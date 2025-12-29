@@ -182,9 +182,7 @@ class BlockManifest(WorkflowBlockManifest):
 
     message: str = Field(
         description="Content of the message to be sent.",
-        examples=[
-            "Alert! Detected {{ $parameters.num_detections }} objects"
-        ],
+        examples=["Alert! Detected {{ $parameters.num_detections }} objects"],
         json_schema_extra={
             "hide_description": True,
             "multiline": True,
@@ -237,7 +235,9 @@ class BlockManifest(WorkflowBlockManifest):
     )
 
     # Twilio credentials - hidden when using Roboflow Managed API Key
-    twilio_account_sid: Optional[Union[str, Selector(kind=[STRING_KIND, SECRET_KIND])]] = Field(
+    twilio_account_sid: Optional[
+        Union[str, Selector(kind=[STRING_KIND, SECRET_KIND])]
+    ] = Field(
         default=None,
         title="Twilio Account SID",
         description="Twilio Account SID from the Twilio Console.",
@@ -250,7 +250,9 @@ class BlockManifest(WorkflowBlockManifest):
         },
     )
 
-    twilio_auth_token: Optional[Union[str, Selector(kind=[STRING_KIND, SECRET_KIND])]] = Field(
+    twilio_auth_token: Optional[
+        Union[str, Selector(kind=[STRING_KIND, SECRET_KIND])]
+    ] = Field(
         default=None,
         title="Twilio Auth Token",
         description="Twilio Auth Token from the Twilio Console.",
@@ -361,7 +363,9 @@ class TwilioSMSNotificationBlockV2(WorkflowBlock):
                 datetime.now() - self._last_notification_fired
             ).total_seconds()
         if seconds_since_last_notification < cooldown_seconds:
-            logging.info(f"Activated `roboflow_core/twilio_sms_notification@v2` cooldown.")
+            logging.info(
+                f"Activated `roboflow_core/twilio_sms_notification@v2` cooldown."
+            )
             return {
                 "error_status": False,
                 "throttling_status": True,
@@ -500,7 +504,9 @@ def process_media_urls_for_twilio(
                 if url:
                     result.append(url)
                 else:
-                    logging.warning("Failed to upload WorkflowImageData to temporary storage")
+                    logging.warning(
+                        "Failed to upload WorkflowImageData to temporary storage"
+                    )
             else:
                 result.append(item)
         return result if result else None
@@ -513,26 +519,26 @@ _EPHEMERAL_HOST_PARTS = ["tmp", "files", ".org"]
 def _upload_image_to_ephemeral_host(image_data: WorkflowImageData) -> Optional[str]:
     """Upload WorkflowImageData to an ephemeral file hosting service."""
     import requests
-    
+
     try:
         jpeg_bytes = encode_image_to_jpeg_bytes(image_data.numpy_image)
         host = "".join(_EPHEMERAL_HOST_PARTS)
         endpoint = f"https://{host}/api/v1/upload"
-        
-        files = {'file': ('image.jpg', jpeg_bytes, 'image/jpeg')}
+
+        files = {"file": ("image.jpg", jpeg_bytes, "image/jpeg")}
         response = requests.post(endpoint, files=files, timeout=10)
         response.raise_for_status()
-        
+
         data = response.json()
-        if data.get('status') == 'success' and data.get('data', {}).get('url'):
-            url = data['data']['url']
-            if '/dl/' not in url and host in url:
-                url = url.replace(f'{host}/', f'{host}/dl/')
+        if data.get("status") == "success" and data.get("data", {}).get("url"):
+            url = data["data"]["url"]
+            if "/dl/" not in url and host in url:
+                url = url.replace(f"{host}/", f"{host}/dl/")
             return url
-        
+
         logging.warning(f"Unexpected ephemeral host response: {data}")
         return None
-        
+
     except Exception as error:
         logging.warning(f"Failed to upload image to ephemeral host: {error}")
         return None
@@ -544,7 +550,7 @@ def serialize_media_for_api(
     """
     Serialize media for API transmission.
     Separates URL-based media from base64 image data.
-    
+
     Returns:
         Tuple of (media_urls, media_base64) where:
         - media_urls: List of string URLs
@@ -552,23 +558,25 @@ def serialize_media_for_api(
     """
     if media_url is None:
         return None, None
-    
+
     media_urls: List[str] = []
     media_base64: List[Dict[str, str]] = []
-    
+
     items = [media_url] if not isinstance(media_url, list) else media_url
-    
+
     for item in items:
         if isinstance(item, WorkflowImageData):
             # Convert to base64 JPEG
             jpeg_bytes = encode_image_to_jpeg_bytes(item.numpy_image)
-            media_base64.append({
-                "base64": base64.b64encode(jpeg_bytes).decode("utf-8"),
-                "mimeType": "image/jpeg"
-            })
+            media_base64.append(
+                {
+                    "base64": base64.b64encode(jpeg_bytes).decode("utf-8"),
+                    "mimeType": "image/jpeg",
+                }
+            )
         elif isinstance(item, str):
             media_urls.append(item)
-    
+
     return (media_urls if media_urls else None, media_base64 if media_base64 else None)
 
 
@@ -665,9 +673,7 @@ def send_sms_via_roboflow_proxy(
         else:
             return True, f"Failed to send SMS via proxy. {error_message}"
     except Exception as error:
-        logging.warning(
-            f"Could not send SMS via Roboflow proxy. Error: {str(error)}"
-        )
+        logging.warning(f"Could not send SMS via Roboflow proxy. Error: {str(error)}")
         return True, f"Failed to send SMS via proxy. Internal error details: {error}"
 
 
