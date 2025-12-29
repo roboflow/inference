@@ -26,6 +26,8 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 
+_ZEBRA_MASK_CACHE = {}
+
 SHORT_DESCRIPTION: str = "Calculate a score to indicate how well-focused a camera is."
 LONG_DESCRIPTION: str = """
 Calculates image sharpness using the Tenengrad focus measure (Sobel gradient magnitudes).
@@ -204,7 +206,12 @@ def _apply_zebra_warnings(
 ) -> np.ndarray:
     """Overlay zebra pattern on under/overexposed regions."""
     output = image.copy()
-    zebra = _create_zebra_mask(gray.shape)
+
+    key = gray.shape
+    zebra = _ZEBRA_MASK_CACHE.get(key)
+    if zebra is None:
+        zebra = _create_zebra_mask(gray.shape)
+        _ZEBRA_MASK_CACHE[key] = zebra
 
     underexposed = (gray < under_thresh) & zebra
     overexposed = (gray > over_thresh) & zebra
@@ -436,7 +443,10 @@ def _compute_tenengrad(
 
     gx = cv2.Sobel(gray, cv2.CV_32F, 1, 0, ksize=3)
     gy = cv2.Sobel(gray, cv2.CV_32F, 0, 1, ksize=3)
-    focus_measure = gx**2 + gy**2
+    np.square(gx, out=gx)
+    np.square(gy, out=gy)
+    np.add(gx, gy, out=gx)
+    focus_measure = gx
     focus_value = float(focus_measure.mean())
 
     bbox_focus_measures: List[float] = []
