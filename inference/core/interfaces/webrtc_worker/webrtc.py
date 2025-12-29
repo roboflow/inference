@@ -326,6 +326,13 @@ class VideoFrameProcessor:
         self._track_ready_event: asyncio.Event = asyncio.Event()
         self.realtime_processing = realtime_processing
 
+        # Optional receiver-paced flow control (enabled only after first ACK is received)
+        self._ack_enabled: bool = False
+        self._ack_last: int = 0
+        # Window size requirement: if ack=1, allow sending up to frame 5 => window=4
+        self._ack_window: int = 4
+        self._ack_event: asyncio.Event = asyncio.Event()
+
         if data_output is None:
             self.data_output = None
             self._data_mode = DataOutputMode.NONE
@@ -369,6 +376,47 @@ class VideoFrameProcessor:
         # Clean up video upload handler if present
         if self.video_upload_handler is not None:
             await self.video_upload_handler.cleanup()
+
+    def record_ack(self, ack: int) -> None:
+        """Record cumulative ACK from the client.
+
+        ACK semantics: client has fully handled all frames <= ack.
+        Backwards compatible: pacing is disabled until we receive the first ACK.
+        """
+        try:
+            ack_int = int(ack)
+        except (TypeError, ValueError):
+            return
+        if ack_int < 0:
+            return
+        if not self._ack_enabled:
+            logger.info("ACK pacing enabled (first ack=%s, window=%s)", ack_int, self._ack_window)
+            self._ack_enabled = True
+        if ack_int > self._ack_last:
+            self._ack_last = ack_int
+            self._ack_event.set()
+
+    async def _wait_for_ack_window(self, next_frame_id: int) -> None:
+        """Block frame production when too far ahead of client ACKs.
+
+        Allows up to (_ack_window) frames in flight beyond the last ACK.
+        """
+        if not self._ack_enabled:
+            return
+        while (
+            not self._stop_processing
+            and next_frame_id > (self._ack_last + self._ack_window)
+        ):
+            if self._check_termination():
+                return
+            if self.heartbeat_callback:
+                self.heartbeat_callback()
+            # Wait briefly for an ACK; timeout keeps heartbeats flowing.
+            self._ack_event.clear()
+            try:
+                await asyncio.wait_for(self._ack_event.wait(), timeout=0.2)
+            except asyncio.TimeoutError:
+                pass
 
     def _check_termination(self):
         """Check if we should terminate based on timeout"""
@@ -515,6 +563,7 @@ class VideoFrameProcessor:
 
         try:
             while not self._stop_processing:
+                await self._wait_for_ack_window(next_frame_id=self._received_frames + 1)
                 if self._check_termination():
                     break
                 if self.heartbeat_callback:
@@ -718,6 +767,9 @@ class VideoTransformTrackWithLoop(VideoStreamTrack, VideoFrameProcessor):
             await self._track_ready_event.wait()
             if self.track is None:
                 raise MediaStreamError("Track not available after wait")
+
+        # Optional ACK pacing: block producing the next frame if we're too far ahead.
+        await self._wait_for_ack_window(next_frame_id=self._received_frames + 1)
 
         # Drain queue if using PlayerStreamTrack (RTSP/video file)
         if isinstance(self.track, PlayerStreamTrack) and self.realtime_processing:
@@ -1115,6 +1167,9 @@ async def init_rtc_peer_connection_with_loop(
             except json.JSONDecodeError:
                 logger.error("Failed to decode webrtc data payload: %s", message)
                 return
+            # Optional ACK-based flow control (enabled only after first ACK is received)
+            if message_data.ack is not None:
+                video_processor.record_ack(message_data.ack)
 
             # Handle stream_output changes
             if message_data.stream_output is not None:
