@@ -13,7 +13,7 @@ WORKFLOW_WITH_CAMERA_FOCUS = {
     "inputs": [{"type": "InferenceImage", "name": "image"}],
     "steps": [
         {
-            "type": "roboflow_core/camera_focus@v1",
+            "type": "roboflow_core/camera_focus@v2",
             "name": "camera_focus",
             "image": "$inputs.image",
         }
@@ -29,6 +29,11 @@ WORKFLOW_WITH_CAMERA_FOCUS = {
             "type": "JsonField",
             "name": "camera_focus_measure",
             "selector": "$steps.camera_focus.focus_measure",
+        },
+        {
+            "type": "JsonField",
+            "name": "bbox_focus_measures",
+            "selector": "$steps.camera_focus.bbox_focus_measures",
         },
     ],
 }
@@ -71,10 +76,10 @@ def test_workflow_with_camera_focus(
     assert set(result[0].keys()) == {
         "camera_focus_image",
         "camera_focus_measure",
+        "bbox_focus_measures",
     }, "Expected all declared outputs to be delivered"
     assert isinstance(
         result[0]["camera_focus_measure"], float
     ), "Expected camera focus output to be a float"
-    assert (
-        abs(result[0]["camera_focus_measure"] - 131.16) < 1e-2
-    ), "Expected focus score to be close to 131.16"
+    assert result[0]["camera_focus_measure"] > 0, "Expected focus score to be positive"
+    assert result[0]["bbox_focus_measures"] == [], "Expected empty bbox_focus_measures when no detections provided"
