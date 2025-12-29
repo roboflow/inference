@@ -472,14 +472,13 @@ def _compute_tenengrad(
 
     gx = cv2.Sobel(gray, cv2.CV_32F, 1, 0, ksize=3)
     gy = cv2.Sobel(gray, cv2.CV_32F, 0, 1, ksize=3)
-    
+
     focus_measure = gx
     np.square(focus_measure, out=focus_measure)
     np.square(gy, out=gy)
     np.add(focus_measure, gy, out=focus_measure)
-    
-    focus_value = float(focus_measure.mean())
 
+    focus_value = float(focus_measure.mean())
 
     bbox_focus_measures: List[float] = []
     if detections is not None and len(detections) > 0:
