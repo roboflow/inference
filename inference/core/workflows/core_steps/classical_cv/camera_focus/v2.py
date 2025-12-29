@@ -456,7 +456,7 @@ GRID_DIVISIONS = {
 def _compute_tenengrad(
     input_image: np.ndarray,
     detections: Optional[sv.Detections] = None,
-) -> Tuple[np.ndarray, np.ndarray, float, List[float]]:
+) -> Tuple[np.ndarray, np.ndarray, float, List[Optional[float]]]:
     """
     Compute Tenengrad focus measure using Sobel gradients.
 
@@ -480,7 +480,7 @@ def _compute_tenengrad(
 
     focus_value = float(focus_measure.mean())
 
-    bbox_focus_measures: List[float] = []
+    bbox_focus_measures: List[Optional[float]] = []
     if detections is not None and len(detections) > 0:
         for xyxy in detections.xyxy:
             x1, y1, x2, y2 = map(int, xyxy)
@@ -489,6 +489,8 @@ def _compute_tenengrad(
             if x2 > x1 and y2 > y1:
                 region_focus = focus_measure[y1:y2, x1:x2].mean()
                 bbox_focus_measures.append(float(region_focus))
+            else:
+                bbox_focus_measures.append(None)
 
     return gray, focus_measure, focus_value, bbox_focus_measures
 
@@ -503,7 +505,7 @@ def visualize_tenengrad_measure(
     show_focus_peaking: bool = True,
     show_center_marker: bool = True,
     detections: Optional[sv.Detections] = None,
-) -> Tuple[np.ndarray, float, List[float]]:
+) -> Tuple[np.ndarray, float, List[Optional[float]]]:
     """
     Tenengrad focus measure with visualization overlay.
 
