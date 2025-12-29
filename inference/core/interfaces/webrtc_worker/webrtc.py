@@ -425,28 +425,44 @@ class VideoFrameProcessor:
         else:
             fields_to_send = self.data_output
 
-        serialized_outputs = {}
+        def serialize_outputs_sync() -> Tuple[Dict[str, Any], List[str]]:
+            """Serialize workflow outputs in a thread to avoid blocking the event loop.
 
-        for field_name in fields_to_send:
-            if field_name not in workflow_output:
-                webrtc_output.errors.append(
-                    f"Requested output '{field_name}' not found in workflow outputs"
-                )
-                continue
+            Image serialization (JPEG encoding + base64) is CPU-intensive and can block
+            for 50-200ms per frame. Running this synchronously on the asyncio event loop
+            prevents timely DTLS/SCTP ACK responses, causing connection drops.
+            """
+            serialized = {}
+            serialization_errors = []
 
-            output_data = workflow_output[field_name]
+            for field_name in fields_to_send:
+                if field_name not in workflow_output:
+                    serialization_errors.append(
+                        f"Requested output '{field_name}' not found in workflow outputs"
+                    )
+                    continue
 
-            if self._data_mode == DataOutputMode.ALL and isinstance(
-                output_data, WorkflowImageData
-            ):
-                continue
+                output_data = workflow_output[field_name]
 
-            try:
-                serialized_value = serialize_wildcard_kind(output_data)
-                serialized_outputs[field_name] = serialized_value
-            except Exception as e:
-                webrtc_output.errors.append(f"{field_name}: {e}")
-                serialized_outputs[field_name] = {"__serialization_error__": str(e)}
+                if self._data_mode == DataOutputMode.ALL and isinstance(
+                    output_data, WorkflowImageData
+                ):
+                    continue
+
+                try:
+                    serialized_value = serialize_wildcard_kind(output_data)
+                    serialized[field_name] = serialized_value
+                except Exception as e:
+                    serialization_errors.append(f"{field_name}: {e}")
+                    serialized[field_name] = {"__serialization_error__": str(e)}
+
+            return serialized, serialization_errors
+
+        # Offload CPU-intensive serialization (especially image base64 encoding) to thread
+        serialized_outputs, serialization_errors = await asyncio.to_thread(
+            serialize_outputs_sync
+        )
+        webrtc_output.errors.extend(serialization_errors)
 
         # Set serialized outputs
         if serialized_outputs:
