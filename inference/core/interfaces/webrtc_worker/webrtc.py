@@ -327,7 +327,6 @@ class VideoFrameProcessor:
         self.realtime_processing = realtime_processing
 
         # Optional receiver-paced flow control (enabled only after first ACK is received)
-        self._ack_enabled: bool = False
         self._ack_last: int = 0
         # Window size requirement: if ack=1, allow sending up to frame 5 => window=4
         self._ack_window: int = 4
@@ -386,13 +385,14 @@ class VideoFrameProcessor:
         try:
             ack_int = int(ack)
         except (TypeError, ValueError):
+            logger.warning("Invalid ACK value: %s", ack)
             return
         if ack_int < 0:
+            logger.warning("Invalid ACK value: %s", ack)
             return
-        if not self._ack_enabled:
-            logger.info("ACK pacing enabled (first ack=%s, window=%s)", ack_int, self._ack_window)
-            self._ack_enabled = True
         if ack_int > self._ack_last:
+            if ack_int%100 == 1:
+                logger.info("ACK received: %s", ack_int)
             self._ack_last = ack_int
             self._ack_event.set()
 
@@ -401,7 +401,7 @@ class VideoFrameProcessor:
 
         Allows up to (_ack_window) frames in flight beyond the last ACK.
         """
-        if not self._ack_enabled:
+        if self._ack_last == 0:
             return
         while (
             not self._stop_processing
@@ -416,7 +416,7 @@ class VideoFrameProcessor:
             try:
                 await asyncio.wait_for(self._ack_event.wait(), timeout=0.2)
             except asyncio.TimeoutError:
-                pass
+                logger.info("Timeout waiting for ACK window (next_frame_id=%s, ack_last=%s, ack_window=%s)", next_frame_id, self._ack_last, self._ack_window)
 
     def _check_termination(self):
         """Check if we should terminate based on timeout"""
@@ -1161,7 +1161,6 @@ async def init_rtc_peer_connection_with_loop(
         # Handle inference control channel (bidirectional communication)
         @channel.on("message")
         def on_message(message):
-            logger.info("Data channel message received: %s", message)
             try:
                 message_data = WebRTCData(**json.loads(message))
             except json.JSONDecodeError:
