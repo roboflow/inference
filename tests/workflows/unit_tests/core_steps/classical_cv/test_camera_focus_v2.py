@@ -132,3 +132,80 @@ def test_camera_focus_v2_block_returns_same_image_when_all_visualizations_disabl
     assert "focus_measure" in output
     assert output["focus_measure"] >= 0
     assert output["bbox_focus_measures"] == []
+
+
+def test_camera_focus_v2_block_with_grayscale_image() -> None:
+    block = CameraFocusBlockV2()
+    gray_image = np.random.randint(0, 256, (100, 100), dtype=np.uint8)
+
+    output = block.run(
+        image=WorkflowImageData(
+            parent_metadata=ImageParentMetadata(parent_id="some"),
+            numpy_image=gray_image,
+        ),
+        underexposed_threshold_percent=3.0,
+        overexposed_threshold_percent=97.0,
+        show_zebra_warnings=True,
+        grid_overlay="3x3",
+        show_hud=True,
+        show_focus_peaking=True,
+        show_center_marker=True,
+        detections=None,
+    )
+
+    assert output["focus_measure"] >= 0
+    assert output["image"].numpy_image.shape == (100, 100, 3)
+
+
+def test_camera_focus_v2_block_with_small_image() -> None:
+    block = CameraFocusBlockV2()
+    small_image = np.random.randint(0, 256, (10, 10, 3), dtype=np.uint8)
+
+    output = block.run(
+        image=WorkflowImageData(
+            parent_metadata=ImageParentMetadata(parent_id="some"),
+            numpy_image=small_image,
+        ),
+        underexposed_threshold_percent=3.0,
+        overexposed_threshold_percent=97.0,
+        show_zebra_warnings=True,
+        grid_overlay="3x3",
+        show_hud=True,
+        show_focus_peaking=True,
+        show_center_marker=True,
+        detections=None,
+    )
+
+    assert output["focus_measure"] >= 0
+    assert output["bbox_focus_measures"] == []
+
+
+def test_camera_focus_v2_block_with_out_of_bounds_detections() -> None:
+    block = CameraFocusBlockV2()
+    image = np.random.randint(0, 256, (100, 100, 3), dtype=np.uint8)
+
+    detections = sv.Detections(
+        xyxy=np.array([
+            [-50, -50, 50, 50],
+            [80, 80, 200, 200],
+        ]),
+    )
+
+    output = block.run(
+        image=WorkflowImageData(
+            parent_metadata=ImageParentMetadata(parent_id="some"),
+            numpy_image=image,
+        ),
+        underexposed_threshold_percent=3.0,
+        overexposed_threshold_percent=97.0,
+        show_zebra_warnings=False,
+        grid_overlay="None",
+        show_hud=False,
+        show_focus_peaking=False,
+        show_center_marker=False,
+        detections=detections,
+    )
+
+    assert output["focus_measure"] >= 0
+    assert len(output["bbox_focus_measures"]) == 2
+    assert all(fm >= 0 for fm in output["bbox_focus_measures"])
