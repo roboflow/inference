@@ -1,3 +1,4 @@
+import time
 from typing import Any, Dict, List, Literal, Optional, Type, Union
 
 from pydantic import ConfigDict, Field
@@ -10,6 +11,7 @@ from inference.core.workflows.core_steps.common.query_language.evaluation_engine
 )
 from inference.core.workflows.execution_engine.entities.base import OutputDefinition
 from inference.core.workflows.execution_engine.entities.types import (
+    FLOAT_KIND,
     Selector,
     StepSelector,
 )
@@ -79,6 +81,14 @@ class BlockManifest(WorkflowBlockManifest):
         examples=[["$steps.on_true"]],
     )
 
+    stop_delay: Union[Selector(kind=[FLOAT_KIND]), float] = Field(
+        title="Stop Delay",
+        description="Execution will persist for this many seconds after the false condition.",
+        gt=0,
+        examples=[5],
+        default=0,
+    )
+
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return []
@@ -90,6 +100,10 @@ class BlockManifest(WorkflowBlockManifest):
 
 class ContinueIfBlockV1(WorkflowBlock):
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.start_time = None
+
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BlockManifest
@@ -99,11 +113,18 @@ class ContinueIfBlockV1(WorkflowBlock):
         condition_statement: StatementGroup,
         evaluation_parameters: Dict[str, Any],
         next_steps: List[StepSelector],
+        stop_delay: float,
     ) -> BlockResult:
         if not next_steps:
             return FlowControl(mode="terminate_branch")
         evaluation_function = build_eval_function(definition=condition_statement)
         evaluation_result = evaluation_function(evaluation_parameters)
+
         if evaluation_result:
+            if stop_delay > 0:
+                self.start_time = time.time()
+            return FlowControl(mode="select_step", context=next_steps)
+
+        if self.start_time and time.time() - self.start_time <= stop_delay:
             return FlowControl(mode="select_step", context=next_steps)
         return FlowControl(mode="terminate_branch")

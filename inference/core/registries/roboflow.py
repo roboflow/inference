@@ -49,6 +49,7 @@ GENERIC_MODELS = {
     "sam2": ("embed", "sam2"),
     "sam3": ("embed", "sam3"),
     "sam3/sam3_interactive": ("interactive-segmentation", "sam3"),
+    "sam3-3d-objects": ("3d-reconstruction", "sam3-3d-objects"),
     "gaze": ("gaze", "l2cs"),
     "doctr": ("ocr", "doctr"),
     "easy_ocr": ("ocr", "easy_ocr"),
@@ -158,8 +159,12 @@ def get_model_type(
         MissingDefaultModelError: If default model is not configured and API does not provide this info
         MalformedRoboflowAPIResponseError: Roboflow API responds in invalid format.
     """
+
     model_id = resolve_roboflow_model_alias(model_id=model_id)
     dataset_id, version_id = get_model_id_chunks(model_id=model_id)
+    print(
+        f"Resolved model_id: {model_id}, dataset_id: {dataset_id}, version_id: {version_id}"
+    )
 
     # first check if the model id as a whole is in the GENERIC_MODELS dictionary
     if model_id in GENERIC_MODELS:
