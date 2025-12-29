@@ -140,8 +140,10 @@ SNAKES_RFDETR_SEG_ONNX_STATIC_BS_STATIC_CROP_LETTERBOX_URL = "https://storage.go
 SNAKES_RFDETR_SEG_TORCH_STATIC_CROP_CENTER_CROP_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-seg-torch-static-crop-center-crop.zip"
 SNAKES_RFDETR_SEG_ONNX_STATIC_BS_STATIC_CROP_CENTER_CROP_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-seg-onnx-static-bs-static-crop-center-crop.zip"
 
-DINOV3_CLASSIFICATION_ONNX_STATIC_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/dinov3-classification.zip"
-DINOV3_MULTI_LABEL_ONNX_STATIC_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/dinov3-multi-label.zip"
+DINOV3_CLASSIFICATION_ONNX_STATIC_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/dinov3-classification-onnx.zip"
+DINOV3_MULTI_LABEL_ONNX_STATIC_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/dinov3-multi-label-onnx.zip"
+DINOV3_CLASSIFICATION_TORCH_STATIC_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/dinov3-classification-torch.zip"
+DINOV3_MULTI_LABEL_TORCH_STATIC_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/dinov3-multi-label-torch.zip"
 
 DEPTH_ANYTHING_V2_SMALL_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/depth-anything-v2.zip"
 DOCTR_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/doctr-dbnet-rn50-crnn-vgg16.zip"
@@ -153,6 +155,12 @@ OWLv2_PACKAGE_URL = (
     "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/owlv2.zip"
 )
 INSTANT_MODEL_COIN_COUNTING_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/instant-model-coin-counting.zip"
+SAM_PACKAGE_URL = (
+    "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/sam.zip"
+)
+SAM2_PACKAGE_URL = (
+    "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/sam2.zip"
+)
 
 
 @pytest.fixture(scope="module")
@@ -1202,6 +1210,22 @@ def dinov3_multi_label_onnx_static_package() -> str:
 
 
 @pytest.fixture(scope="module")
+def dinov3_classification_torch_static_package() -> str:
+    return download_model_package(
+        model_package_zip_url=DINOV3_CLASSIFICATION_TORCH_STATIC_URL,
+        package_name="dinov3-classification-torch-static",
+    )
+
+
+@pytest.fixture(scope="module")
+def dinov3_multi_label_torch_static_package() -> str:
+    return download_model_package(
+        model_package_zip_url=DINOV3_MULTI_LABEL_TORCH_STATIC_URL,
+        package_name="dinov3-multi-label-torch-static",
+    )
+
+
+@pytest.fixture(scope="module")
 def owlv2_package() -> str:
     return download_model_package(
         model_package_zip_url=OWLv2_PACKAGE_URL,
@@ -1214,4 +1238,20 @@ def rf_instant_model_coin_counting_package() -> str:
     return download_model_package(
         model_package_zip_url=INSTANT_MODEL_COIN_COUNTING_PACKAGE_URL,
         package_name="rf-instant-coin-counting",
+    )
+
+
+@pytest.fixture(scope="module")
+def sam_package() -> str:
+    return download_model_package(
+        model_package_zip_url=SAM_PACKAGE_URL,
+        package_name="sam",
+    )
+
+
+@pytest.fixture(scope="module")
+def sam2_package() -> str:
+    return download_model_package(
+        model_package_zip_url=SAM2_PACKAGE_URL,
+        package_name="sam2",
     )

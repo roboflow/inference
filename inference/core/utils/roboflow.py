@@ -34,6 +34,7 @@ def get_model_id_chunks(
         "moondream2",
         "depth-anything-v2",
         "perception_encoder",
+        "sam3-3d-objects",
     }:
         return dataset_id, version_id
 

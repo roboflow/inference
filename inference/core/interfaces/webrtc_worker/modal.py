@@ -418,6 +418,7 @@ if modal is not None:
                     "plan": webrtc_plan,
                     "billable": True,
                     "video_source": video_source,
+                    "is_preview": webrtc_request.is_preview,
                 },
                 execution_duration=(
                     _exec_session_stopped - _exec_session_started

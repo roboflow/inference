@@ -22,6 +22,7 @@ STRUCTURED_OCR_TASK = "structured-ocr"
 TEXT_ONLY_OCR_TASK = "text-only-ocr"
 GAZE_DETECTION_TASK = "gaze-detection"
 OPEN_VOCABULARY_OBJECT_DETECTION_TASK = "open-vocabulary-object-detection"
+INTERACTIVE_INSTANCE_SEGMENTATION_TASK = "interactive-instance-segmentation"
 
 
 @dataclass(frozen=True)
@@ -413,6 +414,22 @@ REGISTERED_MODELS: Dict[
         class_name="DinoV3ForClassificationOnnx",
     ),
     (
+        "dinov3_probe",
+        MULTI_LABEL_CLASSIFICATION_TASK,
+        BackendType.TORCH,
+    ): LazyClass(
+        module_name="inference_exp.models.dinov3.dinov3_classification_torch",
+        class_name="DinoV3ForMultiLabelClassificationTorch",
+    ),
+    (
+        "dinov3_probe",
+        CLASSIFICATION_TASK,
+        BackendType.TORCH,
+    ): LazyClass(
+        module_name="inference_exp.models.dinov3.dinov3_classification_torch",
+        class_name="DinoV3ForClassificationTorch",
+    ),
+    (
         "owlv2",
         OPEN_VOCABULARY_OBJECT_DETECTION_TASK,
         BackendType.HF,
@@ -427,6 +444,14 @@ REGISTERED_MODELS: Dict[
     ): LazyClass(
         module_name="inference_exp.models.roboflow_instant.roboflow_instant_hf",
         class_name="RoboflowInstantHF",
+    ),
+    ("sam", INTERACTIVE_INSTANCE_SEGMENTATION_TASK, BackendType.TORCH): LazyClass(
+        module_name="inference_exp.models.sam.sam_torch",
+        class_name="SAMTorch",
+    ),
+    ("sam2", INTERACTIVE_INSTANCE_SEGMENTATION_TASK, BackendType.TORCH): LazyClass(
+        module_name="inference_exp.models.sam2.sam2_torch",
+        class_name="SAM2Torch",
     ),
 }
 
