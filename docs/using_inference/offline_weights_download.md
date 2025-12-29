@@ -55,8 +55,9 @@ You can also pre-download weights by loading the model directly with `get_model(
 ```python
 from inference import get_model
 
-model = get_model(model_id="rfdetr-base", api_key="YOUR_ROBOFLOW_API_KEY")
-print("Model loaded and cached!")
+get_model("rfdetr-base")
+
+print("Model weights cached successfully!")
 ```
 
 ### Running Inference
