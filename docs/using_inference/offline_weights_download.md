@@ -14,6 +14,12 @@ Model weights are downloaded automatically the first time you run inference with
 
 This approach works across all Roboflow deployment methods and ensures fast, local inference.
 
+!!! warning "Important: Default Cache Location"
+    By default, model weights are stored in `/tmp/cache`, which is **cleared on system reboot**. For production deployments or scenarios where you need weights to persist across reboots, you must configure a persistent cache directory using the `MODEL_CACHE_DIR` environment variable (see [Cache Location](#cache-location) section below).
+
+!!! info "Enterprise Offline Mode"
+    For enterprise deployments requiring completely disconnected operation, see our [Enterprise Offline Mode documentation](https://docs.roboflow.com/deploy/enterprise-deployment/offline-mode). This guide focuses on model weights download and caching, while maintaining connectivity for usage tracking, billing, and workflow updates.
+
 ## InferencePipeline (Video Streaming)
 
 The `InferencePipeline` is designed for real-time video processing and streaming applications. You can pre-download model weights to ensure they're cached before running inference.
@@ -77,14 +83,30 @@ pipeline.join()
 
 ### Cache Location
 
-By default, model weights are cached in `/tmp/cache`. You can customize this location using the `MODEL_CACHE_DIR` environment variable:
+By default, model weights are cached in `/tmp/cache`. **This directory is cleared on system reboot**, which means you'll need to re-download model weights after each restart.
+
+For production deployments or any scenario where you need weights to persist across reboots, you **must** configure a persistent cache directory using the `MODEL_CACHE_DIR` environment variable:
 
 ```python
 import os
-os.environ["MODEL_CACHE_DIR"] = "/path/to/your/cache"
+# Set to a persistent directory (not /tmp)
+os.environ["MODEL_CACHE_DIR"] = "/home/user/.roboflow/cache"
 
 from inference import InferencePipeline
 # ... rest of your code
+```
+
+Alternatively, set it system-wide:
+
+```bash
+export MODEL_CACHE_DIR="/home/user/.roboflow/cache"
+```
+
+Make sure the directory exists and has appropriate permissions:
+
+```bash
+mkdir -p /home/user/.roboflow/cache
+chmod 755 /home/user/.roboflow/cache
 ```
 
 ## Client SDK (Image-Based Inference)
@@ -177,17 +199,36 @@ print("Workflow cached and ready!")
 
 ### Docker Configuration
 
-When running Inference in Docker, you can mount a persistent cache volume to preserve downloaded weights:
+When running Inference in Docker, it's **critical** to mount a persistent cache volume to preserve downloaded weights across container restarts and system reboots:
 
 ```bash
 docker run -d \
   -p 9001:9001 \
-  -v /path/to/cache:/tmp/cache \
+  -v /path/to/persistent/cache:/tmp/cache \
   -e MODEL_CACHE_DIR=/tmp/cache \
   roboflow/roboflow-inference-server-cpu:latest
 ```
 
-This ensures that weights persist across container restarts and can be pre-populated before deployment.
+**Important considerations:**
+
+- Without a mounted volume, weights are stored inside the container and will be **lost on container restart or system reboot**
+- The host path (`/path/to/persistent/cache`) should be on persistent storage, not in `/tmp`
+- Ensure the mounted directory has appropriate permissions for the container user
+- This allows you to pre-populate weights before deployment and ensures they persist across updates
+
+Example with a persistent host directory:
+
+```bash
+# Create persistent cache directory on host
+mkdir -p /var/lib/roboflow/cache
+
+# Run container with persistent cache
+docker run -d \
+  -p 9001:9001 \
+  -v /var/lib/roboflow/cache:/tmp/cache \
+  -e MODEL_CACHE_DIR=/tmp/cache \
+  roboflow/roboflow-inference-server-cpu:latest
+```
 
 ## Native Python API
 
@@ -250,23 +291,51 @@ print(f"Loaded models: {loaded_models}")
 
 ## Best Practices
 
-1. **Pre-download During Setup**: Download all required model weights during your deployment setup phase to ensure they're cached
+1. **Configure Persistent Cache First**: Before downloading any weights, configure `MODEL_CACHE_DIR` to point to a persistent directory (not `/tmp`). This is **essential** for production deployments to avoid losing cached weights on reboot.
 
-2. **Use Persistent Cache**: Configure `MODEL_CACHE_DIR` to a persistent location, especially in Docker environments
+2. **Pre-download During Setup**: Download all required model weights during your deployment setup phase to ensure they're cached and ready.
 
-3. **Verify Before Deployment**: Always verify that models are properly cached before deploying to production environments
+3. **Use Persistent Cache in Docker**: Always mount a persistent volume when running in Docker containers. Weights stored in the container filesystem will be lost on restart.
 
-4. **Document Model IDs**: Keep a list of all model IDs and versions your application requires for easier pre-caching
+4. **Verify Before Deployment**: Always verify that models are properly cached and that the cache directory persists across reboots before deploying to production environments.
 
-5. **Consider Storage**: Model weights can be large (100MB - 1GB+ per model). Ensure sufficient disk space is available
+5. **Document Model IDs**: Keep a list of all model IDs and versions your application requires for easier pre-caching and troubleshooting.
+
+6. **Consider Storage**: Model weights can be large (100MB - 1GB+ per model). Ensure sufficient disk space is available in your persistent cache directory.
+
+7. **Test Reboot Behavior**: After caching weights, test that they persist after a system reboot to ensure your cache configuration is correct.
 
 ## Troubleshooting
+
+### Weights Disappear After Reboot
+
+**Symptom**: Model weights need to be re-downloaded after every system reboot.
+
+**Cause**: The default cache location (`/tmp/cache`) is cleared on reboot.
+
+**Solution**: Configure a persistent cache directory:
+
+```bash
+# Set persistent cache location
+export MODEL_CACHE_DIR="/home/user/.roboflow/cache"
+
+# Create the directory
+mkdir -p /home/user/.roboflow/cache
+
+# For Docker, use a persistent volume mount
+docker run -d \
+  -p 9001:9001 \
+  -v /var/lib/roboflow/cache:/tmp/cache \
+  -e MODEL_CACHE_DIR=/tmp/cache \
+  roboflow/roboflow-inference-server-cpu:latest
+```
 
 ### Model Not Found Error
 
 If you get a "model not found" error:
 
-- Verify the model was actually downloaded (check cache directory)
+- **Check if cache was cleared**: If using default `/tmp/cache`, weights are lost on reboot. Configure a persistent cache directory.
+- Verify the model was actually downloaded (check cache directory with `ls -lh $MODEL_CACHE_DIR`)
 - Ensure you're using the exact same `model_id` as when downloading
 - Check that `MODEL_CACHE_DIR` is set correctly if using a custom location
 
@@ -281,6 +350,8 @@ Ensure the application has read/write permissions to the cache directory:
 ```bash
 chmod -R 755 /path/to/cache
 ```
+
+For Docker containers, ensure the mounted directory has appropriate permissions for the container user (typically UID 1000 or root depending on the image).
 
 ## Related Resources
 
