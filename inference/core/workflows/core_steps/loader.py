@@ -43,6 +43,9 @@ from inference.core.workflows.core_steps.classical_cv.background_subtraction.v1 
 from inference.core.workflows.core_steps.classical_cv.camera_focus.v1 import (
     CameraFocusBlockV1,
 )
+from inference.core.workflows.core_steps.classical_cv.camera_focus.v2 import (
+    CameraFocusBlockV2,
+)
 from inference.core.workflows.core_steps.classical_cv.contours.v1 import (
     ImageContoursDetectionBlockV1,
 )
@@ -626,6 +629,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         CacheGetBlockV1,
         CacheSetBlockV1,
         CameraFocusBlockV1,
+        CameraFocusBlockV2,
         CircleVisualizationBlockV1,
         ClipComparisonBlockV1,
         ClipComparisonBlockV2,
