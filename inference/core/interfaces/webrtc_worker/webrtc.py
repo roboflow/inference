@@ -3,7 +3,6 @@ import datetime
 import json
 import logging
 import struct
-import traceback
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from aioice import ice
@@ -24,9 +23,9 @@ from pydantic import ValidationError
 
 from inference.core import logger
 from inference.core.env import (
+    WEBRTC_DATA_CHANNEL_ACK_WINDOW,
     WEBRTC_DATA_CHANNEL_BUFFER_DRAINING_DELAY,
     WEBRTC_DATA_CHANNEL_BUFFER_SIZE_LIMIT,
-    WEBRTC_DATA_CHANNEL_ACK_WINDOW,
     WEBRTC_MODAL_PUBLIC_STUN_SERVERS,
     WEBRTC_MODAL_RTSP_PLACEHOLDER,
     WEBRTC_MODAL_RTSP_PLACEHOLDER_URL,
@@ -277,12 +276,6 @@ class RTCPeerConnectionWithLoop(RTCPeerConnection):
         super().__init__(*args, **kwargs)
         self._loop = asyncio_loop
 
-    async def close(self):
-        logger.info(
-            "peer_connection.close() called from:\n%s", "".join(traceback.format_stack())
-        )
-        await super().close()
-
 
 class VideoFrameProcessor:
     """Base class for processing video frames through workflow.
@@ -392,7 +385,7 @@ class VideoFrameProcessor:
             logger.warning("Invalid ACK value: %s", ack)
             return
         if ack_int > self._ack_last:
-            if ack_int%100 == 1:
+            if ack_int % 100 == 1:
                 logger.info("ACK received: %s", ack_int)
             self._ack_last = ack_int
             self._ack_event.set()
@@ -401,12 +394,15 @@ class VideoFrameProcessor:
         """Block frame production when too far ahead of client ACKs.
 
         Allows up to (_ack_window) frames in flight beyond the last ACK.
+        Only active for non-realtime processing (video file uploads).
         """
+        if self.realtime_processing:
+            return
         if self._ack_last == 0:
             return
-        while (
-            not self._stop_processing
-            and next_frame_id > (self._ack_last + self._ack_window)
+        wait_counter = 0
+        while not self._stop_processing and next_frame_id > (
+            self._ack_last + self._ack_window
         ):
             if self._check_termination():
                 return
@@ -417,7 +413,14 @@ class VideoFrameProcessor:
             try:
                 await asyncio.wait_for(self._ack_event.wait(), timeout=0.2)
             except asyncio.TimeoutError:
-                logger.info("Timeout waiting for ACK window (next_frame_id=%s, ack_last=%s, ack_window=%s)", next_frame_id, self._ack_last, self._ack_window)
+                wait_counter += 1
+                if wait_counter % 5 == 1:
+                    logger.info(
+                        "Timeout waiting for ACK window (next_frame_id=%s, ack_last=%s, ack_window=%s)",
+                        next_frame_id,
+                        self._ack_last,
+                        self._ack_window,
+                    )
 
     def _check_termination(self):
         """Check if we should terminate based on timeout"""
@@ -433,9 +436,12 @@ class VideoFrameProcessor:
         return False
 
     @staticmethod
-    def serialize_outputs_sync(fields_to_send: List[str], workflow_output: Dict[str, Any], data_output_mode: DataOutputMode) -> Tuple[Dict[str, Any], List[str]]:
-        """Serialize workflow outputs in a thread to avoid blocking the event loop.
-        """
+    def serialize_outputs_sync(
+        fields_to_send: List[str],
+        workflow_output: Dict[str, Any],
+        data_output_mode: DataOutputMode,
+    ) -> Tuple[Dict[str, Any], List[str]]:
+        """Serialize workflow outputs in a thread to avoid blocking the event loop."""
         serialized = {}
         serialization_errors = []
 
@@ -503,7 +509,6 @@ class VideoFrameProcessor:
             fields_to_send = list(workflow_output.keys())
         else:
             fields_to_send = self.data_output
-
 
         # Offload CPU-intensive serialization (especially image base64 encoding) to thread
         serialized_outputs, serialization_errors = await asyncio.to_thread(
@@ -1076,8 +1081,10 @@ async def init_rtc_peer_connection_with_loop(
             logger.info("Stopping WebRTC peer")
             await peer_connection.close()
             terminate_event.set()
-    
-    def process_video_upload_message(message: bytes, video_processor: VideoTransformTrackWithLoop):
+
+    def process_video_upload_message(
+        message: bytes, video_processor: VideoTransformTrackWithLoop
+    ):
         chunk_index, total_chunks, data = parse_video_file_chunk(message)
         video_processor.video_upload_handler.handle_chunk(
             chunk_index, total_chunks, data
@@ -1094,7 +1101,6 @@ async def init_rtc_peer_connection_with_loop(
             logger.info("Video upload channel established")
 
             video_processor.video_upload_handler = VideoFileUploadHandler()
-
 
             @channel.on("message")
             async def on_upload_message(message):
