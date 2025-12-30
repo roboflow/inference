@@ -102,7 +102,7 @@ def test_format_message_simple_parameters() -> None:
     message_parameters_operations = {}
 
     # when
-    result = format_message(
+    result, needs_mms = format_message(
         message=message,
         message_parameters=message_parameters,
         message_parameters_operations=message_parameters_operations,
@@ -110,6 +110,7 @@ def test_format_message_simple_parameters() -> None:
 
     # then
     assert result == "Detected 5 objects of type person"
+    assert needs_mms is False  # Message is under 160 chars
 
 
 def test_format_message_with_operations() -> None:
@@ -123,7 +124,7 @@ def test_format_message_with_operations() -> None:
     }
 
     # when
-    result = format_message(
+    result, needs_mms = format_message(
         message=message,
         message_parameters=message_parameters,
         message_parameters_operations=message_parameters_operations,
@@ -131,6 +132,44 @@ def test_format_message_with_operations() -> None:
 
     # then
     assert "PERSON" in result
+    assert needs_mms is False
+
+
+def test_format_message_long_message_needs_mms() -> None:
+    # given - message over 160 chars
+    message = "A" * 200
+    message_parameters = {}
+    message_parameters_operations = {}
+
+    # when
+    result, needs_mms = format_message(
+        message=message,
+        message_parameters=message_parameters,
+        message_parameters_operations=message_parameters_operations,
+    )
+
+    # then
+    assert len(result) == 200  # No truncation yet (under MMS limit)
+    assert needs_mms is True  # Message exceeds SMS limit
+
+
+def test_format_message_truncates_at_mms_limit() -> None:
+    # given - message over 1600 chars (MMS limit)
+    message = "A" * 2000
+    message_parameters = {}
+    message_parameters_operations = {}
+
+    # when
+    result, needs_mms = format_message(
+        message=message,
+        message_parameters=message_parameters,
+        message_parameters_operations=message_parameters_operations,
+    )
+
+    # then
+    assert len(result) == 1600  # Truncated to MMS limit
+    assert result.endswith("[...]")
+    assert needs_mms is True
 
 
 def test_serialize_media_for_api_with_string_url() -> None:

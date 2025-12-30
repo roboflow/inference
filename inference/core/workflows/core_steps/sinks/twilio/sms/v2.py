@@ -1,4 +1,5 @@
 import base64
+import hashlib
 import logging
 import re
 from collections import defaultdict
@@ -7,10 +8,15 @@ from datetime import datetime
 from functools import partial
 from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
 
+import requests
 from fastapi import BackgroundTasks
 from pydantic import ConfigDict, Field
 from twilio.rest import Client
 
+from inference.core.exceptions import (
+    RoboflowAPIForbiddenError,
+    RoboflowAPIUnsuccessfulRequestError,
+)
 from inference.core.roboflow_api import post_to_roboflow_api
 from inference.core.utils.image_utils import encode_image_to_jpeg_bytes
 from inference.core.workflows.core_steps.common.query_language.entities.operations import (
@@ -140,6 +146,9 @@ With async mode, `error_status` is always `False`. **Set `fire_and_forget=False`
 Set `disable_sink` flag to manually disable the notifier block via Workflow input.
 """
 
+SMS_CHAR_LIMIT = 160
+MMS_CHAR_LIMIT = 1600
+TRUNCATION_MARKER = "[...]"
 PARAMETER_REGEX = re.compile(r"({{\s*\$parameters\.(\w+)\s*}})")
 
 
@@ -356,7 +365,7 @@ class TwilioSMSNotificationBlockV2(WorkflowBlock):
                 "message": "Sink was disabled by parameter `disable_sink`",
             }
 
-        # Check cooldown
+        # Check cooldown using instance variable
         seconds_since_last_notification = cooldown_seconds
         if self._last_notification_fired is not None:
             seconds_since_last_notification = (
@@ -395,7 +404,7 @@ class TwilioSMSNotificationBlockV2(WorkflowBlock):
                 }
 
             # Format message
-            formatted_message = format_message(
+            formatted_message, needs_mms = format_message(
                 message=message,
                 message_parameters=message_parameters,
                 message_parameters_operations=message_parameters_operations,
@@ -405,9 +414,15 @@ class TwilioSMSNotificationBlockV2(WorkflowBlock):
             processed_media_urls = None
             if media_url is not None:
                 processed_media_urls = process_media_urls_for_twilio(media_url)
+            elif needs_mms:
+                # Message exceeds SMS limit - force MMS with minimal placeholder image
+                processed_media_urls = [_get_mms_placeholder_image_url()]
 
-            # Get or create Twilio client
-            credentials_key = f"{twilio_account_sid}:{twilio_auth_token}"
+            # Get or create Twilio client (hash credentials for cache key)
+            credentials_key = _hash_credentials(
+                twilio_account_sid=twilio_account_sid,
+                twilio_auth_token=twilio_auth_token,
+            )
             if credentials_key not in self._clients:
                 self._clients[credentials_key] = Client(
                     twilio_account_sid,
@@ -439,20 +454,33 @@ class TwilioSMSNotificationBlockV2(WorkflowBlock):
                 "throttling_status": False,
                 "message": "Notification sent in the background task",
             }
-        error_status, message = send_sms_handler()
+        error_status, result_message = send_sms_handler()
         return {
             "error_status": error_status,
             "throttling_status": False,
-            "message": message,
+            "message": result_message,
         }
+
+
+def _hash_credentials(twilio_account_sid: str, twilio_auth_token: str) -> str:
+    """Hash Twilio credentials for safe use as cache key."""
+    sid_hash = hashlib.sha256(twilio_account_sid.encode("utf-8")).hexdigest()
+    auth_token_hash = hashlib.sha256(twilio_auth_token.encode("utf-8")).hexdigest()
+    return f"{sid_hash}:{auth_token_hash}"
+
 
 
 def format_message(
     message: str,
     message_parameters: Dict[str, Any],
     message_parameters_operations: Dict[str, List[AllOperationsType]],
-) -> str:
-    """Format SMS/MMS message by replacing parameter placeholders with actual values."""
+) -> Tuple[str, bool]:
+    """Format SMS/MMS message by replacing parameter placeholders with actual values.
+    
+    Returns:
+        Tuple of (formatted_message, needs_mms) where needs_mms is True if message
+        exceeds SMS character limit and should be sent as MMS.
+    """
     matching_parameters = PARAMETER_REGEX.findall(message)
     parameters_to_get_values = {
         p[1] for p in matching_parameters if p[1] in message_parameters
@@ -478,11 +506,20 @@ def format_message(
             message = message.replace(
                 placeholder, str(parameters_values[parameter_name])
             )
-    return message
+    
+    # Determine if MMS is needed (message exceeds SMS limit)
+    needs_mms = len(message) > SMS_CHAR_LIMIT
+    
+    # Truncate at MMS limit if necessary
+    if len(message) > MMS_CHAR_LIMIT:
+        truncated_message = message[: MMS_CHAR_LIMIT - 1 - len(TRUNCATION_MARKER)]
+        message = f"{truncated_message} {TRUNCATION_MARKER}"
+    
+    return message, needs_mms
 
 
 def process_media_urls_for_twilio(
-    media_url: Union[str, List[str], WorkflowImageData]
+    media_url: Union[str, List[Union[str, WorkflowImageData]], WorkflowImageData]
 ) -> Optional[List[str]]:
     """
     Process media URLs for Twilio MMS.
@@ -518,8 +555,6 @@ _EPHEMERAL_HOST_PARTS = ["tmp", "files", ".org"]
 
 def _upload_image_to_ephemeral_host(image_data: WorkflowImageData) -> Optional[str]:
     """Upload WorkflowImageData to an ephemeral file hosting service."""
-    import requests
-
     try:
         jpeg_bytes = encode_image_to_jpeg_bytes(image_data.numpy_image)
         host = "".join(_EPHEMERAL_HOST_PARTS)
@@ -541,6 +576,38 @@ def _upload_image_to_ephemeral_host(image_data: WorkflowImageData) -> Optional[s
 
     except Exception as error:
         logging.warning(f"Failed to upload image to ephemeral host: {error}")
+        return None
+
+
+# Minimal 1x1 transparent PNG (68 bytes)
+_TRANSPARENT_PNG_BASE64 = (
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+)
+
+
+def _get_mms_placeholder_image_url() -> Optional[str]:
+    """Upload a minimal transparent image to force MMS mode for long messages."""
+    try:
+        image_bytes = base64.b64decode(_TRANSPARENT_PNG_BASE64)
+        host = "".join(_EPHEMERAL_HOST_PARTS)
+        endpoint = f"https://{host}/api/v1/upload"
+
+        files = {"file": ("placeholder.png", image_bytes, "image/png")}
+        response = requests.post(endpoint, files=files, timeout=10)
+        response.raise_for_status()
+
+        data = response.json()
+        if data.get("status") == "success" and data.get("data", {}).get("url"):
+            url = data["data"]["url"]
+            if "/dl/" not in url and host in url:
+                url = url.replace(f"{host}/", f"{host}/dl/")
+            return url
+
+        logging.warning(f"Failed to get MMS placeholder URL: {data}")
+        return None
+
+    except Exception as error:
+        logging.warning(f"Failed to upload MMS placeholder image: {error}")
         return None
 
 
@@ -589,10 +656,6 @@ def send_sms_via_roboflow_proxy(
     media_url: Optional[Union[str, List[str], WorkflowImageData]],
 ) -> Tuple[bool, str]:
     """Send SMS/MMS through Roboflow's proxy service."""
-    from inference.core.exceptions import (
-        RoboflowAPIForbiddenError,
-        RoboflowAPIUnsuccessfulRequestError,
-    )
 
     # Custom error handler that preserves the API's error message
     def handle_sms_proxy_error(status_code: int, http_error: Exception) -> None:
@@ -620,7 +683,7 @@ def send_sms_via_roboflow_proxy(
 
     try:
         # Format message client-side before sending to proxy
-        formatted_message = format_message(
+        formatted_message, needs_mms = format_message(
             message=message,
             message_parameters=message_parameters,
             message_parameters_operations=message_parameters_operations,
@@ -632,12 +695,19 @@ def send_sms_via_roboflow_proxy(
         }
 
         # Serialize media - separates URLs from base64 data
+        has_media = False
         if media_url is not None:
             media_urls, media_base64 = serialize_media_for_api(media_url)
             if media_urls:
                 payload["media_urls"] = media_urls
+                has_media = True
             if media_base64:
                 payload["media_base64"] = media_base64
+                has_media = True
+
+        # If message exceeds SMS limit but no media, tell server to force MMS
+        if needs_mms and not has_media:
+            payload["force_mms"] = True
 
         endpoint = "apiproxy/twilio"
 
