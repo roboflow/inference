@@ -636,17 +636,17 @@ if modal is not None:
                 "Spawning webrtc modal function with ram %s",
                 requested_ram_mb,
             )
-        cls_with_options = cls_with_options.with_options(
-            memory=12000,
-        )
+            cls_with_options = cls_with_options.with_options(
+                memory=requested_ram_mb,
+            )
         if requested_cpu_cores is not None:
             logger.info(
                 "Spawning webrtc modal function with cpu cores %s",
                 requested_cpu_cores,
             )
-        cls_with_options = cls_with_options.with_options(
-            cpu=4,
-        )
+            cls_with_options = cls_with_options.with_options(
+                cpu=requested_cpu_cores,
+            )
         rtc_modal_obj: RTCPeerConnectionModal = cls_with_options(
             preload_hf_ids=preload_hf_ids,
             preload_models=preload_models,

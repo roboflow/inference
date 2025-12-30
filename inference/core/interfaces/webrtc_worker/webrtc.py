@@ -265,7 +265,6 @@ async def send_chunked_data(
         )
         data_channel.send(message)
         await asyncio.sleep(0)
-    await asyncio.sleep(0.01)
 
 
 class RTCPeerConnectionWithLoop(RTCPeerConnection):
@@ -433,6 +432,36 @@ class VideoFrameProcessor:
             return True
         return False
 
+    @staticmethod
+    def serialize_outputs_sync(fields_to_send: List[str], workflow_output: Dict[str, Any], data_output_mode: DataOutputMode) -> Tuple[Dict[str, Any], List[str]]:
+        """Serialize workflow outputs in a thread to avoid blocking the event loop.
+        """
+        serialized = {}
+        serialization_errors = []
+
+        for field_name in fields_to_send:
+            if field_name not in workflow_output:
+                serialization_errors.append(
+                    f"Requested output '{field_name}' not found in workflow outputs"
+                )
+                continue
+
+            output_data = workflow_output[field_name]
+
+            if data_output_mode == DataOutputMode.ALL and isinstance(
+                output_data, WorkflowImageData
+            ):
+                continue
+
+            try:
+                serialized_value = serialize_wildcard_kind(output_data)
+                serialized[field_name] = serialized_value
+            except Exception as e:
+                serialization_errors.append(f"{field_name}: {e}")
+                serialized[field_name] = {"__serialization_error__": str(e)}
+
+        return serialized, serialization_errors
+
     async def _send_data_output(
         self,
         workflow_output: Dict[str, Any],
@@ -475,42 +504,13 @@ class VideoFrameProcessor:
         else:
             fields_to_send = self.data_output
 
-        def serialize_outputs_sync() -> Tuple[Dict[str, Any], List[str]]:
-            """Serialize workflow outputs in a thread to avoid blocking the event loop.
-
-            Image serialization (JPEG encoding + base64) is CPU-intensive and can block
-            for 50-200ms per frame. Running this synchronously on the asyncio event loop
-            prevents timely DTLS/SCTP ACK responses, causing connection drops.
-            """
-            serialized = {}
-            serialization_errors = []
-
-            for field_name in fields_to_send:
-                if field_name not in workflow_output:
-                    serialization_errors.append(
-                        f"Requested output '{field_name}' not found in workflow outputs"
-                    )
-                    continue
-
-                output_data = workflow_output[field_name]
-
-                if self._data_mode == DataOutputMode.ALL and isinstance(
-                    output_data, WorkflowImageData
-                ):
-                    continue
-
-                try:
-                    serialized_value = serialize_wildcard_kind(output_data)
-                    serialized[field_name] = serialized_value
-                except Exception as e:
-                    serialization_errors.append(f"{field_name}: {e}")
-                    serialized[field_name] = {"__serialization_error__": str(e)}
-
-            return serialized, serialization_errors
 
         # Offload CPU-intensive serialization (especially image base64 encoding) to thread
         serialized_outputs, serialization_errors = await asyncio.to_thread(
-            serialize_outputs_sync
+            VideoFrameProcessor.serialize_outputs_sync,
+            fields_to_send,
+            workflow_output,
+            self._data_mode,
         )
         webrtc_output.errors.extend(serialization_errors)
 
@@ -1022,37 +1022,6 @@ async def init_rtc_peer_connection_with_loop(
         asyncio_loop=asyncio_loop,
     )
 
-    @peer_connection.on("iceconnectionstatechange")
-    def on_iceconnectionstatechange():
-        logger.info("ICE connection state: %s", peer_connection.iceConnectionState)
-
-    @peer_connection.on("icegatheringstatechange")
-    def on_icegatheringstatechange():
-        logger.info("ICE gathering state: %s", peer_connection.iceGatheringState)
-
-    @peer_connection.on("signalingstatechange")
-    def on_signalingstatechange():
-        logger.info("Signaling state: %s", peer_connection.signalingState)
-
-    def attach_sctp_state_logging() -> None:
-        if getattr(peer_connection, "_sctp_logging_attached", False):
-            return
-        sctp_transport = getattr(peer_connection, "sctp", None)
-        if not sctp_transport:
-            return
-        peer_connection._sctp_logging_attached = True
-
-        @sctp_transport.on("statechange")
-        def on_sctp_state_change():
-            logger.info("SCTP state: %s", sctp_transport.state)
-
-        dtls_transport = getattr(sctp_transport, "transport", None)
-        if dtls_transport:
-
-            @dtls_transport.on("statechange")
-            def on_dtls_state_change():
-                logger.info("DTLS state: %s", dtls_transport.state)
-
     relay = MediaRelay()
 
     # Add video track early for SDP negotiation when stream_output is requested
@@ -1120,7 +1089,6 @@ async def init_rtc_peer_connection_with_loop(
     @peer_connection.on("datachannel")
     def on_datachannel(channel: RTCDataChannel):
         logger.info("Data channel '%s' received", channel.label)
-        attach_sctp_state_logging()
         # Handle video file upload channel
         if channel.label == "video_upload":
             logger.info("Video upload channel established")
