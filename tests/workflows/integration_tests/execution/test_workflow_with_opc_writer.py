@@ -535,7 +535,9 @@ def reset_connection_manager():
 
 
 @pytest.mark.timeout(10)
-def test_connection_pooling_reuses_connections(test_opc_server, reset_connection_manager) -> None:
+def test_connection_pooling_reuses_connections(
+    test_opc_server, reset_connection_manager
+) -> None:
     """Test that the connection manager reuses connections for the same server."""
     manager = reset_connection_manager
 
@@ -593,7 +595,9 @@ def test_connection_pooling_reuses_connections(test_opc_server, reset_connection
 
 
 @pytest.mark.timeout(10)
-def test_connection_invalidation_creates_new_connection(test_opc_server, reset_connection_manager) -> None:
+def test_connection_invalidation_creates_new_connection(
+    test_opc_server, reset_connection_manager
+) -> None:
     """Test that invalidating a connection causes a new one to be created."""
     manager = reset_connection_manager
 
@@ -664,7 +668,9 @@ def test_connection_failure_fails_fast(reset_connection_manager) -> None:
 
 
 @pytest.mark.timeout(10)
-def test_different_servers_get_different_connections(test_opc_server, reset_connection_manager) -> None:
+def test_different_servers_get_different_connections(
+    test_opc_server, reset_connection_manager
+) -> None:
     """Test that different server URLs get separate pooled connections."""
     manager = reset_connection_manager
 

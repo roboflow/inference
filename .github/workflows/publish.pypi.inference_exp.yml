@@ -38,13 +38,13 @@ jobs:
           python-version: ${{ matrix.python-version }}
           check-latest: true
       - name: 📦 Install dependencies
-        working-directory: inference_experimental
+        working-directory: inference_models
         run: |
           python -m pip install --upgrade pip
           python -m pip install uv
       - name: 🏷️ Modify version for pre-release
         if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.pre_release == 'true' }}
-        working-directory: inference_experimental
+        working-directory: inference_models
         run: |
           CURRENT_VERSION=$(grep -m 1 '^version = ' pyproject.toml | sed 's/version = "\(.*\)"/\1/')
           echo "Current version: $CURRENT_VERSION"
@@ -59,12 +59,12 @@ jobs:
             rm pyproject.toml.bak
           fi
       - name: 🔨 Build package
-        working-directory: inference_experimental
+        working-directory: inference_models
         run: |
           python -m uv build
       - name: 🚀 Publish to PyPI
         if: ${{ github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && github.event.inputs.publish == 'true') }}
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
-          packages-dir: inference_experimental/dist/
+          packages-dir: inference_models/dist/
           skip-existing: true

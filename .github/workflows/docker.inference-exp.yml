@@ -5,7 +5,7 @@ on:
     inputs:
       image_variant:
         type: string
-        description: "Image variant to build (e.g., 'cpu', 'cu124', 'jp61') or 'all' for all images. Run 'ls inference_experimental/dockerfiles/' to see available options."
+        description: "Image variant to build (e.g., 'cpu', 'cu124', 'jp61') or 'all' for all images. Run 'ls inference_models/dockerfiles/' to see available options."
         required: true
         default: "all"
       force_push:
@@ -38,7 +38,7 @@ jobs:
 
       - name: Read version from pyproject.toml
         run: |
-          cd inference_experimental
+          cd inference_models
           VERSION=$(grep -E '^version = ' pyproject.toml | cut -d'"' -f2)
           echo "VERSION=${VERSION}"
           echo "VERSION=${VERSION}" >> $GITHUB_ENV
@@ -145,5 +145,5 @@ jobs:
           project: grl7ffzxd7
           tags: ${{ steps.image-tags.outputs.tags }}
           platforms: ${{ matrix.build_platforms }}
-          file: ./inference_experimental/dockerfiles/${{ matrix.dockerfile }}
-          context: ./inference_experimental
+          file: ./inference_models/dockerfiles/${{ matrix.dockerfile }}
+          context: ./inference_models

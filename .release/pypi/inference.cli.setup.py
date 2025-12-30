@@ -54,8 +54,8 @@ setuptools.setup(
             "inference.*",
             "development",
             "development.*",
-            "inference_experimental",
-            "inference_experimental.*"
+            "inference_models",
+            "inference_models.*"
         ),
     ),
     entry_points={

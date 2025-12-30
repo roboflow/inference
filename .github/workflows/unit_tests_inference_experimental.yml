@@ -1,4 +1,4 @@
-name: UNIT TESTS - inference_experimental
+name: UNIT TESTS - inference-models
 permissions:
   contents: read
 on:
@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  unit-tests-inference-experimental:
+  unit-tests-inference-models:
     runs-on:
       labels: depot-ubuntu-22.04-4
       group: public-depot
@@ -24,7 +24,7 @@ jobs:
         uses: actions/cache@v3
         with:
           path: ~/.cache/uv
-          key: ${{ runner.os }}-uv-${{ matrix.python-version }}-${{ hashFiles('inference_experimental/pyproject.toml') }}
+          key: ${{ runner.os }}-uv-${{ matrix.python-version }}-${{ hashFiles('inference_models/pyproject.toml') }}
           restore-keys: |
             ${{ runner.os }}-uv-${{ matrix.python-version }}-
       - name: 🐍 Set up Python ${{ matrix.python-version }}
@@ -33,7 +33,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
           check-latest: true
       - name: 📦 Install dependencies
-        working-directory: inference_experimental
+        working-directory: inference_models
         run: |
           python -m pip install --upgrade pip
           python -m pip install uv
@@ -41,7 +41,7 @@ jobs:
           python -m uv pip install -e .[test] --python .venv
       - name: 🧪 Unit Tests
         timeout-minutes: 30
-        working-directory: inference_experimental
+        working-directory: inference_models
         run: |
           source .venv/bin/activate
           python -m pytest -n auto tests/unit_tests
