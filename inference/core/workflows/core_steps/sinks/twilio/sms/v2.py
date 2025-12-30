@@ -469,14 +469,13 @@ def _hash_credentials(twilio_account_sid: str, twilio_auth_token: str) -> str:
     return f"{sid_hash}:{auth_token_hash}"
 
 
-
 def format_message(
     message: str,
     message_parameters: Dict[str, Any],
     message_parameters_operations: Dict[str, List[AllOperationsType]],
 ) -> Tuple[str, bool]:
     """Format SMS/MMS message by replacing parameter placeholders with actual values.
-    
+
     Returns:
         Tuple of (formatted_message, needs_mms) where needs_mms is True if message
         exceeds SMS character limit and should be sent as MMS.
@@ -506,15 +505,15 @@ def format_message(
             message = message.replace(
                 placeholder, str(parameters_values[parameter_name])
             )
-    
+
     # Determine if MMS is needed (message exceeds SMS limit)
     needs_mms = len(message) > SMS_CHAR_LIMIT
-    
+
     # Truncate at MMS limit if necessary
     if len(message) > MMS_CHAR_LIMIT:
         truncated_message = message[: MMS_CHAR_LIMIT - 1 - len(TRUNCATION_MARKER)]
         message = f"{truncated_message} {TRUNCATION_MARKER}"
-    
+
     return message, needs_mms
 
 
@@ -580,9 +579,7 @@ def _upload_image_to_ephemeral_host(image_data: WorkflowImageData) -> Optional[s
 
 
 # Minimal 1x1 transparent PNG (68 bytes)
-_TRANSPARENT_PNG_BASE64 = (
-    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
-)
+_TRANSPARENT_PNG_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
 
 
 def _get_mms_placeholder_image_url() -> Optional[str]:
