@@ -26,7 +26,7 @@ from inference.core import logger
 from inference.core.env import (
     WEBRTC_DATA_CHANNEL_BUFFER_DRAINING_DELAY,
     WEBRTC_DATA_CHANNEL_BUFFER_SIZE_LIMIT,
-    WEBRTC_DATACHANNEL_ACK_WINDOW,
+    WEBRTC_DATA_CHANNEL_ACK_WINDOW,
     WEBRTC_MODAL_PUBLIC_STUN_SERVERS,
     WEBRTC_MODAL_RTSP_PLACEHOLDER,
     WEBRTC_MODAL_RTSP_PLACEHOLDER_URL,
@@ -331,7 +331,7 @@ class VideoFrameProcessor:
         self._ack_last: int = 0
         # If ack=1 and window=4, server may produce/send up to frame 5.
         # Configurable via WEBRTC_DATACHANNEL_ACK_WINDOW env var.
-        self._ack_window: int = WEBRTC_DATACHANNEL_ACK_WINDOW
+        self._ack_window: int = WEBRTC_DATA_CHANNEL_ACK_WINDOW
         self._ack_event: asyncio.Event = asyncio.Event()
 
         if data_output is None:
