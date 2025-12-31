@@ -58,14 +58,92 @@ RELEVANT_TASKS_DOCS_DESCRIPTION = "\n\n".join(
 
 
 LONG_DESCRIPTION = f"""
-Ask a question to OpenAI's GPT models with vision capabilities (including GPT-5 and GPT-4o).
+Run OpenAI's GPT models with vision capabilities to perform various computer vision tasks.
 
-You can specify arbitrary text prompts or predefined ones, the block supports the following types of prompt:
+## What is a Vision Language Model (VLM)?
+
+A Vision Language Model (VLM) is an AI model that can understand both **images and text** simultaneously. Unlike traditional computer vision models that are trained for a single task (like object detection or classification), VLMs like GPT-4 Vision:
+- **Understand natural language prompts** - you can ask questions or give instructions in plain English
+- **Process visual content** - analyze images to understand what's in them
+- **Generate flexible outputs** - provide text responses or structured data based on your needs
+- **Support multiple tasks** - the same model can perform classification, detection, OCR, question answering, and more just by changing the prompt
+
+This makes VLMs incredibly versatile and useful when you need flexible, natural language-driven computer vision without training separate models for each task.
+
+## How This Block Works
+
+This block takes one or more images as input and processes them through OpenAI's GPT models (including GPT-5 and GPT-4o). Based on the **task type** you select, the block:
+1. **Prepares the appropriate prompt** for the GPT model based on the task type (e.g., OCR, classification, caption)
+2. **Encodes images** to base64 format for API transmission
+3. **Sends the request to OpenAI's API** (directly or via Roboflow proxy) with the image and task-specific instructions
+4. **Returns the response** as text output, which can be structured JSON or natural language depending on the task
+
+The block supports multiple predefined task types, each optimized for specific use cases, or you can use "unconstrained" mode for completely custom prompts.
+
+## Supported Task Types
+
+The block supports the following task types:
 
 {RELEVANT_TASKS_DOCS_DESCRIPTION}
 
-Provide your OpenAI API key or set the value to ``rf_key:account`` (or
-``rf_key:user:<id>``) to proxy requests through Roboflow's API.
+## Inputs and Outputs
+
+**Input:**
+- **images**: One or more images to analyze (can be from workflow inputs or previous steps)
+- **task_type**: The type of task to perform (determines how the prompt is structured and what output format to expect)
+- **prompt**: Text prompt/question (required for "unconstrained" and "visual-question-answering" tasks)
+- **classes**: List of classes for classification tasks (required for "classification" and "multi-label-classification" tasks)
+- **output_structure**: Dictionary defining the expected JSON structure (required for "structured-answering" task)
+- **api_key**: Your OpenAI API key, or use "rf_key:account" (default) to proxy requests through Roboflow's API
+- **model_version**: GPT model version to use (default: "gpt-5") - options include gpt-5, gpt-5-mini, gpt-5-nano, gpt-4.1, gpt-4.1-mini, gpt-4o, gpt-4o-mini, o3, o4-mini
+- **image_detail**: Image processing quality - "auto" (default, model decides), "high" (high fidelity, processes fine details), or "low" (faster, lower cost, lower detail)
+- **max_tokens**: Maximum number of tokens in the response (default: 450)
+- **temperature**: Sampling temperature (0.0-2.0, optional) - controls randomness/creativity
+- **max_concurrent_requests**: Number of concurrent API requests when processing batches (optional, uses global default if not specified)
+
+**Output:**
+- **output**: Text response from GPT (string) - format depends on task type (may be JSON for structured tasks)
+- **classes**: The list of classes that were provided (for classification tasks)
+
+## Key Configuration Options
+
+- **task_type**: Select the task type that best matches your use case - this determines what prompt is sent to GPT and what output format to expect
+- **model_version**: Choose the GPT model - newer models (gpt-5, gpt-4.1) are more capable; older models (gpt-4o-mini) are faster but less capable
+- **api_key**: Use your OpenAI API key directly, or set to "rf_key:account" (default) to route requests through Roboflow's API proxy, which can help with rate limits and API key management
+- **image_detail**: Control image processing quality - "auto" lets the model decide (good default), "high" for tasks requiring fine detail (slower, higher cost), "low" for simple tasks (faster, lower cost)
+- **max_tokens**: Control maximum response length - increase for longer, detailed responses (e.g., comprehensive image analysis), decrease for shorter responses
+- **temperature**: Control output randomness - lower values (0.0-0.5) produce more deterministic, focused responses; higher values (1.0-2.0) produce more creative, varied responses
+- **max_concurrent_requests**: Limit concurrent API calls to stay within OpenAI API rate limits
+
+## Common Use Cases
+
+- **Content Analysis**: Analyze images for safety, quality, or compliance - ask questions like "Does this image contain inappropriate content?"
+- **Document Processing**: Extract text from documents, forms, or receipts using OCR, then structure the data using structured-answering
+- **Product Cataloging**: Classify product images into categories or extract product attributes like color, style, material
+- **Accessibility**: Generate detailed image descriptions for visually impaired users using captioning tasks
+- **Data Extraction**: Extract structured information from images (e.g., extract fields from forms, receipts, or documents)
+- **Visual Q&A**: Build chatbots that can answer questions about images (e.g., "What brand is this product?", "Is this person wearing a mask?")
+
+## Requirements
+
+You need to provide your OpenAI API key to use this block. The API key is used to authenticate requests to OpenAI's GPT API. You can get your API key from [OpenAI's platform](https://platform.openai.com/api-keys). Alternatively, you can use "rf_key:account" (the default) to proxy requests through Roboflow's API, which can help with rate limit management. Note that API usage is subject to OpenAI's pricing and rate limits.
+
+## Connecting to Other Blocks
+
+The text outputs from this block can be connected to:
+- **Parser blocks** (e.g., JSON Parser v1, VLM as Classifier v1) to convert text responses into structured data formats
+- **Conditional logic blocks** to route workflow execution based on GPT's responses
+- **Filter blocks** to filter images or data based on GPT's analysis
+- **Visualization blocks** to display text overlays or annotations on images
+- **Data storage blocks** to log responses for analytics or audit trails
+- **Notification blocks** to send alerts based on GPT's findings
+
+## Version Differences (v3 vs v2)
+
+This version (v3) includes several enhancements over v2:
+- **Roboflow API Proxy**: Supports proxying requests through Roboflow's API using "rf_key:account" (default) or "rf_key:user:<id>", which can help manage rate limits and API key security
+- **Expanded Model Support**: Added support for additional models including o3 and o4-mini
+- **Updated Default Model**: Default model changed to "gpt-5" (from "gpt-4o") to take advantage of the latest capabilities
 """
 
 

@@ -128,14 +128,97 @@ RELEVANT_TASKS_DOCS_DESCRIPTION = "\n\n".join(
 )
 
 LONG_DESCRIPTION = f"""
-Ask a question to OpenAI's GPT models with vision capabilities (including GPT-5 and GPT-4o).
+Run OpenAI's GPT models with vision capabilities to perform various computer vision tasks.
 
-You can specify arbitrary text prompts or predefined ones, the block supports the following types of prompt:
+## What is a Vision Language Model (VLM)?
+
+A Vision Language Model (VLM) is an AI model that can understand both **images and text** simultaneously. Unlike traditional computer vision models that are trained for a single task (like object detection or classification), VLMs like GPT-4 Vision:
+- **Understand natural language prompts** - you can ask questions or give instructions in plain English
+- **Process visual content** - analyze images to understand what's in them
+- **Generate flexible outputs** - provide text responses or structured data based on your needs
+- **Support multiple tasks** - the same model can perform classification, detection, OCR, question answering, and more just by changing the prompt
+
+This makes VLMs incredibly versatile and useful when you need flexible, natural language-driven computer vision without training separate models for each task.
+
+## How This Block Works
+
+This block takes one or more images as input and processes them through OpenAI's GPT models (including GPT-5.2, GPT-5.1, GPT-5, and GPT-4o). Based on the **task type** you select, the block:
+1. **Prepares the appropriate prompt** for the GPT model based on the task type (e.g., OCR, classification, object detection, caption)
+2. **Encodes images** to base64 format for API transmission
+3. **Sends the request to OpenAI's API** (directly or via Roboflow proxy) with the image and task-specific instructions (optionally using reasoning effort for GPT-5 models)
+4. **Returns the response** as text output, which can be structured JSON or natural language depending on the task
+
+The block supports multiple predefined task types, each optimized for specific use cases, or you can use "unconstrained" mode for completely custom prompts.
+
+## Supported Task Types
+
+The block supports the following task types:
 
 {RELEVANT_TASKS_DOCS_DESCRIPTION}
 
-Provide your OpenAI API key or set the value to ``rf_key:account`` (or
-``rf_key:user:<id>``) to proxy requests through Roboflow's API.
+## Inputs and Outputs
+
+**Input:**
+- **images**: One or more images to analyze (can be from workflow inputs or previous steps)
+- **task_type**: The type of task to perform (determines how the prompt is structured and what output format to expect)
+- **prompt**: Text prompt/question (required for "unconstrained" and "visual-question-answering" tasks)
+- **classes**: List of classes for classification or detection tasks (required for "classification", "multi-label-classification", "object-detection" tasks)
+- **output_structure**: Dictionary defining the expected JSON structure (required for "structured-answering" task)
+- **api_key**: Your OpenAI API key, or use "rf_key:account" (default) to proxy requests through Roboflow's API
+- **model_version**: GPT model version to use (default: "gpt-5.1") - options include gpt-5.2, gpt-5.1, gpt-5, gpt-5-mini, gpt-5-nano, gpt-4.1, gpt-4.1-mini, gpt-4.1-nano, gpt-4o, gpt-4o-mini
+- **reasoning_effort**: Controls reasoning depth for GPT-5 models - "none" (no reasoning, fastest), "minimal"/"low", "medium" (default for GPT-5), "high", or "xhigh" (GPT-5.2 only) (optional, only for GPT-5+ models)
+- **image_detail**: Image processing quality - "auto" (default, model decides), "high" (high fidelity, processes fine details), or "low" (faster, lower cost, lower detail)
+- **max_tokens**: Maximum number of tokens in the response (optional, defaults to model's default limit if not specified, minimum: 16)
+- **temperature**: Sampling temperature (0.0-2.0, optional) - controls randomness/creativity (only for models that don't support reasoning_effort)
+- **max_concurrent_requests**: Number of concurrent API requests when processing batches (optional, uses global default if not specified)
+
+**Output:**
+- **output**: Text response from GPT (string) - format depends on task type (may be JSON for structured tasks)
+- **classes**: The list of classes that were provided (for classification/detection tasks)
+
+## Key Configuration Options
+
+- **task_type**: Select the task type that best matches your use case - this determines what prompt is sent to GPT and what output format to expect
+- **model_version**: Choose the GPT model - newer models (gpt-5.2, gpt-5.1) are more capable with reasoning features; older models (gpt-4o-mini) are faster but less capable. GPT-5+ models support reasoning effort control
+- **reasoning_effort**: For GPT-5+ models, control the depth of reasoning - "none" (fastest, no reasoning), "minimal"/"low" (quick reasoning), "medium" (balanced, default for GPT-5), "high" (deep reasoning), or "xhigh" (maximum reasoning, GPT-5.2 only). Higher values improve quality but increase latency and cost
+- **api_key**: Use your OpenAI API key directly, or set to "rf_key:account" (default) to route requests through Roboflow's API proxy, which can help with rate limits and API key management
+- **image_detail**: Control image processing quality - "auto" lets the model decide (good default), "high" for tasks requiring fine detail (slower, higher cost), "low" for simple tasks (faster, lower cost)
+- **max_tokens**: Control maximum response length - if not specified, uses the model's default limit. Increase for longer responses, decrease for shorter responses (minimum: 16)
+- **temperature**: Control output randomness for non-reasoning models - lower values (0.0-0.5) produce more deterministic responses; higher values (1.0-2.0) produce more creative responses. Only available for models that don't support reasoning_effort
+- **max_concurrent_requests**: Limit concurrent API calls to stay within OpenAI API rate limits
+
+## Common Use Cases
+
+- **Content Analysis**: Analyze images for safety, quality, or compliance - ask questions like "Does this image contain inappropriate content?"
+- **Document Processing**: Extract text from documents, forms, or receipts using OCR, then structure the data using structured-answering
+- **Product Cataloging**: Classify product images into categories or extract product attributes like color, style, material
+- **Accessibility**: Generate detailed image descriptions for visually impaired users using captioning tasks
+- **Data Extraction**: Extract structured information from images (e.g., extract fields from forms, receipts, or documents) - reasoning effort can help with complex extraction tasks
+- **Visual Q&A**: Build chatbots that can answer questions about images (e.g., "What brand is this product?", "Is this person wearing a mask?") - reasoning effort enables better reasoning for complex questions
+
+## Requirements
+
+You need to provide your OpenAI API key to use this block. The API key is used to authenticate requests to OpenAI's GPT API. You can get your API key from [OpenAI's platform](https://platform.openai.com/api-keys). Alternatively, you can use "rf_key:account" (the default) to proxy requests through Roboflow's API, which can help with rate limit management. Note that API usage is subject to OpenAI's pricing and rate limits.
+
+## Connecting to Other Blocks
+
+The text outputs from this block can be connected to:
+- **Parser blocks** (e.g., JSON Parser v1, VLM as Classifier v2, VLM as Detector v2) to convert text responses into structured data formats
+- **Conditional logic blocks** to route workflow execution based on GPT's responses
+- **Filter blocks** to filter images or data based on GPT's analysis
+- **Visualization blocks** to display text overlays or annotations on images
+- **Data storage blocks** to log responses for analytics or audit trails
+- **Notification blocks** to send alerts based on GPT's findings
+
+## Version Differences (v4 vs v3)
+
+This version (v4) includes several enhancements over v3:
+- **Reasoning Effort Control**: New `reasoning_effort` parameter for GPT-5+ models allows you to control the depth of reasoning - from "none" (fastest, no reasoning) to "xhigh" (maximum reasoning, GPT-5.2 only). This enables fine-tuned control over quality vs speed/cost tradeoffs
+- **Enhanced Model Support**: Added support for GPT-5.2 and GPT-5.1 models with reasoning capabilities, plus object-detection task type
+- **Improved Token Management**: `max_tokens` is now optional and defaults to the model's default limit, providing better flexibility (minimum: 16 tokens)
+- **Model-Specific Parameters**: `temperature` is now only available for models that don't support reasoning_effort, ensuring optimal configuration for each model type
+- **Updated Default Model**: Default model changed to "gpt-5.1" (from "gpt-5") to take advantage of the latest capabilities
+- **Updated Recommended Parsers**: Recommended parsers now use v2 versions (e.g., vlm_as_classifier@v2, vlm_as_detector@v2) for better compatibility
 """
 
 TaskType = Literal[tuple(SUPPORTED_TASK_TYPES_LIST)]
