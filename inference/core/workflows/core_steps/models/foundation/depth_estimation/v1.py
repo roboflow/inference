@@ -34,25 +34,65 @@ class BlockManifest(WorkflowBlockManifest):
             "short_description": "Run Depth Estimation on an image.",
             "long_description": (
                 """
-                🎯 This workflow block performs depth estimation on images using Apple's DepthPro model. It analyzes the spatial relationships
-                and depth information in images to create a depth map where:
+Run depth estimation on images to generate depth maps representing 3D spatial information.
 
-                📊 Each pixel's value represents its relative distance from the camera
-                🔍 Lower values (darker colors) indicate closer objects
-                🔭 Higher values (lighter colors) indicate further objects
+## What is Depth Estimation?
 
-                The model outputs:
-                1. 🗺️ A depth map showing the relative distances of objects in the scene
-                2. 📐 The camera's field of view (in degrees)
-                3. 🔬 The camera's focal length
+Depth estimation is a computer vision task that predicts the **distance of each pixel** from the camera, converting 2D images into 3D spatial representations. Unlike object detection (which identifies *what* and *where* objects are) or classification (which identifies *what* objects are), depth estimation tells you **how far away** each part of the scene is from the viewer.
 
-                This is particularly useful for:
-                - 🏗️ Understanding 3D structure from 2D images
-                - 🎨 Creating depth-aware visualizations
-                - 📏 Analyzing spatial relationships in scenes
-                - 🕶️ Applications in augmented reality and 3D reconstruction
+A depth map is created where:
+- Each pixel's value represents its **relative distance** from the camera
+- **Lower values** (darker colors like purple/blue) indicate objects **closer** to the camera
+- **Higher values** (lighter colors like yellow/green) indicate objects **further** from the camera
 
-                ⚡ The model runs efficiently on Apple Silicon (M1-M4) using Metal Performance Shaders (MPS) for accelerated inference.
+This enables understanding the 3D structure and spatial relationships within 2D images, which is essential for applications requiring depth perception.
+
+## How This Block Works
+
+This block takes one or more images as input and processes them through a depth estimation model (default: Depth-Anything-V2-Small). The model:
+1. **Analyzes spatial relationships** in the image to infer depth information
+2. **Generates a depth map** where each pixel contains depth/distance information
+3. **Normalizes the depth values** to a 0.0-1.0 range for consistent representation
+4. **Creates a visual representation** using a color-coded depth map (viridis colormap) where depth information is mapped to colors
+
+The block outputs both the normalized depth array (for programmatic use) and a colorized visualization image (for human interpretation).
+
+## Inputs and Outputs
+
+**Input:**
+- **images**: One or more images to estimate depth for (can be from workflow inputs or previous steps)
+- **model_version**: The depth estimation model to use (default: "depth-anything-v2/small")
+
+**Output:**
+- **image**: A colorized depth map visualization image where colors represent depth (darker = closer, lighter = further)
+- **normalized_depth**: A numpy array containing normalized depth values (0.0-1.0) where 0.0 represents the closest point and 1.0 represents the furthest point in the scene
+
+## Key Configuration Options
+
+- **model_version**: The depth estimation model to use (default: "depth-anything-v2/small") - this determines the model architecture and accuracy/speed tradeoff
+
+## Common Use Cases
+
+- **3D Reconstruction**: Generate depth maps from 2D images to understand 3D scene structure for reconstruction or modeling
+- **Augmented Reality (AR)**: Provide depth information for realistic object placement and occlusion in AR applications
+- **Autonomous Navigation**: Understand spatial relationships and distances for obstacle avoidance and path planning
+- **Background Removal**: Use depth information to separate foreground objects from background more accurately
+- **Photography and Cinematography**: Analyze scene composition, understand focus areas, or create depth-of-field effects
+- **Robotics and Automation**: Enable robots to understand spatial relationships and distances for manipulation tasks
+
+## Requirements
+
+This block requires local execution (cannot run remotely). The model runs efficiently on Apple Silicon (M1-M4) devices using Metal Performance Shaders (MPS) for accelerated inference. For other platforms, it will use CPU or CUDA if available.
+
+## Connecting to Other Blocks
+
+The depth estimation results from this block can be connected to:
+- **Visualization blocks** to overlay depth information on original images or create composite visualizations
+- **Filter blocks** to filter objects or regions based on depth thresholds (e.g., only process objects within a certain distance range)
+- **Transformation blocks** to modify images or detections based on depth information
+- **Measurement blocks** to calculate distances, sizes, or spatial relationships using depth data
+- **Conditional logic blocks** to make workflow decisions based on depth values (e.g., process only close objects)
+- **Object Detection blocks** to enhance detections with depth information for 3D-aware object tracking
                 """
             ),
             "license": "Apache-2.0",

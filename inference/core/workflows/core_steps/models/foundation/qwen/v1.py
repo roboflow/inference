@@ -47,8 +47,71 @@ class BlockManifest(WorkflowBlockManifest):
             "version": "v1",
             "short_description": "Run Qwen2.5-VL on an image.",
             "long_description": (
-                "This workflow block runs Qwen2.5-VL—a vision language model that accepts an image "
-                "and an optional text prompt—and returns a text answer based on a conversation template."
+                """
+Run Alibaba's Qwen2.5-VL model to analyze images and answer questions using natural language prompts.
+
+## What is a Vision Language Model (VLM)?
+
+A Vision Language Model (VLM) is an AI model that can understand both **images and text** simultaneously. Unlike traditional computer vision models that are trained for a single task (like object detection or classification), VLMs like Qwen2.5-VL:
+- **Understand natural language prompts** - you can ask questions or give instructions in plain English
+- **Process visual content** - analyze images to understand what's in them
+- **Generate flexible text responses** - provide natural language answers based on the image content
+- **Support conversational interactions** - can follow up on questions and maintain context
+
+This makes VLMs incredibly versatile and useful when you need flexible, natural language-driven computer vision without training separate models for each task.
+
+## How This Block Works
+
+This block takes one or more images as input and processes them through Alibaba's Qwen2.5-VL model. The block:
+1. **Encodes images** for processing by the model
+2. **Combines prompts** - merges your optional text prompt with an optional system prompt to provide context
+3. **Sends the request to Qwen2.5-VL** - processes the image(s) with the combined prompt using a conversation template
+4. **Returns the response** - provides the model's text answer as a parsed dictionary output
+
+The block supports flexible, free-form prompts - you can ask any question about the image, request descriptions, ask for analysis, or give specific instructions.
+
+## Inputs and Outputs
+
+**Input:**
+- **images**: One or more images to analyze (can be from workflow inputs or previous steps)
+- **prompt**: Optional text prompt/question to ask about the image (e.g., "What is in this image?", "Describe the scene", "Are there any people?")
+- **system_prompt**: Optional system prompt to provide additional context or instructions to the model (e.g., "You are a helpful assistant.", "Answer concisely.")
+- **model_version**: Qwen2.5-VL model to use (default: "qwen25-vl-7b") - can also use Roboflow model IDs for custom/fine-tuned models
+
+**Output:**
+- **parsed_output**: A dictionary containing the text response from Qwen2.5-VL
+
+## Key Configuration Options
+
+- **prompt**: Your question or instruction in natural language - be specific about what you want Qwen2.5-VL to analyze or describe from the image. If not provided, the model will generate a general description
+- **system_prompt**: Optional instructions that set the context or behavior for the model - useful for controlling the tone, style, or format of responses (e.g., "Answer in one sentence", "Use technical language")
+- **model_version**: Choose the Qwen2.5-VL model - "qwen25-vl-7b" (default, good balance of performance and accuracy). Can also use Roboflow model IDs for custom or fine-tuned Qwen2.5-VL models
+
+## Common Use Cases
+
+- **Visual Question Answering**: Ask questions about image content - "What objects are in this image?", "How many people are visible?", "What is the person doing?"
+- **Image Description**: Generate descriptions of images for accessibility, content indexing, or documentation
+- **Content Analysis**: Analyze images for safety, quality, or compliance - "Does this image contain inappropriate content?", "Is this product damaged?"
+- **Object Recognition**: Identify objects, landmarks, or scenes in images with natural language descriptions
+- **Document Understanding**: Extract and understand text from images, analyze document structure, or answer questions about document content
+- **Scene Understanding**: Understand complex scenes and relationships - "What activities are happening?", "What is the relationship between objects in this image?"
+
+## Requirements
+
+**⚠️ Important: Dedicated Inference Server Required**
+
+This block requires **local execution** (cannot run remotely). A **GPU is highly recommended** for acceptable performance. You may want to use a dedicated deployment for Qwen2.5-VL models. The model requires appropriate dependencies to be installed.
+
+## Connecting to Other Blocks
+
+The text outputs from this block can be connected to:
+- **Conditional logic blocks** to route workflow execution based on Qwen2.5-VL's responses
+- **Filter blocks** to filter images or data based on the model's analysis
+- **Visualization blocks** to display text overlays or annotations on images
+- **Data storage blocks** to log responses for analytics or audit trails
+- **Notification blocks** to send alerts based on Qwen2.5-VL's findings (e.g., specific content detected, quality issues identified)
+- **Parser blocks** (e.g., JSON Parser) to extract structured information from Qwen2.5-VL's text responses if you prompt it to return JSON
+"""
             ),
             "license": "Apache-2.0",
             "block_type": "model",

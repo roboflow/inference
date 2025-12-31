@@ -52,12 +52,81 @@ from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 LONG_DESCRIPTION = """
 Run inference on an instance segmentation model hosted on or uploaded to Roboflow.
 
-You can query any model that is private to your account, or any public model available 
-on [Roboflow Universe](https://universe.roboflow.com).
+## What is Instance Segmentation?
 
-You will need to set your Roboflow API key in your Inference environment to use this 
-block. To learn more about setting your Roboflow API key, [refer to the Inference 
-documentation](https://inference.roboflow.com/quickstart/configure_api_key/).
+Instance segmentation is a computer vision task that combines object detection with pixel-level classification. Unlike object detection (which only provides bounding boxes) or semantic segmentation (which labels all pixels but doesn't distinguish between instances), instance segmentation:
+- **Detects individual objects** (like object detection)
+- **Provides pixel-precise masks** showing the exact shape of each object
+- **Distinguishes between separate instances** of the same class (e.g., two different people, multiple cars)
+
+Each detection includes a bounding box, a class label, a confidence score, and a **segmentation mask** - a pixel-level outline showing the exact boundaries of the detected object.
+
+## How This Block Works
+
+This block takes one or more images as input and runs them through a trained instance segmentation model. The model analyzes the image and returns a list of detections, where each detection contains:
+- A bounding box (coordinates defining a rectangle around the detected object)
+- A segmentation mask (pixel-level outline showing the exact shape of the object)
+- A class label (the name of what was detected, e.g., "person", "car")
+- A confidence score (how certain the model is, typically from 0.0 to 1.0)
+
+The block applies post-processing techniques like Non-Maximum Suppression (NMS) to filter out duplicate detections and mask decoding to convert raw mask predictions into usable polygon or mask formats.
+
+## Inputs and Outputs
+
+**Input:**
+- **images**: One or more images to analyze (can be from workflow inputs or previous steps)
+
+**Output:**
+- **predictions**: A `sv.Detections` object containing all detected instances with their bounding boxes, segmentation masks, classes, and confidence scores
+- **inference_id**: A unique identifier for this inference run
+- **model_id**: The model identifier that was used for this inference (useful when chaining multiple models)
+
+## Key Configuration Options
+
+- **model_id**: The identifier for your Roboflow model (format: `workspace/project/version`)
+- **confidence**: Minimum confidence threshold (0.0-1.0, default: 0.4) - detections below this threshold are filtered out
+- **class_filter**: Optional list of classes to include - if specified, only these classes will be returned
+- **iou_threshold**: Intersection over Union threshold for NMS (default: 0.3) - controls how much bounding boxes can overlap before being merged
+- **max_detections**: Maximum number of detections to return per image (default: 300)
+- **class_agnostic_nms**: If true, NMS ignores class labels when merging overlapping boxes (default: False)
+- **max_candidates**: Maximum number of candidates as NMS input to be taken into account (default: 3000)
+- **mask_decode_mode**: Mode for decoding masks - `"accurate"` (default, highest quality), `"fast"` (faster processing), or `"tradeoff"` (balanced)
+- **tradeoff_factor**: Post-processing parameter (0.0-1.0, default: 0.0) to balance between fast and accurate mask decoding when using `"tradeoff"` mode
+- **disable_active_learning**: Boolean flag to disable project-level active learning for this block (default: True)
+- **active_learning_target_dataset**: Target dataset for active learning, if enabled (optional)
+
+## Common Use Cases
+
+- **Medical Imaging**: Precise segmentation of tumors, organs, or anatomical structures in medical scans
+- **Autonomous Driving**: Pixel-accurate detection of pedestrians, vehicles, and road boundaries for safe navigation
+- **Quality Control**: Detecting defects with precise boundaries, measuring object areas, or verifying shape accuracy
+- **Retail and E-commerce**: Isolating products for background removal, measuring product dimensions, or counting inventory
+- **Agriculture**: Monitoring crop health by segmenting individual plants or detecting diseased areas
+- **Robotics**: Precise object manipulation requiring exact shape information for grasping and handling
+
+## Model Sources
+
+You can use:
+- Models from your private Roboflow account (requires authentication)
+- Public models from [Roboflow Universe](https://universe.roboflow.com) (no authentication needed for public models)
+
+## Requirements
+
+You will need to set your Roboflow API key in your Inference environment to use private models. To learn more about setting your Roboflow API key, [refer to the Inference documentation](https://inference.roboflow.com/quickstart/configure_api_key/).
+
+## Connecting to Other Blocks
+
+The segmentation results from this block can be connected to:
+- **Visualization blocks** to draw masks and bounding boxes on images (Mask Visualization, Bounding Box Visualization)
+- **Crop blocks** to extract regions using the precise mask boundaries
+- **Filter blocks** to filter detections based on criteria (mask area, confidence, class, etc.)
+- **Classification blocks** to classify each segmented instance
+- **Measurement blocks** to calculate areas, perimeters, or other geometric properties from the masks
+- **Tracking blocks** to track segmented objects across video frames
+
+## Version Differences (v2 vs v1)
+
+This version (v2) includes the `model_id` in the output, making it easier to track which model was used when chaining multiple segmentation models in a workflow. The `inference_id` output also uses the `INFERENCE_ID_KIND` instead of `STRING_KIND` for better type checking.
 """
 
 

@@ -46,12 +46,68 @@ from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 LONG_DESCRIPTION = """
 Run inference on a multi-label classification model hosted on or uploaded to Roboflow.
 
-You can query any model that is private to your account, or any public model available 
-on [Roboflow Universe](https://universe.roboflow.com).
+## What is Multi-Label Classification?
 
-You will need to set your Roboflow API key in your Inference environment to use this 
-block. To learn more about setting your Roboflow API key, [refer to the Inference 
-documentation](https://inference.roboflow.com/quickstart/configure_api_key/).
+Multi-label classification is a computer vision task that assigns **one or more classes** to an image from a predefined set of classes. Unlike single-label classification (which can only assign one class per image), multi-label classification:
+- **Can assign multiple classes** to a single image simultaneously
+- **Each class has its own confidence score** indicating how certain the model is about that specific label
+- **Classes are not mutually exclusive** - multiple tags can apply to the same image
+
+For example, an image of a dog in a park could be labeled with multiple tags: ["dog", "outdoor", "daytime", "grass"] all at once, rather than having to choose just one category.
+
+## How This Block Works
+
+This block takes one or more images as input and runs them through a trained multi-label classification model. The model analyzes each image and returns:
+- **Multiple predicted classes** (all applicable categories from the model's training classes)
+- **Confidence scores** for each predicted class (how certain the model is about each label, typically from 0.0 to 1.0)
+- Additional metadata including class IDs and prediction type
+
+The model processes the entire image and outputs all applicable class labels per image, making it ideal for scenarios where images can belong to multiple categories simultaneously.
+
+## Inputs and Outputs
+
+**Input:**
+- **images**: One or more images to classify (can be from workflow inputs or previous steps)
+
+**Output:**
+- **predictions**: A classification prediction object containing all predicted classes with their confidence scores and class IDs
+- **inference_id**: A unique identifier for this inference run (string value)
+
+## Key Configuration Options
+
+- **model_id**: The identifier for your Roboflow model (format: `workspace/project/version`)
+- **confidence**: Minimum confidence threshold (0.0-1.0, default: 0.4) - classes with confidence below this threshold are filtered out
+- **disable_active_learning**: Boolean flag to disable project-level active learning for this block (default: True)
+- **active_learning_target_dataset**: Target dataset for active learning, if enabled (optional)
+
+## Common Use Cases
+
+- **Content Tagging**: Tagging images with multiple attributes (e.g., ["sunset", "beach", "people", "summer"] for a beach photo)
+- **Medical Imaging**: Identifying multiple conditions or features in medical scans (e.g., ["fracture", "edema", "foreign_object"])
+- **Product Attributes**: Tagging products with multiple characteristics (e.g., ["red", "cotton", "long-sleeve", "casual"] for a shirt)
+- **Scene Understanding**: Identifying multiple elements in a scene (e.g., ["indoor", "kitchen", "daytime", "person", "food"])
+- **Quality Inspection**: Marking multiple quality attributes or defects (e.g., ["scratch", "discoloration", "acceptable"] for a manufactured part)
+- **Social Media Content**: Categorizing posts with multiple tags (e.g., ["food", "restaurant", "vegetarian", "dinner"])
+
+## Model Sources
+
+You can use:
+- Models from your private Roboflow account (requires authentication)
+- Public models from [Roboflow Universe](https://universe.roboflow.com) (no authentication needed for public models)
+
+## Requirements
+
+You will need to set your Roboflow API key in your Inference environment to use private models. To learn more about setting your Roboflow API key, [refer to the Inference documentation](https://inference.roboflow.com/quickstart/configure_api_key/).
+
+## Connecting to Other Blocks
+
+The classification results from this block can be connected to:
+- **Filter blocks** to filter images or workflows based on the presence of specific labels or combinations of labels
+- **Conditional logic blocks** to route workflow execution based on which labels are present (e.g., if "urgent" label exists, send notification)
+- **Visualization blocks** to display all classification labels on images
+- **Data storage blocks** to log multi-label results for analytics and searching
+- **Search/retrieval blocks** to find images matching specific label combinations
+- **Aggregation blocks** to count or analyze label distributions across batches of images
 """
 
 

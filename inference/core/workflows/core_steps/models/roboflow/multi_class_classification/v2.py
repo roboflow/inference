@@ -44,14 +44,75 @@ from inference.core.workflows.prototypes.block import (
 from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 
 LONG_DESCRIPTION = """
-Run inference on a multi-class classification model hosted on or uploaded to Roboflow.
+Run inference on a single-label classification model hosted on or uploaded to Roboflow.
 
-You can query any model that is private to your account, or any public model available 
-on [Roboflow Universe](https://universe.roboflow.com).
+## What is Single-Label Classification?
 
-You will need to set your Roboflow API key in your Inference environment to use this 
-block. To learn more about setting your Roboflow API key, [refer to the Inference 
-documentation](https://inference.roboflow.com/quickstart/configure_api_key/).
+Single-label classification (also called multi-class classification) is a computer vision task that assigns **exactly one class** to an image from a predefined set of classes. Unlike multi-label classification (which can assign multiple tags to an image), single-label classification:
+- **Selects one class** that best describes the image
+- **Provides a confidence score** for the predicted class
+- **Is mutually exclusive** - only one class can be assigned per image
+
+For example, if classifying dog breeds, the model will predict "Golden Retriever" OR "German Shepherd" OR "Poodle", but not multiple breeds at once.
+
+## How This Block Works
+
+This block takes one or more images as input and runs them through a trained classification model. The model analyzes each image and returns:
+- A **predicted class** (the most likely category from the model's training classes)
+- A **confidence score** (how certain the model is about the prediction, typically from 0.0 to 1.0)
+- Additional metadata including class ID and prediction type
+
+The model processes the entire image and outputs a single classification result per image, making it ideal for categorizing images into distinct, non-overlapping categories.
+
+## Inputs and Outputs
+
+**Input:**
+- **images**: One or more images to classify (can be from workflow inputs or previous steps)
+
+**Output:**
+- **predictions**: A classification prediction object containing the predicted class, confidence score, and class ID
+- **inference_id**: A unique identifier for this inference run
+- **model_id**: The model identifier that was used for this inference (useful when chaining multiple models)
+
+## Key Configuration Options
+
+- **model_id**: The identifier for your Roboflow model (format: `workspace/project/version`)
+- **confidence**: Minimum confidence threshold (0.0-1.0, default: 0.4) - predictions below this threshold may be filtered or marked as uncertain
+- **disable_active_learning**: Boolean flag to disable project-level active learning for this block (default: True)
+- **active_learning_target_dataset**: Target dataset for active learning, if enabled (optional)
+
+## Common Use Cases
+
+- **Product Categorization**: Classifying products into categories (e.g., "electronics", "clothing", "food") for e-commerce
+- **Quality Control**: Identifying defects or quality grades (e.g., "pass", "fail", "needs review") in manufacturing
+- **Content Moderation**: Categorizing images as "safe", "unsafe", or "needs review" for content filtering
+- **Medical Diagnosis**: Classifying medical images into diagnostic categories (e.g., "normal", "abnormal", "benign", "malignant")
+- **Animal/Breed Identification**: Classifying animals or specific breeds (e.g., dog breeds, bird species)
+- **Document Classification**: Categorizing documents by type (e.g., "invoice", "receipt", "contract", "letter")
+
+## Model Sources
+
+You can use:
+- Models from your private Roboflow account (requires authentication)
+- Public models from [Roboflow Universe](https://universe.roboflow.com) (no authentication needed for public models)
+
+## Requirements
+
+You will need to set your Roboflow API key in your Inference environment to use private models. To learn more about setting your Roboflow API key, [refer to the Inference documentation](https://inference.roboflow.com/quickstart/configure_api_key/).
+
+## Connecting to Other Blocks
+
+The classification results from this block can be connected to:
+- **Object Detection blocks** to replace detection class labels with more specific classifications (e.g., classify detected dogs by breed)
+- **Visualization blocks** to display classification labels on images
+- **Filter blocks** to filter images or detections based on classification results
+- **Conditional logic blocks** to route workflow execution based on classification outcomes
+- **Notification blocks** to alert when specific classes are detected
+- **Data storage blocks** to log classification results for analytics
+
+## Version Differences (v2 vs v1)
+
+This version (v2) includes the `model_id` in the output, making it easier to track which model was used when chaining multiple classification models in a workflow. The `inference_id` output also uses the `INFERENCE_ID_KIND` instead of `STRING_KIND` for better type checking.
 """
 
 

@@ -40,8 +40,69 @@ class BlockManifest(WorkflowBlockManifest):
             "version": "v1",
             "short_description": "Run SmolVLM2 on an image.",
             "long_description": (
-                "This workflow block runs SmolVLM2, a multimodal vision-language model. You can ask questions about images"
-                " -- including documents and photos -- and get answers in natural language."
+                """
+Run Hugging Face's SmolVLM2 model to analyze images and answer questions using natural language prompts with a lightweight, efficient vision language model.
+
+## What is a Vision Language Model (VLM)?
+
+A Vision Language Model (VLM) is an AI model that can understand both **images and text** simultaneously. Unlike traditional computer vision models that are trained for a single task (like object detection or classification), VLMs like SmolVLM2:
+- **Understand natural language prompts** - you can ask questions or give instructions in plain English
+- **Process visual content** - analyze images to understand what's in them
+- **Generate flexible text responses** - provide natural language answers based on the image content
+- **Support conversational interactions** - can follow up on questions and maintain context
+
+SmolVLM2 is specifically designed to be a **smaller, more efficient** VLM (2.2 billion parameters) that provides strong performance while requiring fewer computational resources than larger VLMs. This makes it ideal for scenarios where you need VLM capabilities but have limited GPU memory or want faster inference times.
+
+## How This Block Works
+
+This block takes one or more images as input and processes them through Hugging Face's SmolVLM2 model. The block:
+1. **Encodes images** for processing by the model
+2. **Applies the prompt** - uses your optional text prompt (or empty string if not provided) to guide the model's analysis
+3. **Sends the request to SmolVLM2** - processes the image(s) with the prompt using the model's chat template format
+4. **Returns the response** - provides the model's text answer as a parsed dictionary output
+
+The block supports flexible, free-form prompts - you can ask any question about the image, request descriptions, ask for analysis, or give specific instructions.
+
+## Inputs and Outputs
+
+**Input:**
+- **images**: One or more images to analyze (can be from workflow inputs or previous steps)
+- **prompt**: Optional text prompt/question to ask about the image (e.g., "What is in this image?", "How many objects are there?", "Extract text from this document")
+- **model_version**: SmolVLM2 model to use (default: "smolvlm2/smolvlm-2.2b-instruct") - can also use Roboflow model IDs for custom/fine-tuned models
+
+**Output:**
+- **parsed_output**: A dictionary containing the text response from SmolVLM2
+
+## Key Configuration Options
+
+- **prompt**: Your question or instruction in natural language - be specific about what you want SmolVLM2 to analyze or describe from the image. If not provided, the model will generate a general description. SmolVLM2 is particularly good at document OCR, visual question answering, and object counting tasks
+- **model_version**: Choose the SmolVLM2 model - "smolvlm2/smolvlm-2.2b-instruct" (default, 2.2B parameter model optimized for instruction following). Can also use Roboflow model IDs for custom or fine-tuned SmolVLM2 models
+
+## Common Use Cases
+
+- **Visual Question Answering**: Ask questions about image content - "What objects are in this image?", "How many dogs are visible?", "What is the person doing?"
+- **Document OCR**: Extract and understand text from documents, forms, or images containing text
+- **Document Question Answering**: Answer specific questions about document content - "What is the total amount on this invoice?", "What date is on this form?"
+- **Object Counting**: Count objects in images - "How many people are in this crowd?", "How many items are on this shelf?"
+- **Image Description**: Generate descriptions of images for accessibility, content indexing, or documentation
+- **Content Analysis**: Analyze images for safety, quality, or compliance - "Does this image contain text?", "Is this document complete?"
+
+## Requirements
+
+**⚠️ Important: Dedicated Inference Server Required**
+
+This block requires **local execution** (cannot run remotely). A **GPU is recommended** for best performance, though SmolVLM2's smaller size means it can run more efficiently than larger VLMs. The model requires appropriate dependencies (transformers library) to be installed.
+
+## Connecting to Other Blocks
+
+The text outputs from this block can be connected to:
+- **Conditional logic blocks** to route workflow execution based on SmolVLM2's responses
+- **Filter blocks** to filter images or data based on the model's analysis
+- **Visualization blocks** to display text overlays or annotations on images
+- **Data storage blocks** to log responses for analytics or audit trails
+- **Notification blocks** to send alerts based on SmolVLM2's findings (e.g., specific content detected, object counts reached thresholds)
+- **Parser blocks** (e.g., JSON Parser) to extract structured information from SmolVLM2's text responses if you prompt it to return structured data
+"""
             ),
             "license": "Apache-2.0",
             "block_type": "model",

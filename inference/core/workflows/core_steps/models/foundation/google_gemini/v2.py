@@ -113,18 +113,98 @@ RELEVANT_TASKS_DOCS_DESCRIPTION = "\n\n".join(
     for k, v in RELEVANT_TASKS_METADATA.items()
 )
 LONG_DESCRIPTION = f"""
-Ask a question to Google's Gemini model with vision capabilities.
+Run Google's Gemini model with vision capabilities to perform various computer vision tasks.
 
-You can specify arbitrary text prompts or predefined ones, the block supports the following types of prompt:
+## What is a Vision Language Model (VLM)?
+
+A Vision Language Model (VLM) is an AI model that can understand both **images and text** simultaneously. Unlike traditional computer vision models that are trained for a single task (like object detection or classification), VLMs like Gemini:
+- **Understand natural language prompts** - you can ask questions or give instructions in plain English
+- **Process visual content** - analyze images to understand what's in them
+- **Generate flexible outputs** - provide text responses, structured data, or formatted results based on your needs
+- **Support multiple tasks** - the same model can perform classification, detection, OCR, question answering, and more just by changing the prompt
+
+This makes VLMs incredibly versatile and useful when you need flexible, natural language-driven computer vision without training separate models for each task.
+
+## How This Block Works
+
+This block takes one or more images as input and processes them through Google's Gemini model. Based on the **task type** you select, the block:
+1. **Prepares the appropriate prompt** for Gemini based on the task type (e.g., OCR, classification, object detection)
+2. **Encodes images** to base64 format for API transmission
+3. **Sends the request to Google's Gemini API** with the image and task-specific instructions (optionally using thinking levels for Gemini 3+ models)
+4. **Returns the response** as text output, which can be structured JSON or natural language depending on the task
+
+The block supports multiple predefined task types, each optimized for specific use cases, or you can use "unconstrained" mode for completely custom prompts.
+
+## Supported Task Types
+
+The block supports the following task types:
 
 {RELEVANT_TASKS_DOCS_DESCRIPTION}
 
-You need to provide your Google AI API key to use the Gemini model.
+## Inputs and Outputs
 
-**WARNING!**
+**Input:**
+- **images**: One or more images to analyze (can be from workflow inputs or previous steps)
+- **task_type**: The type of task to perform (determines how the prompt is structured and what output format to expect)
+- **prompt**: Text prompt/question (required for "unconstrained" and "visual-question-answering" tasks)
+- **classes**: List of classes for classification or detection tasks (required for "classification", "multi-label-classification", "object-detection" tasks)
+- **output_structure**: Dictionary defining the expected JSON structure (required for "structured-answering" task)
+- **api_key**: Your Google AI API key (required)
+- **model_version**: Gemini model version to use (default: "gemini-3-pro-preview")
+- **thinking_level**: Controls depth of internal reasoning for Gemini 3+ models - "low" (minimizes latency/cost) or "high" (maximizes reasoning, default) (optional, only for Gemini 3+ models)
+- **temperature**: Sampling temperature (0.0-2.0, optional) - controls randomness/creativity (only for models that don't support thinking_level)
+- **max_tokens**: Maximum number of tokens in the response (optional, defaults to model's default limit if not specified)
+- **max_concurrent_requests**: Number of concurrent API requests when processing batches (optional, uses global default if not specified)
 
-This block makes use of `/v1beta` API of Google Gemini model - the implementation may change
-in the future, without guarantee of backward compatibility.
+**Output:**
+- **output**: Text response from Gemini (string) - format depends on task type (may be JSON for structured tasks)
+- **classes**: The list of classes that were provided (for classification/detection tasks)
+
+## Key Configuration Options
+
+- **task_type**: Select the task type that best matches your use case - this determines what prompt is sent to Gemini and what output format to expect
+- **model_version**: Choose the Gemini model - newer models (gemini-3-pro-preview, gemini-2.5-pro) are more capable; older models (gemini-2.0-flash) are faster but less capable. Flash models are optimized for speed, while Pro models prioritize accuracy. Gemini 3+ models support thinking levels for enhanced reasoning
+- **thinking_level**: For Gemini 3+ models, control reasoning depth - "low" for simple tasks (faster, lower cost) or "high" for complex reasoning (better quality, default). This replaces temperature for models that support it
+- **temperature**: Control output randomness for older models - lower values (0.0-0.5) produce more deterministic responses; higher values (1.0-2.0) produce more creative responses. Only available for models that don't support thinking_level
+- **max_tokens**: Control the maximum response length - if not specified, uses the model's default limit (useful for longer responses like detailed captions)
+- **max_concurrent_requests**: Limit concurrent API calls to stay within Google Gemini API rate limits
+
+## Common Use Cases
+
+- **Content Analysis**: Analyze images for safety, quality, or compliance - ask questions like "Does this image contain inappropriate content?"
+- **Document Processing**: Extract text from documents, forms, or receipts using OCR, then structure the data using structured-answering
+- **Product Cataloging**: Classify product images into categories or extract product attributes like color, style, material
+- **Accessibility**: Generate detailed image descriptions for visually impaired users using captioning tasks
+- **Data Extraction**: Extract structured information from images (e.g., extract fields from forms, receipts, or documents) - thinking levels can help with complex extraction tasks
+- **Visual Q&A**: Build chatbots that can answer questions about images (e.g., "What brand is this product?", "Is this person wearing a mask?") - thinking levels enable better reasoning for complex questions
+
+## Requirements
+
+You need to provide your Google AI API key to use this block. The API key is used to authenticate requests to Google's Gemini API. You can get your API key from [Google AI Studio](https://makersuite.google.com/app/apikey) or [Google Cloud Console](https://console.cloud.google.com/). Note that API usage is subject to Google's pricing and rate limits.
+
+**⚠️ Beta API Warning**
+
+This block uses Google's `/v1beta` API endpoint for Gemini. The implementation may change in the future without guarantee of backward compatibility as Google continues to develop their API.
+
+## Connecting to Other Blocks
+
+The text outputs from this block can be connected to:
+- **Parser blocks** (e.g., JSON Parser v1, VLM as Classifier v2, VLM as Detector v2) to convert text responses into structured data formats
+- **Conditional logic blocks** to route workflow execution based on Gemini's responses
+- **Filter blocks** to filter images or detections based on Gemini's analysis
+- **Visualization blocks** to display text overlays or annotations on images
+- **Data storage blocks** to log responses for analytics or audit trails
+- **Notification blocks** to send alerts based on Gemini's findings
+
+## Version Differences (v2 vs v1)
+
+This version (v2) includes several enhancements over v1:
+- **Thinking Levels**: New `thinking_level` parameter for Gemini 3+ models allows you to control the depth of internal reasoning - "low" for faster, cost-effective processing of simple tasks, or "high" for maximum reasoning depth on complex problems
+- **Improved Token Management**: `max_tokens` is now optional and defaults to the model's default limit, providing better flexibility for varying response lengths
+- **Enhanced Model Support**: Added support for Gemini 3 Pro (gemini-3-pro-preview) with thinking level capabilities, and improved model metadata structure
+- **Model-Specific Parameters**: `temperature` is now only available for models that don't support thinking levels, ensuring optimal configuration for each model type
+- **Updated Default Model**: Default model changed to "gemini-3-pro-preview" (from "gemini-2.0-flash") to take advantage of the latest capabilities
+- **Updated Recommended Parsers**: Recommended parsers now use v2 versions (e.g., vlm_as_classifier@v2, vlm_as_detector@v2) for better compatibility
 """
 
 TaskType = Literal[tuple(SUPPORTED_TASK_TYPES_LIST)]

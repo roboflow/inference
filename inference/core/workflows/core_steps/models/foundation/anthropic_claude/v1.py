@@ -56,13 +56,84 @@ RELEVANT_TASKS_DOCS_DESCRIPTION = "\n\n".join(
     for k, v in RELEVANT_TASKS_METADATA.items()
 )
 LONG_DESCRIPTION = f"""
-Ask a question to Anthropic Claude model with vision capabilities.
+Run Anthropic Claude model with vision capabilities to perform various computer vision tasks.
 
-You can specify arbitrary text prompts or predefined ones, the block supports the following types of prompt:
+## What is a Vision Language Model (VLM)?
+
+A Vision Language Model (VLM) is an AI model that can understand both **images and text** simultaneously. Unlike traditional computer vision models that are trained for a single task (like object detection or classification), VLMs like Claude:
+- **Understand natural language prompts** - you can ask questions or give instructions in plain English
+- **Process visual content** - analyze images to understand what's in them
+- **Generate flexible outputs** - provide text responses, structured data, or formatted results based on your needs
+- **Support multiple tasks** - the same model can perform classification, detection, OCR, question answering, and more just by changing the prompt
+
+This makes VLMs incredibly versatile and useful when you need flexible, natural language-driven computer vision without training separate models for each task.
+
+## How This Block Works
+
+This block takes one or more images as input and processes them through Anthropic's Claude model. Based on the **task type** you select, the block:
+1. **Prepares the appropriate prompt** for Claude based on the task type (e.g., OCR, classification, object detection)
+2. **Encodes and optimizes images** (downscales large images to meet Claude's requirements while maintaining aspect ratio)
+3. **Sends the request to Claude's API** with the image and task-specific instructions
+4. **Returns the response** as text output, which can be structured JSON or natural language depending on the task
+
+The block supports multiple predefined task types, each optimized for specific use cases, or you can use "unconstrained" mode for completely custom prompts.
+
+## Supported Task Types
+
+The block supports the following task types:
 
 {RELEVANT_TASKS_DOCS_DESCRIPTION}
 
-You need to provide your Anthropic API key to use the Claude model. 
+## Inputs and Outputs
+
+**Input:**
+- **images**: One or more images to analyze (can be from workflow inputs or previous steps)
+- **task_type**: The type of task to perform (determines how the prompt is structured and what output format to expect)
+- **prompt**: Text prompt/question (required for "unconstrained" and "visual-question-answering" tasks)
+- **classes**: List of classes for classification or detection tasks (required for "classification", "multi-label-classification", "object-detection" tasks)
+- **output_structure**: Dictionary defining the expected JSON structure (required for "structured-answering" task)
+- **api_key**: Your Anthropic API key (required)
+- **model_version**: Claude model version to use (default: "claude-4-5-sonnet")
+- **max_tokens**: Maximum number of tokens in the response (default: 450)
+- **temperature**: Sampling temperature (0.0-2.0, optional) - controls randomness/creativity
+- **max_image_size**: Maximum image dimension - larger images are downscaled (default: 1024)
+- **max_concurrent_requests**: Number of concurrent API requests when processing batches (optional, uses global default if not specified)
+
+**Output:**
+- **output**: Text response from Claude (string) - format depends on task type (may be JSON for structured tasks)
+- **classes**: The list of classes that were provided (for classification/detection tasks)
+
+## Key Configuration Options
+
+- **task_type**: Select the task type that best matches your use case - this determines what prompt is sent to Claude and what output format to expect
+- **model_version**: Choose the Claude model - newer models (claude-sonnet-4-5, claude-opus-4) are more capable but may be slower; older models (claude-3-haiku) are faster but less capable
+- **max_tokens**: Control the maximum response length - increase for longer responses (e.g., detailed captions), decrease for shorter responses (e.g., classification)
+- **temperature**: Control output randomness - lower values (0.0-0.5) produce more deterministic, focused responses; higher values (1.0-2.0) produce more creative, varied responses
+- **max_image_size**: Larger images are automatically downscaled - increase if you need fine detail preservation, decrease for faster processing
+- **max_concurrent_requests**: Limit concurrent API calls to stay within Anthropic API rate limits
+
+## Common Use Cases
+
+- **Content Analysis**: Analyze images for safety, quality, or compliance - ask questions like "Does this image contain inappropriate content?"
+- **Document Processing**: Extract text from documents, forms, or receipts using OCR, then structure the data using structured-answering
+- **Product Cataloging**: Classify product images into categories or extract product attributes like color, style, material
+- **Accessibility**: Generate detailed image descriptions for visually impaired users using captioning tasks
+- **Data Extraction**: Extract structured information from images (e.g., extract fields from forms, receipts, or documents)
+- **Visual Q&A**: Build chatbots that can answer questions about images (e.g., "What brand is this product?", "Is this person wearing a mask?")
+
+## Requirements
+
+You need to provide your Anthropic API key to use this block. The API key is used to authenticate requests to Anthropic's Claude API. You can get your API key from [Anthropic's console](https://console.anthropic.com/). Note that API usage is subject to Anthropic's pricing and rate limits.
+
+## Connecting to Other Blocks
+
+The text outputs from this block can be connected to:
+- **Parser blocks** (e.g., JSON Parser, VLM as Classifier, VLM as Detector) to convert text responses into structured data formats
+- **Conditional logic blocks** to route workflow execution based on Claude's responses
+- **Filter blocks** to filter images or detections based on Claude's analysis
+- **Visualization blocks** to display text overlays or annotations on images
+- **Data storage blocks** to log responses for analytics or audit trails
+- **Notification blocks** to send alerts based on Claude's findings
 """
 
 TaskType = Literal[tuple(SUPPORTED_TASK_TYPES_LIST)]
