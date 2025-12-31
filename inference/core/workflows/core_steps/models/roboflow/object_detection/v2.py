@@ -47,14 +47,78 @@ from inference.core.workflows.prototypes.block import (
 from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 
 LONG_DESCRIPTION = """
-Run inference on a object-detection model hosted on or uploaded to Roboflow.
+Run inference on an object-detection model hosted on or uploaded to Roboflow.
 
-You can query any model that is private to your account, or any public model available 
-on [Roboflow Universe](https://universe.roboflow.com).
+## What is Object Detection?
 
-You will need to set your Roboflow API key in your Inference environment to use this 
-block. To learn more about setting your Roboflow API key, [refer to the Inference 
-documentation](https://inference.roboflow.com/quickstart/configure_api_key/).
+Object detection is a computer vision task that identifies and locates objects within an image. Unlike image classification (which only tells you "what is in this image"), object detection tells you:
+- **What** objects are present (e.g., "person", "car", "dog")
+- **Where** they are located (using bounding boxes with x, y coordinates, width, and height)
+- **How confident** the model is about each detection (a confidence score between 0 and 1)
+
+## How This Block Works
+
+This block takes one or more images as input and runs them through a trained object detection model. The model analyzes the image and returns a list of detections, where each detection contains:
+- A bounding box (coordinates defining a rectangle around the detected object)
+- A class label (the name of what was detected, e.g., "person", "car")
+- A confidence score (how certain the model is, typically from 0.0 to 1.0)
+
+The block applies post-processing techniques like Non-Maximum Suppression (NMS) to filter out duplicate detections and ensure clean, accurate results.
+
+## Inputs and Outputs
+
+**Input:**
+- **images**: One or more images to analyze (can be from workflow inputs or previous steps)
+
+**Output:**
+- **predictions**: A `sv.Detections` object containing all detected objects with their bounding boxes, classes, and confidence scores
+- **inference_id**: A unique identifier for this inference run
+- **model_id**: The model identifier that was used for this inference (useful when chaining multiple models)
+
+## Key Configuration Options
+
+- **model_id**: The identifier for your Roboflow model (format: `workspace/project/version`)
+- **confidence**: Minimum confidence threshold (0.0-1.0, default: 0.4) - detections below this threshold are filtered out
+- **class_filter**: Optional list of classes to include - if specified, only these classes will be returned
+- **iou_threshold**: Intersection over Union threshold for NMS (default: 0.3) - controls how much bounding boxes can overlap before being merged
+- **max_detections**: Maximum number of detections to return per image (default: 300)
+- **class_agnostic_nms**: If true, NMS ignores class labels when merging overlapping boxes (default: False)
+- **max_candidates**: Maximum number of candidates as NMS input to be taken into account (default: 3000)
+- **disable_active_learning**: Boolean flag to disable project-level active learning for this block (default: True)
+- **active_learning_target_dataset**: Target dataset for active learning, if enabled (optional)
+
+## Common Use Cases
+
+- **Security and Surveillance**: Detecting people, vehicles, or suspicious objects in video feeds
+- **Retail Analytics**: Counting products on shelves, detecting inventory levels
+- **Quality Control**: Identifying defects or anomalies in manufacturing
+- **Autonomous Vehicles**: Detecting pedestrians, other vehicles, and traffic signs
+- **Sports Analytics**: Tracking players and equipment during games
+- **Wildlife Monitoring**: Counting and identifying animals in camera trap images
+
+## Model Sources
+
+You can use:
+- Models from your private Roboflow account (requires authentication)
+- Public models from [Roboflow Universe](https://universe.roboflow.com) (no authentication needed for public models)
+
+## Requirements
+
+You will need to set your Roboflow API key in your Inference environment to use private models. To learn more about setting your Roboflow API key, [refer to the Inference documentation](https://inference.roboflow.com/quickstart/configure_api_key/).
+
+## Connecting to Other Blocks
+
+The detection results from this block can be connected to:
+- **Classification blocks** to classify each detected object (e.g., classify dog breeds after detecting dogs)
+- **Visualization blocks** to draw bounding boxes and labels on images
+- **Crop blocks** (Dynamic Crop) to extract regions around detected objects for further processing
+- **Tracking blocks** to track objects across video frames
+- **Filter blocks** to filter detections based on criteria (size, confidence, class, etc.)
+- **Transformation blocks** to modify bounding boxes (resize, shift, etc.)
+
+## Version Differences (v2 vs v1)
+
+This version (v2) includes the `model_id` in the output, making it easier to track which model was used when chaining multiple detection models in a workflow. The `inference_id` output also uses the `INFERENCE_ID_KIND` instead of `STRING_KIND` for better type checking.
 """
 
 
