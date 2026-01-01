@@ -50,7 +50,9 @@ def position_grid_to_embed(
     return emb.view(H, W, embed_dim)
 
 
-def make_sincos_pos_embed(embed_dim: int, pos: torch.Tensor, omega_0: float = 100) -> torch.Tensor:
+def make_sincos_pos_embed(
+    embed_dim: int, pos: torch.Tensor, omega_0: float = 100
+) -> torch.Tensor:
     """Generate 1D positional embedding from a given grid using sine and cosine functions."""
     assert embed_dim % 2 == 0
     omega = torch.arange(embed_dim // 2, dtype=torch.float32, device=pos.device)
@@ -120,4 +122,3 @@ def custom_interpolate(
         return torch.cat(outs, dim=0).contiguous()
 
     return F.interpolate(x, size=size, mode=mode, align_corners=align_corners)
-

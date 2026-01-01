@@ -79,7 +79,11 @@ class BlockManifest(WorkflowBlockManifest):
     images: Selector(kind=[IMAGE_KIND]) = ImageInputField
 
     model_version: Union[
-        Literal["depth-anything-v2/small", "depth-anything-v3/small", "depth-anything-v3/base"],
+        Literal[
+            "depth-anything-v2/small",
+            "depth-anything-v3/small",
+            "depth-anything-v3/base",
+        ],
         Selector(kind=[STRING_KIND]),
     ] = Field(
         default="depth-anything-v3/small",

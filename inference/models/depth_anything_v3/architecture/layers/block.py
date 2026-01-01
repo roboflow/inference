@@ -15,7 +15,9 @@ from torch import Tensor, nn
 
 from inference.models.depth_anything_v3.architecture.layers.attention import Attention
 from inference.models.depth_anything_v3.architecture.layers.drop_path import DropPath
-from inference.models.depth_anything_v3.architecture.layers.layer_scale import LayerScale
+from inference.models.depth_anything_v3.architecture.layers.layer_scale import (
+    LayerScale,
+)
 from inference.models.depth_anything_v3.architecture.layers.mlp import Mlp
 
 
@@ -52,7 +54,9 @@ class Block(nn.Module):
             qk_norm=qk_norm,
             rope=rope,
         )
-        self.ls1 = LayerScale(dim, init_values=init_values) if init_values else nn.Identity()
+        self.ls1 = (
+            LayerScale(dim, init_values=init_values) if init_values else nn.Identity()
+        )
         self.drop_path1 = DropPath(drop_path) if drop_path > 0.0 else nn.Identity()
 
         self.norm2 = norm_layer(dim, eps=ln_eps)
@@ -64,7 +68,9 @@ class Block(nn.Module):
             drop=drop,
             bias=ffn_bias,
         )
-        self.ls2 = LayerScale(dim, init_values=init_values) if init_values else nn.Identity()
+        self.ls2 = (
+            LayerScale(dim, init_values=init_values) if init_values else nn.Identity()
+        )
         self.drop_path2 = DropPath(drop_path) if drop_path > 0.0 else nn.Identity()
 
         self.sample_drop_ratio = drop_path
@@ -123,4 +129,3 @@ def drop_add_residual_stochastic_depth(
         x_flat, 0, brange, residual.to(dtype=x.dtype), alpha=residual_scale_factor
     )
     return x_plus_residual.view_as(x)
-

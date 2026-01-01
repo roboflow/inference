@@ -61,4 +61,3 @@ class SwiGLUFFNFused(SwiGLU):
             out_features=out_features,
             bias=bias,
         )
-

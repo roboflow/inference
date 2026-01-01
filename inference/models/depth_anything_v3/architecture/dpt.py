@@ -76,9 +76,14 @@ class DPT(nn.Module):
         elif norm_type == "idt":
             self.norm = nn.Identity()
         else:
-            raise Exception(f"Unknown norm_type {norm_type}, should be 'layer' or 'idt'.")
+            raise Exception(
+                f"Unknown norm_type {norm_type}, should be 'layer' or 'idt'."
+            )
         self.projects = nn.ModuleList(
-            [nn.Conv2d(dim_in, oc, kernel_size=1, stride=1, padding=0) for oc in out_channels]
+            [
+                nn.Conv2d(dim_in, oc, kernel_size=1, stride=1, padding=0)
+                for oc in out_channels
+            ]
         )
 
         self.resize_layers = nn.ModuleList(
@@ -90,15 +95,23 @@ class DPT(nn.Module):
                     out_channels[1], out_channels[1], kernel_size=2, stride=2, padding=0
                 ),
                 nn.Identity(),
-                nn.Conv2d(out_channels[3], out_channels[3], kernel_size=3, stride=2, padding=1),
+                nn.Conv2d(
+                    out_channels[3], out_channels[3], kernel_size=3, stride=2, padding=1
+                ),
             ]
         )
 
         self.scratch = _make_scratch(list(out_channels), features, expand=False)
 
-        self.scratch.refinenet1 = _make_fusion_block(features, inplace=fusion_block_inplace)
-        self.scratch.refinenet2 = _make_fusion_block(features, inplace=fusion_block_inplace)
-        self.scratch.refinenet3 = _make_fusion_block(features, inplace=fusion_block_inplace)
+        self.scratch.refinenet1 = _make_fusion_block(
+            features, inplace=fusion_block_inplace
+        )
+        self.scratch.refinenet2 = _make_fusion_block(
+            features, inplace=fusion_block_inplace
+        )
+        self.scratch.refinenet3 = _make_fusion_block(
+            features, inplace=fusion_block_inplace
+        )
         self.scratch.refinenet4 = _make_fusion_block(
             features, has_residual=False, inplace=fusion_block_inplace
         )
@@ -110,13 +123,23 @@ class DPT(nn.Module):
         )
 
         ln_seq = (
-            [Permute((0, 2, 3, 1)), nn.LayerNorm(head_features_2), Permute((0, 3, 1, 2))]
+            [
+                Permute((0, 2, 3, 1)),
+                nn.LayerNorm(head_features_2),
+                Permute((0, 3, 1, 2)),
+            ]
             if use_ln_for_heads
             else []
         )
 
         self.scratch.output_conv2 = nn.Sequential(
-            nn.Conv2d(head_features_1 // 2, head_features_2, kernel_size=3, stride=1, padding=1),
+            nn.Conv2d(
+                head_features_1 // 2,
+                head_features_2,
+                kernel_size=3,
+                stride=1,
+                padding=1,
+            ),
             *ln_seq,
             nn.ReLU(inplace=True),
             nn.Conv2d(head_features_2, output_dim, kernel_size=1, stride=1, padding=0),
@@ -125,7 +148,11 @@ class DPT(nn.Module):
         if self.use_sky_head:
             self.scratch.sky_output_conv2 = nn.Sequential(
                 nn.Conv2d(
-                    head_features_1 // 2, head_features_2, kernel_size=3, stride=1, padding=1
+                    head_features_1 // 2,
+                    head_features_2,
+                    kernel_size=3,
+                    stride=1,
+                    padding=1,
                 ),
                 *ln_seq,
                 nn.ReLU(inplace=True),
@@ -146,7 +173,9 @@ class DPT(nn.Module):
 
         extra_kwargs = {}
         if "images" in kwargs:
-            extra_kwargs.update({"images": rearrange(kwargs["images"], "B S ... -> (B S) ...")})
+            extra_kwargs.update(
+                {"images": rearrange(kwargs["images"], "B S ... -> (B S) ...")}
+            )
 
         if chunk_size is None or chunk_size >= S:
             out_dict = self._forward_impl(feats, H, W, patch_start_idx, **extra_kwargs)
@@ -160,9 +189,14 @@ class DPT(nn.Module):
             if "images" in extra_kwargs:
                 kw.update({"images": extra_kwargs["images"][s0:s1]})
             out_dicts.append(
-                self._forward_impl([f[s0:s1] for f in feats], H, W, patch_start_idx, **kw)
+                self._forward_impl(
+                    [f[s0:s1] for f in feats], H, W, patch_start_idx, **kw
+                )
             )
-        out_dict = {k: torch.cat([od[k] for od in out_dicts], dim=0) for k in out_dicts[0].keys()}
+        out_dict = {
+            k: torch.cat([od[k] for od in out_dicts], dim=0)
+            for k in out_dicts[0].keys()
+        }
         out_dict = {k: v.view(B, S, *v.shape[1:]) for k, v in out_dict.items()}
         return out_dict
 
@@ -193,7 +227,9 @@ class DPT(nn.Module):
         w_out = int(pw * self.patch_size / self.down_ratio)
 
         fused = self.scratch.output_conv1(fused)
-        fused = custom_interpolate(fused, (h_out, w_out), mode="bilinear", align_corners=True)
+        fused = custom_interpolate(
+            fused, (h_out, w_out), mode="bilinear", align_corners=True
+        )
         if self.pos_embed:
             fused = self._add_pos_embed(fused, W, H)
 
@@ -264,7 +300,9 @@ class DPT(nn.Module):
             return torch.relu(x)
         return x
 
-    def _add_pos_embed(self, x: torch.Tensor, W: int, H: int, ratio: float = 0.1) -> torch.Tensor:
+    def _add_pos_embed(
+        self, x: torch.Tensor, W: int, H: int, ratio: float = 0.1
+    ) -> torch.Tensor:
         pw, ph = x.shape[-1], x.shape[-2]
         pe = create_uv_grid(pw, ph, aspect_ratio=W / H, dtype=x.dtype, device=x.device)
         pe = position_grid_to_embed(pe, x.shape[1]) * ratio
@@ -311,7 +349,9 @@ def _make_scratch(
 class ResidualConvUnit(nn.Module):
     """Lightweight residual convolution block for fusion"""
 
-    def __init__(self, features: int, activation: nn.Module, bn: bool, groups: int = 1) -> None:
+    def __init__(
+        self, features: int, activation: nn.Module, bn: bool, groups: int = 1
+    ) -> None:
         super().__init__()
         self.bn = bn
         self.groups = groups
@@ -357,12 +397,16 @@ class FeatureFusionBlock(nn.Module):
         self.has_residual = has_residual
 
         self.resConfUnit1 = (
-            ResidualConvUnit(features, activation, bn, groups=groups) if has_residual else None
+            ResidualConvUnit(features, activation, bn, groups=groups)
+            if has_residual
+            else None
         )
         self.resConfUnit2 = ResidualConvUnit(features, activation, bn, groups=groups)
 
         out_features = (features // 2) if expand else features
-        self.out_conv = nn.Conv2d(features, out_features, 1, 1, 0, bias=True, groups=groups)
+        self.out_conv = nn.Conv2d(
+            features, out_features, 1, 1, 0, bias=True, groups=groups
+        )
         self.skip_add = nn.quantized.FloatFunctional()
 
     def forward(self, *xs: torch.Tensor, size: Tuple[int, int] = None) -> torch.Tensor:
@@ -379,7 +423,8 @@ class FeatureFusionBlock(nn.Module):
         else:
             up_kwargs = {"size": size}
 
-        y = custom_interpolate(y, **up_kwargs, mode="bilinear", align_corners=self.align_corners)
+        y = custom_interpolate(
+            y, **up_kwargs, mode="bilinear", align_corners=self.align_corners
+        )
         y = self.out_conv(y)
         return y
-

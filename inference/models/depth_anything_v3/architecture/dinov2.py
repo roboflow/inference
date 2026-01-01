@@ -86,13 +86,18 @@ class DinoVisionTransformer(nn.Module):
         self.interpolate_offset = interpolate_offset
 
         self.patch_embed = embed_layer(
-            img_size=img_size, patch_size=patch_size, in_chans=in_chans, embed_dim=embed_dim
+            img_size=img_size,
+            patch_size=patch_size,
+            in_chans=in_chans,
+            embed_dim=embed_dim,
         )
         num_patches = self.patch_embed.num_patches
         self.cls_token = nn.Parameter(torch.zeros(1, 1, embed_dim))
         if self.alt_start != -1:
             self.camera_token = nn.Parameter(torch.randn(1, 2, embed_dim))
-        self.pos_embed = nn.Parameter(torch.zeros(1, num_patches + self.num_tokens, embed_dim))
+        self.pos_embed = nn.Parameter(
+            torch.zeros(1, num_patches + self.num_tokens, embed_dim)
+        )
         assert num_register_tokens >= 0
         self.register_tokens = (
             nn.Parameter(torch.zeros(1, num_register_tokens, embed_dim))
@@ -109,14 +114,20 @@ class DinoVisionTransformer(nn.Module):
         elif ffn_layer == "swiglufused" or ffn_layer == "swiglu":
             ffn_layer = SwiGLUFFNFused
         elif ffn_layer == "identity":
+
             def f(*args, **kwargs):
                 return nn.Identity()
+
             ffn_layer = f
         else:
             raise NotImplementedError
 
         if self.rope_start != -1:
-            self.rope = RotaryPositionEmbedding2D(frequency=rope_freq) if rope_freq > 0 else None
+            self.rope = (
+                RotaryPositionEmbedding2D(frequency=rope_freq)
+                if rope_freq > 0
+                else None
+            )
             self.position_getter = PositionGetter() if self.rope is not None else None
         else:
             self.rope = None
@@ -170,7 +181,9 @@ class DinoVisionTransformer(nn.Module):
         )
         assert (w0, h0) == patch_pos_embed.shape[-2:]
         patch_pos_embed = patch_pos_embed.permute(0, 2, 3, 1).view(1, -1, dim)
-        return torch.cat((class_pos_embed.unsqueeze(0), patch_pos_embed), dim=1).to(previous_dtype)
+        return torch.cat((class_pos_embed.unsqueeze(0), patch_pos_embed), dim=1).to(
+            previous_dtype
+        )
 
     def prepare_cls_token(self, B, S):
         cls_token = self.cls_token.expand(B, S, -1)
@@ -182,7 +195,9 @@ class DinoVisionTransformer(nn.Module):
         x = rearrange(x, "b s c h w -> (b s) c h w")
         x = self.patch_embed(x)
         if masks is not None:
-            x = torch.where(masks.unsqueeze(-1), self.mask_token.to(x.dtype).unsqueeze(0), x)
+            x = torch.where(
+                masks.unsqueeze(-1), self.mask_token.to(x.dtype).unsqueeze(0), x
+            )
         cls_token = self.prepare_cls_token(B, S)
         x = torch.cat((cls_token, x), dim=1)
         x = x + self.interpolate_pos_encoding(x, w, h)
@@ -209,18 +224,24 @@ class DinoVisionTransformer(nn.Module):
             pos_nodiff = torch.zeros_like(pos).to(pos.dtype)
             if self.patch_start_idx > 0:
                 pos = pos + 1
-                pos_special = torch.zeros(B * S, self.patch_start_idx, 2).to(device).to(pos.dtype)
+                pos_special = (
+                    torch.zeros(B * S, self.patch_start_idx, 2).to(device).to(pos.dtype)
+                )
                 pos_special = rearrange(pos_special, "(b s) n c -> b s n c", b=B)
                 pos = torch.cat([pos_special, pos], dim=2)
                 pos_nodiff = pos_nodiff + 1
                 pos_nodiff = torch.cat([pos_special, pos_nodiff], dim=2)
         return pos, pos_nodiff
 
-    def _get_intermediate_layers_not_chunked(self, x, n=1, export_feat_layers=[], **kwargs):
+    def _get_intermediate_layers_not_chunked(
+        self, x, n=1, export_feat_layers=[], **kwargs
+    ):
         B, S, _, H, W = x.shape
         x = self.prepare_tokens_with_masks(x)
         output, total_block_len, aux_output = [], len(self.blocks), []
-        blocks_to_take = range(total_block_len - n, total_block_len) if isinstance(n, int) else n
+        blocks_to_take = (
+            range(total_block_len - n, total_block_len) if isinstance(n, int) else n
+        )
         pos, pos_nodiff = self._prepare_rope(B, S, H, W, x.device)
 
         local_x = x  # Initialize local_x
@@ -298,7 +319,10 @@ class DinoVisionTransformer(nn.Module):
         elif outputs[0][1].shape[-1] == (self.embed_dim * 2):
             outputs = [
                 torch.cat(
-                    [out[1][..., : self.embed_dim], self.norm(out[1][..., self.embed_dim :])],
+                    [
+                        out[1][..., : self.embed_dim],
+                        self.norm(out[1][..., self.embed_dim :]),
+                    ],
                     dim=-1,
                 )
                 for out in outputs
@@ -307,7 +331,9 @@ class DinoVisionTransformer(nn.Module):
             raise ValueError(f"Invalid output shape: {outputs[0][1].shape}")
         aux_outputs = [self.norm(out) for out in aux_outputs]
         outputs = [out[..., 1 + self.num_register_tokens :, :] for out in outputs]
-        aux_outputs = [out[..., 1 + self.num_register_tokens :, :] for out in aux_outputs]
+        aux_outputs = [
+            out[..., 1 + self.num_register_tokens :, :] for out in aux_outputs
+        ]
         return tuple(zip(outputs, camera_tokens)), aux_outputs
 
 
@@ -378,4 +404,3 @@ class DinoV2(nn.Module):
             self.out_layers,
             **kwargs,
         )
-

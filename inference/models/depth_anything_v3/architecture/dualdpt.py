@@ -69,7 +69,10 @@ class DualDPT(nn.Module):
 
         self.norm = nn.LayerNorm(dim_in)
         self.projects = nn.ModuleList(
-            [nn.Conv2d(dim_in, oc, kernel_size=1, stride=1, padding=0) for oc in out_channels]
+            [
+                nn.Conv2d(dim_in, oc, kernel_size=1, stride=1, padding=0)
+                for oc in out_channels
+            ]
         )
 
         self.resize_layers = nn.ModuleList(
@@ -81,7 +84,9 @@ class DualDPT(nn.Module):
                     out_channels[1], out_channels[1], kernel_size=2, stride=2, padding=0
                 ),
                 nn.Identity(),
-                nn.Conv2d(out_channels[3], out_channels[3], kernel_size=3, stride=2, padding=1),
+                nn.Conv2d(
+                    out_channels[3], out_channels[3], kernel_size=3, stride=2, padding=1
+                ),
             ]
         )
 
@@ -99,7 +104,13 @@ class DualDPT(nn.Module):
             head_features_1, head_features_1 // 2, kernel_size=3, stride=1, padding=1
         )
         self.scratch.output_conv2 = nn.Sequential(
-            nn.Conv2d(head_features_1 // 2, head_features_2, kernel_size=3, stride=1, padding=1),
+            nn.Conv2d(
+                head_features_1 // 2,
+                head_features_2,
+                kernel_size=3,
+                stride=1,
+                padding=1,
+            ),
             nn.ReLU(inplace=True),
             nn.Conv2d(head_features_2, output_dim, kernel_size=1, stride=1, padding=0),
         )
@@ -116,7 +127,11 @@ class DualDPT(nn.Module):
 
         use_ln = True
         ln_seq = (
-            [Permute((0, 2, 3, 1)), nn.LayerNorm(head_features_2), Permute((0, 3, 1, 2))]
+            [
+                Permute((0, 2, 3, 1)),
+                nn.LayerNorm(head_features_2),
+                Permute((0, 3, 1, 2)),
+            ]
             if use_ln
             else []
         )
@@ -124,7 +139,11 @@ class DualDPT(nn.Module):
             [
                 nn.Sequential(
                     nn.Conv2d(
-                        head_features_1 // 2, head_features_2, kernel_size=3, stride=1, padding=1
+                        head_features_1 // 2,
+                        head_features_2,
+                        kernel_size=3,
+                        stride=1,
+                        padding=1,
                     ),
                     *ln_seq,
                     nn.ReLU(inplace=True),
@@ -208,7 +227,9 @@ class DualDPT(nn.Module):
             f"{self.head_main}_conf": main_conf,
         }
 
-    def _fuse(self, feats: List[torch.Tensor]) -> Tuple[torch.Tensor, List[torch.Tensor]]:
+    def _fuse(
+        self, feats: List[torch.Tensor]
+    ) -> Tuple[torch.Tensor, List[torch.Tensor]]:
         l1, l2, l3, l4 = feats
 
         l1_rn = self.scratch.layer1_rn(l1)
@@ -237,11 +258,15 @@ class DualDPT(nn.Module):
         aux_list.append(aux_out)
 
         out = self.scratch.output_conv1(out)
-        aux_list = [self.scratch.output_conv1_aux[i](aux) for i, aux in enumerate(aux_list)]
+        aux_list = [
+            self.scratch.output_conv1_aux[i](aux) for i, aux in enumerate(aux_list)
+        ]
 
         return out, aux_list
 
-    def _add_pos_embed(self, x: torch.Tensor, W: int, H: int, ratio: float = 0.1) -> torch.Tensor:
+    def _add_pos_embed(
+        self, x: torch.Tensor, W: int, H: int, ratio: float = 0.1
+    ) -> torch.Tensor:
         pw, ph = x.shape[-1], x.shape[-2]
         pe = create_uv_grid(pw, ph, aspect_ratio=W / H, dtype=x.dtype, device=x.device)
         pe = position_grid_to_embed(pe, x.shape[1]) * ratio
@@ -286,4 +311,3 @@ class DualDPT(nn.Module):
         if act == "tanh":
             return torch.tanh(x)
         return x
-

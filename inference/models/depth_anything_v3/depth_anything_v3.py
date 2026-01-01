@@ -23,11 +23,11 @@ import numpy as np
 import torch
 from PIL import Image
 from safetensors.torch import load_file as load_safetensors
+from transformers import AutoImageProcessor
 
 from inference.models.depth_anything_v2.depth_anything_v2 import DepthAnythingV2
 from inference.models.depth_anything_v3.architecture import DepthAnything3Net
 from inference.models.transformers import TransformerModel
-from transformers import AutoImageProcessor
 
 
 def convert_state_dict(state_dict: dict) -> dict:
@@ -113,7 +113,9 @@ class DepthAnythingV3(DepthAnythingV2):
     architecture is vendored in and model loading is custom. However, the
     external interface (inputs/outputs) matches V2.
     """
+
     endpoint = "depth-anything-v3/small"
+
     def __init__(self, *args, **kwargs):
 
         try:
@@ -129,7 +131,7 @@ class DepthAnythingV3(DepthAnythingV2):
             warnings.warn(
                 "Running DepthAnythingV3 on CPU. This may be very slow. Consider using GPU or MPS if available."
             )
-            
+
     def initialize_model(self, **kwargs):
         """Initialize the model with vendored architecture instead of HF Transformers."""
         # Determine device
@@ -146,7 +148,9 @@ class DepthAnythingV3(DepthAnythingV2):
 
         # Determine dtype
         if self.device.type == "cuda":
-            self.dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
+            self.dtype = (
+                torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
+            )
         elif self.device.type == "mps":
             self.dtype = torch.float32  # MPS works better with float32
         else:
@@ -188,20 +192,26 @@ class DepthAnythingV3(DepthAnythingV2):
         # - cam_enc, cam_dec: Camera encoder/decoder (not used for depth-only)
         # - gs_head, gs_adapter: Gaussian splatting head (not used)
         # - output_conv2_aux: Auxiliary ray prediction heads (not used for depth-only)
-        expected_missing = ["cam_enc", "cam_dec", "gs_head", "gs_adapter", "output_conv2_aux"]
+        expected_missing = [
+            "cam_enc",
+            "cam_dec",
+            "gs_head",
+            "gs_adapter",
+            "output_conv2_aux",
+        ]
         unexpected_filtered = [
-            k for k in unexpected
-            if not any(skip in k for skip in expected_missing)
+            k for k in unexpected if not any(skip in k for skip in expected_missing)
         ]
         missing_filtered = [
-            k for k in missing
-            if not any(skip in k for skip in expected_missing)
+            k for k in missing if not any(skip in k for skip in expected_missing)
         ]
 
         if missing_filtered:
             warnings.warn(f"Missing keys when loading weights: {missing_filtered}")
         if unexpected_filtered:
-            warnings.warn(f"Unexpected keys when loading weights: {unexpected_filtered}")
+            warnings.warn(
+                f"Unexpected keys when loading weights: {unexpected_filtered}"
+            )
 
     def _get_config_path(self) -> str:
         """Get path to model config file."""
@@ -223,9 +233,7 @@ class DepthAnythingV3(DepthAnythingV2):
         if weights_file.exists():
             return str(weights_file)
         else:
-            raise FileNotFoundError(
-                f"Could not find {weights_file} in {cache_dir}"
-            )
+            raise FileNotFoundError(f"Could not find {weights_file} in {cache_dir}")
 
     def predict(self, image_in: Image.Image, prompt="", history=None, **kwargs):
         """

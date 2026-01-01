@@ -83,7 +83,9 @@ class DepthAnything3Net(nn.Module):
             features=head_features,
             out_channels=head_out_channels,
         )
-        self.device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+        self.device = (
+            torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+        )
 
     def forward(
         self,
@@ -113,4 +115,3 @@ class DepthAnything3Net(nn.Module):
     ) -> Dict[str, torch.Tensor]:
         """Process features through the depth prediction head."""
         return self.head(feats, H, W, patch_start_idx=0)
-

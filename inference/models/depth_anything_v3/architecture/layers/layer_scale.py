@@ -30,4 +30,3 @@ class LayerScale(nn.Module):
 
     def extra_repr(self) -> str:
         return f"{self.dim}, init_values={self.init_values}, inplace={self.inplace}"
-
