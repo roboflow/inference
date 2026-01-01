@@ -82,7 +82,9 @@ class DepthAnything3Net(nn.Module):
             features=head_features,
             out_channels=head_out_channels,
         )
-        self.device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+        self.device = (
+            torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+        )
 
     def forward(
         self,
@@ -99,11 +101,11 @@ class DepthAnything3Net(nn.Module):
         """
         # Extract features using backbone
         feats, _ = self.backbone(x)
-        H, W = x.shape[-2], x.shape[-1]
+        shape = x.shape
+        H, W = shape[-2], shape[-1]
 
         # Process features through depth head
-        with torch.autocast(device_type=x.device.type, enabled=False):
-            output = self._process_depth_head(feats, H, W)
+        output = self._process_depth_head(feats, H, W)
 
         return output
 
@@ -112,4 +114,3 @@ class DepthAnything3Net(nn.Module):
     ) -> Dict[str, torch.Tensor]:
         """Process features through the depth prediction head."""
         return self.head(feats, H, W, patch_start_idx=0)
-
