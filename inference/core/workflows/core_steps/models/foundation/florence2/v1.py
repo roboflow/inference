@@ -101,6 +101,7 @@ Run Microsoft's Florence-2 model to perform a wide range of computer vision task
 ## What is Florence-2?
 
 Florence-2 is a **unified Vision Language Model (VLM)** developed by Microsoft Research that can perform many different computer vision tasks using a single model architecture. Unlike traditional models that are specialized for one task (like object detection or OCR), Florence-2:
+
 - **Performs multiple tasks** - object detection, instance segmentation, OCR, captioning, and more, all with the same model
 - **Uses task-specific prompts** - each task is triggered by a special prompt token (e.g., `<OD>` for object detection, `<OCR>` for text recognition)
 - **Supports detection grounding** - can use bounding boxes from other detection models to focus on specific regions
@@ -166,6 +167,7 @@ This block requires **local execution** (cannot run remotely). A **GPU is highly
 ## Connecting to Other Blocks
 
 The outputs from this block can be connected to:
+
 - **Parser blocks** (e.g., VLM as Detector v1) to convert Florence-2 outputs into standard detection formats
 - **Visualization blocks** to draw bounding boxes, masks, or text overlays based on Florence-2 results
 - **Filter blocks** to filter detections or results based on Florence-2's analysis

@@ -46,6 +46,7 @@ Run Hugging Face's SmolVLM2 model to analyze images and answer questions using n
 ## What is a Vision Language Model (VLM)?
 
 A Vision Language Model (VLM) is an AI model that can understand both **images and text** simultaneously. Unlike traditional computer vision models that are trained for a single task (like object detection or classification), VLMs like SmolVLM2:
+
 - **Understand natural language prompts** - you can ask questions or give instructions in plain English
 - **Process visual content** - analyze images to understand what's in them
 - **Generate flexible text responses** - provide natural language answers based on the image content
@@ -96,6 +97,7 @@ This block requires **local execution** (cannot run remotely). A **GPU is recomm
 ## Connecting to Other Blocks
 
 The text outputs from this block can be connected to:
+
 - **Conditional logic blocks** to route workflow execution based on SmolVLM2's responses
 - **Filter blocks** to filter images or data based on the model's analysis
 - **Visualization blocks** to display text overlays or annotations on images
