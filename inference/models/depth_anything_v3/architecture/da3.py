@@ -14,9 +14,10 @@
 
 from __future__ import annotations
 
+from typing import Dict
+
 import torch
 import torch.nn as nn
-from addict import Dict
 
 from inference.models.depth_anything_v3.architecture.dinov2 import DinoV2
 from inference.models.depth_anything_v3.architecture.dualdpt import DualDPT

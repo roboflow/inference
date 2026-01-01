@@ -12,12 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Dict as TyDict
-from typing import List, Sequence, Tuple
+from typing import Dict, List, Sequence, Tuple
 
 import torch
 import torch.nn as nn
-from addict import Dict
 from einops import rearrange
 
 from inference.models.depth_anything_v3.architecture.head_utils import (
@@ -142,7 +140,7 @@ class DPT(nn.Module):
         patch_start_idx: int,
         chunk_size: int = 8,
         **kwargs,
-    ) -> Dict:
+    ) -> Dict[str, torch.Tensor]:
         B, S, N, C = feats[0][0].shape
         feats = [feat[0].reshape(B * S, N, C) for feat in feats]
 
@@ -153,9 +151,9 @@ class DPT(nn.Module):
         if chunk_size is None or chunk_size >= S:
             out_dict = self._forward_impl(feats, H, W, patch_start_idx, **extra_kwargs)
             out_dict = {k: v.view(B, S, *v.shape[1:]) for k, v in out_dict.items()}
-            return Dict(out_dict)
+            return out_dict
 
-        out_dicts: List[TyDict[str, torch.Tensor]] = []
+        out_dicts: List[Dict[str, torch.Tensor]] = []
         for s0 in range(0, S, chunk_size):
             s1 = min(s0 + chunk_size, S)
             kw = {}
@@ -166,7 +164,7 @@ class DPT(nn.Module):
             )
         out_dict = {k: torch.cat([od[k] for od in out_dicts], dim=0) for k in out_dicts[0].keys()}
         out_dict = {k: v.view(B, S, *v.shape[1:]) for k, v in out_dict.items()}
-        return Dict(out_dict)
+        return out_dict
 
     def _forward_impl(
         self,
@@ -174,7 +172,7 @@ class DPT(nn.Module):
         H: int,
         W: int,
         patch_start_idx: int,
-    ) -> TyDict[str, torch.Tensor]:
+    ) -> Dict[str, torch.Tensor]:
         B, _, C = feats[0].shape
         ph, pw = H // self.patch_size, W // self.patch_size
         resized_feats = []
@@ -202,7 +200,7 @@ class DPT(nn.Module):
         feat = fused
 
         main_logits = self.scratch.output_conv2(feat)
-        outs: TyDict[str, torch.Tensor] = {}
+        outs: Dict[str, torch.Tensor] = {}
         if self.has_conf:
             fmap = main_logits.permute(0, 2, 3, 1)
             pred = self._apply_activation_single(fmap[..., :-1], self.activation)
