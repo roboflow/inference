@@ -101,8 +101,8 @@ class DepthAnythingV2(TransformerModel):
 
                 # Create result dictionary
                 result = {
-                    "normalized_depth": normalized_depth,
                     "image": colored_depth_image,
+                    "normalized_depth": normalized_depth,
                 }
 
                 return (result,)
