@@ -23,7 +23,6 @@ from inference.core.workflows.prototypes.block import (
 )
 
 
-
 class BackgroundSubtractionManifest(WorkflowBlockManifest):
     type: Literal["roboflow_core/background_subtraction@v1"]
     model_config = ConfigDict(

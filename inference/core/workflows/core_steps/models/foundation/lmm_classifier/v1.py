@@ -104,11 +104,16 @@ class BlockManifest(WorkflowBlockManifest):
     images: Selector(kind=[IMAGE_KIND]) = ImageInputField
     lmm_type: Union[Selector(kind=[STRING_KIND]), Literal["gpt_4v"]] = Field(
         description="Type of Large Multimodal Model to use. Currently only 'gpt_4v' (GPT-4 with Vision) is supported. This block is deprecated - consider using OpenAI GPT-4 Vision blocks (v1-v4) with classification task type instead.",
-        examples=["gpt_4v", "$inputs.lmm_type"]
+        examples=["gpt_4v", "$inputs.lmm_type"],
     )
     classes: Union[List[str], Selector(kind=[LIST_OF_VALUES_KIND])] = Field(
         description="List of class names to classify images into. The model will assign each image to one of these classes. Provide descriptive class names (e.g., ['cat', 'dog', 'bird'] or ['happy', 'sad', 'neutral']). The block returns the top predicted class for each image. At least one class must be provided.",
-        examples=[["cat", "dog", "bird"], ["happy", "sad", "neutral"], ["high quality", "low quality"], "$inputs.classes"],
+        examples=[
+            ["cat", "dog", "bird"],
+            ["happy", "sad", "neutral"],
+            ["high quality", "low quality"],
+            "$inputs.classes",
+        ],
     )
     lmm_config: LMMConfig = Field(
         default_factory=lambda: LMMConfig(),

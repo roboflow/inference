@@ -37,7 +37,12 @@ class BlockManifest(WorkflowBlockManifest):
     prompt: Optional[str] = Field(
         default=None,
         description="Optional text prompt or question to ask about the image(s). This is the main instruction for Qwen2.5-VL - you can ask questions, request descriptions, or provide specific analysis instructions. Examples: 'What is in this image?', 'Describe the scene', 'Are there any people?', 'Count the number of objects'. If not provided (None), the model will generate a general description of the image content. The prompt is combined with the system prompt before being sent to the model.",
-        examples=["What is in this image?", "Describe the scene", "Are there any people?", "Count the number of objects"],
+        examples=[
+            "What is in this image?",
+            "Describe the scene",
+            "Are there any people?",
+            "Count the number of objects",
+        ],
     )
 
     # Standard model configuration for UI, schema, etc.
@@ -119,7 +124,12 @@ The text outputs from this block can be connected to:
     system_prompt: Optional[str] = Field(
         default=None,
         description="Optional system prompt to provide additional context or instructions that set the behavior, tone, or style for Qwen2.5-VL. This is combined with the main prompt before being sent to the model. Useful for controlling response format (e.g., 'Answer in one sentence', 'Use technical language'), setting the model's role (e.g., 'You are a helpful assistant.'), or providing domain-specific context. If not provided (None), only the main prompt is used.",
-        examples=["You are a helpful assistant.", "Answer concisely.", "Use technical language", "Answer in one sentence"],
+        examples=[
+            "You are a helpful assistant.",
+            "Answer concisely.",
+            "Use technical language",
+            "Answer in one sentence",
+        ],
     )
 
     @classmethod

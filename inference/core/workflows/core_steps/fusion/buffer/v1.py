@@ -94,7 +94,11 @@ class BlockManifest(WorkflowBlockManifest):
         kind=[WILDCARD_KIND, LIST_OF_VALUES_KIND, IMAGE_KIND],
     ) = Field(
         description="Input data of any type to add to the buffer. Can be images, detections, values, or any other workflow output. Newest values are added to the beginning of the buffer array. The buffer maintains a sliding window of the most recent values.",
-        examples=["$steps.visualization", "$steps.object_detection_model.predictions", "$steps.image"],
+        examples=[
+            "$steps.visualization",
+            "$steps.object_detection_model.predictions",
+            "$steps.image",
+        ],
     )
     length: int = Field(
         description="Maximum number of elements to keep in the buffer. When the buffer exceeds this length, the oldest elements are automatically removed. Determines the size of the sliding window. Must be greater than 0. Typical values range from 2-10 for frame sequences, or higher for longer histories.",

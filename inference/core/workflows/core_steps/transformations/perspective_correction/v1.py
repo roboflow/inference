@@ -131,7 +131,10 @@ class PerspectiveCorrectionManifest(WorkflowBlockManifest):
     ] = Field(  # type: ignore
         description="Optional object detection or instance segmentation predictions to transform. If provided, bounding boxes, masks, and keypoints are transformed to the top-down coordinate space. If not provided, only image warping is performed (if enabled). Either predictions or images must be provided.",
         default=None,
-        examples=["$steps.object_detection_model.predictions", "$steps.instance_segmentation_model.predictions"],
+        examples=[
+            "$steps.object_detection_model.predictions",
+            "$steps.instance_segmentation_model.predictions",
+        ],
     )
     images: Selector(kind=[IMAGE_KIND]) = Field(
         title="Image to Crop",
@@ -141,7 +144,10 @@ class PerspectiveCorrectionManifest(WorkflowBlockManifest):
     )
     perspective_polygons: Union[list, Selector(kind=[LIST_OF_VALUES_KIND])] = Field(  # type: ignore
         description="Perspective polygons defining regions to transform from perspective view to top-down view. Each polygon must consist of exactly 4 vertices (coordinates). Format: list of 4 coordinate pairs [[x1, y1], [x2, y2], [x3, y3], [x4, y4]] or NumPy arrays. If multiple polygons are provided for a batch element, the largest polygon (by area) is selected. The polygon defines the source region in the perspective view that will be mapped to the destination rectangle.",
-        examples=["$steps.perspective_wrap.zones", [[100, 100], [500, 100], [500, 400], [100, 400]]],
+        examples=[
+            "$steps.perspective_wrap.zones",
+            [[100, 100], [500, 100], [500, 400], [100, 400]],
+        ],
     )
     transformed_rect_width: Union[int, Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         description="Width of the destination rectangle in the top-down view (in pixels). The perspective polygon is transformed to fit this width. Coordinates are scaled to match this dimension. If polygon extension is enabled, the actual output width may be larger to accommodate extended regions.",

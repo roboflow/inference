@@ -150,7 +150,14 @@ class BlockManifest(WorkflowBlockManifest):
         List[str],
     ] = Field(
         description="List of all class names used by the classification model, in order. Required to generate mapping between class names (from VLM output) and class IDs (for classification format). Classes are mapped to IDs by index: first class = ID 0, second = ID 1, etc. Classes from VLM output that are not in this list get class_id = -1. Should match the classes the VLM was asked to classify.",
-        examples=[["$steps.lmm.classes", "$inputs.classes", ["dog", "cat", "bird"], ["class_a", "class_b"]]],
+        examples=[
+            [
+                "$steps.lmm.classes",
+                "$inputs.classes",
+                ["dog", "cat", "bird"],
+                ["class_a", "class_b"],
+            ]
+        ],
     )
 
     @classmethod

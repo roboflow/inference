@@ -182,7 +182,11 @@ class BlockManifest(WorkflowBlockManifest):
     vlm_output: Selector(kind=[LANGUAGE_MODEL_OUTPUT_KIND]) = Field(
         title="VLM Output",
         description="String output from a VLM or LLM block containing object detection prediction in JSON format. Can be raw JSON string or JSON wrapped in Markdown code blocks (e.g., ```json {...} ```). Format depends on model_type and task_type - different models and tasks produce different JSON structures. If multiple markdown blocks exist, only the first is parsed.",
-        examples=[["$steps.lmm.output"], ["$steps.vlm.output"], ["$steps.claude.output"]],
+        examples=[
+            ["$steps.lmm.output"],
+            ["$steps.vlm.output"],
+            ["$steps.claude.output"],
+        ],
     )
     classes: Optional[
         Union[
@@ -192,7 +196,14 @@ class BlockManifest(WorkflowBlockManifest):
         ]
     ] = Field(
         description="List of all class names used by the classification model, in order. Required to generate mapping between class names (from VLM output) and class IDs (for detection format). Classes are mapped to IDs by index: first class = ID 0, second = ID 1, etc. Classes from VLM output that are not in this list get class_id = -1. Required for OpenAI, Gemini, and Claude models. Optional for Florence-2 (some tasks don't require it). Should match the classes the VLM was asked to detect.",
-        examples=[["$steps.lmm.classes", "$inputs.classes", ["dog", "cat", "bird"], ["class_a", "class_b"]]],
+        examples=[
+            [
+                "$steps.lmm.classes",
+                "$inputs.classes",
+                ["dog", "cat", "bird"],
+                ["class_a", "class_b"],
+            ]
+        ],
         json_schema_extra={
             "relevant_for": {
                 "model_type": {
@@ -205,7 +216,12 @@ class BlockManifest(WorkflowBlockManifest):
     model_type: Literal["openai", "google-gemini", "anthropic-claude", "florence-2"] = (
         Field(
             description="Type of the VLM/LLM model that generated the prediction. Determines which parser is used to extract detection data from the JSON output. Supported models: 'openai' (GPT-4V), 'google-gemini' (Gemini Vision), 'anthropic-claude' (Claude Vision), 'florence-2' (Microsoft Florence-2). Each model type has different JSON output formats, so the correct model type must be specified for proper parsing.",
-            examples=[["openai"], ["google-gemini"], ["anthropic-claude"], ["florence-2"]],
+            examples=[
+                ["openai"],
+                ["google-gemini"],
+                ["anthropic-claude"],
+                ["florence-2"],
+            ],
         )
     )
     task_type: Literal[tuple(SUPPORTED_TASKS)] = Field(

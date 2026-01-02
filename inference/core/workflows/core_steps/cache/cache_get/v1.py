@@ -96,7 +96,12 @@ class BlockManifest(WorkflowBlockManifest):
     )
     key: Union[Selector(kind=[STRING_KIND]), str] = Field(
         description="Cache key (string) identifying which value to retrieve from the cache. The key must match the key used when storing the value with the Cache Set block. If the key does not exist in the cache, the block returns False. Keys are case-sensitive and must be exact matches. Use descriptive keys to identify different cached values (e.g., 'detections', 'classification_result', 'frame_metadata').",
-        examples=["my_cache_key", "detections", "classification_result", "$inputs.cache_key"],
+        examples=[
+            "my_cache_key",
+            "detections",
+            "classification_result",
+            "$inputs.cache_key",
+        ],
     )
 
     @classmethod

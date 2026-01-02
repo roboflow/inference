@@ -115,7 +115,12 @@ class BlockManifest(WorkflowBlockManifest):
     ] = Field(
         default="rf_key:account",
         description="Your Google Cloud Vision API key. You can provide your own API key directly, or use 'rf_key:account' (or 'rf_key:user:<id>') to proxy requests through Roboflow's API. To obtain a Google Cloud Vision API key, visit https://cloud.google.com/vision/docs/setup. This field is kept private for security.",
-        examples=["your-api-key-here", "rf_key:account", "$inputs.google_api_key", "$secrets.google_vision_key"],
+        examples=[
+            "your-api-key-here",
+            "rf_key:account",
+            "$inputs.google_api_key",
+            "$secrets.google_vision_key",
+        ],
         private=True,
     )
     language_hints: Optional[List[str]] = Field(

@@ -134,7 +134,11 @@ class BlockManifest(WorkflowBlockManifest):
         str,
     ] = Field(
         description="Text prompt describing what you want to see in the inpainted regions. The AI will generate content based on this prompt to fill the masked areas. Be descriptive and specific for best results (e.g., 'a red sports car', 'a sunny beach with palm trees', 'modern office furniture').",
-        examples=["a red sports car", "a sunny beach with palm trees", "$inputs.prompt"],
+        examples=[
+            "a red sports car",
+            "a sunny beach with palm trees",
+            "$inputs.prompt",
+        ],
         json_schema_extra={
             "multiline": True,
         },
@@ -147,11 +151,19 @@ class BlockManifest(WorkflowBlockManifest):
     ] = Field(
         default=None,
         description="Optional negative prompt describing what you do not want to see in the generated content. Use this to guide the AI away from unwanted elements (e.g., 'blurry, distorted, low quality', 'people, faces', 'text, watermarks').",
-        examples=["blurry, distorted, low quality", "people, faces", "$inputs.negative_prompt"],
+        examples=[
+            "blurry, distorted, low quality",
+            "people, faces",
+            "$inputs.negative_prompt",
+        ],
     )
     api_key: Union[Selector(kind=[STRING_KIND, SECRET_KIND]), str] = Field(
         description="Your Stability AI API key required to access the inpainting API. You can obtain an API key from https://platform.stability.ai. This field is kept private for security.",
-        examples=["sk-xxx-xxx", "$inputs.stability_ai_api_key", "$secrets.stability_api_key"],
+        examples=[
+            "sk-xxx-xxx",
+            "$inputs.stability_ai_api_key",
+            "$secrets.stability_api_key",
+        ],
         private=True,
     )
     invert_segmentation_mask: Union[

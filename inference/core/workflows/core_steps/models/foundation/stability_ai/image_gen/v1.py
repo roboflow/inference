@@ -115,7 +115,11 @@ class BlockManifest(WorkflowBlockManifest):
         str,
     ] = Field(
         description="Text prompt describing the image you want to generate. Be descriptive and specific for best results (e.g., 'a red sports car on a mountain road at sunset', 'a futuristic cityscape with flying cars', 'a peaceful lake with mountains in the background'). The AI will generate an image based on this description.",
-        examples=["a red sports car on a mountain road", "a futuristic cityscape", "$inputs.prompt"],
+        examples=[
+            "a red sports car on a mountain road",
+            "a futuristic cityscape",
+            "$inputs.prompt",
+        ],
         json_schema_extra={
             "multiline": True,
         },
@@ -129,7 +133,11 @@ class BlockManifest(WorkflowBlockManifest):
     ] = Field(
         default=None,
         description="Optional negative prompt describing what you do not want to see in the generated image. Use this to guide the AI away from unwanted elements or styles (e.g., 'blurry, distorted, low quality', 'people, faces', 'text, watermarks', 'cartoon style'). Helps refine the output by excluding undesired features.",
-        examples=["blurry, distorted, low quality", "people, faces", "$inputs.negative_prompt"],
+        examples=[
+            "blurry, distorted, low quality",
+            "people, faces",
+            "$inputs.negative_prompt",
+        ],
     )
     model: Optional[
         Union[
@@ -144,7 +152,11 @@ class BlockManifest(WorkflowBlockManifest):
     )
     api_key: Union[Selector(kind=[STRING_KIND, SECRET_KIND]), str] = Field(
         description="Your Stability AI API key required to access the image generation API. You can obtain an API key from https://platform.stability.ai. This field is kept private for security.",
-        examples=["sk-xxx-xxx", "$inputs.stability_ai_api_key", "$secrets.stability_api_key"],
+        examples=[
+            "sk-xxx-xxx",
+            "$inputs.stability_ai_api_key",
+            "$secrets.stability_api_key",
+        ],
         private=True,
     )
 

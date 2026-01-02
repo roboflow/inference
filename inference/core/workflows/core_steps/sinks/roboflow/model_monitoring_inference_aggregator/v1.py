@@ -160,7 +160,11 @@ class BlockManifest(WorkflowBlockManifest):
         ]
     ) = Field(
         description="Model predictions (object detection, instance segmentation, keypoint detection, or classification) to aggregate and report to Roboflow Model Monitoring. Predictions are collected in memory, grouped by class name, and the most confident prediction per class is selected as a representative sample. Predictions accumulate between reporting intervals based on the frequency setting. Supported prediction types: supervision Detections objects or classification prediction dictionaries.",
-        examples=["$steps.object_detection.predictions", "$steps.classification.predictions", "$steps.instance_segmentation.predictions"],
+        examples=[
+            "$steps.object_detection.predictions",
+            "$steps.classification.predictions",
+            "$steps.instance_segmentation.predictions",
+        ],
     )
     model_id: Selector(kind=[ROBOFLOW_MODEL_ID_KIND]) = Field(
         description="Roboflow model ID (format: 'project/version') to associate with the predictions in Model Monitoring. This identifies which model generated the predictions being reported. The model ID is included in the monitoring data sent to Roboflow, allowing you to track performance per model in the Model Monitoring dashboard.",

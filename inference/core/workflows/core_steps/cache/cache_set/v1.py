@@ -97,11 +97,21 @@ class BlockManifest(WorkflowBlockManifest):
     )
     key: Union[Selector(kind=[STRING_KIND]), str] = Field(
         description="Cache key (string) identifying the cache entry where the value will be stored. The key must be used with the same value when retrieving the value with the Cache Get block. Keys are case-sensitive and must be exact matches. If a key already exists in the cache, storing a new value will overwrite the previous value. Use descriptive keys to identify different cached values (e.g., 'detections', 'classification_result', 'frame_metadata').",
-        examples=["my_cache_key", "detections", "classification_result", "$inputs.cache_key"],
+        examples=[
+            "my_cache_key",
+            "detections",
+            "classification_result",
+            "$inputs.cache_key",
+        ],
     )
     value: Union[Selector(kind=[WILDCARD_KIND, LIST_OF_VALUES_KIND])] = Field(
         description="Value to store in the cache. Can be any data type including strings, numbers, lists, detections, images, classifications, or any other workflow data type. The value is stored in memory and can be retrieved later using the Cache Get block with the same key and namespace. The value is also passed through as the block's output, allowing it to be used by subsequent workflow steps.",
-        examples=["any_value", "$steps.detection.predictions", "$steps.classification.predictions", "$inputs.metadata"],
+        examples=[
+            "any_value",
+            "$steps.detection.predictions",
+            "$steps.classification.predictions",
+            "$inputs.metadata",
+        ],
     )
 
     @classmethod
