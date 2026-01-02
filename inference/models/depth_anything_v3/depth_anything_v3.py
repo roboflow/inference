@@ -283,6 +283,7 @@ class DepthAnythingV3(DepthAnythingV2):
             if depth_max == depth_min:
                 raise ValueError("Depth map has no variation (min equals max)")
             normalized_depth = (depth_map - depth_min) / (depth_max - depth_min)
+            normalized_depth = 1 - normalized_depth
 
             # Create visualization
             depth_for_viz = (normalized_depth * 255.0).astype(np.uint8)
