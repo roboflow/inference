@@ -32,7 +32,7 @@ RFDETR_ALIASES = {
 
 QWEN_ALIASES = {
     "qwen25-vl-7b": "qwen-pretrains/1",
-    #"qwen3vl-2b-instruct": "qwen-pretrains/2",
+    # "qwen3vl-2b-instruct": "qwen-pretrains/2",
 }
 
 CLASSIFICATION_ALIASES = {
