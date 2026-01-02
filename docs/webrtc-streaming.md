@@ -2,7 +2,7 @@
 
 The WebRTC feature in Roboflow Inference enables real-time video processing through WebRTC connections.
 
-**Supported sources:** Webcam (`WebcamSource`), RTSP (`RTSPSource`), Video files (`VideoFileSource`)
+**Supported sources:** Webcam (`WebcamSource`), RTSP (`RTSPSource`), MJPEG (`MJPEGSource`), Video files (`VideoFileSource`)
 
 > **Prerequisites:**
 > - API key from [app.roboflow.com](https://app.roboflow.com)
@@ -32,6 +32,7 @@ For local setup, see [Local Container Setup](#local-container-setup) below.
 Find complete working examples in the [examples/webrtc_sdk/](https://github.com/roboflow/inference/tree/main/examples/webrtc_sdk) directory:
 - [webcam_basic.py](https://github.com/roboflow/inference/blob/main/examples/webrtc_sdk/webcam_basic.py) - Basic webcam streaming
 - [rtsp_basic.py](https://github.com/roboflow/inference/blob/main/examples/webrtc_sdk/rtsp_basic.py) - RTSP stream processing
+- [mjpeg_basic.py](https://github.com/roboflow/inference/blob/main/examples/webrtc_sdk/mjpeg_basic.py) - MJPEG stream processing
 - [video_file_basic.py](https://github.com/roboflow/inference/blob/main/examples/webrtc_sdk/video_file_basic.py) - Video file processing with output saving
 
 ## Minimal Example

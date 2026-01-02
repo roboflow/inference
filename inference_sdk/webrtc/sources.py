@@ -213,6 +213,23 @@ class RTSPSource(StreamSource):
         return {"rtsp_url": self.url}
 
 
+class MJPEGSource(StreamSource):
+    """Stream source for MJPEG streams."""
+
+    def __init__(self, url: str):
+        if not url.startswith(("http://", "https://")):
+            raise InvalidParameterError(
+                f"Invalid MJPEG URL: {url}. Must start with http:// or https://"
+            )
+        self.url = url
+
+    async def configure_peer_connection(self, pc: RTCPeerConnection) -> None:
+        pc.addTransceiver("video", direction="recvonly")
+
+    def get_initialization_params(self, config: "StreamConfig") -> Dict[str, Any]:
+        return {"mjpeg_url": self.url}
+
+
 class VideoFileSource(StreamSource):
     """Stream source for video files.
 
