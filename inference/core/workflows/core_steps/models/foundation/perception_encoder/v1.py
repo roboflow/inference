@@ -34,10 +34,36 @@ from inference.core.workflows.prototypes.block import (
 from inference_sdk import InferenceHTTPClient
 
 LONG_DESCRIPTION = """
-Use the Meta Perception Encoder model to create semantic embeddings of text and images.
+Use Meta's Perception Encoder model to generate semantic embeddings (vector representations) of images and text that can be compared for similarity.
 
-This block accepts an image or string and returns an embedding. The embedding can be used to compare
-similarity between different images or between images and text.
+## How This Block Works
+
+This block takes either an image or a text string as input and processes it through Meta's Perception Encoder model. Perception Encoder is trained to understand the relationship between images and text, creating embeddings (high-dimensional vectors) that capture semantic meaning. The block:
+
+1. Accepts either an image or a text string as input
+2. Processes the input through the Perception Encoder model to generate a semantic embedding vector
+3. Returns the embedding, which is a numerical representation of the input's semantic content
+4. (For text inputs) Caches the embedding for efficiency if the same text is processed again
+
+The key advantage of Perception Encoder embeddings is that images and text are represented in the same embedding space, meaning you can directly compare embeddings from images and text to find semantic similarity. For example, an image of a cat and the text "a cat" will have similar embeddings, even though one is visual and one is textual.
+
+## Common Use Cases
+
+- **Image-Text Similarity Search**: Compare image embeddings with text embeddings to find images that match text descriptions (e.g., "red car", "sunset", "person wearing hat")
+- **Image Search**: Generate embeddings for images and compare them to find visually or semantically similar images in a dataset
+- **Text-Based Image Filtering**: Use text queries to filter or search through images by comparing text and image embeddings
+- **Content Matching**: Find images that match specific text descriptions without training a custom classification model
+- **Semantic Clustering**: Group images or text based on their semantic similarity using embedding comparisons
+- **Similarity Scoring**: Calculate similarity scores between different images or between images and text for ranking or filtering purposes
+
+## Connecting to Other Blocks
+
+The embedding outputs from this block can be connected to:
+
+- **Cosine Similarity blocks** to calculate similarity between embeddings from multiple Perception Encoder blocks
+- **Filter blocks** or **Conditional logic blocks** to route workflow execution based on similarity scores or embedding comparisons
+- **Analytics blocks** (e.g., Data Aggregator) to analyze embedding similarities over time
+- **Data storage blocks** to store embeddings for later similarity search or analysis
 """
 
 
@@ -61,8 +87,8 @@ class BlockManifest(WorkflowBlockManifest):
     name: str = Field(description="Unique name of step in workflows")
     data: Union[Selector(kind=[IMAGE_KIND, STRING_KIND]), str] = Field(
         title="Data",
-        description="The string or image to generate an embedding for.",
-        examples=["$inputs.image", "$steps.cropping.crops"],
+        description="The image or text string to generate an embedding for. Perception Encoder can process both images and text, generating embeddings in the same semantic space so they can be compared for similarity. For text inputs, embeddings are cached for efficiency.",
+        examples=["$inputs.image", "$steps.cropping.crops", "a red car", "$inputs.text_query"],
     )
     version: Union[
         Literal[
@@ -73,8 +99,8 @@ class BlockManifest(WorkflowBlockManifest):
         Selector(kind=[STRING_KIND]),
     ] = Field(
         default="PE-Core-L14-336",
-        description="Variant of Perception Encoder model",
-        examples=["PE-Core-B16-224", "$inputs.variant"],
+        description="The Perception Encoder model variant to use. Options include 'PE-Core-B16-224' (Base model, 224px input), 'PE-Core-L14-336' (Large model, 336px input, default), and 'PE-Core-G14-448' (Giant model, 448px input). Larger models are more accurate but slower and require more resources. PE-Core-L14-336 offers a good balance of accuracy and speed.",
+        examples=["PE-Core-L14-336", "PE-Core-B16-224", "PE-Core-G14-448", "$inputs.model_version"],
     )
 
     @classmethod

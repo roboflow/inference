@@ -42,8 +42,8 @@ class BlockManifest(WorkflowBlockManifest):
         Selector(kind=[STRING_KIND]),
         str,
     ] = Field(
-        description="Optional text prompt to provide additional context to Moondream2.",
-        examples=["my prompt", "$inputs.prompt"],
+        description="Optional text prompt describing the objects you want to detect. Use natural language to describe object classes (e.g., 'person', 'car', 'dog', 'red bicycle'). If not provided, the model will use its default behavior. For multiple object types, you can describe them in a single prompt.",
+        examples=["person", "car", "dog", "$inputs.prompt"],
         default=None,
     )
 
@@ -53,7 +53,48 @@ class BlockManifest(WorkflowBlockManifest):
             "name": "Moondream2",
             "version": "v1",
             "short_description": "Run Moondream2 on an image.",
-            "long_description": "This workflow block runs Moondream2, a multimodal vision-language model. You can use this block to run zero-shot object detection.",
+            "long_description": (
+                """
+Run Moondream2, a multimodal vision-language model that performs zero-shot object detection by understanding natural language prompts.
+
+## How This Block Works
+
+This block takes one or more images as input and processes them through Moondream2, a vision language model (VLM) that can understand both images and text simultaneously. Unlike most VLMs that output text responses, Moondream2 is specialized for **zero-shot object detection** - it can detect objects in images based on natural language descriptions without being specifically trained on those object classes. The block:
+
+1. Encodes images for processing by the model
+2. Applies your optional text prompt describing the objects you want to detect (e.g., "person", "car", "dog")
+3. Processes the image(s) with the prompt to identify and localize the described objects
+4. Returns object detection predictions with bounding boxes, class names, and confidence scores
+
+Moondream2 is designed to be a lightweight, efficient model that provides flexible object detection capabilities. You can detect any object type described in your prompt without needing to train or configure a traditional object detection model for each class.
+
+## Common Use Cases
+
+- **Zero-Shot Detection**: Detect objects in images using natural language descriptions without training models for specific classes
+- **Flexible Object Detection**: Detect custom object categories by simply describing them in prompts (e.g., "red car", "person wearing hat", "open door")
+- **Rapid Prototyping**: Quickly test object detection for new categories without dataset preparation or model training
+- **Multi-Class Detection**: Detect multiple object types in a single pass by describing them in your prompt
+- **Content Filtering**: Identify specific content or objects in images for moderation or filtering purposes
+- **Inventory Management**: Detect and count items in images using descriptive prompts (e.g., "product on shelf", "package on conveyor")
+
+## Requirements
+
+**⚠️ Important: Dedicated Inference Server Required**
+
+This block requires **local execution** (cannot run remotely). A **GPU is recommended** for best performance. The model requires appropriate dependencies to be installed.
+
+## Connecting to Other Blocks
+
+The object detection predictions from this block can be connected to:
+
+- **Visualization blocks** (e.g., Bounding Box Visualization) to draw detection results on images
+- **Filter blocks** (e.g., Detections Filter) to filter detections based on confidence, class, or other criteria
+- **Analytics blocks** (e.g., Data Aggregator) to count or aggregate detection results over time
+- **Conditional logic blocks** (e.g., Continue If) to route workflow execution based on detection results
+- **Transformation blocks** (e.g., Dynamic Crop) to extract regions based on detected objects
+- **Data storage blocks** (e.g., CSV Formatter, Roboflow Dataset Upload) to log detection results
+"""
+            ),
             "license": "Apache-2.0",
             "block_type": "model",
             "search_keywords": [
@@ -75,7 +116,7 @@ class BlockManifest(WorkflowBlockManifest):
 
     model_version: Union[Selector(kind=[ROBOFLOW_MODEL_ID_KIND]), str] = Field(
         default="moondream2/moondream2_2b_jul24",
-        description="The Moondream2 model to be used for inference.",
+        description="The Moondream2 model to use for inference. Default is 'moondream2/moondream2_2b_jul24'. Can also use other Moondream2 model variants or Roboflow model IDs for custom or fine-tuned models.",
         examples=["moondream2/moondream2_2b_jul24", "moondream2/moondream2-2b"],
     )
 

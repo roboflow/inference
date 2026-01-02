@@ -98,17 +98,6 @@ RELEVANT_TASKS_DOCS_DESCRIPTION = "\n\n".join(
 LONG_DESCRIPTION = f"""
 Run Microsoft's Florence-2 model to perform a wide range of computer vision tasks using a single unified model.
 
-## What is Florence-2?
-
-Florence-2 is a **unified Vision Language Model (VLM)** developed by Microsoft Research that can perform many different computer vision tasks using a single model architecture. Unlike traditional models that are specialized for one task (like object detection or OCR), Florence-2:
-
-- **Performs multiple tasks** - object detection, instance segmentation, OCR, captioning, and more, all with the same model
-- **Uses task-specific prompts** - each task is triggered by a special prompt token (e.g., `<OD>` for object detection, `<OCR>` for text recognition)
-- **Supports detection grounding** - can use bounding boxes from other detection models to focus on specific regions
-- **Provides structured outputs** - returns parsed results in consistent formats for easy integration
-
-This makes Florence-2 incredibly versatile - you can switch between tasks just by changing the task type, without needing separate models for each task.
-
 ## How This Block Works
 
 This block takes one or more images as input and processes them through Microsoft's Florence-2 model. Based on the **task type** you select, the block:
@@ -124,30 +113,6 @@ The block supports many predefined task types, each optimized for specific use c
 The block supports the following task types:
 
 {RELEVANT_TASKS_DOCS_DESCRIPTION}
-
-## Inputs and Outputs
-
-**Input:**
-- **images**: One or more images to analyze (can be from workflow inputs or previous steps)
-- **task_type**: The type of task to perform (determines which Florence-2 task token is used)
-- **prompt**: Text prompt (required for "phrase-grounded-object-detection", "phrase-grounded-instance-segmentation", and "custom" tasks)
-- **classes**: List of classes for open-vocabulary detection (required for "open-vocabulary-object-detection" task)
-- **grounding_detection**: Bounding box coordinates or detections from previous blocks (required for detection-grounded tasks) - can be provided as `[x_min, y_min, x_max, y_max]` or as detection results from other blocks
-- **grounding_selection_mode**: How to select a detection when multiple are provided - "first", "last", "biggest", "smallest", "most-confident", or "least-confident" (default: "first")
-- **model_version**: Florence-2 model to use - "florence-2-base" (default, faster) or "florence-2-large" (more accurate, slower)
-
-**Output:**
-- **raw_output**: Raw JSON string response from Florence-2
-- **parsed_output**: Parsed dictionary containing structured results (format depends on task type)
-- **classes**: List of detected class labels (for detection tasks that extract labels)
-
-## Key Configuration Options
-
-- **task_type**: Select the task type that matches your use case - this determines which Florence-2 task token is used and what output format to expect
-- **model_version**: Choose between "florence-2-base" (default, faster, good for most tasks) or "florence-2-large" (more accurate, slower, better for complex tasks)
-- **grounding_detection**: For detection-grounded tasks, provide bounding boxes either as coordinates `[x_min, y_min, x_max, y_max]` or connect detections from previous blocks (e.g., object detection, instance segmentation)
-- **grounding_selection_mode**: When multiple detections are provided, choose how to select one - "first" (default), "last", "biggest", "smallest", "most-confident", or "least-confident"
-- **prompt**: For phrase-grounded or custom tasks, provide a text description of what to find or your custom prompt
 
 ## Common Use Cases
 
@@ -174,7 +139,7 @@ The outputs from this block can be connected to:
 - **Detection-grounded tasks** - use Florence-2's detection outputs as input to other Florence-2 tasks that require grounding (e.g., detect objects, then segment or classify each one)
 - **Conditional logic blocks** to route workflow execution based on Florence-2's results
 - **Data storage blocks** to log results for analytics or audit trails
-"""
+f"""
 
 
 TaskType = Literal[tuple([task["task_type"] for task in SUPPORTED_TASK_TYPES_LIST])]

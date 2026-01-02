@@ -106,16 +106,6 @@ RELEVANT_TASKS_DOCS_DESCRIPTION = "\n\n".join(
 LONG_DESCRIPTION = f"""
 Run Anthropic Claude model with vision capabilities to perform various computer vision tasks.
 
-## What is a Vision Language Model (VLM)?
-
-A Vision Language Model (VLM) is an AI model that can understand both **images and text** simultaneously. Unlike traditional computer vision models that are trained for a single task (like object detection or classification), VLMs like Claude:
-- **Understand natural language prompts** - you can ask questions or give instructions in plain English
-- **Process visual content** - analyze images to understand what's in them
-- **Generate flexible outputs** - provide text responses, structured data, or formatted results based on your needs
-- **Support multiple tasks** - the same model can perform classification, detection, OCR, question answering, and more just by changing the prompt
-
-This makes VLMs incredibly versatile and useful when you need flexible, natural language-driven computer vision without training separate models for each task.
-
 ## How This Block Works
 
 This block takes one or more images as input and processes them through Anthropic's Claude model. Based on the **task type** you select, the block:
@@ -131,38 +121,6 @@ The block supports multiple predefined task types, each optimized for specific u
 The block supports the following task types:
 
 {RELEVANT_TASKS_DOCS_DESCRIPTION}
-
-## Inputs and Outputs
-
-**Input:**
-- **images**: One or more images to analyze (can be from workflow inputs or previous steps)
-- **task_type**: The type of task to perform (determines how the prompt is structured and what output format to expect)
-- **prompt**: Text prompt/question (required for "unconstrained" and "visual-question-answering" tasks)
-- **classes**: List of classes for classification or detection tasks (required for "classification", "multi-label-classification", "object-detection" tasks)
-- **output_structure**: Dictionary defining the expected JSON structure (required for "structured-answering" task)
-- **api_key**: Your Anthropic API key (required)
-- **model_version**: Claude model version to use (default: "claude-sonnet-4-5")
-- **max_tokens**: Maximum number of tokens in the response (optional, defaults to model's maximum output tokens)
-- **temperature**: Sampling temperature (0.0-1.0, optional) - controls randomness/creativity (cannot be used with extended_thinking)
-- **extended_thinking**: Enable extended thinking for deeper reasoning on complex tasks (optional, defaults to False)
-- **thinking_budget_tokens**: Maximum tokens for internal thinking when extended_thinking is enabled (optional, minimum: 1024)
-- **max_image_size**: Maximum image dimension - larger images are downscaled (default: 1024)
-- **max_concurrent_requests**: Number of concurrent API requests when processing batches (optional, uses global default if not specified)
-
-**Output:**
-- **output**: Text response from Claude (string) - format depends on task type (may be JSON for structured tasks)
-- **classes**: The list of classes that were provided (for classification/detection tasks)
-
-## Key Configuration Options
-
-- **task_type**: Select the task type that best matches your use case - this determines what prompt is sent to Claude and what output format to expect
-- **model_version**: Choose the Claude model - newer models (claude-sonnet-4-5, claude-opus-4-5) are more capable; older models (claude-3-haiku) are faster but less capable
-- **max_tokens**: Control the maximum response length - if not specified, defaults to the model's maximum output tokens (32,000 or 64,000 depending on model)
-- **temperature**: Control output randomness - lower values (0.0-0.5) produce more deterministic, focused responses; higher values (0.5-1.0) produce more creative, varied responses. Cannot be used when extended_thinking is enabled
-- **extended_thinking**: Enable for complex reasoning tasks - allows Claude to use internal "thinking" to work through problems step-by-step before providing the final answer
-- **thinking_budget_tokens**: Control how much internal reasoning Claude can do - higher values allow deeper reasoning but increase latency and cost. Must be less than max_tokens
-- **max_image_size**: Larger images are automatically downscaled - increase if you need fine detail preservation, decrease for faster processing
-- **max_concurrent_requests**: Limit concurrent API calls to stay within Anthropic API rate limits
 
 ## Common Use Cases
 
@@ -180,6 +138,7 @@ You need to provide your Anthropic API key to use this block. The API key is use
 ## Connecting to Other Blocks
 
 The text outputs from this block can be connected to:
+
 - **Parser blocks** (e.g., JSON Parser v1, VLM as Classifier v2, VLM as Detector v2) to convert text responses into structured data formats
 - **Conditional logic blocks** to route workflow execution based on Claude's responses
 - **Filter blocks** to filter images or detections based on Claude's analysis
@@ -190,13 +149,14 @@ The text outputs from this block can be connected to:
 ## Version Differences (v2 vs v1)
 
 This version (v2) includes several enhancements over v1:
+
 - **Extended Thinking**: New `extended_thinking` and `thinking_budget_tokens` parameters enable Claude to perform deeper reasoning on complex tasks by using internal "thinking" before providing the final answer
 - **Improved Token Management**: `max_tokens` is now optional and defaults to the model's maximum output tokens (up to 64,000 for newer models), providing better flexibility
 - **Updated Model Support**: Curated list of Claude models with metadata, updated default to "claude-sonnet-4-5", and improved model version handling
 - **Temperature Range**: Temperature range is now 0.0-1.0 (instead of 0.0-2.0) to align with Claude's API specifications
 - **Streaming API**: Uses streaming API for better handling of long responses and max_tokens limits
 - **Updated Recommended Parsers**: Recommended parsers now use v2 versions (e.g., vlm_as_classifier@v2, vlm_as_detector@v2) for better compatibility
-"""
+f"""
 
 TaskType = Literal[tuple(SUPPORTED_TASK_TYPES_LIST)]
 

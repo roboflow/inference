@@ -46,39 +46,15 @@ from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 LONG_DESCRIPTION = """
 Run inference on a multi-label classification model hosted on or uploaded to Roboflow.
 
-## What is Multi-Label Classification?
-
-Multi-label classification is a computer vision task that assigns **one or more classes** to an image from a predefined set of classes. Unlike single-label classification (which can only assign one class per image), multi-label classification:
-- **Can assign multiple classes** to a single image simultaneously
-- **Each class has its own confidence score** indicating how certain the model is about that specific label
-- **Classes are not mutually exclusive** - multiple tags can apply to the same image
-
-For example, an image of a dog in a park could be labeled with multiple tags: ["dog", "outdoor", "daytime", "grass"] all at once, rather than having to choose just one category.
-
 ## How This Block Works
 
-This block takes one or more images as input and runs them through a trained multi-label classification model. The model analyzes each image and returns:
-- **Multiple predicted classes** (all applicable categories from the model's training classes)
-- **Confidence scores** for each predicted class (how certain the model is about each label, typically from 0.0 to 1.0)
-- Additional metadata including class IDs and prediction type
+This block takes one or more images as input and runs them through a trained multi-label classification model. Unlike single-label classification (which assigns exactly one class per image), multi-label classification can assign multiple classes to a single image simultaneously. The model analyzes each image and returns all applicable class labels with their confidence scores. Each class has its own confidence score indicating how certain the model is about that specific label, and classes are not mutually exclusive - multiple tags can apply to the same image. The block returns:
 
-The model processes the entire image and outputs all applicable class labels per image, making it ideal for scenarios where images can belong to multiple categories simultaneously.
+- Multiple predicted classes (all applicable categories from the model's training classes)
+- Confidence scores for each predicted class (how certain the model is about each label, typically from 0.0 to 1.0)
+- Additional metadata including class IDs, prediction type, and inference ID
 
-## Inputs and Outputs
-
-**Input:**
-- **images**: One or more images to classify (can be from workflow inputs or previous steps)
-
-**Output:**
-- **predictions**: A classification prediction object containing all predicted classes with their confidence scores and class IDs
-- **inference_id**: A unique identifier for this inference run (string value)
-
-## Key Configuration Options
-
-- **model_id**: The identifier for your Roboflow model (format: `workspace/project/version`)
-- **confidence**: Minimum confidence threshold (0.0-1.0, default: 0.4) - classes with confidence below this threshold are filtered out
-- **disable_active_learning**: Boolean flag to disable project-level active learning for this block (default: True)
-- **active_learning_target_dataset**: Target dataset for active learning, if enabled (optional)
+The model processes the entire image and outputs all applicable class labels per image, making it ideal for scenarios where images can belong to multiple categories simultaneously. For example, an image of a dog in a park could be labeled with multiple tags: ["dog", "outdoor", "daytime", "grass"] all at once.
 
 ## Common Use Cases
 
@@ -92,16 +68,18 @@ The model processes the entire image and outputs all applicable class labels per
 ## Model Sources
 
 You can use:
+
 - Models from your private Roboflow account (requires authentication)
 - Public models from [Roboflow Universe](https://universe.roboflow.com) (no authentication needed for public models)
 
 ## Requirements
 
-You will need to set your Roboflow API key in your Inference environment to use private models. To learn more about setting your Roboflow API key, [refer to the Inference documentation](https://inference.roboflow.com/quickstart/configure_api_key/).
+You need to set your Roboflow API key in your Inference environment to use private models. To learn more about setting your Roboflow API key, [refer to the Inference documentation](https://inference.roboflow.com/quickstart/configure_api_key/).
 
 ## Connecting to Other Blocks
 
 The classification results from this block can be connected to:
+
 - **Filter blocks** to filter images or workflows based on the presence of specific labels or combinations of labels
 - **Conditional logic blocks** to route workflow execution based on which labels are present (e.g., if "urgent" label exists, send notification)
 - **Visualization blocks** to display all classification labels on images
@@ -141,7 +119,7 @@ class BlockManifest(WorkflowBlockManifest):
         Selector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
     ] = Field(
         default=0.4,
-        description="Confidence threshold for predictions.",
+        description="Minimum confidence threshold (0.0-1.0) for predictions. Classes with confidence below this threshold are filtered out.",
         examples=[0.3, "$inputs.confidence_threshold"],
     )
     disable_active_learning: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(

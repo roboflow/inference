@@ -62,18 +62,49 @@ class LMMConfig(BaseModel):
 
 
 LONG_DESCRIPTION = """
-Ask a question to a Large Multimodal Model (LMM) with an image and text.
+**⚠️ This block is deprecated.** Use the OpenAI GPT-4 Vision blocks (v1-v4) instead for better functionality and ongoing support. This block allows asking questions to OpenAI's GPT-4 with Vision model using images and text prompts, with optional structured JSON output parsing.
 
-You can specify arbitrary text prompts to an LMMBlock.
+## How This Block Works
 
-The LLMBlock supports two LMMs:
+This deprecated block uses OpenAI's GPT-4 with Vision model to answer questions about images using natural language prompts. The block:
 
-- OpenAI's GPT-4 with Vision;
+1. Takes images and a text prompt as input (supports batch processing)
+2. Encodes images to base64 format for API transmission
+3. Sends the image and prompt to OpenAI's GPT-4 Vision API
+4. Receives the model's text response
+5. Optionally parses structured JSON output if a JSON schema is specified
+6. Returns both raw text output and structured output (if JSON schema was provided)
 
-You need to provide your OpenAI API key to use the GPT-4 with Vision model. 
+The block supports arbitrary text prompts, allowing you to ask questions, request descriptions, or instruct the model to analyze images in any way. You can optionally provide a JSON output schema to parse structured data from the model's response, which is useful for extracting specific information in a consistent format.
 
-_If you want to classify an image into one or more categories, we recommend using the 
-dedicated LMMForClassificationBlock._
+## Common Use Cases
+
+- **Image Analysis and Description**: Ask questions about image content, scene understanding, or request detailed descriptions of what's in an image
+- **Structured Data Extraction**: Extract specific information from images using JSON output schemas (e.g., count objects, identify attributes, extract structured data)
+- **Visual Question Answering**: Answer specific questions about image content (e.g., "What is the weather in this image?", "How many people are present?")
+- **Content Understanding**: Analyze complex scenes, understand context, or interpret visual information that requires reasoning
+- **Custom Vision Tasks**: Perform custom vision tasks with flexible prompts when predefined task types don't fit your needs
+
+## Connecting to Other Blocks
+
+The outputs from this block can be connected to:
+
+- **Conditional logic blocks** (e.g., Continue If) to route workflow execution based on the text responses or extracted structured data
+- **Data storage blocks** (e.g., CSV Formatter, Roboflow Dataset Upload) to log analysis results or extracted structured data
+- **Expression blocks** to parse, validate, or transform the text or structured outputs
+- **Notification blocks** (e.g., Email Notification, Slack Notification) to send alerts based on the analysis results
+- **Webhook blocks** to send analysis results to external systems or APIs
+
+## Deprecation Notice
+
+This block is deprecated. For new workflows, use the **OpenAI GPT-4 Vision blocks (v1-v4)** which provide:
+
+- More comprehensive task type support (OCR, classification, captioning, VQA, structured answering)
+- Better prompt handling and structured outputs
+- Ongoing updates and support
+- Additional model versions and configuration options
+
+If you need image classification specifically, use the **LMM For Classification** block instead.
 """
 
 
@@ -96,18 +127,19 @@ class BlockManifest(WorkflowBlockManifest):
     type: Literal["roboflow_core/lmm@v1", "LMM"]
     images: Selector(kind=[IMAGE_KIND]) = ImageInputField
     prompt: Union[Selector(kind=[STRING_KIND]), str] = Field(
-        description="Holds unconstrained text prompt to LMM mode",
-        examples=["my prompt", "$inputs.prompt"],
+        description="Text prompt to send to the GPT-4 Vision model. Can be any question, instruction, or request about the image. The model will respond based on this prompt. Be specific and clear for best results (e.g., 'Describe what you see in this image', 'Count the number of cars', 'What is the main subject of this photo?'). If json_output is specified, include instructions in the prompt about what information to extract.",
+        examples=["Describe what you see in this image", "Count the number of objects", "$inputs.prompt"],
         json_schema_extra={
             "multiline": True,
         },
     )
     lmm_type: Union[Selector(kind=[STRING_KIND]), Literal["gpt_4v"]] = Field(
-        description="Type of LMM to be used", examples=["gpt_4v", "$inputs.lmm_type"]
+        description="Type of Large Multimodal Model to use. Currently only 'gpt_4v' (GPT-4 with Vision) is supported. This block is deprecated - consider using OpenAI GPT-4 Vision blocks (v1-v4) instead.",
+        examples=["gpt_4v", "$inputs.lmm_type"]
     )
     lmm_config: LMMConfig = Field(
         default_factory=lambda: LMMConfig(),
-        description="Configuration of LMM",
+        description="Configuration options for the LMM. Includes max_tokens (maximum length of response, default 450), gpt_image_detail ('low', 'high', or 'auto' - controls image resolution sent to API, 'auto' uses API defaults), and gpt_model_version (e.g., 'gpt-4o', defaults to 'gpt-4o'). Higher image detail provides better accuracy but uses more tokens.",
         examples=[
             {
                 "max_tokens": 200,
@@ -119,15 +151,15 @@ class BlockManifest(WorkflowBlockManifest):
     remote_api_key: Union[Selector(kind=[STRING_KIND, SECRET_KIND]), Optional[str]] = (
         Field(
             default=None,
-            description="Holds API key required to call LMM model - in current state of development, we require OpenAI key when `lmm_type=gpt_4v`.",
-            examples=["xxx-xxx", "$inputs.api_key"],
+            description="OpenAI API key required to use GPT-4 with Vision. You can obtain an API key from https://platform.openai.com/api-keys. This field is kept private for security. Required when lmm_type is 'gpt_4v'.",
+            examples=["sk-xxx-xxx", "$inputs.openai_api_key", "$secrets.openai_key"],
             private=True,
         )
     )
     json_output: Optional[Dict[str, str]] = Field(
         default=None,
-        description="Holds dictionary that maps name of requested output field into its description",
-        examples=[{"count": "number of cats in the picture"}, "$inputs.json_output"],
+        description="Optional dictionary defining a JSON schema for structured output parsing. Maps field names to their descriptions (e.g., {'count': 'number of objects', 'color': 'dominant color'}). The block will attempt to parse the model's response as JSON matching this schema, extracting the specified fields. If parsing fails or fields are missing, they will be set to 'not_detected'. Leave as None to get raw text output only.",
+        examples=[{"count": "number of cats in the picture", "breed": "cat breed"}, {"objects": "list of objects found"}, "$inputs.json_output"],
     )
 
     @classmethod

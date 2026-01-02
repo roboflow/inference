@@ -67,19 +67,43 @@ MODELS: Dict[str, Tuple[str, List[str]]] = {
 }
 
 LONG_DESCRIPTION = """
- Retrieve the characters in an image using EasyOCR Optical Character Recognition (OCR).
+Extract text from images using EasyOCR Optical Character Recognition (OCR), supporting multiple languages and returning both extracted text and bounding boxes for each detected text region.
 
-This block returns the text within an image.
+## How This Block Works
 
-You may want to use this block in combination with a detections-based block (i.e.
-ObjectDetectionBlock). An object detection model could isolate specific regions from an
-image (i.e. a shipping container ID in a logistics use case) for further processing.
-You can then use a DynamicCropBlock to crop the region of interest before running OCR.
+This block uses the EasyOCR model to detect and extract text content from one or more images, with support for multiple languages. The block:
 
-Using a detections model then cropping detections allows you to isolate your analysis
-on particular regions of an image.
+1. Takes images as input (supports batch processing)
+2. Uses EasyOCR with the selected language model to detect text regions and recognize characters
+3. Generates bounding boxes around each detected text region
+4. Extracts the recognized text content from each region
+5. Returns both a concatenated text string (all text found in the image) and structured predictions with bounding box coordinates for each text region
 
-Note that EasyOCR has limitations running within containers on Apple Silicon.
+The block supports multiple languages including English, Japanese, Korean, Simplified Chinese, Latin (with support for Spanish, French, Italian, Portuguese, German, Polish, Dutch), Kannada, and Telugu. Each language model is optimized for that specific language, improving accuracy for multilingual applications. You can also enable quantized models for faster inference at the cost of slightly reduced accuracy.
+
+## Common Use Cases
+
+- **Multilingual Document Processing**: Extract text from documents in various languages including English, Japanese, Korean, Chinese, and European languages for international document processing applications
+- **International Product Labels**: Read product labels, ingredients, or instructions in multiple languages for global inventory or compliance checking
+- **Multilingual Signage**: Extract text from signs, advertisements, or public notices in different languages for translation services or content analysis
+- **International ID and Certificates**: Read information from ID cards, passports, or certificates in various languages for identity verification systems
+- **Global Logistics**: Read shipping labels, container IDs, or package information in multiple languages for international logistics automation
+- **Content Localization**: Extract text from images for translation workflows, helping identify which language content is in before processing
+
+## Connecting to Other Blocks
+
+The extracted text and text detections from this block can be connected to:
+
+- **Object detection blocks** (e.g., Object Detection Model) combined with crop blocks (e.g., Dynamic Crop) to first isolate specific regions containing text before running OCR, improving accuracy by focusing on relevant areas
+- **Data storage blocks** (e.g., CSV Formatter, Roboflow Dataset Upload) to log extracted text and metadata for record-keeping or analysis
+- **Expression blocks** to parse, validate, or transform extracted text using regular expressions or string operations
+- **Conditional logic blocks** (e.g., Continue If) to route workflow execution based on whether specific text patterns are found or text content matches certain criteria
+- **Notification blocks** (e.g., Email Notification, Slack Notification) to send alerts when specific text is detected (e.g., error messages, warning labels, or important identifiers)
+- **Webhook blocks** to send extracted text data to external systems or APIs for further processing
+
+## Requirements
+
+Note that EasyOCR has limitations running within containers on Apple Silicon (M1/M2/M3 Macs). For Apple Silicon deployments, consider using the OCR Model block (DocTR) instead.
 """
 
 EXPECTED_OUTPUT_KEYS = {
@@ -115,12 +139,12 @@ class BlockManifest(WorkflowBlockManifest):
     images: Selector(kind=[IMAGE_KIND]) = ImageInputField
     language: LANGUAGES = Field(
         title="Language",
-        description="Language model to use for OCR",
+        description="Language model to use for OCR. Select from: English, Japanese, Korean, Simplified Chinese, Latin (supports Spanish, French, Italian, Portuguese, German, Polish, Dutch), Kannada, or Telugu. Each language model is optimized for that specific language, improving accuracy for text in that language. The Latin option supports multiple European languages. Defaults to English.",
         default="English",
     )
     quantize: bool = Field(
         title="Use Quantized Model",
-        description="Quantized models are smaller and faster, but may be less accurate and won't work correctly on all hardware.",
+        description="Enable quantized model for faster inference and lower memory usage. Quantized models are smaller and faster, but may be less accurate than full precision models. May not work correctly on all hardware configurations. Recommended for production deployments where speed is prioritized over maximum accuracy. Defaults to False (full precision model).",
         default=False,
     )
 

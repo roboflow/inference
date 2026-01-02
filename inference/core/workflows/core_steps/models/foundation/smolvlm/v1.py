@@ -29,8 +29,8 @@ class BlockManifest(WorkflowBlockManifest):
     images: Selector(kind=[IMAGE_KIND]) = ImageInputField
     prompt: Optional[str] = Field(
         default=None,
-        description="Optional text prompt to provide additional context to SmolVLM2. Otherwise it will just be None",
-        examples=["What is in this image?"],
+        description="Optional text prompt or question to ask about the image. If not provided, the model will generate a general description. SmolVLM2 is particularly good at document OCR, visual question answering, and object counting tasks. Be specific about what you want the model to analyze or describe from the image.",
+        examples=["What is in this image?", "How many objects are there?", "Extract text from this document"],
     )
 
     # Standard model configuration for UI, schema, etc.
@@ -43,41 +43,16 @@ class BlockManifest(WorkflowBlockManifest):
                 """
 Run Hugging Face's SmolVLM2 model to analyze images and answer questions using natural language prompts with a lightweight, efficient vision language model.
 
-## What is a Vision Language Model (VLM)?
-
-A Vision Language Model (VLM) is an AI model that can understand both **images and text** simultaneously. Unlike traditional computer vision models that are trained for a single task (like object detection or classification), VLMs like SmolVLM2:
-
-- **Understand natural language prompts** - you can ask questions or give instructions in plain English
-- **Process visual content** - analyze images to understand what's in them
-- **Generate flexible text responses** - provide natural language answers based on the image content
-- **Support conversational interactions** - can follow up on questions and maintain context
-
-SmolVLM2 is specifically designed to be a **smaller, more efficient** VLM (2.2 billion parameters) that provides strong performance while requiring fewer computational resources than larger VLMs. This makes it ideal for scenarios where you need VLM capabilities but have limited GPU memory or want faster inference times.
-
 ## How This Block Works
 
-This block takes one or more images as input and processes them through Hugging Face's SmolVLM2 model. The block:
-1. **Encodes images** for processing by the model
-2. **Applies the prompt** - uses your optional text prompt (or empty string if not provided) to guide the model's analysis
-3. **Sends the request to SmolVLM2** - processes the image(s) with the prompt using the model's chat template format
-4. **Returns the response** - provides the model's text answer as a parsed dictionary output
+This block takes one or more images as input and processes them through Hugging Face's SmolVLM2 model. SmolVLM2 is a vision language model (VLM) that can understand both images and text simultaneously, allowing you to ask questions or give instructions in plain English. Unlike traditional computer vision models trained for a single task, SmolVLM2 provides flexible text responses based on image content. The block:
 
-The block supports flexible, free-form prompts - you can ask any question about the image, request descriptions, ask for analysis, or give specific instructions.
+1. Encodes images for processing by the model
+2. Applies your optional text prompt (or empty string if not provided) to guide the model's analysis
+3. Processes the image(s) with the prompt using the model's chat template format
+4. Returns the model's text answer as a parsed dictionary output
 
-## Inputs and Outputs
-
-**Input:**
-- **images**: One or more images to analyze (can be from workflow inputs or previous steps)
-- **prompt**: Optional text prompt/question to ask about the image (e.g., "What is in this image?", "How many objects are there?", "Extract text from this document")
-- **model_version**: SmolVLM2 model to use (default: "smolvlm2/smolvlm-2.2b-instruct") - can also use Roboflow model IDs for custom/fine-tuned models
-
-**Output:**
-- **parsed_output**: A dictionary containing the text response from SmolVLM2
-
-## Key Configuration Options
-
-- **prompt**: Your question or instruction in natural language - be specific about what you want SmolVLM2 to analyze or describe from the image. If not provided, the model will generate a general description. SmolVLM2 is particularly good at document OCR, visual question answering, and object counting tasks
-- **model_version**: Choose the SmolVLM2 model - "smolvlm2/smolvlm-2.2b-instruct" (default, 2.2B parameter model optimized for instruction following). Can also use Roboflow model IDs for custom or fine-tuned SmolVLM2 models
+SmolVLM2 is specifically designed to be a smaller, more efficient VLM (2.2 billion parameters) that provides strong performance while requiring fewer computational resources than larger VLMs. This makes it ideal for scenarios where you need VLM capabilities but have limited GPU memory or want faster inference times. The block supports flexible, free-form prompts - you can ask any question about the image, request descriptions, ask for analysis, or give specific instructions.
 
 ## Common Use Cases
 
@@ -127,7 +102,7 @@ The text outputs from this block can be connected to:
 
     model_version: Union[Selector(kind=[ROBOFLOW_MODEL_ID_KIND]), str] = Field(
         default="smolvlm2/smolvlm-2.2b-instruct",
-        description="The SmolVLM2 model to be used for inference.",
+        description="The SmolVLM2 model to use for inference. Default is 'smolvlm2/smolvlm-2.2b-instruct' (2.2B parameter model optimized for instruction following). Can also use Roboflow model IDs for custom or fine-tuned SmolVLM2 models.",
         examples=["smolvlm2/smolvlm-2.2b-instruct"],
     )
 

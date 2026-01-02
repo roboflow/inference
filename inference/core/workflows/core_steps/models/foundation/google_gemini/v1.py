@@ -68,16 +68,6 @@ RELEVANT_TASKS_DOCS_DESCRIPTION = "\n\n".join(
 LONG_DESCRIPTION = f"""
 Run Google's Gemini model with vision capabilities to perform various computer vision tasks.
 
-## What is a Vision Language Model (VLM)?
-
-A Vision Language Model (VLM) is an AI model that can understand both **images and text** simultaneously. Unlike traditional computer vision models that are trained for a single task (like object detection or classification), VLMs like Gemini:
-- **Understand natural language prompts** - you can ask questions or give instructions in plain English
-- **Process visual content** - analyze images to understand what's in them
-- **Generate flexible outputs** - provide text responses, structured data, or formatted results based on your needs
-- **Support multiple tasks** - the same model can perform classification, detection, OCR, question answering, and more just by changing the prompt
-
-This makes VLMs incredibly versatile and useful when you need flexible, natural language-driven computer vision without training separate models for each task.
-
 ## How This Block Works
 
 This block takes one or more images as input and processes them through Google's Gemini model. Based on the **task type** you select, the block:
@@ -93,32 +83,6 @@ The block supports multiple predefined task types, each optimized for specific u
 The block supports the following task types:
 
 {RELEVANT_TASKS_DOCS_DESCRIPTION}
-
-## Inputs and Outputs
-
-**Input:**
-- **images**: One or more images to analyze (can be from workflow inputs or previous steps)
-- **task_type**: The type of task to perform (determines how the prompt is structured and what output format to expect)
-- **prompt**: Text prompt/question (required for "unconstrained" and "visual-question-answering" tasks)
-- **classes**: List of classes for classification or detection tasks (required for "classification", "multi-label-classification", "object-detection" tasks)
-- **output_structure**: Dictionary defining the expected JSON structure (required for "structured-answering" task)
-- **api_key**: Your Google AI API key (required)
-- **model_version**: Gemini model version to use (default: "gemini-2.0-flash")
-- **max_tokens**: Maximum number of tokens in the response (default: 450)
-- **temperature**: Sampling temperature (0.0-2.0, optional) - controls randomness/creativity
-- **max_concurrent_requests**: Number of concurrent API requests when processing batches (optional, uses global default if not specified)
-
-**Output:**
-- **output**: Text response from Gemini (string) - format depends on task type (may be JSON for structured tasks)
-- **classes**: The list of classes that were provided (for classification/detection tasks)
-
-## Key Configuration Options
-
-- **task_type**: Select the task type that best matches your use case - this determines what prompt is sent to Gemini and what output format to expect
-- **model_version**: Choose the Gemini model - newer models (gemini-2.5-pro, gemini-2.5-flash) are more capable; older models (gemini-1.5-flash) are faster but less capable. Flash models are optimized for speed, while Pro models prioritize accuracy
-- **max_tokens**: Control the maximum response length - increase for longer responses (e.g., detailed captions), decrease for shorter responses (e.g., classification)
-- **temperature**: Control output randomness - lower values (0.0-0.5) produce more deterministic, focused responses; higher values (1.0-2.0) produce more creative, varied responses
-- **max_concurrent_requests**: Limit concurrent API calls to stay within Google Gemini API rate limits
 
 ## Common Use Cases
 
@@ -140,13 +104,14 @@ This block uses Google's `/v1beta` API endpoint for Gemini. The implementation m
 ## Connecting to Other Blocks
 
 The text outputs from this block can be connected to:
+
 - **Parser blocks** (e.g., JSON Parser v1, VLM as Classifier v1, VLM as Detector v1) to convert text responses into structured data formats
 - **Conditional logic blocks** to route workflow execution based on Gemini's responses
 - **Filter blocks** to filter images or detections based on Gemini's analysis
 - **Visualization blocks** to display text overlays or annotations on images
 - **Data storage blocks** to log responses for analytics or audit trails
 - **Notification blocks** to send alerts based on Gemini's findings
-"""
+f"""
 
 TaskType = Literal[tuple(SUPPORTED_TASK_TYPES_LIST)]
 

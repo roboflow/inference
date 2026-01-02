@@ -50,16 +50,6 @@ class LMMConfig(BaseModel):
 LONG_DESCRIPTION = """
 Run OpenAI's GPT-4 with Vision model to analyze images using natural language prompts.
 
-## What is a Vision Language Model (VLM)?
-
-A Vision Language Model (VLM) is an AI model that can understand both **images and text** simultaneously. Unlike traditional computer vision models that are trained for a single task (like object detection or classification), VLMs like GPT-4 Vision:
-- **Understand natural language prompts** - you can ask questions or give instructions in plain English
-- **Process visual content** - analyze images to understand what's in them
-- **Generate flexible outputs** - provide text responses or structured JSON data based on your needs
-- **Support arbitrary tasks** - answer questions, extract information, analyze content, and more through custom prompts
-
-This makes VLMs incredibly versatile and useful when you need flexible, natural language-driven computer vision without training separate models for each task.
-
 ## How This Block Works
 
 This block takes one or more images as input and processes them through OpenAI's GPT-4 Vision model. The block:
@@ -69,33 +59,6 @@ This block takes one or more images as input and processes them through OpenAI's
 4. **Extracts structured data** - if you define expected output fields, the block automatically parses the response into a structured format
 
 The block supports flexible prompts - you can ask any question or give any instruction, making it suitable for a wide variety of computer vision tasks.
-
-## Inputs and Outputs
-
-**Input:**
-- **images**: One or more images to analyze (can be from workflow inputs or previous steps)
-- **prompt**: Text prompt/question to ask the GPT-4 Vision model (required)
-- **openai_api_key**: Your OpenAI API key (required)
-- **openai_model**: GPT model to use - "gpt-4o" (default, more capable) or "gpt-4o-mini" (faster, lower cost)
-- **json_output_format**: Optional dictionary mapping field names to descriptions - if provided, GPT-4 will return structured JSON matching this format
-- **image_detail**: Image processing quality - "auto" (default, model decides), "high" (high fidelity, processes fine details), or "low" (faster, lower cost, lower detail)
-- **max_tokens**: Maximum number of tokens in the response (default: 450)
-
-**Output:**
-- **raw_output**: The raw text response from GPT-4 Vision (string)
-- **structured_output**: Parsed JSON dictionary containing extracted fields (if `json_output_format` was specified)
-- **image**: Image metadata (width, height) for the processed image
-- **parent_id**: Unique identifier for the parent workflow step
-- **root_parent_id**: Unique identifier for the root workflow execution
-- **Dynamic fields**: If `json_output_format` is specified, each field name becomes an output with its extracted value
-
-## Key Configuration Options
-
-- **prompt**: Your question or instruction in natural language - be specific about what you want GPT-4 to analyze or extract from the image
-- **openai_model**: Choose between "gpt-4o" (default, more accurate and capable) or "gpt-4o-mini" (faster, lower cost, good for simple tasks)
-- **json_output_format**: Define expected output structure - a dictionary where keys are field names and values are descriptions. GPT-4 will return JSON matching this structure, and the block will parse it into individual outputs
-- **image_detail**: Control image processing quality - "auto" lets the model decide (good default), "high" for tasks requiring fine detail (slower, higher cost), "low" for simple tasks (faster, lower cost)
-- **max_tokens**: Control maximum response length - increase for longer, detailed responses (e.g., comprehensive image analysis), decrease for shorter responses
 
 ## Common Use Cases
 
@@ -113,6 +76,7 @@ You need to provide your OpenAI API key to use this block. The API key is used t
 ## Connecting to Other Blocks
 
 The outputs from this block can be connected to:
+
 - **Conditional logic blocks** to route workflow execution based on GPT-4's responses or extracted structured data
 - **Filter blocks** to filter images or data based on GPT-4's analysis
 - **Visualization blocks** to display text overlays or annotations based on GPT-4's findings

@@ -48,37 +48,66 @@ PREDICTIONS_OUTPUT_KEY: str = "predictions"
 SEEKING_OUTPUT_KEY: str = "seeking"
 
 LONG_DESCRIPTION = """
-This **ONVIF** block allows a workflow to control an ONVIF capable PTZ camera to follow a detected object.
+Control an ONVIF-compatible PTZ (Pan-Tilt-Zoom) camera to automatically follow detected objects, move to preset positions, and maintain smooth tracking using PID control for surveillance, security monitoring, and automated camera control workflows.
 
-The block returns three values:
-* predictions: a predictions object containing the single prediction the camera is currently following (can be empty)
-* seeking: indicates whether or not the camera is currently seeking an object (set asynchronously)
+## How This Block Works
 
-There are two modes:
+This block controls PTZ cameras through the ONVIF protocol to automatically track and follow objects in real-time. The block:
 
-*Follow:
-The object it follows is the maximum confidence prediction out of all predictions passed into it. To follow
-a specific object, use the appropriate filters on the predictiion object to specify the object you want to
-follow. Additionally if a tracker is used, the camera will follow the tracked object until it disappears.
-Additionally, zoom can be toggled to get the camera to zoom into a position.
+1. Receives object detection or instance segmentation predictions from upstream blocks
+2. Connects to an ONVIF-compatible PTZ camera using IP address, port, username, and password credentials
+3. Determines the movement mode (Follow or Go To Preset):
 
-*Move to Preset:
-The camera can also move to a defined preset position. The camera must support the GotoPreset service.
+   **For Follow Mode:**
+   - Selects the target object to track: either the highest confidence detection or a specific tracked object (if tracker IDs are present)
+   - Calculates the position error by comparing the object's bounding box center to the frame center
+   - Uses PID (Proportional-Integral-Derivative) control to calculate smooth movement commands:
+     - Proportional (Kp): Responds to current position error
+     - Integral (Ki): Corrects steady-state errors over time
+     - Derivative (Kd): Predicts future error and dampens oscillations
+   - Normalizes movement commands to the camera's velocity limits and applies rate limiting to prevent command flooding
+   - Sends continuous movement commands to the camera via ONVIF ContinuousMove service
+   - Monitors the dead zone (region around center where camera stops moving) to prevent hunting behavior
+   - Optionally zooms into the object when it's centered, adjusting zoom speed to fill the frame
+   - Maintains tracking of a specific object using tracker IDs until it disappears or tracking is reset
+   - Automatically moves to a preset position after a configurable idle period when no objects are detected
 
-Note that the tracking block uses the ONVIF continuous movement service. Tracking is adjusted on each successive
-workflow execution. If workflow execution stops, and the camera is currently moving, the camera will continue
-moving until it reaches the limits and will no longer be following an object.
+   **For Go To Preset Mode:**
+   - Moves the camera to a predefined preset position using the ONVIF GotoPreset service
+   - Requires the camera to support preset functionality and have presets configured
+   - Uses the preset name specified in the configuration
 
-Use of a camera with variable speed movement is *highly* recommended for this block. "Simulate variable speed"
-can sometimes be used in place of this, but might result in jerky movements and hunting. This setting sends
-the camera a 100% movement command followed by a stop for a period in order to simulate a percentage speed
-movement. This can work in some cases, but the success varies depending on the camera's responsiveness.
+4. Handles camera communication asynchronously using a separate event loop to prevent blocking workflow execution
+5. Manages camera state including seeking status, tracked object IDs, zoom state, and movement history
+6. Returns two outputs:
+   - **predictions**: The detection being tracked (empty if no object is being followed)
+   - **seeking**: Boolean indicating whether the camera is currently moving/seeking an object
 
-PID tuning is generally necessary for this block to avoid having the camera overshoot and hunt. Having a
-significant lag between the camera movement and video (using a lazy buffer consumption strategy) can make tuning
-extremely difficult. Using an eager buffer consumption strategy is recommended. Increasing the dead zone can
-also help, but can affect zooming.
+The block uses PID control to calculate smooth, proportional movement commands based on the distance between the object center and frame center. Movement is normalized as a percentage of the camera's maximum speed, and commands are rate-limited to prevent overwhelming the camera with updates. The dead zone prevents small movements when the object is near the center, reducing hunting behavior. When zoom is enabled, the camera first centers the object with pan/tilt, then zooms in to fill the frame while maintaining the object in view.
 
+## Common Use Cases
+
+- **Surveillance and Security**: Automatically track individuals or vehicles in surveillance scenarios (e.g., follow suspicious activity, track intruders, monitor security perimeters), enabling automated surveillance workflows
+- **Sports and Event Coverage**: Track athletes or objects during sports events or performances (e.g., follow players on field, track ball movement, cover event action), enabling automated sports coverage workflows
+- **Wildlife Monitoring**: Follow animals or wildlife in natural habitats (e.g., track bird movements, follow animals in reserves, monitor wildlife behavior), enabling wildlife observation workflows
+- **Industrial Monitoring**: Automatically follow objects or personnel in industrial settings (e.g., track equipment movement, monitor worker activities, follow vehicles in facilities), enabling industrial automation workflows
+- **Traffic Monitoring**: Track vehicles or objects in traffic scenarios (e.g., follow vehicles through intersections, track traffic violations, monitor road activity), enabling automated traffic monitoring workflows
+- **Retail Analytics**: Track customers or products in retail environments (e.g., follow customer paths, track product interactions, monitor shopping behavior), enabling retail analytics workflows
+
+## Connecting to Other Blocks
+
+This block receives predictions and produces camera control commands and tracking status:
+
+- **After object detection or instance segmentation blocks** to track detected objects with the camera (e.g., follow detected people, track detected vehicles, monitor detected objects), enabling detection-to-camera-tracking workflows
+- **After Byte Tracker blocks** to follow specific tracked objects with consistent IDs (e.g., follow tracked person across frames, maintain tracking of specific vehicle, monitor tracked object persistently), enabling tracking-to-camera workflows
+- **After detection filter blocks** to track specific object classes or filtered detections (e.g., track only specific classes, follow filtered detections, monitor selected objects), enabling filtered-tracking workflows
+- **Before visualization blocks** to display camera movement status and tracked objects (e.g., visualize tracking status, display seeking indicator, show camera control feedback), enabling camera control visualization workflows
+- **Before notification blocks** to alert when camera starts or stops tracking (e.g., notify when tracking begins, alert on tracking loss, report camera status), enabling camera status notification workflows
+- **In surveillance and monitoring pipelines** where automated camera control is part of a larger security or monitoring system (e.g., automated security systems, monitoring pipelines, camera control chains), enabling comprehensive surveillance workflows
+
+## Requirements
+
+This block requires an ONVIF-compatible PTZ camera with network access. The camera must support the ONVIF ContinuousMove service for Follow mode and GotoPreset service for preset movement. For optimal performance, use a camera with variable speed movement capability - cameras without variable speed can use the simulate_variable_speed option but may experience jerky movement. The block must run in local execution mode (not suitable for remote/cloud execution). PID tuning is recommended to achieve smooth tracking without overshooting or hunting - adjust pid_kp, pid_ki, and pid_kd parameters based on camera responsiveness and video latency. For accurate tracking, use an eager buffer consumption strategy to minimize lag between camera movement and video feedback. The camera must have presets configured if using preset movement or auto-reset functionality.
 """
 
 
@@ -103,86 +132,86 @@ class BlockManifest(WorkflowBlockManifest):
     predictions: Selector(
         kind=[OBJECT_DETECTION_PREDICTION_KIND, INSTANCE_SEGMENTATION_PREDICTION_KIND]
     ) = Field(  # type: ignore
-        description="Object predictions",
+        description="Object detection or instance segmentation predictions to track. In Follow mode, the block will follow the highest confidence prediction or a tracked object if tracker IDs are present. Predictions should include bounding box coordinates and optionally tracker IDs for persistent tracking.",
         examples=["$steps.object_detection_model.predictions"],
     )
     camera_ip: Union[Selector(kind=[STRING_KIND]), str] = Field(
-        description="Camera IP address or hostname",
+        description="Camera IP address or hostname for ONVIF connection. Must be reachable from the workflow execution environment.",
     )
     camera_port: Union[Selector(kind=[INTEGER_KIND]), PositiveInt] = Field(
-        description="Camera ONVIF port", ge=0, le=65535
+        description="Camera ONVIF service port (typically 80, 8080, or camera-specific port). Must match the camera's ONVIF configuration.", ge=0, le=65535
     )
     camera_username: Union[Selector(kind=[STRING_KIND]), str] = Field(
-        description="Camera username",
+        description="Camera username for ONVIF authentication. Must have PTZ control permissions on the camera.",
     )
     camera_password: Union[Selector(kind=[SECRET_KIND]), str] = Field(
-        description="Camera password",
+        description="Camera password for ONVIF authentication. Should be stored as a secret for security.",
     )
     movement_type: Literal["Follow", "Go To Preset"] = Field(
         default="Follow",
-        description="Follow object or go to default position preset on execution",
+        description="Movement mode for the camera. 'Follow' mode tracks detected objects using PID control. 'Go To Preset' mode moves the camera to a predefined preset position (requires default_position_preset to be configured).",
         examples=["Follow", "Go To Preset", "$inputs.movement_type"],
     )
     simulate_variable_speed: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(
         default=False,
-        description="Simulate variable speed on a lower end camera by using frequent stop commands",
+        description="Enable variable speed simulation for cameras without native variable speed support. When enabled, sends 100% speed commands followed by stop commands to approximate percentage speeds. May result in jerky movement - only use if camera lacks variable speed capability.",
         examples=[True, False, "$inputs.simulate_variable_speed"],
     )
     zoom_if_able: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(
         default=False,
-        description="Attempt to zoom into an object so it fills the image",
+        description="Enable automatic zoom to fill frame with the tracked object. When enabled, camera first centers the object with pan/tilt, then zooms in until the object fills the frame. Requires camera to support zoom functionality.",
         examples=[True, False, "$inputs.zoom_if_able"],
     )
     follow_tracker: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(
         default=True,
-        description="Lock to the tracking id of the highest confidence prediction until idle or reset. A tracker must be added to the workflow.",
+        description="Enable persistent tracking using tracker IDs. When enabled, camera locks onto the tracker ID of the highest confidence detection and continues following that specific object until it disappears or tracking resets. Requires a Byte Tracker block in the workflow to assign tracker IDs.",
         examples=[True, False, "$inputs.follow_tracker"],
     )
     dead_zone: Union[Selector(kind=[INTEGER_KIND]), int] = Field(
         default=50,
-        description="Camera will stop once bounding box is within this many pixels of FoV center (or border for zoom). Increasing dead zone helps avoid pan/tilt hunting, but decreasing dead zone helps avoid hunting after zoom.",
+        description="Dead zone size in pixels around frame center where camera movement stops. Prevents hunting behavior when object is near center. Larger values reduce pan/tilt hunting but may cause zoom hunting. Smaller values improve zoom stability but may cause pan/tilt oscillations. Typical range: 30-100 pixels.",
         examples=[50, "$inputs.dead_zone"],
     )
     default_position_preset: Union[Selector(kind=[STRING_KIND]), str] = Field(
-        description="Preset name for default position. This must be a valid camera preset name.",
+        description="Preset name for default/home position. Camera will return to this preset after idle period (if move_to_position_after_idle_seconds is set) or when using Go To Preset mode. Must match exactly a preset name configured on the camera. Required for preset movement functionality.",
         default="",
         examples=["", "$inputs.default_position_preset"],
     )
     move_to_position_after_idle_seconds: Union[Selector(kind=[INTEGER_KIND]), int] = (
         Field(
             default=0,
-            description="Move to the default position after this many seconds of not seeking (0 to disable)",
+            description="Auto-reset time in seconds. After camera stops seeking/moving for this duration, automatically moves to default_position_preset. Set to 0 to disable auto-reset. Requires default_position_preset to be configured.",
         )
     )
     camera_update_rate_limit: Union[Selector(kind=[INTEGER_KIND]), int] = Field(
         default=250,
-        description="Minimum number of milliseconds between ONVIF movement updates",
+        description="Minimum time in milliseconds between camera movement commands. Rate limits ONVIF updates to prevent overwhelming the camera. Lower values provide more responsive tracking but may overload slower cameras. Higher values reduce camera load but may cause less smooth movement. Typical range: 100-500ms.",
     )
     flip_x_movement: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(
         default=False,
         examples=[True, False],
-        description="Flip X movement if image is mirrored horizontally",
+        description="Invert horizontal (pan) movement direction. Enable if the camera image is mirrored horizontally and movement appears reversed. Use to correct camera movement when image is flipped.",
     )
     flip_y_movement: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(
         default=True,
         examples=[True, False],
-        description="Flip Y movement if image is mirrored vertically",
+        description="Invert vertical (tilt) movement direction. Enabled by default as many cameras have inverted Y-axis. Disable if vertical movement appears reversed.",
     )
     minimum_camera_speed: Union[float, Selector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = Field(
         default=0.05,
-        description="Minimum camera speed as percent (0-1). Some cameras won't honor speeds below a certain amount.",
+        description="Minimum movement speed as percentage (0.0-1.0). Movement commands below this threshold are boosted to this minimum. Some cameras ignore very low speeds - increase if camera doesn't respond to small movements. Typical range: 0.02-0.1 (2%-10%).",
     )
     pid_kp: Union[float, Selector(kind=[FLOAT_KIND])] = Field(
         default=0.25,
-        description="PID Kp (proportional) constant. Decrease Kp to reduce hunting at the expense of speed.",
+        description="PID proportional gain (Kp). Controls response to position error - higher values make camera respond faster but may cause overshooting and hunting. Lower values reduce hunting but make tracking slower. Start with default and adjust based on camera responsiveness. Typical range: 0.1-0.5.",
     )
     pid_ki: Union[float, Selector(kind=[FLOAT_KIND])] = Field(
         default=0.0,
-        description="PID Ki (integral) constant. Use to reduce steady state error, but it can usually be zero.",
+        description="PID integral gain (Ki). Eliminates steady-state error by accumulating error over time. Usually kept at 0 as it can cause oscillations. Increase slightly (0.01-0.1) if camera consistently stops slightly off-center despite small errors.",
     )
     pid_kd: Union[float, Selector(kind=[FLOAT_KIND])] = Field(
         default=1,
-        description="PID Kd (derivative) constant. Increase Kd with lag between video and movement, but excessive Kd can also cause hunting.",
+        description="PID derivative gain (Kd). Predicts future error and dampens oscillations. Higher values improve stability with video lag but excessive values can cause hunting. Increase (1-5) if there's significant delay between camera movement and video feedback. Decrease if tracking appears jerky.",
     )
 
     @classmethod

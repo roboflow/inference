@@ -52,47 +52,9 @@ from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 LONG_DESCRIPTION = """
 Run inference on a keypoint detection model hosted on or uploaded to Roboflow.
 
-## What is Keypoint Detection?
-
-Keypoint detection is a computer vision task that identifies **specific points of interest** on objects and connects them to form **skeletons** or structural representations. Unlike object detection (which only provides bounding boxes), keypoint detection:
-- **Detects individual keypoints** (specific points like joints, corners, or landmarks)
-- **Connects keypoints** to form skeletons or structures showing relationships between points
-- **Provides confidence scores** for each keypoint indicating visibility and accuracy
-
-For example, a person pose estimation model detects keypoints like "left shoulder", "right elbow", "left knee" and connects them to show the person's pose skeleton. Each keypoint has coordinates (x, y) and a confidence score.
-
 ## How This Block Works
 
-This block takes one or more images as input and runs them through a trained keypoint detection model. The model analyzes the image and returns detections where each detection contains:
-- A **bounding box** (coordinates defining a rectangle around the detected object)
-- **Keypoints** (a list of specific points with x, y coordinates and confidence scores)
-- **Skeleton connections** (lines connecting keypoints to form structures)
-- A **class label** (the name of what was detected, e.g., "person", "hand")
-- A **confidence score** for the overall detection
-
-The block applies post-processing techniques like Non-Maximum Suppression (NMS) to filter duplicate detections and ensures keypoints are properly structured and connected.
-
-## Inputs and Outputs
-
-**Input:**
-- **images**: One or more images to analyze (can be from workflow inputs or previous steps)
-
-**Output:**
-- **predictions**: A `sv.Detections` object containing all detected objects with their bounding boxes, keypoints, skeletons, classes, and confidence scores
-- **inference_id**: A unique identifier for this inference run (string value)
-
-## Key Configuration Options
-
-- **model_id**: The identifier for your Roboflow model (format: `workspace/project/version`)
-- **confidence**: Minimum confidence threshold for detections (0.0-1.0, default: 0.4) - detections below this threshold are filtered out
-- **keypoint_confidence**: Minimum confidence threshold for individual keypoints (0.0-1.0, default: 0.0) - keypoints below this threshold are marked as not visible
-- **class_filter**: Optional list of classes to include - if specified, only these classes will be returned
-- **iou_threshold**: Intersection over Union threshold for NMS (default: 0.3) - controls how much bounding boxes can overlap before being merged
-- **max_detections**: Maximum number of detections to return per image (default: 300)
-- **class_agnostic_nms**: If true, NMS ignores class labels when merging overlapping boxes (default: False)
-- **max_candidates**: Maximum number of candidates as NMS input to be taken into account (default: 3000)
-- **disable_active_learning**: Boolean flag to disable project-level active learning for this block (default: True)
-- **active_learning_target_dataset**: Target dataset for active learning, if enabled (optional)
+This block takes one or more images as input and runs them through a trained keypoint detection model. Unlike object detection (which only provides bounding boxes), keypoint detection identifies specific points of interest on objects and connects them to form skeletons or structural representations. The model analyzes the image and returns detections where each detection contains a bounding box, keypoints (specific points with x, y coordinates and confidence scores), skeleton connections (lines connecting keypoints to form structures), a class label, and a confidence score for the overall detection. The block applies post-processing techniques like Non-Maximum Suppression (NMS) to filter duplicate detections and ensures keypoints are properly structured and connected. For example, a person pose estimation model detects keypoints like "left shoulder", "right elbow", "left knee" and connects them to show the person's pose skeleton.
 
 ## Common Use Cases
 
@@ -106,16 +68,18 @@ The block applies post-processing techniques like Non-Maximum Suppression (NMS) 
 ## Model Sources
 
 You can use:
+
 - Models from your private Roboflow account (requires authentication)
 - Public models from [Roboflow Universe](https://universe.roboflow.com) (no authentication needed for public models)
 
 ## Requirements
 
-You will need to set your Roboflow API key in your Inference environment to use private models. To learn more about setting your Roboflow API key, [refer to the Inference documentation](https://inference.roboflow.com/quickstart/configure_api_key/).
+You need to set your Roboflow API key in your Inference environment to use private models. To learn more about setting your Roboflow API key, [refer to the Inference documentation](https://inference.roboflow.com/quickstart/configure_api_key/).
 
 ## Connecting to Other Blocks
 
 The keypoint detection results from this block can be connected to:
+
 - **Visualization blocks** to draw skeletons, keypoints, and bounding boxes on images (Keypoint Visualization)
 - **Tracking blocks** to track skeletons and poses across video frames
 - **Filter blocks** to filter detections based on keypoint confidence, pose characteristics, or class
@@ -155,7 +119,7 @@ class BlockManifest(WorkflowBlockManifest):
         Selector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
     ] = Field(
         default=0.4,
-        description="Confidence threshold for predictions.",
+        description="Minimum confidence threshold (0.0-1.0) for detections. Detections below this threshold are filtered out.",
         examples=[0.3, "$inputs.confidence_threshold"],
     )
     keypoint_confidence: Union[
@@ -163,7 +127,7 @@ class BlockManifest(WorkflowBlockManifest):
         Selector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
     ] = Field(
         default=0.0,
-        description="Confidence threshold to predict a keypoint as visible.",
+        description="Minimum confidence threshold (0.0-1.0) for individual keypoints. Keypoints below this threshold are marked as not visible.",
         examples=[0.3, "$inputs.keypoint_confidence"],
     )
     class_filter: Union[Optional[List[str]], Selector(kind=[LIST_OF_VALUES_KIND])] = (

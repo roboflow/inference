@@ -43,17 +43,39 @@ from inference.core.workflows.prototypes.block import (
 from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 
 LONG_DESCRIPTION = """
- Retrieve the characters in an image using DocTR Optical Character Recognition (OCR).
+Extract text from images using DocTR Optical Character Recognition (OCR), returning both the extracted text and bounding boxes for each detected text region.
 
-This block returns the text within an image.
+## How This Block Works
 
-You may want to use this block in combination with a detections-based block (i.e.
-ObjectDetectionBlock). An object detection model could isolate specific regions from an
-image (i.e. a shipping container ID in a logistics use case) for further processing.
-You can then use a DynamicCropBlock to crop the region of interest before running OCR.
+This block uses the DocTR OCR model to detect and extract all text content from one or more images. The block:
 
-Using a detections model then cropping detections allows you to isolate your analysis
-on particular regions of an image.
+1. Takes images as input (supports batch processing)
+2. Uses DocTR to detect text regions and recognize characters in the image
+3. Generates bounding boxes around each detected text region
+4. Extracts the recognized text content from each region
+5. Returns both a concatenated text string (all text found in the image) and structured predictions with bounding box coordinates for each text region
+
+The block outputs both a plain text string containing all extracted text and structured detection predictions that include bounding boxes, allowing you to know not just what text was found, but where it appears in the image. This makes it useful for workflows that need to process or validate specific text locations.
+
+## Common Use Cases
+
+- **Document Processing**: Extract text from scanned documents, PDFs, receipts, invoices, or forms for automated data entry or document digitization
+- **License Plate Recognition**: Read vehicle license plates from images for parking, toll, or security applications
+- **Product Label Reading**: Extract text from product labels, barcodes, serial numbers, or expiration dates for inventory management
+- **Signage and Street Signs**: Read text from street signs, store signs, or directional signage for mapping or navigation applications
+- **ID and Certificate Reading**: Extract information from ID cards, certificates, or official documents for verification or record-keeping
+- **Logistics and Shipping**: Read shipping labels, container IDs, package tracking numbers, or shipping manifests for logistics automation
+
+## Connecting to Other Blocks
+
+The extracted text and text detections from this block can be connected to:
+
+- **Object detection blocks** (e.g., Object Detection Model) combined with crop blocks (e.g., Dynamic Crop) to first isolate specific regions containing text before running OCR, improving accuracy by focusing on relevant areas
+- **Data storage blocks** (e.g., CSV Formatter, Roboflow Dataset Upload) to log extracted text and metadata for record-keeping or analysis
+- **Expression blocks** to parse, validate, or transform extracted text using regular expressions or string operations
+- **Conditional logic blocks** (e.g., Continue If) to route workflow execution based on whether specific text patterns are found or text content matches certain criteria
+- **Notification blocks** (e.g., Email Notification, Slack Notification) to send alerts when specific text is detected (e.g., error messages, warning labels, or important identifiers)
+- **Webhook blocks** to send extracted text data to external systems or APIs for further processing
 """
 
 EXPECTED_OUTPUT_KEYS = {
