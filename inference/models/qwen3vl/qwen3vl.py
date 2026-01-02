@@ -252,15 +252,14 @@ class LoRAQwen3VL(LoRATransformerModel):
                 token=token,
             )
 
-        # Can't make default versions until in prod
-        # if model_load_id != "qwen-pretrains/2":
-        self.model = (
-            PeftModel.from_pretrained(self.base_model, self.cache_dir)
-            .eval()
-            .to(self.dtype)
-        )
-        # else:
-        #    self.model = self.base_model.eval().to(self.dtype)
+        if model_load_id != "qwen-pretrains/2":
+            self.model = (
+                PeftModel.from_pretrained(self.base_model, self.cache_dir)
+                .eval()
+                .to(self.dtype)
+            )
+        else:
+            self.model = self.base_model.eval().to(self.dtype)
 
         self.model.merge_and_unload()
 
