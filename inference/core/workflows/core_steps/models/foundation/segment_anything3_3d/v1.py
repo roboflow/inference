@@ -32,7 +32,17 @@ from inference.core.workflows.prototypes.block import (
 LONG_DESCRIPTION = """
 Generate 3D meshes and Gaussian splatting from 2D images with mask prompts.
 
+## How This Block Works
+
 Accepts masks as: sv.Detections (from SAM2 etc), polygon lists, binary masks, or RLE dicts.
+
+## Common Use Cases
+
+- Use this block to [purpose based on block type]
+
+## Connecting to Other Blocks
+
+The outputs from this block can be connected to other blocks in your workflow.
 """
 
 
