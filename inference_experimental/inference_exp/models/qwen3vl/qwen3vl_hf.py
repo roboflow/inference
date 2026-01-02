@@ -1,3 +1,4 @@
+import json
 import os
 from typing import List, Optional, Tuple, Union
 
@@ -22,6 +23,8 @@ from transformers import (
 
 
 class Qwen3VLHF:
+    default_dtype = torch.bfloat16
+
     @classmethod
     def from_pretrained(
         cls,
@@ -48,50 +51,67 @@ class Qwen3VLHF:
                     ResizeMode.LETTERBOX_REFLECT_EDGES,
                 },
             )
-        if (
-            quantization_config is None
-            and device.type == "cuda"
-            and not disable_quantization
-        ):
-            quantization_config = BitsAndBytesConfig(
-                load_in_4bit=True,
-                bnb_4bit_compute_dtype=torch.float16,
-                bnb_4bit_quant_type="nf4",
-            )
+
+        dtype = cls.default_dtype
+
         if os.path.exists(adapter_config_path):
+            # Has adapter - load base model then apply LoRA
             base_model_path = os.path.join(model_name_or_path, "base")
-            model = Qwen3VLForConditionalGeneration.from_pretrained(
+            base_model = Qwen3VLForConditionalGeneration.from_pretrained(
                 base_model_path,
-                dtype="auto",
-                trust_remote_code=trust_remote_code,
-                local_files_only=local_files_only,
-                quantization_config=quantization_config,
-            )
-            model = PeftModel.from_pretrained(model, model_name_or_path)
-            if quantization_config is None:
-                model.merge_and_unload()
-            model.to(device)
-            processor = AutoProcessor.from_pretrained(
-                model_name_or_path,
-                trust_remote_code=trust_remote_code,
-                local_files_only=local_files_only,
-                use_fast=True,
-            )
-        else:
-            model = Qwen3VLForConditionalGeneration.from_pretrained(
-                model_name_or_path,
-                dtype="auto",
                 device_map=device,
                 trust_remote_code=trust_remote_code,
                 local_files_only=local_files_only,
                 quantization_config=quantization_config,
-            ).eval()
-            processor = AutoProcessor.from_pretrained(
+            )
+            # Apply LoRA, eval, convert to dtype
+            model = (
+                PeftModel.from_pretrained(base_model, model_name_or_path)
+                .eval()
+                .to(dtype)
+            )
+            model = model.merge_and_unload()
+        else:
+            # No adapter - just load base model, eval, convert to dtype
+            base_model = Qwen3VLForConditionalGeneration.from_pretrained(
                 model_name_or_path,
+                device_map=device,
                 trust_remote_code=trust_remote_code,
                 local_files_only=local_files_only,
-                use_fast=True,
+                quantization_config=quantization_config,
             )
+            model = base_model.eval().to(dtype)
+
+        # Load processor with chat_template if available
+        # Check both root and base/ directory for chat_template.json
+        chat_template_path = os.path.join(model_name_or_path, "chat_template.json")
+        if not os.path.exists(chat_template_path):
+            chat_template_path = os.path.join(
+                model_name_or_path, "base", "chat_template.json"
+            )
+
+        # Use base/ for processor when adapter exists - preprocessor configs differ
+        if os.path.exists(adapter_config_path):
+            processor_path = os.path.join(model_name_or_path, "base")
+        else:
+            processor_path = model_name_or_path
+
+        if os.path.exists(chat_template_path):
+            with open(chat_template_path, "r") as f:
+                chat_template = json.load(f)["chat_template"]
+            processor = AutoProcessor.from_pretrained(
+                processor_path,
+                trust_remote_code=trust_remote_code,
+                local_files_only=local_files_only,
+                chat_template=chat_template,
+            )
+        else:
+            processor = AutoProcessor.from_pretrained(
+                processor_path,
+                trust_remote_code=trust_remote_code,
+                local_files_only=local_files_only,
+            )
+
         return cls(
             model=model,
             processor=processor,
@@ -111,7 +131,7 @@ class Qwen3VLHF:
         self._inference_config = inference_config
         self._device = device
         self.default_system_prompt = (
-            "You are a Qwen3-VL model that can answer questions about any image."
+            "You are a Qwen3-VL a helpful assistant for any visual task."
         )
 
     def prompt(
@@ -121,7 +141,7 @@ class Qwen3VLHF:
         input_color_format: ColorFormat = None,
         max_new_tokens: int = 512,
         do_sample: bool = False,
-        skip_special_tokens: bool = False,
+        skip_special_tokens: bool = True,
         **kwargs,
     ) -> List[str]:
         inputs = self.pre_process_generation(
@@ -145,33 +165,6 @@ class Qwen3VLHF:
         image_size: Optional[Tuple[int, int]] = None,
         **kwargs,
     ) -> dict:
-        def _to_tensor(image: Union[np.ndarray, torch.Tensor]) -> torch.Tensor:
-            is_numpy = isinstance(image, np.ndarray)
-            if is_numpy:
-                tensor_image = torch.from_numpy(image.copy()).permute(2, 0, 1)
-            else:
-                tensor_image = image
-            if input_color_format == "bgr" or (is_numpy and input_color_format is None):
-                tensor_image = tensor_image[[2, 1, 0], :, :]
-            return tensor_image
-
-        if self._inference_config is None:
-            if isinstance(images, torch.Tensor) and images.ndim > 3:
-                image_list = [_to_tensor(img) for img in images]
-            elif not isinstance(images, list):
-                image_list = [_to_tensor(images)]
-            else:
-                image_list = [_to_tensor(img) for img in images]
-        else:
-            images = pre_process_network_input(
-                images=images,
-                image_pre_processing=self._inference_config.image_pre_processing,
-                network_input=self._inference_config.network_input,
-                target_device=self._device,
-                input_color_format=input_color_format,
-                image_size_wh=image_size,
-            )[0]
-            image_list = [e[0] for e in torch.split(images, 1, dim=0)]
         # Handle prompt and system prompt parsing logic from original implementation
         if prompt is None:
             prompt = ""
@@ -186,6 +179,7 @@ class Qwen3VLHF:
                 system_prompt = split_prompt[1]
 
         # Construct conversation following original implementation structure
+        # Pass the actual image in the conversation for proper vision token handling
         conversation = [
             {
                 "role": "system",
@@ -194,21 +188,21 @@ class Qwen3VLHF:
             {
                 "role": "user",
                 "content": [
-                    {"type": "image"},  # Processor will handle the actual image
+                    {"type": "image", "image": images},
                     {"type": "text", "text": prompt},
                 ],
             },
         ]
 
-        # Apply chat template
+        # Apply chat template (without add_generation_prompt to match original)
         text_input = self._processor.apply_chat_template(
-            conversation, tokenize=False, add_generation_prompt=True
+            conversation, tokenize=False
         )
 
-        # Process inputs - processor will handle tensor/array inputs directly
+        # Process inputs - pass the image directly, processor handles PIL/tensor conversion
         model_inputs = self._processor(
             text=text_input,
-            images=image_list,
+            images=images,
             return_tensors="pt",
             padding=True,
         )
