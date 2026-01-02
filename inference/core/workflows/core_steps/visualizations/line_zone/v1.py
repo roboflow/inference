@@ -159,7 +159,9 @@ class LineCounterZoneVisualizationBlockV1(VisualizationBlock):
         if copy_image:
             np_image = np_image.copy()
         line_mask = cv.cvtColor(
-            cv.threshold(cv.cvtColor(mask, cv.COLOR_BGR2GRAY), 1, 255, cv.THRESH_BINARY)[1],
+            cv.threshold(
+                cv.cvtColor(mask, cv.COLOR_BGR2GRAY), 1, 255, cv.THRESH_BINARY
+            )[1],
             cv.COLOR_GRAY2BGR,
         )
         blended = cv.addWeighted(
