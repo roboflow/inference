@@ -36,8 +36,8 @@ class BlockManifest(WorkflowBlockManifest):
     images: Selector(kind=[IMAGE_KIND]) = ImageInputField
     prompt: Optional[str] = Field(
         default=None,
-        description="Optional text prompt to provide additional context to Qwen2.5-VL. Otherwise it will just be None",
-        examples=["What is in this image?"],
+        description="Optional text prompt or question to ask about the image(s). This is the main instruction for Qwen2.5-VL - you can ask questions, request descriptions, or provide specific analysis instructions. Examples: 'What is in this image?', 'Describe the scene', 'Are there any people?', 'Count the number of objects'. If not provided (None), the model will generate a general description of the image content. The prompt is combined with the system prompt before being sent to the model.",
+        examples=["What is in this image?", "Describe the scene", "Are there any people?", "Count the number of objects"],
     )
 
     # Standard model configuration for UI, schema, etc.
@@ -50,43 +50,18 @@ class BlockManifest(WorkflowBlockManifest):
                 """
 Run Alibaba's Qwen2.5-VL model to analyze images and answer questions using natural language prompts.
 
-## What is a Vision Language Model (VLM)?
-
-A Vision Language Model (VLM) is an AI model that can understand both **images and text** simultaneously. Unlike traditional computer vision models that are trained for a single task (like object detection or classification), VLMs like Qwen2.5-VL:
-
-- **Understand natural language prompts** - you can ask questions or give instructions in plain English
-- **Process visual content** - analyze images to understand what's in them
-- **Generate flexible text responses** - provide natural language answers based on the image content
-- **Support conversational interactions** - can follow up on questions and maintain context
-
-This makes VLMs incredibly versatile and useful when you need flexible, natural language-driven computer vision without training separate models for each task.
-
 ## How This Block Works
 
-This block takes one or more images as input and processes them through Alibaba's Qwen2.5-VL model. The block:
-1. **Encodes images** for processing by the model
-2. **Combines prompts** - merges your optional text prompt with an optional system prompt to provide context
-3. **Sends the request to Qwen2.5-VL** - processes the image(s) with the combined prompt using a conversation template
-4. **Returns the response** - provides the model's text answer as a parsed dictionary output
+This block takes one or more images as input and processes them through Alibaba's Qwen2.5-VL vision language model. The block processes each image individually:
 
-The block supports flexible, free-form prompts - you can ask any question about the image, request descriptions, ask for analysis, or give specific instructions.
+1. **Receives images and prompts** - takes one or more images along with an optional text prompt and optional system prompt
+2. **Combines prompts** - merges the text prompt and system prompt into a single combined prompt using a special separator
+3. **Converts images** - transforms each image into the format required by the Qwen2.5-VL model
+4. **Registers the model** - ensures the specified Qwen2.5-VL model version is loaded and ready for inference
+5. **Runs inference** - processes each image with the combined prompt through the Qwen2.5-VL model using a conversation template
+6. **Returns responses** - provides the model's text answer for each image as a dictionary output containing the parsed text response
 
-## Inputs and Outputs
-
-**Input:**
-- **images**: One or more images to analyze (can be from workflow inputs or previous steps)
-- **prompt**: Optional text prompt/question to ask about the image (e.g., "What is in this image?", "Describe the scene", "Are there any people?")
-- **system_prompt**: Optional system prompt to provide additional context or instructions to the model (e.g., "You are a helpful assistant.", "Answer concisely.")
-- **model_version**: Qwen2.5-VL model to use (default: "qwen25-vl-7b") - can also use Roboflow model IDs for custom/fine-tuned models
-
-**Output:**
-- **parsed_output**: A dictionary containing the text response from Qwen2.5-VL
-
-## Key Configuration Options
-
-- **prompt**: Your question or instruction in natural language - be specific about what you want Qwen2.5-VL to analyze or describe from the image. If not provided, the model will generate a general description
-- **system_prompt**: Optional instructions that set the context or behavior for the model - useful for controlling the tone, style, or format of responses (e.g., "Answer in one sentence", "Use technical language")
-- **model_version**: Choose the Qwen2.5-VL model - "qwen25-vl-7b" (default, good balance of performance and accuracy). Can also use Roboflow model IDs for custom or fine-tuned Qwen2.5-VL models
+The block supports flexible, free-form prompts - you can ask any question about the image, request descriptions, ask for analysis, or give specific instructions. If no prompt is provided, the model will generate a general description of the image content.
 
 ## Common Use Cases
 
@@ -101,18 +76,18 @@ The block supports flexible, free-form prompts - you can ask any question about 
 
 **⚠️ Important: Dedicated Inference Server Required**
 
-This block requires **local execution** (cannot run remotely). A **GPU is highly recommended** for acceptable performance. You may want to use a dedicated deployment for Qwen2.5-VL models. The model requires appropriate dependencies to be installed.
+This block requires **local execution** (cannot run remotely). A **GPU is highly recommended** for acceptable performance. You may want to use a dedicated deployment for Qwen2.5-VL models. The model requires appropriate dependencies to be installed (typically transformers, torch, and related packages).
 
 ## Connecting to Other Blocks
 
 The text outputs from this block can be connected to:
 
+- **Parser blocks** (e.g., JSON Parser v1) to extract structured information from Qwen2.5-VL's text responses if you prompt it to return JSON
 - **Conditional logic blocks** to route workflow execution based on Qwen2.5-VL's responses
 - **Filter blocks** to filter images or data based on the model's analysis
 - **Visualization blocks** to display text overlays or annotations on images
 - **Data storage blocks** to log responses for analytics or audit trails
 - **Notification blocks** to send alerts based on Qwen2.5-VL's findings (e.g., specific content detected, quality issues identified)
-- **Parser blocks** (e.g., JSON Parser) to extract structured information from Qwen2.5-VL's text responses if you prompt it to return JSON
 """
             ),
             "license": "Apache-2.0",
@@ -137,14 +112,14 @@ The text outputs from this block can be connected to:
 
     model_version: Union[Selector(kind=[ROBOFLOW_MODEL_ID_KIND]), str] = Field(
         default="qwen25-vl-7b",
-        description="The Qwen2.5-VL model to be used for inference.",
+        description="The Qwen2.5-VL model version to use for inference. Default is 'qwen25-vl-7b', which provides a good balance of performance and accuracy. You can also use Roboflow model IDs (format: 'workspace/model/version') for custom or fine-tuned Qwen2.5-VL models. The model will be registered with the model manager when the block runs.",
         examples=["qwen25-vl-7b"],
     )
 
     system_prompt: Optional[str] = Field(
         default=None,
-        description="Optional system prompt to provide additional context to Qwen2.5-VL.",
-        examples=["You are a helpful assistant."],
+        description="Optional system prompt to provide additional context or instructions that set the behavior, tone, or style for Qwen2.5-VL. This is combined with the main prompt before being sent to the model. Useful for controlling response format (e.g., 'Answer in one sentence', 'Use technical language'), setting the model's role (e.g., 'You are a helpful assistant.'), or providing domain-specific context. If not provided (None), only the main prompt is used.",
+        examples=["You are a helpful assistant.", "Answer concisely.", "Use technical language", "Answer in one sentence"],
     )
 
     @classmethod
