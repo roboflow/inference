@@ -1056,6 +1056,15 @@ async def init_rtc_peer_connection_with_loop(
             logger.info("Starting data-only processing for RTSP stream")
             asyncio.create_task(video_processor.process_frames_data_only())
 
+    elif webrtc_request.mjpeg_url:
+        logger.info("Processing MJPEG URL: %s", webrtc_request.mjpeg_url)
+        player = MediaPlayer(webrtc_request.mjpeg_url, format="mjpeg")
+        video_processor.set_track(track=player.video)
+
+        if not should_send_video:
+            logger.info("Starting data-only processing for MJPEG stream")
+            asyncio.create_task(video_processor.process_frames_data_only())
+
     @peer_connection.on("track")
     def on_track(track: RemoteStreamTrack):
         logger.info("Track received from client")
