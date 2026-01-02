@@ -239,11 +239,11 @@ from inference.core.workflows.core_steps.models.foundation.openai.v4 import (
 from inference.core.workflows.core_steps.models.foundation.perception_encoder.v1 import (
     PerceptionEncoderModelBlockV1,
 )
-from inference.core.workflows.core_steps.models.foundation.qwen.v1 import (
-    Qwen25VLBlockV1,
-)
 from inference.core.workflows.core_steps.models.foundation.qwen3vl.v1 import (
     Qwen3VLBlockV1,
+)
+from inference.core.workflows.core_steps.models.foundation.qwen.v1 import (
+    Qwen25VLBlockV1,
 )
 from inference.core.workflows.core_steps.models.foundation.seg_preview.v1 import (
     SegPreviewBlockV1,
