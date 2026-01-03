@@ -22,52 +22,64 @@ from inference.core.workflows.prototypes.block import (
 )
 
 LONG_DESCRIPTION = """
-Combines OCR detection results into a coherent text string by organizing detections spatially.
-This transformation is perfect for turning individual OCR results into structured, readable text!
+Combine individual OCR detection results (words, characters, or text regions) into coherent text strings by organizing detections spatially according to reading direction, grouping detections into lines, sorting them within lines, and concatenating text in proper reading order to reconstruct readable text from OCR model outputs.
 
-#### How It Works
+## How This Block Works
 
-This transformation reconstructs the original text from OCR detection results by:
+This block reconstructs readable text from individual OCR detections by organizing them spatially and concatenating text in proper reading order. The block:
 
-1. 📐 **Grouping** text detections into rows based on their vertical (`y`) positions
+1. Receives OCR detection predictions containing individual text detections with bounding boxes and class names (text content)
+2. Prepares coordinates based on reading direction:
+   - For vertical reading directions, swaps x and y coordinates to enable vertical line processing
+   - For horizontal reading directions, uses coordinates as-is
+3. Groups detections into lines:
+   - Groups detections based on vertical position (or horizontal position for vertical text) using the tolerance parameter
+   - Detections within the tolerance distance are considered part of the same line
+   - Higher tolerance values group detections that are further apart, useful for text with variable line spacing
+4. Sorts lines based on reading direction:
+   - For left-to-right and vertical top-to-bottom: sorts lines from top to bottom
+   - For right-to-left and vertical bottom-to-top: sorts lines in reverse order (bottom to top)
+5. Sorts detections within each line:
+   - For left-to-right and vertical top-to-bottom: sorts detections by horizontal position (left to right, or top to bottom for vertical)
+   - For right-to-left and vertical bottom-to-top: sorts detections in reverse order (right to left, or bottom to top for vertical)
+6. Concatenates text in reading order:
+   - Extracts class names (text content) from detections in sorted order
+   - Adds line separators (newline for horizontal text, space for vertical text) between lines
+   - Optionally inserts a delimiter between each text element if specified
+   - Produces a single coherent text string with proper reading order
+7. Handles automatic reading direction detection (if "auto" is selected):
+   - Analyzes average width and height of detection bounding boxes
+   - If average width > average height: detects horizontal text (left-to-right)
+   - If average height >= average width: detects vertical text (top-to-bottom)
+8. Returns the stitched text string:
+   - Outputs a single text string under the `ocr_text` key
+   - Text is formatted with proper line breaks and spacing according to reading direction
 
-2. 📏 **Sorting** detections within each row by horizontal (`x`) position
+The block enables reconstruction of multi-line text from individual OCR detections, maintaining proper reading order for different languages and writing systems. It handles both horizontal (left-to-right, right-to-left) and vertical (top-to-bottom, bottom-to-top) text orientations, making it useful for processing text in various languages and formats.
 
-3. 📜 **Concatenating** the text in reading order (left-to-right, top-to-bottom)
+## Common Use Cases
 
-#### Parameters
+- **Text Reconstruction**: Convert individual word or character detections from OCR models into readable text blocks (e.g., reconstruct documents from word detections, combine character detections into words, stitch OCR results into paragraphs), enabling text reconstruction workflows
+- **Multi-Line Text Processing**: Reconstruct multi-line text from OCR results with proper line breaks and formatting (e.g., extract paragraphs from OCR results, reconstruct formatted text, process multi-line documents), enabling multi-line text workflows
+- **Multi-Language OCR**: Process OCR results from different languages and writing systems (e.g., process Arabic right-to-left text, handle vertical Chinese/Japanese text, support multiple reading directions), enabling multi-language OCR workflows
+- **Document Processing**: Extract and reconstruct text from documents and images (e.g., extract text from scanned documents, process invoice text, extract text from forms), enabling document processing workflows
+- **Text Extraction and Formatting**: Extract text from images and format it for downstream use (e.g., extract text for database storage, format text for API responses, prepare text for analysis), enabling text extraction workflows
+- **OCR Result Post-Processing**: Post-process OCR model outputs to produce usable text strings (e.g., format OCR outputs, organize OCR results, prepare text for downstream blocks), enabling OCR post-processing workflows
 
-- **`tolerance`**: Controls how close detections need to be vertically to be considered part of the same line of text.
-A higher tolerance will group detections that are further apart vertically.
+## Connecting to Other Blocks
 
-- **`reading_direction`**: Determines the order in which text is read. Available options:
+This block receives OCR detection predictions and produces stitched text strings:
 
-    * **"left_to_right"**: Standard left-to-right reading (e.g., English) ➡️
+- **After OCR model blocks** to convert detection results into readable text (e.g., OCR model to text string, OCR detections to formatted text, OCR results to text output), enabling OCR-to-text workflows
+- **Before data storage blocks** to store extracted text (e.g., store OCR text in databases, save extracted text, log OCR results), enabling text storage workflows
+- **Before notification blocks** to send extracted text in notifications (e.g., send OCR text in alerts, include extracted text in messages, notify with OCR results), enabling text notification workflows
+- **Before text processing blocks** to process stitched text (e.g., process text with NLP models, analyze extracted text, apply text transformations), enabling text processing workflows
+- **Before API output blocks** to provide text in API responses (e.g., return OCR text in API, format text for responses, provide extracted text output), enabling text output workflows
+- **In workflow outputs** to provide stitched text as final output (e.g., text extraction workflows, OCR output workflows, document processing workflows), enabling text output workflows
 
-    * **"right_to_left"**: Right-to-left reading (e.g., Arabic) ⬅️
+## Requirements
 
-    * **"vertical_top_to_bottom"**: Vertical reading from top to bottom ⬇️
-
-    * **"vertical_bottom_to_top"**: Vertical reading from bottom to top ⬆️
-
-    * **"auto"**: Automatically detects the reading direction based on the spatial arrangement of text elements.
-
-#### Why Use This Transformation?
-
-This is especially useful for:
-
-- 📖 Converting individual character/word detections into a readable text block
-
-- 📝 Reconstructing multi-line text from OCR results
-
-- 🔀 Maintaining proper reading order for detected text elements
-
-- 🌏 Supporting different writing systems and text orientations
-
-#### Example Usage
-
-Use this transformation after an OCR model that outputs individual words or characters, so you can reconstruct the
-original text layout in its intended format.
+This block requires OCR detection predictions (object detection format) with bounding boxes and class names containing text content. The `tolerance` parameter must be greater than zero and controls the vertical (or horizontal for vertical text) distance threshold for grouping detections into lines. The `reading_direction` parameter supports five modes: "left_to_right" (standard horizontal), "right_to_left" (Arabic-style), "vertical_top_to_bottom" (vertical), "vertical_bottom_to_top" (vertical reversed), and "auto" (automatic detection based on bounding box dimensions). The `delimiter` parameter is optional and inserts a delimiter between each text element (empty string by default, meaning no delimiter). The block outputs a single text string under the `ocr_text` key.
 """
 
 SHORT_DESCRIPTION = "Combines OCR detection results into a coherent text string by organizing detections spatially."
@@ -103,8 +115,8 @@ class BlockManifest(WorkflowBlockManifest):
         ]
     ) = Field(
         title="OCR Detections",
-        description="The output of an OCR detection model.",
-        examples=["$steps.my_ocr_detection_model.predictions"],
+        description="OCR detection predictions from an OCR model. Should contain bounding boxes and class names with text content. Each detection represents a word, character, or text region that will be stitched together into coherent text. Supports object detection format with bounding boxes (xyxy) and class names in the data dictionary.",
+        examples=["$steps.ocr_model.predictions", "$steps.my_ocr_detection_model.predictions"],
     )
     reading_direction: Literal[
         "left_to_right",
@@ -114,8 +126,8 @@ class BlockManifest(WorkflowBlockManifest):
         "auto",
     ] = Field(
         title="Reading Direction",
-        description="The direction of the text in the image.",
-        examples=["right_to_left"],
+        description="Direction to read and organize text detections. 'left_to_right': Standard horizontal reading (English, most languages). 'right_to_left': Right-to-left reading (Arabic, Hebrew). 'vertical_top_to_bottom': Vertical reading from top to bottom (Traditional Chinese, Japanese). 'vertical_bottom_to_top': Vertical reading from bottom to top (rare vertical formats). 'auto': Automatically detects reading direction based on average bounding box dimensions (width > height = horizontal, height >= width = vertical). Determines how detections are grouped into lines and sorted within lines.",
+        examples=["left_to_right", "right_to_left", "auto"],
         json_schema_extra={
             "values_metadata": {
                 "left_to_right": {
@@ -143,15 +155,15 @@ class BlockManifest(WorkflowBlockManifest):
     )
     tolerance: Union[int, Selector(kind=[INTEGER_KIND])] = Field(
         title="Tolerance",
-        description="The tolerance for grouping detections into the same line of text.",
+        description="Vertical (or horizontal for vertical text) distance threshold in pixels for grouping detections into the same line. Detections within this tolerance distance are grouped into the same line. Higher values group detections that are further apart (useful for text with variable line spacing or slanted text). Lower values create more lines (useful for tightly spaced text). Must be greater than zero.",
         default=10,
-        examples=[10, "$inputs.tolerance"],
+        examples=[10, 20, 5],
     )
     delimiter: Union[str, Selector(kind=[STRING_KIND])] = Field(
         title="Delimiter",
-        description="The delimiter to use for stitching text.",
+        description="Optional delimiter string to insert between each text element (word/character) when stitching. Empty string (default) means no delimiter - text elements are concatenated directly. Useful for adding spaces between words, commas between elements, or custom separators. Example: use ' ' (space) to add spaces between words, or ',' to add commas.",
         default="",
-        examples=["", "$inputs.delimiter"],
+        examples=["", " ", ",", "-"],
     )
 
     @field_validator("tolerance")

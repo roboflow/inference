@@ -41,10 +41,64 @@ SHORT_DESCRIPTION = (
     "to a straight rectangular plane with specified width and height."
 )
 LONG_DESCRIPTION = """
-The `PerspectiveCorrectionBlock` is a transformer block designed to correct
-coordinates of detections based on transformation defined by two polygons.
-This block is best suited when produced coordinates should be considered as if camera
-was placed directly above the scene and was not introducing distortions.
+Transform detection coordinates and optionally images from a perspective view to a top-down orthographic view using perspective transformation, correcting camera angle distortions to enable accurate measurements, top-down analysis, and coordinate normalization for scenarios where objects are viewed at an angle (e.g., surveillance cameras, aerial imagery, or tilted camera setups).
+
+## How This Block Works
+
+This block corrects perspective distortion by transforming coordinates from a perspective view (where objects appear smaller when further away and angles are distorted) to a top-down orthographic view (as if the camera were directly above the scene). The block:
+
+1. Receives input data: images and/or detections (object detection or instance segmentation predictions), along with perspective polygons defining regions to transform
+2. Processes perspective polygons:
+   - Selects the largest polygon from provided polygons (if multiple are provided)
+   - Sorts polygon vertices in clockwise order and orients them starting from the leftmost bottom vertex
+   - Ensures proper polygon ordering for transformation matrix calculation
+3. Optionally extends perspective polygons to contain all detections:
+   - If `extend_perspective_polygon_by_detections_anchor` is set, extends the polygon to ensure all detection anchor points (or entire bounding boxes if "ALL" is specified) are contained within the polygon
+   - Calculates extension amounts needed to contain detections outside the original polygon
+   - Adjusts polygon vertices to create a larger region that encompasses all detections
+4. Generates perspective transformation matrix:
+   - Maps the source polygon (4 vertices in the perspective view) to a destination rectangle (top-down view) with specified width and height
+   - Uses OpenCV's `getPerspectiveTransform` to compute the 3x3 transformation matrix
+   - Handles extended dimensions when polygon extension is enabled
+5. Applies perspective transformation to detections (if provided):
+   - Transforms bounding box coordinates from perspective view to top-down coordinates
+   - Transforms instance segmentation masks by converting masks to polygons, transforming polygon vertices, and converting back to masks in the new coordinate space
+   - Transforms keypoint coordinates for keypoint detection predictions
+   - Updates all coordinate data to reflect the corrected perspective
+6. Optionally warps images (if `warp_image` is True):
+   - Applies the perspective transformation to the entire image using OpenCV's `warpPerspective`
+   - Produces a top-down view of the image with corrected perspective
+   - Outputs the warped image at the specified transformed rectangle dimensions (plus any extensions)
+7. Returns corrected outputs:
+   - `corrected_coordinates`: Detections with transformed coordinates in the top-down coordinate space
+   - `warped_image`: Perspective-corrected image (if image warping is enabled)
+   - `extended_transformed_rect_width` and `extended_transformed_rect_height`: Final dimensions including any polygon extensions
+
+The transformation effectively "unwarps" the perspective distortion, making coordinates and images appear as if viewed from directly above. This is useful for accurate measurements, area calculations, distance measurements, and spatial analysis where perspective distortion would otherwise introduce errors.
+
+## Common Use Cases
+
+- **Top-Down Analysis**: Correct perspective distortion for top-down analysis and measurement (e.g., surveillance camera analysis, overhead view generation, top-down coordinate normalization), enabling top-down analysis workflows
+- **Accurate Measurements**: Enable accurate distance, area, and size measurements by removing perspective distortion (e.g., measure object sizes in real-world units, calculate areas accurately, measure distances without distortion), enabling measurement workflows
+- **Spatial Analysis**: Perform spatial analysis and coordinate-based operations on corrected coordinates (e.g., zone-based analysis, spatial tracking, coordinate-based filtering), enabling spatial analysis workflows
+- **Aerial and Overhead Imagery**: Process aerial imagery or overhead camera feeds with perspective correction (e.g., drone imagery analysis, overhead camera processing, satellite image analysis), enabling aerial analysis workflows
+- **Quality Control and Inspection**: Correct perspective for quality control and inspection workflows (e.g., manufacturing inspection, product quality checks, defect detection with accurate measurements), enabling quality control workflows
+- **Indoor Navigation and Mapping**: Correct perspective for indoor navigation and mapping applications (e.g., floor plan generation, indoor mapping, navigation systems), enabling mapping workflows
+
+## Connecting to Other Blocks
+
+This block receives images and/or detections and produces perspective-corrected outputs:
+
+- **After detection models** to correct coordinates for accurate analysis (e.g., object detection with perspective correction, instance segmentation with corrected coordinates), enabling detection-to-correction workflows
+- **After zone or polygon definition blocks** to use defined regions as perspective polygons (e.g., use polygon zones as perspective regions, apply correction to specific regions), enabling zone-to-correction workflows
+- **Before measurement blocks** to enable accurate measurements on corrected coordinates (e.g., distance measurement with corrected coordinates, size measurement on top-down view, area calculation on corrected coordinates), enabling correction-to-measurement workflows
+- **Before analytics blocks** to perform analytics on corrected coordinates (e.g., zone analytics with corrected coordinates, tracking with top-down view, path analysis with corrected paths), enabling correction-to-analytics workflows
+- **Before visualization blocks** to visualize corrected coordinates and warped images (e.g., display top-down view, visualize corrected detections, show perspective-corrected results), enabling correction-to-visualization workflows
+- **In workflow outputs** to provide perspective-corrected final outputs (e.g., top-down coordinate outputs, corrected detection outputs, warped image outputs), enabling correction-to-output workflows
+
+## Requirements
+
+This block requires either images or predictions (detections) as input. The `perspective_polygons` parameter must contain at least one polygon with exactly 4 vertices defining the region to transform. Polygons can be provided as a list of 4 coordinate pairs `[[x1, y1], [x2, y2], [x3, y3], [x4, y4]]` or as NumPy arrays. If multiple polygons are provided, the largest polygon (by area) is selected for each batch element. The `transformed_rect_width` and `transformed_rect_height` parameters define the dimensions of the output top-down rectangle. The block uses OpenCV's perspective transformation functions, which require proper polygon ordering and valid coordinate data. If polygon extension is enabled, the output dimensions are automatically adjusted to include the extended regions.
 """
 ALL_POSITIONS = "ALL"
 
@@ -75,36 +129,39 @@ class PerspectiveCorrectionManifest(WorkflowBlockManifest):
             ]
         )
     ] = Field(  # type: ignore
-        description="Predictions",
+        description="Optional object detection or instance segmentation predictions to transform. If provided, bounding boxes, masks, and keypoints are transformed to the top-down coordinate space. If not provided, only image warping is performed (if enabled). Either predictions or images must be provided.",
         default=None,
-        examples=["$steps.object_detection_model.predictions"],
+        examples=["$steps.object_detection_model.predictions", "$steps.instance_segmentation_model.predictions"],
     )
     images: Selector(kind=[IMAGE_KIND]) = Field(
         title="Image to Crop",
-        description="The input image for this step.",
+        description="Input images to optionally warp to top-down view. Required if warp_image is True. Images are transformed using the perspective transformation matrix to produce top-down views. If only images are provided (no predictions), only image warping is performed.",
         examples=["$inputs.image", "$steps.cropping.crops"],
         validation_alias=AliasChoices("images", "image"),
     )
     perspective_polygons: Union[list, Selector(kind=[LIST_OF_VALUES_KIND])] = Field(  # type: ignore
-        description="Perspective polygons (for each batch at least one must be consisting of 4 vertices)",
-        examples=["$steps.perspective_wrap.zones"],
+        description="Perspective polygons defining regions to transform from perspective view to top-down view. Each polygon must consist of exactly 4 vertices (coordinates). Format: list of 4 coordinate pairs [[x1, y1], [x2, y2], [x3, y3], [x4, y4]] or NumPy arrays. If multiple polygons are provided for a batch element, the largest polygon (by area) is selected. The polygon defines the source region in the perspective view that will be mapped to the destination rectangle.",
+        examples=["$steps.perspective_wrap.zones", [[100, 100], [500, 100], [500, 400], [100, 400]]],
     )
     transformed_rect_width: Union[int, Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
-        description="Transformed rect width", default=1000, examples=[1000]
+        description="Width of the destination rectangle in the top-down view (in pixels). The perspective polygon is transformed to fit this width. Coordinates are scaled to match this dimension. If polygon extension is enabled, the actual output width may be larger to accommodate extended regions.",
+        default=1000,
+        examples=[1000, 1920],
     )
     transformed_rect_height: Union[int, Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
-        description="Transformed rect height", default=1000, examples=[1000]
+        description="Height of the destination rectangle in the top-down view (in pixels). The perspective polygon is transformed to fit this height. Coordinates are scaled to match this dimension. If polygon extension is enabled, the actual output height may be larger to accommodate extended regions.",
+        default=1000,
+        examples=[1000, 1080],
     )
     extend_perspective_polygon_by_detections_anchor: Union[str, Selector(kind=[STRING_KIND])] = Field(  # type: ignore
-        description=f"If set, perspective polygons will be extended to contain all bounding boxes. Allowed values: {', '.join(sv.Position.list())}"
-        + f" and {ALL_POSITIONS} to extend to contain whole bounding box",
+        description=f"Optional setting to extend the perspective polygon to contain all detection anchor points. If set to a Position value ({', '.join(sv.Position.list())}), extends the polygon to contain that anchor point from all detections. If set to '{ALL_POSITIONS}', extends to contain entire bounding boxes (all corners). Empty string (default) disables extension. Extension ensures all detections are within the transformed region, automatically adjusting polygon boundaries and output dimensions.",
         default="",
-        examples=["CENTER"],
+        examples=["CENTER", "BOTTOM_CENTER", "ALL"],
     )
     warp_image: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(  # type: ignore
-        description=f"If set to True, image will be warped into transformed rect",
+        description="If True, applies perspective transformation to the input image, producing a warped image in the top-down view. The warped image shows the perspective-corrected view at the specified transformed rectangle dimensions (plus any extensions). If False (default), only detection coordinates are transformed, and the original image is returned unchanged. Images must be provided if this is True.",
         default=False,
-        examples=[False],
+        examples=[False, True],
     )
 
     @classmethod
