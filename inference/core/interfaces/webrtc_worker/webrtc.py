@@ -1058,7 +1058,7 @@ async def init_rtc_peer_connection_with_loop(
 
     elif webrtc_request.mjpeg_url:
         logger.info("Processing MJPEG URL: %s", webrtc_request.mjpeg_url)
-        player = MediaPlayer(webrtc_request.mjpeg_url, format="mjpeg")
+        player = MediaPlayer(webrtc_request.mjpeg_url)
         video_processor.set_track(track=player.video)
 
         if not should_send_video:

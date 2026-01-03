@@ -158,13 +158,20 @@ class LineCounterZoneVisualizationBlockV1(VisualizationBlock):
         np_image = image.numpy_image
         if copy_image:
             np_image = np_image.copy()
-        annotated_image = cv.addWeighted(
+        line_mask = cv.cvtColor(
+            cv.threshold(
+                cv.cvtColor(mask, cv.COLOR_BGR2GRAY), 1, 255, cv.THRESH_BINARY
+            )[1],
+            cv.COLOR_GRAY2BGR,
+        )
+        blended = cv.addWeighted(
             src1=mask,
             alpha=opacity,
             src2=np_image,
-            beta=1,
+            beta=1 - opacity,
             gamma=0,
         )
+        annotated_image = np.where(line_mask > 0, blended, np_image)
         annotated_image = sv.draw_text(
             scene=annotated_image,
             text=f"in: {count_in}, out: {count_out}",
