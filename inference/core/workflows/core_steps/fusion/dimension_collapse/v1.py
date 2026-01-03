@@ -89,7 +89,11 @@ class BlockManifest(WorkflowBlockManifest):
     type: Literal["roboflow_core/dimension_collapse@v1", "DimensionCollapse"]
     data: Selector() = Field(
         description="Reference to step outputs at dimensionality level n (nested batch structure) to be flattened and collapsed to level n-1. The input should be a nested batch (e.g., list of lists) where each nested level represents a batch dimension. The block flattens this structure by concatenating all nested elements into a single flat list. Common use cases: classification results from cropped images (level 2 → level 1), OCR results from cropped regions (level 2 → level 1), or any nested batch structure that needs to be flattened.",
-        examples=["$steps.classification_step.predictions", "$steps.ocr_step.results", "$steps.crop_classification.predictions"],
+        examples=[
+            "$steps.classification_step.predictions",
+            "$steps.ocr_step.results",
+            "$steps.crop_classification.predictions",
+        ],
     )
 
     @classmethod

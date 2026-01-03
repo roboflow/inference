@@ -127,7 +127,11 @@ class BlockManifest(WorkflowBlockManifest):
         ]
     ) = Field(
         description="Model predictions (object detection or instance segmentation) from detection models that processed image slices or crops. These predictions must contain parent coordinate metadata indicating the position of each slice/crop in the original image. Predictions are collected from multiple slices/crops and merged into a single unified detection result. The block converts coordinates from slice/crop space to original image space and combines all detections.",
-        examples=["$steps.object_detection.predictions", "$steps.instance_segmentation.predictions", "$steps.slice_model.predictions"],
+        examples=[
+            "$steps.object_detection.predictions",
+            "$steps.instance_segmentation.predictions",
+            "$steps.slice_model.predictions",
+        ],
     )
     overlap_filtering_strategy: Union[
         Literal["none", "nms", "nmm"],

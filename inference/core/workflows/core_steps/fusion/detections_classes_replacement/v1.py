@@ -132,12 +132,18 @@ class BlockManifest(WorkflowBlockManifest):
     ) = Field(
         title="Regions of Interest",
         description="Detection predictions (object detection, instance segmentation, or keypoint detection) containing bounding boxes with generic class labels that will be replaced with classification results. These detections should correspond to the regions that were cropped and classified. Detections must have detection IDs that match the PARENT_ID_KEY in classification predictions. Detections at dimensionality level 1.",
-        examples=["$steps.object_detection_model.predictions", "$steps.instance_segmentation_model.predictions"],
+        examples=[
+            "$steps.object_detection_model.predictions",
+            "$steps.instance_segmentation_model.predictions",
+        ],
     )
     classification_predictions: Selector(kind=[CLASSIFICATION_PREDICTION_KIND]) = Field(
         title="Classification results for crops",
         description="Classification predictions from a classifier applied to cropped regions of the detections. Each classification result must have PARENT_ID_KEY (detection_id) linking it to its source detection. Supports both single-label (uses 'top' class) and multi-label (uses most confident class) classifications. Classification results at dimensionality level 2 (one classification per crop/detection).",
-        examples=["$steps.classification_model.predictions", "$steps.breed_classifier.predictions"],
+        examples=[
+            "$steps.classification_model.predictions",
+            "$steps.breed_classifier.predictions",
+        ],
     )
     fallback_class_name: Union[Optional[str], Selector(kind=[STRING_KIND])] = Field(
         default=None,
