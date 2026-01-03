@@ -46,12 +46,50 @@ from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 LONG_DESCRIPTION = """
 Run inference on a multi-label classification model hosted on or uploaded to Roboflow.
 
-You can query any model that is private to your account, or any public model available 
-on [Roboflow Universe](https://universe.roboflow.com).
+## How This Block Works
 
-You will need to set your Roboflow API key in your Inference environment to use this 
-block. To learn more about setting your Roboflow API key, [refer to the Inference 
-documentation](https://inference.roboflow.com/quickstart/configure_api_key/).
+This block takes one or more images as input and runs them through a trained multi-label classification model. Unlike single-label classification (which assigns exactly one class per image), multi-label classification can assign multiple classes to a single image simultaneously. The model analyzes each image and returns all applicable class labels with their confidence scores. Each class has its own confidence score indicating how certain the model is about that specific label, and classes are not mutually exclusive - multiple tags can apply to the same image. The block returns:
+
+- Multiple predicted classes (all applicable categories from the model's training classes)
+- Confidence scores for each predicted class (how certain the model is about each label, typically from 0.0 to 1.0)
+- Additional metadata including class IDs, prediction type, inference ID, and model ID
+
+The model processes the entire image and outputs all applicable class labels per image, making it ideal for scenarios where images can belong to multiple categories simultaneously. For example, an image of a dog in a park could be labeled with multiple tags: ["dog", "outdoor", "daytime", "grass"] all at once.
+
+## Common Use Cases
+
+- **Content Tagging**: Tagging images with multiple attributes (e.g., ["sunset", "beach", "people", "summer"] for a beach photo)
+- **Medical Imaging**: Identifying multiple conditions or features in medical scans (e.g., ["fracture", "edema", "foreign_object"])
+- **Product Attributes**: Tagging products with multiple characteristics (e.g., ["red", "cotton", "long-sleeve", "casual"] for a shirt)
+- **Scene Understanding**: Identifying multiple elements in a scene (e.g., ["indoor", "kitchen", "daytime", "person", "food"])
+- **Quality Inspection**: Marking multiple quality attributes or defects (e.g., ["scratch", "discoloration", "acceptable"] for a manufactured part)
+- **Social Media Content**: Categorizing posts with multiple tags (e.g., ["food", "restaurant", "vegetarian", "dinner"])
+
+## Model Sources
+
+You can use:
+
+- Models from your private Roboflow account (requires authentication)
+- Public models from [Roboflow Universe](https://universe.roboflow.com) (no authentication needed for public models)
+
+## Requirements
+
+You need to set your Roboflow API key in your Inference environment to use private models. To learn more about setting your Roboflow API key, [refer to the Inference documentation](https://inference.roboflow.com/quickstart/configure_api_key/).
+
+## Connecting to Other Blocks
+
+The classification results from this block can be connected to:
+
+- **Filter blocks** to filter images or workflows based on the presence of specific labels or combinations of labels
+- **Conditional logic blocks** to route workflow execution based on which labels are present (e.g., if "urgent" label exists, send notification)
+- **Visualization blocks** to display all classification labels on images
+- **Data storage blocks** to log multi-label results for analytics and searching
+- **Search/retrieval blocks** to find images matching specific label combinations
+- **Aggregation blocks** to count or analyze label distributions across batches of images
+
+## Version Differences (v2 vs v1)
+
+This version (v2) includes the `model_id` in the output, making it easier to track which model was used when chaining multiple classification models in a workflow. The `inference_id` output also uses the `INFERENCE_ID_KIND` instead of `STRING_KIND` for better type checking.
 """
 
 
@@ -81,7 +119,7 @@ class BlockManifest(WorkflowBlockManifest):
         Selector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
     ] = Field(
         default=0.4,
-        description="Confidence threshold for predictions.",
+        description="Minimum confidence threshold (0.0-1.0) for predictions. Classes with confidence below this threshold are filtered out.",
         examples=[0.3, "$inputs.confidence_threshold"],
     )
     disable_active_learning: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(

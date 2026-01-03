@@ -47,14 +47,48 @@ from inference.core.workflows.prototypes.block import (
 from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 
 LONG_DESCRIPTION = """
-Run inference on a object-detection model hosted on or uploaded to Roboflow.
+Run inference on an object detection model hosted on or uploaded to Roboflow.
 
-You can query any model that is private to your account, or any public model available 
-on [Roboflow Universe](https://universe.roboflow.com).
+## How This Block Works
 
-You will need to set your Roboflow API key in your Inference environment to use this 
-block. To learn more about setting your Roboflow API key, [refer to the Inference 
-documentation](https://inference.roboflow.com/quickstart/configure_api_key/).
+This block takes one or more images as input and runs them through a trained object detection model. The model analyzes each image and identifies objects, returning detections that include:
+
+- Bounding boxes (coordinates defining rectangles around detected objects)
+- Class labels (the names of detected objects, e.g., "person", "car", "dog")
+- Confidence scores (how certain the model is about each detection, from 0.0 to 1.0)
+
+The block applies post-processing techniques like Non-Maximum Suppression (NMS) to filter out duplicate detections and ensure clean, accurate results. You can configure the confidence threshold, filter by specific classes, adjust NMS parameters, and control the maximum number of detections returned.
+
+## Common Use Cases
+
+- **Security and Surveillance**: Detecting people, vehicles, or suspicious objects in video feeds
+- **Retail Analytics**: Counting products on shelves and detecting inventory levels
+- **Quality Control**: Identifying defects or anomalies in manufacturing
+- **Autonomous Vehicles**: Detecting pedestrians, other vehicles, and traffic signs
+- **Sports Analytics**: Tracking players and equipment during games
+- **Wildlife Monitoring**: Counting and identifying animals in camera trap images
+
+## Model Sources
+
+You can use:
+
+- Models from your private Roboflow account (requires authentication)
+- Public models from [Roboflow Universe](https://universe.roboflow.com) (no authentication needed for public models)
+
+## Requirements
+
+You need to set your Roboflow API key in your Inference environment to use private models. To learn more about setting your Roboflow API key, [refer to the Inference documentation](https://inference.roboflow.com/quickstart/configure_api_key/).
+
+## Connecting to Other Blocks
+
+The detection results from this block can be connected to:
+
+- **Classification blocks** to classify each detected object (e.g., classify dog breeds after detecting dogs)
+- **Visualization blocks** to draw bounding boxes and labels on images
+- **Crop blocks** (Dynamic Crop) to extract regions around detected objects for further processing
+- **Tracking blocks** to track objects across video frames
+- **Filter blocks** to filter detections based on criteria (size, confidence, class, etc.)
+- **Transformation blocks** to modify bounding boxes (resize, shift, etc.)
 """
 
 
@@ -89,7 +123,7 @@ class BlockManifest(WorkflowBlockManifest):
         Selector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
     ] = Field(
         default=0.4,
-        description="Confidence threshold for predictions.",
+        description="Minimum confidence threshold (0.0-1.0) for predictions. Detections below this threshold are filtered out.",
         examples=[0.3, "$inputs.confidence_threshold"],
     )
     class_filter: Union[Optional[List[str]], Selector(kind=[LIST_OF_VALUES_KIND])] = (

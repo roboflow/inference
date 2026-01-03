@@ -104,14 +104,59 @@ RELEVANT_TASKS_DOCS_DESCRIPTION = "\n\n".join(
     for k, v in RELEVANT_TASKS_METADATA.items()
 )
 LONG_DESCRIPTION = f"""
-Ask a question to Anthropic Claude model with vision capabilities.
+Run Anthropic Claude model with vision capabilities to perform various computer vision tasks.
 
-You can specify arbitrary text prompts or predefined ones, the block supports the following types of prompt:
+## How This Block Works
+
+This block takes one or more images as input and processes them through Anthropic's Claude model. Based on the **task type** you select, the block:
+1. **Prepares the appropriate prompt** for Claude based on the task type (e.g., OCR, classification, object detection)
+2. **Encodes and optimizes images** (downscales large images to meet Claude's requirements while maintaining aspect ratio)
+3. **Sends the request to Claude's API** with the image and task-specific instructions (optionally using extended thinking for complex reasoning)
+4. **Returns the response** as text output, which can be structured JSON or natural language depending on the task
+
+The block supports multiple predefined task types, each optimized for specific use cases, or you can use "unconstrained" mode for completely custom prompts.
+
+## Supported Task Types
+
+The block supports the following task types:
 
 {RELEVANT_TASKS_DOCS_DESCRIPTION}
 
-You need to provide your Anthropic API key to use the Claude model.
-"""
+## Common Use Cases
+
+- **Content Analysis**: Analyze images for safety, quality, or compliance - ask questions like "Does this image contain inappropriate content?"
+- **Document Processing**: Extract text from documents, forms, or receipts using OCR, then structure the data using structured-answering
+- **Product Cataloging**: Classify product images into categories or extract product attributes like color, style, material
+- **Accessibility**: Generate detailed image descriptions for visually impaired users using captioning tasks
+- **Data Extraction**: Extract structured information from images (e.g., extract fields from forms, receipts, or documents) - extended thinking can help with complex extraction tasks
+- **Visual Q&A**: Build chatbots that can answer questions about images (e.g., "What brand is this product?", "Is this person wearing a mask?") - extended thinking enables better reasoning for complex questions
+
+## Requirements
+
+You need to provide your Anthropic API key to use this block. The API key is used to authenticate requests to Anthropic's Claude API. You can get your API key from [Anthropic's console](https://console.anthropic.com/). Note that API usage is subject to Anthropic's pricing and rate limits.
+
+## Connecting to Other Blocks
+
+The text outputs from this block can be connected to:
+
+- **Parser blocks** (e.g., JSON Parser v1, VLM as Classifier v2, VLM as Detector v2) to convert text responses into structured data formats
+- **Conditional logic blocks** to route workflow execution based on Claude's responses
+- **Filter blocks** to filter images or detections based on Claude's analysis
+- **Visualization blocks** to display text overlays or annotations on images
+- **Data storage blocks** to log responses for analytics or audit trails
+- **Notification blocks** to send alerts based on Claude's findings
+
+## Version Differences (v2 vs v1)
+
+This version (v2) includes several enhancements over v1:
+
+- **Extended Thinking**: New `extended_thinking` and `thinking_budget_tokens` parameters enable Claude to perform deeper reasoning on complex tasks by using internal "thinking" before providing the final answer
+- **Improved Token Management**: `max_tokens` is now optional and defaults to the model's maximum output tokens (up to 64,000 for newer models), providing better flexibility
+- **Updated Model Support**: Curated list of Claude models with metadata, updated default to "claude-sonnet-4-5", and improved model version handling
+- **Temperature Range**: Temperature range is now 0.0-1.0 (instead of 0.0-2.0) to align with Claude's API specifications
+- **Streaming API**: Uses streaming API for better handling of long responses and max_tokens limits
+- **Updated Recommended Parsers**: Recommended parsers now use v2 versions (e.g., vlm_as_classifier@v2, vlm_as_detector@v2) for better compatibility
+f"""
 
 TaskType = Literal[tuple(SUPPORTED_TASK_TYPES_LIST)]
 

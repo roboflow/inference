@@ -48,7 +48,45 @@ DETECTIONS_CLASS_NAME_FIELD = "class_name"
 DETECTION_ID_FIELD = "detection_id"
 
 
-LONG_DESCRIPTION = "Seg Preview"
+LONG_DESCRIPTION = """
+Run Seg Preview, a remote zero-shot instance segmentation model that uses text prompts to segment objects in images.
+
+## How This Block Works
+
+This block takes one or more images as input and processes them through a remote segmentation preview service. The block uses text prompts to perform zero-shot open-vocabulary segmentation, allowing you to segment objects based on natural language descriptions without training a model on specific object classes. The block:
+
+1. Takes your list of class names (e.g., ["person", "car", "bicycle"]) and one or more images
+2. Sends the images and text prompts to the remote segmentation service via API
+3. Processes each image to generate segmentation masks for objects matching your specified class names
+4. Filters masks based on the confidence threshold you specify
+5. Returns instance segmentation predictions with polygon masks, bounding boxes, class names, and confidence scores
+
+This block runs exclusively on remote infrastructure - all processing happens on Roboflow's servers, so no local GPU or model setup is required. The segmentation service uses text prompts to perform open-vocabulary segmentation, meaning you can specify any object classes in natural language.
+
+## Common Use Cases
+
+- **Zero-Shot Segmentation**: Segment objects in images using text descriptions without training a custom segmentation model
+- **Open-Vocabulary Segmentation**: Segment custom object categories by simply describing them in text (e.g., "red car", "person wearing helmet", "dog")
+- **Remote Processing**: Perform segmentation without local GPU requirements - all processing happens on remote infrastructure
+- **Precise Object Segmentation**: Generate pixel-accurate masks for objects, useful for detailed analysis, measurement, or extraction
+- **Multi-Class Segmentation**: Segment multiple object types in a single pass by specifying multiple class names
+- **Quick Prototyping**: Test segmentation workflows quickly without setting up local models or GPU infrastructure
+
+## Requirements
+
+This block runs exclusively on **remote infrastructure** - no local GPU or model setup is required. The segmentation service is hosted on Roboflow's servers and accessed via API. You need a valid API key to use this block.
+
+## Connecting to Other Blocks
+
+The instance segmentation predictions from this block can be connected to:
+
+- **Visualization blocks** (e.g., Mask Visualization, Bounding Box Visualization) to draw segmentation results on images
+- **Filter blocks** (e.g., Detections Filter) to filter segmentation results based on confidence, class, area, or other criteria
+- **Transformation blocks** (e.g., Dynamic Crop) to extract regions based on segmented masks
+- **Analytics blocks** (e.g., Data Aggregator) to analyze segmentation results over time
+- **Conditional logic blocks** (e.g., Continue If) to route workflow execution based on segmentation results
+- **Data storage blocks** (e.g., CSV Formatter, Roboflow Dataset Upload) to log segmentation results
+"""
 
 
 class BlockManifest(WorkflowBlockManifest):
@@ -81,11 +119,13 @@ class BlockManifest(WorkflowBlockManifest):
     ] = Field(
         title="Class Names",
         default=None,
-        description="List of classes to recognise",
-        examples=[["car", "person"], "$inputs.classes"],
+        description="List of class names (text prompts) to segment in the images. Provide a list of strings describing the objects you want to segment (e.g., ['person', 'car', 'bicycle']). You can also provide a comma-separated string. The segmentation service uses these text descriptions for zero-shot open-vocabulary segmentation.",
+        examples=[["car", "person"], "car,person", "$inputs.classes"],
     )
     threshold: Union[Selector(kind=[FLOAT_KIND]), float] = Field(
-        default=0.5, description="Threshold for predicted mask scores", examples=[0.3]
+        default=0.5,
+        description="Confidence threshold for predicted mask scores (0.0 to 1.0). Only segmentation masks with confidence scores above this threshold will be returned. Lower values return more masks (including lower confidence ones), while higher values return only high-confidence masks. Default is 0.5.",
+        examples=[0.3, 0.5, 0.7],
     )
 
     @classmethod

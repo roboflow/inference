@@ -60,10 +60,53 @@ DETECTION_ID_FIELD = "detection_id"
 
 
 LONG_DESCRIPTION = """
-Run Segment Anything 3, a zero-shot instance segmentation model, on an image.
+Run Segment Anything 3 (SAM3), a zero-shot instance segmentation model that uses text prompts to segment objects in images.
 
-You can pass in boxes/predictions from other models as prompts, or use a text prompt for open-vocabulary segmentation.
-If you pass in box detections from another model, the class names of the boxes will be forwarded to the predicted masks.
+## How This Block Works
+
+This block takes one or more images as input and processes them through Meta's Segment Anything 3 (SAM3) model. SAM3 is a zero-shot segmentation model that can segment objects based on text descriptions without being trained on specific object classes. The block:
+
+1. Takes your list of class names (e.g., ["person", "car", "bicycle"]) and one or more images
+2. Processes each image through SAM3 to generate segmentation masks for objects matching your specified class names
+3. Filters masks based on confidence thresholds (global and optionally per-class)
+4. Applies Non-Maximum Suppression (NMS) across prompts to remove overlapping detections (if enabled)
+5. Returns instance segmentation predictions with polygon masks, bounding boxes, class names, and confidence scores
+
+SAM3 uses text prompts to perform open-vocabulary segmentation, meaning you can specify any object classes in natural language without training the model on those specific classes. The model generates pixel-level masks (polygons) for each detected instance of the specified classes.
+
+## Common Use Cases
+
+- **Zero-Shot Segmentation**: Segment objects in images using text descriptions without training a custom segmentation model
+- **Open-Vocabulary Segmentation**: Segment custom object categories by simply describing them in text (e.g., "red car", "person wearing helmet", "dog")
+- **Precise Object Segmentation**: Generate pixel-accurate masks for objects, useful for detailed analysis, measurement, or extraction
+- **Multi-Class Segmentation**: Segment multiple object types in a single pass by specifying multiple class names
+- **Content Analysis**: Identify and segment specific content or objects in images for detailed analysis
+- **Image Editing and Processing**: Extract precise object masks for downstream processing, editing, or composition tasks
+
+## Requirements
+
+**⚠️ Important: GPU Required**
+
+This block requires a **GPU** for best performance. The execution mode (local or remote) is controlled by the `SAM3_EXEC_MODE` environment variable. For local execution, ensure you have a GPU available. For remote execution, the model runs on Roboflow's infrastructure.
+
+## Connecting to Other Blocks
+
+The instance segmentation predictions from this block can be connected to:
+
+- **Visualization blocks** (e.g., Mask Visualization, Bounding Box Visualization) to draw segmentation results on images
+- **Filter blocks** (e.g., Detections Filter) to filter segmentation results based on confidence, class, area, or other criteria
+- **Transformation blocks** (e.g., Dynamic Crop) to extract regions based on segmented masks
+- **Analytics blocks** (e.g., Data Aggregator) to analyze segmentation results over time
+- **Conditional logic blocks** (e.g., Continue If) to route workflow execution based on segmentation results
+- **Data storage blocks** (e.g., CSV Formatter, Roboflow Dataset Upload) to log segmentation results
+
+## Version Differences (v2 vs v1)
+
+This version (v2) includes several enhancements over v1:
+
+- **Per-Class Confidence Thresholds**: Added `per_class_confidence` parameter to set different confidence thresholds for each class, allowing fine-tuned control over detection sensitivity per object type
+- **Non-Maximum Suppression (NMS)**: Added `apply_nms` and `nms_iou_threshold` parameters to remove overlapping detections across different prompts, improving result quality when segmenting multiple classes
+- **Parameter Renaming**: The `threshold` parameter has been renamed to `confidence` for clarity
 """
 
 
@@ -96,8 +139,7 @@ class BlockManifest(WorkflowBlockManifest):
 
     model_id: Union[Selector(kind=[ROBOFLOW_MODEL_ID_KIND]), Optional[str]] = Field(
         default="sam3/sam3_final",
-        # description="Model variant placeholder (SAM3 local image model).",
-        description="model version.  You only need to change this for fine tuned sam3 models.",
+        description="The SAM3 model to use for inference. Default is 'sam3/sam3_final'. You only need to change this for fine-tuned SAM3 models.",
         examples=[
             "sam3/sam3_final",
             "$inputs.model_variant",
@@ -109,14 +151,14 @@ class BlockManifest(WorkflowBlockManifest):
     ] = Field(
         title="Class Names",
         default=None,
-        description="List of classes to recognise",
-        examples=[["car", "person"], "$inputs.classes"],
+        description="List of class names (text prompts) to segment in the images. Provide a list of strings describing the objects you want to segment (e.g., ['person', 'car', 'bicycle']). You can also provide a comma-separated string. SAM3 uses these text descriptions for zero-shot open-vocabulary segmentation. The length must match `per_class_confidence` if provided.",
+        examples=[["car", "person"], "car,person", "$inputs.classes"],
     )
     confidence: Union[Selector(kind=[FLOAT_KIND]), float] = Field(
         default=0.5,
         title="Confidence Threshold",
-        description="Minimum confidence threshold for predicted masks",
-        examples=[0.3],
+        description="Global confidence threshold for predicted mask scores (0.0 to 1.0). Only segmentation masks with confidence scores above this threshold will be returned. This serves as the default threshold; you can override it per-class using `per_class_confidence`. Lower values return more masks (including lower confidence ones), while higher values return only high-confidence masks. Default is 0.5.",
+        examples=[0.3, 0.5, 0.7],
     )
 
     per_class_confidence: Optional[
@@ -124,21 +166,21 @@ class BlockManifest(WorkflowBlockManifest):
     ] = Field(
         default=None,
         title="Per-Class Confidence",
-        description="List of confidence thresholds per class (must match class_names length)",
+        description="Optional list of confidence thresholds (0.0 to 1.0) for each class, allowing fine-tuned control over detection sensitivity per object type. The length must exactly match the number of class names. If provided, these thresholds override the global `confidence` threshold for each corresponding class. Useful when different object types require different sensitivity levels (e.g., lower threshold for rare objects, higher threshold for common objects).",
         examples=[[0.3, 0.5, 0.7]],
     )
 
     apply_nms: Union[Selector(kind=[BOOLEAN_KIND]), bool] = Field(
         default=True,
         title="Apply NMS",
-        description="Whether to apply Non-Maximum Suppression across prompts",
+        description="Whether to apply Non-Maximum Suppression (NMS) across prompts. When enabled, NMS removes overlapping detections from different class prompts, improving result quality when segmenting multiple classes that might overlap. Default is True.",
     )
 
     nms_iou_threshold: Union[Selector(kind=[FLOAT_KIND]), float] = Field(
         default=0.9,
         title="NMS IoU Threshold",
-        description="IoU threshold for cross-prompt NMS. Must be in [0.0, 1.0]",
-        examples=[0.5, 0.9],
+        description="Intersection over Union (IoU) threshold for cross-prompt Non-Maximum Suppression (0.0 to 1.0). Detections with IoU above this threshold are considered overlapping and the lower-confidence one is removed. Higher values (e.g., 0.9) allow more overlapping detections, while lower values (e.g., 0.5) are more aggressive at removing overlaps. Default is 0.9. Only used when `apply_nms` is True.",
+        examples=[0.5, 0.7, 0.9],
     )
 
     @validator("nms_iou_threshold")

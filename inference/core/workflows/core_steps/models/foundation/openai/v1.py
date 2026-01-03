@@ -48,13 +48,41 @@ class LMMConfig(BaseModel):
 
 
 LONG_DESCRIPTION = """
-Ask a question to OpenAI's GPT-4 with Vision model.
+Run OpenAI's GPT-4 with Vision model to analyze images using natural language prompts.
 
-You can specify arbitrary text prompts to the OpenAIBlock.
+## How This Block Works
 
-You need to provide your OpenAI API key to use the GPT-4 with Vision model. 
+This block takes one or more images as input and processes them through OpenAI's GPT-4 Vision model. The block:
+1. **Encodes images** to base64 format for API transmission
+2. **Sends the request to OpenAI's API** with your custom text prompt and the image(s)
+3. **Processes the response** - returns both raw text output and structured JSON (if `json_output_format` is specified)
+4. **Extracts structured data** - if you define expected output fields, the block automatically parses the response into a structured format
 
-_This model was previously part of the LMM block._
+The block supports flexible prompts - you can ask any question or give any instruction, making it suitable for a wide variety of computer vision tasks.
+
+## Common Use Cases
+
+- **Content Analysis**: Ask questions about image content - "What objects are in this image?", "Describe the scene", "Is this product damaged?"
+- **Data Extraction**: Extract structured information from images - define fields like `{"price": "product price", "brand": "brand name"}` to extract specific data points
+- **Document Processing**: Analyze documents, forms, or receipts - "Extract all text from this receipt" or "What information is in this form?"
+- **Quality Control**: Inspect products or manufacturing - "Are there any defects in this image?", "Check if this item meets quality standards"
+- **Accessibility**: Generate descriptions for visually impaired users - "Describe this image in detail"
+- **Scene Understanding**: Understand complex scenes - "What activities are happening in this image?", "What is the mood or atmosphere?"
+
+## Requirements
+
+You need to provide your OpenAI API key to use this block. The API key is used to authenticate requests to OpenAI's GPT-4 Vision API. You can get your API key from [OpenAI's platform](https://platform.openai.com/api-keys). Note that API usage is subject to OpenAI's pricing and rate limits.
+
+## Connecting to Other Blocks
+
+The outputs from this block can be connected to:
+
+- **Conditional logic blocks** to route workflow execution based on GPT-4's responses or extracted structured data
+- **Filter blocks** to filter images or data based on GPT-4's analysis
+- **Visualization blocks** to display text overlays or annotations based on GPT-4's findings
+- **Data storage blocks** to log responses and extracted data for analytics or audit trails
+- **Notification blocks** to send alerts based on GPT-4's analysis (e.g., defect detected, specific content found)
+- **Transformation blocks** to process or transform the structured outputs for downstream use
 """
 
 

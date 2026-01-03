@@ -54,12 +54,47 @@ DETECTIONS_CLASS_NAME_FIELD = "class_name"
 DETECTION_ID_FIELD = "detection_id"
 
 LONG_DESCRIPTION = """
-Run Segment Anything 2, a zero-shot instance segmentation model, on an image.
+Run Segment Anything 2 (SAM2), a zero-shot instance segmentation model that converts bounding boxes to precise segmentation masks.
 
-** Dedicated inference server required (GPU recomended) **
+## How This Block Works
 
-You can use pass in boxes/predictions from other models to Segment Anything 2 to use as prompts for the model.
-If you pass in box detections from another model, the class names of the boxes will be forwarded to the predicted masks.  If using the model unprompted, the model will assign integers as class names / ids.
+This block takes one or more images as input and processes them through Meta's Segment Anything 2 (SAM2) model. SAM2 is designed to convert bounding box prompts into precise pixel-level segmentation masks. The block:
+
+1. Takes images and optionally bounding boxes from other models (object detection, keypoint detection, or instance segmentation)
+2. If boxes are provided, uses them as prompts to generate precise segmentation masks for each box
+3. If no boxes are provided, can generate masks for the entire image (unprompted mode)
+4. Filters masks based on the confidence threshold you specify
+5. Returns instance segmentation predictions with polygon masks, bounding boxes, class names (from input boxes if provided), and confidence scores
+
+When you provide bounding boxes from other models, SAM2 generates precise segmentation masks that follow the contours of the objects. The class names from the input boxes are preserved in the output masks. If you run SAM2 unprompted (without boxes), the model assigns generic class names.
+
+## Common Use Cases
+
+- **Box-to-Polygon Conversion**: Convert bounding boxes from object detection models into precise segmentation masks for detailed object analysis
+- **Precise Object Segmentation**: Generate pixel-accurate masks from bounding boxes, useful for detailed measurement, analysis, or extraction
+- **Multi-Model Workflows**: Combine object detection models with SAM2 to get both fast detections and precise segmentations
+- **Image-Wide Segmentation**: Generate segmentation masks for entire images when run without box prompts
+- **Quality Enhancement**: Improve the precision of bounding box detections by converting them to detailed segmentation masks
+- **Measurement and Analysis**: Extract precise object boundaries for measurement, area calculation, or detailed shape analysis
+
+## Requirements
+
+**⚠️ Important: Dedicated Inference Server Required**
+
+This block requires **local execution** (cannot run remotely). A **GPU is recommended** for best performance. The model requires appropriate dependencies to be installed.
+
+## Connecting to Other Blocks
+
+The instance segmentation predictions from this block can be connected to:
+
+- **Visualization blocks** (e.g., Mask Visualization, Bounding Box Visualization) to draw segmentation results on images
+- **Filter blocks** (e.g., Detections Filter) to filter segmentation results based on confidence, class, area, or other criteria
+- **Transformation blocks** (e.g., Dynamic Crop) to extract regions based on segmented masks
+- **Analytics blocks** (e.g., Data Aggregator) to analyze segmentation results over time
+- **Conditional logic blocks** (e.g., Continue If) to route workflow execution based on segmentation results
+- **Data storage blocks** (e.g., CSV Formatter, Roboflow Dataset Upload) to log segmentation results
+
+This block is commonly used **after** object detection blocks to convert their bounding box outputs into precise segmentation masks.
 """
 
 
@@ -95,7 +130,7 @@ class BlockManifest(WorkflowBlockManifest):
             ]
         )
     ] = Field(  # type: ignore
-        description="Bounding boxes (from another model) to convert to polygons",
+        description="Optional bounding boxes from other models (object detection, instance segmentation, or keypoint detection) to use as prompts for SAM2. When provided, SAM2 will generate precise segmentation masks for each box, preserving the class names from the input detections. If not provided, SAM2 will run in unprompted mode.",
         examples=["$steps.object_detection_model.predictions"],
         default=None,
         json_schema_extra={"always_visible": True},
@@ -105,20 +140,22 @@ class BlockManifest(WorkflowBlockManifest):
         Literal["hiera_large", "hiera_small", "hiera_tiny", "hiera_b_plus"],
     ] = Field(
         default="hiera_tiny",
-        description="Model to be used.  One of hiera_large, hiera_small, hiera_tiny, hiera_b_plus",
-        examples=["hiera_large", "$inputs.openai_model"],
+        description="The SAM2 model variant to use. Options include 'hiera_tiny' (smallest, fastest), 'hiera_small', 'hiera_b_plus', and 'hiera_large' (largest, most accurate). Larger models are more accurate but slower and require more GPU memory. Default is 'hiera_tiny'.",
+        examples=["hiera_tiny", "hiera_large", "$inputs.model_version"],
     )
     threshold: Union[
         Selector(kind=[FLOAT_KIND]),
         float,
     ] = Field(
-        default=0.0, description="Threshold for predicted masks scores", examples=[0.3]
+        default=0.0,
+        description="Confidence threshold for predicted mask scores (0.0 to 1.0). Only segmentation masks with confidence scores above this threshold will be returned. Lower values return more masks (including lower confidence ones), while higher values return only high-confidence masks. Default is 0.0 (returns all masks).",
+        examples=[0.0, 0.3, 0.5],
     )
 
     multimask_output: Union[Optional[bool], Selector(kind=[BOOLEAN_KIND])] = Field(
         default=True,
-        description="Flag to determine whether to use sam2 internal multimask or single mask mode. For ambiguous prompts setting to True is recomended.",
-        examples=[True, "$inputs.multimask_output"],
+        description="Whether to use SAM2's internal multimask or single mask mode. When True (default), SAM2 generates multiple candidate masks for each prompt and selects the best one - recommended for ambiguous prompts where multiple valid segmentations might exist. When False, SAM2 generates a single mask per prompt, which is faster but may be less optimal for ambiguous cases.",
+        examples=[True, False, "$inputs.multimask_output"],
     )
 
     @classmethod

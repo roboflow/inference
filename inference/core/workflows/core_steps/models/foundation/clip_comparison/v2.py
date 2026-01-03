@@ -44,14 +44,49 @@ from inference.core.workflows.prototypes.block import (
 from inference_sdk import InferenceHTTPClient
 
 LONG_DESCRIPTION = """
-Use the OpenAI CLIP zero-shot classification model to classify images.
+Use CLIP to perform zero-shot image classification by comparing images with text labels and returning detailed similarity scores and classification predictions.
 
-This block accepts an image and a list of text prompts. The block then returns the 
-similarity of each text label to the provided image.
+## How This Block Works
 
-This block is useful for classifying images without having to train a fine-tuned 
-classification model. For example, you could use CLIP to classify the type of vehicle 
-in an image, or if an image contains NSFW material.
+This block takes one or more images and a list of text labels (class names) as input, then uses OpenAI's CLIP model to compare the semantic similarity between each image and each text label. The block:
+
+1. Takes images and a list of class names (e.g., ["car", "truck", "bicycle", "motorcycle"])
+2. Generates embeddings for both the images and text labels using the specified CLIP model variant
+3. Calculates similarity scores between each image and each class label
+4. Identifies the most similar and least similar classes for each image
+5. Returns structured classification predictions with confidence scores for all classes
+
+The block provides enhanced outputs compared to v1, including the maximum and minimum similarity scores, the most and least similar class names, and structured classification predictions that can be directly used by other blocks. You can also select from multiple CLIP model variants (e.g., ViT-B-16, RN50, ViT-L-14) to balance accuracy and performance for your use case.
+
+## Common Use Cases
+
+- **Zero-Shot Classification**: Classify images into categories using text labels without training a custom classification model (e.g., classify vehicles as "car", "truck", "motorcycle", "bicycle")
+- **Content Filtering**: Check if images contain specific content by comparing against text descriptions (e.g., "NSFW content", "violence", "safe for work")
+- **Multi-Class Classification**: Classify images into multiple categories simultaneously by providing a list of class names and getting similarity scores for each
+- **Custom Category Detection**: Detect custom object categories or attributes by describing them in text (e.g., "red car", "person wearing helmet", "outdoor scene")
+- **Quality Assessment**: Evaluate image content against quality criteria described in text (e.g., "high quality", "blurry", "well-lit")
+- **Content Moderation**: Automatically flag images that match certain text descriptions for moderation purposes
+
+## Connecting to Other Blocks
+
+The similarity scores and classification predictions from this block can be connected to:
+
+- **Conditional logic blocks** (e.g., Continue If) to route workflow execution based on the most similar class or similarity thresholds
+- **Filter blocks** to filter images based on classification results, max similarity scores, or specific class matches
+- **Analytics blocks** (e.g., Data Aggregator) to analyze classification patterns over time
+- **Data storage blocks** (e.g., CSV Formatter, Roboflow Dataset Upload) to log classification results with structured prediction data
+- **Notification blocks** to send alerts when specific content is detected based on similarity scores or class matches
+- **Classification blocks** that accept classification predictions as input, since this block outputs structured classification predictions
+
+## Version Differences (v2 vs v1)
+
+v2 introduces several enhancements over v1:
+
+- **Enhanced Outputs**: Provides structured outputs including `max_similarity`, `most_similar_class`, `min_similarity`, `least_similar_class`, and `classification_predictions` in addition to raw similarity scores
+- **Model Selection**: Adds a `version` parameter to select from multiple CLIP model variants (RN101, RN50, RN50x16, RN50x4, RN50x64, ViT-B-16, ViT-B-32, ViT-L-14-336px, ViT-L-14) for different accuracy/performance trade-offs
+- **Structured Predictions**: Outputs `classification_predictions` in a format compatible with other classification blocks, including class names, IDs, confidences, and top prediction
+- **Parameter Rename**: The `texts` parameter has been renamed to `classes` for clarity
+- **Better Integration**: The structured outputs make it easier to connect to other workflow blocks that expect classification predictions
 """
 
 
@@ -76,8 +111,8 @@ class BlockManifest(WorkflowBlockManifest):
     name: str = Field(description="Unique name of step in workflows")
     images: Selector(kind=[IMAGE_KIND]) = ImageInputField
     classes: Union[Selector(kind=[LIST_OF_VALUES_KIND]), List[str]] = Field(
-        description="List of classes to calculate similarity against each input image",
-        examples=[["a", "b", "c"], "$inputs.texts"],
+        description="List of class names (text labels) to compare against each input image. CLIP will calculate similarity scores between the image and each class, enabling zero-shot classification. Provide descriptive class names (e.g., ['car', 'truck', 'bicycle'] or ['NSFW content', 'safe content']). The block returns similarity scores for each class, with higher scores indicating better matches. At least one class must be provided.",
+        examples=[["car", "truck", "bicycle"], ["NSFW", "safe"], "$inputs.classes"],
         min_items=1,
     )
     version: Union[
@@ -95,8 +130,8 @@ class BlockManifest(WorkflowBlockManifest):
         Selector(kind=[STRING_KIND]),
     ] = Field(
         default="ViT-B-16",
-        description="Variant of CLIP model",
-        examples=["ViT-B-16", "$inputs.variant"],
+        description="CLIP model variant to use for embeddings. Different variants offer different trade-offs between accuracy and performance. ViT-B-16 (default) provides a good balance. ViT-L-14 variants offer higher accuracy but slower inference. RN (ResNet) variants are faster but may be less accurate. ViT-L-14-336px uses higher resolution input for better accuracy on detailed images.",
+        examples=["ViT-B-16", "ViT-L-14", "RN50", "$inputs.clip_version"],
     )
 
     @classmethod

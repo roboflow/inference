@@ -66,19 +66,52 @@ RELEVANT_TASKS_DOCS_DESCRIPTION = "\n\n".join(
     for k, v in RELEVANT_TASKS_METADATA.items()
 )
 LONG_DESCRIPTION = f"""
-Ask a question to Google's Gemini model with vision capabilities.
+Run Google's Gemini model with vision capabilities to perform various computer vision tasks.
 
-You can specify arbitrary text prompts or predefined ones, the block supports the following types of prompt:
+## How This Block Works
+
+This block takes one or more images as input and processes them through Google's Gemini model. Based on the **task type** you select, the block:
+1. **Prepares the appropriate prompt** for Gemini based on the task type (e.g., OCR, classification, object detection)
+2. **Encodes images** to base64 format for API transmission
+3. **Sends the request to Google's Gemini API** with the image and task-specific instructions
+4. **Returns the response** as text output, which can be structured JSON or natural language depending on the task
+
+The block supports multiple predefined task types, each optimized for specific use cases, or you can use "unconstrained" mode for completely custom prompts.
+
+## Supported Task Types
+
+The block supports the following task types:
 
 {RELEVANT_TASKS_DOCS_DESCRIPTION}
 
-You need to provide your Google AI API key to use the Gemini model. 
+## Common Use Cases
 
-**WARNING!**
+- **Content Analysis**: Analyze images for safety, quality, or compliance - ask questions like "Does this image contain inappropriate content?"
+- **Document Processing**: Extract text from documents, forms, or receipts using OCR, then structure the data using structured-answering
+- **Product Cataloging**: Classify product images into categories or extract product attributes like color, style, material
+- **Accessibility**: Generate detailed image descriptions for visually impaired users using captioning tasks
+- **Data Extraction**: Extract structured information from images (e.g., extract fields from forms, receipts, or documents)
+- **Visual Q&A**: Build chatbots that can answer questions about images (e.g., "What brand is this product?", "Is this person wearing a mask?")
 
-This block makes use of `/v1beta` API of Google Gemini model - the implementation may change 
-in the future, without guarantee of backward compatibility.
-"""
+## Requirements
+
+You need to provide your Google AI API key to use this block. The API key is used to authenticate requests to Google's Gemini API. You can get your API key from [Google AI Studio](https://makersuite.google.com/app/apikey) or [Google Cloud Console](https://console.cloud.google.com/). Note that API usage is subject to Google's pricing and rate limits.
+
+**⚠️ Beta API Warning**
+
+This block uses Google's `/v1beta` API endpoint for Gemini. The implementation may change in the future without guarantee of backward compatibility as Google continues to develop their API.
+
+## Connecting to Other Blocks
+
+The text outputs from this block can be connected to:
+
+- **Parser blocks** (e.g., JSON Parser v1, VLM as Classifier v1, VLM as Detector v1) to convert text responses into structured data formats
+- **Conditional logic blocks** to route workflow execution based on Gemini's responses
+- **Filter blocks** to filter images or detections based on Gemini's analysis
+- **Visualization blocks** to display text overlays or annotations on images
+- **Data storage blocks** to log responses for analytics or audit trails
+- **Notification blocks** to send alerts based on Gemini's findings
+f"""
 
 TaskType = Literal[tuple(SUPPORTED_TASK_TYPES_LIST)]
 

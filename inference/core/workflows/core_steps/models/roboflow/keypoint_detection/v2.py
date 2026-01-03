@@ -52,12 +52,44 @@ from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 LONG_DESCRIPTION = """
 Run inference on a keypoint detection model hosted on or uploaded to Roboflow.
 
-You can query any model that is private to your account, or any public model available 
-on [Roboflow Universe](https://universe.roboflow.com).
+## How This Block Works
 
-You will need to set your Roboflow API key in your Inference environment to use this 
-block. To learn more about setting your Roboflow API key, [refer to the Inference 
-documentation](https://inference.roboflow.com/quickstart/configure_api_key/).
+This block takes one or more images as input and runs them through a trained keypoint detection model. Unlike object detection (which only provides bounding boxes), keypoint detection identifies specific points of interest on objects and connects them to form skeletons or structural representations. The model analyzes the image and returns detections where each detection contains a bounding box, keypoints (specific points with x, y coordinates and confidence scores), skeleton connections (lines connecting keypoints to form structures), a class label, and a confidence score for the overall detection. The block applies post-processing techniques like Non-Maximum Suppression (NMS) to filter duplicate detections and ensures keypoints are properly structured and connected. For example, a person pose estimation model detects keypoints like "left shoulder", "right elbow", "left knee" and connects them to show the person's pose skeleton.
+
+## Common Use Cases
+
+- **Pose Estimation**: Detecting human poses for fitness tracking, sports analysis, or animation (e.g., yoga pose analysis, athlete performance monitoring)
+- **Gesture Recognition**: Identifying hand gestures and finger positions for sign language recognition or touchless interfaces
+- **Sports Analytics**: Analyzing athlete movements, tracking player positions, or measuring biomechanics
+- **Animation and Gaming**: Capturing motion for character animation or creating interactive experiences
+- **Healthcare and Rehabilitation**: Monitoring patient movements, assessing physical therapy progress, or analyzing gait patterns
+- **Industrial Quality Control**: Detecting keypoints on manufactured parts to verify assembly correctness or measure dimensions
+
+## Model Sources
+
+You can use:
+
+- Models from your private Roboflow account (requires authentication)
+- Public models from [Roboflow Universe](https://universe.roboflow.com) (no authentication needed for public models)
+
+## Requirements
+
+You need to set your Roboflow API key in your Inference environment to use private models. To learn more about setting your Roboflow API key, [refer to the Inference documentation](https://inference.roboflow.com/quickstart/configure_api_key/).
+
+## Connecting to Other Blocks
+
+The keypoint detection results from this block can be connected to:
+
+- **Visualization blocks** to draw skeletons, keypoints, and bounding boxes on images (Keypoint Visualization)
+- **Tracking blocks** to track skeletons and poses across video frames
+- **Filter blocks** to filter detections based on keypoint confidence, pose characteristics, or class
+- **Measurement blocks** to calculate angles, distances, or other geometric properties from keypoint positions
+- **Classification blocks** to classify poses or gestures based on keypoint configurations
+- **Transformation blocks** to modify or normalize keypoint coordinates
+
+## Version Differences (v2 vs v1)
+
+This version (v2) includes the `model_id` in the output, making it easier to track which model was used when chaining multiple keypoint detection models in a workflow. The `inference_id` output also uses the `INFERENCE_ID_KIND` instead of `STRING_KIND` for better type checking.
 """
 
 
@@ -87,7 +119,7 @@ class BlockManifest(WorkflowBlockManifest):
         Selector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
     ] = Field(
         default=0.4,
-        description="Confidence threshold for predictions.",
+        description="Minimum confidence threshold (0.0-1.0) for detections. Detections below this threshold are filtered out.",
         examples=[0.3, "$inputs.confidence_threshold"],
     )
     keypoint_confidence: Union[
@@ -95,7 +127,7 @@ class BlockManifest(WorkflowBlockManifest):
         Selector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
     ] = Field(
         default=0.0,
-        description="Confidence threshold to predict a keypoint as visible.",
+        description="Minimum confidence threshold (0.0-1.0) for individual keypoints. Keypoints below this threshold are marked as not visible.",
         examples=[0.3, "$inputs.keypoint_confidence"],
     )
     class_filter: Union[Optional[List[str]], Selector(kind=[LIST_OF_VALUES_KIND])] = (
