@@ -200,7 +200,11 @@ class BlockManifest(WorkflowBlockManifest):
     )
     api_key: Union[Selector(kind=[STRING_KIND, SECRET_KIND]), str] = Field(
         description="Your Stability AI API key required to access the outpainting API. You can obtain an API key from https://platform.stability.ai. This field is kept private for security.",
-        examples=["sk-xxx-xxx", "$inputs.stability_ai_api_key", "$secrets.stability_api_key"],
+        examples=[
+            "sk-xxx-xxx",
+            "$inputs.stability_ai_api_key",
+            "$secrets.stability_api_key",
+        ],
         private=True,
     )
 

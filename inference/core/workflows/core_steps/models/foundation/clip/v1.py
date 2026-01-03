@@ -89,7 +89,12 @@ class BlockManifest(WorkflowBlockManifest):
     data: Union[Selector(kind=[IMAGE_KIND, STRING_KIND]), str] = Field(
         title="Data",
         description="The image or text string to generate an embedding for. CLIP can process both images and text, generating embeddings in the same semantic space so they can be compared for similarity. For text inputs, embeddings are cached for efficiency.",
-        examples=["$inputs.image", "$steps.cropping.crops", "a red car", "$inputs.text_query"],
+        examples=[
+            "$inputs.image",
+            "$steps.cropping.crops",
+            "a red car",
+            "$inputs.text_query",
+        ],
     )
 
     version: Union[

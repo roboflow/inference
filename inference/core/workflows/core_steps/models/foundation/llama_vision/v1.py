@@ -178,7 +178,11 @@ class BlockManifest(WorkflowBlockManifest):
     prompt: Optional[Union[Selector(kind=[STRING_KIND]), str]] = Field(
         default=None,
         description="Text prompt for the Llama model. Required for 'unconstrained' and 'visual-question-answering' task types. Can be any question, instruction, or request about the image. For unconstrained mode, use any custom prompt. For VQA, ask specific questions about the image content (e.g., 'What objects are in this image?', 'Describe the scene').",
-        examples=["What objects are in this image?", "Describe the scene in detail", "$inputs.prompt"],
+        examples=[
+            "What objects are in this image?",
+            "Describe the scene in detail",
+            "$inputs.prompt",
+        ],
         json_schema_extra={
             "relevant_for": {
                 "task_type": {"values": TASKS_REQUIRING_PROMPT, "required": True},
@@ -189,7 +193,11 @@ class BlockManifest(WorkflowBlockManifest):
     output_structure: Optional[Dict[str, str]] = Field(
         default=None,
         description="Dictionary defining the expected JSON output structure for 'structured-answering' task type. Maps field names to their descriptions (e.g., {'count': 'number of objects', 'color': 'dominant color'}). The model will attempt to return JSON matching this structure. Note: The model can be unpredictable with structured outputs due to content filtering. Required for structured-answering task type.",
-        examples=[{"count": "number of objects", "color": "dominant color"}, {"objects": "list of detected objects"}, "$inputs.output_structure"],
+        examples=[
+            {"count": "number of objects", "color": "dominant color"},
+            {"objects": "list of detected objects"},
+            "$inputs.output_structure",
+        ],
         json_schema_extra={
             "relevant_for": {
                 "task_type": {
@@ -202,7 +210,11 @@ class BlockManifest(WorkflowBlockManifest):
     classes: Optional[Union[Selector(kind=[LIST_OF_VALUES_KIND]), List[str]]] = Field(
         default=None,
         description="List of class names for classification tasks. Required for 'classification' (single-label) and 'multi-label-classification' task types. Provide descriptive class names (e.g., ['cat', 'dog', 'bird'] for single-label or ['sunny', 'cloudy', 'rainy'] for multi-label). For single-label classification, the model selects one class. For multi-label, the model can select multiple classes. Note: Classification results can be unpredictable due to model content filtering.",
-        examples=[["cat", "dog", "bird"], ["happy", "sad", "neutral"], "$inputs.classes"],
+        examples=[
+            ["cat", "dog", "bird"],
+            ["happy", "sad", "neutral"],
+            "$inputs.classes",
+        ],
         json_schema_extra={
             "relevant_for": {
                 "task_type": {
@@ -214,7 +226,11 @@ class BlockManifest(WorkflowBlockManifest):
     )
     api_key: Union[Selector(kind=[STRING_KIND]), str] = Field(
         description="OpenRouter API key required to access the Llama 3.2 Vision model. You can obtain an API key from https://openrouter.ai/docs/api-keys. OpenRouter provides access to the model via their API service. This field is kept private for security.",
-        examples=["sk-or-v1-xxx-xxx", "$inputs.openrouter_api_key", "$secrets.openrouter_key"],
+        examples=[
+            "sk-or-v1-xxx-xxx",
+            "$inputs.openrouter_api_key",
+            "$secrets.openrouter_key",
+        ],
         private=True,
     )
     model_version: Union[
@@ -228,7 +244,11 @@ class BlockManifest(WorkflowBlockManifest):
     ] = Field(
         default="11B (Free) - OpenRouter",
         description="Llama 3.2 Vision model variant to use. Options: '11B' (11 billion parameters - faster, cheaper, good for basic tasks) or '90B' (90 billion parameters - higher quality, better for production). Both are available as 'Free' (free tier, subject to availability) or 'Regular' (paid, faster and more reliable). Default is 11B Free. For production use cases requiring higher accuracy, consider 90B Regular.",
-        examples=["11B (Free) - OpenRouter", "90B (Regular) - OpenRouter", "$inputs.model_version"],
+        examples=[
+            "11B (Free) - OpenRouter",
+            "90B (Regular) - OpenRouter",
+            "$inputs.model_version",
+        ],
     )
     max_tokens: int = Field(
         default=500,

@@ -128,14 +128,18 @@ class BlockManifest(WorkflowBlockManifest):
     images: Selector(kind=[IMAGE_KIND]) = ImageInputField
     prompt: Union[Selector(kind=[STRING_KIND]), str] = Field(
         description="Text prompt to send to the GPT-4 Vision model. Can be any question, instruction, or request about the image. The model will respond based on this prompt. Be specific and clear for best results (e.g., 'Describe what you see in this image', 'Count the number of cars', 'What is the main subject of this photo?'). If json_output is specified, include instructions in the prompt about what information to extract.",
-        examples=["Describe what you see in this image", "Count the number of objects", "$inputs.prompt"],
+        examples=[
+            "Describe what you see in this image",
+            "Count the number of objects",
+            "$inputs.prompt",
+        ],
         json_schema_extra={
             "multiline": True,
         },
     )
     lmm_type: Union[Selector(kind=[STRING_KIND]), Literal["gpt_4v"]] = Field(
         description="Type of Large Multimodal Model to use. Currently only 'gpt_4v' (GPT-4 with Vision) is supported. This block is deprecated - consider using OpenAI GPT-4 Vision blocks (v1-v4) instead.",
-        examples=["gpt_4v", "$inputs.lmm_type"]
+        examples=["gpt_4v", "$inputs.lmm_type"],
     )
     lmm_config: LMMConfig = Field(
         default_factory=lambda: LMMConfig(),
@@ -159,7 +163,11 @@ class BlockManifest(WorkflowBlockManifest):
     json_output: Optional[Dict[str, str]] = Field(
         default=None,
         description="Optional dictionary defining a JSON schema for structured output parsing. Maps field names to their descriptions (e.g., {'count': 'number of objects', 'color': 'dominant color'}). The block will attempt to parse the model's response as JSON matching this schema, extracting the specified fields. If parsing fails or fields are missing, they will be set to 'not_detected'. Leave as None to get raw text output only.",
-        examples=[{"count": "number of cats in the picture", "breed": "cat breed"}, {"objects": "list of objects found"}, "$inputs.json_output"],
+        examples=[
+            {"count": "number of cats in the picture", "breed": "cat breed"},
+            {"objects": "list of objects found"},
+            "$inputs.json_output",
+        ],
     )
 
     @classmethod

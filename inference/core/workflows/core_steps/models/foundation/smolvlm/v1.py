@@ -30,7 +30,11 @@ class BlockManifest(WorkflowBlockManifest):
     prompt: Optional[str] = Field(
         default=None,
         description="Optional text prompt or question to ask about the image. If not provided, the model will generate a general description. SmolVLM2 is particularly good at document OCR, visual question answering, and object counting tasks. Be specific about what you want the model to analyze or describe from the image.",
-        examples=["What is in this image?", "How many objects are there?", "Extract text from this document"],
+        examples=[
+            "What is in this image?",
+            "How many objects are there?",
+            "Extract text from this document",
+        ],
     )
 
     # Standard model configuration for UI, schema, etc.

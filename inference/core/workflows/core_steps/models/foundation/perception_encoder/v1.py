@@ -88,7 +88,12 @@ class BlockManifest(WorkflowBlockManifest):
     data: Union[Selector(kind=[IMAGE_KIND, STRING_KIND]), str] = Field(
         title="Data",
         description="The image or text string to generate an embedding for. Perception Encoder can process both images and text, generating embeddings in the same semantic space so they can be compared for similarity. For text inputs, embeddings are cached for efficiency.",
-        examples=["$inputs.image", "$steps.cropping.crops", "a red car", "$inputs.text_query"],
+        examples=[
+            "$inputs.image",
+            "$steps.cropping.crops",
+            "a red car",
+            "$inputs.text_query",
+        ],
     )
     version: Union[
         Literal[
@@ -100,7 +105,12 @@ class BlockManifest(WorkflowBlockManifest):
     ] = Field(
         default="PE-Core-L14-336",
         description="The Perception Encoder model variant to use. Options include 'PE-Core-B16-224' (Base model, 224px input), 'PE-Core-L14-336' (Large model, 336px input, default), and 'PE-Core-G14-448' (Giant model, 448px input). Larger models are more accurate but slower and require more resources. PE-Core-L14-336 offers a good balance of accuracy and speed.",
-        examples=["PE-Core-L14-336", "PE-Core-B16-224", "PE-Core-G14-448", "$inputs.model_version"],
+        examples=[
+            "PE-Core-L14-336",
+            "PE-Core-B16-224",
+            "PE-Core-G14-448",
+            "$inputs.model_version",
+        ],
     )
 
     @classmethod
