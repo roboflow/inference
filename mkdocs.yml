@@ -103,7 +103,6 @@ nav:
           - foundation/about.md
           - CLIP (Classification, Embeddings): foundation/clip.md
           - DocTR (OCR): foundation/doctr.md
-          - EasyOCR (OCR): foundation/easy_ocr.md
           - Depth Estimation (Depth Anything V2 Small): foundation/depth_estimation.md
           - Florence-2: foundation/florence2.md
           - TrOCR (OCR): foundation/trocr.md
