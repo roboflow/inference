@@ -21,16 +21,53 @@ from inference.core.workflows.prototypes.block import (
 
 SHORT_DESCRIPTION = "Get the dominant color of an image in RGB format."
 LONG_DESCRIPTION = """
-Extract the dominant color from an input image using K-means clustering.
+Extract the most prevalent dominant color from an image using K-means clustering on pixel colors, analyzing color distribution, identifying color clusters, and returning the RGB value of the most frequently occurring color cluster for color analysis, theme extraction, color-based filtering, and visual analysis workflows.
 
-This block identifies the most prevalent color in an image.
-Processing time is dependant on color complexity and image size.
-Most images should complete in under half a second.
+## How This Block Works
 
-The output is a list of RGB values representing the dominant color, making it easy 
-to use in further processing or visualization tasks.
+This block analyzes the color distribution in an image using K-means clustering to identify and extract the dominant (most prevalent) color. The block:
 
-Note: The block operates on the assumption that the input image is in RGB format. 
+1. Receives an input image (assumes RGB format) to analyze for dominant color
+2. Downsamples the image to optimize processing speed:
+   - Calculates a scale factor based on the smallest dimension and target_size parameter
+   - Reduces image resolution while preserving color characteristics
+   - Smaller target_size values speed up processing but may slightly reduce precision
+3. Reshapes the image pixels into a 2D array where each row represents one pixel's RGB values
+4. Initializes K-means clustering:
+   - Selects random pixel colors as initial cluster centroids (number of clusters = color_clusters)
+   - Creates initial color clusters to group similar pixel colors
+5. Performs iterative K-means clustering (up to max_iterations):
+   - Assigns each pixel to the nearest color cluster (based on Euclidean distance in RGB color space)
+   - Updates cluster centroids by computing the mean RGB values of pixels in each cluster
+   - Handles empty clusters by reinitializing them to random pixel colors
+   - Checks for convergence (centroids stop changing significantly) and exits early if converged
+6. Counts pixels in each color cluster to determine which cluster contains the most pixels
+7. Selects the cluster with the highest pixel count as the dominant color cluster
+8. Extracts the RGB values from the dominant cluster's centroid
+9. Converts and clips RGB values to valid 0-255 integer range
+10. Returns the dominant color as an RGB tuple (R, G, B values)
+
+The block uses K-means clustering to group similar pixel colors together, then identifies the largest color group as the dominant color. Processing time depends on image size, color complexity, and parameter settings (color_clusters, max_iterations, target_size). Most images complete in under half a second with default settings. The downsampling step balances speed and accuracy - reducing resolution speeds up clustering while still capturing the overall color distribution.
+
+## Common Use Cases
+
+- **Color Theme Extraction**: Extract dominant colors from images to identify color themes or palettes (e.g., extract dominant colors from product images, identify color themes in photographs, analyze color palettes in images), enabling color theme analysis workflows
+- **Image Color Analysis**: Analyze images to determine their primary color characteristics (e.g., identify dominant colors in images, analyze color distribution, extract color signatures from images), enabling color-based image analysis
+- **Color-Based Filtering**: Use dominant colors for filtering or categorizing images (e.g., filter images by dominant color, categorize images by color themes, group images by color characteristics), enabling color-based classification workflows
+- **Visual Analysis and Reporting**: Extract color information for visual analysis or reporting (e.g., generate color reports for images, analyze color trends in image collections, extract color metadata for image databases), enabling color reporting workflows
+- **Design and Branding Analysis**: Analyze images for design or branding purposes (e.g., extract brand colors from images, analyze design color schemes, identify color usage in branded content), enabling design analysis workflows
+- **Quality Control**: Use dominant color analysis for quality control or inspection (e.g., verify expected colors in products, detect color anomalies, validate color characteristics), enabling color-based quality control workflows
+
+## Connecting to Other Blocks
+
+This block receives an image and produces a dominant RGB color:
+
+- **After image input blocks** to extract dominant colors from input images (e.g., analyze colors in camera feeds, extract colors from image inputs, analyze color characteristics of images), enabling color analysis workflows
+- **After crop blocks** to analyze dominant colors in specific image regions (e.g., extract dominant colors from cropped regions, analyze colors in specific areas, identify colors in selected regions), enabling region-based color analysis workflows
+- **Before filtering or logic blocks** that use color information for decision-making (e.g., filter based on dominant colors, make decisions based on color characteristics, apply logic based on color analysis), enabling color-based conditional workflows
+- **Before visualization blocks** to use dominant colors for visualization (e.g., use extracted colors for annotations, apply dominant colors to visualizations, customize visualizations with extracted colors), enabling color-enhanced visualization workflows
+- **In color analysis pipelines** where dominant color extraction is part of a larger analysis workflow (e.g., analyze colors in multi-stage workflows, extract colors for comprehensive analysis, process color information in pipelines), enabling color analysis pipeline workflows
+- **Before data storage blocks** to store color information along with images (e.g., store dominant colors with image metadata, save color analysis results, record color characteristics), enabling color metadata storage workflows
 """
 
 
@@ -54,13 +91,13 @@ class DominantColorManifest(WorkflowBlockManifest):
     )
     image: Selector(kind=[IMAGE_KIND]) = Field(
         title="Input Image",
-        description="The input image for this step.",
+        description="Input image to analyze for dominant color extraction. The image is assumed to be in RGB format. The block analyzes all pixels in the image to determine the most prevalent color. Processing time depends on image size and complexity. The image is automatically downsampled during processing to optimize speed while preserving color characteristics.",
         examples=["$inputs.image", "$steps.cropping.crops"],
         validation_alias=AliasChoices("image", "images"),
     )
     color_clusters: Union[int, Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         title="Color Clusters",
-        description="Number of dominant colors to identify. Higher values increase precision but may slow processing.",
+        description="Number of color clusters (K) to use in K-means clustering. Must be between 1 and 10. The algorithm groups pixel colors into this many clusters, then selects the largest cluster as the dominant color. Higher values (e.g., 6-8) can improve precision for images with complex color distributions but increase processing time. Lower values (e.g., 2-3) are faster but may be less precise for multi-color images. Default is 4, which provides a good balance. Use fewer clusters for images with simple color schemes, more clusters for images with varied colors.",
         default=4,
         examples=[4, "$inputs.color_clusters"],
         gt=0,
@@ -68,7 +105,7 @@ class DominantColorManifest(WorkflowBlockManifest):
     )
     max_iterations: Union[int, Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         title="Max Iterations",
-        description="Max number of iterations to perform. Higher values increase precision but may slow processing.",
+        description="Maximum number of K-means clustering iterations to perform. Must be between 1 and 500. The algorithm iteratively refines color clusters and stops early if convergence is reached (centroids stop changing). Higher values allow more refinement and can improve precision but increase processing time. Lower values are faster but may result in less refined color clusters. Default is 100, which is typically sufficient for convergence. Most images converge well before reaching the maximum. Increase if you need more precise clustering, decrease if speed is critical.",
         default=100,
         examples=[100, "$inputs.max_iterations"],
         gt=0,
@@ -76,7 +113,7 @@ class DominantColorManifest(WorkflowBlockManifest):
     )
     target_size: Union[int, Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         title="Target Size",
-        description="Sets target for the smallest dimension of the downsampled image in pixels. Lower values increase speed but may reduce precision.",
+        description="Target size in pixels for the smallest dimension of the downsampled image used for clustering. Must be between 1 and 250. The image is downsampled before clustering to speed up processing - the smallest dimension is resized to approximately this size while maintaining aspect ratio. Lower values (e.g., 50-75) speed up processing significantly but may slightly reduce precision for images with fine color details. Higher values (e.g., 150-200) preserve more detail but are slower. Default is 100 pixels, which provides a good balance. Use lower values for speed-critical applications, higher values for maximum precision.",
         default=100,
         examples=[100, "$inputs.target_size"],
         gt=0,
