@@ -33,17 +33,41 @@ from inference.core.workflows.prototypes.block import (
 )
 
 LONG_DESCRIPTION = """
-Create dynamic crops from an image based on detections from detections-based model.
+Extract cropped image regions from input images based on bounding boxes from detection model predictions, supporting object detection, instance segmentation, and keypoint detection models with optional background removal using segmentation masks for focused region extraction and multi-stage analysis workflows.
 
-This is useful when placed after an ObjectDetection block as part of a multi-stage 
-workflow. For example, you could use an ObjectDetection block to detect objects, then 
-the DynamicCropBlock block to crop objects, then an OCR block to run character recognition on 
-each of the individual cropped regions.
+## How This Block Works
 
-In addition, for instance segmentation predictions (which provide segmentation mask for each 
-bounding box) it is possible to remove background in the crops, outside of detected instances.
-To enable that functionality, set `mask_opacity` to positive value and optionally tune 
-`background_color`.
+This block crops rectangular regions from input images using bounding boxes from detection model outputs, producing individual cropped images for each detected object. The block:
+
+1. Receives input images and detection predictions (object detection, instance segmentation, or keypoint detection) containing bounding boxes
+2. Validates that predictions contain detection IDs required for crop tracking
+3. Extracts each bounding box from the predictions and crops the corresponding rectangular region from the input image
+4. For instance segmentation predictions with `mask_opacity > 0`: Applies background removal by overlaying the segmentation mask, replacing background pixels outside the detected instance with the specified `background_color` and blending with the original crop based on mask opacity
+5. Creates cropped image objects with metadata tracking the crop's origin (original image, offset coordinates, detection ID)
+6. Translates prediction coordinates from the original image space to the cropped region space (adjusts bounding boxes, masks, keypoints, and polygons to be relative to the crop origin)
+7. Returns a list of results for each detection, each containing the cropped image and the translated predictions
+
+The block processes each detection's bounding box independently, creating separate crops for each detected object. For instance segmentation predictions, the optional background removal feature uses the segmentation mask to isolate the detected object from background pixels, useful for creating clean object-focused crops. All prediction coordinates (bounding boxes, keypoints, polygons, mask coordinates) are automatically translated to be relative to the cropped region's top-left corner, ensuring downstream blocks can process the crops correctly. The block increases output dimensionality by one (produces a list of crops per input image), enabling batch processing workflows where each crop can be processed independently.
+
+## Common Use Cases
+
+- **Multi-Stage Object Analysis**: Extract individual object crops from full images for detailed analysis (e.g., detect objects in a scene, crop each detected object, then run OCR or classification on individual crops), enabling focused analysis of specific regions without processing entire images
+- **Background Removal for Object Focus**: Create clean object crops with background removed using segmentation masks (e.g., detect and segment objects, crop with background removal, create isolated object images for training or analysis), enabling focused object extraction and cleaner downstream processing
+- **Region-Based Processing Pipelines**: Extract regions of interest for specialized processing (e.g., detect text regions, crop each text region, run OCR on crops; detect faces, crop each face, run face recognition), enabling efficient processing of specific image regions
+- **Keypoint and Annotation Preservation**: Extract object crops while preserving detection annotations (e.g., detect objects with keypoints, crop objects maintaining keypoint coordinates, analyze keypoints in cropped context), enabling focused analysis with full annotation context
+- **Batch Region Extraction**: Extract multiple regions from single images for parallel processing (e.g., detect all objects in image, crop each object separately, process crops in parallel for classification or analysis), enabling efficient batch processing of multiple regions
+- **Training Data Preparation**: Create cropped object datasets from annotated images (e.g., detect objects with bounding boxes, crop each object individually, export crops for training data collection), enabling automated extraction of training samples from full images
+
+## Connecting to Other Blocks
+
+This block receives images and detection predictions, producing cropped images:
+
+- **After detection blocks** (e.g., Object Detection, Instance Segmentation, Keypoint Detection) to extract individual object regions based on detected bounding boxes, enabling focused analysis of detected objects in isolation
+- **Before classification or analysis blocks** that need object-focused inputs (e.g., OCR for text regions, fine-grained classification for cropped objects, detailed feature extraction), enabling specialized processing of individual regions rather than full images
+- **In multi-stage detection workflows** where initial detections are used to extract regions for secondary analysis (e.g., detect vehicles, crop each vehicle, detect license plates in crops), enabling hierarchical detection and analysis pipelines
+- **Before visualization blocks** that display individual objects (e.g., display cropped objects separately, create galleries of detected objects, show isolated object annotations), enabling focused visualization of extracted regions
+- **After detection blocks with instance segmentation** to create clean object crops with background removal, enabling isolated object images for analysis, training, or presentation
+- **In keypoint detection workflows** where keypoint coordinates need to be preserved in cropped contexts (e.g., detect people with keypoints, crop each person, analyze pose in cropped images), enabling keypoint analysis in focused image regions
 """
 
 
@@ -67,7 +91,7 @@ class BlockManifest(WorkflowBlockManifest):
     type: Literal["roboflow_core/dynamic_crop@v1", "DynamicCrop", "Crop"]
     images: Selector(kind=[IMAGE_KIND]) = Field(
         title="Image to Crop",
-        description="The input image for this step.",
+        description="Input image(s) to extract cropped regions from. Can be a single image or batch of images. Each image will be processed with corresponding detection predictions to extract bounding box regions. Cropped regions are extracted based on bounding boxes in the predictions. Can also accept previously cropped images from another Dynamic Crop step for nested cropping workflows.",
         examples=["$inputs.image", "$steps.cropping.crops"],
         validation_alias=AliasChoices("images", "image"),
     )
@@ -79,7 +103,7 @@ class BlockManifest(WorkflowBlockManifest):
         ]
     ) = Field(
         title="Regions of Interest",
-        description="Detection model output containing bounding boxes for cropping.",
+        description="Detection model predictions containing bounding boxes that define regions to crop from the images. Supports object detection (bounding boxes), instance segmentation (bounding boxes with segmentation masks), or keypoint detection (bounding boxes with keypoints) predictions. Each bounding box in the predictions defines a rectangular region to extract. Predictions must include detection IDs for crop tracking. Multiple detections per image result in multiple crops per image.",
         examples=["$steps.my_object_detection_model.predictions"],
         validation_alias=AliasChoices("predictions", "detections"),
     )
@@ -90,8 +114,7 @@ class BlockManifest(WorkflowBlockManifest):
         default=0.0,
         le=1.0,
         ge=0.0,
-        description="For instance segmentation, mask_opacity can be used to control background removal. "
-        "Opacity 1.0 removes the background, while 0.0 leaves the crop unchanged.",
+        description="Background removal opacity for instance segmentation crops (0.0 to 1.0). Only applies when predictions contain segmentation masks (instance segmentation predictions). Controls how aggressively background pixels outside the detected instance are removed: 0.0 leaves the crop unchanged (no background removal), 1.0 fully replaces background with background_color, values between blend the original crop with the background. Higher values create cleaner object-focused crops. Set to 0.0 to disable background removal. Requires instance segmentation predictions with masks.",
         json_schema_extra={
             "relevant_for": {
                 "predictions": {
@@ -108,9 +131,7 @@ class BlockManifest(WorkflowBlockManifest):
         Tuple[int, int, int],
     ] = Field(
         default=(0, 0, 0),
-        description="For background removal based on segmentation mask, new background color can be selected. "
-        "Can be a hex string (like '#431112') RGB string (like '(128, 32, 64)') or a RGB tuple "
-        "(like (18, 17, 67)).",
+        description="Background color to use when removing background from instance segmentation crops. Only applies when mask_opacity > 0 and predictions contain segmentation masks. Background pixels outside the detected instance mask are replaced with this color. Can be specified as: hex string (e.g., '#431112' or '#fff'), RGB string in parentheses (e.g., '(128, 32, 64)'), or RGB tuple (e.g., (18, 17, 67)). Defaults to black (0, 0, 0). Use white (255, 255, 255) or '#ffffff' for white backgrounds, or match your use case's background requirements. Color values are interpreted as RGB and converted to BGR for image processing.",
         examples=["#431112", "$inputs.bg_color", (18, 17, 67)],
         json_schema_extra={
             "relevant_for": {
