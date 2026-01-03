@@ -139,7 +139,9 @@ class BlockManifest(WorkflowBlockManifest):
         description="Camera IP address or hostname for ONVIF connection. Must be reachable from the workflow execution environment.",
     )
     camera_port: Union[Selector(kind=[INTEGER_KIND]), PositiveInt] = Field(
-        description="Camera ONVIF service port (typically 80, 8080, or camera-specific port). Must match the camera's ONVIF configuration.", ge=0, le=65535
+        description="Camera ONVIF service port (typically 80, 8080, or camera-specific port). Must match the camera's ONVIF configuration.",
+        ge=0,
+        le=65535,
     )
     camera_username: Union[Selector(kind=[STRING_KIND]), str] = Field(
         description="Camera username for ONVIF authentication. Must have PTZ control permissions on the camera.",

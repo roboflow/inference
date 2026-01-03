@@ -122,11 +122,22 @@ class BlockManifest(WorkflowBlockManifest):
         ]
     ) = Field(
         description="Model predictions (object detection, instance segmentation, keypoint detection, or classification) to attach custom metadata to. The predictions must contain inference IDs that are used to associate metadata with specific inference results in Roboflow Model Monitoring. Inference IDs are automatically extracted from supervision Detections objects or classification prediction dictionaries. The metadata will be attached to all inference IDs found in the predictions.",
-        examples=["$steps.object_detection.predictions", "$steps.classification.predictions", "$steps.instance_segmentation.predictions"],
+        examples=[
+            "$steps.object_detection.predictions",
+            "$steps.classification.predictions",
+            "$steps.instance_segmentation.predictions",
+        ],
     )
     field_name: str = Field(
         description="Name of the custom metadata field to create in Roboflow Model Monitoring. This becomes the field name that can be used for filtering and analysis in the Model Monitoring dashboard. Field names should be descriptive and represent the type of metadata being attached (e.g., 'location', 'quality', 'camera_id', 'batch_number'). The field name is used to organize and categorize metadata values.",
-        examples=["location", "quality", "camera_id", "batch_number", "shift", "operator"],
+        examples=[
+            "location",
+            "quality",
+            "camera_id",
+            "batch_number",
+            "shift",
+            "operator",
+        ],
     )
     field_value: Union[
         str,
@@ -134,7 +145,14 @@ class BlockManifest(WorkflowBlockManifest):
         Selector(kind=[STRING_KIND]),
     ] = Field(
         description="Value to assign to the custom metadata field. This is the actual data that will be attached to inference results and can be used for filtering and analysis in the Model Monitoring dashboard. Can be a string literal or a selector that references workflow outputs. Common values: location identifiers (e.g., 'toronto', 'warehouse_a'), quality labels (e.g., 'pass', 'fail', 'review'), identifiers (e.g., camera IDs, batch numbers), or any other contextual information relevant to your use case.",
-        examples=["toronto", "pass", "fail", "warehouse_a", "camera_01", "$steps.expression.output"],
+        examples=[
+            "toronto",
+            "pass",
+            "fail",
+            "warehouse_a",
+            "camera_01",
+            "$steps.expression.output",
+        ],
     )
     fire_and_forget: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(
         default=True,
