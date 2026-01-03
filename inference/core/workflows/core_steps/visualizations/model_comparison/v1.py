@@ -28,10 +28,42 @@ from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlock
 TYPE: str = "roboflow_core/model_comparison_visualization@v1"
 SHORT_DESCRIPTION = "Visualize the difference between two models' detections."
 LONG_DESCRIPTION = """
-The `ModelComparisonVisualization` block draws all areas
-predicted by neither model with a specified color,
-lets overlapping areas of the predictions shine through,
-and colors areas predicted by only one model with a distinct color.
+Compare predictions from two different models by color-coding areas where only one model detected objects, highlighting model differences while leaving overlapping predictions unchanged to visualize model agreement and disagreement.
+
+## How This Block Works
+
+This block takes an image and predictions from two models (Model A and Model B) and creates a visual comparison overlay that highlights differences between the models. The block:
+
+1. Takes an image and two sets of predictions (predictions_a and predictions_b) as input
+2. Creates masks for areas predicted by each model (using bounding boxes or segmentation masks if available)
+3. Identifies four distinct regions:
+   - Areas predicted only by Model A (colored with color_a, default green)
+   - Areas predicted only by Model B (colored with color_b, default red)
+   - Areas predicted by both models (left unchanged, allowing the original image to show through)
+   - Areas predicted by neither model (colored with background_color, default black)
+4. Applies colored overlays to the identified regions using the specified opacity
+5. Returns an annotated image where model differences are visually distinguished with color coding
+
+The block creates a side-by-side comparison visualization that makes it easy to see where models agree (unchanged areas) and where they disagree (color-coded areas). Areas where both models made predictions are left unchanged, allowing the original image to "shine through" and clearly showing model consensus. This visualization helps identify model strengths, weaknesses, and differences in detection behavior. The block works with object detection predictions (using bounding boxes) or instance segmentation predictions (using masks), making it versatile for comparing different model types.
+
+## Common Use Cases
+
+- **Model Evaluation and Comparison**: Compare two models' detection performance side-by-side to identify where models agree, disagree, or have different detection behaviors for model evaluation, benchmarking, or selection workflows
+- **Model Development and Debugging**: Visualize differences between model versions, architectures, or configurations to understand how changes affect detection behavior, identify improvement opportunities, or debug model performance issues
+- **Ensemble Model Analysis**: Compare predictions from different models in ensemble workflows to understand model agreement patterns, identify complementary strengths, or analyze consensus areas for ensemble decision-making
+- **Training Data Analysis**: Compare model predictions to ground truth annotations or between training runs to identify patterns in detection differences, validate training improvements, or analyze model behavior across datasets
+- **A/B Testing and Model Selection**: Visually compare candidate models to evaluate relative performance, identify detection differences, or make informed model selection decisions for deployment
+- **Quality Assurance and Validation**: Validate model consistency, compare model performance on edge cases, or identify systematic differences between models for quality assurance, validation, or compliance workflows
+
+## Connecting to Other Blocks
+
+The annotated image from this block can be connected to:
+
+- **Model blocks** (e.g., Object Detection Model, Instance Segmentation Model) to receive predictions_a and predictions_b from different models for comparison
+- **Data storage blocks** (e.g., Local File Sink, CSV Formatter, Roboflow Dataset Upload) to save comparison visualizations for documentation, reporting, or analysis
+- **Webhook blocks** to send comparison visualizations to external systems, APIs, or web applications for display in dashboards, model monitoring tools, or evaluation interfaces
+- **Notification blocks** (e.g., Email Notification, Slack Notification) to send comparison visualizations as visual evidence in alerts or reports for model performance monitoring
+- **Video output blocks** to create annotated video streams or recordings with model comparison visualizations for live model evaluation, performance monitoring, or post-processing analysis
 """
 
 
@@ -70,14 +102,14 @@ class ModelComparisonManifest(VisualizationManifest):
             KEYPOINT_DETECTION_PREDICTION_KIND,
         ]
     ) = Field(  # type: ignore
-        description="Predictions",
+        description="Predictions from Model A (the first model being compared). Can be object detection, instance segmentation, or keypoint detection predictions. Areas predicted only by Model A (and not by Model B) will be colored with color_a. Works with bounding boxes or masks depending on prediction type.",
         examples=["$steps.object_detection_model.predictions"],
     )
 
     color_a: Union[str, Selector(kind=[STRING_KIND])] = Field(  # type: ignore
-        description="Color of the areas Model A predicted that Model B did not..",
+        description="Color used to highlight areas predicted only by Model A (that Model B did not predict). Can be specified as a color name (e.g., 'GREEN', 'BLUE'), hex color code (e.g., '#00FF00', '#FFFFFF'), or RGB format (e.g., 'rgb(0, 255, 0)'). Default is GREEN to indicate Model A's unique predictions.",
         default="GREEN",
-        examples=["GREEN", "#FFFFFF", "rgb(255, 255, 255)" "$inputs.color_a"],
+        examples=["GREEN", "#FFFFFF", "rgb(255, 255, 255)", "$inputs.color_a"],
     )
 
     predictions_b: Selector(
@@ -88,24 +120,24 @@ class ModelComparisonManifest(VisualizationManifest):
             KEYPOINT_DETECTION_PREDICTION_KIND,
         ]
     ) = Field(  # type: ignore
-        description="Predictions",
+        description="Predictions from Model B (the second model being compared). Can be object detection, instance segmentation, or keypoint detection predictions. Areas predicted only by Model B (and not by Model A) will be colored with color_b. Works with bounding boxes or masks depending on prediction type.",
         examples=["$steps.object_detection_model.predictions"],
     )
 
     color_b: Union[str, Selector(kind=[STRING_KIND])] = Field(  # type: ignore
-        description="Color of the areas Model B predicted that Model A did not.",
+        description="Color used to highlight areas predicted only by Model B (that Model A did not predict). Can be specified as a color name (e.g., 'RED', 'BLUE'), hex color code (e.g., '#FF0000', '#FFFFFF'), or RGB format (e.g., 'rgb(255, 0, 0)'). Default is RED to indicate Model B's unique predictions.",
         default="RED",
-        examples=["RED", "#FFFFFF", "rgb(255, 255, 255)" "$inputs.color_b"],
+        examples=["RED", "#FFFFFF", "rgb(255, 255, 255)", "$inputs.color_b"],
     )
 
     background_color: Union[str, Selector(kind=[STRING_KIND])] = Field(  # type: ignore
-        description="Color of the areas neither model predicted.",
+        description="Color used for areas predicted by neither model. Can be specified as a color name (e.g., 'BLACK', 'GRAY'), hex color code (e.g., '#000000', '#808080'), or RGB format (e.g., 'rgb(0, 0, 0)'). Default is BLACK to indicate areas where both models missed detections.",
         default="BLACK",
-        examples=["BLACK", "#FFFFFF", "rgb(255, 255, 255)" "$inputs.background_color"],
+        examples=["BLACK", "#FFFFFF", "rgb(255, 255, 255)", "$inputs.background_color"],
     )
 
     opacity: Union[FloatZeroToOne, Selector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = Field(  # type: ignore
-        description="Transparency of the overlay.",
+        description="Opacity of the comparison overlay, ranging from 0.0 (fully transparent) to 1.0 (fully opaque). Controls how transparent the color-coded overlays appear over the original image. Lower values create more transparent overlays where original image details remain more visible, while higher values create more opaque overlays with stronger color emphasis. Typical values range from 0.5 to 0.8 for balanced visibility.",
         default=0.7,
         examples=[0.7, "$inputs.opacity"],
     )
