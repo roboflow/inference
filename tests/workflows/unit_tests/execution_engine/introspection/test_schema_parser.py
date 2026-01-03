@@ -6,8 +6,10 @@ from inference.core.workflows.execution_engine.entities.base import OutputDefini
 from inference.core.workflows.execution_engine.entities.types import (
     BOOLEAN_KIND,
     IMAGE_KIND,
+    LIST_OF_VALUES_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
     STRING_KIND,
+    Selector,
     StepOutputImageSelector,
     StepOutputSelector,
     StepSelector,
@@ -531,3 +533,83 @@ def test_parse_block_manifest_when_manifest_defines_selector_inside_dictionary()
             )
         },
     )
+
+
+def test_parse_block_manifest_when_manifest_defines_union_of_list_str_or_selector() -> (
+    None
+):
+    # Union[List[str], Selector] should have is_list_element=False
+    # because List[str] doesn't allow selectors inside
+    class Manifest(WorkflowBlockManifest):
+        type: Literal["MyManifest"]
+        name: str = Field(description="name field")
+        tags: Union[List[str], Selector(kind=[LIST_OF_VALUES_KIND])] = Field(
+            description="Tags can be a literal list or a selector to a list"
+        )
+
+        @classmethod
+        def describe_outputs(cls) -> List[OutputDefinition]:
+            return []
+
+    manifest_metadata = parse_block_manifest(manifest_type=Manifest)
+
+    assert manifest_metadata == BlockManifestMetadata(
+        primitive_types={
+            "name": PrimitiveTypeDefinition(
+                property_name="name",
+                property_description="name field",
+                type_annotation="str",
+            ),
+            "tags": PrimitiveTypeDefinition(
+                property_name="tags",
+                property_description="Tags can be a literal list or a selector to a list",
+                type_annotation="List[str]",
+            ),
+        },
+        selectors={
+            "tags": SelectorDefinition(
+                property_name="tags",
+                property_description="Tags can be a literal list or a selector to a list",
+                allowed_references=[
+                    ReferenceDefinition(
+                        selected_element="any_data",
+                        kind=[LIST_OF_VALUES_KIND],
+                        points_to_batch={False},
+                    ),
+                ],
+                is_list_element=False,
+                is_dict_element=False,
+                dimensionality_offset=0,
+                is_dimensionality_reference_property=False,
+            )
+        },
+    )
+
+
+def test_parse_block_manifest_when_manifest_defines_union_of_list_with_selectors_or_selector() -> (
+    None
+):
+    # Union[List[Union[Selector, str]], Selector] should have is_list_element=True
+    # because List items can contain selectors (like DatasetUpload.registration_tags)
+    class Manifest(WorkflowBlockManifest):
+        type: Literal["MyManifest"]
+        name: str = Field(description="name field")
+        registration_tags: Union[
+            List[Union[Selector(kind=[STRING_KIND]), str]],
+            Selector(kind=[LIST_OF_VALUES_KIND]),
+        ] = Field(description="Tags with selectors inside the list")
+
+        @classmethod
+        def describe_outputs(cls) -> List[OutputDefinition]:
+            return []
+
+    manifest_metadata = parse_block_manifest(manifest_type=Manifest)
+
+    assert "registration_tags" in manifest_metadata.selectors
+    selector_def = manifest_metadata.selectors["registration_tags"]
+    assert selector_def.is_list_element is True
+    assert selector_def.is_dict_element is False
+
+    all_kinds = {k.name for ref in selector_def.allowed_references for k in ref.kind}
+    assert STRING_KIND.name in all_kinds
+    assert LIST_OF_VALUES_KIND.name in all_kinds
