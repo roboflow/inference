@@ -43,25 +43,103 @@ from inference.core.workflows.prototypes.block import (
 JSON_MARKDOWN_BLOCK_PATTERN = re.compile(r"```json([\s\S]*?)```", flags=re.IGNORECASE)
 
 LONG_DESCRIPTION = """
-The block expects string input that would be produced by blocks exposing Large Language Models (LLMs) and 
-Visual Language Models (VLMs). Input is parsed to object-detection prediction and returned as block output.
+Parse JSON strings from Visual Language Models (VLMs) and Large Language Models (LLMs) into standardized object detection prediction format by extracting bounding boxes, class names, and confidences, converting normalized coordinates to pixel coordinates, mapping class names to class IDs, and handling multiple model types and task formats to enable VLM-based object detection, LLM detection parsing, and text-to-detection conversion workflows.
 
-Accepted formats:
+## How This Block Works
 
-- valid JSON strings
+This block converts VLM/LLM text outputs containing object detection predictions into standardized object detection format compatible with workflow detection blocks. The block:
 
-- JSON documents wrapped with Markdown tags
+1. Receives image and VLM output string containing detection results in JSON format
+2. Parses JSON content from VLM output:
 
-Example
-```
-{"my": "json"}
-```
+   **Handles Markdown-wrapped JSON:**
+   - Searches for JSON wrapped in Markdown code blocks (```json ... ```)
+   - This format is common in LLM/VLM responses
+   - If multiple markdown JSON blocks are found, only the first block is parsed
+   - Extracts JSON content from within markdown tags
 
-**Details regarding block behavior:**
+   **Handles raw JSON strings:**
+   - If no markdown blocks are found, attempts to parse the entire string as JSON
+   - Supports standard JSON format strings
+3. Selects appropriate parser based on model type and task type:
+   - Uses registered parsers that handle different model outputs (google-gemini, anthropic-claude, florence-2, openai)
+   - Supports multiple task types: object-detection, open-vocabulary-object-detection, object-detection-and-caption, phrase-grounded-object-detection, region-proposal, ocr-with-text-detection
+   - Each model/task combination uses a specialized parser for that format
+4. Parses detection data based on model type:
 
-- `error_status` is set `True` whenever parsing cannot be completed
+   **For OpenAI/Gemini/Claude models:**
+   - Extracts detections array from parsed JSON
+   - Converts normalized coordinates (0-1 range) to pixel coordinates using image dimensions
+   - Extracts class names, confidence scores, and bounding box coordinates
+   - Maps class names to class IDs using provided classes list
+   - Creates detection objects with bounding boxes, classes, and confidences
 
-- in case of multiple markdown blocks with raw JSON content - only first will be parsed
+   **For Florence-2 model:**
+   - Uses supervision's built-in LMM parser for Florence-2 format
+   - Handles different task types with specialized parsing (object detection, open vocabulary, region proposal, OCR, etc.)
+   - For region proposal tasks: assigns "roi" as class name
+   - For open vocabulary detection: uses provided classes list for class ID mapping
+   - For other tasks: uses MD5-based class ID generation or provided classes
+   - Sets confidence to 1.0 for Florence-2 detections (model doesn't provide confidence)
+5. Converts coordinates and normalizes data:
+   - Converts normalized coordinates (0-1) to absolute pixel coordinates (x_min, y_min, x_max, y_max)
+   - Scales coordinates using image width and height
+   - Normalizes confidence scores to valid range [0.0, 1.0]
+   - Clamps confidence values outside the range
+6. Creates class name to class ID mapping:
+   - For OpenAI/Gemini/Claude: uses provided classes list to create index mapping (class_name → class_id)
+   - Classes are mapped in order (first class = ID 0, second = ID 1, etc.)
+   - Classes not in the provided list get class_id = -1
+   - For Florence-2: uses different mapping strategies based on task type
+7. Constructs object detection predictions:
+   - Creates supervision Detections objects with bounding boxes (xyxy format)
+   - Includes class IDs, class names, and confidence scores
+   - Adds metadata: detection IDs, inference IDs, image dimensions, prediction type
+   - Attaches parent coordinates for crop-aware detections
+   - Formats predictions in standard object detection format
+8. Handles errors:
+   - Sets `error_status` to True if JSON parsing fails
+   - Sets `error_status` to True if detection parsing fails
+   - Returns None for predictions when errors occur
+   - Always includes inference_id for tracking
+9. Returns object detection predictions:
+   - Outputs `predictions` in standard object detection format (compatible with detection blocks)
+   - Outputs `error_status` indicating parsing success/failure
+   - Outputs `inference_id` for tracking and lineage
+
+The block enables using VLMs/LLMs for object detection by converting their text-based JSON outputs into standardized detection predictions that can be used in workflows like any other object detection model output.
+
+## Common Use Cases
+
+- **VLM-Based Object Detection**: Use Visual Language Models for object detection by parsing VLM outputs into detection predictions (e.g., detect objects with GPT-4V, use Claude Vision for detection, parse Gemini detection outputs), enabling VLM detection workflows
+- **Open-Vocabulary Detection**: Use VLMs for open-vocabulary object detection with custom classes (e.g., detect custom objects with VLMs, use open-vocabulary detection, detect objects not in training set), enabling open-vocabulary detection workflows
+- **Multi-Task Detection**: Use VLMs for various detection tasks (e.g., object detection with captions, phrase-grounded detection, region proposal, OCR with detection), enabling multi-task detection workflows
+- **LLM Detection Parsing**: Parse LLM text outputs containing detection results into standardized format (e.g., parse GPT detection outputs, convert LLM predictions to detection format, use LLMs for detection), enabling LLM detection workflows
+- **Text-to-Detection Conversion**: Convert text-based detection outputs from models into workflow-compatible detection predictions (e.g., convert text predictions to detection format, parse text-based detections, convert model outputs to detections), enabling text-to-detection workflows
+- **VLM Integration**: Integrate VLM outputs into detection workflows (e.g., use VLMs in detection pipelines, integrate VLM predictions with detection blocks, combine VLM and traditional detection), enabling VLM integration workflows
+
+## Connecting to Other Blocks
+
+This block receives images and VLM outputs and produces object detection predictions:
+
+- **After VLM/LLM blocks** to parse detection outputs into standard format (e.g., VLM output to detections, LLM output to detections, parse model outputs), enabling VLM-to-detection workflows
+- **Before detection-based blocks** to use parsed detections (e.g., use parsed detections in workflows, provide detections to downstream blocks, use VLM detections with detection blocks), enabling detection-to-workflow workflows
+- **Before filtering blocks** to filter VLM detections (e.g., filter by class, filter by confidence, apply filters to VLM predictions), enabling detection-to-filter workflows
+- **Before analytics blocks** to analyze VLM detection results (e.g., analyze VLM detections, perform analytics on parsed detections, track VLM detection metrics), enabling detection analytics workflows
+- **Before visualization blocks** to display VLM detection results (e.g., visualize VLM detections, display parsed detection predictions, show VLM detection outputs), enabling detection visualization workflows
+- **In workflow outputs** to provide VLM detections as final output (e.g., VLM detection outputs, parsed detection results, VLM-based detection outputs), enabling detection output workflows
+
+## Version Differences
+
+This version (v2) includes the following enhancements over v1:
+
+- **Improved Type System**: The `inference_id` output now uses `INFERENCE_ID_KIND` instead of `STRING_KIND`, providing better type safety and semantic meaning for inference tracking identifiers in the workflow system
+- **OpenAI Model Support**: Added support for OpenAI models in addition to Google Gemini, Anthropic Claude, and Florence-2 models, expanding the range of VLM/LLM models that can be used for object detection
+- **Enhanced Type Safety**: Improved type system ensures better integration with workflow execution engine and provides clearer semantic meaning for inference tracking
+
+## Requirements
+
+This block requires an image input (for metadata and dimensions) and a VLM output string containing JSON detection data. The JSON can be raw JSON or wrapped in Markdown code blocks (```json ... ```). The block supports four model types: "openai", "google-gemini", "anthropic-claude", and "florence-2". It supports multiple task types: "object-detection", "open-vocabulary-object-detection", "object-detection-and-caption", "phrase-grounded-object-detection", "region-proposal", and "ocr-with-text-detection". The `classes` parameter is required for OpenAI, Gemini, and Claude models (to map class names to IDs) but optional for Florence-2 (some tasks don't require it). Classes are mapped to IDs by index (first class = 0, second = 1, etc.). Classes not in the list get class_id = -1. The block outputs object detection predictions in standard format (compatible with detection blocks), error_status (boolean), and inference_id (INFERENCE_ID_KIND) for tracking.
 """
 
 SHORT_DESCRIPTION = "Parses raw string into object-detection prediction."
@@ -98,13 +176,13 @@ class BlockManifest(WorkflowBlockManifest):
     )
     type: Literal["roboflow_core/vlm_as_detector@v2"]
     image: Selector(kind=[IMAGE_KIND]) = Field(
-        description="The image which was the base to generate VLM prediction",
+        description="Input image that was used to generate the VLM prediction. Used to extract image dimensions (width, height) for converting normalized coordinates to pixel coordinates and metadata (parent_id) for the detection predictions. The same image that was provided to the VLM/LLM block should be used here to maintain consistency.",
         examples=["$inputs.image", "$steps.cropping.crops"],
     )
     vlm_output: Selector(kind=[LANGUAGE_MODEL_OUTPUT_KIND]) = Field(
         title="VLM Output",
-        description="The string with raw classification prediction to parse.",
-        examples=[["$steps.lmm.output"]],
+        description="String output from a VLM or LLM block containing object detection prediction in JSON format. Can be raw JSON string or JSON wrapped in Markdown code blocks (e.g., ```json {...} ```). Format depends on model_type and task_type - different models and tasks produce different JSON structures. If multiple markdown blocks exist, only the first is parsed.",
+        examples=[["$steps.lmm.output"], ["$steps.vlm.output"], ["$steps.claude.output"]],
     )
     classes: Optional[
         Union[
@@ -113,13 +191,12 @@ class BlockManifest(WorkflowBlockManifest):
             List[str],
         ]
     ] = Field(
-        description="List of all classes used by the model, required to "
-        "generate mapping between class name and class id.",
-        examples=[["$steps.lmm.classes", "$inputs.classes", ["class_a", "class_b"]]],
+        description="List of all class names used by the classification model, in order. Required to generate mapping between class names (from VLM output) and class IDs (for detection format). Classes are mapped to IDs by index: first class = ID 0, second = ID 1, etc. Classes from VLM output that are not in this list get class_id = -1. Required for OpenAI, Gemini, and Claude models. Optional for Florence-2 (some tasks don't require it). Should match the classes the VLM was asked to detect.",
+        examples=[["$steps.lmm.classes", "$inputs.classes", ["dog", "cat", "bird"], ["class_a", "class_b"]]],
         json_schema_extra={
             "relevant_for": {
                 "model_type": {
-                    "values": ["google-gemini", "anthropic-claude"],
+                    "values": ["openai", "google-gemini", "anthropic-claude"],
                     "required": True,
                 },
             }
@@ -127,12 +204,12 @@ class BlockManifest(WorkflowBlockManifest):
     )
     model_type: Literal["openai", "google-gemini", "anthropic-claude", "florence-2"] = (
         Field(
-            description="Type of the model that generated prediction",
-            examples=[["google-gemini", "anthropic-claude", "florence-2"]],
+            description="Type of the VLM/LLM model that generated the prediction. Determines which parser is used to extract detection data from the JSON output. Supported models: 'openai' (GPT-4V), 'google-gemini' (Gemini Vision), 'anthropic-claude' (Claude Vision), 'florence-2' (Microsoft Florence-2). Each model type has different JSON output formats, so the correct model type must be specified for proper parsing.",
+            examples=[["openai"], ["google-gemini"], ["anthropic-claude"], ["florence-2"]],
         )
     )
     task_type: Literal[tuple(SUPPORTED_TASKS)] = Field(
-        description="Task type to performed by model.",
+        description="Task type performed by the VLM/LLM model. Determines which parser and format handler is used. Supported task types: 'object-detection' (standard object detection), 'open-vocabulary-object-detection' (detect objects with custom classes), 'object-detection-and-caption' (detection with captions), 'phrase-grounded-object-detection' (ground phrases to detections), 'region-proposal' (propose regions of interest), 'ocr-with-text-detection' (OCR with text region detection). The task type must match what the VLM/LLM was asked to perform.",
         json_schema_extra={
             "values_metadata": RELEVANT_TASKS_METADATA,
         },
