@@ -123,7 +123,7 @@ class BlockManifest(WorkflowBlockManifest):
     )
     operations: List[AllOperationsType] = Field(
         description="Definition of filtering logic using the query language system. Specifies one or more filtering operations (e.g., DetectionsFilter) that use StatementGroup syntax to define conditional logic. Each operation can extract detection properties (class_name, confidence, coordinates, etc.) and compare them using binary statements (e.g., class_name in list, confidence > threshold). Multiple operations can be chained to create complex filtering logic. The operations reference parameter names from operations_parameters to access runtime values.",
-        examples=[OPERATIONS_EXAMPLE]
+        examples=[OPERATIONS_EXAMPLE],
     )
     operations_parameters: Dict[
         str,
