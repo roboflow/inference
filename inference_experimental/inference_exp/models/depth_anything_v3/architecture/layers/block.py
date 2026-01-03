@@ -12,12 +12,12 @@ from typing import Callable
 
 from torch import Tensor, nn
 
-from inference.models.depth_anything_v3.architecture.layers.attention import Attention
-from inference.models.depth_anything_v3.architecture.layers.drop_path import DropPath
-from inference.models.depth_anything_v3.architecture.layers.layer_scale import (
+from inference_exp.models.depth_anything_v3.architecture.layers.attention import Attention
+from inference_exp.models.depth_anything_v3.architecture.layers.drop_path import DropPath
+from inference_exp.models.depth_anything_v3.architecture.layers.layer_scale import (
     LayerScale,
 )
-from inference.models.depth_anything_v3.architecture.layers.mlp import Mlp
+from inference_exp.models.depth_anything_v3.architecture.layers.mlp import Mlp
 
 
 class Block(nn.Module):

@@ -16,7 +16,7 @@ import torch
 import torch.nn as nn
 from einops import rearrange
 
-from inference.models.depth_anything_v3.architecture.layers import (
+from inference_exp.models.depth_anything_v3.architecture.layers import (
     Block,
     Mlp,
     PatchEmbed,
