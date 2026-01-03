@@ -7,6 +7,8 @@ from pathlib import Path
 import pytest
 import requests
 
+from conftest import on_demand_clean_loaded_models
+
 api_key = os.environ.get("API_KEY")
 port = os.environ.get("PORT", 9001)
 base_url = os.environ.get("BASE_URL", "http://localhost")
@@ -18,7 +20,7 @@ TESTS = [
         "payload": {
             "image": {
                 "type": "url",
-                "value": "https://raw.githubusercontent.com/serengil/deepface/master/tests/dataset/img12.jpg",
+                "value": "https://raw.githubusercontent.com/serengil/deepface/refs/heads/master/tests/unit/dataset/img12.jpg",
             }
         },
         "expected_response": [
@@ -117,4 +119,4 @@ def setup():
 
 
 if __name__ == "__main__":
-    test_gaze()
+    test_gaze(TESTS[0], on_demand_clean_loaded_models())
