@@ -22,8 +22,38 @@ from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlock
 TYPE: str = "roboflow_core/bounding_box_visualization@v1"
 SHORT_DESCRIPTION = "Draw a box around detected objects in an image."
 LONG_DESCRIPTION = """
-The `BoundingBoxVisualization` block draws a box around detected
-objects in an image using Supervision's `sv.RoundBoxAnnotator`.
+Draw bounding boxes around detected objects in an image, with customizable colors, thickness, and corner roundness.
+
+## How This Block Works
+
+This block takes an image and detection predictions (from object detection, instance segmentation, or keypoint detection models) and draws rectangular bounding boxes around each detected object. The block:
+
+1. Takes an image and predictions as input
+2. Applies color styling based on the selected color palette, with colors assigned by class, index, or track ID
+3. Draws bounding boxes using Supervision's BoxAnnotator (for square corners) or RoundBoxAnnotator (for rounded corners) based on the roundness setting
+4. Applies the specified box thickness to control the line width of the bounding boxes
+5. Returns an annotated image with bounding boxes overlaid on the original image
+
+The block supports various color palettes (default, Roboflow, Matplotlib palettes, or custom colors) and can color boxes based on detection class, index, or tracker ID. When roundness is set to 0, square corners are used; when roundness is greater than 0, rounded corners are applied for a softer visual appearance. You can choose whether to modify the original image or create a copy for visualization, which is useful when stacking multiple visualization blocks.
+
+## Common Use Cases
+
+- **Model Validation and Debugging**: Visualize detection results to verify model performance, check bounding box accuracy, identify false positives or false negatives, and debug model outputs
+- **Results Presentation**: Create annotated images for reports, dashboards, or presentations showing what objects were detected in images or video frames
+- **Quality Control**: Overlay bounding boxes on production line images to visualize detected defects, products, or components for quality assurance workflows
+- **Monitoring and Alerting**: Generate visual outputs showing detected objects for security monitoring, surveillance systems, or compliance tracking with annotated evidence
+- **Training Data Review**: Review and validate training datasets by visualizing annotations and bounding boxes to ensure labeling accuracy and consistency
+- **Interactive Applications**: Create user interfaces that display real-time detection results with bounding boxes for object tracking, counting, or identification applications
+
+## Connecting to Other Blocks
+
+The annotated image from this block can be connected to:
+
+- **Other visualization blocks** (e.g., Label Visualization, Polygon Visualization, Mask Visualization) to stack multiple annotations on the same image for comprehensive visualization
+- **Data storage blocks** (e.g., Local File Sink, CSV Formatter, Roboflow Dataset Upload) to save annotated images for documentation, archiving, or training data preparation
+- **Webhook blocks** to send visualized results to external systems, APIs, or web applications for display in dashboards or monitoring tools
+- **Notification blocks** (e.g., Email Notification, Slack Notification) to send annotated images as visual evidence in alerts or reports
+- **Video output blocks** to create annotated video streams or recordings with bounding boxes for live monitoring or post-processing analysis
 """
 
 
@@ -56,13 +86,13 @@ class BoundingBoxManifest(ColorableVisualizationManifest):
     )
 
     thickness: Union[int, Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
-        description="Set the thickness of the bounding box edges.",
+        description="Thickness of the bounding box edges in pixels. Higher values create thicker, more visible box outlines.",
         default=2,
         examples=[2, "$inputs.thickness"],
     )
 
     roundness: Union[FloatZeroToOne, Selector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = Field(  # type: ignore
-        description="Define the roundness of the bounding box corners.",
+        description="Roundness of the bounding box corners, ranging from 0.0 (square corners) to 1.0 (fully rounded corners). When set to 0.0, square-cornered boxes are used; higher values create progressively more rounded corners.",
         default=0.0,
         examples=[0.0, "$inputs.roundness"],
     )
