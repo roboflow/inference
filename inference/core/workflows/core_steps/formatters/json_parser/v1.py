@@ -117,13 +117,22 @@ class BlockManifest(WorkflowBlockManifest):
     )
     type: Literal["roboflow_core/json_parser@v1"]
     raw_json: Union[str, Selector(kind=[LANGUAGE_MODEL_OUTPUT_KIND])] = Field(
-        description="JSON string to parse. Can be raw JSON string (e.g., '{\"key\": \"value\"}') or JSON wrapped in Markdown code blocks (e.g., ```json {\"key\": \"value\"} ```). Markdown-wrapped JSON is common in LLM/VLM responses. If multiple markdown JSON blocks are present, only the first block is parsed. The string is parsed using Python's JSON parser, and specified fields are extracted as outputs.",
-        examples=["$steps.lmm.output", "$inputs.config", '{"key": "value"}', '{"model_id": "yolov8n-640"}'],
+        description='JSON string to parse. Can be raw JSON string (e.g., \'{"key": "value"}\') or JSON wrapped in Markdown code blocks (e.g., ```json {"key": "value"} ```). Markdown-wrapped JSON is common in LLM/VLM responses. If multiple markdown JSON blocks are present, only the first block is parsed. The string is parsed using Python\'s JSON parser, and specified fields are extracted as outputs.',
+        examples=[
+            "$steps.lmm.output",
+            "$inputs.config",
+            '{"key": "value"}',
+            '{"model_id": "yolov8n-640"}',
+        ],
     )
     expected_fields: Annotated[List[str], AfterValidator(validate_reserved_fields)] = (
         Field(
             description="List of JSON field names to extract from the parsed JSON. Each field becomes a separate output that can be referenced in subsequent workflow steps (e.g., $steps.block_name.field_name). Fields that exist in the JSON are extracted with their values; missing fields are set to None. The 'error_status' field name is reserved (always included as output) and cannot be used in this list. Field names must match JSON keys exactly.",
-            examples=[["field_a", "field_b"], ["model_id", "confidence"], ["class_name", "class_id"]],
+            examples=[
+                ["field_a", "field_b"],
+                ["model_id", "confidence"],
+                ["class_name", "class_id"],
+            ],
         )
     )
 

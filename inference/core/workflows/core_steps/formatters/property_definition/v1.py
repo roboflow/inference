@@ -120,7 +120,11 @@ class BlockManifest(WorkflowBlockManifest):
     ]
     data: Selector() = Field(
         description="Input data from any workflow step to extract properties from. Can be detections, classifications, OCR results, images, or any other workflow output. The data type determines which operations are applicable. Examples: detection predictions for extracting class names, classification results for extracting predicted class, OCR results for extracting text.",
-        examples=["$steps.object_detection_model.predictions", "$steps.classification_model.top", "$steps.ocr_model.text"],
+        examples=[
+            "$steps.object_detection_model.predictions",
+            "$steps.classification_model.top",
+            "$steps.ocr_model.text",
+        ],
     )
     operations: List[AllOperationsType] = Field(
         description="List of operations to perform sequentially on the input data. Each operation performs extraction, filtering, transformation, or combination. Operations execute in order, with each operation working on the previous result. Common operations: DetectionsPropertyExtract (extract properties like class_name, confidence, count, coordinates from detections), ClassificationPropertyExtract (extract class, confidence from classifications), DetectionsFilter (filter detections before extraction), DetectionsSelection (select specific detections). Can include single or compound operations for complex extractions.",
