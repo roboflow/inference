@@ -16,8 +16,6 @@ from inference.models.depth_anything_v3.architecture.layers.rope import (
 __all__ = [
     "Mlp",
     "PatchEmbed",
-    "SwiGLUFFN",
-    "SwiGLUFFNFused",
     "Block",
     "LayerScale",
     "PositionGetter",

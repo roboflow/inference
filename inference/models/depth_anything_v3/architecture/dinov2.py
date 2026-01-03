@@ -110,8 +110,6 @@ class DinoVisionTransformer(nn.Module):
             dpr = [x.item() for x in torch.linspace(0, drop_path_rate, depth)]
         if ffn_layer == "mlp":
             ffn_layer = Mlp
-        elif ffn_layer == "swiglufused" or ffn_layer == "swiglu":
-            ffn_layer = SwiGLUFFNFused
         elif ffn_layer == "identity":
 
             def f(*args, **kwargs):
