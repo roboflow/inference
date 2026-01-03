@@ -15,7 +15,6 @@
 import json
 import warnings
 from pathlib import Path
-from typing import Any, Tuple
 from uuid import uuid4
 
 import matplotlib.pyplot as plt
@@ -27,7 +26,6 @@ from transformers import AutoImageProcessor
 
 from inference.models.depth_anything_v2.depth_anything_v2 import DepthAnythingV2
 from inference.models.depth_anything_v3.architecture import DepthAnything3Net
-from inference.models.transformers import TransformerModel
 
 
 def convert_state_dict(state_dict: dict) -> dict:

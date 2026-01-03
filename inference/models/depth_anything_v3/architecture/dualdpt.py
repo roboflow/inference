@@ -18,7 +18,6 @@ import torch
 import torch.nn as nn
 
 from inference.models.depth_anything_v3.architecture.dpt import (
-    FeatureFusionBlock,
     _make_fusion_block,
     _make_scratch,
 )
