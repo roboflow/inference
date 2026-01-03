@@ -549,6 +549,8 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
 class RFDETRInstanceSegmentation(
     RFDETRObjectDetection, InstanceSegmentationBaseOnnxRoboflowInferenceModel
 ):
+    task_type = "instance-segmentation"
+
     def initialize_model(self, **kwargs) -> None:
         super().initialize_model(**kwargs)
         mask_shape = self.onnx_session.get_outputs()[2].shape
