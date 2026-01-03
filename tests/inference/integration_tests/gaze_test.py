@@ -7,8 +7,6 @@ from pathlib import Path
 import pytest
 import requests
 
-from conftest import on_demand_clean_loaded_models
-
 api_key = os.environ.get("API_KEY")
 port = os.environ.get("PORT", 9001)
 base_url = os.environ.get("BASE_URL", "http://localhost")
@@ -119,4 +117,5 @@ def setup():
 
 
 if __name__ == "__main__":
+    from conftest import on_demand_clean_loaded_models
     test_gaze(TESTS[0], on_demand_clean_loaded_models())
