@@ -127,7 +127,10 @@ class DynamicZonesManifest(WorkflowBlockManifest):
         ]
     ) = Field(  # type: ignore
         description="Instance segmentation predictions containing masks (polygon data) for detected objects. Detections should be filtered to contain only desired classes of interest. Each detection's mask is converted to contours, and the largest contour is used to generate a simplified polygon zone. Supports instance segmentation format with mask data.",
-        examples=["$steps.instance_segmentation_model.predictions", "$segmentation.predictions"],
+        examples=[
+            "$steps.instance_segmentation_model.predictions",
+            "$segmentation.predictions",
+        ],
     )
     required_number_of_vertices: Union[int, Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         description="Target number of vertices for simplified polygons. The block uses Douglas-Peucker polygon approximation with iterative binary search to reduce polygon vertices to this count. Common values: 4 for rectangles/quadrilaterals, 3 for triangles, 6+ for more complex shapes. The algorithm attempts to converge to this exact count; if convergence fails (within iteration limit), vertices are padded or truncated to match the count.",

@@ -114,7 +114,11 @@ class BlockManifest(WorkflowBlockManifest):
     image: Selector(kind=[IMAGE_KIND]) = Field(
         title="Image to slice",
         description="Input image to be sliced into smaller tiles. The image will be divided into overlapping slices based on the slice dimensions and overlap ratios. Each slice maintains metadata about its position in the original image for coordinate mapping. All slices will have equal dimensions (border slices are adjusted to match). Used in SAHI (Slicing Adaptive Inference) workflows to enable small object detection by processing image regions separately.",
-        examples=["$inputs.image", "$steps.preprocessing.output", "$steps.cropping.crops"],
+        examples=[
+            "$inputs.image",
+            "$steps.preprocessing.output",
+            "$steps.cropping.crops",
+        ],
         validation_alias=AliasChoices("image", "images"),
     )
     slice_width: Union[PositiveInt, Selector(kind=[INTEGER_KIND])] = Field(

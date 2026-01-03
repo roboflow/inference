@@ -116,7 +116,10 @@ class BlockManifest(WorkflowBlockManifest):
     ) = Field(
         title="OCR Detections",
         description="OCR detection predictions from an OCR model. Should contain bounding boxes and class names with text content. Each detection represents a word, character, or text region that will be stitched together into coherent text. Supports object detection format with bounding boxes (xyxy) and class names in the data dictionary.",
-        examples=["$steps.ocr_model.predictions", "$steps.my_ocr_detection_model.predictions"],
+        examples=[
+            "$steps.ocr_model.predictions",
+            "$steps.my_ocr_detection_model.predictions",
+        ],
     )
     reading_direction: Literal[
         "left_to_right",
