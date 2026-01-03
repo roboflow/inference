@@ -102,11 +102,11 @@ class DepthAnything3Net(nn.Module):
         """
         # Extract features using backbone
         feats, _ = self.backbone(x)
-        H, W = x.shape[-2], x.shape[-1]
+        shape = x.shape
+        H, W = shape[-2], shape[-1]
 
         # Process features through depth head
-        with torch.autocast(device_type=x.device.type, enabled=False):
-            output = self._process_depth_head(feats, H, W)
+        output = self._process_depth_head(feats, H, W)
 
         return output
 
