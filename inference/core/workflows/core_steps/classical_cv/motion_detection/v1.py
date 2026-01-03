@@ -27,7 +27,6 @@ from inference.core.workflows.prototypes.block import (
 )
 
 
-
 class MotionDetectionManifest(WorkflowBlockManifest):
     type: Literal["roboflow_core/motion_detection@v1"]
     model_config = ConfigDict(
