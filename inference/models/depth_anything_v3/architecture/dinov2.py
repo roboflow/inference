@@ -22,7 +22,6 @@ from inference.models.depth_anything_v3.architecture.layers import (
     PatchEmbed,
     PositionGetter,
     RotaryPositionEmbedding2D,
-    SwiGLUFFNFused,
 )
 
 logger = logging.getLogger("dinov2")

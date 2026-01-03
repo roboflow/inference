@@ -12,10 +12,6 @@ from inference.models.depth_anything_v3.architecture.layers.rope import (
     PositionGetter,
     RotaryPositionEmbedding2D,
 )
-from inference.models.depth_anything_v3.architecture.layers.swiglu_ffn import (
-    SwiGLUFFN,
-    SwiGLUFFNFused,
-)
 
 __all__ = [
     "Mlp",
