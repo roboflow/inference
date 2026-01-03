@@ -145,7 +145,11 @@ class BlockManifest(WorkflowBlockManifest):
     ] = Field(
         default="Exponential Moving Average (EMA)",
         description="Statistical strategy for tracking embedding and change rate statistics. 'Exponential Moving Average (EMA)': Adapts quickly to recent trends, more weight on recent data. 'Simple Moving Average (SMA)': Stable long-term tracking, all data contributes equally. 'Sliding Window': Fast adaptation, uses only recent window_size samples. EMA is best for adaptive monitoring, SMA for stable tracking, Sliding Window for rapid adaptation.",
-        examples=["Exponential Moving Average (EMA)", "Simple Moving Average (SMA)", "Sliding Window"],
+        examples=[
+            "Exponential Moving Average (EMA)",
+            "Simple Moving Average (SMA)",
+            "Sliding Window",
+        ],
         json_schema_extra={
             "always_visible": True,
         },
