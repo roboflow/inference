@@ -13,7 +13,11 @@ from inference.core.workflows.prototypes.block import (
 
 LONG_DESCRIPTION = """
 The **Environment Secrets Store** block is a secure and flexible solution for fetching secrets stored as 
-**environmental variables**. It is designed to enable Workflows to access sensitive information, 
+**environmental variables**.
+
+## How This Block Works
+
+It is designed to enable Workflows to access sensitive information, 
 such as API keys or service credentials, without embedding them directly into the Workflow definitions. 
 
 This block simplifies the integration of external services while prioritizing security and adaptability. You can
