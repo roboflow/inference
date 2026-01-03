@@ -99,7 +99,15 @@ class BlockManifest(WorkflowBlockManifest):
     ]
     data: List[Selector()] = Field(
         description="List of data references (selectors) to check for non-empty values, in priority order. Each selector can reference outputs from different workflow steps or execution branches. The block iterates through this list and returns the first non-empty (non-None) value encountered. If all values in the list are empty/None, the default value is returned. Minimum 1 item required. Order matters: earlier items in the list have higher priority. Common use cases: merging outputs from conditional execution branches, providing fallback data sources, or combining results from alternative processing paths.",
-        examples=[["$steps.my_step.predictions"], ["$steps.branch_a.output", "$steps.branch_b.output"], ["$steps.primary.result", "$steps.fallback.result", "$steps.alternative.result"]],
+        examples=[
+            ["$steps.my_step.predictions"],
+            ["$steps.branch_a.output", "$steps.branch_b.output"],
+            [
+                "$steps.primary.result",
+                "$steps.fallback.result",
+                "$steps.alternative.result",
+            ],
+        ],
         min_items=1,
     )
     default: Any = Field(
