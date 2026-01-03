@@ -5,6 +5,7 @@ from .config import StreamConfig  # noqa: F401
 from .session import VideoMetadata, WebRTCSession  # noqa: F401
 from .sources import (  # noqa: F401
     ManualSource,
+    MJPEGSource,
     RTSPSource,
     StreamSource,
     UploadProgressCallback,
@@ -22,6 +23,7 @@ __all__ = [
     "StreamSource",
     "WebcamSource",
     "RTSPSource",
+    "MJPEGSource",
     "VideoFileSource",
     "ManualSource",
     # Type aliases
