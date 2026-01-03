@@ -37,7 +37,11 @@ from inference.core.workflows.prototypes.block import (
 
 LONG_DESCRIPTION = """
 The **Webhook Sink** block enables sending a data from Workflow into external APIs 
-by sending HTTP requests containing workflow results. It supports multiple HTTP methods 
+by sending HTTP requests containing workflow results.
+
+## How This Block Works
+
+It supports multiple HTTP methods 
 (GET, POST, PUT) and can be configured to send:
 
 * JSON payloads
@@ -131,6 +135,14 @@ debugging purposes**.
 Sometimes it would be convenient to manually disable the **Webhook sink** block. This is possible 
 setting `disable_sink` flag to hold reference to Workflow input. with such setup, caller would be
 able to disable the sink when needed sending agreed input parameter.
+
+## Common Use Cases
+
+- Use this block to [purpose based on block type]
+
+## Connecting to Other Blocks
+
+The outputs from this block can be connected to other blocks in your workflow.
 """
 
 QUERY_PARAMS_KIND = [

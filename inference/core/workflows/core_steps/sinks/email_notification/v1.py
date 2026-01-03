@@ -41,122 +41,57 @@ from inference.core.workflows.prototypes.block import (
 ROBOFLOW_EMAIL_ENDPOINT = "/notifications/email"
 
 LONG_DESCRIPTION = """
-The **Email Notification** block allows users to send email notifications as part of a workflow. 
-It **requires** SMTP server setup to send the notification 
+Send email notifications via SMTP server with customizable subject, message content with dynamic workflow data parameters, recipient lists (To, CC, BCC), file attachments, cooldown throttling, and optional async background execution for alerting, reporting, and communication workflows.
 
-### Customizable Email Content
+## How This Block Works
 
-* **Subject:** Set the subject field to define the subject line of the email.
+This block sends email notifications through an SMTP server, integrating workflow execution results into email content. The block:
 
-* **Message:** Use the message field to write the body content of the email. **Message can be parametrised
-with data generated during workflow run. See *Dynamic Parameters* section.**
+1. Checks if the sink is disabled via `disable_sink` flag (if disabled, returns immediately without sending)
+2. Validates cooldown period (if enabled, throttles notifications within `cooldown_seconds` of the last sent email, returning throttling status)
+3. Formats the email message by processing dynamic parameters (replaces placeholders like `{{ $parameters.parameter_name }}` with actual workflow data from `message_parameters`)
+4. Applies optional UQL operations to transform parameter values before insertion (e.g., extract class names from detections, calculate metrics, filter data) using `message_parameters_operations`
+5. Constructs email recipients lists from `receiver_email` (required), `cc_receiver_email`, and `bcc_receiver_email` (supports single email addresses or lists)
+6. Processes attachments by retrieving content from referenced workflow step outputs and encoding them as email attachments
+7. Establishes SSL-secured SMTP connection to the configured server (authentication using sender email and password)
+8. Sends the email synchronously or asynchronously based on `fire_and_forget` setting:
+   - **Synchronous mode** (`fire_and_forget=False`): Waits for email send completion, returns actual error status for debugging
+   - **Asynchronous mode** (`fire_and_forget=True`): Sends email in background task, workflow continues immediately, error status always False
+9. Returns status outputs indicating success, throttling, or errors
 
-* **Recipients (To, CC, BCC)**: Define who will receive the email using `receiver_email`, 
-`cc_receiver_email`, and `bcc_receiver_email` properties. You can input a single email or a list.
+The block supports dynamic message content through parameter placeholders that are replaced with workflow data at runtime. Message parameters can be raw workflow outputs or transformed using UQL operations (e.g., extract properties, calculate counts, filter values). Attachments are sourced from other workflow blocks that produce string or binary content (e.g., CSV Formatter for reports, image outputs for screenshots). Cooldown prevents notification spam by enforcing minimum time between sends, though this only applies to video processing workflows (not HTTP request contexts).
 
-### Dynamic Parameters
+## Requirements
 
-Content of the message can be parametrised with Workflow execution outcomes. Take a look at the example
-message using dynamic parameters:
+**SMTP Server Configuration**: Requires access to an SMTP server with the following configuration:
+- `smtp_server`: Hostname of the SMTP server (e.g., `smtp.gmail.com` for Google)
+- `sender_email`: Email address to use as the sender
+- `sender_email_password`: Password for the sender email account (or application-specific password for Gmail with 2FA)
+- `smtp_port`: SMTP port (defaults to `465` for SSL)
 
-```
-message = "This is example notification. Predicted classes: {{ '{{' }} $parameters.predicted_classes {{ '}}' }}"
-```
+**Gmail Users with 2FA**: If using Gmail with 2-step verification enabled, you must use an [application-specific password](https://support.google.com/accounts/answer/185833) instead of your regular Gmail password. Application passwords should be kept secure and provided via workflow inputs rather than stored in workflow definitions.
 
-Message parameters are delivered by Workflows Execution Engine by setting proper data selectors in
-`message_parameters` field, for example:
+**Cooldown Limitations**: The cooldown mechanism (`cooldown_seconds`) only applies to video processing workflows. For HTTP request contexts (Roboflow Hosted API, Dedicated Deployment, or self-hosted servers), cooldown has no effect since each request is independent.
 
-```
-message_parameters = {
-    "predicted_classes": "$steps.model.predictions"
-}
-```
+## Common Use Cases
 
-Selecting data is not the only option - data may be processed in the block. In the example below we wish to
-extract names of predicted classes. We can apply transformation **for each parameter** by setting
-`message_parameters_operations`:
+- **Alert Notifications**: Send email alerts when specific conditions are detected (e.g., alert security team when unauthorized objects detected, notify operators when anomaly detected, send alerts when detection counts exceed thresholds), enabling real-time monitoring and incident response
+- **Workflow Execution Reports**: Generate and email periodic or event-driven reports with workflow results (e.g., daily summary reports with detection statistics, batch processing completion notifications, performance metrics summaries), enabling automated reporting and documentation
+- **Detection Summaries**: Send email summaries of detection results with aggregated statistics (e.g., email lists of detected objects, send counts and classifications, include detection confidence summaries), enabling stakeholders to stay informed about workflow outputs
+- **Error and Status Notifications**: Notify administrators about workflow execution status and errors (e.g., send alerts when workflows fail, notify about processing completion, report system health issues), enabling monitoring and debugging for production deployments
+- **Data Export Notifications**: Email generated data exports and reports (e.g., attach CSV reports from CSV Formatter, send exported detection data, include formatted analytics summaries), enabling automated data distribution and archival
+- **Multi-Recipient Updates**: Send notifications to multiple stakeholders simultaneously using CC/BCC (e.g., notify team members about detections, send updates to multiple departments, distribute reports with CC for visibility), enabling efficient multi-party communication
 
-```
-message_parameters_operations = {
-    "predictions": [
-        {"type": "DetectionsPropertyExtract", "property_name": "class_name"}
-    ]
-}
-```
+## Connecting to Other Blocks
 
-As a result, in the e-mail that will be sent, you can expect:
+This block receives data from workflow steps and sends email notifications:
 
-```
-This is example notification. Predicted classes: ["class_a", "class_b"].
-```
-
-### Configuring SMTP server
-
-Those are the parameters configuring SMTP server: 
-
-* `smtp_server` - hostname of the SMTP server to use
-
-* `sender_email` - e-mail account to be used as sender
-
-* `sender_email_password` - password for sender e-mail account
-
-* `smtp_port` - port of SMTP service - defaults to `465`
-
-Block **enforces** SSL over SMTP.
-
-Typical scenario for using custom SMTP server involves sending e-mail through Google SMTP server.
-Take a look at [Google tutorial](https://support.google.com/a/answer/176600?hl=en) to configure the 
-block properly. 
-
-!!! note "GMAIL password will not work if 2-step verification is turned on"
-    
-    GMAIL users choosing custom SMTP server as e-mail service provider must configure 
-    [application password](https://support.google.com/accounts/answer/185833) to avoid
-    problems with 2-step verification protected account. Beware that **application
-    password must be kept protected** - we recommend sending the password in Workflow 
-    input and providing it each time by the caller, avoiding storing it in Workflow 
-    definition.
-    
-### Cooldown
-
-The block accepts `cooldown_seconds` (which **defaults to `5` seconds**) to prevent unintended bursts of 
-notifications. Please adjust it according to your needs, setting `0` indicate no cooldown. 
-
-During cooldown period, consecutive runs of the step will cause `throttling_status` output to be set `True`
-and no notification will be sent.
-
-!!! warning "Cooldown limitations"
-
-    Current implementation of cooldown is limited to video processing - using this block in context of a 
-    Workflow that is run behind HTTP service (Roboflow Hosted API, Dedicated Deployment or self-hosted 
-    `inference` server) will have no effect for processing HTTP requests.  
-
-
-### Attachments
-
-You may specify attachment files to be send with your e-mail. Attachments can only be generated 
-in runtime by dedicated blocks (for instance [CSV Formatter](https://inference.roboflow.com/workflows/csv_formatter/))
-
-To include attachments, simply provide the attachment name and refer to other block outputs:
-
-```
-attachments = {
-    "report.pdf": "$steps.report_generator.output"
-}
-```
-
-### Async execution
-
-Configure the `fire_and_forget` property. Set it to True if you want the email to be sent in the background, allowing the 
-Workflow to proceed without waiting on e-mail to be sent. In this case you will not be able to rely on 
-`error_status` output which will always be set to `False`, so we **recommend setting the `fire_and_forget=False` for
-debugging purposes**.
-
-### Disabling notifications based on runtime parameter
-
-Sometimes it would be convenient to manually disable the e-mail notifier block. This is possible 
-setting `disable_sink` flag to hold reference to Workflow input. with such setup, caller would be
-able to disable the sink when needed sending agreed input parameter.
+- **After detection or analysis blocks** (e.g., Object Detection, Instance Segmentation, Classification) to send alerts or summaries when objects are detected, classifications are made, or thresholds are exceeded, enabling real-time notification workflows
+- **After data processing blocks** (e.g., Expression, Property Definition, Detections Filter) to include computed metrics, transformed data, or filtered results in email notifications, enabling customized reporting with processed data
+- **After formatter blocks** (e.g., CSV Formatter) to attach formatted reports and exports to emails, enabling automated distribution of structured data and analytics
+- **In conditional workflows** (e.g., Continue If) to send notifications only when specific conditions are met, enabling event-driven alerting and reporting
+- **After aggregation blocks** (e.g., Data Aggregator) to email periodic analytics summaries and statistical reports, enabling scheduled reporting and trend analysis
+- **In monitoring workflows** to send status updates, error notifications, or health check reports, enabling automated system monitoring and incident management
 """
 
 PARAMETER_REGEX = re.compile(r"({{\s*\$parameters\.(\w+)\s*}})")
@@ -181,14 +116,14 @@ class BlockManifest(WorkflowBlockManifest):
     )
     type: Literal["roboflow_core/email_notification@v1"]
     subject: str = Field(
-        description="Subject of the message.",
+        description="Email subject line for the notification. This is the text that appears in the email header and recipient's inbox subject field. Can include static text describing the notification purpose (e.g., 'Workflow Alert', 'Detection Summary', 'Daily Report').",
         examples=["Workflow alert"],
         json_schema_extra={
             "hide_description": True,
         },
     )
     sender_email: Union[str, Selector(kind=[STRING_KIND])] = Field(
-        description="E-mail to be used to send the message.",
+        description="Email address to use as the sender of the notification. This email account must have access to the configured SMTP server and the password provided in sender_email_password. For Gmail with 2FA enabled, this should be the Gmail address that has an application-specific password configured.",
         examples=["sender@gmail.com"],
         json_schema_extra={
             "hide_description": True,
@@ -199,14 +134,14 @@ class BlockManifest(WorkflowBlockManifest):
         List[str],
         Selector(kind=[STRING_KIND, LIST_OF_VALUES_KIND]),
     ] = Field(
-        description="Destination e-mail address.",
+        description="Primary recipient email address(es) for the notification. Required field - at least one recipient must be specified. Can be a single email address string or a list of email addresses for multiple recipients. Recipients will see their email addresses in the 'To' field of the received email.",
         examples=["receiver@gmail.com"],
         json_schema_extra={
             "hide_description": True,
         },
     )
     message: str = Field(
-        description="Content of the message to be send.",
+        description="Email body content (plain text). Supports dynamic parameters using placeholder syntax: {{ $parameters.parameter_name }}. Placeholders are replaced with values from message_parameters at runtime. Message can be multi-line text. Example: 'Detected {{ $parameters.num_objects }} objects. Classes: {{ $parameters.classes }}.'",
         examples=[
             "During last 5 minutes detected {{ $parameters.num_instances }} instances"
         ],
@@ -219,7 +154,7 @@ class BlockManifest(WorkflowBlockManifest):
         str,
         Union[Selector(), Selector(), str, int, float, bool],
     ] = Field(
-        description="Data to be used inside the message.",
+        description="Dictionary mapping parameter names (used in message placeholders) to workflow data sources. Keys are parameter names referenced in message as {{ $parameters.key }}, values are selectors to workflow step outputs or direct values. These values are substituted into message placeholders at runtime. Can optionally use message_parameters_operations to transform parameter values before substitution.",
         examples=[
             {
                 "predictions": "$steps.model.predictions",
@@ -232,7 +167,7 @@ class BlockManifest(WorkflowBlockManifest):
         },
     )
     message_parameters_operations: Dict[str, List[AllOperationsType]] = Field(
-        description="Preprocessing operations to be performed on message parameters.",
+        description="Optional dictionary mapping parameter names (from message_parameters) to UQL operation chains that transform parameter values before inserting them into the message. Operations are applied in sequence (e.g., extract class names from detections, calculate counts, filter values). Keys must match parameter names in message_parameters. Leave empty or omit parameters that don't need transformation.",
         examples=[
             {
                 "predictions": [
@@ -250,7 +185,7 @@ class BlockManifest(WorkflowBlockManifest):
         ]
     ] = Field(
         default=None,
-        description="Destination e-mail address.",
+        description="Optional CC (Carbon Copy) recipient email address(es). Can be a single email address string or a list of email addresses. CC recipients receive a copy of the email and can see each other's addresses. Use for recipients who should be informed but don't need to take action.",
         examples=["cc-receiver@gmail.com"],
         json_schema_extra={
             "hide_description": True,
@@ -264,14 +199,14 @@ class BlockManifest(WorkflowBlockManifest):
         ]
     ] = Field(
         default=None,
-        description="Destination e-mail address.",
+        description="Optional BCC (Blind Carbon Copy) recipient email address(es). Can be a single email address string or a list of email addresses. BCC recipients receive a copy of the email but their addresses are hidden from other recipients. Use for recipients who should receive the notification privately.",
         examples=["bcc-receiver@gmail.com"],
         json_schema_extra={
             "hide_description": True,
         },
     )
     attachments: Dict[str, Selector(kind=[STRING_KIND, BYTES_KIND])] = Field(
-        description="Attachments",
+        description="Optional dictionary mapping attachment filenames to workflow step outputs that provide file content. Keys are the attachment filenames (e.g., 'report.csv', 'summary.pdf'), values are selectors to blocks that output string or binary content (e.g., CSV Formatter outputs, image data, generated reports). Attachments are encoded and attached to the email. Leave empty if no attachments are needed.",
         default_factory=dict,
         examples=[{"report.cvs": "$steps.csv_formatter.csv_content"}],
         json_schema_extra={
@@ -279,35 +214,34 @@ class BlockManifest(WorkflowBlockManifest):
         },
     )
     smtp_server: Union[str, Selector(kind=[STRING_KIND])] = Field(
-        description="Custom SMTP server to be used.",
+        description="SMTP server hostname to use for sending emails. Common examples: 'smtp.gmail.com' for Gmail, 'smtp.outlook.com' for Outlook, or your organization's SMTP server hostname. The block enforces SSL/TLS encryption for SMTP connections. Ensure the server supports SSL on the specified port.",
         examples=["$inputs.smtp_server", "smtp.google.com"],
     )
     sender_email_password: Union[str, Selector(kind=[STRING_KIND, SECRET_KIND])] = (
         Field(
-            description="Sender e-mail password be used when authenticating to SMTP server.",
+            description="Password for the sender email account to authenticate with the SMTP server. For Gmail with 2-step verification enabled, use an application-specific password instead of the regular Gmail password. This field is marked as private for security. Recommended to provide via workflow inputs rather than storing in workflow definitions. For Roboflow-hosted services, can use SECRET_KIND selectors for secure credential management.",
             private=True,
             examples=["$inputs.email_password"],
         )
     )
     smtp_port: int = Field(
         default=465,
-        description="SMTP server port.",
+        description="SMTP server port number. Defaults to 465 (standard SSL port for SMTP). Common alternatives: 587 for TLS (not supported - this block enforces SSL), 25 for unencrypted (not recommended). Ensure the port supports SSL encryption as required by this block.",
         examples=[465],
     )
     fire_and_forget: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(
         default=True,
-        description="Boolean flag to run the block asynchronously (True) for faster workflows or  "
-        "synchronously (False) for debugging and error handling.",
+        description="Execution mode: True for asynchronous background sending (workflow continues immediately, error_status always False, faster execution), False for synchronous sending (waits for email completion, returns actual error status for debugging). Set to False during development and debugging to catch email sending errors. Set to True in production for faster workflow execution when email delivery timing is not critical.",
         examples=["$inputs.fire_and_forget", False],
     )
     disable_sink: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(
         default=False,
-        description="Boolean flag to disable block execution.",
+        description="Flag to disable email sending at runtime. When True, the block skips sending email and returns a disabled message. Useful for conditional notification control via workflow inputs (e.g., allow callers to disable notifications for testing, enable/disable based on configuration). Set via workflow inputs for runtime control.",
         examples=[False, "$inputs.disable_email_notifications"],
     )
     cooldown_seconds: Union[int, Selector(kind=[INTEGER_KIND])] = Field(
         default=5,
-        description="Number of seconds until a follow-up notification can be sent. ",
+        description="Minimum seconds between consecutive email notifications to prevent notification spam. Defaults to 5 seconds. Set to 0 to disable cooldown (no throttling). During cooldown period, the block returns throttling_status=True and skips sending. Note: Cooldown only applies to video processing workflows, not HTTP request contexts (Roboflow Hosted API, Dedicated Deployment, or self-hosted servers where each request is independent).",
         examples=["$inputs.cooldown_seconds", 3],
         json_schema_extra={
             "always_visible": True,

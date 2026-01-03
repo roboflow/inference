@@ -37,25 +37,60 @@ from inference.core.workflows.prototypes.block import (
 CACHE_EXPIRE_TIME = 15 * 60
 
 LONG_DESCRIPTION = """
-The **Slack Notification** block 📩 enables sending notifications via Slack, with customizable messages, attachments, 
-and cooldown mechanisms.
+Send notifications to Slack channels with customizable message content featuring dynamic workflow data parameters, file attachments, cooldown throttling using cache-based session tracking, and optional async background execution for team alerts, monitoring, and real-time communication workflows.
 
-The block requires Slack setup - 
-[this article](https://www.datacamp.com/tutorial/how-to-send-slack-messages-with-python) may help you 
-configuring everything properly.
+## How This Block Works
 
+This block sends notifications to Slack channels using the Slack Web API, integrating workflow execution results into message content. The block:
 
-#### ✨ Key Features
+1. Checks if the sink is disabled via `disable_sink` flag (if disabled, returns immediately without sending)
+2. Generates a cache key for cooldown tracking using the Slack token hash and `cooldown_session_key` (unique per workflow step)
+3. Validates cooldown period by checking cache for the last notification timestamp (if enabled, throttles notifications within `cooldown_seconds` of the last sent notification, returning throttling status)
+4. Creates or retrieves a Slack WebClient instance for the provided token (caches clients by token hash for efficiency)
+5. Formats the message by processing dynamic parameters (replaces placeholders like `{{ $parameters.parameter_name }}` with actual workflow data from `message_parameters`)
+6. Applies optional UQL operations to transform parameter values before insertion (e.g., extract class names from detections, calculate metrics, filter data) using `message_parameters_operations`
+7. Sends the notification to the specified Slack channel:
+   - **Without attachments**: Uses `chat_postMessage` API to send text-only messages
+   - **With attachments**: Uses `files_upload_v2` API to upload files with the message as an initial comment
+8. Updates the cache with the current notification timestamp (expires after 15 minutes)
+9. Executes synchronously or asynchronously based on `fire_and_forget` setting:
+   - **Synchronous mode** (`fire_and_forget=False`): Waits for Slack API call completion, returns actual error status for debugging
+   - **Asynchronous mode** (`fire_and_forget=True`): Sends notification in background task, workflow continues immediately, error status always False
+10. Returns status outputs indicating success, throttling, or errors (includes Slack API error details when available)
 
-* 📢 **Send Messages:** Deliver notifications to specified Slack channels.
+The block supports dynamic message content through parameter placeholders that are replaced with workflow data at runtime. Message parameters can be raw workflow outputs or transformed using UQL operations (e.g., extract properties, calculate counts, filter values). Attachments are sourced from other workflow blocks that produce string or binary content (e.g., CSV Formatter for reports, image outputs for visualizations). Cooldown prevents notification spam by enforcing minimum time between sends using cache-based tracking with session keys, enabling per-step throttling in distributed or multi-instance environments.
 
-* 🔗 **Dynamic Content:** Craft notifications based on outputs from other Workflow steps.
+## Requirements
 
-* 📎 **Attach Files:** Share reports, predictions or visualizations.
+**Slack API Token**: Requires a Slack API token (Bot Token or User Token) with appropriate permissions:
+- Token must have `chat:write` scope to send messages to channels
+- Token must have `files:write` scope if using attachments
+- Token can be provided via workflow inputs (recommended for security) or stored in workflow definitions
+- View [Slack API documentation](https://api.slack.com/tutorials/tracks/getting-a-token) or [Roboflow Blog guide](https://blog.roboflow.com/slack-notification-workflows/) for token generation instructions
 
-* 🕒 **Cooldown Control:** Prevent duplicate notifications within a set time frame.
+**Channel Configuration**: Requires a valid Slack channel identifier (channel ID or channel name starting with `#`). The bot or user associated with the token must be a member of the channel.
 
-* ⚙️ **Flexible Execution:** Execute in the background or block Workflow execution for debugging.
+**Cooldown Session Key**: The `cooldown_session_key` must be unique for each Slack Notification step in your workflow to enable proper per-step cooldown tracking. The cooldown mechanism uses cache-based storage with a 15-minute expiration time, and cooldown seconds must be between 0 and 900 (15 minutes).
+
+## Common Use Cases
+
+- **Team Alert Notifications**: Send Slack alerts to team channels when specific conditions are detected (e.g., alert security team when unauthorized objects detected, notify operations when anomaly detected, send alerts when detection counts exceed thresholds), enabling real-time team collaboration and incident response
+- **Workflow Execution Updates**: Send Slack notifications about workflow execution status and results (e.g., notify team when batch processing completes, send daily summary reports, alert about workflow failures), enabling team visibility into automated processes
+- **Detection Summaries**: Send Slack messages with detection results and aggregated statistics (e.g., share lists of detected objects, send counts and classifications, include detection confidence summaries), enabling stakeholders to stay informed about workflow outputs via team communication channels
+- **Report Distribution**: Upload and share generated reports and data exports via Slack (e.g., attach CSV reports from CSV Formatter, share exported detection data, include formatted analytics summaries), enabling automated data distribution through team channels
+- **Real-Time Monitoring**: Send continuous monitoring updates and status notifications (e.g., notify about system health issues, send periodic performance metrics, alert about processing milestones), enabling real-time visibility for operational monitoring
+- **Multi-Channel Broadcasting**: Send notifications to different Slack channels based on workflow conditions or routing logic (e.g., send alerts to different channels per detection type, route notifications by severity level, distribute reports to department-specific channels), enabling targeted communication and notification routing
+
+## Connecting to Other Blocks
+
+This block receives data from workflow steps and sends Slack notifications:
+
+- **After detection or analysis blocks** (e.g., Object Detection, Instance Segmentation, Classification) to send alerts or summaries when objects are detected, classifications are made, or thresholds are exceeded, enabling real-time team notifications and collaboration
+- **After data processing blocks** (e.g., Expression, Property Definition, Detections Filter) to include computed metrics, transformed data, or filtered results in Slack notifications, enabling customized reporting with processed data in team channels
+- **After formatter blocks** (e.g., CSV Formatter) to attach formatted reports and exports to Slack messages, enabling automated distribution of structured data and analytics through team communication channels
+- **In conditional workflows** (e.g., Continue If) to send notifications only when specific conditions are met, enabling event-driven alerting and team communication
+- **After aggregation blocks** (e.g., Data Aggregator) to send periodic analytics summaries and statistical reports to Slack, enabling scheduled team updates and trend analysis
+- **In monitoring workflows** to send status updates, error notifications, or health check reports to team channels, enabling automated system monitoring and incident management through Slack
 """
 
 PARAMETER_REGEX = re.compile(r"({{\s*\$parameters\.(\w+)\s*}})")
@@ -78,18 +113,16 @@ class BlockManifest(WorkflowBlockManifest):
     )
     type: Literal["roboflow_core/slack_notification@v1"]
     slack_token: Union[str, Selector(kind=[STRING_KIND, SECRET_KIND])] = Field(
-        description="View the [Roboflow Blog](https://blog.roboflow.com/slack-notification-workflows/) or "
-        "[Slack Documentation](https://api.slack.com/tutorials/tracks/getting-a-token) "
-        "to learn how to generate a Slack API token.",
+        description="Slack API token (Bot Token or User Token) for authenticating with Slack API. Token must have 'chat:write' scope to send messages and 'files:write' scope if using attachments. Token is marked as private for security. Recommended to provide via workflow inputs using SECRET_KIND selectors rather than storing in workflow definitions. Generate tokens via Slack API apps or workspace administration. See [Slack API documentation](https://api.slack.com/tutorials/tracks/getting-a-token) or [Roboflow Blog guide](https://blog.roboflow.com/slack-notification-workflows/) for setup instructions.",
         private=True,
         examples=["$inputs.slack_token"],
     )
     channel: Union[str, Selector(kind=[STRING_KIND])] = Field(
-        description="Identifier of Slack channel.",
+        description="Slack channel identifier where the notification will be sent. Can be a channel ID (e.g., 'C1234567890') or channel name starting with '#' (e.g., '#alerts', '#general'). The bot or user associated with the Slack token must be a member of the channel. Channel names are automatically converted to channel IDs by the Slack API.",
         examples=["$inputs.slack_channel_id"],
     )
     message: str = Field(
-        description="Content of the message to be sent.",
+        description="Message content to send to the Slack channel (plain text). Supports dynamic parameters using placeholder syntax: {{ $parameters.parameter_name }}. Placeholders are replaced with values from message_parameters at runtime. Message can be multi-line text. If attachments are provided, this message becomes the initial comment attached to the file upload. Example: 'Detected {{ $parameters.num_objects }} objects. Classes: {{ $parameters.classes }}.'",
         examples=[
             "During last 5 minutes detected {{ $parameters.num_instances }} instances"
         ],
@@ -101,7 +134,7 @@ class BlockManifest(WorkflowBlockManifest):
         str,
         Union[Selector(), Selector(), str, int, float, bool],
     ] = Field(
-        description="Data to be used in the message content.",
+        description="Dictionary mapping parameter names (used in message placeholders) to workflow data sources. Keys are parameter names referenced in message as {{ $parameters.key }}, values are selectors to workflow step outputs or direct values. These values are substituted into message placeholders at runtime. Can optionally use message_parameters_operations to transform parameter values before substitution.",
         examples=[
             {
                 "predictions": "$steps.model.predictions",
@@ -114,7 +147,7 @@ class BlockManifest(WorkflowBlockManifest):
         },
     )
     message_parameters_operations: Dict[str, List[AllOperationsType]] = Field(
-        description="Preprocessing operations to be performed on message parameters.",
+        description="Optional dictionary mapping parameter names (from message_parameters) to UQL operation chains that transform parameter values before inserting them into the message. Operations are applied in sequence (e.g., extract class names from detections, calculate counts, filter values). Keys must match parameter names in message_parameters. Leave empty or omit parameters that don't need transformation.",
         examples=[
             {
                 "predictions": [
@@ -125,32 +158,30 @@ class BlockManifest(WorkflowBlockManifest):
         default_factory=dict,
     )
     attachments: Dict[str, Selector(kind=[STRING_KIND, BYTES_KIND])] = Field(
-        description="Attachments to be sent in the message, such as a csv file or jpg image.",
+        description="Optional dictionary mapping attachment filenames to workflow step outputs that provide file content. Keys are the attachment filenames (e.g., 'report.csv', 'image.jpg'), values are selectors to blocks that output string or binary content (e.g., CSV Formatter outputs, image data, generated reports). Files are uploaded to Slack using files_upload_v2 API, and the message becomes the initial comment. Leave empty if no attachments are needed. Requires 'files:write' scope on the Slack token.",
         default_factory=dict,
         examples=[{"report.csv": "$steps.csv_formatter.csv_content"}],
     )
     fire_and_forget: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(
         default=True,
-        description="Boolean flag to run the block asynchronously (True) for faster workflows or  "
-        "synchronously (False) for debugging and error handling.",
+        description="Execution mode: True for asynchronous background sending (workflow continues immediately, error_status always False, faster execution), False for synchronous sending (waits for Slack API call completion, returns actual error status for debugging). Set to False during development and debugging to catch Slack API errors. Set to True in production for faster workflow execution when notification delivery timing is not critical.",
         examples=["$inputs.fire_and_forget", False],
     )
     disable_sink: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(
         default=False,
-        description="Boolean flag to disable block execution.",
+        description="Flag to disable Slack notification sending at runtime. When True, the block skips sending notification and returns a disabled message. Useful for conditional notification control via workflow inputs (e.g., allow callers to disable notifications for testing, enable/disable based on configuration). Set via workflow inputs for runtime control.",
         examples=[False, "$inputs.disable_slack_notifications"],
     )
     cooldown_seconds: Union[int, Selector(kind=[INTEGER_KIND])] = Field(
         default=5,
-        description="Number of seconds until a follow-up notification can be sent. "
-        f"Maximum value: {CACHE_EXPIRE_TIME} seconds (15 minutes)",
+        description="Minimum seconds between consecutive Slack notifications to prevent notification spam. Defaults to 5 seconds. Set to 0 to disable cooldown (no throttling). Must be between 0 and 900 (15 minutes). During cooldown period, the block returns throttling_status=True and skips sending. Cooldown is tracked per step using cooldown_session_key with cache-based storage (15-minute expiration). Each Slack Notification step in a workflow should have a unique cooldown_session_key for proper per-step tracking.",
         examples=["$inputs.cooldown_seconds", 3],
         json_schema_extra={
             "always_visible": True,
         },
     )
     cooldown_session_key: str = Field(
-        description="Unique key used internally to implement cooldown. Must be unique for each step in your Workflow.",
+        description="Unique identifier for this Slack Notification step's cooldown tracking session. Must be unique for each Slack Notification step in your workflow to enable proper per-step cooldown isolation. Used with the Slack token hash to create a cache key for tracking the last notification timestamp. In distributed or multi-instance environments, this ensures cooldown works correctly per step. Typically auto-generated or provided as a workflow input.",
         examples=["session-1v73kdhfse"],
         json_schema_extra={"hidden": True},
     )
