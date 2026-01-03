@@ -86,11 +86,19 @@ class BlockManifest(WorkflowBlockManifest):
     name: str = Field(description="Unique name of step in workflows")
     embedding_1: Selector(kind=[EMBEDDING_KIND]) = Field(
         description="First embedding vector to compare. Must have the same dimensionality (same number of elements) as embedding_2. Can be from any embedding model (CLIP, Perception Encoder, etc.) and can represent images, text, or other data types. Embedding vectors are lists of floats representing high-dimensional feature representations.",
-        examples=["$steps.clip_image.embedding", "$steps.perception_encoder.embedding", "$steps.clip_text.embedding"],
+        examples=[
+            "$steps.clip_image.embedding",
+            "$steps.perception_encoder.embedding",
+            "$steps.clip_text.embedding",
+        ],
     )
     embedding_2: Selector(kind=[EMBEDDING_KIND]) = Field(
         description="Second embedding vector to compare. Must have the same dimensionality (same number of elements) as embedding_1. Can be from any embedding model (CLIP, Perception Encoder, etc.) and can represent images, text, or other data types. Embedding vectors are lists of floats representing high-dimensional feature representations. The cosine similarity measures the similarity between embedding_1 and embedding_2.",
-        examples=["$steps.clip_text.embedding", "$steps.clip_image.embedding", "$steps.perception_encoder.embedding"],
+        examples=[
+            "$steps.clip_text.embedding",
+            "$steps.clip_image.embedding",
+            "$steps.perception_encoder.embedding",
+        ],
     )
 
     @classmethod
