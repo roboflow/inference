@@ -546,6 +546,13 @@ class WebRTCSession:
             return value
         return [value]
 
+    def _send_ack(self, frame_id: int, channel: "RTCDataChannel") -> None:
+        """Send cumulative ACK for flow control (only when realtime_processing=False)."""
+        if self._config.realtime_processing:
+            return
+        if channel.readyState == "open":
+            channel.send(json.dumps({"ack": frame_id}))
+
     async def _get_turn_config(self) -> Optional[RTCConfiguration]:
         """Get TURN configuration from user-provided config or Roboflow API.
 
@@ -796,6 +803,10 @@ class WebRTCSession:
                                         f"Error calling handler for field '{field_name}'",
                                         exc_info=True,
                                     )
+
+                # Send ACK for flow control (only when realtime_processing=False)
+                if metadata and metadata.frame_id is not None:
+                    self._send_ack(metadata.frame_id, ch)
             except json.JSONDecodeError:
                 logger.warning("Failed to parse data channel message as JSON")
 
