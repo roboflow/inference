@@ -135,14 +135,6 @@ This block supports two API key modes:
    * Full control over API usage
    * You pay Google directly
 
-### Pricing (Roboflow Managed)
-
-Token-based pricing varies by model. Approximate costs:
-* **Gemini 3 Pro**: ~$2.00 / 1M input tokens, ~$12.00 / 1M output tokens
-* **Gemini 2.5 Pro**: ~$1.25 / 1M input tokens, ~$10.00 / 1M output tokens  
-* **Gemini 2.5 Flash**: ~$0.30 / 1M input tokens, ~$2.50 / 1M output tokens
-* **Gemini 2.0 Flash**: ~$0.10 / 1M input tokens, ~$0.40 / 1M output tokens
-
 **WARNING!**
 
 This block makes use of `/v1beta` API of Google Gemini model - the implementation may change
