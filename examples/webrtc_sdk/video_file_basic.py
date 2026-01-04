@@ -85,7 +85,11 @@ def main() -> None:
     # Prepare config
     stream_output = [args.stream_output] if args.stream_output else []
     data_output = [args.data_output] if args.data_output else []
-    config = StreamConfig(stream_output=stream_output, data_output=data_output)
+    config = StreamConfig(
+        stream_output=stream_output,
+        data_output=data_output,
+        realtime_processing=args.realtime_processing,
+    )
 
     # Create streaming session
     session = client.webrtc.stream(
