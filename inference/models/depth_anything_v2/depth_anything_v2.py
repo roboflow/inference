@@ -23,7 +23,7 @@ from inference.core.workflows.execution_engine.entities.base import (
 from inference.models.transformers import TransformerModel
 
 
-class DepthEstimator(TransformerModel):
+class DepthAnythingV2(TransformerModel):
     transformers_class = AutoModelForDepthEstimation
     processor_class = AutoImageProcessor
     load_base_from_roboflow = True
@@ -101,8 +101,8 @@ class DepthEstimator(TransformerModel):
 
                 # Create result dictionary
                 result = {
-                    "normalized_depth": normalized_depth,
                     "image": colored_depth_image,
+                    "normalized_depth": normalized_depth,
                 }
 
                 return (result,)
