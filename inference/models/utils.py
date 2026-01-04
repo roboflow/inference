@@ -474,9 +474,15 @@ except:
 
 try:
     if DEPTH_ESTIMATION_ENABLED:
-        from inference.models.depth_estimation.depthestimation import DepthEstimator
+        from inference.models.depth_anything_v2.depth_anything_v2 import DepthAnythingV2
+        from inference.models.depth_anything_v3.depth_anything_v3 import DepthAnythingV3
 
-        ROBOFLOW_MODEL_TYPES[("depth-estimation", "small")] = DepthEstimator
+        ROBOFLOW_MODEL_TYPES[("depth-estimation", "depth-anything-v2")] = (
+            DepthAnythingV2
+        )
+        ROBOFLOW_MODEL_TYPES[("depth-estimation", "depth-anything-v3")] = (
+            DepthAnythingV3
+        )
 except:
     warnings.warn(
         "Your `inference` configuration does not support Depth Estimation."
