@@ -36,6 +36,19 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 
+_SYSTEM_INSTRUCTION = {
+    "role": "system",
+    "parts": [
+        {
+            "text": "You act as object-detection model. You must provide reasonable predictions. "
+            "You are only allowed to produce JSON document. "
+            'Expected structure of json: {"detections": [{"x_min": 0.1, "y_min": 0.2, "x_max": 0.3, "y_max": 0.4, "class_name": "my-class-X", "confidence": 0.7}]}. '
+            "`my-class-X` must be one of the class names defined by user. All coordinates must be in range 0.0-1.0, representing percentage of image dimensions. "
+            "`confidence` is a value in range 0.0-1.0 representing your confidence in prediction. You should detect all instances of classes provided by user.",
+        }
+    ],
+}
+
 GOOGLE_API_KEY_PATTERN = re.compile(r"key=(.[^&]*)")
 GOOGLE_API_KEY_VALUE_GROUP = 1
 MIN_KEY_LENGTH_TO_REVEAL_PREFIX = 8
@@ -86,9 +99,9 @@ MODEL_VERSION_METADATA = {
     model["id"]: {"name": model["name"]} for model in GEMINI_MODELS
 }
 
-MODELS_SUPPORTING_THINKING_LEVEL = [
+MODELS_SUPPORTING_THINKING_LEVEL = frozenset(
     model["id"] for model in GEMINI_MODELS if model["supports_thinking_level"]
-]
+)
 
 MODELS_NOT_SUPPORTING_THINKING_LEVEL = [
     model["id"] for model in GEMINI_MODELS if not model["supports_thinking_level"]
@@ -891,18 +904,7 @@ def prepare_object_detection_prompt(
 ) -> dict:
     serialised_classes = ", ".join(classes)
     return {
-        "systemInstruction": {
-            "role": "system",
-            "parts": [
-                {
-                    "text": "You act as object-detection model. You must provide reasonable predictions. "
-                    "You are only allowed to produce JSON document. "
-                    'Expected structure of json: {"detections": [{"x_min": 0.1, "y_min": 0.2, "x_max": 0.3, "y_max": 0.4, "class_name": "my-class-X", "confidence": 0.7}]}. '
-                    "`my-class-X` must be one of the class names defined by user. All coordinates must be in range 0.0-1.0, representing percentage of image dimensions. "
-                    "`confidence` is a value in range 0.0-1.0 representing your confidence in prediction. You should detect all instances of classes provided by user.",
-                }
-            ],
-        },
+        "systemInstruction": _SYSTEM_INSTRUCTION,
         "contents": {
             "parts": [
                 {
