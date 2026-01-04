@@ -217,6 +217,11 @@ class DepthAnythingV3Torch(
         with torch.inference_mode():
             outputs = self._model(pre_processed_images)
             depth_map = outputs["depth"].squeeze(1)
+            depth_min = depth_map.min()
+            depth_max = depth_map.max()
+
+            # Flip to be consistent with V2
+            depth_map = (depth_map * -1) + depth_min + depth_max
             return depth_map
 
     def post_process(
