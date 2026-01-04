@@ -146,6 +146,8 @@ DINOV3_CLASSIFICATION_TORCH_STATIC_URL = "https://storage.googleapis.com/roboflo
 DINOV3_MULTI_LABEL_TORCH_STATIC_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/dinov3-multi-label-torch.zip"
 
 DEPTH_ANYTHING_V2_SMALL_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/depth-anything-v2.zip"
+DEPTH_ANYTHING_V3_SMALL_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/depth-anything-v3-small.zip"
+DEPTH_ANYTHING_V3_BASE_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/depth-anything-v3-base.zip"
 DOCTR_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/doctr-dbnet-rn50-crnn-vgg16.zip"
 EASY_OCR_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/easy-ocr-english.zip"
 TROCR_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/tr-ocr-small-printed.zip"
@@ -1153,6 +1155,22 @@ def depth_anything_v2_small_package() -> str:
     return download_model_package(
         model_package_zip_url=DEPTH_ANYTHING_V2_SMALL_PACKAGE_URL,
         package_name="depth-anything-v2-small",
+    )
+
+
+@pytest.fixture(scope="module")
+def depth_anything_v3_small_package() -> str:
+    return download_model_package(
+        model_package_zip_url=DEPTH_ANYTHING_V3_SMALL_PACKAGE_URL,
+        package_name="depth-anything-v3-small",
+    )
+
+
+@pytest.fixture(scope="module")
+def depth_anything_v3_base_package() -> str:
+    return download_model_package(
+        model_package_zip_url=DEPTH_ANYTHING_V3_BASE_PACKAGE_URL,
+        package_name="depth-anything-v3-base",
     )
 
 
