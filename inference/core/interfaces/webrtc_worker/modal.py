@@ -226,11 +226,14 @@ if modal is not None:
             )
         )
 
+        loop = asyncio.get_running_loop()
+
         def on_timeout(message: Optional[str] = ""):
             msg = "Cancelled by watchdog"
             if message:
                 msg += f": {message}"
-            rtc_peer_connection_task.cancel(msg)
+            # Use call_soon_threadsafe since this callback is invoked from the watchdog thread
+            loop.call_soon_threadsafe(rtc_peer_connection_task.cancel, msg)
 
         watchdog.on_timeout = on_timeout
         watchdog.start()
