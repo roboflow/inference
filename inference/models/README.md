@@ -4,6 +4,8 @@ The models supported by Roboflow Inference have their own licenses. View the lic
 |:--------------------------------------|:------------------------------------------------------------------------------------:|:----------------------------:|
 | `inference/models/clip`               | [MIT](https://github.com/openai/CLIP/blob/main/LICENSE)                              |              👍              |
 | `inference/models/doctr`              | [Apache 2.0](https://github.com/mindee/doctr/blob/main/LICENSE)                      |              👍              |
+| `inference/models/depth_anything_v2`  | [Apache 2.0](https://github.com/DepthAnything/Depth-Anything-V2/blob/main/LICENSE)          |              👍              |
+| `inference/models/depth_anything_v3`  | [Apache 2.0](https://github.com/ByteDance-Seed/depth-anything-3/blob/main/LICENSE)          |              👍              |
 | `inference/models/easy_ocr`           | [Apache 2.0](https://github.com/JaidedAI/EasyOCR/blob/master/LICENSE)                |              👍              |
 | `inference/models/florence2`          | [MIT](https://huggingface.co/microsoft/Florence-2-base/blob/main/LICENSE)            |              👍              |
 | `inference/models/gaze`               | [Apache 2.0 (Mediapipe)](https://github.com/google/mediapipe/blob/master/LICENSE), [MIT (L2Cs-Net)](https://github.com/Ahmednull/L2CS-Net/blob/main/LICENSE) |              👍              |

@@ -25,6 +25,7 @@ DEPTH_ESTIMATION_WORKFLOW_DEFINITION = {
             "type": "roboflow_core/depth_estimation@v1",
             "name": "depth_estimation",
             "images": "$inputs.image",
+            "model_version": "depth-anything-v2/small",
         }
     ],
     "outputs": [
