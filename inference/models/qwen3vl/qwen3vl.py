@@ -123,6 +123,8 @@ class Qwen3VL(TransformerModel):
             revision=revision,
             cache_dir=cache_dir,
             token=token,
+            min_pixels=256 * 28 * 28,
+            max_pixels=1280 * 28 * 28,
         )
 
     def predict(self, image_in: Image.Image, prompt=None, **kwargs):
@@ -294,6 +296,8 @@ class LoRAQwen3VL(LoRATransformerModel):
                 cache_dir=cache_dir,
                 token=token,
                 chat_template=chat_template,
+                min_pixels=256 * 28 * 28,
+                max_pixels=1280 * 28 * 28,
             )
         else:
             self.processor = self.processor_class.from_pretrained(
@@ -301,6 +305,8 @@ class LoRAQwen3VL(LoRATransformerModel):
                 revision=revision,
                 cache_dir=cache_dir,
                 token=token,
+                min_pixels=256 * 28 * 28,
+                max_pixels=1280 * 28 * 28,
             )
 
     def predict(self, image_in: Image.Image, prompt=None, **kwargs):
