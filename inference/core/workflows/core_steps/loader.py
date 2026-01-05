@@ -43,6 +43,9 @@ from inference.core.workflows.core_steps.classical_cv.background_subtraction.v1 
 from inference.core.workflows.core_steps.classical_cv.camera_focus.v1 import (
     CameraFocusBlockV1,
 )
+from inference.core.workflows.core_steps.classical_cv.camera_focus.v2 import (
+    CameraFocusBlockV2,
+)
 from inference.core.workflows.core_steps.classical_cv.contours.v1 import (
     ImageContoursDetectionBlockV1,
 )
@@ -348,6 +351,9 @@ from inference.core.workflows.core_steps.sinks.slack.notification.v1 import (
 from inference.core.workflows.core_steps.sinks.twilio.sms.v1 import (
     TwilioSMSNotificationBlockV1,
 )
+from inference.core.workflows.core_steps.sinks.twilio.sms.v2 import (
+    TwilioSMSNotificationBlockV2,
+)
 from inference.core.workflows.core_steps.sinks.webhook.v1 import WebhookSinkBlockV1
 from inference.core.workflows.core_steps.transformations.absolute_static_crop.v1 import (
     AbsoluteStaticCropBlockV1,
@@ -627,6 +633,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         CacheGetBlockV1,
         CacheSetBlockV1,
         CameraFocusBlockV1,
+        CameraFocusBlockV2,
         CircleVisualizationBlockV1,
         ClipComparisonBlockV1,
         ClipComparisonBlockV2,
@@ -735,6 +742,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         EnvironmentSecretsStoreBlockV1,
         SlackNotificationBlockV1,
         TwilioSMSNotificationBlockV1,
+        TwilioSMSNotificationBlockV2,
         GazeBlockV1,
         LlamaVisionBlockV1,
         ImageSlicerBlockV2,
