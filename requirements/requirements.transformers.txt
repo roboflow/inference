@@ -1,7 +1,7 @@
 # TODO: update to 2.8.0 once pre-built flashattn is available
 torch>=2.0.1,<2.7.0
 torchvision>=0.15.0
-transformers>=4.57.3,<v5.0.0rc0
+transformers>=4.57.3,<5.0.0
 timm~=1.0.0
 #accelerate>=0.32,<1.0.0
 accelerate>=1.0.0,<2.0.0

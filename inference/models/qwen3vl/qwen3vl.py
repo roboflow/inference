@@ -117,13 +117,17 @@ class Qwen3VL(TransformerModel):
         )
 
     def predict(self, image_in: Image.Image, prompt=None, **kwargs):
-        split_prompt = prompt.split("<system_prompt>")
-        if len(split_prompt) == 1:
-            prompt = split_prompt[0]
+        if prompt is None:
+            prompt = "Describe what's in this image."
             system_prompt = self.default_system_prompt
         else:
-            prompt = split_prompt[0]
-            system_prompt = split_prompt[1]
+            split_prompt = prompt.split("<system_prompt>")
+            if len(split_prompt) == 1:
+                prompt = split_prompt[0] or "Describe what's in this image."
+                system_prompt = self.default_system_prompt
+            else:
+                prompt = split_prompt[0] or "Describe what's in this image."
+                system_prompt = split_prompt[1] or self.default_system_prompt
 
         conversation = [
             {
@@ -134,7 +138,7 @@ class Qwen3VL(TransformerModel):
                 "role": "user",
                 "content": [
                     {"type": "image", "image": image_in},
-                    {"type": "text", "text": prompt or ""},
+                    {"type": "text", "text": prompt},
                 ],
             },
         ]
@@ -284,16 +288,16 @@ class LoRAQwen3VL(LoRATransformerModel):
 
     def predict(self, image_in: Image.Image, prompt=None, **kwargs):
         if prompt is None:
-            prompt = ""
+            prompt = "Describe what's in this image."
             system_prompt = self.default_system_prompt
         else:
             split_prompt = prompt.split("<system_prompt>")
             if len(split_prompt) == 1:
-                prompt = split_prompt[0]
+                prompt = split_prompt[0] or "Describe what's in this image."
                 system_prompt = self.default_system_prompt
             else:
-                prompt = split_prompt[0]
-                system_prompt = split_prompt[1]
+                prompt = split_prompt[0] or "Describe what's in this image."
+                system_prompt = split_prompt[1] or self.default_system_prompt
 
         conversation = [
             {

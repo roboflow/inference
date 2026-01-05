@@ -167,16 +167,16 @@ class Qwen3VLHF:
     ) -> dict:
         # Handle prompt and system prompt parsing logic from original implementation
         if prompt is None:
-            prompt = ""
+            prompt = "Describe what's in this image."
             system_prompt = self.default_system_prompt
         else:
             split_prompt = prompt.split("<system_prompt>")
             if len(split_prompt) == 1:
-                prompt = split_prompt[0]
+                prompt = split_prompt[0] or "Describe what's in this image."
                 system_prompt = self.default_system_prompt
             else:
-                prompt = split_prompt[0]
-                system_prompt = split_prompt[1]
+                prompt = split_prompt[0] or "Describe what's in this image."
+                system_prompt = split_prompt[1] or self.default_system_prompt
 
         # Construct conversation following original implementation structure
         # Pass the actual image in the conversation for proper vision token handling

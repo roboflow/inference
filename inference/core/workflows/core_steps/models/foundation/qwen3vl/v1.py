@@ -32,15 +32,6 @@ from inference.core.workflows.prototypes.block import (
 # Qwen3-VL Workflow Block Manifest
 ##########################################################################
 class BlockManifest(WorkflowBlockManifest):
-    # Qwen3-VL only needs an image and an optional text prompt.
-    images: Selector(kind=[IMAGE_KIND]) = ImageInputField
-    prompt: Optional[str] = Field(
-        default=None,
-        description="Optional text prompt to provide additional context to Qwen3-VL. Otherwise it will just be None",
-        examples=["What is in this image?"],
-    )
-
-    # Standard model configuration for UI, schema, etc.
     model_config = ConfigDict(
         json_schema_extra={
             "name": "Qwen3-VL",
@@ -70,6 +61,12 @@ class BlockManifest(WorkflowBlockManifest):
     )
     type: Literal["roboflow_core/qwen3vl@v1"]
 
+    images: Selector(kind=[IMAGE_KIND]) = ImageInputField
+    prompt: Optional[str] = Field(
+        default=None,
+        description="Optional text prompt to provide additional context to Qwen3-VL. Otherwise it will just be a default one, which may affect the desired model behavior.",
+        examples=["What is in this image?"],
+    )
     model_version: Union[Selector(kind=[ROBOFLOW_MODEL_ID_KIND]), str] = Field(
         default="qwen3vl-2b-instruct",
         description="The Qwen3-VL model to be used for inference.",
@@ -158,9 +155,12 @@ class Qwen3VLBlockV1(WorkflowBlock):
         inference_images = [
             i.to_inference_format(numpy_preferred=False) for i in images
         ]
-        # Use the provided prompt (or an empty string if None) for every image.
-        prompt = prompt or ""
-        system_prompt = system_prompt or ""
+        # Use the provided prompt or default to a generic image description request.
+        prompt = prompt or "Describe what's in this image."
+        system_prompt = (
+            system_prompt
+            or "You are a Qwen3-VL model that can answer questions about any image."
+        )
         prompts = [prompt + "<system_prompt>" + system_prompt] * len(inference_images)
         # Register Qwen3-VL with the model manager.
         self._model_manager.add_model(model_id=model_version, api_key=self._api_key)
