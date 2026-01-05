@@ -529,6 +529,10 @@ def merge_crop_predictions(
         for pred in merged_preds:
             if has_masks:
                 merged_masks.append(pred["mask"])
+            else:
+                # For non-mask detections, collect bboxes
+                if "bbox" in pred and pred["bbox"] is not None:
+                    merged_bboxes.append(pred["bbox"])
             merged_confidences.append(pred["confidence"])
             merged_class_ids.append(pred["class_id"])
 
@@ -654,10 +658,6 @@ def merge_crop_predictions(
             class_id=merged_class_ids_array,
         )
     else:
-        for pred in merged_preds:
-            if "bbox" in pred and pred["bbox"] is not None:
-                merged_bboxes.append(pred["bbox"])
-
         # Object detection - use bounding boxes directly
         if merged_bboxes:
             xyxy_array = np.array(merged_bboxes, dtype=np.float32)
