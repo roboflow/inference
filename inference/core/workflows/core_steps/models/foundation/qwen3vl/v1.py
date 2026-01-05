@@ -1,5 +1,7 @@
+import json
 from typing import List, Literal, Optional, Type, Union
 
+import supervision as sv
 from pydantic import ConfigDict, Field
 
 from inference.core.entities.requests.inference import LMMInferenceRequest
@@ -13,7 +15,9 @@ from inference.core.workflows.execution_engine.entities.base import (
 from inference.core.workflows.execution_engine.entities.types import (
     DICTIONARY_KIND,
     IMAGE_KIND,
+    LANGUAGE_MODEL_OUTPUT_KIND,
     ROBOFLOW_MODEL_ID_KIND,
+    STRING_KIND,
     ImageInputField,
     Selector,
 )
@@ -24,32 +28,27 @@ from inference.core.workflows.prototypes.block import (
 )
 
 
+##########################################################################
+# Qwen3-VL Workflow Block Manifest
+##########################################################################
 class BlockManifest(WorkflowBlockManifest):
-    # SmolVLM needs an image and a text prompt.
-    images: Selector(kind=[IMAGE_KIND]) = ImageInputField
-    prompt: Optional[str] = Field(
-        default=None,
-        description="Optional text prompt to provide additional context to SmolVLM2. Otherwise it will just be None",
-        examples=["What is in this image?"],
-    )
-
-    # Standard model configuration for UI, schema, etc.
     model_config = ConfigDict(
         json_schema_extra={
-            "name": "SmolVLM2",
+            "name": "Qwen3-VL",
             "version": "v1",
-            "short_description": "Run SmolVLM2 on an image.",
+            "short_description": "Run Qwen3-VL on an image.",
             "long_description": (
-                "This workflow block runs SmolVLM2, a multimodal vision-language model. You can ask questions about images"
-                " -- including documents and photos -- and get answers in natural language."
+                "This workflow block runs Qwen3-VL—a vision language model that accepts an image "
+                "and an optional text prompt—and returns a text answer based on a conversation template."
             ),
             "license": "Apache-2.0",
             "block_type": "model",
             "search_keywords": [
-                "SmolVLM2",
-                "smolvlm",
+                "Qwen3",
+                "qwen3-vl",
                 "vision language model",
                 "VLM",
+                "Alibaba",
             ],
             "is_vlm_block": True,
             "ui_manifest": {
@@ -60,12 +59,24 @@ class BlockManifest(WorkflowBlockManifest):
         },
         protected_namespaces=(),
     )
-    type: Literal["roboflow_core/smolvlm2@v1"]
+    type: Literal["roboflow_core/qwen3vl@v1"]
 
+    images: Selector(kind=[IMAGE_KIND]) = ImageInputField
+    prompt: Optional[str] = Field(
+        default=None,
+        description="Optional text prompt to provide additional context to Qwen3-VL. Otherwise it will just be a default one, which may affect the desired model behavior.",
+        examples=["What is in this image?"],
+    )
     model_version: Union[Selector(kind=[ROBOFLOW_MODEL_ID_KIND]), str] = Field(
-        default="smolvlm2/smolvlm-2.2b-instruct",
-        description="The SmolVLM2 model to be used for inference.",
-        examples=["smolvlm2/smolvlm-2.2b-instruct"],
+        default="qwen3vl-2b-instruct",
+        description="The Qwen3-VL model to be used for inference.",
+        examples=["qwen3vl-2b-instruct"],
+    )
+
+    system_prompt: Optional[str] = Field(
+        default=None,
+        description="Optional system prompt to provide additional context to Qwen3-VL.",
+        examples=["You are a helpful assistant."],
     )
 
     @classmethod
@@ -88,7 +99,10 @@ class BlockManifest(WorkflowBlockManifest):
         return ">=1.3.0,<2.0.0"
 
 
-class SmolVLM2BlockV1(WorkflowBlock):
+##########################################################################
+# Qwen3-VL Workflow Block
+##########################################################################
+class Qwen3VLBlockV1(WorkflowBlock):
     def __init__(
         self,
         model_manager: ModelManager,
@@ -112,16 +126,18 @@ class SmolVLM2BlockV1(WorkflowBlock):
         images: Batch[WorkflowImageData],
         model_version: str,
         prompt: Optional[str],
+        system_prompt: Optional[str],
     ) -> BlockResult:
         if self._step_execution_mode == StepExecutionMode.LOCAL:
             return self.run_locally(
                 images=images,
                 model_version=model_version,
                 prompt=prompt,
+                system_prompt=system_prompt,
             )
         elif self._step_execution_mode == StepExecutionMode.REMOTE:
             raise NotImplementedError(
-                "Remote execution is not supported for SmolVLM2. Please use a local or dedicated inference server."
+                "Remote execution is not supported for Qwen3-VL. Please use a local or dedicated inference server."
             )
         else:
             raise ValueError(
@@ -133,6 +149,7 @@ class SmolVLM2BlockV1(WorkflowBlock):
         images: Batch[WorkflowImageData],
         model_version: str,
         prompt: Optional[str],
+        system_prompt: Optional[str],
     ) -> BlockResult:
         # Convert each image to the format required by the model.
         inference_images = [
@@ -140,9 +157,12 @@ class SmolVLM2BlockV1(WorkflowBlock):
         ]
         # Use the provided prompt or default to a generic image description request.
         prompt = prompt or "Describe what's in this image."
-        prompts = [prompt] * len(inference_images)
-
-        # Register SmolVLM2 with the model manager.
+        system_prompt = (
+            system_prompt
+            or "You are a Qwen3-VL model that can answer questions about any image."
+        )
+        prompts = [prompt + "<system_prompt>" + system_prompt] * len(inference_images)
+        # Register Qwen3-VL with the model manager.
         self._model_manager.add_model(model_id=model_version, api_key=self._api_key)
 
         predictions = []
