@@ -36,7 +36,7 @@ class BlockManifest(WorkflowBlockManifest):
     images: Selector(kind=[IMAGE_KIND]) = ImageInputField
     prompt: Optional[str] = Field(
         default=None,
-        description="Optional text prompt to provide additional context to Qwen2.5-VL. Otherwise it will just be None",
+        description="Optional text prompt to provide additional context to Qwen2.5-VL. Otherwise it will just be a default one, which may affect the desired model behavior.",
         examples=["What is in this image?"],
     )
 
@@ -158,9 +158,12 @@ class Qwen25VLBlockV1(WorkflowBlock):
         inference_images = [
             i.to_inference_format(numpy_preferred=False) for i in images
         ]
-        # Use the provided prompt (or an empty string if None) for every image.
-        prompt = prompt or ""
-        system_prompt = system_prompt or ""
+        # Use the provided prompt or default to a generic image description request.
+        prompt = prompt or "Describe what's in this image."
+        system_prompt = (
+            system_prompt
+            or "You are a Qwen2.5-VL model that can answer questions about any image."
+        )
         prompts = [prompt + "<system_prompt>" + system_prompt] * len(inference_images)
         # Register Qwen2.5-VL with the model manager.
         self._model_manager.add_model(model_id=model_version, api_key=self._api_key)
