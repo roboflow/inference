@@ -242,6 +242,9 @@ from inference.core.workflows.core_steps.models.foundation.openai.v4 import (
 from inference.core.workflows.core_steps.models.foundation.perception_encoder.v1 import (
     PerceptionEncoderModelBlockV1,
 )
+from inference.core.workflows.core_steps.models.foundation.qwen3vl.v1 import (
+    Qwen3VLBlockV1,
+)
 from inference.core.workflows.core_steps.models.foundation.qwen.v1 import (
     Qwen25VLBlockV1,
 )
@@ -265,6 +268,7 @@ if SAM3_3D_OBJECTS_ENABLED:
     from inference.core.workflows.core_steps.models.foundation.segment_anything3_3d.v1 import (
         SegmentAnything3_3D_ObjectsBlockV1,
     )
+
 from inference.core.workflows.core_steps.models.foundation.smolvlm.v1 import (
     SmolVLM2BlockV1,
 )
@@ -747,6 +751,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         LlamaVisionBlockV1,
         ImageSlicerBlockV2,
         Qwen25VLBlockV1,
+        Qwen3VLBlockV1,
         SmolVLM2BlockV1,
         Moondream2BlockV1,
         OverlapBlockV1,

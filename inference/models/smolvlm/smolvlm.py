@@ -29,6 +29,7 @@ class SmolVLM(TransformerModel):
         super().__init__(*args, **kwargs)
 
     def predict(self, image_in: Image.Image, prompt="", history=None, **kwargs):
+        prompt = prompt or "Describe what's in this image."
         messages = [
             {
                 "role": "user",
@@ -145,7 +146,7 @@ class LoRASmolVLM(LoRATransformerModel):
             )
 
     def predict(self, image_in: Image.Image, prompt="", **kwargs):
-
+        prompt = prompt or "Describe what's in this image."
         conversation = [
             {
                 "role": "user",

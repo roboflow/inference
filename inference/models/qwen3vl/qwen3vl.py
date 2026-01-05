@@ -5,18 +5,13 @@ import torch
 from peft import LoraConfig, PeftModel
 from PIL import Image
 from transformers import (
-    AutoModelForCausalLM,
+    AutoProcessor,
     BitsAndBytesConfig,
-    Qwen2_5_VLConfig,
-    Qwen2_5_VLForConditionalGeneration,
+    Qwen3VLForConditionalGeneration,
 )
 
 from inference.core.env import DEVICE, HUGGINGFACE_TOKEN, MODEL_CACHE_DIR
 from inference.models.transformers import LoRATransformerModel, TransformerModel
-
-AutoModelForCausalLM.register(
-    config_class=Qwen2_5_VLConfig, model_class=Qwen2_5_VLForConditionalGeneration
-)
 
 bnb_config = BitsAndBytesConfig(
     load_in_4bit=True,
@@ -26,39 +21,15 @@ bnb_config = BitsAndBytesConfig(
 )
 
 
-def _patch_preprocessor_config(cache_dir: str):
-    """
-    Checks and patches the preprocessor_config.json in the given cache directory
-    to ensure the image_processor_type is recognized.
-    """
-    config_path = os.path.join(cache_dir, "preprocessor_config.json")
-    target_key = "image_processor_type"
-    correct_value = "Qwen2VLImageProcessor"
-
-    if not os.path.exists(config_path):
-        raise FileNotFoundError(f"Preprocessor config not found at {config_path}")
-
-    with open(config_path, "r") as f:
-        data = json.load(f)
-
-    if target_key in data and data[target_key] != correct_value:
-        data[target_key] = correct_value
-        with open(config_path, "w") as f:
-            json.dump(data, f, indent=4)
-    elif target_key in data:
-        pass
-    else:
-        raise ValueError(f"'{target_key}' not found in {config_path}")
-
-
-class Qwen25VL(TransformerModel):
+class Qwen3VL(TransformerModel):
     generation_includes_input = True
-    transformers_class = AutoModelForCausalLM
+    transformers_class = Qwen3VLForConditionalGeneration
+    processor_class = AutoProcessor
     default_dtype = torch.bfloat16
     skip_special_tokens = False
 
     default_system_prompt = (
-        "You are a Qwen2.5-VL model that can answer questions about any image."
+        "You are a Qwen3-VL model that can answer questions about any image."
     )
 
     def __init__(
@@ -67,7 +38,7 @@ class Qwen25VL(TransformerModel):
         *args,
         dtype=None,
         huggingface_token=HUGGINGFACE_TOKEN,
-        use_quantization=True,
+        use_quantization=False,
         **kwargs,
     ):
         super().__init__(model_id, *args, **kwargs)
@@ -119,9 +90,6 @@ class Qwen25VL(TransformerModel):
             revision = None
             token = None
 
-        files_folder = MODEL_CACHE_DIR + "lora-bases/qwen/qwen25vl-7b/main/"
-        _patch_preprocessor_config(files_folder)
-
         if self.use_quantization:
             self.base_model = self.transformers_class.from_pretrained(
                 model_load_id,
@@ -141,16 +109,11 @@ class Qwen25VL(TransformerModel):
             )
         self.model = self.base_model.eval().to(self.dtype)
 
-        preprocessor_config_path = os.path.join(self.cache_dir, "chat_template.json")
-        with open(preprocessor_config_path, "r") as f:
-            chat_template = json.load(f)["chat_template"]
-
         self.processor = self.processor_class.from_pretrained(
             model_load_id,
             revision=revision,
             cache_dir=cache_dir,
             token=token,
-            chat_template=chat_template,
         )
 
     def predict(self, image_in: Image.Image, prompt=None, **kwargs):
@@ -219,16 +182,17 @@ class Qwen25VL(TransformerModel):
         return (decoded,)
 
 
-class LoRAQwen25VL(LoRATransformerModel):
+class LoRAQwen3VL(LoRATransformerModel):
     load_base_from_roboflow = True
     generation_includes_input = True
     skip_special_tokens = True
-    transformers_class = AutoModelForCausalLM
+    transformers_class = Qwen3VLForConditionalGeneration
+    processor_class = AutoProcessor
     default_dtype = torch.bfloat16
-    use_quantization = True
+    use_quantization = False
 
     default_system_prompt = (
-        "You are a Qwen2.5-VL model that can answer questions about any image."
+        "You are a Qwen3-VL a helpful assistant for any visual task."
     )
 
     def get_lora_base_from_roboflow(self, model_id, revision):
@@ -269,15 +233,10 @@ class LoRAQwen25VL(LoRATransformerModel):
             token = None
 
         rm_weights = os.path.join(
-            MODEL_CACHE_DIR, "lora-bases/qwen/qwen25vl-7b/main/weights.tar.gz"
+            MODEL_CACHE_DIR, "lora-bases/qwen/qwen3vl-2b-instruct/main/weights.tar.gz"
         )
         if os.path.exists(rm_weights):
             os.remove(rm_weights)
-
-        files_folder = os.path.join(
-            MODEL_CACHE_DIR, "lora-bases/qwen/qwen25vl-7b/main/"
-        )
-        _patch_preprocessor_config(files_folder)
 
         if self.use_quantization:
             self.base_model = self.transformers_class.from_pretrained(
@@ -297,7 +256,7 @@ class LoRAQwen25VL(LoRATransformerModel):
                 token=token,
             )
 
-        if model_load_id != "qwen-pretrains/1":
+        if model_load_id != "qwen-pretrains/2":
             self.model = (
                 PeftModel.from_pretrained(self.base_model, self.cache_dir)
                 .eval()
@@ -307,19 +266,25 @@ class LoRAQwen25VL(LoRATransformerModel):
             self.model = self.base_model.eval().to(self.dtype)
 
         self.model.merge_and_unload()
-        preprocessor_config_path = os.path.join(self.cache_dir, "chat_template.json")
-        with open(preprocessor_config_path, "r") as f:
-            chat_template = json.load(f)["chat_template"]
 
-        self.processor = self.processor_class.from_pretrained(
-            model_load_id,
-            revision=revision,
-            cache_dir=cache_dir,
-            token=token,
-            chat_template=chat_template,
-            min_pixels=256 * 28 * 28,
-            max_pixels=1280 * 28 * 28,
-        )
+        preprocessor_config_path = os.path.join(self.cache_dir, "chat_template.json")
+        if os.path.exists(preprocessor_config_path):
+            with open(preprocessor_config_path, "r") as f:
+                chat_template = json.load(f)["chat_template"]
+            self.processor = self.processor_class.from_pretrained(
+                model_load_id,
+                revision=revision,
+                cache_dir=cache_dir,
+                token=token,
+                chat_template=chat_template,
+            )
+        else:
+            self.processor = self.processor_class.from_pretrained(
+                model_load_id,
+                revision=revision,
+                cache_dir=cache_dir,
+                token=token,
+            )
 
     def predict(self, image_in: Image.Image, prompt=None, **kwargs):
         if prompt is None:
