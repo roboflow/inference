@@ -9,6 +9,7 @@ from transformers import (
     BitsAndBytesConfig,
     Qwen3VLForConditionalGeneration,
 )
+from transformers.utils import is_flash_attn_2_available
 
 from inference.core.env import DEVICE, HUGGINGFACE_TOKEN, MODEL_CACHE_DIR
 from inference.models.transformers import LoRATransformerModel, TransformerModel
@@ -90,6 +91,12 @@ class Qwen3VL(TransformerModel):
             revision = None
             token = None
 
+        attn_implementation = (
+            "flash_attention_2"
+            if (is_flash_attn_2_available() and DEVICE and "cuda" in DEVICE)
+            else "eager"
+        )
+
         if self.use_quantization:
             self.base_model = self.transformers_class.from_pretrained(
                 model_load_id,
@@ -98,6 +105,7 @@ class Qwen3VL(TransformerModel):
                 cache_dir=cache_dir,
                 token=token,
                 quantization_config=bnb_config,
+                attn_implementation=attn_implementation,
             )
         else:
             self.base_model = self.transformers_class.from_pretrained(
@@ -106,6 +114,7 @@ class Qwen3VL(TransformerModel):
                 device_map=DEVICE,
                 cache_dir=cache_dir,
                 token=token,
+                attn_implementation=attn_implementation,
             )
         self.model = self.base_model.eval().to(self.dtype)
 
@@ -238,6 +247,12 @@ class LoRAQwen3VL(LoRATransformerModel):
         if os.path.exists(rm_weights):
             os.remove(rm_weights)
 
+        attn_implementation = (
+            "flash_attention_2"
+            if (is_flash_attn_2_available() and DEVICE and "cuda" in DEVICE)
+            else "eager"
+        )
+
         if self.use_quantization:
             self.base_model = self.transformers_class.from_pretrained(
                 model_load_id,
@@ -246,6 +261,7 @@ class LoRAQwen3VL(LoRATransformerModel):
                 cache_dir=cache_dir,
                 token=token,
                 quantization_config=bnb_config,
+                attn_implementation=attn_implementation,
             )
         else:
             self.base_model = self.transformers_class.from_pretrained(
@@ -254,6 +270,7 @@ class LoRAQwen3VL(LoRATransformerModel):
                 device_map=DEVICE,
                 cache_dir=cache_dir,
                 token=token,
+                attn_implementation=attn_implementation,
             )
 
         if model_load_id != "qwen-pretrains/2":
