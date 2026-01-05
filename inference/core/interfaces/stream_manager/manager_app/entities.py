@@ -126,6 +126,9 @@ class InitialiseWebRTCPipelinePayload(InitialisePipelinePayload):
 class WebRTCData(BaseModel):
     stream_output: Optional[List[str]] = None
     data_output: Optional[List[str]] = None
+    # Optional cumulative ACK from client: "client has fully handled all frames <= ack"
+    # Used by WebRTC worker to enable receiver-paced flow control (backwards compatible).
+    ack: Optional[int] = None
 
 
 class ConsumeResultsPayload(BaseModel):

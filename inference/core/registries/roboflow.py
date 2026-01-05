@@ -59,7 +59,8 @@ GENERIC_MODELS = {
     "yolo_world": ("object-detection", "yolo-world"),
     "owlv2": ("object-detection", "owlv2"),
     "smolvlm2": ("lmm", "smolvlm-2.2b-instruct"),
-    "depth-anything-v2": ("depth-estimation", "small"),
+    "depth-anything-v2": ("depth-estimation", "depth-anything-v2"),
+    "depth-anything-v3": ("depth-estimation", "depth-anything-v3"),
     "moondream2": ("lmm", "moondream2"),
     "perception_encoder": ("embed", "perception_encoder"),
 }
