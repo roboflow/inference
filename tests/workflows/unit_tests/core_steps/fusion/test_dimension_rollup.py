@@ -9,9 +9,9 @@ import numpy as np
 import pytest
 import supervision as sv
 
-from inference.core.workflows.core_steps.fusion.dimension_rollup.v1 import (
+from inference.core.workflows.core_steps.fusion.detections_list_rollup.v1 import (
     BlockManifest,
-    DimensionRollUpBlockV1,
+    DetectionsListRollUpBlockV1,
 )
 
 # ============================================================================
@@ -72,7 +72,7 @@ class TestBlockManifestValidation:
     def test_manifest_with_defaults(self) -> None:
         """Test manifest parsing with default parameter values."""
         raw_manifest = {
-            "type": "roboflow_core/dimension_rollup@v1",
+            "type": "roboflow_core/detections_list_rollup@v1",
             "name": "rollup",
             "parent_detection": "$inputs.parent",
             "child_detections": "$inputs.children",
@@ -80,7 +80,7 @@ class TestBlockManifestValidation:
 
         result = BlockManifest.model_validate(raw_manifest)
 
-        assert result.type == "roboflow_core/dimension_rollup@v1"
+        assert result.type == "roboflow_core/detections_list_rollup@v1"
         assert result.name == "rollup"
         assert result.confidence_strategy == "max"
         assert result.overlap_threshold == 0.0
@@ -93,7 +93,7 @@ class TestBlockManifestValidation:
     def test_manifest_with_confidence_strategy(self, confidence_strategy: str) -> None:
         """Test manifest with different confidence strategies."""
         raw_manifest = {
-            "type": "roboflow_core/dimension_rollup@v1",
+            "type": "roboflow_core/detections_list_rollup@v1",
             "name": "rollup",
             "parent_detection": "$inputs.parent",
             "child_detections": "$inputs.children",
@@ -110,7 +110,7 @@ class TestBlockManifestValidation:
     def test_manifest_with_overlap_threshold(self, overlap_threshold) -> None:
         """Test manifest with different overlap thresholds."""
         raw_manifest = {
-            "type": "roboflow_core/dimension_rollup@v1",
+            "type": "roboflow_core/detections_list_rollup@v1",
             "name": "rollup",
             "parent_detection": "$inputs.parent",
             "child_detections": "$inputs.children",
@@ -127,7 +127,7 @@ class TestBlockManifestValidation:
     def test_manifest_with_keypoint_threshold(self, keypoint_threshold) -> None:
         """Test manifest with different keypoint thresholds."""
         raw_manifest = {
-            "type": "roboflow_core/dimension_rollup@v1",
+            "type": "roboflow_core/detections_list_rollup@v1",
             "name": "rollup",
             "parent_detection": "$inputs.parent",
             "child_detections": "$inputs.children",
@@ -148,7 +148,7 @@ class TestDimensionRollupObjectDetection:
 
     def test_simple_object_detection_no_overlap(self) -> None:
         """Test rollup with simple non-overlapping object detections."""
-        block = DimensionRollUpBlockV1()
+        block = DetectionsListRollUpBlockV1()
         parent = create_parent_detections([[0, 0, 100, 100]])
 
         child_detections = [
@@ -173,7 +173,7 @@ class TestDimensionRollupObjectDetection:
     @pytest.mark.parametrize("strategy", ["max", "mean", "min"])
     def test_confidence_strategies(self, strategy: str) -> None:
         """Test all confidence merging strategies."""
-        block = DimensionRollUpBlockV1()
+        block = DetectionsListRollUpBlockV1()
         parent = create_parent_detections([[0, 0, 100, 100]])
 
         # Overlapping detections with different confidences
@@ -199,7 +199,7 @@ class TestDimensionRollupObjectDetection:
     @pytest.mark.parametrize("threshold", [0.0, 0.3, 0.5, 0.7])
     def test_overlap_thresholds(self, threshold: float) -> None:
         """Test different IoU thresholds for merging."""
-        block = DimensionRollUpBlockV1()
+        block = DetectionsListRollUpBlockV1()
         parent = create_parent_detections([[0, 0, 100, 100]])
 
         # Detections with varying overlaps
@@ -233,7 +233,7 @@ class TestDimensionRollupSegmentation:
 
     def test_simple_segmentation(self) -> None:
         """Test rollup with segmentation masks."""
-        block = DimensionRollUpBlockV1()
+        block = DetectionsListRollUpBlockV1()
         parent = create_parent_detections([[0, 0, 100, 100]])
 
         # Create child detections with masks
@@ -276,7 +276,7 @@ class TestDimensionRollupKeypoints:
 
     def test_simple_keypoint_rollup(self) -> None:
         """Test rollup with keypoint detections."""
-        block = DimensionRollUpBlockV1()
+        block = DetectionsListRollUpBlockV1()
         parent = create_parent_detections([[0, 0, 100, 100]])
 
         keypoints1 = [[20, 25], [15, 35], [5, 35], [15, 60], [5, 60]]
@@ -315,7 +315,7 @@ class TestDimensionRollupKeypoints:
     @pytest.mark.parametrize("threshold", [5, 10, 20, 50])
     def test_keypoint_merge_thresholds(self, threshold: float) -> None:
         """Test keypoint merging with different distance thresholds."""
-        block = DimensionRollUpBlockV1()
+        block = DetectionsListRollUpBlockV1()
         parent = create_parent_detections([[0, 0, 100, 100]])
 
         # Keypoints at varying distances
@@ -363,7 +363,7 @@ class TestDimensionRollupEdgeCases:
 
     def test_empty_child_detections(self) -> None:
         """Test with empty child detections."""
-        block = DimensionRollUpBlockV1()
+        block = DetectionsListRollUpBlockV1()
         parent = create_parent_detections([[0, 0, 100, 100]])
         child_detections = [create_child_detections([])]
 
@@ -379,7 +379,7 @@ class TestDimensionRollupEdgeCases:
 
     def test_single_detection_per_parent(self) -> None:
         """Test with single child detection per parent."""
-        block = DimensionRollUpBlockV1()
+        block = DetectionsListRollUpBlockV1()
         parent = create_parent_detections([[0, 0, 100, 100]])
         child_detections = [create_child_detections([[10, 10, 50, 50]], [0.85], [0])]
 
@@ -395,7 +395,7 @@ class TestDimensionRollupEdgeCases:
 
     def test_multiple_parents(self) -> None:
         """Test with multiple parent detections."""
-        block = DimensionRollUpBlockV1()
+        block = DetectionsListRollUpBlockV1()
         parent = create_parent_detections([[0, 0, 100, 100], [150, 150, 250, 250]])
 
         child_detections = [
@@ -423,7 +423,7 @@ class TestDimensionRollupEdgeCases:
 
     def test_many_overlapping_detections(self) -> None:
         """Test with many overlapping detections requiring merging."""
-        block = DimensionRollUpBlockV1()
+        block = DetectionsListRollUpBlockV1()
         parent = create_parent_detections([[0, 0, 100, 100]])
 
         # Create 10 overlapping detections
@@ -449,7 +449,7 @@ class TestDimensionRollupEdgeCases:
 
     def test_multi_class_detections(self) -> None:
         """Test with detections from multiple classes."""
-        block = DimensionRollUpBlockV1()
+        block = DetectionsListRollUpBlockV1()
         parent = create_parent_detections([[0, 0, 100, 100]])
 
         child_detections = [
