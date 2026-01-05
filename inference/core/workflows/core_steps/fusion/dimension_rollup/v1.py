@@ -12,9 +12,9 @@ from supervision import Detections
 
 from inference.core.workflows.execution_engine.entities.base import OutputDefinition
 from inference.core.workflows.execution_engine.entities.types import (
+    FLOAT_KIND,
     FLOAT_ZERO_TO_ONE_KIND,
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
-    INTEGER_KIND,
     KEYPOINT_DETECTION_PREDICTION_KIND,
     LIST_OF_VALUES_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
@@ -100,14 +100,14 @@ class BlockManifest(WorkflowBlockManifest):
         le=1.0,
     )
 
-    keypoint_merge_threshold: Union[Selector(kind=[INTEGER_KIND]), int] = Field(
-        default=10,
+    keypoint_merge_threshold: Union[Selector(kind=[FLOAT_KIND]), float] = Field(
+        default=10.0,
         title="Keypoint Merge Threshold",
         description=(
             "Keypoint distance (in pixels) to merge keypoint detections if the child detections contain keypoint data."
         ),
-        examples=[0, 20],
-        ge=0,
+        examples=[0.0, 20.0],
+        ge=0.0,
     )
 
     @classmethod
@@ -295,7 +295,7 @@ def merge_crop_predictions(
                          - 0.0: Only merge if detections touch or overlap at all (default)
                          - >0.0: Only merge if overlap ratio exceeds this threshold
                          - 1.0: Only merge completely overlapping detections
-        keypoint_merge_threshold: Maximum distance in pixels to merge keypoints (default: 50.0).
+        keypoint_merge_threshold: Maximum distance in pixels to merge keypoints (default: 10).
                                 For keypoint detections, merges detections if their average
                                 keypoint distance is below this threshold.
 
@@ -351,6 +351,8 @@ def merge_crop_predictions(
         if child_pred.mask is not None and len(child_pred.mask) > 0:
             has_masks = True
             break
+
+    for child_pred in child_predictions:
         # Check for keypoint detection
         if "prediction_type" in child_pred.data:
             pred_type = child_pred.data["prediction_type"]
@@ -530,10 +532,6 @@ def merge_crop_predictions(
             merged_confidences.append(pred["confidence"])
             merged_class_ids.append(pred["class_id"])
 
-            # Store bbox for later use
-            if "bbox" in pred and pred["bbox"] is not None:
-                merged_bboxes.append(pred["bbox"])
-
             # Collect keypoint data if present
             if "keypoint_data" in pred and pred["keypoint_data"]:
                 kp_data = pred["keypoint_data"]
@@ -656,6 +654,10 @@ def merge_crop_predictions(
             class_id=merged_class_ids_array,
         )
     else:
+        for pred in merged_preds:
+            if "bbox" in pred and pred["bbox"] is not None:
+                merged_bboxes.append(pred["bbox"])
+
         # Object detection - use bounding boxes directly
         if merged_bboxes:
             xyxy_array = np.array(merged_bboxes, dtype=np.float32)
@@ -815,7 +817,7 @@ def _merge_overlapping_masks(
         class_id = group[0]["class_id"]
 
         # Get image shape from first mask
-        image_shape = group[0].get("image_shape", predictions[0]["mask"].shape)
+        image_shape = predictions[0]["mask"].shape
 
         # Handle MultiPolygon results
         if merged_poly.geom_type == "MultiPolygon":
