@@ -119,7 +119,7 @@ class SmolVLMHF:
     def prompt(
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
-        prompt: str,
+        prompt: Optional[str] = None,
         images_to_single_prompt: bool = True,
         input_color_format: Optional[ColorFormat] = None,
         max_new_tokens: int = 400,
@@ -127,6 +127,7 @@ class SmolVLMHF:
         skip_special_tokens: bool = True,
         **kwargs,
     ) -> List[str]:
+        prompt = prompt or "Describe what's in this image."
         inputs = self.pre_process_generation(
             images=images,
             prompt=prompt,

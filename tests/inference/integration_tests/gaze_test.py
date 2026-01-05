@@ -18,7 +18,7 @@ TESTS = [
         "payload": {
             "image": {
                 "type": "url",
-                "value": "https://raw.githubusercontent.com/serengil/deepface/master/tests/dataset/img12.jpg",
+                "value": "https://raw.githubusercontent.com/serengil/deepface/refs/heads/master/tests/unit/dataset/img12.jpg",
             }
         },
         "expected_response": [
@@ -117,4 +117,5 @@ def setup():
 
 
 if __name__ == "__main__":
-    test_gaze()
+    from conftest import on_demand_clean_loaded_models
+    test_gaze(TESTS[0], on_demand_clean_loaded_models())
