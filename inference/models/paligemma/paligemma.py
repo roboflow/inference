@@ -97,7 +97,7 @@ class LoRAPaliGemma(LoRATransformerModel):
             .to(self.dtype)
         )
 
-        self.model = self.model.merge_and_unload()
+        self.model.merge_and_unload()
 
         self.processor = self.processor_class.from_pretrained(
             model_load_id, revision=revision, cache_dir=cache_dir, token=token
