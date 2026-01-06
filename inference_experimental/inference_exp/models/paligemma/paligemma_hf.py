@@ -90,7 +90,7 @@ class PaliGemmaHF:
             )
             model = PeftModel.from_pretrained(model, model_name_or_path)
             if quantization_config is None:
-                model = model.merge_and_unload()
+                model.merge_and_unload()
             model.to(device)
 
             processor = AutoProcessor.from_pretrained(
