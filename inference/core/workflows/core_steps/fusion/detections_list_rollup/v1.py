@@ -265,7 +265,9 @@ def _merge_keypoint_detections(
                     "class_id": group[0]["class_id"],
                     "mask": None,
                     "keypoint_data": merged_kp_data,
-                    "detection_data": group[0].get("detection_data", {}),  # Preserve first detection's metadata
+                    "detection_data": group[0].get(
+                        "detection_data", {}
+                    ),  # Preserve first detection's metadata
                 }
             )
 
@@ -812,7 +814,9 @@ def _merge_overlapping_masks(
                         "polygon": poly,
                         "confidence": pred["confidence"],
                         "class_id": pred["class_id"],
-                        "detection_data": pred.get("detection_data", {}),  # Preserve metadata
+                        "detection_data": pred.get(
+                            "detection_data", {}
+                        ),  # Preserve metadata
                     }
                 )
 
@@ -853,7 +857,9 @@ def _merge_overlapping_masks(
                             "mask": mask,
                             "confidence": merged_confidence,
                             "class_id": class_id,
-                            "detection_data": group[0].get("detection_data", {}),  # Preserve first detection's metadata
+                            "detection_data": group[0].get(
+                                "detection_data", {}
+                            ),  # Preserve first detection's metadata
                         }
                     )
         else:
@@ -864,7 +870,9 @@ def _merge_overlapping_masks(
                         "mask": mask,
                         "confidence": merged_confidence,
                         "class_id": class_id,
-                        "detection_data": group[0].get("detection_data", {}),  # Preserve first detection's metadata
+                        "detection_data": group[0].get(
+                            "detection_data", {}
+                        ),  # Preserve first detection's metadata
                     }
                 )
 
@@ -921,7 +929,9 @@ def _merge_overlapping_bboxes(
                 "bbox": merged_bbox,
                 "confidence": merged_confidence,
                 "class_id": class_id,
-                "detection_data": group[0].get("detection_data", {}),  # Preserve first detection's metadata
+                "detection_data": group[0].get(
+                    "detection_data", {}
+                ),  # Preserve first detection's metadata
             }
         )
 
