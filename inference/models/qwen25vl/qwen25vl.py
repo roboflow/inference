@@ -110,7 +110,9 @@ class Qwen25VL(TransformerModel):
             revision = None
             token = None
 
-        files_folder = os.path.join(MODEL_CACHE_DIR, "lora-bases/qwen/qwen25vl-7b/main/")
+        files_folder = os.path.join(
+            MODEL_CACHE_DIR, "lora-bases/qwen/qwen25vl-7b/main/"
+        )
         _patch_preprocessor_config(files_folder)
 
         attn_implementation = (
