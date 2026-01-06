@@ -265,6 +265,9 @@ def _merge_keypoint_detections(
                     "class_id": group[0]["class_id"],
                     "mask": None,
                     "keypoint_data": merged_kp_data,
+                    "detection_data": group[0].get(
+                        "detection_data", {}
+                    ),  # Preserve first detection's metadata
                 }
             )
 
@@ -408,6 +411,23 @@ def merge_crop_predictions(
                         "keypoints_confidence"
                     ][j]
 
+            # Collect per-detection data fields to preserve individual detection metadata
+            # This is crucial for preserving class_name and other fields when multiple
+            # detections have the same class_id but different values
+            detection_data = {}
+            for key in child_pred.data.keys():
+                if key not in [
+                    "detection_id",
+                    "parent_id",
+                    "inference_id",
+                    "keypoints_xy",
+                    "keypoints_class_name",
+                    "keypoints_class_id",
+                    "keypoints_confidence",
+                ]:
+                    if j < len(child_pred.data[key]):
+                        detection_data[key] = child_pred.data[key][j]
+
             if has_masks and child_pred.mask is not None:
                 # Instance segmentation - transform mask
                 mask = child_pred.mask[j]
@@ -426,6 +446,7 @@ def merge_crop_predictions(
                         "class_id": class_id,
                         "bbox": None,  # Will compute from mask
                         "keypoint_data": keypoint_data,
+                        "detection_data": detection_data,  # Store per-detection metadata
                     }
                 )
             else:
@@ -446,6 +467,7 @@ def merge_crop_predictions(
                         "class_id": class_id,
                         "mask": None,
                         "keypoint_data": keypoint_data,
+                        "detection_data": detection_data,  # Store per-detection metadata
                     }
                 )
 
@@ -616,8 +638,11 @@ def merge_crop_predictions(
                     # Prediction type should be 'instance-segmentation'
                     merged_data[key].append("instance-segmentation")
                 else:
-                    # For other fields like class_name, use the value associated with this class_id
-                    if (
+                    # For other fields like class_name, check pred dict first (per-detection data)
+                    # then fall back to class_id_to_data (class-level defaults)
+                    if key in pred.get("detection_data", {}):
+                        merged_data[key].append(pred["detection_data"][key])
+                    elif (
                         pred["class_id"] in class_id_to_data
                         and key in class_id_to_data[pred["class_id"]]
                     ):
@@ -789,6 +814,9 @@ def _merge_overlapping_masks(
                         "polygon": poly,
                         "confidence": pred["confidence"],
                         "class_id": pred["class_id"],
+                        "detection_data": pred.get(
+                            "detection_data", {}
+                        ),  # Preserve metadata
                     }
                 )
 
@@ -829,6 +857,9 @@ def _merge_overlapping_masks(
                             "mask": mask,
                             "confidence": merged_confidence,
                             "class_id": class_id,
+                            "detection_data": group[0].get(
+                                "detection_data", {}
+                            ),  # Preserve first detection's metadata
                         }
                     )
         else:
@@ -839,6 +870,9 @@ def _merge_overlapping_masks(
                         "mask": mask,
                         "confidence": merged_confidence,
                         "class_id": class_id,
+                        "detection_data": group[0].get(
+                            "detection_data", {}
+                        ),  # Preserve first detection's metadata
                     }
                 )
 
@@ -891,7 +925,14 @@ def _merge_overlapping_bboxes(
         merged_bbox = np.array([min(x_mins), min(y_mins), max(x_maxs), max(y_maxs)])
 
         merged_results.append(
-            {"bbox": merged_bbox, "confidence": merged_confidence, "class_id": class_id}
+            {
+                "bbox": merged_bbox,
+                "confidence": merged_confidence,
+                "class_id": class_id,
+                "detection_data": group[0].get(
+                    "detection_data", {}
+                ),  # Preserve first detection's metadata
+            }
         )
 
     return merged_results
