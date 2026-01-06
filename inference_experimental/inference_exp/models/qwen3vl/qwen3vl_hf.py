@@ -20,6 +20,7 @@ from transformers import (
     BitsAndBytesConfig,
     Qwen3VLForConditionalGeneration,
 )
+from transformers.utils import is_flash_attn_2_available
 
 
 class Qwen3VLHF:
@@ -54,6 +55,12 @@ class Qwen3VLHF:
 
         dtype = cls.default_dtype
 
+        attn_implementation = (
+            "flash_attention_2"
+            if (is_flash_attn_2_available() and device and "cuda" in str(device))
+            else "eager"
+        )
+
         if os.path.exists(adapter_config_path):
             # Has adapter - load base model then apply LoRA
             base_model_path = os.path.join(model_name_or_path, "base")
@@ -63,6 +70,7 @@ class Qwen3VLHF:
                 trust_remote_code=trust_remote_code,
                 local_files_only=local_files_only,
                 quantization_config=quantization_config,
+                attn_implementation=attn_implementation,
             )
             # Apply LoRA, eval, convert to dtype
             model = (
@@ -79,6 +87,7 @@ class Qwen3VLHF:
                 trust_remote_code=trust_remote_code,
                 local_files_only=local_files_only,
                 quantization_config=quantization_config,
+                attn_implementation=attn_implementation,
             )
             model = base_model.eval().to(dtype)
 
@@ -104,12 +113,16 @@ class Qwen3VLHF:
                 trust_remote_code=trust_remote_code,
                 local_files_only=local_files_only,
                 chat_template=chat_template,
+                min_pixels=256 * 28 * 28,
+                max_pixels=1280 * 28 * 28,
             )
         else:
             processor = AutoProcessor.from_pretrained(
                 processor_path,
                 trust_remote_code=trust_remote_code,
                 local_files_only=local_files_only,
+                min_pixels=256 * 28 * 28,
+                max_pixels=1280 * 28 * 28,
             )
 
         return cls(
