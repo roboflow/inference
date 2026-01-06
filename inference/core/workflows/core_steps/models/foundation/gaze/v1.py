@@ -34,13 +34,43 @@ from inference.core.workflows.prototypes.block import (
 )
 
 LONG_DESCRIPTION = """
-Run L2CS Gaze detection model on faces in images.
+Detect faces and estimate gaze direction (where people are looking) using the L2CS gaze detection model, returning facial landmarks and gaze angles.
 
-This block can:
-1. Detect faces in images and estimate their gaze direction
-2. Estimate gaze direction on pre-cropped face images
+## How This Block Works
 
-The gaze direction is represented by yaw and pitch angles in degrees.
+This block uses the L2CS gaze detection model to analyze faces and determine where a person is looking. The block:
+
+1. Takes images as input (supports batch processing)
+2. Optionally detects faces in the image (can be disabled if input images are pre-cropped to faces)
+3. Detects facial landmarks (keypoints) for each face
+4. Estimates gaze direction using yaw (horizontal angle) and pitch (vertical angle) measurements
+5. Returns face predictions with landmarks, yaw angles, and pitch angles for each detected face
+
+Gaze direction is represented by two angles: **yaw** (horizontal gaze, -180° to 180°, negative values indicate looking left) and **pitch** (vertical gaze, -90° to 90°, negative values indicate looking down). These angles tell you where each person is looking relative to the camera. The block can work with full images (detecting faces automatically) or with pre-cropped face images for more precise control.
+
+## Common Use Cases
+
+- **Attention and Engagement Tracking**: Monitor where people are looking in video calls, meetings, or presentations to measure attention and engagement levels
+- **Driver Monitoring Systems**: Detect driver distraction, drowsiness, or if a driver is looking away from the road in automotive safety applications
+- **User Interface Interaction**: Track where users are looking on screens or displays to improve UI/UX design or enable gaze-based controls
+- **Retail and Marketing Analytics**: Analyze customer attention in retail environments, tracking which products or displays capture gaze to optimize store layouts
+- **Accessibility Applications**: Build gaze-controlled interfaces for users with mobility limitations, allowing them to interact with devices using eye movement
+- **Security and Surveillance**: Detect suspicious behavior by monitoring gaze patterns, such as people repeatedly looking in specific directions or avoiding eye contact
+
+## Connecting to Other Blocks
+
+The face predictions and gaze angles from this block can be connected to:
+
+- **Conditional logic blocks** (e.g., Continue If) to trigger actions based on gaze direction thresholds (e.g., alert if driver looks away for too long, or trigger UI changes when user looks at specific areas)
+- **Filter blocks** to filter faces based on gaze angles (e.g., only process faces looking in a specific direction)
+- **Data storage blocks** (e.g., CSV Formatter, Roboflow Dataset Upload) to log gaze data for analytics or compliance purposes
+- **Notification blocks** (e.g., Email Notification, Slack Notification) to send alerts when specific gaze patterns are detected (e.g., driver distraction warnings)
+- **Visualization blocks** (e.g., Keypoint Visualization) to overlay facial landmarks and gaze direction vectors on images for analysis or debugging
+- **Object detection blocks** combined with crop blocks to first detect faces, then crop them before running gaze detection for improved accuracy
+
+## Requirements
+
+This block only supports local execution mode. Remote execution is not currently supported.
 """
 
 
@@ -145,7 +175,7 @@ class BlockManifest(WorkflowBlockManifest):
     images: Selector(kind=[IMAGE_KIND]) = ImageInputField
     do_run_face_detection: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(
         default=True,
-        description="Whether to run face detection. Set to False if input images are pre-cropped face images.",
+        description="Whether to run face detection on input images. Set to True to automatically detect faces in full images. Set to False if input images are already pre-cropped to contain only face regions, which can improve accuracy and processing speed. When False, the block assumes the entire image contains a single face and skips face detection.",
     )
 
     @classmethod

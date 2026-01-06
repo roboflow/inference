@@ -43,14 +43,37 @@ from inference.core.workflows.prototypes.block import (
 from inference_sdk import InferenceHTTPClient
 
 LONG_DESCRIPTION = """
-Use the OpenAI CLIP zero-shot classification model to classify images.
+Use CLIP to perform zero-shot image classification by comparing images with text labels and returning similarity scores.
 
-This block accepts an image and a list of text prompts. The block then returns the 
-similarity of each text label to the provided image.
+## How This Block Works
 
-This block is useful for classifying images without having to train a fine-tuned 
-classification model. For example, you could use CLIP to classify the type of vehicle 
-in an image, or if an image contains NSFW material.
+This block takes one or more images and a list of text labels (class names) as input, then uses OpenAI's CLIP model to compare the semantic similarity between each image and each text label. The block:
+
+1. Takes images and a list of text labels (e.g., ["car", "truck", "bicycle", "motorcycle"])
+2. Generates embeddings for both the images and text labels using CLIP
+3. Calculates similarity scores between each image and each text label
+4. Returns similarity scores for each text label, indicating how well each label matches the image
+
+The similarity scores represent how semantically similar each text label is to the image content. Higher scores indicate a better match. This enables zero-shot classification - you can classify images into categories without training a custom model, simply by providing text descriptions of the classes you want to detect.
+
+## Common Use Cases
+
+- **Zero-Shot Classification**: Classify images into categories using text labels without training a custom classification model (e.g., classify vehicles as "car", "truck", "motorcycle", "bicycle")
+- **Content Filtering**: Check if images contain specific content by comparing against text descriptions (e.g., "NSFW content", "violence", "safe for work")
+- **Multi-Class Classification**: Classify images into multiple categories simultaneously by providing a list of class names and getting similarity scores for each
+- **Custom Category Detection**: Detect custom object categories or attributes by describing them in text (e.g., "red car", "person wearing helmet", "outdoor scene")
+- **Quality Assessment**: Evaluate image content against quality criteria described in text (e.g., "high quality", "blurry", "well-lit")
+- **Content Moderation**: Automatically flag images that match certain text descriptions for moderation purposes
+
+## Connecting to Other Blocks
+
+The similarity scores from this block can be connected to:
+
+- **Conditional logic blocks** (e.g., Continue If) to route workflow execution based on similarity scores or classification results
+- **Filter blocks** to filter images based on classification results or similarity thresholds
+- **Analytics blocks** (e.g., Data Aggregator) to analyze classification patterns over time
+- **Data storage blocks** (e.g., CSV Formatter, Roboflow Dataset Upload) to log classification results
+- **Notification blocks** to send alerts when specific content is detected based on similarity scores
 """
 
 EXPECTED_OUTPUT_KEYS = {"similarity", "parent_id", "root_parent_id", "prediction_type"}
@@ -77,8 +100,8 @@ class BlockManifest(WorkflowBlockManifest):
     name: str = Field(description="Unique name of step in workflows")
     images: Selector(kind=[IMAGE_KIND]) = ImageInputField
     texts: Union[Selector(kind=[LIST_OF_VALUES_KIND]), List[str]] = Field(
-        description="List of texts to calculate similarity against each input image",
-        examples=[["a", "b", "c"], "$inputs.texts"],
+        description="List of text labels (class names or descriptions) to compare against each input image. CLIP will calculate similarity scores between the image and each text label, enabling zero-shot classification. Provide descriptive class names (e.g., ['car', 'truck', 'bicycle'] or ['NSFW content', 'safe content']). The block returns similarity scores for each label, with higher scores indicating better matches.",
+        examples=[["car", "truck", "bicycle"], ["NSFW", "safe"], "$inputs.classes"],
         validation_alias=AliasChoices("texts", "text"),
     )
 

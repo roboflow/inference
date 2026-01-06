@@ -35,15 +35,42 @@ from inference.core.workflows.prototypes.block import (
 )
 
 LONG_DESCRIPTION = """
-Detect text in images using Google Vision OCR.
+Extract text from images using Google Cloud Vision API's OCR service, with support for scene text detection and dense document processing, returning extracted text, language detection, and bounding box predictions.
 
-Supported types of text detection:
+## How This Block Works
 
-- `text_detection`: optimized for areas of text within a larger image.
-- `ocr_text_detection`: optimized for dense text documents.
+This block uses Google Cloud Vision API to detect and extract text from images. The block:
 
-Provide your Google Vision API key or set the value to ``rf_key:account`` (or
-``rf_key:user:<id>``) to proxy requests through Roboflow's API.
+1. Takes an image as input and selects one of two OCR modes based on the image type
+2. Sends the image to Google Cloud Vision API (either directly or proxied through Roboflow)
+3. The API detects text regions, recognizes characters, and identifies the language
+4. Returns the extracted text, detected language code, and structured predictions with bounding boxes for each text block
+
+The block supports two OCR modes: **text_detection** (optimized for scene text in photographs, signs, or images with text) and **ocr_text_detection** (optimized for dense text documents like scanned pages or printed text). The document mode provides confidence scores for each detected text block, while scene text mode is better suited for natural images containing text. You can optionally provide language hints to improve accuracy for specific languages, or let the API automatically detect the language.
+
+## Common Use Cases
+
+- **Document Digitization**: Extract text from scanned documents, PDFs, receipts, invoices, forms, or printed materials for automated data entry or archival
+- **Scene Text Recognition**: Read text from natural images such as street signs, storefronts, billboards, or product packaging in photographs
+- **Multi-language Text Extraction**: Extract text from documents in various languages with automatic language detection or language hints for improved accuracy
+- **Compliance and Record-Keeping**: Digitize and extract text from legal documents, certificates, IDs, or official records for searchable archives
+- **Receipt and Invoice Processing**: Extract structured information from receipts and invoices for expense tracking, accounting, or financial automation
+- **Content Analysis**: Extract and analyze text from images for content moderation, translation workflows, or information extraction
+
+## Connecting to Other Blocks
+
+The extracted text and text detections from this block can be connected to:
+
+- **Object detection blocks** combined with crop blocks (e.g., Dynamic Crop) to first isolate specific regions containing text before running OCR, improving accuracy by focusing on relevant areas
+- **Data storage blocks** (e.g., CSV Formatter, Roboflow Dataset Upload) to log extracted text, language, and metadata for record-keeping or analysis
+- **Expression blocks** to parse, validate, or transform extracted text using regular expressions or string operations
+- **Conditional logic blocks** (e.g., Continue If) to route workflow execution based on detected language, text content, or specific text patterns
+- **Notification blocks** (e.g., Email Notification, Slack Notification) to send alerts when specific text is detected or when language detection occurs
+- **Webhook blocks** to send extracted text data to external systems or APIs for further processing or integration
+
+## Requirements
+
+This block requires a Google Cloud Vision API key. You can either provide your own API key directly or use `rf_key:account` (or `rf_key:user:<id>`) to proxy requests through Roboflow's API. The OCR operation is performed remotely via Google Cloud Vision API, so an active internet connection is required.
 """
 
 
@@ -65,11 +92,11 @@ class BlockManifest(WorkflowBlockManifest):
     )
     type: Literal["roboflow_core/google_vision_ocr@v1"]
     image: Selector(kind=[IMAGE_KIND]) = Field(
-        description="Image to run OCR",
+        description="The input image from which to extract text. Can be a natural scene image, scanned document, or any image containing text. The image will be processed by Google Cloud Vision API based on the selected OCR type.",
         examples=["$inputs.image", "$steps.cropping.crops"],
     )
     ocr_type: Literal["text_detection", "ocr_text_detection"] = Field(
-        description="Type of OCR to use",
+        description="Type of OCR mode to use. 'text_detection' (Any Scene Text Detection) is optimized for detecting text in natural images like photographs, signs, or images with text blocks. 'ocr_text_detection' (Document Text Detection) is optimized for dense text documents like scanned pages, printed text, or documents. Document mode provides confidence scores for each text block, while scene text mode is better for natural images.",
         json_schema_extra={
             "values_metadata": {
                 "text_detection": {
@@ -87,15 +114,19 @@ class BlockManifest(WorkflowBlockManifest):
         Selector(kind=[STRING_KIND, SECRET_KIND, ROBOFLOW_MANAGED_KEY]), str
     ] = Field(
         default="rf_key:account",
-        description="Your Google Vision API key",
-        examples=["xxx-xxx", "$inputs.google_api_key"],
+        description="Your Google Cloud Vision API key. You can provide your own API key directly, or use 'rf_key:account' (or 'rf_key:user:<id>') to proxy requests through Roboflow's API. To obtain a Google Cloud Vision API key, visit https://cloud.google.com/vision/docs/setup. This field is kept private for security.",
+        examples=[
+            "your-api-key-here",
+            "rf_key:account",
+            "$inputs.google_api_key",
+            "$secrets.google_vision_key",
+        ],
         private=True,
     )
     language_hints: Optional[List[str]] = Field(
         default=None,
-        description="Optional list of language codes to pass to the OCR API. If not provided, the API will attempt to detect the language automatically."
-        "If provided, language codes must be supported by the OCR API, visit https://cloud.google.com/vision/docs/languages for list of supported language codes.",
-        examples=[["en", "fr"], ["de"]],
+        description="Optional list of language codes (BCP-47 format) to help improve OCR accuracy for specific languages. If provided, the API will prioritize these languages when detecting and recognizing text. If not provided, the API will automatically detect the language. Common examples include 'en' (English), 'es' (Spanish), 'fr' (French), 'de' (German), 'ja' (Japanese), 'zh' (Chinese). You can provide multiple language hints if the document contains mixed languages. For a complete list of supported language codes, visit https://cloud.google.com/vision/docs/languages.",
+        examples=[["en"], ["en", "es"], ["ja"], ["de", "fr"]],
     )
 
     @classmethod

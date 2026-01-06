@@ -51,12 +51,47 @@ from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 LONG_DESCRIPTION = """
 Run inference on an instance segmentation model hosted on or uploaded to Roboflow.
 
-You can query any model that is private to your account, or any public model available 
-on [Roboflow Universe](https://universe.roboflow.com).
+## How This Block Works
 
-You will need to set your Roboflow API key in your Inference environment to use this 
-block. To learn more about setting your Roboflow API key, [refer to the Inference 
-documentation](https://inference.roboflow.com/quickstart/configure_api_key/).
+This block takes one or more images as input and runs them through a trained instance segmentation model. The model analyzes each image and identifies objects with pixel-precise boundaries, returning detections that include:
+
+- Bounding boxes (coordinates defining rectangles around detected objects)
+- Segmentation masks (pixel-level outlines showing the exact shape of each object)
+- Class labels (the names of detected objects, e.g., "person", "car")
+- Confidence scores (how certain the model is about each detection, from 0.0 to 1.0)
+
+The block applies post-processing techniques like Non-Maximum Suppression (NMS) to filter out duplicate detections and mask decoding to convert raw mask predictions into usable polygon or mask formats. You can configure the confidence threshold, filter by specific classes, adjust NMS parameters, control mask decoding quality and speed, and set the maximum number of detections returned.
+
+## Common Use Cases
+
+- **Medical Imaging**: Precise segmentation of tumors, organs, or anatomical structures in medical scans
+- **Autonomous Driving**: Pixel-accurate detection of pedestrians, vehicles, and road boundaries for safe navigation
+- **Quality Control**: Detecting defects with precise boundaries, measuring object areas, or verifying shape accuracy
+- **Retail and E-commerce**: Isolating products for background removal, measuring product dimensions, or counting inventory
+- **Agriculture**: Monitoring crop health by segmenting individual plants or detecting diseased areas
+- **Robotics**: Precise object manipulation requiring exact shape information for grasping and handling
+
+## Model Sources
+
+You can use:
+
+- Models from your private Roboflow account (requires authentication)
+- Public models from [Roboflow Universe](https://universe.roboflow.com) (no authentication needed for public models)
+
+## Requirements
+
+You need to set your Roboflow API key in your Inference environment to use private models. To learn more about setting your Roboflow API key, [refer to the Inference documentation](https://inference.roboflow.com/quickstart/configure_api_key/).
+
+## Connecting to Other Blocks
+
+The segmentation results from this block can be connected to:
+
+- **Visualization blocks** to draw masks and bounding boxes on images (Mask Visualization, Bounding Box Visualization)
+- **Crop blocks** to extract regions using the precise mask boundaries
+- **Filter blocks** to filter detections based on criteria (mask area, confidence, class, etc.)
+- **Classification blocks** to classify each segmented instance
+- **Measurement blocks** to calculate areas, perimeters, or other geometric properties from the masks
+- **Tracking blocks** to track segmented objects across video frames
 """
 
 
@@ -91,7 +126,7 @@ class BlockManifest(WorkflowBlockManifest):
         Selector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
     ] = Field(
         default=0.4,
-        description="Confidence threshold for predictions.",
+        description="Minimum confidence threshold (0.0-1.0) for predictions. Detections below this threshold are filtered out.",
         examples=[0.3, "$inputs.confidence_threshold"],
     )
     class_filter: Union[Optional[List[str]], Selector(kind=[LIST_OF_VALUES_KIND])] = (
@@ -129,7 +164,7 @@ class BlockManifest(WorkflowBlockManifest):
         Selector(kind=[STRING_KIND]),
     ] = Field(
         default="accurate",
-        description="Parameter of mask decoding in prediction post-processing.",
+        description="Mode for decoding segmentation masks - `accurate` (default, highest quality), `fast` (faster processing), or `tradeoff` (balanced).",
         examples=["accurate", "$inputs.mask_decode_mode"],
     )
     tradeoff_factor: Union[
@@ -137,7 +172,7 @@ class BlockManifest(WorkflowBlockManifest):
         Selector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
     ] = Field(
         default=0.0,
-        description="Post-processing parameter to dictate tradeoff between fast and accurate.",
+        description="Post-processing parameter (0.0-1.0) to balance between fast and accurate mask decoding when using `tradeoff` mode. Higher values prioritize speed over accuracy.",
         examples=[0.3, "$inputs.tradeoff_factor"],
     )
     disable_active_learning: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(

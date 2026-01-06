@@ -31,26 +31,38 @@ NOT_DETECTED_VALUE = "not_detected"
 JSON_MARKDOWN_BLOCK_PATTERN = re.compile(r"```json\n([\s\S]*?)\n```")
 
 LONG_DESCRIPTION = """
+!!! warning "DEPRECATED - CogVLM reached **End Of Life**"
 
-!!! Warning "CogVLM reached **End Of Life**"
+    CogVLM support in `inference` reached End of Life effective since release `0.38.0` due to dependency conflicts with newer models and security vulnerabilities discovered in the `transformers` library (CVE-2024-11393). This block is **no longer functional** and will raise a runtime error. The block will be completely removed in inference release `0.54.0`, at which point workflows using this block will raise compilation errors. Please migrate to alternative vision-language models such as OpenAI GPT-4 Vision, Anthropic Claude, Google Gemini, or other available VLM blocks.
 
-    Due to dependencies conflicts with newer models and security vulnerabilities discovered in `transformers`
-    library patched in the versions of library incompatible with the model we announced End Of Life for CogVLM
-    support in `inference`, effective since release `0.38.0`.
-    
-    We are leaving this block in ecosystem until release `0.42.0` for clients to get informed about change that 
-    was introduced.
-    
-    Starting as of now, all Workflows using the block stop being functional (runtime error will be raised), 
-    after inference release `0.42.0` - this block will be removed and Execution Engine will raise compilation 
-    error seeing the block in Workflow definition. 
+Run CogVLM, an open-source vision-language model (deprecated).
 
+## How This Block Works
 
-Ask a question to CogVLM, an open source vision-language model.
+**⚠️ This block is deprecated and no longer functional.** 
 
-This model requires a GPU and can only be run on self-hosted devices, and is not available on the Roboflow Hosted API.
+This block was designed to process images and text prompts using CogVLM, an open-source vision-language model. The block would have taken images and text prompts as input, processed them through the CogVLM model, and returned text responses. The model required a GPU and could only run on self-hosted devices - it was not available on the Roboflow Hosted API.
 
-_This model was previously part of the LMM block._
+This model was previously part of the LMM block. Due to security vulnerabilities and dependency conflicts, CogVLM support has been discontinued. Please use alternative VLM blocks instead.
+
+## Common Use Cases
+
+**Note**: This block is deprecated and no longer functional. For similar functionality, consider using:
+
+- **OpenAI GPT-4 Vision** blocks for general-purpose vision-language tasks
+- **Anthropic Claude** blocks for advanced vision-language capabilities
+- **Google Gemini** blocks for multimodal understanding
+- **Other VLM blocks** available in the model section (e.g., SmolVLM2, Qwen2.5-VL, Florence-2)
+
+## Connecting to Other Blocks
+
+Since this block is deprecated and non-functional, workflows using this block will not execute. If you migrate to alternative VLM blocks, their outputs can typically be connected to:
+
+- **Parser blocks** to convert text responses into structured data
+- **Conditional logic blocks** to route workflow execution based on model responses
+- **Visualization blocks** to display annotations or text overlays
+- **Data storage blocks** to log responses for analytics
+- **Notification blocks** to send alerts based on model findings
 """
 
 
@@ -77,7 +89,7 @@ class BlockManifest(WorkflowBlockManifest):
     type: Literal["roboflow_core/cog_vlm@v1", "CogVLM"]
     images: Selector(kind=[IMAGE_KIND]) = ImageInputField
     prompt: Union[Selector(kind=[STRING_KIND]), str] = Field(
-        description="Text prompt to the CogVLM model",
+        description="Text prompt to the CogVLM model. **Note: This block is deprecated and no longer functional.**",
         examples=["my prompt", "$inputs.prompt"],
         json_schema_extra={
             "multiline": True,
@@ -85,7 +97,7 @@ class BlockManifest(WorkflowBlockManifest):
     )
     json_output_format: Optional[Dict[str, str]] = Field(
         default=None,
-        description="Holds dictionary that maps name of requested output field into its description",
+        description="Optional dictionary that maps output field names to their descriptions. When provided, the model attempts to return structured JSON output with fields matching the keys in this dictionary. **Note: This block is deprecated and no longer functional.**",
         examples=[
             {"count": "number of cats in the picture"},
             "$inputs.json_output_format",

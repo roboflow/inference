@@ -34,11 +34,39 @@ from inference.core.workflows.prototypes.block import (
 )
 
 LONG_DESCRIPTION = """
-Detect the location of a QR code.
+Detect QR codes in images and extract their encoded data, returning bounding box coordinates and decoded text for each detected QR code.
 
-This block is useful for manufacturing and consumer packaged goods projects where you 
-need to detect a QR code region in an image. You can then apply Crop block to isolate 
-each QR code then apply further processing (i.e. read a QR code with a custom block).
+## How This Block Works
+
+This block uses OpenCV's QRCodeDetector to detect and decode QR codes in images. The block:
+
+1. Takes images as input (supports batch processing)
+2. Scans each image for QR code patterns using OpenCV's QR code detector
+3. Detects QR code regions and extracts the encoded data/text from each QR code
+4. Generates bounding boxes around each detected QR code
+5. Returns predictions with bounding box coordinates, confidence scores, and the decoded QR code data/text
+
+The block can detect multiple QR codes in a single image and automatically decodes the information stored in each code. QR codes are 2D barcodes that can store more data than traditional linear barcodes, including URLs, contact information, text, and other data. Each detected QR code includes its location (bounding box), decoded text/data, and detection metadata.
+
+## Common Use Cases
+
+- **Contactless Information Access**: Read QR codes containing URLs, contact information, WiFi credentials, or other encoded data for automated information retrieval
+- **Product Authentication**: Verify product authenticity by reading QR codes on packaging for anti-counterfeiting, supply chain traceability, or brand protection
+- **Event and Ticketing**: Process QR code tickets, event passes, or access codes for entry verification, attendance tracking, or event management
+- **Marketing and Advertising**: Extract data from QR codes in advertisements, promotional materials, or product packaging for campaign tracking or customer engagement
+- **Mobile Payment Processing**: Read payment QR codes for transaction processing, payment verification, or financial services
+- **Asset and Inventory Tracking**: Track assets, equipment, or inventory items by reading QR code labels for identification, location tracking, or maintenance scheduling
+
+## Connecting to Other Blocks
+
+The QR code detections from this block can be connected to:
+
+- **Crop blocks** (e.g., Dynamic Crop, Absolute Static Crop) to isolate individual QR code regions for further processing, validation, or quality checks
+- **Data storage blocks** (e.g., CSV Formatter, Roboflow Dataset Upload) to log QR code data and metadata for record-keeping, analytics, or tracking
+- **Conditional logic blocks** (e.g., Continue If) to route workflow execution based on detected QR code values, URLs, or the presence of specific QR codes
+- **Notification blocks** (e.g., Email Notification, Slack Notification) to send alerts when specific QR codes are detected, when QR code reading succeeds or fails, or for access control notifications
+- **Webhook blocks** to send QR code data to external systems, databases, or APIs for authentication, payment processing, inventory updates, or tracking
+- **Expression blocks** to parse, validate, or transform QR code data (e.g., extract URLs, validate formats, parse structured data from QR code content)
 """
 
 

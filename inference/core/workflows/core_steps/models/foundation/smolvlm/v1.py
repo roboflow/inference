@@ -29,8 +29,12 @@ class BlockManifest(WorkflowBlockManifest):
     images: Selector(kind=[IMAGE_KIND]) = ImageInputField
     prompt: Optional[str] = Field(
         default=None,
-        description="Optional text prompt to provide additional context to SmolVLM2. Otherwise it will just be None",
-        examples=["What is in this image?"],
+        description="Optional text prompt or question to ask about the image. If not provided, the model will generate a general description. SmolVLM2 is particularly good at document OCR, visual question answering, and object counting tasks. Be specific about what you want the model to analyze or describe from the image.",
+        examples=[
+            "What is in this image?",
+            "How many objects are there?",
+            "Extract text from this document",
+        ],
     )
 
     # Standard model configuration for UI, schema, etc.
@@ -40,8 +44,46 @@ class BlockManifest(WorkflowBlockManifest):
             "version": "v1",
             "short_description": "Run SmolVLM2 on an image.",
             "long_description": (
-                "This workflow block runs SmolVLM2, a multimodal vision-language model. You can ask questions about images"
-                " -- including documents and photos -- and get answers in natural language."
+                """
+Run Hugging Face's SmolVLM2 model to analyze images and answer questions using natural language prompts with a lightweight, efficient vision language model.
+
+## How This Block Works
+
+This block takes one or more images as input and processes them through Hugging Face's SmolVLM2 model. SmolVLM2 is a vision language model (VLM) that can understand both images and text simultaneously, allowing you to ask questions or give instructions in plain English. Unlike traditional computer vision models trained for a single task, SmolVLM2 provides flexible text responses based on image content. The block:
+
+1. Encodes images for processing by the model
+2. Applies your optional text prompt (or empty string if not provided) to guide the model's analysis
+3. Processes the image(s) with the prompt using the model's chat template format
+4. Returns the model's text answer as a parsed dictionary output
+
+SmolVLM2 is specifically designed to be a smaller, more efficient VLM (2.2 billion parameters) that provides strong performance while requiring fewer computational resources than larger VLMs. This makes it ideal for scenarios where you need VLM capabilities but have limited GPU memory or want faster inference times. The block supports flexible, free-form prompts - you can ask any question about the image, request descriptions, ask for analysis, or give specific instructions.
+
+## Common Use Cases
+
+- **Visual Question Answering**: Ask questions about image content - "What objects are in this image?", "How many dogs are visible?", "What is the person doing?"
+- **Document OCR**: Extract and understand text from documents, forms, or images containing text
+- **Document Question Answering**: Answer specific questions about document content - "What is the total amount on this invoice?", "What date is on this form?"
+- **Object Counting**: Count objects in images - "How many people are in this crowd?", "How many items are on this shelf?"
+- **Image Description**: Generate descriptions of images for accessibility, content indexing, or documentation
+- **Content Analysis**: Analyze images for safety, quality, or compliance - "Does this image contain text?", "Is this document complete?"
+
+## Requirements
+
+**⚠️ Important: Dedicated Inference Server Required**
+
+This block requires **local execution** (cannot run remotely). A **GPU is recommended** for best performance, though SmolVLM2's smaller size means it can run more efficiently than larger VLMs. The model requires appropriate dependencies (transformers library) to be installed.
+
+## Connecting to Other Blocks
+
+The text outputs from this block can be connected to:
+
+- **Conditional logic blocks** to route workflow execution based on SmolVLM2's responses
+- **Filter blocks** to filter images or data based on the model's analysis
+- **Visualization blocks** to display text overlays or annotations on images
+- **Data storage blocks** to log responses for analytics or audit trails
+- **Notification blocks** to send alerts based on SmolVLM2's findings (e.g., specific content detected, object counts reached thresholds)
+- **Parser blocks** (e.g., JSON Parser) to extract structured information from SmolVLM2's text responses if you prompt it to return structured data
+"""
             ),
             "license": "Apache-2.0",
             "block_type": "model",
@@ -64,7 +106,7 @@ class BlockManifest(WorkflowBlockManifest):
 
     model_version: Union[Selector(kind=[ROBOFLOW_MODEL_ID_KIND]), str] = Field(
         default="smolvlm2/smolvlm-2.2b-instruct",
-        description="The SmolVLM2 model to be used for inference.",
+        description="The SmolVLM2 model to use for inference. Default is 'smolvlm2/smolvlm-2.2b-instruct' (2.2B parameter model optimized for instruction following). Can also use Roboflow model IDs for custom or fine-tuned SmolVLM2 models.",
         examples=["smolvlm2/smolvlm-2.2b-instruct"],
     )
 

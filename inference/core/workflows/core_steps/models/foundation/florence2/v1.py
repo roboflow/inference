@@ -96,29 +96,50 @@ RELEVANT_TASKS_DOCS_DESCRIPTION = "\n\n".join(
     for k, v in RELEVANT_TASKS_METADATA.items()
 )
 LONG_DESCRIPTION = f"""
-**Dedicated inference server required (GPU recommended) - you may want to use dedicated deployment**
+Run Microsoft's Florence-2 model to perform a wide range of computer vision tasks using a single unified model.
 
-This Workflow block introduces **Florence 2**, a Visual Language Model (VLM) capable of performing a 
-wide range of tasks, including:
+## How This Block Works
 
-* Object Detection
+This block takes one or more images as input and processes them through Microsoft's Florence-2 model. Based on the **task type** you select, the block:
+1. **Prepares the task-specific prompt** - adds the appropriate Florence-2 task token (e.g., `<OD>`, `<OCR>`, `<CAPTION>`) or uses your custom prompt
+2. **Handles detection grounding** (if required) - for tasks that need bounding boxes, it extracts coordinates from previous detections or uses provided coordinates
+3. **Sends the request to Florence-2** - processes the image with the task-specific prompt
+4. **Parses and returns results** - provides both raw JSON output and parsed structured data, making it easy to use in workflows
 
-* Instance Segmentation
+The block supports many predefined task types, each optimized for specific use cases, or you can use "custom" mode with your own prompts (useful with fine-tuned models).
 
-* Image Captioning
+## Supported Task Types
 
-* Optical Character Recognition (OCR)
-
-* and more...
-
-
-Below is a comprehensive list of tasks supported by the model, along with descriptions on 
-how to utilize their outputs within the Workflows ecosystem:
-
-**Task Descriptions:**
+The block supports the following task types:
 
 {RELEVANT_TASKS_DOCS_DESCRIPTION}
-"""
+
+## Common Use Cases
+
+- **Multi-Task Workflows**: Use a single model for multiple tasks in one workflow - detect objects, then caption them, then extract text from regions
+- **Detection-Grounded Analysis**: Chain detections from one model to analyze specific regions - detect objects, then classify or caption each detected region
+- **Document Processing**: Extract text from documents using OCR, or detect and read text in specific regions
+- **Image Understanding**: Generate captions (short, detailed, or very detailed) for images or specific regions
+- **Open-Vocabulary Detection**: Detect objects based on text descriptions without training a custom model
+- **Region Analysis**: Propose regions of interest, then analyze each region with different tasks (classification, captioning, OCR)
+
+## Requirements
+
+**⚠️ Important: Dedicated Inference Server Required**
+
+This block requires **local execution** (cannot run remotely). A **GPU is highly recommended** for acceptable performance. You may want to use a dedicated deployment for Florence-2 models. The model requires the `transformers` library - install with `pip install inference[transformers]` or `pip install inference-gpu[transformers]` for GPU support.
+
+## Connecting to Other Blocks
+
+The outputs from this block can be connected to:
+
+- **Parser blocks** (e.g., VLM as Detector v1) to convert Florence-2 outputs into standard detection formats
+- **Visualization blocks** to draw bounding boxes, masks, or text overlays based on Florence-2 results
+- **Filter blocks** to filter detections or results based on Florence-2's analysis
+- **Detection-grounded tasks** - use Florence-2's detection outputs as input to other Florence-2 tasks that require grounding (e.g., detect objects, then segment or classify each one)
+- **Conditional logic blocks** to route workflow execution based on Florence-2's results
+- **Data storage blocks** to log results for analytics or audit trails
+f"""
 
 
 TaskType = Literal[tuple([task["task_type"] for task in SUPPORTED_TASK_TYPES_LIST])]

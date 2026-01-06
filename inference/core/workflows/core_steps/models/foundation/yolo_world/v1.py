@@ -41,16 +41,37 @@ from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 from inference_sdk.http.utils.iterables import make_batches
 
 LONG_DESCRIPTION = """
-Run YOLO-World, a zero-shot object detection model, on an image.
+Run YOLO-World, a zero-shot object detection model that can detect objects based on text descriptions without training.
 
-YOLO-World accepts one or more text classes you want to identify in an image. The model 
-returns the location of objects that meet the specified class, if YOLO-World is able to 
-identify objects of that class.
+## How This Block Works
 
-We recommend experimenting with YOLO-World to evaluate the model on your use case 
-before using this block in production. For example on how to effectively prompt 
-YOLO-World, refer to the [Roboflow YOLO-World prompting 
-guide](https://blog.roboflow.com/yolo-world-prompting-tips/).
+This block takes one or more images as input and processes them through YOLO-World, a zero-shot object detection model. Unlike traditional object detection models that require training on specific object classes, YOLO-World can detect objects based on natural language class names you provide. The block:
+
+1. Takes your list of class names (e.g., ["person", "car", "bicycle"]) and one or more images
+2. Processes each image through the YOLO-World model to identify objects matching your specified classes
+3. Returns object detection predictions with bounding boxes, class names, and confidence scores for each detected object
+
+YOLO-World works best with short, descriptive class names for common objects. The model can handle multiple classes in a single pass, making it efficient for detecting multiple object types simultaneously. We recommend experimenting with YOLO-World to evaluate the model on your use case before using this block in production. For tips on how to effectively prompt YOLO-World, refer to the [Roboflow YOLO-World prompting guide](https://blog.roboflow.com/yolo-world-prompting-tips/).
+
+## Common Use Cases
+
+- **Zero-Shot Object Detection**: Detect objects in images using text descriptions without training a custom model for each class
+- **Rapid Prototyping**: Quickly test object detection for new categories without dataset preparation or model training
+- **Multi-Class Detection**: Detect multiple object types in a single pass by specifying multiple class names
+- **Custom Object Categories**: Detect objects using natural language descriptions (e.g., "license plate", "red car", "person wearing helmet")
+- **Content Filtering**: Identify specific content or objects in images for moderation or filtering purposes
+- **Inventory Management**: Detect and count items in images using descriptive class names (e.g., "product on shelf", "package")
+
+## Connecting to Other Blocks
+
+The object detection predictions from this block can be connected to:
+
+- **Visualization blocks** (e.g., Bounding Box Visualization) to draw detection results on images
+- **Filter blocks** (e.g., Detections Filter) to filter detections based on confidence, class, or other criteria
+- **Analytics blocks** (e.g., Data Aggregator, Line Counter) to count or aggregate detection results over time
+- **Conditional logic blocks** (e.g., Continue If) to route workflow execution based on detection results
+- **Transformation blocks** (e.g., Dynamic Crop, Detections Transformation) to extract or transform regions based on detected objects
+- **Data storage blocks** (e.g., CSV Formatter, Roboflow Dataset Upload) to log detection results
 """
 
 
@@ -74,7 +95,7 @@ class BlockManifest(WorkflowBlockManifest):
     type: Literal["roboflow_core/yolo_world_model@v1", "YoloWorldModel", "YoloWorld"]
     images: Selector(kind=[IMAGE_KIND]) = ImageInputField
     class_names: Union[Selector(kind=[LIST_OF_VALUES_KIND]), List[str]] = Field(
-        description="One or more classes that you want YOLO-World to detect. The model accepts any string as an input, though does best with short descriptions of common objects.",
+        description="One or more class names that you want YOLO-World to detect in the images. Provide a list of strings describing the objects (e.g., ['person', 'car', 'bicycle']). The model accepts any string as input, but works best with short, descriptive class names for common objects. For best results, use simple, clear descriptions.",
         examples=[["person", "car", "license plate"], "$inputs.class_names"],
     )
     version: Union[
@@ -91,16 +112,16 @@ class BlockManifest(WorkflowBlockManifest):
         Selector(kind=[STRING_KIND]),
     ] = Field(
         default="v2-s",
-        description="Variant of YoloWorld model",
-        examples=["v2-s", "$inputs.variant"],
+        description="The YOLO-World model variant to use. Options include 'v2-s' (small, fastest), 'v2-m' (medium), 'v2-l' (large), 'v2-x' (extra large, most accurate), and older variants ('s', 'm', 'l', 'x'). Larger models are more accurate but slower. Default is 'v2-s'.",
+        examples=["v2-s", "v2-m", "$inputs.variant"],
     )
     confidence: Union[
         Optional[FloatZeroToOne],
         Selector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
     ] = Field(
         default=0.005,
-        description="Confidence threshold for detections",
-        examples=[0.005, "$inputs.confidence"],
+        description="Confidence threshold for detections (0.0 to 1.0). Only detections with confidence scores above this threshold will be returned. Lower values return more detections (including lower confidence ones), while higher values return only high-confidence detections. Default is 0.005.",
+        examples=[0.005, 0.25, 0.5, "$inputs.confidence"],
     )
 
     @classmethod

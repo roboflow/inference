@@ -55,14 +55,57 @@ RELEVANT_TASKS_DOCS_DESCRIPTION = "\n\n".join(
 
 
 LONG_DESCRIPTION = f"""
-Ask a question to OpenAI's GPT models with vision capabilities (including GPT-4o and GPT-5).
+Run OpenAI's GPT models with vision capabilities to perform various computer vision tasks.
 
-You can specify arbitrary text prompts or predefined ones, the block supports the following types of prompt:
+## How This Block Works
+
+This block takes one or more images as input and processes them through OpenAI's GPT models (including GPT-4o and GPT-5). Based on the **task type** you select, the block:
+1. **Prepares the appropriate prompt** for the GPT model based on the task type (e.g., OCR, classification, caption)
+2. **Encodes images** to base64 format for API transmission
+3. **Sends the request to OpenAI's API** with the image and task-specific instructions
+4. **Returns the response** as text output, which can be structured JSON or natural language depending on the task
+
+The block supports multiple predefined task types, each optimized for specific use cases, or you can use "unconstrained" mode for completely custom prompts.
+
+## Supported Task Types
+
+The block supports the following task types:
 
 {RELEVANT_TASKS_DOCS_DESCRIPTION}
 
-You need to provide your OpenAI API key to use the GPT-4 with Vision model. 
-"""
+## Common Use Cases
+
+- **Content Analysis**: Analyze images for safety, quality, or compliance - ask questions like "Does this image contain inappropriate content?"
+- **Document Processing**: Extract text from documents, forms, or receipts using OCR, then structure the data using structured-answering
+- **Product Cataloging**: Classify product images into categories or extract product attributes like color, style, material
+- **Accessibility**: Generate detailed image descriptions for visually impaired users using captioning tasks
+- **Data Extraction**: Extract structured information from images (e.g., extract fields from forms, receipts, or documents)
+- **Visual Q&A**: Build chatbots that can answer questions about images (e.g., "What brand is this product?", "Is this person wearing a mask?")
+
+## Requirements
+
+You need to provide your OpenAI API key to use this block. The API key is used to authenticate requests to OpenAI's GPT API. You can get your API key from [OpenAI's platform](https://platform.openai.com/api-keys). Note that API usage is subject to OpenAI's pricing and rate limits.
+
+## Connecting to Other Blocks
+
+The text outputs from this block can be connected to:
+
+- **Parser blocks** (e.g., JSON Parser v1, VLM as Classifier v1) to convert text responses into structured data formats
+- **Conditional logic blocks** to route workflow execution based on GPT's responses
+- **Filter blocks** to filter images or data based on GPT's analysis
+- **Visualization blocks** to display text overlays or annotations on images
+- **Data storage blocks** to log responses for analytics or audit trails
+- **Notification blocks** to send alerts based on GPT's findings
+
+## Version Differences (v2 vs v1)
+
+This version (v2) includes several enhancements over v1:
+
+- **Task Types**: Introduces predefined task types (OCR, classification, captioning, etc.) for easier configuration and consistent outputs, similar to Claude and Gemini blocks
+- **Expanded Model Support**: Supports newer GPT models including GPT-5, GPT-4.1 series (gpt-4.1, gpt-4.1-mini, gpt-4.1-nano)
+- **Simplified Outputs**: Uses standardized output format (`output` and `classes`) instead of v1's complex structured outputs
+- **Recommended Parsers**: Includes recommended parser blocks for each task type to help convert text responses into structured data
+f"""
 
 
 TaskType = Literal[tuple(SUPPORTED_TASK_TYPES_LIST)]

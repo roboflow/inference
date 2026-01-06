@@ -34,11 +34,39 @@ from inference.core.workflows.prototypes.block import (
 )
 
 LONG_DESCRIPTION = """
-Detect the location of barcodes in an image.
+Detect barcodes in images and extract their encoded data, returning bounding box coordinates and decoded text for each detected barcode.
 
-This block is useful for manufacturing and consumer packaged goods projects where you 
-need to detect a barcode region in an image. You can then apply Crop block to isolate 
-each barcode then apply further processing (i.e. OCR of the characters on a barcode).
+## How This Block Works
+
+This block uses the zxingcpp library to detect and decode barcodes in images. The block:
+
+1. Takes images as input (supports batch processing)
+2. Scans each image for barcode patterns using the zxingcpp barcode reader
+3. Detects barcode regions and extracts the encoded data/text from each barcode
+4. Generates bounding boxes around each detected barcode
+5. Returns predictions with bounding box coordinates, confidence scores, and the decoded barcode data/text
+
+The block automatically detects various barcode formats and extracts the encoded information. Each detected barcode includes its location (bounding box), decoded text/data, and detection metadata. This makes it useful for processing images that contain barcodes, allowing you to locate and extract information from them automatically.
+
+## Common Use Cases
+
+- **Inventory Management**: Automatically scan and read barcodes on products for inventory tracking, stock management, or warehouse operations
+- **Retail Point of Sale**: Detect and read product barcodes for price lookup, checkout systems, or product identification in retail environments
+- **Package Tracking**: Read shipping barcodes or tracking codes on packages for logistics, delivery tracking, or postal services
+- **Manufacturing Quality Control**: Verify product barcodes during manufacturing processes, ensuring correct labeling and traceability
+- **Document Processing**: Extract barcode information from documents, tickets, or forms for automated data entry or document indexing
+- **Asset Management**: Track assets by reading barcode labels on equipment, tools, or inventory items
+
+## Connecting to Other Blocks
+
+The barcode detections from this block can be connected to:
+
+- **Crop blocks** (e.g., Dynamic Crop, Absolute Static Crop) to isolate individual barcode regions for further processing or validation
+- **OCR blocks** (e.g., OCR Model, EasyOCR) to read any text that appears alongside or within barcode regions
+- **Data storage blocks** (e.g., CSV Formatter, Roboflow Dataset Upload) to log barcode data and metadata for record-keeping or analysis
+- **Conditional logic blocks** (e.g., Continue If) to route workflow execution based on detected barcode values or the presence of barcodes
+- **Notification blocks** (e.g., Email Notification, Slack Notification) to send alerts when specific barcodes are detected or when barcode reading fails
+- **Webhook blocks** to send barcode data to external systems, databases, or APIs for inventory updates or tracking
 """
 
 

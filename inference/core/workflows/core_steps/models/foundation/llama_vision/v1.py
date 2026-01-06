@@ -67,56 +67,60 @@ RELEVANT_TASKS_DOCS_DESCRIPTION = "\n\n".join(
 
 
 LONG_DESCRIPTION = f"""
-Ask a question to Llama 3.2 Vision model with vision capabilities.
+Run Meta's Llama 3.2 Vision model via OpenRouter API to perform various computer vision tasks including OCR, classification, captioning, visual question answering, and more.
 
-You can specify arbitrary text prompts or predefined ones, the block supports the following types of prompt:
+## How This Block Works
+
+This block takes one or more images as input and processes them through Meta's Llama 3.2 Vision model via the OpenRouter API. Based on the **task type** you select, the block:
+
+1. Takes images and task-specific parameters (prompts, classes, or output structure) as input
+2. Prepares the appropriate prompt for the Llama model based on the selected task type
+3. Encodes images to base64 format for API transmission
+4. Sends the request to OpenRouter API with the image and task-specific instructions
+5. Returns the model's response as text output, which can be structured JSON or natural language depending on the task
+
+The block supports multiple predefined task types, each optimized for specific use cases, or you can use "unconstrained" mode for completely custom prompts. The model is accessed through OpenRouter, which provides both free and paid API access to different model variants (11B and 90B parameter versions).
+
+## Supported Task Types
+
+The block supports the following task types:
 
 {RELEVANT_TASKS_DOCS_DESCRIPTION}
 
-!!! warning "Issues with structured prompting"
+**Note:** The model can be unpredictable when structured output (JSON) is expected, particularly for tasks like `structured-answering`, `classification`, or `multi-label-classification`. This is due to content filtering mechanisms in the model. For more reliable structured outputs, consider using other VLM blocks like OpenAI GPT-4 Vision or Anthropic Claude.
 
-    Model tends to be quite unpredictable when structured output (in our case JSON document) is expected.
-    That problems may impact tasks like `structured-answering`, `classification` or `multi-label-classification`.
-    
-    The cause seems to be quite sensitive "filters" of inappropriate content embedded in model.
-    
+## Common Use Cases
 
-#### 🛠️ API providers and model variants
+- **Image Analysis and Understanding**: Ask questions about images, get descriptions, or analyze visual content using natural language prompts
+- **Text Extraction**: Extract text from images using OCR capabilities for document processing, receipt scanning, or text recognition
+- **Image Classification**: Classify images into custom categories (single-label or multi-label) without training a model
+- **Content Generation**: Generate captions or descriptions of images for accessibility, content indexing, or automated tagging
+- **Visual Question Answering**: Answer specific questions about image content for interactive applications or content analysis
+- **Structured Data Extraction**: Extract structured information from images using JSON output schemas (with noted reliability limitations)
 
-Llama Vision 3.2 model is exposed via [OpenRouter API](https://openrouter.ai/) and we require 
-passing [OpenRouter API Key](https://openrouter.ai/docs/api-keys) to run.
+## Connecting to Other Blocks
 
-There are different versions of the model supported:
+The outputs from this block can be connected to:
 
-* smaller version (`11B`) is faster and cheaper, yet you can expect better quality of results using `90B` version
+- **Conditional logic blocks** (e.g., Continue If) to route workflow execution based on the model's responses or extracted data
+- **Data storage blocks** (e.g., CSV Formatter, Roboflow Dataset Upload) to log analysis results or extracted information
+- **Expression blocks** to parse, validate, or transform the text or structured outputs
+- **Notification blocks** (e.g., Email Notification, Slack Notification) to send alerts based on analysis results
+- **Parser blocks** (e.g., JSON Parser, VLM as Classifier) to process structured outputs for specific task types
+- **Additional workflow blocks** for further processing or analysis
 
-* `Regular` version is paid (and usually faster) API, whereas `Free` is free for use for OpenRouter clients 
-(state at 01.01.2025)
+## Requirements
 
+This block requires an **OpenRouter API key**. The model is accessed through OpenRouter's API, which is a third-party service. OpenRouter provides access to multiple model variants:
 
-As for now, OpenRouter is the only provider for Llama 3.2 Vision model, but we will keep you posted if
-the state of the matter changes.
+- **11B versions**: Smaller, faster, and more cost-effective. Good for basic tasks and development.
+- **90B versions**: Larger model with better quality results, suitable for production use cases requiring higher accuracy.
 
+Both versions are available as:
+- **Free**: Free tier available for OpenRouter clients (subject to availability and rate limits)
+- **Regular**: Paid API access, typically faster and more reliable
 
-!!! warning "API Usage Charges"
-
-    OpenRouter is external third party providing access to the model and incurring charges on the usage.
-    Please check out pricing before use:
-    
-    * [Llama 3.2 Vision 11B (Regular)](https://openrouter.ai/meta-llama/llama-3.2-11b-vision-instruct/providers)
-    
-    * [Llama 3.2 Vision 90B (Regular)](https://openrouter.ai/meta-llama/llama-3.2-90b-vision-instruct/providers)
-
-#### 💡 Further reading and Acceptable Use Policy
-
-!!! warning "Model license"
-
-    Check out [model license](https://github.com/meta-llama/llama-models/blob/main/models/llama3_2/LICENSE) before
-    use. 
-
-[Click here](https://github.com/meta-llama/llama-models/blob/main/models/llama3_2/MODEL_CARD_VISION.md) for the original model card.
-
-Usage of this model is subject to Meta's [Acceptable Use Policy](https://www.llama.com/llama3/use-policy/).
+Please review [OpenRouter pricing](https://openrouter.ai/) before use, as charges apply for paid API usage. Check the [model license](https://github.com/meta-llama/llama-models/blob/main/models/llama3_2/LICENSE) and [Meta's Acceptable Use Policy](https://www.llama.com/llama3/use-policy/) before using this model. See the [original model card](https://github.com/meta-llama/llama-models/blob/main/models/llama3_2/MODEL_CARD_VISION.md) for more information.
 """
 
 
@@ -160,7 +164,7 @@ class BlockManifest(WorkflowBlockManifest):
     images: Selector(kind=[IMAGE_KIND]) = ImageInputField
     task_type: TaskType = Field(
         default="unconstrained",
-        description="Task type to be performed by model. Value determines required parameters and output response.",
+        description="Task type to be performed by the model. Select from: unconstrained (custom prompts), ocr (text recognition), structured-answering (JSON output), classification (single-label), multi-label-classification, visual-question-answering (answer questions about images), caption (short description), or detailed-caption (long description). The task type determines which other parameters are required (e.g., prompt for VQA, classes for classification, output_structure for structured-answering) and the format of the response.",
         json_schema_extra={
             "values_metadata": RELEVANT_TASKS_METADATA,
             "recommended_parsers": {
@@ -173,8 +177,12 @@ class BlockManifest(WorkflowBlockManifest):
     )
     prompt: Optional[Union[Selector(kind=[STRING_KIND]), str]] = Field(
         default=None,
-        description="Text prompt to the Llama model",
-        examples=["my prompt", "$inputs.prompt"],
+        description="Text prompt for the Llama model. Required for 'unconstrained' and 'visual-question-answering' task types. Can be any question, instruction, or request about the image. For unconstrained mode, use any custom prompt. For VQA, ask specific questions about the image content (e.g., 'What objects are in this image?', 'Describe the scene').",
+        examples=[
+            "What objects are in this image?",
+            "Describe the scene in detail",
+            "$inputs.prompt",
+        ],
         json_schema_extra={
             "relevant_for": {
                 "task_type": {"values": TASKS_REQUIRING_PROMPT, "required": True},
@@ -184,8 +192,12 @@ class BlockManifest(WorkflowBlockManifest):
     )
     output_structure: Optional[Dict[str, str]] = Field(
         default=None,
-        description="Dictionary with structure of expected JSON response",
-        examples=[{"my_key": "description"}, "$inputs.output_structure"],
+        description="Dictionary defining the expected JSON output structure for 'structured-answering' task type. Maps field names to their descriptions (e.g., {'count': 'number of objects', 'color': 'dominant color'}). The model will attempt to return JSON matching this structure. Note: The model can be unpredictable with structured outputs due to content filtering. Required for structured-answering task type.",
+        examples=[
+            {"count": "number of objects", "color": "dominant color"},
+            {"objects": "list of detected objects"},
+            "$inputs.output_structure",
+        ],
         json_schema_extra={
             "relevant_for": {
                 "task_type": {
@@ -197,8 +209,12 @@ class BlockManifest(WorkflowBlockManifest):
     )
     classes: Optional[Union[Selector(kind=[LIST_OF_VALUES_KIND]), List[str]]] = Field(
         default=None,
-        description="List of classes to be used",
-        examples=[["class-a", "class-b"], "$inputs.classes"],
+        description="List of class names for classification tasks. Required for 'classification' (single-label) and 'multi-label-classification' task types. Provide descriptive class names (e.g., ['cat', 'dog', 'bird'] for single-label or ['sunny', 'cloudy', 'rainy'] for multi-label). For single-label classification, the model selects one class. For multi-label, the model can select multiple classes. Note: Classification results can be unpredictable due to model content filtering.",
+        examples=[
+            ["cat", "dog", "bird"],
+            ["happy", "sad", "neutral"],
+            "$inputs.classes",
+        ],
         json_schema_extra={
             "relevant_for": {
                 "task_type": {
@@ -209,8 +225,12 @@ class BlockManifest(WorkflowBlockManifest):
         },
     )
     api_key: Union[Selector(kind=[STRING_KIND]), str] = Field(
-        description="Your Llama Vision API key (dependent on provider, ex: OpenRouter API key)",
-        examples=["xxx-xxx", "$inputs.llama_api_key"],
+        description="OpenRouter API key required to access the Llama 3.2 Vision model. You can obtain an API key from https://openrouter.ai/docs/api-keys. OpenRouter provides access to the model via their API service. This field is kept private for security.",
+        examples=[
+            "sk-or-v1-xxx-xxx",
+            "$inputs.openrouter_api_key",
+            "$secrets.openrouter_key",
+        ],
         private=True,
     )
     model_version: Union[
@@ -223,18 +243,21 @@ class BlockManifest(WorkflowBlockManifest):
         ],
     ] = Field(
         default="11B (Free) - OpenRouter",
-        description="Model to be used",
-        examples=["11B (Free) - OpenRouter", "$inputs.llama_model"],
+        description="Llama 3.2 Vision model variant to use. Options: '11B' (11 billion parameters - faster, cheaper, good for basic tasks) or '90B' (90 billion parameters - higher quality, better for production). Both are available as 'Free' (free tier, subject to availability) or 'Regular' (paid, faster and more reliable). Default is 11B Free. For production use cases requiring higher accuracy, consider 90B Regular.",
+        examples=[
+            "11B (Free) - OpenRouter",
+            "90B (Regular) - OpenRouter",
+            "$inputs.model_version",
+        ],
     )
     max_tokens: int = Field(
         default=500,
-        description="Maximum number of tokens the model can generate in it's response.",
+        description="Maximum number of tokens (words/characters) the model can generate in its response. Higher values allow longer responses but may increase cost and processing time. Must be greater than 1. Default is 500 tokens.",
         gt=1,
     )
     temperature: Union[float, Selector(kind=[FLOAT_KIND])] = Field(
         default=0.1,
-        description="Temperature to sample from the model - value in range 0.0-2.0, the higher - the more "
-        'random / "creative" the generations are.',
+        description="Temperature parameter controlling randomness in the model's responses. Range 0.0-2.0. Lower values (closer to 0) produce more deterministic, focused responses. Higher values (closer to 2) produce more random and creative responses. Default is 0.1 for consistent, focused outputs. Use higher values for creative tasks and lower values for factual or classification tasks.",
     )
     max_concurrent_requests: Optional[int] = Field(
         default=None,
