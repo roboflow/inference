@@ -1,5 +1,8 @@
-from dataclasses import dataclass
+import logging
+from dataclasses import asdict, dataclass
 from typing import Any, Dict, List, Literal, Optional, Type, Union
+
+logger = logging.getLogger(__name__)
 
 import numpy as np
 import supervision as sv
@@ -35,6 +38,7 @@ MAX_VIDEOS = 100  # Maximum number of video streams to track before evicting old
 @dataclass
 class DetectionEvent:
     """Stores event data for a tracked detection."""
+
     tracker_id: int
     class_name: str
     first_seen_frame: int
@@ -104,7 +108,9 @@ class BlockManifest(WorkflowBlockManifest):
         ge=1,
     )
 
-    reference_timestamp: Optional[Union[float, WorkflowParameterSelector(kind=[FLOAT_KIND])]] = Field(
+    reference_timestamp: Optional[
+        Union[float, WorkflowParameterSelector(kind=[FLOAT_KIND])]
+    ] = Field(
         default=None,
         description="Unix timestamp to use as reference for calculating relative times (first_seen_relative, last_seen_relative).",
         examples=[1726570875.0],
@@ -119,7 +125,10 @@ class BlockManifest(WorkflowBlockManifest):
             ),
             OutputDefinition(
                 name=DETECTIONS_OUTPUT_KEY,
-                kind=[OBJECT_DETECTION_PREDICTION_KIND, INSTANCE_SEGMENTATION_PREDICTION_KIND],
+                kind=[
+                    OBJECT_DETECTION_PREDICTION_KIND,
+                    INSTANCE_SEGMENTATION_PREDICTION_KIND,
+                ],
             ),
             OutputDefinition(
                 name="total_logged",
@@ -171,11 +180,6 @@ class DetectionEventLogBlockV1(WorkflowBlock):
         if metadata.comes_from_video_file and metadata.fps and metadata.fps != 0:
             return metadata.frame_number / metadata.fps
         return metadata.frame_timestamp.timestamp()
-
-    def _should_flush(self, video_id: str, current_frame: int, flush_interval: int) -> bool:
-        """Check if it's time to run cleanup."""
-        last_flush = self._last_flush_frame.get(video_id, 0)
-        return (current_frame - last_flush) >= flush_interval
 
     def _evict_oldest_video(self) -> None:
         """Remove the oldest video stream data when MAX_VIDEOS is exceeded."""
@@ -248,17 +252,17 @@ class DetectionEventLogBlockV1(WorkflowBlock):
             self._last_flush_frame[video_id] = current_frame
 
         # Check if it's time to run cleanup
-        if self._should_flush(video_id, current_frame, flush_interval):
-            removed_events = self._remove_stale_events(event_log, current_frame, stale_frames)
+        last_flush = self._last_flush_frame.get(video_id, 0)
+        if (current_frame - last_flush) >= flush_interval:
+            self._remove_stale_events(event_log, current_frame, stale_frames)
             self._last_flush_frame[video_id] = current_frame
-            for event in removed_events:
-                if event.logged:
-                    print(f"[Detection Event Log] Removed stale object {event.tracker_id} ({event.class_name}) - not seen for {current_frame - event.last_seen_frame} frames")
 
         # Process detections
         if detections.tracker_id is None or len(detections.tracker_id) == 0:
             # No tracked detections, return current log
-            event_log_dict, total_logged, total_pending = self._format_event_log(event_log, frame_threshold, reference_timestamp)
+            event_log_dict, total_logged, total_pending = self._format_event_log(
+                event_log, frame_threshold, reference_timestamp
+            )
             return {
                 OUTPUT_KEY: event_log_dict,
                 DETECTIONS_OUTPUT_KEY: detections,
@@ -268,13 +272,17 @@ class DetectionEventLogBlockV1(WorkflowBlock):
 
         # Get class names
         class_names = detections.data.get("class_name", [])
-        if len(class_names) == 0 and hasattr(detections, "class_id") and detections.class_id is not None:
+        if (
+            len(class_names) == 0
+            and hasattr(detections, "class_id")
+            and detections.class_id is not None
+        ):
             class_names = [f"class_{cid}" for cid in detections.class_id]
 
         # Update event log for each tracked detection
         for i, tracker_id in enumerate(detections.tracker_id):
             tracker_id = int(tracker_id)
-            class_name = class_names[i] if i < len(class_names) else "unknown"
+            class_name = class_names[i] if class_names else "unknown"
 
             if tracker_id in event_log:
                 # Update existing event
@@ -286,7 +294,9 @@ class DetectionEventLogBlockV1(WorkflowBlock):
                 # Mark as logged once threshold is reached
                 if event.frame_count >= frame_threshold and not event.logged:
                     event.logged = True
-                    print(f"[Detection Event Log] Object {tracker_id} ({event.class_name}) logged after {event.frame_count} frames")
+                    logger.debug(
+                        f"Object {tracker_id} ({event.class_name}) logged after {event.frame_count} frames"
+                    )
             else:
                 # Create new event
                 event_log[tracker_id] = DetectionEvent(
@@ -300,7 +310,9 @@ class DetectionEventLogBlockV1(WorkflowBlock):
                     logged=False,
                 )
 
-        event_log_dict, total_logged, total_pending = self._format_event_log(event_log, frame_threshold, reference_timestamp)
+        event_log_dict, total_logged, total_pending = self._format_event_log(
+            event_log, frame_threshold, reference_timestamp
+        )
         return {
             OUTPUT_KEY: event_log_dict,
             DETECTIONS_OUTPUT_KEY: detections,
@@ -323,20 +335,17 @@ class DetectionEventLogBlockV1(WorkflowBlock):
         pending_events = {}
 
         for tracker_id, event in event_log.items():
-            event_data = {
-                "tracker_id": event.tracker_id,
-                "class_name": event.class_name,
-                "first_seen_frame": event.first_seen_frame,
-                "first_seen_timestamp": event.first_seen_timestamp,
-                "last_seen_frame": event.last_seen_frame,
-                "last_seen_timestamp": event.last_seen_timestamp,
-                "frame_count": event.frame_count,
-            }
+            event_data = asdict(event)
+            del event_data["logged"]
 
             # Add relative timestamps if reference_timestamp is provided
             if reference_timestamp is not None:
-                event_data["first_seen_relative"] = event.first_seen_timestamp - reference_timestamp
-                event_data["last_seen_relative"] = event.last_seen_timestamp - reference_timestamp
+                event_data["first_seen_relative"] = (
+                    event.first_seen_timestamp - reference_timestamp
+                )
+                event_data["last_seen_relative"] = (
+                    event.last_seen_timestamp - reference_timestamp
+                )
 
             if event.frame_count >= frame_threshold:
                 logged_events[str(tracker_id)] = event_data
