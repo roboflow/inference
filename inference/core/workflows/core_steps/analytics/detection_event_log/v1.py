@@ -16,9 +16,9 @@ from inference.core.workflows.execution_engine.entities.base import (
 from inference.core.workflows.execution_engine.entities.types import (
     DICTIONARY_KIND,
     FLOAT_KIND,
-    OBJECT_DETECTION_PREDICTION_KIND,
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
     INTEGER_KIND,
+    OBJECT_DETECTION_PREDICTION_KIND,
     Selector,
     WorkflowImageSelector,
     WorkflowParameterSelector,
@@ -28,7 +28,6 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
-
 
 OUTPUT_KEY = "event_log"
 DETECTIONS_OUTPUT_KEY = "detections"
