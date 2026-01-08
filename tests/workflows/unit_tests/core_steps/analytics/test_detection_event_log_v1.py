@@ -1,11 +1,12 @@
 import datetime
+
 import numpy as np
 import pytest
 import supervision as sv
 
 from inference.core.workflows.core_steps.analytics.detection_event_log.v1 import (
-    DetectionEventLogBlockV1,
     MAX_VIDEOS,
+    DetectionEventLogBlockV1,
 )
 from inference.core.workflows.execution_engine.entities.base import (
     ImageParentMetadata,
@@ -466,7 +467,7 @@ def test_relative_timestamps_update_over_frames() -> None:
     # Then
     event = result["event_log"]["pending"]["1"]
     assert event["first_seen_relative"] == pytest.approx(1.0)  # frame 30 / 30 fps
-    assert event["last_seen_relative"] == pytest.approx(3.0)   # frame 90 / 30 fps
+    assert event["last_seen_relative"] == pytest.approx(3.0)  # frame 90 / 30 fps
 
 
 def test_relative_timestamps_in_logged_events() -> None:

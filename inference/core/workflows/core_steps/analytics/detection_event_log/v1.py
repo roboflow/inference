@@ -227,6 +227,19 @@ class DetectionEventLogBlockV1(WorkflowBlock):
         stale_frames: int,
         reference_timestamp: Optional[float] = None,
     ) -> BlockResult:
+        """Process detections and update the event log.
+
+        Args:
+            image: Workflow image data containing video metadata.
+            detections: Tracked detections with tracker_id from ByteTracker.
+            frame_threshold: Minimum frames an object must be seen before logging.
+            flush_interval: How often to run stale event cleanup.
+            stale_frames: Remove events not seen for this many frames.
+            reference_timestamp: Optional Unix timestamp for calculating relative times.
+
+        Returns:
+            Dictionary containing event_log, detections, total_logged, and total_pending.
+        """
         metadata = image.video_metadata
         video_id = metadata.video_identifier
 
