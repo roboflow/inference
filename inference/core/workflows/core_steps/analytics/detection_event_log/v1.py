@@ -294,7 +294,7 @@ class DetectionEventLogBlockV1(WorkflowBlock):
         # Update event log for each tracked detection
         for i, tracker_id in enumerate(detections.tracker_id):
             tracker_id = int(tracker_id)
-            class_name = class_names[i] if class_names else "unknown"
+            class_name = class_names[i] if len(class_names) > 0 else "unknown"
 
             if tracker_id in event_log:
                 # Update existing event
