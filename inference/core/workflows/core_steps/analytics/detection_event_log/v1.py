@@ -12,6 +12,7 @@ from inference.core.workflows.execution_engine.entities.base import (
 )
 from inference.core.workflows.execution_engine.entities.types import (
     DICTIONARY_KIND,
+    FLOAT_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
     INTEGER_KIND,
@@ -28,6 +29,7 @@ from inference.core.workflows.prototypes.block import (
 
 OUTPUT_KEY = "event_log"
 DETECTIONS_OUTPUT_KEY = "detections"
+MAX_VIDEOS = 100  # Maximum number of video streams to track before evicting oldest
 
 
 @dataclass
@@ -102,6 +104,12 @@ class BlockManifest(WorkflowBlockManifest):
         ge=1,
     )
 
+    reference_timestamp: Optional[Union[float, WorkflowParameterSelector(kind=[FLOAT_KIND])]] = Field(
+        default=None,
+        description="Unix timestamp to use as reference for calculating relative times (first_seen_relative, last_seen_relative).",
+        examples=[1726570875.0],
+    )
+
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
@@ -149,6 +157,10 @@ class DetectionEventLogBlockV1(WorkflowBlock):
         self._last_flush_frame: Dict[str, int] = {}
         # Dict[video_id, frame_count] - internal frame counter (increments each run)
         self._frame_count: Dict[str, int] = {}
+        # Dict[video_id, last_access_frame] - tracks when each video was last accessed (global frame count)
+        self._last_access: Dict[str, int] = {}
+        # Global frame counter for tracking video access order
+        self._global_frame: int = 0
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -164,6 +176,20 @@ class DetectionEventLogBlockV1(WorkflowBlock):
         """Check if it's time to run cleanup."""
         last_flush = self._last_flush_frame.get(video_id, 0)
         return (current_frame - last_flush) >= flush_interval
+
+    def _evict_oldest_video(self) -> None:
+        """Remove the oldest video stream data when MAX_VIDEOS is exceeded."""
+        if len(self._event_logs) <= MAX_VIDEOS:
+            return
+
+        # Find the video with the oldest last access time
+        oldest_video_id = min(self._last_access, key=self._last_access.get)
+
+        # Remove all data for this video
+        self._event_logs.pop(oldest_video_id, None)
+        self._last_flush_frame.pop(oldest_video_id, None)
+        self._frame_count.pop(oldest_video_id, None)
+        self._last_access.pop(oldest_video_id, None)
 
     def _remove_stale_events(
         self,
@@ -196,9 +222,17 @@ class DetectionEventLogBlockV1(WorkflowBlock):
         frame_threshold: int,
         flush_interval: int,
         stale_frames: int,
+        reference_timestamp: Optional[float] = None,
     ) -> BlockResult:
         metadata = image.video_metadata
         video_id = metadata.video_identifier
+
+        # Track global frame count and video access for eviction
+        self._global_frame += 1
+        self._last_access[video_id] = self._global_frame
+
+        # Evict oldest video if we've exceeded MAX_VIDEOS
+        self._evict_oldest_video()
 
         # Increment internal frame counter
         current_frame = self._frame_count.get(video_id, 0) + 1
@@ -224,7 +258,7 @@ class DetectionEventLogBlockV1(WorkflowBlock):
         # Process detections
         if detections.tracker_id is None or len(detections.tracker_id) == 0:
             # No tracked detections, return current log
-            event_log_dict, total_logged, total_pending = self._format_event_log(event_log, frame_threshold)
+            event_log_dict, total_logged, total_pending = self._format_event_log(event_log, frame_threshold, reference_timestamp)
             return {
                 OUTPUT_KEY: event_log_dict,
                 DETECTIONS_OUTPUT_KEY: detections,
@@ -266,7 +300,7 @@ class DetectionEventLogBlockV1(WorkflowBlock):
                     logged=False,
                 )
 
-        event_log_dict, total_logged, total_pending = self._format_event_log(event_log, frame_threshold)
+        event_log_dict, total_logged, total_pending = self._format_event_log(event_log, frame_threshold, reference_timestamp)
         return {
             OUTPUT_KEY: event_log_dict,
             DETECTIONS_OUTPUT_KEY: detections,
@@ -278,6 +312,7 @@ class DetectionEventLogBlockV1(WorkflowBlock):
         self,
         event_log: Dict[int, DetectionEvent],
         frame_threshold: int,
+        reference_timestamp: Optional[float] = None,
     ) -> tuple:
         """Format the event log for output.
 
@@ -297,6 +332,11 @@ class DetectionEventLogBlockV1(WorkflowBlock):
                 "last_seen_timestamp": event.last_seen_timestamp,
                 "frame_count": event.frame_count,
             }
+
+            # Add relative timestamps if reference_timestamp is provided
+            if reference_timestamp is not None:
+                event_data["first_seen_relative"] = event.first_seen_timestamp - reference_timestamp
+                event_data["last_seen_relative"] = event.last_seen_timestamp - reference_timestamp
 
             if event.frame_count >= frame_threshold:
                 logged_events[str(tracker_id)] = event_data

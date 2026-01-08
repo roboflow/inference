@@ -5,6 +5,7 @@ import supervision as sv
 
 from inference.core.workflows.core_steps.analytics.detection_event_log.v1 import (
     DetectionEventLogBlockV1,
+    MAX_VIDEOS,
 )
 from inference.core.workflows.execution_engine.entities.base import (
     ImageParentMetadata,
@@ -389,3 +390,213 @@ def test_new_tracker_added_mid_stream() -> None:
     assert result["event_log"]["pending"]["1"]["frame_count"] == 2
     assert result["event_log"]["pending"]["2"]["frame_count"] == 1
     assert result["event_log"]["pending"]["2"]["first_seen_frame"] == 2
+
+
+def test_no_relative_timestamps_without_reference() -> None:
+    """Test that relative timestamps are not included when reference_timestamp is None."""
+    # Given
+    block = DetectionEventLogBlockV1()
+    image_data = create_workflow_image_data(frame_number=1)
+    detections = create_detections([1], ["dog"])
+
+    # When
+    result = block.run(
+        image=image_data,
+        detections=detections,
+        frame_threshold=5,
+        flush_interval=30,
+        stale_frames=300,
+        reference_timestamp=None,
+    )
+
+    # Then
+    event = result["event_log"]["pending"]["1"]
+    assert "first_seen_relative" not in event
+    assert "last_seen_relative" not in event
+
+
+def test_relative_timestamps_with_reference() -> None:
+    """Test that relative timestamps are calculated correctly with reference_timestamp."""
+    # Given
+    block = DetectionEventLogBlockV1()
+    fps = 30.0
+    frame_number = 90  # timestamp = 90/30 = 3.0 seconds
+    reference_timestamp = 1.0  # reference is 1 second
+    image_data = create_workflow_image_data(frame_number=frame_number, fps=fps)
+    detections = create_detections([1], ["dog"])
+
+    # When
+    result = block.run(
+        image=image_data,
+        detections=detections,
+        frame_threshold=5,
+        flush_interval=30,
+        stale_frames=300,
+        reference_timestamp=reference_timestamp,
+    )
+
+    # Then
+    event = result["event_log"]["pending"]["1"]
+    # first_seen_timestamp = 90/30 = 3.0
+    # first_seen_relative = 3.0 - 1.0 = 2.0
+    assert event["first_seen_relative"] == pytest.approx(2.0)
+    assert event["last_seen_relative"] == pytest.approx(2.0)
+
+
+def test_relative_timestamps_update_over_frames() -> None:
+    """Test that last_seen_relative updates as object is tracked across frames."""
+    # Given
+    block = DetectionEventLogBlockV1()
+    fps = 30.0
+    reference_timestamp = 0.0
+
+    # When - run 3 frames
+    for frame in [30, 60, 90]:  # timestamps: 1.0, 2.0, 3.0 seconds
+        image_data = create_workflow_image_data(frame_number=frame, fps=fps)
+        detections = create_detections([1], ["dog"])
+        result = block.run(
+            image=image_data,
+            detections=detections,
+            frame_threshold=5,
+            flush_interval=30,
+            stale_frames=300,
+            reference_timestamp=reference_timestamp,
+        )
+
+    # Then
+    event = result["event_log"]["pending"]["1"]
+    assert event["first_seen_relative"] == pytest.approx(1.0)  # frame 30 / 30 fps
+    assert event["last_seen_relative"] == pytest.approx(3.0)   # frame 90 / 30 fps
+
+
+def test_relative_timestamps_in_logged_events() -> None:
+    """Test that relative timestamps are included in logged events."""
+    # Given
+    block = DetectionEventLogBlockV1()
+    fps = 30.0
+    reference_timestamp = 0.0
+    frame_threshold = 3
+
+    # When - run enough frames to log the event
+    for frame in [30, 60, 90]:
+        image_data = create_workflow_image_data(frame_number=frame, fps=fps)
+        detections = create_detections([1], ["dog"])
+        result = block.run(
+            image=image_data,
+            detections=detections,
+            frame_threshold=frame_threshold,
+            flush_interval=30,
+            stale_frames=300,
+            reference_timestamp=reference_timestamp,
+        )
+
+    # Then
+    assert result["total_logged"] == 1
+    event = result["event_log"]["logged"]["1"]
+    assert event["first_seen_relative"] == pytest.approx(1.0)
+    assert event["last_seen_relative"] == pytest.approx(3.0)
+
+
+def test_negative_relative_timestamps() -> None:
+    """Test that relative timestamps can be negative if event is before reference."""
+    # Given
+    block = DetectionEventLogBlockV1()
+    fps = 30.0
+    frame_number = 30  # timestamp = 1.0 seconds
+    reference_timestamp = 5.0  # reference is 5 seconds (after the event)
+    image_data = create_workflow_image_data(frame_number=frame_number, fps=fps)
+    detections = create_detections([1], ["dog"])
+
+    # When
+    result = block.run(
+        image=image_data,
+        detections=detections,
+        frame_threshold=5,
+        flush_interval=30,
+        stale_frames=300,
+        reference_timestamp=reference_timestamp,
+    )
+
+    # Then
+    event = result["event_log"]["pending"]["1"]
+    # first_seen_timestamp = 30/30 = 1.0
+    # first_seen_relative = 1.0 - 5.0 = -4.0
+    assert event["first_seen_relative"] == pytest.approx(-4.0)
+    assert event["last_seen_relative"] == pytest.approx(-4.0)
+
+
+def test_oldest_video_evicted_when_max_exceeded() -> None:
+    """Test that oldest video is evicted when MAX_VIDEOS is exceeded."""
+    # Given
+    block = DetectionEventLogBlockV1()
+
+    # When - add MAX_VIDEOS + 1 different video streams
+    for i in range(MAX_VIDEOS + 1):
+        video_id = f"vid_{i}"
+        image_data = create_workflow_image_data(video_id=video_id, frame_number=1)
+        detections = create_detections([1], ["dog"])
+        block.run(
+            image=image_data,
+            detections=detections,
+            frame_threshold=5,
+            flush_interval=30,
+            stale_frames=300,
+        )
+
+    # Then - should only have MAX_VIDEOS entries
+    assert len(block._event_logs) == MAX_VIDEOS
+    assert len(block._last_access) == MAX_VIDEOS
+    assert len(block._frame_count) == MAX_VIDEOS
+
+    # The oldest video (vid_0) should be evicted
+    assert "vid_0" not in block._event_logs
+    # The most recent video should still be present
+    assert f"vid_{MAX_VIDEOS}" in block._event_logs
+
+
+def test_recently_accessed_video_not_evicted() -> None:
+    """Test that recently accessed videos are not evicted."""
+    # Given
+    block = DetectionEventLogBlockV1()
+
+    # Add MAX_VIDEOS videos
+    for i in range(MAX_VIDEOS):
+        video_id = f"vid_{i}"
+        image_data = create_workflow_image_data(video_id=video_id, frame_number=1)
+        detections = create_detections([1], ["dog"])
+        block.run(
+            image=image_data,
+            detections=detections,
+            frame_threshold=5,
+            flush_interval=30,
+            stale_frames=300,
+        )
+
+    # Access vid_0 again to make it recent
+    image_data = create_workflow_image_data(video_id="vid_0", frame_number=2)
+    detections = create_detections([1], ["dog"])
+    block.run(
+        image=image_data,
+        detections=detections,
+        frame_threshold=5,
+        flush_interval=30,
+        stale_frames=300,
+    )
+
+    # When - add a new video that exceeds the limit
+    image_data = create_workflow_image_data(video_id="vid_new", frame_number=1)
+    detections = create_detections([1], ["cat"])
+    block.run(
+        image=image_data,
+        detections=detections,
+        frame_threshold=5,
+        flush_interval=30,
+        stale_frames=300,
+    )
+
+    # Then - vid_0 should still be present (was recently accessed)
+    assert "vid_0" in block._event_logs
+    # vid_1 should be evicted (oldest after vid_0 was re-accessed)
+    assert "vid_1" not in block._event_logs
+    # New video should be present
+    assert "vid_new" in block._event_logs
