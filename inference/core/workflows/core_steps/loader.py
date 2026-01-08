@@ -142,9 +142,6 @@ from inference.core.workflows.core_steps.formatters.expression.v1 import (
 from inference.core.workflows.core_steps.formatters.first_non_empty_or_default.v1 import (
     FirstNonEmptyOrDefaultBlockV1,
 )
-from inference.core.workflows.core_steps.formatters.hello_world.v1 import (
-    HelloWorldBlockV1,
-)
 from inference.core.workflows.core_steps.formatters.json_parser.v1 import (
     JSONParserBlockV1,
 )
@@ -633,7 +630,6 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         DimensionCollapseBlockV1,
         DetectionsListRollUpBlockV1,
         FirstNonEmptyOrDefaultBlockV1,
-        HelloWorldBlockV1,
         AnthropicClaudeBlockV1,
         AnthropicClaudeBlockV2,
         CosineSimilarityBlockV1,
