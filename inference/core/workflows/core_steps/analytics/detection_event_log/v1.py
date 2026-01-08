@@ -1,6 +1,7 @@
 import logging
 from dataclasses import asdict, dataclass
 from typing import Any, Dict, List, Literal, Optional, Type, Union
+import heapq
 
 logger = logging.getLogger(__name__)
 
@@ -167,6 +168,8 @@ class DetectionEventLogBlockV1(WorkflowBlock):
         self._frame_count: Dict[str, int] = {}
         # Dict[video_id, last_access_frame] - tracks when each video was last accessed (global frame count)
         self._last_access: Dict[str, int] = {}
+        # Min-heap of (last_access_frame, video_id) for efficient eviction
+        self._access_heap: list = []
         # Global frame counter for tracking video access order
         self._global_frame: int = 0
 
@@ -185,14 +188,17 @@ class DetectionEventLogBlockV1(WorkflowBlock):
         if len(self._event_logs) <= MAX_VIDEOS:
             return
 
-        # Find the video with the oldest last access time
-        oldest_video_id = min(self._last_access, key=self._last_access.get)
+        # Pop from heap until we find a valid video (handles stale entries)
+        while self._access_heap:
+            _, oldest_video_id = heapq.heappop(self._access_heap)
 
-        # Remove all data for this video
-        self._event_logs.pop(oldest_video_id, None)
-        self._last_flush_frame.pop(oldest_video_id, None)
-        self._frame_count.pop(oldest_video_id, None)
-        self._last_access.pop(oldest_video_id, None)
+            if oldest_video_id in self._event_logs:
+                # Remove all data for this video
+                self._event_logs.pop(oldest_video_id, None)
+                self._last_flush_frame.pop(oldest_video_id, None)
+                self._frame_count.pop(oldest_video_id, None)
+                self._last_access.pop(oldest_video_id, None)
+                break
 
     def _remove_stale_events(
         self,
