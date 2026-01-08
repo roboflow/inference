@@ -91,11 +91,23 @@ class OPCUAConnectionManager:
         user_name: Optional[str],
         password: Optional[str],
         timeout: int,
+        session_timeout_seconds: int = 3600,
+        secure_channel_lifetime_seconds: int = 3600,
     ) -> Client:
         """Create and configure a new OPC UA client using the shared ThreadLoop."""
         logger.debug(f"OPC UA Connection Manager creating client for {url}")
         tloop = self._get_tloop()
         client = Client(url=url, tloop=tloop, sync_wrapper_timeout=timeout)
+
+        # Set session timeout and secure channel lifetime (convert seconds to milliseconds)
+        client.session_timeout = session_timeout_seconds * 1000
+        client.secure_channel_timeout = secure_channel_lifetime_seconds * 1000
+        logger.debug(
+            f"OPC UA Connection Manager set session_timeout={client.session_timeout}ms "
+            f"({session_timeout_seconds}s), secure_channel_timeout={client.secure_channel_timeout}ms "
+            f"({secure_channel_lifetime_seconds}s)"
+        )
+
         if user_name and password:
             client.set_user(user_name)
             client.set_password(password)
@@ -203,6 +215,8 @@ class OPCUAConnectionManager:
         timeout: int,
         max_retries: int = 1,
         base_backoff: float = 0.0,
+        session_timeout_seconds: int = 3600,
+        secure_channel_lifetime_seconds: int = 3600,
     ) -> Client:
         """
         Get a connection from the pool or create a new one.
@@ -217,6 +231,8 @@ class OPCUAConnectionManager:
             timeout: Connection timeout in seconds
             max_retries: Maximum number of connection attempts (default 1)
             base_backoff: Base delay between retries (default 0)
+            session_timeout_seconds: Session timeout in seconds (default 3600)
+            secure_channel_lifetime_seconds: Secure channel lifetime in seconds (default 3600)
 
         Returns:
             A connected OPC UA client
@@ -246,7 +262,14 @@ class OPCUAConnectionManager:
 
             # Create new connection
             try:
-                client = self._create_client(url, user_name, password, timeout)
+                client = self._create_client(
+                    url,
+                    user_name,
+                    password,
+                    timeout,
+                    session_timeout_seconds,
+                    secure_channel_lifetime_seconds,
+                )
                 self._connect_with_retry(client, url, max_retries, base_backoff)
 
                 # Success - clear any failure record and store in pool
@@ -403,8 +426,10 @@ from inference.core.workflows.prototypes.block import (
 
 BLOCK_TYPE = "roboflow_enterprise/opc_writer_sink@v1"
 LONG_DESCRIPTION = """
-The **OPC UA Writer** block enables you to write data to a variable on an OPC UA server, leveraging the 
+The **OPC UA Writer** block enables you to write data to a variable on an OPC UA server, leveraging the
 [asyncua](https://github.com/FreeOpcUa/opcua-asyncio) library for seamless communication.
+
+For complete documentation, see the [OPC UA Writer Block Reference](https://inference.roboflow.com/reference/inference/enterprise/workflows/enterprise_blocks/sinks/opc_writer/v1/).
 
 ### Supported Data Types
 This block supports writing the following data types to OPC UA server variables:
@@ -468,6 +493,14 @@ The block includes configurable retry logic with exponential backoff for handlin
 
 **Note:** Authentication errors (wrong username/password) are not retried as they will continue to fail.
 
+### Session and Channel Timeouts
+The block allows configuration of OPC UA session and secure channel timeouts:
+
+- `session_timeout_seconds`: Controls how long the OPC UA session remains active without communication (default: 3600 seconds / 1 hour)
+- `secure_channel_lifetime_seconds`: Controls how long the secure channel remains valid before needing renewal (default: 3600 seconds / 1 hour)
+
+These parameters allow you to adjust the connection behavior based on your server requirements and network conditions.
+
 ### Cooldown Limitations
 !!! warning "Cooldown Limitations"
     The cooldown feature is optimized for workflows involving video processing.
@@ -505,7 +538,7 @@ class BlockManifest(WorkflowBlockManifest):
         json_schema_extra={
             "name": "OPC UA Writer Sink",
             "version": "v1",
-            "short_description": "Writes data to an OPC UA server using the [asyncua](https://github.com/FreeOpcUa/opcua-asyncio) library for communication.",
+            "short_description": "Writes data to an OPC UA server using the [asyncua](https://inference.roboflow.com/reference/inference/enterprise/workflows/enterprise_blocks/sinks/opc_writer/v1/) library for communication.",
             "long_description": LONG_DESCRIPTION,
             "license": "Roboflow Enterprise License",
             "block_type": "sink",
@@ -516,6 +549,7 @@ class BlockManifest(WorkflowBlockManifest):
                 "enterprise_only": True,
                 "local_only": True,
             },
+            "docs": "https://inference.roboflow.com/reference/inference/enterprise/workflows/enterprise_blocks/sinks/opc_writer/v1/",
         }
     )
     type: Literal[BLOCK_TYPE]
@@ -587,6 +621,18 @@ class BlockManifest(WorkflowBlockManifest):
         default=2,
         description="The number of seconds to wait for a response from the OPC UA server before timing out.",
         examples=[10, "$inputs.timeout"],
+    )
+    session_timeout_seconds: Union[int, Selector(kind=[INTEGER_KIND])] = Field(
+        default=3600,
+        description="The session timeout in seconds. This controls how long the OPC UA session remains active without communication. Default is 3600 seconds (1 hour).",
+        examples=[1800, 3600, 7200, "$inputs.session_timeout_seconds"],
+        ge=1,
+    )
+    secure_channel_lifetime_seconds: Union[int, Selector(kind=[INTEGER_KIND])] = Field(
+        default=3600,
+        description="The secure channel lifetime in seconds. This controls how long the secure channel remains valid before needing renewal. Default is 3600 seconds (1 hour).",
+        examples=[1800, 3600, 7200, "$inputs.secure_channel_lifetime_seconds"],
+        ge=1,
     )
     fire_and_forget: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(
         default=True,
@@ -688,6 +734,8 @@ class OPCWriterSinkBlockV1(WorkflowBlock):
             "UInt64",
         ] = "String",
         timeout: int = 2,
+        session_timeout_seconds: int = 3600,
+        secure_channel_lifetime_seconds: int = 3600,
         fire_and_forget: bool = True,
         disable_sink: bool = False,
         cooldown_seconds: int = 5,
@@ -739,6 +787,8 @@ class OPCWriterSinkBlockV1(WorkflowBlock):
             value=decoded_value,
             value_type=value_type,
             timeout=timeout,
+            session_timeout_seconds=session_timeout_seconds,
+            secure_channel_lifetime_seconds=secure_channel_lifetime_seconds,
             node_lookup_mode=node_lookup_mode,
             max_retries=max_retries,
             retry_backoff_seconds=retry_backoff_seconds,
@@ -824,6 +874,8 @@ def opc_connect_and_write_value(
     value_type: str = "String",
     max_retries: int = 1,
     retry_backoff_seconds: float = 0.0,
+    session_timeout_seconds: int = 3600,
+    secure_channel_lifetime_seconds: int = 3600,
 ) -> Tuple[bool, str]:
     """
     Connect to OPC UA server and write a value using connection pooling.
@@ -845,6 +897,8 @@ def opc_connect_and_write_value(
         value_type: OPC UA data type for the value
         max_retries: Maximum number of connection attempts (default 1 = no retries)
         retry_backoff_seconds: Base delay between retries (default 0 = no delay)
+        session_timeout_seconds: Session timeout in seconds (default 3600)
+        secure_channel_lifetime_seconds: Secure channel lifetime in seconds (default 3600)
 
     Returns:
         Tuple of (error_status, message)
@@ -864,6 +918,8 @@ def opc_connect_and_write_value(
             timeout=timeout,
             max_retries=max_retries,
             base_backoff=retry_backoff_seconds,
+            session_timeout_seconds=session_timeout_seconds,
+            secure_channel_lifetime_seconds=secure_channel_lifetime_seconds,
         )
 
         # Perform the write operation
