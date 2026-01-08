@@ -37,8 +37,8 @@ class DetectionEvent:
     class_name: str
     first_seen_frame: int
     first_seen_timestamp: float
-    most_recent_frame: int
-    most_recent_timestamp: float
+    last_seen_frame: int
+    last_seen_timestamp: float
     frame_count: int = 1
     logged: bool = False
 
@@ -51,7 +51,7 @@ class BlockManifest(WorkflowBlockManifest):
             "short_description": "Tracks detection events over time, logging when objects first appear and persist.",
             "long_description": (
                 "This block maintains a log of detection events from tracked objects. "
-                "It records when each object was first seen, its class, and the most recent time it was seen. "
+                "It records when each object was first seen, its class, and the last time it was seen."
                 "Objects must be seen for a minimum number of frames (frame_threshold) before being logged. "
                 "Stale events (not seen for stale_frames) are removed during periodic cleanup (every flush_interval frames)."
             ),
@@ -134,7 +134,7 @@ class DetectionEventLogBlockV1(WorkflowBlock):
 
     Maintains a dictionary of tracked objects with:
     - First seen timestamp and frame
-    - Most recent timestamp and frame
+    - Last seen timestamp and frame
     - Class name
     - Frame count (number of frames the object has been seen)
 
@@ -179,7 +179,7 @@ class DetectionEventLogBlockV1(WorkflowBlock):
         removed_events = []
 
         for tracker_id, event in event_log.items():
-            frames_since_seen = current_frame - event.most_recent_frame
+            frames_since_seen = current_frame - event.last_seen_frame
             if frames_since_seen > stale_frames:
                 stale_tracker_ids.append(tracker_id)
                 removed_events.append(event)
@@ -219,7 +219,7 @@ class DetectionEventLogBlockV1(WorkflowBlock):
             self._last_flush_frame[video_id] = current_frame
             for event in removed_events:
                 if event.logged:
-                    print(f"[Detection Event Log] Removed stale object {event.tracker_id} ({event.class_name}) - not seen for {current_frame - event.most_recent_frame} frames")
+                    print(f"[Detection Event Log] Removed stale object {event.tracker_id} ({event.class_name}) - not seen for {current_frame - event.last_seen_frame} frames")
 
         # Process detections
         if detections.tracker_id is None or len(detections.tracker_id) == 0:
@@ -245,8 +245,8 @@ class DetectionEventLogBlockV1(WorkflowBlock):
             if tracker_id in event_log:
                 # Update existing event
                 event = event_log[tracker_id]
-                event.most_recent_frame = current_frame
-                event.most_recent_timestamp = current_time
+                event.last_seen_frame = current_frame
+                event.last_seen_timestamp = current_time
                 event.frame_count += 1
 
                 # Mark as logged once threshold is reached
@@ -260,8 +260,8 @@ class DetectionEventLogBlockV1(WorkflowBlock):
                     class_name=class_name,
                     first_seen_frame=current_frame,
                     first_seen_timestamp=current_time,
-                    most_recent_frame=current_frame,
-                    most_recent_timestamp=current_time,
+                    last_seen_frame=current_frame,
+                    last_seen_timestamp=current_time,
                     frame_count=1,
                     logged=False,
                 )
@@ -293,8 +293,8 @@ class DetectionEventLogBlockV1(WorkflowBlock):
                 "class_name": event.class_name,
                 "first_seen_frame": event.first_seen_frame,
                 "first_seen_timestamp": event.first_seen_timestamp,
-                "most_recent_frame": event.most_recent_frame,
-                "most_recent_timestamp": event.most_recent_timestamp,
+                "last_seen_frame": event.last_seen_frame,
+                "last_seen_timestamp": event.last_seen_timestamp,
                 "frame_count": event.frame_count,
             }
 
