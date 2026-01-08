@@ -234,9 +234,6 @@ class DetectionEventLogBlockV1(WorkflowBlock):
         self._global_frame += 1
         self._last_access[video_id] = self._global_frame
 
-        # Evict oldest video if we've exceeded MAX_VIDEOS
-        self._evict_oldest_video()
-
         # Increment internal frame counter
         current_frame = self._frame_count.get(video_id, 0) + 1
         self._frame_count[video_id] = current_frame
@@ -245,6 +242,9 @@ class DetectionEventLogBlockV1(WorkflowBlock):
 
         # Initialize event log for this video if needed
         event_log = self._event_logs.setdefault(video_id, {})
+
+        # Evict oldest video if we've exceeded MAX_VIDEOS (after adding current video)
+        self._evict_oldest_video()
 
         # Initialize last flush frame if not set
         if video_id not in self._last_flush_frame:
