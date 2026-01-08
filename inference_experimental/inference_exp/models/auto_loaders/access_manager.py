@@ -2,6 +2,8 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Optional
 
+from inference_exp.models.auto_loaders.entities import AnyModel
+
 
 @dataclass(frozen=True)
 class AccessIdentifiers:
@@ -10,7 +12,7 @@ class AccessIdentifiers:
     api_key: Optional[str]
 
 
-class ModelStorageManager(ABC):
+class ModelAccessManager(ABC):
 
     @abstractmethod
     def on_model_access_forbidden(self, model_id: str, api_key: Optional[str]) -> None:
@@ -18,7 +20,7 @@ class ModelStorageManager(ABC):
 
     @abstractmethod
     def on_model_package_access_granted(
-        self, dir_path: str, access_identifiers: AccessIdentifiers
+        self, access_identifiers: AccessIdentifiers
     ) -> None:
         pass
 
@@ -62,14 +64,46 @@ class ModelStorageManager(ABC):
     ) -> bool:
         pass
 
+    @abstractmethod
+    def retrieve_model_instance(
+        self,
+        model_id: str,
+        package_id: Optional[str],
+        api_key: Optional[str],
+        loading_parameter_digest: Optional[str],
+    ) -> Optional[AnyModel]:
+        pass
 
-class LiberalModelStorageManager(ModelStorageManager):
+    @abstractmethod
+    def on_model_loaded(
+        self,
+        model: AnyModel,
+        access_identifiers: AccessIdentifiers,
+        model_storage_path: str,
+    ) -> None:
+        pass
+
+    @abstractmethod
+    def on_model_alias_discovered(self, alias: str, model_id: str) -> None:
+        pass
+
+    @abstractmethod
+    def on_model_dependency_discovered(
+        self,
+        base_model_id: str,
+        base_model_package_id: Optional[str],
+        dependent_model_id: str,
+    ) -> None:
+        pass
+
+
+class LiberalModelAccessManager(ModelAccessManager):
 
     def on_model_access_forbidden(self, model_id: str, api_key: Optional[str]) -> None:
         pass
 
     def on_model_package_access_granted(
-        self, dir_path: str, access_identifiers: AccessIdentifiers
+        self, access_identifiers: AccessIdentifiers
     ) -> None:
         pass
 
@@ -104,3 +138,31 @@ class LiberalModelStorageManager(ModelStorageManager):
         self, model_id: str, package_id: str, api_key: Optional[str]
     ) -> bool:
         return True
+
+    def retrieve_model_instance(
+        self,
+        model_id: str,
+        package_id: Optional[str],
+        api_key: Optional[str],
+        loading_parameter_digest: Optional[str],
+    ) -> Optional[AnyModel]:
+        return None
+
+    def on_model_loaded(
+        self,
+        model: AnyModel,
+        access_identifiers: AccessIdentifiers,
+        model_storage_path: str,
+    ) -> None:
+        pass
+
+    def on_model_alias_discovered(self, alias: str, model_id: str) -> None:
+        pass
+
+    def on_model_dependency_discovered(
+        self,
+        base_model_id: str,
+        base_model_package_id: Optional[str],
+        dependent_model_id: str,
+    ) -> None:
+        pass

@@ -28,6 +28,7 @@ class WebRTCConfig(BaseModel):
 class WebRTCWorkerRequest(BaseModel):
     api_key: Optional[str] = None
     workflow_configuration: WorkflowConfiguration
+    is_preview: bool = False
     webrtc_offer: WebRTCOffer
     webrtc_config: Optional[WebRTCConfig] = None
     # TODO: to be removed, replaced with webrtc_config
@@ -39,9 +40,7 @@ class WebRTCWorkerRequest(BaseModel):
     data_output: Optional[List[str]] = Field(default=None)
     declared_fps: Optional[float] = None
     rtsp_url: Optional[str] = None
-    use_data_channel_frames: bool = (
-        False  # When True, expect frames via data channel instead of media track
-    )
+    mjpeg_url: Optional[str] = None
     processing_timeout: Optional[int] = WEBRTC_MODAL_FUNCTION_TIME_LIMIT
     processing_session_started: Optional[datetime.datetime] = None
     requested_plan: Optional[str] = "webrtc-gpu-small"

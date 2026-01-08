@@ -8,12 +8,12 @@ from inference_exp.models.auto_loaders.constants import (
     NMS_IOU_THRESHOLD_KEY,
     NMS_MAX_DETECTIONS_KEY,
 )
+from inference_exp.models.auto_loaders.entities import BackendType
 from inference_exp.models.auto_loaders.utils import (
     filter_available_devices_with_selected_device,
 )
 from inference_exp.runtime_introspection.core import x_ray_runtime_environment
 from inference_exp.weights_providers.entities import (
-    BackendType,
     JetsonEnvironmentRequirements,
     ModelPackageMetadata,
     Quantization,
@@ -77,9 +77,9 @@ def rank_model_packages(
         )
         sorting_features.append(
             (
-                model_package.trusted_source,
                 BACKEND_PRIORITY.get(model_package.backend, 0),
                 QUANTIZATION_PRIORITY.get(model_package.quantization, 0),
+                model_package.trusted_source,
                 BATCH_SIZE_PRIORITY[batch_mode],
                 static_batch_size_score,  # the bigger statis batch size, the worse - requires padding
                 retrieve_onnx_opset_score(

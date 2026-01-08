@@ -1,5 +1,6 @@
 import json
 import os
+import tarfile
 
 import torch
 from peft import LoraConfig, PeftModel
@@ -10,8 +11,11 @@ from transformers import (
     Qwen2_5_VLConfig,
     Qwen2_5_VLForConditionalGeneration,
 )
+from transformers.utils import is_flash_attn_2_available
 
+from inference.core.cache.model_artifacts import get_cache_dir, get_cache_file_path
 from inference.core.env import DEVICE, HUGGINGFACE_TOKEN, MODEL_CACHE_DIR
+from inference.core.roboflow_api import get_roboflow_base_lora, stream_url_to_cache
 from inference.models.transformers import LoRATransformerModel, TransformerModel
 
 AutoModelForCausalLM.register(
@@ -55,7 +59,7 @@ class Qwen25VL(TransformerModel):
     generation_includes_input = True
     transformers_class = AutoModelForCausalLM
     default_dtype = torch.bfloat16
-    skip_special_tokens = False
+    skip_special_tokens = True
 
     default_system_prompt = (
         "You are a Qwen2.5-VL model that can answer questions about any image."
@@ -70,21 +74,8 @@ class Qwen25VL(TransformerModel):
         use_quantization=True,
         **kwargs,
     ):
-        super().__init__(model_id, *args, **kwargs)
-        self.huggingface_token = huggingface_token
-        if self.needs_hf_token and self.huggingface_token is None:
-            raise RuntimeError(
-                "Must set environment variable HUGGINGFACE_TOKEN to load LoRA "
-                "(or pass huggingface_token to this __init__)"
-            )
-        self.dtype = dtype
-        if self.dtype is None:
-            self.dtype = self.default_dtype
-        self.cache_model_artefacts(**kwargs)
-
-        self.cache_dir = os.path.join(MODEL_CACHE_DIR, self.endpoint + "/")
         self.use_quantization = use_quantization
-        self.initialize_model(**kwargs)
+        super().__init__(model_id, *args, **kwargs)
 
     def initialize_model(self, **kwargs):
         config_file = os.path.join(self.cache_dir, "adapter_config.json")
@@ -119,8 +110,16 @@ class Qwen25VL(TransformerModel):
             revision = None
             token = None
 
-        files_folder = MODEL_CACHE_DIR + "lora-bases/qwen/qwen25vl-7b/main/"
+        files_folder = os.path.join(
+            MODEL_CACHE_DIR, "lora-bases/qwen/qwen25vl-7b/main/"
+        )
         _patch_preprocessor_config(files_folder)
+
+        attn_implementation = (
+            "flash_attention_2"
+            if (is_flash_attn_2_available() and DEVICE and "cuda" in DEVICE)
+            else "eager"
+        )
 
         if self.use_quantization:
             self.base_model = self.transformers_class.from_pretrained(
@@ -130,6 +129,7 @@ class Qwen25VL(TransformerModel):
                 cache_dir=cache_dir,
                 token=token,
                 quantization_config=bnb_config,
+                attn_implementation=attn_implementation,
             )
         else:
             self.base_model = self.transformers_class.from_pretrained(
@@ -138,8 +138,12 @@ class Qwen25VL(TransformerModel):
                 device_map=DEVICE,
                 cache_dir=cache_dir,
                 token=token,
+                attn_implementation=attn_implementation,
             )
-        self.model = self.base_model.eval().to(self.dtype)
+        if self.use_quantization:
+            self.model = self.base_model.eval()
+        else:
+            self.model = self.base_model.eval().to(self.dtype)
 
         preprocessor_config_path = os.path.join(self.cache_dir, "chat_template.json")
         with open(preprocessor_config_path, "r") as f:
@@ -153,14 +157,43 @@ class Qwen25VL(TransformerModel):
             chat_template=chat_template,
         )
 
+    def get_lora_base_from_roboflow(self, repo, revision) -> str:
+        base_dir = os.path.join("lora-bases", repo, revision)
+        cache_dir = get_cache_dir(base_dir)
+        if os.path.exists(cache_dir):
+            return cache_dir
+        api_data = get_roboflow_base_lora(self.api_key, repo, revision, self.device_id)
+        if "weights" not in api_data:
+            raise RuntimeError(
+                "`weights` key not available in Roboflow API response while downloading model weights."
+            )
+
+        weights_url = api_data["weights"]["model"]
+        filename = weights_url.split("?")[0].split("/")[-1]
+        assert filename.endswith("tar.gz")
+        stream_url_to_cache(
+            url=weights_url,
+            filename=filename,
+            model_id=base_dir,
+        )
+        tar_file_path = get_cache_file_path(filename, base_dir)
+        with tarfile.open(tar_file_path, "r:gz") as tar:
+            tar.extractall(path=cache_dir)
+
+        return cache_dir
+
     def predict(self, image_in: Image.Image, prompt=None, **kwargs):
-        split_prompt = prompt.split("<system_prompt>")
-        if len(split_prompt) == 1:
-            prompt = split_prompt[0]
+        if prompt is None:
+            prompt = "Describe what's in this image."
             system_prompt = self.default_system_prompt
         else:
-            prompt = split_prompt[0]
-            system_prompt = split_prompt[1]
+            split_prompt = prompt.split("<system_prompt>")
+            if len(split_prompt) == 1:
+                prompt = split_prompt[0] or "Describe what's in this image."
+                system_prompt = self.default_system_prompt
+            else:
+                prompt = split_prompt[0] or "Describe what's in this image."
+                system_prompt = split_prompt[1] or self.default_system_prompt
 
         conversation = [
             {
@@ -171,7 +204,7 @@ class Qwen25VL(TransformerModel):
                 "role": "user",
                 "content": [
                     {"type": "image", "image": image_in},
-                    {"type": "text", "text": prompt or ""},
+                    {"type": "text", "text": prompt},
                 ],
             },
         ]
@@ -202,7 +235,7 @@ class Qwen25VL(TransformerModel):
                 bos_token_id=self.processor.tokenizer.bos_token_id,
             )
 
-        if not self.generation_includes_input:
+        if self.generation_includes_input:
             generation = generation[:, input_len:]
 
         decoded = self.processor.decode(
@@ -275,6 +308,12 @@ class LoRAQwen25VL(LoRATransformerModel):
         )
         _patch_preprocessor_config(files_folder)
 
+        attn_implementation = (
+            "flash_attention_2"
+            if (is_flash_attn_2_available() and DEVICE and "cuda" in DEVICE)
+            else "eager"
+        )
+
         if self.use_quantization:
             self.base_model = self.transformers_class.from_pretrained(
                 model_load_id,
@@ -283,6 +322,7 @@ class LoRAQwen25VL(LoRATransformerModel):
                 cache_dir=cache_dir,
                 token=token,
                 quantization_config=bnb_config,
+                attn_implementation=attn_implementation,
             )
         else:
             self.base_model = self.transformers_class.from_pretrained(
@@ -291,16 +331,25 @@ class LoRAQwen25VL(LoRATransformerModel):
                 device_map=DEVICE,
                 cache_dir=cache_dir,
                 token=token,
+                attn_implementation=attn_implementation,
             )
 
         if model_load_id != "qwen-pretrains/1":
-            self.model = (
-                PeftModel.from_pretrained(self.base_model, self.cache_dir)
-                .eval()
-                .to(self.dtype)
-            )
+            if self.use_quantization:
+                self.model = PeftModel.from_pretrained(
+                    self.base_model, self.cache_dir
+                ).eval()
+            else:
+                self.model = (
+                    PeftModel.from_pretrained(self.base_model, self.cache_dir)
+                    .eval()
+                    .to(self.dtype)
+                )
         else:
-            self.model = self.base_model.eval().to(self.dtype)
+            if self.use_quantization:
+                self.model = self.base_model.eval()
+            else:
+                self.model = self.base_model.eval().to(self.dtype)
 
         self.model.merge_and_unload()
         preprocessor_config_path = os.path.join(self.cache_dir, "chat_template.json")
@@ -319,16 +368,16 @@ class LoRAQwen25VL(LoRATransformerModel):
 
     def predict(self, image_in: Image.Image, prompt=None, **kwargs):
         if prompt is None:
-            prompt = ""
+            prompt = "Describe what's in this image."
             system_prompt = self.default_system_prompt
         else:
             split_prompt = prompt.split("<system_prompt>")
             if len(split_prompt) == 1:
-                prompt = split_prompt[0]
+                prompt = split_prompt[0] or "Describe what's in this image."
                 system_prompt = self.default_system_prompt
             else:
-                prompt = split_prompt[0]
-                system_prompt = split_prompt[1]
+                prompt = split_prompt[0] or "Describe what's in this image."
+                system_prompt = split_prompt[1] or self.default_system_prompt
 
         conversation = [
             {

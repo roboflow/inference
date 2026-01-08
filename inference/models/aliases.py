@@ -28,6 +28,7 @@ FLORENCE_ALIASES = {
 }
 QWEN_ALIASES = {
     "qwen25-vl-7b": "qwen-pretrains/1",
+    "qwen3vl-2b-instruct": "qwen-pretrains/2",
 }
 
 YOLOV11_ALIASES = {
@@ -56,12 +57,24 @@ SMOLVLM_ALIASES = {
     "smolvlm2": "smolvlm-2.2b-instruct",
 }
 
+SAM3_3D_ALIASES = {
+    "sam3-3d-objects": "sam3-3d-weights-vc6vz/1",
+}
+
 RFDETR_ALIASES = {
     "rfdetr-base": "coco/36",
     "rfdetr-large": "coco/37",
     "rfdetr-nano": "coco/38",
     "rfdetr-small": "coco/39",
     "rfdetr-medium": "coco/40",
+    "rfdetr-seg-preview": "coco-dataset-vdnr1/26",
+}
+
+CLASSIFICATION_ALIASES = {
+    "resnet18": "classifiers/1",
+    "resnet34": "classifiers/2",
+    "resnet50": "classifiers/3",
+    "resnet101": "classifiers/4",
 }
 
 REGISTERED_ALIASES = {
@@ -105,6 +118,8 @@ REGISTERED_ALIASES = {
     **YOLOV11_ALIASES,
     **QWEN_ALIASES,
     **RFDETR_ALIASES,
+    **CLASSIFICATION_ALIASES,
+    **SAM3_3D_ALIASES,
 }
 
 

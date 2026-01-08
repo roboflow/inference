@@ -2,18 +2,9 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import List, Optional, Set, Tuple, Union
 
+from inference_exp.models.auto_loaders.entities import BackendType
 from packaging.version import Version
-
-
-class BackendType(str, Enum):
-    TORCH = "torch"
-    TORCH_SCRIPT = "torch-script"
-    ONNX = "onnx"
-    TRT = "trt"
-    HF = "hugging-face"
-    ULTRALYTICS = "ultralytics"
-    MEDIAPIPE = "mediapipe"
-    CUSTOM = "custom"
+from pydantic import BaseModel, Field
 
 
 class Quantization(str, Enum):
@@ -151,6 +142,12 @@ class ModelPackageMetadata:
         )
 
 
+class ModelDependency(BaseModel):
+    name: str
+    model_id: str
+    model_package_id: Optional[str] = Field(default=None)
+
+
 @dataclass(frozen=True)
 class ModelMetadata:
     model_id: str
@@ -158,3 +155,4 @@ class ModelMetadata:
     model_packages: List[ModelPackageMetadata]
     task_type: Optional[str] = field(default=None)
     model_variant: Optional[str] = field(default=None)
+    model_dependencies: Optional[List[ModelDependency]] = field(default=None)

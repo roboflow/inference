@@ -2,9 +2,12 @@ from dataclasses import dataclass, field
 from typing import Dict, Optional, Set, Tuple, Union
 
 from inference_exp.errors import ModelImplementationLoaderError
-from inference_exp.models.auto_loaders.entities import ModelArchitecture, TaskType
+from inference_exp.models.auto_loaders.entities import (
+    BackendType,
+    ModelArchitecture,
+    TaskType,
+)
 from inference_exp.utils.imports import LazyClass
-from inference_exp.weights_providers.entities import BackendType
 
 OBJECT_DETECTION_TASK = "object-detection"
 INSTANCE_SEGMENTATION_TASK = "instance-segmentation"
@@ -19,6 +22,7 @@ STRUCTURED_OCR_TASK = "structured-ocr"
 TEXT_ONLY_OCR_TASK = "text-only-ocr"
 GAZE_DETECTION_TASK = "gaze-detection"
 OPEN_VOCABULARY_OBJECT_DETECTION_TASK = "open-vocabulary-object-detection"
+INTERACTIVE_INSTANCE_SEGMENTATION_TASK = "interactive-instance-segmentation"
 
 
 @dataclass(frozen=True)
@@ -242,6 +246,10 @@ REGISTERED_MODELS: Dict[
         module_name="inference_exp.models.qwen25vl.qwen25vl_hf",
         class_name="Qwen25VLHF",
     ),
+    ("qwen3vl", VLM_TASK, BackendType.HF): LazyClass(
+        module_name="inference_exp.models.qwen3vl.qwen3vl_hf",
+        class_name="Qwen3VLHF",
+    ),
     ("florence-2", VLM_TASK, BackendType.HF): LazyClass(
         module_name="inference_exp.models.florence2.florence2_hf",
         class_name="Florence2HF",
@@ -362,6 +370,10 @@ REGISTERED_MODELS: Dict[
         module_name="inference_exp.models.depth_anything_v2.depth_anything_v2_hf",
         class_name="DepthAnythingV2HF",
     ),
+    ("depth-anything-v3", DEPTH_ESTIMATION_TASK, BackendType.TORCH): LazyClass(
+        module_name="inference_exp.models.depth_anything_v3.depth_anything_v3_torch",
+        class_name="DepthAnythingV3Torch",
+    ),
     ("doctr", STRUCTURED_OCR_TASK, BackendType.TORCH): LazyClass(
         module_name="inference_exp.models.doctr.doctr_torch", class_name="DocTR"
     ),
@@ -392,6 +404,62 @@ REGISTERED_MODELS: Dict[
     ): LazyClass(
         module_name="inference_exp.models.grounding_dino.grounding_dino_torch",
         class_name="GroundingDinoForObjectDetectionTorch",
+    ),
+    (
+        "dinov3_probe",
+        MULTI_LABEL_CLASSIFICATION_TASK,
+        BackendType.ONNX,
+    ): LazyClass(
+        module_name="inference_exp.models.dinov3.dinov3_classification_onnx",
+        class_name="DinoV3ForMultiLabelClassificationOnnx",
+    ),
+    (
+        "dinov3_probe",
+        CLASSIFICATION_TASK,
+        BackendType.ONNX,
+    ): LazyClass(
+        module_name="inference_exp.models.dinov3.dinov3_classification_onnx",
+        class_name="DinoV3ForClassificationOnnx",
+    ),
+    (
+        "dinov3_probe",
+        MULTI_LABEL_CLASSIFICATION_TASK,
+        BackendType.TORCH,
+    ): LazyClass(
+        module_name="inference_exp.models.dinov3.dinov3_classification_torch",
+        class_name="DinoV3ForMultiLabelClassificationTorch",
+    ),
+    (
+        "dinov3_probe",
+        CLASSIFICATION_TASK,
+        BackendType.TORCH,
+    ): LazyClass(
+        module_name="inference_exp.models.dinov3.dinov3_classification_torch",
+        class_name="DinoV3ForClassificationTorch",
+    ),
+    (
+        "owlv2",
+        OPEN_VOCABULARY_OBJECT_DETECTION_TASK,
+        BackendType.HF,
+    ): LazyClass(
+        module_name="inference_exp.models.owlv2.owlv2_hf",
+        class_name="OWLv2HF",
+    ),
+    (
+        "roboflow-instant",
+        OBJECT_DETECTION_TASK,
+        BackendType.HF,
+    ): LazyClass(
+        module_name="inference_exp.models.roboflow_instant.roboflow_instant_hf",
+        class_name="RoboflowInstantHF",
+    ),
+    ("sam", INTERACTIVE_INSTANCE_SEGMENTATION_TASK, BackendType.TORCH): LazyClass(
+        module_name="inference_exp.models.sam.sam_torch",
+        class_name="SAMTorch",
+    ),
+    ("sam2", INTERACTIVE_INSTANCE_SEGMENTATION_TASK, BackendType.TORCH): LazyClass(
+        module_name="inference_exp.models.sam2.sam2_torch",
+        class_name="SAM2Torch",
     ),
 }
 

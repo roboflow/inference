@@ -1,6 +1,6 @@
 import pytest
+from inference_exp.models.auto_loaders.entities import BackendType
 from inference_exp.models.auto_loaders.models_registry import resolve_model_class
-from inference_exp.weights_providers.entities import BackendType
 
 
 @pytest.mark.onnx_extras

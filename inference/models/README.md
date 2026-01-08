@@ -4,6 +4,8 @@ The models supported by Roboflow Inference have their own licenses. View the lic
 |:--------------------------------------|:------------------------------------------------------------------------------------:|:----------------------------:|
 | `inference/models/clip`               | [MIT](https://github.com/openai/CLIP/blob/main/LICENSE)                              |              👍              |
 | `inference/models/doctr`              | [Apache 2.0](https://github.com/mindee/doctr/blob/main/LICENSE)                      |              👍              |
+| `inference/models/depth_anything_v2`  | [Apache 2.0](https://github.com/DepthAnything/Depth-Anything-V2/blob/main/LICENSE)          |              👍              |
+| `inference/models/depth_anything_v3`  | [Apache 2.0](https://github.com/ByteDance-Seed/depth-anything-3/blob/main/LICENSE)          |              👍              |
 | `inference/models/easy_ocr`           | [Apache 2.0](https://github.com/JaidedAI/EasyOCR/blob/master/LICENSE)                |              👍              |
 | `inference/models/florence2`          | [MIT](https://huggingface.co/microsoft/Florence-2-base/blob/main/LICENSE)            |              👍              |
 | `inference/models/gaze`               | [Apache 2.0 (Mediapipe)](https://github.com/google/mediapipe/blob/master/LICENSE), [MIT (L2Cs-Net)](https://github.com/Ahmednull/L2CS-Net/blob/main/LICENSE) |              👍              |
@@ -11,6 +13,7 @@ The models supported by Roboflow Inference have their own licenses. View the lic
 | `inference/models/owlv2`              | [Apache 2.0](https://github.com/google-research/scenic/blob/main/LICENSE)            |              👍              |
 | `inference/models/paligemma`          | [Apache 2.0](https://github.com/google-research/big_vision/blob/main/LICENSE), [Gemma](https://ai.google.dev/gemma/terms) |              👍              |
 | `inference/models/qwen25vl(7b)`       | [Apache 2.0](https://github.com/QwenLM/Qwen2.5-VL/blob/main/LICENSE)                 |              👍              |
+| `inference/models/qwen3vl(2b)`       | [Apache 2.0](https://github.com/QwenLM/Qwen3-VL/blob/main/LICENSE)                 |              👍              |
 | `inference/models/resnet`             | [Apache 2.0](https://github.com/huggingface/pytorch-image-models/blob/main/LICENSE)  |              👍              |
 | `inference/models/sam`                | [Apache 2.0](https://github.com/facebookresearch/segment-anything/blob/main/LICENSE) |              👍              |
 | `inference/models/sam2`               | [Apache 2.0](https://github.com/facebookresearch/sam2/blob/main/LICENSE)             |              👍              |
@@ -34,7 +37,7 @@ The models supported by Roboflow Inference have their own licenses. View the lic
 | `inference/models/moondream2`         | [Apache 2.0](https://github.com/vikhyat/moondream/blob/main/LICENSE)          |              👍              |
 | `inference/models/perception_encoder` | [Apache 2.0](https://github.com/facebookresearch/perception_models/blob/main/LICENSE.PE) |              👍              |
 | `inference/models/sam3`               | [SAM License](https://github.com/facebookresearch/sam3/blob/main/LICENSE) |               👍               |
-
+| `inference/models/sam3_3d`               | [SAM License](https://github.com/facebookresearch/sam-3d-objects/blob/main/LICENSE) |               👍               |
 ## Commercial Licenses
 
 Models listed with a 👍 above are permissively licensed for commercial use by default. Typically no additional license is needed.

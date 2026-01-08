@@ -1,6 +1,7 @@
 import base64
 import concurrent
 import os
+import re
 from concurrent.futures import CancelledError, Future, ThreadPoolExecutor
 from functools import partial
 from threading import Lock, Thread
@@ -1468,7 +1469,14 @@ class HttpInterface(BaseInterface):
             @with_route_exceptions_async
             async def initialise_webrtc_worker(
                 request: WebRTCWorkerRequest,
+                r: Request,
             ) -> InitializeWebRTCResponse:
+                if str(r.headers.get("origin")).lower() == BUILDER_ORIGIN.lower():
+                    if re.search(
+                        r"^https://[^.]+\.roboflow\.[^./]+/", str(r.url).lower()
+                    ):
+                        request.is_preview = True
+
                 logger.debug("Received initialise_webrtc_worker request")
                 worker_result: WebRTCWorkerResult = await start_worker(
                     webrtc_request=request,
@@ -2845,14 +2853,16 @@ class HttpInterface(BaseInterface):
                 router as builder_router,
             )
 
-            # Allow CORS on only the API, but not the builder UI/iframe (where the CSRF is passed)
+            # Allow CORS on builder API and workflow endpoints needed by the builder UI
+            # Enables Private Network Access for Chrome 142+ (local development)
             app.add_middleware(
                 PathAwareCORSMiddleware,
-                match_paths=r"^/build/api.*",
+                match_paths=r"^/(build/api|workflows/).*",
                 allow_origins=[BUILDER_ORIGIN],
                 allow_methods=["*"],
                 allow_headers=["*"],
                 allow_credentials=True,
+                allow_private_network=True,
             )
 
             # Attach all routes from builder to the /build prefix

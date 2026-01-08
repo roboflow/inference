@@ -18,6 +18,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     FLOAT_ZERO_TO_ONE_KIND,
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
     INTEGER_KIND,
+    RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
     FloatZeroToOne,
     Selector,
 )
@@ -62,6 +63,7 @@ class HaloManifest(ColorableVisualizationManifest):
     predictions: Selector(
         kind=[
             INSTANCE_SEGMENTATION_PREDICTION_KIND,
+            RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
         ]
     ) = Field(  # type: ignore
         description="Predictions",

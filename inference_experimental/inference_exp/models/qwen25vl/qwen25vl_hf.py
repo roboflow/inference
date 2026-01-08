@@ -19,6 +19,7 @@ from transformers import (
     Qwen2_5_VLForConditionalGeneration,
     Qwen2_5_VLProcessor,
 )
+from transformers.utils import is_flash_attn_2_available
 
 
 class Qwen25VLHF:
@@ -58,19 +59,28 @@ class Qwen25VLHF:
                 bnb_4bit_compute_dtype=torch.float16,
                 bnb_4bit_quant_type="nf4",
             )
+
+        attn_implementation = (
+            "flash_attention_2"
+            if (is_flash_attn_2_available() and device and "cuda" in str(device))
+            else "eager"
+        )
+
         if os.path.exists(adapter_config_path):
             base_model_path = os.path.join(model_name_or_path, "base")
             model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
                 base_model_path,
                 dtype="auto",
+                device_map=device,
                 trust_remote_code=trust_remote_code,
                 local_files_only=local_files_only,
                 quantization_config=quantization_config,
+                attn_implementation=attn_implementation,
             )
             model = PeftModel.from_pretrained(model, model_name_or_path)
             if quantization_config is None:
                 model.merge_and_unload()
-            model.to(device)
+                model.to(device)
             processor = Qwen2_5_VLProcessor.from_pretrained(
                 model_name_or_path,
                 trust_remote_code=trust_remote_code,
@@ -85,6 +95,7 @@ class Qwen25VLHF:
                 trust_remote_code=trust_remote_code,
                 local_files_only=local_files_only,
                 quantization_config=quantization_config,
+                attn_implementation=attn_implementation,
             ).eval()
             Qwen2_5_VLProcessor.image_processor_class = "Qwen2VLImageProcessor"
             processor = Qwen2_5_VLProcessor.from_pretrained(
@@ -122,7 +133,7 @@ class Qwen25VLHF:
         input_color_format: ColorFormat = None,
         max_new_tokens: int = 512,
         do_sample: bool = False,
-        skip_special_tokens: bool = False,
+        skip_special_tokens: bool = True,
         **kwargs,
     ) -> List[str]:
         inputs = self.pre_process_generation(
@@ -175,16 +186,16 @@ class Qwen25VLHF:
             image_list = [e[0] for e in torch.split(images, 1, dim=0)]
         # Handle prompt and system prompt parsing logic from original implementation
         if prompt is None:
-            prompt = ""
+            prompt = "Describe what's in this image."
             system_prompt = self.default_system_prompt
         else:
             split_prompt = prompt.split("<system_prompt>")
             if len(split_prompt) == 1:
-                prompt = split_prompt[0]
+                prompt = split_prompt[0] or "Describe what's in this image."
                 system_prompt = self.default_system_prompt
             else:
-                prompt = split_prompt[0]
-                system_prompt = split_prompt[1]
+                prompt = split_prompt[0] or "Describe what's in this image."
+                system_prompt = split_prompt[1] or self.default_system_prompt
 
         # Construct conversation following original implementation structure
         conversation = [

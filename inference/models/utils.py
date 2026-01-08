@@ -19,6 +19,8 @@ from inference.core.env import (
     MOONDREAM2_ENABLED,
     PALIGEMMA_ENABLED,
     QWEN_2_5_ENABLED,
+    QWEN_3_ENABLED,
+    SAM3_3D_OBJECTS_ENABLED,
     SMOLVLM2_ENABLED,
     USE_INFERENCE_EXP_MODELS,
 )
@@ -367,6 +369,23 @@ except:
         category=ModelDependencyMissing,
     )
 
+try:
+    if QWEN_3_ENABLED:
+        from inference.models import LoRAQwen3VL, Qwen3VL
+
+        qwen3vl_models = {
+            ("text-image-pairs", "qwen3vl-2b-instruct"): Qwen3VL,
+            ("text-image-pairs", "qwen3vl-2b-instruct-peft"): LoRAQwen3VL,
+        }
+        ROBOFLOW_MODEL_TYPES.update(qwen3vl_models)
+except:
+    warnings.warn(
+        "Your `inference` configuration does not support Qwen3-VL model. "
+        "Use pip install 'inference[transformers]' to install missing requirements."
+        "To suppress this warning, set QWEN_3_ENABLED to False.",
+        category=ModelDependencyMissing,
+    )
+
 
 try:
     if CORE_MODEL_SAM_ENABLED:
@@ -473,9 +492,15 @@ except:
 
 try:
     if DEPTH_ESTIMATION_ENABLED:
-        from inference.models.depth_estimation.depthestimation import DepthEstimator
+        from inference.models.depth_anything_v2.depth_anything_v2 import DepthAnythingV2
+        from inference.models.depth_anything_v3.depth_anything_v3 import DepthAnythingV3
 
-        ROBOFLOW_MODEL_TYPES[("depth-estimation", "small")] = DepthEstimator
+        ROBOFLOW_MODEL_TYPES[("depth-estimation", "depth-anything-v2")] = (
+            DepthAnythingV2
+        )
+        ROBOFLOW_MODEL_TYPES[("depth-estimation", "depth-anything-v3")] = (
+            DepthAnythingV3
+        )
 except:
     warnings.warn(
         "Your `inference` configuration does not support Depth Estimation."
@@ -495,6 +520,23 @@ except:
         "Your `inference` configuration does not support Moondream2."
         "Use pip install 'inference[transformers]' to install missing requirements."
         "To suppress this warning, set MOONDREAM2_ENABLED to False.",
+        category=ModelDependencyMissing,
+    )
+
+try:
+    if SAM3_3D_OBJECTS_ENABLED:
+        from inference.models.sam3_3d.segment_anything_3d import (
+            SegmentAnything3_3D_Objects,
+        )
+
+        ROBOFLOW_MODEL_TYPES[("3d-reconstruction", "sam3-3d-objects")] = (
+            SegmentAnything3_3D_Objects
+        )
+except:
+    warnings.warn(
+        "Your `inference` configuration does not support SAM3_3D_Objects model. "
+        "Use pip install 'inference[sam3_3d]' to install missing requirements."
+        "To suppress this warning, set SAM3_3D_OBJECTS_ENABLED to False.",
         category=ModelDependencyMissing,
     )
 

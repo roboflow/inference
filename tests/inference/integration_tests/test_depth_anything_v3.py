@@ -5,7 +5,6 @@ import requests
 
 from tests.inference.integration_tests.regression_test import bool_env
 
-
 api_key = os.environ.get("API_KEY")
 
 
@@ -25,7 +24,7 @@ def test_depth_estimation_inference(
             "type": "url",
             "value": "https://media.roboflow.com/dog.jpeg",
         },
-        "model_id": "depth-anything-v2/small",
+        "model_id": "depth-anything-v3/small",
     }
 
     # when

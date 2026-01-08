@@ -867,7 +867,13 @@ class SerializedOwlV2(RoboflowInferenceModel):
                 model_data = torch.load(previous_embeddings_file, weights_only=False)
 
             train_data_dict = model_data["train_data_dict"]
-            owlv2.cpu_image_embed_cache = model_data["image_embeds"]
+            if isinstance(model_data["image_embeds"], LimitedSizeDict):
+                owlv2.cpu_image_embed_cache = model_data["image_embeds"]
+            else:
+                cache = LimitedSizeDict(size_limit=CPU_IMAGE_EMBED_CACHE_SIZE)
+                for key, value in model_data["image_embeds"].items():
+                    cache[key] = value
+                owlv2.cpu_image_embed_cache = cache
 
         train_data_dict, image_embeds = owlv2.make_class_embeddings_dict(
             training_data, iou_threshold, return_image_embeds=True
@@ -949,7 +955,7 @@ class SerializedOwlV2(RoboflowInferenceModel):
                         api_data["model"], json_response=False
                     )
                 else:
-                    logger.info("Getting OWLv2 model data for")
+                    logger.info("Getting OWLv2 model data for %s", self.endpoint)
                     api_data = get_roboflow_instant_model_data(
                         api_key=self.api_key,
                         model_id=self.endpoint,
@@ -1001,7 +1007,13 @@ class SerializedOwlV2(RoboflowInferenceModel):
         self.roboflow_id = self.model_data["roboflow_id"]
         # Use the same cached OwlV2 instance mechanism to avoid creating duplicates
         self.owlv2 = self.__class__.get_or_create_owlv2_instance(self.roboflow_id)
-        self.owlv2.cpu_image_embed_cache = self.model_data["image_embeds"]
+        if isinstance(self.model_data["image_embeds"], LimitedSizeDict):
+            self.owlv2.cpu_image_embed_cache = self.model_data["image_embeds"]
+        else:
+            cache = LimitedSizeDict(size_limit=CPU_IMAGE_EMBED_CACHE_SIZE)
+            for key, value in self.model_data["image_embeds"].items():
+                cache[key] = value
+            self.owlv2.cpu_image_embed_cache = cache
 
     weights_file_path = "weights.pt"
 
@@ -1049,6 +1061,6 @@ class SerializedOwlV2(RoboflowInferenceModel):
             self.huggingface_id,
             self.roboflow_id,
             self.train_data_dict,
-            self.owlv2.cpu_image_embed_cache,
+            {},
             save_dir,
         )

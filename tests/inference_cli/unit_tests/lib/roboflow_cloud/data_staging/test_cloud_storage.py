@@ -1,12 +1,13 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
+
 from inference_cli.lib.roboflow_cloud.data_staging.api_operations import (
-    _parse_bucket_path,
-    _get_fs_kwargs,
-    _match_glob_pattern,
-    _list_and_filter_files_streaming,
     _generate_presigned_urls_parallel,
+    _get_fs_kwargs,
+    _list_and_filter_files_streaming,
+    _match_glob_pattern,
+    _parse_bucket_path,
 )
 
 

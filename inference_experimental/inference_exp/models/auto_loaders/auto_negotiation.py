@@ -21,7 +21,11 @@ from inference_exp.models.auto_loaders.constants import (
     NMS_IOU_THRESHOLD_KEY,
     NMS_MAX_DETECTIONS_KEY,
 )
-from inference_exp.models.auto_loaders.entities import ModelArchitecture, TaskType
+from inference_exp.models.auto_loaders.entities import (
+    BackendType,
+    ModelArchitecture,
+    TaskType,
+)
 from inference_exp.models.auto_loaders.models_registry import (
     model_implementation_exists,
 )
@@ -35,7 +39,6 @@ from inference_exp.runtime_introspection.core import (
 )
 from inference_exp.utils.onnx_introspection import get_selected_onnx_execution_providers
 from inference_exp.weights_providers.entities import (
-    BackendType,
     JetsonEnvironmentRequirements,
     ModelPackageMetadata,
     Quantization,

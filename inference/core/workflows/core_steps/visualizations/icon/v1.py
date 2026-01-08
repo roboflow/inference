@@ -16,6 +16,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     INTEGER_KIND,
     KEYPOINT_DETECTION_PREDICTION_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
+    RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
     STRING_KIND,
     Selector,
 )
@@ -86,6 +87,7 @@ class IconManifest(VisualizationManifest):
             kind=[
                 OBJECT_DETECTION_PREDICTION_KIND,
                 INSTANCE_SEGMENTATION_PREDICTION_KIND,
+                RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
                 KEYPOINT_DETECTION_PREDICTION_KIND,
             ]
         )
