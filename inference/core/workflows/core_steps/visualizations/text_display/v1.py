@@ -48,7 +48,9 @@ TYPE: str = "roboflow_core/text_display@v1"
 
 PARAMETER_REGEX = re.compile(r"({{\s*\$parameters\.(\w+)\s*}})")
 
-SHORT_DESCRIPTION = "Display customizable text on an image with styling and positioning options."
+SHORT_DESCRIPTION = (
+    "Display customizable text on an image with styling and positioning options."
+)
 
 LONG_DESCRIPTION = """
 The **Text Display** block renders text on an image with full control over styling and positioning.
@@ -180,7 +182,14 @@ class BlockManifest(WorkflowBlockManifest):
             "Color of the text. Supports supervision color names (WHITE, BLACK, RED, GREEN, BLUE, YELLOW, ROBOFLOW, etc.), "
             "hex format (#RRGGBB), rgb(R,G,B) format, or bgr(B,G,R) format."
         ),
-        examples=["WHITE", "ROBOFLOW", "#FF0000", "rgb(255,128,0)", "bgr(0,0,255)", "$inputs.text_color"],
+        examples=[
+            "WHITE",
+            "ROBOFLOW",
+            "#FF0000",
+            "rgb(255,128,0)",
+            "bgr(0,0,255)",
+            "$inputs.text_color",
+        ],
     )
 
     background_color: Union[str, Selector(kind=[STRING_KIND])] = Field(
@@ -189,10 +198,19 @@ class BlockManifest(WorkflowBlockManifest):
             "Background color behind the text. Supports the same color formats as text_color. "
             "Use 'transparent' for no background."
         ),
-        examples=["BLACK", "transparent", "#000000", "rgb(0,0,0)", "bgr(0,0,0)", "$inputs.bg_color"],
+        examples=[
+            "BLACK",
+            "transparent",
+            "#000000",
+            "rgb(0,0,0)",
+            "bgr(0,0,0)",
+            "$inputs.bg_color",
+        ],
     )
 
-    background_opacity: Union[FloatZeroToOne, Selector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = Field(
+    background_opacity: Union[
+        FloatZeroToOne, Selector(kind=[FLOAT_ZERO_TO_ONE_KIND])
+    ] = Field(
         default=1.0,
         description="Opacity of the background (0.0 = fully transparent, 1.0 = fully opaque).",
         examples=[1.0, 0.5, 0.0, "$inputs.bg_opacity"],
@@ -376,7 +394,8 @@ class TextDisplayVisualizationBlockV1(WorkflowBlock):
 
         text_color_bgr = str_to_color(text_color).as_bgr()
         bg_color_bgr = (
-            None if background_color.lower() == "transparent"
+            None
+            if background_color.lower() == "transparent"
             else str_to_color(background_color).as_bgr()
         )
 
@@ -392,9 +411,9 @@ class TextDisplayVisualizationBlockV1(WorkflowBlock):
             position_mode=position_mode,
             position_x=position_x,
             position_y=position_y,
-                anchor=anchor,
-                offset_x=offset_x,
-                offset_y=offset_y,
+            anchor=anchor,
+            offset_x=offset_x,
+            offset_y=offset_y,
             img_w=img_w,
             img_h=img_h,
         )
@@ -406,10 +425,17 @@ class TextDisplayVisualizationBlockV1(WorkflowBlock):
         y2 = min(img_h, layout.box_y + layout.box_h)
 
         draw_background(
-            output_image, x1, y1, x2, y2, bg_color_bgr, background_opacity, border_radius
+            output_image,
+            x1,
+            y1,
+            x2,
+            y2,
+            bg_color_bgr,
+            background_opacity,
+            border_radius,
         )
         draw_text_lines(
-                        output_image,
+            output_image,
             layout=layout,
             padding=padding,
             text_align=text_align,
@@ -432,7 +458,7 @@ def format_text_with_parameters(
     text_parameters_operations: Dict[str, List[AllOperationsType]],
 ) -> str:
     """Format text by replacing parameter placeholders with actual values.
-    
+
     Uses a single-pass regex substitution for efficiency and correctness.
     """
     # Cache for computed parameter values (with operations applied)
@@ -444,13 +470,13 @@ def format_text_with_parameters(
             return match.group(0)
         if parameter_name in computed_values:
             return computed_values[parameter_name]
-        
+
         parameter_value = text_parameters[parameter_name]
         operations = text_parameters_operations.get(parameter_name)
         if operations:
             operations_chain = build_operations_chain(operations=operations)
             parameter_value = operations_chain(parameter_value, global_parameters={})
-        
+
         # Cache and return
         computed_values[parameter_name] = str(parameter_value)
         return computed_values[parameter_name]

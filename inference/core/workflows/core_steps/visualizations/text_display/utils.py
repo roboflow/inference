@@ -29,7 +29,7 @@ def calculate_relative_position(
     img_height: int,
 ) -> Tuple[int, int]:
     """Calculate the top-left corner position for a box positioned relative to an image anchor.
-    
+
     Args:
         anchor: Anchor point name (e.g., "top_left", "center", "bottom_right")
         offset_x: Horizontal offset from anchor point (positive = right)
@@ -38,10 +38,10 @@ def calculate_relative_position(
         box_height: Height of the box to position
         img_width: Width of the image
         img_height: Height of the image
-    
+
     Returns:
         Tuple of (x, y) coordinates for the top-left corner of the box
-    
+
     Raises:
         ValueError: If anchor is not recognized
     """
@@ -55,7 +55,7 @@ def calculate_relative_position(
 
     anchor_x = int(round(ax * img_width))
     anchor_y = int(round(ay * img_height))
-    
+
     box_x = anchor_x - int(round(ax * box_width)) + offset_x
     box_y = anchor_y - int(round(ay * box_height)) + offset_y
 
@@ -118,7 +118,11 @@ def compute_layout(
     line_spacing = max(1, int(round(0.25 * line_advance)))
 
     line_widths = [
-        cv2.getTextSize(line, font, font_scale, font_thickness)[0][0] if line.strip() else 0
+        (
+            cv2.getTextSize(line, font, font_scale, font_thickness)[0][0]
+            if line.strip()
+            else 0
+        )
         for line in lines
     ]
     max_width = max(line_widths, default=0)
@@ -182,7 +186,14 @@ def draw_text_lines(
 
             if text_y > 0 and current_y < img_h and text_x < img_w:
                 cv2.putText(
-                    img, line, (text_x, text_y), font, font_scale, color_bgr, font_thickness, cv2.LINE_AA
+                    img,
+                    line,
+                    (text_x, text_y),
+                    font,
+                    font_scale,
+                    color_bgr,
+                    font_thickness,
+                    cv2.LINE_AA,
                 )
 
         current_y += layout.line_advance
@@ -215,8 +226,12 @@ def draw_rounded_rectangle(
     cv2.rectangle(img, (x1 + radius, y1), (x2 - radius, y2), color, -1)
     cv2.rectangle(img, (x1, y1 + radius), (x2, y2 - radius), color, -1)
 
-    cv2.ellipse(img, (x1 + radius, y1 + radius), (radius, radius), 180, 0, 90, color, -1)
-    cv2.ellipse(img, (x2 - radius, y1 + radius), (radius, radius), 270, 0, 90, color, -1)
+    cv2.ellipse(
+        img, (x1 + radius, y1 + radius), (radius, radius), 180, 0, 90, color, -1
+    )
+    cv2.ellipse(
+        img, (x2 - radius, y1 + radius), (radius, radius), 270, 0, 90, color, -1
+    )
     cv2.ellipse(img, (x1 + radius, y2 - radius), (radius, radius), 90, 0, 90, color, -1)
     cv2.ellipse(img, (x2 - radius, y2 - radius), (radius, radius), 0, 0, 90, color, -1)
 
