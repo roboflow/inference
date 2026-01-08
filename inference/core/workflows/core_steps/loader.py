@@ -496,6 +496,9 @@ from inference.core.workflows.core_steps.visualizations.reference_path.v1 import
 from inference.core.workflows.core_steps.visualizations.trace.v1 import (
     TraceVisualizationBlockV1,
 )
+from inference.core.workflows.core_steps.visualizations.text_display.v1 import (
+    TextDisplayVisualizationBlockV1,
+)
 from inference.core.workflows.core_steps.visualizations.triangle.v1 import (
     TriangleVisualizationBlockV1,
 )
@@ -724,6 +727,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         TimeInZoneBlockV2,
         TimeInZoneBlockV3,
         TriangleVisualizationBlockV1,
+        TextDisplayVisualizationBlockV1,
         VLMAsClassifierBlockV1,
         VLMAsDetectorBlockV1,
         YoloWorldModelBlockV1,
