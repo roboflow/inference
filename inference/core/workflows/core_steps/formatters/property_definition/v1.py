@@ -16,6 +16,7 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 
+
 LONG_DESCRIPTION = """
 Define a field using properties from previous workflow steps.
 
@@ -92,4 +93,6 @@ class PropertyDefinitionBlockV1(WorkflowBlock):
         operations: List[AllOperationsType],
     ) -> BlockResult:
         operations_chain = build_operations_chain(operations=operations)
+
+        print('hello from property definition')
         return {"output": operations_chain(data, global_parameters={})}
