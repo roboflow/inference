@@ -627,12 +627,18 @@ class BlockManifest(WorkflowBlockManifest):
         description="The session timeout in seconds. This controls how long the OPC UA session remains active without communication. Default is 3600 seconds (1 hour).",
         examples=[1800, 3600, 7200, "$inputs.session_timeout_seconds"],
         ge=1,
+        json_schema_extra={
+            "always_visible": True,
+        },
     )
     secure_channel_lifetime_seconds: Union[int, Selector(kind=[INTEGER_KIND])] = Field(
         default=3600,
         description="The secure channel lifetime in seconds. This controls how long the secure channel remains valid before needing renewal. Default is 3600 seconds (1 hour).",
         examples=[1800, 3600, 7200, "$inputs.secure_channel_lifetime_seconds"],
         ge=1,
+        json_schema_extra={
+            "always_visible": True,
+        },
     )
     fire_and_forget: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(
         default=True,
