@@ -43,18 +43,56 @@ from inference.core.workflows.prototypes.block import (
 SHORT_DESCRIPTION = "Periodically report an aggregated sample of inference results to Roboflow Model Monitoring."
 
 LONG_DESCRIPTION = """
-This block 📊 **transforms inference data reporting** to a whole new level by 
-periodically aggregating and sending a curated sample of predictions to 
-**[Roboflow Model Monitoring](https://docs.roboflow.com/deploy/model-monitoring)**.
+Periodically aggregate and report a curated sample of inference predictions to Roboflow Model Monitoring by collecting predictions in memory, grouping by class, selecting the most confident prediction per class, and sending aggregated results at configurable intervals to enable efficient video processing monitoring, production analytics, and model performance tracking workflows with minimal performance overhead.
 
-#### ✨ Key Features
-* **Effortless Aggregation:** Collects and organizes predictions in-memory, ensuring only the most relevant 
-and confident predictions are reported.
+## How This Block Works
 
-* **Customizable Reporting Intervals:** Choose how frequently (in seconds) data should be sent—ensuring 
-optimal balance between granularity and resource efficiency.
+This block aggregates predictions over time and sends representative samples to Roboflow Model Monitoring at regular intervals, reducing API calls and maintaining video processing performance. The block:
 
-* **Debug-Friendly Mode:** Fine-tune operations by enabling or disabling asynchronous background execution.
+1. Receives predictions and configuration:
+   - Takes predictions from any supported model type (object detection, instance segmentation, keypoint detection, or classification)
+   - Receives model ID for identification in Model Monitoring
+   - Accepts frequency parameter specifying reporting interval in seconds
+   - Receives execution mode flag (fire-and-forget)
+2. Validates Roboflow API key:
+   - Checks that a valid Roboflow API key is available (required for API access)
+   - Raises an error if API key is missing with instructions on how to retrieve one
+3. Collects predictions in memory:
+   - Stores predictions in an in-memory aggregator organized by model ID
+   - Accumulates predictions between reporting intervals
+   - Maintains state for the duration of the workflow execution session
+4. Checks reporting interval:
+   - Uses cache to track last report time based on unique aggregator key
+   - Calculates time elapsed since last report
+   - Compares elapsed time to configured frequency threshold
+   - Skips reporting if interval has not been reached (returns status message)
+5. Consolidates predictions when reporting:
+   - Formats all collected predictions for Model Monitoring
+   - Groups predictions by class name across all collected data
+   - For each class, sorts predictions by confidence (highest first)
+   - Selects the most confident prediction per class as representative sample
+   - Creates a curated set of predictions (one per class with highest confidence)
+6. Retrieves workspace information:
+   - Gets workspace ID from Roboflow API using the provided API key
+   - Uses caching (15-minute expiration) to avoid repeated API calls
+   - Caches workspace name using MD5 hash of API key as cache key
+7. Sends aggregated data to Model Monitoring:
+   - Constructs inference data payload with timestamp, source info, device ID, and server version
+   - Includes system information (if available) for monitoring context
+   - Sends aggregated predictions (one per class) to Roboflow Model Monitoring API
+   - Flushes in-memory aggregator after sending (starts fresh collection)
+   - Updates last report time in cache
+8. Executes synchronously or asynchronously:
+   - **Asynchronous mode (fire_and_forget=True)**: Submits task to background thread pool or FastAPI background tasks, allowing workflow to continue without waiting for API call to complete
+   - **Synchronous mode (fire_and_forget=False)**: Waits for API call to complete and returns immediate status, useful for debugging and error handling
+9. Returns status information:
+   - Outputs error_status indicating success (False) or failure (True)
+   - Outputs message with reporting status or error details
+   - Provides feedback on whether aggregation was sent or skipped
+
+The block is optimized for video processing workflows where sending every prediction would create excessive API calls and impact performance. By aggregating predictions and selecting representative samples (most confident per class), the block provides meaningful monitoring data while minimizing overhead. The interval-based reporting ensures regular updates to Model Monitoring without constant API calls.
+
+## Common Use Cases
 
 #### 🔍 Why Use This Block?
 
@@ -71,7 +109,6 @@ Perfect for:
 
 * Providing actionable insights from inference workflows with minimal overhead 🔧.
 
-
 #### 🚨 Limitations
 
 * The block is should not be relied on when running Workflow in `inference` server or via HTTP request to Roboflow 
@@ -79,8 +116,20 @@ hosted platform, as the internal state is not persisted in a memory that would b
 the server, causing aggregation to **only have a scope of single request**. We will solve that problem in future 
 releases if proven to be serious limitation for clients.
 
-* This block do not have ability to separate aggregations for multiple videos processed by `InferencePipeline` - 
-effectively aggregating data for **all video feeds connected to single process running `InferencePipeline`**. 
+## Connecting to Other Blocks
+
+This block receives predictions and outputs status information:
+
+- **After model blocks** (Object Detection Model, Instance Segmentation Model, Classification Model, Keypoint Detection Model) to aggregate and report predictions to Model Monitoring (e.g., aggregate detection results, report classification outputs, monitor model predictions), enabling model-to-monitoring workflows
+- **After filtering or analytics blocks** (DetectionsFilter, ContinueIf, OverlapFilter) to aggregate filtered or analyzed results for monitoring (e.g., aggregate filtered detections, report analytics results, monitor processed predictions), enabling analysis-to-monitoring workflows
+- **In video processing workflows** to efficiently monitor video analysis with minimal performance impact (e.g., aggregate video frame detections, report video processing results, monitor video analysis performance), enabling video monitoring workflows
+- **After preprocessing or transformation blocks** to monitor transformed predictions (e.g., aggregate transformed detections, report processed results, monitor transformation outputs), enabling transformation-to-monitoring workflows
+- **In production deployment workflows** to track model performance in production environments (e.g., monitor production inference, track deployment performance, report production metrics), enabling production monitoring workflows
+- **As a sink block** to send aggregated monitoring data without blocking workflow execution (e.g., background monitoring reporting, non-blocking analytics, efficient data collection), enabling sink-to-monitoring workflows
+
+## Requirements
+
+This block requires a valid Roboflow API key configured in the environment or workflow configuration. The API key is required to authenticate with Roboflow API and access Model Monitoring features. Visit https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key to learn how to retrieve an API key. The block maintains in-memory state for aggregation, which means it works best for long-running workflows (like video processing with InferencePipeline). The block should not be relied upon when running workflows in inference server or via HTTP requests to Roboflow hosted platform, as the internal state is only accessible for single requests and aggregation scope is limited to single request execution. The block aggregates data for all video feeds connected to a single InferencePipeline process (cannot separate aggregations per video feed). The frequency parameter must be at least 1 second. For more information on Model Monitoring at Roboflow, see https://docs.roboflow.com/deploy/model-monitoring.
 """
 
 
@@ -110,33 +159,34 @@ class BlockManifest(WorkflowBlockManifest):
             CLASSIFICATION_PREDICTION_KIND,
         ]
     ) = Field(
-        description="Model predictions to report to Roboflow Model Monitoring.",
-        examples=["$steps.my_step.predictions"],
+        description="Model predictions (object detection, instance segmentation, keypoint detection, or classification) to aggregate and report to Roboflow Model Monitoring. Predictions are collected in memory, grouped by class name, and the most confident prediction per class is selected as a representative sample. Predictions accumulate between reporting intervals based on the frequency setting. Supported prediction types: supervision Detections objects or classification prediction dictionaries.",
+        examples=[
+            "$steps.object_detection.predictions",
+            "$steps.classification.predictions",
+            "$steps.instance_segmentation.predictions",
+        ],
     )
     model_id: Selector(kind=[ROBOFLOW_MODEL_ID_KIND]) = Field(
-        description="Model ID to report to Roboflow Model Monitoring.",
-        examples=["my_project/3"],
+        description="Roboflow model ID (format: 'project/version') to associate with the predictions in Model Monitoring. This identifies which model generated the predictions being reported. The model ID is included in the monitoring data sent to Roboflow, allowing you to track performance per model in the Model Monitoring dashboard.",
+        examples=["my_project/3", "production_model/1", "detection_model/5"],
     )
     frequency: Union[
         int,
         Selector(kind=[STRING_KIND]),
     ] = Field(
         default=5,
-        description="Frequency of reporting (in seconds). For example, if 5 is provided, the "
-        "block will report an aggregated sample of predictions every 5 seconds.",
-        examples=["3", "5"],
+        description="Reporting frequency in seconds. Specifies how often aggregated predictions are sent to Roboflow Model Monitoring. For example, if set to 5, the block collects predictions for 5 seconds, then sends the aggregated sample (one most confident prediction per class) to Model Monitoring. Must be at least 1 second. Lower values provide more frequent updates but increase API calls. Higher values reduce API calls but provide less frequent updates. Default: 5 seconds. Works well for video processing where you want regular but not excessive reporting.",
+        examples=[3, 5, 10, 30, 60],
     )
     unique_aggregator_key: str = Field(
-        description="Unique key used internally to track the session of inference results reporting. "
-        "Must be unique for each step in your Workflow.",
+        description="Unique key used internally to track the aggregation session and cache last report time. This key must be unique for each instance of this block in your workflow. The key is used to create cache entries that track when the last report was sent, enabling interval-based reporting. This field is automatically generated and hidden in the UI.",
         examples=["session-1v73kdhfse"],
         json_schema_extra={"hidden": True},
     )
     fire_and_forget: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(
         default=True,
-        description="Boolean flag to run the block asynchronously (True) for faster workflows or  "
-        "synchronously (False) for debugging and error handling.",
-        examples=[True],
+        description="Execution mode flag. When True (default), the block runs asynchronously in the background, allowing the workflow to continue processing without waiting for the API call to complete. This provides faster workflow execution but errors are not immediately available. When False, the block runs synchronously and waits for the API call to complete, returning immediate status and error information. Use False for debugging and error handling, True for production workflows where performance is prioritized.",
+        examples=[True, False],
     )
 
     @field_validator("frequency")

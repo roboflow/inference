@@ -20,8 +20,39 @@ from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlock
 TYPE: str = "roboflow_core/circle_visualization@v1"
 SHORT_DESCRIPTION = "Draw a circle around detected objects in an image."
 LONG_DESCRIPTION = """
-The `CircleVisualization` block draws a circle around detected
-objects in an image using Supervision's `sv.CircleAnnotator`.
+Draw circular outlines around detected objects, providing an alternative to rectangular bounding boxes with a softer, more rounded visualization style.
+
+## How This Block Works
+
+This block takes an image and detection predictions and draws circular outlines around each detected object. The block:
+
+1. Takes an image and predictions as input
+2. Calculates the center point and size for each detection based on its bounding box
+3. Applies color styling based on the selected color palette, with colors assigned by class, index, or track ID
+4. Draws circular outlines around each detected object using Supervision's CircleAnnotator
+5. Applies the specified circle thickness to control the line width of the circular outlines
+6. Returns an annotated image with circular outlines overlaid on the original image
+
+The block draws circles that are typically centered on each detection's bounding box, with the circle size determined by the detection dimensions. Circles provide a softer, more organic visual style compared to rectangular bounding boxes, while still clearly marking the location and extent of detected objects. Unlike dot visualization (which marks specific points), circle visualization draws full circular outlines that encompass the detected objects, making it useful when you want a rounded geometric shape that's less angular than bounding boxes but more prominent than small dot markers.
+
+## Common Use Cases
+
+- **Soft Geometric Visualization**: Use circular outlines instead of rectangular bounding boxes for a softer, more organic visual style in presentations, dashboards, or user interfaces where rounded shapes are preferred
+- **Object Highlighting with Rounded Shapes**: Highlight detected objects with circular outlines when working with circular or spherical objects (e.g., balls, coins, circular logos, round products) where circles naturally fit the object shape
+- **Aesthetic Visualization Alternatives**: Create visually distinct annotations compared to standard bounding boxes for design purposes, artistic visualizations, or when circular shapes better match the overall design aesthetic
+- **Detection Visualization with Variation**: Provide an alternative visualization style to bounding boxes for comparison, experimentation, or when multiple visualization types are used together to distinguish different detection sets
+- **User Interface Design**: Use circular outlines in user interfaces, mobile apps, or interactive displays where rounded shapes are more visually appealing or match design guidelines
+- **Scientific and Medical Imaging**: Visualize detections with circular outlines in scientific or medical imaging contexts where rounded shapes may be more appropriate than angular bounding boxes
+
+## Connecting to Other Blocks
+
+The annotated image from this block can be connected to:
+
+- **Other visualization blocks** (e.g., Label Visualization, Dot Visualization, Bounding Box Visualization) to combine circular outlines with additional annotations for comprehensive visualization
+- **Data storage blocks** (e.g., Local File Sink, CSV Formatter, Roboflow Dataset Upload) to save annotated images with circular outlines for documentation, reporting, or analysis
+- **Webhook blocks** to send visualized results with circular outlines to external systems, APIs, or web applications for display in dashboards or monitoring tools
+- **Notification blocks** (e.g., Email Notification, Slack Notification) to send annotated images with circular outlines as visual evidence in alerts or reports
+- **Video output blocks** to create annotated video streams or recordings with circular outlines for live monitoring, tracking visualization, or post-processing analysis
 """
 
 
@@ -53,7 +84,7 @@ class CircleManifest(ColorableVisualizationManifest):
     )
 
     thickness: Union[int, Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
-        description="Thickness of the lines in pixels.",
+        description="Thickness of the circle outline in pixels. Higher values create thicker, more visible circular outlines.",
         default=2,
         examples=[2, "$inputs.thickness"],
     )
