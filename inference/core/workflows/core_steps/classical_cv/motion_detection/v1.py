@@ -97,11 +97,13 @@ The motion detection outputs from this block can be connected to:
         default=200,
     )
 
-    morphological_kernel_size: Union[PositiveInt, Selector(kind=[INTEGER_KIND])] = Field(
-        title="Morphological Kernel Size",
-        description="Size of the morphological kernel in pixels used to combine nearby motion regions and filter noise. Larger values merge more distant motion regions into single contours but may also merge separate objects. Smaller values preserve more detail but may leave fragmented detections. The kernel uses an elliptical shape. Default is 3 pixels.",
-        examples=[3, 5, 7],
-        default=3,
+    morphological_kernel_size: Union[PositiveInt, Selector(kind=[INTEGER_KIND])] = (
+        Field(
+            title="Morphological Kernel Size",
+            description="Size of the morphological kernel in pixels used to combine nearby motion regions and filter noise. Larger values merge more distant motion regions into single contours but may also merge separate objects. Smaller values preserve more detail but may leave fragmented detections. The kernel uses an elliptical shape. Default is 3 pixels.",
+            examples=[3, 5, 7],
+            default=3,
+        )
     )
 
     threshold: Union[PositiveInt, Selector(kind=[INTEGER_KIND])] = Field(
