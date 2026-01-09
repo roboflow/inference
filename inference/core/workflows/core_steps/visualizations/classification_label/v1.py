@@ -26,56 +26,42 @@ from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlock
 SHORT_DESCRIPTION = "Visualize both single-label and multi-label classification predictions with customizable display options."
 
 LONG_DESCRIPTION = """
-Visualizes classification predictions with customizable labels and positioning options. 
-Perfect for creating clear, informative displays of model predictions!
+Visualize classification predictions as text labels positioned on images, automatically handling both single-label and multi-label classification formats with customizable styling and positioning.
 
-#### How It Works
+## How This Block Works
 
-This visualization processes classification predictions by:
+This block takes an image and classification predictions (for entire image classification, not object detection) and displays text labels showing the predicted class names and confidence scores. The block:
 
-1. 🎯 **Analyzing** predictions based on task type (single-label or multi-label)
+1. Takes an image and classification predictions as input
+2. Automatically detects whether predictions are single-label (one class per image) or multi-label (multiple classes per image)
+3. For single-label predictions: selects the highest confidence prediction to display
+4. For multi-label predictions: formats and sorts all predicted classes by confidence score (highest first)
+5. Extracts label text based on the selected text option (class name, confidence score, or both)
+6. Positions labels on the image at the specified location (top, center, or bottom edges, with left/center/right alignment)
+7. Applies background color styling based on the selected color palette, with colors assigned by class
+8. Renders text labels with customizable text color, scale, thickness, padding, and border radius
+9. Returns an annotated image with classification labels overlaid on the original image
 
-2. 📊 **Organizing** results by confidence score
+Unlike the regular Label Visualization block (which labels detected objects with bounding boxes), this block is designed for image-level classification where the entire image is classified into one or more categories. Labels are positioned at the edges or center of the image itself, not relative to object locations. For multi-label predictions, multiple labels are stacked vertically at the chosen position, making it easy to see all predicted classes and their confidence scores.
 
-3. 🎨 **Rendering** labels with customizable positioning and styling
-#### Parameters
+## Common Use Cases
 
-- **`task_type`**: Specifies how to handle predictions. Available options:
-  
-    * **"single-label"**: Shows only the highest confidence prediction
-  
-    * **"multi-label"**: Displays all predictions above threshold
+- **Image Classification Results Display**: Visualize the predicted class and confidence score for classified images in applications like content moderation, product categorization, or medical image analysis
+- **Multi-Class Probability Visualization**: Display multiple predicted classes with their confidence scores for multi-label classification tasks, such as tagging images with multiple attributes, detecting multiple defects, or identifying multiple objects in scene classification
+- **Model Performance Validation**: Show classification predictions directly on images to validate model performance, verify correct classifications, and identify misclassifications during model development or testing
+- **User Interface Integration**: Create clean, professional displays of classification results for applications, dashboards, or mobile apps where users need to see what an image was classified as
+- **Documentation and Reporting**: Generate annotated images showing classification results for reports, documentation, or training data review to demonstrate model predictions
+- **Quality Control Workflows**: Display classification results on production images for quality control, content filtering, or automated categorization workflows where visual confirmation of predictions is needed
 
-- **`text_position`**: Controls label placement with 9 options:
-  
-    * **Top**: LEFT, CENTER, RIGHT
-    * **Center**: LEFT, CENTER, RIGHT
-    * **Bottom**: LEFT, CENTER, RIGHT
+## Connecting to Other Blocks
 
-- **`text`**: Determines what information to display:
-  
-    * **"Class"**: Only show class names
-    * **"Confidence"**: Only show confidence scores
-    * **"Class and Confidence"**: Show both
+The annotated image from this block can be connected to:
 
-- **`text_padding`**: Controls spacing between labels and from image edges
-
-#### Why Use This Visualization?
-
-This is especially useful for:
-
-- 🏷️ Creating clear, professional-looking prediction displays
-
-- 📱 Supporting different UI layouts with flexible positioning
-
-- 🎨 Customizing appearance for different use cases
-
-- 📊 Showing prediction confidence in an intuitive way
-
-#### Example Usage
-
-Use this visualization after any classification model to display predictions in a clean, 
-organized format. Perfect for both single predictions and multiple class probabilities.
+- **Data storage blocks** (e.g., Local File Sink, CSV Formatter, Roboflow Dataset Upload) to save annotated images with classification labels for documentation, reporting, or analysis
+- **Webhook blocks** to send visualized results with classification labels to external systems, APIs, or web applications for display in dashboards or classification monitoring tools
+- **Notification blocks** (e.g., Email Notification, Slack Notification) to send annotated images with classification labels as visual evidence in alerts or reports when specific classes are detected
+- **Video output blocks** to create annotated video streams or recordings with classification labels for live monitoring, real-time classification display, or post-processing analysis
+- **Conditional logic blocks** (e.g., Continue If) to route workflow execution based on classification results or confidence scores displayed in the labels
 """
 
 
@@ -111,7 +97,7 @@ class ClassificationLabelManifest(ColorableVisualizationManifest):
         WorkflowParameterSelector(kind=[STRING_KIND]),
     ] = Field(  # type: ignore
         default="Class",
-        description="The data to display in the text labels.",
+        description="Content to display in text labels. Options: 'Class' (class name only), 'Confidence' (confidence score only, formatted as decimal), or 'Class and Confidence' (both class name and confidence score).",
         examples=["LABEL", "$inputs.text"],
         json_schema_extra={
             "always_visible": True,
@@ -133,41 +119,41 @@ class ClassificationLabelManifest(ColorableVisualizationManifest):
         WorkflowParameterSelector(kind=[STRING_KIND]),
     ] = Field(  # type: ignore
         default="TOP_LEFT",
-        description="The anchor position for placing the label.",
+        description="Position for placing labels on the image. Options include: TOP (TOP_LEFT, TOP_CENTER, TOP_RIGHT), CENTER (CENTER_LEFT, CENTER, CENTER_RIGHT), or BOTTOM (BOTTOM_LEFT, BOTTOM_CENTER, BOTTOM_RIGHT). For multi-label predictions, labels are stacked vertically at the chosen position.",
         examples=["CENTER", "$inputs.text_position"],
     )
 
     predictions: StepOutputSelector(kind=[CLASSIFICATION_PREDICTION_KIND]) = Field(  # type: ignore
-        description="Classification predictions.",
+        description="Classification predictions from a single-label or multi-label classification model. The block automatically detects the prediction format and handles both types accordingly.",
         examples=["$steps.classification_model.predictions"],
     )
 
     text_color: Union[str, WorkflowParameterSelector(kind=[STRING_KIND])] = Field(  # type: ignore
-        description="Color of the text.",
+        description="Color of the label text. Can be a color name (e.g., 'WHITE', 'BLACK') or color code in HEX format (e.g., '#FFFFFF') or RGB format (e.g., 'rgb(255, 255, 255)').",
         default="WHITE",
         examples=["WHITE", "#FFFFFF", "rgb(255, 255, 255)" "$inputs.text_color"],
     )
 
     text_scale: Union[float, WorkflowParameterSelector(kind=[FLOAT_KIND])] = Field(  # type: ignore
-        description="Scale of the text.",
+        description="Scale factor for text size. Higher values create larger text. Default is 1.0.",
         default=1.0,
         examples=[1.0, "$inputs.text_scale"],
     )
 
     text_thickness: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
-        description="Thickness of the text characters.",
+        description="Thickness of text characters in pixels. Higher values create bolder, thicker text for better visibility.",
         default=1,
         examples=[1, "$inputs.text_thickness"],
     )
 
     text_padding: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
-        description="Padding around the text in pixels.",
+        description="Padding around the text in pixels. Controls the spacing between the text and the label background border, and the spacing between multiple labels in multi-label predictions.",
         default=10,
         examples=[10, "$inputs.text_padding"],
     )
 
     border_radius: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
-        description="Radius of the label in pixels.",
+        description="Border radius of the label background in pixels. Set to 0 for square corners. Higher values create more rounded corners for a softer appearance.",
         default=0,
         examples=[0, "$inputs.border_radius"],
     )
