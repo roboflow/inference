@@ -4,7 +4,7 @@ from typing import List, Literal, Optional, Tuple, Type, Union
 import cv2
 import numpy as np
 import supervision as sv
-from pydantic import AliasChoices, ConfigDict, Field
+from pydantic import AliasChoices, ConfigDict, Field, PositiveInt
 from shapely.geometry import Polygon
 
 from inference.core.workflows.execution_engine.entities.base import (
@@ -90,34 +90,32 @@ The motion detection outputs from this block can be connected to:
         validation_alias=AliasChoices("image", "images"),
     )
 
-    minimum_contour_area: Union[Selector(kind=[INTEGER_KIND]), int] = Field(
+    minimum_contour_area: Union[PositiveInt, Selector(kind=[INTEGER_KIND])] = Field(
         title="Minimum Contour Area",
         description="Minimum area in square pixels for a motion region to be detected. Contours smaller than this threshold are filtered out to ignore noise, small shadows, or minor pixel variations. Lower values increase sensitivity but may detect more false positives (e.g., 100 for very sensitive detection, 500 for only large objects). Default is 200 square pixels.",
-        gt=0,
         examples=[200, 100, 500],
         default=200,
     )
 
-    morphological_kernel_size: Union[Selector(kind=[INTEGER_KIND]), int] = Field(
-        title="Morphological Kernel Size",
-        description="Size of the morphological kernel in pixels used to combine nearby motion regions and filter noise. Larger values merge more distant motion regions into single contours but may also merge separate objects. Smaller values preserve more detail but may leave fragmented detections. The kernel uses an elliptical shape. Default is 3 pixels.",
-        gt=0,
-        examples=[3, 5, 7],
-        default=3,
+    morphological_kernel_size: Union[PositiveInt, Selector(kind=[INTEGER_KIND])] = (
+        Field(
+            title="Morphological Kernel Size",
+            description="Size of the morphological kernel in pixels used to combine nearby motion regions and filter noise. Larger values merge more distant motion regions into single contours but may also merge separate objects. Smaller values preserve more detail but may leave fragmented detections. The kernel uses an elliptical shape. Default is 3 pixels.",
+            examples=[3, 5, 7],
+            default=3,
+        )
     )
 
-    threshold: Union[Selector(kind=[INTEGER_KIND]), int] = Field(
+    threshold: Union[PositiveInt, Selector(kind=[INTEGER_KIND])] = Field(
         title="Threshold",
         description="Threshold value for the squared Mahalanobis distance used by the MOG2 background subtraction algorithm. Controls sensitivity to motion - smaller values increase sensitivity (detect smaller changes) but may produce more false positives, larger values decrease sensitivity (only detect significant changes) but may miss subtle motion. Recommended range is 8-32. Default is 16.",
-        gt=0,
         examples=[16, 8, 24, 32],
         default=16,
     )
 
-    history: Union[Selector(kind=[INTEGER_KIND]), int] = Field(
+    history: Union[PositiveInt, Selector(kind=[INTEGER_KIND])] = Field(
         title="History",
         description="Number of previous frames used to build the background model. Controls how quickly the background adapts to changes - larger values (e.g., 50-100) create a more stable background model that's less sensitive to temporary changes but adapts slowly to permanent background changes. Smaller values (e.g., 10-20) allow faster adaptation but may treat moving objects as background if they stop moving. Default is 30 frames.",
-        gt=0,
         examples=[30, 50, 100],
         default=30,
     )
