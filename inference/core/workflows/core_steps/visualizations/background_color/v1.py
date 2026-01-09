@@ -26,9 +26,39 @@ SHORT_DESCRIPTION = (
     "Apply a mask to cover all areas outside the detected regions in an image."
 )
 LONG_DESCRIPTION = """
-The `BackgroundColorVisualization` block draws all areas
-outside of detected regions in an image with a specified
-color.
+Apply a colored overlay to areas outside detected regions, effectively masking the background while preserving detected objects at their original appearance.
+
+## How This Block Works
+
+This block takes an image and detection predictions and applies a colored overlay to all areas outside of the detected objects, leaving the detected regions unchanged. The block:
+
+1. Takes an image and predictions as input
+2. Creates a colored mask layer with the specified background color
+3. Identifies detected regions from bounding boxes or segmentation masks (preserves detected objects)
+4. Applies the colored overlay to all areas outside the detected regions with the specified opacity
+5. Blends the colored overlay with the original image based on the opacity setting
+6. Returns an annotated image where detected objects appear unchanged, while the background is filled with the specified color
+
+The block works with both object detection predictions (using bounding boxes) and instance segmentation predictions (using masks). When masks are available, it preserves the exact shape of detected objects; otherwise, it uses bounding box regions. The opacity parameter controls how transparent or opaque the background overlay is, allowing you to create effects ranging from subtle background dimming (low opacity) to complete background replacement (high opacity). This creates a visual focus effect that highlights the detected objects by de-emphasizing or completely hiding the background.
+
+## Common Use Cases
+
+- **Object Focus and Highlighting**: Highlight detected objects by dimming or replacing the background, making objects stand out for presentations, documentation, or user interfaces
+- **Background Removal Effects**: Create images where backgrounds are replaced with solid colors or semi-transparent overlays for product photography, content creation, or design workflows
+- **Privacy and Anonymization**: Mask backgrounds while preserving detected objects (e.g., people, vehicles) to anonymize images, protect privacy, or comply with data protection requirements
+- **Visual Debugging and Validation**: Dim backgrounds to focus attention on detected regions when validating model performance, checking detection accuracy, or debugging detection results
+- **Presentation and Documentation**: Create clean, professional visualizations for reports, presentations, or documentation where you want to emphasize detected objects without distracting backgrounds
+- **Content Creation and Editing**: Prepare images for further processing, compositing, or editing by isolating detected objects with colored backgrounds for easier manipulation or integration into other workflows
+
+## Connecting to Other Blocks
+
+The annotated image from this block can be connected to:
+
+- **Other visualization blocks** (e.g., Label Visualization, Bounding Box Visualization, Polygon Visualization) to add additional annotations on top of the background-colored image for comprehensive visualization
+- **Data storage blocks** (e.g., Local File Sink, CSV Formatter, Roboflow Dataset Upload) to save images with background coloring for documentation, reporting, or archiving
+- **Webhook blocks** to send visualized results with background coloring to external systems, APIs, or web applications for display in dashboards or monitoring tools
+- **Notification blocks** (e.g., Email Notification, Slack Notification) to send annotated images with background coloring as visual evidence in alerts or reports
+- **Video output blocks** to create annotated video streams or recordings with background coloring for live monitoring, tracking visualization, or post-processing analysis
 """
 
 
@@ -60,13 +90,13 @@ class BackgroundColorManifest(PredictionsVisualizationManifest):
     )
 
     color: Union[str, Selector(kind=[STRING_KIND])] = Field(  # type: ignore
-        description="Color of the background.",
+        description="Color to use for the background overlay. Areas outside detected regions will be filled with this color. Can be a color name (e.g., 'BLACK', 'WHITE') or color code in HEX format (e.g., '#000000') or RGB format (e.g., 'rgb(0, 0, 0)').",
         default="BLACK",
         examples=["WHITE", "#FFFFFF", "rgb(255, 255, 255)" "$inputs.background_color"],
     )
 
     opacity: Union[FloatZeroToOne, Selector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = Field(  # type: ignore
-        description="Transparency of the Mask overlay.",
+        description="Opacity of the background overlay, ranging from 0.0 (fully transparent, original background visible) to 1.0 (fully opaque, complete background replacement). Values between 0.0 and 1.0 create a blend between the original image and the background color. Lower values create subtle background dimming, while higher values create stronger background replacement effects.",
         default=0.5,
         examples=[0.5, "$inputs.opacity"],
     )

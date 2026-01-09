@@ -42,7 +42,9 @@ from inference.core.workflows.prototypes.block import (
 )
 
 LONG_DESCRIPTION = """
-The **Email Notification** block allows users to send email notifications as part of a workflow. 
+The **Email Notification** block allows users to send email notifications as part of a workflow.
+
+## How This Block Works
 
 ### Email Provider Options
 
@@ -146,7 +148,6 @@ and no notification will be sent.
     Workflow that is run behind HTTP service (Roboflow Hosted API, Dedicated Deployment or self-hosted 
     `inference` server) will have no effect for processing HTTP requests.  
 
-
 ### Attachments
 
 You may specify attachment files to be sent with your e-mail. Attachments can be generated 
@@ -181,6 +182,14 @@ debugging purposes**.
 Sometimes it would be convenient to manually disable the e-mail notifier block. This is possible 
 setting `disable_sink` flag to hold reference to Workflow input. with such setup, caller would be
 able to disable the sink when needed sending agreed input parameter.
+
+## Common Use Cases
+
+- Use this block to [purpose based on block type]
+
+## Connecting to Other Blocks
+
+The outputs from this block can be connected to other blocks in your workflow.
 """
 
 PARAMETER_REGEX = re.compile(r"({{\s*\$parameters\.(\w+)\s*}})")

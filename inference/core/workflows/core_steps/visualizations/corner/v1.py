@@ -20,8 +20,40 @@ from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlock
 TYPE: str = "roboflow_core/corner_visualization@v1"
 SHORT_DESCRIPTION = "Draw the corners of detected objects in an image."
 LONG_DESCRIPTION = """
-The `CornerVisualization` block draws the corners of detected
-objects in an image using Supervision's `sv.BoxCornerAnnotator`.
+Draw corner markers at the four corners of detected object bounding boxes, providing a minimal, clean visualization style that marks object locations without full bounding box outlines.
+
+## How This Block Works
+
+This block takes an image and detection predictions and draws corner markers at the four corners of each detected object's bounding box. The block:
+
+1. Takes an image and predictions as input
+2. Identifies bounding box coordinates for each detected object
+3. Calculates the four corner positions (top-left, top-right, bottom-left, bottom-right) of each bounding box
+4. Applies color styling based on the selected color palette, with colors assigned by class, index, or track ID
+5. Draws corner markers (typically L-shaped lines or corner indicators) at each corner position using Supervision's BoxCornerAnnotator
+6. Applies the specified thickness and corner length to control the appearance of the corner markers
+7. Returns an annotated image with corner markers overlaid on the original image
+
+The block draws minimal corner markers instead of full bounding boxes, creating a clean, unobtrusive visualization style. This approach marks object locations clearly while maintaining a minimal aesthetic that doesn't overwhelm the image with full rectangular outlines. The corner markers can be customized with different thickness and length values, and colors can be assigned based on object class, index, or tracking ID, making it easy to distinguish between different objects or object types.
+
+## Common Use Cases
+
+- **Minimal Object Marking**: Mark detected objects with corner indicators instead of full bounding boxes for a clean, unobtrusive visualization style that preserves image clarity while still indicating object locations
+- **Aesthetic Visualization Design**: Create visually minimal annotations for presentations, dashboards, or user interfaces where full bounding boxes would be too visually intrusive but corner markers provide sufficient location indication
+- **Dense Scene Visualization**: Use corner markers when working with many detected objects in dense scenes where full bounding boxes would overlap excessively and create visual clutter
+- **Design-Oriented Applications**: Apply corner markers in design workflows, artistic visualizations, or creative applications where a minimal, modern aesthetic is preferred over traditional bounding box outlines
+- **Subtle Object Highlighting**: Mark object locations subtly without drawing attention away from the main image content, useful for background annotations or when object location indication is needed without visual prominence
+- **UI and Dashboard Integration**: Integrate corner markers into user interfaces, dashboards, or interactive applications where minimal visual indicators are preferred for better user experience and reduced visual noise
+
+## Connecting to Other Blocks
+
+The annotated image from this block can be connected to:
+
+- **Other visualization blocks** (e.g., Label Visualization, Dot Visualization, Bounding Box Visualization) to combine corner markers with additional annotations for comprehensive visualization
+- **Data storage blocks** (e.g., Local File Sink, CSV Formatter, Roboflow Dataset Upload) to save annotated images with corner markers for documentation, reporting, or analysis
+- **Webhook blocks** to send visualized results with corner markers to external systems, APIs, or web applications for display in dashboards or monitoring tools
+- **Notification blocks** (e.g., Email Notification, Slack Notification) to send annotated images with corner markers as visual evidence in alerts or reports
+- **Video output blocks** to create annotated video streams or recordings with corner markers for live monitoring, tracking visualization, or post-processing analysis
 """
 
 
@@ -53,13 +85,13 @@ class CornerManifest(ColorableVisualizationManifest):
     )
 
     thickness: Union[int, Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
-        description="Thickness of the lines in pixels.",
+        description="Thickness of the corner marker lines in pixels. Higher values create thicker, more visible corner markers.",
         default=4,
         examples=[4, "$inputs.thickness"],
     )
 
     corner_length: Union[int, Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
-        description="Length of the corner lines in pixels.",
+        description="Length of each corner marker line segment in pixels. This controls how long the corner indicators extend from each corner point. Higher values create longer, more prominent corner markers.",
         default=15,
         examples=[15, "$inputs.corner_length"],
     )

@@ -27,141 +27,42 @@ from inference.core.workflows.prototypes.block import (
 )
 
 LONG_DESCRIPTION = """
-The **Data Aggregator** block collects and processes data from Workflows to generate time-based statistical 
-summaries. It allows users to define custom aggregation strategies over specified intervals, making it suitable 
-for creating **analytics on data streams**.
+Collect and process data from workflow steps over configurable time-based or run-based intervals to generate statistical summaries and analytics reports, supporting multiple aggregation operations (sum, average, max, min, count, distinct values, value counts) with optional UQL-based data transformations for comprehensive data stream analytics.
 
-The block enables:
+## How This Block Works
 
-* feeding it with data from other Workflow blocks and applying in-place operations (for instance to extract 
-desired values out of model predictions)
+This block collects and aggregates data from workflow steps over specified intervals to produce statistical summaries. Unlike most blocks that output data for every input, this block maintains internal state and outputs aggregated results only when the configured interval is reached. The block:
 
-* using multiple aggregation modes, including `sum`, `avg`, `max`, `min`, `count` and others
+1. Receives data inputs from other workflow steps (via `data` field mapping variable names to workflow step outputs)
+2. Optionally applies UQL (Query Language) operations to transform the data before aggregation (e.g., extract class names from detections, calculate sequence lengths, filter or transform values) using `data_operations` for each input variable
+3. Accumulates data into internal aggregation states based on the specified `aggregation_mode` for each variable
+4. Tracks time elapsed or number of runs based on `interval_unit` (seconds, minutes, hours, or runs)
+5. Most of the time, returns empty outputs (terminating downstream processing) while collecting data internally
+6. When the interval threshold is reached (based on time elapsed or run count), computes and outputs aggregated statistics
+7. Flushes internal state after outputting aggregated results and starts collecting data for the next interval
+8. Produces output fields dynamically named as `{variable_name}_{aggregation_mode}` (e.g., `predictions_avg`, `classes_distinct`, `count_values_counts`)
 
-* specifying aggregation interval flexibly
+The block supports multiple aggregation modes for numeric data (`sum`, `avg`, `max`, `min`, `values_difference`), counting operations (`count`, `count_distinct`), and value analysis (`distinct`, `values_counts`). For list-like data, operations automatically process each element (e.g., `count` adds list length, `distinct` adds each element to the distinct set). The interval can be time-based (useful for video streams where wall-clock time matters) or run-based (useful for video file processing where frame count matters more than elapsed time).
 
-### Feeding Data Aggregator
+## Common Use Cases
 
-You can specify the data to aggregate by referencing input sources using the `data` field. Optionally,
-for each specified `data` input you can apply chain of UQL operations with `data_operations` property.
+- **Video Stream Analytics**: Aggregate detection results over time intervals from live video streams (e.g., calculate average object counts per minute, track distinct classes seen per hour, compute min/max detection counts over 30-second windows), enabling real-time analytics and monitoring for continuous video processing workflows
+- **Batch Video Processing**: Aggregate statistics across video frames using run-based intervals (e.g., calculate average detections per 100 frames, count distinct objects across 500-frame windows, sum total detections per batch), enabling meaningful analytics for pre-recorded video files where frame count matters more than elapsed time
+- **Time-Series Metrics Collection**: Collect and summarize workflow metrics over time (e.g., aggregate detection counts, calculate average confidence scores, track distinct class occurrences, compute value distributions), enabling statistical analysis and reporting for production workflows
+- **Model Performance Analysis**: Analyze model predictions across multiple inputs (e.g., calculate average prediction counts, track distinct predicted classes, compute min/max confidence scores, count occurrences of each class), enabling comprehensive model performance evaluation and insights
+- **Data Stream Summarization**: Summarize high-frequency data streams into periodic reports (e.g., aggregate every 60 seconds of detections into summary statistics, compute hourly averages, generate per-run summaries), enabling efficient data reduction and analysis for high-volume workflows
+- **Multi-Model Comparison**: Aggregate results from multiple models for comparison (e.g., compare average detection counts across models, track distinct classes per model, compute aggregate statistics for model ensembles), enabling comparative analytics across different inference pipelines
 
-For example, the following configuration:
+## Connecting to Other Blocks
 
-```
-data = {
-    "predictions_model_a": "$steps.model_a.predictions",
-    "predictions_model_b": "$steps.model_b.predictions",
-}
-data_operations = { 
-    "predictions_model_a": [
-        {"type": "DetectionsPropertyExtract", "property_name": "class_name"}
-    ],
-    "predictions_model_b": [{"type": "SequenceLength"}]
-}
-```
+This block receives data from workflow steps and outputs aggregated statistics periodically:
 
-on each step run will at first take `predictions_model_a` to extract list of detected classes
-and calculate the number of predicted bounding boxes for `predictions_model_b`.
-
-### Specifying data aggregations
-
-For each input data referenced by `data` property you can specify list of aggregation operations, that
-include:
-
-* **`sum`**: Taking the sum of values (requires data to be numeric)
-
-* **`avg`**: Taking the average of values (requires data to be numeric)
-
-* **`max`**: Taking the max of values (requires data to be numeric)
-
-* **`min`**: Taking the min of values (requires data to be numeric)
-
-* **`count`**: Counting the values - if provided value is list - operation will add length of the list into 
-aggregated state
-
-* **`distinct`:** deduplication of encountered values - providing list of unique values in the output. If 
-aggregation data is list - operation will add each element of the list into aggregated state.
-
-* **`count_distinct`:** counting occurrences of distinct values - providing number of different values that were 
-encountered. If aggregation data is list - operation will add each element of the list into aggregated state.
-
-* **`count_distinct`:** counting distinct values - providing number of different values that were 
-encountered. If aggregation data is list - operation will add each element of the list into aggregated state.
-
-* **`values_counts`:** counting occurrences of each distinct value - providing dictionary mapping each unique value 
-encountered into the number of observations. If aggregation data is list - operation will add each element of the list 
-into aggregated state.
-
-* **`values_difference`:** calculates the difference between max and min observed value (requires data to be numeric)
-
-If we take the `data` and `data_operations` from the example above and specify `aggregation_mode` in the following way:
-
-```
-aggregation_mode = {
-    "predictions_model_a": ["distinct", "count_distinct"],
-    "predictions_model_b": ["avg"],
-}
-``` 
-
-Our aggregation report will contain the following values:
-
-```
-{
-    "predictions_model_a_distinct": ["car", "person", "dog"],
-    "predictions_model_a_count_distinct": {"car": 378, "person": 128, "dog": 37},
-    "predictions_model_b_avg": 7.35,
-}
-``` 
-
-where:
-
-* `predictions_model_a_distinct` provides distinct classes predicted by model A in aggregation window
-
-* `predictions_model_a_count_distinct` provides number of classes instances predicted by model A in aggregation 
-window
-
-* `predictions_model_b_avg` provides average number of bounding boxes predicted by model B in aggregation window
-
-### Interval nature of the block
-
-!!! warning "Block behaviour is dictated by internal 'clock'"
-
-    Behaviour of this block differs from other, more classical blocks which output the data for each input.
-    **Data Aggregator** block maintains its internal state that dictates when the data will be produced, 
-    flushing internal aggregation state of the block. 
-    
-    You can expect that most of the times, once fed with data, the block will produce empty outputs,
-    effectively terminating downstream processing:
-    
-    ```
-    --- input_batch[0] ----> ┌───────────────────────┐ ---->  <Empty>
-    --- input_batch[1] ----> │                       │ ---->  <Empty>
-            ...              │     Data Aggregator   │ ---->  <Empty>
-            ...              │                       │ ---->  <Empty>           
-    --- input_batch[n] ----> └───────────────────────┘ ---->  <Empty>
-    ```  
-    
-    But once for a while, the block will yield aggregated data and flush its internal state:
-    
-    ```
-    --- input_batch[0] ----> ┌───────────────────────┐ ---->  <Empty>
-    --- input_batch[1] ----> │                       │ ---->  <Empty>
-            ...              │     Data Aggregator   │ ---->  {<aggregated_report>}
-            ...              │                       │ ---->  <Empty> # first datapoint added to new state          
-    --- input_batch[n] ----> └───────────────────────┘ ---->  <Empty>
-    ```
-     
-Setting the aggregation interval is possible with `interval` and `interval_unit` property.
-`interval` specifies the length of aggregation window and `interval_unit` bounds the `interval` value 
-into units. You can specify the interval based on:
-
-* **time elapse:** using `["seconds", "minutes", "hours"]` as `interval_unit` will make the 
-**Data Aggregator** to yield the aggregated report based on time that elapsed since last report 
-was released - this setting is relevant for **processing of video streams**.
-
-* **number of runs:** using `runs` as `interval_unit` - this setting is relevant for 
-**processing of video files**, as in this context wall-clock time elapse is not the proper way of getting
-meaningful reports.
+- **After detection or analysis blocks** (e.g., Object Detection, Instance Segmentation, Classification) to aggregate prediction results over time or across frames, enabling statistical analysis of model outputs and detection patterns
+- **After data processing blocks** (e.g., Expression, Property Definition, Detections Filter) that produce numeric or list outputs to aggregate computed values, metrics, or transformed data over intervals
+- **Before sink blocks** (e.g., CSV Formatter, Local File Sink, Webhook Sink) to save periodic aggregated reports, enabling efficient storage and export of summarized analytics data instead of individual data points
+- **In video processing workflows** to generate time-based or frame-based analytics reports, enabling comprehensive video analysis with periodic statistical summaries rather than per-frame outputs
+- **Before visualization or reporting blocks** that need aggregated data to create dashboards, charts, or summaries from time-series data, enabling visualization of trends and statistics
+- **In analytics pipelines** where high-frequency data needs to be reduced to periodic summaries, enabling efficient downstream processing and storage of statistical insights rather than raw high-volume data streams
 """
 
 
@@ -197,7 +98,7 @@ class BlockManifest(WorkflowBlockManifest):
     )
     type: Literal["roboflow_core/data_aggregator@v1"]
     data: Dict[str, Selector()] = Field(
-        description="References data to be used to construct each and every column",
+        description="Dictionary mapping variable names to data sources from workflow steps. Each key becomes a variable name for aggregation, and each value is a selector referencing workflow step outputs (e.g., predictions, metrics, computed values). These variables are used in aggregation_mode to specify which aggregations to compute. Example: {'predictions': '$steps.model.predictions', 'count': '$steps.counter.total'}.",
         examples=[
             {
                 "predictions": "$steps.model.predictions",
@@ -206,7 +107,7 @@ class BlockManifest(WorkflowBlockManifest):
         ],
     )
     data_operations: Dict[str, List[AllOperationsType]] = Field(
-        description="UQL definitions of operations to be performed on defined data w.r.t. element of the data",
+        description="Optional dictionary mapping variable names (from data) to UQL (Query Language) operation chains that transform data before aggregation. Operations are applied in sequence to extract, filter, or transform values (e.g., extract class names from detections using DetectionsPropertyExtract, calculate sequence length using SequenceLength, filter values, perform calculations). Keys must match variable names in data. Leave empty or omit variables that don't need transformation. Example: {'predictions': [{'type': 'DetectionsPropertyExtract', 'property_name': 'class_name'}]}.",
         examples=[
             {
                 "predictions": [
@@ -221,7 +122,7 @@ class BlockManifest(WorkflowBlockManifest):
         },
     )
     aggregation_mode: Dict[str, List[AggregationType]] = Field(
-        description="Lists of aggregation operations to apply on each input data",
+        description="Dictionary mapping variable names (from data) to lists of aggregation operations to compute. Each aggregation produces an output field named '{variable_name}_{aggregation_mode}'. Supported operations: 'sum' (sum of numeric values), 'avg' (average of numeric values), 'max'/'min' (maximum/minimum numeric values), 'count' (count values, adds list length for lists), 'distinct' (list of unique values), 'count_distinct' (number of unique values), 'values_counts' (dictionary of value occurrence counts), 'values_difference' (difference between max and min numeric values). For lists, operations process each element. Multiple aggregations per variable are supported. Example: {'predictions': ['distinct', 'count_distinct', 'avg']}.",
         examples=[{"predictions": ["distinct", "count_distinct"]}],
         json_schema_extra={
             "keys_bound_in": "data",
@@ -273,7 +174,7 @@ class BlockManifest(WorkflowBlockManifest):
     )
     interval_unit: Literal["seconds", "minutes", "hours", "runs"] = Field(
         default="seconds",
-        description="Unit to measure `interval`",
+        description="Unit for measuring the aggregation interval: 'seconds', 'minutes', 'hours' (time-based, uses wall-clock time elapsed since last output - useful for video streams), or 'runs' (run-based, counts number of workflow executions - useful for video file processing where frame count matters more than time). Time-based intervals track elapsed time between aggregated outputs. Run-based intervals count the number of times the block receives data. The block outputs aggregated results and flushes state when the interval threshold is reached.",
         examples=["seconds", "hours"],
         json_schema_extra={
             "always_visible": True,
@@ -299,7 +200,7 @@ class BlockManifest(WorkflowBlockManifest):
         },
     )
     interval: int = Field(
-        description="Length of aggregation interval",
+        description="Length of the aggregation interval in the units specified by interval_unit. Must be greater than 0. The block accumulates data internally and outputs aggregated results when this interval threshold is reached. For time-based units (seconds, minutes, hours), this is the duration elapsed since the last output. For 'runs', this is the number of workflow executions (e.g., frames processed) since the last output. After outputting results, the block resets its internal state and starts a new aggregation window. Most of the time, the block returns empty outputs while collecting data.",
         examples=[10, 100],
         gt=0,
     )
