@@ -423,14 +423,14 @@ class TextDisplayVisualizationBlockV1(WorkflowBlock):
         y2 = min(img_h, layout.box_y + layout.box_h)
 
         draw_background(
-            output_image,
-            x1,
-            y1,
-            x2,
-            y2,
-            bg_color_bgr,
-            background_opacity,
-            border_radius,
+            img=output_image,
+            x1=x1,
+            y1=y1,
+            x2=x2,
+            y2=y2,
+            bg_color_bgr=bg_color_bgr,
+            background_opacity=background_opacity,
+            border_radius=border_radius,
         )
         draw_text_lines(
             output_image,
