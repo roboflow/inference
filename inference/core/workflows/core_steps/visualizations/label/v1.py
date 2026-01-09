@@ -25,8 +25,39 @@ SHORT_DESCRIPTION = (
     "Draw labels on an image at specific coordinates based on provided detections."
 )
 LONG_DESCRIPTION = """
-The `LabelVisualization` block draws labels on an image at specific coordinates
-based on provided detections using Supervision's `sv.LabelAnnotator`.
+Draw text labels on detected objects with customizable content, position, styling, and background colors to display information like class names, confidence scores, tracking IDs, or other detection metadata.
+
+## How This Block Works
+
+This block takes an image and detection predictions and draws text labels on each detected object. The block:
+
+1. Takes an image and predictions as input
+2. Extracts label text for each detection based on the selected text option (class name, confidence, tracker ID, dimensions, area, time in zone, or index)
+3. Determines label position based on the selected anchor point (center, corners, edges, or center of mass)
+4. Applies background color styling based on the selected color palette, with colors assigned by class, index, or track ID
+5. Renders text labels with customizable text color, scale, thickness, padding, and border radius using Supervision's LabelAnnotator
+6. Returns an annotated image with text labels overlaid on the original image
+
+The block supports various text content options including class names, confidence scores, combination of class and confidence, tracker IDs (for tracked objects), time in zone (for zone analysis), object dimensions (center coordinates and width/height), area, or detection index. Labels are rendered with colored backgrounds that match the object's assigned color from the palette, and text styling (color, size, thickness) can be customized for optimal visibility. The labels can be positioned at any anchor point relative to each detection, allowing flexible placement for different visualization needs.
+
+## Common Use Cases
+
+- **Information Display on Detections**: Add informative text labels showing class names, confidence scores, or other metadata directly on detected objects for quick identification and validation
+- **Model Performance Visualization**: Display confidence scores or class predictions on detected objects to visualize model certainty, identify low-confidence detections, and validate model performance
+- **Object Tracking Visualization**: Show tracker IDs on tracked objects to visualize object tracking across frames, monitor persistent object identities, or debug tracking algorithms
+- **Zone Analysis and Monitoring**: Display "Time In Zone" labels on objects to visualize how long objects have been in specific zones for occupancy monitoring, dwell time analysis, or compliance tracking
+- **Spatial Information Display**: Show object dimensions (center coordinates, width, height) or area measurements directly on detections for spatial analysis, measurement workflows, or quality control
+- **Professional Presentation and Reporting**: Create clean, informative visualizations with labeled detections for reports, dashboards, or presentations that combine visual results with textual information
+
+## Connecting to Other Blocks
+
+The annotated image from this block can be connected to:
+
+- **Other visualization blocks** (e.g., Bounding Box Visualization, Polygon Visualization, Dot Visualization) to combine text labels with geometric annotations for comprehensive visualization
+- **Data storage blocks** (e.g., Local File Sink, CSV Formatter, Roboflow Dataset Upload) to save annotated images with labels for documentation, reporting, or analysis
+- **Webhook blocks** to send visualized results with labels to external systems, APIs, or web applications for display in dashboards or monitoring tools
+- **Notification blocks** (e.g., Email Notification, Slack Notification) to send annotated images with labels as visual evidence in alerts or reports
+- **Video output blocks** to create annotated video streams or recordings with labels for live monitoring, tracking visualization, or post-processing analysis
 """
 
 
@@ -72,7 +103,7 @@ class LabelManifest(ColorableVisualizationManifest):
         Selector(kind=[STRING_KIND]),
     ] = Field(  # type: ignore
         default="Class",
-        description="The data to display in the text labels.",
+        description="Content to display in text labels. Options: 'Class' (class name), 'Confidence' (confidence score), 'Class and Confidence' (both), 'Tracker Id' (tracking ID for tracked objects), 'Time In Zone' (time spent in zone), 'Dimensions' (center coordinates and width x height), 'Area' (object area in pixels), or 'Index' (detection index).",
         examples=["LABEL", "$inputs.text"],
         json_schema_extra={
             "always_visible": True,
@@ -95,36 +126,36 @@ class LabelManifest(ColorableVisualizationManifest):
         Selector(kind=[STRING_KIND]),
     ] = Field(  # type: ignore
         default="TOP_LEFT",
-        description="The anchor position for placing the label.",
+        description="Anchor position for placing labels relative to each detection's bounding box. Options include: CENTER (center of box), corners (TOP_LEFT, TOP_RIGHT, BOTTOM_LEFT, BOTTOM_RIGHT), edge midpoints (TOP_CENTER, CENTER_LEFT, CENTER_RIGHT, BOTTOM_CENTER), or CENTER_OF_MASS (center of mass of the object).",
         examples=["CENTER", "$inputs.text_position"],
     )
 
     text_color: Union[str, Selector(kind=[STRING_KIND])] = Field(  # type: ignore
-        description="Color of the text.",
+        description="Color of the label text. Can be a color name (e.g., 'WHITE', 'BLACK') or color code in HEX format (e.g., '#FFFFFF') or RGB format (e.g., 'rgb(255, 255, 255)').",
         default="WHITE",
         examples=["WHITE", "#FFFFFF", "rgb(255, 255, 255)" "$inputs.text_color"],
     )
 
     text_scale: Union[float, Selector(kind=[FLOAT_KIND])] = Field(  # type: ignore
-        description="Scale of the text.",
+        description="Scale factor for text size. Higher values create larger text. Default is 1.0.",
         default=1.0,
         examples=[1.0, "$inputs.text_scale"],
     )
 
     text_thickness: Union[int, Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
-        description="Thickness of the text characters.",
+        description="Thickness of text characters in pixels. Higher values create bolder, thicker text for better visibility.",
         default=1,
         examples=[1, "$inputs.text_thickness"],
     )
 
     text_padding: Union[int, Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
-        description="Padding around the text in pixels.",
+        description="Padding around the text in pixels. Controls the spacing between the text and the label background border.",
         default=10,
         examples=[10, "$inputs.text_padding"],
     )
 
     border_radius: Union[int, Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
-        description="Radius of the label in pixels.",
+        description="Border radius of the label background in pixels. Set to 0 for square corners. Higher values create more rounded corners for a softer appearance.",
         default=0,
         examples=[0, "$inputs.border_radius"],
     )

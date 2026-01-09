@@ -117,6 +117,12 @@ ROBOFLOW_MODEL_TYPES = {
     ("object-detection", "rfdetr-small"): RFDETRObjectDetection,
     ("object-detection", "rfdetr-medium"): RFDETRObjectDetection,
     ("instance-segmentation", "rfdetr-seg-preview"): RFDETRInstanceSegmentation,
+    ("instance-segmentation", "rfdetr-seg-nano"): RFDETRInstanceSegmentation,
+    ("instance-segmentation", "rfdetr-seg-small"): RFDETRInstanceSegmentation,
+    ("instance-segmentation", "rfdetr-seg-medium"): RFDETRInstanceSegmentation,
+    ("instance-segmentation", "rfdetr-seg-large"): RFDETRInstanceSegmentation,
+    ("instance-segmentation", "rfdetr-seg-xlarge"): RFDETRInstanceSegmentation,
+    ("instance-segmentation", "rfdetr-seg-xxlarge"): RFDETRInstanceSegmentation,
     (
         "instance-segmentation",
         "yolov11n",
