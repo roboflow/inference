@@ -32,13 +32,76 @@ from inference.core.workflows.prototypes.block import (
 OUTPUT_KEY: str = "velocity_detections"
 SHORT_DESCRIPTION = "Calculate the velocity and speed of tracked objects with smoothing and unit conversion."
 LONG_DESCRIPTION = """
-The `VelocityBlock` computes the velocity and speed of objects tracked across video frames.
-It includes options to smooth the velocity and speed measurements over time and to convert units from pixels per second to meters per second.
-It requires detections from Byte Track with unique `tracker_id` assigned to each object, which persists between frames.
-The velocities are calculated based on the displacement of object centers over time.
+Calculate the velocity and speed of tracked objects across video frames by measuring displacement of object centers over time, applying exponential moving average smoothing to reduce noise, and converting measurements from pixels per second to meters per second for traffic speed monitoring, movement analysis, behavior tracking, and performance measurement workflows.
 
-Note: due to perspective and camera distortions calculated velocity will be different depending on object position in relation to the camera.
+## How This Block Works
 
+This block measures how fast objects are moving by tracking their positions across video frames. The block:
+
+1. Receives tracked detection predictions with unique tracker IDs and an image with embedded video metadata
+2. Extracts video metadata from the image:
+   - Accesses video_metadata to get frame timestamps or frame numbers and frame rate (fps)
+   - Extracts video_identifier to maintain separate tracking state for different videos
+   - Determines current timestamp using frame_number/fps for video files or frame_timestamp for streams
+3. Validates that detections have tracker IDs (required for tracking object movement across frames)
+4. Calculates object center positions:
+   - Computes the center point (x, y) of each bounding box in the current frame
+   - Uses bounding box coordinates to find geometric centers
+5. Retrieves or initializes tracking state:
+   - Maintains previous positions and timestamps for each tracker_id per video
+   - Stores smoothed velocity history for each tracker_id per video
+   - Creates new tracking entries for objects appearing for the first time
+6. Calculates velocity and speed for each tracked object:
+   - **For objects with previous positions**: Computes displacement (change in position) and time delta (change in time) between current and previous frames
+   - **Velocity**: Calculates velocity vector as displacement divided by time delta (pixels per second)
+   - **Speed**: Computes speed as the magnitude (length) of the velocity vector (total pixels per second regardless of direction)
+   - **For new objects**: Sets velocity and speed to zero (no movement data available yet)
+7. Applies exponential moving average smoothing:
+   - Smooths velocity measurements using exponential moving average with configurable smoothing factor (alpha)
+   - Reduces noise and jitter in velocity calculations from detection variations
+   - Lower alpha values provide more smoothing (slower response to changes), higher alpha values provide less smoothing (faster response to changes)
+   - Calculates smoothed velocity and smoothed speed for each object
+8. Converts units to meters per second:
+   - Divides pixel-based velocities and speeds by pixels_per_meter conversion factor
+   - Converts all measurements (velocity, speed, smoothed_velocity, smoothed_speed) to real-world units
+   - Enables comparison with real-world speed measurements (e.g., km/h, mph)
+9. Stores velocity data in detection metadata:
+   - Adds four velocity metrics to each detection: velocity (m/s), speed (m/s), smoothed_velocity (m/s), smoothed_speed (m/s)
+   - Velocity is a 2D vector [vx, vy] representing direction and magnitude of movement
+   - Speed is a scalar value representing total speed regardless of direction
+   - All measurements are stored in detections.data for downstream use
+10. Updates tracking state for next frame:
+    - Saves current positions and timestamps for all tracked objects
+    - Stores smoothed velocities for next frame's smoothing calculations
+11. Returns detections enhanced with velocity information:
+    - Outputs the same detection objects with added velocity metadata
+    - Each detection now includes velocity and speed data in its metadata
+
+Velocity is calculated based on the displacement of object centers (bounding box centers) over time. The block maintains separate tracking state for each video, allowing velocity calculation across multiple video streams. Due to perspective distortion and camera positioning, calculated velocity may vary depending on where objects appear in the frame - objects closer to the camera or at different depths will have different pixel-per-second values for the same real-world speed. The smoothing helps reduce noise from detection inaccuracies and frame-to-frame variations.
+
+## Common Use Cases
+
+- **Traffic Speed Monitoring**: Measure vehicle speeds on roads and highways (e.g., monitor traffic speeds, detect speeding violations, analyze traffic flow rates), enabling traffic enforcement and analysis workflows
+- **Sports Performance Analysis**: Track athlete movement and speed during sports activities (e.g., measure player speeds, analyze sprint performance, track movement patterns), enabling sports analytics workflows
+- **Security and Surveillance**: Monitor movement speed of people or objects in security scenarios (e.g., detect running or suspicious rapid movement, monitor crowd flow speeds, track object movement rates), enabling security monitoring workflows
+- **Retail Analytics**: Analyze customer movement patterns and walking speeds in retail spaces (e.g., measure customer flow rates, analyze shopping behavior patterns, track movement efficiency), enabling retail behavior analysis workflows
+- **Wildlife Behavior Studies**: Track animal movement speeds and patterns in natural habitats (e.g., measure animal speeds, analyze migration patterns, study movement behavior), enabling wildlife research workflows
+- **Industrial Monitoring**: Monitor speeds of vehicles, equipment, or products in industrial settings (e.g., track conveyor speeds, measure vehicle speeds in facilities, monitor production line movement rates), enabling industrial automation workflows
+
+## Connecting to Other Blocks
+
+This block receives tracked detections and an image with embedded video metadata, and produces detections enhanced with velocity metadata:
+
+- **After Byte Tracker blocks** to calculate velocity for tracked objects (e.g., measure speeds of tracked vehicles, analyze tracked person movement, monitor tracked object velocities), enabling tracking-to-velocity workflows
+- **After object detection or instance segmentation blocks** with tracking enabled to measure movement speeds (e.g., calculate vehicle speeds, track person movement rates, monitor object velocities), enabling detection-to-velocity workflows
+- **Before visualization blocks** to display velocity information (e.g., visualize speed overlays, display velocity vectors, show movement speed annotations), enabling velocity visualization workflows
+- **Before logic blocks** like Continue If to make decisions based on speed thresholds (e.g., continue if speed exceeds limit, filter based on velocity ranges, trigger actions on speed violations), enabling speed-based decision workflows
+- **Before notification blocks** to alert on speed violations or threshold events (e.g., alert on speeding violations, notify on rapid movement, trigger speed-based alerts), enabling velocity-based notification workflows
+- **Before data storage blocks** to record velocity measurements (e.g., log speed data, store velocity statistics, record movement metrics), enabling velocity data logging workflows
+
+## Requirements
+
+This block requires tracked detections with tracker_id information (detections must come from a tracking block like Byte Tracker). The image's video_metadata should include frame rate (fps) for video files or frame timestamps for streamed video to calculate accurate time deltas. The block maintains persistent tracking state across frames for each video using video_identifier, so it should be used in video workflows where frames are processed sequentially. For accurate velocity measurement, detections should be provided consistently across frames with valid tracker IDs. The pixels_per_meter conversion factor should be calibrated based on camera setup and scene geometry for accurate real-world speed measurements. Note that velocity accuracy may vary due to perspective distortion depending on object position in the frame.
 """
 
 
@@ -59,25 +122,27 @@ class VelocityManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["roboflow_core/velocity@v1"]
-    image: WorkflowImageSelector
+    image: WorkflowImageSelector = Field(
+        description="Image with embedded video metadata. The video_metadata contains fps, frame_number, frame_timestamp, and video_identifier. Required for calculating time deltas and maintaining separate velocity tracking state for different videos.",
+    )
     detections: StepOutputSelector(
         kind=[
             OBJECT_DETECTION_PREDICTION_KIND,
             INSTANCE_SEGMENTATION_PREDICTION_KIND,
         ]
     ) = Field(  # type: ignore
-        description="Model predictions to calculate the velocity for.",
+        description="Tracked object detection or instance segmentation predictions. Must include tracker_id information from a tracking block. Velocity is calculated based on displacement of bounding box centers over time. Output detections include velocity (m/s vector), speed (m/s scalar), smoothed_velocity (m/s vector), and smoothed_speed (m/s scalar) in detection metadata.",
         examples=["$steps.object_detection_model.predictions"],
     )
     smoothing_alpha: Union[float, Selector(kind=[FLOAT_KIND])] = Field(  # type: ignore
         default=0.5,
-        description="Smoothing factor (alpha) for exponential moving average (0 < alpha <= 1). Lower alpha means more smoothing.",
-        examples=[0.5],
+        description="Smoothing factor (alpha) for exponential moving average, range 0 < alpha <= 1. Controls how much smoothing is applied to velocity measurements. Lower values (closer to 0) provide more smoothing - slower response to changes, less noise. Higher values (closer to 1) provide less smoothing - faster response to changes, more noise. Default 0.5 balances smoothness and responsiveness.",
+        examples=[0.5, 0.3, 0.7],
     )
     pixels_per_meter: Union[float, Selector(kind=[FLOAT_KIND])] = Field(  # type: ignore
         default=1.0,
-        description="Conversion from pixels to meters. Velocity will be converted to meters per second using this value.",
-        examples=[0.01],  # Example: 1 pixel = 0.01 meters
+        description="Conversion factor from pixels to meters for real-world speed calculation. Velocity measurements in pixels per second are divided by this value to convert to meters per second. Must be greater than 0. For accurate real-world speeds, calibrate based on camera height, angle, and scene geometry. Example: if 1 pixel = 0.01 meters (1cm), use 0.01. Default 1.0 means no conversion (results in pixels per second).",
+        examples=[0.01, 0.1, 1.0],
     )
 
     @classmethod
