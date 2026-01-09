@@ -26,18 +26,6 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 
-SHORT_DESCRIPTION: str = "Detect motion in a video using OpenCV."
-LONG_DESCRIPTION: str = """
-This block uses background subtraction to detect motion in a video. The block draws the contours
-of the detected motion, as well as outputs the bounding boxes as an object detection. Two flags are
-provided for use in workflows - one to indicate motion, and an alarm to indicate when the motion
-changed from no motion to motion detected. Additionally a zone can be provided to limit the scope
-of the motion detection to a specific area of the video frame.
-
-Motion detection is extremely useful for generating alerts and file uploads. Additionally, inference
-can be conditionally run based on motion detection to save compute resources.
-"""
-
 
 class MotionDetectionManifest(WorkflowBlockManifest):
     type: Literal["roboflow_core/motion_detection@v1"]
@@ -45,8 +33,45 @@ class MotionDetectionManifest(WorkflowBlockManifest):
         json_schema_extra={
             "name": "Motion Detection",
             "version": "v1",
-            "short_description": SHORT_DESCRIPTION,
-            "long_description": LONG_DESCRIPTION,
+            "short_description": "Detect motion in a video using OpenCV.",
+            "long_description": (
+                """
+Detect motion in video streams using OpenCV's background subtraction algorithm.
+
+## How This Block Works
+
+This block uses background subtraction (specifically the MOG2 algorithm) to detect motion in video frames. The block maintains state across frames to build a background model and track motion patterns:
+
+1. **Initializes background model** - on the first frame, creates a background subtractor using the specified history and threshold parameters
+2. **Processes each frame** - applies background subtraction to identify pixels that differ from the learned background model
+3. **Filters noise** - applies morphological operations to remove noise and combine nearby motion regions into coherent contours
+4. **Extracts motion regions** - finds contours representing motion areas, filters them by minimum size, and optionally clips them to a detection zone
+5. **Simplifies contours** - reduces contour complexity to keep detection data manageable
+6. **Generates outputs** - creates object detection predictions with bounding boxes, determines motion status, triggers alarms when motion starts, and provides motion zone polygons
+
+The block tracks motion state across frames - the **alarm** output becomes true only when motion transitions from not detected to detected, making it useful for triggering actions when motion first appears.
+
+## Common Use Cases
+
+- **Security Monitoring**: Detect motion in surveillance cameras to trigger alerts, recordings, or notifications when activity is detected
+- **Resource Optimization**: Conditionally run expensive inference operations (e.g., object detection, classification) only when motion is detected to save computational resources
+- **Activity Detection**: Monitor areas for movement to track occupancy, identify entry/exit events, or detect unauthorized access
+- **Video Analytics**: Analyze video streams to identify motion patterns, track activity levels, or detect anomalies in monitored areas
+- **Smart Recording**: Trigger video recording or snapshot capture when motion is detected, reducing storage requirements compared to continuous recording
+- **Zone Monitoring**: Monitor specific areas within a frame using detection zones to focus motion detection on relevant regions while ignoring busy but irrelevant areas
+
+## Connecting to Other Blocks
+
+The motion detection outputs from this block can be connected to:
+
+- **Conditional logic blocks** (e.g., Continue If) to execute workflow steps only when motion is detected or when alarms trigger
+- **Object detection blocks** to run detection models only on frames with motion, saving computational resources
+- **Notification blocks** (e.g., Email Notification, Slack Notification) to send alerts when motion is detected or alarms trigger
+- **Data storage blocks** (e.g., Roboflow Dataset Upload, CSV Formatter) to log motion events, timestamps, and detection data for analytics
+- **Visualization blocks** to draw motion zones, bounding boxes, or annotations on frames showing detected motion
+- **Filter blocks** to filter images or data based on motion status before passing to downstream processing
+"""
+            ),
             "license": "Apache-2.0",
             "block_type": "classical_computer_vision",
             "ui_manifest": {
@@ -60,56 +85,53 @@ class MotionDetectionManifest(WorkflowBlockManifest):
 
     image: Selector(kind=[IMAGE_KIND]) = Field(
         title="Input Image",
-        description="The input image for this step.",
+        description="The input image or video frame to analyze for motion. The block processes frames sequentially to build a background model - each frame updates the background model and detects motion relative to learned background patterns. Can be connected from workflow inputs or previous steps.",
         examples=["$inputs.image", "$steps.cropping.crops"],
         validation_alias=AliasChoices("image", "images"),
     )
 
     minimum_contour_area: Union[Selector(kind=[INTEGER_KIND]), int] = Field(
         title="Minimum Contour Area",
-        description="Motion in areas smaller than this in square pixels will not be counted as motion.",
+        description="Minimum area in square pixels for a motion region to be detected. Contours smaller than this threshold are filtered out to ignore noise, small shadows, or minor pixel variations. Lower values increase sensitivity but may detect more false positives (e.g., 100 for very sensitive detection, 500 for only large objects). Default is 200 square pixels.",
         gt=0,
-        examples=[200],
+        examples=[200, 100, 500],
         default=200,
     )
 
     morphological_kernel_size: Union[Selector(kind=[INTEGER_KIND]), int] = Field(
         title="Morphological Kernel Size",
-        description="The size of the kernel in pixels used for morphological operations to combine contours.",
+        description="Size of the morphological kernel in pixels used to combine nearby motion regions and filter noise. Larger values merge more distant motion regions into single contours but may also merge separate objects. Smaller values preserve more detail but may leave fragmented detections. The kernel uses an elliptical shape. Default is 3 pixels.",
         gt=0,
-        examples=[3],
+        examples=[3, 5, 7],
         default=3,
     )
 
     threshold: Union[Selector(kind=[INTEGER_KIND]), int] = Field(
         title="Threshold",
-        description="The threshold value for the squared Mahalanobis distance for background subtraction."
-        " Smaller values increase sensitivity to motion. Recommended values are 8-32.",
+        description="Threshold value for the squared Mahalanobis distance used by the MOG2 background subtraction algorithm. Controls sensitivity to motion - smaller values increase sensitivity (detect smaller changes) but may produce more false positives, larger values decrease sensitivity (only detect significant changes) but may miss subtle motion. Recommended range is 8-32. Default is 16.",
         gt=0,
-        examples=[16],
+        examples=[16, 8, 24, 32],
         default=16,
     )
 
     history: Union[Selector(kind=[INTEGER_KIND]), int] = Field(
         title="History",
-        description="The number of previous frames to use for background subtraction. Larger values make the model"
-        " less sensitive to quick changes in the background, smaller values allow for more adaptation.",
+        description="Number of previous frames used to build the background model. Controls how quickly the background adapts to changes - larger values (e.g., 50-100) create a more stable background model that's less sensitive to temporary changes but adapts slowly to permanent background changes. Smaller values (e.g., 10-20) allow faster adaptation but may treat moving objects as background if they stop moving. Default is 30 frames.",
         gt=0,
-        examples=[30],
+        examples=[30, 50, 100],
         default=30,
     )
 
     detection_zone: Union[list, str, Selector(kind=[ZONE_KIND]), Selector(kind=[LIST_OF_VALUES_KIND])] = Field(  # type: ignore
         title="Detection Zone",
-        description="An optional polygon zone in a format [[x1, y1], [x2, y2], [x3, y3], ...];"
-        " each zone must consist of more than 3 points",
+        description="Optional polygon zone to limit motion detection to a specific area of the frame. Motion is only detected within this zone, ignoring activity outside. Format: [[x1, y1], [x2, y2], [x3, y3], ...] where coordinates are in pixels. The polygon must have more than 3 points. Can be provided as a list, JSON string, or selector referencing zone outputs from other blocks. Useful for focusing on specific regions (e.g., doorways, windows, restricted areas) while ignoring busy but irrelevant areas. If not provided, motion is detected across the entire frame.",
         default=None,
     )
 
     suppress_first_detections: Union[Selector(kind=[BOOLEAN_KIND]), bool] = Field(  # type: ignore
         title="Don't Detect Until History is Full",
-        description="Suppress motion detections until the background history is fully initialized.",
-        examples=[True],
+        description="If true, suppresses motion detections until the background model has been initialized with enough frames (specified by the history parameter). This prevents false positives from early frames where the background model hasn't learned the scene yet. When false, the block attempts to detect motion immediately, which may produce unreliable results during initialization. Default is true (recommended for most use cases).",
+        examples=[True, False],
         default=True,
     )
 
@@ -121,24 +143,28 @@ class MotionDetectionManifest(WorkflowBlockManifest):
                 kind=[
                     BOOLEAN_KIND,
                 ],
+                description="Boolean flag indicating whether motion was detected in the current frame. True if any motion regions were found, false otherwise. This flag is true for every frame with detected motion.",
             ),
             OutputDefinition(
                 name="alarm",
                 kind=[
                     BOOLEAN_KIND,
                 ],
+                description="Boolean flag that becomes true only when motion transitions from not detected (previous frame) to detected (current frame). Useful for triggering actions when motion first appears. Returns false if motion was already detected in the previous frame, even if motion continues in the current frame.",
             ),
             OutputDefinition(
                 name="detections",
                 kind=[
                     OBJECT_DETECTION_PREDICTION_KIND,
                 ],
+                description="Object detection predictions containing bounding boxes for all detected motion regions. Each detection has class name 'motion', confidence 1.0, and bounding box coordinates. Empty detections if no motion is detected. Compatible with other blocks that accept object detection predictions.",
             ),
             OutputDefinition(
                 name="motion_zones",
                 kind=[
                     LIST_OF_VALUES_KIND,
                 ],
+                description="List of polygon coordinates representing the exact shapes of detected motion regions. Each polygon is a list of [x, y] coordinate pairs defining the contour of a motion region. Useful for visualization or precise motion area analysis. Empty list if no motion is detected.",
             ),
         ]
 
