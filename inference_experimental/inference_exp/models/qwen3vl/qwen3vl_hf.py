@@ -23,6 +23,22 @@ from transformers import (
 from transformers.utils import is_flash_attn_2_available
 
 
+def _get_qwen3vl_attn_implementation(device: torch.device) -> str:
+    """Use flash_attention_2 if available, otherwise eager.
+
+    SDPA has dtype mismatch issues with some transformers versions.
+    """
+    if is_flash_attn_2_available() and device and "cuda" in str(device):
+        # Verify flash_attn can actually be imported (not just installed)
+        try:
+            import flash_attn  # noqa: F401
+
+            return "flash_attention_2"
+        except ImportError:
+            pass
+    return "eager"
+
+
 class Qwen3VLHF:
     default_dtype = torch.bfloat16
 
@@ -55,11 +71,7 @@ class Qwen3VLHF:
 
         dtype = cls.default_dtype
 
-        attn_implementation = (
-            "flash_attention_2"
-            if (is_flash_attn_2_available() and device and "cuda" in str(device))
-            else "eager"
-        )
+        attn_implementation = _get_qwen3vl_attn_implementation(device)
 
         if os.path.exists(adapter_config_path):
             # Has adapter - load base model then apply LoRA
