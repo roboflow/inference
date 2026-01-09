@@ -493,11 +493,11 @@ from inference.core.workflows.core_steps.visualizations.polygon_zone.v1 import (
 from inference.core.workflows.core_steps.visualizations.reference_path.v1 import (
     ReferencePathVisualizationBlockV1,
 )
-from inference.core.workflows.core_steps.visualizations.trace.v1 import (
-    TraceVisualizationBlockV1,
-)
 from inference.core.workflows.core_steps.visualizations.text_display.v1 import (
     TextDisplayVisualizationBlockV1,
+)
+from inference.core.workflows.core_steps.visualizations.trace.v1 import (
+    TraceVisualizationBlockV1,
 )
 from inference.core.workflows.core_steps.visualizations.triangle.v1 import (
     TriangleVisualizationBlockV1,

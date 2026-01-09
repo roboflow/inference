@@ -14,9 +14,7 @@ from inference.core.workflows.core_steps.common.query_language.operations.core i
 from inference.core.workflows.core_steps.visualizations.common.base import (
     OUTPUT_IMAGE_KEY,
 )
-from inference.core.workflows.core_steps.visualizations.common.utils import (
-    str_to_color,
-)
+from inference.core.workflows.core_steps.visualizations.common.utils import str_to_color
 from inference.core.workflows.core_steps.visualizations.text_display.utils import (
     TextLayout,
     calculate_relative_position,
