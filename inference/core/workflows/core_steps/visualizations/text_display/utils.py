@@ -282,11 +282,11 @@ def draw_background_with_alpha(
     # so max index is size - 1
     if border_radius > 0:
         draw_rounded_rectangle(
-            overlay,
-            (0, 0),
-            (roi_w - 1, roi_h - 1),
-            color,
-            border_radius,
+            img=overlay,
+            pt1=(0, 0),
+            pt2=(roi_w - 1, roi_h - 1),
+            color=color,
+            radius=border_radius,
         )
     else:
         cv2.rectangle(
@@ -322,23 +322,23 @@ def draw_background(
         if background_opacity < 1.0:
             # Alpha blending required
             draw_background_with_alpha(
-                img,
-                (x1, y1),
-                (x2, y2),
-                bg_color_bgr,
-                background_opacity,
-                border_radius,
+                img=img,
+                pt1=(x1, y1),
+                pt2=(x2, y2),
+                color=bg_color_bgr,
+                alpha=background_opacity,
+                border_radius=border_radius,
             )
         else:
             # Fully opaque - use direct drawing
             # OpenCV uses inclusive coordinates, so subtract 1 from exclusive end coords
             if border_radius > 0:
                 draw_rounded_rectangle(
-                    img,
-                    (x1, y1),
-                    (x2 - 1, y2 - 1),
-                    bg_color_bgr,
-                    border_radius,
+                    img=img,
+                    pt1=(x1, y1),
+                    pt2=(x2 - 1, y2 - 1),
+                    color=bg_color_bgr,
+                    radius=border_radius,
                 )
             else:
                 cv2.rectangle(
