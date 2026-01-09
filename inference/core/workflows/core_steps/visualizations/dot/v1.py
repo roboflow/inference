@@ -23,8 +23,38 @@ SHORT_DESCRIPTION = (
     "Draw dots on an image at specific coordinates based on provided detections."
 )
 LONG_DESCRIPTION = """
-The `DotVisualization` block draws dots on an image at specific coordinates
-based on provided detections using Supervision's `sv.DotAnnotator`.
+Draw circular dots on an image to mark specific points on detected objects, with customizable position, size, color, and outline styling.
+
+## How This Block Works
+
+This block takes an image and detection predictions and draws circular dot markers at specified anchor positions on each detected object. The block:
+
+1. Takes an image and predictions as input
+2. Determines the dot position for each detection based on the selected anchor point (center, corners, edges, or center of mass)
+3. Applies color styling based on the selected color palette, with colors assigned by class, index, or track ID
+4. Draws circular dots with the specified radius and optional outline thickness using Supervision's DotAnnotator
+5. Returns an annotated image with dots overlaid on the original image
+
+The block supports various position options including the center of the bounding box, any of the four corners, edge midpoints, or the center of mass (useful for objects with irregular shapes). Dots can be customized with different sizes (radius), optional outlines for better visibility, and various color palettes. This provides a minimal, clean visualization style that marks detection locations without the visual clutter of full bounding boxes, making it ideal for dense scenes or when you need to highlight specific points of interest.
+
+## Common Use Cases
+
+- **Minimal Object Marking**: Mark detected objects with small dots instead of bounding boxes for cleaner, less cluttered visualizations when working with dense scenes or many detections
+- **Point of Interest Highlighting**: Mark specific anchor points (corners, center, center of mass) on detected objects for applications like object tracking, pose estimation, or spatial analysis
+- **Tracking Visualization**: Use dots to visualize object trajectories or tracking IDs over time, creating a cleaner alternative to bounding boxes for tracking workflows
+- **Crowd Counting and Density Analysis**: Mark people or objects with dots to visualize density patterns, crowd distribution, or object counts without overlapping bounding boxes
+- **Keypoint and Landmark Marking**: Mark specific points on objects (such as the center of mass for irregular shapes) for physics simulations, measurement workflows, or spatial relationship analysis
+- **Minimal UI Overlays**: Create clean, unobtrusive visual overlays for user interfaces, dashboards, or mobile applications where full bounding boxes would be too visually intrusive
+
+## Connecting to Other Blocks
+
+The annotated image from this block can be connected to:
+
+- **Other visualization blocks** (e.g., Bounding Box Visualization, Label Visualization, Trace Visualization) to combine dot markers with additional annotations for comprehensive visualization
+- **Data storage blocks** (e.g., Local File Sink, CSV Formatter, Roboflow Dataset Upload) to save annotated images with dot markers for documentation, reporting, or analysis
+- **Webhook blocks** to send visualized results with dot markers to external systems, APIs, or web applications for display in dashboards or monitoring tools
+- **Notification blocks** (e.g., Email Notification, Slack Notification) to send annotated images with dot markers as visual evidence in alerts or reports
+- **Video output blocks** to create annotated video streams or recordings with dot markers for live monitoring, tracking visualization, or post-processing analysis
 """
 
 
@@ -63,19 +93,19 @@ class DotManifest(ColorableVisualizationManifest):
         ],
         Selector(kind=[STRING_KIND]),
     ] = Field(  # type: ignore
+        description="Anchor position for placing the dot relative to each detection's bounding box. Options include: CENTER (center of box), corners (TOP_LEFT, TOP_RIGHT, BOTTOM_LEFT, BOTTOM_RIGHT), edge midpoints (TOP_CENTER, CENTER_LEFT, CENTER_RIGHT, BOTTOM_CENTER), or CENTER_OF_MASS (center of mass of the object, useful for irregular shapes).",
         default="CENTER",
-        description="The anchor position for placing the dot.",
         examples=["CENTER", "$inputs.position"],
     )
 
     radius: Union[int, Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
-        description="Radius of the dot in pixels.",
+        description="Radius of the dot in pixels. Higher values create larger, more visible dots.",
         default=4,
         examples=[4, "$inputs.radius"],
     )
 
     outline_thickness: Union[int, Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
-        description="Thickness of the outline of the dot in pixels.",
+        description="Thickness of the dot outline in pixels. Set to 0 for no outline (filled dots only). Higher values create thicker outlines around the dot for better visibility against varying backgrounds.",
         default=0,
         examples=[2, "$inputs.outline_thickness"],
     )
