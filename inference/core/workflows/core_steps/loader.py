@@ -12,6 +12,9 @@ from inference.core.env import (
 from inference.core.workflows.core_steps.analytics.data_aggregator.v1 import (
     DataAggregatorBlockV1,
 )
+from inference.core.workflows.core_steps.analytics.detection_event_log.v1 import (
+    DetectionEventLogBlockV1,
+)
 from inference.core.workflows.core_steps.analytics.line_counter.v1 import (
     LineCounterBlockV1,
 )
@@ -42,6 +45,9 @@ from inference.core.workflows.core_steps.classical_cv.background_subtraction.v1 
 )
 from inference.core.workflows.core_steps.classical_cv.camera_focus.v1 import (
     CameraFocusBlockV1,
+)
+from inference.core.workflows.core_steps.classical_cv.camera_focus.v2 import (
+    CameraFocusBlockV2,
 )
 from inference.core.workflows.core_steps.classical_cv.contours.v1 import (
     ImageContoursDetectionBlockV1,
@@ -161,6 +167,9 @@ from inference.core.workflows.core_steps.fusion.detections_classes_replacement.v
 from inference.core.workflows.core_steps.fusion.detections_consensus.v1 import (
     DetectionsConsensusBlockV1,
 )
+from inference.core.workflows.core_steps.fusion.detections_list_rollup.v1 import (
+    DetectionsListRollUpBlockV1,
+)
 from inference.core.workflows.core_steps.fusion.detections_stitch.v1 import (
     DetectionsStitchBlockV1,
 )
@@ -207,6 +216,9 @@ from inference.core.workflows.core_steps.models.foundation.google_gemini.v1 impo
 from inference.core.workflows.core_steps.models.foundation.google_gemini.v2 import (
     GoogleGeminiBlockV2,
 )
+from inference.core.workflows.core_steps.models.foundation.google_gemini.v3 import (
+    GoogleGeminiBlockV3,
+)
 from inference.core.workflows.core_steps.models.foundation.google_vision_ocr.v1 import (
     GoogleVisionOCRBlockV1,
 )
@@ -236,6 +248,9 @@ from inference.core.workflows.core_steps.models.foundation.openai.v4 import (
 from inference.core.workflows.core_steps.models.foundation.perception_encoder.v1 import (
     PerceptionEncoderModelBlockV1,
 )
+from inference.core.workflows.core_steps.models.foundation.qwen3vl.v1 import (
+    Qwen3VLBlockV1,
+)
 from inference.core.workflows.core_steps.models.foundation.qwen.v1 import (
     Qwen25VLBlockV1,
 )
@@ -259,6 +274,7 @@ if SAM3_3D_OBJECTS_ENABLED:
     from inference.core.workflows.core_steps.models.foundation.segment_anything3_3d.v1 import (
         SegmentAnything3_3D_ObjectsBlockV1,
     )
+
 from inference.core.workflows.core_steps.models.foundation.smolvlm.v1 import (
     SmolVLM2BlockV1,
 )
@@ -344,6 +360,9 @@ from inference.core.workflows.core_steps.sinks.slack.notification.v1 import (
 )
 from inference.core.workflows.core_steps.sinks.twilio.sms.v1 import (
     TwilioSMSNotificationBlockV1,
+)
+from inference.core.workflows.core_steps.sinks.twilio.sms.v2 import (
+    TwilioSMSNotificationBlockV2,
 )
 from inference.core.workflows.core_steps.sinks.webhook.v1 import WebhookSinkBlockV1
 from inference.core.workflows.core_steps.transformations.absolute_static_crop.v1 import (
@@ -477,6 +496,9 @@ from inference.core.workflows.core_steps.visualizations.polygon_zone.v1 import (
 from inference.core.workflows.core_steps.visualizations.reference_path.v1 import (
     ReferencePathVisualizationBlockV1,
 )
+from inference.core.workflows.core_steps.visualizations.text_display.v1 import (
+    TextDisplayVisualizationBlockV1,
+)
 from inference.core.workflows.core_steps.visualizations.trace.v1 import (
     TraceVisualizationBlockV1,
 )
@@ -609,6 +631,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         ExpressionBlockV1,
         PropertyDefinitionBlockV1,
         DimensionCollapseBlockV1,
+        DetectionsListRollUpBlockV1,
         FirstNonEmptyOrDefaultBlockV1,
         AnthropicClaudeBlockV1,
         AnthropicClaudeBlockV2,
@@ -623,6 +646,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         CacheGetBlockV1,
         CacheSetBlockV1,
         CameraFocusBlockV1,
+        CameraFocusBlockV2,
         CircleVisualizationBlockV1,
         ClipComparisonBlockV1,
         ClipComparisonBlockV2,
@@ -644,6 +668,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         Florence2BlockV2,
         GoogleGeminiBlockV1,
         GoogleGeminiBlockV2,
+        GoogleGeminiBlockV3,
         GoogleVisionOCRBlockV1,
         GridVisualizationBlockV1,
         HaloVisualizationBlockV1,
@@ -705,11 +730,13 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         TimeInZoneBlockV2,
         TimeInZoneBlockV3,
         TriangleVisualizationBlockV1,
+        TextDisplayVisualizationBlockV1,
         VLMAsClassifierBlockV1,
         VLMAsDetectorBlockV1,
         YoloWorldModelBlockV1,
         KeypointVisualizationBlockV1,
         DataAggregatorBlockV1,
+        DetectionEventLogBlockV1,
         CSVFormatterBlockV1,
         EmailNotificationBlockV1,
         EmailNotificationBlockV2,
@@ -731,10 +758,12 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         EnvironmentSecretsStoreBlockV1,
         SlackNotificationBlockV1,
         TwilioSMSNotificationBlockV1,
+        TwilioSMSNotificationBlockV2,
         GazeBlockV1,
         LlamaVisionBlockV1,
         ImageSlicerBlockV2,
         Qwen25VLBlockV1,
+        Qwen3VLBlockV1,
         SmolVLM2BlockV1,
         Moondream2BlockV1,
         OverlapBlockV1,

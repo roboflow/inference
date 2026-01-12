@@ -21,6 +21,8 @@ from inference.core.env import (
     MODELS_CACHE_AUTH_ENABLED,
     PROJECT,
     ROBOFLOW_INTERNAL_SERVICE_SECRET,
+    WEBRTC_DATA_CHANNEL_ACK_WINDOW,
+    WEBRTC_DATA_CHANNEL_BUFFER_SIZE_LIMIT,
     WEBRTC_MODAL_APP_NAME,
     WEBRTC_MODAL_FUNCTION_BUFFER_CONTAINERS,
     WEBRTC_MODAL_FUNCTION_ENABLE_MEMORY_SNAPSHOT,
@@ -159,6 +161,7 @@ if modal is not None:
             "LOG_LEVEL": LOG_LEVEL,
             "ONNXRUNTIME_EXECUTION_PROVIDERS": "[CUDAExecutionProvider,CPUExecutionProvider]",
             "PROJECT": PROJECT,
+            "PYTHONASYNCIODEBUG": str(os.getenv("PYTHONASYNCIODEBUG", "0")),
             "ROBOFLOW_INTERNAL_SERVICE_NAME": WEBRTC_MODAL_ROBOFLOW_INTERNAL_SERVICE_NAME,
             "ROBOFLOW_INTERNAL_SERVICE_SECRET": ROBOFLOW_INTERNAL_SERVICE_SECRET,
             "WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE": WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE,
@@ -191,6 +194,10 @@ if modal is not None:
                 if WEBRTC_MODAL_MODELS_PRELOAD_API_KEY
                 else ""
             ),
+            "WEBRTC_DATA_CHANNEL_BUFFER_SIZE_LIMIT": str(
+                WEBRTC_DATA_CHANNEL_BUFFER_SIZE_LIMIT
+            ),
+            "WEBRTC_DATA_CHANNEL_ACK_WINDOW": str(WEBRTC_DATA_CHANNEL_ACK_WINDOW),
             "WEBRTC_MODAL_RTSP_PLACEHOLDER": WEBRTC_MODAL_RTSP_PLACEHOLDER,
             "WEBRTC_MODAL_RTSP_PLACEHOLDER_URL": WEBRTC_MODAL_RTSP_PLACEHOLDER_URL,
             "WEBRTC_MODAL_SHUTDOWN_RESERVE": str(WEBRTC_MODAL_SHUTDOWN_RESERVE),
@@ -219,11 +226,14 @@ if modal is not None:
             )
         )
 
+        loop = asyncio.get_running_loop()
+
         def on_timeout(message: Optional[str] = ""):
             msg = "Cancelled by watchdog"
             if message:
                 msg += f": {message}"
-            rtc_peer_connection_task.cancel(msg)
+            # Use call_soon_threadsafe since this callback is invoked from the watchdog thread
+            loop.call_soon_threadsafe(rtc_peer_connection_task.cancel, msg)
 
         watchdog.on_timeout = on_timeout
         watchdog.start()
@@ -632,7 +642,7 @@ if modal is not None:
                 requested_ram_mb,
             )
             cls_with_options = cls_with_options.with_options(
-                ram=requested_ram_mb,
+                memory=requested_ram_mb,
             )
         if requested_cpu_cores is not None:
             logger.info(

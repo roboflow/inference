@@ -246,6 +246,10 @@ REGISTERED_MODELS: Dict[
         module_name="inference_models.models.qwen25vl.qwen25vl_hf",
         class_name="Qwen25VLHF",
     ),
+    ("qwen3vl", VLM_TASK, BackendType.HF): LazyClass(
+        module_name="inference_models.models.qwen3vl.qwen3vl_hf",
+        class_name="Qwen3VLHF",
+    ),
     ("florence-2", VLM_TASK, BackendType.HF): LazyClass(
         module_name="inference_models.models.florence2.florence2_hf",
         class_name="Florence2HF",
@@ -365,6 +369,10 @@ REGISTERED_MODELS: Dict[
     ("depth-anything-v2", DEPTH_ESTIMATION_TASK, BackendType.HF): LazyClass(
         module_name="inference_models.models.depth_anything_v2.depth_anything_v2_hf",
         class_name="DepthAnythingV2HF",
+    ),
+    ("depth-anything-v3", DEPTH_ESTIMATION_TASK, BackendType.TORCH): LazyClass(
+        module_name="inference_models.models.depth_anything_v3.depth_anything_v3_torch",
+        class_name="DepthAnythingV3Torch",
     ),
     ("doctr", STRUCTURED_OCR_TASK, BackendType.TORCH): LazyClass(
         module_name="inference_models.models.doctr.doctr_torch", class_name="DocTR"

@@ -9,6 +9,24 @@ from transformers import (
     BitsAndBytesConfig,
     PaliGemmaForConditionalGeneration,
 )
+from transformers.utils import is_flash_attn_2_available
+
+
+def _get_paligemma_attn_implementation(device: torch.device) -> str:
+    """Use flash_attention_2 if available, otherwise eager.
+
+    SDPA has dtype mismatch issues with token_type_ids in transformers 4.57+.
+    """
+    if is_flash_attn_2_available() and device.type == "cuda":
+        # Verify flash_attn can actually be imported (not just installed)
+        try:
+            import flash_attn  # noqa: F401
+
+            return "flash_attention_2"
+        except ImportError:
+            pass
+    return "eager"
+
 
 from inference_models.configuration import DEFAULT_DEVICE
 from inference_models.entities import ColorFormat
@@ -60,6 +78,7 @@ class PaliGemmaHF:
                 bnb_4bit_quant_type="nf4",
                 bnb_4bit_compute_dtype=torch.bfloat16,
             )
+        attn_implementation = _get_paligemma_attn_implementation(device)
         adapter_config_path = os.path.join(model_name_or_path, "adapter_config.json")
         if os.path.exists(adapter_config_path):
             base_model_path = os.path.join(model_name_or_path, "base")
@@ -69,6 +88,7 @@ class PaliGemmaHF:
                 trust_remote_code=trust_remote_code,
                 local_files_only=local_files_only,
                 quantization_config=quantization_config,
+                attn_implementation=attn_implementation,
             )
             model = PeftModel.from_pretrained(model, model_name_or_path)
             if quantization_config is None:
@@ -89,6 +109,7 @@ class PaliGemmaHF:
                 trust_remote_code=trust_remote_code,
                 local_files_only=local_files_only,
                 quantization_config=quantization_config,
+                attn_implementation=attn_implementation,
             ).eval()
             processor = AutoProcessor.from_pretrained(
                 model_name_or_path,

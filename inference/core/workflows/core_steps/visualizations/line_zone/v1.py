@@ -27,10 +27,40 @@ from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlock
 TYPE: str = "roboflow_core/line_counter_visualization@v1"
 SHORT_DESCRIPTION = "Apply a mask over a line zone in an image."
 LONG_DESCRIPTION = """
-The `LineCounterZoneVisualization` block draws line
-in an image with a specified color and opacity.
-Please note: line zone will be drawn on top of image passed to this block,
-this block should be placed before other visualization blocks in the workflow.
+Draw a line zone on an image to visualize counting boundaries, displaying a colored line overlay with in/out count labels for line counter workflows that track objects crossing a specified line.
+
+## How This Block Works
+
+This block takes an image and line zone coordinates (two points defining a line) and draws a visual representation of the counting line with count statistics. The block:
+
+1. Takes an image and line zone coordinates (two points: [x1, y1] and [x2, y2]) as input
+2. Creates a line mask from the zone coordinates using the specified color and thickness
+3. Overlays the line onto the image with the specified opacity, creating a semi-transparent line visualization
+4. Displays text labels showing the count_in (objects that crossed into the zone) and count_out (objects that crossed out of the zone) values
+5. Positions the count text at the starting point of the line (x1, y1) with customizable text styling
+6. Returns an annotated image with the line zone and count statistics overlaid on the original image
+
+The block visualizes line counting zones used to track object movement across a defined boundary line. The line is drawn between the two specified points with customizable color, thickness, and opacity. Count statistics (in and out) are displayed as text labels, typically connected from a Line Counter block that tracks object crossings. The visualization helps users see the counting boundary and monitor counting results in real-time. Note: This block should typically be placed before other visualization blocks in the workflow, as the line zone provides a background reference layer for object detection visualizations.
+
+## Common Use Cases
+
+- **Line Counter Visualization**: Visualize line counting zones for people counting, vehicle counting, or object tracking workflows where objects cross a defined line boundary, displaying the counting line and in/out statistics
+- **Traffic and Movement Monitoring**: Display counting lines for traffic monitoring, pedestrian flow analysis, or entry/exit tracking applications where you need to visualize the counting boundary and current counts
+- **Checkpoint and Access Control**: Visualize counting lines at checkpoints, gates, or access points to show the monitoring boundary and track entry/exit counts for security or access control workflows
+- **Retail and Business Analytics**: Display counting lines for foot traffic analysis, customer flow monitoring, or occupancy tracking in retail, hospitality, or business intelligence applications
+- **Crowd Management and Safety**: Visualize counting lines for crowd management, capacity monitoring, or safety workflows where tracking object movement across boundaries is critical
+- **Real-Time Counting Dashboards**: Create visual overlays for real-time counting dashboards, monitoring interfaces, or live video feeds where the counting line and statistics need to be clearly visible
+
+## Connecting to Other Blocks
+
+The annotated image from this block can be connected to:
+
+- **Line Counter blocks** to receive count_in and count_out values that are displayed on the visualization
+- **Other visualization blocks** (e.g., Bounding Box Visualization, Label Visualization, Polygon Visualization) to add object detection annotations on top of the line zone visualization
+- **Data storage blocks** (e.g., Local File Sink, CSV Formatter, Roboflow Dataset Upload) to save images with line zone visualizations for documentation, reporting, or analysis
+- **Webhook blocks** to send visualized results with line zones to external systems, APIs, or web applications for display in dashboards or monitoring tools
+- **Notification blocks** (e.g., Email Notification, Slack Notification) to send annotated images with line zones as visual evidence in alerts or reports
+- **Video output blocks** to create annotated video streams or recordings with line zone visualizations for live monitoring, counting visualization, or post-processing analysis
 """
 
 
@@ -61,43 +91,43 @@ class LineCounterZoneVisualizationManifest(VisualizationManifest):
         }
     )
     zone: Union[list, Selector(kind=[LIST_OF_VALUES_KIND]), Selector(kind=[LIST_OF_VALUES_KIND])] = Field(  # type: ignore
-        description="Line in the format [[x1, y1], [x2, y2]] consisting of exactly two points.",
+        description="Line zone coordinates in the format [[x1, y1], [x2, y2]] consisting of exactly two points that define the counting line. The line is drawn between these two points, and objects crossing this line are counted. Typically connected from a Line Counter block's zone output.",
         examples=[[[0, 50], [500, 50]], "$inputs.zones"],
     )
     color: Union[str, Selector(kind=[STRING_KIND])] = Field(  # type: ignore
-        description="Color of the zone.",
+        description="Color of the line zone. Can be specified as a color name (e.g., 'WHITE', 'RED'), hex color code (e.g., '#5bb573', '#FFFFFF'), or RGB format (e.g., 'rgb(255, 255, 255)'). The line is drawn in this color with the specified opacity.",
         default="#5bb573",
-        examples=["WHITE", "#FFFFFF", "rgb(255, 255, 255)" "$inputs.background_color"],
+        examples=["WHITE", "#FFFFFF", "rgb(255, 255, 255)", "$inputs.background_color"],
     )
     thickness: Union[int, Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
-        description="Thickness of the lines in pixels.",
+        description="Thickness of the line zone in pixels. Controls how thick the counting line appears. Higher values create thicker, more visible lines, while lower values create thinner lines. Typical values range from 1 to 10 pixels.",
         default=2,
         examples=[2, "$inputs.thickness"],
     )
     text_thickness: Union[int, Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
-        description="Thickness of the text in pixels.",
+        description="Thickness of the count text labels in pixels. Controls how bold the text appears (line width of text characters). Higher values create thicker, bolder text, while lower values create thinner text. Typical values range from 1 to 3.",
         default=1,
         examples=[1, "$inputs.text_thickness"],
     )
     text_scale: Union[float, Selector(kind=[FLOAT_KIND])] = Field(  # type: ignore
-        description="Scale of the text.",
+        description="Scale factor for the count text labels. Controls the size of the text displaying count_in and count_out values. Values greater than 1.0 make text larger, values less than 1.0 make text smaller. Typical values range from 0.5 to 2.0.",
         default=1.0,
         examples=[1.0, "$inputs.text_scale"],
     )
     count_in: Union[int, Selector(kind=[INTEGER_KIND]), Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
-        description="Reference to the number of objects that crossed into the line zone.",
+        description="Number of objects that crossed into the line zone (crossing from one side to the other in the 'in' direction). Typically connected from a Line Counter block's count_in output (e.g., '$steps.line_counter.count_in'). This value is displayed in the visualization text label.",
         default=0,
         examples=["$steps.line_counter.count_in"],
         json_schema_extra={"always_visible": True},
     )
     count_out: Union[int, Selector(kind=[INTEGER_KIND]), Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
-        description="Reference to the number of objects that crossed out of the line zone.",
+        description="Number of objects that crossed out of the line zone (crossing from one side to the other in the 'out' direction). Typically connected from a Line Counter block's count_out output (e.g., '$steps.line_counter.count_out'). This value is displayed in the visualization text label.",
         default=0,
         examples=["$steps.line_counter.count_out"],
         json_schema_extra={"always_visible": True},
     )
     opacity: Union[FloatZeroToOne, Selector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = Field(  # type: ignore
-        description="Transparency of the Mask overlay.",
+        description="Opacity of the line zone overlay, ranging from 0.0 (fully transparent) to 1.0 (fully opaque). Controls how transparent the counting line appears over the image. Lower values create more transparent lines that blend with the background, while higher values create more opaque, visible lines. Typical values range from 0.2 to 0.5 for balanced visibility.",
         default=0.3,
         examples=[0.3, "$inputs.opacity"],
     )
