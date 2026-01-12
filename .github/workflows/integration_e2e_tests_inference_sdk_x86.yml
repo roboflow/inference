@@ -35,6 +35,9 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-pip-${{ matrix.python-version }}-
 
+      - name: 🚧 Install OS dependencies
+        run: sudo add-apt-repository ppa:ubuntuhandbook1/ffmpeg7 && sudo apt-get update && sudo apt-get install -y libavformat-dev libavdevice-dev
+
       - name: 🐍 Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
         with:
@@ -75,6 +78,9 @@ jobs:
           key: ${{ runner.os }}-pip-${{ matrix.python-version }}-e2e-${{ hashFiles('requirements/**') }}
           restore-keys: |
             ${{ runner.os }}-pip-${{ matrix.python-version }}-
+
+      - name: 🚧 Install OS dependencies
+        run: sudo add-apt-repository ppa:ubuntuhandbook1/ffmpeg7 && sudo apt-get update && sudo apt-get install -y ffmpeg libavformat-dev libavdevice-dev
 
       - name: 🐍 Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
