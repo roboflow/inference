@@ -26,7 +26,7 @@ RUN UV_PROJECT_ENVIRONMENT=/usr $HOME/.local/bin/uv sync --locked --extra torch-
 
 COPY inference_models inference_models
 RUN $HOME/.local/bin/uv build
-RUN WHEEL=$(ls dist/inference_exp-*.whl) && $HOME/.local/bin/uv pip install --system "${WHEEL}"
+RUN WHEEL=$(ls dist/inference_models-*.whl) && $HOME/.local/bin/uv pip install --system "${WHEEL}"
 
 WORKDIR /
 RUN rm -r /build
