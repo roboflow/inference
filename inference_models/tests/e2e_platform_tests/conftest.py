@@ -1,9 +1,11 @@
+import gc
 import os
 
 import cv2
 import numpy as np
 import pytest
 import requests
+import torch
 from filelock import FileLock
 
 ASSETS_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "assets"))
@@ -25,6 +27,13 @@ COIN_COUNTING_IMAGE_PATH = os.path.join(ASSETS_DIR, "image-coin-counting.jpg")
 # ORIGIN OF THE IMAGE https://github.com/facebookresearch/sam
 TRUCK_IMAGE_URL = "https://media.roboflow.com/inference/example-input-images/truck.jpg"
 TRUCK_IMAGE_PATH = os.path.join(ASSETS_DIR, "truck.jpg")
+
+
+@pytest.fixture(autouse=True)
+def clean_up_cuda_memory():
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
 
 
 @pytest.fixture()
