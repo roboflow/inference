@@ -1,0 +1,160 @@
+site_name: Inference Models Documentation
+site_url: https://roboflow.github.io/inference-models/
+site_author: Roboflow
+site_description: Next-generation computer vision inference library with multi-backend support
+repo_name: roboflow/inference
+repo_url: https://github.com/roboflow/inference
+edit_uri: https://github.com/roboflow/inference/tree/main/inference_models/docs
+copyright: Roboflow 2026. All rights reserved.
+
+extra:
+  version:
+    provider: mike
+    default: latest
+  generator: false
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/roboflow
+    - icon: fontawesome/brands/youtube
+      link: https://www.youtube.com/roboflow
+    - icon: fontawesome/brands/linkedin
+      link: https://www.linkedin.com/company/roboflow-ai/mycompany/
+    - icon: fontawesome/brands/twitter
+      link: https://twitter.com/roboflow
+
+nav:
+  - index.md
+  - Getting Started:
+      - Installation: getting-started/installation.md
+      - Quick Start: getting-started/quickstart.md
+      - Principles & Architecture: getting-started/principles.md
+  - Auto-Loading:
+      - Overview: auto-loading/overview.md
+      - AutoModel API: auto-loading/automodel.md
+      - Backend Selection: auto-loading/backend-selection.md
+      - Model Resolution: auto-loading/model-resolution.md
+  - Models:
+      - Overview: models/index.md
+      - Object Detection:
+          - RFDetr: models/rfdetr.md
+          - YOLOv8: models/yolov8.md
+          - YOLOv9: models/yolov9.md
+          - YOLOv10: models/yolov10.md
+          - YOLOv11: models/yolov11.md
+          - YOLOv12: models/yolov12.md
+          - YOLO-NAS: models/yolonas.md
+          - Grounding DINO: models/grounding-dino.md
+          - OWLv2: models/owlv2.md
+          - YOLO-World: models/yolo-world.md
+      - Instance Segmentation:
+          - YOLOv8 Segmentation: models/yolov8-seg.md
+          - YOLOv11 Segmentation: models/yolov11-seg.md
+          - YOLACT: models/yolact.md
+      - Classification:
+          - ResNet: models/resnet.md
+          - ViT: models/vit.md
+          - DINOv3: models/dinov3.md
+      - Embeddings:
+          - CLIP: models/clip.md
+          - Perception Encoder: models/perception-encoder.md
+      - OCR & Document Parsing:
+          - DocTR: models/doctr.md
+          - EasyOCR: models/easyocr.md
+          - TrOCR: models/trocr.md
+      - Segmentation:
+          - SAM: models/sam.md
+          - SAM2: models/sam2.md
+          - SAM2 Real-Time: models/sam2-rt.md
+      - Vision-Language Models:
+          - Florence-2: models/florence2.md
+          - PaliGemma: models/paligemma.md
+          - Qwen2.5-VL: models/qwen25vl.md
+          - Qwen3-VL: models/qwen3vl.md
+          - SmolVLM: models/smolvlm.md
+          - Moondream2: models/moondream2.md
+      - Depth Estimation:
+          - Depth Anything V2: models/depth-anything-v2.md
+          - Depth Anything V3: models/depth-anything-v3.md
+      - Other:
+          - L2CS (Gaze Detection): models/l2cs.md
+          - MediaPipe Face Detection: models/mediapipe-face.md
+  - How-To Guides:
+      - Load Models from Local Packages: how-to/local-packages.md
+      - Add a New Model: how-to/add-model.md
+      - Custom Model Development: how-to/custom-models.md
+      - Working with Model Pipelines: how-to/model-pipelines.md
+  - Contributors:
+      - Architecture Overview: contributors/architecture.md
+      - Multi-Backend System: contributors/backends.md
+      - Dependency Management: contributors/dependencies.md
+      - Adding Models: contributors/adding-models.md
+      - Testing: contributors/testing.md
+  - API Reference:
+      - inference_models: api-reference/
+
+theme:
+  name: 'material'
+  favicon: favicon.png
+  font:
+    text: Inter
+    code: ui-monospace
+  features:
+    - announce.dismiss
+    - content.action.edit
+    - content.code.copy
+    - content.tabs.link
+    - navigation.footer
+    - navigation.indexes
+    - navigation.instant
+    - navigation.instant.prefetch
+    - navigation.instant.preview
+    - navigation.instant.progress
+    - navigation.prune
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.top
+    - navigation.tracking
+    - search.share
+    - search.suggest
+    - toc.follow
+  icon:
+    repo: fontawesome/brands/github
+  palette:
+    - scheme: default
+      primary: 'custom'
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [.]  # Current directory (inference_models/) contains the inference_models package
+          options:
+            show_source: true
+            show_root_heading: true
+            show_root_full_path: false
+            docstring_style: google
+  - gen-files:
+      scripts:
+        - docs/scripts/gen_ref_pages.py
+  - literate-nav:
+      nav_file: SUMMARY.md
+      implicit_index: True
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - pymdownx.details
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - toc:
+      permalink: true
+
