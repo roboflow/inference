@@ -70,6 +70,7 @@ class BlockManifest(WorkflowBlockManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "model",
+            "search_keywords": ["yolo"],
             "ui_manifest": {
                 "section": "model",
                 "icon": "far fa-chart-network",
