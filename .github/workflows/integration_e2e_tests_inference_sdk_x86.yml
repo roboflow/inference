@@ -80,7 +80,7 @@ jobs:
             ${{ runner.os }}-pip-${{ matrix.python-version }}-
 
       - name: 🚧 Install OS dependencies
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg libavformat-dev libavdevice-dev
+        run: add-apt-repository ppa:ubuntuhandbook1/ffmpeg7 && sudo apt-get update && sudo apt-get install -y ffmpeg libavformat-dev libavdevice-dev
 
       - name: 🐍 Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
