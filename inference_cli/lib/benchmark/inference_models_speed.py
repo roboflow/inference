@@ -13,7 +13,7 @@ from inference_models.configuration import DEFAULT_DEVICE
 from inference_models.models.auto_loaders.entities import AnyModel
 
 
-def run_inference_experimental_benchmark(
+def run_inference_models_benchmark(
     model_id: str,
     images: List[np.ndarray],
     results_collector: ResultsCollector,
