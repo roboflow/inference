@@ -1,4 +1,4 @@
-aiortc>=1.9.0
+aiortc>=1.9.0,<1.14.0
 APScheduler>=3.10.1,<4.0.0
 asyncua~=1.1.5
 cachetools<6.0.0
