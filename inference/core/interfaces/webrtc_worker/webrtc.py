@@ -84,6 +84,98 @@ def create_chunked_binary_message(
     return header + payload
 
 
+def get_video_rotation(filepath: str) -> int:
+    """Detect video rotation from metadata (displaymatrix or rotate tag).
+    
+    Args:
+        filepath: Path to the video file
+        
+    Returns:
+        Rotation in degrees (-90, 0, 90, 180, 270) or 0 if not found.
+        Negative values indicate counter-clockwise rotation.
+    """
+    import json
+    import subprocess
+    
+    # Primary method: Use ffprobe to read displaymatrix rotation
+    # PyAV doesn't reliably expose displaymatrix side_data, so ffprobe is more reliable
+    try:
+        result = subprocess.run(
+            [
+                "ffprobe", "-v", "quiet",
+                "-select_streams", "v:0",
+                "-show_entries", "stream_side_data=rotation:stream_tags=rotate",
+                "-of", "json",
+                filepath
+            ],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        if result.returncode == 0:
+            data = json.loads(result.stdout)
+            streams = data.get("streams", [])
+            if streams:
+                # Check displaymatrix side_data first
+                for sd in streams[0].get("side_data_list", []):
+                    if "rotation" in sd:
+                        rotation = int(sd["rotation"])
+                        logger.info("Video rotation detected: %d° (from displaymatrix)", rotation)
+                        return rotation
+                # Fall back to rotate tag in stream tags
+                rotate_str = streams[0].get("tags", {}).get("rotate", "0")
+                rotation = int(rotate_str)
+                if rotation != 0:
+                    logger.info("Video rotation detected: %d° (from rotate tag)", rotation)
+                    return rotation
+    except FileNotFoundError:
+        logger.debug("ffprobe not available, falling back to PyAV metadata")
+    except Exception as e:
+        logger.debug("ffprobe rotation detection failed: %s", e)
+    
+    # Fallback: Use PyAV to check stream metadata (works for some formats)
+    try:
+        import av
+        container = av.open(filepath)
+        stream = container.streams.video[0]
+        
+        if hasattr(stream, 'metadata') and stream.metadata:
+            rotate_str = stream.metadata.get('rotate', '0')
+            rotation = int(rotate_str)
+            if rotation != 0:
+                logger.info("Video rotation detected: %d° (from PyAV metadata)", rotation)
+                container.close()
+                return rotation
+        
+        container.close()
+    except Exception as e:
+        logger.debug("PyAV rotation detection failed: %s", e)
+    
+    return 0
+
+
+def get_cv2_rotation_code(rotation: int):
+    """Get OpenCV rotation code to correct a given rotation.
+    
+    Args:
+        rotation: Rotation angle in degrees from metadata
+        
+    Returns:
+        cv2 rotation constant or None if no correction needed
+    """
+    import cv2
+    
+    # The displaymatrix rotation indicates how the video is rotated.
+    # To correct it, we apply the OPPOSITE rotation.
+    if rotation in (-90, 270):
+        return cv2.ROTATE_90_CLOCKWISE
+    elif rotation in (90, -270):
+        return cv2.ROTATE_90_COUNTERCLOCKWISE
+    elif rotation in (180, -180):
+        return cv2.ROTATE_180
+    return None
+
+
 class OnDemandVideoTrack(MediaStreamTrack):
     """Lazy video track that decodes frames on-demand without pre-buffering.
 
@@ -104,10 +196,31 @@ class OnDemandVideoTrack(MediaStreamTrack):
         self._container = av.open(filepath)
         self._stream = self._container.streams.video[0]
         self._iterator = self._container.decode(self._stream)
+        
+        # Detect rotation and get OpenCV rotation code
+        rotation = get_video_rotation(filepath)
+        self._rotation_code = get_cv2_rotation_code(rotation)
+        if self._rotation_code is not None:
+            logger.info("Will apply %d° rotation correction via OpenCV", rotation)
+
+    def _get_next_frame(self):
+        """Get next frame, applying rotation if needed."""
+        import av
+        import cv2
+        
+        frame = next(self._iterator, None)
+        if frame is None or self._rotation_code is None:
+            return frame
+        
+        # Convert to numpy, rotate, convert back
+        img = frame.to_ndarray(format="bgr24")
+        img = cv2.rotate(img, self._rotation_code)
+        return av.VideoFrame.from_ndarray(img, format="bgr24")
 
     async def recv(self) -> VideoFrame:
         loop = asyncio.get_running_loop()
-        frame = await loop.run_in_executor(None, lambda: next(self._iterator, None))
+        frame = await loop.run_in_executor(None, self._get_next_frame)
+        
         if frame is None:
             self.stop()
             raise MediaStreamError("End of video file")
@@ -118,6 +231,40 @@ class OnDemandVideoTrack(MediaStreamTrack):
         if self._container:
             self._container.close()
             self._container = None
+
+
+class RotatingVideoTrack(MediaStreamTrack):
+    """Wrapper track that applies rotation to frames from MediaPlayer via OpenCV.
+    
+    Used with MediaPlayer for realtime_processing mode when video has rotation metadata.
+    """
+    
+    kind = "video"
+    
+    def __init__(self, source_track: MediaStreamTrack, rotation: int):
+        super().__init__()
+        self._source = source_track
+        self._rotation_code = get_cv2_rotation_code(rotation)
+        if self._rotation_code is not None:
+            logger.info("Will apply %d° rotation correction via OpenCV (MediaPlayer)", rotation)
+    
+    async def recv(self) -> VideoFrame:
+        import av
+        import cv2
+        
+        frame = await self._source.recv()
+        
+        if self._rotation_code is None:
+            return frame
+        
+        # Convert to numpy, rotate, convert back
+        img = frame.to_ndarray(format="bgr24")
+        img = cv2.rotate(img, self._rotation_code)
+        return av.VideoFrame.from_ndarray(img, format="bgr24")
+    
+    def stop(self):
+        super().stop()
+        self._source.stop()
 
 
 class VideoFileUploadHandler:
@@ -1126,13 +1273,25 @@ async def init_rtc_peer_connection_with_loop(
                     None, process_video_upload_message, message, video_processor
                 )
                 if video_path:
+                    logger.info(
+                        "Video upload complete, processing: realtime=%s, path=%s",
+                        webrtc_request.webrtc_realtime_processing, video_path
+                    )
                     if webrtc_request.webrtc_realtime_processing:
                         # Throttled playback - use MediaPlayer
                         player = MediaPlayer(video_path, loop=False)
                         player._throttle_playback = True
-                        video_processor.set_track(track=player.video)
+                        
+                        # Check if video needs rotation correction
+                        rotation = get_video_rotation(video_path)
+                        if rotation not in (0, 360, -360):
+                            track = RotatingVideoTrack(player.video, rotation)
+                            video_processor.set_track(track=track)
+                        else:
+                            video_processor.set_track(track=player.video)
                     else:
-                        # Fast processing - use OnDemandVideoTrack (no pre-buffering)
+                        # Fast processing - use OnDemandVideoTrack (handles rotation internally)
+                        logger.info("Using OnDemandVideoTrack (realtime_processing=False)")
                         track = OnDemandVideoTrack(video_path)
                         video_processor.set_track(track=track)
 
