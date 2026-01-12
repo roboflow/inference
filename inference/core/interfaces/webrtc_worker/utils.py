@@ -235,3 +235,121 @@ def is_over_quota(api_key: str) -> bool:
         usage_collector._plan_details._over_quota_col_name
     )
     return is_over_quota
+
+
+def get_video_rotation(filepath: str) -> int:
+    """Detect video rotation from metadata (displaymatrix or rotate tag).
+
+    Args:
+        filepath: Path to the video file
+
+    Returns:
+        Rotation in degrees (-90, 0, 90, 180, 270) or 0 if not found.
+        Negative values indicate counter-clockwise rotation.
+    """
+    import json
+    import subprocess
+
+    # Primary method: Use ffprobe to read displaymatrix rotation
+    # PyAV doesn't reliably expose displaymatrix side_data, so ffprobe is more reliable
+    try:
+        result = subprocess.run(
+            [
+                "ffprobe",
+                "-v",
+                "quiet",
+                "-select_streams",
+                "v:0",
+                "-show_entries",
+                "stream_side_data=rotation:stream_tags=rotate",
+                "-of",
+                "json",
+                filepath,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode == 0:
+            data = json.loads(result.stdout)
+            streams = data.get("streams", [])
+            if streams:
+                # Check displaymatrix side_data first
+                for sd in streams[0].get("side_data_list", []):
+                    if "rotation" in sd:
+                        rotation = int(sd["rotation"])
+                        logger.info(
+                            "Video rotation detected: %d° (from displaymatrix)",
+                            rotation,
+                        )
+                        return rotation
+                # Fall back to rotate tag in stream tags
+                rotate_str = streams[0].get("tags", {}).get("rotate", "0")
+                rotation = int(rotate_str)
+                if rotation != 0:
+                    logger.info(
+                        "Video rotation detected: %d° (from rotate tag)", rotation
+                    )
+                    return rotation
+    except FileNotFoundError:
+        logger.debug("ffprobe not available, falling back to PyAV metadata")
+    except Exception as e:
+        logger.debug("ffprobe rotation detection failed: %s", e)
+
+    # Fallback: Use PyAV to check stream metadata (works for some formats)
+    try:
+        import av
+
+        container = av.open(filepath)
+        stream = container.streams.video[0]
+
+        if hasattr(stream, "metadata") and stream.metadata:
+            rotate_str = stream.metadata.get("rotate", "0")
+            rotation = int(rotate_str)
+            if rotation != 0:
+                logger.info(
+                    "Video rotation detected: %d° (from PyAV metadata)", rotation
+                )
+                container.close()
+                return rotation
+
+        container.close()
+    except Exception as e:
+        logger.debug("PyAV rotation detection failed: %s", e)
+
+    return 0
+
+
+def get_cv2_rotation_code(rotation: int) -> Optional[int]:
+    """Get OpenCV rotation code to correct a given rotation.
+
+    Args:
+        rotation: Rotation angle in degrees from metadata
+
+    Returns:
+        cv2 rotation constant or None if no correction needed
+    """
+    # The displaymatrix rotation indicates how the video is rotated.
+    # To correct it, we apply the OPPOSITE rotation.
+    if rotation in (-90, 270):
+        return cv.ROTATE_90_CLOCKWISE
+    elif rotation in (90, -270):
+        return cv.ROTATE_90_COUNTERCLOCKWISE
+    elif rotation in (180, -180):
+        return cv.ROTATE_180
+    return None
+
+
+def rotate_video_frame(frame: VideoFrame, rotation_code: int) -> VideoFrame:
+    """Apply rotation to a video frame using OpenCV.
+
+    Args:
+        frame: Input VideoFrame
+        rotation_code: cv2 rotation constant (ROTATE_90_CLOCKWISE, etc.)
+
+    Returns:
+        Rotated VideoFrame
+    """
+    img = frame.to_ndarray(format="bgr24")
+    img = cv.rotate(img, rotation_code)
+    return VideoFrame.from_ndarray(img, format="bgr24")
