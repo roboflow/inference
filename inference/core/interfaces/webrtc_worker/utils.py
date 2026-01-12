@@ -250,8 +250,6 @@ def get_video_rotation(filepath: str) -> int:
     import json
     import subprocess
 
-    # Primary method: Use ffprobe to read displaymatrix rotation
-    # PyAV doesn't reliably expose displaymatrix side_data, so ffprobe is more reliable
     try:
         result = subprocess.run(
             [
@@ -295,27 +293,6 @@ def get_video_rotation(filepath: str) -> int:
         logger.debug("ffprobe not available, falling back to PyAV metadata")
     except Exception as e:
         logger.debug("ffprobe rotation detection failed: %s", e)
-
-    # Fallback: Use PyAV to check stream metadata (works for some formats)
-    try:
-        import av
-
-        container = av.open(filepath)
-        stream = container.streams.video[0]
-
-        if hasattr(stream, "metadata") and stream.metadata:
-            rotate_str = stream.metadata.get("rotate", "0")
-            rotation = int(rotate_str)
-            if rotation != 0:
-                logger.info(
-                    "Video rotation detected: %d° (from PyAV metadata)", rotation
-                )
-                container.close()
-                return rotation
-
-        container.close()
-    except Exception as e:
-        logger.debug("PyAV rotation detection failed: %s", e)
 
     return 0
 
