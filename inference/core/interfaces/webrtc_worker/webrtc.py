@@ -96,6 +96,8 @@ class OnDemandVideoTrack(MediaStreamTrack):
 
     Use this for video file processing when realtime_processing=False.
     For throttled playback (realtime_processing=True), use MediaPlayer instead.
+
+    Note: Rotation is handled by VideoFrameProcessor, not this track.
     """
 
     kind = "video"
@@ -108,24 +110,9 @@ class OnDemandVideoTrack(MediaStreamTrack):
         self._stream = self._container.streams.video[0]
         self._iterator = self._container.decode(self._stream)
 
-        # Detect rotation (pass filepath, not container - get_video_rotation uses ffprobe primarily)
-        rotation = get_video_rotation(filepath)
-        self._rotation_code = get_cv2_rotation_code(rotation)
-        if self._rotation_code is not None:
-            logger.info("Will apply %d° rotation correction via OpenCV", rotation)
-
-    def _get_next_frame(self):
-        """Get next frame, applying rotation if needed."""
-        frame = next(self._iterator, None)
-        if frame is None:
-            return None
-        if self._rotation_code is not None:
-            return rotate_video_frame(frame, self._rotation_code)
-        return frame
-
     async def recv(self) -> VideoFrame:
         loop = asyncio.get_running_loop()
-        frame = await loop.run_in_executor(None, self._get_next_frame)
+        frame = await loop.run_in_executor(None, lambda: next(self._iterator, None))
 
         if frame is None:
             self.stop()
@@ -137,34 +124,6 @@ class OnDemandVideoTrack(MediaStreamTrack):
         if self._container:
             self._container.close()
             self._container = None
-
-
-class RotatingVideoTrack(MediaStreamTrack):
-    """Wrapper track that applies rotation to frames from MediaPlayer via OpenCV.
-
-    Used with MediaPlayer for realtime_processing mode when video has rotation metadata.
-    """
-
-    kind = "video"
-
-    def __init__(self, source_track: MediaStreamTrack, rotation: int):
-        super().__init__()
-        self._source = source_track
-        self._rotation_code = get_cv2_rotation_code(rotation)
-        if self._rotation_code is not None:
-            logger.info(
-                "Will apply %d° rotation correction via OpenCV (MediaPlayer)", rotation
-            )
-
-    async def recv(self) -> VideoFrame:
-        frame = await self._source.recv()
-        if self._rotation_code is not None:
-            return rotate_video_frame(frame, self._rotation_code)
-        return frame
-
-    def stop(self):
-        super().stop()
-        self._source.stop()
 
 
 class VideoFileUploadHandler:
@@ -365,6 +324,9 @@ class VideoFrameProcessor:
         self.video_upload_handler: Optional[VideoFileUploadHandler] = None
         self._track_ready_event: asyncio.Event = asyncio.Event()
         self.realtime_processing = realtime_processing
+        self._rotation_code: Optional[int] = (
+            None  # OpenCV rotation code for video correction
+        )
 
         # Optional receiver-paced flow control (enabled only after first ACK is received)
         self._ack_last: int = 0
@@ -405,9 +367,10 @@ class VideoFrameProcessor:
             model_manager=model_manager,
         )
 
-    def set_track(self, track: MediaStreamTrack):
+    def set_track(self, track: MediaStreamTrack, rotation_code: Optional[int] = None):
         if not self.track:
             self.track = track
+            self._rotation_code = rotation_code
             self._track_ready_event.set()
 
     async def close(self):
@@ -731,6 +694,10 @@ class VideoFrameProcessor:
         include_errors_on_frame: bool = True,
     ) -> Tuple[Dict[str, Any], Optional[VideoFrame], List[str]]:
         """Async wrapper for process_frame using executor."""
+
+        if self._rotation_code is not None:
+            frame = rotate_video_frame(frame, self._rotation_code)
+
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(
             None,
@@ -1178,25 +1145,21 @@ async def init_rtc_peer_connection_with_loop(
                         webrtc_request.webrtc_realtime_processing,
                         video_path,
                     )
+
+                    rotation = get_video_rotation(video_path)
+                    rotation_code = get_cv2_rotation_code(rotation)
+                    if rotation_code is not None:
+                        logger.info("Video has %d° rotation, will correct", rotation)
+
                     if webrtc_request.webrtc_realtime_processing:
                         # Throttled playback - use MediaPlayer
                         player = MediaPlayer(video_path, loop=False)
                         player._throttle_playback = True
-
-                        # Check if video needs rotation correction
-                        rotation = get_video_rotation(video_path)
-                        if rotation not in (0, 360, -360):
-                            track = RotatingVideoTrack(player.video, rotation)
-                            video_processor.set_track(track=track)
-                        else:
-                            video_processor.set_track(track=player.video)
+                        video_processor.set_track(player.video, rotation_code)
                     else:
-                        # Fast processing - use OnDemandVideoTrack (handles rotation internally)
-                        logger.info(
-                            "Using OnDemandVideoTrack (realtime_processing=False)"
-                        )
+                        # Fast processing - use OnDemandVideoTrack
                         track = OnDemandVideoTrack(video_path)
-                        video_processor.set_track(track=track)
+                        video_processor.set_track(track, rotation_code)
 
                     if not should_send_video:
                         # For DATA_ONLY, start data-only processing task
