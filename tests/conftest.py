@@ -2,7 +2,6 @@ import os
 
 import pytest
 
-
 ASSETS_DIR = os.path.abspath(
     os.path.join(
         os.path.dirname(__file__),
@@ -14,7 +13,7 @@ ASSETS_DIR = os.path.abspath(
     )
 )
 
-os.environ["TELEMETRY_OPT_OUT"] = "True"
+os.environ["TELEMETRY_USE_PERSISTENT_QUEUE"] = "False"
 os.environ["ONNXRUNTIME_EXECUTION_PROVIDERS"] = (
     "[CUDAExecutionProvider,CPUExecutionProvider]"
 )

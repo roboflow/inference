@@ -1,4 +1,4 @@
-""" CLIP tokenizer
+"""CLIP tokenizer
 
 Copied from https://github.com/openai/CLIP. Originally MIT License, Copyright (c) 2021 OpenAI.
 """
@@ -45,14 +45,17 @@ def bytes_to_unicode():
         + list(range(ord("¡"), ord("¬") + 1))
         + list(range(ord("®"), ord("ÿ") + 1))
     )
+    # Precompute set for faster lookup, eliminate repeated containment checks
+    bs_set = set(bs)
     cs = bs[:]
     n = 0
-    for b in range(2**8):
-        if b not in bs:
+    for b in range(256):  # 2**8
+        if b not in bs_set:
             bs.append(b)
-            cs.append(2**8 + n)
+            cs.append(256 + n)
             n += 1
-    cs = [chr(n) for n in cs]
+    # Use list comprehension and map for efficient conversion
+    cs = list(map(chr, cs))
     return dict(zip(bs, cs))
 
 

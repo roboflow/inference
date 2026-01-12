@@ -24,7 +24,11 @@ SHORT_DESCRIPTION = (
     "Measure the dimensions of objects in relation to a reference object."
 )
 LONG_DESCRIPTION = """
-The [**Size Measurement Block**](https://www.loom.com/share/355116ea17c84af18c4052b3c64303e2) calculates the dimensions of objects relative to a reference object. It uses one model to detect the reference object and another to detect the objects to measure. The block outputs the dimensions of the objects in terms of the reference object.
+The [**Size Measurement Block**](https://www.
+
+## How This Block Works
+
+youtube.com/watch?v=FQY7TSHfZeI) calculates the dimensions of objects relative to a reference object. It uses one model to detect the reference object and another to detect the objects to measure. The block outputs the dimensions of the objects in terms of the reference object.
 
 - **Reference Object**: This is the known object used as a baseline for measurements. Its dimensions are known and used to scale the measurements of other objects.
 - **Object to Measure**: This is the object whose dimensions are being calculated. The block measures these dimensions relative to the reference object.
@@ -52,7 +56,7 @@ The block will use the known dimensions of the calibration card to calculate the
 
 This allows you to obtain the real-world dimensions of the packages based on the reference object's known size.
 
-[Watch the video tutorial](https://www.loom.com/share/355116ea17c84af18c4052b3c64303e2)
+[Watch the video tutorial](https://www.youtube.com/watch?v=FQY7TSHfZeI)
 """
 
 

@@ -122,7 +122,7 @@ OWLV2_COMPILE_MODEL = str2bool(os.getenv("OWLV2_COMPILE_MODEL", True))
 #       and also ENABLE_STREAM_API environmental variable is set to False
 PRELOAD_HF_IDS = os.getenv("PRELOAD_HF_IDS")
 if PRELOAD_HF_IDS:
-    PRELOAD_HF_IDS = [id.strip() for id in PRELOAD_HF_IDS.split(",")]
+    PRELOAD_HF_IDS = [m.strip() for m in PRELOAD_HF_IDS.split(",")]
 
 # Maximum batch size for GAZE, default is 8
 GAZE_MAX_BATCH_SIZE = int(os.getenv("GAZE_MAX_BATCH_SIZE", 8))
@@ -157,14 +157,27 @@ CORE_MODEL_PE_ENABLED = str2bool(os.getenv("CORE_MODEL_PE_ENABLED", True))
 # Flag to enable SAM core model, default is True
 CORE_MODEL_SAM_ENABLED = str2bool(os.getenv("CORE_MODEL_SAM_ENABLED", True))
 CORE_MODEL_SAM2_ENABLED = str2bool(os.getenv("CORE_MODEL_SAM2_ENABLED", True))
+CORE_MODEL_SAM3_ENABLED = str2bool(os.getenv("CORE_MODEL_SAM3_ENABLED", True))
 
 CORE_MODEL_OWLV2_ENABLED = str2bool(os.getenv("CORE_MODEL_OWLV2_ENABLED", False))
+
+# Maximum prompt batch size for SAM3 PCS requests
+SAM3_MAX_PROMPT_BATCH_SIZE = int(os.getenv("SAM3_MAX_PROMPT_BATCH_SIZE", 16))
+SAM3_EXEC_MODE = os.getenv("SAM3_EXEC_MODE", "local")
+SAM3_EXEC_MODE = SAM3_EXEC_MODE.lower()
+if SAM3_EXEC_MODE not in ["local", "remote"]:
+    raise ValueError(
+        f"Invalid SAM3 execution mode in ENVIRONMENT var SAM3_EXEC_MODE (local or remote): {SAM3_EXEC_MODE}"
+    )
 
 # Flag to enable GAZE core model, default is True
 CORE_MODEL_GAZE_ENABLED = str2bool(os.getenv("CORE_MODEL_GAZE_ENABLED", True))
 
 # Flag to enable DocTR core model, default is True
 CORE_MODEL_DOCTR_ENABLED = str2bool(os.getenv("CORE_MODEL_DOCTR_ENABLED", True))
+
+# Flag to enable EasyOCR core model, default is True
+CORE_MODEL_EASYOCR_ENABLED = str2bool(os.getenv("CORE_MODEL_EASYOCR_ENABLED", True))
 
 # Flag to enable TrOCR core model, default is True
 CORE_MODEL_TROCR_ENABLED = str2bool(os.getenv("CORE_MODEL_TROCR_ENABLED", True))
@@ -178,6 +191,8 @@ LMM_ENABLED = str2bool(os.getenv("LMM_ENABLED", False))
 
 QWEN_2_5_ENABLED = str2bool(os.getenv("QWEN_2_5_ENABLED", True))
 
+QWEN_3_ENABLED = str2bool(os.getenv("QWEN_3_ENABLED", True))
+
 DEPTH_ESTIMATION_ENABLED = str2bool(os.getenv("DEPTH_ESTIMATION_ENABLED", True))
 
 SMOLVLM2_ENABLED = str2bool(os.getenv("SMOLVLM2_ENABLED", True))
@@ -188,9 +203,17 @@ PALIGEMMA_ENABLED = str2bool(os.getenv("PALIGEMMA_ENABLED", True))
 
 FLORENCE2_ENABLED = str2bool(os.getenv("FLORENCE2_ENABLED", True))
 
+SAM3_3D_OBJECTS_ENABLED = str2bool(os.getenv("SAM3_3D_OBJECTS_ENABLED", False))
+
 # Flag to enable YOLO-World core model, default is True
 CORE_MODEL_YOLO_WORLD_ENABLED = str2bool(
     os.getenv("CORE_MODEL_YOLO_WORLD_ENABLED", True)
+)
+
+# Enable experimental RFDETR backend (inference_models) rollout, default is True
+USE_INFERENCE_EXP_MODELS = str2bool(os.getenv("USE_INFERENCE_EXP_MODELS", "False"))
+ALLOW_INFERENCE_EXP_UNTRUSTED_MODELS = str2bool(
+    os.getenv("ALLOW_INFERENCE_EXP_UNTRUSTED_MODELS", "False")
 )
 
 # ID of host device, default is None
@@ -397,7 +420,16 @@ DISABLE_SAM2_LOGITS_CACHE = str2bool(os.getenv("DISABLE_SAM2_LOGITS_CACHE", Fals
 # SAM version ID, default is "vit_h"
 SAM_VERSION_ID = os.getenv("SAM_VERSION_ID", "vit_h")
 SAM2_VERSION_ID = os.getenv("SAM2_VERSION_ID", "hiera_large")
+# SAM3_CHECKPOINT_PATH = os.getenv("SAM3_CHECKPOINT_PATH")
+# SAM3_BPE_PATH = os.getenv("SAM3_BPE_PATH", "/home/hansent/sam3/assets/bpe_simple_vocab_16e6.txt.gz")
+SAM3_IMAGE_SIZE = int(os.getenv("SAM3_IMAGE_SIZE", 1008))
+# SAM3_REPO_PATH = os.getenv("SAM3_REPO_PATH", "/home/hansent/sam3")
+SAM3_MAX_EMBEDDING_CACHE_SIZE = int(os.getenv("SAM3_MAX_EMBEDDING_CACHE_SIZE", 100))
+SAM3_MAX_LOGITS_CACHE_SIZE = int(os.getenv("SAM3_MAX_LOGITS_CACHE_SIZE", 1000))
+DISABLE_SAM3_LOGITS_CACHE = str2bool(os.getenv("DISABLE_SAM3_LOGITS_CACHE", False))
 
+# EasyOCR version ID, default is "english_g2"
+EASYOCR_VERSION_ID = os.getenv("EASYOCR_VERSION_ID", "english_g2")
 
 # Device ID, default is "sample-device-id"
 INFERENCE_SERVER_ID = os.getenv("INFERENCE_SERVER_ID", None)
@@ -473,6 +505,12 @@ ENABLE_FRAME_DROP_ON_VIDEO_FILE_RATE_LIMITING = str2bool(
     os.getenv("ENABLE_FRAME_DROP_ON_VIDEO_FILE_RATE_LIMITING", "False")
 )
 
+DEBUG_AIORTC_QUEUES = str2bool(os.getenv("DEBUG_AIORTC_QUEUES", "False"))
+DEBUG_WEBRTC_PROCESSING_LATENCY = str2bool(
+    os.getenv("DEBUG_WEBRTC_PROCESSING_LATENCY", "False")
+)
+WEBRTC_REALTIME_PROCESSING = str2bool(os.getenv("WEBRTC_REALTIME_PROCESSING", "True"))
+
 NUM_CELERY_WORKERS = os.getenv("NUM_CELERY_WORKERS", 4)
 CELERY_LOG_LEVEL = os.getenv("CELERY_LOG_LEVEL", "WARNING")
 
@@ -538,6 +576,15 @@ _modal_token_secret = os.getenv("MODAL_TOKEN_SECRET")
 MODAL_TOKEN_ID = _modal_token_id.strip("\"'") if _modal_token_id else None
 MODAL_TOKEN_SECRET = _modal_token_secret.strip("\"'") if _modal_token_secret else None
 MODAL_WORKSPACE_NAME = os.getenv("MODAL_WORKSPACE_NAME", "roboflow")
+
+# Control whether anonymous Modal execution is allowed (when no api_key is available)
+MODAL_ALLOW_ANONYMOUS_EXECUTION = str2bool(
+    os.getenv("MODAL_ALLOW_ANONYMOUS_EXECUTION", "False")
+)
+
+MODAL_ANONYMOUS_WORKSPACE_NAME = os.getenv(
+    "MODAL_ANONYMOUS_WORKSPACE_NAME", "anonymous"
+)
 
 MODEL_VALIDATION_DISABLED = str2bool(os.getenv("MODEL_VALIDATION_DISABLED", "False"))
 
@@ -611,6 +658,10 @@ if ROBOFLOW_API_REQUEST_TIMEOUT:
     ROBOFLOW_API_REQUEST_TIMEOUT = int(ROBOFLOW_API_REQUEST_TIMEOUT)
 
 
+# Control SSL certificate verification for requests to the Roboflow API
+# Default is True (verify SSL). Set ROBOFLOW_API_VERIFY_SSL=false to disable in local dev.
+ROBOFLOW_API_VERIFY_SSL = str2bool(os.getenv("ROBOFLOW_API_VERIFY_SSL", "True"))
+
 IGNORE_MODEL_DEPENDENCIES_WARNINGS = str2bool(
     os.getenv("IGNORE_MODEL_DEPENDENCIES_WARNINGS", "False")
 )
@@ -642,4 +693,122 @@ CACHE_METADATA_LOCK_TIMEOUT = float(os.getenv("CACHE_METADATA_LOCK_TIMEOUT", 1.0
 MODEL_LOCK_ACQUIRE_TIMEOUT = float(os.getenv("MODEL_LOCK_ACQUIRE_TIMEOUT", "60.0"))
 HOT_MODELS_QUEUE_LOCK_ACQUIRE_TIMEOUT = float(
     os.getenv("HOT_MODELS_QUEUE_LOCK_ACQUIRE_TIMEOUT", "5.0")
+)
+
+# RFDETR input resolution limit for models loaded through onnx runtime
+# 1280 -> ~3.5G
+# 1440 -> ~5G
+# 1600 -> ~10G
+# 2048 -> ~22G
+RFDETR_ONNX_MAX_RESOLUTION = int(os.getenv("RFDETR_ONNX_MAX_RESOLUTION", "1600"))
+
+# Confidence lower bound to prevent OOM when inferring on instance segmentation models
+CONFIDENCE_LOWER_BOUND_OOM_PREVENTION = float(
+    os.getenv("CONFIDENCE_LOWER_BOUND_OOM_PREVENTION", "0.01")
+)
+
+WEBRTC_WORKER_ENABLED: bool = str2bool(os.getenv("WEBRTC_WORKER_ENABLED", "True"))
+
+# Strip quotes from Modal WebRTC worker credentials in case users include them
+_webrtc_modal_token_id = os.getenv("WEBRTC_MODAL_TOKEN_ID")
+_webrtc_modal_token_secret = os.getenv("WEBRTC_MODAL_TOKEN_SECRET")
+
+# Remove common quote characters that users might accidentally include
+WEBRTC_MODAL_TOKEN_ID = (
+    _webrtc_modal_token_id.strip("\"'") if _webrtc_modal_token_id else None
+)
+WEBRTC_MODAL_TOKEN_SECRET = (
+    _webrtc_modal_token_secret.strip("\"'") if _webrtc_modal_token_secret else None
+)
+WEBRTC_MODAL_APP_NAME = os.getenv(
+    "WEBRTC_MODAL_APP_NAME", f"inference-webrtc-{PROJECT}"
+)
+# seconds
+WEBRTC_MODAL_RESPONSE_TIMEOUT = int(os.getenv("WEBRTC_MODAL_RESPONSE_TIMEOUT", "60"))
+# seconds
+WEBRTC_MODAL_WATCHDOG_TIMEMOUT = int(os.getenv("WEBRTC_MODAL_WATCHDOG_TIMEMOUT", "60"))
+# seconds
+WEBRTC_MODAL_FUNCTION_TIME_LIMIT = int(
+    os.getenv("WEBRTC_MODAL_FUNCTION_TIME_LIMIT", "3600")
+)
+# seconds
+WEBRTC_MODAL_FUNCTION_MAX_TIME_LIMIT = int(
+    os.getenv("WEBRTC_MODAL_FUNCTION_MAX_TIME_LIMIT", "604800")  # 7 days
+)
+# seconds
+WEBRTC_MODAL_SHUTDOWN_RESERVE = int(os.getenv("WEBRTC_MODAL_SHUTDOWN_RESERVE", "1"))
+WEBRTC_MODAL_FUNCTION_ENABLE_MEMORY_SNAPSHOT = str2bool(
+    os.getenv("WEBRTC_MODAL_FUNCTION_ENABLE_MEMORY_SNAPSHOT", "True")
+)
+# not set (to use CPU), any, or https://modal.com/docs/guide/gpu#specifying-gpu-type
+WEBRTC_MODAL_FUNCTION_GPU = os.getenv("WEBRTC_MODAL_FUNCTION_GPU")
+try:
+    WEBRTC_MODAL_FUNCTION_MAX_INPUTS = int(
+        os.getenv("WEBRTC_MODAL_FUNCTION_MAX_INPUTS")
+    )
+except (ValueError, TypeError):
+    WEBRTC_MODAL_FUNCTION_MAX_INPUTS = None
+WEBRTC_MODAL_FUNCTION_MIN_CONTAINERS = int(
+    os.getenv("WEBRTC_MODAL_FUNCTION_MIN_CONTAINERS", "0")
+)
+WEBRTC_MODAL_FUNCTION_BUFFER_CONTAINERS = int(
+    os.getenv("WEBRTC_MODAL_FUNCTION_BUFFER_CONTAINERS", "0")
+)
+# seconds
+WEBRTC_MODAL_FUNCTION_SCALEDOWN_WINDOW = int(
+    os.getenv("WEBRTC_MODAL_FUNCTION_SCALEDOWN_WINDOW", "15")
+)
+WEBRTC_MODAL_IMAGE_NAME = os.getenv(
+    "WEBRTC_MODAL_IMAGE_NAME", "roboflow/roboflow-inference-server-gpu"
+)
+WEBRTC_MODAL_IMAGE_TAG = os.getenv("WEBRTC_MODAL_IMAGE_TAG")
+WEBRTC_MODAL_ROBOFLOW_INTERNAL_SERVICE_NAME = os.getenv(
+    "WEBRTC_MODAL_ROBOFLOW_INTERNAL_SERVICE_NAME", "webrtc-modal"
+)
+WEBRTC_MODAL_RTSP_PLACEHOLDER = os.getenv("WEBRTC_MODAL_RTSP_PLACEHOLDER")
+WEBRTC_MODAL_RTSP_PLACEHOLDER_URL = os.getenv("WEBRTC_MODAL_RTSP_PLACEHOLDER_URL")
+WEBRTC_MODAL_GCP_SECRET_NAME = os.getenv("WEBRTC_MODAL_GCP_SECRET_NAME")
+WEBRTC_MODAL_MODELS_PRELOAD_API_KEY = os.getenv("WEBRTC_MODAL_MODELS_PRELOAD_API_KEY")
+WEBRTC_MODAL_PRELOAD_MODELS = os.getenv("WEBRTC_MODAL_PRELOAD_MODELS")
+WEBRTC_MODAL_PRELOAD_HF_IDS = os.getenv("WEBRTC_MODAL_PRELOAD_HF_IDS")
+try:
+    WEBRTC_MODAL_MIN_CPU_CORES = int(os.getenv("WEBRTC_MODAL_MIN_CPU_CORES"))
+except (ValueError, TypeError):
+    WEBRTC_MODAL_MIN_CPU_CORES = None
+try:
+    WEBRTC_MODAL_MIN_RAM_MB = int(os.getenv("WEBRTC_MODAL_MIN_RAM_MB"))
+except (ValueError, TypeError):
+    WEBRTC_MODAL_MIN_RAM_MB = None
+WEBRTC_MODAL_PUBLIC_STUN_SERVERS = os.getenv(
+    "WEBRTC_MODAL_PUBLIC_STUN_SERVERS",
+    "stun:stun.l.google.com:19302,stun:stun1.l.google.com:19302,stun:stun2.l.google.com:19302,stun:stun3.l.google.com:19302,stun:stun4.l.google.com:19302",
+)
+WEBRTC_MODAL_USAGE_QUOTA_ENABLED = str2bool(
+    os.getenv("WEBRTC_MODAL_USAGE_QUOTA_ENABLED", "False")
+)
+WEBRTC_DATA_CHANNEL_BUFFER_DRAINING_DELAY = float(
+    os.getenv("WEBRTC_DATA_CHANNEL_BUFFER_DRAINING_DELAY", "0.1")
+)
+WEBRTC_DATA_CHANNEL_BUFFER_SIZE_LIMIT = int(
+    os.getenv("WEBRTC_DATA_CHANNEL_BUFFER_SIZE_LIMIT", str(1024 * 1024))  # 1MB
+)
+
+# Maximum number of frames the server is allowed to be ahead of the last client ACK
+# when ACK-based pacing is enabled on the WebRTC control datachannel.
+#
+# Example: if ack=1 and window=4, server may produce/send up to frame 5.
+try:
+    WEBRTC_DATA_CHANNEL_ACK_WINDOW = int(
+        os.getenv("WEBRTC_DATA_CHANNEL_ACK_WINDOW", "20")
+    )
+except (ValueError, TypeError):
+    WEBRTC_DATA_CHANNEL_ACK_WINDOW = 20
+if WEBRTC_DATA_CHANNEL_ACK_WINDOW < 0:
+    WEBRTC_DATA_CHANNEL_ACK_WINDOW = 0
+
+HTTP_API_SHARED_WORKFLOWS_THREAD_POOL_ENABLED = str2bool(
+    os.getenv("HTTP_API_SHARED_WORKFLOWS_THREAD_POOL_ENABLED", "True")
+)
+HTTP_API_SHARED_WORKFLOWS_THREAD_POOL_WORKERS = int(
+    os.getenv("HTTP_API_SHARED_WORKFLOWS_THREAD_POOL_WORKERS", "16")
 )

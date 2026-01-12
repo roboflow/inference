@@ -22,6 +22,7 @@ COPY requirements/requirements.cpu.txt \
     requirements/requirements.vino.txt \
     requirements/requirements.cli.txt \
     requirements/requirements.sdk.http.txt \
+    requirements/requirements.modal.txt \
     ./
 
 RUN if [ "${TARGETPLATFORM}" = "linux/amd64" ]; then mv requirements.vino.txt requirements.cpu.txt; fi
@@ -33,6 +34,7 @@ RUN pip3 install \
     -r requirements.http.txt \
     -r requirements.cli.txt \
     -r requirements.sdk.http.txt \
+    -r requirements.modal.txt \
     "setuptools<=75.5.0" \
     --upgrade \
     && rm -rf ~/.cache/pip
@@ -62,5 +64,7 @@ ENV WORKFLOWS_STEP_EXECUTION_MODE=local
 ENV WORKFLOWS_MAX_CONCURRENT_STEPS=4
 ENV API_LOGGING_ENABLED=True
 ENV ENABLE_PROMETHEUS=True
+ENV CORE_MODEL_EASYOCR_ENABLED=False
+ENV CORE_MODEL_SAM3_ENABLED=False
 
 ENTRYPOINT uvicorn cpu_http:app --workers $NUM_WORKERS --host $HOST --port $PORT

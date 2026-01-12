@@ -1,6 +1,6 @@
 # Installation
 
-You can install `inference` in a [Python>=3.8](https://www.python.org/) environment.
+You can install `inference` in a [Python>=3.9,<3.13](https://www.python.org/) environment.
 
 !!! example "Installation Command"
 

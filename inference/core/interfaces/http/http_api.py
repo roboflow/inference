@@ -1,14 +1,16 @@
 import base64
 import concurrent
 import os
+import re
 from concurrent.futures import CancelledError, Future, ThreadPoolExecutor
 from functools import partial
-from threading import Lock, Semaphore, Thread
+from threading import Lock, Thread
 from time import sleep
 from typing import Annotated, Any, Dict, List, Optional, Tuple, Union
 from uuid import uuid4
 
 import asgi_correlation_id
+import requests
 import uvicorn
 from fastapi import (
     BackgroundTasks,
@@ -22,6 +24,7 @@ from fastapi import (
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi_cprofile.profiler import CProfileMiddleware
+from pydantic import ValidationError
 from starlette.datastructures import UploadFile
 from starlette.middleware.base import BaseHTTPMiddleware
 
@@ -34,6 +37,7 @@ from inference.core.entities.requests.clip import (
     ClipTextEmbeddingRequest,
 )
 from inference.core.entities.requests.doctr import DoctrOCRInferenceRequest
+from inference.core.entities.requests.easy_ocr import EasyOCRInferenceRequest
 from inference.core.entities.requests.gaze import GazeDetectionInferenceRequest
 from inference.core.entities.requests.groundingdino import GroundingDINOInferenceRequest
 from inference.core.entities.requests.inference import (
@@ -60,6 +64,7 @@ from inference.core.entities.requests.sam2 import (
     Sam2EmbeddingRequest,
     Sam2SegmentationRequest,
 )
+from inference.core.entities.requests.sam3 import Sam3SegmentationRequest
 from inference.core.entities.requests.server_state import (
     AddModelRequest,
     ClearModelRequest,
@@ -104,6 +109,10 @@ from inference.core.entities.responses.sam2 import (
     Sam2EmbeddingResponse,
     Sam2SegmentationResponse,
 )
+from inference.core.entities.responses.sam3 import (
+    Sam3EmbeddingResponse,
+    Sam3SegmentationResponse,
+)
 from inference.core.entities.responses.server_state import (
     ModelsDescriptions,
     ServerVersionInfo,
@@ -118,16 +127,20 @@ from inference.core.entities.responses.workflows import (
 )
 from inference.core.env import (
     ALLOW_ORIGINS,
+    API_BASE_URL,
     API_KEY,
     API_LOGGING_ENABLED,
     BUILDER_ORIGIN,
+    CONFIDENCE_LOWER_BOUND_OOM_PREVENTION,
     CORE_MODEL_CLIP_ENABLED,
     CORE_MODEL_DOCTR_ENABLED,
+    CORE_MODEL_EASYOCR_ENABLED,
     CORE_MODEL_GAZE_ENABLED,
     CORE_MODEL_GROUNDINGDINO_ENABLED,
     CORE_MODEL_OWLV2_ENABLED,
     CORE_MODEL_PE_ENABLED,
     CORE_MODEL_SAM2_ENABLED,
+    CORE_MODEL_SAM3_ENABLED,
     CORE_MODEL_SAM_ENABLED,
     CORE_MODEL_TROCR_ENABLED,
     CORE_MODEL_YOLO_WORLD_ENABLED,
@@ -139,11 +152,12 @@ from inference.core.env import (
     DOCKER_SOCKET_PATH,
     ENABLE_BUILDER,
     ENABLE_DASHBOARD,
-    ENABLE_PROMETHEUS,
     ENABLE_STREAM_API,
     ENABLE_WORKFLOWS_PROFILING,
     GCP_SERVERLESS,
     GET_MODEL_REGISTRY_ENABLED,
+    HTTP_API_SHARED_WORKFLOWS_THREAD_POOL_ENABLED,
+    HTTP_API_SHARED_WORKFLOWS_THREAD_POOL_WORKERS,
     LAMBDA,
     LEGACY_ROUTE_ENABLED,
     LMM_ENABLED,
@@ -154,7 +168,11 @@ from inference.core.env import (
     NOTEBOOK_PORT,
     PRELOAD_MODELS,
     PROFILE,
+    ROBOFLOW_INTERNAL_SERVICE_NAME,
+    ROBOFLOW_INTERNAL_SERVICE_SECRET,
     ROBOFLOW_SERVICE_SECRET,
+    SAM3_EXEC_MODE,
+    WEBRTC_WORKER_ENABLED,
     WORKFLOWS_MAX_CONCURRENT_STEPS,
     WORKFLOWS_PROFILER_BUFFER_SIZE,
     WORKFLOWS_STEP_EXECUTION_MODE,
@@ -163,8 +181,12 @@ from inference.core.exceptions import (
     ContentTypeInvalid,
     ContentTypeMissing,
     InputImageLoadError,
+    MissingApiKeyError,
     MissingServiceSecretError,
     RoboflowAPINotAuthorizedError,
+    RoboflowAPINotNotFoundError,
+    WebRTCConfigurationError,
+    WorkspaceLoadError,
 )
 from inference.core.interfaces.base import BaseInterface
 from inference.core.interfaces.http.dependencies import (
@@ -181,12 +203,17 @@ from inference.core.interfaces.http.handlers.workflows import (
 )
 from inference.core.interfaces.http.middlewares.cors import PathAwareCORSMiddleware
 from inference.core.interfaces.http.middlewares.gzip import gzip_response_if_requested
-from inference.core.interfaces.http.orjson_utils import orjson_response
+from inference.core.interfaces.http.orjson_utils import (
+    orjson_response,
+    orjson_response_keeping_parent_id,
+)
 from inference.core.interfaces.stream_manager.api.entities import (
+    CommandContext,
     CommandResponse,
     ConsumePipelineResponse,
     InferencePipelineStatusResponse,
     InitializeWebRTCPipelineResponse,
+    InitializeWebRTCResponse,
     ListPipelinesResponse,
 )
 from inference.core.interfaces.stream_manager.api.stream_manager_client import (
@@ -196,11 +223,18 @@ from inference.core.interfaces.stream_manager.manager_app.entities import (
     ConsumeResultsPayload,
     InitialisePipelinePayload,
     InitialiseWebRTCPipelinePayload,
+    OperationStatus,
+)
+from inference.core.interfaces.webrtc_worker import start_worker
+from inference.core.interfaces.webrtc_worker.entities import (
+    WebRTCWorkerRequest,
+    WebRTCWorkerResult,
 )
 from inference.core.managers.base import ModelManager
 from inference.core.managers.metrics import get_container_stats
 from inference.core.managers.prometheus import InferenceInstrumentator
 from inference.core.roboflow_api import (
+    build_roboflow_api_headers,
     get_roboflow_workspace,
     get_roboflow_workspace_async,
     get_workflow_specification,
@@ -208,6 +242,7 @@ from inference.core.roboflow_api import (
 from inference.core.utils.container import is_docker_socket_mounted
 from inference.core.utils.notebooks import start_notebook
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
+from inference.core.workflows.errors import WorkflowSyntaxError
 from inference.core.workflows.execution_engine.core import (
     ExecutionEngine,
     get_available_versions,
@@ -236,6 +271,17 @@ import time
 from inference.core.roboflow_api import ModelEndpointType
 from inference.core.version import __version__
 
+try:
+    from inference_sdk.config import EXECUTION_ID_HEADER, execution_id
+except ImportError:
+    execution_id = None
+    EXECUTION_ID_HEADER = None
+
+
+def get_content_type(request: Request) -> str:
+    content_type = request.headers.get("content-type", "")
+    return content_type.split(";")[0].strip()
+
 
 class LambdaMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
@@ -247,10 +293,17 @@ class LambdaMiddleware(BaseHTTPMiddleware):
 
 class GCPServerlessMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
+        if execution_id is not None:
+            execution_id_value = request.headers.get(EXECUTION_ID_HEADER)
+            if not execution_id_value:
+                execution_id_value = f"{time.time_ns()}_{uuid4().hex[:4]}"
+            execution_id.set(execution_id_value)
         t1 = time.time()
         response = await call_next(request)
         t2 = time.time()
         response.headers[PROCESSING_TIME_HEADER] = str(t2 - t1)
+        if execution_id is not None:
+            response.headers[EXECUTION_ID_HEADER] = execution_id_value
         return response
 
 
@@ -407,8 +460,91 @@ class HttpInterface(BaseInterface):
                 )
                 return JSONResponse(status_code=200, content=container_stats)
 
+        cached_api_keys = dict()
+
+        if GCP_SERVERLESS:
+
+            @app.middleware("http")
+            async def check_authorization_serverless(request: Request, call_next):
+                # exclusions
+                skip_check = (
+                    request.method not in ["GET", "POST"]
+                    or request.url.path
+                    in [
+                        "/",
+                        "/docs",
+                        "/info",
+                        "/healthz",  # health check endpoint for liveness probe
+                        "/readiness",
+                        "/metrics",
+                        "/openapi.json",  # needed for /docs and /redoc
+                        "/model/registry",  # dont auth this route, usually not used on serverlerless, but queue based serverless uses it internally (not accessible from outside)
+                    ]
+                    or request.url.path.startswith("/static/")
+                    or request.url.path.startswith("/_next/")
+                )
+
+                # for these routes we only want to auth if dynamic python modules are provided
+                if request.url.path in [
+                    "/workflows/blocks/describe",
+                    "/workflows/definition/schema",
+                ]:
+                    if request.method == "GET":
+                        skip_check = True
+
+                    elif (
+                        get_content_type(request) == "application/json"
+                        and int(request.headers.get("content-length", 0)) > 0
+                    ):
+                        json_params = await request.json()
+                        dynamic_blocks_definitions = json_params.get(
+                            "dynamic_blocks_definitions", None
+                        )
+                        if not dynamic_blocks_definitions:
+                            skip_check = True
+
+                if skip_check:
+                    return await call_next(request)
+
+                def _unauthorized_response(msg):
+                    return JSONResponse(
+                        status_code=401,
+                        content={
+                            "status": 401,
+                            "message": msg,
+                        },
+                    )
+
+                req_params = request.query_params
+                json_params = dict()
+                api_key = req_params.get("api_key", None)
+                if (
+                    api_key is None
+                    and get_content_type(request) == "application/json"
+                    and int(request.headers.get("content-length", 0)) > 0
+                ):
+                    # have to try catch here, because some legacy endpoints that abuse Content-Type header but dont actually receive json
+                    try:
+                        json_params = await request.json()
+                    except Exception:
+                        pass
+                api_key = json_params.get("api_key", api_key)
+
+                if api_key is None:
+                    return _unauthorized_response("Unauthorized api_key")
+
+                if cached_api_keys.get(api_key, 0) < time.time():
+                    try:
+                        await get_roboflow_workspace_async(api_key=api_key)
+                        cached_api_keys[api_key] = (
+                            time.time() + 3600
+                        )  # expired after 1 hour
+                    except (RoboflowAPINotAuthorizedError, WorkspaceLoadError):
+                        return _unauthorized_response("Unauthorized api_key")
+
+                return await call_next(request)
+
         if DEDICATED_DEPLOYMENT_WORKSPACE_URL:
-            cached_api_keys = dict()
 
             @app.middleware("http")
             async def check_authorization(request: Request, call_next):
@@ -421,9 +557,10 @@ class HttpInterface(BaseInterface):
                         "/docs",
                         "/redoc",
                         "/info",
+                        "/healthz",  # health check endpoint for liveness probe
+                        "/readiness",
+                        "/metrics",
                         "/openapi.json",  # needed for /docs and /redoc
-                        "/workflows/blocks/describe",
-                        "/workflows/definition/schema",
                     ]
                     or request.url.path.startswith("/static/")
                     or request.url.path.startswith("/_next/")
@@ -443,14 +580,21 @@ class HttpInterface(BaseInterface):
                 # check api_key
                 req_params = request.query_params
                 json_params = dict()
+                api_key = req_params.get("api_key", None)
                 if (
-                    request.headers.get("content-type", None) == "application/json"
+                    api_key is None
+                    and get_content_type(request) == "application/json"
                     and int(request.headers.get("content-length", 0)) > 0
                 ):
-                    json_params = await request.json()
-                api_key = req_params.get("api_key", None) or json_params.get(
-                    "api_key", None
-                )
+                    # have to try catch here, because some legacy endpoints that abuse Content-Type header but dont actually receive json
+                    try:
+                        json_params = await request.json()
+                    except Exception:
+                        pass
+                api_key = json_params.get("api_key", api_key)
+
+                if api_key is None:
+                    return _unauthorized_response("Unauthorized api_key")
 
                 if cached_api_keys.get(api_key, 0) < time.time():
                     try:
@@ -468,7 +612,7 @@ class HttpInterface(BaseInterface):
                         cached_api_keys[api_key] = (
                             time.time() + 3600
                         )  # expired after 1 hour
-                    except RoboflowAPINotAuthorizedError as e:
+                    except (RoboflowAPINotAuthorizedError, WorkspaceLoadError):
                         return _unauthorized_response("Unauthorized api_key")
 
                 return await call_next(request)
@@ -476,6 +620,11 @@ class HttpInterface(BaseInterface):
         self.app = app
         self.model_manager = model_manager
         self.stream_manager_client: Optional[StreamManagerClient] = None
+        self.shared_thread_pool_executor: Optional[ThreadPoolExecutor] = None
+        if HTTP_API_SHARED_WORKFLOWS_THREAD_POOL_ENABLED:
+            self.shared_thread_pool_executor = ThreadPoolExecutor(
+                max_workers=HTTP_API_SHARED_WORKFLOWS_THREAD_POOL_WORKERS
+            )
 
         if ENABLE_STREAM_API:
             operations_timeout = os.getenv("STREAM_MANAGER_OPERATIONS_TIMEOUT")
@@ -523,6 +672,7 @@ class HttpInterface(BaseInterface):
             background_tasks: Optional[BackgroundTasks],
             profiler: WorkflowsProfiler,
         ) -> WorkflowInferenceResponse:
+
             workflow_init_parameters = {
                 "workflows_core.model_manager": model_manager,
                 "workflows_core.api_key": workflow_request.api_key,
@@ -534,6 +684,7 @@ class HttpInterface(BaseInterface):
                 max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
                 prevent_local_images_loading=True,
                 profiler=profiler,
+                executor=self.shared_thread_pool_executor,
                 workflow_id=workflow_request.workflow_id,
             )
             is_preview = False
@@ -651,6 +802,17 @@ class HttpInterface(BaseInterface):
         Returns:
         The DocTR model ID.
         """
+
+        load_easy_ocr_model = partial(load_core_model, core_model="easy_ocr")
+        """Loads the EasyOCR model into the model manager.
+
+        Args:
+        Same as `load_core_model`.
+
+        Returns:
+        The EasyOCR model ID.
+        """
+
         load_paligemma_model = partial(load_core_model, core_model="paligemma")
 
         load_grounding_dino_model = partial(
@@ -1206,6 +1368,7 @@ class HttpInterface(BaseInterface):
                 # TODO: get rid of async: https://github.com/roboflow/inference/issues/569
                 dynamic_blocks_definitions = None
                 requested_execution_engine_version = None
+                api_key = None
                 if request_payload is not None:
                     dynamic_blocks_definitions = (
                         request_payload.dynamic_blocks_definitions
@@ -1213,9 +1376,13 @@ class HttpInterface(BaseInterface):
                     requested_execution_engine_version = (
                         request_payload.execution_engine_version
                     )
+                    api_key = request_payload.api_key or request.query_params.get(
+                        "api_key", None
+                    )
                 result = handle_describe_workflows_blocks_request(
                     dynamic_blocks_definitions=dynamic_blocks_definitions,
                     requested_execution_engine_version=requested_execution_engine_version,
+                    api_key=api_key,
                 )
                 return gzip_response_if_requested(request=request, response=result)
 
@@ -1270,12 +1437,16 @@ class HttpInterface(BaseInterface):
             @with_route_exceptions
             def validate_workflow(
                 specification: dict,
+                api_key: Optional[str] = Query(
+                    None,
+                    description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
+                ),
             ) -> WorkflowValidationStatus:
                 # TODO: get rid of async: https://github.com/roboflow/inference/issues/569
                 step_execution_mode = StepExecutionMode(WORKFLOWS_STEP_EXECUTION_MODE)
                 workflow_init_parameters = {
                     "workflows_core.model_manager": model_manager,
-                    "workflows_core.api_key": None,
+                    "workflows_core.api_key": api_key,
                     "workflows_core.background_tasks": None,
                     "workflows_core.step_execution_mode": step_execution_mode,
                 }
@@ -1286,6 +1457,63 @@ class HttpInterface(BaseInterface):
                     prevent_local_images_loading=True,
                 )
                 return WorkflowValidationStatus(status="ok")
+
+        if WEBRTC_WORKER_ENABLED:
+
+            @app.post(
+                "/initialise_webrtc_worker",
+                response_model=InitializeWebRTCResponse,
+                summary="[EXPERIMENTAL] Establishes WebRTC peer connection and processes video stream in spawned process or modal function",
+                description="[EXPERIMENTAL] Establishes WebRTC peer connection and processes video stream in spawned process or modal function",
+            )
+            @with_route_exceptions_async
+            async def initialise_webrtc_worker(
+                request: WebRTCWorkerRequest,
+                r: Request,
+            ) -> InitializeWebRTCResponse:
+                if str(r.headers.get("origin")).lower() == BUILDER_ORIGIN.lower():
+                    if re.search(
+                        r"^https://[^.]+\.roboflow\.[^./]+/", str(r.url).lower()
+                    ):
+                        request.is_preview = True
+
+                logger.debug("Received initialise_webrtc_worker request")
+                worker_result: WebRTCWorkerResult = await start_worker(
+                    webrtc_request=request,
+                )
+                if worker_result.exception_type is not None:
+                    if worker_result.exception_type == "WorkflowSyntaxError":
+                        raise WorkflowSyntaxError(
+                            public_message=worker_result.error_message,
+                            context=worker_result.error_context,
+                            inner_error=worker_result.inner_error,
+                        )
+                    expected_exceptions = {
+                        "Exception": Exception,
+                        "KeyError": KeyError,
+                        "MissingApiKeyError": MissingApiKeyError,
+                        "NotImplementedError": NotImplementedError,
+                        "RoboflowAPINotAuthorizedError": RoboflowAPINotAuthorizedError,
+                        "RoboflowAPINotNotFoundError": RoboflowAPINotNotFoundError,
+                        "ValidationError": ValidationError,
+                        "WebRTCConfigurationError": WebRTCConfigurationError,
+                    }
+                    exc = expected_exceptions.get(
+                        worker_result.exception_type, Exception
+                    )(worker_result.error_message)
+                    logger.error(
+                        f"Initialise webrtc worker failed with %s: %s",
+                        worker_result.exception_type,
+                        worker_result.error_message,
+                    )
+                    raise exc
+                logger.debug("Returning initialise_webrtc_worker response")
+                return InitializeWebRTCResponse(
+                    context=CommandContext(),
+                    status=OperationStatus.SUCCESS,
+                    sdp=worker_result.answer.sdp,
+                    type=worker_result.answer.type,
+                )
 
         if ENABLE_STREAM_API:
 
@@ -1876,7 +2104,9 @@ class HttpInterface(BaseInterface):
 
                 @app.post(
                     "/doctr/ocr",
-                    response_model=OCRInferenceResponse,
+                    response_model=Union[
+                        OCRInferenceResponse, List[OCRInferenceResponse]
+                    ],
                     summary="DocTR OCR response",
                     description="Run the DocTR OCR model to retrieve text in an image.",
                 )
@@ -1901,7 +2131,7 @@ class HttpInterface(BaseInterface):
                         request (Request, default Body()): The HTTP request.
 
                     Returns:
-                        M.OCRInferenceResponse: The response containing the embedded image.
+                        OCRInferenceResponse: The response containing the embedded image.
                     """
                     logger.debug(f"Reached /doctr/ocr")
                     doctr_model_id = load_doctr_model(
@@ -1918,7 +2148,57 @@ class HttpInterface(BaseInterface):
                             "authorizer"
                         ]["lambda"]["actor"]
                         trackUsage(doctr_model_id, actor)
-                    return response
+                    return orjson_response_keeping_parent_id(response)
+
+            if CORE_MODEL_EASYOCR_ENABLED:
+
+                @app.post(
+                    "/easy_ocr/ocr",
+                    response_model=Union[
+                        OCRInferenceResponse, List[OCRInferenceResponse]
+                    ],
+                    summary="EasyOCR OCR response",
+                    description="Run the EasyOCR model to retrieve text in an image.",
+                )
+                @with_route_exceptions
+                @usage_collector("request")
+                def easy_ocr_retrieve_text(
+                    inference_request: EasyOCRInferenceRequest,
+                    request: Request,
+                    api_key: Optional[str] = Query(
+                        None,
+                        description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
+                    ),
+                    countinference: Optional[bool] = None,
+                    service_secret: Optional[str] = None,
+                ):
+                    """
+                    Embeds image data using the EasyOCR model.
+
+                    Args:
+                        inference_request (EasyOCRInferenceRequest): The request containing the image from which to retrieve text.
+                        api_key (Optional[str], default None): Roboflow API Key passed to the model during initialization for artifact retrieval.
+                        request (Request, default Body()): The HTTP request.
+
+                    Returns:
+                        OCRInferenceResponse: The response containing the embedded image.
+                    """
+                    logger.debug(f"Reached /easy_ocr/ocr")
+                    easy_ocr_model_id = load_easy_ocr_model(
+                        inference_request,
+                        api_key=api_key,
+                        countinference=countinference,
+                        service_secret=service_secret,
+                    )
+                    response = self.model_manager.infer_from_request_sync(
+                        easy_ocr_model_id, inference_request
+                    )
+                    if LAMBDA:
+                        actor = request.scope["aws.event"]["requestContext"][
+                            "authorizer"
+                        ]["lambda"]["actor"]
+                        trackUsage(easy_ocr_model_id, actor)
+                    return orjson_response_keeping_parent_id(response)
 
             if CORE_MODEL_SAM_ENABLED:
 
@@ -2105,6 +2385,226 @@ class HttpInterface(BaseInterface):
                     )
                     model_response = self.model_manager.infer_from_request_sync(
                         sam2_model_id, inference_request
+                    )
+                    if inference_request.format == "binary":
+                        return Response(
+                            content=model_response,
+                            headers={"Content-Type": "application/octet-stream"},
+                        )
+                    return model_response
+
+            if CORE_MODEL_SAM3_ENABLED and not GCP_SERVERLESS:
+
+                @app.post(
+                    "/sam3/embed_image",
+                    response_model=Sam3EmbeddingResponse,
+                    summary="Seg preview Image Embeddings",
+                    description="Run the  Model to embed image data.",
+                )
+                @with_route_exceptions
+                @usage_collector("request")
+                def sam3_embed_image(
+                    inference_request: Sam2EmbeddingRequest,
+                    request: Request,
+                    api_key: Optional[str] = Query(
+                        None,
+                        description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
+                    ),
+                    countinference: Optional[bool] = None,
+                    service_secret: Optional[str] = None,
+                ):
+                    logger.debug(f"Reached /sam3/embed_image")
+
+                    if SAM3_EXEC_MODE == "remote":
+                        raise HTTPException(
+                            status_code=501,
+                            detail="SAM3 embedding is not supported in remote execution mode.",
+                        )
+
+                    self.model_manager.add_model(
+                        "sam3/sam3_interactive",
+                        api_key=api_key,
+                        endpoint_type=ModelEndpointType.CORE_MODEL,
+                        countinference=countinference,
+                        service_secret=service_secret,
+                    )
+
+                    model_response = self.model_manager.infer_from_request_sync(
+                        "sam3/sam3_interactive", inference_request
+                    )
+                    return model_response
+
+                @app.post(
+                    "/sam3/visual_segment",
+                    response_model=Sam2SegmentationResponse,
+                    summary="SAM3 PVS (promptable visual segmentation)",
+                    description="Run the SAM3 PVS (promptable visual segmentation) to generate segmentations for image data.",
+                )
+                @with_route_exceptions
+                @usage_collector("request")
+                def sam3_visual_segment(
+                    inference_request: Sam2SegmentationRequest,
+                    request: Request,
+                    api_key: Optional[str] = Query(
+                        None,
+                        description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
+                    ),
+                    countinference: Optional[bool] = None,
+                    service_secret: Optional[str] = None,
+                ):
+                    logger.debug(f"Reached /sam3/visual_segment")
+
+                    if SAM3_EXEC_MODE == "remote":
+                        raise HTTPException(
+                            status_code=501,
+                            detail="SAM3 visual segmentation is not supported in remote execution mode.",
+                        )
+
+                    self.model_manager.add_model(
+                        "sam3/sam3_interactive",
+                        api_key=api_key,
+                        endpoint_type=ModelEndpointType.CORE_MODEL,
+                        countinference=countinference,
+                        service_secret=service_secret,
+                    )
+
+                    model_response = self.model_manager.infer_from_request_sync(
+                        "sam3/sam3_interactive", inference_request
+                    )
+                    return model_response
+
+            if CORE_MODEL_SAM3_ENABLED:
+
+                @app.post(
+                    "/sam3/concept_segment",
+                    response_model=Sam3SegmentationResponse,
+                    summary="SAM3 PCS (promptable concept segmentation)",
+                    description="Run the SAM3 PCS (promptable concept segmentation) to generate segmentations for image data.",
+                )
+                @with_route_exceptions
+                @usage_collector("request")
+                def sam3_segment_image(
+                    inference_request: Sam3SegmentationRequest,
+                    request: Request,
+                    api_key: Optional[str] = Query(
+                        None,
+                        description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
+                    ),
+                    countinference: Optional[bool] = None,
+                    service_secret: Optional[str] = None,
+                ):
+                    if SAM3_EXEC_MODE == "remote":
+                        if not inference_request.model_id.startswith("sam3/"):
+                            raise HTTPException(
+                                status_code=501,
+                                detail="Fine-tuned SAM3 models are not supported in remote execution mode yet. Please use a workflow or self-host the server.",
+                            )
+                        endpoint = f"{API_BASE_URL}/inferenceproxy/seg-preview"
+
+                        # Construct payload for remote API
+                        # The remote API expects:
+                        # {
+                        #     "image": {"type": "base64", "value": ...},
+                        #     "prompts": [{"type": "text", "text": ...}, ...],
+                        #     "output_prob_thresh": ...
+                        # }
+
+                        # Extract prompts from request
+                        http_prompts = []
+                        for prompt in inference_request.prompts:
+                            p_dict = prompt.dict(exclude_none=True)
+                            # Ensure type is set if missing (default to text if text is present)
+                            if "type" not in p_dict:
+                                if "text" in p_dict:
+                                    p_dict["type"] = "text"
+                            http_prompts.append(p_dict)
+
+                        # Prepare image
+                        # inference_request.image is InferenceRequestImage
+                        if inference_request.image.type == "base64":
+                            http_image = {
+                                "type": "base64",
+                                "value": inference_request.image.value,
+                            }
+                        elif inference_request.image.type == "url":
+                            http_image = {
+                                "type": "url",
+                                "value": inference_request.image.value,
+                            }
+                        elif inference_request.image.type == "numpy":
+                            # Numpy not supported for remote proxy easily without serialization,
+                            # but InferenceRequestImage usually comes as base64/url in HTTP API.
+                            # If it is numpy, we might need to handle it, but for now assume base64/url.
+                            # If it's numpy, it's likely from internal call, but this is HTTP API.
+                            http_image = {
+                                "type": "numpy",
+                                "value": inference_request.image.value,
+                            }
+                        else:
+                            http_image = {
+                                "type": inference_request.image.type,
+                                "value": inference_request.image.value,
+                            }
+
+                        payload = {
+                            "image": http_image,
+                            "prompts": http_prompts,
+                            "output_prob_thresh": inference_request.output_prob_thresh,
+                        }
+
+                        try:
+                            headers = {"Content-Type": "application/json"}
+                            if ROBOFLOW_INTERNAL_SERVICE_NAME:
+                                headers["X-Roboflow-Internal-Service-Name"] = (
+                                    ROBOFLOW_INTERNAL_SERVICE_NAME
+                                )
+                            if ROBOFLOW_INTERNAL_SERVICE_SECRET:
+                                headers["X-Roboflow-Internal-Service-Secret"] = (
+                                    ROBOFLOW_INTERNAL_SERVICE_SECRET
+                                )
+
+                            headers = build_roboflow_api_headers(
+                                explicit_headers=headers
+                            )
+
+                            response = requests.post(
+                                f"{endpoint}?api_key={api_key}",
+                                json=payload,
+                                headers=headers,
+                                timeout=60,
+                            )
+                            response.raise_for_status()
+                            resp_json = response.json()
+
+                            # The remote API returns the same structure as Sam3SegmentationResponse
+                            return Sam3SegmentationResponse(**resp_json)
+
+                        except Exception as e:
+                            logger.error(f"SAM3 remote request failed: {e}")
+                            raise HTTPException(
+                                status_code=500,
+                                detail=f"SAM3 remote request failed: {str(e)}",
+                            )
+
+                    if inference_request.model_id.startswith("sam3/"):
+                        self.model_manager.add_model(
+                            inference_request.model_id,
+                            api_key=api_key,
+                            endpoint_type=ModelEndpointType.CORE_MODEL,
+                            countinference=countinference,
+                            service_secret=service_secret,
+                        )
+                    else:
+                        self.model_manager.add_model(
+                            inference_request.model_id,
+                            api_key=api_key,
+                            endpoint_type=ModelEndpointType.ORT,
+                            countinference=countinference,
+                            service_secret=service_secret,
+                        )
+
+                    model_response = self.model_manager.infer_from_request_sync(
+                        inference_request.model_id, inference_request
                     )
                     if inference_request.format == "binary":
                         return Response(
@@ -2306,7 +2806,7 @@ class HttpInterface(BaseInterface):
                             "authorizer"
                         ]["lambda"]["actor"]
                         trackUsage(trocr_model_id, actor)
-                    return response
+                    return orjson_response_keeping_parent_id(response)
 
         if not (LAMBDA or GCP_SERVERLESS):
 
@@ -2353,14 +2853,16 @@ class HttpInterface(BaseInterface):
                 router as builder_router,
             )
 
-            # Allow CORS on only the API, but not the builder UI/iframe (where the CSRF is passed)
+            # Allow CORS on builder API and workflow endpoints needed by the builder UI
+            # Enables Private Network Access for Chrome 142+ (local development)
             app.add_middleware(
                 PathAwareCORSMiddleware,
-                match_paths=r"^/build/api.*",
+                match_paths=r"^/(build/api|workflows/).*",
                 allow_origins=[BUILDER_ORIGIN],
                 allow_methods=["*"],
                 allow_headers=["*"],
                 allow_credentials=True,
+                allow_private_network=True,
             )
 
             # Attach all routes from builder to the /build prefix
@@ -2497,6 +2999,11 @@ class HttpInterface(BaseInterface):
                     "external",
                     description="The detailed source information of the inference request",
                 ),
+                disable_model_monitoring: Optional[bool] = Query(
+                    False,
+                    description="If true, disables model monitoring for this request",
+                    include_in_schema=False,
+                ),
             ):
                 """
                 Legacy inference endpoint for object detection, instance segmentation, and classification.
@@ -2517,8 +3024,9 @@ class HttpInterface(BaseInterface):
                 model_id = f"{dataset_id}/{version_id}"
                 if confidence >= 1:
                     confidence /= 100
-                elif confidence < 0:
-                    confidence = 0
+                if confidence < CONFIDENCE_LOWER_BOUND_OOM_PREVENTION:
+                    # allowing lower confidence results in RAM usage explosion
+                    confidence = CONFIDENCE_LOWER_BOUND_OOM_PREVENTION
 
                 if overlap >= 1:
                     overlap /= 100
@@ -2622,6 +3130,7 @@ class HttpInterface(BaseInterface):
                     source=source,
                     source_info=source_info,
                     usage_billable=countinference,
+                    disable_model_monitoring=disable_model_monitoring,
                     **args,
                 )
                 inference_response = self.model_manager.infer_from_request_sync(

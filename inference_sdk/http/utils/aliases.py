@@ -27,10 +27,19 @@ RFDETR_ALIASES = {
     "rfdetr-nano": "coco/38",
     "rfdetr-small": "coco/39",
     "rfdetr-medium": "coco/40",
+    "rfdetr-seg-preview": "coco-dataset-vdnr1/26",
 }
 
 QWEN_ALIASES = {
     "qwen25-vl-7b": "qwen-pretrains/1",
+    "qwen3vl-2b-instruct": "qwen-pretrains/2",
+}
+
+CLASSIFICATION_ALIASES = {
+    "resnet18": "classifiers/1",
+    "resnet34": "classifiers/2",
+    "resnet50": "classifiers/3",
+    "resnet101": "classifiers/4",
 }
 
 REGISTERED_ALIASES = {
@@ -83,16 +92,21 @@ REGISTERED_ALIASES = {
     "paligemma-3b-ft-tallyqa-448": "paligemma-pretrains/17",
     "paligemma-3b-ft-docvqa-448": "paligemma-pretrains/18",
     "paligemma-3b-ft-ocrvqa-448": "paligemma-pretrains/19",
-    "florence-2-base": "florence-pretrains/1",
-    "florence-2-large": "florence-pretrains/2",
+    # "florence-2-base": "florence-pretrains/1",
+    # "florence-2-large": "florence-pretrains/2",
+    # since transformers 0.53.3 need newer version of florence2 weights
+    "florence-2-base": "florence-pretrains/3",
+    "florence-2-large": "florence-pretrains/4",
     **YOLOV11_ALIASES,
     **QWEN_ALIASES,
     **RFDETR_ALIASES,
+    **CLASSIFICATION_ALIASES,
 }
 
 OCR_ENDPOINTS = {
     "doctr": "/doctr/ocr",
     "trocr": "/ocr/trocr",
+    "easy_ocr": "/easy_ocr/ocr",
 }
 
 

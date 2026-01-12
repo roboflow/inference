@@ -1,0 +1,7 @@
+NMS_FUSED_FEATURE = "nms_fused"
+NMS_MAX_DETECTIONS_KEY = "max_detections"
+NMS_CONFIDENCE_THRESHOLD_KEY = "confidence_threshold"
+NMS_IOU_THRESHOLD_KEY = "iou_threshold"
+NMS_CLASS_AGNOSTIC_KEY = "class_agnostic"
+MODEL_DEPENDENCIES_KEY = "model_dependencies"
+MODEL_DEPENDENCIES_SUB_DIR = "model_dependencies"

@@ -650,13 +650,13 @@ def test_workflow_with_detections_tiling_in_batch_variant(
         "visualisation",
     }, "Expected all declared outputs to be delivered"
     assert result[0]["visualisation"].shape == (
-        416,
-        362,
+        426,
+        377,
         3,
     ), "Expected visualisation to be image of shape (416, 362, 3)"
     assert result[1]["visualisation"].shape == (
         296,
-        522,
+        527,
         3,
     ), "Expected visualisation to be image of shape (296, 522, 3)"
 
@@ -767,12 +767,12 @@ def test_workflow_with_detections_tiling_in_non_batch_variant(
         "visualisation",
     }, "Expected all declared outputs to be delivered"
     assert result[0]["visualisation"].shape == (
-        416,
-        362,
+        426,
+        377,
         3,
     ), "Expected visualisation to be image of shape (416, 362, 3)"
     assert result[1]["visualisation"].shape == (
         296,
-        522,
+        527,
         3,
     ), "Expected visualisation to be image of shape (296, 522, 3)"

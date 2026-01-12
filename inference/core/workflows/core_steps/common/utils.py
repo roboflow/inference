@@ -2,7 +2,7 @@ import logging
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
-from typing import Any, Callable, Dict, Iterable, List, Optional, TypeVar, Union
+from typing import Any, Callable, Dict, Iterable, List, Optional, Set, TypeVar, Union
 
 import numpy as np
 import supervision as sv
@@ -10,6 +10,7 @@ from supervision.config import CLASS_NAME_DATA_FIELD
 
 from inference.core.entities.requests.clip import ClipCompareRequest
 from inference.core.entities.requests.doctr import DoctrOCRInferenceRequest
+from inference.core.entities.requests.easy_ocr import EasyOCRInferenceRequest
 from inference.core.entities.requests.gaze import GazeDetectionInferenceRequest
 from inference.core.entities.requests.sam2 import Sam2InferenceRequest
 from inference.core.entities.requests.yolo_world import YOLOWorldInferenceRequest
@@ -48,6 +49,7 @@ from inference.core.workflows.execution_engine.entities.base import (
     OriginCoordinatesSystem,
     WorkflowImageData,
 )
+from inference.core.workflows.prototypes.block import BlockResult
 
 T = TypeVar("T")
 
@@ -56,6 +58,7 @@ def load_core_model(
     model_manager: ModelManager,
     inference_request: Union[
         DoctrOCRInferenceRequest,
+        EasyOCRInferenceRequest,
         ClipCompareRequest,
         YOLOWorldInferenceRequest,
         Sam2InferenceRequest,
@@ -85,6 +88,12 @@ def attach_prediction_type_info(
     return predictions
 
 
+def filter_out_invalid_polygons(predictions: List[dict]) -> List[dict]:
+    return [
+        d for d in predictions if "points" not in d or len(d.get("points", [])) >= 3
+    ]
+
+
 def attach_prediction_type_info_to_sv_detections_batch(
     predictions: List[sv.Detections],
     prediction_type: str,
@@ -104,9 +113,12 @@ def convert_inference_detections_batch_to_sv_detections(
     for p in predictions:
         width, height = p[image_key][WIDTH_KEY], p[image_key][HEIGHT_KEY]
         detections = sv.Detections.from_inference(p)
-        parent_ids = [d.get(PARENT_ID_KEY, "") for d in p[predictions_key]]
+        raw_predictions = p[predictions_key]
+        if len(detections) != len(raw_predictions):
+            raw_predictions = filter_out_invalid_polygons(predictions=raw_predictions)
+        parent_ids = [d.get(PARENT_ID_KEY, "") for d in raw_predictions]
         detection_ids = [
-            d.get(DETECTION_ID_KEY, str(uuid.uuid4())) for d in p[predictions_key]
+            d.get(DETECTION_ID_KEY, str(uuid.uuid4())) for d in raw_predictions
         ]
         detections[DETECTION_ID_KEY] = np.array(detection_ids)
         detections[PARENT_ID_KEY] = np.array(parent_ids)
@@ -424,6 +436,30 @@ def remove_unexpected_keys_from_dictionary(
     for unexpected_key in unexpected_keys:
         del dictionary[unexpected_key]
     return dictionary
+
+
+def post_process_ocr_result(
+    images: Batch[WorkflowImageData],
+    predictions: List[dict],
+    expected_output_keys: Set[str],
+) -> BlockResult:
+    for prediction, image in zip(predictions, images):
+        raw_predictions = prediction.get("predictions", [])
+        prediction["predictions"] = sv.Detections.from_inference(prediction)
+        if len(prediction["predictions"]) != len(raw_predictions):
+            raw_predictions = filter_out_invalid_polygons(predictions=raw_predictions)
+        detection_ids = [
+            p.get("detection_id", str(uuid.uuid4())) for p in raw_predictions
+        ]
+        prediction["predictions"]["detection_id"] = detection_ids
+        prediction[PREDICTION_TYPE_KEY] = "ocr"
+        prediction[PARENT_ID_KEY] = image.parent_metadata.parent_id
+        prediction[ROOT_PARENT_ID_KEY] = image.workflow_root_ancestor_metadata.parent_id
+        _ = remove_unexpected_keys_from_dictionary(
+            dictionary=prediction,
+            expected_keys=expected_output_keys,
+        )
+    return predictions
 
 
 def run_in_parallel(tasks: List[Callable[[], T]], max_workers: int = 1) -> List[T]:

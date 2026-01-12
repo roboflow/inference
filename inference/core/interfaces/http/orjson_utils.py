@@ -41,6 +41,23 @@ def orjson_response(
     return ORJSONResponseBytes(content=content)
 
 
+def orjson_response_keeping_parent_id(
+    response: Union[List[InferenceResponse], InferenceResponse, BaseModel],
+) -> ORJSONResponseBytes:
+    if isinstance(response, list):
+        content = []
+        for r in response:
+            serialised = r.model_dump(by_alias=True, exclude_none=True)
+            if "parent_id" not in serialised:
+                serialised["parent_id"] = None
+            content.append(serialised)
+    else:
+        content = response.model_dump(by_alias=True, exclude_none=True)
+        if "parent_id" not in content:
+            content["parent_id"] = None
+    return ORJSONResponseBytes(content=content)
+
+
 @deprecated(
     reason="Function serialise_workflow_result(...) will be removed from `inference` end of Q1 2025. "
     "Workflows ecosystem shifted towards internal serialization - see Workflows docs: "

@@ -20,6 +20,8 @@ COPY requirements/requirements.sam.txt \
     requirements/requirements.gaze.txt \
     requirements/requirements.parallel.txt \
     requirements/_requirements.txt \
+    requirements/requirements.easyocr.txt \
+    requirements/requirements.modal.txt \
     ./
 
 RUN pip3 install --upgrade pip  && pip3 install \
@@ -30,6 +32,8 @@ RUN pip3 install --upgrade pip  && pip3 install \
     -r requirements.gpu.txt \
     -r requirements.gaze.txt \
     -r requirements.parallel.txt \
+    -r requirements.easyocr.txt \
+    -r requirements.modal.txt \
     "setuptools<=75.5.0" \
     --upgrade \
     && rm -rf ~/.cache/pip
@@ -66,5 +70,6 @@ ENV API_LOGGING_ENABLED=True
 ENV CORE_MODEL_SAM2_ENABLED=True
 ENV CORE_MODEL_TROCR_ENABLED=false
 ENV ENABLE_PROMETHEUS=True
+ENV CORE_MODEL_SAM3_ENABLED=False
 
 ENTRYPOINT python3 entrypoint.py

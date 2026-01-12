@@ -36,7 +36,21 @@ If you want more control of the container settings you can also start it
 manually. Jetson devices with NVIDIA Jetpack are pre-configured with NVIDIA Container
 Runtime and will be hardware accelerated out of the box:
 
-=== "Jetpack 6"
+=== "Jetpack 6.2"
+    ```bash
+    sudo docker run -d \
+        --name inference-server \
+        --runtime nvidia \
+        --read-only \
+        -p 9001:9001 \
+        --volume ~/.inference/cache:/tmp:rw \
+        --security-opt="no-new-privileges" \
+        --cap-drop="ALL" \
+        --cap-add="NET_BIND_SERVICE" \
+        roboflow/roboflow-inference-server-jetson-6.2.0:latest
+    ```
+
+=== "Jetpack 6.0"
     ```bash
     sudo docker run -d \
         --name inference-server \
@@ -110,7 +124,22 @@ load each model.
 
 Enable TensorRT by adding `TensorrtExecutionProvider` to the `ONNXRUNTIME_EXECUTION_PROVIDERS` environment variable.
 
-=== "Jetpack 6"
+=== "Jetpack 6.2"
+    ```bash
+    sudo docker run -d \
+        --name inference-server \
+        --runtime nvidia \
+        --read-only \
+        -p 9001:9001 \
+        --volume ~/.inference/cache:/tmp:rw \
+        --security-opt="no-new-privileges" \
+        --cap-drop="ALL" \
+        --cap-add="NET_BIND_SERVICE" \
+        -e ONNXRUNTIME_EXECUTION_PROVIDERS="[TensorrtExecutionProvider,CUDAExecutionProvider,CPUExecutionProvider]" \
+        roboflow/roboflow-inference-server-jetson-6.2.0:latest
+    ```
+
+=== "Jetpack 6.0"
     ```bash
     sudo docker run -d \
         --name inference-server \
@@ -182,7 +211,37 @@ Enable TensorRT by adding `TensorrtExecutionProvider` to the `ONNXRUNTIME_EXECUT
 
 If you are using Docker Compose for your application, the equivalent yaml is:
 
-=== "Jetpack 6"
+=== "Jetpack 6.2"
+    ```yaml
+    version: "3.9"
+    
+    services:
+      inference-server:
+        container_name: inference-server
+        image: roboflow/roboflow-inference-server-jetson-6.2.0:latest
+    
+        read_only: true
+        ports:
+          - "9001:9001"
+
+        volumes:
+          - "${HOME}/.inference/cache:/tmp:rw"
+    
+        runtime: nvidia
+
+        # Optionally: uncomment the following lines to enable TensorRT:
+        # environment:
+        #   ONNXRUNTIME_EXECUTION_PROVIDERS: "[TensorrtExecutionProvider,CUDAExecutionProvider,CPUExecutionProvider]"
+    
+        security_opt:
+          - no-new-privileges
+        cap_drop:
+          - ALL
+        cap_add:
+          - NET_BIND_SERVICE
+    ```
+
+=== "Jetpack 6.0"
     ```yaml
     version: "3.9"
     

@@ -41,8 +41,8 @@ setuptools.setup(
             "tests.*",
             "development",
             "development.*",
-            "inference_experimental",
-            "inference_experimental.*"
+            "inference_models",
+            "inference_models.*"
         ),
     ),
     package_data={
@@ -65,6 +65,7 @@ setuptools.setup(
     ),
     extras_require={
         "clip": read_requirements("requirements/requirements.clip.txt"),
+        "easy-ocr": read_requirements("requirements/requirements.easyocr.txt"),
         "gaze": read_requirements("requirements/requirements.gaze.txt"),
         "grounding-dino": read_requirements(
             "requirements/requirements.groundingdino.txt"

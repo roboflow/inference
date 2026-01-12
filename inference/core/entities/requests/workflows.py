@@ -47,6 +47,10 @@ class WorkflowSpecificationInferenceRequest(WorkflowInferenceRequest):
 
 
 class DescribeBlocksRequest(BaseModel):
+    api_key: Optional[str] = Field(
+        default=None,
+        description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
+    )
     dynamic_blocks_definitions: List[DynamicBlockDefinition] = Field(
         default_factory=list, description="Dynamic blocks to be used."
     )

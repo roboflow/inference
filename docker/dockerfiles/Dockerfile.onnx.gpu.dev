@@ -30,6 +30,8 @@ COPY requirements/requirements.sam.txt \
     requirements/requirements.pali.flash_attn.txt \
     requirements/requirements.sdk.http.txt \
     requirements/requirements.cli.txt \
+    requirements/requirements.easyocr.txt \
+    requirements/requirements.modal.txt \
     ./
 
 RUN python3 -m pip install -U pip
@@ -46,6 +48,8 @@ RUN python3 -m pip install \
     -r requirements.transformers.txt \
     -r requirements.sdk.http.txt \
     -r requirements.cli.txt \
+    -r requirements.easyocr.txt \
+    -r requirements.modal.txt \
     jupyterlab \
     "setuptools<=75.5.0" \
     --upgrade \
@@ -79,5 +83,6 @@ ENV CORE_MODEL_OWLV2_ENABLED=True
 ENV ENABLE_STREAM_API=True
 ENV ENABLE_PROMETHEUS=True
 ENV STREAM_API_PRELOADED_PROCESSES=2
+ENV CORE_MODEL_SAM3_ENABLED=True
 
 ENTRYPOINT uvicorn gpu_http:app --workers $NUM_WORKERS --host $HOST --port $PORT

@@ -1,5 +1,4 @@
 FROM nvcr.io/nvidia/cuda:12.4.1-cudnn-devel-ubuntu22.04 as builder
-#has python 3.10
 
 WORKDIR /app
 
@@ -17,6 +16,7 @@ RUN rm -rf /var/lib/apt/lists/* && apt-get clean && apt-get update -y && DEBIAN_
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements/requirements.sam.txt \
+    requirements/requirements.sam3.txt \
     requirements/requirements.clip.txt \
     requirements/requirements.http.txt \
     requirements/requirements.gpu.txt \
@@ -27,20 +27,25 @@ COPY requirements/requirements.sam.txt \
     requirements/_requirements.txt \
     requirements/requirements.transformers.txt \
     requirements/requirements.pali.flash_attn.txt \
+    requirements/requirements.easyocr.txt \
+    requirements/requirements.modal.txt \
     ./
 
-RUN python3 -m pip install -U pip
-RUN python3 -m pip install \
+RUN python3 -m pip install -U pip uv
+RUN uv pip install --system \
     -r _requirements.txt \
+    -r requirements.doctr.txt \
     -r requirements.sam.txt \
+    -r requirements.sam3.txt \
     -r requirements.clip.txt \
     -r requirements.http.txt \
     -r requirements.gpu.txt \
     -r requirements.gaze.txt \
     -r requirements.groundingdino.txt \
-    -r requirements.doctr.txt \
     -r requirements.yolo_world.txt \
     -r requirements.transformers.txt \
+    -r requirements.easyocr.txt \
+    -r requirements.modal.txt \
     jupyterlab \
     "setuptools<=75.5.0" \
     --upgrade \
@@ -62,18 +67,24 @@ COPY --from=builder /usr/local/lib/python3.10 /usr/local/lib/python3.10
 COPY --from=builder /usr/local/bin /usr/local/bin
 
 # Install runtime dependencies
-RUN rm -rf /var/lib/apt/lists/* && apt-get clean && apt-get update -y && DEBIAN_FRONTEND=noninteractive apt-get install -y \
-    libxext6 \
-    libopencv-dev \
-    uvicorn \
-    python3-pip \
-    git \
-    libgdal-dev \
-    libvips-dev \
-    wget \
-    rustc \
-    cargo \
-    && rm -rf /var/lib/apt/lists/*
+ADD https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.1-1_all.deb /tmp/cuda-keyring.deb
+RUN set -eux; \
+    rm -rf /var/lib/apt/lists/*; apt-get clean; \
+    dpkg -i /tmp/cuda-keyring.deb || true; \
+    rm -f /tmp/cuda-keyring.deb; \
+    apt-get update -y; \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y \
+        libxext6 \
+        libopencv-dev \
+        uvicorn \
+        python3-pip \
+        git \
+        libgdal-dev \
+        libvips-dev \
+        wget \
+        rustc \
+        cargo; \
+    rm -rf /var/lib/apt/lists/*
 
 WORKDIR /build
 COPY . .
@@ -98,6 +109,7 @@ ENV WORKFLOWS_MAX_CONCURRENT_STEPS=4
 ENV API_LOGGING_ENABLED=True
 ENV LMM_ENABLED=True
 ENV CORE_MODEL_SAM2_ENABLED=True
+ENV CORE_MODEL_SAM3_ENABLED=True
 ENV CORE_MODEL_OWLV2_ENABLED=True
 ENV ENABLE_STREAM_API=True
 ENV ENABLE_PROMETHEUS=True

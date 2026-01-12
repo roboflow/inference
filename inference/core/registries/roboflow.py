@@ -47,15 +47,20 @@ GENERIC_MODELS = {
     "clip": ("embed", "clip"),
     "sam": ("embed", "sam"),
     "sam2": ("embed", "sam2"),
+    "sam3": ("embed", "sam3"),
+    "sam3/sam3_interactive": ("interactive-segmentation", "sam3"),
+    "sam3-3d-objects": ("3d-reconstruction", "sam3-3d-objects"),
     "gaze": ("gaze", "l2cs"),
     "doctr": ("ocr", "doctr"),
+    "easy_ocr": ("ocr", "easy_ocr"),
     "trocr": ("ocr", "trocr"),
     "grounding_dino": ("object-detection", "grounding-dino"),
     "paligemma": ("llm", "paligemma"),
     "yolo_world": ("object-detection", "yolo-world"),
     "owlv2": ("object-detection", "owlv2"),
     "smolvlm2": ("lmm", "smolvlm-2.2b-instruct"),
-    "depth-anything-v2": ("depth-estimation", "small"),
+    "depth-anything-v2": ("depth-estimation", "depth-anything-v2"),
+    "depth-anything-v3": ("depth-estimation", "depth-anything-v3"),
     "moondream2": ("lmm", "moondream2"),
     "perception_encoder": ("embed", "perception_encoder"),
 }
@@ -72,8 +77,8 @@ class RoboflowModelRegistry(ModelRegistry):
         self,
         model_id: ModelID,
         api_key: str,
-        countinference: bool = None,
-        service_secret: str = None,
+        countinference: Optional[bool] = None,
+        service_secret: Optional[str] = None,
     ) -> Model:
         """Returns the model class based on the given model id and API key.
 
@@ -155,9 +160,19 @@ def get_model_type(
         MissingDefaultModelError: If default model is not configured and API does not provide this info
         MalformedRoboflowAPIResponseError: Roboflow API responds in invalid format.
     """
+
     model_id = resolve_roboflow_model_alias(model_id=model_id)
     dataset_id, version_id = get_model_id_chunks(model_id=model_id)
+    print(
+        f"Resolved model_id: {model_id}, dataset_id: {dataset_id}, version_id: {version_id}"
+    )
 
+    # first check if the model id as a whole is in the GENERIC_MODELS dictionary
+    if model_id in GENERIC_MODELS:
+        logger.debug(f"Loading generic model: {model_id}.")
+        return GENERIC_MODELS[model_id]
+
+    # then check if the dataset id is in the GENERIC_MODELS dictionary
     if dataset_id in GENERIC_MODELS:
         logger.debug(f"Loading generic model: {dataset_id}.")
         return GENERIC_MODELS[dataset_id]

@@ -72,7 +72,7 @@ nav:
       #         - Basler: inputs/industrial/basler.md
       #         - Lucid: inputs/industrial/lucid.md
       #         - FLIR: inputs/industrial/flir.md
-      
+
       - Start Building ⭐️:
           - Hello World: guides/hello-world.md
           - Compare Models: guides/compare-models.md
@@ -113,6 +113,7 @@ nav:
           - Perception Encoder: foundation/perception_encoder.md
           - Segment Anything (Segmentation): foundation/sam.md
           - Segment Anything 2 (Segmentation): foundation/sam2.md
+          - Segment Anything 3 (Segmentation): foundation/sam3.md
           - SmolVLM2: foundation/smolvlm.md
           - YOLO-World (Object Detection): foundation/yolo_world.md
           - OwlV2 (Object Detection): foundation/owlv2.md
@@ -178,6 +179,7 @@ nav:
           - Security of input formats: server_configuration/accepted_input_formats.md
           - Service telemetry: server_configuration/service_telemetry.md
           - Install "bare metal" Inference GPU on Windows: quickstart/inference_gpu_windows.md
+      - Model Weights Download: using_inference/offline_weights_download.md
       - Contribute to Inference: contributing.md
       - Changelog: https://github.com/roboflow/inference/releases
   - Examples: workflows/gallery/

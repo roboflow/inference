@@ -194,6 +194,77 @@ def test_rotate_image_workflow_when_valid_input_provided(
     ), "Expected image to be rotated 90 degrees"
 
 
+def test_rotate_image_workflow_with_dynamic_rotation_degrees(
+    model_manager: ModelManager,
+    dogs_image: np.ndarray,
+) -> None:
+    """Test that rotation_degrees can accept dynamic parameter references."""
+    # given
+    workflow_definition = {
+        "version": "1.0",
+        "inputs": [
+            {"type": "InferenceImage", "name": "image"},
+            {
+                "type": "WorkflowParameter",
+                "name": "rotation_angle",
+                "default_value": 90,
+            },
+        ],
+        "steps": [
+            {
+                "type": "roboflow_core/image_preprocessing@v1",
+                "name": "rotate",
+                "image": "$inputs.image",
+                "task_type": "rotate",
+                "rotation_degrees": "$inputs.rotation_angle",
+            }
+        ],
+        "outputs": [
+            {
+                "type": "JsonField",
+                "name": "rotated_image",
+                "coordinates_system": "own",
+                "selector": "$steps.rotate.image",
+            }
+        ],
+    }
+
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=workflow_definition,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    result = execution_engine.run(
+        runtime_parameters={
+            "image": dogs_image,
+            "rotation_angle": 180,
+        }
+    )
+
+    # then
+    original_image_height, original_image_width, _ = dogs_image.shape
+    assert isinstance(result, list), "Expected list to be delivered"
+    assert len(result) == 1, "Expected 1 element in the output for one input image"
+    assert set(result[0].keys()) == {
+        "rotated_image",
+    }, "Expected all declared outputs to be delivered"
+    np_image = result[0]["rotated_image"].numpy_image
+    # 180 degree rotation should preserve dimensions
+    assert (
+        np_image.shape[0] == original_image_height
+    ), "Expected image height to be preserved after 180 degree rotation"
+    assert (
+        np_image.shape[1] == original_image_width
+    ), "Expected image width to be preserved after 180 degree rotation"
+
+
 def test_rotate_image_workflow_when_missing_required_parameters() -> None:
     # given
     data = {

@@ -1,7 +1,7 @@
 import os
 import time
 from time import perf_counter
-from typing import Any, List, Tuple, Union
+from typing import Any, List, Optional, Tuple, Union
 
 import cv2
 import numpy as np
@@ -9,18 +9,30 @@ import onnxruntime
 from PIL import Image
 
 from inference.core.entities.requests.inference import InferenceRequestImage
+from inference.core.entities.responses.inference import InferenceResponseImage
 from inference.core.env import (
     DISABLE_PREPROC_AUTO_ORIENT,
     FIX_BATCH_SIZE,
     MAX_BATCH_SIZE,
     ONNXRUNTIME_EXECUTION_PROVIDERS,
     REQUIRED_ONNX_PROVIDERS,
+    RFDETR_ONNX_MAX_RESOLUTION,
     TENSORRT_CACHE_PATH,
     USE_PYTORCH_FOR_PREPROCESSING,
 )
-from inference.core.exceptions import ModelArtefactError, OnnxProviderNotAvailable
+from inference.core.exceptions import (
+    CannotInitialiseModelError,
+    ModelArtefactError,
+    OnnxProviderNotAvailable,
+)
 from inference.core.logger import logger
 from inference.core.models.defaults import DEFAULT_CONFIDENCE, DEFAUlT_MAX_DETECTIONS
+from inference.core.models.instance_segmentation_base import (
+    InstanceSegmentationBaseOnnxRoboflowInferenceModel,
+    InstanceSegmentationInferenceResponse,
+    InstanceSegmentationPrediction,
+    Point,
+)
 from inference.core.models.object_detection_base import (
     ObjectDetectionBaseOnnxRoboflowInferenceModel,
     ObjectDetectionInferenceResponse,
@@ -33,6 +45,7 @@ from inference.core.utils.onnx import (
     get_onnxruntime_execution_providers,
     run_session_via_iobinding,
 )
+from inference.core.utils.postprocess import mask2poly
 from inference.core.utils.preprocess import letterbox_image
 
 if USE_PYTORCH_FOR_PREPROCESSING:
@@ -385,6 +398,28 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
         """Initializes the ONNX model, setting up the inference session and other necessary properties."""
         logger.debug("Getting model artefacts")
         self.get_model_artifacts(**kwargs)
+
+        input_resolution = self.environment.get("RESOLUTION")
+        if input_resolution is None:
+            input_resolution = self.preproc.get("resize", {}).get("width")
+        if isinstance(input_resolution, (list, tuple)):
+            input_resolution = input_resolution[0]
+        try:
+            input_resolution = int(input_resolution)
+        except (TypeError, ValueError):
+            input_resolution = None
+        if (
+            input_resolution is not None
+            and input_resolution >= RFDETR_ONNX_MAX_RESOLUTION
+        ):
+            logger.error(
+                "NOT loading '%s' model, input resolution is '%s', ONNX max resolution limit set to '%s' (limit can be increased via RFDETR_ONNX_MAX_RESOLUTION env variable)",
+                self.endpoint,
+                input_resolution,
+                RFDETR_ONNX_MAX_RESOLUTION,
+            )
+            raise CannotInitialiseModelError(f"Resolution too high for RFDETR")
+
         logger.debug("Creating inference session")
         if self.load_weights or not self.has_model_metadata:
             t1_session = perf_counter()
@@ -509,3 +544,252 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
 
     def validate_model_classes(self) -> None:
         pass
+
+
+class RFDETRInstanceSegmentation(
+    RFDETRObjectDetection, InstanceSegmentationBaseOnnxRoboflowInferenceModel
+):
+    task_type = "instance-segmentation"
+
+    def initialize_model(self, **kwargs) -> None:
+        super().initialize_model(**kwargs)
+        mask_shape = self.onnx_session.get_outputs()[2].shape
+        self.mask_shape = mask_shape[2:]
+
+    def predict(self, img_in: ImageMetaType, **kwargs) -> Tuple[np.ndarray]:
+        """Performs object detection on the given image using the ONNX session with the RFDETR model.
+
+        Args:
+            img_in (np.ndarray): Input image as a NumPy array.
+
+        Returns:
+            Tuple[np.ndarray]: NumPy array representing the predictions, including boxes, confidence scores, and class IDs.
+        """
+        with self._session_lock:
+            predictions = run_session_via_iobinding(
+                self.onnx_session, self.input_name, img_in
+            )
+        bboxes = predictions[0]
+        logits = predictions[1]
+        masks = predictions[2]
+
+        return (bboxes, logits, masks)
+
+    def postprocess(
+        self,
+        predictions: Tuple[np.ndarray, ...],
+        preproc_return_metadata: PreprocessReturnMetadata,
+        confidence: float = DEFAULT_CONFIDENCE,
+        max_detections: int = DEFAUlT_MAX_DETECTIONS,
+        **kwargs,
+    ) -> List[InstanceSegmentationInferenceResponse]:
+        bboxes, logits, masks = predictions
+        bboxes = bboxes.astype(np.float32)
+        logits = logits.astype(np.float32)
+
+        batch_size, num_queries, num_classes = logits.shape
+        logits_sigmoid = self.sigmoid_stable(logits)
+
+        img_dims = preproc_return_metadata["img_dims"]
+
+        processed_predictions = []
+        processed_masks = []
+
+        for batch_idx in range(batch_size):
+            orig_h, orig_w = img_dims[batch_idx]
+
+            logits_flat = logits_sigmoid[batch_idx].reshape(-1)
+
+            # Use argpartition for better performance when max_detections is smaller than logits_flat
+            partition_indices = np.argpartition(-logits_flat, max_detections)[
+                :max_detections
+            ]
+            sorted_indices = partition_indices[
+                np.argsort(-logits_flat[partition_indices])
+            ]
+            topk_scores = logits_flat[sorted_indices]
+
+            conf_mask = topk_scores > confidence
+            sorted_indices = sorted_indices[conf_mask]
+            topk_scores = topk_scores[conf_mask]
+
+            topk_boxes = sorted_indices // num_classes
+            topk_labels = sorted_indices % num_classes
+
+            if self.is_one_indexed:
+                class_filter_mask = topk_labels != self.background_class_index
+
+                topk_labels[topk_labels > self.background_class_index] -= 1
+                topk_scores = topk_scores[class_filter_mask]
+                topk_labels = topk_labels[class_filter_mask]
+                topk_boxes = topk_boxes[class_filter_mask]
+
+            selected_boxes = bboxes[batch_idx, topk_boxes]
+            selected_masks = masks[batch_idx, topk_boxes]
+
+            cxcy = selected_boxes[:, :2]
+            wh = selected_boxes[:, 2:]
+            xy_min = cxcy - 0.5 * wh
+            xy_max = cxcy + 0.5 * wh
+            boxes_xyxy = np.concatenate([xy_min, xy_max], axis=1)
+
+            if self.resize_method == "Stretch to":
+                scale_fct = np.array([orig_w, orig_h, orig_w, orig_h], dtype=np.float32)
+                boxes_xyxy *= scale_fct
+            else:
+                input_h, input_w = self.img_size_h, self.img_size_w
+
+                scale = min(input_w / orig_w, input_h / orig_h)
+                scaled_w = int(orig_w * scale)
+                scaled_h = int(orig_h * scale)
+
+                pad_x = (input_w - scaled_w) / 2
+                pad_y = (input_h - scaled_h) / 2
+
+                boxes_input = boxes_xyxy * np.array(
+                    [input_w, input_h, input_w, input_h], dtype=np.float32
+                )
+
+                boxes_input[:, 0] -= pad_x
+                boxes_input[:, 1] -= pad_y
+                boxes_input[:, 2] -= pad_x
+                boxes_input[:, 3] -= pad_y
+
+                boxes_xyxy = boxes_input / scale
+
+            np.clip(
+                boxes_xyxy,
+                [0, 0, 0, 0],
+                [orig_w, orig_h, orig_w, orig_h],
+                out=boxes_xyxy,
+            )
+
+            batch_predictions = np.column_stack(
+                (
+                    boxes_xyxy,
+                    topk_scores,
+                    np.zeros((len(topk_scores), 1), dtype=np.float32),
+                    topk_labels,
+                )
+            )
+            valid_pred_mask = batch_predictions[:, 6] < len(self.class_names)
+
+            outputs_predictions = []
+            outputs_polygons = []
+            class_filter_local = kwargs.get("class_filter")
+            for i, pred in enumerate(batch_predictions):
+                if not valid_pred_mask[i]:
+                    continue
+                # Early class filtering to avoid unnecessary mask processing
+                if class_filter_local:
+                    try:
+                        pred_class_name = self.class_names[int(pred[6])]
+                    except Exception:
+                        continue
+                    if pred_class_name not in class_filter_local:
+                        continue
+                mask = selected_masks[i]
+                # Per-mask optional upscaling for better polygon quality without retaining all high-res masks
+                mask_decode_mode = kwargs.get("mask_decode_mode", "accurate")
+                if mask_decode_mode == "accurate":
+                    target_res = (orig_w, orig_h)
+                    if mask.shape[1] != target_res[0] or mask.shape[0] != target_res[1]:
+                        mask = cv2.resize(
+                            mask.astype(np.float32),
+                            target_res,
+                            interpolation=cv2.INTER_LINEAR,
+                        )
+                elif mask_decode_mode == "tradeoff":
+                    tradeoff_factor = kwargs.get("tradeoff_factor", 0.0)
+                    mask_res = (mask.shape[1], mask.shape[0])  # (w, h)
+                    full_res = (orig_w, orig_h)  # (w, h)
+                    target_res = (
+                        int(
+                            mask_res[0] * (1 - tradeoff_factor)
+                            + full_res[0] * tradeoff_factor
+                        ),
+                        int(
+                            mask_res[1] * (1 - tradeoff_factor)
+                            + full_res[1] * tradeoff_factor
+                        ),
+                    )
+                    if mask.shape[1] != target_res[0] or mask.shape[0] != target_res[1]:
+                        mask = cv2.resize(
+                            mask.astype(np.float32),
+                            target_res,
+                            interpolation=cv2.INTER_LINEAR,
+                        )
+                # Ensure binary for polygonization
+                mask_bin = (mask > 0).astype(np.uint8)
+                points = mask2poly(mask_bin)
+                # Scale polygon points back to original image coordinates if needed
+                new_points = []
+                prediction_h, prediction_w = mask_bin.shape[0], mask_bin.shape[1]
+                for point in points:
+                    if self.resize_method == "Stretch to":
+                        new_x = point[0] * (orig_w / prediction_w)
+                        new_y = point[1] * (orig_h / prediction_h)
+                    else:
+                        scale = max(orig_w / prediction_w, orig_h / prediction_h)
+                        pad_x = (orig_w - prediction_w * scale) / 2
+                        pad_y = (orig_h - prediction_h * scale) / 2
+                        new_x = point[0] * scale + pad_x
+                        new_y = point[1] * scale + pad_y
+                    new_points.append(np.array([new_x, new_y]))
+                outputs_polygons.append(new_points)
+                outputs_predictions.append(list(pred))
+
+            processed_predictions.append(outputs_predictions)
+            processed_masks.append(outputs_polygons)
+
+        res = self.make_response(
+            processed_predictions, processed_masks, img_dims, **kwargs
+        )
+        return res
+
+    def make_response(
+        self,
+        predictions: List[List[List[float]]],
+        masks: List[List[List[np.ndarray]]],
+        img_dims: List[Tuple[int, int]],
+        class_filter: Optional[List[str]] = None,
+        *args,
+        **kwargs,
+    ) -> List[InstanceSegmentationInferenceResponse]:
+        """Constructs instance segmentation response objects from preprocessed predictions and polygons."""
+        # Align to actual number of real images; predictions/masks may include padded slots
+        if isinstance(img_dims, dict) and "img_dims" in img_dims:
+            img_dims = img_dims["img_dims"]
+        effective_len = min(len(img_dims), len(predictions), len(masks))
+
+        responses = []
+        for ind in range(effective_len):
+            batch_predictions = predictions[ind]
+            batch_masks = masks[ind]
+            preds_out = []
+            for pred, mask in zip(batch_predictions, batch_masks):
+                if class_filter and self.class_names[int(pred[6])] not in class_filter:
+                    continue
+                preds_out.append(
+                    InstanceSegmentationPrediction(
+                        **{
+                            "x": (pred[0] + pred[2]) / 2,
+                            "y": (pred[1] + pred[3]) / 2,
+                            "width": pred[2] - pred[0],
+                            "height": pred[3] - pred[1],
+                            "confidence": pred[4],
+                            "class": self.class_names[int(pred[6])],
+                            "class_id": int(pred[6]),
+                            "points": [Point(x=point[0], y=point[1]) for point in mask],
+                        }
+                    )
+                )
+            responses.append(
+                InstanceSegmentationInferenceResponse(
+                    predictions=preds_out,
+                    image=InferenceResponseImage(
+                        width=img_dims[ind][1], height=img_dims[ind][0]
+                    ),
+                )
+            )
+        return responses

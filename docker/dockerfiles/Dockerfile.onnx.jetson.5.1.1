@@ -31,6 +31,7 @@ COPY requirements/requirements.clip.txt \
     requirements/requirements.sdk.http.txt \
     requirements/requirements.yolo_world.txt \
     requirements/_requirements.txt \
+    requirements/requirements.easyocr.txt \
     ./
 
 RUN python3.9 -m pip install --ignore-installed PyYAML && rm -rf ~/.cache/pip
@@ -53,6 +54,7 @@ RUN python3.9 -m pip install --upgrade pip  && python3.9 -m pip install \
     -r requirements.groundingdino.txt \
     -r requirements.sdk.http.txt \
     -r requirements.yolo_world.txt \
+    -r requirements.easyocr.txt \
     jupyterlab \
     "setuptools<=75.5.0" \
     --upgrade \
@@ -97,5 +99,6 @@ ENV VERSION_CHECK_MODE=continuous \
     ENABLE_STREAM_API=True \
     STREAM_API_PRELOADED_PROCESSES=2 \
     PYTHONPATH=/app:$PYTHONPATH
+ENV CORE_MODEL_SAM3_ENABLED=False
 
 ENTRYPOINT uvicorn gpu_http:app --workers $NUM_WORKERS --host $HOST --port $PORT

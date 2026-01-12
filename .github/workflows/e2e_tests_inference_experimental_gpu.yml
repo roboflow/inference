@@ -1,0 +1,69 @@
+name: E2E tests - inference_models (GPU)
+permissions:
+  contents: read
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  e2e-tests-inference-models-gpu:
+    runs-on: Roboflow-GPU-VM-Runner
+    timeout-minutes: 30
+    steps:
+      - name: 🛎️ Checkout
+        uses: actions/checkout@v4
+      - name: 📦 Cache Python packages
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/uv
+          key: ${{ runner.os }}-uv-3.12-${{ hashFiles('inference_models/pyproject.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-uv-3.12-
+      - name: 📦 Cache apt packages
+        uses: actions/cache@v3
+        with:
+          path: ~/apt-cache
+          key: ${{ runner.os }}-apt-cuda-12-4
+          restore-keys: |
+            ${{ runner.os }}-apt-cuda-
+      - name: 🐍 Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: 3.12
+          check-latest: true
+      - name: 🔧 Install CUDA development toolkit
+        run: |
+          mkdir -p ~/apt-cache
+
+          sudo mkdir -p /var/cache/apt/archives
+          sudo cp -r ~/apt-cache/* /var/cache/apt/archives/ 2>/dev/null || true
+
+          sudo apt-get update
+          sudo apt-get install -y \
+              cuda-cudart-dev-12-5 \
+              cuda-nvcc-12-5 \
+              cuda-profiler-api-12-5 \
+              libcurand-dev-12-5 \
+              libvips-dev
+
+          sudo cp /var/cache/apt/archives/*.deb ~/apt-cache/ 2>/dev/null || true
+          sudo chown -R $(whoami):$(whoami) ~/apt-cache
+      - name: 📦 Install dependencies
+        working-directory: inference_models
+        run: |
+          export CUDA_HOME=/usr/local/cuda-12.5
+          export PATH=/usr/local/cuda-12.5/bin:$PATH
+          export LD_LIBRARY_PATH=/usr/local/cuda-12.5/targets/x86_64-linux/lib64:$LD_LIBRARY_PATH
+          export CPATH=/usr/local/cuda-12.5/targets/x86_64-linux/include:$CPATH
+          export LIBRARY_PATH=/usr/local/cuda-12.5/targets/x86_64-linux/lib64:$LIBRARY_PATH
+          python -m pip install --upgrade pip
+          python -m pip install uv
+          python -m uv venv
+          python -m uv pip install -e .[test,onnx-cu12,trt10,torch-cu124,mediapipe] --python .venv
+      - name: 🧪 Run E2E tests
+        working-directory: inference_models
+        timeout-minutes: 20
+        run: |
+          source .venv/bin/activate
+          ROBOFLOW_API_KEY=${{ secrets.LOAD_TEST_PRODUCTION_API_KEY }} python -m pytest -m "e2e_model_inference and not cpu_only" tests/e2e_platform_tests

@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 import cv2
 import numpy as np
@@ -27,12 +27,21 @@ from inference.core.workflows.execution_engine.constants import (
     KEYPOINTS_CONFIDENCE_KEY_IN_SV_DETECTIONS,
     KEYPOINTS_KEY_IN_INFERENCE_RESPONSE,
     KEYPOINTS_XY_KEY_IN_SV_DETECTIONS,
+    PARENT_COORDINATES_KEY,
+    PARENT_DIMENSIONS_KEY,
     PARENT_ID_KEY,
+    PARENT_ORIGIN_KEY,
     PATH_DEVIATION_KEY_IN_INFERENCE_RESPONSE,
     PATH_DEVIATION_KEY_IN_SV_DETECTIONS,
     POLYGON_KEY,
     POLYGON_KEY_IN_INFERENCE_RESPONSE,
     POLYGON_KEY_IN_SV_DETECTIONS,
+    RLE_MASK_KEY_IN_INFERENCE_RESPONSE,
+    RLE_MASK_KEY_IN_SV_DETECTIONS,
+    ROOT_PARENT_COORDINATES_KEY,
+    ROOT_PARENT_DIMENSIONS_KEY,
+    ROOT_PARENT_ID_KEY,
+    ROOT_PARENT_ORIGIN_KEY,
     SMOOTHED_SPEED_KEY_IN_INFERENCE_RESPONSE,
     SMOOTHED_SPEED_KEY_IN_SV_DETECTIONS,
     SMOOTHED_VELOCITY_KEY_IN_INFERENCE_RESPONSE,
@@ -49,6 +58,7 @@ from inference.core.workflows.execution_engine.constants import (
     Y_KEY,
 )
 from inference.core.workflows.execution_engine.entities.base import (
+    ParentOrigin,
     VideoMetadata,
     WorkflowImageData,
 )
@@ -131,8 +141,34 @@ def serialise_sv_detections(detections: sv.Detections) -> dict:
             detection_dict[BOUNDING_RECT_WIDTH_KEY_IN_INFERENCE_RESPONSE] = data[
                 BOUNDING_RECT_WIDTH_KEY_IN_SV_DETECTIONS
             ]
+
         if PARENT_ID_KEY in data:
             detection_dict[PARENT_ID_KEY] = str(data[PARENT_ID_KEY])
+
+        # Add parent origin metadata if detection is based on a crop/slice
+        if (
+            PARENT_ID_KEY in data
+            and ROOT_PARENT_ID_KEY in data
+            and str(data[PARENT_ID_KEY]) != str(data[ROOT_PARENT_ID_KEY])
+        ):
+            _attach_parent_metadata_to_detection_dict(
+                detection_dict=detection_dict,
+                data=data,
+                coordinates_key=PARENT_COORDINATES_KEY,
+                dimensions_key=PARENT_DIMENSIONS_KEY,
+                origin_key=PARENT_ORIGIN_KEY,
+            )
+
+            detection_dict[ROOT_PARENT_ID_KEY] = str(data[ROOT_PARENT_ID_KEY])
+
+            _attach_parent_metadata_to_detection_dict(
+                detection_dict=detection_dict,
+                data=data,
+                coordinates_key=ROOT_PARENT_COORDINATES_KEY,
+                dimensions_key=ROOT_PARENT_DIMENSIONS_KEY,
+                origin_key=ROOT_PARENT_ORIGIN_KEY,
+            )
+
         if (
             KEYPOINTS_CLASS_ID_KEY_IN_SV_DETECTIONS in data
             and KEYPOINTS_CLASS_NAME_KEY_IN_SV_DETECTIONS in data
@@ -192,6 +228,28 @@ def serialise_sv_detections(detections: sv.Detections) -> dict:
     return {"image": image_metadata, "predictions": serialized_detections}
 
 
+def _attach_parent_metadata_to_detection_dict(
+    detection_dict: dict,
+    data: Dict[str, Union[np.ndarray, list]],
+    coordinates_key: str,
+    dimensions_key: str,
+    origin_key: str,
+) -> None:
+    if coordinates_key in data and dimensions_key in data:
+        parent_coords = data[coordinates_key]
+        parent_dims = data[dimensions_key]
+        if isinstance(parent_coords, np.ndarray):
+            parent_coords = parent_coords.astype(float).round().astype(int).tolist()
+        if isinstance(parent_dims, np.ndarray):
+            parent_dims = parent_dims.astype(float).round().astype(int).tolist()
+        detection_dict[origin_key] = ParentOrigin(
+            offset_x=parent_coords[0],
+            offset_y=parent_coords[1],
+            width=parent_dims[1],
+            height=parent_dims[0],
+        ).model_dump()
+
+
 def mask_to_polygon(mask: np.ndarray) -> Optional[np.ndarray]:
     # masks here should be predicted by instance segmentation
     # model and in theory can only present SINGLE!!! shape
@@ -224,11 +282,28 @@ def mask_to_polygon(mask: np.ndarray) -> Optional[np.ndarray]:
 
 
 def serialise_image(image: WorkflowImageData) -> Dict[str, Any]:
-    return {
+    result = {
         "type": "base64",
         "value": image.base64_image,
         "video_metadata": image.video_metadata.dict() if image.video_metadata else None,
     }
+
+    parent_metadata = image.parent_metadata
+    root_metadata = image.workflow_root_ancestor_metadata
+
+    # Add parent origin metadata if image is a crop/slice
+    if parent_metadata.parent_id != root_metadata.parent_id:
+        result[PARENT_ID_KEY] = parent_metadata.parent_id
+        result[PARENT_ORIGIN_KEY] = ParentOrigin.from_origin_coordinates_system(
+            parent_metadata.origin_coordinates
+        ).model_dump()
+
+        result[ROOT_PARENT_ID_KEY] = root_metadata.parent_id
+        result[ROOT_PARENT_ORIGIN_KEY] = ParentOrigin.from_origin_coordinates_system(
+            root_metadata.origin_coordinates
+        ).model_dump()
+
+    return result
 
 
 def serialize_video_metadata_kind(video_metadata: VideoMetadata) -> dict:
@@ -276,3 +351,25 @@ def serialize_secret(secret: str) -> str:
 
 def serialize_timestamp(timestamp: datetime) -> str:
     return timestamp.isoformat()
+
+
+def serialise_rle_sv_detections(detections: sv.Detections) -> dict:
+    rle_masks = detections.data.get(RLE_MASK_KEY_IN_SV_DETECTIONS)
+    if rle_masks is None:
+        raise ValueError(
+            "No RLE masks found in detections.data['rle_mask']. "
+            "This serializer requires RLE masks to be present."
+        )
+
+    result = serialise_sv_detections(detections=detections)
+
+    for idx, detection_dict in enumerate(result["predictions"]):
+        detection_dict.pop(POLYGON_KEY, None)
+
+        if idx < len(rle_masks):
+            rle = rle_masks[idx]
+            if isinstance(rle.get("counts"), bytes):
+                rle = {"size": rle["size"], "counts": rle["counts"].decode("utf-8")}
+            detection_dict[RLE_MASK_KEY_IN_INFERENCE_RESPONSE] = rle
+
+    return result

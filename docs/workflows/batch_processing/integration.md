@@ -376,10 +376,10 @@ enterprise environments where data is stored in the cloud.
 
 * **Active Polling:** The process requires constant polling to verify statuses, which is inefficient and not scalable.
 
-To address these issues, the system supports webhook notifications for both data staging and batch processing. 
-Webhooks allow external systems to automatically react to status changes, eliminating the need for manual polling and 
-enabling seamless automation. Additionally, system allows for data ingestion through **signed URLs** 
-which should streamline integrations with cloud storage.
+To address these issues, the system supports webhook notifications for both data staging and batch processing.
+Webhooks allow external systems to automatically react to status changes, eliminating the need for manual polling and
+enabling seamless automation. Additionally, system allows for data ingestion through **signed URLs**
+which should streamline integrations with [cloud storage](#cloud-storage).
 
 !!! important "API integration"
 
@@ -388,8 +388,8 @@ which should streamline integrations with cloud storage.
 
 ### Data ingestion
 
-Both `inference rf-cloud data-staging create-batch-of-videos` and `inference rf-cloud data-staging create-batch-of-images` 
-commands support additional parameters to enable webhook notifications and ingest data directly from cloud storage.
+Both `inference rf-cloud data-staging create-batch-of-videos` and `inference rf-cloud data-staging create-batch-of-images`
+commands support additional parameters to enable webhook notifications and ingest data directly from [cloud storage](#cloud-storage).
 
 * `--data-source reference-file` instructs the CLI to process files referenced via signed URLs instead of requiring local data.
 
@@ -424,7 +424,7 @@ commands support additional parameters to enable webhook notifications and inges
 Each entry in the references file contains two key attributes:
 
 * `name`: A unique identifier for the file.
-* `url`: A signed URL pointing to the file in cloud storage.
+* `url`: A signed URL pointing to the file in [cloud storage](#cloud-storage).
 
 Here’s an example of the JSONL format:
 ```
@@ -432,8 +432,228 @@ Here’s an example of the JSONL format:
 {"name": "<your-unique-name-of-file-2>", "url": "https://<signed-url>"}
 ```
 
-You can store this references file locally or in cloud storage. If the file is stored in the cloud, simply provide the 
+You can store this references file locally or in [cloud storage](#cloud-storage). If the file is stored in the cloud, simply provide the
 signed URL to the file when running the ingestion command.
+
+
+### Cloud Storage
+
+For most use cases, the `inference-cli` provides built-in cloud storage support that handles authentication, file discovery, and presigned URL generation automatically. See the [main batch processing guide](./about.md#cloud-storage-integration) for simple examples.
+
+This section covers advanced cloud storage integration for custom workflows.
+
+#### Direct Cloud Storage Integration
+
+The `inference-cli` supports direct integration with cloud storage providers:
+
+**AWS S3 / S3-Compatible (Cloudflare R2, MinIO, etc.):**
+```bash
+export AWS_ACCESS_KEY_ID=your-access-key
+export AWS_SECRET_ACCESS_KEY=your-secret-key
+# Optional: for S3-compatible services
+export AWS_ENDPOINT_URL=https://your-endpoint.com
+
+inference rf-cloud data-staging create-batch-of-images \
+  --data-source cloud-storage \
+  --bucket-path "s3://my-bucket/images/**/*.jpg" \
+  --batch-id my-batch
+```
+
+**Google Cloud Storage:**
+```bash
+export GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
+
+inference rf-cloud data-staging create-batch-of-images \
+  --data-source cloud-storage \
+  --bucket-path "gs://my-bucket/images/**/*.jpg" \
+  --batch-id my-batch
+```
+
+**Azure Blob Storage:**
+```bash
+export AZURE_STORAGE_ACCOUNT_NAME=mystorageaccount
+export AZURE_STORAGE_SAS_TOKEN="sv=2021-06-08&ss=b&srt=sco&sp=rl"
+
+inference rf-cloud data-staging create-batch-of-images \
+  --data-source cloud-storage \
+  --bucket-path "az://my-container/images/**/*.jpg" \
+  --batch-id my-batch
+```
+
+See the [Cloud Storage Authentication](#cloud-storage-authentication) section below for detailed configuration options.
+
+#### Cloud Storage Authentication
+
+This section provides detailed information about authenticating with different cloud storage providers.
+
+##### AWS S3 and S3-Compatible Storage
+
+The system automatically detects AWS credentials from multiple sources in this order:
+
+1. **Environment variables:**
+   ```bash
+   export AWS_ACCESS_KEY_ID=your-access-key-id
+   export AWS_SECRET_ACCESS_KEY=your-secret-access-key
+   export AWS_SESSION_TOKEN=your-session-token  # Optional, for temporary credentials
+   ```
+
+2. **AWS credential files:**
+   ```bash
+   ~/.aws/credentials
+   ~/.aws/config`
+   ```
+
+3. **IAM roles** (when running on EC2, ECS, or Lambda)
+
+**Using named profiles:**
+```bash
+# Use a specific profile from ~/.aws/credentials
+export AWS_PROFILE=production # optional
+
+inference rf-cloud data-staging create-batch-of-images \
+  --data-source cloud-storage \
+  --bucket-path "s3://my-bucket/images/**/*.jpg" \
+  --batch-id my-batch
+```
+
+**S3-compatible services (Cloudflare R2, MinIO, etc.):**
+
+For S3-compatible services, you need to specify the endpoint URL and, for some services like Cloudflare R2, the region:
+
+```bash
+# Cloudflare R2 example
+export AWS_ENDPOINT_URL=https://account-id.r2.cloudflarestorage.com
+export AWS_REGION=auto  # R2 requires region='auto'
+export AWS_ACCESS_KEY_ID=your-r2-access-key
+export AWS_SECRET_ACCESS_KEY=your-r2-secret-key
+```
+
+!!! note "Region for S3-Compatible Services"
+
+    Some S3-compatible services like Cloudflare R2 use non-standard regions (e.g., `auto`, `wnam`, `enam`). If you get an `InvalidRegionName` error, set `AWS_REGION` to the appropriate value for your service.
+
+##### Google Cloud Storage
+
+GCS automatically detects credentials from multiple sources:
+
+1. **Service account key file** (recommended for automation):
+   ```bash
+   export GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account-key.json
+   ```
+
+2. **User credentials** from gcloud CLI:
+   ```bash
+   gcloud auth login
+   # Credentials stored in ~/.config/gcloud/
+   ```
+
+3. **GCP metadata service** (when running on Google Cloud Platform)
+
+**No additional configuration needed** if using default gcloud authentication.
+
+##### Azure Blob Storage
+
+Azure requires explicit credential configuration. The system supports **two naming conventions**:
+
+**Option 1: SAS Token (Recommended - Time-Limited, More Secure)**
+
+Using adlfs convention:
+```bash
+export AZURE_STORAGE_ACCOUNT_NAME=mystorageaccount
+export AZURE_STORAGE_SAS_TOKEN="sv=2021-06-08&ss=b&srt=sco&sp=rl&se=2024-12-31"
+```
+
+Or using Azure CLI standard:
+```bash
+export AZURE_STORAGE_ACCOUNT=mystorageaccount
+export AZURE_STORAGE_SAS_TOKEN="sv=2021-06-08&ss=b&srt=sco&sp=rl&se=2024-12-31"
+```
+
+**Generating a SAS token:**
+```bash
+# Using Azure CLI
+az storage container generate-sas \
+  --account-name mystorageaccount \
+  --name my-container \
+  --permissions rl \
+  --expiry 2024-12-31T23:59:59Z
+```
+
+**Option 2: Account Key**
+
+Using adlfs convention:
+```bash
+export AZURE_STORAGE_ACCOUNT_NAME=mystorageaccount
+export AZURE_STORAGE_ACCOUNT_KEY=your-account-key
+```
+
+Or using Azure CLI standard:
+```bash
+export AZURE_STORAGE_ACCOUNT=mystorageaccount
+export AZURE_STORAGE_KEY=your-account-key
+```
+
+**Authentication priority:**
+- SAS token takes precedence over account key (if both are set)
+- adlfs convention takes precedence over Azure CLI standard
+
+##### Error Handling
+
+The system provides detailed error messages for common authentication and access issues:
+
+**Wrong Region:**
+```
+FileNotFoundError: Cloud storage path does not exist: s3://my-bucket/
+Possible causes:
+  - Bucket doesn't exist
+  - Wrong region configured
+  - Path doesn't exist in bucket
+Check your bucket name and region settings.
+```
+
+**Permission Denied:**
+```
+Exception: Failed to access cloud storage path: s3://my-bucket/
+Error: PermissionError: Access Denied
+Possible causes:
+  - Invalid credentials (check AWS_PROFILE, AWS_ACCESS_KEY_ID, etc.)
+  - Wrong region (check AWS_DEFAULT_REGION or endpoint URL)
+  - Permission denied (check bucket permissions)
+  - Network connectivity issues
+```
+
+
+
+#### Custom Scripts for Advanced Use Cases
+
+If you need more customization beyond what `inference-cli` provides, you can use these reference scripts as a starting point for generating a reference-file:
+
+- **AWS S3:** [generateS3SignedUrls.sh](https://raw.githubusercontent.com/roboflow/roboflow-python/main/scripts/generateS3SignedUrls.sh)
+- **Google Cloud Storage:** [generateGCSSignedUrls.sh](https://github.com/roboflow/roboflow-python/blob/main/scripts/generateGCSSignedUrls.sh)
+- **Azure Blob Storage:** [generateAzureSasUrls.sh](https://raw.githubusercontent.com/roboflow/roboflow-python/main/scripts/generateAzureSasUrls.sh)
+
+These scripts demonstrate how to:
+- List files from cloud storage
+- Generate presigned URLs with custom expiration times
+- Process files in parallel for better performance
+- Create JSONL reference files for batch ingestion
+
+**Example usage:**
+```bash
+# Download and run the S3 script
+curl -fsSL https://raw.githubusercontent.com/roboflow/roboflow-python/main/scripts/generateS3SignedUrls.sh | \
+  bash -s -- s3://my-bucket/images/ output.jsonl
+
+# Download and run the GCS script
+curl -fsSL https://github.com/roboflow/roboflow-python/blob/main/scripts/generateGCSSignedUrls.sh | \
+  bash -s -- gs://my-bucket/images/ output.jsonl
+
+# Download and run the Azure script
+curl -fsSL https://raw.githubusercontent.com/roboflow/roboflow-python/main/scripts/generateAzureSasUrls.sh | \
+  bash -s -- az://my-container/images/ output.jsonl
+```
+
+
 
 #### Notifications
 

@@ -90,7 +90,7 @@ def get_container_id():
     if is_running_in_docker():
         return (
             os.popen(
-                "cat /proc/self/cgroup | grep 'docker' | sed 's/^.*\///' | tail -n1"
+                r"cat /proc/self/cgroup | grep 'docker' | sed 's/^.*\///' | tail -n1"
             )
             .read()
             .strip()

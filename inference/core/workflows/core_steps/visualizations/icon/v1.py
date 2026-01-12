@@ -16,6 +16,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     INTEGER_KIND,
     KEYPOINT_DETECTION_PREDICTION_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
+    RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
     STRING_KIND,
     Selector,
 )
@@ -24,10 +25,44 @@ from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlock
 TYPE: str = "roboflow_core/icon_visualization@v1"
 SHORT_DESCRIPTION = "Draw icons on an image either at specific static coordinates or dynamically based on detections."
 LONG_DESCRIPTION = """
-The `IconVisualization` block draws icons on an image using Supervision's `sv.IconAnnotator`.
-It supports two modes:
-1. **Static Mode**: Position an icon at a fixed location (e.g., for watermarks)
-2. **Dynamic Mode**: Position icons based on detection coordinates
+Place custom icon images on images either at fixed positions (static mode) or dynamically positioned on detected objects (dynamic mode), useful for watermarks, labels, badges, or visual markers.
+
+## How This Block Works
+
+This block takes an image and optionally detection predictions, then places a custom icon image on the image. The block supports two modes:
+
+**Static Mode** (for watermarks and fixed positioning):
+1. Takes an image and an icon image as input
+2. Places the icon at fixed x and y coordinates on the image
+3. Supports negative coordinates for positioning from the right or bottom edges
+4. Returns an annotated image with the icon at the specified static location
+
+**Dynamic Mode** (for detection-based positioning):
+1. Takes an image, an icon image, and detection predictions as input
+2. Positions the icon on each detected object based on the selected anchor point (center, corners, edges, or center of mass)
+3. Places the icon at the same position relative to each detection
+4. Returns an annotated image with icons overlaid on detected objects
+
+The block supports PNG images with transparency (alpha channel), allowing icons to blend naturally with the background. Icons can be resized to any width and height, making them suitable for various use cases from small badges to large watermarks. In static mode, icons are placed at fixed coordinates, making it ideal for watermarks or branding. In dynamic mode, icons automatically follow detected objects, making it useful for labeling, categorizing, or marking detected items with custom visual indicators.
+
+## Common Use Cases
+
+- **Watermarks and Branding**: Place logos, watermarks, or branding elements at fixed positions (static mode) on images or videos for content protection, copyright marking, or brand identification
+- **Object Labeling with Icons**: Place custom icons on detected objects (dynamic mode) to categorize, label, or mark objects with visual indicators (e.g., warning icons on unsafe objects, category icons for products, status badges)
+- **Visual Status Indicators**: Display status icons (e.g., checkmarks, warning signs, information badges) on detected objects based on classification results, confidence levels, or custom logic for quick visual feedback
+- **Product Marking and Categorization**: Place category icons, product type indicators, or custom markers on detected products in retail, e-commerce, or inventory management workflows
+- **Custom Annotation Systems**: Create custom annotation workflows with specialized icons for quality control, defect marking, or compliance tracking in manufacturing or inspection workflows
+- **Interactive UI Elements**: Add icon-based visual elements to images or videos for user interfaces, dashboards, or interactive applications where custom icons provide intuitive visual cues
+
+## Connecting to Other Blocks
+
+The annotated image from this block can be connected to:
+
+- **Other visualization blocks** (e.g., Label Visualization, Bounding Box Visualization, Polygon Visualization) to combine icon placement with additional annotations for comprehensive visualization
+- **Data storage blocks** (e.g., Local File Sink, CSV Formatter, Roboflow Dataset Upload) to save images with icons for documentation, reporting, or archiving
+- **Webhook blocks** to send visualized results with icons to external systems, APIs, or web applications for display in dashboards or monitoring tools
+- **Notification blocks** (e.g., Email Notification, Slack Notification) to send annotated images with icons as visual evidence in alerts or reports
+- **Video output blocks** to create annotated video streams or recordings with icons for live monitoring, tracking visualization, or post-processing analysis
 """
 
 
@@ -60,7 +95,7 @@ class IconManifest(VisualizationManifest):
 
     icon: Selector(kind=[IMAGE_KIND]) = Field(
         title="Icon Image",
-        description="The icon image to place on the input image (PNG with transparency recommended)",
+        description="The icon image to place on the input image. PNG format with transparency (alpha channel) is recommended for best results, as it allows the icon to blend naturally with the background. The icon will be resized to the specified width and height.",
         examples=["$inputs.icon", "$steps.image_loader.image"],
         json_schema_extra={
             "always_visible": True,
@@ -73,7 +108,7 @@ class IconManifest(VisualizationManifest):
         Selector(kind=[STRING_KIND]),
     ] = Field(
         default="dynamic",
-        description="Mode for placing icons: 'static' for fixed position (watermark), 'dynamic' for detection-based",
+        description="Mode for placing icons. 'static' mode places the icon at fixed x,y coordinates (useful for watermarks or fixed-position elements). 'dynamic' mode places icons on detected objects based on their positions (useful for object labeling or categorization).",
         examples=["static", "dynamic", "$inputs.mode"],
         json_schema_extra={
             "always_visible": True,
@@ -86,12 +121,13 @@ class IconManifest(VisualizationManifest):
             kind=[
                 OBJECT_DETECTION_PREDICTION_KIND,
                 INSTANCE_SEGMENTATION_PREDICTION_KIND,
+                RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
                 KEYPOINT_DETECTION_PREDICTION_KIND,
             ]
         )
     ] = Field(
         default=None,
-        description="Model predictions to place icons on (required for dynamic mode)",
+        description="Model predictions to place icons on (required for dynamic mode). Icons will be positioned on each detected object based on the selected position anchor point.",
         examples=["$steps.object_detection_model.predictions"],
         json_schema_extra={
             "relevant_for": {
@@ -103,7 +139,7 @@ class IconManifest(VisualizationManifest):
 
     icon_width: Union[int, Selector(kind=[INTEGER_KIND])] = Field(
         default=64,
-        description="Width of the icon in pixels",
+        description="Width of the icon in pixels. The icon image will be resized to this width while maintaining aspect ratio if height is also specified.",
         examples=[64, "$inputs.icon_width"],
         json_schema_extra={
             "always_visible": True,
@@ -112,7 +148,7 @@ class IconManifest(VisualizationManifest):
 
     icon_height: Union[int, Selector(kind=[INTEGER_KIND])] = Field(
         default=64,
-        description="Height of the icon in pixels",
+        description="Height of the icon in pixels. The icon image will be resized to this height while maintaining aspect ratio if width is also specified.",
         examples=[64, "$inputs.icon_height"],
         json_schema_extra={
             "always_visible": True,
@@ -137,7 +173,7 @@ class IconManifest(VisualizationManifest):
         ]
     ] = Field(
         default="TOP_CENTER",
-        description="Position relative to detection for dynamic mode",
+        description="Anchor position for placing icons relative to each detection's bounding box (dynamic mode only). Options include: CENTER (center of box), corners (TOP_LEFT, TOP_RIGHT, BOTTOM_LEFT, BOTTOM_RIGHT), edge midpoints (TOP_CENTER, CENTER_LEFT, CENTER_RIGHT, BOTTOM_CENTER), or CENTER_OF_MASS (center of mass of the object).",
         examples=["TOP_CENTER", "$inputs.position"],
         json_schema_extra={
             "relevant_for": {
@@ -148,7 +184,7 @@ class IconManifest(VisualizationManifest):
 
     x_position: Optional[Union[int, Selector(kind=[INTEGER_KIND])]] = Field(
         default=10,
-        description="X coordinate for static mode. Positive values from left edge, negative from right edge",
+        description="X coordinate for static mode positioning. Positive values position from the left edge of the image. Negative values position from the right edge (e.g., -10 places the icon 10 pixels from the right edge).",
         examples=[10, -10, "$inputs.x_position"],
         json_schema_extra={
             "relevant_for": {
@@ -159,7 +195,7 @@ class IconManifest(VisualizationManifest):
 
     y_position: Optional[Union[int, Selector(kind=[INTEGER_KIND])]] = Field(
         default=10,
-        description="Y coordinate for static mode. Positive values from top edge, negative from bottom edge",
+        description="Y coordinate for static mode positioning. Positive values position from the top edge of the image. Negative values position from the bottom edge (e.g., -10 places the icon 10 pixels from the bottom edge).",
         examples=[10, -10, "$inputs.y_position"],
         json_schema_extra={
             "relevant_for": {

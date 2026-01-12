@@ -80,6 +80,14 @@ def initialise_video_sources(
     desired_source_fps: Optional[Union[float, int]] = None,
     decoding_buffer_size: int = DEFAULT_BUFFER_SIZE,
 ) -> List[VideoSource]:
+    if isinstance(source_buffer_filling_strategy, str):
+        source_buffer_filling_strategy = BufferFillingStrategy(
+            source_buffer_filling_strategy
+        )
+    if isinstance(source_buffer_consumption_strategy, str):
+        source_buffer_consumption_strategy = BufferConsumptionStrategy(
+            source_buffer_consumption_strategy
+        )
     return [
         VideoSource.init(
             video_reference=reference,

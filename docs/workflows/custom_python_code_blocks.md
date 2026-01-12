@@ -33,6 +33,49 @@ When using Roboflow's cloud infrastructure with Serverless v2 API, dynamic block
 
 The cloud execution environment provides the same standard libraries and imports as local execution, ensuring your code works consistently across both modes.
 
+## State Management and Shared Data
+
+Variables defined at the module level (outside of your `run` function) in your block's code are scoped to instances of that block. These variables:
+
+- **Persist across invocations** of the same block (as long as the code doesn't change)
+- **Reset when the block's code changes** any modification to the block's code creates a new namespace
+- **Are lost when the server/container restarts**
+
+**Example:**
+
+This block increments a counter each time the block is run and remembers the last result:
+
+```python
+# This variable is block-scoped
+counter = 0
+last_result = None
+
+def run(self, input_value):
+    global counter, last_result
+    
+    counter += 1
+    
+    # Store the last result for comparison
+    previous = last_result
+    last_result = input_value * 2
+    
+    return {
+        "run_count": counter,
+        "current": last_result,
+        "previous": previous
+    }
+```
+
+### Best Practices for State Management
+
+Custom Block state is meant for caching expensive computations and optimization of artifact and dependency loading.
+
+- Do not rely on state for critical data persistence - use external storage for important data.
+- State may be lost at any time due to server restarts or container scaling
+- In cloud environments, subsequent requests may hit different servers with different state
+- Initialize block-scoped variables with default values to handle fresh starts
+- Keep state lightweight. Large objects consume memory and may impact performance.
+
 ## Theory
 
 The high-level overview of Dynamic Python blocks functionality:

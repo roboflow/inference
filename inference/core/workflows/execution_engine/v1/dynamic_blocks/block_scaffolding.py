@@ -4,8 +4,11 @@ from typing import List, Optional, Type
 
 from inference.core.env import (
     ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS,
+    MODAL_ANONYMOUS_WORKSPACE_NAME,
     WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE,
 )
+from inference.core.exceptions import WorkspaceLoadError
+from inference.core.roboflow_api import get_roboflow_workspace
 from inference.core.workflows.errors import (
     DynamicBlockError,
     WorkflowEnvironmentConfigurationError,
@@ -34,19 +37,24 @@ IMPORTS_LINES = [
     "from inference.core.workflows.prototypes.block import BlockResult",
 ]
 
+# Shared globals dict for all custom python blocks in local mode
+_LOCAL_SHARED_GLOBALS = {}
+
 
 def assembly_custom_python_block(
     block_type_name: str,
     unique_identifier: str,
     manifest: Type[WorkflowBlockManifest],
     python_code: PythonCode,
-    workspace_id: Optional[str] = None,
+    api_key: Optional[str] = None,
+    skip_class_eval: Optional[bool] = False,
 ) -> Type[WorkflowBlock]:
     code_module = create_dynamic_module(
         block_type_name=block_type_name,
         python_code=python_code,
         module_name=f"dynamic_module_{unique_identifier}",
-        workspace_id=workspace_id,
+        api_key=api_key,
+        skip_class_eval=skip_class_eval,
     )
     if not hasattr(code_module, python_code.run_function_name):
         raise DynamicBlockError(
@@ -64,15 +72,14 @@ def assembly_custom_python_block(
                 ModalExecutor,
             )
 
-            # Get workspace_id from context if available
-            workspace_id = kwargs.pop("workspace_id", None)
-            if not workspace_id:
-                # Try to extract from self or context
-                workspace_id = getattr(self, "workspace_id", None)
+            try:  # Get workspace_id from context if available
+                workspace_id = get_roboflow_workspace(self._api_key)
+            except WorkspaceLoadError:
+                workspace_id = None
 
             # Fall back to "anonymous" for non-authenticated users
             if not workspace_id:
-                workspace_id = "anonymous"
+                workspace_id = MODAL_ANONYMOUS_WORKSPACE_NAME
 
             executor = ModalExecutor(workspace_id)
             return executor.execute_remote(
@@ -116,12 +123,13 @@ def assembly_custom_python_block(
 
     init_function = getattr(code_module, python_code.init_function_name, dict)
 
-    def constructor(self):
+    def constructor(self, api_key: Optional[str] = None):
         self._init_results = init_function()
+        self._api_key = api_key
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
-        return []
+        return ["api_key"]
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -147,8 +155,21 @@ def create_dynamic_module(
     block_type_name: str,
     python_code: PythonCode,
     module_name: str,
-    workspace_id: Optional[str] = None,
+    api_key: Optional[str] = None,
+    skip_class_eval: Optional[bool] = False,
 ) -> types.ModuleType:
+
+    if skip_class_eval:
+        # Create a stub module for local reference
+        dynamic_module = types.ModuleType(module_name)
+        # Add placeholder function
+        setattr(
+            dynamic_module, python_code.run_function_name, lambda *args, **kwargs: None
+        )
+        if python_code.init_function_code:
+            setattr(dynamic_module, python_code.init_function_name, lambda: {})
+        return dynamic_module
+
     imports = _get_python_code_imports(python_code)
     code = python_code.run_function_code
     if python_code.init_function_code:
@@ -162,8 +183,14 @@ def create_dynamic_module(
             validate_code_in_modal,
         )
 
-        # Use anonymous workspace if not provided
-        validation_workspace = workspace_id or "anonymous"
+        try:  # Get workspace_id from context if available
+            validation_workspace = get_roboflow_workspace(api_key)
+        except WorkspaceLoadError:
+            validation_workspace = None
+
+        # Fall back to "anonymous" for non-authenticated users
+        if not validation_workspace:
+            validation_workspace = MODAL_ANONYMOUS_WORKSPACE_NAME
 
         # This will raise if validation fails
         validate_code_in_modal(python_code, validation_workspace)
@@ -181,6 +208,8 @@ def create_dynamic_module(
         # Local validation and module creation
         try:
             dynamic_module = types.ModuleType(module_name)
+            # Inject the shared globals dict into the module namespace
+            dynamic_module.__dict__["globals"] = _LOCAL_SHARED_GLOBALS
             exec(code, dynamic_module.__dict__)
             return dynamic_module
         except Exception as error:

@@ -4,11 +4,13 @@ from inference.core.env import (
     API_KEY,
     CORE_MODEL_CLIP_ENABLED,
     CORE_MODEL_DOCTR_ENABLED,
+    CORE_MODEL_EASYOCR_ENABLED,
     CORE_MODEL_GAZE_ENABLED,
     CORE_MODEL_GROUNDINGDINO_ENABLED,
     CORE_MODEL_OWLV2_ENABLED,
     CORE_MODEL_PE_ENABLED,
     CORE_MODEL_SAM2_ENABLED,
+    CORE_MODEL_SAM3_ENABLED,
     CORE_MODEL_SAM_ENABLED,
     CORE_MODEL_TROCR_ENABLED,
     CORE_MODEL_YOLO_WORLD_ENABLED,
@@ -17,7 +19,10 @@ from inference.core.env import (
     MOONDREAM2_ENABLED,
     PALIGEMMA_ENABLED,
     QWEN_2_5_ENABLED,
+    QWEN_3_ENABLED,
+    SAM3_3D_OBJECTS_ENABLED,
     SMOLVLM2_ENABLED,
+    USE_INFERENCE_EXP_MODELS,
 )
 from inference.core.models.base import Model
 from inference.core.models.stubs import (
@@ -30,7 +35,9 @@ from inference.core.registries.roboflow import get_model_type
 from inference.core.warnings import ModelDependencyMissing
 from inference.models import (
     YOLACT,
+    DinoV3Classification,
     ResNetClassification,
+    RFDETRInstanceSegmentation,
     RFDETRObjectDetection,
     VitClassification,
     YOLONASObjectDetection,
@@ -54,6 +61,7 @@ from inference.models.yolov11.yolov11_keypoints_detection import (
 ROBOFLOW_MODEL_TYPES = {
     ("classification", "stub"): ClassificationModelStub,
     ("classification", "vit"): VitClassification,
+    ("classification", "dinov3"): DinoV3Classification,
     ("classification", "resnet18"): ResNetClassification,
     ("classification", "resnet34"): ResNetClassification,
     ("classification", "resnet50"): ResNetClassification,
@@ -108,6 +116,13 @@ ROBOFLOW_MODEL_TYPES = {
     ("object-detection", "rfdetr-nano"): RFDETRObjectDetection,
     ("object-detection", "rfdetr-small"): RFDETRObjectDetection,
     ("object-detection", "rfdetr-medium"): RFDETRObjectDetection,
+    ("instance-segmentation", "rfdetr-seg-preview"): RFDETRInstanceSegmentation,
+    ("instance-segmentation", "rfdetr-seg-nano"): RFDETRInstanceSegmentation,
+    ("instance-segmentation", "rfdetr-seg-small"): RFDETRInstanceSegmentation,
+    ("instance-segmentation", "rfdetr-seg-medium"): RFDETRInstanceSegmentation,
+    ("instance-segmentation", "rfdetr-seg-large"): RFDETRInstanceSegmentation,
+    ("instance-segmentation", "rfdetr-seg-xlarge"): RFDETRInstanceSegmentation,
+    ("instance-segmentation", "rfdetr-seg-xxlarge"): RFDETRInstanceSegmentation,
     (
         "instance-segmentation",
         "yolov11n",
@@ -360,12 +375,30 @@ except:
         category=ModelDependencyMissing,
     )
 
+try:
+    if QWEN_3_ENABLED:
+        from inference.models import LoRAQwen3VL, Qwen3VL
+
+        qwen3vl_models = {
+            ("text-image-pairs", "qwen3vl-2b-instruct"): Qwen3VL,
+            ("text-image-pairs", "qwen3vl-2b-instruct-peft"): LoRAQwen3VL,
+        }
+        ROBOFLOW_MODEL_TYPES.update(qwen3vl_models)
+except:
+    warnings.warn(
+        "Your `inference` configuration does not support Qwen3-VL model. "
+        "Use pip install 'inference[transformers]' to install missing requirements."
+        "To suppress this warning, set QWEN_3_ENABLED to False.",
+        category=ModelDependencyMissing,
+    )
+
 
 try:
     if CORE_MODEL_SAM_ENABLED:
         from inference.models import SegmentAnything
 
         ROBOFLOW_MODEL_TYPES[("embed", "sam")] = SegmentAnything
+
 except:
     warnings.warn(
         "Your `inference` configuration does not support SAM model. "
@@ -383,6 +416,26 @@ except:
         "Your `inference` configuration does not support SAM2 model. "
         "Use pip install 'inference[sam]' to install missing requirements."
         "To suppress this warning, set CORE_MODEL_SAM2_ENABLED to False.",
+        category=ModelDependencyMissing,
+    )
+
+try:
+    if CORE_MODEL_SAM3_ENABLED:
+        from inference.models import (
+            Sam3ForInteractiveImageSegmentation,
+            SegmentAnything3,
+        )
+
+        ROBOFLOW_MODEL_TYPES[("embed", "sam3")] = SegmentAnything3
+        ROBOFLOW_MODEL_TYPES[("instance-segmentation", "sam3-large")] = SegmentAnything3
+        ROBOFLOW_MODEL_TYPES[("interactive-segmentation", "sam3")] = (
+            Sam3ForInteractiveImageSegmentation
+        )
+
+except Exception:
+    warnings.warn(
+        "Your `inference` configuration does not support SAM3 model. "
+        "Install SAM3 dependencies and set CORE_MODEL_SAM3_ENABLED to True.",
         category=ModelDependencyMissing,
     )
 
@@ -445,9 +498,15 @@ except:
 
 try:
     if DEPTH_ESTIMATION_ENABLED:
-        from inference.models.depth_estimation.depthestimation import DepthEstimator
+        from inference.models.depth_anything_v2.depth_anything_v2 import DepthAnythingV2
+        from inference.models.depth_anything_v3.depth_anything_v3 import DepthAnythingV3
 
-        ROBOFLOW_MODEL_TYPES[("depth-estimation", "small")] = DepthEstimator
+        ROBOFLOW_MODEL_TYPES[("depth-estimation", "depth-anything-v2")] = (
+            DepthAnythingV2
+        )
+        ROBOFLOW_MODEL_TYPES[("depth-estimation", "depth-anything-v3")] = (
+            DepthAnythingV3
+        )
 except:
     warnings.warn(
         "Your `inference` configuration does not support Depth Estimation."
@@ -471,10 +530,35 @@ except:
     )
 
 try:
+    if SAM3_3D_OBJECTS_ENABLED:
+        from inference.models.sam3_3d.segment_anything_3d import (
+            SegmentAnything3_3D_Objects,
+        )
+
+        ROBOFLOW_MODEL_TYPES[("3d-reconstruction", "sam3-3d-objects")] = (
+            SegmentAnything3_3D_Objects
+        )
+except:
+    warnings.warn(
+        "Your `inference` configuration does not support SAM3_3D_Objects model. "
+        "Use pip install 'inference[sam3_3d]' to install missing requirements."
+        "To suppress this warning, set SAM3_3D_OBJECTS_ENABLED to False.",
+        category=ModelDependencyMissing,
+    )
+
+try:
     if CORE_MODEL_DOCTR_ENABLED:
         from inference.models import DocTR
 
         ROBOFLOW_MODEL_TYPES[("ocr", "doctr")] = DocTR
+except:
+    pass
+
+try:
+    if CORE_MODEL_EASYOCR_ENABLED:
+        from inference.models import EasyOCR
+
+        ROBOFLOW_MODEL_TYPES[("ocr", "easy_ocr")] = EasyOCR
 except:
     pass
 
@@ -539,3 +623,30 @@ def get_model(model_id, api_key=API_KEY, **kwargs) -> Model:
 
 def get_roboflow_model(*args, **kwargs):
     return get_model(*args, **kwargs)
+
+
+# Prefer inference_exp backend for RF-DETR variants when enabled and available
+try:
+    if USE_INFERENCE_EXP_MODELS:
+        # Ensure experimental package is importable before swapping
+        __import__("inference_models")
+        from inference.models.rfdetr.rfdetr_exp import RFDetrExperimentalModel
+        from inference.models.yolov8.yolov8_object_detection_exp import (
+            Yolo8ODExperimentalModel,
+        )
+
+        for task, variant in ROBOFLOW_MODEL_TYPES.keys():
+            if task == "object-detection" and variant.startswith("rfdetr-"):
+                ROBOFLOW_MODEL_TYPES[(task, variant)] = RFDetrExperimentalModel
+
+        # iterate over ROBOFLOW_MODEL_TYPES and replace all valuses where the model variatn starts with yolov8 with the experimental model
+        for task, variant in ROBOFLOW_MODEL_TYPES.keys():
+            if task == "object-detection" and variant.startswith("yolov8"):
+                ROBOFLOW_MODEL_TYPES[(task, variant)] = Yolo8ODExperimentalModel
+
+
+except Exception:
+    # Fallback silently to legacy ONNX RFDETR when experimental stack is unavailable
+    warnings.warn(
+        "Inference experimental stack is unavailable, falling back to regular model inference stack"
+    )

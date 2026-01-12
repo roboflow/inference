@@ -276,11 +276,11 @@ class InferencePipelineManager(Process):
                 init_rtc_peer_connection(
                     webrtc_offer=webrtc_offer,
                     webrtc_turn_config=webrtc_turn_config,
+                    webrtc_realtime_processing=parsed_payload.webrtc_realtime_processing,
                     to_inference_queue=to_inference_queue,
                     from_inference_queue=from_inference_queue,
                     asyncio_loop=loop,
                     webcam_fps=webcam_fps,
-                    processing_timeout=parsed_payload.processing_timeout,
                     fps_probe_frames=parsed_payload.fps_probe_frames,
                     data_output=data_output,
                     stream_output=stream_output,

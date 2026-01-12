@@ -54,8 +54,8 @@ setuptools.setup(
             "inference.*",
             "development",
             "development.*",
-            "inference_experimental",
-            "inference_experimental.*"
+            "inference_models",
+            "inference_models.*"
         ),
     ),
     entry_points={
@@ -65,6 +65,7 @@ setuptools.setup(
     },
     extras_require={
         "cloud-deploy": read_requirements("requirements/requirements.cloud_deploy.txt"),
+        "cloud-storage": read_requirements("requirements/requirements.cloud_storage.txt"),
     },
     package_data={"": ["configs/*.yml"]},
     install_requires=read_requirements([

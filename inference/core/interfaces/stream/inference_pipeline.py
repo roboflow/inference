@@ -55,6 +55,7 @@ from inference.core.interfaces.stream.watchdog import (
     PipelineWatchDog,
 )
 from inference.core.managers.active_learning import BackgroundTaskActiveLearningManager
+from inference.core.managers.base import ModelManager
 from inference.core.managers.decorators.fixed_size_cache import WithFixedSizeCache
 from inference.core.registries.roboflow import RoboflowModelRegistry
 from inference.core.utils.function import experimental
@@ -486,6 +487,7 @@ class InferencePipeline:
         serialize_results: bool = False,
         predictions_queue_size: int = PREDICTIONS_QUEUE_SIZE,
         decoding_buffer_size: int = DEFAULT_BUFFER_SIZE,
+        model_manager: Optional[ModelManager] = None,
     ) -> "InferencePipeline":
         """
         This class creates the abstraction for making inferences from given workflow against video stream.
@@ -566,6 +568,8 @@ class InferencePipeline:
                 default value is taken from INFERENCE_PIPELINE_PREDICTIONS_QUEUE_SIZE env variable
             decoding_buffer_size (int): size of video source decoding buffer
                 default value is taken from VIDEO_SOURCE_BUFFER_SIZE env variable
+            model_manager (Optional[ModelManager]): Model manager to be used by InferencePipeline, defaults to
+                BackgroundTaskActiveLearningManager with WithFixedSizeCache
 
         Other ENV variables involved in low-level configuration:
         * INFERENCE_PIPELINE_PREDICTIONS_QUEUE_SIZE - size of buffer for predictions that are ready for dispatching
@@ -592,10 +596,9 @@ class InferencePipeline:
         named_workflow_specified = (workspace_name is not None) and (
             workflow_id is not None
         )
-        if not (named_workflow_specified != (workflow_specification is not None)):
+        if not named_workflow_specified and not workflow_specification:
             raise ValueError(
-                "Parameters (`workspace_name`, `workflow_id`) can be used mutually exclusive with "
-                "`workflow_specification`, but at least one must be set."
+                "Either (`workspace_name`, `workflow_id`) or `workflow_specification` must be provided."
             )
         try:
             from inference.core.interfaces.stream.model_handlers.workflows import (
@@ -623,13 +626,14 @@ class InferencePipeline:
                         use_cache=use_workflow_definition_cache,
                     )
             model_registry = RoboflowModelRegistry(ROBOFLOW_MODEL_TYPES)
-            model_manager = BackgroundTaskActiveLearningManager(
-                model_registry=model_registry, cache=cache
-            )
-            model_manager = WithFixedSizeCache(
-                model_manager,
-                max_size=MAX_ACTIVE_MODELS,
-            )
+            if model_manager is None:
+                model_manager = BackgroundTaskActiveLearningManager(
+                    model_registry=model_registry, cache=cache
+                )
+                model_manager = WithFixedSizeCache(
+                    model_manager,
+                    max_size=MAX_ACTIVE_MODELS,
+                )
             if workflow_init_parameters is None:
                 workflow_init_parameters = {}
             thread_pool_executor = ThreadPoolExecutor(

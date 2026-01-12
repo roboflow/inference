@@ -136,7 +136,7 @@ class Sam2SegmentationRequest(Sam2InferenceRequest):
     format: Optional[str] = Field(
         default="json",
         examples=["json"],
-        description="The format of the response. Must be one of json or binary. If binary, masks are returned as binary numpy arrays. If json, masks are converted to polygons, then returned as json.",
+        description="The format of the response. Must be one of 'json', 'rle', or 'binary'. If binary, masks are returned as binary numpy arrays. If json, masks are converted to polygons. If rle, masks are converted to RLE format.",
     )
     image: InferenceRequestImage = Field(
         description="The image to be segmented.",
@@ -149,7 +149,8 @@ class Sam2SegmentationRequest(Sam2InferenceRequest):
     prompts: Sam2PromptSet = Field(
         default=Sam2PromptSet(prompts=None),
         example=[{"prompts": [{"points": [{"x": 100, "y": 100, "positive": True}]}]}],
-        description="A list of prompts for masks to predict. Each prompt can include a bounding box and / or a set of postive or negative points",
+        description="A list of prompts for masks to predict. Each prompt can include a bounding box and / or a set of postive or negative points. "
+        "Also accepts a flat array of prompts (e.g. 'prompts': [{...}, {...}]) for convenience.",
     )
     multimask_output: bool = Field(
         default=True,
@@ -161,6 +162,48 @@ class Sam2SegmentationRequest(Sam2InferenceRequest):
         "to select the best mask. For non-ambiguous prompts, such as multiple "
         "input prompts, multimask_output=False can give better results.",
     )
+
+    # TODO[pydantic]: We couldn't refactor the `validator`, please replace it by `field_validator` manually.
+    # Check https://docs.pydantic.dev/dev-v2/migration/#changes-to-validators for more information.
+    @validator("prompts", pre=True, always=True)
+    def _coerce_prompts(cls, value):
+        """
+        Accepts any of the following and coerces to Sam2PromptSet:
+        - None
+        - Sam2PromptSet
+        - {"prompts": [...]} (nested)
+        - [...] (flat list of prompts)
+        - single prompt dict (wrapped to list)
+        """
+        if value is None:
+            return Sam2PromptSet(prompts=None)
+        if isinstance(value, Sam2PromptSet):
+            return value
+        # Nested dict with key 'prompts'
+        if isinstance(value, dict):
+            if "prompts" in value:
+                return Sam2PromptSet(**value)
+            # Single prompt dict – wrap and parse
+            try:
+                return Sam2PromptSet(prompts=[Sam2Prompt(**value)])
+            except Exception:
+                # Fall-through to attempt generic construction
+                return Sam2PromptSet(**value)
+        # Flat list of prompts (dicts or Sam2Prompt instances)
+        if isinstance(value, list):
+            prompts: List[Sam2Prompt] = []
+            for item in value:
+                if isinstance(item, Sam2Prompt):
+                    prompts.append(item)
+                elif isinstance(item, dict):
+                    prompts.append(Sam2Prompt(**item))
+                else:
+                    raise ValueError(
+                        "Invalid prompt entry; expected dict or Sam2Prompt instance"
+                    )
+            return Sam2PromptSet(prompts=prompts)
+        # Fallback: let Pydantic try
+        return value
 
     save_logits_to_cache: bool = Field(
         default=False,

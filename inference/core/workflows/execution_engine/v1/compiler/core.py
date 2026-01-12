@@ -87,6 +87,7 @@ def compile_workflow(
         workflow_definition=workflow_definition,
         execution_engine_version=execution_engine_version,
         profiler=profiler,
+        init_parameters=init_parameters,
     )
     steps = initialise_steps(
         steps_manifest=graph_compilation_results.parsed_workflow_definition.steps,
@@ -116,6 +117,7 @@ def compile_workflow_graph(
     workflow_definition: dict,
     execution_engine_version: Optional[Version] = None,
     profiler: Optional[WorkflowsProfiler] = None,
+    init_parameters: Dict[str, Union[Any, Callable[[None], Any]]] = {},
 ) -> GraphCompilationResult:
     key = COMPILATION_CACHE.get_hash_key(
         workflow_definition=workflow_definition,
@@ -142,6 +144,7 @@ def compile_workflow_graph(
             "dynamic_blocks_definitions", []
         ),
         profiler=profiler,
+        api_key=init_parameters.get("workflows_core.api_key", None),
     )
     available_blocks = statically_defined_blocks + dynamic_blocks
     parsed_workflow_definition = parse_workflow_definition(

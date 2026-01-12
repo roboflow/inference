@@ -106,6 +106,7 @@ class ModelManager:
                     countinference=countinference,
                     service_secret=service_secret,
                 )
+
                 model = model_class(
                     model_id=model_id,
                     api_key=api_key,
@@ -167,7 +168,10 @@ class ModelManager:
         logger.debug(
             f"ModelManager - inference from request started for model_id={model_id}."
         )
-        if METRICS_ENABLED and self.pingback:
+        enable_model_monitoring = not getattr(
+            request, "disable_model_monitoring", False
+        )
+        if METRICS_ENABLED and self.pingback and enable_model_monitoring:
             logger.debug("ModelManager - setting pingback fallback api key...")
             self.pingback.fallback_api_key = request.api_key
         try:
@@ -178,7 +182,7 @@ class ModelManager:
                 f"ModelManager - inference from request finished for model_id={model_id}."
             )
             finish_time = time.time()
-            if not DISABLE_INFERENCE_CACHE:
+            if not DISABLE_INFERENCE_CACHE and enable_model_monitoring:
                 try:
                     logger.debug(
                         f"ModelManager - caching inference request started for model_id={model_id}"
@@ -211,7 +215,7 @@ class ModelManager:
             return rtn_val
         except Exception as e:
             finish_time = time.time()
-            if not DISABLE_INFERENCE_CACHE:
+            if not DISABLE_INFERENCE_CACHE and enable_model_monitoring:
                 try:
                     cache.zadd(
                         f"models",
@@ -251,7 +255,10 @@ class ModelManager:
         logger.debug(
             f"ModelManager - inference from request started for model_id={model_id}."
         )
-        if METRICS_ENABLED and self.pingback:
+        enable_model_monitoring = not getattr(
+            request, "disable_model_monitoring", False
+        )
+        if METRICS_ENABLED and self.pingback and enable_model_monitoring:
             logger.debug("ModelManager - setting pingback fallback api key...")
             self.pingback.fallback_api_key = request.api_key
         try:
@@ -262,7 +269,7 @@ class ModelManager:
                 f"ModelManager - inference from request finished for model_id={model_id}."
             )
             finish_time = time.time()
-            if not DISABLE_INFERENCE_CACHE:
+            if not DISABLE_INFERENCE_CACHE and enable_model_monitoring:
                 try:
                     logger.debug(
                         f"ModelManager - caching inference request started for model_id={model_id}"
@@ -295,7 +302,7 @@ class ModelManager:
             return rtn_val
         except Exception as e:
             finish_time = time.time()
-            if not DISABLE_INFERENCE_CACHE:
+            if not DISABLE_INFERENCE_CACHE and enable_model_monitoring:
                 try:
                     cache.zadd(
                         f"models",

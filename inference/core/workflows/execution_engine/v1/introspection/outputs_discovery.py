@@ -25,7 +25,8 @@ def describe_workflow_outputs(
     definition: dict,
 ) -> Dict[str, Union[List[str], Dict[str, List[str]]]]:
     dynamic_blocks = compile_dynamic_blocks(
-        dynamic_blocks_definitions=definition.get("dynamic_blocks_definitions", [])
+        dynamic_blocks_definitions=definition.get("dynamic_blocks_definitions", []),
+        skip_class_eval=True,
     )
     blocks_description = describe_available_blocks(
         dynamic_blocks=dynamic_blocks,

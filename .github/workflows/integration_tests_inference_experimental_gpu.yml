@@ -1,4 +1,4 @@
-name: INTEGRATION TESTS - inference_experimental (GPU)
+name: INTEGRATION TESTS - inference-models (GPU)
 permissions:
   contents: read
 on:
@@ -15,28 +15,29 @@ on:
           - ''
           - onnx_extras
           - trt_extras
+          - torch_models
+          - hf_vlm_models
       python_version:
-        description: 'Python version to test. Available options: 3.10, 3.11, 3.12. Leave empty to run all.'
+        description: 'Python version to test. Available options: 3.12. Leave empty to run all.'
         required: false
-        default: ''
+        default: '3.12'
         type: choice
         options:
-          - ''
-          - '3.10'
-          - '3.11'
           - '3.12'
 
 jobs:
-  integration-tests-inference-experimental-gpu:
+  integration-tests-inference-models-gpu:
     name: ${{ matrix.extras.marker }}:${{ matrix.python-version }}
     runs-on: Roboflow-GPU-VM-Runner
-    timeout-minutes: 10
+    timeout-minutes: 30
     strategy:
       matrix:
-        python-version: ["3.10", "3.11", "3.12"]
+        python-version: ["3.12"]
         extras:
-          - { install: "onnx-cu12", marker: "onnx_extras" }
-          - { install: "trt10", marker: "trt_extras" }
+          - { install: "onnx-cu12,mediapipe", marker: "onnx_extras", workers: "auto" }
+          - { install: "trt10", marker: "trt_extras", workers: "auto" }
+          - { install: "torch-cu124,mediapipe", marker: "torch_models", workers: "1" }
+          - { install: "torch-cu124", marker: "hf_vlm_models", workers: "1" }
     steps:
       - name: 🛎️ Checkout
         if: ${{ (github.event.inputs.extras == '' || github.event.inputs.extras == matrix.extras.marker) && (github.event.inputs.python_version == '' || github.event.inputs.python_version == matrix.python-version) }}
@@ -46,7 +47,7 @@ jobs:
         uses: actions/cache@v3
         with:
           path: ~/.cache/uv
-          key: ${{ runner.os }}-uv-${{ matrix.python-version }}-${{ hashFiles('inference_experimental/pyproject.toml') }}
+          key: ${{ runner.os }}-uv-${{ matrix.python-version }}-${{ hashFiles('inference_models/pyproject.toml') }}
           restore-keys: |
             ${{ runner.os }}-uv-${{ matrix.python-version }}-
       - name: 📦 Cache apt packages
@@ -76,13 +77,14 @@ jobs:
               cuda-cudart-dev-12-5 \
               cuda-nvcc-12-5 \
               cuda-profiler-api-12-5 \
-              libcurand-dev-12-5
+              libcurand-dev-12-5 \
+              libvips-dev
 
           sudo cp /var/cache/apt/archives/*.deb ~/apt-cache/ 2>/dev/null || true
           sudo chown -R $(whoami):$(whoami) ~/apt-cache
       - name: 📦 Install base dependencies as well as `${{ matrix.extras.install }}` dependencies
         if: ${{ (github.event.inputs.extras == '' || github.event.inputs.extras == matrix.extras.marker) && (github.event.inputs.python_version == '' || github.event.inputs.python_version == matrix.python-version) }}
-        working-directory: inference_experimental
+        working-directory: inference_models
         run: |
           export CUDA_HOME=/usr/local/cuda-12.5
           export PATH=/usr/local/cuda-12.5/bin:$PATH
@@ -95,8 +97,8 @@ jobs:
           python -m uv pip install -e .[test,${{ matrix.extras.install }}] --python .venv
       - name: 🧪 Run tests marked `${{ matrix.extras.marker }}`
         if: ${{ (github.event.inputs.extras == '' || github.event.inputs.extras == matrix.extras.marker) && (github.event.inputs.python_version == '' || github.event.inputs.python_version == matrix.python-version) }}
-        working-directory: inference_experimental
-        timeout-minutes: 30
+        working-directory: inference_models
+        timeout-minutes: 25
         run: |
           source .venv/bin/activate
-          python -m pytest -n auto -m "${{ matrix.extras.marker }} and not cpu_only" tests/integration_tests
+          python -m pytest -n ${{ matrix.extras.workers }} -m "${{ matrix.extras.marker }} and not cpu_only" tests/integration_tests

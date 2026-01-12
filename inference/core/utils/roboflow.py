@@ -18,6 +18,7 @@ def get_model_id_chunks(
 
     if dataset_id.lower() in {
         "clip",
+        "easy_ocr",
         "doctr",
         "doctr_rec",
         "doctr_det",
@@ -25,13 +26,16 @@ def get_model_id_chunks(
         "grounding_dino",
         "sam",
         "sam2",
+        "sam3",
         "owlv2",
         "trocr",
         "yolo_world",
         "smolvlm2",
         "moondream2",
         "depth-anything-v2",
+        "depth-anything-v3",
         "perception_encoder",
+        "sam3-3d-objects",
     }:
         return dataset_id, version_id
 

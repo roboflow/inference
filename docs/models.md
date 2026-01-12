@@ -91,15 +91,16 @@ Alternatively, you can take advantage of some advanced execution providers using
 
 Some functionality requires extra dependencies. These can be installed by specifying the desired extras during installation of Roboflow Inference. e.x. `pip install inference[extra]`
 
-| extra | description |
-|:-------|:-------------------------------------------------|
-| `clip` | Ability to use the core `CLIP` model (by OpenAI) |
-| `gaze` | Ability to use the core `Gaze` model |
-| `http` | Ability to run the http interface |
-| `sam`  | Ability to run the core `Segment Anything` model (by Meta AI) |
-| `doctr` | Ability to use the core `doctr` model (by <a href="https://github.com/mindee/doctr" target="_blank">Mindee</a>) |
+| extra | description                                                                                                                                                                                                                         |
+|:-------|:------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `clip` | Ability to use the core `CLIP` model (by OpenAI)                                                                                                                                                                                    |
+| `gaze` | Ability to use the core `Gaze` model                                                                                                                                                                                                |
+| `http` | Ability to run the http interface                                                                                                                                                                                                   |
+| `sam`  | Ability to run the core `Segment Anything` model (by Meta AI)                                                                                                                                                                       |
+| `doctr` | Ability to use the core `doctr` model (by <a href="https://github.com/mindee/doctr" target="_blank">Mindee</a>)                                                                                                                     |
+| `easy-ocr` | Ability to use the core `easy-ocr` model (by <a href="https://github.com/JaidedAI/EasyOCRr" target="_blank">JaidedAI</a>)                                                                                                           |
 | `transformers` | Ability to use transformers based multi-modal models such as `Florence2` and `PaliGemma`. To use Florence2 you will need to manually install <a href="https://github.com/Dao-AILab/flash-attention/" target="_blank">flash_attn</a> |
-
+| `sam3`    | Ability to use Segment Anything 3 model (only available for `inference-gpu`)                                                                                                                                                        |
 **_Note:_** Both CLIP and Segment Anything require PyTorch to run. These are included in their respective dependencies however PyTorch installs can be highly environment dependent. See the <a href="https://pytorch.org/get-started/locally/" target="_blank">official PyTorch install page</a> for instructions specific to your enviornment.
 
 Example install with CLIP dependencies:
@@ -165,7 +166,7 @@ After you have python installed, install the pypi package `inference-cli` or `in
 pip install inference-cli
 ```
 
-From there you can run the inference server. See [Docker quickstart via CLI](./quickstart/docker.md/#via-cli) for more information.
+From there you can run the inference server. See [Docker quickstart via CLI](./quickstart/docker.md#set-up-a-docker-inference-server-via-inference-server-start) for more information.
 
 ```bash
 inference server start
@@ -178,7 +179,7 @@ inference server stop
 
 To use the CLI to make inferences, first <a href="https://docs.roboflow.com/api-reference/workspace-and-project-ids" target="_blank">find your project ID and model version number in Roboflow</a>.
 
-See more detailed documentation on [HTTP Inference quickstart via CLI](./quickstart/http_inference.md/#via-cli).
+See more detailed documentation on [HTTP Inference quickstart](./quickstart/http_inference.md).
 
 ```bash
 inference infer {image_path} \

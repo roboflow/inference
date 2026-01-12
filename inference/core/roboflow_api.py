@@ -14,12 +14,14 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union
 import aiohttp
 import backoff
 import requests
+from cachetools.func import ttl_cache
 from requests import Response, Timeout
 from requests_toolbelt import MultipartEncoder
 
 from inference.core import logger
 from inference.core.cache import cache
 from inference.core.cache.base import BaseCache
+from inference.core.cache.model_artifacts import get_cache_dir, initialise_cache
 from inference.core.entities.types import (
     DatasetID,
     ModelID,
@@ -33,10 +35,13 @@ from inference.core.env import (
     INTERNAL_WEIGHTS_URL_SUFFIX,
     MD5_VERIFICATION_ENABLED,
     MODEL_CACHE_DIR,
+    MODELS_CACHE_AUTH_CACHE_MAX_SIZE,
+    MODELS_CACHE_AUTH_CACHE_TTL,
     MODELS_CACHE_AUTH_ENABLED,
     RETRY_CONNECTION_ERRORS_TO_ROBOFLOW_API,
     ROBOFLOW_API_EXTRA_HEADERS,
     ROBOFLOW_API_REQUEST_TIMEOUT,
+    ROBOFLOW_API_VERIFY_SSL,
     ROBOFLOW_SERVICE_SECRET,
     TRANSIENT_ROBOFLOW_API_ERRORS,
     TRANSIENT_ROBOFLOW_API_ERRORS_RETRIES,
@@ -50,6 +55,7 @@ from inference.core.exceptions import (
     MissingDefaultModelError,
     RetryRequestError,
     RoboflowAPIConnectionError,
+    RoboflowAPIForbiddenError,
     RoboflowAPIIAlreadyAnnotatedError,
     RoboflowAPIIAnnotationRejectionError,
     RoboflowAPIImageUploadRejectionError,
@@ -92,6 +98,12 @@ DEFAULT_ERROR_HANDLERS = {
         e,
         RoboflowAPINotAuthorizedError,
         "Unauthorized access to roboflow API - check API key. Visit "
+        "https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key to learn how to retrieve one.",
+    ),
+    403: lambda e: raise_from_lambda(
+        e,
+        RoboflowAPIForbiddenError,
+        "Unauthorized access to roboflow API - check API key regarding correctness and required scopes. Visit "
         "https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key to learn how to retrieve one.",
     ),
     404: lambda e: raise_from_lambda(
@@ -187,8 +199,12 @@ def wrap_roboflow_api_errors_async(
     return decorator
 
 
+@ttl_cache(ttl=MODELS_CACHE_AUTH_CACHE_TTL, maxsize=MODELS_CACHE_AUTH_CACHE_MAX_SIZE)
 @wrap_roboflow_api_errors()
 def get_roboflow_workspace(api_key: str) -> WorkspaceID:
+    if not api_key:
+        raise WorkspaceLoadError(f"Empty workspace encountered, check your API key.")
+
     api_url = _add_params_to_url(
         url=f"{API_BASE_URL}/",
         params=[("api_key", api_key), ("nocache", "true")],
@@ -265,6 +281,7 @@ def add_custom_metadata(
         },
         headers=build_roboflow_api_headers(),
         timeout=ROBOFLOW_API_REQUEST_TIMEOUT,
+        verify=ROBOFLOW_API_VERIFY_SSL,
     )
     api_key_safe_raise_for_status(response=response)
 
@@ -332,8 +349,8 @@ def get_roboflow_model_data(
     model_id: str,
     endpoint_type: ModelEndpointType,
     device_id: str,
-    countinference: bool = None,
-    service_secret: str = None,
+    countinference: Optional[bool] = None,
+    service_secret: Optional[str] = None,
 ) -> dict:
     api_data_cache_key = f"roboflow_api_data:{endpoint_type.value}:{model_id}"
     api_data = None
@@ -507,6 +524,7 @@ def register_image_at_roboflow(
         data=m,
         headers=headers,
         timeout=ROBOFLOW_API_REQUEST_TIMEOUT,
+        verify=ROBOFLOW_API_VERIFY_SSL,
     )
     api_key_safe_raise_for_status(response=response)
     parsed_response = response.json()
@@ -550,6 +568,7 @@ def annotate_image_at_roboflow(
         data=annotation_content,
         headers=headers,
         timeout=ROBOFLOW_API_REQUEST_TIMEOUT,
+        verify=ROBOFLOW_API_VERIFY_SSL,
     )
     api_key_safe_raise_for_status(response=response)
     parsed_response = response.json()
@@ -825,6 +844,7 @@ def _get_from_url(
             wrap_url(url),
             headers=build_roboflow_api_headers(),
             timeout=ROBOFLOW_API_REQUEST_TIMEOUT,
+            verify=ROBOFLOW_API_VERIFY_SSL,
         )
 
     except (ConnectionError, Timeout, requests.exceptions.ConnectionError) as error:
@@ -874,6 +894,55 @@ def _get_from_url(
     return response
 
 
+def _test_range_request(url: str, timeout: int = 10) -> bool:
+    """Test if server actually honors range requests by making a real range GET request.
+
+    Note: We can't rely on Accept-Ranges header alone because some servers/CDNs
+    advertise range support but return 200 (full file) instead of 206 (partial).
+    """
+    try:
+        headers = {"Range": "bytes=0-0"}
+        response = requests.get(url, headers=headers, stream=True, timeout=timeout)
+        response.close()
+        if response.status_code == 206:
+            return True
+
+        return False
+    except Exception as e:
+        logger.warning(
+            f"Failed to test range request support: {e}. Falling back to single-threaded download."
+        )
+        return False
+
+
+def stream_url_to_cache(
+    url: str,
+    filename: str,
+    model_id: str,
+) -> None:
+    from inference_models.utils.download import download_files_to_directory
+
+    initialise_cache(model_id=model_id)
+    cache_dir = get_cache_dir(model_id=model_id)
+    md5_hash = None
+
+    max_threads = 8 if _test_range_request(url) else 1
+
+    try:
+        download_files_to_directory(
+            target_dir=cache_dir,
+            files_specs=[(filename, url, md5_hash)],
+            verbose=True,
+            download_files_without_hash=True,
+            verify_hash_while_download=False,
+            max_threads_per_download=max_threads,
+        )
+    except Exception as e:
+        raise RoboflowAPIUnsuccessfulRequestError(
+            f"Failed to download {filename}: {str(e)}"
+        ) from e
+
+
 def _add_params_to_url(url: str, params: List[Tuple[str, str]]) -> str:
     if len(params) == 0:
         return url
@@ -899,6 +968,7 @@ def send_inference_results_to_model_monitoring(
         json=inference_data,
         headers=build_roboflow_api_headers(),
         timeout=ROBOFLOW_API_REQUEST_TIMEOUT,
+        verify=ROBOFLOW_API_VERIFY_SSL,
     )
     api_key_safe_raise_for_status(response=response)
 
@@ -918,32 +988,48 @@ def build_roboflow_api_headers(
         return explicit_headers
 
 
-@wrap_roboflow_api_errors()
 def post_to_roboflow_api(
     endpoint: str,
     api_key: Optional[str],
     payload: Optional[dict] = None,
     params: Optional[List[Tuple[str, str]]] = None,
+    http_errors_handlers: Optional[
+        Dict[int, Callable[[Union[requests.exceptions.HTTPError]], None]]
+    ] = None,
 ) -> dict:
-    """Generic function to make a POST request to the Roboflow API."""
-    url_params = []
-    if api_key:
-        url_params.append(("api_key", api_key))
-    if params:
-        url_params.extend(params)
+    """Generic function to make a POST request to the Roboflow API.
 
-    full_url = _add_params_to_url(
-        url=f"{API_BASE_URL}/{endpoint.strip('/')}", params=url_params
-    )
-    wrapped_url = wrap_url(full_url)
+    Args:
+        endpoint: API endpoint path
+        api_key: Roboflow API key
+        payload: JSON payload
+        params: Additional URL parameters
+        http_errors_handlers: Optional custom HTTP error handlers by status code
+    """
 
-    headers = build_roboflow_api_headers()
+    @wrap_roboflow_api_errors(http_errors_handlers=http_errors_handlers)
+    def _make_request():
+        url_params = []
+        if api_key:
+            url_params.append(("api_key", api_key))
+        if params:
+            url_params.extend(params)
 
-    response = requests.post(
-        url=wrapped_url,
-        json=payload,
-        headers=headers,
-        timeout=ROBOFLOW_API_REQUEST_TIMEOUT,
-    )
-    api_key_safe_raise_for_status(response=response)
-    return response.json()
+        full_url = _add_params_to_url(
+            url=f"{API_BASE_URL}/{endpoint.strip('/')}", params=url_params
+        )
+        wrapped_url = wrap_url(full_url)
+
+        headers = build_roboflow_api_headers()
+
+        response = requests.post(
+            url=wrapped_url,
+            json=payload,
+            headers=headers,
+            timeout=ROBOFLOW_API_REQUEST_TIMEOUT,
+            verify=ROBOFLOW_API_VERIFY_SSL,
+        )
+        api_key_safe_raise_for_status(response=response)
+        return response.json()
+
+    return _make_request()

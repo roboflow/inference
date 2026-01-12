@@ -18,6 +18,7 @@ from inference_cli.lib.benchmark.results_gathering import (
 from inference_cli.lib.utils import (
     dump_json,
     ensure_inference_is_installed,
+    ensure_inference_models_is_installed,
     initialise_client,
 )
 
@@ -61,6 +62,10 @@ def run_infer_api_speed_benchmark(
         number_of_clients=number_of_clients,
         requests_per_second=requests_per_second,
     )
+    if benchmark_results.avg_remote_execution_time is not None:
+        print(
+            f"Average remote execution time: {benchmark_results.avg_remote_execution_time:.3f}s (across {benchmark_results.inferences_made} requests)"
+        )
     if output_location is None:
         ensure_error_rate_is_below_threshold(
             error_rate=benchmark_results.error_rate,
@@ -129,6 +134,10 @@ def run_workflow_api_speed_benchmark(
         number_of_clients=number_of_clients,
         requests_per_second=requests_per_second,
     )
+    if benchmark_results.avg_remote_execution_time is not None:
+        print(
+            f"Average remote execution time: {benchmark_results.avg_remote_execution_time:.3f}s (across {benchmark_results.inferences_made} requests)"
+        )
     if output_location is None:
         ensure_error_rate_is_below_threshold(
             error_rate=benchmark_results.error_rate,
@@ -200,6 +209,76 @@ def run_python_package_speed_benchmark(
     )
     benchmark_results = results_collector.get_statistics()
     statistics_display_thread.join()
+    if benchmark_results.avg_remote_execution_time is not None:
+        print(
+            f"Average remote execution time: {benchmark_results.avg_remote_execution_time:.3f}s (across {benchmark_results.inferences_made} requests)"
+        )
+    if output_location is None:
+        return None
+    benchmark_parameters = {
+        "datetime": datetime.now().isoformat(),
+        "model_id": model_id,
+        "dataset_reference": dataset_reference,
+        "benchmark_inferences": benchmark_inferences,
+        "batch_size": batch_size,
+        "model_configuration": model_configuration,
+    }
+    dump_benchmark_results(
+        output_location=output_location,
+        benchmark_parameters=benchmark_parameters,
+        benchmark_results=benchmark_results,
+    )
+
+
+def run_inference_models_benchmark(
+    model_id: str,
+    dataset_reference: str,
+    warm_up_inferences: int = 10,
+    benchmark_inferences: int = 1000,
+    batch_size: int = 1,
+    api_key: Optional[str] = None,
+    model_configuration: Optional[str] = None,
+    output_location: Optional[str] = None,
+    model_package_id: Optional[str] = None,
+    turn_images_to_tensors: bool = True,
+    allow_untrusted_packages: bool = True,
+) -> None:
+    ensure_inference_models_is_installed()
+
+    # importing here not to affect other entrypoints by missing `inference` core library
+    from inference_cli.lib.benchmark.inference_models_speed import (
+        run_inference_models_benchmark,
+    )
+
+    dataset_images = load_dataset_images(
+        dataset_reference=dataset_reference,
+    )
+    image_sizes = {i.shape[:2] for i in dataset_images}
+    print(f"Detected images dimensions: {image_sizes}")
+    results_collector = ResultsCollector()
+    statistics_display_thread = Thread(
+        target=display_benchmark_statistics, args=(results_collector,)
+    )
+    statistics_display_thread.start()
+    run_inference_models_benchmark(
+        model_id=model_id,
+        images=dataset_images,
+        results_collector=results_collector,
+        warm_up_inferences=warm_up_inferences,
+        benchmark_inferences=benchmark_inferences,
+        batch_size=batch_size,
+        api_key=api_key,
+        model_configuration=model_configuration,
+        model_package_id=model_package_id,
+        turn_images_to_tensors=turn_images_to_tensors,
+        allow_untrusted_packages=allow_untrusted_packages,
+    )
+    benchmark_results = results_collector.get_statistics()
+    statistics_display_thread.join()
+    if benchmark_results.avg_remote_execution_time is not None:
+        print(
+            f"Average execution time: {benchmark_results.avg_remote_execution_time:.3f}s (across {benchmark_results.inferences_made} inferences)"
+        )
     if output_location is None:
         return None
     benchmark_parameters = {
