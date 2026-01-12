@@ -117,6 +117,12 @@ ROBOFLOW_MODEL_TYPES = {
     ("object-detection", "rfdetr-small"): RFDETRObjectDetection,
     ("object-detection", "rfdetr-medium"): RFDETRObjectDetection,
     ("instance-segmentation", "rfdetr-seg-preview"): RFDETRInstanceSegmentation,
+    ("instance-segmentation", "rfdetr-seg-nano"): RFDETRInstanceSegmentation,
+    ("instance-segmentation", "rfdetr-seg-small"): RFDETRInstanceSegmentation,
+    ("instance-segmentation", "rfdetr-seg-medium"): RFDETRInstanceSegmentation,
+    ("instance-segmentation", "rfdetr-seg-large"): RFDETRInstanceSegmentation,
+    ("instance-segmentation", "rfdetr-seg-xlarge"): RFDETRInstanceSegmentation,
+    ("instance-segmentation", "rfdetr-seg-xxlarge"): RFDETRInstanceSegmentation,
     (
         "instance-segmentation",
         "yolov11n",
@@ -623,7 +629,7 @@ def get_roboflow_model(*args, **kwargs):
 try:
     if USE_INFERENCE_EXP_MODELS:
         # Ensure experimental package is importable before swapping
-        __import__("inference_exp")
+        __import__("inference_models")
         from inference.models.rfdetr.rfdetr_exp import RFDetrExperimentalModel
         from inference.models.yolov8.yolov8_object_detection_exp import (
             Yolo8ODExperimentalModel,

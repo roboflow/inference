@@ -18,11 +18,72 @@ from inference.core.workflows.prototypes.block import (
 )
 
 LONG_DESCRIPTION = """
-Identify outlier embeddings compared to prior data.
+Identify outlier embeddings compared to prior data using von Mises-Fisher statistical distribution analysis to detect anomalies, unusual patterns, or deviations from normal behavior by comparing current embedding vectors against a sliding window of historical embeddings for quality control, anomaly detection, and data sampling workflows.
 
-This block accepts an embedding and compares it to a sample of prior data.
-If the embedding is an outlier, the block will return a boolean flag and the
-percentile of the embedding.
+## How This Block Works
+
+This block detects outliers by statistically comparing embedding vectors against historical data using directional statistics. The block:
+
+1. Receives an embedding vector representing the current data point's features
+2. Normalizes the embedding to unit length:
+   - Converts the embedding to a unit vector (length = 1) for directional analysis
+   - Enables comparison using angular/directional statistics rather than distance-based metrics
+   - Handles zero vectors gracefully by skipping normalization
+3. Tracks sample count and warmup status:
+   - Increments sample counter for each processed embedding
+   - Determines if still in warmup period (samples < warmup parameter)
+   - During warmup, no outliers are identified to allow baseline establishment
+4. Maintains a sliding window of historical embeddings:
+   - Stores normalized embeddings in a buffer that grows up to window_size
+   - When buffer exceeds window_size, removes oldest embeddings (FIFO)
+   - Creates a rolling history of recent data for statistical comparison
+5. Fits von Mises-Fisher (vMF) distribution parameters during warmup completion:
+   - **Mean Direction (mu)**: Calculates the average direction of all historical embeddings
+   - **Concentration Parameter (kappa)**: Measures how tightly clustered the embeddings are around the mean
+   - Uses statistical estimation to model the distribution of embedding directions
+   - vMF distribution is ideal for directional data on a hypersphere (unit vectors)
+6. Computes alignment score for current embedding:
+   - Calculates dot product between current normalized embedding and mean direction vector
+   - Measures how well the current embedding aligns with the typical direction
+   - Higher values indicate closer alignment to the norm, lower values indicate deviation
+7. Calculates empirical percentile of current embedding:
+   - Computes alignment scores for all historical embeddings against the mean direction
+   - Ranks the current embedding's alignment score among historical scores
+   - Determines percentile position (0.0 = lowest, 1.0 = highest) of current embedding
+8. Determines outlier status based on percentile thresholds:
+   - Flags as outlier if percentile is below threshold_percentile (e.g., bottom 5%)
+   - Flags as outlier if percentile is above (1 - threshold_percentile) (e.g., top 5%)
+   - Detects both extreme low and extreme high deviations from the norm
+9. Returns three outputs:
+   - **is_outlier**: Boolean flag indicating if the current embedding is an outlier
+   - **percentile**: Float value (0.0-1.0) representing where the embedding ranks among historical data
+   - **warming_up**: Boolean flag indicating if still in warmup period (always False after warmup)
+
+The block uses von Mises-Fisher distribution analysis, which is designed for directional data on a hypersphere (unit vectors). This makes it well-suited for high-dimensional embeddings where direction matters more than magnitude. The sliding window approach ensures the statistical model adapts to recent trends while the percentile-based detection identifies embeddings that are unusually different from the historical pattern. Lower percentiles indicate embeddings that are less aligned with typical patterns, while higher percentiles indicate embeddings that are unusually well-aligned or different in a positive direction.
+
+## Common Use Cases
+
+- **Anomaly Detection**: Detect unusual images, objects, or patterns that deviate from normal data (e.g., identify unusual product variations, detect anomalous behavior, flag unexpected patterns), enabling anomaly detection workflows
+- **Quality Control**: Identify defective or unusual items in manufacturing or production (e.g., detect product defects, identify quality issues, flag manufacturing anomalies), enabling quality control workflows
+- **Data Sampling**: Identify interesting or unusual data points for manual review or further analysis (e.g., sample unusual images for labeling, identify edge cases for model improvement, select interesting data for analysis), enabling intelligent data sampling workflows
+- **Change Detection**: Detect when data patterns change significantly from historical norms (e.g., detect scene changes, identify pattern shifts, flag significant variations), enabling change detection workflows
+- **Model Monitoring**: Monitor model performance by detecting when embeddings deviate from training distribution (e.g., detect distribution shift, identify out-of-distribution data, monitor model drift), enabling model monitoring workflows
+- **Content Filtering**: Identify unusual or inappropriate content that differs from expected patterns (e.g., detect unusual content, flag inappropriate material, identify content anomalies), enabling content filtering workflows
+
+## Connecting to Other Blocks
+
+This block receives embeddings and produces is_outlier, percentile, and warming_up outputs:
+
+- **After embedding model blocks** (CLIP, Perception Encoder, etc.) to analyze embedding outliers (e.g., identify outliers from CLIP embeddings, analyze Perception Encoder outliers, detect anomalies from embeddings), enabling embedding-to-outlier workflows
+- **After classification or detection blocks** with embeddings to identify unusual predictions (e.g., identify unusual detections, flag anomalous classifications, detect outlier predictions), enabling prediction-to-outlier workflows
+- **Before logic blocks** like Continue If to make decisions based on outlier detection (e.g., continue if outlier detected, filter based on outlier status, trigger actions on anomalies), enabling outlier-based decision workflows
+- **Before notification blocks** to alert on outlier detection (e.g., alert on anomalies, notify about unusual data, trigger alerts on outliers), enabling outlier-based notification workflows
+- **Before data storage blocks** to record outlier information (e.g., log outlier data, store anomaly statistics, record unusual data points), enabling outlier data logging workflows
+- **In quality control pipelines** where outlier detection is part of quality assurance (e.g., filter outliers in quality pipelines, identify issues in production workflows, detect problems in processing chains), enabling quality control workflows
+
+## Requirements
+
+This block requires embeddings as input (typically from embedding model blocks like CLIP or Perception Encoder). The block maintains internal state across workflow executions, accumulating a sliding window of historical embeddings. During the warmup period (first `warmup` samples), no outliers are identified and the block returns is_outlier=False and percentile=0.5. After warmup, the block uses at least `warmup` embeddings (up to `window_size` embeddings) to establish statistical baselines. The threshold_percentile parameter (0.0-1.0) controls sensitivity - lower values (e.g., 0.01) detect only extreme outliers, while higher values (e.g., 0.1) detect more moderate deviations. The block works best with consistent embedding models and may need adjustment of threshold_percentile based on expected variation in your data.
 """
 
 
@@ -45,14 +106,14 @@ class BlockManifest(WorkflowBlockManifest):
     name: str = Field(description="Unique name of step in workflows")
 
     embedding: Selector(kind=[EMBEDDING_KIND]) = Field(
-        description="Embedding of the current data.",
-        examples=["$steps.clip.embedding"],
+        description="Embedding vector representing the current data point's features. Typically from embedding models like CLIP or Perception Encoder. The embedding is normalized to unit length for directional statistical analysis using von Mises-Fisher distribution. Must be a numerical vector of any dimension.",
+        examples=["$steps.clip.embedding", "$steps.perception_encoder.embedding"],
     )
 
     threshold_percentile: Union[Selector(kind=[FLOAT_ZERO_TO_ONE_KIND]), float] = Field(
         default=0.05,
-        description="The desired sensitivity. A higher value will result in more data points being classified as outliers.",
-        examples=["$inputs.sample_rate", 0.01],
+        description="Percentile threshold for outlier detection, range 0.0-1.0. Embeddings below this percentile or above (1 - threshold_percentile) are flagged as outliers. Lower values (e.g., 0.01) detect only extreme outliers - very strict. Higher values (e.g., 0.1) detect more moderate deviations - more sensitive. Default 0.05 means bottom 5% and top 5% are outliers. Adjust based on expected variation in your data.",
+        examples=[0.05, 0.01, 0.1, "$inputs.threshold_percentile"],
         json_schema_extra={
             "always_visible": True,
         },
@@ -60,14 +121,14 @@ class BlockManifest(WorkflowBlockManifest):
 
     warmup: Union[Selector(kind=[INTEGER_KIND]), int] = Field(
         default=3,
-        description="The number of data points to use for the initial average calculation. No outliers are identified during this period.",
-        examples=[100],
+        description="Number of initial data points required before outlier detection begins. During warmup, no outliers are identified (is_outlier=False) to allow baseline establishment. Must be at least 2 for statistical analysis. Typical range: 3-100 samples. Higher values provide more stable baselines but delay outlier detection. Lower values enable faster detection but may be less accurate initially.",
+        examples=[3, 10, 100],
     )
 
     window_size: Optional[Union[Selector(kind=[INTEGER_KIND]), int]] = Field(
         default=32,
-        description="The number of previous data points to consider in the sliding window algorithm.",
-        examples=[5],
+        description="Maximum number of historical embeddings to maintain in sliding window. The block keeps the most recent window_size embeddings for statistical comparison. When exceeded, oldest embeddings are removed (FIFO). Larger windows provide more stable statistics but adapt slower to distribution changes. Smaller windows adapt faster but may be less stable. Set to None for unlimited window (uses all historical data). Typical range: 10-100 embeddings.",
+        examples=[32, 64, 100, None],
     )
 
     @classmethod

@@ -12,6 +12,9 @@ from inference.core.env import (
 from inference.core.workflows.core_steps.analytics.data_aggregator.v1 import (
     DataAggregatorBlockV1,
 )
+from inference.core.workflows.core_steps.analytics.detection_event_log.v1 import (
+    DetectionEventLogBlockV1,
+)
 from inference.core.workflows.core_steps.analytics.line_counter.v1 import (
     LineCounterBlockV1,
 )
@@ -493,6 +496,9 @@ from inference.core.workflows.core_steps.visualizations.polygon_zone.v1 import (
 from inference.core.workflows.core_steps.visualizations.reference_path.v1 import (
     ReferencePathVisualizationBlockV1,
 )
+from inference.core.workflows.core_steps.visualizations.text_display.v1 import (
+    TextDisplayVisualizationBlockV1,
+)
 from inference.core.workflows.core_steps.visualizations.trace.v1 import (
     TraceVisualizationBlockV1,
 )
@@ -724,11 +730,13 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         TimeInZoneBlockV2,
         TimeInZoneBlockV3,
         TriangleVisualizationBlockV1,
+        TextDisplayVisualizationBlockV1,
         VLMAsClassifierBlockV1,
         VLMAsDetectorBlockV1,
         YoloWorldModelBlockV1,
         KeypointVisualizationBlockV1,
         DataAggregatorBlockV1,
+        DetectionEventLogBlockV1,
         CSVFormatterBlockV1,
         EmailNotificationBlockV1,
         EmailNotificationBlockV2,

@@ -465,6 +465,29 @@ def test_motion_detection_block_with_list_detection_zone() -> None:
     assert isinstance(output["detections"], sv.Detections)
 
 
+def test_motion_detection_manifest_accepts_workflow_input_selectors() -> None:
+    """Test that manifest accepts workflow input selectors for integer parameters."""
+    # given
+    data = {
+        "type": "roboflow_core/motion_detection@v1",
+        "name": "motion_detector",
+        "image": "$inputs.image",
+        "minimum_contour_area": "$inputs.min_contour_area",
+        "morphological_kernel_size": "$inputs.kernel_size",
+        "threshold": "$inputs.threshold",
+        "history": "$inputs.history",
+    }
+
+    # when
+    result = MotionDetectionManifest.model_validate(data)
+
+    # then
+    assert result.minimum_contour_area == "$inputs.min_contour_area"
+    assert result.morphological_kernel_size == "$inputs.kernel_size"
+    assert result.threshold == "$inputs.threshold"
+    assert result.history == "$inputs.history"
+
+
 def test_motion_detection_block_changes_threshold() -> None:
     """Test that the background subtractor is only created once (on first run)."""
     # given

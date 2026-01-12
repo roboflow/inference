@@ -36,24 +36,63 @@ CACHE_EXPIRE_TIME = 15 * 60
 TRUNCATION_MARKER = "[...]"
 
 LONG_DESCRIPTION = """
-The 📲 **Twilio SMS Notification** ✉️ block enables sending text message notifications via the Twilio SMS service, 
-with flexible features such as dynamic content, message truncation, and cooldown management.
+Send SMS text message notifications via Twilio SMS service with customizable message content featuring dynamic workflow data parameters, automatic message truncation for SMS length limits, cooldown throttling using cache-based session tracking, and optional async background execution for mobile alerts, urgent notifications, and real-time communication workflows.
 
-The block requires Twilio setup - 
-[this article](https://www.twilio.com/docs/messaging/tutorials/how-to-send-sms-messages/python) may help you 
-configuring everything properly.
+## How This Block Works
 
-#### ✨ Key Features
+This block sends SMS text messages to phone numbers using the Twilio SMS API, integrating workflow execution results into message content. The block:
 
-* 📢 **Send SMS**: Deliver SMS messages to designated recipients.
+1. Checks if the sink is disabled via `disable_sink` flag (if disabled, returns immediately without sending)
+2. Generates a cache key for cooldown tracking using a hash of Twilio credentials (Account SID and Auth Token) and `cooldown_session_key` (unique per workflow step)
+3. Validates cooldown period by checking cache for the last notification timestamp (if enabled, throttles notifications within `cooldown_seconds` of the last sent SMS, returning throttling status)
+4. Creates or retrieves a Twilio Client instance for the provided credentials (caches clients by credential hash for efficiency)
+5. Formats the message by processing dynamic parameters (replaces placeholders like `{{ $parameters.parameter_name }}` with actual workflow data from `message_parameters`)
+6. Applies optional UQL operations to transform parameter values before insertion (e.g., extract class names from detections, calculate metrics, filter data) using `message_parameters_operations`
+7. Truncates the message if it exceeds `length_limit` characters (appends truncation marker `[...]` to indicate truncation)
+8. Sends the SMS message to the receiver phone number from the sender number using Twilio's `messages.create` API
+9. Updates the cache with the current notification timestamp (expires after 15 minutes)
+10. Executes synchronously or asynchronously based on `fire_and_forget` setting:
+    - **Synchronous mode** (`fire_and_forget=False`): Waits for Twilio API call completion, returns actual error status for debugging
+    - **Asynchronous mode** (`fire_and_forget=True`): Sends SMS in background task, workflow continues immediately, error status always False
+11. Returns status outputs indicating success, throttling, or errors (includes Twilio API error details when available)
 
-* 🔗 **Dynamic Content**: Craft notifications based on outputs from other Workflow steps.
+The block supports dynamic message content through parameter placeholders that are replaced with workflow data at runtime. Message parameters can be raw workflow outputs or transformed using UQL operations (e.g., extract properties, calculate counts, filter values). SMS messages are automatically truncated if they exceed the character limit to comply with SMS standards and prevent message delivery issues. Cooldown prevents SMS spam by enforcing minimum time between sends using cache-based tracking with session keys, enabling per-step throttling in distributed or multi-instance environments.
 
-* ✂️ **Message Truncation**: Automatically truncate messages exceeding the character limit.
+## Requirements
 
-* 🕒 **Cooldown Control:** Prevent duplicate notifications within a set time frame.
+**Twilio Account Configuration**: Requires a Twilio account with SMS capabilities:
+- `twilio_account_sid`: Twilio Account SID (found in [Twilio Console](https://twilio.com/console))
+- `twilio_auth_token`: Twilio Auth Token (found in Twilio Console, marked as private for security)
+- Credentials can be provided via workflow inputs (recommended for security) using SECRET_KIND selectors rather than storing in workflow definitions
+- View [Twilio SMS tutorial](https://www.twilio.com/docs/messaging/tutorials/how-to-send-sms-messages/python) for setup instructions
 
-* ⚙️ **Flexible Execution:** Execute in the background or block Workflow execution for debugging.
+**Phone Number Configuration**: Requires valid phone numbers in E.164 format (e.g., `+1234567890`):
+- `sender_number`: Twilio phone number to send from (must be a Twilio-purchased number or verified number in your account)
+- `receiver_number`: Destination phone number to receive the SMS
+
+**Cooldown Session Key**: The `cooldown_session_key` must be unique for each Twilio SMS Notification step in your workflow to enable proper per-step cooldown tracking. The cooldown mechanism uses cache-based storage with a 15-minute expiration time, and cooldown seconds must be between 0 and 900 (15 minutes).
+
+**Message Length Limit**: SMS messages have a default length limit of 160 characters. Messages exceeding `length_limit` are automatically truncated with a truncation marker (`[...]`). Adjust `length_limit` based on your needs, but note that SMS standards typically support 160 characters for single-part messages or 153 characters per segment for multi-part messages.
+
+## Common Use Cases
+
+- **Urgent Alert Notifications**: Send SMS alerts to mobile devices when critical conditions are detected (e.g., alert security personnel when unauthorized objects detected, notify operators when system anomalies occur, send alerts when detection counts exceed critical thresholds), enabling immediate mobile notification for time-sensitive incidents
+- **Mobile Workflow Updates**: Send SMS notifications about workflow execution status and critical results (e.g., notify operators when batch processing completes, send urgent failure alerts, alert about system health issues), enabling mobile visibility into automated processes
+- **Detection Summaries**: Send SMS messages with detection results and key statistics (e.g., share counts of detected objects, send classification summaries, include critical detection alerts), enabling stakeholders to receive important workflow outputs on their mobile devices
+- **Emergency Notifications**: Send urgent SMS alerts for emergency situations and critical events (e.g., alert emergency responders, notify maintenance teams about critical issues, send immediate system failure notifications), enabling rapid mobile communication for emergency response
+- **Real-Time Mobile Monitoring**: Send continuous SMS updates for real-time monitoring and status notifications (e.g., notify about system health issues, send periodic performance alerts, alert about processing milestones), enabling mobile visibility for operational monitoring
+- **On-Call Alerts**: Send SMS notifications to on-call personnel for after-hours or critical issues (e.g., alert on-call engineers about system problems, notify on-call security about detected threats, send after-hours incident notifications), enabling mobile communication for on-call staff
+
+## Connecting to Other Blocks
+
+This block receives data from workflow steps and sends SMS notifications:
+
+- **After detection or analysis blocks** (e.g., Object Detection, Instance Segmentation, Classification) to send urgent mobile alerts or summaries when objects are detected, classifications are made, or thresholds are exceeded, enabling real-time mobile notifications for critical events
+- **After data processing blocks** (e.g., Expression, Property Definition, Detections Filter) to include computed metrics, transformed data, or filtered results in SMS notifications, enabling customized mobile reporting with processed data
+- **In conditional workflows** (e.g., Continue If) to send SMS notifications only when specific conditions are met, enabling event-driven mobile alerting and urgent notifications
+- **After aggregation blocks** (e.g., Data Aggregator) to send periodic analytics summaries and statistical reports via SMS, enabling scheduled mobile updates and trend analysis
+- **In monitoring workflows** to send status updates, error notifications, or health check reports to mobile devices, enabling automated system monitoring and incident management via SMS
+- **For emergency workflows** where immediate mobile notification is critical (e.g., security alerts, system failures, critical detections), enabling rapid mobile communication for time-sensitive situations
 """
 
 PARAMETER_REGEX = re.compile(r"({{\s*\$parameters\.(\w+)\s*}})")
@@ -77,17 +116,13 @@ class BlockManifest(WorkflowBlockManifest):
     type: Literal["roboflow_core/twilio_sms_notification@v1"]
     twilio_account_sid: Union[str, Selector(kind=[STRING_KIND, SECRET_KIND])] = Field(
         title="Twilio Account SID",
-        description="Twilio Account SID. Visit the "
-        "[Twilio Console](https://twilio.com/console) "
-        "to configure the SMS service and retrieve the value.",
+        description="Twilio Account SID for authenticating with Twilio API. Found in the [Twilio Console](https://twilio.com/console) under Account Info. This field is marked as private for security. Recommended to provide via workflow inputs using SECRET_KIND selectors rather than storing in workflow definitions. Used together with twilio_auth_token to authenticate Twilio API requests for sending SMS messages.",
         private=True,
         examples=["$inputs.twilio_account_sid"],
     )
     twilio_auth_token: Union[str, Selector(kind=[STRING_KIND, SECRET_KIND])] = Field(
         title="Twilio Auth Token",
-        description="Twilio Auth Token. Visit the "
-        "[Twilio Console](https://twilio.com/console) "
-        "to configure the SMS service and retrieve the value.",
+        description="Twilio Auth Token for authenticating with Twilio API. Found in the [Twilio Console](https://twilio.com/console) under Account Info (click 'show' to reveal). This field is marked as private for security. Recommended to provide via workflow inputs using SECRET_KIND selectors rather than storing in workflow definitions. Used together with twilio_account_sid to authenticate Twilio API requests for sending SMS messages.",
         private=True,
         examples=["$inputs.twilio_auth_token"],
         json_schema_extra={
@@ -95,21 +130,21 @@ class BlockManifest(WorkflowBlockManifest):
         },
     )
     sender_number: Union[str, Selector(kind=[STRING_KIND])] = Field(
-        description="Sender phone number",
+        description="Twilio phone number to send SMS messages from. Must be in E.164 format (e.g., '+1234567890') and must be a Twilio-purchased phone number or a verified number in your Twilio account. This number appears as the sender in SMS messages received by recipients. You can purchase numbers in the Twilio Console or use trial numbers for testing.",
         examples=["+1234567890", "$inputs.sender_number"],
         json_schema_extra={
             "hide_description": True,
         },
     )
     receiver_number: Union[str, Selector(kind=[STRING_KIND])] = Field(
-        description="Receiver phone number",
+        description="Destination phone number to receive the SMS message. Must be in E.164 format (e.g., '+1234567890'). For Twilio trial accounts, receiver numbers must be verified in your Twilio account. For paid accounts, you can send to any valid phone number. This is the mobile number that will receive the notification.",
         examples=["+1234567890", "$inputs.receiver_number"],
         json_schema_extra={
             "hide_description": True,
         },
     )
     message: str = Field(
-        description="Content of the message to be sent.",
+        description="SMS message content (plain text). Supports dynamic parameters using placeholder syntax: {{ $parameters.parameter_name }}. Placeholders are replaced with values from message_parameters at runtime. Message can be multi-line text but will be sent as a single SMS. Messages exceeding length_limit will be automatically truncated with a truncation marker. Example: 'Detected {{ $parameters.num_objects }} objects. Alert: {{ $parameters.classes }}.'",
         examples=[
             "During last 5 minutes detected {{ $parameters.num_instances }} instances"
         ],
@@ -121,7 +156,7 @@ class BlockManifest(WorkflowBlockManifest):
         str,
         Union[Selector(), Selector(), str, int, float, bool],
     ] = Field(
-        description="Data to be used in the message content.",
+        description="Dictionary mapping parameter names (used in message placeholders) to workflow data sources. Keys are parameter names referenced in message as {{ $parameters.key }}, values are selectors to workflow step outputs or direct values. These values are substituted into message placeholders at runtime. Can optionally use message_parameters_operations to transform parameter values before substitution.",
         examples=[
             {
                 "predictions": "$steps.model.predictions",
@@ -134,7 +169,7 @@ class BlockManifest(WorkflowBlockManifest):
         },
     )
     message_parameters_operations: Dict[str, List[AllOperationsType]] = Field(
-        description="Preprocessing operations to be performed on message parameters.",
+        description="Optional dictionary mapping parameter names (from message_parameters) to UQL operation chains that transform parameter values before inserting them into the message. Operations are applied in sequence (e.g., extract class names from detections, calculate counts, filter values). Keys must match parameter names in message_parameters. Leave empty or omit parameters that don't need transformation.",
         examples=[
             {
                 "predictions": [
@@ -146,32 +181,31 @@ class BlockManifest(WorkflowBlockManifest):
     )
     fire_and_forget: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(
         default=True,
-        description="Boolean flag to run the block asynchronously (True) for faster workflows or synchronously (False) for debugging and error handling.",
+        description="Execution mode: True for asynchronous background sending (workflow continues immediately, error_status always False, faster execution), False for synchronous sending (waits for Twilio API call completion, returns actual error status for debugging). Set to False during development and debugging to catch Twilio API errors. Set to True in production for faster workflow execution when SMS delivery timing is not critical.",
         examples=["$inputs.fire_and_forget", False],
     )
     disable_sink: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(
         default=False,
-        description="Boolean flag to disable block execution.",
-        examples=[False, "$inputs.disable_slack_notifications"],
+        description="Flag to disable SMS notification sending at runtime. When True, the block skips sending SMS and returns a disabled message. Useful for conditional notification control via workflow inputs (e.g., allow callers to disable notifications for testing, enable/disable based on configuration). Set via workflow inputs for runtime control.",
+        examples=[False, "$inputs.disable_sms_notifications"],
     )
     cooldown_seconds: Union[int, Selector(kind=[INTEGER_KIND])] = Field(
         default=5,
-        description="Number of seconds until a follow-up notification can be sent. "
-        f"Maximum value: {CACHE_EXPIRE_TIME} seconds (15 minutes)",
+        description="Minimum seconds between consecutive SMS notifications to prevent SMS spam. Defaults to 5 seconds. Set to 0 to disable cooldown (no throttling). Must be between 0 and 900 (15 minutes). During cooldown period, the block returns throttling_status=True and skips sending. Cooldown is tracked per step using cooldown_session_key with cache-based storage (15-minute expiration). Each Twilio SMS Notification step in a workflow should have a unique cooldown_session_key for proper per-step tracking.",
         examples=["$inputs.cooldown_seconds", 3],
         json_schema_extra={
             "always_visible": True,
         },
     )
     cooldown_session_key: str = Field(
-        description="Unique key used internally to implement cooldown. Must be unique for each step in your Workflow.",
+        description="Unique identifier for this Twilio SMS Notification step's cooldown tracking session. Must be unique for each Twilio SMS Notification step in your workflow to enable proper per-step cooldown isolation. Used with the Twilio credentials hash to create a cache key for tracking the last notification timestamp. In distributed or multi-instance environments, this ensures cooldown works correctly per step. Typically auto-generated or provided as a workflow input.",
         examples=["session-1v73kdhfse"],
         json_schema_extra={"hidden": True},
     )
     length_limit: Union[int, Selector(kind=[INTEGER_KIND])] = Field(
         default=160,
-        description="Maximum number of characters in SMS notification (longer messages will be truncated).",
-        examples=["$inputs.sms_length_limit", 3],
+        description="Maximum number of characters allowed in the SMS message before truncation. Defaults to 160 characters (standard single-part SMS length). Messages exceeding this limit are automatically truncated, with the last characters replaced by a truncation marker ('[...]'). Must be greater than 0. Note: SMS standards support 160 characters for single-part messages or 153 characters per segment for multi-part messages. Adjust based on your needs, but longer messages may incur additional costs with Twilio.",
+        examples=["$inputs.sms_length_limit", 160],
         json_schema_extra={
             "always_visible": True,
         },

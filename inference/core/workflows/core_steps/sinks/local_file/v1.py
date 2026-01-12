@@ -20,47 +20,61 @@ from inference.core.workflows.prototypes.block import (
 )
 
 LONG_DESCRIPTION = """
-The **Local File Sink** block saves workflow data as files on a local file system. It allows users to configure how 
-the data is stored, either:
- 
-* aggregating **multiple entries into a single file**
-  
-* or saving **each entry as a separate file**. 
+Save workflow data as files on the local filesystem, supporting CSV, JSON, and text file formats with configurable output modes for aggregating multiple entries into single files or saving each entry separately, enabling persistent data storage, logging, and file-based data export.
 
-This block is useful for logging, data export, or preparing files for subsequent processing.
+## How This Block Works
 
-### File Content, File Type and Output Mode
+This block writes string content from workflow steps to files on the local filesystem. The block:
 
-`content` is expected to be the output from another block producing string values of specific types
-denoted by `file_type`.
+1. Takes string content (from formatters, predictions, or other string-producing blocks) and file configuration as input
+2. Validates filesystem access permissions (checks if local storage access is allowed based on environment configuration)
+3. Verifies write permissions for the target directory (checks against allowed write directory restrictions if configured)
+4. Selects the appropriate file saving strategy based on `output_mode`:
+   - **Separate Files Mode**: Creates a new file for each input, generating unique filenames with timestamps
+   - **Append Log Mode**: Appends content to an existing file (or creates a new one if needed), aggregating multiple entries
+5. For **separate files mode**: Generates a unique file path using the target directory, file name prefix, file type, and a timestamp, then writes the content to the new file
+6. For **append log mode**: 
+   - Opens or creates a file based on the file name prefix and type
+   - Applies format-specific handling for appending:
+     - **CSV**: Removes the header row from subsequent appends (CSV content must include headers on first write)
+     - **JSON**: Converts to JSONL (JSON Lines) format, parsing and re-serializing each JSON document to fit on a single line
+     - **TXT**: Appends content directly with newlines
+   - Tracks entry count and creates a new file when `max_entries_per_file` limit is reached
+7. Creates parent directories if they don't exist
+8. Writes content to the file (ensuring newline termination)
+9. Returns error status and messages indicating save success or failure
 
-`output_mode` set into `append_log` will make the block appending single file with consecutive entries
-passed to `content` input up to `max_entries_per_file`. In this mode it is important that 
+The block supports two distinct storage strategies: separate files mode creates individual timestamped files for each input (useful for organizing outputs by execution), while append log mode aggregates multiple entries into continuous log files (useful for time-series data logging). The file path generation includes timestamps (format: `YYYY_MM_DD_HH_MM_SS_microseconds`) to ensure unique filenames and chronological organization. In append log mode, the block maintains file handles across executions and automatically handles file rotation when entry limits are reached.
 
-!!! Note "`file_type` in `append_log` mode"
+## Requirements
 
-    Contrary to `separate_files` output mode, `append_log` mode may introduce subtle changes into
-    the structure of the `content` to properly append it into existing file, hence setting proper
-    `file_type` is crucial:
-    
-    * **`file_type=json`**: in `append_log` mode, the block will create `*.jsonl` file in 
-    [JSON Lines](https://jsonlines.org/) format - for that to be possible, each JSON document
-    will be parsed and dumped to ensure that it will fit into single line.
-    
-    * **`file_type=csv`**: in `append_log` mode, the block will deduct the first line from the 
-    content (making it **required for CSV content to always be shipped with header row**) of 
-    consecutive updates into the content of already created file.
-    
+**Local Filesystem Access**: This block requires write access to the local filesystem. Filesystem access can be controlled via environment variables:
+- Set `ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE=False` to disable local file sink functionality (block will raise an error)
+- Set `WORKFLOW_BLOCKS_WRITE_DIRECTORY` to an absolute path to restrict writes to a specific directory and its subdirectories only
 
-!!! warning "Security considerations"
+**Note on Append Log Mode Format Handling**: 
+- For CSV files in append mode, the content must include header rows on the first write; headers are automatically removed from subsequent appends
+- For JSON files in append mode, files are saved with `.jsonl` extension in JSON Lines format (one JSON object per line)
 
-    The block has an ability to write to the file system. If you find this unintended in your system, 
-    you can disable the block setting environmental variable `ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE=False`
-    in the environment which host Workflows Execution Engine.
-    
-    If you want to **restrict** the directory which may be used to write data - set 
-    environmental variable `WORKFLOW_BLOCKS_WRITE_DIRECTORY` to the absolute path of directory which you
-    allow to be used.
+## Common Use Cases
+
+- **Data Logging and Audit Trails**: Save workflow execution data, detection results, or metrics to local log files (e.g., append CSV logs of detections, JSON logs of workflow outputs), enabling persistent logging and audit trails for production workflows
+- **File-Based Data Export**: Export formatted workflow data to files for external processing (e.g., save CSV exports from CSV Formatter, JSON exports for downstream tools), enabling integration with file-based data processing pipelines
+- **Time-Series Data Collection**: Aggregate workflow metrics over time into continuous log files (e.g., append CSV rows with timestamps, log detection counts per frame), creating persistent time-series datasets for analysis and reporting
+- **Batch Result Storage**: Save individual results from batch processing workflows to separate files (e.g., save each image's detection results to separate JSON files), enabling organized storage of batch processing outputs with unique filenames
+- **Data Archival**: Archive workflow outputs and results to local storage (e.g., save formatted reports, export analysis results), enabling long-term data retention and backup workflows
+- **Integration with File-Based Systems**: Store workflow data in file formats compatible with external tools (e.g., save CSV for spreadsheet analysis, JSONL for data processing pipelines), enabling seamless data exchange with file-based systems
+
+## Connecting to Other Blocks
+
+This block receives string content from workflow steps and saves it to files:
+
+- **After formatter blocks** (e.g., CSV Formatter) to save formatted data (CSV, JSON, or text) to files, enabling persistent storage of structured workflow outputs
+- **After detection or analysis blocks** that output string-format data to save inference results, metrics, or analysis outputs to files for logging or archival
+- **After data processing blocks** (e.g., Expression, Property Definition) that produce string outputs to save computed or transformed data to files
+- **In logging workflows** to create persistent audit trails and logs of workflow executions, enabling record-keeping and debugging for production deployments
+- **In batch processing workflows** where multiple data points need to be saved (either aggregated into log files or stored as separate files), enabling organized data collection and storage
+- **Before external processing** where workflow data needs to be saved to files for consumption by external tools, scripts, or systems that read from filesystem storage
 """
 
 
@@ -83,16 +97,16 @@ class BlockManifest(WorkflowBlockManifest):
     )
     type: Literal["roboflow_core/local_file_sink@v1"]
     content: Selector(kind=[STRING_KIND]) = Field(
-        description="Content of the file to save",
+        description="String content to save as a file. This should be formatted data from other workflow blocks (e.g., CSV content from CSV Formatter, JSON strings, or plain text). The content format should match the specified file_type. For CSV files in append_log mode, content must include header rows on the first write.",
         examples=["$steps.csv_formatter.csv_content"],
     )
     file_type: Literal["csv", "json", "txt"] = Field(
         default="csv",
-        description="Type of the file",
+        description="Type of file to create: 'csv' (CSV format), 'json' (JSON format, or JSONL in append_log mode), or 'txt' (plain text). The content format should match this file type. In append_log mode, JSON files are saved as .jsonl (JSON Lines) format with one JSON object per line.",
         examples=["csv"],
     )
     output_mode: Literal["append_log", "separate_files"] = Field(
-        description="Decides how to organise the content of the file",
+        description="File organization strategy: 'append_log' aggregates multiple content entries into a single file (useful for time-series logging, creates files that grow over time), or 'separate_files' creates a new file for each input (useful for organizing individual outputs, each file gets a unique timestamp-based filename). In append_log mode, the block handles format-specific appending (removes CSV headers, converts JSON to JSONL).",
         examples=["append_log"],
         json_schema_extra={
             "values_metadata": {
@@ -108,12 +122,12 @@ class BlockManifest(WorkflowBlockManifest):
         },
     )
     target_directory: Union[Selector(kind=[STRING_KIND]), str] = Field(
-        description="Target directory",
+        description="Directory path where files will be saved. Can be a relative or absolute path. Parent directories are created automatically if they don't exist. If WORKFLOW_BLOCKS_WRITE_DIRECTORY is set, this path must be a subdirectory of the allowed directory. Files are saved with filenames generated from file_name_prefix and timestamps.",
         examples=["some/location"],
     )
     file_name_prefix: Union[Selector(kind=[STRING_KIND]), str] = Field(
         default="workflow_output",
-        description="File name prefix",
+        description="Prefix used to generate filenames. Combined with a timestamp (format: YYYY_MM_DD_HH_MM_SS_microseconds) and file extension to create unique filenames like 'workflow_output_2024_10_18_14_09_57_622297.csv'. For append_log mode, new files are created when max_entries_per_file is reached, using this prefix with new timestamps.",
         examples=["my_file"],
         json_schema_extra={
             "always_visible": True,
@@ -121,7 +135,7 @@ class BlockManifest(WorkflowBlockManifest):
     )
     max_entries_per_file: Union[int, Selector(kind=[STRING_KIND])] = Field(
         default=1024,
-        description="Defines how many datapoints can be appended to a single file",
+        description="Maximum number of entries (content appends) allowed per file in append_log mode. When this limit is reached, a new file is created with the same file_name_prefix and a new timestamp. Only applies when output_mode is 'append_log'. Must be at least 1. Use this to control file sizes and enable file rotation for long-running workflows.",
         examples=[1024],
         json_schema_extra={
             "relevant_for": {

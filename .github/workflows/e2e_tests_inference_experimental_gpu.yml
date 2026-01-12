@@ -1,4 +1,4 @@
-name: E2E tests - inference_experimental (GPU)
+name: E2E tests - inference_models (GPU)
 permissions:
   contents: read
 on:
@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  e2e-tests-inference-experimental-gpu:
+  e2e-tests-inference-models-gpu:
     runs-on: Roboflow-GPU-VM-Runner
     timeout-minutes: 30
     steps:
@@ -17,7 +17,7 @@ jobs:
         uses: actions/cache@v3
         with:
           path: ~/.cache/uv
-          key: ${{ runner.os }}-uv-3.12-${{ hashFiles('inference_experimental/pyproject.toml') }}
+          key: ${{ runner.os }}-uv-3.12-${{ hashFiles('inference_models/pyproject.toml') }}
           restore-keys: |
             ${{ runner.os }}-uv-3.12-
       - name: 📦 Cache apt packages
@@ -50,7 +50,7 @@ jobs:
           sudo cp /var/cache/apt/archives/*.deb ~/apt-cache/ 2>/dev/null || true
           sudo chown -R $(whoami):$(whoami) ~/apt-cache
       - name: 📦 Install dependencies
-        working-directory: inference_experimental
+        working-directory: inference_models
         run: |
           export CUDA_HOME=/usr/local/cuda-12.5
           export PATH=/usr/local/cuda-12.5/bin:$PATH
@@ -62,7 +62,7 @@ jobs:
           python -m uv venv
           python -m uv pip install -e .[test,onnx-cu12,trt10,torch-cu124,mediapipe] --python .venv
       - name: 🧪 Run E2E tests
-        working-directory: inference_experimental
+        working-directory: inference_models
         timeout-minutes: 20
         run: |
           source .venv/bin/activate
