@@ -1,8 +1,8 @@
-# Experimental version of inference
+# Inference Models
 
-## 🚀 Introducing `inference-models` - the evolution of `inference`
+## 🚀 What is `inference-models`?
 
-At Roboflow, we’re taking a bold step toward a new generation of `inference` — designed to be faster, 
+At Roboflow, we’re taking a bold step toward a new generation of `inference` models engine — designed to be faster, 
 more reliable, and more user-friendly. With this vision in mind, we’re building a new library called `inference-models`.
 
 This is an early-stage project, and we’re sharing initial versions to gather valuable community feedback. 
@@ -10,13 +10,23 @@ Your input will help us shape and steer this initiative in the right direction.
 
 We’re excited to have you join us on this journey — let’s build something great together! 🤝
 
-> [!CAUTION]
-> The `inference-models` package **is an experimental preview** of upcoming inference capabilities.
-> * Features may change, break, or be removed without notice.
-> * We **do not guarantee backward compatibility** between releases.
-> 
-> ❗ **We strongly advise against** using `inference-models` in production systems - for such purposes 
-> please **continue to use the stable `inference` package.**
+## 🛣️ Roadmap to Stable Release
+
+We're actively working toward stabilizing `inference-models` and integrating it into the main `inference` package. The plan is to:
+
+1. **Stabilize the API** - Finalize the core interfaces and ensure backward compatibility
+2. **Integrate with `inference`** - Make `inference-models` available as a selectable backend in the `inference` package
+3. **Production deployment** - Enable users to choose between the classic inference backend and the new `inference-models` backend
+4. **Gradual migration** - Provide a smooth transition path for existing users
+
+We're sharing this preview to gather valuable community feedback that will help us shape the final release. Your input is crucial in making this the best inference experience possible!
+
+> [!NOTE]
+> The `inference-models` package is approaching stability but is still in active development.
+> * The core API is stabilizing, but minor changes may still occur
+> * We're working toward backward compatibility guarantees
+> * Production use is possible but we recommend thorough testing
+> * For mission-critical systems, continue using the stable `inference` package until the official integration is complete
 
 ## ⚡ Installation
 
@@ -54,7 +64,7 @@ pip install "inference-models[torch-cu128,onnx-cu12,trt10]" "tensorrt==10.12.0.3
 > To avoid clashes with external packages, `pyproject.toml` defines quite loose restrictions for the dependent packages.
 > Some packages, like `tensorrt` are good to be kept under more strict control (as some TRT engines will only work 
 > when there is an exact match of environment that runs the model with the one that compiled it) - that's why we 
-> recommend fixing `tensorrt` version to the one we currently use to compile TRT artefacts.
+> recommend fixing `tensorrt` version to the one we currently use to compile TRT engines.
 > 
 > Additionally, library defines set of `torch-*` extras which, thanks to `uv` deliver extra packages indexes adjusted 
 > for specific CUDA version: `torch-cu118`, `torch-cu124`, `torch-cu126`, `torch-cu128`, `torch-jp6-cu126`.
@@ -360,7 +370,7 @@ The following model IDs are registered:
 * `clip/ViT-B-16`
  
 * `clip/ViT-B-32`
- 
+
 * `clip/ViT-L-14-336px`
  
 * `clip/ViT-L-14`

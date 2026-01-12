@@ -7,24 +7,33 @@ hide:
 
 Welcome to the **inference-models** documentation - the next generation of computer vision inference from Roboflow.
 
-!!! warning "Experimental Preview"
-    The `inference-models` package is an **experimental preview** of upcoming inference capabilities.
-    
-    * Features may change, break, or be removed without notice.
-    * We **do not guarantee backward compatibility** between releases.
-    
-    ❗ **We strongly advise against** using `inference-models` in production systems - for such purposes 
-    please **continue to use the stable `inference` package.**
-
 ## 🚀 What is inference-models?
 
-At Roboflow, we're building a new generation of `inference` — designed to be faster, more reliable, and more user-friendly. The `inference-models` library represents this evolution with:
+`inference-models` is the next generation of computer vision inference from Roboflow — designed to be faster, more reliable, and more user-friendly. It provides:
 
 - **Multi-Backend Support**: Run models with PyTorch, ONNX, TensorRT, or Hugging Face backends
 - **Automatic Model Loading**: Smart model resolution and backend selection
 - **Minimal Dependencies**: Composable extras system for installing only what you need
 - **Unified Interface**: Consistent API across all model types and backends
-- **Production-Ready**: Optimized for both development and deployment
+
+## 🛣️ Roadmap to Stable Release
+
+We're actively working toward stabilizing `inference-models` and integrating it into the main `inference` package. The plan is to:
+
+1. **Stabilize the API** - Finalize the core interfaces and ensure backward compatibility
+2. **Integrate with `inference`** - Make `inference-models` available as a selectable backend in the `inference` package
+3. **Production deployment** - Enable users to choose between the classic inference backend and the new `inference-models` backend
+4. **Gradual migration** - Provide a smooth transition path for existing users
+
+We're sharing this preview to gather valuable community feedback that will help us shape the final release. Your input is crucial in making this the best inference experience possible!
+
+!!! note "Current Status"
+    The `inference-models` package is approaching stability but is still in active development.
+
+    * The core API is stabilizing, but minor changes may still occur
+    * We're working toward backward compatibility guarantees
+    * Production use is possible but we recommend thorough testing
+    * For mission-critical systems, continue using the stable `inference` package until the official integration is complete
 
 ## ⚡ Quick Start
 
