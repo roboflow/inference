@@ -1,4 +1,3 @@
-import itertools
 from collections import OrderedDict, defaultdict
 from dataclasses import replace
 from typing import Dict, Optional, Set, Type
@@ -379,7 +378,12 @@ def retrieve_selectors_from_simple_property(
             inputs_enforcing_auto_batch_casting=inputs_enforcing_auto_batch_casting,
             is_list_element=True,
         )
-    if property_defines_union(property_definition=property_definition):
+    # Inlined property_defines_union check
+    if (
+        ANY_OF_KEY in property_definition
+        or ONE_OF_KEY in property_definition
+        or ALL_OF_KEY in property_definition
+    ):
         return retrieve_selectors_from_union_definition(
             property_name=property_name,
             property_description=property_description,
@@ -415,56 +419,54 @@ def retrieve_selectors_from_union_definition(
     inputs_accepting_batches_and_scalars: Set[str],
     inputs_enforcing_auto_batch_casting: Set[str],
 ) -> Optional[SelectorDefinition]:
-    union_types = (
-        union_definition.get(ANY_OF_KEY, [])
-        + union_definition.get(ONE_OF_KEY, [])
-        + union_definition.get(ALL_OF_KEY, [])
-    )
     results = []
-    for type_definition in union_types:
-        result = retrieve_selectors_from_simple_property(
-            property_name=property_name,
-            property_description=property_description,
-            property_definition=type_definition,
-            property_dimensionality_offset=property_dimensionality_offset,
-            is_dimensionality_reference_property=is_dimensionality_reference_property,
-            inputs_accepting_batches=inputs_accepting_batches,
-            inputs_accepting_batches_and_scalars=inputs_accepting_batches_and_scalars,
-            inputs_enforcing_auto_batch_casting=inputs_enforcing_auto_batch_casting,
-            is_list_element=is_list_element,
-            is_dict_element=is_dict_element,
-        )
-        if result is None:
+    # Process union types more efficiently by iterating once
+    for key in (ANY_OF_KEY, ONE_OF_KEY, ALL_OF_KEY):
+        union_types = union_definition.get(key)
+        if not union_types:
             continue
-        results.append(result)
-    results_references = list(
-        itertools.chain.from_iterable(r.allowed_references for r in results)
-    )
+        for type_definition in union_types:
+            result = retrieve_selectors_from_simple_property(
+                property_name=property_name,
+                property_description=property_description,
+                property_definition=type_definition,
+                property_dimensionality_offset=property_dimensionality_offset,
+                is_dimensionality_reference_property=is_dimensionality_reference_property,
+                inputs_accepting_batches=inputs_accepting_batches,
+                inputs_accepting_batches_and_scalars=inputs_accepting_batches_and_scalars,
+                inputs_enforcing_auto_batch_casting=inputs_enforcing_auto_batch_casting,
+                is_list_element=is_list_element,
+                is_dict_element=is_dict_element,
+            )
+            if result is not None:
+                results.append(result)
+
+    if not results:
+        return None
+
     results_references_kind_by_selected_element = defaultdict(set)
     results_references_batch_pointing_by_selected_element = defaultdict(set)
-    for reference in results_references:
-        results_references_kind_by_selected_element[reference.selected_element].update(
-            reference.kind
+
+    for result in results:
+        for reference in result.allowed_references:
+            results_references_kind_by_selected_element[
+                reference.selected_element
+            ].update(reference.kind)
+            results_references_batch_pointing_by_selected_element[
+                reference.selected_element
+            ].update(reference.points_to_batch)
+
+    merged_references = [
+        ReferenceDefinition(
+            selected_element=reference_selected_element,
+            kind=list(kind),
+            points_to_batch=results_references_batch_pointing_by_selected_element[
+                reference_selected_element
+            ],
         )
-        results_references_batch_pointing_by_selected_element[
-            reference.selected_element
-        ].update(reference.points_to_batch)
-    merged_references = []
-    for (
-        reference_selected_element,
-        kind,
-    ) in results_references_kind_by_selected_element.items():
-        merged_references.append(
-            ReferenceDefinition(
-                selected_element=reference_selected_element,
-                kind=list(kind),
-                points_to_batch=results_references_batch_pointing_by_selected_element[
-                    reference_selected_element
-                ],
-            )
-        )
-    if not merged_references:
-        return None
+        for reference_selected_element, kind in results_references_kind_by_selected_element.items()
+    ]
+
     merged_is_list_element = is_list_element or any(r.is_list_element for r in results)
     merged_is_dict_element = is_dict_element or any(r.is_dict_element for r in results)
     return SelectorDefinition(
