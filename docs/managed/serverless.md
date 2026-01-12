@@ -10,7 +10,7 @@ You may want to use the Serverless API if any of the following are true:
 - You need infrastructure that automatically scales.
 - You only need the results from models and plan to write code to process the results.
 
-If you want to build multi-stage vision applications that run a model without writing code for each step in your application, check out [Workflows](/workflows/).
+If you want to build multi-stage vision applications that run a model without writing code for each step in your application, check out [Workflows](/workflows/about.md).
 
 APIs are automatically set up for the following model types:
 

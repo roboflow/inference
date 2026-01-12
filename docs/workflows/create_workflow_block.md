@@ -15,7 +15,7 @@ Understanding of [Workflow execution](/workflows/workflow_execution.md), in part
 * how [Execution Engine](/workflows/workflows_execution_engine.md) interacts with step, regarding 
 its inputs and outputs
 
-* what is the nature and role of [Workflow `kinds`](/workflows/kinds.md)
+* what is the nature and role of [Workflow `kinds`](/workflows/kinds/index.md)
 
 * understanding how [`pydantic`](https://docs.pydantic.dev/latest/) works
 
