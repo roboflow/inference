@@ -38,7 +38,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-pip-${{ matrix.python-version }}-
       - name: 🚧 Install OS dependencies
-        run: sudo apt-get update && sudo apt-get install -y libgdal-dev libavformat-free-devel libavdevice-free-devel
+        run: sudo apt-get update && sudo apt-get install -y libgdal-dev libavformat-dev libavdevice-dev
       - name: 📦 Install dependencies
         run: |
           python -m pip install --upgrade pip
