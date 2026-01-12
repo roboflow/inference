@@ -1,7 +1,7 @@
 # Data representations in Workflows
 
 Many frameworks enforce standard data types for developers to work with, and the Workflows ecosystem is no 
-exception. While the [kind](/workflows/kinds.md) in a Workflow represents a high-level abstraction of the data 
+exception. While the [kind](/workflows/kinds/index.md) in a Workflow represents a high-level abstraction of the data 
 being passed through, it's important to understand the specific data types that will be provided to the 
 `WorkflowBlock.run(...)` method when building Workflow blocks.
 

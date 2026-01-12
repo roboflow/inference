@@ -11,9 +11,9 @@ with your cloud provider.
 
 Read our deployment guides for more information:
 
-- [Set up Inference on AWS](/install/cloud/aws/)
-- [Set up Inference on Azure](/install/cloud/azure/)
-- [Set up Inference on GCP](/install/cloud/gcp/)
+- [Set up Inference on AWS](/install/cloud/aws.md)
+- [Set up Inference on Azure](/install/cloud/azure.md)
+- [Set up Inference on GCP](/install/cloud/gcp.md)
 
 ## Manual Setup
 
