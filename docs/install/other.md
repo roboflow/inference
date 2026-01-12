@@ -30,4 +30,4 @@ on other deployment targets like
 [Snap Lens Studio](https://docs.roboflow.com/deploy/sdks/lens-studio).
 
 For additional functionality, like running Workflows and other types of models on another
-device, connect to an Inference Server over HTTP [via its API](/api/).
+device, connect to an Inference Server over HTTP [via its API](/api.md).
