@@ -214,6 +214,6 @@ conflicts = [
 ]
 
 [tool.setuptools.package-data]
-inference_exp = [
+inference_models = [
   "models/rfdetr/dinov2_configs/*.json"
 ]
