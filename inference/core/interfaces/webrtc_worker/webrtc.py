@@ -71,6 +71,39 @@ logging.getLogger("aiortc").setLevel(logging.WARNING)
 # WebRTC data channel chunking configuration
 CHUNK_SIZE = 48 * 1024  # 48KB - safe for all WebRTC implementations
 
+from aiortc.codecs.vpx import Vp8Encoder
+
+## FIX ME: MONKEY PATCHING TEST
+from aiortc.codecs.vpx import Vp8Encoder
+
+_original_vp8_init = Vp8Encoder.__init__
+
+def _patched_vp8_init(self, *args, **kwargs):
+    _original_vp8_init(self, *args, **kwargs)
+    
+    if hasattr(self, '_encoder') and self._encoder:
+        # Faster ramp-up settings for libvpx
+        cfg = self._encoder.config
+        
+        # Set higher target (in kbps for libvpx)
+        cfg.rc_target_bitrate = 2000  # 2 Mbps target
+        
+        # Reduce buffer sizes for faster ramp-up
+        # (smaller buffers = encoder reacts faster to bandwidth availability)
+        cfg.rc_buf_initial_sz = 500   # ms - default is usually 4000-6000
+        cfg.rc_buf_optimal_sz = 600   # ms
+        cfg.rc_buf_sz = 1000          # ms
+        
+        # More aggressive undershoot (ramp up faster when below target)
+        cfg.rc_undershoot_pct = 95    # default is ~25, higher = faster ramp-up
+        
+        # Lower min quantizer = higher quality ceiling
+        cfg.rc_min_quantizer = 2      # 0-63, lower = better quality
+        
+        self._encoder.configure(cfg)
+
+Vp8Encoder.__init__ = _patched_vp8_init
+
 
 def create_chunked_binary_message(
     frame_id: int, chunk_index: int, total_chunks: int, payload: bytes
