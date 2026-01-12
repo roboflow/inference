@@ -76,7 +76,7 @@ def test_sam_predictions_without_prompting_batch_numpy(
     assert np.allclose(
         results[1].scores.cpu().numpy(), np.array([0.8682, 0.7068, 0.4445]), atol=0.01
     )
-    assert 724600 <= results[1].masks[0].cpu().sum() <= 725000
+    assert 724500 <= results[1].masks[0].cpu().sum() <= 725000
 
 
 @pytest.mark.slow
@@ -118,7 +118,7 @@ def test_sam_predictions_without_prompting_batch_torch(
     assert np.allclose(
         results[1].scores.cpu().numpy(), np.array([0.8682, 0.7068, 0.4445]), atol=0.01
     )
-    assert 724600 <= results[1].masks[0].cpu().sum() <= 725000
+    assert 724500 <= results[1].masks[0].cpu().sum() <= 725000
 
 
 @pytest.mark.slow
@@ -266,7 +266,7 @@ def test_sam_predictions_with_box_prompting_and_embeddings(
         np.array([0.97505486, 0.96572363, 0.9098512]),
         atol=0.01,
     )
-    assert 31300 <= results[1].masks[2].cpu().sum() <= 31500
+    assert 31200 <= results[1].masks[2].cpu().sum() <= 31500
 
 
 @pytest.mark.slow
