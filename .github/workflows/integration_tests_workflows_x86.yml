@@ -38,7 +38,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-pip-${{ matrix.python-version }}-
       - name: 🚧 Install OS dependencies
-        run: add-apt-repository ppa:ubuntuhandbook1/ffmpeg7 && sudo apt-get update && sudo apt-get install -y libgdal-dev ffmpeg libavformat-dev libavdevice-dev
+        run: sudo add-apt-repository ppa:ubuntuhandbook1/ffmpeg7 && sudo apt-get update && sudo apt-get install -y libgdal-dev ffmpeg libavformat-dev libavdevice-dev
       - name: 📦 Install dependencies
         run: |
           python -m pip install --upgrade pip
