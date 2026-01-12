@@ -629,7 +629,7 @@ def get_roboflow_model(*args, **kwargs):
 try:
     if USE_INFERENCE_EXP_MODELS:
         # Ensure experimental package is importable before swapping
-        __import__("inference_exp")
+        __import__("inference_models")
         from inference.models.rfdetr.rfdetr_exp import RFDetrExperimentalModel
         from inference.models.yolov8.yolov8_object_detection_exp import (
             Yolo8ODExperimentalModel,
