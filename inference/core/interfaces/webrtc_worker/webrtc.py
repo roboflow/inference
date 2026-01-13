@@ -1151,11 +1151,15 @@ async def init_rtc_peer_connection_with_loop(
                         # Throttled playback - use MediaPlayer
                         player = MediaPlayer(video_path, loop=False)
                         player._throttle_playback = True
-                        video_processor.set_track(player.video, rotation_code)
+                        video_processor.set_track(
+                            track=player.video, rotation_code=rotation_code
+                        )
                     else:
                         # Fast processing - use OnDemandVideoTrack
                         track = OnDemandVideoTrack(video_path)
-                        video_processor.set_track(track, rotation_code)
+                        video_processor.set_track(
+                            track=track, rotation_code=rotation_code
+                        )
 
                     if not should_send_video:
                         # For DATA_ONLY, start data-only processing task
