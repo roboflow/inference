@@ -1,5 +1,9 @@
+import datetime
+import os
 from typing import List, Literal, Optional, Type, Union
+from uuid import uuid4
 
+import cv2
 from pydantic import ConfigDict, Field, PositiveInt
 
 from inference.core.entities.requests.inference import (
@@ -12,6 +16,7 @@ from inference.core.env import (
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
 )
+from inference.core.logger import logger
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.utils import (
@@ -59,6 +64,29 @@ You will need to set your Roboflow API key in your Inference environment to use 
 block. To learn more about setting your Roboflow API key, [refer to the Inference 
 documentation](https://inference.roboflow.com/quickstart/configure_api_key/).
 """
+
+
+DEBUG_OUTPUT_DIR = os.environ.get(
+    "INFERENCE_DEBUG_OUTPUT_DIR", "/tmp/cache/inference_debug"
+)
+
+
+def _save_detection_mismatch_debug_info(
+    image: Optional["WorkflowImageData"],
+) -> None:
+    """Save debug information when detection count mismatch is detected."""
+    try:
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        debug_dir = os.path.join(DEBUG_OUTPUT_DIR, f"mismatch_{timestamp}")
+        os.makedirs(debug_dir, exist_ok=True)
+
+        # Save image if available
+        if image is not None:
+            img_name = uuid4().hex
+            image_path = os.path.join(debug_dir, f"{img_name}.jpg")
+            cv2.imwrite(image_path, image.numpy_image)
+    except Exception as e:
+        logger.error(f"Failed to save detection mismatch debug info: {e}")
 
 
 class BlockManifest(WorkflowBlockManifest):
@@ -206,40 +234,44 @@ class RoboflowInstanceSegmentationModelBlockV2(WorkflowBlock):
         disable_active_learning: Optional[bool],
         active_learning_target_dataset: Optional[str],
     ) -> BlockResult:
-        if self._step_execution_mode is StepExecutionMode.LOCAL:
-            return self.run_locally(
-                images=images,
-                model_id=model_id,
-                class_agnostic_nms=class_agnostic_nms,
-                class_filter=class_filter,
-                confidence=confidence,
-                iou_threshold=iou_threshold,
-                max_detections=max_detections,
-                max_candidates=max_candidates,
-                mask_decode_mode=mask_decode_mode,
-                tradeoff_factor=tradeoff_factor,
-                disable_active_learning=disable_active_learning,
-                active_learning_target_dataset=active_learning_target_dataset,
-            )
-        elif self._step_execution_mode is StepExecutionMode.REMOTE:
-            return self.run_remotely(
-                images=images,
-                model_id=model_id,
-                class_agnostic_nms=class_agnostic_nms,
-                class_filter=class_filter,
-                confidence=confidence,
-                iou_threshold=iou_threshold,
-                max_detections=max_detections,
-                max_candidates=max_candidates,
-                mask_decode_mode=mask_decode_mode,
-                tradeoff_factor=tradeoff_factor,
-                disable_active_learning=disable_active_learning,
-                active_learning_target_dataset=active_learning_target_dataset,
-            )
-        else:
-            raise ValueError(
-                f"Unknown step execution mode: {self._step_execution_mode}"
-            )
+        try:
+            if self._step_execution_mode is StepExecutionMode.LOCAL:
+                return self.run_locally(
+                    images=images,
+                    model_id=model_id,
+                    class_agnostic_nms=class_agnostic_nms,
+                    class_filter=class_filter,
+                    confidence=confidence,
+                    iou_threshold=iou_threshold,
+                    max_detections=max_detections,
+                    max_candidates=max_candidates,
+                    mask_decode_mode=mask_decode_mode,
+                    tradeoff_factor=tradeoff_factor,
+                    disable_active_learning=disable_active_learning,
+                    active_learning_target_dataset=active_learning_target_dataset,
+                )
+            elif self._step_execution_mode is StepExecutionMode.REMOTE:
+                return self.run_remotely(
+                    images=images,
+                    model_id=model_id,
+                    class_agnostic_nms=class_agnostic_nms,
+                    class_filter=class_filter,
+                    confidence=confidence,
+                    iou_threshold=iou_threshold,
+                    max_detections=max_detections,
+                    max_candidates=max_candidates,
+                    mask_decode_mode=mask_decode_mode,
+                    tradeoff_factor=tradeoff_factor,
+                    disable_active_learning=disable_active_learning,
+                    active_learning_target_dataset=active_learning_target_dataset,
+                )
+            else:
+                raise ValueError(
+                    f"Unknown step execution mode: {self._step_execution_mode}"
+                )
+        except Exception as exc:
+            _save_detection_mismatch_debug_info(images[0])
+            raise exc
 
     def run_locally(
         self,
@@ -356,9 +388,7 @@ class RoboflowInstanceSegmentationModelBlockV2(WorkflowBlock):
         model_id: str,
     ) -> BlockResult:
         inference_ids = [p.get(INFERENCE_ID_KEY, None) for p in predictions]
-        predictions = convert_inference_detections_batch_to_sv_detections(
-            predictions, images=images
-        )
+        predictions = convert_inference_detections_batch_to_sv_detections(predictions)
         predictions = attach_prediction_type_info_to_sv_detections_batch(
             predictions=predictions,
             prediction_type="instance-segmentation",

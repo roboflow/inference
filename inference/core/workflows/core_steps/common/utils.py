@@ -1,13 +1,9 @@
-import json
 import logging
-import os
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
-from datetime import datetime
 from typing import Any, Callable, Dict, Iterable, List, Optional, Set, TypeVar, Union
 
-import cv2
 import numpy as np
 import supervision as sv
 from supervision.config import CLASS_NAME_DATA_FIELD
@@ -108,88 +104,18 @@ def attach_prediction_type_info_to_sv_detections_batch(
     return predictions
 
 
-DEBUG_OUTPUT_DIR = os.environ.get(
-    "INFERENCE_DEBUG_OUTPUT_DIR", "/tmp/cache/inference_debug"
-)
-
-
-def _save_detection_mismatch_debug_info(
-    image: Optional["WorkflowImageData"],
-    raw_predictions: List[Dict[str, Any]],
-    num_detections: int,
-    batch_index: int,
-) -> None:
-    """Save debug information when detection count mismatch is detected."""
-    try:
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-        debug_dir = os.path.join(DEBUG_OUTPUT_DIR, f"mismatch_{timestamp}")
-        os.makedirs(debug_dir, exist_ok=True)
-
-        # Save image if available
-        if image is not None:
-            image_path = os.path.join(debug_dir, "image.jpg")
-            cv2.imwrite(image_path, image.numpy_image)
-
-        # Save raw predictions (sanitize for JSON serialization)
-        predictions_path = os.path.join(debug_dir, "predictions.json")
-        serializable_predictions = []
-        for pred in raw_predictions:
-            sanitized = {}
-            for k, v in pred.items():
-                if isinstance(v, (str, int, float, bool, type(None))):
-                    sanitized[k] = v
-                elif isinstance(v, list):
-                    sanitized[k] = v
-                elif isinstance(v, dict):
-                    sanitized[k] = v
-                else:
-                    sanitized[k] = str(v)
-            serializable_predictions.append(sanitized)
-
-        debug_info = {
-            "timestamp": timestamp,
-            "batch_index": batch_index,
-            "num_raw_predictions": len(raw_predictions),
-            "num_sv_detections": num_detections,
-            "raw_predictions": serializable_predictions,
-        }
-        with open(predictions_path, "w") as f:
-            json.dump(debug_info, f, indent=2)
-
-        logging.warning(
-            f"Detection count mismatch detected: {len(raw_predictions)} raw predictions "
-            f"vs {num_detections} sv.Detections. Debug info saved to {debug_dir}"
-        )
-    except Exception as e:
-        logging.error(f"Failed to save detection mismatch debug info: {e}")
-
-
 def convert_inference_detections_batch_to_sv_detections(
     predictions: List[Dict[str, Union[List[Dict[str, Any]], Any]]],
     predictions_key: str = "predictions",
     image_key: str = "image",
-    images: Optional[Iterable["WorkflowImageData"]] = None,
 ) -> List[sv.Detections]:
     batch_of_detections: List[sv.Detections] = []
-    images_iter = iter(images) if images is not None else None
-    for batch_idx, p in enumerate(predictions):
+    for p in predictions:
         width, height = p[image_key][WIDTH_KEY], p[image_key][HEIGHT_KEY]
         detections = sv.Detections.from_inference(p)
-        raw_predictions = p[predictions_key]
-        current_image = next(images_iter, None) if images_iter is not None else None
-
-        # Detect mismatch between sv.Detections and raw predictions
-        if len(detections) != len(raw_predictions):
-            _save_detection_mismatch_debug_info(
-                image=current_image,
-                raw_predictions=raw_predictions,
-                num_detections=len(detections),
-                batch_index=batch_idx,
-            )
-
-        parent_ids = [d.get(PARENT_ID_KEY, "") for d in raw_predictions]
+        parent_ids = [d.get(PARENT_ID_KEY, "") for d in p[predictions_key]]
         detection_ids = [
-            d.get(DETECTION_ID_KEY, str(uuid.uuid4())) for d in raw_predictions
+            d.get(DETECTION_ID_KEY, str(uuid.uuid4())) for d in p[predictions_key]
         ]
         detections[DETECTION_ID_KEY] = np.array(detection_ids)
         detections[PARENT_ID_KEY] = np.array(parent_ids)
