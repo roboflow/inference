@@ -25,15 +25,16 @@ extra:
 nav:
   - index.md
   - Getting Started:
-      - Installation: getting-started/installation.md
-      - Quick Start: getting-started/quickstart.md
       - Principles & Architecture: getting-started/principles.md
+      - Installation: getting-started/installation.md
+      - Backends & Installation Options: getting-started/backends.md
+      - Quick Start: getting-started/quickstart.md
   - Auto-Loading:
       - Overview: auto-loading/overview.md
       - AutoModel API: auto-loading/automodel.md
       - Backend Selection: auto-loading/backend-selection.md
       - Model Resolution: auto-loading/model-resolution.md
-  - Models:
+  - Supported Models:
       - Overview: models/index.md
       - Object Detection:
           - RFDetr: models/rfdetr.md

@@ -5,16 +5,20 @@ hide:
 
 # Inference Models
 
-Welcome to the **inference-models** documentation - the next generation of computer vision inference from Roboflow.
+Welcome to the **inference-models** documentation - the next generation of computer vision inference engine from Roboflow.
 
 ## 🚀 What is inference-models?
 
-`inference-models` is the next generation of computer vision inference from Roboflow — designed to be faster, more reliable, and more user-friendly. It provides:
+`inference-models` is the library to make predictions from computer vision models provided by Roboflow — designed to
+be fast, reliable, and user-friendly. It offers:
 
 - **Multi-Backend Support**: Run models with PyTorch, ONNX, TensorRT, or Hugging Face backends
 - **Automatic Model Loading**: Smart model resolution and backend selection
 - **Minimal Dependencies**: Composable extras system for installing only what you need
 - **Unified Interface**: Consistent API across all model types and backends
+
+!!! success "Full Roboflow Platform Support"
+    **Run any model trained on [Roboflow](https://roboflow.com)** - your custom models work seamlessly alongside pretrained weights. For supported model architectures, Roboflow provides pretrained weights you can use without training your own model.
 
 ## 🛣️ Roadmap to Stable Release
 
@@ -37,114 +41,197 @@ We're sharing this preview to gather valuable community feedback that will help 
 
 ## ⚡ Quick Start
 
-Install the package:
+### Installation
 
-```bash
-# CPU installation
-pip install inference-models
+!!! tip "We recommend using `uv`"
+    `uv` is a fast Python package installer and resolver. Install it with:
 
-# GPU installation with ONNX and TensorRT support
-pip install "inference-models[torch-cu128,onnx-cu12,trt10]" "tensorrt==10.12.0.36"
-```
+    ```bash
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+    ```
+
+    Learn more in the [uv documentation](https://docs.astral.sh/uv/).
+
+=== "uv (recommended)"
+
+    **CPU installation:**
+    ```bash
+    uv pip install inference-models
+    ```
+
+    **GPU installation with ONNX and TensorRT support:**
+    ```bash
+    uv pip install "inference-models[torch-cu128,onnx-cu12,trt10]" tensorrt
+    ```
+
+=== "pip"
+
+    **CPU installation:**
+    ```bash
+    pip install inference-models
+    ```
+
+    **GPU installation with ONNX and TensorRT support:**
+    ```bash
+    pip install "inference-models[torch-cu128,onnx-cu12,trt10]" tensorrt
+    ```
+
+!!! warning "TensorRT Version Compatibility"
+    The `trt10` extra only works with TensorRT 10.x. We recommend installing the TensorRT version compatible with your target environment by specifying the exact version: `tensorrt==x.y.z`. For example, `tensorrt==10.12.0.36` for CUDA 12.x environments.
+
+!!! info "Composable Dependencies"
+    The `inference-models` package uses a composable extras system - install only the backends and models you need.
+    See [Backends and Installation Options](getting-started/backends.md) for all available backends and their use cases.
+    Learn more about this philosophy in [Principles and Assumptions](getting-started/principles.md).
+
+### Usage
 
 Load and run a model:
 
 ```python
-from inference_models import AutoModel
 import cv2
+import supervision as sv
+from inference_models import AutoModel
 
 # Load model from Roboflow
 model = AutoModel.from_pretrained("rfdetr-base")
 
 # Run inference
-image = cv2.imread("path/to/image.jpg")
+image = cv2.imread("<path-to-your-image>")
 predictions = model(image)
 
 # Use with supervision
-import supervision as sv
 annotator = sv.BoxAnnotator()
-annotated = annotator.annotate(image.copy(), predictions[0].to_supervision())
+annotated = annotator.annotate(image, predictions[0].to_supervision())
 ```
 
-## 📚 Key Features
+## 📚 Why `inference-models`?
 
-### Multi-Backend Architecture
+### Model selection optimized for your environment
 
-Run the same model with different backends depending on your environment:
+When model is available in multiple backends, the same code works for all of them - `inference-models` automatically 
+select best option based on your environment and installed dependencies. That strategy **maximizes performance** and 
+**reduces your effort**.
 
-- **PyTorch**: Default backend, maximum flexibility
-- **ONNX**: Cross-platform compatibility, good performance
-- **TensorRT**: Maximum GPU performance
-- **Hugging Face**: Access to transformer-based models
+**Available Backends:** PyTorch • ONNX • TensorRT • Hugging Face • MediaPipe
 
-The library automatically selects the best available backend based on your installation and hardware.
+**Example: RFDetr Object Detection**
 
-### Smart Model Loading
+=== "Auto-Selection"
 
-The `AutoModel` class handles all the complexity:
+    !!! info "Installation"
+        ```bash
+        uv pip install "inference-models[torch-cu128,onnx-cu12,trt10]" tensorrt
+        ```
 
-- Automatic backend selection
-- Model package resolution
-- Dependency management
-- Caching and optimization
+    ```python
+    import cv2
+    import supervision as sv
+    from inference_models import AutoModel
 
-### Composable Dependencies
+    # Automatically selects best available backend
+    model = AutoModel.from_pretrained("rfdetr-base")
 
-Install only what you need with extras:
+    image = cv2.imread("<path-to-your-image>")
+    predictions = model(image)
 
-```bash
-# ONNX backend for CPU
-pip install "inference-models[onnx-cpu]"
+    # Visualize with supervision
+    annotator = sv.BoxAnnotator()
+    annotated = annotator.annotate(image, predictions[0].to_supervision())
+    ```
 
-# Full GPU setup with TensorRT
-pip install "inference-models[torch-cu128,onnx-cu12,trt10]"
+=== "PyTorch"
 
-# Additional models
-pip install "inference-models[mediapipe,grounding-dino]"
-```
+    !!! info "Installation"
+        ```bash
+        # CPU
+        uv pip install inference-models
+        # GPU
+        uv pip install "inference-models[torch-cu128]"
+        ```
 
-## 🧠 Supported Models
+    ```python hl_lines="6"
+    import cv2
+    import supervision as sv
+    from inference_models import AutoModel
 
-The library supports a wide range of computer vision tasks:
+    # Force PyTorch backend
+    model = AutoModel.from_pretrained("rfdetr-base", backend="torch")
 
-- **Object Detection**: YOLOv8-12, RFDetr, YOLO-NAS, Grounding DINO, OWLv2, YOLO-World
-- **Instance Segmentation**: YOLOv8/11 Seg, YOLACT
-- **Classification**: ResNet, ViT, DINOv3
-- **Embeddings**: CLIP, Perception Encoder
-- **OCR**: DocTR, EasyOCR, TrOCR
-- **Segmentation**: SAM, SAM2, SAM2 Real-Time
-- **Vision-Language**: Florence-2, PaliGemma, Qwen2.5-VL, Qwen3-VL, SmolVLM, Moondream2
-- **Depth Estimation**: Depth Anything V2/V3
-- **Specialized**: L2CS (Gaze), MediaPipe Face Detection
+    image = cv2.imread("<path-to-your-image>")
+    predictions = model(image)
 
-See the [Models Overview](models/index.md) for complete details.
+    # Visualize with supervision
+    annotator = sv.BoxAnnotator()
+    annotated = annotator.annotate(image, predictions[0].to_supervision())
+    ```
 
-## 📖 Documentation Structure
+=== "ONNX"
 
-- **[Getting Started](getting-started/installation.md)**: Installation, quick start, and core principles
-- **[Auto-Loading](auto-loading/overview.md)**: Understanding the automatic model loading system
-- **[Models](models/index.md)**: Detailed documentation for each supported model
-- **[How-To Guides](how-to/local-packages.md)**: Practical guides for common tasks
-- **[Contributors](contributors/architecture.md)**: Architecture and development guides
-- **[API Reference](api-reference/)**: Complete API documentation
+    !!! info "Installation"
+        ```bash
+        # CPU
+        uv pip install "inference-models[onnx-cpu]"
+        # GPU
+        uv pip install "inference-models[onnx-cu12]"
+        ```
 
-## 🤝 Community & Support
+    ```python hl_lines="6"
+    import cv2
+    import supervision as sv
+    from inference_models import AutoModel
 
-This is an early-stage project, and we're sharing initial versions to gather valuable community feedback. Your input will help us shape and steer this initiative in the right direction.
+    # Force ONNX backend
+    model = AutoModel.from_pretrained("rfdetr-base", backend="onnx")
 
-- **GitHub Issues**: [Report bugs or request features](https://github.com/roboflow/inference/issues/)
-- **Discussions**: [Ask questions and share ideas](https://github.com/roboflow/inference/discussions)
-- **Discord**: [Join our community](https://discord.gg/roboflow)
+    image = cv2.imread("<path-to-your-image>")
+    predictions = model(image)
 
-## 🔗 Related Projects
+    # Visualize with supervision
+    annotator = sv.BoxAnnotator()
+    annotated = annotator.annotate(image, predictions[0].to_supervision())
+    ```
 
-- **[inference](https://github.com/roboflow/inference)**: The stable, production-ready inference library
-- **[supervision](https://github.com/roboflow/supervision)**: Computer vision utilities for working with predictions
-- **[Roboflow](https://roboflow.com)**: Train and deploy custom computer vision models
+=== "TensorRT"
+
+    !!! info "Installation (Requires NVIDIA GPU)"
+        ```bash
+        uv pip install "inference-models[trt10]" tensorrt
+        ```
+
+    ```python hl_lines="6"
+    import cv2
+    import supervision as sv
+    from inference_models import AutoModel
+
+    # Force TensorRT backend
+    model = AutoModel.from_pretrained("rfdetr-base", backend="trt")
+
+    image = cv2.imread("<path-to-your-image>")
+    predictions = model(image)
+
+    # Visualize with supervision
+    annotator = sv.BoxAnnotator()
+    annotated = annotator.annotate(image, predictions[0].to_supervision())
+    ```
+
+!!! warning "Backend Prediction Differences"
+    Predictions may vary slightly between backends due to different numerical implementations. We aim for consistency, but minor differences are expected. Always validate performance for your specific use case.
+
+## 🧠 Supported Model Architectures
+
+- **RFDetr**
+- **SAM models family**
+- **Vision-Language Models** (Florence, PaliGemma, Qwen, SmolVLM, Moondream)
+- **OCR** (DocTR, EasyOCR, TrOCR)
+- **YOLO**
+- and many more
+
+For detailed model documentation, see [Supported Models](models/index.md).
 
 ## 📄 License
 
-The `inference-models` package is licensed under Apache 2.0. Individual models may have different licenses - see the [Models Overview](models/index.md) for details.
+The `inference-models` package is licensed under Apache 2.0. Individual models may have different licenses - see the [Supported Models](models/index.md) for details.
 
 ---
 
