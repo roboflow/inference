@@ -1,16 +1,16 @@
-# Installation Guide
+# 📦 Installation Guide
 
 This guide covers all installation options for the `inference-models` package.
 
-## Prerequisites
+## ✅ Prerequisites
 
-- Python 3.9 - 3.12
-- pip or uv package manager
-- For GPU support: CUDA-compatible GPU with appropriate drivers
+- **Python 3.9 - 3.12**
+- **pip** or **uv** package manager
+- For GPU support: **CUDA-compatible GPU** with appropriate drivers
 
-## Recommended: Using uv
+## 🚀 Recommended: Using uv
 
-We recommend using `uv` for faster and more reliable installations:
+We recommend using **`uv`** for faster and more reliable installations:
 
 ```bash
 # Install uv
@@ -19,7 +19,41 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 
 Learn more about uv at [docs.astral.sh/uv](https://docs.astral.sh/uv/getting-started/installation/).
 
-## Basic Installation
+## 📋 What Gets Installed
+
+### Base Installation
+
+The base `inference-models` package includes:
+
+- **PyTorch** (CPU) - Deep learning framework
+- **Hugging Face Transformers** - Transformer models support
+- **OpenCV** - Computer vision utilities
+- **Supervision** - Vision utilities and annotations
+
+For information about which extras are required for specific model architectures, see the [Supported Models](../models/index.md) documentation.
+
+### Optional Extras
+
+Install additional backends and specialized models using extras:
+
+| Extra | What It Provides | When to Use |
+|-------|------------------|-------------|
+| **Backend Extras** | | |
+| `torch-cpu` | PyTorch CPU-only | CPU-only environments, development |
+| `torch-cu118` | PyTorch + CUDA 11.8 | NVIDIA GPUs with CUDA 11.8 (legacy) |
+| `torch-cu124` | PyTorch + CUDA 12.4 | NVIDIA GPUs with CUDA 12.4 |
+| `torch-cu126` | PyTorch + CUDA 12.6 | NVIDIA GPUs with CUDA 12.6 |
+| `torch-cu128` | PyTorch + CUDA 12.8 | NVIDIA GPUs with CUDA 12.8 |
+| `torch-jp6-cu126` | PyTorch for Jetson JetPack 6 | NVIDIA Jetson devices (see [Hardware Compatibility](hardware-compatibility.md)) |
+| `onnx-cpu` | ONNX Runtime CPU | CPU inference, Roboflow models |
+| `onnx-cu118` | ONNX Runtime + CUDA 11.8 | GPU inference with CUDA 11.8 |
+| `onnx-cu12` | ONNX Runtime + CUDA 12.x | GPU inference with CUDA 12.x |
+| `onnx-jp6-cu126` | ONNX Runtime for Jetson | NVIDIA Jetson devices (see [Hardware Compatibility](hardware-compatibility.md)) |
+| `trt10` | TensorRT 10 | Maximum GPU performance, production |
+| **Model Extras** | | |
+| `mediapipe` | MediaPipe models | Face detection, pose estimation |
+
+## 💻 Basic Installation
 
 ### CPU Installation
 
@@ -47,11 +81,19 @@ uv pip install "inference-models[onnx-cpu]"
 pip install "inference-models[onnx-cpu]"
 ```
 
-## GPU Installation
+## 🎮 GPU Installation
+
+!!! warning "TensorRT Version Compatibility"
+
+    **TensorRT engines are sensitive to version compatibility.** A TensorRT engine compiled with a specific TensorRT version may not work with a different runtime version.
+
+    - **Roboflow platform** provides TensorRT packages compiled with **TensorRT 10.12.0.36** and maintains forward compatibility within the 10.x series
+    - **Custom compiled engines** are not guaranteed to be forward compatible - match the exact TensorRT version used during compilation
+    - **Best practice**: Match your TensorRT version with other dependencies in your environment
+
+    When installing the `trt10` extra, we recommend pinning to `tensorrt==10.12.0.36` for compatibility with Roboflow-provided engines.
 
 ### CUDA 12.8
-
-For the latest CUDA version with full backend support:
 
 ```bash
 # Using uv (recommended)
@@ -61,29 +103,27 @@ uv pip install "inference-models[torch-cu128,onnx-cu12,trt10]" "tensorrt==10.12.
 pip install "inference-models[torch-cu128,onnx-cu12,trt10]" "tensorrt==10.12.0.36"
 ```
 
-### CUDA 12.4
-
-```bash
-uv pip install "inference-models[torch-cu124,onnx-cu12,trt10]" "tensorrt==10.12.0.36"
-```
-
 ### CUDA 12.6
 
 ```bash
 uv pip install "inference-models[torch-cu126,onnx-cu12,trt10]" "tensorrt==10.12.0.36"
 ```
 
-### CUDA 11.8
+### CUDA 12.4
+
+```bash
+uv pip install "inference-models[torch-cu124,onnx-cu12,trt10]" "tensorrt==10.12.0.36"
+```
+
+### CUDA 11.8 (Legacy)
 
 ```bash
 uv pip install "inference-models[torch-cu118,onnx-cu118,trt10]" "tensorrt==10.12.0.36"
 ```
 
-!!! note "TensorRT Version"
-    We recommend pinning `tensorrt==10.12.0.36` to match the version used to compile TRT engines. 
-    TRT engines require an exact match between compilation and runtime environments.
+## 🤖 Jetson Installation
 
-## Jetson Installation
+For NVIDIA Jetson devices, see the [Hardware Compatibility](hardware-compatibility.md) guide for detailed installation instructions and platform-specific requirements.
 
 ### Jetson with JetPack 6 (CUDA 12.6)
 
@@ -95,7 +135,7 @@ uv pip install "inference-models[torch-jp6-cu126,onnx-jp6-cu126]"
     Jetson installations should use the pre-compiled TensorRT package shipped with JetPack.
     Do not install the `trt10` extra on Jetson devices.
 
-## Additional Models & Features
+## 🔧 Additional Features
 
 ### MediaPipe Models
 
@@ -105,32 +145,13 @@ Enables MediaPipe-based models including Face Detection:
 uv pip install "inference-models[mediapipe]"
 ```
 
-### Grounding DINO
-
-Enables the Grounding DINO open-vocabulary object detection model:
-
-```bash
-uv pip install "inference-models[grounding-dino]"
-```
-
-### Flash Attention (Experimental)
-
-For faster LLM/VLM inference (requires compilation):
-
-```bash
-uv pip install "inference-models[flash-attn]"
-```
-
-!!! warning "Compilation Required"
-    Flash Attention requires extensive compilation and may take significant time to install.
-
 ### SAM2 Real-Time
 
 SAM2 Real-Time requires manual installation from GitHub:
 
 ```bash
-# First install inference-models
-pip install "inference-models[torch-cu124]"
+# First install inference-models with any CUDA backend
+pip install "inference-models[torch-cu128]"  # or torch-cu126, torch-cu124, etc.
 
 # Then install SAM2 Real-Time
 pip install git+https://github.com/Gy920/segment-anything-2-real-time.git
@@ -139,13 +160,13 @@ pip install git+https://github.com/Gy920/segment-anything-2-real-time.git
 !!! note "PyPI Restriction"
     Due to PyPI restrictions on Git dependencies, SAM2 Real-Time must be installed separately.
 
-## Combining Extras
+## 🔗 Combining Extras
 
 You can combine multiple extras in a single installation:
 
 ```bash
 # GPU with multiple backends and additional models
-uv pip install "inference-models[torch-cu128,onnx-cu12,trt10,mediapipe,grounding-dino]" "tensorrt==10.12.0.36"
+uv pip install "inference-models[torch-cu128,onnx-cu12,trt10,mediapipe]" "tensorrt==10.12.0.36"
 ```
 
 !!! important "Conflicting Extras"
@@ -156,7 +177,7 @@ uv pip install "inference-models[torch-cu128,onnx-cu12,trt10,mediapipe,grounding
     
     The library will prevent conflicting installations when using `uv`.
 
-## Reproducible Installations
+## 🔒 Reproducible Installations
 
 For production deployments requiring strict dependency control, use the `uv.lock` file:
 
@@ -171,7 +192,7 @@ uv sync --frozen
 
 See the [official Docker builds](https://github.com/roboflow/inference/tree/main/inference_models/dockerfiles) for examples.
 
-## Verifying Installation
+## ✅ Verifying Installation
 
 Test your installation:
 
@@ -179,14 +200,14 @@ Test your installation:
 from inference_models import AutoModel
 
 # This will show available backends
-AutoModel.describe_runtime()
+AutoModel.describe_compute_environment()
 
 # Try loading a model
 model = AutoModel.from_pretrained("rfdetr-base")
 print("Installation successful!")
 ```
 
-## Troubleshooting
+## 🔧 Troubleshooting
 
 ### Missing Dependencies Error
 
@@ -194,31 +215,35 @@ If you see an error about missing dependencies when loading a model:
 
 1. Check which backend the model requires
 2. Install the appropriate extra (e.g., `onnx-cpu`, `trt10`)
-3. See [Backend Selection](../auto-loading/backend-selection.md) for details
 
 ### CUDA Version Mismatch
 
-Ensure your CUDA version matches the installed extras:
+**Rule of thumb:** Match the **major CUDA version** between your system and the installed extras. Do not install packages built for a newer CUDA version than what's installed on your system, as they may require CUDA symbols from `*.so` libraries that aren't available in older installations.
+
+**Check your CUDA version:**
 
 ```bash
-# Check CUDA version
-nvidia-smi
+# Check CUDA compiler version (most reliable)
+nvcc --version
 
-# Install matching extras
-uv pip install "inference-models[torch-cu128,onnx-cu12]"  # for CUDA 12.8
+# Check where CUDA is installed
+ls -la /usr/local/cuda
 ```
 
-### TensorRT Engine Errors
+!!! warning "nvidia-smi Can Be Misleading"
+    `nvidia-smi` shows the **driver version** and maximum supported CUDA version, not the actual CUDA toolkit version installed. Always verify with `nvcc --version` or check the `/usr/local/cuda` symlink.
 
-TensorRT engines must match the compilation environment exactly:
+**Install matching extras:**
 
-- Same TensorRT version
-- Same CUDA version
-- Same GPU architecture
+```bash
+# For CUDA 12.x
+uv pip install "inference-models[torch-cu128,onnx-cu12]"
 
-Use `tensorrt==10.12.0.36` for compatibility with Roboflow-provided engines.
+# For CUDA 11.8
+uv pip install "inference-models[torch-cu118,onnx-cu118]"
+```
 
-## Next Steps
+## 🚀 Next Steps
 
 - [Quick Overview](overview.md) - Learn basic usage and concepts
 - [Principles & Architecture](principles.md) - Understand the design

@@ -29,6 +29,8 @@ nav:
       - Installation: getting-started/installation.md
       - Core Concepts: getting-started/principles.md
       - Cache Management: getting-started/cache.md
+      - Hardware Compatibility: getting-started/hardware-compatibility.md
+      - Docker Environments: getting-started/docker.md
   - Auto-Loading:
       - Overview: auto-loading/overview.md
       - AutoModel API: auto-loading/automodel.md
