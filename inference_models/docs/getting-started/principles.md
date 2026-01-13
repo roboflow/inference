@@ -1,10 +1,10 @@
-# Principles & Architecture
+# Core Concepts
 
 Understanding the core principles and design philosophy behind `inference-models`.
 
-## Core Principles
+## 🎯 Core Principles
 
-### 1. Multi-Backend by Design
+### 🔄 1. Multi-Backend by Design
 
 We define a **model** as weights trained on a dataset, which can be exported or compiled into multiple equivalent **model packages**, each optimized for specific environments.
 
@@ -17,12 +17,13 @@ Model (trained weights)
 ```
 
 The library automatically selects the best available backend based on:
+
 - Installed dependencies
 - Hardware capabilities
 - Model availability
 - User preferences
 
-### 2. Minimal Dependencies
+### 📦 2. Minimal Dependencies
 
 We aim to keep extra dependencies minimal while covering as broad a range of models as possible.
 
@@ -36,7 +37,7 @@ We aim to keep extra dependencies minimal while covering as broad a range of mod
 - TensorRT (GPU only)
 - Specialized models (MediaPipe, Grounding DINO)
 
-### 3. Runtime Backend Selection
+### ⚡ 3. Runtime Backend Selection
 
 Backend selection happens **dynamically at runtime** based on:
 
@@ -45,24 +46,33 @@ Backend selection happens **dynamically at runtime** based on:
 3. **Hardware detection**: What devices are available?
 4. **User override**: Explicit backend specification
 
-**Default preference order**: TensorRT → PyTorch → ONNX
+**Default preference order**: TensorRT → PyTorch → Hugging Face → ONNX
 
-### 4. Unified Interface
+### 🎯 4. Behavior-Based Interfaces
 
-All models expose a consistent interface regardless of backend:
+The library follows a **minimalist interface design philosophy**. Models that exhibit similar behavior share slim, functionally-justified interfaces:
+
+- **Detection models** (YOLO, RFDetr, etc.) share methods for bounding box predictions
+- **Segmentation models** share methods that return masks alongside boxes
+- **Classification models** share methods for class predictions
+- **Vision-Language models** share prompting and text generation methods
+- **Embedding models** share feature extraction methods
+- **Depth estimation models** share depth map output methods
+- **OCR models** share text extraction methods
 
 ```python
-# Same API for all models
-model = AutoModel.from_pretrained(model_id)
-predictions = model(images)
+# Models with similar behavior share interfaces
+yolo_model = AutoModel.from_pretrained("yolov8n-640")
+rfdetr_model = AutoModel.from_pretrained("rfdetr-base")
+predictions_yolo = yolo_model(image)    # Same interface
+predictions_rfdetr = rfdetr_model(image)  # Same interface
+
+# Different behaviors have different interfaces
+vlm_model = AutoModel.from_pretrained("florence2-base")
+result = vlm_model.prompt(image, "Describe this")  # Different interface for VLMs
 ```
 
-Model-specific interfaces inherit from base classes:
-- `ObjectDetectionModel`
-- `InstanceSegmentationModel`
-- `ClassificationModel`
-- `TextImageEmbeddingModel`
-- And more...
+**Key principle**: Interfaces are defined by behavior, not by forcing unification. Models can implement completely custom interfaces when their behavior doesn't fit existing patterns - the library supports loading and running fully custom model implementations without requiring conformance to predefined interfaces.
 
 ## Architecture Overview
 
@@ -99,155 +109,90 @@ Model-specific interfaces inherit from base classes:
 └─────────────────────────────────────────┘
 ```
 
-### Key Components
+### 🧩 Key Components
 
 #### AutoModel
 
-The main entry point for loading models. Handles:
-- Model metadata retrieval
-- Backend negotiation
-- Package selection
-- Model instantiation
+The main entry point for loading models. When you call `AutoModel.from_pretrained(...)`, it orchestrates the entire model loading process:
+
+- Retrieves model metadata from the appropriate source (Roboflow API or local filesystem)
+- Negotiates the best backend based on your environment and installed dependencies
+- Selects the optimal model package variant
+- Downloads and caches model files if needed
+- Instantiates the model with the selected backend
+
+This abstraction allows you to load any model with a single line of code, regardless of its architecture or backend.
 
 #### Weights Providers
 
-Retrieve model metadata and download model packages:
-- **Roboflow Provider**: Fetches models from Roboflow API
-- **Local Provider**: Loads models from local directories
+Weights providers are responsible for retrieving model metadata and downloading model packages from different sources. The library is designed to support multiple providers, allowing you to add custom sources for model packages.
 
-#### Model Registry
+**Currently implemented providers:**
 
-Maps `(architecture, task_type, backend)` tuples to model classes:
+- **Roboflow Provider** - Connects to the Roboflow API to fetch models trained on the Roboflow platform. It handles authentication, version resolution, and downloading model artifacts. This provider enables seamless access to both public models and your private custom models.
 
-```python
-REGISTERED_MODELS = {
-    ("yolov8", "object-detection", "onnx"): YOLOv8ForObjectDetectionOnnx,
-    ("yolov8", "object-detection", "trt"): YOLOv8ForObjectDetectionTRT,
-    ("rfdetr", "object-detection", "torch"): RFDetrForObjectDetectionTorch,
-    # ... many more
-}
+- **Local Provider** - Loads models from your local filesystem. This is useful for development, offline deployment, or when working with models that aren't hosted on Roboflow. It supports both standard model packages and custom model implementations.
+
+
+
+## 📦 Model Package Structure
+
+A model package is a collection of files that together define everything needed to run inference with a specific model variant. The exact structure varies depending on the model architecture and backend, but typically includes:
+
+- **Model weights** - The trained parameters in backend-specific format (`.pt` for PyTorch, `.onnx` for ONNX Runtime, `.engine` for TensorRT)
+- **Metadata files** - Information about the model architecture, task type, and backend
+- **Task-specific artifacts** - Class labels for detection/classification, vocabulary files for text models, etc.
+- **Roboflow inference config** (when applicable) - A standardized metadata format used by the Roboflow platform to define the interface between training and inference time. This config specifies preprocessing requirements (image resizing, normalization), postprocessing parameters (NMS thresholds, confidence filtering), and other runtime behavior needed to properly instrument the model.
+
+**Example: Object Detection Model Package**
+```
+yolov8n-640-onnx/
+├── model.onnx              # ONNX weights
+├── class_names.txt         # Object class labels
+└── inference_config.json   # Roboflow preprocessing/postprocessing config
 ```
 
-#### Base Model Classes
-
-Abstract base classes defining model interfaces:
-
-- `ObjectDetectionModel`: Bounding box predictions
-- `InstanceSegmentationModel`: Boxes + masks
-- `ClassificationModel`: Class predictions
-- `KeyPointsDetectionModel`: Keypoint predictions
-- `TextImageEmbeddingModel`: Embeddings
-- `DepthEstimationModel`: Depth maps
-- `StructuredOCRModel`: OCR with structure
-- And more...
-
-## Model Package Structure
-
-A model package contains:
-
+**Example: Vision-Language Model Package**
 ```
-model_package/
-├── model_config.json          # Model metadata
-├── weights.{pt,onnx,engine}   # Model weights
-├── class_names.txt            # Class labels (if applicable)
-└── inference_config.json      # Preprocessing config (if applicable)
+florence2-base-hf/
+├── model.safetensors       # Hugging Face weights
+├── config.json             # Model architecture config
+├── tokenizer.json          # Text tokenizer
+└── preprocessor_config.json # Image preprocessing config
 ```
 
-### Model Config
+## 🔍 Backend Selection Process
 
-```json
-{
-  "model_id": "yolov8n-640",
-  "model_architecture": "yolov8",
-  "task_type": "object-detection",
-  "backend": "onnx",
-  "quantization": "fp32",
-  "input_shape": [1, 3, 640, 640]
-}
-```
+When you call `AutoModel.from_pretrained()`, the library goes through a sophisticated backend selection process to find the optimal model package for your environment:
 
-## Backend Selection Process
+1. **Retrieve model metadata** - Contacts the weights provider (Roboflow API or local filesystem) to get information about all available model packages, including their backends, quantization levels, batch size support, and dependencies.
 
-1. **Retrieve model metadata** from weights provider
-2. **Filter available packages** by installed backends
-3. **Rank packages** by preference order
-4. **Check environment compatibility** (GPU, CUDA version, etc.)
-5. **Select best package** or fail with helpful error
-6. **Download and cache** model files
-7. **Instantiate model** with selected backend
+2. **Filter by installed backends** - Examines your Python environment to detect which backends are available (PyTorch, ONNX Runtime, TensorRT, Hugging Face) and filters out packages that require backends you don't have installed.
 
-## Dependency Management
+3. **Filter by compatibility** - Checks hardware and software compatibility for each remaining package. This includes GPU availability, CUDA version compatibility, ONNX opset support, TensorRT version matching, and platform-specific requirements.
 
-### Composable Extras
+4. **Apply user preferences** - If you specified preferences for backend, quantization, or batch size, further filters packages to match your requirements.
 
-Dependencies are organized into composable extras:
+5. **Rank by priority** - Sorts remaining packages according to the preference order (TensorRT > PyTorch > Hugging Face > ONNX) and other optimization criteria.
 
-```toml
-[project.optional-dependencies]
-torch-cu128 = ["torch>=2.0.0", "torchvision", "pycuda"]
-onnx-cpu = ["onnxruntime>=1.15.1"]
-onnx-cu12 = ["onnxruntime-gpu>=1.17.0", "pycuda"]
-trt10 = ["tensorrt-cu12>=10.0.0", "pycuda"]
-mediapipe = ["rf-mediapipe>=0.9"]
-```
+6. **Select best package** - Chooses the highest-ranked package. If no compatible package is found, provides a detailed error message explaining why each package was filtered out.
 
-### Conflict Resolution
+7. **Download and cache** - Downloads the selected package files to local cache if not already present, verifying file hashes for integrity.
 
-The library prevents conflicting installations:
+8. **Instantiate model** - Loads the model using the selected backend and returns a ready-to-use model instance.
 
-```toml
-[tool.uv]
-conflicts = [
-  [
-    { extra = "torch-cpu" },
-    { extra = "torch-cu118" },
-    { extra = "torch-cu124" },
-    { extra = "torch-cu128" },
-  ],
-  # ...
-]
-```
+## 💾 Cache
 
-## Caching Strategy
+The library uses two types of caching to improve performance:
 
-### Auto-Resolution Cache
+- **Auto-Resolution Cache** - Stores backend selection decisions to avoid repeated API calls
+- **Model Package Cache** - Stores downloaded model files to avoid re-downloading
 
-Caches backend selection decisions to avoid repeated API calls:
+For detailed information about cache configuration, locations, and management, see the [Cache Guide](cache.md).
 
-```python
-cache_key = hash(model_id, backend_preferences, environment)
-if cache_key in cache:
-    return cached_model_class
-```
+## 🚀 Next Steps
 
-### Model Package Cache
-
-Downloaded model files are cached locally:
-
-```
-~/.cache/inference-models/
-├── yolov8n-640/
-│   ├── onnx-fp32/
-│   │   ├── model.onnx
-│   │   └── class_names.txt
-│   └── trt-fp16/
-│       └── model.engine
-└── rfdetr-base/
-    └── torch-fp32/
-        └── model.pt
-```
-
-## Design Goals
-
-1. **Ease of Use**: Simple API for common cases
-2. **Flexibility**: Advanced options for power users
-3. **Performance**: Optimal backend selection
-4. **Reliability**: Robust error handling and validation
-5. **Extensibility**: Easy to add new models and backends
-6. **Transparency**: Clear feedback about what's happening
-
-## Next Steps
-
+- [Cache Guide](cache.md) - Learn about cache management and configuration
 - [Auto-Loading Overview](../auto-loading/overview.md) - Deep dive into model loading
 - [Backend Selection](../auto-loading/backend-selection.md) - How backends are chosen
 - [Contributors Guide](../contributors/architecture.md) - Implementation details

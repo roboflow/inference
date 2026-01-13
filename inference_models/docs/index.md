@@ -15,7 +15,7 @@ be fast, reliable, and user-friendly. It offers:
 - **Multi-Backend Support**: Run models with PyTorch, ONNX, TensorRT, or Hugging Face backends
 - **Automatic Model Loading**: Smart model resolution and backend selection
 - **Minimal Dependencies**: Composable extras system for installing only what you need
-- **Unified Interface**: Consistent API across all model types and backends
+- **Behavior-Based Interfaces**: Models with similar behavior share consistent APIs; custom models can define their own
 
 !!! success "Full Roboflow Platform Support"
     **Run any model trained on [Roboflow](https://roboflow.com)** - your custom models work seamlessly alongside pretrained weights. For supported model architectures, Roboflow provides pretrained weights you can use without training your own model.

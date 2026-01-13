@@ -27,7 +27,8 @@ nav:
   - Getting Started:
       - Quick Overview: getting-started/overview.md
       - Installation: getting-started/installation.md
-      - Principles & Architecture: getting-started/principles.md
+      - Core Concepts: getting-started/principles.md
+      - Cache Management: getting-started/cache.md
   - Auto-Loading:
       - Overview: auto-loading/overview.md
       - AutoModel API: auto-loading/automodel.md

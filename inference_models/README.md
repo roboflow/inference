@@ -10,7 +10,7 @@ be fast, reliable, and user-friendly. It offers:
 - **Multi-Backend Support**: Run models with PyTorch, ONNX, TensorRT, or Hugging Face backends
 - **Automatic Model Loading**: Smart model resolution and backend selection
 - **Minimal Dependencies**: Composable extras system for installing only what you need
-- **Unified Interface**: Consistent API across all model types and backends
+- **Behavior-Based Interfaces**: Models with similar behavior share consistent APIs; custom models can define their own
 
 > [!IMPORTANT]
 > **Full Roboflow Platform Support**
