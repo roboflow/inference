@@ -1,6 +1,5 @@
 from typing import List, Literal, Optional, Type, Union
 
-import cv2
 from pydantic import ConfigDict, Field, PositiveInt
 
 from inference.core.entities.requests.inference import (
