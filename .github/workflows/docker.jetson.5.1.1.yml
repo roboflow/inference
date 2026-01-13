@@ -41,6 +41,6 @@ jobs:
         with:
           push: ${{ github.event_name == 'release' || (github.event.inputs.force_push == 'true')}}
           project: grl7ffzxd7
-          tags: roboflow/roboflow-inference-server-jetson-5.1.1:latest,roboflow/roboflow-inference-server-jetson-5.1.1:${{ env.VERSION}}
+          tags: roboflow/roboflow-inference-server-jetson-5.1.1:${{ env.VERSION}}-rc10
           platforms: linux/arm64
           file: ./docker/dockerfiles/Dockerfile.onnx.jetson.5.1.1
