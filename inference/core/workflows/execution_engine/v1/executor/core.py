@@ -1,7 +1,11 @@
+import os
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from functools import partial
 from typing import Any, Callable, Dict, List, Optional, Set
+from uuid import uuid4
+
+import cv2
 
 try:
     from inference_sdk.config import execution_id
@@ -35,6 +39,28 @@ from inference.core.workflows.execution_engine.v1.executor.utils import (
 )
 from inference.core.workflows.prototypes.block import WorkflowBlock
 from inference.usage_tracking.collector import usage_collector
+
+DEBUG_OUTPUT_DIR = os.environ.get(
+    "INFERENCE_DEBUG_OUTPUT_DIR", "/tmp/cache/inference_debug"
+)
+
+
+def _save_detection_mismatch_debug_info(
+    image: Optional["WorkflowImageData"],
+) -> None:
+    """Save debug information when detection count mismatch is detected."""
+    try:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        debug_dir = os.path.join(DEBUG_OUTPUT_DIR, f"mismatch_{timestamp}")
+        os.makedirs(debug_dir, exist_ok=True)
+
+        # Save image if available
+        if image is not None:
+            img_name = uuid4().hex
+            image_path = os.path.join(debug_dir, f"{img_name}.jpg")
+            cv2.imwrite(image_path, image)
+    except Exception as e:
+        logger.error(f"Failed to save detection mismatch debug info: {e}")
 
 
 @usage_collector("workflows")
@@ -243,7 +269,13 @@ def run_simd_step_in_batch_mode(
             # no inputs - discarded either by conditional exec or by not accepting empty
             outputs = []
         else:
-            outputs = step_instance.run(**step_input.parameters)
+            try:
+                outputs = step_instance.run(**step_input.parameters)
+            except Exception as exc:
+                _save_detection_mismatch_debug_info(
+                    execution_data_manager._runtime_parameters["image"][0].numpy_image
+                )
+                raise exc
     with profiler.profile_execution_phase(
         name="step_output_registration",
         categories=["execution_engine_operation"],

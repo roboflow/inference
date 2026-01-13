@@ -113,6 +113,7 @@ def convert_inference_detections_batch_to_sv_detections(
     for p in predictions:
         width, height = p[image_key][WIDTH_KEY], p[image_key][HEIGHT_KEY]
         detections = sv.Detections.from_inference(p)
+        detections = detections[:1]
         parent_ids = [d.get(PARENT_ID_KEY, "") for d in p[predictions_key]]
         detection_ids = [
             d.get(DETECTION_ID_KEY, str(uuid.uuid4())) for d in p[predictions_key]
