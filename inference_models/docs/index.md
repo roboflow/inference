@@ -31,7 +31,7 @@ We're actively working toward stabilizing `inference-models` and integrating it 
 
 We're sharing this preview to gather valuable community feedback that will help us shape the final release. Your input is crucial in making this the best inference experience possible!
 
-!!! note "Current Status"
+??? note "Current Status"
     The `inference-models` package is approaching stability but is still in active development.
 
     * The core API is stabilizing, but minor changes may still occur
@@ -105,9 +105,7 @@ annotator = sv.BoxAnnotator()
 annotated = annotator.annotate(image, predictions[0].to_supervision())
 ```
 
-## 📚 Why `inference-models`?
-
-### Model selection optimized for your environment
+## 📚 Model selection optimized for your environment
 
 When model is available in multiple backends, the same code works for all of them - `inference-models` automatically 
 select best option based on your environment and installed dependencies. That strategy **maximizes performance** and 
@@ -228,6 +226,30 @@ select best option based on your environment and installed dependencies. That st
 - and many more
 
 For detailed model documentation, see [Supported Models](models/index.md).
+
+## 🔧 Run your local models
+
+Load your own model implementations from a local directory without contributing to the main library:
+
+```python
+from inference_models import AutoModel
+
+model = AutoModel.from_pretrained(
+    "/path/to/my_custom_model",
+    allow_local_code_packages=True
+)
+```
+
+Your custom model directory structure:
+
+```
+my_custom_model/
+├── model_config.json    # Model metadata
+├── model.py            # Your model implementation
+└── weights.pt          # Model weights (optional)
+```
+
+See [Load Models from Local Packages](how-to/local-packages.md) for complete details on creating custom model packages.
 
 ## 📄 License
 
