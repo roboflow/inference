@@ -81,8 +81,8 @@ We're sharing this preview to gather valuable community feedback that will help 
 
 !!! info "Composable Dependencies"
     The `inference-models` package uses a composable extras system - install only the backends and models you need.
-    See [Backends and Installation Options](getting-started/backends.md) for all available backends and their use cases.
-    Learn more about this philosophy in [Principles and Assumptions](getting-started/principles.md).
+    See [Installation Guide](getting-started/installation.md) for all available backends and their use cases.
+    Learn more about this philosophy in [Principles & Architecture](getting-started/principles.md).
 
 ### Usage
 
@@ -93,16 +93,38 @@ import cv2
 import supervision as sv
 from inference_models import AutoModel
 
-# Load model from Roboflow
+# Load pretrained model from Roboflow
 model = AutoModel.from_pretrained("rfdetr-base")
 
-# Run inference
+# Run inference (works with numpy arrays or torch.Tensor)
 image = cv2.imread("<path-to-your-image>")
 predictions = model(image)
 
 # Use with supervision
 annotator = sv.BoxAnnotator()
 annotated = annotator.annotate(image, predictions[0].to_supervision())
+```
+
+### Using Your Roboflow Models
+
+Load and run models trained on the [Roboflow platform](https://roboflow.com):
+
+```python
+import cv2
+from inference_models import AutoModel
+
+# Load your custom model from Roboflow
+model = AutoModel.from_pretrained(
+    "<your-project>/<version>",
+    api_key="<your-api-key>"
+)
+
+# Run inference
+image = cv2.imread("<path-to-your-image>")
+predictions = model(image)
+
+# Print predictions
+print(predictions)
 ```
 
 ## 📚 Model selection optimized for your environment
@@ -260,5 +282,5 @@ The `inference-models` package is licensed under Apache 2.0. Individual models m
 
 ---
 
-Ready to get started? Head to the [Installation Guide](getting-started/installation.md) →
+Ready to get started? Head to the [Quick Overview](getting-started/overview.md) →
 

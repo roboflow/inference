@@ -1,4 +1,4 @@
-site_name: Inference Models Documentation
+site_name: Inference Models
 site_url: https://roboflow.github.io/inference-models/
 site_author: Roboflow
 site_description: Next-generation computer vision inference library with multi-backend support
@@ -23,12 +23,11 @@ extra:
       link: https://twitter.com/roboflow
 
 nav:
-  - index.md
+  - Home: index.md
   - Getting Started:
-      - Principles & Architecture: getting-started/principles.md
+      - Quick Overview: getting-started/overview.md
       - Installation: getting-started/installation.md
-      - Backends & Installation Options: getting-started/backends.md
-      - Quick Start: getting-started/quickstart.md
+      - Principles & Architecture: getting-started/principles.md
   - Auto-Loading:
       - Overview: auto-loading/overview.md
       - AutoModel API: auto-loading/automodel.md

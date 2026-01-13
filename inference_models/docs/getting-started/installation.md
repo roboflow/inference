@@ -220,7 +220,7 @@ Use `tensorrt==10.12.0.36` for compatibility with Roboflow-provided engines.
 
 ## Next Steps
 
-- [Quick Start Guide](quickstart.md) - Learn basic usage
+- [Quick Overview](overview.md) - Learn basic usage and concepts
 - [Principles & Architecture](principles.md) - Understand the design
 - [Models Overview](../models/index.md) - Explore available models
 

@@ -20,7 +20,7 @@ from inference_models.errors import (
     InsecureModelIdentifierError,
     ModelLoadingError,
     NoModelPackagesAvailableError,
-    UnauthorizedModelAccessError,
+    UnauthorizedModelAccessError, InvalidParameterError,
 )
 from inference_models.logger import LOGGER, verbose_info
 from inference_models.models.auto_loaders.access_manager import (
@@ -210,7 +210,7 @@ class AutoModel:
             Union[str, Quantization, List[Union[str, Quantization]]]
         ] = None,
         onnx_execution_providers: Optional[List[Union[str, tuple]]] = None,
-        device: torch.device = DEFAULT_DEVICE,
+        device: Union[torch.device, str] = DEFAULT_DEVICE,
         default_onnx_trt_options: bool = True,
         max_package_loading_attempts: Optional[int] = None,
         verbose: bool = False,
@@ -267,6 +267,16 @@ class AutoModel:
                 on_file_created=register_file_created_for_model_package,
                 on_file_deleted=model_access_manager.on_file_deleted,
             )
+        if isinstance(device, str):
+            try:
+                device = torch.device(device)
+            except RuntimeError as error:
+                raise InvalidParameterError(
+                    message="Could not parse `device` parameter value - make sure that it is a valid string "
+                    f"representation of torch device. Valid values: 'cpu', 'cuda' or 'cuda:0'. If you see this error "
+                    "while using Roboflow infrastructure - contact us to get help. Otherwise - verify your setup.",
+                    help_url="https://todo",
+                ) from error
         model_init_kwargs = {
             "onnx_execution_providers": onnx_execution_providers,
             "device": device,

@@ -183,6 +183,6 @@ text_emb = model.embed_text("a photo of a cat")
 ## Next Steps
 
 - Browse individual model pages for detailed documentation
-- See [Quick Start](../getting-started/quickstart.md) for usage examples
+- See [Quick Overview](../getting-started/overview.md) for usage examples
 - Check [Installation Guide](../getting-started/installation.md) for backend setup
 

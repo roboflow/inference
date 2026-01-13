@@ -335,6 +335,6 @@ This shows:
 
 - [Installation Guide](installation.md) - Detailed installation instructions
 - [Principles and Assumptions](principles.md) - Design philosophy
-- [Quick Start](quickstart.md) - Get started with your first model
+- [Quick Overview](overview.md) - Get started with your first model
 - [Backend Selection](../auto-loading/backend-selection.md) - How backends are chosen automatically
 

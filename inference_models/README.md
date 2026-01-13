@@ -85,12 +85,35 @@ import supervision as sv
 
 model = AutoModel.from_pretrained("rfdetr-base")
 
+# Works with numpy arrays or torch.Tensor
 image = cv2.imread("<path-to-your-image>")
 predictions = model(image)
 
 # Visualize with supervision
 annotator = sv.BoxAnnotator()
 annotated = annotator.annotate(image, predictions[0].to_supervision())
+```
+
+### Using Your Roboflow Models
+
+Load and run models trained on the [Roboflow platform](https://roboflow.com):
+
+```python
+import cv2
+from inference_models import AutoModel
+
+# Load your custom model from Roboflow
+model = AutoModel.from_pretrained(
+    "<your-project>/<version>",
+    api_key="<your-api-key>"
+)
+
+# Run inference
+image = cv2.imread("<path-to-your-image>")
+predictions = model(image)
+
+# Print predictions
+print(predictions)
 ```
 
 ## 📚 Model selection optimized for your environment
@@ -262,9 +285,8 @@ See [Load Models from Local Packages](https://roboflow.github.io/inference/infer
 
 Visit the [full documentation](https://roboflow.github.io/inference/inference_models/) for:
 
+- [Quick Overview](https://roboflow.github.io/inference/inference_models/getting-started/overview/)
 - [Installation Guide](https://roboflow.github.io/inference/inference_models/getting-started/installation/)
-- [Backends & Installation Options](https://roboflow.github.io/inference/inference_models/getting-started/backends/)
-- [Quick Start](https://roboflow.github.io/inference/inference_models/getting-started/quickstart/)
 - [Principles & Architecture](https://roboflow.github.io/inference/inference_models/getting-started/principles/)
 - [Model Documentation](https://roboflow.github.io/inference/inference_models/models/)
 - [API Reference](https://roboflow.github.io/inference/inference_models/api-reference/)

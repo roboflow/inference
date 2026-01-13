@@ -249,7 +249,7 @@ pip install "inference-models[trt10]" "tensorrt==10.12.0.36"
 
 ## Next Steps
 
-- [Quick Start Guide](../getting-started/quickstart.md)
+- [Quick Overview](../getting-started/overview.md)
 - [Object Detection Tutorial](../how-to/object-detection.md)
 - [API Reference](../api-reference/)
 

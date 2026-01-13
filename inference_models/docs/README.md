@@ -76,8 +76,8 @@ mike delete 0.18.3
 docs/
 ├── index.md                    # Homepage
 ├── getting-started/            # Installation and quick start
+│   ├── overview.md
 │   ├── installation.md
-│   ├── quickstart.md
 │   └── principles.md
 ├── auto-loading/               # Auto-loading system docs
 │   ├── overview.md
