@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any, Callable, Dict, Optional, Tuple
 import cv2
 import numpy as np
 from aiortc import RTCPeerConnection, VideoStreamTrack
+from aiortc.contrib.media import MediaPlayer
 from av import VideoFrame
 
 from inference_sdk.http.errors import InvalidParameterError
@@ -179,6 +180,78 @@ class WebcamSource(StreamSource):
         """Release webcam resources."""
         if self._track:
             self._track.release()
+
+
+class LocalStreamSource(StreamSource):
+    """Stream source for locally captured RTSP/RTMP camera streams.
+
+    Unlike RTSPSource (where the server captures the RTSP stream), this source
+    captures the stream locally using aiortc's MediaPlayer (FFmpeg-based) and
+    sends frames to the server via WebRTC, similar to WebcamSource.
+
+    Supported protocols:
+    - RTSP: rtsp://host/path or rtsps://host/path
+    - RTMP: rtmp://host/path or rtmps://host/path
+
+    Use this when:
+    - The camera is only accessible from the client machine (e.g., local network)
+    - You want to preprocess frames before sending to the server
+    - The server cannot access the stream URL directly
+    """
+
+    # Supported URL schemes
+    SUPPORTED_SCHEMES = ("rtsp://", "rtsps://", "rtmp://", "rtmps://")
+
+    def __init__(self, url: str):
+        """Initialize local stream source.
+
+        Args:
+            url: Stream URL. Supported formats:
+                - RTSP: "rtsp://host/stream" or "rtsps://host/stream"
+                - RTMP: "rtmp://host/stream" or "rtmps://host/stream"
+                Credentials can be included: "rtsp://user:pass@host/stream"
+        """
+        if not url.startswith(self.SUPPORTED_SCHEMES):
+            raise InvalidParameterError(
+                f"Invalid stream URL: {url}. "
+                f"Must start with one of: {', '.join(self.SUPPORTED_SCHEMES)}"
+            )
+        self.url = url
+        self._player: Optional[MediaPlayer] = None
+
+    async def configure_peer_connection(self, pc: RTCPeerConnection) -> None:
+        """Create MediaPlayer for stream and add video track to peer connection."""
+        # Determine format and options based on URL scheme
+        if self.url.startswith(("rtsp://", "rtsps://")):
+            self._player = MediaPlayer(
+                self.url,
+                format="rtsp",
+                options={
+                    "rtsp_transport": "tcp",
+                    "rtsp_flags": "prefer_tcp",
+                    "stimeout": "5000000",  # 5s socket timeout
+                },
+            )
+        else:
+            # RTMP - use default format detection
+            self._player = MediaPlayer(self.url)
+
+        if self._player.video is None:
+            raise RuntimeError(f"No video track available from stream: {self.url}")
+
+        # Add the video track to send to server
+        pc.addTrack(self._player.video)
+
+    def get_initialization_params(self, config: "StreamConfig") -> Dict[str, Any]:
+        """Return empty params - stream is captured locally, not by server."""
+        return {}
+
+    async def cleanup(self) -> None:
+        """Stop the MediaPlayer."""
+        if self._player:
+            if self._player.video:
+                self._player.video.stop()
+            self._player = None
 
 
 class RTSPSource(StreamSource):
