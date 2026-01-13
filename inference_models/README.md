@@ -106,6 +106,9 @@ When model is available in multiple backends, the same code works for all of the
 
 **Installation:**
 ```bash
+# CPU
+uv pip install "inference-models[onnx-cpu]"
+# GPU
 uv pip install "inference-models[torch-cu128,onnx-cu12,trt10]" tensorrt
 ```
 

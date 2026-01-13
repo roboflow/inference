@@ -119,6 +119,9 @@ select best option based on your environment and installed dependencies. That st
 
     !!! info "Installation"
         ```bash
+        # CPU
+        uv pip install "inference-models[onnx-cpu]"
+        # GPU
         uv pip install "inference-models[torch-cu128,onnx-cu12,trt10]" tensorrt
         ```
 
