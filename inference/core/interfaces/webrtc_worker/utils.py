@@ -290,7 +290,7 @@ def get_video_rotation(filepath: str) -> int:
                     )
                     return rotation
     except FileNotFoundError:
-        logger.debug("ffprobe not available, falling back to PyAV metadata")
+        logger.debug("ffprobe not available")
     except Exception as e:
         logger.debug("ffprobe rotation detection failed: %s", e)
 

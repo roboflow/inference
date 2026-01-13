@@ -96,8 +96,6 @@ class OnDemandVideoTrack(MediaStreamTrack):
 
     Use this for video file processing when realtime_processing=False.
     For throttled playback (realtime_processing=True), use MediaPlayer instead.
-
-    Note: Rotation is handled by VideoFrameProcessor, not this track.
     """
 
     kind = "video"
@@ -324,9 +322,7 @@ class VideoFrameProcessor:
         self.video_upload_handler: Optional[VideoFileUploadHandler] = None
         self._track_ready_event: asyncio.Event = asyncio.Event()
         self.realtime_processing = realtime_processing
-        self._rotation_code: Optional[int] = (
-            None  # OpenCV rotation code for video correction
-        )
+        self._rotation_code: Optional[int] = None
 
         # Optional receiver-paced flow control (enabled only after first ACK is received)
         self._ack_last: int = 0
