@@ -93,9 +93,9 @@ annotator = sv.BoxAnnotator()
 annotated = annotator.annotate(image, predictions[0].to_supervision())
 ```
 
-## 📚 Same Model, Optimized for Your Environment
+## 📚 Model selection optimized for your environment
 
-When model is available in multiple backends, the same code works for all of them - only the backend selection changes.
+When model is available in multiple backends, the same code works for all of them - `inference-models` automatically select best option based on your environment and installed dependencies. That strategy **maximizes performance** and **reduces your effort**.
 
 **Available Backends:** PyTorch • ONNX • TensorRT • Hugging Face • MediaPipe
 
