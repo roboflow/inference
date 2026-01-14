@@ -193,7 +193,6 @@ For detailed information about cache configuration, locations, and management, s
 ## 🚀 Next Steps
 
 - [Cache Guide](cache.md) - Learn about cache management and configuration
-- [Auto-Loading Overview](../auto-loading/overview.md) - Deep dive into model loading
-- [Backend Selection](../auto-loading/backend-selection.md) - How backends are chosen
+- [Supported Models](../models/index.md) - Browse available models
 - [Contributors Guide](../contributors/architecture.md) - Implementation details
 

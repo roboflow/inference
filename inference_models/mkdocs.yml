@@ -31,43 +31,47 @@ nav:
       - Cache Management: getting-started/cache.md
       - Hardware Compatibility: getting-started/hardware-compatibility.md
       - Docker Environments: getting-started/docker.md
-  - Auto-Loading:
-      - Overview: auto-loading/overview.md
-      - AutoModel API: auto-loading/automodel.md
-      - Backend Selection: auto-loading/backend-selection.md
-      - Model Resolution: auto-loading/model-resolution.md
-  - Supported Models:
+  - Models:
       - Overview: models/index.md
       - Object Detection:
-          - RFDetr: models/rfdetr.md
-          - YOLOv8: models/yolov8.md
-          - YOLOv9: models/yolov9.md
-          - YOLOv10: models/yolov10.md
-          - YOLOv11: models/yolov11.md
-          - YOLOv12: models/yolov12.md
-          - YOLO-NAS: models/yolonas.md
+          - RFDetr: models/rfdetr-object-detection.md
+          - YOLOv5: models/yolov5-object-detection.md
+          - YOLOv8: models/yolov8-object-detection.md
+          - YOLOv9: models/yolov9-object-detection.md
+          - YOLOv10: models/yolov10-object-detection.md
+          - YOLOv11: models/yolov11-object-detection.md
+          - YOLOv12: models/yolov12-object-detection.md
+          - YOLO-NAS: models/yolonas-object-detection.md
+          - Roboflow Instant: models/roboflow-instant-object-detection.md
+      - Open-Vocabulary Object Detection:
           - Grounding DINO: models/grounding-dino.md
           - OWLv2: models/owlv2.md
-          - YOLO-World: models/yolo-world.md
       - Instance Segmentation:
-          - YOLOv8 Segmentation: models/yolov8-seg.md
-          - YOLOv11 Segmentation: models/yolov11-seg.md
+          - RFDetr: models/rfdetr-object-detection.md
+          - YOLOv5: models/yolov5.md
+          - YOLOv7: models/yolov7.md
+          - YOLOv8: models/yolov8-instance-segmentation.md
+          - YOLOv11: models/yolov11.md
           - YOLACT: models/yolact.md
+          - SAM2 Real-Time: models/sam2-rt.md
+      - Interactive Segmentation:
+          - SAM: models/sam.md
+          - SAM2: models/sam2.md
+      - Semantic Segmentation:
+          - DeepLabV3+: models/deeplabv3plus.md
       - Classification:
+          - YOLOv8: models/yolov8-classification.md
+          - YOLOv11: models/yolov11.md
           - ResNet: models/resnet.md
           - ViT: models/vit.md
           - DINOv3: models/dinov3.md
+      - Keypoint Detection:
+          - YOLOv8: models/yolov8-keypoint-detection.md
+          - YOLOv11: models/yolov11.md
+          - MediaPipe Face Detection: models/mediapipe-face.md
       - Embeddings:
           - CLIP: models/clip.md
           - Perception Encoder: models/perception-encoder.md
-      - OCR & Document Parsing:
-          - DocTR: models/doctr.md
-          - EasyOCR: models/easyocr.md
-          - TrOCR: models/trocr.md
-      - Segmentation:
-          - SAM: models/sam.md
-          - SAM2: models/sam2.md
-          - SAM2 Real-Time: models/sam2-rt.md
       - Vision-Language Models:
           - Florence-2: models/florence2.md
           - PaliGemma: models/paligemma.md
@@ -75,12 +79,15 @@ nav:
           - Qwen3-VL: models/qwen3vl.md
           - SmolVLM: models/smolvlm.md
           - Moondream2: models/moondream2.md
+      - OCR:
+          - DocTR: models/doctr.md
+          - EasyOCR: models/easyocr.md
+          - TrOCR: models/trocr.md
       - Depth Estimation:
           - Depth Anything V2: models/depth-anything-v2.md
           - Depth Anything V3: models/depth-anything-v3.md
-      - Other:
-          - L2CS (Gaze Detection): models/l2cs.md
-          - MediaPipe Face Detection: models/mediapipe-face.md
+      - Gaze Detection:
+          - L2CS-Net: models/l2cs.md
   - How-To Guides:
       - Load Models from Local Packages: how-to/local-packages.md
       - Add a New Model: how-to/add-model.md
@@ -90,6 +97,7 @@ nav:
       - Architecture Overview: contributors/architecture.md
       - Multi-Backend System: contributors/backends.md
       - Dependency Management: contributors/dependencies.md
+      - Running Models from Local Packages: contributors/running-models-from-local-packages.md
       - Adding Models: contributors/adding-models.md
       - Testing: contributors/testing.md
   - API Reference:

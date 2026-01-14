@@ -78,12 +78,10 @@ docs/
 ├── getting-started/            # Installation and quick start
 │   ├── overview.md
 │   ├── installation.md
-│   └── principles.md
-├── auto-loading/               # Auto-loading system docs
-│   ├── overview.md
-│   ├── automodel.md
-│   ├── backend-selection.md
-│   └── model-resolution.md
+│   ├── principles.md
+│   ├── cache.md
+│   ├── hardware-compatibility.md
+│   └── docker.md
 ├── models/                     # Model-specific documentation
 │   ├── index.md
 │   ├── rfdetr.md

@@ -146,6 +146,6 @@ rm -rf /tmp/cache/shared-blobs/
 ## 🚀 Next Steps
 
 - [Core Concepts](principles.md) - Understand the design philosophy
-- [Auto-Loading Overview](../auto-loading/overview.md) - Deep dive into model loading
+- [Supported Models](../models/index.md) - Browse available models
 - [How-To: Local Packages](../how-to/local-packages.md) - Working with local model packages
 

@@ -253,7 +253,7 @@ model = AutoModel.from_pretrained(
 ## Next Steps
 
 - [Principles & Architecture](principles.md) - Understand the design philosophy
-- [Auto-Loading Overview](../auto-loading/overview.md) - Learn about automatic model loading
+- [Installation Guide](installation.md) - Detailed installation instructions
 - [Models Overview](../models/index.md) - Explore all available models
 - [How-To Guides](../how-to/local-packages.md) - Advanced usage patterns
 
