@@ -52,9 +52,10 @@ nav:
           - YOLACT: models/yolact-instance-segmentation.md
       - Classification:
           - YOLOv8: models/yolov8-classification.md
-          - ResNet: models/resnet.md
-          - ViT: models/vit.md
-          - DINOv3: models/dinov3.md
+          - YOLOv11: models/yolov11-classification.md
+          - ResNet: models/resnet-classification.md
+          - ViT: models/vit-classification.md
+          - DINOv3: models/dinov3-classification.md
       - OCR:
           - DocTR: models/doctr.md
           - EasyOCR: models/easyocr.md
