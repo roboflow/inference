@@ -35,9 +35,12 @@ The `inference-models` library supports a wide range of computer vision models a
 
 | Model | Model IDs | Backends | License | Access |
 |-------|-----------|----------|---------|--------|
-| [YOLOv8 Seg](yolov8-seg.md) | `yolov8{n,s,m,l,x}-seg-{640,1280}` | ONNX, TRT | AGPL | Public |
-| [YOLOv11 Seg](yolov11-seg.md) | `yolov11{n,s,m,l,x}-seg-{640,1280}` | ONNX, TRT | AGPL | Public |
-| [YOLACT](yolact.md) | `yolact-{resnet50,resnet101}` | Torch | MIT | Public |
+| [RF-DETR Seg](rfdetr-instance-segmentation.md) | `rfdetr-seg-preview` | Torch, ONNX, TRT | Apache 2.0 | Public |
+| [YOLOv5 Seg](yolov5-instance-segmentation.md) | Custom models only | ONNX, TRT | AGPL | API Key |
+| [YOLOv7 Seg](yolov7-instance-segmentation.md) | Custom models only | ONNX, TRT | AGPL | API Key |
+| [YOLOv8 Seg](yolov8-instance-segmentation.md) | `yolov8{n,s,m,l,x}-seg-{640,1280}` | ONNX, TorchScript, TRT | AGPL | Public |
+| [YOLOv11 Seg](yolov11-instance-segmentation.md) | `yolov11{n,s,m,l,x}-seg-640` | ONNX, TorchScript, TRT | AGPL | Public |
+| [YOLACT](yolact-instance-segmentation.md) | Custom models only | ONNX, TRT | MIT | API Key |
 
 ### Classification
 

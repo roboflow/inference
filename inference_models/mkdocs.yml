@@ -34,7 +34,7 @@ nav:
   - Models:
       - Overview: models/index.md
       - Object Detection:
-          - RFDetr: models/rfdetr-object-detection.md
+          - RF-DETR: models/rfdetr-object-detection.md
           - YOLOv5: models/yolov5-object-detection.md
           - YOLOv8: models/yolov8-object-detection.md
           - YOLOv9: models/yolov9-object-detection.md
@@ -43,35 +43,28 @@ nav:
           - YOLOv12: models/yolov12-object-detection.md
           - YOLO-NAS: models/yolonas-object-detection.md
           - Roboflow Instant: models/roboflow-instant-object-detection.md
-      - Open-Vocabulary Object Detection:
-          - Grounding DINO: models/grounding-dino.md
-          - OWLv2: models/owlv2.md
       - Instance Segmentation:
-          - RFDetr: models/rfdetr-object-detection.md
-          - YOLOv5: models/yolov5.md
-          - YOLOv7: models/yolov7.md
+          - RF-DETR: models/rfdetr-instance-segmentation.md
+          - YOLOv5: models/yolov5-instance-segmentation.md
+          - YOLOv7: models/yolov7-instance-segmentation.md
           - YOLOv8: models/yolov8-instance-segmentation.md
-          - YOLOv11: models/yolov11.md
-          - YOLACT: models/yolact.md
-          - SAM2 Real-Time: models/sam2-rt.md
-      - Interactive Segmentation:
-          - SAM: models/sam.md
-          - SAM2: models/sam2.md
-      - Semantic Segmentation:
-          - DeepLabV3+: models/deeplabv3plus.md
+          - YOLOv11: models/yolov11-instance-segmentation.md
+          - YOLACT: models/yolact-instance-segmentation.md
       - Classification:
           - YOLOv8: models/yolov8-classification.md
-          - YOLOv11: models/yolov11.md
           - ResNet: models/resnet.md
           - ViT: models/vit.md
           - DINOv3: models/dinov3.md
+      - OCR:
+          - DocTR: models/doctr.md
+          - EasyOCR: models/easyocr.md
+          - TrOCR: models/trocr.md
       - Keypoint Detection:
           - YOLOv8: models/yolov8-keypoint-detection.md
-          - YOLOv11: models/yolov11.md
           - MediaPipe Face Detection: models/mediapipe-face.md
-      - Embeddings:
-          - CLIP: models/clip.md
-          - Perception Encoder: models/perception-encoder.md
+      - Interactive Segmentation:
+          - SAM: models/sam.md
+          - SAM2: models/sam2.md
       - Vision-Language Models:
           - Florence-2: models/florence2.md
           - PaliGemma: models/paligemma.md
@@ -79,10 +72,14 @@ nav:
           - Qwen3-VL: models/qwen3vl.md
           - SmolVLM: models/smolvlm.md
           - Moondream2: models/moondream2.md
-      - OCR:
-          - DocTR: models/doctr.md
-          - EasyOCR: models/easyocr.md
-          - TrOCR: models/trocr.md
+      - Embeddings:
+          - CLIP: models/clip.md
+          - Perception Encoder: models/perception-encoder.md
+      - Semantic Segmentation:
+          - DeepLabV3+: models/deeplabv3plus.md
+      - Open-Vocabulary Object Detection:
+          - Grounding DINO: models/grounding-dino.md
+          - OWLv2: models/owlv2.md
       - Depth Estimation:
           - Depth Anything V2: models/depth-anything-v2.md
           - Depth Anything V3: models/depth-anything-v3.md
