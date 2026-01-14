@@ -41,8 +41,8 @@ You can also use fine-tuned models from Roboflow by specifying `project/version`
 
 | Feature | Supported |
 |---------|-----------|
-| **Training** | ✅ LoRA fine-tuning only |
-| **Upload Weights** | ✅ Upload fine-tuned models |
+| **Training** | ❌ Not supported |
+| **Upload Weights** | ❌ Not supported |
 | **Serverless API (v2)** | ⚠️ Limited support (not yet fully stable) |
 | **Workflows** | ✅ Use in [Workflows](https://inference.roboflow.com/workflows/about/) via Moondream2 block |
 | **Edge Deployment (Jetson)** | ❌ Not supported |

@@ -17,178 +17,99 @@ The `inference-models` library supports a wide range of computer vision models a
 
 ## Model Catalog
 
+**Legend:** ✅ Available | ❌ Not available | 🔑 Requires API key | 📤 Upload only
+
 ### Object Detection
 
-| Model | Model IDs | Backends | License | Access |
-|-------|-----------|----------|---------|--------|
-| [RFDetr](rfdetr.md) | `rfdetr-base`, `rfdetr-small`, `rfdetr-medium`, `rfdetr-nano`, `rfdetr-large` | Torch, TRT | Apache 2.0 | Public |
-| [YOLOv8](yolov8.md) | `yolov8{n,s,m,l,x}-{640,1280}` | ONNX, TRT | AGPL | Public |
-| [YOLOv9](yolov9.md) | `yolov9{c,e}-{640,1280}` | ONNX, TRT | AGPL | Public |
-| [YOLOv10](yolov10.md) | `yolov10{n,s,m,b,l,x}-640` | ONNX, TRT | AGPL | Public |
-| [YOLOv11](yolov11.md) | `yolov11{n,s,m,l,x}-{640,1280}` | ONNX, TRT | AGPL | Public |
-| [YOLOv12](yolov12.md) | `yolov12{n,s,m,l,x}-{640,1280}` | ONNX, TRT | AGPL | Public |
-| [YOLO-NAS](yolonas.md) | `yolonas{s,m,l}-{640,1280}` | ONNX, TRT | Apache 2.0 | Public |
-| [Grounding DINO](grounding-dino.md) | `grounding-dino-{tiny,base}` | Torch | Apache 2.0 | Public |
-| [OWLv2](owlv2.md) | `owlv2-{base,large}-patch14` | HF | Apache 2.0 | Public |
-| [YOLO-World](yolo-world.md) | `yolo-world-{s,m,l,x}` | Torch | GPL-3.0 | Public |
+| Model                                   | Backends | License    | Commercial License in RF Plan | Pre-trained Weights | Trainable at RF |
+|-----------------------------------------|----------|------------|-------------------------------|---------------------|----------------|
+| [RF-DETR](rfdetr-object-detection.md)   | `torch`, `onnx`, `trt` | Apache 2.0 | N/A | ✅ | ✅ |
+| [YOLOv5](yolov5-object-detection.md)    | `onnx`, `trt` | AGPL-3.0   | ✅ | ❌ | 📤 |
+| [YOLOv8](yolov8-object-detection.md)    | `onnx`, `torch-script`, `trt` | AGPL-3.0   | ✅ | ✅ | ✅ |
+| [YOLOv9](yolov9-object-detection.md)    | `onnx`, `torch-script`, `trt` | GPL-3.0    | ❌ | ❌ | 📤 |
+| [YOLOv10](yolov10-object-detection.md)  | `onnx`, `trt` | AGPL-3.0   | ✅ | ✅ | 📤 |
+| [YOLOv11](yolov11-object-detection.md)  | `onnx`, `torch-script`, `trt` | AGPL-3.0   | ✅ | ✅ | ✅ |
+| [YOLOv12](yolov12-object-detection.md)  | `onnx`, `torch-script`, `trt` | AGPL-3.0   | ✅ | ❌ | ✅ |
+| [YOLO-NAS](yolonas-object-detection.md) | `onnx`, `trt` | Apache 2.0 | N/A | ✅ | ✅ |
+| [Grounding DINO](grounding-dino.md)     | `torch` | Apache 2.0 | N/A | 🔑 | ❌ |
+| [OWLv2](owlv2.md)                       | `hugging-face` | Apache 2.0 | N/A | 🔑 | ❌ |
+| [Roboflow Instant](rroboflow-instant-object-detection)           | `hugging-face` | Roboflow   | ✅ | ❌ | ✅ |
 
 ### Instance Segmentation
 
-| Model | Model IDs | Backends | License | Access |
-|-------|-----------|----------|---------|--------|
-| [RF-DETR Seg](rfdetr-instance-segmentation.md) | `rfdetr-seg-preview` | Torch, ONNX, TRT | Apache 2.0 | Public |
-| [YOLOv5 Seg](yolov5-instance-segmentation.md) | Custom models only | ONNX, TRT | AGPL | API Key |
-| [YOLOv7 Seg](yolov7-instance-segmentation.md) | Custom models only | ONNX, TRT | AGPL | API Key |
-| [YOLOv8 Seg](yolov8-instance-segmentation.md) | `yolov8{n,s,m,l,x}-seg-{640,1280}` | ONNX, TorchScript, TRT | AGPL | Public |
-| [YOLOv11 Seg](yolov11-instance-segmentation.md) | `yolov11{n,s,m,l,x}-seg-640` | ONNX, TorchScript, TRT | AGPL | Public |
-| [YOLACT](yolact-instance-segmentation.md) | Custom models only | ONNX, TRT | MIT | API Key |
+| Model | Backends | License | Commercial License in RF Plan | Pre-trained Weights | Trainable at RF |
+|-------|----------|---------|-------------------------------|---------------------|-----------------|
+| [RF-DETR Seg](rfdetr-instance-segmentation.md) | `torch` | Apache 2.0 | N/A | ✅ | ✅ |
+| [YOLOv5 Seg](yolov5-instance-segmentation.md) | `onnx`, `trt` | AGPL-3.0 | ✅ | ❌ | ✅ |
+| [YOLOv7 Seg](yolov7-instance-segmentation.md) | `onnx`, `trt` | AGPL-3.0 | ❌ | ❌ | ✅ |
+| [YOLOv8 Seg](yolov8-instance-segmentation.md) | `onnx`, `torch-script`, `trt` | AGPL-3.0 | ✅ | ✅ | ✅ |
+| [YOLOv11 Seg](yolov11-instance-segmentation.md) | `onnx`, `torch-script`, `trt` | AGPL-3.0 | ✅ | ✅ | ✅ |
+| [YOLACT](yolact-instance-segmentation.md) | `onnx`, `trt` | MIT | N/A | ❌ | ✅ |
 
 ### Classification
 
-| Model | Model IDs | Backends | License | Access |
-|-------|-----------|----------|---------|--------|
-| [ResNet](resnet.md) | `resnet{18,34,50,101,152}` | Torch | Apache 2.0 | Public |
-| [ViT](vit.md) | `vit-{tiny,small,base,large}-patch{16,32}` | Torch | Apache 2.0 | Public |
-| [DINOv3](dinov3.md) | `dinov3-{small,base,large,giant}` | Torch | Apache 2.0 | Public |
+| Model | Backends | License | Commercial License in RF Plan | Pre-trained Weights | Trainable at RF |
+|-------|----------|---------|-------------------------------|---------------------|-----------------|
+| [ResNet](resnet-classification.md) | `torch`, `onnx`, `trt` | Apache 2.0 | N/A | ✅ | ✅ |
+| [ViT](vit-classification.md) | `torch` | Apache 2.0 | N/A | ✅ | ✅ |
+| [DINOv3](dinov3-classification.md) | `torch` | Meta DINO | N/A | ❌ | ✅ |
+| [YOLOv8 Cls](yolov8-classification.md) | `onnx`, `trt` | AGPL-3.0 | ✅ | ✅ | ✅ |
 
 ### Embeddings
 
-| Model | Model IDs | Backends | License | Access |
-|-------|-----------|----------|---------|--------|
-| [CLIP](clip.md) | `clip/{RN50,RN101,RN50x4,RN50x16,RN50x64,ViT-B-16,ViT-B-32,ViT-L-14,ViT-L-14-336px}` | Torch, ONNX | MIT | Public |
-| [Perception Encoder](perception-encoder.md) | `perception-encoder/PE-Core-{B16-224,G14-448,L14-336}` | Torch | FAIR Noncommercial | Public |
+| Model | Backends | License | Commercial License in RF Plan | Pre-trained Weights | Trainable at RF |
+|-------|----------|---------|-------------------------------|---------------------|-----------------|
+| [CLIP](clip.md) | `torch`, `onnx` | MIT | N/A | ✅ | ❌ |
+| [Perception Encoder](perception-encoder.md) | `torch` | FAIR Noncommercial | ❌ | ✅ | ❌ |
 
 ### Semantic Segmentation
 
-| Model | Model IDs | Backends | License | Access |
-|-------|-----------|----------|---------|--------|
-| [DeepLabV3+](deeplabv3plus.md) | Custom models only | Torch, ONNX, TRT | MIT | API Key |
+| Model | Backends | License | Commercial License in RF Plan | Pre-trained Weights | Trainable at RF |
+|-------|----------|---------|-------------------------------|---------------------|-----------------|
+| [DeepLabV3+](deeplabv3plus.md) | `torch`, `onnx`, `trt` | MIT | N/A | ❌ | ✅ |
 
 ### OCR & Document Parsing
 
-| Model | Model IDs | Backends | License | Access |
-|-------|-----------|----------|---------|--------|
-| [DocTR](doctr.md) | `doctr-{det}/{rec}` (63 combinations) | Torch | Apache 2.0 | API Key |
-| [EasyOCR](easyocr.md) | `easy-ocr-{lang}/{det}` (24 combinations) | Torch | Apache 2.0 | API Key |
-| [TrOCR](trocr.md) | `microsoft/trocr-{small,base,large}-printed` | HF | MIT | API Key |
+| Model | Backends | License | Commercial License in RF Plan | Pre-trained Weights | Trainable at RF |
+|-------|----------|---------|-------------------------------|---------------------|-----------------|
+| [DocTR](doctr.md) | `torch` | Apache 2.0 | N/A | 🔑 | ❌ |
+| [EasyOCR](easyocr.md) | `torch` | Apache 2.0 | N/A | 🔑 | ❌ |
+| [TrOCR](trocr.md) | `hugging-face` | MIT | N/A | 🔑 | ❌ |
 
 ### Interactive Segmentation
 
-| Model | Model IDs | Backends | License | Access |
-|-------|-----------|----------|---------|--------|
-| [SAM](sam-interactive-segmentation.md) | `sam/vit_b`, `sam/vit_l`, `sam/vit_h` | Torch | Apache 2.0 | API Key |
-| [SAM2](sam2-interactive-segmentation.md) | `sam2/hiera_{tiny,small,b_plus,large}` | Torch | Apache 2.0 | API Key |
-| [SAM2 RT](sam2-rt-video-tracking.md) | `Gy920/sam2-1-hiera-{tiny,small,base-plus,large}` | Torch | Apache 2.0 | Public |
+| Model | Backends | License | Commercial License in RF Plan | Pre-trained Weights | Trainable at RF |
+|-------|----------|---------|-------------------------------|---------------------|-----------------|
+| [SAM](sam-interactive-segmentation.md) | `torch` | Apache 2.0 | N/A | 🔑 | ❌ |
+| [SAM2](sam2-interactive-segmentation.md) | `torch` | Apache 2.0 | N/A | 🔑 | ❌ |
+| [SAM2 RT](sam2-rt-video-tracking.md) | `torch` | Apache 2.0 | N/A | ✅ | ❌ |
 
 ### Vision-Language Models
 
-| Model | Model IDs | Backends | License | Access |
-|-------|-----------|----------|---------|--------|
-| [Florence-2](florence2.md) | `florence-2-{base,large}` | Torch | MIT | Public |
-| [PaliGemma](paligemma.md) | `paligemma-{3b,10b}` | Torch | Gemma License | Public |
-| [Qwen2.5-VL](qwen25vl.md) | `qwen2.5-vl-{2b,7b,72b}` | Torch | Apache 2.0 | Public |
-| [Qwen3-VL](qwen3vl.md) | `qwen3-vl-{2b,8b}` | Torch | Apache 2.0 | Public |
-| [SmolVLM](smolvlm.md) | `smolvlm-{256m,2.2b}` | Torch | Apache 2.0 | Public |
-| [Moondream2](moondream2.md) | `moondream2` | Torch | Apache 2.0 | Public |
+| Model | Backends | License | Commercial License in RF Plan | Pre-trained Weights | Trainable at RF |
+|-------|----------|---------|-------------------------------|---------------------|-----------------|
+| [Florence-2](florence2.md) | `torch` | MIT | N/A | ✅ | ✅ |
+| [PaliGemma](paligemma.md) | `torch` | Gemma License | ❌ | ✅ | ✅ |
+| [Qwen2.5-VL](qwen25vl.md) | `torch` | Apache 2.0 | N/A | ✅ | ✅ |
+| [Qwen3-VL](qwen3vl.md) | `torch` | Apache 2.0 | N/A | ✅ | ✅ |
+| [SmolVLM](smolvlm.md) | `torch` | Apache 2.0 | N/A | ✅ | ✅ |
+| [Moondream2](moondream2.md) | `torch` | Apache 2.0 | N/A | ✅ | ❌ |
 
 ### Depth Estimation
 
-| Model | Model IDs | Backends | License | Access |
-|-------|-----------|----------|---------|--------|
-| [Depth Anything V2](depth-anything-v2.md) | `depth-anything-v2-{small,base,large}` | Torch | Apache 2.0 | Public |
-| [Depth Anything V3](depth-anything-v3.md) | `depth-anything-v3-{small,base,large}` | Torch | Apache 2.0 | Public |
+| Model | Backends | License | Commercial License in RF Plan | Pre-trained Weights | Trainable at RF |
+|-------|----------|---------|-------------------------------|---------------------|-----------------|
+| [Depth Anything V2](depth-anything-v2.md) | `torch` | Apache 2.0 | N/A | 🔑 | ❌ |
+| [Depth Anything V3](depth-anything-v3.md) | `torch` | Apache 2.0 | N/A | 🔑 | ❌ |
 
 ### Specialized Models
 
-| Model | Model IDs | Backends | License | Access |
-|-------|-----------|----------|---------|--------|
-| [L2CS](l2cs.md) | `l2cs-gaze` | Torch | MIT | Public |
-| [MediaPipe Face](mediapipe-face.md) | `mediapipe-face-detection` | MediaPipe | Apache 2.0 | Public |
+| Model | Backends | License | Commercial License in RF Plan | Pre-trained Weights | Trainable at RF |
+|-------|----------|---------|-------------------------------|---------------------|-----------------|
+| [L2CS](l2cs.md) | `torch` | MIT | N/A | ✅ | ❌ |
+| [MediaPipe Face](mediapipe-face.md) | `mediapipe` | Apache 2.0 | N/A | ✅ | ❌ |
 
-## Access Levels
 
-- **Public**: Available without API key
-- **API Key Gated**: Requires Roboflow API key
-- **Private**: Only available to specific workspaces
-
-## Backend Support
-
-### PyTorch (Torch)
-- Default backend
-- Maximum flexibility
-- Good for development
-- Supports all model types
-
-### ONNX
-- Cross-platform compatibility
-- Good CPU and GPU performance
-- Required for Roboflow-trained models
-- Install: `pip install "inference-models[onnx-cpu]"` or `[onnx-cu12]`
-
-### TensorRT (TRT)
-- Maximum GPU performance
-- Optimized for NVIDIA GPUs
-- Requires exact environment match
-- Install: `pip install "inference-models[trt10]"`
-
-### Hugging Face (HF)
-- Transformer-based models
-- Integrated with HF ecosystem
-- Included in base installation
-
-### MediaPipe
-- Optimized for mobile/edge
-- Efficient face detection
-- Install: `pip install "inference-models[mediapipe]"`
-
-## Model Naming Convention
-
-Model IDs follow these patterns:
-
-### Pre-trained Models
-```
-{architecture}-{variant}-{size}
-```
-Examples:
-- `yolov8n-640` - YOLOv8 nano, 640px input
-- `rfdetr-base` - RFDetr base variant
-- `clip/ViT-B-32` - CLIP ViT-Base with 32px patches
-
-### Roboflow-Trained Models
-```
-{workspace}/{project}/{version}
-```
-Example:
-- `my-workspace/my-project/1`
-
-## Common Model Interfaces
-
-All models implement task-specific interfaces:
-
-### Object Detection
-```python
-model = AutoModel.from_pretrained("yolov8n-640")
-predictions: List[Detections] = model(images)
-```
-
-### Instance Segmentation
-```python
-model = AutoModel.from_pretrained("yolov8n-seg-640")
-predictions: List[InstanceDetections] = model(images)
-```
-
-### Classification
-```python
-model = AutoModel.from_pretrained("resnet50")
-prediction: ClassificationPrediction = model(image)
-```
-
-### Embeddings
-```python
-model = AutoModel.from_pretrained("clip/ViT-B-32")
-image_emb = model.embed_image(image)
-text_emb = model.embed_text("a photo of a cat")
-```
 
 ## Next Steps
 

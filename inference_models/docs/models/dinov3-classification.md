@@ -14,12 +14,33 @@ DINOv3 for classification leverages self-supervised learning to create robust fe
 
 ## License
 
-**Apache 2.0**
+**Meta DINOv3 License**
 
-!!! info "Open Source License"
-    DINOv3 is licensed under Apache 2.0, making it free for both commercial and non-commercial use without restrictions.
+!!! warning "Custom License with Restrictions"
+    DINOv3 is licensed under Meta's custom DINO Materials license agreement. Key terms:
 
-    Learn more: [Apache 2.0 License](https://www.apache.org/licenses/LICENSE-2.0)
+    **✅ Permitted Uses:**
+
+    - Use, reproduce, distribute, copy, create derivative works, and modify
+    - Research and commercial applications
+    - Non-exclusive, worldwide, royalty-free license
+    - You own derivative works you create
+
+    **⚠️ Restrictions:**
+
+    - Must comply with Trade Controls and Sanctions
+    - Cannot be used for ITAR activities, military/warfare, nuclear applications, espionage, or illegal weapons
+    - Must acknowledge DINO Materials in publications
+    - Cannot reverse engineer or decompile
+    - Must redistribute under same license terms
+
+    **📋 Legal:**
+
+    - Provided "AS IS" without warranties
+    - Governed by California law
+    - License terminates if you breach terms or sue Meta over IP
+
+    **Full License**: [Meta DINOv3 License](https://github.com/roboflow/inference/blob/main/inference/models/dinov3/LICENSE.txt)
 
 ## Pre-trained Model IDs
 
