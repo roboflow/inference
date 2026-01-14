@@ -31,6 +31,7 @@ nav:
       - Cache Management: getting-started/cache.md
       - Hardware Compatibility: getting-started/hardware-compatibility.md
       - Docker Environments: getting-started/docker.md
+      - TensorRT Compilation: getting-started/trt-compilation.md
   - Models:
       - Overview: models/index.md
       - Object Detection:
