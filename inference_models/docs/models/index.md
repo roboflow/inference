@@ -6,10 +6,11 @@ The `inference-models` library supports a wide range of computer vision models a
 
 - **Object Detection**: Detect and localize objects in images
 - **Instance Segmentation**: Detect objects with pixel-level masks
+- **Semantic Segmentation**: Classify every pixel in an image
 - **Classification**: Classify entire images or image regions
 - **Embeddings**: Generate vector representations for images and text
 - **OCR & Document Parsing**: Extract text and structure from documents
-- **Segmentation**: Interactive and automatic segmentation
+- **Interactive Segmentation**: Interactive and automatic segmentation
 - **Vision-Language Models**: Multi-modal understanding and generation
 - **Depth Estimation**: Predict depth maps from images
 - **Specialized**: Gaze detection, face detection, and more
@@ -56,6 +57,12 @@ The `inference-models` library supports a wide range of computer vision models a
 |-------|-----------|----------|---------|--------|
 | [CLIP](clip.md) | `clip/{RN50,RN101,RN50x4,RN50x16,RN50x64,ViT-B-16,ViT-B-32,ViT-L-14,ViT-L-14-336px}` | Torch, ONNX | MIT | Public |
 | [Perception Encoder](perception-encoder.md) | `perception-encoder/PE-Core-{B16-224,G14-448,L14-336}` | Torch | FAIR Noncommercial | Public |
+
+### Semantic Segmentation
+
+| Model | Model IDs | Backends | License | Access |
+|-------|-----------|----------|---------|--------|
+| [DeepLabV3+](deeplabv3plus.md) | Custom models only | Torch, ONNX, TRT | MIT | API Key |
 
 ### OCR & Document Parsing
 
