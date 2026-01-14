@@ -62,6 +62,7 @@ nav:
           - TrOCR: models/trocr.md
       - Keypoint Detection:
           - YOLOv8: models/yolov8-keypoint-detection.md
+          - YOLOv11: models/yolov11-keypoint-detection.md
           - MediaPipe Face Detection: models/mediapipe-face.md
       - Interactive Segmentation:
           - SAM: models/sam.md
