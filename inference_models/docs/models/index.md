@@ -65,13 +65,13 @@ The `inference-models` library supports a wide range of computer vision models a
 | [EasyOCR](easyocr.md) | `easy-ocr-{lang}/{det}` (24 combinations) | Torch | Apache 2.0 | API Key |
 | [TrOCR](trocr.md) | `microsoft/trocr-{small,base,large}-printed` | HF | MIT | API Key |
 
-### Segmentation
+### Interactive Segmentation
 
 | Model | Model IDs | Backends | License | Access |
 |-------|-----------|----------|---------|--------|
-| [SAM](sam.md) | `sam-{vit_b,vit_l,vit_h}` | Torch | Apache 2.0 | Public |
-| [SAM2](sam2.md) | `sam2-{tiny,small,base,large}` | Torch | Apache 2.0 | Public |
-| [SAM2 RT](sam2-rt.md) | `sam2-rt-{tiny,small,base,large}` | Torch | Apache 2.0 | Public |
+| [SAM](sam-interactive-segmentation.md) | `sam/vit_b`, `sam/vit_l`, `sam/vit_h` | Torch | Apache 2.0 | API Key |
+| [SAM2](sam2-interactive-segmentation.md) | `sam2/hiera_{tiny,small,b_plus,large}` | Torch | Apache 2.0 | API Key |
+| [SAM2 RT](sam2-rt-video-tracking.md) | `Gy920/sam2-1-hiera-{tiny,small,base-plus,large}` | Torch | Apache 2.0 | Public |
 
 ### Vision-Language Models
 

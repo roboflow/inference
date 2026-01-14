@@ -65,8 +65,9 @@ nav:
           - YOLOv11: models/yolov11-keypoint-detection.md
           - MediaPipe Face Detection: models/mediapipe-face.md
       - Interactive Segmentation:
-          - SAM: models/sam.md
-          - SAM2: models/sam2.md
+          - SAM: models/sam-interactive-segmentation.md
+          - SAM2: models/sam2-interactive-segmentation.md
+          - SAM2 RT: models/sam2-rt-video-tracking.md
       - Vision-Language Models:
           - Florence-2: models/florence2.md
           - PaliGemma: models/paligemma.md
