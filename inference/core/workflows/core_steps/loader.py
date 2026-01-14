@@ -358,6 +358,18 @@ from inference.core.workflows.core_steps.sinks.roboflow.dataset_upload.v2 import
 from inference.core.workflows.core_steps.sinks.roboflow.model_monitoring_inference_aggregator.v1 import (
     ModelMonitoringInferenceAggregatorBlockV1,
 )
+from inference.core.workflows.core_steps.sinks.cloud_storage.aws_s3.v1 import (
+    AWSS3SinkBlockV1,
+)
+from inference.core.workflows.core_steps.sinks.cloud_storage.azure_blob.v1 import (
+    AzureBlobSinkBlockV1,
+)
+from inference.core.workflows.core_steps.sinks.cloud_storage.gcp_gcs.v1 import (
+    GCPGCSSinkBlockV1,
+)
+from inference.core.workflows.core_steps.sinks.cloud_storage.azure_cosmos_db.v1 import (
+    AzureCosmosDBSinkBlockV1,
+)
 from inference.core.workflows.core_steps.sinks.slack.notification.v1 import (
     SlackNotificationBlockV1,
 )
@@ -775,6 +787,10 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         EasyOCRBlockV1,
         QRCodeGeneratorBlockV1,
         DetectionsCombineBlockV1,
+        AWSS3SinkBlockV1,
+        AzureBlobSinkBlockV1,
+        GCPGCSSinkBlockV1,
+        AzureCosmosDBSinkBlockV1,
     ]
     if SAM3_3D_OBJECTS_ENABLED:
         blocks.append(SegmentAnything3_3D_ObjectsBlockV1)
