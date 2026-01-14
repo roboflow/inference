@@ -61,9 +61,9 @@ The `inference-models` library supports a wide range of computer vision models a
 
 | Model | Model IDs | Backends | License | Access |
 |-------|-----------|----------|---------|--------|
-| [DocTR](doctr.md) | `doctr-{db_resnet50,db_mobilenet_v3}` | Torch | Apache 2.0 | Public |
-| [EasyOCR](easyocr.md) | `easyocr-{en,multi}` | Torch | Apache 2.0 | Public |
-| [TrOCR](trocr.md) | `trocr-{base,large}-{printed,handwritten}` | HF | Apache 2.0 | Public |
+| [DocTR](doctr.md) | `doctr-{det}/{rec}` (63 combinations) | Torch | Apache 2.0 | API Key |
+| [EasyOCR](easyocr.md) | `easy-ocr-{lang}/{det}` (24 combinations) | Torch | Apache 2.0 | API Key |
+| [TrOCR](trocr.md) | `microsoft/trocr-{small,base,large}-printed` | HF | MIT | API Key |
 
 ### Segmentation
 
