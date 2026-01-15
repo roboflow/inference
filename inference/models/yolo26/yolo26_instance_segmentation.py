@@ -51,7 +51,6 @@ class YOLO26InstanceSegmentation(YOLOv11InstanceSegmentation):
                 self.onnx_session, self.input_name, img_in
             )
 
-
         return predictions, protos
 
     def postprocess(
