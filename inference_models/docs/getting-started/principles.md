@@ -4,7 +4,54 @@ Understanding the core principles and design philosophy behind `inference-models
 
 ## 🎯 Core Principles
 
-### 🔄 1. Multi-Backend by Design
+### 📚 1. Clear Public Interface
+
+The library maintains a **strict separation between public and internal APIs** to ensure stability and clarity for users.
+
+**For end users** - Import only from the main package:
+
+```python
+from inference_models import AutoModel, ObjectDetectionModel, Detections
+```
+
+The public interface (`inference_models/__init__.py`) exposes only the essential symbols needed for typical usage:
+
+- `AutoModel` - Main entry point for loading models
+- `AutoModelPipeline` - For loading model pipelines
+- Base model classes (`ObjectDetectionModel`, `ClassificationModel`, etc.)
+- Prediction types (`Detections`, `InstanceDetections`, `ClassificationPrediction`, etc.)
+- Common enums (`BackendType`, `ColorFormat`, `Quantization`)
+
+**For custom model developers** - Import from the developer tools module:
+
+```python
+from inference_models.developer_tools import (
+    get_model_package_contents,
+    register_model_provider,
+    ModelMetadata,
+    ONNXPackageDetails,
+)
+```
+
+The developer tools interface (`inference_models/developer_tools.py`) exposes utilities for creating custom models:
+
+- Model package loading utilities
+- Weight provider registration
+- Metadata and configuration classes
+- Backend-specific helpers (ONNX, TensorRT, PyTorch)
+- Runtime environment introspection
+
+**Why this matters:**
+
+- **Stability** - Public API changes are carefully managed and documented
+- **Clarity** - Clear guidance on what's safe to use vs. internal implementation details
+- **Maintainability** - Internal refactoring doesn't break user code
+- **Discoverability** - Small, focused API surface makes it easier to learn
+
+!!! warning "Import Guidelines"
+    **Always import from `inference_models` or `inference_models.developer_tools`**. Never import from internal modules like `inference_models.models.yolo.yolov8` or `inference_models.utils.*` - these are implementation details that may change without notice.
+
+### 🔄 2. Multi-Backend by Design
 
 We define a **model** as weights trained on a dataset, which can be exported or compiled into multiple equivalent **model packages**, each optimized for specific environments.
 
@@ -23,7 +70,7 @@ The library automatically selects the best available backend based on:
 - Model availability
 - User preferences
 
-### 📦 2. Minimal Dependencies
+### 📦 3. Minimal Dependencies
 
 We aim to keep extra dependencies minimal while covering as broad a range of models as possible.
 
@@ -37,7 +84,7 @@ We aim to keep extra dependencies minimal while covering as broad a range of mod
 - TensorRT (GPU only)
 - Specialized models (MediaPipe, Grounding DINO)
 
-### ⚡ 3. Runtime Backend Selection
+### ⚡ 4. Runtime Backend Selection
 
 Backend selection happens **dynamically at runtime** based on:
 
@@ -48,7 +95,7 @@ Backend selection happens **dynamically at runtime** based on:
 
 **Default preference order**: TensorRT → PyTorch → Hugging Face → ONNX
 
-### 🎯 4. Behavior-Based Interfaces
+### 🎯 5. Behavior-Based Interfaces
 
 The library follows a **minimalist interface design philosophy**. Models that exhibit similar behavior share slim, functionally-justified interfaces:
 
@@ -160,6 +207,19 @@ florence2-base-hf/
 ├── tokenizer.json          # Text tokenizer
 └── preprocessor_config.json # Image preprocessing config
 ```
+
+**Example: Custom Model Package**
+
+For custom models with architectures not in the main `inference-models` package, the package also includes the model implementation code:
+
+```
+my_custom_model/
+├── model_config.json       # Model metadata (architecture, task type, backend)
+├── model.py                # Model implementation (custom architecture code)
+└── weights.pt              # Model weights (optional, can be downloaded separately)
+```
+
+Custom model packages allow you to use `inference-models` as a deployment tool for proprietary or experimental architectures. The library handles model loading, backend management, and integration with the Roboflow ecosystem, while you provide the model implementation. See [Load Models from Local Packages](../how-to/local-packages.md) for details on creating custom model packages.
 
 ## 🔍 Backend Selection Process
 
