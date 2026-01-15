@@ -90,10 +90,7 @@ nav:
       - Gaze Detection:
           - L2CS-Net: models/l2cs.md
   - How-To Guides:
-      - Load Models from Local Packages: how-to/local-packages.md
-      - Add a New Model: how-to/add-model.md
-      - Custom Model Development: how-to/custom-models.md
-      - Working with Model Pipelines: how-to/model-pipelines.md
+      - Load Models Locally: how-to/local-packages.md
   - Contributors:
       - Architecture Overview: contributors/architecture.md
       - Multi-Backend System: contributors/backends.md

@@ -52,6 +52,8 @@ RF-DETR Segmentation preview model is trained on the COCO dataset (80 classes) a
 
 ## Usage Example
 
+### Using Pre-trained Models
+
 ```python
 import cv2
 import supervision as sv
@@ -72,4 +74,74 @@ annotated_image = mask_annotator.annotate(image.copy(), detections)
 # Save or display
 cv2.imwrite("annotated.jpg", annotated_image)
 ```
+
+## Trained RF-DETR Segmentation Outside Roboflow? Use with `inference-models`
+
+RF-DETR Segmentation offers a **seamless training-to-deployment workflow** that makes it incredibly easy to go from training to production.
+
+### Step 1: Train Your Model
+
+Train RF-DETR Segmentation on your custom dataset using the official [rf-detr repository](https://github.com/roboflow/rf-detr):
+
+```bash
+# Clone the RF-DETR training repository
+git clone https://github.com/roboflow/rf-detr.git
+cd rf-detr
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Train on your custom instance segmentation dataset
+python train.py --config configs/rfdetr_seg_preview.yaml --data path/to/your/dataset
+```
+
+After training completes, you'll have a checkpoint file (e.g., `checkpoint_best.pth`) containing your trained weights.
+
+### Step 2: Deploy Instantly with inference-models
+
+Here's where the magic happens - **no conversion, no export, no hassle**. Simply point `AutoModel` directly at your training checkpoint:
+
+```python
+import cv2
+import supervision as sv
+from inference_models import AutoModel
+
+# Load your freshly trained model directly from the checkpoint
+# You MUST specify model_type for checkpoint loading
+model = AutoModel.from_pretrained(
+    "/path/to/checkpoint_best.pth",
+    model_type="rfdetr-seg-preview",  # Required: specify the model architecture
+    labels=["class1", "class2", "class3"]  # Optional: your custom class names
+)
+
+# That's it! Use it exactly like any other model
+image = cv2.imread("path/to/image.jpg")
+predictions = model(image)
+detections = predictions[0].to_supervision()
+
+# Annotate with masks
+mask_annotator = sv.MaskAnnotator()
+annotated_image = mask_annotator.annotate(image.copy(), detections)
+cv2.imwrite("annotated.jpg", annotated_image)
+```
+
+**Important parameters:**
+
+- **`model_type`** (required) - Specifies the RF-DETR Segmentation architecture variant. Currently: `rfdetr-seg-preview`
+- **`labels`** (optional) - Class names for your model. Can be:
+    - A list of class names: `["person", "car", "dog"]`
+    - A registered label set name: `"coco"` (for COCO dataset classes)
+    - If not provided, defaults to COCO labels
+
+### Why This Matters
+
+**Frictionless training-to-production workflow:**
+
+- ✅ **No model conversion** - Use training checkpoints directly
+- ✅ **No export step** - Skip ONNX/TensorRT export complexity
+- ✅ **Instant deployment** - From training to production in seconds
+- ✅ **Same API** - Identical interface for pre-trained and custom models
+- ✅ **Production-ready** - Leverage all `inference-models` features (multi-backend, caching, optimization)
+
+This seamless workflow eliminates the traditional friction between training and deployment, letting you iterate faster and deploy with confidence.
 
