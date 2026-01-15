@@ -8,7 +8,12 @@ import pytest
 
 from inference.core.devices.utils import GLOBAL_DEVICE_ID
 from inference.core.entities.types import ModelType, TaskType
-from inference.core.exceptions import MissingApiKeyError, ModelNotRecognisedError
+from inference.core.exceptions import (
+    InvalidModelIDError,
+    MissingApiKeyError,
+    ModelNotRecognisedError,
+    RoboflowAPIUnsuccessfulRequestError,
+)
 from inference.core.registries import roboflow
 from inference.core.registries.roboflow import (
     RoboflowModelRegistry,
@@ -246,6 +251,34 @@ def test_get_model_type_when_generic_model_is_utilised(
 
     # then
     assert result == expected_result
+
+
+@mock.patch.object(roboflow, "get_roboflow_instant_model_data")
+@mock.patch.object(roboflow, "construct_model_type_cache_path")
+def test_get_model_type_when_public_model_without_version_fails(
+    construct_model_type_cache_path_mock: MagicMock,
+    get_roboflow_instant_model_data_mock: MagicMock,
+    empty_local_dir: str,
+) -> None:
+    # given
+    metadata_path = os.path.join(empty_local_dir, "model_type.json")
+    construct_model_type_cache_path_mock.return_value = metadata_path
+    get_roboflow_instant_model_data_mock.side_effect = (
+        RoboflowAPIUnsuccessfulRequestError("500")
+    )
+
+    # when
+    with pytest.raises(InvalidModelIDError) as error:
+        _ = get_model_type(model_id="public-model", api_key="my_api_key")
+
+    # then
+    assert "missing a version or is invalid" in str(error.value)
+    get_roboflow_instant_model_data_mock.assert_called_once_with(
+        api_key="my_api_key",
+        model_id="public-model",
+        countinference=None,
+        service_secret=None,
+    )
 
 
 @mock.patch.object(roboflow, "get_roboflow_model_data")

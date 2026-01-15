@@ -21,10 +21,12 @@ from inference.core.env import (
     MODELS_CACHE_AUTH_ENABLED,
 )
 from inference.core.exceptions import (
+    InvalidModelIDError,
     MissingApiKeyError,
     ModelArtefactError,
     ModelNotRecognisedError,
     RoboflowAPINotAuthorizedError,
+    RoboflowAPIUnsuccessfulRequestError,
 )
 from inference.core.logger import logger
 from inference.core.models.base import Model
@@ -223,12 +225,19 @@ def get_model_type(
         ).get("ort")
         project_task_type = api_data.get("type", "object-detection")
     else:
-        api_data = get_roboflow_instant_model_data(
-            api_key=api_key,
-            model_id=model_id,
-            countinference=countinference,
-            service_secret=service_secret,
-        )
+        try:
+            api_data = get_roboflow_instant_model_data(
+                api_key=api_key,
+                model_id=model_id,
+                countinference=countinference,
+                service_secret=service_secret,
+            )
+        except RoboflowAPIUnsuccessfulRequestError as error:
+            raise InvalidModelIDError(
+                f"Model ID `{model_id}` is missing a version or is invalid. "
+                f"Provide a versioned model id like `<model_id>/<version>` "
+                f"(e.g., `model-name/1`)."
+            ) from error
         project_task_type = api_data.get("taskType", "object-detection")
     if api_data is None:
         raise ModelArtefactError("Error loading model artifacts from Roboflow API.")
