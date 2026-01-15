@@ -21,6 +21,30 @@ YOLOV11_ALIASES = {
     **YOLOV11_ALIASES,
     **{k.replace("yolov11", "yolo11"): v for k, v in YOLOV11_ALIASES.items()},
 }
+YOLO26_ALIASES = {
+    "yolov26n-640": "coco/41",
+    "yolov26s-640": "coco/42",
+    "yolov26m-640": "coco/43",
+    "yolov26l-640": "coco/44",
+    "yolov26x-640": "coco/45",
+}
+
+YOLO26_SEG_ALIASES = {
+    "yolov26n-seg-640": "coco-dataset-vdnr1/27",
+    "yolov26s-seg-640": "coco-dataset-vdnr1/28",
+    "yolov26m-seg-640": "coco-dataset-vdnr1/29",
+    "yolov26l-seg-640": "coco-dataset-vdnr1/31",
+    "yolov26x-seg-640": "coco-dataset-vdnr1/32",
+}
+
+YOLO26_POSE_ALIASES = {
+    "yolov26n-pose-640": "coco-pose-detection/12",
+    "yolov26s-pose-640": "coco-pose-detection/13",
+    "yolov26m-pose-640": "coco-pose-detection/14",
+    "yolov26l-pose-640": "coco-pose-detection/15",
+    "yolov26x-pose-640": "coco-pose-detection/16",
+}
+
 RFDETR_ALIASES = {
     "rfdetr-base": "coco/36",
     "rfdetr-large": "coco/37",
@@ -101,6 +125,9 @@ REGISTERED_ALIASES = {
     **QWEN_ALIASES,
     **RFDETR_ALIASES,
     **CLASSIFICATION_ALIASES,
+    **YOLO26_ALIASES,
+    **YOLO26_SEG_ALIASES,
+    **YOLO26_POSE_ALIASES,
 }
 
 OCR_ENDPOINTS = {
