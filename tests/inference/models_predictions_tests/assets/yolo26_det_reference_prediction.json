@@ -5,14 +5,14 @@
   },
   "predictions": [
     {
-      "x": 360.0,
-      "y": 215.5,
-      "width": 558.0,
-      "height": 411.0,
-      "confidence": 0.8924306631088257,
+      "x": 306.5,
+      "y": 217.0,
+      "width": 613.0,
+      "height": 414.0,
+      "confidence": 0.9381707906723022,
       "class": "dog",
       "class_id": 16,
-      "detection_id": "31b982e4-093b-4ca2-8385-f6900f6f47fc"
+      "detection_id": "f5266176-fd2d-4aa1-8fdf-9c6a3ce79cfc"
     }
   ]
 }

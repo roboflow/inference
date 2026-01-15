@@ -122,6 +122,7 @@ class ObjectDetectionBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
         predictions = predictions[
             : len(img_dims)
         ]  # If the batch size was fixed we have empty preds at the end
+
         responses = [
             ObjectDetectionInferenceResponse(
                 predictions=[
