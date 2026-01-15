@@ -27,6 +27,11 @@ YOLO26_ALIASES = {
     "yolov26m-640": "coco/43",
     "yolov26l-640": "coco/44",
     "yolov26x-640": "coco/45",
+    "yolo26n-640": "coco/41",
+    "yolo26s-640": "coco/42",
+    "yolo26m-640": "coco/43",
+    "yolo26l-640": "coco/44",
+    "yolo26x-640": "coco/45",
 }
 
 YOLO26_SEG_ALIASES = {
@@ -35,6 +40,11 @@ YOLO26_SEG_ALIASES = {
     "yolov26m-seg-640": "coco-dataset-vdnr1/29",
     "yolov26l-seg-640": "coco-dataset-vdnr1/31",
     "yolov26x-seg-640": "coco-dataset-vdnr1/32",
+    "yolo26n-seg-640": "coco-dataset-vdnr1/27",
+    "yolo26s-seg-640": "coco-dataset-vdnr1/28",
+    "yolo26m-seg-640": "coco-dataset-vdnr1/29",
+    "yolo26l-seg-640": "coco-dataset-vdnr1/31",
+    "yolo26x-seg-640": "coco-dataset-vdnr1/32",
 }
 
 YOLO26_POSE_ALIASES = {
@@ -43,6 +53,11 @@ YOLO26_POSE_ALIASES = {
     "yolov26m-pose-640": "coco-pose-detection/14",
     "yolov26l-pose-640": "coco-pose-detection/15",
     "yolov26x-pose-640": "coco-pose-detection/16",
+    "yolo26n-pose-640": "coco-pose-detection/12",
+    "yolo26s-pose-640": "coco-pose-detection/13",
+    "yolo26m-pose-640": "coco-pose-detection/14",
+    "yolo26l-pose-640": "coco-pose-detection/15",
+    "yolo26x-pose-640": "coco-pose-detection/16",
 }
 
 RFDETR_ALIASES = {
@@ -125,6 +140,9 @@ REGISTERED_ALIASES = {
     **QWEN_ALIASES,
     **RFDETR_ALIASES,
     **CLASSIFICATION_ALIASES,
+    **YOLO26_ALIASES,
+    **YOLO26_SEG_ALIASES,
+    **YOLO26_POSE_ALIASES,
     **YOLO26_ALIASES,
     **YOLO26_SEG_ALIASES,
     **YOLO26_POSE_ALIASES,
