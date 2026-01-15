@@ -52,10 +52,15 @@ from inference.models import (
     YOLOv11InstanceSegmentation,
     YOLOv11ObjectDetection,
     YOLOv12ObjectDetection,
+    YOLO26InstanceSegmentation,
+    YOLO26ObjectDetection,
 )
 from inference.models.yolov8.yolov8_keypoints_detection import YOLOv8KeypointsDetection
 from inference.models.yolov11.yolov11_keypoints_detection import (
     YOLOv11KeypointsDetection,
+)
+from inference.models.yolov26.yolov26_keypoints_detection import (
+    YOLO26KeypointsDetection,
 )
 
 ROBOFLOW_MODEL_TYPES = {
@@ -111,6 +116,13 @@ ROBOFLOW_MODEL_TYPES = {
     ("object-detection", "yolov12m"): YOLOv12ObjectDetection,
     ("object-detection", "yolov12l"): YOLOv12ObjectDetection,
     ("object-detection", "yolov12x"): YOLOv12ObjectDetection,
+    ("object-detection", "yolo26"): YOLO26ObjectDetection,
+    ("object-detection", "yolo26s"): YOLO26ObjectDetection,
+    ("object-detection", "yolo26n"): YOLO26ObjectDetection,
+    ("object-detection", "yolo26b"): YOLO26ObjectDetection,
+    ("object-detection", "yolo26m"): YOLO26ObjectDetection,
+    ("object-detection", "yolo26l"): YOLO26ObjectDetection,
+    ("object-detection", "yolo26x"): YOLO26ObjectDetection,
     ("object-detection", "rfdetr-base"): RFDETRObjectDetection,
     ("object-detection", "rfdetr-large"): RFDETRObjectDetection,
     ("object-detection", "rfdetr-nano"): RFDETRObjectDetection,
@@ -163,6 +175,46 @@ ROBOFLOW_MODEL_TYPES = {
         "instance-segmentation",
         "yolov11x-seg",
     ): YOLOv11InstanceSegmentation,
+    (
+        "instance-segmentation",
+        "yolo26n",
+    ): YOLO26InstanceSegmentation,
+    (
+        "instance-segmentation",
+        "yolo26s",
+    ): YOLO26InstanceSegmentation,
+    (
+        "instance-segmentation",
+        "yolo26m",
+    ): YOLO26InstanceSegmentation,
+    (
+        "instance-segmentation",
+        "yolo26l",
+    ): YOLO26InstanceSegmentation,
+    (
+        "instance-segmentation",
+        "yolo26x",
+    ): YOLO26InstanceSegmentation,
+    (
+        "instance-segmentation",
+        "yolo26n-seg",
+    ): YOLO26InstanceSegmentation,
+    (
+        "instance-segmentation",
+        "yolo26s-seg",
+    ): YOLO26InstanceSegmentation,
+    (
+        "instance-segmentation",
+        "yolo26m-seg",
+    ): YOLO26InstanceSegmentation,
+    (
+        "instance-segmentation",
+        "yolo26l-seg",
+    ): YOLO26InstanceSegmentation,
+    (
+        "instance-segmentation",
+        "yolo26x-seg",
+    ): YOLO26InstanceSegmentation,
     ("keypoint-detection", "yolov11n"): YOLOv11KeypointsDetection,
     ("keypoint-detection", "yolov11s"): YOLOv11KeypointsDetection,
     ("keypoint-detection", "yolov11m"): YOLOv11KeypointsDetection,
@@ -173,6 +225,16 @@ ROBOFLOW_MODEL_TYPES = {
     ("keypoint-detection", "yolov11m-pose"): YOLOv11KeypointsDetection,
     ("keypoint-detection", "yolov11l-pose"): YOLOv11KeypointsDetection,
     ("keypoint-detection", "yolov11x-pose"): YOLOv11KeypointsDetection,
+    ("keypoint-detection", "yolo26n"): YOLO26KeypointsDetection,
+    ("keypoint-detection", "yolo26s"): YOLO26KeypointsDetection,
+    ("keypoint-detection", "yolo26m"): YOLO26KeypointsDetection,
+    ("keypoint-detection", "yolo26l"): YOLO26KeypointsDetection,
+    ("keypoint-detection", "yolo26x"): YOLO26KeypointsDetection,
+    ("keypoint-detection", "yolo26n-pose"): YOLO26KeypointsDetection,
+    ("keypoint-detection", "yolo26s-pose"): YOLO26KeypointsDetection,
+    ("keypoint-detection", "yolo26m-pose"): YOLO26KeypointsDetection,
+    ("keypoint-detection", "yolo26l-pose"): YOLO26KeypointsDetection,
+    ("keypoint-detection", "yolo26x-pose"): YOLO26KeypointsDetection,
     ("instance-segmentation", "stub"): InstanceSegmentationModelStub,
     (
         "instance-segmentation",
