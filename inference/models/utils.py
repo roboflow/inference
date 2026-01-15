@@ -40,6 +40,8 @@ from inference.models import (
     RFDETRInstanceSegmentation,
     RFDETRObjectDetection,
     VitClassification,
+    YOLO26InstanceSegmentation,
+    YOLO26ObjectDetection,
     YOLONASObjectDetection,
     YOLOv5InstanceSegmentation,
     YOLOv5ObjectDetection,
@@ -52,8 +54,6 @@ from inference.models import (
     YOLOv11InstanceSegmentation,
     YOLOv11ObjectDetection,
     YOLOv12ObjectDetection,
-    YOLO26InstanceSegmentation,
-    YOLO26ObjectDetection,
 )
 from inference.models.yolov8.yolov8_keypoints_detection import YOLOv8KeypointsDetection
 from inference.models.yolov11.yolov11_keypoints_detection import (
