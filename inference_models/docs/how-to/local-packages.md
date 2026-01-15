@@ -1,328 +1,322 @@
-# Load Models from Local Packages
+# Load Models Locally
 
-This guide shows how to load models from local directories and custom code packages.
+This guide explains the three ways to load models from local storage in `inference-models`.
 
 ## Overview
 
-The `inference-models` library supports loading models from:
+The `inference-models` library supports three distinct approaches for loading models locally:
 
-1. **Local model packages** - Pre-downloaded model files
-2. **Local code packages** - Custom model implementations
-3. **Checkpoint files** - Direct loading from model checkpoints
+1. **[Custom Model Packages](#1-custom-model-packages)** - Run models with custom architectures not in the main package (both code and weights from local directory)
+2. **[Locally Cached Packages](#2-locally-cached-packages)** - Load models from cached packages distributed via weights providers (useful for development)
+3. **[Direct Checkpoint Loading](#3-direct-checkpoint-loading)** - Load training checkpoints directly (currently RF-DETR only)
 
-## Loading from Local Model Packages
+Each approach serves different use cases - choose based on your needs.
 
-### Basic Usage
+## 1. Custom Model Packages
 
-If you have a model package directory with the standard structure:
+Load models with **custom architectures not in the main `inference-models` package**. This approach is especially valuable for production deployment of proprietary or experimental models.
+
+### When to Use
+
+- **Custom architectures** - Run models with architectures not submitted to the main package
+- **Proprietary models** - Keep your model code and architecture private
+- **Using `inference-models` as a deployment tool** - Leverage production-ready tooling (multi-backend support, model loading, preprocessing) and integration with the Roboflow ecosystem ([Workflows](https://inference.roboflow.com/workflows/about/), [InferencePipeline](https://inference.roboflow.com/quickstart/inference_pipeline/))
+
+### Package Structure
+
+A custom model package contains both the model implementation code and weights:
 
 ```
-my_model/
-├── model_config.json
-├── weights.pt (or .onnx, .engine)
-├── class_names.txt
-└── inference_config.json
+my_custom_model/
+├── model_config.json    # Points to your model class
+├── model.py            # Your model implementation
+└── weights.pt          # Model weights (optional)
 ```
 
-Load it with:
+### Loading Custom Models
 
 ```python
 from inference_models import AutoModel
 
 model = AutoModel.from_pretrained(
-    "/path/to/my_model",
-    weights_provider="local"
-)
-```
-
-### Model Package Structure
-
-A valid model package must contain:
-
-#### Required Files
-
-**`model_config.json`** - Model metadata:
-```json
-{
-  "model_id": "my-custom-model",
-  "model_architecture": "yolov8",
-  "task_type": "object-detection",
-  "backend": "torch",
-  "quantization": "fp32"
-}
-```
-
-**Weights file** - One of:
-- `weights.pt` (PyTorch)
-- `model.onnx` (ONNX)
-- `model.engine` (TensorRT)
-- `model.pth` (PyTorch state dict)
-
-#### Optional Files
-
-**`class_names.txt`** - Class labels (one per line):
-```
-person
-car
-dog
-cat
-```
-
-**`inference_config.json`** - Preprocessing configuration:
-```json
-{
-  "resize_mode": "letterbox",
-  "input_size": [640, 640],
-  "mean": [0.485, 0.456, 0.406],
-  "std": [0.229, 0.224, 0.225]
-}
-```
-
-### Specifying Backend
-
-If the model package supports multiple backends, specify which to use:
-
-```python
-model = AutoModel.from_pretrained(
-    "/path/to/my_model",
-    weights_provider="local",
-    backend_type="onnx"  # or "torch", "trt"
-)
-```
-
-## Loading from Checkpoints
-
-Load directly from a checkpoint file without a full package:
-
-```python
-from inference_models import AutoModel
-
-model = AutoModel.from_pretrained(
-    "/path/to/checkpoint.pt",
-    model_type="yolov8",
-    task_type="object-detection",
-    backend_type="torch"
-)
-```
-
-This is useful for:
-- Loading models mid-training
-- Testing custom checkpoints
-- Quick experimentation
-
-## Loading Custom Code Packages
-
-For models with custom code (not in the standard registry):
-
-### Enable Local Code Packages
-
-```python
-model = AutoModel.from_pretrained(
-    "/path/to/custom_model",
-    allow_local_code_packages=True,
-    weights_provider="local"
+    "/path/to/my_custom_model",
+    allow_local_code_packages=True
 )
 ```
 
 !!! warning "Security Warning"
-    Only enable `allow_local_code_packages` for trusted sources. 
-    This allows execution of arbitrary Python code.
+    Only enable `allow_local_code_packages` for trusted sources. This allows execution of arbitrary Python code from the model package.
 
-### Custom Package Structure
+### Creating Custom Model Packages
 
-```
-custom_model/
-├── model_config.json
-├── weights.pt
-├── model.py              # Custom model implementation
-└── __init__.py
-```
+#### Step 1: Create `model_config.json`
 
-**`model.py`**:
-```python
-from inference_models.models.base.object_detection import ObjectDetectionModel
+The config file specifies which Python module and class to load:
 
-class CustomDetector(ObjectDetectionModel):
-    @classmethod
-    def from_pretrained(cls, model_name_or_path, **kwargs):
-        # Load model
-        return cls(...)
-    
-    def pre_process(self, images, **kwargs):
-        # Custom preprocessing
-        pass
-    
-    def forward(self, pre_processed_images, **kwargs):
-        # Custom inference
-        pass
-    
-    def post_process(self, model_results, **kwargs):
-        # Custom postprocessing
-        pass
-```
-
-**`model_config.json`**:
 ```json
 {
-  "model_id": "custom-detector",
-  "model_architecture": "custom",
-  "task_type": "object-detection",
-  "backend": "custom",
-  "entry_point": "model.CustomDetector"
+  "model_module": "model.py",
+  "model_class": "MyCustomDetector"
 }
 ```
 
-## Offline Model Distribution
+**Required fields:**
 
-### Prepare Model Package
+- **`model_module`** - Name of the Python file containing your model class (e.g., `"model.py"`)
+- **`model_class`** - Name of the class in that module (e.g., `"MyCustomDetector"`)
 
-1. Download model from Roboflow:
+#### Step 2: Implement Your Model Class
+
+Your model class must comply with the standard `.from_pretrained(...)` classmethod schema that all models use:
+
+**Example: Object Detection Model**
+
+```python
+from typing import List, Optional, Union
+import numpy as np
+import torch
+from inference_models import ObjectDetectionModel, Detections
+from inference_models.developer_tools import get_model_package_contents
+
+class MyCustomDetector(ObjectDetectionModel[torch.Tensor, torch.Tensor]):
+
+    @classmethod
+    def from_pretrained(
+        cls,
+        model_name_or_path: str,
+        device: torch.device = torch.device("cpu"),
+        **kwargs,
+    ) -> "MyCustomDetector":
+        """Load model from package directory.
+
+        Args:
+            model_name_or_path: Path to model package directory
+            device: Device to load model on
+            **kwargs: Additional arguments
+
+        Returns:
+            Initialized model instance
+        """
+        # Get model package contents
+        package_contents = get_model_package_contents(
+            model_package_dir=model_name_or_path,
+            elements=["weights.pt", "config.json"]  # Files you need
+        )
+
+        # Load your model
+        model = torch.load(package_contents["weights.pt"], map_location=device)
+
+        return cls(model=model, device=device)
+
+    def pre_process(self, images, **kwargs):
+        # Your preprocessing logic
+        pass
+
+    def forward(self, pre_processed_images, **kwargs):
+        # Your inference logic
+        pass
+
+    def post_process(self, model_results, **kwargs) -> Detections:
+        # Your postprocessing logic
+        pass
+```
+
+**Example: Classification Model**
+
+```python
+from typing import List, Optional, Union
+import numpy as np
+import torch
+from inference_models import ClassificationModel, ClassificationPrediction, ColorFormat
+from inference_models.developer_tools import get_model_package_contents
+
+class MyClassificationModel(ClassificationModel[torch.Tensor, torch.Tensor]):
+
+    @classmethod
+    def from_pretrained(
+        cls,
+        model_name_or_path: str,
+        device: torch.device = torch.device("cpu"),
+        **kwargs,
+    ) -> "MyClassificationModel":
+        # Load model package contents
+        package_contents = get_model_package_contents(
+            model_package_dir=model_name_or_path,
+            elements=["weights.pt"]
+        )
+
+        # Initialize your model
+        model = torch.load(package_contents["weights.pt"], map_location=device)
+
+        return cls(model=model, device=device)
+
+    @property
+    def class_names(self) -> List[str]:
+        return ["class1", "class2", "class3"]
+
+    def pre_process(
+        self,
+        images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
+        input_color_format: Optional[ColorFormat] = None,
+        **kwargs,
+    ) -> torch.Tensor:
+        # Your preprocessing logic
+        pass
+
+    def forward(self, pre_processed_images: torch.Tensor, **kwargs) -> torch.Tensor:
+        # Your inference logic
+        pass
+
+    def post_process(
+        self,
+        model_results: torch.Tensor,
+        **kwargs,
+    ) -> ClassificationPrediction:
+        # Your postprocessing logic
+        pass
+```
+
+!!! tip "Imports from `inference-models`"
+    When creating custom models, use the public `inference-models` interface:
+
+    **Base model classes:**
+
+    - `from inference_models import ObjectDetectionModel, Detections`
+    - `from inference_models import ClassificationModel, ClassificationPrediction`
+    - `from inference_models import InstanceSegmentationModel`
+    - `from inference_models import KeypointsDetectionModel`
+
+    **Developer tools:**
+
+    - `from inference_models.developer_tools import get_model_package_contents` - Load files from model packages
+    - `from inference_models.developer_tools import x_ray_runtime_environment` - Runtime introspection
+
+    **Utilities:**
+
+    - `from inference_models import ColorFormat` - Image color format handling
+
+    See [Core Principles - Clear Public Interface](../getting-started/principles.md#1-clear-public-interface) for the complete public API.
+
+## 2. Locally Cached Packages
+
+Load models from **locally cached packages distributed via weights providers**. This approach is useful when developing changes to model code or before upstreaming implementation to the main repository.
+
+### When to Use
+
+- **Development and debugging** - Test changes to model implementations before contributing
+- **Determining package contents** - Verify what files should be distributed by weights providers
+- **Offline testing** - Work with cached models without network access
+
+### How It Works
+
+When you load a model from a weights provider (like Roboflow), `inference-models` downloads and caches the model package locally. Both `AutoModel` and specific model implementation classes can load from this cache.
+
+### Loading from Cache
+
 ```python
 from inference_models import AutoModel
 
-# This downloads and caches the model
-model = AutoModel.from_pretrained("yolov8n-640")
+# First load downloads and caches the model
+model = AutoModel.from_pretrained("rfdetr-base")
 
-# Find cache location
-import os
-cache_dir = os.path.expanduser("~/.cache/inference-models/yolov8n-640")
-print(f"Model cached at: {cache_dir}")
+# Subsequent loads use the cached version
+# Default cache location: /tmp/cache/models-cache/
+# Override with: export INFERENCE_HOME=/path/to/cache
 ```
 
-2. Copy the cache directory to your offline environment
+### Direct Cache Access
 
-3. Load from local path:
+You can also load directly from a cached package directory:
+
 ```python
+from inference_models import AutoModel
+
+# Load from specific cache directory
 model = AutoModel.from_pretrained(
-    "/path/to/copied/model",
-    weights_provider="local"
+    "/tmp/cache/models-cache/rfdetr-base-6a8b9c2d/torch-fp32-batch1"
 )
 ```
 
-### Package for Distribution
+### Package Structure
 
-Create a distributable package:
+This is an example structure - each model follows its own rules and there are no arbitrary files:
 
-```bash
-# Create package directory
-mkdir my_model_package
-cd my_model_package
-
-# Copy model files
-cp ~/.cache/inference-models/yolov8n-640/* .
-
-# Create archive
-tar -czf my_model_package.tar.gz .
+```
+model_package/
+├── model_config.json       # Auto-generated metadata
+├── weights.pt              # Model weights
+└── class_names.txt         # Class labels (if applicable)
 ```
 
-Distribute and extract:
+!!! info "Roboflow Platform Models"
+    Models trained on Roboflow Platform comply to a custom RF standard where runtime behavior is determined by `inference_config.json`. See [Understand Roboflow Model Packages](roboflow-model-packages.md) for details.
 
-```bash
-tar -xzf my_model_package.tar.gz -C /path/to/models/
-```
+### Development Workflow
 
-## Environment Variables
+1. **Download model package** - Load model to populate cache
+2. **Modify model code** - Edit implementation in your local repository
+3. **Test with cached weights** - Load from cache directory to test changes
+4. **Verify package contents** - Ensure all required files are present
+5. **Upstream changes** - Submit PR with updated implementation
 
-Control cache and loading behavior:
+## 3. Direct Checkpoint Loading
+
+Load **training checkpoints directly** without conversion or export. Currently supported for **RF-DETR models only**.
+
+### When to Use
+
+- **Seamless training-to-deployment** - Go from training to production instantly
+- **Models trained outside Roboflow** - Use models trained with the [rf-detr repository](https://github.com/roboflow/rf-detr)
+- **Rapid iteration** - Test freshly trained models without export steps
+
+### Loading RF-DETR Checkpoints
 
 ```python
-import os
+from inference_models import AutoModel
 
-# Set custom cache directory
-os.environ["INFERENCE_MODELS_CACHE_DIR"] = "/custom/cache/path"
-
-# Disable hash verification (not recommended)
-os.environ["INFERENCE_MODELS_VERIFY_HASH"] = "false"
-
-# Set download timeout
-os.environ["INFERENCE_MODELS_DOWNLOAD_TIMEOUT"] = "300"
-```
-
-## Advanced Options
-
-### Disable Auto-Resolution Cache
-
-```python
+# Load RF-DETR checkpoint directly
 model = AutoModel.from_pretrained(
-    "/path/to/model",
-    use_auto_resolution_cache=False
+    "/path/to/checkpoint_best.pth",
+    model_type="rfdetr-base",  # Required: specify architecture
+    labels=["class1", "class2", "class3"]  # Optional: your class names
 )
 ```
 
-### Custom Model Access Manager
+**Required parameters:**
 
-Track model file access:
+- **`model_type`** - RF-DETR architecture variant: `rfdetr-nano`, `rfdetr-small`, `rfdetr-base`, `rfdetr-medium`, `rfdetr-large`, `rfdetr-seg-preview`
 
-```python
-from inference_models.models.auto_loaders.model_access_manager import ModelAccessManager
+**Optional parameters:**
 
-access_manager = ModelAccessManager()
+- **`labels`** - Class names as a list or registered label set name (e.g., `"coco"`)
 
-model = AutoModel.from_pretrained(
-    "/path/to/model",
-    model_access_manager=access_manager
-)
+### Why This Matters
 
-# Query accessed files
-files = access_manager.get_accessed_files()
-```
+**Frictionless training-to-production workflow:**
 
-### Untrusted Packages
+- ✅ **No model conversion** - Use training checkpoints directly
+- ✅ **No export step** - Skip ONNX/TensorRT export complexity
+- ✅ **Instant deployment** - From training to production in seconds
+- ✅ **Same API** - Identical interface for pre-trained and custom models
 
-By default, only trusted packages are loaded. To allow untrusted:
+### Learn More
 
-```python
-model = AutoModel.from_pretrained(
-    "/path/to/model",
-    allow_untrusted_packages=True
-)
-```
+See the RF-DETR model documentation for complete training and deployment workflows:
 
-!!! danger "Security Risk"
-    Untrusted packages may contain malicious code. Only use with packages from trusted sources.
+- [RF-DETR Object Detection](../models/rfdetr-object-detection.md#trained-rf-detr-outside-roboflow-use-with-inference-models)
+- [RF-DETR Instance Segmentation](../models/rfdetr-instance-segmentation.md#trained-rf-detr-segmentation-outside-roboflow-use-with-inference-models)
 
-## Troubleshooting
+## Comparison Table
 
-### Missing model_config.json
-
-If loading fails due to missing config:
-
-```python
-# Specify manually
-model = AutoModel.from_pretrained(
-    "/path/to/weights.pt",
-    model_type="yolov8",
-    task_type="object-detection",
-    backend_type="torch"
-)
-```
-
-### Incompatible Backend
-
-Ensure the backend is installed:
-
-```bash
-# For ONNX
-pip install "inference-models[onnx-cpu]"
-
-# For TensorRT
-pip install "inference-models[trt10]" "tensorrt==10.12.0.36"
-```
-
-### Hash Verification Failures
-
-If hash verification fails but you trust the source:
-
-```python
-model = AutoModel.from_pretrained(
-    "/path/to/model",
-    verify_hash_while_download=False
-)
-```
+| Approach | Use Case | Code Required | Weights Location | When to Use |
+|----------|----------|---------------|------------------|-------------|
+| **Custom Model Packages** | Custom architectures | ✅ Yes (model.py) | Local directory | Production deployment of proprietary models |
+| **Locally Cached Packages** | Standard architectures | ❌ No (uses library code) | Cache directory | Development, testing, offline work |
+| **Direct Checkpoint Loading** | RF-DETR only | ❌ No (uses library code) | Checkpoint file | Training-to-deployment workflow |
 
 ## Next Steps
 
-- [Custom Model Development](custom-models.md) - Build your own models
-- [Add a New Model](add-model.md) - Contribute to the library
-- [Model Pipelines](model-pipelines.md) - Chain multiple models
+- [Core Principles](../getting-started/principles.md) - Understand the public interface and developer tools
+- [RF-DETR Object Detection](../models/rfdetr-object-detection.md) - Learn about checkpoint loading
+- [Supported Models](../models/index.md) - Browse available models
 

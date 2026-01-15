@@ -91,6 +91,7 @@ nav:
           - L2CS-Net: models/l2cs.md
   - How-To Guides:
       - Load Models Locally: how-to/local-packages.md
+      - Understand Roboflow Model Packages: how-to/roboflow-model-packages.md
   - Contributors:
       - Architecture Overview: contributors/architecture.md
       - Multi-Backend System: contributors/backends.md
