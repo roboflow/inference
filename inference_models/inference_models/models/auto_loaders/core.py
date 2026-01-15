@@ -18,9 +18,10 @@ from inference_models.errors import (
     CorruptedModelPackageError,
     DirectLocalStorageAccessError,
     InsecureModelIdentifierError,
+    InvalidParameterError,
     ModelLoadingError,
     NoModelPackagesAvailableError,
-    UnauthorizedModelAccessError, InvalidParameterError,
+    UnauthorizedModelAccessError,
 )
 from inference_models.logger import LOGGER, verbose_info
 from inference_models.models.auto_loaders.access_manager import (

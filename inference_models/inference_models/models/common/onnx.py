@@ -85,7 +85,7 @@ MODEL_INPUT_CASTING = {
 }
 
 
-def set_execution_provider_defaults(
+def set_onnx_execution_provider_defaults(
     providers: List[Union[str, tuple]],
     model_package_path: str,
     device: torch.device,
@@ -113,7 +113,7 @@ def set_execution_provider_defaults(
     return result
 
 
-def run_session_with_batch_size_limit(
+def run_onnx_session_with_batch_size_limit(
     session: onnxruntime.InferenceSession,
     inputs: Dict[str, torch.Tensor],
     output_shape_mapping: Optional[Dict[str, tuple]] = None,
@@ -121,7 +121,7 @@ def run_session_with_batch_size_limit(
     min_batch_size: Optional[int] = None,
 ) -> List[torch.Tensor]:
     if max_batch_size is None:
-        return run_session_via_iobinding(
+        return run_onnx_session_via_iobinding(
             session=session,
             inputs=inputs,
             output_shape_mapping=output_shape_mapping,
@@ -140,7 +140,7 @@ def run_session_with_batch_size_limit(
     input_batch_size = input_batch_sizes.pop()
     if min_batch_size is None and input_batch_size <= max_batch_size:
         # no point iterating
-        return run_session_via_iobinding(
+        return run_onnx_session_via_iobinding(
             session=session,
             inputs=inputs,
             output_shape_mapping=output_shape_mapping,
@@ -174,7 +174,7 @@ def run_session_with_batch_size_limit(
             batch_output_shape_mapping = {}
             for name, shape in output_shape_mapping.items():
                 batch_output_shape_mapping[name] = (max_batch_size,) + shape[1:]
-        batch_results = run_session_via_iobinding(
+        batch_results = run_onnx_session_via_iobinding(
             session=session,
             inputs=batch_inputs,
             output_shape_mapping=batch_output_shape_mapping,
@@ -186,7 +186,7 @@ def run_session_with_batch_size_limit(
     return [torch.cat(e, dim=0).contiguous() for e in all_results]
 
 
-def run_session_via_iobinding(
+def run_onnx_session_via_iobinding(
     session: onnxruntime.InferenceSession,
     inputs: Dict[str, torch.Tensor],
     output_shape_mapping: Optional[Dict[str, tuple]] = None,

@@ -58,10 +58,7 @@ class InferenceTRTLogger(trt.ILogger):
         return self._memory
 
 
-TRT_LOGGER = InferenceTRTLogger()
-
-
-def get_engine_inputs_and_outputs(
+def get_trt_engine_inputs_and_outputs(
     engine: trt.ICudaEngine,
 ) -> Tuple[List[str], List[str]]:
     num_inputs = engine.num_io_tensors
@@ -230,7 +227,7 @@ def trt_dtype_to_torch(trt_dtype):
     }[trt_dtype]
 
 
-def load_model(
+def load_trt_model(
     model_path: str,
     engine_host_code_allowed: bool = False,
 ) -> trt.ICudaEngine:

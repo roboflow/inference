@@ -15,8 +15,8 @@ from inference_models.errors import (
 )
 from inference_models.models.common.model_packages import get_model_package_contents
 from inference_models.models.common.onnx import (
-    run_session_with_batch_size_limit,
-    set_execution_provider_defaults,
+    run_onnx_session_with_batch_size_limit,
+    set_onnx_execution_provider_defaults,
 )
 from inference_models.models.common.roboflow.model_packages import (
     InferenceConfig,
@@ -80,7 +80,7 @@ class YOLOACTForInstanceSegmentationOnnx(
                 f"contact the platform support.",
                 help_url="https://todo",
             )
-        onnx_execution_providers = set_execution_provider_defaults(
+        onnx_execution_providers = set_onnx_execution_provider_defaults(
             providers=onnx_execution_providers,
             model_package_path=model_name_or_path,
             device=device,
@@ -173,7 +173,7 @@ class YOLOACTForInstanceSegmentationOnnx(
             ) = ([], [], [], [], [])
             for image in pre_processed_images:
                 loc_data, conf_data, mask_data, prior_data, proto_data = (
-                    run_session_with_batch_size_limit(
+                    run_onnx_session_with_batch_size_limit(
                         session=self._session,
                         inputs={self._input_name: image.unsqueeze(0).contiguous()},
                     )
