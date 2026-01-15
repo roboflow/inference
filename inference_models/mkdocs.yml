@@ -89,7 +89,10 @@ nav:
           - Depth Anything V3: models/depth-anything-v3.md
       - Gaze Detection:
           - L2CS-Net: models/l2cs.md
-  - How-To Guides:
+  - How-To:
+      - Choose the Right Backend: how-to/choose-backend.md
+      - Work with Model Predictions: how-to/work-with-predictions.md
+      - Debug Model Loading Issues: how-to/debug-model-loading.md
       - Load Models Locally: how-to/local-packages.md
       - Understand Roboflow Model Packages: how-to/roboflow-model-packages.md
   - Contributors:

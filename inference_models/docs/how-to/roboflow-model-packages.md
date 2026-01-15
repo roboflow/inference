@@ -196,17 +196,6 @@ When you load a Roboflow Platform model:
 4. Model is initialized with appropriate backend
 5. Post-processing is configured based on settings
 
-## Runtime Overrides
-
-```python
-from inference_models import AutoModel
-
-model = AutoModel.from_pretrained("your-project/your-model")
-
-# Override parameters at runtime
-predictions = model(image, confidence=0.5, iou_threshold=0.6)
-```
-
 ## Next Steps
 
 - [Load Models Locally](local-packages.md)
