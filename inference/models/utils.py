@@ -59,7 +59,7 @@ from inference.models.yolov8.yolov8_keypoints_detection import YOLOv8KeypointsDe
 from inference.models.yolov11.yolov11_keypoints_detection import (
     YOLOv11KeypointsDetection,
 )
-from inference.models.yolov26.yolov26_keypoints_detection import (
+from inference.models.yolo26.yolo26_keypoints_detection import (
     YOLO26KeypointsDetection,
 )
 

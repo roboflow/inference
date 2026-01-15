@@ -1,0 +1,18 @@
+{
+  "image": {
+    "width": 640,
+    "height": 427
+  },
+  "predictions": [
+    {
+      "x": 360.0,
+      "y": 215.5,
+      "width": 558.0,
+      "height": 411.0,
+      "confidence": 0.8924306631088257,
+      "class": "dog",
+      "class_id": 16,
+      "detection_id": "31b982e4-093b-4ca2-8385-f6900f6f47fc"
+    }
+  ]
+}
