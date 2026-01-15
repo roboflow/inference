@@ -259,7 +259,15 @@ For detailed model documentation, see [Supported Models](https://roboflow.github
 
 ## 🔧 Run your local models
 
-Load your own model implementations from a local directory without contributing to the main library:
+Load your own model implementations from a local directory - models with architectures **not** in the main `inference-models` package. This is especially valuable for **production deployment** of custom models:
+
+**Why use `inference-models` for custom models?**
+
+- **Multi-backend support** - Automatically run your models with TensorRT, ONNX, or PyTorch backends without writing backend-specific code
+- **Production-ready tooling** - Leverage tested components for model loading, preprocessing, and prediction
+- **Frictionless training-to-production** - Take models from training to production applications with minimal effort
+- **Integration with Roboflow ecosystem** - Use your custom models in [Workflows](https://inference.roboflow.com/workflows/about/) for complex pipelines or with [InferencePipeline](https://inference.roboflow.com/using_inference/inference_pipeline) for video processing
+- **Keep models private** - Run proprietary architectures without contributing to the main package
 
 ```python
 from inference_models import AutoModel
