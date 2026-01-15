@@ -41,16 +41,6 @@ class YOLO26KeypointsDetection(YOLOv11KeypointsDetection):
                 self.onnx_session, self.input_name, img_in
             )[0]
 
-        # YOLO26 end-to-end format: (batch, num_det, 6 + num_keypoints*3)
-        # [x1, y1, x2, y2, conf, class_idx, keypoints...]
-        boxes = predictions[:, :, :4]
-        confs = predictions[:, :, 4:5]
-        class_indices = predictions[:, :, 5:6]
-        keypoints = predictions[:, :, 6:]
-
-        # Reformat to match expected format: [boxes, conf, class_idx, keypoints]
-        predictions = np.concatenate([boxes, confs, class_indices, keypoints], axis=2)
-
         return (predictions,)
 
     def postprocess(

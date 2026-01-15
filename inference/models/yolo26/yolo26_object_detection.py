@@ -34,10 +34,6 @@ class YOLO26ObjectDetection(YOLOv11ObjectDetection):
             predictions = run_session_via_iobinding(
                 self.onnx_session, self.input_name, img_in
             )[0]
-        boxes = predictions[:, :, :4]
-        confs = predictions[:, :, 4:5]
-        class_indices = predictions[:, :, 5:6]
-        predictions = np.concatenate([boxes, confs, class_indices], axis=2)
 
         return (predictions,)
 
