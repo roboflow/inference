@@ -1,7 +1,12 @@
-from inference.models.yolov11.yolov11_object_detection import YOLOv11ObjectDetection
+from typing import List, Optional, Tuple
+
 import numpy as np
-from typing import Tuple, List, Optional
-from inference.core.utils.onnx import ImageMetaType, run_session_via_iobinding
+
+from inference.core.entities.responses.inference import (
+    InferenceResponseImage,
+    ObjectDetectionInferenceResponse,
+    ObjectDetectionPrediction,
+)
 from inference.core.models.defaults import (
     DEFAULT_CLASS_AGNOSTIC_NMS,
     DEFAULT_CONFIDENCE,
@@ -9,14 +14,11 @@ from inference.core.models.defaults import (
     DEFAULT_MAX_CANDIDATES,
     DEFAUlT_MAX_DETECTIONS,
 )
-
-from inference.core.entities.responses.inference import (
-    InferenceResponseImage,
-    ObjectDetectionInferenceResponse,
-    ObjectDetectionPrediction,
-)
 from inference.core.models.types import PreprocessReturnMetadata
+from inference.core.utils.onnx import ImageMetaType, run_session_via_iobinding
 from inference.core.utils.postprocess import post_process_bboxes
+from inference.models.yolov11.yolov11_object_detection import YOLOv11ObjectDetection
+
 
 class YOLO26ObjectDetection(YOLOv11ObjectDetection):
     def predict(self, img_in: ImageMetaType, **kwargs) -> Tuple[np.ndarray]:
@@ -139,7 +141,6 @@ class YOLO26ObjectDetection(YOLOv11ObjectDetection):
             for ind, batch_predictions in enumerate(predictions)
         ]
         return responses
-
 
     def validate_model_classes(self) -> None:
         pass

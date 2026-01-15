@@ -1,4 +1,5 @@
-from typing import List, Tuple, Optional, Union
+from typing import List, Optional, Tuple, Union
+
 import numpy as np
 
 from inference.core.entities.responses.inference import (
@@ -9,6 +10,7 @@ from inference.core.entities.responses.inference import (
 )
 from inference.core.exceptions import InvalidMaskDecodeArgument
 from inference.core.models.types import PreprocessReturnMetadata
+from inference.core.utils.onnx import run_session_via_iobinding
 from inference.core.utils.postprocess import (
     masks2poly,
     post_process_bboxes,
@@ -17,7 +19,6 @@ from inference.core.utils.postprocess import (
     process_mask_fast,
     process_mask_tradeoff,
 )
-from inference.core.utils.onnx import run_session_via_iobinding
 from inference.models.yolov11.yolov11_instance_segmentation import (
     YOLOv11InstanceSegmentation,
 )
@@ -29,13 +30,13 @@ DEFAULT_TRADEOFF_FACTOR = 0.0
 
 class YOLO26InstanceSegmentation(YOLOv11InstanceSegmentation):
     """YOLO26 Instance Segmentation model with end-to-end ONNX output.
-    
+
     YOLO26 exports with NMS already applied, outputting:
     - predictions: (batch, num_detections, 38) where 38 = 6 + 32 mask coefficients
       Format: [x1, y1, x2, y2, confidence, class_index, mask_coeff_0, ..., mask_coeff_31]
     - protos: (batch, 32, H, W) mask prototypes
     """
-    
+
     def predict(self, img_in: np.ndarray, **kwargs) -> Tuple[np.ndarray, np.ndarray]:
         """Performs inference on the given image using the ONNX session.
 
@@ -49,17 +50,17 @@ class YOLO26InstanceSegmentation(YOLOv11InstanceSegmentation):
             predictions, protos = run_session_via_iobinding(
                 self.onnx_session, self.input_name, img_in
             )
-        
+
         # YOLO26 end-to-end format: (batch, num_det, 38)
         # [x1, y1, x2, y2, conf, class_idx, mask_coeffs...]
         boxes = predictions[:, :, :4]
         confs = predictions[:, :, 4:5]
         class_indices = predictions[:, :, 5:6]
         mask_coeffs = predictions[:, :, 6:]
-        
+
         # Reformat to match expected format: [boxes, conf, class_idx, mask_coeffs]
         predictions = np.concatenate([boxes, confs, class_indices, mask_coeffs], axis=2)
-        
+
         return predictions, protos
 
     def postprocess(
@@ -75,7 +76,7 @@ class YOLO26InstanceSegmentation(YOLOv11InstanceSegmentation):
         List[InstanceSegmentationInferenceResponse],
     ]:
         """Postprocesses the instance segmentation predictions.
-        
+
         YOLO26 predictions come with NMS already applied, so we just need to:
         1. Filter by confidence
         2. Decode masks
@@ -85,27 +86,27 @@ class YOLO26InstanceSegmentation(YOLOv11InstanceSegmentation):
         infer_shape = (self.img_size_h, self.img_size_w)
         img_dims = preprocess_return_metadata["img_dims"]
         img_in_shape = preprocess_return_metadata["im_shape"]
-        
+
         # Filter by confidence and process each batch
         masks = []
         filtered_predictions = []
-        
+
         for batch_idx, batch_preds in enumerate(predictions):
             # Filter by confidence (conf is at index 4)
             keep = batch_preds[:, 4] > confidence
             batch_preds = batch_preds[keep]
             filtered_predictions.append(batch_preds)
-            
+
             if batch_preds.size == 0:
                 masks.append([])
                 continue
-            
+
             # Get mask coefficients (starting at index 6)
             mask_coeffs = batch_preds[:, 6:]
             boxes = batch_preds[:, :4]
             proto = protos[batch_idx]
             img_dim = img_dims[batch_idx]
-            
+
             # Decode masks based on mode
             if mask_decode_mode == "accurate":
                 batch_masks = process_mask_accurate(
@@ -130,10 +131,10 @@ class YOLO26InstanceSegmentation(YOLOv11InstanceSegmentation):
                 raise InvalidMaskDecodeArgument(
                     f"Invalid mask_decode_mode: {mask_decode_mode}. Must be one of ['accurate', 'fast', 'tradeoff']"
                 )
-            
+
             # Convert masks to polygons
             polys = masks2poly(batch_masks)
-            
+
             # Post-process bounding boxes
             batch_preds[:, :4] = post_process_bboxes(
                 [boxes],
@@ -145,7 +146,7 @@ class YOLO26InstanceSegmentation(YOLOv11InstanceSegmentation):
                     "disable_preproc_static_crop"
                 ],
             )[0]
-            
+
             # Post-process polygons
             polys = post_process_polygons(
                 img_dim,
@@ -156,7 +157,7 @@ class YOLO26InstanceSegmentation(YOLOv11InstanceSegmentation):
             )
             masks.append(polys)
             filtered_predictions[batch_idx] = batch_preds
-        
+
         return self.make_response(filtered_predictions, masks, img_dims, **kwargs)
 
     def make_response(
@@ -169,12 +170,12 @@ class YOLO26InstanceSegmentation(YOLOv11InstanceSegmentation):
         **kwargs,
     ) -> List[InstanceSegmentationInferenceResponse]:
         """Constructs instance segmentation response objects.
-        
+
         YOLO26 prediction format: [x1, y1, x2, y2, conf, class_idx, mask_coeffs...]
         """
         if isinstance(img_dims, dict) and "img_dims" in img_dims:
             img_dims = img_dims["img_dims"]
-            
+
         responses = []
         for ind, (batch_predictions, batch_masks) in enumerate(zip(predictions, masks)):
             preds_list = []
