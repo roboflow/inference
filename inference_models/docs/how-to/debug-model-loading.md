@@ -36,7 +36,7 @@ AutoModel.describe_runtime()
 NoModelPackagesAvailableError: Could not find any model package announced by weights provider
 ```
 
-**Cause:** Either the model doesn't exist, or no compatible model packages are available for your environment.
+**Cause:** No model package is registered for the requested model.
 
 **Solutions:**
 
@@ -50,6 +50,7 @@ model = AutoModel.from_pretrained("yolov8n-640")
 ```
 
 2. **Check if model is ready:**
+
    - For Roboflow models, ensure training is complete
    - Check the Roboflow dashboard for model status
 
@@ -79,10 +80,7 @@ model = AutoModel.from_pretrained(
 )
 ```
 
-**Get your API key:**
-1. Go to [Roboflow](https://roboflow.com)
-2. Navigate to Settings → API Keys
-3. Copy your API key
+**Get your API key:** See [how to find your Roboflow API key](https://docs.roboflow.com/developer/authentication/find-your-roboflow-api-key)
 
 ### Corrupted Model Package
 
@@ -91,7 +89,7 @@ model = AutoModel.from_pretrained(
 CorruptedModelPackageError: Model package is corrupted or incomplete
 ```
 
-**Cause:** Downloaded model files are corrupted or incomplete.
+**Cause:** Downloaded model files are corrupted or incomplete, or bug in the code.
 
 **Solution:**
 
@@ -112,6 +110,10 @@ from inference_models import AutoModel
 
 model = AutoModel.from_pretrained("yolov8n-640")
 ```
+
+3. **If the issue persists, report it:**
+
+After verifying the cache is cleared and the problem continues, [open a GitHub issue](https://github.com/roboflow/inference/issues/new) with details about the model and error.
 
 ### Backend Compatibility Issues
 
@@ -150,13 +152,14 @@ model = AutoModel.from_pretrained("yolov8n-640", backend="onnx")
 
 
 
-## Common Scenarios
+## Common Problems
 
-### Scenario 1: "Model not found" on Roboflow Platform
+### "Model not found" on Roboflow Platform
 
 **Problem:** Model ID is correct but still getting errors.
 
 **Checklist:**
+
 - ✅ Model training is complete
 - ✅ Model version exists (check dashboard)
 - ✅ API key is provided and valid
@@ -171,7 +174,7 @@ model = AutoModel.from_pretrained(
 )
 ```
 
-### Scenario 2: CUDA Out of Memory
+### CUDA Out of Memory
 
 **Error:**
 ```
@@ -182,9 +185,22 @@ RuntimeError: CUDA out of memory
 
 1. **Use smaller batch size:**
 ```python
-# Process images one at a time
-for image in images:
-    predictions = model([image])  # Batch of 1
+from inference_models.developer_tools import generate_batch_chunks
+
+# For list of images
+batch_size = 4
+for i in range(0, len(images), batch_size):
+    batch = images[i:i + batch_size]
+    predictions = model(batch)
+
+# For 4D tensor (batch, channels, height, width)
+import torch
+images_tensor = torch.stack([...])  # Your images as tensor
+for chunk, padding_size in generate_batch_chunks(images_tensor, chunk_size=4):
+    predictions = model(chunk)
+    # Remove padding from results if needed
+    if padding_size > 0:
+        predictions = predictions[:-padding_size]
 ```
 
 2. **Use CPU instead:**
