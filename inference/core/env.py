@@ -818,17 +818,9 @@ HTTP_API_SHARED_WORKFLOWS_THREAD_POOL_WORKERS = int(
 WORKFLOW_SELECTIVE_BLOCKS_DISABLE = str2bool(
     os.getenv("WORKFLOW_SELECTIVE_BLOCKS_DISABLE", "False")
 )
-# Backward compatibility with old mirroring mode variable
-if not WORKFLOW_SELECTIVE_BLOCKS_DISABLE:
-    WORKFLOW_SELECTIVE_BLOCKS_DISABLE = str2bool(
-        os.getenv("WORKFLOW_MIRRORING_MODE", "False")
-    )
 
 # Comma-separated list of block type categories to disable (e.g., "sink,model")
-WORKFLOW_DISABLED_BLOCK_TYPES = os.getenv(
-    "WORKFLOW_DISABLED_BLOCK_TYPES",
-    os.getenv("WORKFLOW_BLOCKED_BLOCK_TYPES", "")  # Backward compatibility
-)
+WORKFLOW_DISABLED_BLOCK_TYPES = os.getenv("WORKFLOW_DISABLED_BLOCK_TYPES", "")
 if WORKFLOW_DISABLED_BLOCK_TYPES:
     WORKFLOW_DISABLED_BLOCK_TYPES = [
         t.strip().lower() for t in WORKFLOW_DISABLED_BLOCK_TYPES.split(",") if t.strip()
@@ -837,10 +829,7 @@ else:
     WORKFLOW_DISABLED_BLOCK_TYPES = []
 
 # Comma-separated list of block identifier patterns to disable
-WORKFLOW_DISABLED_BLOCK_PATTERNS = os.getenv(
-    "WORKFLOW_DISABLED_BLOCK_PATTERNS",
-    os.getenv("WORKFLOW_BLOCKED_BLOCK_PATTERNS", "")  # Backward compatibility
-)
+WORKFLOW_DISABLED_BLOCK_PATTERNS = os.getenv("WORKFLOW_DISABLED_BLOCK_PATTERNS", "")
 if WORKFLOW_DISABLED_BLOCK_PATTERNS:
     WORKFLOW_DISABLED_BLOCK_PATTERNS = [
         p.strip().lower() for p in WORKFLOW_DISABLED_BLOCK_PATTERNS.split(",") if p.strip()
