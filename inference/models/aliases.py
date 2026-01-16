@@ -67,12 +67,12 @@ YOLO26_SEG_ALIASES = {
     "yolov26s-seg-640": "coco-dataset-vdnr1/28",
     "yolov26m-seg-640": "coco-dataset-vdnr1/29",
     "yolov26l-seg-640": "coco-dataset-vdnr1/31",
-    "yolov26x-seg-640": "coco-dataset-vdnr1/32",
+    "yolov26x-seg-640": "coco-dataset-vdnr1/34",
     "yolo26n-seg-640": "coco-dataset-vdnr1/27",
     "yolo26s-seg-640": "coco-dataset-vdnr1/28",
     "yolo26m-seg-640": "coco-dataset-vdnr1/29",
     "yolo26l-seg-640": "coco-dataset-vdnr1/31",
-    "yolo26x-seg-640": "coco-dataset-vdnr1/32",
+    "yolo26x-seg-640": "coco-dataset-vdnr1/34",
 }
 
 YOLO26_POSE_ALIASES = {
