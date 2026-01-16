@@ -96,12 +96,11 @@ nav:
       - Load Models Locally: how-to/local-packages.md
       - Understand Roboflow Model Packages: how-to/roboflow-model-packages.md
   - Contributors:
-      - Architecture Overview: contributors/architecture.md
-      - Multi-Backend System: contributors/backends.md
-      - Dependency Management: contributors/dependencies.md
-      - Running Models from Local Packages: contributors/running-models-from-local-packages.md
-      - Adding Models: contributors/adding-models.md
-      - Testing: contributors/testing.md
+      - Development Environment: contributors/dev-environment.md
+      - Core Architecture: contributors/core-architecture.md
+      - Dependencies and Backends: contributors/dependencies-and-backends.md
+      - Adding a Model: contributors/adding-model.md
+      - Writing Tests: contributors/writing-tests.md
   - API Reference:
       - inference_models: api-reference/
 
