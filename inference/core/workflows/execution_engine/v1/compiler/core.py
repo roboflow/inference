@@ -154,6 +154,7 @@ def compile_workflow_graph(
     )
     validate_workflow_specification(
         workflow_definition=parsed_workflow_definition,
+        available_blocks=available_blocks,
         profiler=profiler,
     )
     execution_graph = prepare_execution_graph(
