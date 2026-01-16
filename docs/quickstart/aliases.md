@@ -385,108 +385,108 @@ table {
     <td><a href="https://universe.roboflow.com/microsoft/coco-dataset-vdnr1/model/23">Test in Browser</a></td>
 </tr>
 <tr>
-    <td>YOLOv26n</td>
+    <td>YOLO26n</td>
     <td>640</td>
     <td>Object Detection</td>
-    <td>yolov26n-640</td>
+    <td>yolo26n-640</td>
     <td><a href="https://universe.roboflow.com/microsoft/coco/model/41">Test in Browser</a></td>
 </tr>
 <tr>
     <td>YOLOv26s</td>
     <td>640</td>
     <td>Object Detection</td>
-    <td>yolov26s-640</td>
+    <td>yolo26s-640</td>
     <td><a href="https://universe.roboflow.com/microsoft/coco/model/42">Test in Browser</a></td>
 </tr>
 <tr>
     <td>YOLOv26m</td>
     <td>640</td>
     <td>Object Detection</td>
-    <td>yolov26m-640</td>
+    <td>yolo26m-640</td>
     <td><a href="https://universe.roboflow.com/microsoft/coco/model/43">Test in Browser</a></td>
 </tr>
 <tr>
     <td>YOLOv26l</td>
     <td>640</td>
     <td>Object Detection</td>
-    <td>yolov26l-640</td>
+    <td>yolo26l-640</td>
     <td><a href="https://universe.roboflow.com/microsoft/coco/model/44">Test in Browser</a></td>
 </tr>
 <tr>
     <td>YOLOv26x</td>
     <td>640</td>
     <td>Object Detection</td>
-    <td>yolov26x-640</td>
+    <td>yolo26x-640</td>
     <td><a href="https://universe.roboflow.com/microsoft/coco/model/45">Test in Browser</a></td>
 </tr>
 <tr>
-    <td>YOLOv26n</td>
+    <td>YOLO26n</td>
     <td>640</td>
     <td>Instance Segmentation</td>
-    <td>yolov26n-seg-640</td>
+    <td>yolo26n-seg-640</td>
     <td><a href="https://universe.roboflow.com/microsoft/coco-dataset-vdnr1/model/27">Test in Browser</a></td>
 </tr>
 <tr>
     <td>YOLOv26s</td>
     <td>640</td>
     <td>Instance Segmentation</td>
-    <td>yolov26s-seg-640</td>
+    <td>yolo26s-seg-640</td>
     <td><a href="https://universe.roboflow.com/microsoft/coco-dataset-vdnr1/model/28">Test in Browser</a></td>
 </tr>
 <tr>
     <td>YOLOv26m</td>
     <td>640</td>
     <td>Instance Segmentation</td>
-    <td>yolov26m-seg-640</td>
+    <td>yolo26m-seg-640</td>
     <td><a href="https://universe.roboflow.com/microsoft/coco-dataset-vdnr1/model/29">Test in Browser</a></td>
 </tr>
 <tr>
     <td>YOLOv26l</td>
     <td>640</td>
     <td>Instance Segmentation</td>
-    <td>yolov26l-seg-640</td>
+    <td>yolo26l-seg-640</td>
     <td><a href="https://universe.roboflow.com/microsoft/coco-dataset-vdnr1/model/31">Test in Browser</a></td>
 </tr>
 <tr>
     <td>YOLOv26x</td>
     <td>640</td>
     <td>Instance Segmentation</td>
-    <td>yolov26x-seg-640</td>
+    <td>yolo26x-seg-640</td>
     <td><a href="https://universe.roboflow.com/microsoft/coco-dataset-vdnr1/model/34">Test in Browser</a></td>
 </tr>
 <tr>
-    <td>YOLOv26n Keypoint Detection</td>
+    <td>YOLO26n Keypoint Detection</td>
     <td>640</td>
     <td>Keypoint Detection</td>
-    <td>yolov26n-pose-640</td>
+    <td>yolo26n-pose-640</td>
     <td><a href="https://universe.roboflow.com/microsoft/coco-pose-detection/12">Test in Browser</a></td>
 </tr>
 <tr>
     <td>YOLOv26s Keypoint Detection</td>
     <td>640</td>
     <td>Keypoint Detection</td>
-    <td>yolov26s-pose-640</td>
+    <td>yolo26s-pose-640</td>
     <td><a href="https://universe.roboflow.com/microsoft/coco-pose-detection/13">Test in Browser</a></td>
 </tr>
 <tr>
     <td>YOLOv26m Keypoint Detection</td>
     <td>640</td>
     <td>Keypoint Detection</td>
-    <td>yolov26m-pose-640</td>
+    <td>yolo26m-pose-640</td>
     <td><a href="https://universe.roboflow.com/microsoft/coco-pose-detection/14">Test in Browser</a></td>
 </tr>
 <tr>
     <td>YOLOv26l Keypoint Detection</td>
     <td>640</td>
     <td>Keypoint Detection</td>
-    <td>yolov26l-pose-640</td>
+    <td>yolo26l-pose-640</td>
     <td><a href="https://universe.roboflow.com/microsoft/coco-pose-detection/15">Test in Browser</a></td>
 </tr>
 <tr>
     <td>YOLOv26x Keypoint Detection</td>
     <td>640</td>
     <td>Keypoint Detection</td>
-    <td>yolov26x-pose-640</td>
+    <td>yolo26x-pose-640</td>
     <td><a href="https://universe.roboflow.com/microsoft/coco-pose-detection/16">Test in Browser</a></td>
 </tr>
 </table>
