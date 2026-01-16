@@ -22,7 +22,6 @@ When enabled, the validation checks each workflow step during compilation and re
 - **Default**: `false`
 - **Description**: Enables or disables the block filtering feature
 - **Example**: `export WORKFLOW_SELECTIVE_BLOCKS_DISABLE=true`
-- **Backward Compatibility**: Also supports `WORKFLOW_MIRRORING_MODE` for legacy systems
 
 #### `WORKFLOW_DISABLED_BLOCK_TYPES`
 - **Type**: Comma-separated string
@@ -30,14 +29,12 @@ When enabled, the validation checks each workflow step during compilation and re
 - **Description**: Block type categories to disable (from block manifest's `block_type` field)
 - **Valid Values**: `sink`, `model`, `transformation`, `visualization`, `analytics`, etc.
 - **Example**: `export WORKFLOW_DISABLED_BLOCK_TYPES="sink,model"`
-- **Backward Compatibility**: Falls back to `WORKFLOW_BLOCKED_BLOCK_TYPES` if set
 
 #### `WORKFLOW_DISABLED_BLOCK_PATTERNS`
 - **Type**: Comma-separated string
 - **Default**: Empty (no patterns disabled by default)
 - **Description**: Patterns to match in block identifiers (case-insensitive substring match)
 - **Example**: `export WORKFLOW_DISABLED_BLOCK_PATTERNS="webhook,openai,anthropic"`
-- **Backward Compatibility**: Falls back to `WORKFLOW_BLOCKED_BLOCK_PATTERNS` if set
 
 #### `WORKFLOW_DISABLE_REASON`
 - **Type**: String
@@ -229,22 +226,6 @@ export WORKFLOW_SELECTIVE_BLOCKS_DISABLE=false
 - Compiled workflows are cached
 - No runtime performance impact
 - Minimal overhead (<1ms per workflow)
-
-## Migration Guide
-
-### From Mirroring Mode to Selective Blocks
-```bash
-# Old configuration
-export WORKFLOW_MIRRORING_MODE=true
-export WORKFLOW_BLOCKED_BLOCK_TYPES="sink,model"
-export WORKFLOW_BLOCKED_BLOCK_PATTERNS="webhook,openai"
-
-# New configuration (backward compatible)
-export WORKFLOW_SELECTIVE_BLOCKS_DISABLE=true
-export WORKFLOW_DISABLED_BLOCK_TYPES="sink,model"
-export WORKFLOW_DISABLED_BLOCK_PATTERNS="webhook,openai"
-export WORKFLOW_DISABLE_REASON="Blocks disabled for testing"
-```
 
 ## Advanced Configuration
 
