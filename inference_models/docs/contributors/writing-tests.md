@@ -2,33 +2,210 @@
 
 This guide covers best practices for writing tests in `inference-models`.
 
+## Test Types
+
+The `inference_models` library uses three types of tests, each serving a different purpose:
+
+### 1. Integration Tests
+
+**Location:** `inference_models/tests/integration_tests/models/`
+
+Integration tests verify that your model produces correct predictions with actual model packages. They:
+
+- Load models using `from_pretrained()` with real model packages
+- Run inference on test images
+- Assert that predictions match expected outputs (bounding boxes, confidence scores, class IDs, etc.)
+- Test different input formats (numpy arrays, torch tensors, single images, batches)
+- Test model-specific features (custom image sizes, preprocessing options, etc.)
+
+**Example:** `test_yolov8_object_detection_predictions_onnx.py` tests YOLOv8 ONNX models with various configurations.
+
+**When to add:** Always add integration tests when implementing a new model. These are the most important tests.
+
+### 2. E2E Platform Tests
+
+**Location:** `inference_models/tests/e2e_platform_tests/`
+
+E2E (end-to-end) platform tests verify the full auto-loading pipeline using `AutoModel.from_pretrained()`:
+
+- Test the complete workflow: weights provider → package download → model instantiation
+- Verify that models work correctly when loaded through the platform
+- Typically simpler than integration tests, focusing on basic functionality
+
+**Example:** `test_moondream2_e2e.py` tests loading Moondream2 via AutoModel and running basic inference.
+
+**When to add:** Add an E2E test to verify your model integrates correctly with the AutoModel system.
+
+### 3. Unit Tests
+
+**Location:** `inference_models/tests/unit_tests/`
+
+Unit tests verify individual components in isolation:
+
+- Auto-loader logic (`models/auto_loaders/`)
+- Model registry functionality
+- Utilities and helper functions
+- Weights provider logic
+
+**When to add:** Add unit tests if you created new utilities, helper functions, or custom auto-loader logic.
+
 ## Test Organization
 
 ### Directory Structure
 
 ```
-tests/
-├── inference/
-│   └── unit_tests/
-│       └── models/
-│           └── test_your_model.py
-├── inference_cli/
-│   └── unit_tests/
-├── inference_sdk/
-│   └── unit_tests/
-└── workflows/
-    └── unit_tests/
+inference_models/tests/
+├── integration_tests/
+│   └── models/
+│       ├── test_yolov8_object_detection_predictions_onnx.py
+│       ├── test_yolov8_object_detection_predictions_torch.py
+│       └── test_<your_model>_predictions_<backend>.py
+├── e2e_platform_tests/
+│   ├── test_moondream2_e2e.py
+│   └── test_<your_model>_e2e.py
+└── unit_tests/
+    ├── models/
+    │   └── auto_loaders/
+    └── weights_providers/
 ```
 
 ### Test File Naming
 
-- Test files: `test_*.py`
+- Integration tests: `test_<model_name>_predictions_<backend>.py`
+- E2E tests: `test_<model_name>_e2e.py`
+- Unit tests: `test_<component>.py`
 - Test functions: `test_*`
 - Test classes: `Test*`
 
+## Writing Integration Tests
+
+Integration tests are the most important tests for model implementations. Here's how to write them:
+
+### Basic Integration Test Structure
+
+```python
+import numpy as np
+import pytest
+import torch
+
+
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+def test_onnx_package_with_dynamic_batch_size_and_letterbox_numpy(
+    coin_counting_yolov8n_onnx_dynamic_bs_letterbox_package: str,
+    coins_counting_image_numpy: np.ndarray,
+) -> None:
+    # given
+    from inference_models.models.yolov8.yolov8_object_detection_onnx import (
+        YOLOv8ForObjectDetectionOnnx,
+    )
+
+    model = YOLOv8ForObjectDetectionOnnx.from_pretrained(
+        model_name_or_path=coin_counting_yolov8n_onnx_dynamic_bs_letterbox_package,
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
+    )
+
+    # when
+    predictions = model(coins_counting_image_numpy)
+
+    # then
+    assert torch.allclose(
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.9608, 0.9449, 0.9339]).cpu(),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0].class_id.cpu(),
+        torch.tensor([4, 1, 1], dtype=torch.int32).cpu(),
+    )
+    expected_xyxy = torch.tensor(
+        [[1296, 528, 3024, 1979], [1172, 2632, 1376, 2847]],
+        dtype=torch.int32,
+    )
+    assert torch.allclose(
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
+        atol=2,
+    )
+```
+
+### Key Elements of Integration Tests
+
+1. **Use fixtures for test data** - Model packages and test images should be provided via pytest fixtures
+2. **Test multiple input formats** - Test with numpy arrays, torch tensors, single images, and batches
+3. **Assert on actual outputs** - Compare predictions against known-good outputs
+4. **Use appropriate tolerances** - Use `atol` for floating-point comparisons
+5. **Mark tests appropriately** - Use `@pytest.mark.slow`, `@pytest.mark.onnx_extras`, etc.
+
+### Testing Different Input Formats
+
+```python
+# Test single numpy array
+def test_single_numpy(model_package, test_image_numpy):
+    model = YourModel.from_pretrained(model_package)
+    predictions = model(test_image_numpy)
+    assert len(predictions) == 1
+
+# Test batch of numpy arrays
+def test_batch_numpy(model_package, test_image_numpy):
+    model = YourModel.from_pretrained(model_package)
+    predictions = model([test_image_numpy, test_image_numpy])
+    assert len(predictions) == 2
+
+# Test single torch tensor
+def test_single_torch(model_package, test_image_torch):
+    model = YourModel.from_pretrained(model_package)
+    predictions = model(test_image_torch)
+    assert len(predictions) == 1
+
+# Test stacked torch tensors
+def test_batch_torch_stacked(model_package, test_image_torch):
+    model = YourModel.from_pretrained(model_package)
+    batch = torch.stack([test_image_torch, test_image_torch], dim=0)
+    predictions = model(batch)
+    assert len(predictions) == 2
+
+# Test list of torch tensors
+def test_batch_torch_list(model_package, test_image_torch):
+    model = YourModel.from_pretrained(model_package)
+    predictions = model([test_image_torch, test_image_torch])
+    assert len(predictions) == 2
+```
+
+## Writing E2E Platform Tests
+
+E2E tests verify the AutoModel integration:
+
+### Basic E2E Test Structure
+
+```python
+import pytest
+from inference_models import AutoModel
+
+
+@pytest.mark.e2e_model_inference
+def test_moondream2_e2e():
+    """Test Moondream2 loads and runs via AutoModel."""
+    # Load model through AutoModel
+    model = AutoModel.from_pretrained("vikhyatk/moondream2")
+
+    # Run basic inference
+    image = "path/to/test/image.jpg"
+    prompt = "Describe this image"
+
+    result = model(image, prompt)
+
+    # Basic assertions
+    assert result is not None
+    assert isinstance(result, str)
+    assert len(result) > 0
+```
+
 ## Writing Unit Tests
 
-### Basic Test Structure
+Unit tests verify individual components:
+
+### Basic Unit Test Structure
 
 ```python
 import pytest
@@ -48,27 +225,13 @@ def test_single_image_inference():
     """Test inference on a single image."""
     model = YourModel(weights_path="path/to/model.pt", device="cpu")
     image = np.random.randint(0, 255, (640, 640, 3), dtype=np.uint8)
-    
+
     predictions = model(image)
-    
+
     assert len(predictions) == 1
     assert hasattr(predictions[0], 'xyxy')
     assert hasattr(predictions[0], 'confidence')
     assert hasattr(predictions[0], 'class_id')
-
-def test_batch_inference():
-    """Test inference on batch of images."""
-    model = YourModel(weights_path="path/to/model.pt", device="cpu")
-    images = [
-        np.random.randint(0, 255, (640, 640, 3), dtype=np.uint8)
-        for _ in range(3)
-    ]
-    
-    predictions = model(images)
-    
-    assert len(predictions) == 3
-    for pred in predictions:
-        assert hasattr(pred, 'xyxy')
 ```
 
 ### Testing Error Handling
@@ -151,46 +314,58 @@ def test_different_batch_sizes(batch_size):
     assert len(predictions) == batch_size
 ```
 
-## Marking Tests
+## Pytest Markers
 
-### Slow Tests
+Use markers to categorize and control test execution:
 
-Mark tests that take a long time:
+### Available Markers
+
+- `@pytest.mark.slow` - Tests that take significant time (e.g., loading large models, processing many images)
+- `@pytest.mark.gpu_only` - Tests that require GPU hardware
+- `@pytest.mark.cpu_only` - Tests that should only run on CPU
+- `@pytest.mark.onnx_extras` - Tests for ONNX-specific functionality
+- `@pytest.mark.torch_models` - Tests for PyTorch-specific functionality
+- `@pytest.mark.e2e_model_inference` - End-to-end platform tests
+
+### Using Markers
 
 ```python
 @pytest.mark.slow
-def test_large_batch_inference():
-    """Test inference on large batch (slow)."""
-    model = YourModel(weights_path="path/to/model.pt", device="cpu")
-    images = [
-        np.random.randint(0, 255, (640, 640, 3), dtype=np.uint8)
-        for _ in range(100)
-    ]
-    predictions = model(images)
-    assert len(predictions) == 100
-```
+@pytest.mark.onnx_extras
+def test_onnx_large_batch():
+    """Test ONNX model with large batch (slow)."""
+    # Test code here
+    pass
 
-Skip slow tests:
-
-```bash
-pytest -m "not slow" tests/
-```
-
-### GPU Tests
-
-Mark tests that require GPU:
-
-```python
-@pytest.mark.gpu
+@pytest.mark.gpu_only
 def test_gpu_inference():
     """Test GPU inference."""
     if not torch.cuda.is_available():
         pytest.skip("CUDA not available")
-    
-    model = YourModel(weights_path="path/to/model.pt", device="cuda")
-    image = np.random.randint(0, 255, (640, 640, 3), dtype=np.uint8)
-    predictions = model(image)
-    assert len(predictions) == 1
+    # Test code here
+    pass
+
+@pytest.mark.e2e_model_inference
+def test_automodel_loading():
+    """Test loading via AutoModel."""
+    # Test code here
+    pass
+```
+
+### Running Tests by Marker
+
+```bash
+# Skip slow tests
+uv run pytest -m "not slow" tests/
+
+# Run only GPU tests
+uv run pytest -m "gpu_only" tests/
+
+# Run only ONNX tests
+uv run pytest -m "onnx_extras" tests/
+
+# Run E2E tests
+uv run pytest -m "e2e_model_inference" tests/
 ```
 
 ## Running Tests
@@ -198,31 +373,31 @@ def test_gpu_inference():
 ### Run All Tests
 
 ```bash
-pytest tests/
+uv run pytest tests/
 ```
 
 ### Run Specific Test File
 
 ```bash
-pytest tests/inference/unit_tests/models/test_your_model.py
+uv run pytest inference_models/tests/integration_tests/models/test_your_model.py
 ```
 
 ### Run Specific Test Function
 
 ```bash
-pytest tests/inference/unit_tests/models/test_your_model.py::test_model_initialization
+uv run pytest inference_models/tests/integration_tests/models/test_your_model.py::test_model_initialization
 ```
 
 ### Run with Coverage
 
 ```bash
-pytest --cov=inference_models --cov-report=html tests/
+uv run pytest --cov=inference_models --cov-report=html tests/
 ```
 
 ### Run in Parallel
 
 ```bash
-pytest -n auto tests/
+uv run pytest -n auto tests/
 ```
 
 ## Best Practices
