@@ -65,6 +65,72 @@ class RuntimeXRayResult:
 
 @cache
 def x_ray_runtime_environment() -> RuntimeXRayResult:
+    """Inspect the runtime environment and available hardware/software.
+
+    Performs comprehensive introspection of the system to detect available GPUs,
+    CUDA/TensorRT versions, installed ML frameworks, and execution providers.
+    This is useful for debugging model loading issues and understanding what
+    backends are available.
+
+    The function is cached, so subsequent calls return the same result without
+    re-inspecting the environment.
+
+    Returns:
+        RuntimeXRayResult: Dataclass containing:
+            - gpu_available (bool): Whether any GPU is available
+            - gpu_devices (List[str]): Names of available GPU devices
+            - gpu_devices_cc (List[Version]): Compute capability versions
+            - driver_version (Optional[Version]): NVIDIA driver version
+            - cuda_version (Optional[Version]): CUDA runtime version
+            - trt_version (Optional[Version]): TensorRT version
+            - jetson_type (Optional[str]): Jetson device type (if running on Jetson)
+            - l4t_version (Optional[Version]): L4T version (Jetson only)
+            - os_version (Optional[str]): Operating system version
+            - torch_available (bool): Whether PyTorch is installed
+            - torch_version (Optional[Version]): PyTorch version
+            - torchvision_version (Optional[Version]): Torchvision version
+            - onnxruntime_version (Optional[Version]): ONNX Runtime version
+            - available_onnx_execution_providers (Optional[Set[str]]): Available ONNX EPs
+            - hf_transformers_available (bool): Whether Hugging Face Transformers is installed
+            - ultralytics_available (bool): Whether Ultralytics is installed
+            - trt_python_package_available (bool): Whether TensorRT Python package is installed
+            - mediapipe_available (bool): Whether MediaPipe is installed
+
+    Examples:
+        Inspect runtime environment:
+
+        >>> from inference_models.developer_tools import x_ray_runtime_environment
+        >>>
+        >>> env = x_ray_runtime_environment()
+        >>> print(f"GPU available: {env.gpu_available}")
+        >>> print(f"GPU devices: {env.gpu_devices}")
+        >>> print(f"CUDA version: {env.cuda_version}")
+        >>> print(f"PyTorch available: {env.torch_available}")
+        >>> print(f"ONNX providers: {env.available_onnx_execution_providers}")
+
+        Check for specific capabilities:
+
+        >>> env = x_ray_runtime_environment()
+        >>> if env.gpu_available and env.cuda_version:
+        ...     print("CUDA is available, can use GPU models")
+        >>> if "CUDAExecutionProvider" in (env.available_onnx_execution_providers or []):
+        ...     print("ONNX CUDA execution provider available")
+
+        Debug model loading issues:
+
+        >>> from inference_models import AutoModel
+        >>> from inference_models.developer_tools import x_ray_runtime_environment
+        >>>
+        >>> try:
+        ...     model = AutoModel.from_pretrained("yolov8n-640", device="cuda")
+        ... except Exception as e:
+        ...     print(f"Model loading failed: {e}")
+        ...     env = x_ray_runtime_environment()
+        ...     print(f"Environment info: {env}")
+
+    See Also:
+        - `AutoModel.describe_compute_environment()`: Higher-level environment inspection
+    """
     trt_version = get_trt_version()
     cuda_version = get_cuda_version()
     jetson_type, l4t_version, os_version, driver_version = None, None, None, None

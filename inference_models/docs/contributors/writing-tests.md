@@ -180,6 +180,7 @@ E2E tests verify the AutoModel integration:
 
 ```python
 import pytest
+import cv2
 from inference_models import AutoModel
 
 
@@ -190,7 +191,7 @@ def test_moondream2_e2e():
     model = AutoModel.from_pretrained("vikhyatk/moondream2")
 
     # Run basic inference
-    image = "path/to/test/image.jpg"
+    image = cv2.imread("path/to/test/image.jpg")
     prompt = "Describe this image"
 
     result = model(image, prompt)

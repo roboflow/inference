@@ -92,6 +92,69 @@ def set_onnx_execution_provider_defaults(
     enable_fp16: bool = True,
     default_onnx_trt_options: bool = True,
 ) -> List[Union[str, tuple[str, dict[str, Any]]]]:
+    """Configure ONNX Runtime execution providers with default options.
+
+    Applies default configuration options to ONNX Runtime execution providers,
+    particularly for TensorRT and CUDA providers. This includes setting up
+    TensorRT engine caching, FP16 precision, and device selection.
+
+    Args:
+        providers: List of execution provider names or (name, options) tuples.
+            Example: ["CUDAExecutionProvider", "CPUExecutionProvider"]
+
+        model_package_path: Path to model package directory, used for TensorRT
+            engine cache storage.
+
+        device: PyTorch device specifying which GPU to use. The device index
+            is used to configure the execution provider.
+
+        enable_fp16: Enable FP16 (half precision) for TensorRT execution provider.
+            Default: True.
+
+        default_onnx_trt_options: Apply default TensorRT options (engine caching,
+            FP16). If False, TensorRT provider is used without modifications.
+            Default: True.
+
+    Returns:
+        List of execution providers with configured options. Each element is either
+        a string (provider name) or a tuple of (provider_name, options_dict).
+
+    Examples:
+        Configure providers for CUDA inference:
+
+        >>> from inference_models.developer_tools import set_onnx_execution_provider_defaults
+        >>> import torch
+        >>>
+        >>> providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
+        >>> configured = set_onnx_execution_provider_defaults(
+        ...     providers=providers,
+        ...     model_package_path="/path/to/model",
+        ...     device=torch.device("cuda:0"),
+        ...     enable_fp16=True
+        ... )
+        >>> # Returns: [("CUDAExecutionProvider", {"device_id": 0}), "CPUExecutionProvider"]
+
+        Configure TensorRT with custom options:
+
+        >>> providers = ["TensorrtExecutionProvider"]
+        >>> configured = set_onnx_execution_provider_defaults(
+        ...     providers=providers,
+        ...     model_package_path="/cache/models/yolov8n",
+        ...     device=torch.device("cuda:1"),
+        ...     enable_fp16=False,
+        ...     default_onnx_trt_options=True
+        ... )
+        >>> # TensorRT provider will cache engines in /cache/models/yolov8n
+
+    Note:
+        - TensorRT provider gets: engine caching, cache path, FP16 setting, device ID
+        - CUDA provider gets: device ID
+        - Other providers are passed through unchanged
+        - Engine caching significantly speeds up subsequent model loads
+
+    See Also:
+        - `run_onnx_session_via_iobinding()`: Run ONNX sessions with configured providers
+    """
     result = []
     device_id_options = {}
     if device.index is not None:
@@ -120,6 +183,83 @@ def run_onnx_session_with_batch_size_limit(
     max_batch_size: Optional[int] = None,
     min_batch_size: Optional[int] = None,
 ) -> List[torch.Tensor]:
+    """Run ONNX inference session with automatic batch splitting.
+
+    Executes an ONNX model with automatic batching when the input batch size
+    exceeds the maximum supported batch size. Splits large batches into smaller
+    chunks, runs inference on each chunk, and concatenates the results.
+
+    This is useful for models with static batch size constraints or to avoid
+    GPU memory issues with large batches.
+
+    Args:
+        session: ONNX Runtime inference session.
+
+        inputs: Dictionary mapping input names to PyTorch tensors. All tensors
+            must have the same batch size (first dimension).
+
+        output_shape_mapping: Optional dictionary mapping output names to their
+            expected shapes. Used for pre-allocating output buffers. If None,
+            outputs are dynamically allocated.
+
+        max_batch_size: Maximum batch size to process at once. If None or if
+            input batch size is smaller, processes the entire batch at once.
+
+        min_batch_size: Minimum batch size for the model. If the last chunk is
+            smaller, it will be padded to this size. Useful for models with
+            static batch size requirements.
+
+    Returns:
+        List of output tensors from the ONNX model, in the order defined by
+        the model's output specification.
+
+    Raises:
+        ModelRuntimeError: If input tensors have different batch sizes.
+
+    Examples:
+        Run inference with batch size limit:
+
+        >>> from inference_models.developer_tools import run_onnx_session_with_batch_size_limit
+        >>> import onnxruntime as ort
+        >>> import torch
+        >>>
+        >>> session = ort.InferenceSession("model.onnx")
+        >>>
+        >>> # Large batch that exceeds model's max batch size
+        >>> inputs = {
+        ...     "input": torch.randn(100, 3, 640, 640, device="cuda")
+        ... }
+        >>>
+        >>> # Process in chunks of 16
+        >>> outputs = run_onnx_session_with_batch_size_limit(
+        ...     session=session,
+        ...     inputs=inputs,
+        ...     max_batch_size=16
+        ... )
+        >>> # Returns concatenated results from all chunks
+
+        Handle models with static batch size:
+
+        >>> # Model requires exactly batch size of 8
+        >>> inputs = {"input": torch.randn(20, 3, 640, 640, device="cuda")}
+        >>>
+        >>> outputs = run_onnx_session_with_batch_size_limit(
+        ...     session=session,
+        ...     inputs=inputs,
+        ...     max_batch_size=8,
+        ...     min_batch_size=8  # Pad last chunk to size 8
+        ... )
+
+    Note:
+        - Automatically handles batch splitting and result concatenation
+        - Pads the last chunk if min_batch_size is specified
+        - Uses `run_onnx_session_via_iobinding()` internally for efficiency
+        - All input tensors must have the same batch size
+
+    See Also:
+        - `run_onnx_session_via_iobinding()`: Lower-level ONNX execution
+        - `generate_batch_chunks()`: Utility for creating batch chunks
+    """
     if max_batch_size is None:
         return run_onnx_session_via_iobinding(
             session=session,
@@ -191,6 +331,89 @@ def run_onnx_session_via_iobinding(
     inputs: Dict[str, torch.Tensor],
     output_shape_mapping: Optional[Dict[str, tuple]] = None,
 ) -> List[torch.Tensor]:
+    """Run ONNX inference session using IO binding for optimal GPU performance.
+
+    Executes an ONNX model using ONNX Runtime's IO binding API, which provides
+    better performance on CUDA devices by avoiding unnecessary memory copies
+    between CPU and GPU. For CPU inference, falls back to standard execution.
+
+    IO binding allows direct binding of GPU tensors to ONNX Runtime, eliminating
+    the need to copy data to CPU and back. This is particularly beneficial for
+    large models and high-throughput scenarios.
+
+    Args:
+        session: ONNX Runtime inference session.
+
+        inputs: Dictionary mapping input names to PyTorch tensors. Tensors can
+            be on CPU or CUDA devices.
+
+        output_shape_mapping: Optional dictionary mapping output names to their
+            expected shapes. Used for pre-allocating output buffers on GPU,
+            which improves performance. If not provided or if output has dynamic
+            shape, outputs are allocated dynamically.
+
+    Returns:
+        List of output tensors from the ONNX model, in the order defined by
+        the model's output specification. Tensors are on the same device as inputs.
+
+    Examples:
+        Run inference with IO binding on GPU:
+
+        >>> from inference_models.developer_tools import run_onnx_session_via_iobinding
+        >>> import onnxruntime as ort
+        >>> import torch
+        >>>
+        >>> session = ort.InferenceSession(
+        ...     "model.onnx",
+        ...     providers=["CUDAExecutionProvider"]
+        ... )
+        >>>
+        >>> inputs = {
+        ...     "images": torch.randn(1, 3, 640, 640, device="cuda:0")
+        ... }
+        >>>
+        >>> outputs = run_onnx_session_via_iobinding(
+        ...     session=session,
+        ...     inputs=inputs
+        ... )
+        >>> # Returns list of tensors on cuda:0
+
+        Pre-allocate outputs for better performance:
+
+        >>> output_shapes = {
+        ...     "output0": (1, 84, 8400),  # Detection output shape
+        ... }
+        >>>
+        >>> outputs = run_onnx_session_via_iobinding(
+        ...     session=session,
+        ...     inputs=inputs,
+        ...     output_shape_mapping=output_shapes
+        ... )
+        >>> # Outputs are pre-allocated, avoiding dynamic allocation overhead
+
+        CPU inference (automatic fallback):
+
+        >>> inputs_cpu = {
+        ...     "images": torch.randn(1, 3, 640, 640)  # CPU tensor
+        ... }
+        >>>
+        >>> outputs = run_onnx_session_via_iobinding(
+        ...     session=session,
+        ...     inputs=inputs_cpu
+        ... )
+        >>> # Automatically uses standard execution for CPU
+
+    Note:
+        - Automatically casts input types to match model requirements
+        - Uses IO binding for CUDA devices, standard execution for CPU
+        - Requires PyCUDA for CUDA execution
+        - Pre-allocating outputs via output_shape_mapping improves performance
+        - Handles both static and dynamic output shapes
+
+    See Also:
+        - `run_onnx_session_with_batch_size_limit()`: Higher-level function with batching
+        - `set_onnx_execution_provider_defaults()`: Configure execution providers
+    """
     inputs = auto_cast_session_inputs(
         session=session,
         inputs=inputs,

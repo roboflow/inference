@@ -61,6 +61,52 @@ class InferenceTRTLogger(trt.ILogger):
 def get_trt_engine_inputs_and_outputs(
     engine: trt.ICudaEngine,
 ) -> Tuple[List[str], List[str]]:
+    """Extract input and output tensor names from a TensorRT engine.
+
+    Inspects a TensorRT engine to determine which tensors are inputs and which
+    are outputs. This is useful for setting up inference execution contexts and
+    understanding the engine's interface.
+
+    Args:
+        engine: TensorRT CUDA engine (ICudaEngine) to inspect.
+
+    Returns:
+        Tuple of (input_names, output_names) where:
+            - input_names: List of input tensor names
+            - output_names: List of output tensor names
+
+    Examples:
+        Inspect TensorRT engine:
+
+        >>> from inference_models.developer_tools import (
+        ...     load_trt_model,
+        ...     get_trt_engine_inputs_and_outputs
+        ... )
+        >>>
+        >>> engine = load_trt_model("model.plan")
+        >>> inputs, outputs = get_trt_engine_inputs_and_outputs(engine)
+        >>>
+        >>> print(f"Inputs: {inputs}")   # ['images']
+        >>> print(f"Outputs: {outputs}") # ['output0', 'output1']
+
+        Use for setting up inference:
+
+        >>> inputs, outputs = get_trt_engine_inputs_and_outputs(engine)
+        >>> context = engine.create_execution_context()
+        >>>
+        >>> # Set input tensor
+        >>> input_name = inputs[0]
+        >>> context.set_input_shape(input_name, (1, 3, 640, 640))
+
+    Note:
+        - Requires TensorRT to be installed
+        - Works with TensorRT 10.x engines
+        - Tensor names are defined during engine building/export
+
+    See Also:
+        - `load_trt_model()`: Load TensorRT engine from file
+        - `infer_from_trt_engine()`: Run inference with TensorRT engine
+    """
     num_inputs = engine.num_io_tensors
     inputs = []
     outputs = []
@@ -83,6 +129,97 @@ def infer_from_trt_engine(
     input_name: str,
     outputs: List[str],
 ) -> List[torch.Tensor]:
+    """Run inference using a TensorRT engine.
+
+    Executes inference on preprocessed images using a TensorRT engine and execution
+    context. Handles both static and dynamic batch sizes, automatically splitting
+    large batches if needed.
+
+    Args:
+        pre_processed_images: Preprocessed input tensor on CUDA device.
+            Shape: (batch_size, channels, height, width).
+
+        trt_config: TensorRT configuration object containing batch size settings
+            and other engine-specific parameters.
+
+        engine: TensorRT CUDA engine (ICudaEngine) to use for inference.
+
+        context: TensorRT execution context (IExecutionContext) for running inference.
+
+        device: PyTorch CUDA device to use for inference.
+
+        input_name: Name of the input tensor in the TensorRT engine.
+
+        outputs: List of output tensor names to retrieve from the engine.
+
+    Returns:
+        List of output tensors from the TensorRT engine, in the order specified
+        by the outputs parameter.
+
+    Examples:
+        Run TensorRT inference:
+
+        >>> from inference_models.developer_tools import (
+        ...     load_trt_model,
+        ...     get_trt_engine_inputs_and_outputs,
+        ...     infer_from_trt_engine
+        ... )
+        >>> from inference_models.models.common.roboflow.model_packages import (
+        ...     parse_trt_config
+        ... )
+        >>> import torch
+        >>>
+        >>> # Load engine and config
+        >>> engine = load_trt_model("model.plan")
+        >>> trt_config = parse_trt_config("trt_config.json")
+        >>> context = engine.create_execution_context()
+        >>>
+        >>> # Get input/output names
+        >>> inputs, outputs = get_trt_engine_inputs_and_outputs(engine)
+        >>>
+        >>> # Prepare input
+        >>> images = torch.randn(1, 3, 640, 640, device="cuda:0")
+        >>>
+        >>> # Run inference
+        >>> results = infer_from_trt_engine(
+        ...     pre_processed_images=images,
+        ...     trt_config=trt_config,
+        ...     engine=engine,
+        ...     context=context,
+        ...     device=torch.device("cuda:0"),
+        ...     input_name=inputs[0],
+        ...     outputs=outputs
+        ... )
+
+        Handle large batches:
+
+        >>> # Large batch will be automatically split
+        >>> large_batch = torch.randn(100, 3, 640, 640, device="cuda:0")
+        >>>
+        >>> results = infer_from_trt_engine(
+        ...     pre_processed_images=large_batch,
+        ...     trt_config=trt_config,
+        ...     engine=engine,
+        ...     context=context,
+        ...     device=torch.device("cuda:0"),
+        ...     input_name=inputs[0],
+        ...     outputs=outputs
+        ... )
+        >>> # Results are automatically concatenated
+
+    Note:
+        - Requires TensorRT and PyCUDA to be installed
+        - Input must be on CUDA device
+        - Automatically handles batch size constraints from trt_config
+        - Uses asynchronous execution with CUDA streams
+
+    Raises:
+        ModelRuntimeError: If inference execution fails.
+
+    See Also:
+        - `load_trt_model()`: Load TensorRT engine from file
+        - `get_trt_engine_inputs_and_outputs()`: Get engine tensor names
+    """
     if trt_config.static_batch_size is not None:
         return infer_from_trt_engine_with_batch_size_boundaries(
             pre_processed_images=pre_processed_images,
@@ -231,6 +368,81 @@ def load_trt_model(
     model_path: str,
     engine_host_code_allowed: bool = False,
 ) -> trt.ICudaEngine:
+    """Load a TensorRT engine from a serialized engine file.
+
+    Deserializes a TensorRT engine from a .plan file and returns the engine
+    object ready for inference. Handles errors during deserialization and
+    provides detailed error messages.
+
+    Args:
+        model_path: Path to the serialized TensorRT engine file (.plan).
+
+        engine_host_code_allowed: Allow the engine to execute host code.
+            **Security risk** - only enable if you trust the engine source.
+            Default: False.
+
+    Returns:
+        TensorRT CUDA engine (ICudaEngine) ready for creating execution contexts
+        and running inference.
+
+    Raises:
+        CorruptedModelPackageError: If the engine file cannot be loaded due to:
+            - File not found
+            - Incompatible TensorRT version
+            - Incompatible CUDA version
+            - Corrupted engine file
+            - Runtime deserialization errors
+
+        MissingDependencyError: If TensorRT is not installed.
+
+    Examples:
+        Load TensorRT engine:
+
+        >>> from inference_models.developer_tools import load_trt_model
+        >>>
+        >>> engine = load_trt_model("model.plan")
+        >>> print(f"Engine loaded: {engine.name}")
+        >>>
+        >>> # Create execution context
+        >>> context = engine.create_execution_context()
+
+        Load engine with host code allowed:
+
+        >>> # Only if you trust the engine source!
+        >>> engine = load_trt_model(
+        ...     "custom_model.plan",
+        ...     engine_host_code_allowed=True
+        ... )
+
+        Complete inference setup:
+
+        >>> from inference_models.developer_tools import (
+        ...     load_trt_model,
+        ...     get_trt_engine_inputs_and_outputs
+        ... )
+        >>>
+        >>> # Load engine
+        >>> engine = load_trt_model("yolov8n.plan")
+        >>>
+        >>> # Get input/output info
+        >>> inputs, outputs = get_trt_engine_inputs_and_outputs(engine)
+        >>> print(f"Inputs: {inputs}")
+        >>> print(f"Outputs: {outputs}")
+        >>>
+        >>> # Create context for inference
+        >>> context = engine.create_execution_context()
+
+    Note:
+        - Requires TensorRT to be installed (TensorRT 10.x recommended)
+        - Engine files are platform and TensorRT version specific
+        - Engines built on one GPU architecture may not work on another
+        - Engine files typically have .plan or .engine extension
+        - Provides detailed error messages from TensorRT runtime
+
+    See Also:
+        - `get_trt_engine_inputs_and_outputs()`: Inspect engine inputs/outputs
+        - `infer_from_trt_engine()`: Run inference with loaded engine
+    """
     try:
         local_logger = InferenceTRTLogger(with_memory=True)
         with open(model_path, "rb") as f, trt.Runtime(local_logger) as runtime:
