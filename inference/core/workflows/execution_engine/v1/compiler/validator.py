@@ -1,6 +1,6 @@
-import os
 from typing import Dict, List, Optional, Type
 
+from inference.core import env
 from inference.core.workflows.errors import DuplicatedNameError, WorkflowDefinitionError
 from inference.core.workflows.execution_engine.entities.base import InputType, JsonField
 from inference.core.workflows.execution_engine.profiling.core import (
@@ -83,13 +83,13 @@ def validate_disabled_blocks(
         WorkflowDefinitionError: If disabled blocks are found
     """
     # Check if selective block disabling is enabled
-    if not _is_selective_blocks_disabled():
+    if not env.WORKFLOW_SELECTIVE_BLOCKS_DISABLE:
         return
     
     # Get disabled block types and patterns from environment
-    disabled_types = _get_disabled_block_types()
-    disabled_patterns = _get_disabled_block_patterns()
-    disable_reason = _get_disable_reason()
+    disabled_types = env.WORKFLOW_DISABLED_BLOCK_TYPES
+    disabled_patterns = env.WORKFLOW_DISABLED_BLOCK_PATTERNS
+    disable_reason = env.WORKFLOW_DISABLE_REASON
     
     # Build a map of block identifiers to their specifications
     blocks_by_identifier = {
@@ -126,55 +126,6 @@ def validate_disabled_blocks(
                     ),
                     context="workflow_compilation | block_validation",
                 )
-
-
-def _is_selective_blocks_disabled() -> bool:
-    """Check if selective block disabling is enabled."""
-    # Support both old and new environment variable names for backward compatibility
-    return (
-        os.environ.get("WORKFLOW_SELECTIVE_BLOCKS_DISABLE", "false").lower() == "true" or
-        os.environ.get("WORKFLOW_MIRRORING_MODE", "false").lower() == "true"
-    )
-
-
-def _get_disabled_block_types() -> List[str]:
-    """Get list of disabled block type categories from environment."""
-    # Support both old and new environment variable names
-    disabled_types_str = os.environ.get(
-        "WORKFLOW_DISABLED_BLOCK_TYPES",
-        os.environ.get("WORKFLOW_BLOCKED_BLOCK_TYPES", "")
-    )
-    
-    # If no explicit configuration, don't disable any types by default
-    # This allows users to be explicit about what they want to disable
-    if not disabled_types_str:
-        return []
-    
-    return [t.strip().lower() for t in disabled_types_str.split(",") if t.strip()]
-
-
-def _get_disabled_block_patterns() -> List[str]:
-    """Get list of disabled block identifier patterns from environment."""
-    # Support both old and new environment variable names
-    disabled_patterns_str = os.environ.get(
-        "WORKFLOW_DISABLED_BLOCK_PATTERNS",
-        os.environ.get("WORKFLOW_BLOCKED_BLOCK_PATTERNS", "")
-    )
-    
-    # No default patterns - users should explicitly specify what to disable
-    if not disabled_patterns_str:
-        return []
-    
-    return [p.strip().lower() for p in disabled_patterns_str.split(",") if p.strip()]
-
-
-def _get_disable_reason() -> str:
-    """Get the reason for disabling blocks from environment."""
-    reason = os.environ.get(
-        "WORKFLOW_DISABLE_REASON",
-        "These blocks are disabled by system configuration."
-    )
-    return reason
 
 
 def _get_block_type_from_specification(block_spec: BlockSpecification) -> Optional[str]:
