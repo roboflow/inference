@@ -2,7 +2,7 @@
 
 A natural question you might ask is: *How do I know which blocks to connect to achieve my desired outcome?* 
 This is a crucial question, which is why we've created auto-generated 
-[documentation for all supported Workflow blocks](/workflows/blocks.md). In this guide, we’ll show you how to use 
+[documentation for all supported Workflow blocks](/workflows/blocks/index.md). In this guide, we’ll show you how to use 
 these docs effectively and explain key details that help you understand why certain connections between 
 blocks are possible, while others may not be.
 
@@ -11,7 +11,7 @@ blocks are possible, while others may not be.
     Using the Workflows UI in the Roboflow app, you may find compatible connections between steps automatically,
     without any input from you. This page briefly explains how to determine whether two
     blocks can be connected, making it possible to connect steps manually if needed. This page appears
-    before the link to the [block gallery](/workflows/blocks.md) because it explains how to use those docs effectively.
+    before the link to the [block gallery](/workflows/blocks/index.md) because it explains how to use those docs effectively.
     It also introduces references to concepts covered in the User and Developer Guide. Please continue reading those sections
     if you find some concepts presented here need further explanation.
 
@@ -61,11 +61,11 @@ provide configuration parameters dynamically during execution.
 The manifest also includes the block's outputs.
 
 For each step definition field (if it can hold a [selector](/workflows/definitions.md)) and step output, 
-the expected [kind](/workflows/kinds.md) is specified. A [kind](/workflows/kinds.md) is a high-level definition 
+the expected [kind](/workflows/kinds/index.md) is specified. A [kind](/workflows/kinds/index.md) is a high-level definition 
 of the type of data that will be passed during workflow execution. Simply put, it describes the data that 
 will replace the [selector](/workflows/definitions.md) during block execution.
 
-To ensure steps are correctly connected, the Workflow Compiler checks if the input and output [kinds](/workflows/kinds.md)
+To ensure steps are correctly connected, the Workflow Compiler checks if the input and output [kinds](/workflows/kinds/index.md)
 match. If they do, the connection is valid.
 
 Additionally, the [`dimensionality level`](/workflows/workflow_execution.md#dimensionality-level) of the data is considered when 

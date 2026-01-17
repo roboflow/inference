@@ -19,6 +19,7 @@ from inference.core.env import (
     MOONDREAM2_ENABLED,
     PALIGEMMA_ENABLED,
     QWEN_2_5_ENABLED,
+    QWEN_3_ENABLED,
     SAM3_3D_OBJECTS_ENABLED,
     SMOLVLM2_ENABLED,
     USE_INFERENCE_EXP_MODELS,
@@ -39,6 +40,8 @@ from inference.models import (
     RFDETRInstanceSegmentation,
     RFDETRObjectDetection,
     VitClassification,
+    YOLO26InstanceSegmentation,
+    YOLO26ObjectDetection,
     YOLONASObjectDetection,
     YOLOv5InstanceSegmentation,
     YOLOv5ObjectDetection,
@@ -52,6 +55,7 @@ from inference.models import (
     YOLOv11ObjectDetection,
     YOLOv12ObjectDetection,
 )
+from inference.models.yolo26.yolo26_keypoints_detection import YOLO26KeypointsDetection
 from inference.models.yolov8.yolov8_keypoints_detection import YOLOv8KeypointsDetection
 from inference.models.yolov11.yolov11_keypoints_detection import (
     YOLOv11KeypointsDetection,
@@ -110,12 +114,25 @@ ROBOFLOW_MODEL_TYPES = {
     ("object-detection", "yolov12m"): YOLOv12ObjectDetection,
     ("object-detection", "yolov12l"): YOLOv12ObjectDetection,
     ("object-detection", "yolov12x"): YOLOv12ObjectDetection,
+    ("object-detection", "yolo26"): YOLO26ObjectDetection,
+    ("object-detection", "yolo26s"): YOLO26ObjectDetection,
+    ("object-detection", "yolo26n"): YOLO26ObjectDetection,
+    ("object-detection", "yolo26b"): YOLO26ObjectDetection,
+    ("object-detection", "yolo26m"): YOLO26ObjectDetection,
+    ("object-detection", "yolo26l"): YOLO26ObjectDetection,
+    ("object-detection", "yolo26x"): YOLO26ObjectDetection,
     ("object-detection", "rfdetr-base"): RFDETRObjectDetection,
     ("object-detection", "rfdetr-large"): RFDETRObjectDetection,
     ("object-detection", "rfdetr-nano"): RFDETRObjectDetection,
     ("object-detection", "rfdetr-small"): RFDETRObjectDetection,
     ("object-detection", "rfdetr-medium"): RFDETRObjectDetection,
     ("instance-segmentation", "rfdetr-seg-preview"): RFDETRInstanceSegmentation,
+    ("instance-segmentation", "rfdetr-seg-nano"): RFDETRInstanceSegmentation,
+    ("instance-segmentation", "rfdetr-seg-small"): RFDETRInstanceSegmentation,
+    ("instance-segmentation", "rfdetr-seg-medium"): RFDETRInstanceSegmentation,
+    ("instance-segmentation", "rfdetr-seg-large"): RFDETRInstanceSegmentation,
+    ("instance-segmentation", "rfdetr-seg-xlarge"): RFDETRInstanceSegmentation,
+    ("instance-segmentation", "rfdetr-seg-xxlarge"): RFDETRInstanceSegmentation,
     (
         "instance-segmentation",
         "yolov11n",
@@ -156,6 +173,46 @@ ROBOFLOW_MODEL_TYPES = {
         "instance-segmentation",
         "yolov11x-seg",
     ): YOLOv11InstanceSegmentation,
+    (
+        "instance-segmentation",
+        "yolo26n",
+    ): YOLO26InstanceSegmentation,
+    (
+        "instance-segmentation",
+        "yolo26s",
+    ): YOLO26InstanceSegmentation,
+    (
+        "instance-segmentation",
+        "yolo26m",
+    ): YOLO26InstanceSegmentation,
+    (
+        "instance-segmentation",
+        "yolo26l",
+    ): YOLO26InstanceSegmentation,
+    (
+        "instance-segmentation",
+        "yolo26x",
+    ): YOLO26InstanceSegmentation,
+    (
+        "instance-segmentation",
+        "yolo26n-seg",
+    ): YOLO26InstanceSegmentation,
+    (
+        "instance-segmentation",
+        "yolo26s-seg",
+    ): YOLO26InstanceSegmentation,
+    (
+        "instance-segmentation",
+        "yolo26m-seg",
+    ): YOLO26InstanceSegmentation,
+    (
+        "instance-segmentation",
+        "yolo26l-seg",
+    ): YOLO26InstanceSegmentation,
+    (
+        "instance-segmentation",
+        "yolo26x-seg",
+    ): YOLO26InstanceSegmentation,
     ("keypoint-detection", "yolov11n"): YOLOv11KeypointsDetection,
     ("keypoint-detection", "yolov11s"): YOLOv11KeypointsDetection,
     ("keypoint-detection", "yolov11m"): YOLOv11KeypointsDetection,
@@ -166,6 +223,16 @@ ROBOFLOW_MODEL_TYPES = {
     ("keypoint-detection", "yolov11m-pose"): YOLOv11KeypointsDetection,
     ("keypoint-detection", "yolov11l-pose"): YOLOv11KeypointsDetection,
     ("keypoint-detection", "yolov11x-pose"): YOLOv11KeypointsDetection,
+    ("keypoint-detection", "yolo26n"): YOLO26KeypointsDetection,
+    ("keypoint-detection", "yolo26s"): YOLO26KeypointsDetection,
+    ("keypoint-detection", "yolo26m"): YOLO26KeypointsDetection,
+    ("keypoint-detection", "yolo26l"): YOLO26KeypointsDetection,
+    ("keypoint-detection", "yolo26x"): YOLO26KeypointsDetection,
+    ("keypoint-detection", "yolo26n-pose"): YOLO26KeypointsDetection,
+    ("keypoint-detection", "yolo26s-pose"): YOLO26KeypointsDetection,
+    ("keypoint-detection", "yolo26m-pose"): YOLO26KeypointsDetection,
+    ("keypoint-detection", "yolo26l-pose"): YOLO26KeypointsDetection,
+    ("keypoint-detection", "yolo26x-pose"): YOLO26KeypointsDetection,
     ("instance-segmentation", "stub"): InstanceSegmentationModelStub,
     (
         "instance-segmentation",
@@ -368,6 +435,23 @@ except:
         category=ModelDependencyMissing,
     )
 
+try:
+    if QWEN_3_ENABLED:
+        from inference.models import LoRAQwen3VL, Qwen3VL
+
+        qwen3vl_models = {
+            ("text-image-pairs", "qwen3vl-2b-instruct"): Qwen3VL,
+            ("text-image-pairs", "qwen3vl-2b-instruct-peft"): LoRAQwen3VL,
+        }
+        ROBOFLOW_MODEL_TYPES.update(qwen3vl_models)
+except:
+    warnings.warn(
+        "Your `inference` configuration does not support Qwen3-VL model. "
+        "Use pip install 'inference[transformers]' to install missing requirements."
+        "To suppress this warning, set QWEN_3_ENABLED to False.",
+        category=ModelDependencyMissing,
+    )
+
 
 try:
     if CORE_MODEL_SAM_ENABLED:
@@ -474,9 +558,15 @@ except:
 
 try:
     if DEPTH_ESTIMATION_ENABLED:
-        from inference.models.depth_estimation.depthestimation import DepthEstimator
+        from inference.models.depth_anything_v2.depth_anything_v2 import DepthAnythingV2
+        from inference.models.depth_anything_v3.depth_anything_v3 import DepthAnythingV3
 
-        ROBOFLOW_MODEL_TYPES[("depth-estimation", "small")] = DepthEstimator
+        ROBOFLOW_MODEL_TYPES[("depth-estimation", "depth-anything-v2")] = (
+            DepthAnythingV2
+        )
+        ROBOFLOW_MODEL_TYPES[("depth-estimation", "depth-anything-v3")] = (
+            DepthAnythingV3
+        )
 except:
     warnings.warn(
         "Your `inference` configuration does not support Depth Estimation."
@@ -599,7 +689,7 @@ def get_roboflow_model(*args, **kwargs):
 try:
     if USE_INFERENCE_EXP_MODELS:
         # Ensure experimental package is importable before swapping
-        __import__("inference_exp")
+        __import__("inference_models")
         from inference.models.rfdetr.rfdetr_exp import RFDetrExperimentalModel
         from inference.models.yolov8.yolov8_object_detection_exp import (
             Yolo8ODExperimentalModel,

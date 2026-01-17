@@ -88,7 +88,7 @@ Running Inference this way can have several advantages:
 There are several advanced interfaces that enhance the capabilities of the base Inference package.
 
 - **Active Learning**: Active learning helps improve your model over time by contributing real world data back to your Roboflow dataset in real time.
-- **Parallel HTTP API**: A highly parallel server capable of accepting requests from many different clients and batching them dynamically in real time to make the most efficient use of the host hardware. [Docs and Examples](/enterprise/parallel_processing)
+- **Parallel HTTP API**: A highly parallel server capable of accepting requests from many different clients and batching them dynamically in real time to make the most efficient use of the host hardware. [Docs and Examples](/enterprise/parallel_processing.md)
 - **Stream Manager API**: An API for starting, stopping, and managing Inference Pipeline instances. This interfaces combines the advantages of running Inference realtime on a stream while also fitting nicely into a microservice architecture. [Docs and Examples](../enterprise/stream_management_api.md)
 
 To learn more, [contact the Roboflow sales team](https://roboflow.com/sales).

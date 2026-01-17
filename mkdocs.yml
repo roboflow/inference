@@ -90,6 +90,7 @@ nav:
       - 'Fine-Tuned Models':
           - quickstart/explore_models.md
           - RF-DETR: fine-tuned/rfdetr.md
+          - YOLO26: fine-tuned/yolo26.md
           - YOLOv11: fine-tuned/yolov11.md
           - YOLOv10: fine-tuned/yolov10.md
           - YOLOv9: fine-tuned/yolov9.md
@@ -103,7 +104,6 @@ nav:
           - foundation/about.md
           - CLIP (Classification, Embeddings): foundation/clip.md
           - DocTR (OCR): foundation/doctr.md
-          - EasyOCR (OCR): foundation/easy_ocr.md
           - Depth Estimation (Depth Anything V2 Small): foundation/depth_estimation.md
           - Florence-2: foundation/florence2.md
           - TrOCR (OCR): foundation/trocr.md

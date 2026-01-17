@@ -138,8 +138,8 @@ class SmolVLM2BlockV1(WorkflowBlock):
         inference_images = [
             i.to_inference_format(numpy_preferred=False) for i in images
         ]
-        # Use the provided prompt (or an empty string if None) for every image.
-        prompt = prompt or ""
+        # Use the provided prompt or default to a generic image description request.
+        prompt = prompt or "Describe what's in this image."
         prompts = [prompt] * len(inference_images)
 
         # Register SmolVLM2 with the model manager.

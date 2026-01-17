@@ -77,7 +77,7 @@ It’s essential to understand that blocks are grouped in workflow plugins, whic
 Roboflow offers its own set of plugins, and community members are encouraged to create their own. 
 The process of importing a plugin into your environment is detailed [here](./blocks_bundling.md).
 
-Feel free to explore [Workflow blocks prepared by Roboflow](/workflows/blocks).
+Feel free to explore [Workflow blocks prepared by Roboflow](/workflows/blocks/index.md).
 
 ## Workflows Compiler and Execution Engine
 

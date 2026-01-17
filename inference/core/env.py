@@ -191,6 +191,8 @@ LMM_ENABLED = str2bool(os.getenv("LMM_ENABLED", False))
 
 QWEN_2_5_ENABLED = str2bool(os.getenv("QWEN_2_5_ENABLED", True))
 
+QWEN_3_ENABLED = str2bool(os.getenv("QWEN_3_ENABLED", True))
+
 DEPTH_ESTIMATION_ENABLED = str2bool(os.getenv("DEPTH_ESTIMATION_ENABLED", True))
 
 SMOLVLM2_ENABLED = str2bool(os.getenv("SMOLVLM2_ENABLED", True))
@@ -208,7 +210,7 @@ CORE_MODEL_YOLO_WORLD_ENABLED = str2bool(
     os.getenv("CORE_MODEL_YOLO_WORLD_ENABLED", True)
 )
 
-# Enable experimental RFDETR backend (inference_exp) rollout, default is True
+# Enable experimental RFDETR backend (inference_models) rollout, default is True
 USE_INFERENCE_EXP_MODELS = str2bool(os.getenv("USE_INFERENCE_EXP_MODELS", "False"))
 ALLOW_INFERENCE_EXP_UNTRUSTED_MODELS = str2bool(
     os.getenv("ALLOW_INFERENCE_EXP_UNTRUSTED_MODELS", "False")

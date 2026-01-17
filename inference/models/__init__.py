@@ -69,6 +69,8 @@ OPTIONAL_MODELS = {
     "LoRAFlorence2": "inference.models.florence2",
     "Qwen25VL": "inference.models.qwen25vl",
     "LoRAQwen25VL": "inference.models.qwen25vl",
+    "Qwen3VL": "inference.models.qwen3vl",
+    "LoRAQwen3VL": "inference.models.qwen3vl",
     "TrOCR": "inference.models.trocr",
     "SmolVLM": "inference.models.smolvlm",
     "LoRASmolVLM": "inference.models.smolvlm",
@@ -98,6 +100,9 @@ STANDARD_MODELS = {
     "YOLOv11KeypointsDetection": "inference.models.yolov11",
     "YOLOv11ObjectDetection": "inference.models.yolov11",
     "YOLOv12ObjectDetection": "inference.models.yolov12",
+    "YOLO26InstanceSegmentation": "inference.models.yolo26",
+    "YOLO26KeypointsDetection": "inference.models.yolo26",
+    "YOLO26ObjectDetection": "inference.models.yolo26",
 }
 
 
