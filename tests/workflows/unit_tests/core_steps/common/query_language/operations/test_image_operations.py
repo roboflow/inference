@@ -81,7 +81,10 @@ def test_encode_image_to_jpeg_when_valid_input_provided() -> None:
     result = execute_operations(value=image, operations=operations)
 
     # then
-    recovered_image = cv2.imdecode(np.fromstring(result, np.uint8), cv2.IMREAD_COLOR)
+    try:
+        recovered_image = cv2.imdecode(np.frombuffer(result, np.uint8), cv2.IMREAD_COLOR)
+    except Exception:
+        recovered_image = cv2.imdecode(np.fromstring(result, np.uint8), cv2.IMREAD_COLOR)
     assert np.allclose(image.numpy_image, recovered_image)
 
 
@@ -122,9 +125,14 @@ def test_encode_image_to_base64_when_valid_input_provided() -> None:
 
     # then
     result_bytes = base64.b64decode(result)
-    recovered_image = cv2.imdecode(
-        np.fromstring(result_bytes, np.uint8), cv2.IMREAD_COLOR
-    )
+    try:
+        recovered_image = cv2.imdecode(
+            np.frombuffer(result_bytes, np.uint8), cv2.IMREAD_COLOR
+        )
+    except Exception:
+        recovered_image = cv2.imdecode(
+            np.fromstring(result_bytes, np.uint8), cv2.IMREAD_COLOR
+        )
     assert np.allclose(image.numpy_image, recovered_image)
 
 
