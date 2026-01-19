@@ -11,7 +11,10 @@ The workflow block filtering feature allows you to selectively disable certain t
 - **Resource Management**: Limit resource-intensive operations
 
 ## How It Works
-When enabled, the validation checks each workflow step during compilation and rejects workflows containing disabled blocks. The validation is performed at compilation time, providing immediate feedback before any execution occurs.
+When enabled, disabled blocks are prevented from being loaded into the system at all. This means:
+- Disabled blocks won't appear in the UI or API discovery endpoints
+- Workflows attempting to use disabled blocks will fail with "unknown block type" errors
+- The filtering happens at load time, before blocks are registered with the workflow engine
 
 ## Configuration
 
@@ -36,12 +39,6 @@ When enabled, the validation checks each workflow step during compilation and re
 - **Description**: Patterns to match in block identifiers (case-insensitive substring match)
 - **Example**: `export WORKFLOW_DISABLED_BLOCK_PATTERNS="webhook,openai,anthropic"`
 
-#### `WORKFLOW_DISABLE_REASON`
-- **Type**: String
-- **Default**: `"These blocks are disabled by system configuration."`
-- **Description**: Custom message explaining why blocks are disabled
-- **Example**: `export WORKFLOW_DISABLE_REASON="Foundation models are disabled to reduce costs in development."`
-
 ## Usage Scenarios
 
 ### 1. Mirroring/Testing Infrastructure
@@ -50,7 +47,6 @@ Prevent duplicate side effects when testing with mirrored requests:
 export WORKFLOW_SELECTIVE_BLOCKS_DISABLE=true
 export WORKFLOW_DISABLED_BLOCK_TYPES="sink,model"
 export WORKFLOW_DISABLED_BLOCK_PATTERNS="webhook,email,database,openai,anthropic"
-export WORKFLOW_DISABLE_REASON="Blocks disabled to prevent duplicate side effects during mirroring."
 ```
 
 ### 2. Development Environment
@@ -59,7 +55,6 @@ Reduce costs and prevent accidental production actions:
 export WORKFLOW_SELECTIVE_BLOCKS_DISABLE=true
 export WORKFLOW_DISABLED_BLOCK_TYPES="sink"
 export WORKFLOW_DISABLED_BLOCK_PATTERNS="openai,anthropic,google_gemini,stability_ai"
-export WORKFLOW_DISABLE_REASON="External APIs and sinks disabled in development environment."
 ```
 
 ### 3. Cost Control
@@ -67,7 +62,6 @@ Disable expensive operations:
 ```bash
 export WORKFLOW_SELECTIVE_BLOCKS_DISABLE=true
 export WORKFLOW_DISABLED_BLOCK_PATTERNS="gpt-4,claude,gemini-pro,stability_ai"
-export WORKFLOW_DISABLE_REASON="Premium AI models are disabled. Please use standard models."
 ```
 
 ### 4. Security-Restricted Environment
@@ -76,7 +70,6 @@ Prevent data exfiltration and external communication:
 export WORKFLOW_SELECTIVE_BLOCKS_DISABLE=true
 export WORKFLOW_DISABLED_BLOCK_TYPES="sink"
 export WORKFLOW_DISABLED_BLOCK_PATTERNS="webhook,http,email,slack,database"
-export WORKFLOW_DISABLE_REASON="External communication is restricted for security reasons."
 ```
 
 ### 5. Compliance Mode
@@ -84,7 +77,6 @@ Ensure GDPR/HIPAA compliance:
 ```bash
 export WORKFLOW_SELECTIVE_BLOCKS_DISABLE=true
 export WORKFLOW_DISABLED_BLOCK_PATTERNS="google,openai,anthropic,external"
-export WORKFLOW_DISABLE_REASON="Third-party AI services disabled for data privacy compliance."
 ```
 
 ## Docker Configuration
@@ -99,7 +91,6 @@ services:
       - WORKFLOW_SELECTIVE_BLOCKS_DISABLE=true
       - WORKFLOW_DISABLED_BLOCK_TYPES=sink,model
       - WORKFLOW_DISABLED_BLOCK_PATTERNS=webhook,openai
-      - WORKFLOW_DISABLE_REASON=External services disabled in this environment
 ```
 
 ### Dockerfile
@@ -110,7 +101,6 @@ FROM roboflow/inference-server
 ENV WORKFLOW_SELECTIVE_BLOCKS_DISABLE=true
 ENV WORKFLOW_DISABLED_BLOCK_TYPES=model
 ENV WORKFLOW_DISABLED_BLOCK_PATTERNS=gpt-4,claude
-ENV WORKFLOW_DISABLE_REASON="Premium models disabled. Use standard models instead."
 ```
 
 ### Kubernetes ConfigMap
@@ -123,19 +113,20 @@ data:
   WORKFLOW_SELECTIVE_BLOCKS_DISABLE: "true"
   WORKFLOW_DISABLED_BLOCK_TYPES: "sink"
   WORKFLOW_DISABLED_BLOCK_PATTERNS: "webhook,database"
-  WORKFLOW_DISABLE_REASON: "Sinks disabled in staging environment"
 ```
 
 ## Error Messages
-When a workflow is rejected, users receive clear, actionable error messages:
+When a workflow attempts to use a disabled block, users receive a standard "unknown block type" error:
 
 ```json
 {
   "error": "WorkflowDefinitionError",
-  "message": "Block type 'roboflow_core/webhook_sink@v1' (category: sink) is not allowed. Blocks of type 'sink' are disabled. External services disabled in this environment.",
-  "context": "workflow_compilation | block_validation"
+  "message": "Unknown block type: 'roboflow_core/webhook_sink@v1'",
+  "context": "workflow_compilation"
 }
 ```
+
+This is intentional - disabled blocks are completely removed from the system, so they appear as if they don't exist.
 
 ## Block Categories Reference
 
@@ -220,12 +211,13 @@ export WORKFLOW_SELECTIVE_BLOCKS_DISABLE=false
 1. Verify `WORKFLOW_SELECTIVE_BLOCKS_DISABLE=true`
 2. Check pattern matching (case-insensitive substring)
 3. Verify block type in manifest matches configuration
+4. Check that the server/process was restarted after changing environment variables (blocks are loaded once at startup)
 
 ### Performance Considerations
-- Validation occurs during compilation only
-- Compiled workflows are cached
+- Filtering occurs once at startup during block loading
 - No runtime performance impact
-- Minimal overhead (<1ms per workflow)
+- Disabled blocks consume no memory or resources
+- API discovery endpoints automatically reflect filtered blocks
 
 ## Advanced Configuration
 
