@@ -627,13 +627,13 @@ def _should_filter_block(block_class: Type[WorkflowBlock]) -> bool:
         # Get block manifest to check block type
         manifest_class = block_class.get_manifest()
         schema = manifest_class.model_json_schema()
-        json_schema_extra = schema.get("json_schema_extra", {})
-        block_type = json_schema_extra.get("block_type", "")
-        
+        # Note: Pydantic puts json_schema_extra values at top level of schema
+        block_type = schema.get("block_type", "")
+
         # Check if block type category is disabled
         if block_type and block_type.lower() in WORKFLOW_DISABLED_BLOCK_TYPES:
             return True
-        
+
         # Get the block identifier for pattern matching
         # We'll check multiple identifiers to be thorough:
         # 1. The block class name
@@ -641,7 +641,7 @@ def _should_filter_block(block_class: Type[WorkflowBlock]) -> bool:
         # 3. The block name from schema if available
         block_class_name = block_class.__name__.lower()
         block_module = block_class.__module__.lower()
-        block_name = json_schema_extra.get("name", "").lower()
+        block_name = schema.get("name", "").lower()
         
         # Check patterns against various identifiers
         for pattern in WORKFLOW_DISABLED_BLOCK_PATTERNS:
