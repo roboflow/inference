@@ -278,12 +278,13 @@ def run_simd_step_in_batch_mode(
             try:
                 outputs = step_instance.run(**step_input.parameters)
             except Exception as exc:
-                _store_crash_info(
-                    image=execution_data_manager._runtime_parameters["image"][
-                        0
-                    ].numpy_image,
-                    exception=exc,
-                )
+                if INFERENCE_DEBUG_OUTPUT_DIR:
+                    _store_crash_info(
+                        image=execution_data_manager._runtime_parameters["image"][
+                            0
+                        ].numpy_image,
+                        exception=exc,
+                    )
                 raise exc
     with profiler.profile_execution_phase(
         name="step_output_registration",
