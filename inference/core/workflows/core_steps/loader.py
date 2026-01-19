@@ -617,12 +617,12 @@ KINDS_DESERIALIZERS = {
 def _should_filter_block(block_class: Type[WorkflowBlock]) -> bool:
     """
     Check if a block should be filtered out based on configuration.
-    
+
     Returns True if the block should be filtered (removed), False if it should be kept.
     """
     if not WORKFLOW_SELECTIVE_BLOCKS_DISABLE:
         return False
-    
+
     try:
         # Get block manifest to check block type
         manifest_class = block_class.get_manifest()
@@ -642,20 +642,22 @@ def _should_filter_block(block_class: Type[WorkflowBlock]) -> bool:
         block_class_name = block_class.__name__.lower()
         block_module = block_class.__module__.lower()
         block_name = schema.get("name", "").lower()
-        
+
         # Check patterns against various identifiers
         for pattern in WORKFLOW_DISABLED_BLOCK_PATTERNS:
             pattern_lower = pattern.lower()
-            if (pattern_lower in block_class_name or 
-                pattern_lower in block_module or
-                pattern_lower in block_name):
+            if (
+                pattern_lower in block_class_name
+                or pattern_lower in block_module
+                or pattern_lower in block_name
+            ):
                 return True
-                
+
     except Exception:
         # If we can't determine block info, don't filter it
         # This ensures we don't accidentally filter blocks due to errors
         pass
-    
+
     return False
 
 
@@ -826,12 +828,12 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
     ]
     if SAM3_3D_OBJECTS_ENABLED:
         blocks.append(SegmentAnything3_3D_ObjectsBlockV1)
-    
+
     # Filter blocks if selective disable is enabled
     if WORKFLOW_SELECTIVE_BLOCKS_DISABLE:
         filtered_blocks = [block for block in blocks if not _should_filter_block(block)]
         return filtered_blocks
-    
+
     return blocks
 
 

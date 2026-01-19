@@ -832,7 +832,9 @@ else:
 WORKFLOW_DISABLED_BLOCK_PATTERNS = os.getenv("WORKFLOW_DISABLED_BLOCK_PATTERNS", "")
 if WORKFLOW_DISABLED_BLOCK_PATTERNS:
     WORKFLOW_DISABLED_BLOCK_PATTERNS = [
-        p.strip().lower() for p in WORKFLOW_DISABLED_BLOCK_PATTERNS.split(",") if p.strip()
+        p.strip().lower()
+        for p in WORKFLOW_DISABLED_BLOCK_PATTERNS.split(",")
+        if p.strip()
     ]
 else:
     WORKFLOW_DISABLED_BLOCK_PATTERNS = []
