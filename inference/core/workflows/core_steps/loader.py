@@ -8,6 +8,9 @@ from inference.core.env import (
     SAM3_3D_OBJECTS_ENABLED,
     WORKFLOW_BLOCKS_WRITE_DIRECTORY,
     WORKFLOWS_STEP_EXECUTION_MODE,
+    WORKFLOW_SELECTIVE_BLOCKS_DISABLE,
+    WORKFLOW_DISABLED_BLOCK_TYPES,
+    WORKFLOW_DISABLED_BLOCK_PATTERNS,
 )
 from inference.core.workflows.core_steps.analytics.data_aggregator.v1 import (
     DataAggregatorBlockV1,
@@ -611,6 +614,51 @@ KINDS_DESERIALIZERS = {
 }
 
 
+def _should_filter_block(block_class: Type[WorkflowBlock]) -> bool:
+    """
+    Check if a block should be filtered out based on configuration.
+    
+    Returns True if the block should be filtered (removed), False if it should be kept.
+    """
+    if not WORKFLOW_SELECTIVE_BLOCKS_DISABLE:
+        return False
+    
+    try:
+        # Get block manifest to check block type
+        manifest_class = block_class.get_manifest()
+        schema = manifest_class.model_json_schema()
+        json_schema_extra = schema.get("json_schema_extra", {})
+        block_type = json_schema_extra.get("block_type", "")
+        
+        # Check if block type category is disabled
+        if block_type and block_type.lower() in WORKFLOW_DISABLED_BLOCK_TYPES:
+            return True
+        
+        # Get the block identifier for pattern matching
+        # We'll check multiple identifiers to be thorough:
+        # 1. The block class name
+        # 2. The full module path
+        # 3. The block name from schema if available
+        block_class_name = block_class.__name__.lower()
+        block_module = block_class.__module__.lower()
+        block_name = json_schema_extra.get("name", "").lower()
+        
+        # Check patterns against various identifiers
+        for pattern in WORKFLOW_DISABLED_BLOCK_PATTERNS:
+            pattern_lower = pattern.lower()
+            if (pattern_lower in block_class_name or 
+                pattern_lower in block_module or
+                pattern_lower in block_name):
+                return True
+                
+    except Exception:
+        # If we can't determine block info, don't filter it
+        # This ensures we don't accidentally filter blocks due to errors
+        pass
+    
+    return False
+
+
 def load_blocks() -> List[Type[WorkflowBlock]]:
     blocks = [
         AbsoluteStaticCropBlockV1,
@@ -778,6 +826,12 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
     ]
     if SAM3_3D_OBJECTS_ENABLED:
         blocks.append(SegmentAnything3_3D_ObjectsBlockV1)
+    
+    # Filter blocks if selective disable is enabled
+    if WORKFLOW_SELECTIVE_BLOCKS_DISABLE:
+        filtered_blocks = [block for block in blocks if not _should_filter_block(block)]
+        return filtered_blocks
+    
     return blocks
 
 

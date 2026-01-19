@@ -836,9 +836,3 @@ if WORKFLOW_DISABLED_BLOCK_PATTERNS:
     ]
 else:
     WORKFLOW_DISABLED_BLOCK_PATTERNS = []
-
-# Custom reason message for why blocks are disabled
-WORKFLOW_DISABLE_REASON = os.getenv(
-    "WORKFLOW_DISABLE_REASON",
-    "These blocks are disabled by system configuration."
-)
