@@ -315,12 +315,15 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
             logits_flat = logits_sigmoid[batch_idx].reshape(-1)
 
             # Use argpartition for better performance when max_detections is smaller than logits_flat
-            partition_indices = np.argpartition(-logits_flat, max_detections)[
-                :max_detections
-            ]
-            sorted_indices = partition_indices[
-                np.argsort(-logits_flat[partition_indices])
-            ]
+            if len(logits_flat) > max_detections:
+                partition_indices = np.argpartition(-logits_flat, max_detections)[
+                    :max_detections
+                ]
+                sorted_indices = partition_indices[
+                    np.argsort(-logits_flat[partition_indices])
+                ]
+            else:
+                sorted_indices = np.argsort(-logits_flat)
             topk_scores = logits_flat[sorted_indices]
 
             conf_mask = topk_scores > confidence
@@ -601,12 +604,15 @@ class RFDETRInstanceSegmentation(
             logits_flat = logits_sigmoid[batch_idx].reshape(-1)
 
             # Use argpartition for better performance when max_detections is smaller than logits_flat
-            partition_indices = np.argpartition(-logits_flat, max_detections)[
-                :max_detections
-            ]
-            sorted_indices = partition_indices[
-                np.argsort(-logits_flat[partition_indices])
-            ]
+            if len(logits_flat) > max_detections:
+                partition_indices = np.argpartition(-logits_flat, max_detections)[
+                    :max_detections
+                ]
+                sorted_indices = partition_indices[
+                    np.argsort(-logits_flat[partition_indices])
+                ]
+            else:
+                sorted_indices = np.argsort(-logits_flat)
             topk_scores = logits_flat[sorted_indices]
 
             conf_mask = topk_scores > confidence
