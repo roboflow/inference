@@ -1,17 +1,32 @@
 import logging
+import multiprocessing
+
+import av
 
 logger = logging.getLogger(__name__)
 
+def _fast_rampup_options(bitrate: int) -> dict:
+    """VP8 options for fast quality ramp-up."""
+    buf = str(bitrate // 2)  # 500ms buffer
+    rate = str(bitrate)
+    return {
+        "bufsize": buf,
+        "cpu-used": "-6",
+        "deadline": "realtime",
+        "lag-in-frames": "0",
+        "minrate": rate,
+        "maxrate": rate,
+        "undershoot-pct": "100",
+        "overshoot-pct": "15",
+        "noise-sensitivity": "4",
+        "static-thresh": "0",
+        "partitions": "0",
+        "error-resilient": "1",
+    }
+
 
 def register_custom_vp8_encoder() -> bool:
-    """Register optimized VP8 encoder subclass in aiortc's codec module.
-
-    Creates a subclass of Vp8Encoder with faster quality ramp-up settings
-    (smaller buffers, higher undershoot) and replaces the original.
-
-    Returns:
-        True if encoder was registered, False otherwise
-    """
+    """Register VP8 encoder with faster quality ramp-up settings."""
     try:
         from aiortc.codecs import vpx as vpx_module
     except ImportError:
@@ -20,28 +35,47 @@ def register_custom_vp8_encoder() -> bool:
 
     try:
         OriginalVp8Encoder = vpx_module.Vp8Encoder
+        original_encode = OriginalVp8Encoder.encode
 
-        class CustomVp8Encoder(OriginalVp8Encoder):
-            """VP8 encoder with faster quality ramp-up settings."""
+        def _create_fast_codec(encoder, frame):
+            """Create codec with fast ramp-up settings."""
+            encoder.codec = av.CodecContext.create("libvpx", "w")
+            encoder.codec.width = frame.width
+            encoder.codec.height = frame.height
+            encoder.codec.bit_rate = encoder.target_bitrate
+            encoder.codec.pix_fmt = "yuv420p"
+            encoder.codec.gop_size = 120
+            encoder.codec.qmin = 4
+            encoder.codec.qmax = 48
+            encoder.codec.options = _fast_rampup_options(encoder.target_bitrate)
+            encoder.codec.thread_count = vpx_module.number_of_threads(
+                frame.width * frame.height, multiprocessing.cpu_count()
+            )
 
-            def __init__(self, *args, **kwargs):
-                super().__init__(*args, **kwargs)
-                if hasattr(self, "_encoder") and self._encoder:
-                    cfg = self._encoder.config
-                    cfg.rc_target_bitrate = 2000  # kbps
-                    cfg.rc_buf_initial_sz = 500  # ms (default 4000)
-                    cfg.rc_buf_optimal_sz = 600  # ms
-                    cfg.rc_buf_sz = 1000  # ms
-                    cfg.rc_undershoot_pct = 95  # default 25
-                    cfg.rc_min_quantizer = 2  # 0-63, lower = better quality
-                    self._encoder.configure(cfg)
+        def fast_encode(self, frame, force_keyframe=False):
+            # Ensure yuv420p format
+            if frame.format.name != "yuv420p":
+                frame = frame.reformat(format="yuv420p")
 
-        vpx_module.Vp8Encoder = CustomVp8Encoder
-        logger.info("Registered custom VP8 encoder")
+            # Invalidate codec on size/bitrate change
+            if self.codec and (
+                frame.width != self.codec.width
+                or frame.height != self.codec.height
+                or abs(self.target_bitrate - self.codec.bit_rate)
+                / self.codec.bit_rate
+                > 0.1
+            ):
+                self.codec = None
+
+            # Create our custom codec before parent tries to
+            if self.codec is None:
+                _create_fast_codec(self, frame)
+
+            return original_encode(self, frame, force_keyframe)
+
+        OriginalVp8Encoder.encode = fast_encode
+        logger.info("Registered custom VP8 encoder with fast ramp-up settings")
         return True
-    except AttributeError:
-        logger.debug("VP8 encoder not available in aiortc")
-        return False
     except Exception as e:
         logger.warning("Failed to register custom VP8 encoder: %s", e)
         return False
