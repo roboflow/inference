@@ -932,20 +932,6 @@ async def init_rtc_peer_connection_with_loop(
                 heartbeat_callback=heartbeat_callback,
                 realtime_processing=webrtc_request.webrtc_realtime_processing,
             )
-            # IMPORTANT: raise GoogCC floor/ceiling to speed ramp-up
-
-
-        try:
-            await set_sender_bitrates(
-                video_sender,
-                min_bps=1_500_000,   # 1.5 Mbps floor
-                max_bps=6_000_000,   # 6 Mbps ceiling
-            )
-            logger.info("Applied sender bitrate bounds (min=%s, max=%s)", 1_500_000, 6_000_000)
-        except Exception as e:
-            logger.warning("Failed to set sender bitrates: %s", e)
-            
-
 
     except (
         ValidationError,
@@ -1055,7 +1041,17 @@ async def init_rtc_peer_connection_with_loop(
     # The track source will be set later by the appropriate handler (RTSP, on_track, video_upload)
     if should_send_video:
         logger.info("Adding video track early for SDP negotiation")
-        peer_connection.addTrack(video_processor)
+        video_sender = peer_connection.addTrack(video_processor)
+        # Set sender bitrates to improve quality ramp-up (raise GoogCC floor/ceiling)
+        try:
+            await set_sender_bitrates(
+                video_sender,
+                min_bps=1_500_000,   # 1.5 Mbps floor
+                max_bps=6_000_000,   # 6 Mbps ceiling
+            )
+            logger.info("Applied sender bitrate bounds (min=%s, max=%s)", 1_500_000, 6_000_000)
+        except Exception as e:
+            logger.warning("Failed to set sender bitrates: %s", e)
 
     player: Optional[MediaPlayer] = None
     if webrtc_request.rtsp_url:
