@@ -433,11 +433,11 @@ def test_getting_base64_image_when_image_provided_in_np_representation() -> None
     # then
     try:
         result_image = cv2.imdecode(
-            np.fromstring(base64.b64decode(result), np.uint8), cv2.IMREAD_ANYCOLOR
+            np.frombuffer(base64.b64decode(result), np.uint8), cv2.IMREAD_ANYCOLOR
         )
     except Exception:
         result_image = cv2.imdecode(
-            np.frombuffer(base64.b64decode(result), np.uint8), cv2.IMREAD_ANYCOLOR
+            np.fromstring(base64.b64decode(result), np.uint8), cv2.IMREAD_ANYCOLOR
         )
     assert np.allclose(result_image, np.zeros((192, 168, 3), dtype=np.uint8))
 
@@ -475,11 +475,11 @@ def test_getting_base64_image_when_image_provided_as_file(empty_directory: str) 
     # then
     try:
         result_image = cv2.imdecode(
-            np.fromstring(base64.b64decode(result), np.uint8), cv2.IMREAD_ANYCOLOR
+            np.frombuffer(base64.b64decode(result), np.uint8), cv2.IMREAD_ANYCOLOR
         )
     except Exception:
         result_image = cv2.imdecode(
-            np.frombuffer(base64.b64decode(result), np.uint8), cv2.IMREAD_ANYCOLOR
+            np.fromstring(base64.b64decode(result), np.uint8), cv2.IMREAD_ANYCOLOR
         )
     assert np.allclose(result_image, np.zeros((192, 168, 3), dtype=np.uint8))
 
@@ -502,11 +502,11 @@ def test_getting_base64_image_when_image_provided_as_url(
     # then
     try:
         result_image = cv2.imdecode(
-            np.fromstring(base64.b64decode(result), np.uint8), cv2.IMREAD_ANYCOLOR
+            np.frombuffer(base64.b64decode(result), np.uint8), cv2.IMREAD_ANYCOLOR
         )
     except Exception:
         result_image = cv2.imdecode(
-            np.frombuffer(base64.b64decode(result), np.uint8), cv2.IMREAD_ANYCOLOR
+            np.fromstring(base64.b64decode(result), np.uint8), cv2.IMREAD_ANYCOLOR
         )
     assert np.allclose(result_image, np.zeros((192, 168, 3), dtype=np.uint8))
 
