@@ -95,6 +95,7 @@ nav:
       - Choose the Right Backend: how-to/choose-backend.md
       - Work with Model Predictions: how-to/work-with-predictions.md
       - Debug Model Loading Issues: how-to/debug-model-loading.md
+      - Configure Environment Variables: how-to/environment-variables.md
       - Load Models Locally: how-to/local-packages.md
       - Understand Roboflow Model Packages: how-to/roboflow-model-packages.md
       - Manage Cache: how-to/cache-management.md
@@ -153,6 +154,15 @@ nav:
               - JetsonEnvironmentRequirements: api-reference/developer-tools/jetson-environment-requirements.md
               - ServerEnvironmentRequirements: api-reference/developer-tools/server-environment-requirements.md
               - FileDownloadSpecs: api-reference/developer-tools/file-download-specs.md
+  - Errors:
+      - Overview: errors/index.md
+      - Model Loading: errors/model-loading.md
+      - Package Negotiation: errors/package-negotiation.md
+      - Model Retrieval: errors/model-retrieval.md
+      - File & Download: errors/file-download.md
+      - Runtime & Environment: errors/runtime-environment.md
+      - Input & Validation: errors/input-validation.md
+      - Runtime: errors/runtime.md
 
 theme:
   name: 'material'

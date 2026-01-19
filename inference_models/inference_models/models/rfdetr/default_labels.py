@@ -1,7 +1,7 @@
 from copy import deepcopy
 from typing import List
 
-from inference_models.errors import ModelLoadingError
+from inference_models.errors import ModelLoadingError, InvalidModelInitParameterError
 
 COCO_LABELS = [
     "background",
@@ -100,7 +100,7 @@ COCO_LABELS = [
 
 def resolve_labels(labels: str) -> List[str]:
     if labels != "coco":
-        raise ModelLoadingError(
+        raise InvalidModelInitParameterError(
             message=f"While loading RFDetr model, `labels` parameter was set to `{labels}` which is invalid. "
             f"Supported set of labels: `coco`.",
             help_url="https://todo",

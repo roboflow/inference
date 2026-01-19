@@ -100,12 +100,26 @@ class AmbiguousModelPackageResolutionError(ModelPackageNegotiationError):
 class ModelLoadingError(BaseInferenceError):
     pass
 
+class ModelPackageAlternativesExhaustedError(ModelLoadingError):
+    pass
+
+
+class MissingModelInitParameterError(ModelLoadingError):
+    pass
+
+
+class InvalidModelInitParameterError(ModelLoadingError):
+    pass
+
 
 class InsecureModelIdentifierError(ModelLoadingError):
     pass
 
 
 class DirectLocalStorageAccessError(ModelLoadingError):
+    pass
+
+class ForbiddenLocalCodePackageAccessError(ModelLoadingError):
     pass
 
 

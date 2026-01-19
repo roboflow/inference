@@ -21,7 +21,8 @@ from inference_models.errors import (
     InvalidParameterError,
     ModelLoadingError,
     NoModelPackagesAvailableError,
-    UnauthorizedModelAccessError,
+    UnauthorizedModelAccessError, ModelPackageAlternativesExhaustedError, ForbiddenLocalCodePackageAccessError,
+    MissingModelInitParameterError, InvalidModelInitParameterError,
 )
 from inference_models.logger import LOGGER, verbose_info
 from inference_models.models.auto_loaders.access_manager import (
@@ -1069,7 +1070,7 @@ def attempt_loading_matching_model_packages(
     if max_package_loading_attempts is not None:
         matching_model_packages = matching_model_packages[:max_package_loading_attempts]
     if not matching_model_packages:
-        raise ModelLoadingError(
+        raise NoModelPackagesAvailableError(
             message=f"Cannot load model {model_id} - no matching model package candidates for given model "
             f"running in this environment.",
             help_url="https://todo",
@@ -1139,7 +1140,7 @@ def attempt_loading_matching_model_packages(
         f"\t* model_package_id={model_package_id} error={error} error_type={error.__class__.__name__}"
         for model_package_id, error in failed_load_attempts
     )
-    raise ModelLoadingError(
+    raise ModelPackageAlternativesExhaustedError(
         message=f"Could not load any of model package candidate for model {model_id}. This may "
         f"be caused several issues. If you see this warning after manually specifying model "
         f"package to be loaded - make sure that all required dependencies are installed. If "
@@ -1490,7 +1491,7 @@ def attempt_loading_model_from_local_storage(
             model_init_kwargs=model_init_kwargs,
         )
     if not allow_local_code_packages:
-        raise ModelLoadingError(
+        raise ForbiddenLocalCodePackageAccessError(
             message=f"Attempted to load model from local package with arbitrary code. This is not allowed in "
             f"this environment. To let inference loading such models, use `allow_local_code_packages=True` "
             f"parameter of `AutoModel.from_pretrained(...)`. If you see this error while using one of Roboflow "
@@ -1536,14 +1537,14 @@ def resolve_models_registry_entry(
 ) -> Tuple[str, str, BackendType]:
     #  TODO: in the future this check will grow in size
     if not model_type:
-        raise ModelLoadingError(
+        raise MissingModelInitParameterError(
             message="When loading model directly from checkpoint path, `model_type` parameter must be specified. "
             "Use one of the supported value, for example `rfdetr-nano` in case you refer checkpoint of "
             "RFDetr Nano model.",
             help_url="https://todo",
         )
     if model_type not in MODEL_TYPES_TO_LOAD_FROM_CHECKPOINT:
-        raise ModelLoadingError(
+        raise InvalidModelInitParameterError(
             message="When loading model directly from checkpoint path, `model_type` parameter must define "
             "one of the type of model that support loading directly from the checkpoints. "
             f"Models supported in current version: {MODEL_TYPES_TO_LOAD_FROM_CHECKPOINT}",
@@ -1557,7 +1558,7 @@ def resolve_models_registry_entry(
         else:
             task_type = OBJECT_DETECTION_TASK
     if task_type not in {OBJECT_DETECTION_TASK, INSTANCE_SEGMENTATION_TASK}:
-        raise ModelLoadingError(
+        raise InvalidModelInitParameterError(
             message=f"When loading model directly from checkpoint path, set `model_type` as {model_type} and "
             f"`task_type` as {task_type}, whereas selected model do only support `{OBJECT_DETECTION_TASK}` "
             f"task while loading from checkpoint file.",
@@ -1567,7 +1568,7 @@ def resolve_models_registry_entry(
         backend_type = BackendType.TORCH
     if isinstance(backend_type, list) and len(backend_type) != 1:
         if len(backend_type) != 1:
-            raise ModelLoadingError(
+            raise InvalidModelInitParameterError(
                 message=f"When loading model directly from checkpoint path, set `backend` parameter to be {backend_type}, "
                 f"whereas it is only supported to pass a single value.",
                 help_url="https://todo",
@@ -1576,7 +1577,7 @@ def resolve_models_registry_entry(
     if isinstance(backend_type, str):
         backend_type = parse_backend_type(value=backend_type)
     if backend_type is not BackendType.TORCH:
-        raise ModelLoadingError(
+        raise InvalidModelInitParameterError(
             message=f"When loading model directly from checkpoint path, selected the following backend {backend_type}, "
             f"but the backend supported for model {model_type} is {BackendType.TORCH}",
             help_url="https://todo",
@@ -1586,7 +1587,7 @@ def resolve_models_registry_entry(
 
 def parse_model_config(config_path: str) -> InferenceModelConfig:
     if not os.path.isfile(config_path):
-        raise ModelLoadingError(
+        raise CorruptedModelPackageError(
             message=f"Could not find model config while attempting to load model from "
             f"local directory. This error may be caused by misconfiguration of model package (lack of config "
             f"file), as well as by clash between model_id or model alias and contents of local disc drive which "
