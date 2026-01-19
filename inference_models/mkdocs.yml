@@ -128,6 +128,20 @@ nav:
               - get_selected_onnx_execution_providers: api-reference/developer-tools/get-selected-onnx-execution-providers.md
               - get_model_from_provider: api-reference/developer-tools/get-model-from-provider.md
               - register_model_provider: api-reference/developer-tools/register-model-provider.md
+          - Backend-Specific Utilities:
+              - CUDA:
+                  - use_primary_cuda_context: api-reference/developer-tools/cuda/use-primary-cuda-context.md
+                  - use_cuda_context: api-reference/developer-tools/cuda/use-cuda-context.md
+              - ONNX:
+                  - set_onnx_execution_provider_defaults: api-reference/developer-tools/onnx/set-onnx-execution-provider-defaults.md
+                  - run_onnx_session_with_batch_size_limit: api-reference/developer-tools/onnx/run-onnx-session-with-batch-size-limit.md
+                  - run_onnx_session_via_iobinding: api-reference/developer-tools/onnx/run-onnx-session-via-iobinding.md
+              - PyTorch:
+                  - generate_batch_chunks: api-reference/developer-tools/torch/generate-batch-chunks.md
+              - TensorRT:
+                  - get_trt_engine_inputs_and_outputs: api-reference/developer-tools/trt/get-trt-engine-inputs-and-outputs.md
+                  - infer_from_trt_engine: api-reference/developer-tools/trt/infer-from-trt-engine.md
+                  - load_trt_model: api-reference/developer-tools/trt/load-trt-model.md
           - Entities:
               - RuntimeXRayResult: api-reference/developer-tools/runtime-xray-result.md
               - ModelMetadata: api-reference/developer-tools/model-metadata.md
@@ -167,6 +181,8 @@ plugins:
       handlers:
         python:
           options:
+            separate_signature: true
+            line_length: 88
             parameter_headings: true
             paths: [ inference_models ]
             load_external_modules: true
@@ -178,6 +194,7 @@ plugins:
             show_root_heading: True
             show_symbol_type_toc: true
             show_category_heading: true
+            docstring_section_style: list
           inventories:
             - url: https://docs.python-requests.org/en/master/objects.inv
               domains: [ std, py ]
