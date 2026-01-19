@@ -66,7 +66,7 @@ from inference.core.workflows.errors import WorkflowError, WorkflowSyntaxError
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
 from inference.usage_tracking.collector import usage_collector
 from inference.core.interfaces.webrtc_worker.video_encoders import (
-    register_custom_vp8_encoder,
+    register_custom_vp8_encoder, set_sender_bitrates
 )
 
 logging.getLogger("aiortc").setLevel(logging.WARNING)
@@ -932,6 +932,21 @@ async def init_rtc_peer_connection_with_loop(
                 heartbeat_callback=heartbeat_callback,
                 realtime_processing=webrtc_request.webrtc_realtime_processing,
             )
+            # IMPORTANT: raise GoogCC floor/ceiling to speed ramp-up
+
+
+        try:
+            await set_sender_bitrates(
+                video_sender,
+                min_bps=1_500_000,   # 1.5 Mbps floor
+                max_bps=6_000_000,   # 6 Mbps ceiling
+            )
+            logger.info("Applied sender bitrate bounds (min=%s, max=%s)", 1_500_000, 6_000_000)
+        except Exception as e:
+            logger.warning("Failed to set sender bitrates: %s", e)
+            
+
+
     except (
         ValidationError,
         MissingApiKeyError,
