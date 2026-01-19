@@ -145,7 +145,7 @@ rm -rf /tmp/cache/shared-blobs/
 
 ## 🚀 Next Steps
 
-- [Core Concepts](principles.md) - Understand the design philosophy
+- [Understand Core Concepts](understand-core-concepts.md) - Understand the design philosophy
 - [Supported Models](../models/index.md) - Browse available models
 - [How-To: Local Packages](../how-to/local-packages.md) - Working with local model packages
 

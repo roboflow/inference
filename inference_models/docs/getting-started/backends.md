@@ -17,7 +17,7 @@ This approach:
 - ✅ Gives you full control over your environment
 - ✅ Enables reproducible builds
 
-See [Principles and Assumptions](principles.md) for more details on this design philosophy.
+See [Understand Core Concepts](../how-to/understand-core-concepts.md) for more details on this design philosophy.
 
 ## Available Backends
 
@@ -334,7 +334,7 @@ This shows:
 ## Next Steps
 
 - [Installation Guide](installation.md) - Detailed installation instructions
-- [Principles and Assumptions](principles.md) - Design philosophy
+- [Understand Core Concepts](../how-to/understand-core-concepts.md) - Design philosophy
 - [Quick Overview](overview.md) - Get started with your first model
 - [Supported Models](../models/index.md) - Browse available models
 

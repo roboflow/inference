@@ -195,7 +195,7 @@ class MyClassificationModel(ClassificationModel[torch.Tensor, torch.Tensor]):
 
     - `from inference_models import ColorFormat` - Image color format handling
 
-    See [Core Principles - Clear Public Interface](../getting-started/principles.md#1-clear-public-interface) for the complete public API.
+    See [Core Concepts - Clear Public Interface](understand-core-concepts.md#1-clear-public-interface) for the complete public API.
 
 ## 2. Locally Cached Packages
 
@@ -316,7 +316,7 @@ See the RF-DETR model documentation for complete training and deployment workflo
 
 ## Next Steps
 
-- [Core Principles](../getting-started/principles.md) - Understand the public interface and developer tools
+- [Understand Core Concepts](understand-core-concepts.md) - Understand the public interface and developer tools
 - [RF-DETR Object Detection](../models/rfdetr-object-detection.md) - Learn about checkpoint loading
 - [Supported Models](../models/index.md) - Browse available models
 

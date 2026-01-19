@@ -96,5 +96,5 @@ These Docker images are experimental. If you encounter issues:
 
 - [Installation Guide](installation.md) - Local installation options
 - [Hardware Compatibility](hardware-compatibility.md) - Platform-specific requirements
-- [Core Concepts](principles.md) - Understand the architecture
+- [Understand Core Concepts](../how-to/understand-core-concepts.md) - Understand the architecture
 

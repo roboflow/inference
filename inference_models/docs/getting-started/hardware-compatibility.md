@@ -154,6 +154,6 @@ JetPack 5.1 requires a custom Docker build. See the [Roboflow inference reposito
 ## 🚀 Next Steps
 
 - [Installation Guide](installation.md) - Detailed installation instructions
-- [Core Concepts](principles.md) - Understand the architecture
+- [Understand Core Concepts](../how-to/understand-core-concepts.md) - Understand the architecture
 - [Supported Models](../models/index.md) - Browse available models
 

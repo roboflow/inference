@@ -199,6 +199,6 @@ When you load a Roboflow Platform model:
 ## Next Steps
 
 - [Load Models Locally](local-packages.md)
-- [Cache Management](../getting-started/cache.md)
+- [Cache Management](cache-management.md)
 - [Supported Models](../models/index.md)
 

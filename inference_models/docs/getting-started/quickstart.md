@@ -252,7 +252,7 @@ model = AutoModel.from_pretrained(
 
 ## Next Steps
 
-- [Principles & Architecture](principles.md) - Understand the design philosophy
+- [Understand Core Concepts](../how-to/understand-core-concepts.md) - Understand the design philosophy
 - [Installation Guide](installation.md) - Detailed installation instructions
 - [Models Overview](../models/index.md) - Explore all available models
 - [How-To Guides](../how-to/local-packages.md) - Advanced usage patterns

@@ -22,13 +22,14 @@ extra:
     - icon: fontawesome/brands/twitter
       link: https://twitter.com/roboflow
 
+extra_css:
+  - stylesheets/extra.css
+
 nav:
   - Home: index.md
   - Getting Started:
-      - Quick Overview: getting-started/overview.md
       - Installation: getting-started/installation.md
-      - Core Concepts: getting-started/principles.md
-      - Cache Management: getting-started/cache.md
+      - Quick Overview: getting-started/overview.md
       - Hardware Compatibility: getting-started/hardware-compatibility.md
       - Docker Environments: getting-started/docker.md
       - TensorRT Compilation: getting-started/trt-compilation.md
@@ -90,11 +91,13 @@ nav:
       - Gaze Detection:
           - L2CS-Net: models/l2cs.md
   - How-To:
+      - Understand Core Concepts: how-to/understand-core-concepts.md
       - Choose the Right Backend: how-to/choose-backend.md
       - Work with Model Predictions: how-to/work-with-predictions.md
       - Debug Model Loading Issues: how-to/debug-model-loading.md
       - Load Models Locally: how-to/local-packages.md
       - Understand Roboflow Model Packages: how-to/roboflow-model-packages.md
+      - Manage Cache: how-to/cache-management.md
   - Contributors:
       - Development Environment: contributors/dev-environment.md
       - Core Architecture: contributors/core-architecture.md
@@ -107,28 +110,18 @@ nav:
 theme:
   name: 'material'
   favicon: favicon.png
+  logo: favicon.png
   font:
     text: Inter
     code: ui-monospace
   features:
-    - announce.dismiss
-    - content.action.edit
+    - navigation.tracking
     - content.code.copy
-    - content.tabs.link
-    - navigation.footer
-    - navigation.indexes
-    - navigation.instant
-    - navigation.instant.prefetch
-    - navigation.instant.preview
-    - navigation.instant.progress
-    - navigation.prune
+    - content.action.edit
+    - content.tooltips
+    - content.code.annotate
     - navigation.tabs
     - navigation.tabs.sticky
-    - navigation.top
-    - navigation.tracking
-    - search.share
-    - search.suggest
-    - toc.follow
   icon:
     repo: fontawesome/brands/github
   palette:
@@ -137,14 +130,24 @@ theme:
 plugins:
   - search
   - mkdocstrings:
+      default_handler: python
       handlers:
         python:
-          paths: [.]  # Current directory (inference_models/) contains the inference_models package
           options:
-            show_source: true
-            show_root_heading: true
-            show_root_full_path: false
+            parameter_headings: true
+            paths: [ inference_models ]
+            load_external_modules: true
+            allow_inspection: true
+            show_bases: true
+            group_by_category: true
             docstring_style: google
+            show_symbol_type_heading: true
+            show_root_heading: True
+            show_symbol_type_toc: true
+            show_category_heading: true
+          inventories:
+            - url: https://docs.python-requests.org/en/master/objects.inv
+              domains: [ std, py ]
   - gen-files:
       scripts:
         - docs/scripts/gen_ref_pages.py

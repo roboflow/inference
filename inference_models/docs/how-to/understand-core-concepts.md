@@ -248,11 +248,11 @@ The library uses two types of caching to improve performance:
 - **Auto-Resolution Cache** - Stores backend selection decisions to avoid repeated API calls
 - **Model Package Cache** - Stores downloaded model files to avoid re-downloading
 
-For detailed information about cache configuration, locations, and management, see the [Cache Guide](cache.md).
+For detailed information about cache configuration, locations, and management, see the [Cache Management Guide](../how-to/cache-management.md).
 
 ## 🚀 Next Steps
 
-- [Cache Guide](cache.md) - Learn about cache management and configuration
+- [Cache Management Guide](../how-to/cache-management.md) - Learn about cache management and configuration
 - [Supported Models](../models/index.md) - Browse available models
 - [Contributors Guide](../contributors/architecture.md) - Implementation details
 

@@ -2,6 +2,15 @@
 
 This guide covers all installation options for the `inference-models` package.
 
+## 🧩 Composable Extras
+
+The `inference-models` package uses **composable extras** to give you fine-grained control over dependencies. Instead of installing everything at once, you can mix and match components based on your needs:
+
+- **Backend extras** (`torch-cu128`, `onnx-cpu`, `trt10`) - Choose your inference runtime
+- **Model extras** (`mediapipe`) - Add support for specific model families
+
+This modular approach keeps installations lightweight and avoids dependency conflicts. For example, you can combine `torch-cu128` (PyTorch with CUDA 12.8) + `onnx-cu12` (ONNX Runtime) + `trt10` (TensorRT) in a single installation for maximum flexibility.
+
 ## ✅ Prerequisites
 
 - **Python 3.9 - 3.12**
@@ -246,6 +255,6 @@ uv pip install "inference-models[torch-cu118,onnx-cu118]"
 ## 🚀 Next Steps
 
 - [Quick Overview](overview.md) - Learn basic usage and concepts
-- [Principles & Architecture](principles.md) - Understand the design
+- [Understand Core Concepts](../how-to/understand-core-concepts.md) - Understand the design
 - [Models Overview](../models/index.md) - Explore available models
 

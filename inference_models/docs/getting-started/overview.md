@@ -11,34 +11,10 @@
 !!! tip "TensorRT Engine Management"
     Need pre-compiled TensorRT engines for maximum performance? Roboflow platform provides tools for TensorRT compilation and optimization. [Contact us](https://roboflow.com/contact) to learn more.
 
-## Installation
-
-### Quick Install
-
-```bash
-# minimalistic CPU installation
-pip install inference-models
-
-# GPU installation with ONNX and TensorRT support
-pip install "inference-models[torch-cu128,onnx-cu12,trt10]" tensorrt
-```
-
-!!! tip "Using uv"
-    We recommend using `uv` for faster installations:
-    
-    ```bash
-    curl -LsSf https://astral.sh/uv/install.sh | sh
-    uv pip install inference-models
-    ```
-
-Review [Installation Options](installation.md) for detailed backend options and configurations.
-
 ## Basic Usage
 
-!!! info "Public Models vs Custom Models"
-    The examples below use publicly available models registered at Roboflow that can be used **without an API key**.
+Different model categories have different interfaces tailored to their specific tasks. Object detection models use the standard `model(image)` call and return bounding boxes, while vision-language models use `model.prompt(image, text)` for multimodal interactions. Below you can see usage examples for models from different categories, demonstrating how the API adapts to each task type while maintaining consistency in core operations like loading and batching.
 
-    You can also use your own custom models trained on Roboflow. To use custom models, you'll need a [Roboflow account](https://app.roboflow.com/) and [API key](https://docs.roboflow.com/developer/authentication/find-your-roboflow-api-key).
 
 ### Object Detection
 
@@ -66,7 +42,7 @@ Review [Installation Options](installation.md) for detailed backend options and 
 
 === "torch.Tensor"
 
-    ```python hl_lines="9"
+    ```python hl_lines="10"
     import cv2
     import supervision as sv
     from inference_models import AutoModel
@@ -244,39 +220,58 @@ Review [Installation Options](installation.md) for detailed backend options and 
 
 ## Backend Selection
 
-Many models, especially custom models trained on Roboflow, are available in multiple backend variants (PyTorch, ONNX, TensorRT). Each backend offers different trade-offs between performance, compatibility, and setup complexity.
+Many models are available in multiple backend variants (PyTorch, ONNX, TensorRT). By default, `inference-models` uses **automatic backend negotiation**: it detects your installed dependencies and hardware, then selects the fastest compatible backend (priority: TensorRT > PyTorch > Hugging Face > ONNX). This means the same code automatically uses TensorRT on production GPUs or falls back to CPU backends in development - no code changes needed.
 
-### Automatic Backend Negotiation
+=== "Auto-Negotiation (Default)"
 
-By default, `inference-models` uses **automatic backend negotiation** to select the best available backend for your environment. This process:
+    Automatically selects the best available backend for your environment:
 
-1. **Checks your installed dependencies** - Detects which backends you have installed (PyTorch, ONNX Runtime, TensorRT)
-2. **Evaluates hardware compatibility** - Considers your GPU availability and CUDA setup
-3. **Selects the optimal backend** - Chooses the fastest backend that works in your environment
-4. **Falls back gracefully** - If the preferred backend isn't available, automatically tries the next best option
+    ```python
+    from inference_models import AutoModel
 
-This means you can write code once and it will automatically use TensorRT on production GPU servers, PyTorch on development machines, or Hugging Face/ONNX on CPU servers - without changing a single line of code.
+    # Automatic backend selection - uses best available option
+    model = AutoModel.from_pretrained("rfdetr-base")
+    # On GPU with TensorRT installed: uses TensorRT
+    # On GPU without TensorRT: uses PyTorch or ONNX
+    # On CPU: uses PyTorch CPU or ONNX CPU
+    ```
 
-**Priority order:** TensorRT > PyTorch > Hugging Face > ONNX
+=== "Force PyTorch"
 
-```python
-from inference_models import AutoModel
+    Explicitly specify PyTorch backend:
 
-# Automatic backend selection - uses best available option
-model = AutoModel.from_pretrained("rfdetr-base")
-# On GPU with TensorRT installed: uses TensorRT
-# On GPU without TensorRT: uses PyTorch, Hugging Face, or ONNX
-# On CPU: uses PyTorch CPU, Hugging Face, or ONNX CPU
+    ```python hl_lines="4"
+    from inference_models import AutoModel
 
-# You can also explicitly specify a backend if needed
-model = AutoModel.from_pretrained("rfdetr-base", backend="torch")  # Force PyTorch
-model = AutoModel.from_pretrained("rfdetr-base", backend="onnx")   # Force ONNX
-model = AutoModel.from_pretrained("rfdetr-base", backend="trt")    # Force TensorRT
-```
+    # Force PyTorch backend
+    model = AutoModel.from_pretrained("rfdetr-base", backend="torch")
+    ```
+
+=== "Force ONNX"
+
+    Explicitly specify ONNX Runtime backend:
+
+    ```python hl_lines="4"
+    from inference_models import AutoModel
+
+    # Force ONNX Runtime backend
+    model = AutoModel.from_pretrained("rfdetr-base", backend="onnx")
+    ```
+
+=== "Force TensorRT"
+
+    Explicitly specify TensorRT backend:
+
+    ```python hl_lines="4"
+    from inference_models import AutoModel
+
+    # Force TensorRT backend
+    model = AutoModel.from_pretrained("rfdetr-base", backend="trt")
+    ```
 
 ## Next Steps
 
 - **[Installation Guide](installation.md)** - Detailed installation options for all backends
-- **[Principles & Architecture](principles.md)** - Deep dive into design philosophy
+- **[Understand Core Concepts](../how-to/understand-core-concepts.md)** - Deep dive into design philosophy
 - **[Supported Models](../models/index.md)** - Browse all available models
 
