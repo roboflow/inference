@@ -77,23 +77,41 @@ def x_ray_runtime_environment() -> RuntimeXRayResult:
 
     Returns:
         RuntimeXRayResult: Dataclass containing:
+
             - gpu_available (bool): Whether any GPU is available
+
             - gpu_devices (List[str]): Names of available GPU devices
+
             - gpu_devices_cc (List[Version]): Compute capability versions
+
             - driver_version (Optional[Version]): NVIDIA driver version
+
             - cuda_version (Optional[Version]): CUDA runtime version
+
             - trt_version (Optional[Version]): TensorRT version
+
             - jetson_type (Optional[str]): Jetson device type (if running on Jetson)
+
             - l4t_version (Optional[Version]): L4T version (Jetson only)
+
             - os_version (Optional[str]): Operating system version
+
             - torch_available (bool): Whether PyTorch is installed
+
             - torch_version (Optional[Version]): PyTorch version
+
             - torchvision_version (Optional[Version]): Torchvision version
+
             - onnxruntime_version (Optional[Version]): ONNX Runtime version
+
             - available_onnx_execution_providers (Optional[Set[str]]): Available ONNX EPs
+
             - hf_transformers_available (bool): Whether Hugging Face Transformers is installed
+
             - ultralytics_available (bool): Whether Ultralytics is installed
+
             - trt_python_package_available (bool): Whether TensorRT Python package is installed
+
             - mediapipe_available (bool): Whether MediaPipe is installed
 
     Examples:

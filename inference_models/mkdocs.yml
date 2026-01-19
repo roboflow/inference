@@ -105,7 +105,40 @@ nav:
       - Adding a Model: contributors/adding-model.md
       - Writing Tests: contributors/writing-tests.md
   - API Reference:
-      - inference_models: api-reference/
+      - Overview: api-reference/index.md
+      - Core Classes:
+          - AutoModel: api-reference/auto-model.md
+          - AutoModelPipeline: api-reference/auto-model-pipeline.md
+      - Prediction Types:
+          - Detections: api-reference/detections.md
+          - InstanceDetections: api-reference/instance-detections.md
+          - KeyPoints: api-reference/keypoints.md
+          - ClassificationPrediction: api-reference/classification-prediction.md
+          - MultiLabelClassificationPrediction: api-reference/multi-label-classification-prediction.md
+      - Enums and Types:
+          - BackendType: api-reference/backend-type.md
+          - ColorFormat: api-reference/color-format.md
+          - Quantization: api-reference/quantization.md
+      - Developer Tools:
+          - Overview: api-reference/developer-tools/index.md
+          - Base Functions:
+              - get_model_package_contents: api-reference/developer-tools/get-model-package-contents.md
+              - x_ray_runtime_environment: api-reference/developer-tools/x-ray-runtime-environment.md
+              - download_files_to_directory: api-reference/developer-tools/download-files-to-directory.md
+              - get_selected_onnx_execution_providers: api-reference/developer-tools/get-selected-onnx-execution-providers.md
+              - get_model_from_provider: api-reference/developer-tools/get-model-from-provider.md
+              - register_model_provider: api-reference/developer-tools/register-model-provider.md
+          - Entities:
+              - RuntimeXRayResult: api-reference/developer-tools/runtime-xray-result.md
+              - ModelMetadata: api-reference/developer-tools/model-metadata.md
+              - ModelDependency: api-reference/developer-tools/model-dependency.md
+              - ModelPackageMetadata: api-reference/developer-tools/model-package-metadata.md
+              - TorchScriptPackageDetails: api-reference/developer-tools/torchscript-package-details.md
+              - ONNXPackageDetails: api-reference/developer-tools/onnx-package-details.md
+              - TRTPackageDetails: api-reference/developer-tools/trt-package-details.md
+              - JetsonEnvironmentRequirements: api-reference/developer-tools/jetson-environment-requirements.md
+              - ServerEnvironmentRequirements: api-reference/developer-tools/server-environment-requirements.md
+              - FileDownloadSpecs: api-reference/developer-tools/file-download-specs.md
 
 theme:
   name: 'material'

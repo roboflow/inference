@@ -33,9 +33,12 @@ class KeyPoints:
 
         Returns:
             sv.KeyPoints: Supervision KeyPoints object with:
+
                 - xy: Keypoint coordinates as NumPy array (N, K, 2) where N is number
                   of instances and K is number of keypoints per instance
+
                 - class_id: Class IDs as NumPy array (N,)
+
                 - confidence: Keypoint confidence scores as NumPy array (N, K)
 
         Examples:

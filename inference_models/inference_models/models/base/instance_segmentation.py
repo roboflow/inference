@@ -33,9 +33,13 @@ class InstanceDetections:
 
         Returns:
             sv.Detections: Supervision Detections object with:
+
                 - xyxy: Bounding boxes as NumPy array (N, 4) in [x1, y1, x2, y2] format
+
                 - class_id: Class IDs as NumPy array (N,)
+
                 - confidence: Confidence scores as NumPy array (N,)
+
                 - mask: Segmentation masks as NumPy array (N, H, W) with boolean values
 
         Examples:
