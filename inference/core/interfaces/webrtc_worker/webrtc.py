@@ -65,11 +65,18 @@ from inference.core.workflows.core_steps.common.serializers import (
 from inference.core.workflows.errors import WorkflowError, WorkflowSyntaxError
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
 from inference.usage_tracking.collector import usage_collector
+from inference.core.interfaces.webrtc_worker.video_encoders import (
+    register_custom_vp8_encoder,
+)
 
 logging.getLogger("aiortc").setLevel(logging.WARNING)
 
 # WebRTC data channel chunking configuration
 CHUNK_SIZE = 48 * 1024  # 48KB - safe for all WebRTC implementations
+
+
+# Register custom VP8 encoder for faster ramp-up.
+register_custom_vp8_encoder()
 
 
 def create_chunked_binary_message(
