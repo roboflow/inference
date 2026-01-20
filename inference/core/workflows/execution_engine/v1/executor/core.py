@@ -57,6 +57,7 @@ def _store_crash_info(
         file_name = f"image_{timestamp}_{uuid4().hex[:5]}"
         if exception is not None:
             traceback_str = traceback.format_exc()
+            os.makedirs(INFERENCE_DEBUG_OUTPUT_DIR, exist_ok=True)
             with open(
                 os.path.join(INFERENCE_DEBUG_OUTPUT_DIR, f"{file_name}.txt"), "w"
             ) as f:

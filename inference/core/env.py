@@ -1,7 +1,6 @@
 import os
 import uuid
 import warnings
-from pathlib import Path
 from typing import Optional
 
 from dotenv import load_dotenv
@@ -358,13 +357,6 @@ METRICS_URL = os.getenv("METRICS_URL", f"{API_BASE_URL}/inference-stats")
 # Model cache directory, default is "/tmp/cache"
 MODEL_CACHE_DIR = os.getenv("MODEL_CACHE_DIR", "/tmp/cache")
 INFERENCE_DEBUG_OUTPUT_DIR = os.environ.get("INFERENCE_DEBUG_OUTPUT_DIR")
-if (
-    INFERENCE_DEBUG_OUTPUT_DIR is not None
-    and not Path(INFERENCE_DEBUG_OUTPUT_DIR).exists()
-):
-    raise ValueError(
-        f"INFERENCE_DEBUG_OUTPUT_DIR {INFERENCE_DEBUG_OUTPUT_DIR} does not exist"
-    )
 
 # Model ID, default is None
 MODEL_ID = os.getenv("MODEL_ID")
