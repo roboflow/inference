@@ -71,6 +71,101 @@ def download_files_to_directory(
     on_file_created: Optional[Callable[[str], None]] = None,
     on_file_renamed: Optional[Callable[[str, str], None]] = None,
 ) -> Dict[str, str]:
+    """Download multiple files to a directory with parallel downloads and hash verification.
+
+    Downloads files from URLs to a target directory with support for parallel downloads,
+    automatic retries, hash verification, and progress tracking. Skips files that already
+    exist in the target directory.
+
+    Args:
+        target_dir: Absolute path to the directory where files should be downloaded.
+            Will be created if it doesn't exist.
+
+        files_specs: List of tuples, each containing:
+            - file_handle (str): Logical name for the file (used as filename by default)
+            - download_url (str): URL to download the file from
+            - md5_hash (Optional[str]): Expected MD5 hash for verification (None if unknown)
+
+        verbose: Show progress bars during download. Default: True.
+
+        response_codes_to_retry: HTTP status codes that should trigger a retry.
+            Default: Uses library defaults (typically 429, 500, 502, 503, 504).
+
+        request_timeout: Timeout in seconds for HTTP requests. Default: Uses library default.
+
+        max_parallel_downloads: Maximum number of files to download simultaneously.
+            Default: 8.
+
+        max_threads_per_download: Maximum number of threads to use for downloading a
+            single large file. Default: 8.
+
+        file_lock_acquire_timeout: Timeout in seconds for acquiring file locks during
+            concurrent downloads. Default: 10.
+
+        verify_hash_while_download: Verify MD5 hash during download. Default: True.
+
+        download_files_without_hash: Allow downloading files without MD5 hashes.
+            **Security risk**. Default: False.
+
+        name_after: How to name downloaded files. Options:
+            - "file_handle": Use the file_handle from files_specs
+            - "md5_hash": Use the MD5 hash as filename
+            Default: "file_handle".
+
+        on_file_created: Optional callback called when a file is created.
+            Receives the file path as argument.
+
+        on_file_renamed: Optional callback called when a file is renamed.
+            Receives old and new paths as arguments.
+
+    Returns:
+        Dictionary mapping file handles to their absolute paths in the target directory.
+
+    Raises:
+        UntrustedFileError: If `download_files_without_hash=False` and files without
+            hashes are encountered.
+        FileHashSumMissmatch: If downloaded file's hash doesn't match expected hash.
+        RetryError: If download fails after all retry attempts.
+        InvalidParameterError: If `name_after` has an invalid value.
+
+    Examples:
+        Download model files:
+
+        >>> from inference_models.developer_tools import download_files_to_directory
+        >>>
+        >>> files_to_download = [
+        ...     ("model.onnx", "https://example.com/model.onnx", "abc123..."),
+        ...     ("config.json", "https://example.com/config.json", "def456..."),
+        ... ]
+        >>>
+        >>> file_paths = download_files_to_directory(
+        ...     target_dir="/path/to/cache",
+        ...     files_specs=files_to_download,
+        ...     verbose=True
+        ... )
+        >>>
+        >>> print(file_paths["model.onnx"])  # /path/to/cache/model.onnx
+        >>> print(file_paths["config.json"])  # /path/to/cache/config.json
+
+        Download without hash verification (not recommended):
+
+        >>> files_to_download = [
+        ...     ("weights.pt", "https://example.com/weights.pt", None),
+        ... ]
+        >>>
+        >>> file_paths = download_files_to_directory(
+        ...     target_dir="/path/to/cache",
+        ...     files_specs=files_to_download,
+        ...     download_files_without_hash=True,  # Allow files without hashes
+        ...     verify_hash_while_download=False
+        ... )
+
+    Note:
+        - Files are downloaded in parallel for better performance
+        - Large files (>32MB) are downloaded using multiple threads
+        - Existing files are skipped automatically
+        - Progress bars are disabled if DISABLE_INTERACTIVE_PROGRESS_BARS env var is set
+    """
     if name_after not in {"file_handle", "md5_hash"}:
         raise InvalidParameterError(
             message="Function download_files_to_directory(...) was called with "
