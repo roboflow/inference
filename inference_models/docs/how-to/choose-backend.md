@@ -179,7 +179,7 @@ See what backends are installed in your environment:
 ```python
 from inference_models import AutoModel
 
-AutoModel.describe_runtime()
+AutoModel.describe_compute_environment()
 ```
 
 This displays:

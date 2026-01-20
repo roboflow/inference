@@ -163,6 +163,7 @@ nav:
       - Runtime & Environment: errors/runtime-environment.md
       - Input & Validation: errors/input-validation.md
       - Runtime: errors/runtime.md
+  - Changelog: changelog.md
 
 theme:
   name: 'material'

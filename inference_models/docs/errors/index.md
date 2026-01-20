@@ -6,109 +6,47 @@ All errors in `inference-models` inherit from `BaseInferenceError` and are organ
 
 ## Error Categories
 
-Errors in `inference-models` are organized into the following categories based on their inheritance hierarchy:
-
 ### [Model Loading Errors](model-loading.md)
 
-**Base Class:** `ModelLoadingError`
+Errors that occur when loading or initializing models. These errors typically happen during the model instantiation phase and can be caused by various issues including missing files, corrupted packages, invalid configurations, security violations, or incompatible environments.
 
-Errors that occur when loading or initializing models (11 error types):
-
-- **ModelLoadingError** - Base class for model loading failures
-- **ModelPackageAlternativesExhaustedError** - All model package alternatives failed to load
-- **MissingModelInitParameterError** - Required model initialization parameter is missing
-- **InvalidModelInitParameterError** - Model initialization parameter has invalid value
-- **InsecureModelIdentifierError** - Model identifier contains invalid/insecure characters
-- **DirectLocalStorageAccessError** - Attempted illegal direct access to local storage
-- **ForbiddenLocalCodePackageAccessError** - Attempted access to forbidden local code package
-- **ModelImplementationLoaderError** - Could not find or load model implementation
-- **CorruptedModelPackageError** - Model package is corrupted or invalid
-- **DependencyModelParametersValidationError** - Dependent model parameters validation failed
-- **ModelPipelineInitializationError** - Failed to initialize model pipeline
-  - **ModelPipelineNotFound** - Requested model pipeline not found
+[View all Model Loading Errors →](model-loading.md)
 
 ### [Model Package Negotiation Errors](package-negotiation.md)
 
-**Base Class:** `ModelPackageNegotiationError`
+Errors that occur when the system cannot select an appropriate model package for the current environment. These errors happen during the package selection phase, before actual model loading, and are typically caused by incompatible hardware, unsupported backends, invalid configurations, or environment introspection failures.
 
-Errors related to selecting the appropriate model package for your environment (7 error types):
-
-- **ModelPackageNegotiationError** - Base class for package negotiation failures
-- **UnknownBackendTypeError** - Requested backend type is not supported
-- **UnknownQuantizationError** - Requested quantization type is not supported
-- **InvalidRequestedBatchSizeError** - Requested batch size is invalid
-- **RuntimeIntrospectionError** - Failed to introspect runtime environment
-  - **JetsonTypeResolutionError** - Failed to determine Jetson device type
-- **NoModelPackagesAvailableError** - No compatible model packages available
-- **AmbiguousModelPackageResolutionError** - Multiple packages match the criteria
+[View all Model Package Negotiation Errors →](package-negotiation.md)
 
 ### [Model Retrieval Errors](model-retrieval.md)
 
-**Base Class:** `ModelRetrievalError`
+Errors that occur when the system fails to retrieve model metadata from the weights provider (typically Roboflow API). These errors happen during the model discovery phase and are typically caused by authentication issues, network problems, or inconsistent metadata.
 
-Errors that occur when retrieving model metadata from the weights provider (3 error types):
-
-- **ModelRetrievalError** - Base class for model retrieval failures
-- **UnauthorizedModelAccessError** - Unauthorized access to model (invalid/missing API key)
-- **ModelMetadataConsistencyError** - Inconsistent model metadata from provider
-- **ModelMetadataHandlerNotImplementedError** - Model metadata handler not implemented
+[View all Model Retrieval Errors →](model-retrieval.md)
 
 ### [File & Download Errors](file-download.md)
 
-**Base Classes:** `RetryError`, `UntrustedFileError`, `FileHashSumMissmatch`
+Errors that occur when the system fails to download model files or verify their integrity. These errors happen during the file download phase and are typically caused by network issues, corrupted downloads, or security validation failures.
 
-Errors related to file downloads and integrity verification (3 error types):
-
-- **RetryError** - Transient network or server errors during download
-- **FileHashSumMissmatch** - Downloaded file hash doesn't match expected value
-- **UntrustedFileError** - File lacks required hash sum for verification
+[View all File & Download Errors →](file-download.md)
 
 ### [Runtime & Environment Errors](runtime-environment.md)
 
-**Base Classes:** `EnvironmentConfigurationError`, `InvalidEnvVariable`, `MissingDependencyError`
+Errors that occur when the system detects issues with the runtime environment, configuration, or dependencies. These errors can happen at various stages and are typically caused by missing dependencies, invalid environment variables, or incorrect environment setup.
 
-Errors related to runtime environment and dependencies (3 error types):
-
-- **EnvironmentConfigurationError** - Invalid environment configuration
-- **InvalidEnvVariable** - Environment variable has invalid value
-- **MissingDependencyError** - Required dependency is not installed
+[View all Runtime & Environment Errors →](runtime-environment.md)
 
 ### [Model Input & Validation Errors](input-validation.md)
 
-**Base Classes:** `ModelInputError`, `InvalidParameterError`, `AssumptionError`
+Errors that occur when invalid input or parameters are provided to the model or when internal assumptions are violated. These errors happen during input validation or runtime and are typically caused by incorrect data types, invalid values, or violated preconditions.
 
-Errors caused by invalid input or parameters (3 error types):
-
-- **ModelInputError** - Invalid input provided to model
-- **InvalidParameterError** - Invalid parameter value
-- **AssumptionError** - Internal assumption violated
+[View all Model Input & Validation Errors →](input-validation.md)
 
 ### [Model Runtime Errors](runtime.md)
 
-**Base Class:** `ModelRuntimeError`
+Errors that occur during model execution (inference). These errors happen after the model has been successfully loaded and are typically caused by issues during the actual inference process, such as incompatible input shapes, out-of-memory conditions, or backend-specific failures.
 
-Errors that occur during model execution:
-
-- **ModelRuntimeError** - Base class for model runtime failures
-
-## Error Hierarchy
-
-```
-BaseInferenceError
-├── ModelLoadingError
-├── ModelPackageNegotiationError
-├── ModelRetrievalError
-├── RetryError
-├── UntrustedFileError
-├── FileHashSumMissmatch
-├── EnvironmentConfigurationError
-├── InvalidEnvVariable
-├── MissingDependencyError
-├── ModelInputError
-├── InvalidParameterError
-├── AssumptionError
-└── ModelRuntimeError
-```
+[View all Model Runtime Errors →](runtime.md)
 
 ## Getting Help
 

@@ -26,7 +26,7 @@ pip install "inference-models[onnx-cu12]"
 ```python
 from inference_models import AutoModel
 
-AutoModel.describe_runtime()
+AutoModel.describe_compute_environment()
 ```
 
 ### No Model Packages Available
@@ -130,7 +130,7 @@ Could not load any of model package candidate
 ```python
 from inference_models import AutoModel
 
-AutoModel.describe_runtime()
+AutoModel.describe_compute_environment()
 ```
 
 2. **Install compatible backends:**
@@ -279,7 +279,7 @@ import sys
 print(f"Python version: {sys.version}")
 print(f"Platform: {sys.platform}")
 
-AutoModel.describe_runtime()
+AutoModel.describe_compute_environment()
 ```
 
 3. **Include error traceback:**
