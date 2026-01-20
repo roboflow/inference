@@ -20,4 +20,4 @@ jinja2
 # which likely stems from a typo or mismatch in versions
 # between the libraries.
 mistune==2.0.4
-nbconvert==7.7.4
+nbconvert==7.16.6
