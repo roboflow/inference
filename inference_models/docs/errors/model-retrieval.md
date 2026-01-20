@@ -8,9 +8,156 @@ Model retrieval errors occur when the system fails to retrieve model metadata fr
 
 ## ModelRetrievalError
 
-**Base class for all model retrieval errors.**
+**Failed to retrieve model metadata from the weights provider.**
 
-This is the parent error class. Specific errors below provide detailed information about what went wrong during model metadata retrieval.
+### Overview
+
+This error is raised when the system cannot retrieve model metadata from the weights provider. It can be raised directly for general retrieval failures, or you may encounter one of its more specific subclasses.
+
+### When It Occurs
+
+**Scenario 1: Unknown weights provider**
+
+- Requesting a provider that is not registered
+
+- Typo in provider name
+
+- Custom provider not registered before use
+
+**Scenario 2: Empty model packages list**
+
+- Roboflow API returns no model packages
+
+- Model exists but has no compatible packages
+
+- Model processing incomplete on Roboflow platform
+
+**Scenario 3: API response decode failure**
+
+- Roboflow API returns malformed JSON
+
+- Response structure doesn't match expected schema
+
+- Missing required fields in API response
+
+**Scenario 4: HTTP error from provider**
+
+- API returns 4xx or 5xx error (except 401/403 which raise `UnauthorizedModelAccessError`)
+
+- Network issues or timeouts
+
+- Provider service unavailable
+
+### What To Check
+
+1. **Verify provider name:**
+   ```python
+   from inference_models import AutoModel
+
+   # Default provider is "roboflow"
+   model = AutoModel.from_pretrained("yolov8n-640")
+
+   # Or specify explicitly
+   model = AutoModel.from_pretrained(
+       "yolov8n-640",
+       weights_provider="roboflow"
+   )
+   ```
+
+2. **Check model exists and is ready:**
+
+   - Visit Roboflow dashboard
+
+   - Verify model training/deployment is complete
+
+   - Check model version exists
+
+3. **Check network connectivity:**
+   ```bash
+   # Test connection to Roboflow API
+   curl -I https://api.roboflow.com
+   ```
+
+4. **Review error message:**
+
+     - "provider which is not implemented" → Unknown provider
+
+     - "empty list of model packages" → No packages available
+
+     - "Could not decode" → API response format issue
+
+     - "invalid response code" → HTTP error from API
+
+### How To Fix
+
+**Scenario 1: Unknown provider**
+
+```python
+from inference_models import AutoModel
+
+# ❌ Wrong - typo in provider name
+model = AutoModel.from_pretrained(
+    "yolov8n-640",
+    weights_provider="roboflo"  # typo
+)
+
+# ✅ Correct
+model = AutoModel.from_pretrained(
+    "yolov8n-640",
+    weights_provider="roboflow"
+)
+
+# Or use default (roboflow)
+model = AutoModel.from_pretrained("yolov8n-640")
+```
+
+**Register custom provider:**
+```python
+from inference_models.weights_providers import register_model_provider
+
+# Register your custom provider
+register_model_provider("my_provider", my_provider_function)
+
+# Then use it
+model = AutoModel.from_pretrained(
+    "model-id",
+    weights_provider="my_provider"
+)
+```
+
+**Scenario 2: Empty packages list**
+
+- Wait for model to finish processing on Roboflow
+
+- Check model status in Roboflow dashboard
+
+- Verify model version exists
+
+- Contact Roboflow support if model should have packages
+
+**Scenario 3: API decode failure**
+
+This is typically a Roboflow API issue:
+
+- [Report the issue](https://github.com/roboflow/inference/issues) with:
+
+  - Full error message
+
+  - Model ID
+
+  - Timestamp when error occurred
+
+- Try again later (may be temporary API issue)
+
+**Scenario 4: HTTP errors**
+
+- Check network connectivity
+
+- Verify Roboflow API is accessible
+
+- Try again (may be temporary)
+
+- If persistent, [report the issue](https://github.com/roboflow/inference/issues)
 
 ---
 
