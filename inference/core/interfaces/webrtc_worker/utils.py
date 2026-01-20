@@ -261,15 +261,16 @@ def get_video_rotation(filepath: str) -> int:
     logger.info("Video file exists, size: %d bytes", os.path.getsize(filepath))
 
     try:
+        # Use -show_streams which is compatible with all ffprobe versions
+        # This returns full stream info including tags and side_data_list
         result = subprocess.run(
             [
                 "ffprobe",
                 "-v",
-                "error",  # Show errors instead of quiet
+                "error",
                 "-select_streams",
                 "v:0",
-                "-show_entries",
-                "stream_side_data=rotation:stream_tags=rotate",
+                "-show_streams",
                 "-of",
                 "json",
                 filepath,
@@ -279,17 +280,18 @@ def get_video_rotation(filepath: str) -> int:
             timeout=5,
         )
         logger.info(
-            "ffprobe result: returncode=%s, stdout=%s, stderr=%s",
+            "ffprobe result: returncode=%s, stdout_len=%s, stderr=%s",
             result.returncode,
-            result.stdout[:500] if result.stdout else "(empty)",
+            len(result.stdout) if result.stdout else 0,
             result.stderr[:500] if result.stderr else "(empty)",
         )
         if result.returncode == 0:
             data = json.loads(result.stdout)
             streams = data.get("streams", [])
             if streams:
+                stream = streams[0]
                 # Check displaymatrix side_data first
-                for sd in streams[0].get("side_data_list", []):
+                for sd in stream.get("side_data_list", []):
                     if "rotation" in sd:
                         rotation = int(sd["rotation"])
                         logger.info(
@@ -298,13 +300,14 @@ def get_video_rotation(filepath: str) -> int:
                         )
                         return rotation
                 # Fall back to rotate tag in stream tags
-                rotate_str = streams[0].get("tags", {}).get("rotate", "0")
+                rotate_str = stream.get("tags", {}).get("rotate", "0")
                 rotation = int(rotate_str)
                 if rotation != 0:
                     logger.info(
                         "Video rotation detected: %d° (from rotate tag)", rotation
                     )
                     return rotation
+                logger.info("No rotation metadata found in stream")
             else:
                 logger.info("ffprobe returned no streams for rotation detection")
         else:
