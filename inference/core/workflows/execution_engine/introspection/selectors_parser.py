@@ -23,27 +23,30 @@ def get_step_selectors(
             step_manifest=step_manifest,
             property_name=property_name,
         )
-        if selector_definition.is_list_element:
+        # Check runtime type to handle Union[List[...], Selector(...)] patterns
+        # where the actual value determines which path to take
+        if selector_definition.is_list_element and isinstance(property_value, list):
             selectors = retrieve_selectors_from_array(
                 step_name=step_manifest.name,
                 property_value=property_value,
                 selector_definition=selector_definition,
             )
             result.extend(selectors)
-        elif selector_definition.is_dict_element:
+        elif selector_definition.is_dict_element and isinstance(property_value, dict):
             selectors = retrieve_selectors_from_dictionary(
                 step_name=step_manifest.name,
                 property_value=property_value,
                 selector_definition=selector_definition,
             )
             result.extend(selectors)
-        else:
+        elif is_selector(property_value):
             selector = retrieve_selector_from_simple_property(
                 step_name=step_manifest.name,
                 property_value=property_value,
                 selector_definition=selector_definition,
             )
             result.append(selector)
+        # If none of the above, property_value is not a selector
     return [r for r in result if r is not None]
 
 

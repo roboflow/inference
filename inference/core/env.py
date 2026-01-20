@@ -210,7 +210,7 @@ CORE_MODEL_YOLO_WORLD_ENABLED = str2bool(
     os.getenv("CORE_MODEL_YOLO_WORLD_ENABLED", True)
 )
 
-# Enable experimental RFDETR backend (inference_exp) rollout, default is True
+# Enable experimental RFDETR backend (inference_models) rollout, default is True
 USE_INFERENCE_EXP_MODELS = str2bool(os.getenv("USE_INFERENCE_EXP_MODELS", "False"))
 ALLOW_INFERENCE_EXP_UNTRUSTED_MODELS = str2bool(
     os.getenv("ALLOW_INFERENCE_EXP_UNTRUSTED_MODELS", "False")

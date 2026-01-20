@@ -100,6 +100,9 @@ STANDARD_MODELS = {
     "YOLOv11KeypointsDetection": "inference.models.yolov11",
     "YOLOv11ObjectDetection": "inference.models.yolov11",
     "YOLOv12ObjectDetection": "inference.models.yolov12",
+    "YOLO26InstanceSegmentation": "inference.models.yolo26",
+    "YOLO26KeypointsDetection": "inference.models.yolo26",
+    "YOLO26ObjectDetection": "inference.models.yolo26",
 }
 
 

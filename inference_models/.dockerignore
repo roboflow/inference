@@ -34,5 +34,5 @@ lora-tars
 tmptmp
 README.md
 dist
-inference_exp.egg-info
+inference_models.egg-info
 .python-version

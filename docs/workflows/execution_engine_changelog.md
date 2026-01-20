@@ -300,7 +300,7 @@ format introduced **at the level of Execution Engine**). As a result of the chan
 
     * **new input type was introduced:** `WorkflowBatchInput` should be used from now on to denote 
     batch-oriented inputs (and clearly separate them from `WorkflowParameters`). `WorkflowBatchInput` 
-    let users define both *[kind](/workflows/kinds.md)* of the data and it's 
+    let users define both *[kind](/workflows/kinds/index.md)* of the data and it's 
     *[dimensionality](/workflows/workflow_execution.md#steps-interactions-with-data)*.
     New input type is effectively a superset of all previous batch-oriented inputs: `WorkflowImage` and
     `WorkflowVideoMetadata`, which **remain supported**, but **will be removed in Execution Engine `v2`**. 
@@ -317,7 +317,7 @@ format introduced **at the level of Execution Engine**). As a result of the chan
 
     * as a result of simplification in the selectors type annotations, the old selector will no 
     longer be providing the information on which parameter of blocks' `run(...)` method is 
-    shipped by Execution Engine wrapped into [`Batch[X]` container](/workflows/internal_data_types.md#batch).
+    shipped by Execution Engine wrapped into [`Batch[X]` container](internal_data_types.md#batch).
     Instead of old selectors type annotations and `block_manifest.accepts_batch_input()` method, 
     we propose the switch into two methods explicitly defining the parameters that are expected to 
     be fed with batch-oriented data (`block_manifest.get_parameters_accepting_batches()`) and 

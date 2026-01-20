@@ -33,7 +33,7 @@ compared to standard Python library:
 
 * `load_blocks()` function to provide list of blocks' classes (required)
 
-* `load_kinds()` function to return all custom [kinds](/workflows/kinds.md) the plugin defines (optional)
+* `load_kinds()` function to return all custom [kinds](/workflows/kinds/index.md) the plugin defines (optional)
 
 * `REGISTERED_INITIALIZERS` module property which is a dict mapping name of block 
 init parameter into default value or parameter-free function constructing that value - optional 
@@ -112,7 +112,7 @@ REGISTERED_INITIALIZERS = {
 
 Support for custom serializers and deserializers was introduced in Execution Engine `v1.3.0`.
 From that version onward it is possible to point custom functions that 
-Execution Engine should use to serialize and deserialize any *[kind](/workflows/kinds.md)*.
+Execution Engine should use to serialize and deserialize any *[kind](/workflows/kinds/index.md)*.
 
 Deserializers will determine how to decode inputs send through the wire 
 into internal data representation used by blocks. Serializers, on the other hand, 

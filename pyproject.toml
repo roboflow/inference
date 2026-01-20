@@ -4,5 +4,5 @@ module-root = "inference"
 tests-root = "tests/inference/unit_tests"
 benchmarks-root = "tests/benchmarks"
 test-framework = "pytest"
-ignore-paths = []
+ignore-paths = ["inference/models/yolo26"]
 formatter-cmds = ["black $file"]

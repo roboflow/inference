@@ -1,6 +1,6 @@
 You can run computer vision models on webcam stream frames, RTSP stream frames, and video frames with Inference.
 
-!!! tip "Follow our [Run a Fine-Tuned Model on Images](/quickstart/run_model_on_image) guide to learn how to find a model to run."
+!!! tip "Follow our [Run a Fine-Tuned Model on Images](/quickstart/run_model_on_image.md) guide to learn how to find a model to run."
 
 ## Installation
 
