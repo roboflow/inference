@@ -120,7 +120,11 @@ if modal is not None:
         video_processing_image = modal.Image.from_registry(
             f"{WEBRTC_MODAL_IMAGE_NAME}:{docker_tag}"
         )
-    video_processing_image = video_processing_image.pip_install("modal").entrypoint([])
+
+    video_processing_image = video_processing_image\
+        .apt_install("ffmpeg")\
+        .pip_install("modal")\
+        .entrypoint([])
 
     # https://modal.com/docs/reference/modal.Volume
     rfcache_volume = modal.Volume.from_name("rfcache", create_if_missing=True)
