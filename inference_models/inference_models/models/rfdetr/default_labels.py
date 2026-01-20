@@ -1,7 +1,7 @@
 from copy import deepcopy
 from typing import List
 
-from inference_models.errors import ModelLoadingError, InvalidModelInitParameterError
+from inference_models.errors import InvalidModelInitParameterError, ModelLoadingError
 
 COCO_LABELS = [
     "background",

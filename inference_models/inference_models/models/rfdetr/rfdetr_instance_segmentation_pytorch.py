@@ -10,7 +10,9 @@ from inference_models.configuration import DEFAULT_DEVICE
 from inference_models.entities import ColorFormat
 from inference_models.errors import (
     CorruptedModelPackageError,
-    ModelRuntimeError, MissingModelInitParameterError, InvalidModelInitParameterError,
+    InvalidModelInitParameterError,
+    MissingModelInitParameterError,
+    ModelRuntimeError,
 )
 from inference_models.logger import LOGGER
 from inference_models.models.common.model_packages import get_model_package_contents

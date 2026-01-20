@@ -12,6 +12,7 @@ We keep the list of exposed symbols small, to make it easier to reason about the
 polluting the namespace. If you see a symbol that you need but is not exposed here, please open an issue
 https://github.com/roboflow/inference/issues/new
 """
+
 import importlib.metadata as importlib_metadata
 
 try:
