@@ -126,15 +126,20 @@ This error occurs when a function or method is called with an invalid parameter 
 If the error message indicates this is a bug in `inference-models`:
 
 1. **Gather information:**
-   - Full error message and stack trace
-   - Code that triggered the error
-   - Model ID and version
-   - Python version and environment details
+     * Full error message and stack trace
+
+     * Code that triggered the error
+
+     * Model ID and version
+
+     * Python version and environment details
 
 2. **Report the issue:**
-   - Visit [GitHub Issues](https://github.com/roboflow/inference/issues)
-   - Create a new issue with all gathered information
-   - Include minimal reproducible example
+     * Visit [GitHub Issues](https://github.com/roboflow/inference/issues)
+
+     * Create a new issue with all gathered information
+
+     * Include minimal reproducible example
 
 3. **Check for updates**
 
@@ -178,19 +183,19 @@ This error indicates that an internal assumption in the library code has been vi
 
 1. **This is always a bug:**
 
-   - `AssumptionError` always indicates a library bug
+     * `AssumptionError` always indicates a library bug
 
-   - Not caused by user input (though user input may trigger it)
+     * Not caused by user input (though user input may trigger it)
 
-   - Should be reported to developers
+     * Should be reported to developers
 
 2. **Review the error message:**
 
-   - Describes which assumption was violated
+     * Describes which assumption was violated
 
-   - Often includes link to GitHub issues
+     * Often includes link to GitHub issues
 
-   - May suggest this is a bug
+     * May suggest this is a bug
 
 3. **Check if you can reproduce:**
    ```python
@@ -229,37 +234,15 @@ This error indicates that an internal assumption in the library code has been vi
 
 3. **Report the issue:**
 
-   - Visit [GitHub Issues](https://github.com/roboflow/inference/issues)
+     * Visit [GitHub Issues](https://github.com/roboflow/inference/issues)
 
-   - Create a new issue with:
-     - Full error message and stack trace
-     - Minimal reproducible example
-     - Environment information (Python, PyTorch, CUDA versions)
-     - Model ID and parameters used
+     * Create a new issue with:
+       - Full error message and stack trace
+       - Minimal reproducible example
+       - Environment information (Python, PyTorch, CUDA versions)
+       - Model ID and parameters used
 
-   - Use a descriptive title like: "AssumptionError in SAM2 prompt processing"
-
-**Temporary workarounds:**
-
-While waiting for a fix, try:
-
-```python
-# Try a different model version
-model = AutoModel.from_pretrained("sam-vit-b")  # Instead of sam-vit-h
-
-# Try a different backend
-model = AutoModel.from_pretrained("yolov8n-640", backend="onnx")  # Instead of trt
-
-# Simplify your input
-# If using batch processing, try single image
-images = ["single_image.jpg"]  # Instead of multiple images
-
-# If using multiple prompts, try one at a time
-result = model.segment_images(
-    images=images,
-    point_coordinates=[[[100, 200]]]  # Only points, no boxes
-)
-```
+     * Use a descriptive title like: "AssumptionError in SAM2 prompt processing"
 
 **Check for existing issues:**
 
