@@ -93,13 +93,55 @@ class ModelManager:
                 raise ModelManagerLockAcquisitionError(
                     f"Could not acquire lock for model with id={resolved_identifier}."
                 )
-            if resolved_identifier in self._models:
+
+            # Import GCP logging utilities
+            from inference.core.env import GCP_LOGGING_DETAILED_MEMORY
+            from inference.core.gcp_logging import (
+                ModelCacheStatusEvent,
+                ModelLoadedToMemoryEvent,
+                gcp_logger,
+                get_gcp_context,
+                measure_memory_after_load,
+                measure_memory_before_load,
+                update_gcp_context,
+            )
+
+            cache_hit = resolved_identifier in self._models
+
+            # Log cache status event and store in context for inference_completed event
+            if gcp_logger.enabled:
+                ctx = get_gcp_context()
+                gcp_logger.log_event(
+                    ModelCacheStatusEvent(
+                        request_id=ctx.request_id if ctx else None,
+                        model_id=model_id,
+                        cache_hit=cache_hit,
+                        invocation_source=ctx.invocation_source if ctx else "direct",
+                        workflow_instance_id=ctx.workflow_instance_id if ctx else None,
+                        workflow_id=ctx.workflow_id if ctx else None,
+                        step_name=ctx.step_name if ctx else None,
+                    ),
+                    sampled=True,
+                )
+                # Store cache_hit in context so inference_completed can access it
+                update_gcp_context(last_model_cache_hit=cache_hit)
+
+            if cache_hit:
                 logger.debug(
                     f"ModelManager - model with model_id={resolved_identifier} is already loaded."
                 )
                 return
             try:
                 logger.debug("ModelManager - model initialisation...")
+
+                # Measure memory before loading (for GCP logging)
+                allocated_before, detailed_before = 0, None
+                if gcp_logger.enabled:
+                    allocated_before, detailed_before = measure_memory_before_load(
+                        detailed=GCP_LOGGING_DETAILED_MEMORY
+                    )
+                load_start_time = time.time()
+
                 model_class = self.model_registry.get_model(
                     resolved_identifier,
                     api_key,
@@ -113,6 +155,40 @@ class ModelManager:
                     countinference=countinference,
                     service_secret=service_secret,
                 )
+
+                # Log model loaded to memory event
+                if gcp_logger.enabled:
+                    load_duration_ms = (time.time() - load_start_time) * 1000
+                    footprint, memory_snapshot = measure_memory_after_load(
+                        allocated_before=allocated_before,
+                        detailed_before=detailed_before,
+                        detailed=GCP_LOGGING_DETAILED_MEMORY,
+                    )
+
+                    # Try to get model architecture info
+                    model_architecture = None
+                    if hasattr(model, "task_type"):
+                        model_architecture = getattr(model, "task_type", None)
+
+                    # Try to get device info
+                    device = None
+                    if hasattr(model, "device"):
+                        device = str(getattr(model, "device", None))
+
+                    ctx = get_gcp_context()
+                    gcp_logger.log_event(
+                        ModelLoadedToMemoryEvent(
+                            request_id=ctx.request_id if ctx else None,
+                            model_id=model_id,
+                            backend="onnx",  # Default, could be enhanced to detect actual backend
+                            device=device,
+                            load_duration_ms=load_duration_ms,
+                            model_architecture=model_architecture,
+                            model_footprint_bytes=footprint,
+                            memory=memory_snapshot,
+                        ),
+                        sampled=False,  # Always log model loads (low volume, high value)
+                    )
 
                 # Pass countinference and service_secret to download_model_artifacts_from_roboflow_api if available
                 if (
@@ -261,10 +337,44 @@ class ModelManager:
         if METRICS_ENABLED and self.pingback and enable_model_monitoring:
             logger.debug("ModelManager - setting pingback fallback api key...")
             self.pingback.fallback_api_key = request.api_key
+
+        inference_start_time = time.time()
         try:
             rtn_val = self.model_infer_sync(
                 model_id=model_id, request=request, **kwargs
             )
+
+            # Log inference_completed event for GCP logging
+            from inference.core.gcp_logging import (
+                InferenceCompletedEvent,
+                gcp_logger,
+                get_gcp_context,
+            )
+
+            if gcp_logger.enabled:
+                inference_duration_ms = (time.time() - inference_start_time) * 1000
+                ctx = get_gcp_context()
+
+                # Try to determine batch size
+                batch_size = 1
+                if hasattr(request, "image") and isinstance(request.image, list):
+                    batch_size = len(request.image)
+
+                gcp_logger.log_event(
+                    InferenceCompletedEvent(
+                        request_id=ctx.request_id if ctx else None,
+                        model_id=model_id,
+                        inference_duration_ms=inference_duration_ms,
+                        batch_size=batch_size,
+                        cache_hit=ctx.last_model_cache_hit if ctx else None,
+                        invocation_source=ctx.invocation_source if ctx else "direct",
+                        workflow_instance_id=ctx.workflow_instance_id if ctx else None,
+                        workflow_id=ctx.workflow_id if ctx else None,
+                        step_name=ctx.step_name if ctx else None,
+                    ),
+                    sampled=True,
+                )
+
             logger.debug(
                 f"ModelManager - inference from request finished for model_id={model_id}."
             )
