@@ -1,15 +1,5 @@
 # Changelog
 
-## [Unreleased]
-
-### Documentation
-- Comprehensive error documentation for all model loading error types
-- Added detailed scenarios and troubleshooting steps for 11 model loading errors
-- Comprehensive error documentation for all model package negotiation error types
-- Added detailed scenarios and troubleshooting steps for 7 package negotiation errors
-
----
-
 ## `0.18.5` and earlier versions
 
 ### Added
