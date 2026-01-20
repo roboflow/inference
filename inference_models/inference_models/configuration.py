@@ -2,7 +2,12 @@ import os
 
 import torch
 
-from inference_models.utils.environment import parse_comma_separated_values, str2bool
+from inference_models.utils.environment import (
+    get_boolean_from_env,
+    get_comma_separated_list_of_integers_from_env,
+    get_integer_from_env,
+    parse_comma_separated_values,
+)
 
 ONNXRUNTIME_EXECUTION_PROVIDERS = parse_comma_separated_values(
     values=os.getenv(
@@ -18,13 +23,15 @@ DEFAULT_DEVICE_STR = os.getenv(
 )
 DEFAULT_DEVICE = torch.device(DEFAULT_DEVICE_STR)
 ROBOFLOW_API_KEY = os.getenv("ROBOFLOW_API_KEY")
-API_CALLS_TIMEOUT = int(os.getenv("API_CALLS_TIMEOUT", "5"))
-API_CALLS_MAX_TRIES = int(os.getenv("API_CALLS_MAX_TRIES", "3"))
+API_CALLS_TIMEOUT = get_integer_from_env(variable_name="API_CALLS_TIMEOUT", default=5)
+API_CALLS_MAX_TRIES = get_integer_from_env(
+    variable_name="API_CALLS_MAX_TRIES", default=3
+)
 IDEMPOTENT_API_REQUEST_CODES_TO_RETRY = set(
-    int(e.strip())
-    for e in os.getenv(
-        "IDEMPOTENT_API_REQUEST_CODES_TO_RETRY", "408,429,502,503,504"
-    ).split(",")
+    get_comma_separated_list_of_integers_from_env(
+        variable_name="IDEMPOTENT_API_REQUEST_CODES_TO_RETRY",
+        default=[408, 429, 502, 503, 504],
+    )
 )
 ROBOFLOW_ENVIRONMENT = os.getenv("ROBOFLOW_ENVIRONMENT", "prod")
 ROBOFLOW_API_HOST = os.getenv(
@@ -38,20 +45,26 @@ ROBOFLOW_API_HOST = os.getenv(
 RUNNING_ON_JETSON = os.getenv("RUNNING_ON_JETSON")
 L4T_VERSION = os.getenv("L4T_VERSION")
 INFERENCE_HOME = os.getenv("INFERENCE_HOME", "/tmp/cache")
-DISABLE_INTERACTIVE_PROGRESS_BARS = str2bool(
-    os.getenv("DISABLE_INTERACTIVE_PROGRESS_BARS", "False")
+DISABLE_INTERACTIVE_PROGRESS_BARS = get_boolean_from_env(
+    variable_name="DISABLE_INTERACTIVE_PROGRESS_BARS",
+    default=False,
 )
 LOG_LEVEL = os.getenv("LOG_LEVEL", "WARNING")
 VERBOSE_LOG_LEVEL = os.getenv("VERBOSE_LOG_LEVEL", "INFO")
-DISABLE_VERBOSE_LOGGER = str2bool(os.getenv("DISABLE_VERBOSE_LOGGER", "False"))
-AUTO_LOADER_CACHE_EXPIRATION_MINUTES = int(
-    os.getenv("AUTO_LOADER_CACHE_EXPIRATION_MINUTES", "1440")
+DISABLE_VERBOSE_LOGGER = get_boolean_from_env(
+    variable_name="DISABLE_VERBOSE_LOGGER", default=False
 )
-ALLOW_URL_INPUT = str2bool(os.getenv("ALLOW_URL_INPUT", True))
-ALLOW_NON_HTTPS_URL_INPUT = str2bool(os.getenv("ALLOW_NON_HTTPS_URL_INPUT", False))
-ALLOW_URL_INPUT_WITHOUT_FQDN = str2bool(
-    os.getenv("ALLOW_URL_INPUT_WITHOUT_FQDN", False)
+AUTO_LOADER_CACHE_EXPIRATION_MINUTES = get_integer_from_env(
+    variable_name="AUTO_LOADER_CACHE_EXPIRATION_MINUTES", default=1440
 )
+ALLOW_URL_INPUT = get_boolean_from_env(variable_name="ALLOW_URL_INPUT", default=True)
+ALLOW_NON_HTTPS_URL_INPUT = get_boolean_from_env(
+    variable_name="ALLOW_NON_HTTPS_URL_INPUT", default=False
+)
+ALLOW_URL_INPUT_WITHOUT_FQDN = get_boolean_from_env(
+    variable_name="ALLOW_URL_INPUT_WITHOUT_FQDN", default=False
+)
+
 WHITELISTED_DESTINATIONS_FOR_URL_INPUT = os.getenv(
     "WHITELISTED_DESTINATIONS_FOR_URL_INPUT"
 )

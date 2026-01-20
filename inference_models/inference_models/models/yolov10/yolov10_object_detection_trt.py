@@ -33,9 +33,9 @@ from inference_models.models.common.roboflow.pre_processing import (
     pre_process_network_input,
 )
 from inference_models.models.common.trt import (
-    get_engine_inputs_and_outputs,
+    get_trt_engine_inputs_and_outputs,
     infer_from_trt_engine,
-    load_model,
+    load_trt_model,
 )
 
 try:
@@ -105,12 +105,12 @@ class YOLOv10ForObjectDetectionTRT(
         cuda.init()
         cuda_device = cuda.Device(device.index or 0)
         with use_primary_cuda_context(cuda_device=cuda_device) as cuda_context:
-            engine = load_model(
+            engine = load_trt_model(
                 model_path=model_package_content["engine.plan"],
                 engine_host_code_allowed=engine_host_code_allowed,
             )
             execution_context = engine.create_execution_context()
-        inputs, outputs = get_engine_inputs_and_outputs(engine=engine)
+        inputs, outputs = get_trt_engine_inputs_and_outputs(engine=engine)
         if len(inputs) != 1:
             raise CorruptedModelPackageError(
                 message=f"Implementation assume single model input, found: {len(inputs)}.",

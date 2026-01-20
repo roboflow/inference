@@ -81,7 +81,9 @@ class RoboflowModelMetadata(BaseModel):
     next_page: Optional[str] = Field(alias="nextPage", default=None)
 
 
-def get_roboflow_model(model_id: str, api_key: Optional[str] = None) -> ModelMetadata:
+def get_roboflow_model(
+    model_id: str, api_key: Optional[str] = None, **kwargs
+) -> ModelMetadata:
     model_metadata = get_model_metadata(model_id=model_id, api_key=api_key)
     parsed_model_packages = []
     for model_package in model_metadata.model_packages:
