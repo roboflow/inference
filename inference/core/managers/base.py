@@ -175,12 +175,23 @@ class ModelManager:
                     if hasattr(model, "device"):
                         device = str(getattr(model, "device", None))
 
+                    # Detect backend - check for inference-models adapter
+                    backend = "onnx"  # Default for legacy models
+                    if hasattr(model, "_exp_model"):
+                        # This is an inference-models adapter
+                        backend = "inference-models"
+                        exp_model = model._exp_model
+                        if hasattr(exp_model, "backend"):
+                            backend = f"inference-models/{exp_model.backend}"
+                        if hasattr(exp_model, "device"):
+                            device = str(getattr(exp_model, "device", device))
+
                     ctx = get_gcp_context()
                     gcp_logger.log_event(
                         ModelLoadedToMemoryEvent(
                             request_id=ctx.request_id if ctx else None,
                             model_id=model_id,
-                            backend="onnx",  # Default, could be enhanced to detect actual backend
+                            backend=backend,
                             device=device,
                             load_duration_ms=load_duration_ms,
                             model_architecture=model_architecture,
