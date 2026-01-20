@@ -201,7 +201,7 @@ def x_ray_runtime_environment() -> RuntimeXRayResult:
 @cache
 def is_running_on_jetson() -> bool:
     if RUNNING_ON_JETSON is not None:
-        return str2bool(value=RUNNING_ON_JETSON)
+        return str2bool(value=RUNNING_ON_JETSON, variable_name="RUNNING_ON_JETSON")
     return get_jetson_type() is not None
 
 
