@@ -814,11 +814,6 @@ HTTP_API_SHARED_WORKFLOWS_THREAD_POOL_WORKERS = int(
 )
 
 # Workflow block filtering configuration
-# Enable selective block disabling for workflows (useful for mirroring, cost control, security, etc.)
-WORKFLOW_SELECTIVE_BLOCKS_DISABLE = str2bool(
-    os.getenv("WORKFLOW_SELECTIVE_BLOCKS_DISABLE", "False")
-)
-
 # Comma-separated list of block type categories to disable (e.g., "sink,model")
 WORKFLOW_DISABLED_BLOCK_TYPES = os.getenv("WORKFLOW_DISABLED_BLOCK_TYPES", "")
 if WORKFLOW_DISABLED_BLOCK_TYPES:

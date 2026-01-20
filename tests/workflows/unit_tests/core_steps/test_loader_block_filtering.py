@@ -2,7 +2,8 @@
 Tests for workflow block filtering functionality added in PR #1924.
 
 This module tests the `_should_filter_block()` function and filtering behavior
-in `load_blocks()` when `WORKFLOW_SELECTIVE_BLOCKS_DISABLE` is enabled.
+in `load_blocks()` when block filtering is configured via WORKFLOW_DISABLED_BLOCK_TYPES
+or WORKFLOW_DISABLED_BLOCK_PATTERNS.
 """
 
 from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
@@ -173,7 +174,6 @@ class WebhookNotificationBlock(WorkflowBlock):
 class TestShouldFilterBlockByType:
     """Tests for _should_filter_block() with block_type filtering."""
 
-    @mock.patch.object(loader, "WORKFLOW_SELECTIVE_BLOCKS_DISABLE", True)
     @mock.patch.object(loader, "WORKFLOW_DISABLED_BLOCK_TYPES", ["sink"])
     @mock.patch.object(loader, "WORKFLOW_DISABLED_BLOCK_PATTERNS", [])
     def test_should_filter_block_when_block_type_matches_disabled_type(self) -> None:
@@ -183,7 +183,6 @@ class TestShouldFilterBlockByType:
         # then
         assert result is True, "Block with type 'sink' should be filtered when 'sink' is disabled"
 
-    @mock.patch.object(loader, "WORKFLOW_SELECTIVE_BLOCKS_DISABLE", True)
     @mock.patch.object(loader, "WORKFLOW_DISABLED_BLOCK_TYPES", ["sink"])
     @mock.patch.object(loader, "WORKFLOW_DISABLED_BLOCK_PATTERNS", [])
     def test_should_not_filter_block_when_block_type_does_not_match(self) -> None:
@@ -195,7 +194,6 @@ class TestShouldFilterBlockByType:
             "Block with type 'transformation' should not be filtered when only 'sink' is disabled"
         )
 
-    @mock.patch.object(loader, "WORKFLOW_SELECTIVE_BLOCKS_DISABLE", True)
     @mock.patch.object(loader, "WORKFLOW_DISABLED_BLOCK_TYPES", ["sink"])  # env.py normalizes to lowercase
     @mock.patch.object(loader, "WORKFLOW_DISABLED_BLOCK_PATTERNS", [])
     def test_should_filter_block_with_case_insensitive_block_type_value(self) -> None:
@@ -211,7 +209,6 @@ class TestShouldFilterBlockByType:
         # then
         assert result is True, "Block type from schema should be lowercased for comparison"
 
-    @mock.patch.object(loader, "WORKFLOW_SELECTIVE_BLOCKS_DISABLE", True)
     @mock.patch.object(loader, "WORKFLOW_DISABLED_BLOCK_TYPES", ["sink", "model"])
     @mock.patch.object(loader, "WORKFLOW_DISABLED_BLOCK_PATTERNS", [])
     def test_should_filter_blocks_when_multiple_types_disabled(self) -> None:
@@ -234,7 +231,6 @@ class TestShouldFilterBlockByType:
 class TestShouldFilterBlockByPattern:
     """Tests for _should_filter_block() with pattern matching."""
 
-    @mock.patch.object(loader, "WORKFLOW_SELECTIVE_BLOCKS_DISABLE", True)
     @mock.patch.object(loader, "WORKFLOW_DISABLED_BLOCK_TYPES", [])
     @mock.patch.object(loader, "WORKFLOW_DISABLED_BLOCK_PATTERNS", ["webhook"])
     def test_should_filter_block_when_pattern_matches_friendly_name(self) -> None:
@@ -246,7 +242,6 @@ class TestShouldFilterBlockByPattern:
             "Block should be filtered when pattern 'webhook' matches friendly name 'Webhook Notification'"
         )
 
-    @mock.patch.object(loader, "WORKFLOW_SELECTIVE_BLOCKS_DISABLE", True)
     @mock.patch.object(loader, "WORKFLOW_DISABLED_BLOCK_TYPES", [])
     @mock.patch.object(loader, "WORKFLOW_DISABLED_BLOCK_PATTERNS", ["sinkblock"])
     def test_should_filter_block_when_pattern_matches_class_name(self) -> None:
@@ -258,7 +253,6 @@ class TestShouldFilterBlockByPattern:
             "Block should be filtered when pattern 'sinkblock' matches class name 'SinkBlock'"
         )
 
-    @mock.patch.object(loader, "WORKFLOW_SELECTIVE_BLOCKS_DISABLE", True)
     @mock.patch.object(loader, "WORKFLOW_DISABLED_BLOCK_TYPES", [])
     @mock.patch.object(loader, "WORKFLOW_DISABLED_BLOCK_PATTERNS", ["WEBHOOK"])  # uppercase
     def test_should_filter_block_with_case_insensitive_pattern_matching(self) -> None:
@@ -268,7 +262,6 @@ class TestShouldFilterBlockByPattern:
         # then
         assert result is True, "Pattern matching should be case-insensitive"
 
-    @mock.patch.object(loader, "WORKFLOW_SELECTIVE_BLOCKS_DISABLE", True)
     @mock.patch.object(loader, "WORKFLOW_DISABLED_BLOCK_TYPES", [])
     @mock.patch.object(loader, "WORKFLOW_DISABLED_BLOCK_PATTERNS", ["nonexistent_pattern"])
     def test_should_not_filter_block_when_pattern_does_not_match(self) -> None:
@@ -278,7 +271,6 @@ class TestShouldFilterBlockByPattern:
         # then
         assert result is False, "Block should not be filtered when pattern doesn't match"
 
-    @mock.patch.object(loader, "WORKFLOW_SELECTIVE_BLOCKS_DISABLE", True)
     @mock.patch.object(loader, "WORKFLOW_DISABLED_BLOCK_TYPES", ["sink"])  # type match
     @mock.patch.object(loader, "WORKFLOW_DISABLED_BLOCK_PATTERNS", ["modelblock"])  # pattern match
     def test_should_filter_block_when_either_type_or_pattern_matches(self) -> None:
@@ -301,25 +293,8 @@ class TestShouldFilterBlockByPattern:
 
 
 class TestFeatureToggleBehavior:
-    """Tests for feature toggle (WORKFLOW_SELECTIVE_BLOCKS_DISABLE)."""
+    """Tests for implicit feature toggle based on configuration presence."""
 
-    @mock.patch.object(loader, "WORKFLOW_SELECTIVE_BLOCKS_DISABLE", False)
-    @mock.patch.object(loader, "WORKFLOW_DISABLED_BLOCK_TYPES", ["sink"])
-    @mock.patch.object(loader, "WORKFLOW_DISABLED_BLOCK_PATTERNS", ["webhook"])
-    def test_should_not_filter_when_feature_disabled(self) -> None:
-        # when
-        sink_result = loader._should_filter_block(SinkBlock)
-        webhook_result = loader._should_filter_block(WebhookNotificationBlock)
-
-        # then
-        assert sink_result is False, (
-            "No filtering should occur when WORKFLOW_SELECTIVE_BLOCKS_DISABLE is False"
-        )
-        assert webhook_result is False, (
-            "No filtering should occur when WORKFLOW_SELECTIVE_BLOCKS_DISABLE is False"
-        )
-
-    @mock.patch.object(loader, "WORKFLOW_SELECTIVE_BLOCKS_DISABLE", True)
     @mock.patch.object(loader, "WORKFLOW_DISABLED_BLOCK_TYPES", [])
     @mock.patch.object(loader, "WORKFLOW_DISABLED_BLOCK_PATTERNS", [])
     def test_should_not_filter_when_no_types_or_patterns_specified(self) -> None:
@@ -331,7 +306,6 @@ class TestFeatureToggleBehavior:
             "No filtering should occur when no types or patterns are specified"
         )
 
-    @mock.patch.object(loader, "WORKFLOW_SELECTIVE_BLOCKS_DISABLE", True)
     @mock.patch.object(loader, "WORKFLOW_DISABLED_BLOCK_TYPES", ["sink"])
     @mock.patch.object(loader, "WORKFLOW_DISABLED_BLOCK_PATTERNS", [])
     def test_load_blocks_excludes_filtered_blocks(self) -> None:
@@ -352,7 +326,6 @@ class TestFeatureToggleBehavior:
                 # Skip blocks that don't have proper manifest structure
                 pass
 
-    @mock.patch.object(loader, "WORKFLOW_SELECTIVE_BLOCKS_DISABLE", True)
     @mock.patch.object(loader, "WORKFLOW_DISABLED_BLOCK_TYPES", ["sink"])
     @mock.patch.object(loader, "WORKFLOW_DISABLED_BLOCK_PATTERNS", [])
     def test_load_blocks_count_reduced_when_filtering_enabled(self) -> None:
@@ -361,7 +334,7 @@ class TestFeatureToggleBehavior:
         filtered_count = len(filtered_blocks)
 
         # when - get unfiltered count
-        with mock.patch.object(loader, "WORKFLOW_SELECTIVE_BLOCKS_DISABLE", False):
+        with mock.patch.object(loader, "WORKFLOW_DISABLED_BLOCK_TYPES", []):
             unfiltered_blocks = loader.load_blocks()
             unfiltered_count = len(unfiltered_blocks)
 

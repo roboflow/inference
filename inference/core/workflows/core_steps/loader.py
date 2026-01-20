@@ -9,7 +9,6 @@ from inference.core.env import (
     WORKFLOW_BLOCKS_WRITE_DIRECTORY,
     WORKFLOW_DISABLED_BLOCK_PATTERNS,
     WORKFLOW_DISABLED_BLOCK_TYPES,
-    WORKFLOW_SELECTIVE_BLOCKS_DISABLE,
     WORKFLOWS_STEP_EXECUTION_MODE,
 )
 from inference.core.workflows.core_steps.analytics.data_aggregator.v1 import (
@@ -620,7 +619,7 @@ def _should_filter_block(block_class: Type[WorkflowBlock]) -> bool:
 
     Returns True if the block should be filtered (removed), False if it should be kept.
     """
-    if not WORKFLOW_SELECTIVE_BLOCKS_DISABLE:
+    if not WORKFLOW_DISABLED_BLOCK_TYPES and not WORKFLOW_DISABLED_BLOCK_PATTERNS:
         return False
 
     try:
@@ -829,8 +828,8 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
     if SAM3_3D_OBJECTS_ENABLED:
         blocks.append(SegmentAnything3_3D_ObjectsBlockV1)
 
-    # Filter blocks if selective disable is enabled
-    if WORKFLOW_SELECTIVE_BLOCKS_DISABLE:
+    # Filter blocks if any disable configuration is set
+    if WORKFLOW_DISABLED_BLOCK_TYPES or WORKFLOW_DISABLED_BLOCK_PATTERNS:
         filtered_blocks = [block for block in blocks if not _should_filter_block(block)]
         return filtered_blocks
 

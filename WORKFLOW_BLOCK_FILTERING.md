@@ -11,20 +11,15 @@ The workflow block filtering feature allows you to selectively disable certain t
 - **Resource Management**: Limit resource-intensive operations
 
 ## How It Works
-When enabled, disabled blocks are prevented from being loaded into the system at all. This means:
+When configured, disabled blocks are prevented from being loaded into the system at all. This means:
 - Disabled blocks won't appear in the UI or API discovery endpoints
 - Workflows attempting to use disabled blocks will fail with "unknown block type" errors
 - The filtering happens at load time, before blocks are registered with the workflow engine
+- Filtering is automatically enabled when either `WORKFLOW_DISABLED_BLOCK_TYPES` or `WORKFLOW_DISABLED_BLOCK_PATTERNS` is set
 
 ## Configuration
 
 ### Environment Variables
-
-#### `WORKFLOW_SELECTIVE_BLOCKS_DISABLE`
-- **Type**: Boolean (true/false)
-- **Default**: `false`
-- **Description**: Enables or disables the block filtering feature
-- **Example**: `export WORKFLOW_SELECTIVE_BLOCKS_DISABLE=true`
 
 #### `WORKFLOW_DISABLED_BLOCK_TYPES`
 - **Type**: Comma-separated string
@@ -44,7 +39,6 @@ When enabled, disabled blocks are prevented from being loaded into the system at
 ### 1. Mirroring/Testing Infrastructure
 Prevent duplicate side effects when testing with mirrored requests:
 ```bash
-export WORKFLOW_SELECTIVE_BLOCKS_DISABLE=true
 export WORKFLOW_DISABLED_BLOCK_TYPES="sink,model"
 export WORKFLOW_DISABLED_BLOCK_PATTERNS="webhook,email,database,openai,anthropic"
 ```
@@ -52,7 +46,6 @@ export WORKFLOW_DISABLED_BLOCK_PATTERNS="webhook,email,database,openai,anthropic
 ### 2. Development Environment
 Reduce costs and prevent accidental production actions:
 ```bash
-export WORKFLOW_SELECTIVE_BLOCKS_DISABLE=true
 export WORKFLOW_DISABLED_BLOCK_TYPES="sink"
 export WORKFLOW_DISABLED_BLOCK_PATTERNS="openai,anthropic,google_gemini,stability_ai"
 ```
@@ -60,14 +53,12 @@ export WORKFLOW_DISABLED_BLOCK_PATTERNS="openai,anthropic,google_gemini,stabilit
 ### 3. Cost Control
 Disable expensive operations:
 ```bash
-export WORKFLOW_SELECTIVE_BLOCKS_DISABLE=true
 export WORKFLOW_DISABLED_BLOCK_PATTERNS="gpt-4,claude,gemini-pro,stability_ai"
 ```
 
 ### 4. Security-Restricted Environment
 Prevent data exfiltration and external communication:
 ```bash
-export WORKFLOW_SELECTIVE_BLOCKS_DISABLE=true
 export WORKFLOW_DISABLED_BLOCK_TYPES="sink"
 export WORKFLOW_DISABLED_BLOCK_PATTERNS="webhook,http,email,slack,database"
 ```
@@ -75,7 +66,6 @@ export WORKFLOW_DISABLED_BLOCK_PATTERNS="webhook,http,email,slack,database"
 ### 5. Compliance Mode
 Ensure GDPR/HIPAA compliance:
 ```bash
-export WORKFLOW_SELECTIVE_BLOCKS_DISABLE=true
 export WORKFLOW_DISABLED_BLOCK_PATTERNS="google,openai,anthropic,external"
 ```
 
@@ -88,7 +78,6 @@ services:
   inference:
     image: roboflow/inference-server
     environment:
-      - WORKFLOW_SELECTIVE_BLOCKS_DISABLE=true
       - WORKFLOW_DISABLED_BLOCK_TYPES=sink,model
       - WORKFLOW_DISABLED_BLOCK_PATTERNS=webhook,openai
 ```
@@ -98,7 +87,6 @@ services:
 FROM roboflow/inference-server
 
 # Disable expensive operations
-ENV WORKFLOW_SELECTIVE_BLOCKS_DISABLE=true
 ENV WORKFLOW_DISABLED_BLOCK_TYPES=model
 ENV WORKFLOW_DISABLED_BLOCK_PATTERNS=gpt-4,claude
 ```
@@ -110,7 +98,6 @@ kind: ConfigMap
 metadata:
   name: workflow-config
 data:
-  WORKFLOW_SELECTIVE_BLOCKS_DISABLE: "true"
   WORKFLOW_DISABLED_BLOCK_TYPES: "sink"
   WORKFLOW_DISABLED_BLOCK_PATTERNS: "webhook,database"
 ```
@@ -152,8 +139,7 @@ This is intentional - disabled blocks are completely removed from the system, so
 import os
 import json
 
-# Set configuration
-os.environ["WORKFLOW_SELECTIVE_BLOCKS_DISABLE"] = "true"
+# Set configuration - filtering is automatically enabled when these are set
 os.environ["WORKFLOW_DISABLED_BLOCK_TYPES"] = "sink"
 
 # Test workflow
@@ -199,16 +185,16 @@ except WorkflowDefinitionError as e:
 ### Workflow Unexpectedly Rejected
 ```bash
 # Check current configuration
-echo "Selective disable: $WORKFLOW_SELECTIVE_BLOCKS_DISABLE"
 echo "Disabled types: $WORKFLOW_DISABLED_BLOCK_TYPES"
 echo "Disabled patterns: $WORKFLOW_DISABLED_BLOCK_PATTERNS"
 
-# Temporarily disable filtering to test
-export WORKFLOW_SELECTIVE_BLOCKS_DISABLE=false
+# Temporarily disable filtering by unsetting the variables
+unset WORKFLOW_DISABLED_BLOCK_TYPES
+unset WORKFLOW_DISABLED_BLOCK_PATTERNS
 ```
 
 ### Workflow Not Rejected When Expected
-1. Verify `WORKFLOW_SELECTIVE_BLOCKS_DISABLE=true`
+1. Verify that `WORKFLOW_DISABLED_BLOCK_TYPES` or `WORKFLOW_DISABLED_BLOCK_PATTERNS` is set
 2. Check pattern matching (case-insensitive substring)
 3. Verify block type in manifest matches configuration
 4. Check that the server/process was restarted after changing environment variables (blocks are loaded once at startup)
