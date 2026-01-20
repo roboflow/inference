@@ -10,7 +10,8 @@ from inference_models.configuration import DEFAULT_DEVICE
 from inference_models.entities import ColorFormat
 from inference_models.errors import (
     CorruptedModelPackageError,
-    ModelLoadingError,
+    InvalidModelInitParameterError,
+    MissingModelInitParameterError,
     ModelRuntimeError,
 )
 from inference_models.logger import LOGGER
@@ -117,7 +118,7 @@ class RFDetrForInstanceSegmentationTorch(
             config_path=model_package_content["model_type.json"]
         )
         if model_type not in CONFIG_FOR_MODEL_TYPE:
-            raise CorruptedModelPackageError(
+            raise InvalidModelInitParameterError(
                 message=f"Model package describes model_type as '{model_type}' which is not supported. "
                 f"Supported model types: {list(CONFIG_FOR_MODEL_TYPE.keys())}.",
                 help_url="https://todo",
@@ -152,7 +153,7 @@ class RFDetrForInstanceSegmentationTorch(
         device: torch.device = DEFAULT_DEVICE,
     ):
         if model_type is None:
-            raise ModelLoadingError(
+            raise MissingModelInitParameterError(
                 message="While loading RFDetr model (using torch backend) could not determine `model_type`. "
                 "If you used `RFDetrForObjectDetectionTorch` directly imported in your code, please pass "
                 f"one of the value: {CONFIG_FOR_MODEL_TYPE.keys()} as the parameter. If you see this "
@@ -167,7 +168,7 @@ class RFDetrForInstanceSegmentationTorch(
             weights_only=False,
         )["model"]
         if model_type not in CONFIG_FOR_MODEL_TYPE:
-            raise ModelLoadingError(
+            raise CorruptedModelPackageError(
                 message=f"Model package describes model_type as '{model_type}' which is not supported. "
                 f"Supported model types: {list(CONFIG_FOR_MODEL_TYPE.keys())}.",
                 help_url="https://todo",
@@ -176,7 +177,7 @@ class RFDetrForInstanceSegmentationTorch(
         divisibility = model_config.num_windows * model_config.patch_size
         if resolution is not None:
             if resolution < 0 or resolution % divisibility != 0:
-                raise ModelLoadingError(
+                raise InvalidModelInitParameterError(
                     message=f"Attempted to load RFDetr model (using torch backend) with `resolution` parameter which "
                     f"is invalid - the model required positive value divisible by 56. Make sure you used "
                     f"proper value, corresponding to the one used to train the model.",
@@ -211,7 +212,7 @@ class RFDetrForInstanceSegmentationTorch(
         else:
             class_names = labels
         if checkpoint_num_classes != len(class_names):
-            raise ModelLoadingError(
+            raise InvalidModelInitParameterError(
                 message=f"Checkpoint pointed to load RFDetr defines {checkpoint_num_classes} output classes, but "
                 f"loaded labels define {len(class_names)} classes - fix the value of `labels` parameter.",
                 help_url="https://todo",
