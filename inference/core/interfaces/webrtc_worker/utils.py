@@ -250,6 +250,8 @@ def get_video_rotation(filepath: str) -> int:
     import json
     import subprocess
 
+    logger.info("Detecting video rotation for: %s", filepath)
+
     try:
         result = subprocess.run(
             [
@@ -267,6 +269,12 @@ def get_video_rotation(filepath: str) -> int:
             capture_output=True,
             text=True,
             timeout=5,
+        )
+        logger.info(
+            "ffprobe result: returncode=%s, stdout=%s, stderr=%s",
+            result.returncode,
+            result.stdout[:500] if result.stdout else "(empty)",
+            result.stderr[:500] if result.stderr else "(empty)",
         )
         if result.returncode == 0:
             data = json.loads(result.stdout)
@@ -289,11 +297,22 @@ def get_video_rotation(filepath: str) -> int:
                         "Video rotation detected: %d° (from rotate tag)", rotation
                     )
                     return rotation
+            else:
+                logger.info("ffprobe returned no streams for rotation detection")
+        else:
+            logger.warning(
+                "ffprobe failed with returncode %s: %s",
+                result.returncode,
+                result.stderr,
+            )
     except FileNotFoundError:
-        logger.warning("ffprobe not available")
+        logger.warning("ffprobe not available - binary not found in PATH")
+    except subprocess.TimeoutExpired:
+        logger.warning("ffprobe timed out after 5 seconds")
     except Exception as e:
         logger.warning("ffprobe rotation detection failed: %s", e)
 
+    logger.info("No rotation detected, returning 0")
     return 0
 
 
