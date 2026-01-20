@@ -1,7 +1,7 @@
 import importlib
 import os
 import sys
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 
 class LazyClass:
@@ -15,6 +15,20 @@ class LazyClass:
         if self._symbol is None:
             module = importlib.import_module(self._module_name)
             self._symbol = getattr(module, self._class_name)
+        return self._symbol
+
+
+class LazyFunction:
+
+    def __init__(self, module_name: str, function_name: str):
+        self._module_name = module_name
+        self._function_name = function_name
+        self._symbol: Optional[callable] = None
+
+    def resolve(self) -> Callable[..., Any]:
+        if self._symbol is None:
+            module = importlib.import_module(self._module_name)
+            self._symbol = getattr(module, self._function_name)
         return self._symbol
 
 

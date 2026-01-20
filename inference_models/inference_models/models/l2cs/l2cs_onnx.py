@@ -16,9 +16,9 @@ from inference_models.errors import (
 from inference_models.models.base.types import PreprocessedInputs
 from inference_models.models.common.model_packages import get_model_package_contents
 from inference_models.models.common.onnx import (
-    run_session_via_iobinding,
-    run_session_with_batch_size_limit,
-    set_execution_provider_defaults,
+    run_onnx_session_via_iobinding,
+    run_onnx_session_with_batch_size_limit,
+    set_onnx_execution_provider_defaults,
 )
 from inference_models.utils.onnx_introspection import (
     get_selected_onnx_execution_providers,
@@ -72,7 +72,7 @@ class L2CSNetOnnx:
                 f"contact the platform support.",
                 help_url="https://todo",
             )
-        onnx_execution_providers = set_execution_provider_defaults(
+        onnx_execution_providers = set_onnx_execution_provider_defaults(
             providers=onnx_execution_providers,
             model_package_path=model_name_or_path,
             device=device,
@@ -196,7 +196,7 @@ class L2CSNetOnnx:
         **kwargs,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         with self._session_thread_lock:
-            yaw, pitch = run_session_with_batch_size_limit(
+            yaw, pitch = run_onnx_session_with_batch_size_limit(
                 session=self._session, inputs={self._input_name: pre_processed_images}
             )
             return yaw, pitch
