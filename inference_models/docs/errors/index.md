@@ -42,11 +42,11 @@ Errors that occur when invalid input or parameters are provided to the model or 
 
 [View all Model Input & Validation Errors →](input-validation.md)
 
-### [Model Runtime Errors](runtime.md)
+### [Model Runtime Errors](models-runtime.md)
 
 Errors that occur during model execution (inference). These errors happen after the model has been successfully loaded and are typically caused by issues during the actual inference process, such as incompatible input shapes, out-of-memory conditions, or backend-specific failures.
 
-[View all Model Runtime Errors →](runtime.md)
+[View all Model Runtime Errors →](models-runtime.md)
 
 ## Getting Help
 

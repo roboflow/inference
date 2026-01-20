@@ -162,7 +162,7 @@ nav:
       - File & Download: errors/file-download.md
       - Runtime & Environment: errors/runtime-environment.md
       - Input & Validation: errors/input-validation.md
-      - Runtime: errors/runtime.md
+      - Models Runtime: errors/models-runtime.md
   - Changelog: changelog.md
 
 theme:
