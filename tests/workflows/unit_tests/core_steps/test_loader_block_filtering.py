@@ -317,8 +317,8 @@ class TestFeatureToggleBehavior:
             try:
                 manifest_class = block_class.get_manifest()
                 schema = manifest_class.model_json_schema()
-                json_schema_extra = schema.get("json_schema_extra", {})
-                block_type = json_schema_extra.get("block_type", "")
+                # Note: Pydantic V2 puts json_schema_extra values at top level of schema
+                block_type = schema.get("block_type", "")
                 assert block_type.lower() != "sink", (
                     f"Sink block {block_class.__name__} should have been filtered"
                 )
