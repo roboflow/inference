@@ -42,6 +42,7 @@ from inference.core.gcp_logging.memory import (
     measure_memory_before_load,
     measure_memory_for_eviction,
 )
+from inference.core.gcp_logging.access_manager import GCPLoggingModelAccessManager
 
 __all__ = [
     # Logger
@@ -69,4 +70,6 @@ __all__ = [
     "measure_memory_before_load",
     "measure_memory_after_load",
     "measure_memory_for_eviction",
+    # Access Manager (for inference-models integration)
+    "GCPLoggingModelAccessManager",
 ]
