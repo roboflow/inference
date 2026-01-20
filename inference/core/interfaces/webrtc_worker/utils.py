@@ -248,16 +248,24 @@ def get_video_rotation(filepath: str) -> int:
         Negative values indicate counter-clockwise rotation.
     """
     import json
+    import os
     import subprocess
 
     logger.info("Detecting video rotation for: %s", filepath)
+
+    # Check if file exists
+    if not os.path.exists(filepath):
+        logger.warning("Video file does not exist: %s", filepath)
+        return 0
+
+    logger.info("Video file exists, size: %d bytes", os.path.getsize(filepath))
 
     try:
         result = subprocess.run(
             [
                 "ffprobe",
                 "-v",
-                "quiet",
+                "error",  # Show errors instead of quiet
                 "-select_streams",
                 "v:0",
                 "-show_entries",
