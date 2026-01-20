@@ -251,15 +251,15 @@ def get_video_rotation(filepath: str) -> int:
     import subprocess
 
     try:
+        # Use -show_streams which is compatible with all ffprobe versions
         result = subprocess.run(
             [
                 "ffprobe",
                 "-v",
-                "quiet",
+                "error",
                 "-select_streams",
                 "v:0",
-                "-show_entries",
-                "stream_side_data=rotation:stream_tags=rotate",
+                "-show_streams",
                 "-of",
                 "json",
                 filepath,
@@ -272,27 +272,27 @@ def get_video_rotation(filepath: str) -> int:
             data = json.loads(result.stdout)
             streams = data.get("streams", [])
             if streams:
+                stream = streams[0]
                 # Check displaymatrix side_data first
-                for sd in streams[0].get("side_data_list", []):
+                for sd in stream.get("side_data_list", []):
                     if "rotation" in sd:
                         rotation = int(sd["rotation"])
-                        logger.info(
-                            "Video rotation detected: %d° (from displaymatrix)",
-                            rotation,
-                        )
+                        logger.info("Video rotation detected: %d°", rotation)
                         return rotation
                 # Fall back to rotate tag in stream tags
-                rotate_str = streams[0].get("tags", {}).get("rotate", "0")
+                rotate_str = stream.get("tags", {}).get("rotate", "0")
                 rotation = int(rotate_str)
                 if rotation != 0:
-                    logger.info(
-                        "Video rotation detected: %d° (from rotate tag)", rotation
-                    )
+                    logger.info("Video rotation detected: %d°", rotation)
                     return rotation
+        else:
+            logger.warning("ffprobe failed: %s", result.stderr.strip())
     except FileNotFoundError:
-        logger.debug("ffprobe not available")
+        logger.warning("ffprobe not available")
+    except subprocess.TimeoutExpired:
+        logger.warning("ffprobe timed out")
     except Exception as e:
-        logger.debug("ffprobe rotation detection failed: %s", e)
+        logger.warning("ffprobe rotation detection failed: %s", e)
 
     return 0
 
