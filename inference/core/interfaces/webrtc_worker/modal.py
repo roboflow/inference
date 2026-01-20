@@ -106,30 +106,6 @@ def check_nvidia_smi_gpu() -> str:
         return ""
 
 
-def check_ffprobe_available() -> bool:
-    """Check if ffprobe is available in the container."""
-    try:
-        result = subprocess.run(
-            ["ffprobe", "-version"],
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
-        if result.returncode == 0:
-            version_line = result.stdout.split("\n")[0] if result.stdout else "unknown"
-            logger.info("ffprobe available: %s", version_line)
-            return True
-        else:
-            logger.warning("ffprobe returned error: %s", result.stderr)
-            return False
-    except FileNotFoundError:
-        logger.warning("ffprobe not found in PATH")
-        return False
-    except Exception as e:
-        logger.warning("ffprobe check failed: %s", e)
-        return False
-
-
 if modal is not None:
     docker_tag: str = WEBRTC_MODAL_IMAGE_TAG if WEBRTC_MODAL_IMAGE_TAG else __version__
     if WEBRTC_MODAL_GCP_SECRET_NAME:
@@ -504,7 +480,6 @@ if modal is not None:
             self._cold_start = False
             time_start = time.time()
             warmup_cuda(max_retries=10, retry_delay=0.5)
-            check_ffprobe_available()
             self._gpu = check_nvidia_smi_gpu()
             logger.info("Starting GPU container on %s", self._gpu)
             logger.info("Preload hf ids: %s", self.preload_hf_ids)

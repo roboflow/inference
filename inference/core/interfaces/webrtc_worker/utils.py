@@ -248,21 +248,10 @@ def get_video_rotation(filepath: str) -> int:
         Negative values indicate counter-clockwise rotation.
     """
     import json
-    import os
     import subprocess
-
-    logger.info("Detecting video rotation for: %s", filepath)
-
-    # Check if file exists
-    if not os.path.exists(filepath):
-        logger.warning("Video file does not exist: %s", filepath)
-        return 0
-
-    logger.info("Video file exists, size: %d bytes", os.path.getsize(filepath))
 
     try:
         # Use -show_streams which is compatible with all ffprobe versions
-        # This returns full stream info including tags and side_data_list
         result = subprocess.run(
             [
                 "ffprobe",
@@ -279,12 +268,6 @@ def get_video_rotation(filepath: str) -> int:
             text=True,
             timeout=5,
         )
-        logger.info(
-            "ffprobe result: returncode=%s, stdout_len=%s, stderr=%s",
-            result.returncode,
-            len(result.stdout) if result.stdout else 0,
-            result.stderr[:500] if result.stderr else "(empty)",
-        )
         if result.returncode == 0:
             data = json.loads(result.stdout)
             streams = data.get("streams", [])
@@ -294,36 +277,23 @@ def get_video_rotation(filepath: str) -> int:
                 for sd in stream.get("side_data_list", []):
                     if "rotation" in sd:
                         rotation = int(sd["rotation"])
-                        logger.info(
-                            "Video rotation detected: %d° (from displaymatrix)",
-                            rotation,
-                        )
+                        logger.info("Video rotation detected: %d°", rotation)
                         return rotation
                 # Fall back to rotate tag in stream tags
                 rotate_str = stream.get("tags", {}).get("rotate", "0")
                 rotation = int(rotate_str)
                 if rotation != 0:
-                    logger.info(
-                        "Video rotation detected: %d° (from rotate tag)", rotation
-                    )
+                    logger.info("Video rotation detected: %d°", rotation)
                     return rotation
-                logger.info("No rotation metadata found in stream")
-            else:
-                logger.info("ffprobe returned no streams for rotation detection")
         else:
-            logger.warning(
-                "ffprobe failed with returncode %s: %s",
-                result.returncode,
-                result.stderr,
-            )
+            logger.warning("ffprobe failed: %s", result.stderr.strip())
     except FileNotFoundError:
-        logger.warning("ffprobe not available - binary not found in PATH")
+        logger.warning("ffprobe not available")
     except subprocess.TimeoutExpired:
-        logger.warning("ffprobe timed out after 5 seconds")
+        logger.warning("ffprobe timed out")
     except Exception as e:
         logger.warning("ffprobe rotation detection failed: %s", e)
 
-    logger.info("No rotation detected, returning 0")
     return 0
 
 
