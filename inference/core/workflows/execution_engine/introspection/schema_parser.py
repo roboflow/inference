@@ -53,6 +53,11 @@ ONE_OF_KEY = "oneOf"
 OBJECT_TYPE = "object"
 
 
+def clear_cache() -> None:
+    """Clear the parse_block_manifest cache."""
+    parse_block_manifest.cache_clear()
+
+
 @lru_cache(maxsize=256)
 def parse_block_manifest(
     manifest_type: Type[WorkflowBlockManifest],

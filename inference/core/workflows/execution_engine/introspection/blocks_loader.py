@@ -4,7 +4,7 @@ import os
 from collections import Counter
 from copy import copy
 from functools import lru_cache
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 from packaging.specifiers import SpecifierSet
 from packaging.version import Version
@@ -50,14 +50,37 @@ WORKFLOWS_PLUGINS_ENV = "WORKFLOWS_PLUGINS"
 WORKFLOWS_CORE_PLUGIN_NAME = "workflows_core"
 
 
+def _get_env_configuration_state() -> Tuple[Tuple[str, ...], bool]:
+    """
+    Returns current environment configuration state for cache keying.
+    This ensures caches are invalidated when plugins or enterprise blocks change.
+    """
+    plugins = tuple(get_plugin_modules())
+    return (plugins, LOAD_ENTERPRISE_BLOCKS)
+
+
+def clear_caches() -> None:
+    """
+    Clear all LRU caches in this module.
+    Useful for testing or when environment configuration changes.
+    """
+    _cached_describe_available_blocks.cache_clear()
+    load_core_workflow_blocks.cache_clear()
+    _cached_load_all_defined_kinds.cache_clear()
+    _cached_model_json_schema.cache_clear()
+    _cached_describe_outputs.cache_clear()
+
+
 def describe_available_blocks(
     dynamic_blocks: List[BlockSpecification],
     execution_engine_version: Optional[Union[str, Version]] = None,
 ) -> BlocksDescription:
     # Fast path: cache for common case with no dynamic blocks
     if not dynamic_blocks:
+        env_state = _get_env_configuration_state()
         return _cached_describe_available_blocks(
-            execution_engine_version=execution_engine_version
+            execution_engine_version=execution_engine_version,
+            env_state=env_state,
         )
 
     blocks = (
@@ -93,15 +116,23 @@ def describe_available_blocks(
             )
         )
     _validate_loaded_blocks_manifest_type_identifiers(blocks=result)
-    declared_kinds = _cached_load_all_defined_kinds()
+    declared_kinds = _cached_load_all_defined_kinds(
+        env_state=_get_env_configuration_state()
+    )
     return BlocksDescription(blocks=result, declared_kinds=declared_kinds)
 
 
 @lru_cache(maxsize=8)
 def _cached_describe_available_blocks(
     execution_engine_version: Optional[Union[str, Version]] = None,
+    env_state: Tuple[Tuple[str, ...], bool] = None,
 ) -> BlocksDescription:
-    """Cached version for when there are no dynamic blocks (common case)."""
+    """Cached version for when there are no dynamic blocks (common case).
+
+    Args:
+        execution_engine_version: Version filter for blocks
+        env_state: Tuple of (plugins, enterprise_blocks_flag) for cache invalidation
+    """
     blocks = load_workflow_blocks(execution_engine_version=execution_engine_version)
     result = []
     for block in blocks:
@@ -132,7 +163,7 @@ def _cached_describe_available_blocks(
             )
         )
     _validate_loaded_blocks_manifest_type_identifiers(blocks=result)
-    declared_kinds = _cached_load_all_defined_kinds()
+    declared_kinds = _cached_load_all_defined_kinds(env_state=env_state)
     return BlocksDescription(blocks=result, declared_kinds=declared_kinds)
 
 
@@ -395,9 +426,15 @@ def _validate_used_kinds_uniqueness(declared_kinds: List[Kind]) -> None:
         )
 
 
-@lru_cache()
-def _cached_load_all_defined_kinds() -> List[Kind]:
-    """Cached version of load_all_defined_kinds."""
+@lru_cache(maxsize=8)
+def _cached_load_all_defined_kinds(
+    env_state: Tuple[Tuple[str, ...], bool] = None,
+) -> List[Kind]:
+    """Cached version of load_all_defined_kinds.
+
+    Args:
+        env_state: Tuple of (plugins, enterprise_blocks_flag) for cache invalidation
+    """
     return load_all_defined_kinds()
 
 
