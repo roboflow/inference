@@ -150,7 +150,7 @@ class DeepLabV3PlusForSemanticSegmentationTorch(
         self,
         model_results: torch.Tensor,
         pre_processing_meta: List[PreProcessingMetadata],
-        confidence_threshold: float = 0.5,
+        confidence: float = 0.5,
         **kwargs,
     ) -> List[SemanticSegmentationResult]:
         results = []
@@ -215,7 +215,7 @@ class DeepLabV3PlusForSemanticSegmentationTorch(
                 )
             image_results = torch.nn.functional.softmax(image_results, dim=0)
             image_confidence, image_class_ids = torch.max(image_results, dim=0)
-            below_threshold = image_confidence < confidence_threshold
+            below_threshold = image_confidence < confidence
             image_confidence[below_threshold] = 0.0
             image_class_ids[below_threshold] = self._background_class_id
             if (

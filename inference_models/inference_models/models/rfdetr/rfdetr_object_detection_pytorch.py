@@ -361,7 +361,7 @@ class RFDetrForObjectDetectionTorch(
         self,
         model_results: dict,
         pre_processing_meta: List[PreProcessingMetadata],
-        threshold: float = 0.5,
+        confidence: float = 0.5,
         **kwargs,
     ) -> List[Detections]:
         if (
@@ -428,7 +428,7 @@ class RFDetrForObjectDetectionTorch(
                 scores = scores[remapping_mask]
                 labels = self._classes_re_mapping.class_mapping[labels[remapping_mask]]
                 boxes = boxes[remapping_mask]
-            keep = scores > threshold
+            keep = scores > confidence
             scores = scores[keep]
             labels = labels[keep]
             boxes = boxes[keep]

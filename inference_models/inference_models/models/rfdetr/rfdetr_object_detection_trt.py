@@ -216,7 +216,7 @@ class RFDetrForObjectDetectionTRT(
         self,
         model_results: Tuple[torch.Tensor, torch.Tensor],
         pre_processing_meta: List[PreProcessingMetadata],
-        threshold: float = 0.5,
+        confidence: float = 0.5,
         **kwargs,
     ) -> List[Detections]:
         bboxes, logits = model_results
@@ -226,7 +226,7 @@ class RFDetrForObjectDetectionTRT(
             bboxes, logits_sigmoid, pre_processing_meta
         ):
             confidence, top_classes = image_logits.max(dim=1)
-            confidence_mask = confidence > threshold
+            confidence_mask = confidence > confidence
             confidence = confidence[confidence_mask]
             top_classes = top_classes[confidence_mask]
             selected_boxes = image_bboxes[confidence_mask]

@@ -16,7 +16,6 @@ from inference_models.errors import (
 from inference_models.models.base.types import PreprocessedInputs
 from inference_models.models.common.model_packages import get_model_package_contents
 from inference_models.models.common.onnx import (
-    run_onnx_session_via_iobinding,
     run_onnx_session_with_batch_size_limit,
     set_onnx_execution_provider_defaults,
 )

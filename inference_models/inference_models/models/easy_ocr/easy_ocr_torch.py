@@ -170,7 +170,7 @@ class EasyOCRTorch(
         self,
         model_results: List[EasyOCRRawPrediction],
         pre_processing_meta: List[ImageDimensions],
-        confidence_threshold: float = 0.3,
+        confidence: float = 0.3,
         text_regions_separator: str = " ",
         **kwargs,
     ) -> Tuple[List[str], List[Detections]]:
@@ -180,10 +180,10 @@ class EasyOCRTorch(
         ):
             whole_image_text = []
             xyxy = []
-            confidence = []
+            predictions_confidence = []
             class_id = []
             for box, text, text_confidence in single_image_result:
-                if text_confidence < confidence_threshold:
+                if text_confidence < confidence:
                     continue
                 whole_image_text.append(text)
                 min_x = min(p[0] for p in box)
@@ -192,7 +192,7 @@ class EasyOCRTorch(
                 max_y = max(p[1] for p in box)
                 box_xyxy = [min_x, min_y, max_x, max_y]
                 xyxy.append(box_xyxy)
-                confidence.append(float(text_confidence))
+                predictions_confidence.append(float(text_confidence))
                 class_id.append(0)
             while_image_text_joined = text_regions_separator.join(whole_image_text)
             rendered_texts.append(while_image_text_joined)
@@ -201,7 +201,7 @@ class EasyOCRTorch(
                 Detections(
                     xyxy=torch.tensor(xyxy, device=self._device),
                     class_id=torch.tensor(class_id, device=self._device),
-                    confidence=torch.tensor(confidence, device=self._device),
+                    confidence=torch.tensor(predictions_confidence, device=self._device),
                     bboxes_metadata=data,
                 )
             )

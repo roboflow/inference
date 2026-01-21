@@ -112,14 +112,14 @@ class RoboflowInstantHF(ObjectDetectionModel):
     def forward(
         self,
         pre_processed_images: List[ImageEmbeddings],
-        confidence_threshold: float = 0.99,
+        confidence: float = 0.99,
         iou_threshold: float = 0.3,
         **kwargs,
     ) -> List[Tuple[torch.Tensor, torch.Tensor, torch.Tensor]]:
         return self._feature_extractor.forward_pass_with_precomputed_embeddings(
             images_embeddings=pre_processed_images,
             class_embeddings=self._reference_examples_embeddings.class_embeddings,
-            confidence_threshold=confidence_threshold,
+            confidence=confidence,
             iou_threshold=iou_threshold,
         )
 

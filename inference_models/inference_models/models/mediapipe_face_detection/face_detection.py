@@ -158,7 +158,7 @@ class MediaPipeFaceDetector(
         self,
         model_results: List[List[Detection]],
         pre_processing_meta: List[ImageDimensions],
-        conf_thresh: float = 0.25,
+        confidence: float = 0.25,
         **kwargs,
     ) -> Tuple[List[KeyPoints], List[Detections]]:
         final_key_points, final_detections = [], []
@@ -166,7 +166,7 @@ class MediaPipeFaceDetector(
             detections_xyxy, detections_class_id, detections_confidence = [], [], []
             key_points_xy, key_points_class_id, key_points_confidence = [], [], []
             for detection in image_results:
-                if detection.categories[0].score < conf_thresh:
+                if detection.categories[0].score < confidence:
                     continue
                 xyxy = (
                     detection.bounding_box.origin_x,

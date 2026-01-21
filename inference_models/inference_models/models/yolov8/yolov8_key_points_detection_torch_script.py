@@ -155,26 +155,26 @@ class YOLOv8ForKeyPointsDetectionTorchScript(
         self,
         model_results: torch.Tensor,
         pre_processing_meta: List[PreProcessingMetadata],
-        conf_thresh: float = 0.25,
-        iou_thresh: float = 0.45,
+        confidence: float = 0.25,
+        iou_threshold: float = 0.45,
         max_detections: int = 100,
-        class_agnostic: bool = False,
+        class_agnostic_nms: bool = False,
         key_points_threshold: float = 0.3,
         **kwargs,
     ) -> Tuple[List[KeyPoints], Optional[List[Detections]]]:
         if self._inference_config.post_processing.fused:
             nms_results = post_process_nms_fused_model_output(
-                output=model_results, conf_thresh=conf_thresh
+                output=model_results, conf_thresh=confidence
             )
         else:
             nms_results = run_nms_for_key_points_detection(
                 output=model_results,
                 num_classes=len(self._class_names),
                 key_points_slots_in_prediction=self._key_points_slots_in_prediction,
-                conf_thresh=conf_thresh,
-                iou_thresh=iou_thresh,
+                conf_thresh=confidence,
+                iou_thresh=iou_threshold,
                 max_detections=max_detections,
-                class_agnostic=class_agnostic,
+                class_agnostic=class_agnostic_nms,
             )
         rescaled_results = rescale_key_points_detections(
             detections=nms_results,
@@ -196,7 +196,7 @@ class YOLOv8ForKeyPointsDetectionTorchScript(
                 result.shape[0], self._key_points_slots_in_prediction, 3
             )
             xy = key_points_reshaped[:, :, :2]
-            confidence = key_points_reshaped[:, :, 2]
+            predicted_key_points_confidence = key_points_reshaped[:, :, 2]
             key_points_classes_for_instance_class = (
                 (self._key_points_classes_for_instances[class_id])
                 .unsqueeze(1)
@@ -208,11 +208,15 @@ class YOLOv8ForKeyPointsDetectionTorchScript(
                 .repeat(result.shape[0], 1)
                 < key_points_classes_for_instance_class
             )
-            confidence_mask = confidence < key_points_threshold
+            confidence_mask = predicted_key_points_confidence < key_points_threshold
             mask = instances_class_mask & confidence_mask
             xy[mask] = 0.0
-            confidence[mask] = 0.0
+            predicted_key_points_confidence[mask] = 0.0
             all_key_points.append(
-                KeyPoints(xy=xy.round().int(), class_id=class_id, confidence=confidence)
+                KeyPoints(
+                    xy=xy.round().int(),
+                    class_id=class_id,
+                    confidence=predicted_key_points_confidence,
+                )
             )
         return all_key_points, detections

@@ -175,18 +175,18 @@ class YOLONasForObjectDetectionOnnx(
         self,
         model_results: torch.Tensor,
         pre_processing_meta: List[PreProcessingMetadata],
-        conf_thresh: float = 0.25,
-        iou_thresh: float = 0.45,
+        confidence: float = 0.25,
+        iou_threshold: float = 0.45,
         max_detections: int = 100,
-        class_agnostic: bool = False,
+        class_agnostic_nms: bool = False,
         **kwargs,
     ) -> List[Detections]:
         nms_results = run_yolonas_nms_for_object_detection(
             output=model_results,
-            conf_thresh=conf_thresh,
-            iou_thresh=iou_thresh,
+            conf_thresh=confidence,
+            iou_thresh=iou_threshold,
             max_detections=max_detections,
-            class_agnostic=class_agnostic,
+            class_agnostic=class_agnostic_nms,
         )
         rescaled_results = rescale_detections(
             detections=nms_results,

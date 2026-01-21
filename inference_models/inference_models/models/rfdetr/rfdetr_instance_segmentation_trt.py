@@ -213,7 +213,7 @@ class RFDetrForInstanceSegmentationTRT(
         self,
         model_results: Tuple[torch.Tensor, torch.Tensor, torch.Tensor],
         pre_processing_meta: List[PreProcessingMetadata],
-        threshold: float = 0.5,
+        confidence: float = 0.5,
         **kwargs,
     ) -> List[InstanceDetections]:
         bboxes, logits, masks = model_results
@@ -222,6 +222,6 @@ class RFDetrForInstanceSegmentationTRT(
             logits=logits,
             masks=masks,
             pre_processing_meta=pre_processing_meta,
-            threshold=threshold,
+            threshold=confidence,
             classes_re_mapping=self._classes_re_mapping,
         )

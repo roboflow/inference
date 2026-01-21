@@ -146,12 +146,12 @@ class GroundingDinoForObjectDetectionTorch(
         self,
         pre_processed_images: torch.Tensor,
         classes: List[str],
-        conf_thresh: float = 0.5,
-        text_threshold: Optional[float] = None,
+        box_confidence: float = 0.5,
+        text_confidence: Optional[float] = None,
         **kwargs,
     ) -> Tuple[List[torch.Tensor], List[torch.Tensor], List[List[str]], List[str]]:
-        if text_threshold is None:
-            text_threshold = conf_thresh
+        if text_confidence is None:
+            text_confidence = box_confidence
         caption = ". ".join(classes)
         all_boxes, all_logits, all_phrases = [], [], []
         with torch.inference_mode():
@@ -160,8 +160,8 @@ class GroundingDinoForObjectDetectionTorch(
                     model=self._model,
                     image=image,
                     caption=caption,
-                    box_threshold=conf_thresh,
-                    text_threshold=text_threshold,
+                    box_threshold=box_confidence,
+                    text_threshold=text_confidence,
                     device=self._device,
                     remove_combined=True,
                 )
@@ -176,9 +176,9 @@ class GroundingDinoForObjectDetectionTorch(
             List[torch.Tensor], List[torch.Tensor], List[List[str]], List[str]
         ],
         pre_processing_meta: List[ImageDimensions],
-        iou_thresh: float = 0.45,
+        iou_threshold: float = 0.45,
         max_detections: int = 100,
-        class_agnostic: bool = False,
+        class_agnostic_nms: bool = False,
         **kwargs,
     ) -> List[Detections]:
         all_boxes, all_logits, all_phrases, classes = model_results
@@ -200,8 +200,8 @@ class GroundingDinoForObjectDetectionTorch(
                 phrases=phrases,
                 classes=classes,
             ).to(boxes.device)
-            nms_class_ids = torch.zeros_like(class_id) if class_agnostic else class_id
-            keep = torchvision.ops.batched_nms(xyxy, logits, nms_class_ids, iou_thresh)
+            nms_class_ids = torch.zeros_like(class_id) if class_agnostic_nms else class_id
+            keep = torchvision.ops.batched_nms(xyxy, logits, nms_class_ids, iou_threshold)
             if keep.numel() > max_detections:
                 keep = keep[:max_detections]
             results.append(

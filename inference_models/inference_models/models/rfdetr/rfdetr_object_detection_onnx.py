@@ -190,7 +190,7 @@ class RFDetrForObjectDetectionONNX(
         self,
         model_results: Tuple[torch.Tensor, torch.Tensor],
         pre_processing_meta: List[PreProcessingMetadata],
-        threshold: float = 0.5,
+        confidence: float = 0.5,
         **kwargs,
     ) -> List[Detections]:
         bboxes, logits = model_results
@@ -199,12 +199,12 @@ class RFDetrForObjectDetectionONNX(
         for image_bboxes, image_logits, image_meta in zip(
             bboxes, logits_sigmoid, pre_processing_meta
         ):
-            confidence, top_classes = image_logits.max(dim=1)
-            confidence_mask = confidence > threshold
-            confidence = confidence[confidence_mask]
+            predicted_confidence, top_classes = image_logits.max(dim=1)
+            confidence_mask = predicted_confidence > confidence
+            predicted_confidence = predicted_confidence[confidence_mask]
             top_classes = top_classes[confidence_mask]
             selected_boxes = image_bboxes[confidence_mask]
-            confidence, sorted_indices = torch.sort(confidence, descending=True)
+            predicted_confidence, sorted_indices = torch.sort(predicted_confidence, descending=True)
             top_classes = top_classes[sorted_indices]
             selected_boxes = selected_boxes[sorted_indices]
             if self._classes_re_mapping is not None:
@@ -215,7 +215,7 @@ class RFDetrForObjectDetectionONNX(
                     top_classes[remapping_mask]
                 ]
                 selected_boxes = selected_boxes[remapping_mask]
-                confidence = confidence[remapping_mask]
+                predicted_confidence = predicted_confidence[remapping_mask]
             cxcy = selected_boxes[:, :2]
             wh = selected_boxes[:, 2:]
             xy_min = cxcy - 0.5 * wh
@@ -237,7 +237,7 @@ class RFDetrForObjectDetectionONNX(
             )
             detections = Detections(
                 xyxy=selected_boxes_xyxy.round().int(),
-                confidence=confidence,
+                confidence=predicted_confidence,
                 class_id=top_classes.int(),
             )
             results.append(detections)

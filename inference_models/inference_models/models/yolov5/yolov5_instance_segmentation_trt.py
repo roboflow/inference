@@ -202,19 +202,19 @@ class YOLOv5ForInstanceSegmentationTRT(
         self,
         model_results: Tuple[torch.Tensor, torch.Tensor],
         pre_processing_meta: List[PreProcessingMetadata],
-        conf_thresh: float = 0.25,
-        iou_thresh: float = 0.45,
+        confidence: float = 0.25,
+        iou_threshold: float = 0.45,
         max_detections: int = 100,
-        class_agnostic: bool = False,
+        class_agnostic_nms: bool = False,
         **kwargs,
     ) -> List[InstanceDetections]:
         instances, protos = model_results
         nms_results = run_yolov5_nms_for_instance_segmentation(
             output=instances.permute(0, 2, 1),
-            conf_thresh=conf_thresh,
-            iou_thresh=iou_thresh,
+            conf_thresh=confidence,
+            iou_thresh=iou_threshold,
             max_detections=max_detections,
-            class_agnostic=class_agnostic,
+            class_agnostic=class_agnostic_nms,
         )
         final_results = []
         for image_bboxes, image_protos, image_meta in zip(

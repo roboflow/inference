@@ -191,15 +191,13 @@ class YOLOv10ForObjectDetectionTRT(
         self,
         model_results: torch.Tensor,
         pre_processing_meta: List[PreProcessingMetadata],
-        conf_thresh: float = 0.25,
-        iou_thresh: float = 0.45,
+        confidence: float = 0.25,
         max_detections: int = 100,
-        class_agnostic: bool = False,
         **kwargs,
     ) -> List[Detections]:
         results = []
         for image_result, metadata in zip(model_results, pre_processing_meta):
-            mask = image_result[:, 4] > conf_thresh
+            mask = image_result[:, 4] > confidence
             filtered = image_result[mask][:max_detections]
             rescaled = rescale_image_detections(
                 image_detections=filtered,
