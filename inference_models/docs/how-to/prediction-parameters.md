@@ -221,7 +221,25 @@ result = model.caption_image(image, skip_special_tokens=True)
 
 You can set default values for many prediction parameters using environment variables. This is useful for configuring behavior globally without changing code.
 
-See the [Environment Variables Configuration](environment-variables.md) guide for details on available environment variables.
+The following environment variables are available:
+
+- **General defaults**: `INFERENCE_MODELS_DEFAULT_CONFIDENCE`, `INFERENCE_MODELS_DEFAULT_IOU_THRESHOLD`, `INFERENCE_MODELS_DEFAULT_MAX_DETECTIONS`, `INFERENCE_MODELS_DEFAULT_CLASS_AGNOSTIC_NMS`, `INFERENCE_MODELS_DEFAULT_MAX_NEW_TOKENS`, `INFERENCE_MODELS_DEFAULT_NUM_BEAMS`, `INFERENCE_MODELS_DEFAULT_DO_SAMPLE`, `INFERENCE_MODELS_DEFAULT_SKIP_SPECIAL_TOKENS`
+
+- **Model-specific overrides**: Each model can have its own defaults (e.g., `INFERENCE_MODELS_YOLOV8_DEFAULT_CONFIDENCE`, `INFERENCE_MODELS_FLORENCE2_DEFAULT_MAX_NEW_TOKENS`)
+
+Example:
+
+```bash
+# Set global defaults
+export INFERENCE_MODELS_DEFAULT_CONFIDENCE="0.5"
+export INFERENCE_MODELS_DEFAULT_IOU_THRESHOLD="0.4"
+export INFERENCE_MODELS_DEFAULT_MAX_NEW_TOKENS="1000"
+
+# Override for specific model
+export INFERENCE_MODELS_OWLV2_DEFAULT_CONFIDENCE="0.95"
+```
+
+See the [Environment Variables Configuration](environment-variables.md#prediction-parameter-defaults) guide for the complete list of available environment variables and their default values.
 
 
 ## Best Practices
