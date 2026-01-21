@@ -56,8 +56,10 @@ def describe_available_blocks(
 ) -> BlocksDescription:
     # Fast path: cache for common case with no dynamic blocks
     if not dynamic_blocks:
-        return _cached_describe_available_blocks(execution_engine_version=execution_engine_version)
-    
+        return _cached_describe_available_blocks(
+            execution_engine_version=execution_engine_version
+        )
+
     blocks = (
         load_workflow_blocks(execution_engine_version=execution_engine_version)
         + dynamic_blocks
