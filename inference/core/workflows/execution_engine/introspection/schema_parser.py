@@ -58,7 +58,7 @@ def clear_cache() -> None:
     parse_block_manifest.cache_clear()
 
 
-@lru_cache(maxsize=256)
+@lru_cache(maxsize=10000)
 def parse_block_manifest(
     manifest_type: Type[WorkflowBlockManifest],
 ) -> BlockManifestMetadata:
