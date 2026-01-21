@@ -54,6 +54,10 @@ def describe_available_blocks(
     dynamic_blocks: List[BlockSpecification],
     execution_engine_version: Optional[Union[str, Version]] = None,
 ) -> BlocksDescription:
+    # Fast path: cache for common case with no dynamic blocks
+    if not dynamic_blocks:
+        return _cached_describe_available_blocks(execution_engine_version=execution_engine_version)
+    
     blocks = (
         load_workflow_blocks(execution_engine_version=execution_engine_version)
         + dynamic_blocks
@@ -87,7 +91,46 @@ def describe_available_blocks(
             )
         )
     _validate_loaded_blocks_manifest_type_identifiers(blocks=result)
-    declared_kinds = load_all_defined_kinds()
+    declared_kinds = _cached_load_all_defined_kinds()
+    return BlocksDescription(blocks=result, declared_kinds=declared_kinds)
+
+
+@lru_cache(maxsize=8)
+def _cached_describe_available_blocks(
+    execution_engine_version: Optional[Union[str, Version]] = None,
+) -> BlocksDescription:
+    """Cached version for when there are no dynamic blocks (common case)."""
+    blocks = load_workflow_blocks(execution_engine_version=execution_engine_version)
+    result = []
+    for block in blocks:
+        block_schema = _cached_model_json_schema(block.manifest_class)
+        outputs_manifest = _cached_describe_outputs(block.manifest_class)
+        manifest_type_identifiers = get_manifest_type_identifiers(
+            block_schema=block_schema,
+            block_source=block.block_source,
+            block_identifier=block.identifier,
+        )
+        result.append(
+            BlockDescription(
+                manifest_class=block.manifest_class,
+                block_class=block.block_class,
+                block_schema=block_schema,
+                outputs_manifest=outputs_manifest,
+                block_source=block.block_source,
+                fully_qualified_block_class_name=block.identifier,
+                human_friendly_block_name=build_human_friendly_block_name(
+                    fully_qualified_name=block.identifier, block_schema=block_schema
+                ),
+                manifest_type_identifier=manifest_type_identifiers[0],
+                manifest_type_identifier_aliases=manifest_type_identifiers[1:],
+                execution_engine_compatibility=block.manifest_class.get_execution_engine_compatibility(),
+                input_dimensionality_offsets=block.manifest_class.get_input_dimensionality_offsets(),
+                dimensionality_reference_property=block.manifest_class.get_dimensionality_reference_property(),
+                output_dimensionality_offset=block.manifest_class.get_output_dimensionality_offset(),
+            )
+        )
+    _validate_loaded_blocks_manifest_type_identifiers(blocks=result)
+    declared_kinds = _cached_load_all_defined_kinds()
     return BlocksDescription(blocks=result, declared_kinds=declared_kinds)
 
 
@@ -348,6 +391,12 @@ def _validate_used_kinds_uniqueness(declared_kinds: List[Kind]) -> None:
             f"the same name.",
             context="blocks_loading",
         )
+
+
+@lru_cache()
+def _cached_load_all_defined_kinds() -> List[Kind]:
+    """Cached version of load_all_defined_kinds."""
+    return load_all_defined_kinds()
 
 
 def load_all_defined_kinds() -> List[Kind]:
