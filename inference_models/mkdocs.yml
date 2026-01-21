@@ -94,6 +94,7 @@ nav:
       - Understand Core Concepts: how-to/understand-core-concepts.md
       - Choose the Right Backend: how-to/choose-backend.md
       - Work with Model Predictions: how-to/work-with-predictions.md
+      - Understand Prediction Parameters: how-to/prediction-parameters.md
       - Debug Model Loading Issues: how-to/debug-model-loading.md
       - Configure Environment Variables: how-to/environment-variables.md
       - Load Models Locally: how-to/local-packages.md
