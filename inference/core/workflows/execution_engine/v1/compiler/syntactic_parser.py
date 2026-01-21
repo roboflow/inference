@@ -1,3 +1,4 @@
+from functools import lru_cache
 from typing import Dict, List, Optional, Type, Union
 
 import pydantic
@@ -126,10 +127,16 @@ def build_workflow_definition_entity(
     return entity
 
 
-def get_workflow_schema_description() -> WorkflowsBlocksSchemaDescription:
+@lru_cache(maxsize=8)
+def _cached_workflow_schema() -> dict:
+    """Cached schema generation - called only when blocks don't change."""
     available_blocks = load_workflow_blocks()
     workflow_definition_class = build_workflow_definition_entity(
         available_blocks=available_blocks
     )
-    schema = workflow_definition_class.model_json_schema()
+    return workflow_definition_class.model_json_schema()
+
+
+def get_workflow_schema_description() -> WorkflowsBlocksSchemaDescription:
+    schema = _cached_workflow_schema()
     return WorkflowsBlocksSchemaDescription(schema=schema)
