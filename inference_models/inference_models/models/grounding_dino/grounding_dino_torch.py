@@ -10,7 +10,12 @@ from torchvision import transforms
 from torchvision.ops import box_convert
 
 from inference_models import Detections
-from inference_models.configuration import DEFAULT_DEVICE
+from inference_models.configuration import (
+    DEFAULT_DEVICE,
+    INFERENCE_MODELS_GROUNDING_DINO_DEFAULT_BOX_CONFIDENCE,
+    INFERENCE_MODELS_GROUNDING_DINO_DEFAULT_IOU_THRESHOLD,
+    INFERENCE_MODELS_GROUNDING_DINO_DEFAULT_MAX_DETECTIONS,
+)
 from inference_models.entities import ColorFormat, ImageDimensions
 from inference_models.errors import ModelRuntimeError
 from inference_models.models.base.object_detection import (
@@ -146,7 +151,7 @@ class GroundingDinoForObjectDetectionTorch(
         self,
         pre_processed_images: torch.Tensor,
         classes: List[str],
-        box_confidence: float = 0.5,
+        box_confidence: float = INFERENCE_MODELS_GROUNDING_DINO_DEFAULT_BOX_CONFIDENCE,
         text_confidence: Optional[float] = None,
         **kwargs,
     ) -> Tuple[List[torch.Tensor], List[torch.Tensor], List[List[str]], List[str]]:
@@ -176,8 +181,8 @@ class GroundingDinoForObjectDetectionTorch(
             List[torch.Tensor], List[torch.Tensor], List[List[str]], List[str]
         ],
         pre_processing_meta: List[ImageDimensions],
-        iou_threshold: float = 0.45,
-        max_detections: int = 100,
+        iou_threshold: float = INFERENCE_MODELS_GROUNDING_DINO_DEFAULT_IOU_THRESHOLD,
+        max_detections: int = INFERENCE_MODELS_GROUNDING_DINO_DEFAULT_MAX_DETECTIONS,
         class_agnostic_nms: bool = False,
         **kwargs,
     ) -> List[Detections]:
@@ -200,8 +205,12 @@ class GroundingDinoForObjectDetectionTorch(
                 phrases=phrases,
                 classes=classes,
             ).to(boxes.device)
-            nms_class_ids = torch.zeros_like(class_id) if class_agnostic_nms else class_id
-            keep = torchvision.ops.batched_nms(xyxy, logits, nms_class_ids, iou_threshold)
+            nms_class_ids = (
+                torch.zeros_like(class_id) if class_agnostic_nms else class_id
+            )
+            keep = torchvision.ops.batched_nms(
+                xyxy, logits, nms_class_ids, iou_threshold
+            )
             if keep.numel() > max_detections:
                 keep = keep[:max_detections]
             results.append(

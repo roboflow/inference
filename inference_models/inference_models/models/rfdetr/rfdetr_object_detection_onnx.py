@@ -5,7 +5,10 @@ import numpy as np
 import torch
 
 from inference_models import Detections, ObjectDetectionModel
-from inference_models.configuration import DEFAULT_DEVICE
+from inference_models.configuration import (
+    DEFAULT_DEVICE,
+    INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE,
+)
 from inference_models.entities import ColorFormat
 from inference_models.errors import (
     EnvironmentConfigurationError,
@@ -190,7 +193,7 @@ class RFDetrForObjectDetectionONNX(
         self,
         model_results: Tuple[torch.Tensor, torch.Tensor],
         pre_processing_meta: List[PreProcessingMetadata],
-        confidence: float = 0.5,
+        confidence: float = INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE,
         **kwargs,
     ) -> List[Detections]:
         bboxes, logits = model_results
@@ -204,7 +207,9 @@ class RFDetrForObjectDetectionONNX(
             predicted_confidence = predicted_confidence[confidence_mask]
             top_classes = top_classes[confidence_mask]
             selected_boxes = image_bboxes[confidence_mask]
-            predicted_confidence, sorted_indices = torch.sort(predicted_confidence, descending=True)
+            predicted_confidence, sorted_indices = torch.sort(
+                predicted_confidence, descending=True
+            )
             top_classes = top_classes[sorted_indices]
             selected_boxes = selected_boxes[sorted_indices]
             if self._classes_re_mapping is not None:

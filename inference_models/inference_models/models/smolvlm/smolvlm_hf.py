@@ -6,7 +6,12 @@ import torch
 from peft import PeftModel
 from transformers import AutoModelForImageTextToText, AutoProcessor, BitsAndBytesConfig
 
-from inference_models.configuration import DEFAULT_DEVICE
+from inference_models.configuration import (
+    DEFAULT_DEVICE,
+    INFERENCE_MODELS_SMOL_VLM_DEFAULT_DO_SAMPLE,
+    INFERENCE_MODELS_SMOL_VLM_DEFAULT_MAX_NEW_TOKENS,
+    INFERENCE_MODELS_SMOL_VLM_DEFAULT_SKIP_SPECIAL_TOKENS,
+)
 from inference_models.entities import ColorFormat
 from inference_models.models.common.roboflow.model_packages import (
     InferenceConfig,
@@ -123,9 +128,9 @@ class SmolVLMHF:
         prompt: Optional[str] = None,
         images_to_single_prompt: bool = True,
         input_color_format: Optional[ColorFormat] = None,
-        max_new_tokens: int = 400,
-        do_sample: bool = False,
-        skip_special_tokens: bool = True,
+        max_new_tokens: int = INFERENCE_MODELS_SMOL_VLM_DEFAULT_MAX_NEW_TOKENS,
+        do_sample: bool = INFERENCE_MODELS_SMOL_VLM_DEFAULT_DO_SAMPLE,
+        skip_special_tokens: bool = INFERENCE_MODELS_SMOL_VLM_DEFAULT_SKIP_SPECIAL_TOKENS,
         **kwargs,
     ) -> List[str]:
         prompt = prompt or "Describe what's in this image."
@@ -224,8 +229,8 @@ class SmolVLMHF:
     def generate(
         self,
         inputs: dict,
-        max_new_tokens: int = 400,
-        do_sample: bool = False,
+        max_new_tokens: int = INFERENCE_MODELS_SMOL_VLM_DEFAULT_MAX_NEW_TOKENS,
+        do_sample: bool = INFERENCE_MODELS_SMOL_VLM_DEFAULT_DO_SAMPLE,
         **kwargs,
     ) -> torch.Tensor:
         generation = self._model.generate(

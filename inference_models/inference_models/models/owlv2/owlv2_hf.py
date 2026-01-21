@@ -15,6 +15,10 @@ from inference_models.configuration import (
     ALLOW_URL_INPUT_WITHOUT_FQDN,
     BLACKLISTED_DESTINATIONS_FOR_URL_INPUT,
     DEFAULT_DEVICE,
+    INFERENCE_MODELS_OWLV2_DEFAULT_CLASS_AGNOSTIC_NMS,
+    INFERENCE_MODELS_OWLV2_DEFAULT_CONFIDENCE,
+    INFERENCE_MODELS_OWLV2_DEFAULT_IOU_THRESHOLD,
+    INFERENCE_MODELS_OWLV2_DEFAULT_MAX_DETECTIONS,
     WHITELISTED_DESTINATIONS_FOR_URL_INPUT,
 )
 from inference_models.entities import ImageDimensions
@@ -171,10 +175,10 @@ class OWLv2HF(
         self,
         model_results: Owlv2ObjectDetectionOutput,
         pre_processing_meta: List[ImageDimensions],
-        confidence: float = 0.1,
-        iou_threshold: float = 0.45,
-        class_agnostic_nms: bool = False,
-        max_detections: int = 100,
+        confidence: float = INFERENCE_MODELS_OWLV2_DEFAULT_CONFIDENCE,
+        iou_threshold: float = INFERENCE_MODELS_OWLV2_DEFAULT_IOU_THRESHOLD,
+        class_agnostic_nms: bool = INFERENCE_MODELS_OWLV2_DEFAULT_CLASS_AGNOSTIC_NMS,
+        max_detections: int = INFERENCE_MODELS_OWLV2_DEFAULT_MAX_DETECTIONS,
         **kwargs,
     ) -> List[Detections]:
         target_sizes = [(dim.height, dim.width) for dim in pre_processing_meta]
@@ -191,7 +195,9 @@ class OWLv2HF(
                 post_processed_outputs[i]["labels"],
             )
             nms_class_ids = torch.zeros_like(labels) if class_agnostic_nms else labels
-            keep = torchvision.ops.batched_nms(boxes, scores, nms_class_ids, iou_threshold)
+            keep = torchvision.ops.batched_nms(
+                boxes, scores, nms_class_ids, iou_threshold
+            )
             keep = keep[:max_detections]
             results.append(
                 Detections(
@@ -206,9 +212,9 @@ class OWLv2HF(
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         reference_examples: List[ReferenceExample],
-        confidence: float = 0.99,
-        iou_threshold: float = 0.3,
-        max_detections: int = 300,
+        confidence: float = INFERENCE_MODELS_OWLV2_DEFAULT_CONFIDENCE,
+        iou_threshold: float = INFERENCE_MODELS_OWLV2_DEFAULT_IOU_THRESHOLD,
+        max_detections: int = INFERENCE_MODELS_OWLV2_DEFAULT_MAX_DETECTIONS,
     ) -> List[Detections]:
         reference_embeddings = self.prepare_reference_examples_embeddings(
             reference_examples=reference_examples,
@@ -226,9 +232,9 @@ class OWLv2HF(
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         class_embeddings: Dict[str, ReferenceExamplesClassEmbeddings],
-        confidence: float = 0.99,
-        iou_threshold: float = 0.3,
-        max_detections: int = 300,
+        confidence: float = INFERENCE_MODELS_OWLV2_DEFAULT_CONFIDENCE,
+        iou_threshold: float = INFERENCE_MODELS_OWLV2_DEFAULT_IOU_THRESHOLD,
+        max_detections: int = INFERENCE_MODELS_OWLV2_DEFAULT_MAX_DETECTIONS,
     ) -> List[Detections]:
         images_embeddings, images_dimensions = self.embed_images(
             images=images, max_detections=max_detections
@@ -250,8 +256,8 @@ class OWLv2HF(
         self,
         images_embeddings: List[ImageEmbeddings],
         class_embeddings: Dict[str, ReferenceExamplesClassEmbeddings],
-        confidence: float = 0.99,
-        iou_threshold: float = 0.3,
+        confidence: float = INFERENCE_MODELS_OWLV2_DEFAULT_CONFIDENCE,
+        iou_threshold: float = INFERENCE_MODELS_OWLV2_DEFAULT_IOU_THRESHOLD,
     ) -> List[Tuple[torch.Tensor, torch.Tensor, torch.Tensor]]:
         results = []
         for image_embedding in images_embeddings:
@@ -297,8 +303,8 @@ class OWLv2HF(
         self,
         predictions: List[Tuple[torch.Tensor, torch.Tensor, torch.Tensor]],
         images_dimensions: List[ImageDimensions],
-        max_detections: int = 300,
-        iou_threshold: float = 0.3,
+        max_detections: int = INFERENCE_MODELS_OWLV2_DEFAULT_MAX_DETECTIONS,
+        iou_threshold: float = INFERENCE_MODELS_OWLV2_DEFAULT_IOU_THRESHOLD,
     ) -> List[Detections]:
         results = []
         for image_predictions, image_dimensions in zip(predictions, images_dimensions):
@@ -477,7 +483,7 @@ class OWLv2HF(
     def embed_images(
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
-        max_detections: int = 300,
+        max_detections: int = INFERENCE_MODELS_OWLV2_DEFAULT_MAX_DETECTIONS,
     ) -> Tuple[List[ImageEmbeddings], List[ImageDimensions]]:
         if isinstance(images, torch.Tensor):
             if len(images.shape) == 3:
@@ -505,7 +511,7 @@ class OWLv2HF(
     def embed_image(
         self,
         image: Union[torch.Tensor, np.ndarray, LazyImageWrapper],
-        max_detections: int = 300,
+        max_detections: int = INFERENCE_MODELS_OWLV2_DEFAULT_MAX_DETECTIONS,
         unload_after_use: bool = True,
     ) -> ImageEmbeddings:
         if isinstance(image, LazyImageWrapper):

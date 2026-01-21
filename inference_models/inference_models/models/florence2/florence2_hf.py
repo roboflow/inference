@@ -16,7 +16,12 @@ from transformers import (
 )
 
 from inference_models import Detections, InstanceDetections
-from inference_models.configuration import DEFAULT_DEVICE
+from inference_models.configuration import (
+    DEFAULT_DEVICE,
+    INFERENCE_MODELS_FLORENCE2_DEFAULT_DO_SAMPLE,
+    INFERENCE_MODELS_FLORENCE2_DEFAULT_MAX_NEW_TOKENS,
+    INFERENCE_MODELS_FLORENCE2_DEFAULT_NUM_BEAMS,
+)
 from inference_models.entities import ColorFormat, ImageDimensions
 from inference_models.errors import CorruptedModelPackageError, ModelRuntimeError
 from inference_models.models.common.roboflow.model_packages import (
@@ -197,8 +202,8 @@ class Florence2HF:
             np.ndarray,
         ],
         max_new_tokens: int = 4096,
-        num_beams: int = 3,
-        do_sample: bool = False,
+        num_beams: int = INFERENCE_MODELS_FLORENCE2_DEFAULT_NUM_BEAMS,
+        do_sample: bool = INFERENCE_MODELS_FLORENCE2_DEFAULT_DO_SAMPLE,
         input_color_format: Optional[ColorFormat] = None,
     ) -> List[str]:
         loc_phrases = region_to_loc_phrase(images=images, xyxy=xyxy)
@@ -225,8 +230,8 @@ class Florence2HF:
             np.ndarray,
         ],
         max_new_tokens: int = 4096,
-        num_beams: int = 3,
-        do_sample: bool = False,
+        num_beams: int = INFERENCE_MODELS_FLORENCE2_DEFAULT_NUM_BEAMS,
+        do_sample: bool = INFERENCE_MODELS_FLORENCE2_DEFAULT_DO_SAMPLE,
         input_color_format: Optional[ColorFormat] = None,
     ) -> List[str]:
         loc_phrases = region_to_loc_phrase(images=images, xyxy=xyxy)
@@ -253,8 +258,8 @@ class Florence2HF:
             np.ndarray,
         ],
         max_new_tokens: int = 4096,
-        num_beams: int = 3,
-        do_sample: bool = False,
+        num_beams: int = INFERENCE_MODELS_FLORENCE2_DEFAULT_NUM_BEAMS,
+        do_sample: bool = INFERENCE_MODELS_FLORENCE2_DEFAULT_DO_SAMPLE,
         input_color_format: Optional[ColorFormat] = None,
     ) -> List[str]:
         loc_phrases = region_to_loc_phrase(images=images, xyxy=xyxy)
@@ -281,8 +286,8 @@ class Florence2HF:
             np.ndarray,
         ],
         max_new_tokens: int = 4096,
-        num_beams: int = 3,
-        do_sample: bool = False,
+        num_beams: int = INFERENCE_MODELS_FLORENCE2_DEFAULT_NUM_BEAMS,
+        do_sample: bool = INFERENCE_MODELS_FLORENCE2_DEFAULT_DO_SAMPLE,
         input_color_format: Optional[ColorFormat] = None,
     ) -> List[InstanceDetections]:
         loc_phrases = region_to_loc_phrase(images=images, xyxy=xyxy)
@@ -321,8 +326,8 @@ class Florence2HF:
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         phrase: str,
         max_new_tokens: int = 4096,
-        num_beams: int = 3,
-        do_sample: bool = False,
+        num_beams: int = INFERENCE_MODELS_FLORENCE2_DEFAULT_NUM_BEAMS,
+        do_sample: bool = INFERENCE_MODELS_FLORENCE2_DEFAULT_DO_SAMPLE,
         input_color_format: Optional[ColorFormat] = None,
     ) -> List[InstanceDetections]:
         prompt = f"<REFERRING_EXPRESSION_SEGMENTATION>{phrase}"
@@ -361,8 +366,8 @@ class Florence2HF:
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         phrase: str,
         max_new_tokens: int = 4096,
-        num_beams: int = 3,
-        do_sample: bool = False,
+        num_beams: int = INFERENCE_MODELS_FLORENCE2_DEFAULT_NUM_BEAMS,
+        do_sample: bool = INFERENCE_MODELS_FLORENCE2_DEFAULT_DO_SAMPLE,
         input_color_format: Optional[ColorFormat] = None,
     ) -> List[Detections]:
         prompt = f"<CAPTION_TO_PHRASE_GROUNDING>{phrase}"
@@ -398,8 +403,8 @@ class Florence2HF:
         labels_mode: Literal["classes", "captions", "rois"] = "classes",
         classes: Optional[List[str]] = None,
         max_new_tokens: int = 4096,
-        num_beams: int = 3,
-        do_sample: bool = False,
+        num_beams: int = INFERENCE_MODELS_FLORENCE2_DEFAULT_NUM_BEAMS,
+        do_sample: bool = INFERENCE_MODELS_FLORENCE2_DEFAULT_DO_SAMPLE,
         input_color_format: Optional[ColorFormat] = None,
     ) -> List[Detections]:
         if classes:
@@ -440,9 +445,9 @@ class Florence2HF:
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         granularity: Literal["normal", "detailed", "very_detailed"] = "normal",
-        max_new_tokens: int = 4096,
-        num_beams: int = 3,
-        do_sample: bool = False,
+        max_new_tokens: int = INFERENCE_MODELS_FLORENCE2_DEFAULT_MAX_NEW_TOKENS,
+        num_beams: int = INFERENCE_MODELS_FLORENCE2_DEFAULT_NUM_BEAMS,
+        do_sample: bool = INFERENCE_MODELS_FLORENCE2_DEFAULT_DO_SAMPLE,
         input_color_format: Optional[ColorFormat] = None,
     ) -> List[str]:
         task = GRANULARITY_2TASK[granularity]
@@ -460,9 +465,9 @@ class Florence2HF:
     def parse_document(
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
-        max_new_tokens: int = 4096,
-        num_beams: int = 3,
-        do_sample: bool = False,
+        max_new_tokens: int = INFERENCE_MODELS_FLORENCE2_DEFAULT_MAX_NEW_TOKENS,
+        num_beams: int = INFERENCE_MODELS_FLORENCE2_DEFAULT_NUM_BEAMS,
+        do_sample: bool = INFERENCE_MODELS_FLORENCE2_DEFAULT_DO_SAMPLE,
         input_color_format: Optional[ColorFormat] = None,
     ) -> List[Detections]:
         task = "<OCR_WITH_REGION>"
@@ -492,9 +497,9 @@ class Florence2HF:
     def ocr_image(
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
-        max_new_tokens: int = 4096,
-        num_beams: int = 3,
-        do_sample: bool = False,
+        max_new_tokens: int = INFERENCE_MODELS_FLORENCE2_DEFAULT_MAX_NEW_TOKENS,
+        num_beams: int = INFERENCE_MODELS_FLORENCE2_DEFAULT_NUM_BEAMS,
+        do_sample: bool = INFERENCE_MODELS_FLORENCE2_DEFAULT_DO_SAMPLE,
         input_color_format: Optional[ColorFormat] = None,
     ) -> List[str]:
         task = "<OCR>"
@@ -513,9 +518,9 @@ class Florence2HF:
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         prompt: Union[str, List[str]],
-        max_new_tokens: int = 4096,
-        num_beams: int = 3,
-        do_sample: bool = False,
+        max_new_tokens: int = INFERENCE_MODELS_FLORENCE2_DEFAULT_MAX_NEW_TOKENS,
+        num_beams: int = INFERENCE_MODELS_FLORENCE2_DEFAULT_NUM_BEAMS,
+        do_sample: bool = INFERENCE_MODELS_FLORENCE2_DEFAULT_DO_SAMPLE,
         skip_special_tokens: bool = False,
         task: Optional[str] = None,
         input_color_format: Optional[ColorFormat] = None,
@@ -595,9 +600,9 @@ class Florence2HF:
     def generate(
         self,
         inputs: dict,
-        max_new_tokens: int = 4096,
-        num_beams: int = 3,
-        do_sample: bool = False,
+        max_new_tokens: int = INFERENCE_MODELS_FLORENCE2_DEFAULT_MAX_NEW_TOKENS,
+        num_beams: int = INFERENCE_MODELS_FLORENCE2_DEFAULT_NUM_BEAMS,
+        do_sample: bool = INFERENCE_MODELS_FLORENCE2_DEFAULT_DO_SAMPLE,
         **kwargs,
     ) -> torch.Tensor:
         return self._model.generate(

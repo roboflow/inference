@@ -5,6 +5,9 @@ import numpy as np
 import torch
 
 from inference_models import Detections, KeyPoints, KeyPointsDetectionModel
+from inference_models.configuration import (
+    INFERENCE_MODELS_MEDIAPIPE_FACE_DETECTOR_DEFAULT_CONFIDENCE,
+)
 from inference_models.entities import ColorFormat, ImageDimensions
 from inference_models.errors import MissingDependencyError, ModelRuntimeError
 from inference_models.models.common.model_packages import get_model_package_contents
@@ -158,7 +161,7 @@ class MediaPipeFaceDetector(
         self,
         model_results: List[List[Detection]],
         pre_processing_meta: List[ImageDimensions],
-        confidence: float = 0.25,
+        confidence: float = INFERENCE_MODELS_MEDIAPIPE_FACE_DETECTOR_DEFAULT_CONFIDENCE,
         **kwargs,
     ) -> Tuple[List[KeyPoints], List[Detections]]:
         final_key_points, final_detections = [], []

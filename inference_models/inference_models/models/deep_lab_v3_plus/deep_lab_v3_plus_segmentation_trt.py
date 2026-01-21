@@ -5,7 +5,10 @@ import torch
 from torchvision.transforms import functional
 
 from inference_models import ColorFormat, SemanticSegmentationModel
-from inference_models.configuration import DEFAULT_DEVICE
+from inference_models.configuration import (
+    DEFAULT_DEVICE,
+    INFERENCE_MODELS_DEEP_LAB_V3_PLUS_DEFAULT_CONFIDENCE,
+)
 from inference_models.errors import (
     CorruptedModelPackageError,
     MissingDependencyError,
@@ -199,7 +202,7 @@ class DeepLabV3PlusForSemanticSegmentationTRT(
         self,
         model_results: torch.Tensor,
         pre_processing_meta: PreprocessedInputs,
-        confidence: float = 0.5,
+        confidence: float = INFERENCE_MODELS_DEEP_LAB_V3_PLUS_DEFAULT_CONFIDENCE,
         **kwargs,
     ) -> List[SemanticSegmentationResult]:
         results = []

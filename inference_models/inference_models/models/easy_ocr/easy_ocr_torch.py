@@ -6,7 +6,10 @@ import torch
 from pydantic import BaseModel
 
 from inference_models import Detections, StructuredOCRModel
-from inference_models.configuration import DEFAULT_DEVICE
+from inference_models.configuration import (
+    DEFAULT_DEVICE,
+    INFERENCE_MODELS_EASYOCR_DEFAULT_CONFIDENCE,
+)
 from inference_models.entities import ColorFormat, ImageDimensions
 from inference_models.errors import CorruptedModelPackageError, ModelRuntimeError
 from inference_models.models.common.model_packages import get_model_package_contents
@@ -170,7 +173,7 @@ class EasyOCRTorch(
         self,
         model_results: List[EasyOCRRawPrediction],
         pre_processing_meta: List[ImageDimensions],
-        confidence: float = 0.3,
+        confidence: float = INFERENCE_MODELS_EASYOCR_DEFAULT_CONFIDENCE,
         text_regions_separator: str = " ",
         **kwargs,
     ) -> Tuple[List[str], List[Detections]]:
@@ -201,7 +204,9 @@ class EasyOCRTorch(
                 Detections(
                     xyxy=torch.tensor(xyxy, device=self._device),
                     class_id=torch.tensor(class_id, device=self._device),
-                    confidence=torch.tensor(predictions_confidence, device=self._device),
+                    confidence=torch.tensor(
+                        predictions_confidence, device=self._device
+                    ),
                     bboxes_metadata=data,
                 )
             )

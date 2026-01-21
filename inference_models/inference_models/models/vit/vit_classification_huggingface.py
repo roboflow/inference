@@ -12,7 +12,10 @@ from inference_models import (
     MultiLabelClassificationModel,
     MultiLabelClassificationPrediction,
 )
-from inference_models.configuration import DEFAULT_DEVICE
+from inference_models.configuration import (
+    DEFAULT_DEVICE,
+    INFERENCE_MODELS_VIT_CLASSIFIER_DEFAULT_CONFIDENCE,
+)
 from inference_models.entities import ColorFormat
 from inference_models.errors import CorruptedModelPackageError
 from inference_models.models.common.model_packages import get_model_package_contents
@@ -302,7 +305,7 @@ class VITForMultiLabelClassificationHF(
     def post_process(
         self,
         model_results: torch.Tensor,
-        confidence: float = 0.5,
+        confidence: float = INFERENCE_MODELS_VIT_CLASSIFIER_DEFAULT_CONFIDENCE,
         **kwargs,
     ) -> List[MultiLabelClassificationPrediction]:
         results = []

@@ -11,7 +11,12 @@ from transformers import (
 )
 from transformers.utils import is_flash_attn_2_available
 
-from inference_models.configuration import DEFAULT_DEVICE
+from inference_models.configuration import (
+    DEFAULT_DEVICE,
+    INFERENCE_MODELS_QWEN25_VL_DEFAULT_DO_SAMPLE,
+    INFERENCE_MODELS_QWEN25_VL_DEFAULT_MAX_NEW_TOKENS,
+    INFERENCE_MODELS_QWEN25_VL_DEFAULT_SKIP_SPECIAL_TOKENS,
+)
 from inference_models.entities import ColorFormat
 from inference_models.models.common.roboflow.model_packages import (
     InferenceConfig,
@@ -132,9 +137,9 @@ class Qwen25VLHF:
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         prompt: str = None,
         input_color_format: ColorFormat = None,
-        max_new_tokens: int = 512,
-        do_sample: bool = False,
-        skip_special_tokens: bool = True,
+        max_new_tokens: int = INFERENCE_MODELS_QWEN25_VL_DEFAULT_MAX_NEW_TOKENS,
+        do_sample: bool = INFERENCE_MODELS_QWEN25_VL_DEFAULT_DO_SAMPLE,
+        skip_special_tokens: bool = INFERENCE_MODELS_QWEN25_VL_DEFAULT_SKIP_SPECIAL_TOKENS,
         **kwargs,
     ) -> List[str]:
         inputs = self.pre_process_generation(
@@ -238,8 +243,8 @@ class Qwen25VLHF:
     def generate(
         self,
         inputs: dict,
-        max_new_tokens: int = 512,
-        do_sample: bool = False,
+        max_new_tokens: int = INFERENCE_MODELS_QWEN25_VL_DEFAULT_MAX_NEW_TOKENS,
+        do_sample: bool = INFERENCE_MODELS_QWEN25_VL_DEFAULT_DO_SAMPLE,
         **kwargs,
     ) -> torch.Tensor:
         input_len = inputs["input_ids"].shape[-1]

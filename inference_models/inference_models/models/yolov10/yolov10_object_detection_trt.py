@@ -5,7 +5,11 @@ import numpy as np
 import torch
 
 from inference_models import Detections, ObjectDetectionModel
-from inference_models.configuration import DEFAULT_DEVICE
+from inference_models.configuration import (
+    DEFAULT_DEVICE,
+    INFERENCE_MODELS_YOLOV10_DEFAULT_CONFIDENCE,
+    INFERENCE_MODELS_YOLOV10_DEFAULT_MAX_DETECTIONS,
+)
 from inference_models.entities import ColorFormat
 from inference_models.errors import (
     CorruptedModelPackageError,
@@ -191,8 +195,8 @@ class YOLOv10ForObjectDetectionTRT(
         self,
         model_results: torch.Tensor,
         pre_processing_meta: List[PreProcessingMetadata],
-        confidence: float = 0.25,
-        max_detections: int = 100,
+        confidence: float = INFERENCE_MODELS_YOLOV10_DEFAULT_CONFIDENCE,
+        max_detections: int = INFERENCE_MODELS_YOLOV10_DEFAULT_MAX_DETECTIONS,
         **kwargs,
     ) -> List[Detections]:
         results = []

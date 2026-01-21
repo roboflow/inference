@@ -5,7 +5,10 @@ import numpy as np
 import torch
 
 from inference_models import Detections
-from inference_models.configuration import DEFAULT_DEVICE
+from inference_models.configuration import (
+    DEFAULT_DEVICE,
+    INFERENCE_MODELS_MOONDREAM2_DEFAULT_MAX_NEW_TOKENS,
+)
 from inference_models.entities import ColorFormat, ImageDimensions
 from inference_models.errors import ModelRuntimeError
 from inference_models.models.common.model_packages import get_model_package_contents
@@ -68,7 +71,7 @@ class MoonDream2HF:
             List[np.ndarray],
         ],
         classes: List[str],
-        max_new_tokens: int = 700,
+        max_new_tokens: int = INFERENCE_MODELS_MOONDREAM2_DEFAULT_MAX_NEW_TOKENS,
         input_color_format: Optional[ColorFormat] = None,
     ) -> List[Detections]:
         encoded_images = self.encode_images(
@@ -103,7 +106,7 @@ class MoonDream2HF:
             List[np.ndarray],
         ],
         length: Literal["normal", "short", "long"] = "normal",
-        max_new_tokens: int = 700,
+        max_new_tokens: int = INFERENCE_MODELS_MOONDREAM2_DEFAULT_MAX_NEW_TOKENS,
         input_color_format: Optional[ColorFormat] = None,
     ) -> List[str]:
         encoded_images = self.encode_images(
@@ -130,7 +133,7 @@ class MoonDream2HF:
             List[np.ndarray],
         ],
         question: str,
-        max_new_tokens: int = 700,
+        max_new_tokens: int = INFERENCE_MODELS_MOONDREAM2_DEFAULT_MAX_NEW_TOKENS,
         input_color_format: Optional[ColorFormat] = None,
     ) -> List[str]:
         encoded_images = self.encode_images(
@@ -157,7 +160,7 @@ class MoonDream2HF:
             List[np.ndarray],
         ],
         classes: List[str],
-        max_new_tokens: int = 700,
+        max_new_tokens: int = INFERENCE_MODELS_MOONDREAM2_DEFAULT_MAX_NEW_TOKENS,
         input_color_format: Optional[ColorFormat] = None,
     ) -> List[Points]:
         encoded_images = self.encode_images(
