@@ -30,7 +30,7 @@ WORKFLOW_STITCHING_OCR_DETECTIONS_TOLERANCE = {
             "confidence": "$inputs.confidence",
         },
         {
-            "type": "roboflow_core/stitch_ocr_detections@v1",
+            "type": "roboflow_core/stitch_ocr_detections@v2",
             "name": "detections_stitch",
             "predictions": "$steps.ocr_detection.predictions",
             "stitching_algorithm": "tolerance",
@@ -72,7 +72,7 @@ WORKFLOW_STITCHING_OCR_DETECTIONS_OTSU = {
             "confidence": "$inputs.confidence",
         },
         {
-            "type": "roboflow_core/stitch_ocr_detections@v1",
+            "type": "roboflow_core/stitch_ocr_detections@v2",
             "name": "detections_stitch",
             "predictions": "$steps.ocr_detection.predictions",
             "stitching_algorithm": "otsu",
@@ -114,7 +114,7 @@ WORKFLOW_STITCHING_OCR_DETECTIONS_COLLIMATE = {
             "confidence": "$inputs.confidence",
         },
         {
-            "type": "roboflow_core/stitch_ocr_detections@v1",
+            "type": "roboflow_core/stitch_ocr_detections@v2",
             "name": "detections_stitch",
             "predictions": "$steps.ocr_detection.predictions",
             "stitching_algorithm": "collimate",

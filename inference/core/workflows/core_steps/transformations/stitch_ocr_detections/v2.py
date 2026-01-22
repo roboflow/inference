@@ -99,7 +99,7 @@ class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
             "name": "Stitch OCR Detections",
-            "version": "v1",
+            "version": "v2",
             "short_description": SHORT_DESCRIPTION,
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
@@ -111,7 +111,7 @@ class BlockManifest(WorkflowBlockManifest):
             },
         }
     )
-    type: Literal["roboflow_core/stitch_ocr_detections@v1"]
+    type: Literal["roboflow_core/stitch_ocr_detections@v2"]
     stitching_algorithm: Literal["tolerance", "otsu", "collimate"] = Field(
         title="Stitching Algorithm",
         description="Algorithm for grouping detections into words/lines. 'tolerance': Uses fixed pixel tolerance for line grouping (original algorithm). Good for consistent font sizes and line spacing. 'otsu': Uses Otsu's method on normalized gaps to find natural breaks between words. Resolution-invariant and works well with bimodal gap distributions. 'collimate': Uses greedy parent-child traversal to group detections. Good for skewed or curved text where bucket-based approaches fail.",

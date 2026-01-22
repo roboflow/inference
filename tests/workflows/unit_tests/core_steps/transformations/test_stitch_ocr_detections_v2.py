@@ -16,7 +16,7 @@ from inference.core.workflows.core_steps.transformations.stitch_ocr_detections.v
 def test_stitch_ocr_detections_when_valid_manifest_is_given() -> None:
     # given
     data = {
-        "type": "roboflow_core/stitch_ocr_detections@v1",
+        "type": "roboflow_core/stitch_ocr_detections@v2",
         "name": "some",
         "predictions": "$steps.detection.predictions",
         "reading_direction": "left_to_right",
@@ -28,7 +28,7 @@ def test_stitch_ocr_detections_when_valid_manifest_is_given() -> None:
     result = BlockManifest.model_validate(data)
 
     # then
-    assert result.type == "roboflow_core/stitch_ocr_detections@v1"
+    assert result.type == "roboflow_core/stitch_ocr_detections@v2"
     assert result.name == "some"
     assert result.predictions == "$steps.detection.predictions"
     assert result.reading_direction == "left_to_right"
@@ -39,7 +39,7 @@ def test_stitch_ocr_detections_when_valid_manifest_is_given() -> None:
 def test_stitch_ocr_detections_when_otsu_algorithm_is_given() -> None:
     # given
     data = {
-        "type": "roboflow_core/stitch_ocr_detections@v1",
+        "type": "roboflow_core/stitch_ocr_detections@v2",
         "name": "some",
         "predictions": "$steps.detection.predictions",
         "reading_direction": "left_to_right",
@@ -58,7 +58,7 @@ def test_stitch_ocr_detections_when_otsu_algorithm_is_given() -> None:
 def test_stitch_ocr_detections_when_collimate_algorithm_is_given() -> None:
     # given
     data = {
-        "type": "roboflow_core/stitch_ocr_detections@v1",
+        "type": "roboflow_core/stitch_ocr_detections@v2",
         "name": "some",
         "predictions": "$steps.detection.predictions",
         "reading_direction": "left_to_right",
@@ -77,7 +77,7 @@ def test_stitch_ocr_detections_when_collimate_algorithm_is_given() -> None:
 def test_stitch_ocr_detections_when_invalid_tolerance_is_given() -> None:
     # given
     data = {
-        "type": "roboflow_core/stitch_ocr_detections@v1",
+        "type": "roboflow_core/stitch_ocr_detections@v2",
         "name": "some",
         "predictions": "$steps.detection.predictions",
         "reading_direction": "left_to_right",
