@@ -25,6 +25,50 @@ class InstanceDetections:
     )
 
     def to_supervision(self) -> sv.Detections:
+        """Convert instance segmentation detections to Supervision Detections format.
+
+        Converts the PyTorch tensor-based instance segmentation results to Supervision's
+        NumPy-based format. This includes both bounding boxes and segmentation masks,
+        enabling use of Supervision's mask annotators and analysis tools.
+
+        Returns:
+            sv.Detections: Supervision Detections object with:
+
+                - xyxy: Bounding boxes as NumPy array (N, 4) in [x1, y1, x2, y2] format
+
+                - class_id: Class IDs as NumPy array (N,)
+
+                - confidence: Confidence scores as NumPy array (N,)
+
+                - mask: Segmentation masks as NumPy array (N, H, W) with boolean values
+
+        Examples:
+            Convert and visualize instance segmentation:
+
+            >>> import cv2
+            >>> import supervision as sv
+            >>> from inference_models import AutoModel
+            >>>
+            >>> model = AutoModel.from_pretrained("yolov8n-seg-640")
+            >>> image = cv2.imread("image.jpg")
+            >>> predictions = model(image)
+            >>>
+            >>> # Convert to Supervision format
+            >>> detections = predictions[0].to_supervision()
+            >>>
+            >>> # Use Supervision mask annotator
+            >>> mask_annotator = sv.MaskAnnotator()
+            >>> annotated = mask_annotator.annotate(image.copy(), detections)
+
+            Access masks:
+
+            >>> detections = predictions[0].to_supervision()
+            >>> print(f"Masks shape: {detections.mask.shape}")  # (N, H, W)
+            >>> print(f"First mask: {detections.mask[0]}")  # Boolean array
+
+        See Also:
+            - Supervision documentation: https://supervision.roboflow.com
+        """
         return sv.Detections(
             xyxy=self.xyxy.cpu().numpy(),
             class_id=self.class_id.cpu().numpy(),

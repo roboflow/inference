@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 from typing import Dict, Optional, Set, Tuple, Union
 
-from inference_models.errors import ModelImplementationLoaderError
+from inference_models.errors import ModelImplementationNotFoundError
 from inference_models.models.auto_loaders.entities import (
     BackendType,
     ModelArchitecture,
@@ -476,7 +476,7 @@ def resolve_model_class(
         backend=backend,
         model_features=model_features,
     ):
-        raise ModelImplementationLoaderError(
+        raise ModelImplementationNotFoundError(
             message=f"Did not find implementation for model with architecture: {model_architecture}, "
             f"task type: {task_type} backend: {backend} and model features: {model_features}",
             help_url="https://todo",
