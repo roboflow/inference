@@ -51,6 +51,8 @@ RUN dnf makecache -y && dnf install -y \
     --upgrade \
     --target "${LAMBDA_TASK_ROOT}" \
   && rm -rf ~/.cache/pip \
+  && dnf remove -y gcc rustc cargo zlib-devel libjpeg-devel git \
+  && dnf clean all \
   && rm -rf /build
 
 COPY inference ${LAMBDA_TASK_ROOT}/inference
