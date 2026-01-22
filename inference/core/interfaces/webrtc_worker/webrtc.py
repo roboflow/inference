@@ -1,11 +1,14 @@
 import asyncio
 import datetime
+import av
 import fractions
 import json
 import logging
 import multiprocessing
 import queue
 import struct
+import threading
+import time
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from aioice import ice
@@ -89,8 +92,7 @@ def create_chunked_binary_message(
 
 def _decode_worker(filepath: str, frame_queue, stop_event):
     """Decode video frames in a subprocess and put them on the queue."""
-    # we import here because this runs in a subprocess
-    import av
+
 
     try:
         container = av.open(filepath)
@@ -125,11 +127,12 @@ class SubprocessVideoTrack(MediaStreamTrack):
 
     def __init__(self, filepath: str, queue_size: int = 10):
         super().__init__()
-        ctx = multiprocessing.get_context("spawn")
-        self._queue = ctx.Queue(maxsize=queue_size)
-        self._stop_event = ctx.Event()
-        self._process = ctx.Process(
-            target=_decode_worker, args=(filepath, self._queue, self._stop_event)
+        self._queue = queue.Queue(maxsize=queue_size)
+        self._stop_event = threading.Event()
+        self._process = threading.Thread(
+            target=_decode_worker,
+            args=(filepath, self._queue, self._stop_event),
+            daemon=True,
         )
         self._process.start()
 
@@ -162,8 +165,7 @@ class SubprocessVideoTrack(MediaStreamTrack):
         super().stop()
         self._stop_event.set()
         self._process.join(timeout=2)
-        if self._process.is_alive():
-            self._process.terminate()
+
 
 
 class VideoFileUploadHandler:
