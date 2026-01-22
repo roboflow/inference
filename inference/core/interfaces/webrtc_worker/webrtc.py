@@ -1,10 +1,8 @@
 import asyncio
 import datetime
 import av
-import fractions
 import json
 import logging
-import multiprocessing
 import queue
 import struct
 import threading
@@ -101,14 +99,8 @@ def _decode_worker(filepath: str, frame_queue, stop_event):
         for frame in container.decode(stream):
             if stop_event.is_set():
                 break
-            arr = frame.to_ndarray(format="rgb24")
             frame_queue.put(
-                (
-                    arr,
-                    frame.pts,
-                    frame.time_base.numerator,
-                    frame.time_base.denominator,
-                ),
+                frame,
                 timeout=30,
             )
 
@@ -119,8 +111,8 @@ def _decode_worker(filepath: str, frame_queue, stop_event):
         frame_queue.put(None)
 
 
-class SubprocessVideoTrack(MediaStreamTrack):
-    """Video track that decodes frames from a queue"""
+class ThreadedVideoTrack(MediaStreamTrack):
+    """Video track that decodes frames from a queue."""
 
     kind = "video"
 
@@ -128,12 +120,12 @@ class SubprocessVideoTrack(MediaStreamTrack):
         super().__init__()
         self._queue = queue.Queue(maxsize=queue_size)
         self._stop_event = threading.Event()
-        self._process = threading.Thread(
+        self._decode_thread = threading.Thread(
             target=_decode_worker,
             args=(filepath, self._queue, self._stop_event),
             daemon=True,
         )
-        self._process.start()
+        self._decode_thread.start()
 
     async def recv(self) -> VideoFrame:
         while True:
@@ -143,7 +135,7 @@ class SubprocessVideoTrack(MediaStreamTrack):
             except queue.Empty:
                 # we use a non-blocking get + sleep to avoid blocking the
                 # event loop.
-                # The queue is typically pre-filled by the decoder subprocess,
+                # The queue is typically pre-filled by the decoder thread,
                 # so this sleep rarely triggers during normal operation.
                 await asyncio.sleep(0.01)
 
@@ -154,16 +146,11 @@ class SubprocessVideoTrack(MediaStreamTrack):
             self.stop()
             raise MediaStreamError(data.get("error", "Unknown decode error"))
 
-        arr, pts, tb_num, tb_den = data
-        frame = VideoFrame.from_ndarray(arr, format="rgb24")
-        frame.pts = pts
-        frame.time_base = fractions.Fraction(tb_num, tb_den)
-        return frame
+        return data
 
     def stop(self):
         super().stop()
         self._stop_event.set()
-        self._process.join(timeout=2)
 
 
 class VideoFileUploadHandler:
@@ -1175,7 +1162,7 @@ async def init_rtc_peer_connection_with_loop(
                         player._throttle_playback = True
                         video_processor.set_track(track=player.video)
                     else:
-                        track = SubprocessVideoTrack(video_path)
+                        track = ThreadedVideoTrack(video_path)
                         video_processor.set_track(track=track)
 
                     if not should_send_video:
