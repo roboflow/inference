@@ -103,11 +103,20 @@ SAM3_3D_ALIASES = {
 
 RFDETR_ALIASES = {
     "rfdetr-base": "coco/36",
-    "rfdetr-large": "coco/37",
+    #"rfdetr-large": "coco/37", deprecated
     "rfdetr-nano": "coco/38",
     "rfdetr-small": "coco/39",
     "rfdetr-medium": "coco/40",
+    "rfdetr-large": "coco/50",
+    "rfdetr-xlarge": "coco/48",
+    "rfdetr-2xlarge": "coco/47",
     "rfdetr-seg-preview": "coco-dataset-vdnr1/26",
+    "rfdetr-seg-nano": "coco-dataset-vdnr1/41",
+    "rfdetr-seg-small": "coco-dataset-vdnr1/36",
+    "rfdetr-seg-medium": "coco-dataset-vdnr1/37",
+    "rfdetr-seg-large": "coco-dataset-vdnr1/38",
+    "rfdetr-seg-xlarge": "coco-dataset-vdnr1/39",
+    "rfdetr-seg-2xlarge": "coco-dataset-vdnr1/40",
 }
 
 CLASSIFICATION_ALIASES = {
