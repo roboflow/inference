@@ -103,7 +103,7 @@ SAM3_3D_ALIASES = {
 
 RFDETR_ALIASES = {
     "rfdetr-base": "coco/36",
-    #"rfdetr-large": "coco/37", deprecated
+    # "rfdetr-large": "coco/37", deprecated
     "rfdetr-nano": "coco/38",
     "rfdetr-small": "coco/39",
     "rfdetr-medium": "coco/40",
