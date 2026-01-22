@@ -633,6 +633,8 @@ class VideoFrameProcessor:
 
                 frame = await self.track.recv()
                 self._received_frames += 1
+                if self._received_frames == 1 or self._received_frames % 30 == 0:
+                    print(f"[DEBUG] Processing frame {self._received_frames}")
 
                 frame_timestamp = datetime.datetime.now()
 
@@ -827,6 +829,8 @@ class VideoTransformTrackWithLoop(VideoStreamTrack, VideoFrameProcessor):
 
         frame: VideoFrame = await self.track.recv()
         self._received_frames += 1
+        if self._received_frames == 1 or self._received_frames % 30 == 0:
+            print(f"[DEBUG] recv() frame {self._received_frames}")
         frame_timestamp = datetime.datetime.now()
 
         if self.stream_output is None and self._received_frames == 1:
@@ -1053,17 +1057,21 @@ async def init_rtc_peer_connection_with_loop(
                     credential=ice_server.credential,
                 )
             )
+            print(f"[DEBUG] Added ICE server: {ice_server.urls}")
         # Always add public stun servers (if specified)
         if WEBRTC_MODAL_PUBLIC_STUN_SERVERS:
             for stun_server in WEBRTC_MODAL_PUBLIC_STUN_SERVERS.split(","):
                 try:
                     ice_servers.append(RTCIceServer(urls=stun_server.strip()))
+                    print(f"[DEBUG] Added public STUN server: {stun_server.strip()}")
                 except Exception as e:
                     logger.warning(
                         "Failed to add public stun server '%s': %s", stun_server, e
                     )
     else:
         ice_servers = None
+        print("[DEBUG] No ICE servers configured")
+    print(f"[DEBUG] Creating peer connection with {len(ice_servers) if ice_servers else 0} ICE servers")
     peer_connection = RTCPeerConnectionWithLoop(
         configuration=RTCConfiguration(iceServers=ice_servers) if ice_servers else None,
         asyncio_loop=asyncio_loop,
@@ -1109,6 +1117,7 @@ async def init_rtc_peer_connection_with_loop(
 
     @peer_connection.on("track")
     def on_track(track: RemoteStreamTrack):
+        print(f"[DEBUG] Track received: kind={track.kind}, id={track.id}")
         logger.info("Track received from client")
         relayed_track = relay.subscribe(
             track,
@@ -1123,8 +1132,10 @@ async def init_rtc_peer_connection_with_loop(
 
     @peer_connection.on("connectionstatechange")
     async def on_connectionstatechange():
+        print(f"[DEBUG] connectionstatechange: {peer_connection.connectionState}")
         logger.info("on_connectionstatechange: %s", peer_connection.connectionState)
         if peer_connection.connectionState in {"failed", "closed"}:
+            print(f"[DEBUG] Connection {peer_connection.connectionState}, cleaning up")
             if video_processor.track:
                 logger.info("Stopping video processor track")
                 video_processor.track.stop()
@@ -1132,6 +1143,18 @@ async def init_rtc_peer_connection_with_loop(
             logger.info("Stopping WebRTC peer")
             await peer_connection.close()
             terminate_event.set()
+
+    @peer_connection.on("iceconnectionstatechange")
+    async def on_iceconnectionstatechange():
+        print(f"[DEBUG] iceconnectionstatechange: {peer_connection.iceConnectionState}")
+
+    @peer_connection.on("icegatheringstatechange")
+    async def on_icegatheringstatechange():
+        print(f"[DEBUG] icegatheringstatechange: {peer_connection.iceGatheringState}")
+
+    @peer_connection.on("signalingstatechange")
+    async def on_signalingstatechange():
+        print(f"[DEBUG] signalingstatechange: {peer_connection.signalingState}")
 
     def process_video_upload_message(
         message: bytes, video_processor: VideoTransformTrackWithLoop
@@ -1146,7 +1169,21 @@ async def init_rtc_peer_connection_with_loop(
 
     @peer_connection.on("datachannel")
     def on_datachannel(channel: RTCDataChannel):
+        print(f"[DEBUG] Data channel received: label={channel.label}, state={channel.readyState}")
         logger.info("Data channel '%s' received", channel.label)
+
+        @channel.on("open")
+        def on_channel_open():
+            print(f"[DEBUG] Data channel '{channel.label}' opened")
+
+        @channel.on("close")
+        def on_channel_close():
+            print(f"[DEBUG] Data channel '{channel.label}' closed")
+
+        @channel.on("error")
+        def on_channel_error(error):
+            print(f"[DEBUG] Data channel '{channel.label}' error: {error}")
+
         # Handle video file upload channel
         if channel.label == "video_upload":
             logger.info("Video upload channel established")
@@ -1227,15 +1264,27 @@ async def init_rtc_peer_connection_with_loop(
 
         video_processor.data_channel = channel
 
+    print("[DEBUG] Setting remote description (offer)")
     await peer_connection.setRemoteDescription(
         RTCSessionDescription(
             sdp=webrtc_request.webrtc_offer.sdp, type=webrtc_request.webrtc_offer.type
         )
     )
+    print("[DEBUG] Creating answer")
     answer = await peer_connection.createAnswer()
+    print("[DEBUG] Setting local description (answer)")
     await peer_connection.setLocalDescription(answer)
 
+    print("[DEBUG] Waiting for ICE gathering to complete")
     await _wait_ice_complete(peer_connection, timeout=2.0)
+    print(f"[DEBUG] ICE gathering done, state={peer_connection.iceGatheringState}, connection={peer_connection.connectionState}")
+
+    # Log local ICE candidates
+    if peer_connection.localDescription and peer_connection.localDescription.sdp:
+        ice_candidates = [line for line in peer_connection.localDescription.sdp.split('\n') if 'candidate' in line.lower()]
+        print(f"[DEBUG] Local ICE candidates count: {len(ice_candidates)}")
+        for candidate in ice_candidates[:5]:  # Show first 5
+            print(f"[DEBUG]   {candidate.strip()}")
 
     logger.info(
         "Initialized RTC peer connection with loop (status: %s), sending answer",
@@ -1251,8 +1300,10 @@ async def init_rtc_peer_connection_with_loop(
         )
     )
 
+    print(f"[DEBUG] Answer sent, iceConnectionState={peer_connection.iceConnectionState}")
     logger.info("Answer sent, waiting for termination event")
     await terminate_event.wait()
+    print(f"[DEBUG] Termination event triggered, iceConnectionState={peer_connection.iceConnectionState}, connectionState={peer_connection.connectionState}")
     logger.info("Termination event received, closing WebRTC connection")
     if player:
         logger.info("Stopping player")
