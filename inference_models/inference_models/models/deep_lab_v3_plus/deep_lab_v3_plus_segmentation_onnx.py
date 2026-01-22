@@ -19,7 +19,7 @@ from inference_models.models.base.types import (
     RawPrediction,
 )
 from inference_models.models.common.model_packages import get_model_package_contents
-from inference_models.models.common.onnx import run_session_with_batch_size_limit
+from inference_models.models.common.onnx import run_onnx_session_with_batch_size_limit
 from inference_models.models.common.roboflow.model_packages import (
     InferenceConfig,
     PreProcessingMetadata,
@@ -157,7 +157,7 @@ class DeepLabV3PlusForSemanticSegmentationOnnx(
         self, pre_processed_images: PreprocessedInputs, **kwargs
     ) -> RawPrediction:
         with self._session_thread_lock:
-            return run_session_with_batch_size_limit(
+            return run_onnx_session_with_batch_size_limit(
                 session=self._session,
                 inputs={self._input_name: pre_processed_images},
                 min_batch_size=self._input_batch_size,

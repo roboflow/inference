@@ -22,7 +22,7 @@ class DependencyModelParameters(BaseModel):
         Field(default=None)
     )
     onnx_execution_providers: Optional[List[Union[str, tuple]]] = Field(default=None)
-    device: torch.device = Field(default=DEFAULT_DEVICE)
+    device: Union[torch.device, str] = Field(default=DEFAULT_DEVICE)
     default_onnx_trt_options: bool = Field(default=True)
     nms_fusion_preferences: Optional[Union[bool, dict]] = Field(default=None)
     model_type: Optional[str] = Field(default=None)

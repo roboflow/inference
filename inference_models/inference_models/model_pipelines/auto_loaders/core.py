@@ -26,6 +26,29 @@ class AutoModelPipeline:
 
     @classmethod
     def list_available_pipelines(cls) -> None:
+        """Display all registered model pipelines available for loading.
+
+        Shows a tree view of all pipeline identifiers that can be used with
+        `AutoModelPipeline.from_pretrained()`. Pipelines are multi-model workflows
+        that combine multiple models to solve complex computer vision tasks.
+
+        Returns:
+            None. Prints a formatted tree to the console showing all registered
+            pipeline identifiers.
+
+        Examples:
+            List available pipelines:
+
+            >>> from inference_models import AutoModelPipeline
+            >>> AutoModelPipeline.list_available_pipelines()
+            # Displays:
+            # Available Model Pipelines:
+            # ├── face-and-gaze-detection
+            # └── ... (other registered pipelines)
+
+        See Also:
+            - `AutoModelPipeline.from_pretrained()`: Load a pipeline
+        """
         console = Console()
         tree = Tree("Available Model Pipelines:")
         for pipeline_id in sorted(REGISTERED_PIPELINES):
@@ -55,6 +78,108 @@ class AutoModelPipeline:
         model_access_manager: Optional[ModelAccessManager] = None,
         **kwargs,
     ) -> AnyModel:
+        """Load and initialize a multi-model pipeline.
+
+        Pipelines are pre-configured workflows that combine multiple models to solve
+        complex computer vision tasks. For example, the "face-and-gaze-detection"
+        pipeline combines a face detector with a gaze estimation model.
+
+        Each pipeline has default model configurations, but you can override them by
+        providing custom `models_parameters`. All models in the pipeline are loaded
+        using `AutoModel.from_pretrained()` with the same loading parameters.
+
+        Args:
+            pipline_id: Pipeline identifier. Use `list_available_pipelines()` to see
+                available options. Examples: "face-and-gaze-detection".
+
+            models_parameters: Optional list of parameters for each model in the pipeline.
+                Can be:
+                - None (default): Use pipeline's default models
+                - List of model IDs (strings): ["model1-id", "model2-id"]
+                - List of parameter dicts: [{"model_id_or_path": "model1", "device": "cuda"}, ...]
+                - List of DependencyModelParameters objects (advanced)
+                - Mix of the above (None entries use defaults)
+
+                The list length should match the number of models in the pipeline.
+
+            weights_provider: Source for model weights. Default: "roboflow".
+
+            api_key: Roboflow API key for accessing private models. If not provided,
+                uses the `ROBOFLOW_API_KEY` environment variable.
+
+            max_package_loading_attempts: Maximum number of model packages to try before
+                failing. Default: Try all matching packages.
+
+            verbose: Enable detailed logging during pipeline and model loading.
+                Default: False.
+
+            model_download_file_lock_acquire_timeout: Timeout in seconds for acquiring
+                file locks during concurrent downloads. Default: 10.
+
+            allow_untrusted_packages: Allow loading model packages with custom code that
+                haven't been verified. **Security risk**. Default: False.
+
+            trt_engine_host_code_allowed: Allow TensorRT engines to execute host code.
+                Default: True.
+
+            allow_local_code_packages: Allow loading models with custom Python code from
+                local directories. Default: True.
+
+            verify_hash_while_download: Verify file integrity using checksums during
+                download. Default: True.
+
+            download_files_without_hash: Allow downloading files without checksums.
+                **Security risk**. Default: False.
+
+            use_auto_resolution_cache: Enable caching of model resolution results.
+                Default: True.
+
+            auto_resolution_cache: Custom cache implementation. Advanced usage only.
+
+            allow_direct_local_storage_loading: Allow loading models directly from local
+                paths. Default: True.
+
+            model_access_manager: Custom model access control manager. Advanced usage only.
+
+            **kwargs: Additional pipeline-specific parameters passed to the pipeline's
+                `with_models()` method.
+
+        Returns:
+            Initialized pipeline instance. The specific type depends on the pipeline.
+
+        Raises:
+            ModelPipelineInitializationError: If pipeline initialization fails, models
+                cannot be loaded, or required parameters are missing.
+            UnauthorizedModelAccessError: If API key is invalid or model access is denied.
+
+        Examples:
+            Load pipeline with default models:
+
+            >>> from inference_models import AutoModelPipeline
+            >>> pipeline = AutoModelPipeline.from_pretrained("face-and-gaze-detection")
+            >>> results = pipeline(image)
+
+            Load pipeline with custom model parameters:
+
+            >>> pipeline = AutoModelPipeline.from_pretrained(
+            ...     "face-and-gaze-detection",
+            ...     models_parameters=[
+            ...         "mediapipe/face-detector",  # Use specific face detector
+            ...         {"model_id_or_path": "l2cs-net/rn50", "device": "cuda"}  # Custom gaze model
+            ...     ]
+            ... )
+
+            Load with verbose logging:
+
+            >>> pipeline = AutoModelPipeline.from_pretrained(
+            ...     "face-and-gaze-detection",
+            ...     verbose=True
+            ... )
+
+        See Also:
+            - `AutoModelPipeline.list_available_pipelines()`: List all available pipelines
+            - `AutoModel.from_pretrained()`: Load individual models
+        """
         pipeline_class = resolve_pipeline_class(pipline_id=pipline_id)
         models = []
         verbose_info(
