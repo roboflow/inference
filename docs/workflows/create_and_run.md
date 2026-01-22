@@ -158,5 +158,5 @@ To make it easier to reproduce the workflow, below you can find a workflow defin
 
 Now that you have created and run your first workflow, you can explore our other supported blocks and create a more complex workflow.
 
-Refer to our [Supported Blocks](/workflows/blocks) documentation to learn more about what blocks are supported.
+Refer to our [Supported Blocks](/workflows/blocks/index.md) documentation to learn more about what blocks are supported.
 We also recommend reading the [Understanding workflows](./understanding.md) page.

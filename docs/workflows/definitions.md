@@ -122,7 +122,7 @@ More details about the nature of batch-oriented data processing in workflows can
 ### Generic batch-oriented inputs
 
 Since Execution Engine `v1.3.0` (inference release `v0.27.0`), Workflows support
-batch oriented inputs of any *[kind](/workflows/kinds)* and 
+batch oriented inputs of any *[kind](/workflows/kinds/index.md)* and 
 *[dimensionality](./workflow_execution.md#steps-interactions-with-data)*. 
 This inputs are **not enforced for now**, but we expect that as the ecosystem grows, they will 
 be more and more useful.
@@ -186,7 +186,7 @@ Two remaining properties declare `selectors` (this is how we call references in 
 `model`. While running the workflow, data passed into those placeholders will be provided for block to process.
 
 Our documentation showcases what is the structure of each block and provides examples of how each block can be 
-used as workflow step. Explore our blocks collection [here](/workflows/blocks) where you can find what are 
+used as workflow step. Explore our blocks collection [here](/workflows/blocks/index.md) where you can find what are 
 block data inputs, outputs and configuration properties.
 
 Input data bindings of blocks (like `images` property) can be filled with selectors to batch-oriented inputs and 

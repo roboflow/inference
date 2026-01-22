@@ -1,6 +1,7 @@
 import itertools
 from collections import OrderedDict, defaultdict
 from dataclasses import replace
+from functools import lru_cache
 from typing import Dict, Optional, Set, Type
 
 from inference.core.workflows.execution_engine.entities.types import (
@@ -52,10 +53,21 @@ ONE_OF_KEY = "oneOf"
 OBJECT_TYPE = "object"
 
 
+def clear_cache() -> None:
+    """Clear the parse_block_manifest cache."""
+    parse_block_manifest.cache_clear()
+
+
+@lru_cache(maxsize=10000)
 def parse_block_manifest(
     manifest_type: Type[WorkflowBlockManifest],
 ) -> BlockManifestMetadata:
-    schema = manifest_type.model_json_schema()
+    # Import here to avoid circular dependency
+    from inference.core.workflows.execution_engine.introspection.blocks_loader import (
+        _cached_model_json_schema,
+    )
+
+    schema = _cached_model_json_schema(manifest_type)
     inputs_dimensionality_offsets = manifest_type.get_input_dimensionality_offsets()
     dimensionality_reference_property = (
         manifest_type.get_dimensionality_reference_property()
@@ -432,6 +444,7 @@ def retrieve_selectors_from_union_definition(
             inputs_accepting_batches_and_scalars=inputs_accepting_batches_and_scalars,
             inputs_enforcing_auto_batch_casting=inputs_enforcing_auto_batch_casting,
             is_list_element=is_list_element,
+            is_dict_element=is_dict_element,
         )
         if result is None:
             continue
@@ -464,12 +477,14 @@ def retrieve_selectors_from_union_definition(
         )
     if not merged_references:
         return None
+    merged_is_list_element = is_list_element or any(r.is_list_element for r in results)
+    merged_is_dict_element = is_dict_element or any(r.is_dict_element for r in results)
     return SelectorDefinition(
         property_name=property_name,
         property_description=property_description,
         allowed_references=merged_references,
-        is_list_element=is_list_element,
-        is_dict_element=is_dict_element,
+        is_list_element=merged_is_list_element,
+        is_dict_element=merged_is_dict_element,
         dimensionality_offset=property_dimensionality_offset,
         is_dimensionality_reference_property=is_dimensionality_reference_property,
     )

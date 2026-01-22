@@ -6,8 +6,8 @@ from typing_extensions import Annotated
 
 from inference_cli.lib.benchmark.dataset import PREDEFINED_DATASETS
 from inference_cli.lib.benchmark_adapter import (
+    run_inference_models_benchmark,
     run_infer_api_speed_benchmark,
-    run_inference_experimental_benchmark,
     run_python_package_speed_benchmark,
     run_workflow_api_speed_benchmark,
 )
@@ -271,10 +271,10 @@ def python_package_speed(
 
 
 @benchmark_app.command(
-    help="This command provides a benchmark of inference-exp package. Currently, support for this feature "
+    help="This command provides a benchmark of inference-models package. Currently, support for this feature "
     "is experimental."
 )
-def inference_experimental_speed(
+def inference_models_speed(
     model_id: Annotated[
         str,
         typer.Option(
@@ -353,7 +353,7 @@ def inference_experimental_speed(
     ] = True,
 ):
     try:
-        run_inference_experimental_benchmark(
+        run_inference_models_benchmark(
             model_id=model_id,
             dataset_reference=dataset_reference,
             warm_up_inferences=warm_up_inferences,

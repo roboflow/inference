@@ -185,6 +185,9 @@ from inference.core.workflows.core_steps.models.foundation.anthropic_claude.v1 i
 from inference.core.workflows.core_steps.models.foundation.anthropic_claude.v2 import (
     AnthropicClaudeBlockV2,
 )
+from inference.core.workflows.core_steps.models.foundation.anthropic_claude.v3 import (
+    AnthropicClaudeBlockV3,
+)
 from inference.core.workflows.core_steps.models.foundation.clip.v1 import (
     ClipModelBlockV1,
 )
@@ -635,6 +638,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         FirstNonEmptyOrDefaultBlockV1,
         AnthropicClaudeBlockV1,
         AnthropicClaudeBlockV2,
+        AnthropicClaudeBlockV3,
         CosineSimilarityBlockV1,
         BackgroundColorVisualizationBlockV1,
         BarcodeDetectorBlockV1,

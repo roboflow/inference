@@ -54,6 +54,11 @@ GEMINI_MODELS = [
         "supports_thinking_level": True,
     },
     {
+        "id": "gemini-3-flash-preview",
+        "name": "Gemini 3 Flash",
+        "supports_thinking_level": True,
+    },
+    {
         "id": "gemini-2.5-pro",
         "name": "Gemini 2.5 Pro",
         "supports_thinking_level": False,

@@ -920,7 +920,7 @@ def stream_url_to_cache(
     filename: str,
     model_id: str,
 ) -> None:
-    from inference_exp.utils.download import download_files_to_directory
+    from inference_models.utils.download import download_files_to_directory
 
     initialise_cache(model_id=model_id)
     cache_dir = get_cache_dir(model_id=model_id)
