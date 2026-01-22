@@ -91,7 +91,7 @@ def create_chunked_binary_message(
 
 
 def _decode_worker(filepath: str, frame_queue, stop_event):
-    """Decode video frames in a subprocess and put them on the queue."""
+    """Decode video frames in a thread and put them on the queue."""
 
 
     try:
@@ -121,7 +121,7 @@ def _decode_worker(filepath: str, frame_queue, stop_event):
 
 
 class SubprocessVideoTrack(MediaStreamTrack):
-    """Video track that decodes frames in a subprocess to avoid GIL deadlocks."""
+    """Video track that decodes frames from a queue"""
 
     kind = "video"
 
