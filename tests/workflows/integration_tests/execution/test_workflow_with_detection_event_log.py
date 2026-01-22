@@ -1,9 +1,16 @@
+import datetime
+
 import numpy as np
 
 from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.execution_engine.core import ExecutionEngine
+from inference.core.workflows.execution_engine.entities.base import (
+    ImageParentMetadata,
+    VideoMetadata,
+    WorkflowImageData,
+)
 
 WORKFLOW_WITH_DETECTION_EVENT_LOG = {
     "version": "1.0",
@@ -134,34 +141,93 @@ def test_workflow_with_detection_event_log_multiple_frames(
     event_log = result[0]["event_log"]
     total_logged = result[0]["total_logged"]
 
-    # Without reference_timestamp, only *_relative fields are present (no *_timestamp fields)
     # Relative times are frame-based: (frame - 1) / fps
     # WorkflowImageData defaults to fps=30 when no video metadata is provided
     # Frame 1: (1-1)/30 = 0.0, Frame 3: (3-1)/30 = 0.0666...
-    expected_event_log = {
-        "logged": {
-            "1": {
-                "tracker_id": 1,
-                "class_name": "dog",
-                "first_seen_frame": 1,
-                "first_seen_relative": 0.0,
-                "last_seen_frame": 3,
-                "last_seen_relative": 2 / 30,
-                "frame_count": 3,
-            },
-            "2": {
-                "tracker_id": 2,
-                "class_name": "dog",
-                "first_seen_frame": 1,
-                "first_seen_relative": 0.0,
-                "last_seen_frame": 3,
-                "last_seen_relative": 2 / 30,
-                "frame_count": 3,
-            },
-        },
-        "pending": {},
-    }
+    # Note: With auto-extraction of reference_timestamp from frame_timestamp,
+    # absolute timestamps (*_timestamp) are now also present
 
-    assert event_log == expected_event_log
     assert total_logged == 2
     assert result[0]["total_pending"] == 0
+    assert event_log["pending"] == {}
+
+    # Verify each logged event has the expected fields
+    for tracker_id in ["1", "2"]:
+        event = event_log["logged"][tracker_id]
+        assert event["tracker_id"] == int(tracker_id)
+        assert event["class_name"] == "dog"
+        assert event["first_seen_frame"] == 1
+        assert event["first_seen_relative"] == 0.0
+        assert event["last_seen_frame"] == 3
+        assert event["last_seen_relative"] == 2 / 30
+        assert event["frame_count"] == 3
+        # Auto-extracted timestamps should also be present
+        assert "first_seen_timestamp" in event
+        assert "last_seen_timestamp" in event
+
+
+def test_workflow_with_detection_event_log_auto_extracts_reference_timestamp(
+    model_manager: ModelManager,
+    dogs_image: np.ndarray,
+) -> None:
+    """Test that detection_event_log auto-extracts reference_timestamp from frame_timestamp."""
+    # given
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=WORKFLOW_WITH_DETECTION_EVENT_LOG,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # Create WorkflowImageData with frame_timestamp to trigger auto-extraction
+    frame_ts = datetime.datetime.fromtimestamp(1726570875.0).astimezone(
+        tz=datetime.timezone.utc
+    )
+    metadata = VideoMetadata(
+        video_identifier="test_video",
+        frame_number=1,
+        fps=30.0,
+        frame_timestamp=frame_ts,
+        comes_from_video_file=True,
+    )
+    parent_metadata = ImageParentMetadata(parent_id="test_frame_1")
+    image_with_metadata = WorkflowImageData(
+        parent_metadata=parent_metadata,
+        numpy_image=dogs_image,
+        video_metadata=metadata,
+    )
+
+    # when
+    result = execution_engine.run(
+        runtime_parameters={
+            "image": [image_with_metadata],
+        }
+    )
+
+    # then
+    assert isinstance(result, list), "Expected result to be list"
+    assert len(result) == 1, "Expected single result for single input image"
+
+    event_log = result[0]["event_log"]
+    total_logged = result[0]["total_logged"]
+
+    # With frame_threshold=1, all detections should be logged immediately
+    assert total_logged >= 1, "Expected at least one logged detection"
+
+    # Check that absolute timestamps are present (auto-extracted from frame_timestamp)
+    logged_events = event_log.get("logged", {})
+    if logged_events:
+        first_event = next(iter(logged_events.values()))
+        # Relative timestamps should always be present
+        assert "first_seen_relative" in first_event
+        assert "last_seen_relative" in first_event
+        # Absolute timestamps should be present due to auto-extraction
+        assert "first_seen_timestamp" in first_event, "Expected auto-extracted first_seen_timestamp"
+        assert "last_seen_timestamp" in first_event, "Expected auto-extracted last_seen_timestamp"
+        # first_seen_relative = 0.0, so first_seen_timestamp should equal reference_timestamp
+        # reference_timestamp = frame_ts - relative_time = 1726570875.0 - 0.0 = 1726570875.0
+        assert first_event["first_seen_timestamp"] == 1726570875.0
