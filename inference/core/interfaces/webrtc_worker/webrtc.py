@@ -6,7 +6,6 @@ import logging
 import multiprocessing
 import queue
 import struct
-import time
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from aioice import ice
@@ -884,8 +883,6 @@ async def init_rtc_peer_connection_with_loop(
     shutdown_reserve: int = WEBRTC_MODAL_SHUTDOWN_RESERVE,
     heartbeat_callback: Optional[Callable[[], None]] = None,
 ) -> RTCPeerConnectionWithLoop:
-    _init_start = time.time()
-    print(f"[DEBUG] init_rtc_peer_connection_with_loop START")
     logger.info("Initializing RTC peer connection with loop")
     # ice._mdns is instantiated on the module level, it has a lock that is bound to the event loop
     # avoid RuntimeError: asyncio.locks.Lock is bound to a different event loop
@@ -897,7 +894,6 @@ async def init_rtc_peer_connection_with_loop(
         logger.warning(
             "aioice.ice implementation was changed, _mdns attribute is not available"
         )
-    print(f"[DEBUG] +{time.time()-_init_start:.3f}s ice lock handled")
 
     termination_date = None
     terminate_event = asyncio.Event()
@@ -941,11 +937,8 @@ async def init_rtc_peer_connection_with_loop(
     else:
         data_fields = webrtc_request.data_output
 
-    print(f"[DEBUG] +{time.time()-_init_start:.3f}s stream_mode={stream_mode}, data_fields={data_fields}")
-
     try:
         should_send_video = stream_mode != StreamOutputMode.NO_VIDEO
-        print(f"[DEBUG] +{time.time()-_init_start:.3f}s Creating video processor (should_send_video={should_send_video})")
 
         if should_send_video:
             video_processor = VideoTransformTrackWithLoop(
@@ -978,14 +971,12 @@ async def init_rtc_peer_connection_with_loop(
                 heartbeat_callback=heartbeat_callback,
                 realtime_processing=webrtc_request.webrtc_realtime_processing,
             )
-        print(f"[DEBUG] +{time.time()-_init_start:.3f}s Video processor created")
     except (
         ValidationError,
         MissingApiKeyError,
         KeyError,
         NotImplementedError,
     ) as error:
-        print(f"[DEBUG] +{time.time()-_init_start:.3f}s EXCEPTION in video processor init: {type(error).__name__}: {error}")
         # heartbeat to indicate caller error
         heartbeat_callback()
         send_answer(
@@ -996,7 +987,6 @@ async def init_rtc_peer_connection_with_loop(
         )
         return
     except WebRTCConfigurationError as error:
-        print(f"[DEBUG] +{time.time()-_init_start:.3f}s EXCEPTION WebRTCConfigurationError: {error}")
         # heartbeat to indicate caller error
         heartbeat_callback()
         send_answer(
@@ -1006,8 +996,7 @@ async def init_rtc_peer_connection_with_loop(
             )
         )
         return
-    except RoboflowAPINotAuthorizedError as error:
-        print(f"[DEBUG] +{time.time()-_init_start:.3f}s EXCEPTION RoboflowAPINotAuthorizedError: {error}")
+    except RoboflowAPINotAuthorizedError:
         # heartbeat to indicate caller error
         heartbeat_callback()
         send_answer(
@@ -1017,8 +1006,7 @@ async def init_rtc_peer_connection_with_loop(
             )
         )
         return
-    except RoboflowAPINotNotFoundError as error:
-        print(f"[DEBUG] +{time.time()-_init_start:.3f}s EXCEPTION RoboflowAPINotNotFoundError: {error}")
+    except RoboflowAPINotNotFoundError:
         # heartbeat to indicate caller error
         heartbeat_callback()
         send_answer(
@@ -1029,7 +1017,6 @@ async def init_rtc_peer_connection_with_loop(
         )
         return
     except WorkflowSyntaxError as error:
-        print(f"[DEBUG] +{time.time()-_init_start:.3f}s EXCEPTION WorkflowSyntaxError: {error}")
         # heartbeat to indicate caller error
         heartbeat_callback()
         send_answer(
@@ -1042,7 +1029,6 @@ async def init_rtc_peer_connection_with_loop(
         )
         return
     except WorkflowError as error:
-        print(f"[DEBUG] +{time.time()-_init_start:.3f}s EXCEPTION WorkflowError: {error}")
         # heartbeat to indicate caller error
         heartbeat_callback()
         send_answer(
@@ -1053,7 +1039,6 @@ async def init_rtc_peer_connection_with_loop(
         )
         return
     except Exception as error:
-        print(f"[DEBUG] +{time.time()-_init_start:.3f}s EXCEPTION (generic): {type(error).__name__}: {error}")
         send_answer(
             WebRTCWorkerResult(
                 exception_type=error.__class__.__name__,
@@ -1062,7 +1047,6 @@ async def init_rtc_peer_connection_with_loop(
         )
         return
 
-    print(f"[DEBUG] +{time.time()-_init_start:.3f}s Configuring ICE servers")
     if webrtc_request.webrtc_config is not None:
         ice_servers = []
         for ice_server in webrtc_request.webrtc_config.iceServers:
@@ -1086,28 +1070,22 @@ async def init_rtc_peer_connection_with_loop(
                     )
     else:
         ice_servers = None
-        print("[DEBUG] No ICE servers configured (webrtc_config is None)")
-    print(f"[DEBUG] +{time.time()-_init_start:.3f}s Creating peer connection with {len(ice_servers) if ice_servers else 0} ICE servers")
+        print("[DEBUG] No ICE servers configured")
+    print(f"[DEBUG] Creating peer connection with {len(ice_servers) if ice_servers else 0} ICE servers")
     peer_connection = RTCPeerConnectionWithLoop(
         configuration=RTCConfiguration(iceServers=ice_servers) if ice_servers else None,
         asyncio_loop=asyncio_loop,
     )
-    print(f"[DEBUG] +{time.time()-_init_start:.3f}s Peer connection created")
 
-    print(f"[DEBUG] +{time.time()-_init_start:.3f}s Creating MediaRelay")
     relay = MediaRelay()
 
     # Add video track early for SDP negotiation when stream_output is requested
     # The track source will be set later by the appropriate handler (RTSP, on_track, video_upload)
     if should_send_video:
-        print(f"[DEBUG] +{time.time()-_init_start:.3f}s Adding video track to peer connection")
         logger.info("Adding video track early for SDP negotiation")
         peer_connection.addTrack(video_processor)
-    else:
-        print(f"[DEBUG] +{time.time()-_init_start:.3f}s No video track (data-only mode)")
 
     player: Optional[MediaPlayer] = None
-    print(f"[DEBUG] +{time.time()-_init_start:.3f}s rtsp_url={webrtc_request.rtsp_url}, mjpeg_url={webrtc_request.mjpeg_url}")
     if webrtc_request.rtsp_url:
         if webrtc_request.rtsp_url == WEBRTC_MODAL_RTSP_PLACEHOLDER:
             webrtc_request.rtsp_url = WEBRTC_MODAL_RTSP_PLACEHOLDER_URL
@@ -1137,11 +1115,9 @@ async def init_rtc_peer_connection_with_loop(
             logger.info("Starting data-only processing for MJPEG stream")
             asyncio.create_task(video_processor.process_frames_data_only())
 
-    print(f"[DEBUG] +{time.time()-_init_start:.3f}s Registering event handlers")
-
     @peer_connection.on("track")
     def on_track(track: RemoteStreamTrack):
-        print(f"[DEBUG] +{time.time()-_init_start:.3f}s Track received: kind={track.kind}, id={track.id}")
+        print(f"[DEBUG] Track received: kind={track.kind}, id={track.id}")
         logger.info("Track received from client")
         relayed_track = relay.subscribe(
             track,
@@ -1156,10 +1132,10 @@ async def init_rtc_peer_connection_with_loop(
 
     @peer_connection.on("connectionstatechange")
     async def on_connectionstatechange():
-        print(f"[DEBUG] +{time.time()-_init_start:.3f}s connectionstatechange: {peer_connection.connectionState}")
+        print(f"[DEBUG] connectionstatechange: {peer_connection.connectionState}")
         logger.info("on_connectionstatechange: %s", peer_connection.connectionState)
         if peer_connection.connectionState in {"failed", "closed"}:
-            print(f"[DEBUG] +{time.time()-_init_start:.3f}s Connection {peer_connection.connectionState}, cleaning up")
+            print(f"[DEBUG] Connection {peer_connection.connectionState}, cleaning up")
             if video_processor.track:
                 logger.info("Stopping video processor track")
                 video_processor.track.stop()
@@ -1170,15 +1146,15 @@ async def init_rtc_peer_connection_with_loop(
 
     @peer_connection.on("iceconnectionstatechange")
     async def on_iceconnectionstatechange():
-        print(f"[DEBUG] +{time.time()-_init_start:.3f}s iceconnectionstatechange: {peer_connection.iceConnectionState}")
+        print(f"[DEBUG] iceconnectionstatechange: {peer_connection.iceConnectionState}")
 
     @peer_connection.on("icegatheringstatechange")
     async def on_icegatheringstatechange():
-        print(f"[DEBUG] +{time.time()-_init_start:.3f}s icegatheringstatechange: {peer_connection.iceGatheringState}")
+        print(f"[DEBUG] icegatheringstatechange: {peer_connection.iceGatheringState}")
 
     @peer_connection.on("signalingstatechange")
     async def on_signalingstatechange():
-        print(f"[DEBUG] +{time.time()-_init_start:.3f}s signalingstatechange: {peer_connection.signalingState}")
+        print(f"[DEBUG] signalingstatechange: {peer_connection.signalingState}")
 
     def process_video_upload_message(
         message: bytes, video_processor: VideoTransformTrackWithLoop
@@ -1193,20 +1169,20 @@ async def init_rtc_peer_connection_with_loop(
 
     @peer_connection.on("datachannel")
     def on_datachannel(channel: RTCDataChannel):
-        print(f"[DEBUG] +{time.time()-_init_start:.3f}s Data channel received: label={channel.label}, state={channel.readyState}")
+        print(f"[DEBUG] Data channel received: label={channel.label}, state={channel.readyState}")
         logger.info("Data channel '%s' received", channel.label)
 
         @channel.on("open")
         def on_channel_open():
-            print(f"[DEBUG] +{time.time()-_init_start:.3f}s Data channel '{channel.label}' opened")
+            print(f"[DEBUG] Data channel '{channel.label}' opened")
 
         @channel.on("close")
         def on_channel_close():
-            print(f"[DEBUG] +{time.time()-_init_start:.3f}s Data channel '{channel.label}' closed")
+            print(f"[DEBUG] Data channel '{channel.label}' closed")
 
         @channel.on("error")
         def on_channel_error(error):
-            print(f"[DEBUG] +{time.time()-_init_start:.3f}s Data channel '{channel.label}' error: {error}")
+            print(f"[DEBUG] Data channel '{channel.label}' error: {error}")
 
         # Handle video file upload channel
         if channel.label == "video_upload":
@@ -1288,51 +1264,25 @@ async def init_rtc_peer_connection_with_loop(
 
         video_processor.data_channel = channel
 
-    try:
-        print(f"[DEBUG] +{time.time()-_init_start:.3f}s Setting remote description (offer)")
-        await peer_connection.setRemoteDescription(
-            RTCSessionDescription(
-                sdp=webrtc_request.webrtc_offer.sdp, type=webrtc_request.webrtc_offer.type
-            )
+    print("[DEBUG] Setting remote description (offer)")
+    await peer_connection.setRemoteDescription(
+        RTCSessionDescription(
+            sdp=webrtc_request.webrtc_offer.sdp, type=webrtc_request.webrtc_offer.type
         )
-        print(f"[DEBUG] +{time.time()-_init_start:.3f}s setRemoteDescription done")
-    except asyncio.CancelledError:
-        print(f"[DEBUG] +{time.time()-_init_start:.3f}s setRemoteDescription CANCELLED")
-        raise
-    except Exception as e:
-        print(f"[DEBUG] +{time.time()-_init_start:.3f}s setRemoteDescription FAILED: {type(e).__name__}: {e}")
-        raise
+    )
+    print("[DEBUG] Creating answer")
+    answer = await peer_connection.createAnswer()
+    print("[DEBUG] Setting local description (answer)")
+    await peer_connection.setLocalDescription(answer)
 
-    try:
-        print(f"[DEBUG] +{time.time()-_init_start:.3f}s Creating answer")
-        answer = await peer_connection.createAnswer()
-        print(f"[DEBUG] +{time.time()-_init_start:.3f}s createAnswer done")
-    except asyncio.CancelledError:
-        print(f"[DEBUG] +{time.time()-_init_start:.3f}s createAnswer CANCELLED")
-        raise
-    except Exception as e:
-        print(f"[DEBUG] +{time.time()-_init_start:.3f}s createAnswer FAILED: {type(e).__name__}: {e}")
-        raise
-
-    try:
-        print(f"[DEBUG] +{time.time()-_init_start:.3f}s Setting local description (answer)")
-        await peer_connection.setLocalDescription(answer)
-        print(f"[DEBUG] +{time.time()-_init_start:.3f}s setLocalDescription done")
-    except asyncio.CancelledError:
-        print(f"[DEBUG] +{time.time()-_init_start:.3f}s setLocalDescription CANCELLED")
-        raise
-    except Exception as e:
-        print(f"[DEBUG] +{time.time()-_init_start:.3f}s setLocalDescription FAILED: {type(e).__name__}: {e}")
-        raise
-
-    print(f"[DEBUG] +{time.time()-_init_start:.3f}s Waiting for ICE gathering to complete")
+    print("[DEBUG] Waiting for ICE gathering to complete")
     await _wait_ice_complete(peer_connection, timeout=2.0)
-    print(f"[DEBUG] +{time.time()-_init_start:.3f}s ICE gathering done, state={peer_connection.iceGatheringState}, connection={peer_connection.connectionState}")
+    print(f"[DEBUG] ICE gathering done, state={peer_connection.iceGatheringState}, connection={peer_connection.connectionState}")
 
     # Log local ICE candidates
     if peer_connection.localDescription and peer_connection.localDescription.sdp:
         ice_candidates = [line for line in peer_connection.localDescription.sdp.split('\n') if 'candidate' in line.lower()]
-        print(f"[DEBUG] +{time.time()-_init_start:.3f}s Local ICE candidates count: {len(ice_candidates)}")
+        print(f"[DEBUG] Local ICE candidates count: {len(ice_candidates)}")
         for candidate in ice_candidates[:5]:  # Show first 5
             print(f"[DEBUG]   {candidate.strip()}")
 
@@ -1341,7 +1291,6 @@ async def init_rtc_peer_connection_with_loop(
         peer_connection.connectionState,
     )
 
-    print(f"[DEBUG] +{time.time()-_init_start:.3f}s Sending answer via send_answer callback")
     send_answer(
         WebRTCWorkerResult(
             answer={
@@ -1351,10 +1300,10 @@ async def init_rtc_peer_connection_with_loop(
         )
     )
 
-    print(f"[DEBUG] +{time.time()-_init_start:.3f}s Answer sent, iceConnectionState={peer_connection.iceConnectionState}")
+    print(f"[DEBUG] Answer sent, iceConnectionState={peer_connection.iceConnectionState}")
     logger.info("Answer sent, waiting for termination event")
     await terminate_event.wait()
-    print(f"[DEBUG] +{time.time()-_init_start:.3f}s Termination event triggered, iceConnectionState={peer_connection.iceConnectionState}, connectionState={peer_connection.connectionState}")
+    print(f"[DEBUG] Termination event triggered, iceConnectionState={peer_connection.iceConnectionState}, connectionState={peer_connection.connectionState}")
     logger.info("Termination event received, closing WebRTC connection")
     if player:
         logger.info("Stopping player")
