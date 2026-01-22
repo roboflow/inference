@@ -22,7 +22,7 @@ from inference.core.env import (
     QWEN_3_ENABLED,
     SAM3_3D_OBJECTS_ENABLED,
     SMOLVLM2_ENABLED,
-    USE_INFERENCE_EXP_MODELS,
+    USE_INFERENCE_MODELS,
 )
 from inference.core.models.base import Model
 from inference.core.models.stubs import (
@@ -687,25 +687,58 @@ def get_roboflow_model(*args, **kwargs):
 
 # Prefer inference_exp backend for RF-DETR variants when enabled and available
 try:
-    if USE_INFERENCE_EXP_MODELS:
+    if USE_INFERENCE_MODELS:
         # Ensure experimental package is importable before swapping
         __import__("inference_models")
-        from inference.models.rfdetr.rfdetr_exp import RFDetrExperimentalModel
-        from inference.models.yolov8.yolov8_object_detection_exp import (
-            Yolo8ODExperimentalModel,
+        from inference.core.models.inference_models_adapters import (
+            InferenceModelsInstanceSegmentationAdapter,
+            InferenceModelsKeyPointsDetectionAdapter,
+            InferenceModelsObjectDetectionAdapter,
         )
 
         for task, variant in ROBOFLOW_MODEL_TYPES.keys():
-            if task == "object-detection" and variant.startswith("rfdetr-"):
-                ROBOFLOW_MODEL_TYPES[(task, variant)] = RFDetrExperimentalModel
+            if task == "object-detection" and variant.startswith("rfdetr"):
+                ROBOFLOW_MODEL_TYPES[(task, variant)] = (
+                    InferenceModelsObjectDetectionAdapter
+                )
+            if (
+                task == "object-detection"
+                and variant.startswith("yolov")
+                and not variant.startswith("yolo26")
+            ):
+                ROBOFLOW_MODEL_TYPES[(task, variant)] = (
+                    InferenceModelsObjectDetectionAdapter
+                )
+            if task == "object-detection" and variant.startswith("yolo_nas"):
+                ROBOFLOW_MODEL_TYPES[(task, variant)] = (
+                    InferenceModelsObjectDetectionAdapter
+                )
+            if task == "instance-segmentation" and variant.startswith("rfdetr"):
+                ROBOFLOW_MODEL_TYPES[(task, variant)] = (
+                    InferenceModelsInstanceSegmentationAdapter
+                )
+            if (
+                task == "instance-segmentation"
+                and variant.startswith("yolov")
+                and not variant.startswith("yolo26")
+            ):
+                ROBOFLOW_MODEL_TYPES[(task, variant)] = (
+                    InferenceModelsInstanceSegmentationAdapter
+                )
+            if task == "instance-segmentation" and variant.startswith("yolact"):
+                ROBOFLOW_MODEL_TYPES[(task, variant)] = (
+                    InferenceModelsInstanceSegmentationAdapter
+                )
+            if (
+                task == "keypoint-detection"
+                and variant.startswith("yolov")
+                and not variant.startswith("yolo26")
+            ):
+                ROBOFLOW_MODEL_TYPES[(task, variant)] = (
+                    InferenceModelsKeyPointsDetectionAdapter
+                )
 
-        # iterate over ROBOFLOW_MODEL_TYPES and replace all valuses where the model variatn starts with yolov8 with the experimental model
-        for task, variant in ROBOFLOW_MODEL_TYPES.keys():
-            if task == "object-detection" and variant.startswith("yolov8"):
-                ROBOFLOW_MODEL_TYPES[(task, variant)] = Yolo8ODExperimentalModel
-
-
-except Exception:
+except Exception as e:
     # Fallback silently to legacy ONNX RFDETR when experimental stack is unavailable
     warnings.warn(
         "Inference experimental stack is unavailable, falling back to regular model inference stack"

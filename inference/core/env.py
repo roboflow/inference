@@ -211,9 +211,12 @@ CORE_MODEL_YOLO_WORLD_ENABLED = str2bool(
 )
 
 # Enable experimental RFDETR backend (inference_models) rollout, default is True
-USE_INFERENCE_EXP_MODELS = str2bool(os.getenv("USE_INFERENCE_EXP_MODELS", "False"))
-ALLOW_INFERENCE_EXP_UNTRUSTED_MODELS = str2bool(
-    os.getenv("ALLOW_INFERENCE_EXP_UNTRUSTED_MODELS", "False")
+USE_INFERENCE_MODELS = str2bool(os.getenv("USE_INFERENCE_MODELS", "False"))
+ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES = str2bool(
+    os.getenv("ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES", "False")
+)
+ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES = str2bool(
+    os.getenv("ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES", "False")
 )
 
 # ID of host device, default is None
