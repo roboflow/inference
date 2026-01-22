@@ -93,7 +93,6 @@ def create_chunked_binary_message(
 def _decode_worker(filepath: str, frame_queue, stop_event):
     """Decode video frames in a thread and put them on the queue."""
 
-
     try:
         container = av.open(filepath)
         stream = container.streams.video[0]
@@ -165,7 +164,6 @@ class SubprocessVideoTrack(MediaStreamTrack):
         super().stop()
         self._stop_event.set()
         self._process.join(timeout=2)
-
 
 
 class VideoFileUploadHandler:
