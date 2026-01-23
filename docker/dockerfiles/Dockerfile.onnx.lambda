@@ -51,12 +51,10 @@ RUN dnf makecache -y && dnf install -y \
     --upgrade \
     --target "${LAMBDA_TASK_ROOT}" \
   && rm -rf ~/.cache/pip \
-  && dnf remove -y --noautoremove \
+  && rpm -e --nodeps \
     gcc \
-    rustc \
     cargo \
     zlib-devel \
-    libjpeg-devel \
     git \
     perl-Git \
     annobin-plugin-gcc \
