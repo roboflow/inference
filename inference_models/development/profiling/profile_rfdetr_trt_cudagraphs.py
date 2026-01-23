@@ -11,14 +11,14 @@ IMAGE_PATH_WARMUP = "/home/mkaic/inference/tests/inference/unit_tests/core/utils
 # IMAGE_PATH_PROFILING = IMAGE_PATH_WARMUP
 IMAGE_PATH_PROFILING = "/home/mkaic/inference/tests/workflows/integration_tests/execution/assets/car.jpg"
 DEVICE = os.environ.get("DEVICE", "cuda:0")
-CYCLES = 500
+CYCLES = 10_000
 WARMUP = 50
 
 
 def main() -> None:
     image = cv2.imread(IMAGE_PATH_WARMUP)
     model = AutoModel.from_pretrained(
-        model_id_or_path="rfdetr-nano", device=torch.device(DEVICE), backend="trt"
+        model_id_or_path="rfdetr-seg-preview", device=torch.device(DEVICE), backend="trt"
     )
 
     image_warmup = cv2.imread(IMAGE_PATH_WARMUP)
@@ -48,21 +48,35 @@ def main() -> None:
     # torch.cuda.synchronize()
     cudagraph_fps = CYCLES / (time.perf_counter() - start)
 
-    result_baseline = model.forward(pre_processed_profiling, use_cuda_graph=False)
-    result_cudagraph = model.forward(pre_processed_profiling, use_cuda_graph=True)
-    # torch.cuda.synchronize()
+    expected_warmup = model.forward(pre_processed_warmup, use_cuda_graph=False)
+    expected_profiling = model.forward(pre_processed_profiling, use_cuda_graph=False)
 
-    print(f"Result baseline: {result_baseline}")
-    print(f"Result cudagraph: {result_cudagraph}")
+    print("Testing for race conditions (alternating inputs 20 times)...")
+    all_match = True
+    for i in range(20):
+        if i % 2 == 0:
+            result = model.forward(pre_processed_warmup, use_cuda_graph=True)
+            expected = expected_warmup
+            img_name = "warmup"
+        else:
+            result = model.forward(pre_processed_profiling, use_cuda_graph=True)
+            expected = expected_profiling
+            img_name = "profiling"
 
-    dets_match = torch.allclose(result_baseline[0], result_cudagraph[0], atol=1e-4)
-    labels_match = torch.allclose(result_baseline[1], result_cudagraph[1], atol=1e-4)
+        dets_match = torch.allclose(result[0], expected[0], atol=1e-6)
+        labels_match = torch.allclose(result[1], expected[1], atol=1e-6)
+        if not (dets_match and labels_match):
+            print(f"  MISMATCH at iteration {i} ({img_name}): dets={dets_match}, labels={labels_match}")
+            all_match = False
+
+    if all_match:
+        print("  All 20 iterations matched expected outputs.")
 
     print(f"\n{'='*50}")
     print(f"Forward pass FPS (no CUDA graphs): {baseline_fps:.1f}")
     print(f"Forward pass FPS (CUDA graphs):    {cudagraph_fps:.1f}")
     print(f"Speedup: {cudagraph_fps / baseline_fps:.2f}x")
-    print(f"Outputs match: dets={dets_match}, labels={labels_match}")
+    print(f"Race condition test: {'PASSED' if all_match else 'FAILED'}")
     print(f"{'='*50}")
 
 

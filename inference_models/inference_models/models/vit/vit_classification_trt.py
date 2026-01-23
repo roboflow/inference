@@ -183,7 +183,7 @@ class VITForClassificationTRT(ClassificationModel[torch.Tensor, torch.Tensor]):
     ) -> torch.Tensor:
         with self._lock:
             with use_cuda_context(context=self._cuda_context):
-                return infer_from_trt_engine(
+                results, _ = infer_from_trt_engine(
                     pre_processed_images=pre_processed_images,
                     trt_config=self._trt_config,
                     engine=self._engine,
@@ -191,7 +191,8 @@ class VITForClassificationTRT(ClassificationModel[torch.Tensor, torch.Tensor]):
                     device=self._device,
                     input_name=self._input_name,
                     outputs=self._output_names,
-                )[0]
+                )
+                return results[0]
 
     def post_process(
         self,
@@ -331,7 +332,7 @@ class VITForMultiLabelClassificationTRT(
     ) -> torch.Tensor:
         with self._lock:
             with use_cuda_context(context=self._cuda_context):
-                return infer_from_trt_engine(
+                results, _ = infer_from_trt_engine(
                     pre_processed_images=pre_processed_images,
                     trt_config=self._trt_config,
                     engine=self._engine,
@@ -339,7 +340,8 @@ class VITForMultiLabelClassificationTRT(
                     device=self._device,
                     input_name=self._input_name,
                     outputs=self._output_names,
-                )[0]
+                )
+                return results[0]
 
     def post_process(
         self,
