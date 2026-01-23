@@ -142,7 +142,7 @@ def infer_from_trt_engine(
     outputs: List[str],
     use_cuda_graph: bool = False,
     trt_cuda_graph_state: Optional[TRTCudaGraphState] = None,
-) -> Tuple[List[torch.Tensor], TRTCudaGraphState]:
+) -> Tuple[List[torch.Tensor], Optional[TRTCudaGraphState]]:
     """Run inference using a TensorRT engine.
 
     Executes inference on preprocessed images using a TensorRT engine and execution
@@ -272,7 +272,7 @@ def infer_from_trt_engine_with_batch_size_boundaries(
     max_batch_size: int,
     use_cuda_graph: bool = False,
     trt_cuda_graph_state: Optional[TRTCudaGraphState] = None,
-) -> Tuple[List[torch.Tensor], TRTCudaGraphState]:
+) -> Tuple[List[torch.Tensor], Optional[TRTCudaGraphState]]:
     if pre_processed_images.shape[0] <= max_batch_size:
         reminder = min_batch_size - pre_processed_images.shape[0]
         if reminder > 0:
@@ -363,10 +363,12 @@ def execute_trt_engine(
             )
 
         stream = trt_cuda_graph_state.cuda_stream
-        trt_cuda_graph_state.input_buffer.copy_(pre_processed_images)
-        trt_cuda_graph_state.cuda_graph.replay()
+        with torch.cuda.stream(stream):
+            trt_cuda_graph_state.input_buffer.copy_(pre_processed_images)
+            trt_cuda_graph_state.cuda_graph.replay()
+            results = [buf.clone() for buf in trt_cuda_graph_state.output_buffers]
         stream.synchronize()
-        results = [buf.clone() for buf in trt_cuda_graph_state.output_buffers]
+
         return results, trt_cuda_graph_state
 
     elif use_cuda_graph:
@@ -471,8 +473,10 @@ def _capture_cuda_graph(
                 message="Failed to capture CUDA graph from TRT model execution.",
                 help_url="https://todo",
             )
+    with torch.cuda.stream(stream):
+        results = [buf.clone() for buf in output_buffers]
+    stream.synchronize()
 
-    
     trt_cuda_graph_state = TRTCudaGraphState(
         cuda_graph=cuda_graph,
         cuda_stream=stream,
@@ -480,7 +484,6 @@ def _capture_cuda_graph(
         output_buffers=output_buffers,
     )
 
-    results = [buf.clone() for buf in output_buffers]
     return results, trt_cuda_graph_state
 
 

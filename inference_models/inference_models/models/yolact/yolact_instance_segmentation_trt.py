@@ -192,7 +192,7 @@ class YOLOACTForInstanceSegmentationTRT(
                     all_proto_data,
                 ) = ([], [], [], [], [])
                 for image in pre_processed_images:
-                    loc_data, conf_data, mask_data, prior_data, proto_data = (
+                    (loc_data, conf_data, mask_data, prior_data, proto_data), _ = (
                         infer_from_trt_engine(
                             pre_processed_images=image.unsqueeze(0).contiguous(),
                             trt_config=self._trt_config,

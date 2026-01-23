@@ -33,6 +33,7 @@ from inference_models.models.common.trt import (
     get_trt_engine_inputs_and_outputs,
     infer_from_trt_engine,
     load_trt_model,
+    TRTCudaGraphState,
 )
 from inference_models.models.rfdetr.class_remapping import (
     ClassesReMapping,
@@ -198,7 +199,7 @@ class RFDetrForInstanceSegmentationTRT(
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         with self._lock:
             with use_cuda_context(context=self._cuda_context):
-                detections, labels, masks = infer_from_trt_engine(
+                (detections, labels, masks), _ = infer_from_trt_engine(
                     pre_processed_images=pre_processed_images,
                     trt_config=self._trt_config,
                     engine=self._engine,

@@ -187,7 +187,7 @@ class YOLONasForObjectDetectionTRT(
     def forward(self, pre_processed_images: torch.Tensor, **kwargs) -> torch.Tensor:
         with self._session_thread_lock:
             with use_cuda_context(context=self._cuda_context):
-                results = infer_from_trt_engine(
+                results, _ = infer_from_trt_engine(
                     pre_processed_images=pre_processed_images,
                     trt_config=self._trt_config,
                     engine=self._engine,
