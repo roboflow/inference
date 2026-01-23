@@ -54,8 +54,10 @@ RUN dnf makecache -y && dnf install -y \
   && rpm -e --nodeps \
     gcc \
     cargo \
+    rust \
     zlib-devel \
     git \
+    libjpeg-turbo-devel \
     perl-Git \
     annobin-plugin-gcc \
     rust-std-static \
