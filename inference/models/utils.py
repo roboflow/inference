@@ -694,6 +694,7 @@ try:
             InferenceModelsInstanceSegmentationAdapter,
             InferenceModelsKeyPointsDetectionAdapter,
             InferenceModelsObjectDetectionAdapter,
+            InferenceModelsClassificationAdapter
         )
 
         for task, variant in ROBOFLOW_MODEL_TYPES.keys():
@@ -701,7 +702,7 @@ try:
                 ROBOFLOW_MODEL_TYPES[(task, variant)] = (
                     InferenceModelsObjectDetectionAdapter
                 )
-            if (
+            elif (
                 task == "object-detection"
                 and variant.startswith("yolov")
                 and not variant.startswith("yolo26")
@@ -709,15 +710,15 @@ try:
                 ROBOFLOW_MODEL_TYPES[(task, variant)] = (
                     InferenceModelsObjectDetectionAdapter
                 )
-            if task == "object-detection" and variant.startswith("yolo_nas"):
+            elif task == "object-detection" and variant.startswith("yolo_nas"):
                 ROBOFLOW_MODEL_TYPES[(task, variant)] = (
                     InferenceModelsObjectDetectionAdapter
                 )
-            if task == "instance-segmentation" and variant.startswith("rfdetr"):
+            elif task == "instance-segmentation" and variant.startswith("rfdetr"):
                 ROBOFLOW_MODEL_TYPES[(task, variant)] = (
                     InferenceModelsInstanceSegmentationAdapter
                 )
-            if (
+            elif (
                 task == "instance-segmentation"
                 and variant.startswith("yolov")
                 and not variant.startswith("yolo26")
@@ -725,11 +726,11 @@ try:
                 ROBOFLOW_MODEL_TYPES[(task, variant)] = (
                     InferenceModelsInstanceSegmentationAdapter
                 )
-            if task == "instance-segmentation" and variant.startswith("yolact"):
+            elif task == "instance-segmentation" and variant.startswith("yolact"):
                 ROBOFLOW_MODEL_TYPES[(task, variant)] = (
                     InferenceModelsInstanceSegmentationAdapter
                 )
-            if (
+            elif (
                 task == "keypoint-detection"
                 and variant.startswith("yolov")
                 and not variant.startswith("yolo26")
@@ -737,7 +738,13 @@ try:
                 ROBOFLOW_MODEL_TYPES[(task, variant)] = (
                     InferenceModelsKeyPointsDetectionAdapter
                 )
-
+            elif (
+                task == "classification"
+                and (variant.startswith("yolov") or variant.startswith("dinov3") or variant.startswith("resnet") or variant.startswith("vit"))
+            ):
+                ROBOFLOW_MODEL_TYPES[(task, variant)] = (
+                    InferenceModelsClassificationAdapter
+                )
 except Exception as e:
     # Fallback silently to legacy ONNX RFDETR when experimental stack is unavailable
     warnings.warn(
