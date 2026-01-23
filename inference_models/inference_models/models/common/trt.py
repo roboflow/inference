@@ -1,4 +1,5 @@
 from typing import List, Tuple
+from dataclasses import dataclass
 
 import torch
 
@@ -56,6 +57,14 @@ class InferenceTRTLogger(trt.ILogger):
 
     def get_memory(self) -> List[Tuple[trt.ILogger.Severity, str]]:
         return self._memory
+
+import pycuda.driver as cuda
+@dataclass
+class TRTCudaGraphState:
+    cuda_graph: cuda.GraphExec
+    cuda_stream: torch.cuda.Stream
+    input_pointer: int
+    output_pointers: List[int]
 
 
 def get_trt_engine_inputs_and_outputs(
