@@ -48,10 +48,10 @@ Set up your api key, and install <a href="https://github.com/facebookresearch/se
 
     There's <a href="https://github.com/facebookresearch/segment-anything-2/issues/48" target="_blank">currently a problem</a> with sam2 + flash attention on certain gpus, like the L4 or A100. Use the fix in the posted thread, or use the docker image we provide for sam2. 
 
-```
+```python
 import os
-
 os.environ["API_KEY"] = "<YOUR-API-KEY>"
+
 from inference.models.sam2 import SegmentAnything2
 from inference.core.utils.postprocess import masks2poly
 from inference.core.entities.requests.sam2 import Sam2PromptSet

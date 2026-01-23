@@ -4,6 +4,14 @@ WORKDIR /app
 ARG DEBIAN_FRONTEND=noninteractive
 ARG TARGETPLATFORM
 
+COPY requirements/requirements.cpu.txt \
+    requirements/requirements.http.txt \
+    requirements/requirements.hosted.txt \
+    requirements/_requirements.txt \
+    requirements/requirements.sdk.http.txt \
+    requirements/requirements.vino.txt \
+    ./
+
 RUN dnf makecache -y && dnf install -y \
     libSM \
     libXext  \
@@ -16,20 +24,10 @@ RUN dnf makecache -y && dnf install -y \
     pango \
     rustc \
     cargo \
-    && dnf clean all
-
-COPY requirements/requirements.cpu.txt \
-    requirements/requirements.http.txt \
-    requirements/requirements.hosted.txt \
-    requirements/_requirements.txt \
-    requirements/requirements.sdk.http.txt \
-    requirements/requirements.vino.txt \
-    ./
-
-RUN if [ "${TARGETPLATFORM}" == "linux/amd64" ]; then mv requirements.vino.txt requirements.cpu.txt; fi
-
-RUN /var/lang/bin/python3.12 -m pip install --upgrade pip && rm -rf ~/.cache/pip
-RUN pip3 install \
+  && dnf clean all \
+  && if [ "${TARGETPLATFORM}" == "linux/amd64" ]; then mv requirements.vino.txt requirements.cpu.txt; fi \
+  && /var/lang/bin/python3.12 -m pip install --upgrade pip && rm -rf ~/.cache/pip \
+  && pip3 install \
     certifi==2022.12.07 \
     -r _requirements.txt \
     -r requirements.cpu.txt \
@@ -40,41 +38,51 @@ RUN pip3 install \
     "setuptools<=75.5.0" \
     --upgrade \
     --target "${LAMBDA_TASK_ROOT}" \
-    && rm -rf ~/.cache/pip
-
-
+  && rm -rf ~/.cache/pip \
+  && rpm -e --nodeps \
+    gcc \
+    cargo \
+    rust \
+    zlib-devel \
+    git \
+    libjpeg-turbo-devel \
+    perl-Git \
+    annobin-plugin-gcc \
+    rust-std-static \
+  && dnf clean all \
+  && rm -rf /var/cache/dnf /build
 
 COPY inference ${LAMBDA_TASK_ROOT}/inference
 COPY inference_sdk ${LAMBDA_TASK_ROOT}/inference_sdk
 COPY docker/config/lambda.py ${LAMBDA_TASK_ROOT}/lambda.py
 
-ENV CORE_MODEL_CLIP_ENABLED=false
-ENV CORE_MODEL_PE_ENABLED=false
-ENV CORE_MODEL_SAM_ENABLED=false
-ENV CORE_MODEL_SAM2_ENABLED=false
-ENV CORE_MODEL_GAZE_ENABLED=false
-ENV CORE_MODEL_DOCTR_ENABLED=false
-ENV CORE_MODEL_YOLO_WORLD_ENABLED=false
-ENV CORE_MODELS_ENABLED=false
-ENV LAMBDA=True
-ENV ALLOW_NUMPY_INPUT=False
-ENV INFERENCE_SERVER_ID=HostedInferenceLambda
-ENV DISABLE_VERSION_CHECK=true
-ENV REDIS_SSL=true
-ENV WORKFLOWS_STEP_EXECUTION_MODE=remote
-ENV WORKFLOWS_REMOTE_API_TARGET=hosted
-ENV API_LOGGING_ENABLED=True
-ENV MODEL_VALIDATION_DISABLED=True
-ENV ALLOW_NON_HTTPS_URL_INPUT=False
-ENV ALLOW_URL_INPUT_WITHOUT_FQDN=False
-ENV ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS=False
-ENV CORE_MODEL_TROCR_ENABLED=false
-ENV USE_FILE_CACHE_FOR_WORKFLOWS_DEFINITIONS=False
-ENV ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE=False
-ENV ALLOW_WORKFLOW_BLOCKS_ACCESSING_ENVIRONMENTAL_VARIABLES=False
-ENV ALLOW_LOADING_IMAGES_FROM_LOCAL_FILESYSTEM=False
-ENV DEPTH_ESTIMATION_ENABLED=False
-ENV CORE_MODEL_SAM3_ENABLED=False
+ENV CORE_MODEL_CLIP_ENABLED=false \
+  CORE_MODEL_PE_ENABLED=false \
+  CORE_MODEL_SAM_ENABLED=false \
+  CORE_MODEL_SAM2_ENABLED=false \
+  CORE_MODEL_GAZE_ENABLED=false \
+  CORE_MODEL_DOCTR_ENABLED=false \
+  CORE_MODEL_YOLO_WORLD_ENABLED=false \
+  CORE_MODELS_ENABLED=false \
+  LAMBDA=True \
+  ALLOW_NUMPY_INPUT=False \
+  INFERENCE_SERVER_ID=HostedInferenceLambda \
+  DISABLE_VERSION_CHECK=true \
+  REDIS_SSL=true \
+  WORKFLOWS_STEP_EXECUTION_MODE=remote \
+  WORKFLOWS_REMOTE_API_TARGET=hosted \
+  API_LOGGING_ENABLED=True \
+  MODEL_VALIDATION_DISABLED=True \
+  ALLOW_NON_HTTPS_URL_INPUT=False \
+  ALLOW_URL_INPUT_WITHOUT_FQDN=False \
+  ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS=False \
+  CORE_MODEL_TROCR_ENABLED=false \
+  USE_FILE_CACHE_FOR_WORKFLOWS_DEFINITIONS=False \
+  ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE=False \
+  ALLOW_WORKFLOW_BLOCKS_ACCESSING_ENVIRONMENTAL_VARIABLES=False \
+  ALLOW_LOADING_IMAGES_FROM_LOCAL_FILESYSTEM=False \
+  DEPTH_ESTIMATION_ENABLED=False \
+  CORE_MODEL_SAM3_ENABLED=False
 
 WORKDIR ${LAMBDA_TASK_ROOT}
 
