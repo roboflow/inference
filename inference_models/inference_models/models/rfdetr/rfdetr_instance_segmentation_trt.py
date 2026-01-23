@@ -172,6 +172,7 @@ class RFDetrForInstanceSegmentationTRT(
         self._cuda_context = cuda_context
         self._execution_context = execution_context
         self._trt_config = trt_config
+        self._trt_cuda_graph_state = None
         self._lock = threading.Lock()
 
     @property
@@ -195,11 +196,11 @@ class RFDetrForInstanceSegmentationTRT(
         )
 
     def forward(
-        self, pre_processed_images: torch.Tensor, **kwargs
+        self, pre_processed_images: torch.Tensor, use_cuda_graph: bool = False, **kwargs
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         with self._lock:
             with use_cuda_context(context=self._cuda_context):
-                (detections, labels, masks), _ = infer_from_trt_engine(
+                (detections, labels, masks), trt_cuda_graph_state = infer_from_trt_engine(
                     pre_processed_images=pre_processed_images,
                     trt_config=self._trt_config,
                     engine=self._engine,
@@ -207,7 +208,11 @@ class RFDetrForInstanceSegmentationTRT(
                     device=self._device,
                     input_name=self._input_name,
                     outputs=self._output_names,
+                    use_cuda_graph=use_cuda_graph,
+                    trt_cuda_graph_state=self._trt_cuda_graph_state if use_cuda_graph else None,
                 )
+                if use_cuda_graph:
+                    self._trt_cuda_graph_state = trt_cuda_graph_state
                 return detections, labels, masks
 
     def post_process(
