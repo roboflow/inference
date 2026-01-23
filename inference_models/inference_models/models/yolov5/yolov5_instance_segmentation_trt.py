@@ -187,7 +187,7 @@ class YOLOv5ForInstanceSegmentationTRT(
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         with self._session_thread_lock:
             with use_cuda_context(context=self._cuda_context):
-                (instances, protos), _ = infer_from_trt_engine(
+                instances, protos = infer_from_trt_engine(
                     pre_processed_images=pre_processed_images,
                     trt_config=self._trt_config,
                     engine=self._engine,

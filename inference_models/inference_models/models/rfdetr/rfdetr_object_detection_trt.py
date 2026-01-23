@@ -35,6 +35,7 @@ from inference_models.models.common.roboflow.pre_processing import (
 from inference_models.models.common.trt import (
     get_trt_engine_inputs_and_outputs,
     infer_from_trt_engine,
+    infer_from_trt_engine_with_cudagraph,
     load_trt_model,
     TRTCudaGraphState,
 )
@@ -203,19 +204,29 @@ class RFDetrForObjectDetectionTRT(
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         with self._lock:
             with use_cuda_context(context=self._cuda_context):
-                (detections, labels), trt_cuda_graph_state = infer_from_trt_engine(
-                    pre_processed_images=pre_processed_images,
-                    trt_config=self._trt_config,
-                    engine=self._engine,
-                    context=self._execution_context,
-                    device=self._device,
-                    input_name=self._input_name,
-                    outputs=self._output_names,
-                    use_cuda_graph=use_cuda_graph,
-                    trt_cuda_graph_state=self._trt_cuda_graph_state if use_cuda_graph else None,
-                )
                 if use_cuda_graph:
-                    self._trt_cuda_graph_state = trt_cuda_graph_state
+                    (detections, labels), self._trt_cuda_graph_state = (
+                        infer_from_trt_engine_with_cudagraph(
+                            pre_processed_images=pre_processed_images,
+                            trt_config=self._trt_config,
+                            engine=self._engine,
+                            context=self._execution_context,
+                            device=self._device,
+                            input_name=self._input_name,
+                            outputs=self._output_names,
+                            trt_cuda_graph_state=self._trt_cuda_graph_state,
+                        )
+                    )
+                else:
+                    detections, labels = infer_from_trt_engine(
+                        pre_processed_images=pre_processed_images,
+                        trt_config=self._trt_config,
+                        engine=self._engine,
+                        context=self._execution_context,
+                        device=self._device,
+                        input_name=self._input_name,
+                        outputs=self._output_names,
+                    )
                 return detections, labels
 
     def post_process(

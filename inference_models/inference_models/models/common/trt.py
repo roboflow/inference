@@ -140,9 +140,7 @@ def infer_from_trt_engine(
     device: torch.device,
     input_name: str,
     outputs: List[str],
-    use_cuda_graph: bool = False,
-    trt_cuda_graph_state: Optional[TRTCudaGraphState] = None,
-) -> Tuple[List[torch.Tensor], Optional[TRTCudaGraphState]]:
+) -> List[torch.Tensor]:
     """Run inference using a TensorRT engine.
 
     Executes inference on preprocessed images using a TensorRT engine and execution
@@ -235,7 +233,7 @@ def infer_from_trt_engine(
         - `get_trt_engine_inputs_and_outputs()`: Get engine tensor names
     """
     if trt_config.static_batch_size is not None:
-        return infer_from_trt_engine_with_batch_size_boundaries(
+        results, _ = _infer_from_trt_engine_with_batch_size_boundaries(
             pre_processed_images=pre_processed_images,
             engine=engine,
             context=context,
@@ -244,10 +242,11 @@ def infer_from_trt_engine(
             outputs=outputs,
             min_batch_size=trt_config.static_batch_size,
             max_batch_size=trt_config.static_batch_size,
-            use_cuda_graph=use_cuda_graph,
-            trt_cuda_graph_state=trt_cuda_graph_state,
+            use_cuda_graph=False,
+            trt_cuda_graph_state=None,
         )
-    return infer_from_trt_engine_with_batch_size_boundaries(
+        return results
+    results, _ = _infer_from_trt_engine_with_batch_size_boundaries(
         pre_processed_images=pre_processed_images,
         engine=engine,
         context=context,
@@ -256,12 +255,69 @@ def infer_from_trt_engine(
         outputs=outputs,
         min_batch_size=trt_config.dynamic_batch_size_min,
         max_batch_size=trt_config.dynamic_batch_size_max,
-        use_cuda_graph=use_cuda_graph,
+        use_cuda_graph=False,
+        trt_cuda_graph_state=None,
+    )
+    return results
+
+
+def infer_from_trt_engine_with_cudagraph(
+    pre_processed_images: torch.Tensor,
+    trt_config: TRTConfig,
+    engine: trt.ICudaEngine,
+    context: trt.IExecutionContext,
+    device: torch.device,
+    input_name: str,
+    outputs: List[str],
+    trt_cuda_graph_state: Optional[TRTCudaGraphState] = None,
+) -> Tuple[List[torch.Tensor], Optional[TRTCudaGraphState]]:
+    """Run inference using a TensorRT engine with CUDA graph support.
+
+    Similar to `infer_from_trt_engine`, but captures and replays CUDA graphs for
+    improved performance on repeated inference with the same input shape.
+
+    Args:
+        pre_processed_images: Preprocessed input tensor on CUDA device.
+        trt_config: TensorRT configuration object.
+        engine: TensorRT CUDA engine (ICudaEngine).
+        context: TensorRT execution context (IExecutionContext).
+        device: PyTorch CUDA device.
+        input_name: Name of the input tensor in the TensorRT engine.
+        outputs: List of output tensor names.
+        trt_cuda_graph_state: Optional state from a previous call for graph replay.
+
+    Returns:
+        Tuple of (results, trt_cuda_graph_state) where results is the list of
+        output tensors and trt_cuda_graph_state can be passed to subsequent calls.
+    """
+    if trt_config.static_batch_size is not None:
+        return _infer_from_trt_engine_with_batch_size_boundaries(
+            pre_processed_images=pre_processed_images,
+            engine=engine,
+            context=context,
+            device=device,
+            input_name=input_name,
+            outputs=outputs,
+            min_batch_size=trt_config.static_batch_size,
+            max_batch_size=trt_config.static_batch_size,
+            use_cuda_graph=True,
+            trt_cuda_graph_state=trt_cuda_graph_state,
+        )
+    return _infer_from_trt_engine_with_batch_size_boundaries(
+        pre_processed_images=pre_processed_images,
+        engine=engine,
+        context=context,
+        device=device,
+        input_name=input_name,
+        outputs=outputs,
+        min_batch_size=trt_config.dynamic_batch_size_min,
+        max_batch_size=trt_config.dynamic_batch_size_max,
+        use_cuda_graph=True,
         trt_cuda_graph_state=trt_cuda_graph_state,
     )
 
 
-def infer_from_trt_engine_with_batch_size_boundaries(
+def _infer_from_trt_engine_with_batch_size_boundaries(
     pre_processed_images: torch.Tensor,
     engine: trt.ICudaEngine,
     context: trt.IExecutionContext,
