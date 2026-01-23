@@ -6,7 +6,11 @@ from typing import Optional
 from dotenv import load_dotenv
 
 from inference.core.utils.environment import safe_split_value, str2bool
-from inference.core.warnings import InferenceDeprecationWarning, ModelDependencyMissing
+from inference.core.warnings import (
+    InferenceDeprecationWarning,
+    InferenceModelsStackMissing,
+    ModelDependencyMissing,
+)
 
 load_dotenv(os.getcwd() + "/.env")
 
@@ -597,6 +601,7 @@ INFERENCE_WARNINGS_DISABLED = str2bool(
 
 if INFERENCE_WARNINGS_DISABLED:
     warnings.simplefilter("ignore", InferenceDeprecationWarning)
+    warnings.simplefilter("ignore", InferenceModelsStackMissing)
 
 HUGGINGFACE_TOKEN = os.getenv("HUGGINGFACE_TOKEN")
 DEVICE = os.getenv("DEVICE")

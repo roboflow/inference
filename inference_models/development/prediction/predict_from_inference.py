@@ -2,8 +2,9 @@ import argparse
 import os.path
 from typing import Optional
 
-from inference_models import AutoModel
 from tqdm import tqdm
+
+from inference_models import AutoModel
 
 from .dataset import download_dataset
 from .serialization import dump_json, serialize_results

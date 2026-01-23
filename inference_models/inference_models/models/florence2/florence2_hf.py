@@ -74,6 +74,7 @@ class Florence2HF:
                     ResizeMode.LETTERBOX,
                     ResizeMode.CENTER_CROP,
                     ResizeMode.LETTERBOX_REFLECT_EDGES,
+                    ResizeMode.FIT_LONGER_EDGE,
                 },
             )
 
@@ -611,7 +612,6 @@ class Florence2HF:
             max_new_tokens=max_new_tokens,
             num_beams=num_beams,
             do_sample=do_sample,
-            **kwargs,
         )
 
     def post_process_generation(

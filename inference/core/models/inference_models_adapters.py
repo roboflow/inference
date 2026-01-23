@@ -5,18 +5,20 @@ from typing import Any, List, Optional, Tuple, Union
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
-from inference.core import logger
 from inference.core.entities.requests import ClassificationInferenceRequest
 from inference.core.entities.responses.inference import (
+    ClassificationInferenceResponse,
+    InferenceResponse,
     InferenceResponseImage,
     InstanceSegmentationInferenceResponse,
     InstanceSegmentationPrediction,
     Keypoint,
     KeypointsDetectionInferenceResponse,
     KeypointsPrediction,
+    MultiLabelClassificationInferenceResponse,
     ObjectDetectionInferenceResponse,
     ObjectDetectionPrediction,
-    Point, MultiLabelClassificationInferenceResponse, ClassificationInferenceResponse, InferenceResponse
+    Point,
 )
 from inference.core.env import (
     ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES,
@@ -27,22 +29,20 @@ from inference.core.models.base import Model
 from inference.core.utils.image_utils import load_image_rgb
 from inference.core.utils.postprocess import masks2poly
 from inference.models.aliases import resolve_roboflow_model_alias
-from inference.usage_tracking.collector import usage_collector
 from inference_models import (
     AutoModel,
+    ClassificationModel,
+    ClassificationPrediction,
     Detections,
     InstanceDetections,
     InstanceSegmentationModel,
     KeyPoints,
     KeyPointsDetectionModel,
-    ObjectDetectionModel,
-    ClassificationModel,
-    ClassificationPrediction,
     MultiLabelClassificationModel,
     MultiLabelClassificationPrediction,
+    ObjectDetectionModel,
 )
 from inference_models.models.base.types import PreprocessingMetadata
-
 
 DEFAULT_COLOR_PALETTE = [
     "A351FB",
@@ -67,6 +67,7 @@ DEFAULT_COLOR_PALETTE = [
     "FF97CA",
     "FF39C9",
 ]
+
 
 class InferenceModelsObjectDetectionAdapter(Model):
     def __init__(self, model_id: str, api_key: str = None, **kwargs):
@@ -474,12 +475,14 @@ class InferenceModelsClassificationAdapter(Model):
 
         self.task_type = "classification"
 
-        self._model: Union[ClassificationModel, MultiLabelClassificationModel] = AutoModel.from_pretrained(
-            model_id_or_path=model_id,
-            api_key=self.api_key,
-            allow_untrusted_packages=ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES,
-            allow_direct_local_storage_loading=ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES,
-            **kwargs,
+        self._model: Union[ClassificationModel, MultiLabelClassificationModel] = (
+            AutoModel.from_pretrained(
+                model_id_or_path=model_id,
+                api_key=self.api_key,
+                allow_untrusted_packages=ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES,
+                allow_direct_local_storage_loading=ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES,
+                **kwargs,
+            )
         )
         self.class_names = list(self._model.class_names)
 
@@ -512,11 +515,13 @@ class InferenceModelsClassificationAdapter(Model):
         returned_metadata: List[Tuple[int, int]],
         **kwargs,
     ) -> Union[
-            List[MultiLabelClassificationInferenceResponse],
-            List[ClassificationInferenceResponse]
-        ]:
+        List[MultiLabelClassificationInferenceResponse],
+        List[ClassificationInferenceResponse],
+    ]:
         mapped_kwargs = self.map_inference_kwargs(kwargs)
-        post_processed_predictions = self._model.post_process(predictions, **mapped_kwargs)
+        post_processed_predictions = self._model.post_process(
+            predictions, **mapped_kwargs
+        )
         if isinstance(post_processed_predictions, list):
             # multi-label classification
             return prepare_multi_label_classification_response(
@@ -534,7 +539,6 @@ class InferenceModelsClassificationAdapter(Model):
                 confidence_threshold=kwargs.get("confidence", 0.5),
             )
 
-
     def clear_cache(self, delete_from_disk: bool = True) -> None:
         """Clears any cache if necessary. TODO: Implement this to delete the cache from the experimental model.
 
@@ -542,7 +546,6 @@ class InferenceModelsClassificationAdapter(Model):
             delete_from_disk (bool, optional): Whether to delete cached files from disk. Defaults to True.
         """
         pass
-
 
     def infer_from_request(
         self,
@@ -572,13 +575,14 @@ class InferenceModelsClassificationAdapter(Model):
 
         if request.visualize_predictions:
             for response in responses:
-                response.visualization = draw_predictions(request, response, self.class_names)
+                response.visualization = draw_predictions(
+                    request, response, self.class_names
+                )
 
         if not isinstance(request.image, list):
             responses = responses[0]
 
         return responses
-
 
 
 def prepare_multi_label_classification_response(
@@ -591,9 +595,14 @@ def prepare_multi_label_classification_response(
     for prediction, image_size in zip(post_processed_predictions, image_sizes):
         image_predictions_dict = dict()
         predicted_classes = []
-        for class_id, confidence in zip(prediction.class_ids.cpu().tolist(), prediction.confidence.cpu().tolist()):
+        for class_id, confidence in zip(
+            prediction.class_ids.cpu().tolist(), prediction.confidence.cpu().tolist()
+        ):
             cls_name = class_names[class_id]
-            image_predictions_dict[cls_name] = {"confidence": confidence, "class_id": class_id}
+            image_predictions_dict[cls_name] = {
+                "confidence": confidence,
+                "class_id": class_id,
+            }
             if confidence > confidence_threshold:
                 predicted_classes.append(cls_name)
         results.append(
@@ -615,8 +624,7 @@ def prepare_classification_response(
 ) -> List[ClassificationInferenceResponse]:
     responses = []
     for classes_confidence, image_size in zip(
-        post_processed_predictions.confidence.cpu().tolist(),
-        image_sizes
+        post_processed_predictions.confidence.cpu().tolist(), image_sizes
     ):
         individual_classes_predictions = []
         for i, cls_name in enumerate(class_names):
@@ -629,17 +637,26 @@ def prepare_classification_response(
                 "confidence": round(class_score, 4),
             }
             individual_classes_predictions.append(class_prediction)
-        individual_classes_predictions = sorted(individual_classes_predictions, key=lambda x: x["confidence"], reverse=True)
+        individual_classes_predictions = sorted(
+            individual_classes_predictions, key=lambda x: x["confidence"], reverse=True
+        )
         response = ClassificationInferenceResponse(
             image=InferenceResponseImage(width=image_size[1], height=image_size[0]),
             # essentially pushing a dummy values as I have no intention breaking the new API for the sake of delivering value that has no practical use
             predictions=individual_classes_predictions,
-            top=individual_classes_predictions[0]["class"] if individual_classes_predictions else "",
-            confidence=individual_classes_predictions[0]["confidence"] if individual_classes_predictions else 0.0,
+            top=(
+                individual_classes_predictions[0]["class"]
+                if individual_classes_predictions
+                else ""
+            ),
+            confidence=(
+                individual_classes_predictions[0]["confidence"]
+                if individual_classes_predictions
+                else 0.0
+            ),
         )
         responses.append(response)
     return responses
-
 
 
 def draw_predictions(inference_request, inference_response, class_names: List[str]):
@@ -696,9 +713,7 @@ def draw_predictions(inference_request, inference_response, class_names: List[st
             (cls_name, pred)
             for cls_name, pred in inference_response.predictions.items()
         ]
-        predictions = sorted(
-            predictions, key=lambda x: x[1].confidence, reverse=True
-        )
+        predictions = sorted(predictions, key=lambda x: x[1].confidence, reverse=True)
         for i, (cls_name, pred) in enumerate(predictions):
             color = class_id_2_color.get(cls_name, "#4892EA")
             text = f"{cls_name} {pred.confidence:.2f}"

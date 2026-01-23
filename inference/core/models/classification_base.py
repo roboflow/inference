@@ -337,7 +337,7 @@ class ClassificationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
                         width=img_dims[ind][0], height=img_dims[ind][1]
                     ),
                     predicted_classes=predicted_classes,
-                        predictions=results,
+                    predictions=results,
                 )
             else:
                 preds = prediction[0]

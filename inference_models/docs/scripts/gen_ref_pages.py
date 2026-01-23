@@ -1,6 +1,7 @@
 """Generate API reference pages automatically from docstrings."""
 
 from pathlib import Path
+
 import mkdocs_gen_files
 
 # Modules to skip

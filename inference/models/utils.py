@@ -32,7 +32,7 @@ from inference.core.models.stubs import (
     ObjectDetectionModelStub,
 )
 from inference.core.registries.roboflow import get_model_type
-from inference.core.warnings import ModelDependencyMissing
+from inference.core.warnings import InferenceModelsStackMissing, ModelDependencyMissing
 from inference.models import (
     YOLACT,
     DinoV3Classification,
@@ -685,19 +685,18 @@ def get_roboflow_model(*args, **kwargs):
     return get_model(*args, **kwargs)
 
 
-# Prefer inference_exp backend for RF-DETR variants when enabled and available
-try:
-    if USE_INFERENCE_MODELS:
-        # Ensure experimental package is importable before swapping
-        __import__("inference_models")
-        from inference.core.models.inference_models_adapters import (
-            InferenceModelsInstanceSegmentationAdapter,
-            InferenceModelsKeyPointsDetectionAdapter,
-            InferenceModelsObjectDetectionAdapter,
-            InferenceModelsClassificationAdapter
-        )
+if USE_INFERENCE_MODELS:
+    # Ensure experimental package is importable before swapping
+    __import__("inference_models")
+    from inference.core.models.inference_models_adapters import (
+        InferenceModelsClassificationAdapter,
+        InferenceModelsInstanceSegmentationAdapter,
+        InferenceModelsKeyPointsDetectionAdapter,
+        InferenceModelsObjectDetectionAdapter,
+    )
 
-        for task, variant in ROBOFLOW_MODEL_TYPES.keys():
+    for task, variant in ROBOFLOW_MODEL_TYPES.keys():
+        try:
             if task == "object-detection" and variant.startswith("rfdetr"):
                 ROBOFLOW_MODEL_TYPES[(task, variant)] = (
                     InferenceModelsObjectDetectionAdapter
@@ -738,15 +737,30 @@ try:
                 ROBOFLOW_MODEL_TYPES[(task, variant)] = (
                     InferenceModelsKeyPointsDetectionAdapter
                 )
-            elif (
-                task == "classification"
-                and (variant.startswith("yolov") or variant.startswith("dinov3") or variant.startswith("resnet") or variant.startswith("vit"))
+            elif task == "classification" and (
+                variant.startswith("yolov")
+                or variant.startswith("dinov3")
+                or variant.startswith("resnet")
+                or variant.startswith("vit")
             ):
                 ROBOFLOW_MODEL_TYPES[(task, variant)] = (
                     InferenceModelsClassificationAdapter
                 )
-except Exception as e:
-    # Fallback silently to legacy ONNX RFDETR when experimental stack is unavailable
-    warnings.warn(
-        "Inference experimental stack is unavailable, falling back to regular model inference stack"
-    )
+            elif variant.startswith("paligemma-") or variant.startswith("paligemma2-"):
+                from inference.models.paligemma.paligemma_inference_models import (
+                    InferenceModelsPaligemmaAdapter,
+                )
+
+                ROBOFLOW_MODEL_TYPES[(task, variant)] = InferenceModelsPaligemmaAdapter
+            elif variant.startswith("florence-2"):
+                from inference.models.florence2.florence2_inference_models import (
+                    InferenceModelsFlorence2Adapter,
+                )
+
+                ROBOFLOW_MODEL_TYPES[(task, variant)] = InferenceModelsFlorence2Adapter
+        except Exception as e:
+            warnings.warn(
+                f"`inference-models` stack is unavailable for model: {variant} and task: {task}, "
+                f"falling back to regular `inference` stack - error: {e}",
+                category=InferenceModelsStackMissing,
+            )

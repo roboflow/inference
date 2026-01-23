@@ -4,10 +4,11 @@ import time
 import cv2
 import torch
 import torchvision
+from tqdm import tqdm
+
 from inference_models.models.yolov8.yolov8_object_detection_trt import (
     YOLOv8ForObjectDetectionTRT,
 )
-from tqdm import tqdm
 
 IMAGE_PATH = os.environ["IMAGE_PATH"]
 MODEL_PACKAGE = os.environ["MODEL_PACKAGE"]
