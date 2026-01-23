@@ -33,21 +33,48 @@ def main() -> None:
     pre_processed_1, _ = model.pre_process(image_1)
     pre_processed_2, _ = model.pre_process(image_2)
 
+    expected_output_1_no_cuda_graph = model.forward(
+        pre_processed_1, use_cuda_graph=False
+    )
+    expected_output_2_no_cuda_graph = model.forward(
+        pre_processed_2, use_cuda_graph=False
+    )
 
-    expected_output_1_no_cuda_graph = model.forward(pre_processed_1, use_cuda_graph=False)
-    expected_output_2_no_cuda_graph = model.forward(pre_processed_2, use_cuda_graph=False)
+    expected_output_1_capture_cuda_graph = model.forward(
+        pre_processed_1, use_cuda_graph=True
+    )
+    expected_output_2_capture_cudagraph = model.forward(
+        pre_processed_2, use_cuda_graph=True
+    )
 
-    expected_output_1_capture_cuda_graph = model.forward(pre_processed_1, use_cuda_graph=True)
-    expected_output_2_capture_cudagraph = model.forward(pre_processed_2, use_cuda_graph=True)
-
-    expected_output_1_replayed_cudagraph = model.forward(pre_processed_1, use_cuda_graph=True)
-    expected_output_2_replayed_cudagraph = model.forward(pre_processed_2, use_cuda_graph=True)
+    expected_output_1_replayed_cudagraph = model.forward(
+        pre_processed_1, use_cuda_graph=True
+    )
+    expected_output_2_replayed_cudagraph = model.forward(
+        pre_processed_2, use_cuda_graph=True
+    )
 
     for i in [0, 1]:
-        assert torch.allclose(expected_output_1_no_cuda_graph[i], expected_output_1_capture_cuda_graph[i], atol=1e-6)
-        assert torch.allclose(expected_output_2_no_cuda_graph[i], expected_output_2_capture_cudagraph[i], atol=1e-6)
-        assert torch.allclose(expected_output_1_no_cuda_graph[i], expected_output_1_replayed_cudagraph[i], atol=1e-6)
-        assert torch.allclose(expected_output_2_no_cuda_graph[i], expected_output_2_replayed_cudagraph[i], atol=1e-6)
+        assert torch.allclose(
+            expected_output_1_no_cuda_graph[i],
+            expected_output_1_capture_cuda_graph[i],
+            atol=1e-6,
+        )
+        assert torch.allclose(
+            expected_output_2_no_cuda_graph[i],
+            expected_output_2_capture_cudagraph[i],
+            atol=1e-6,
+        )
+        assert torch.allclose(
+            expected_output_1_no_cuda_graph[i],
+            expected_output_1_replayed_cudagraph[i],
+            atol=1e-6,
+        )
+        assert torch.allclose(
+            expected_output_2_no_cuda_graph[i],
+            expected_output_2_replayed_cudagraph[i],
+            atol=1e-6,
+        )
 
     print("Timing without CUDA graphs...")
     start = time.perf_counter()
