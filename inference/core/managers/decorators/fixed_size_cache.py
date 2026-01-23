@@ -33,10 +33,18 @@ class WithFixedSizeCache(ModelManagerDecorator):
             model_manager (ModelManager): Instance of a ModelManager.
             max_size (int, optional): Max number of models at the same time. Defaults to 8.
         """
+        import time
+
         super().__init__(model_manager)
         self.max_size = max_size
         self._key_queue = deque(self.model_manager.keys())
         self._queue_lock = Lock()
+        # Track when models were loaded for lifetime calculation in eviction events
+        self._model_load_times: dict = {}
+        # Initialize load times for pre-existing models
+        current_time = time.time()
+        for model_id in self.model_manager.keys():
+            self._model_load_times[model_id] = current_time
 
     def add_model(
         self,
@@ -84,10 +92,25 @@ class WithFixedSizeCache(ModelManagerDecorator):
                 raise ModelManagerLockAcquisitionError(
                     "Could not acquire lock on Model Manager state to add model from active models queue."
                 )
+            import time
+
+            from inference.core.env import GCP_LOGGING_DETAILED_MEMORY
+            from inference.core.gcp_logging import (
+                ModelEvictedEvent,
+                gcp_logger,
+                measure_memory_for_eviction,
+            )
+
             while self._key_queue and (
                 len(self) >= self.max_size
                 or (MEMORY_FREE_THRESHOLD and self.memory_pressure_detected())
             ):
+                # Determine eviction reason
+                is_memory_pressure = (
+                    MEMORY_FREE_THRESHOLD and self.memory_pressure_detected()
+                )
+                eviction_reason = "memory_pressure" if is_memory_pressure else "capacity"
+
                 # To prevent flapping around the threshold, remove 3 models to make some space.
                 for _ in range(3):
                     if not self._key_queue:
@@ -100,6 +123,45 @@ class WithFixedSizeCache(ModelManagerDecorator):
                         )
                         break
                     to_remove_model_id = self._key_queue.popleft()
+
+                    # Capture model metrics before eviction for GCP logging
+                    if gcp_logger.enabled:
+                        # Calculate lifetime
+                        load_time = self._model_load_times.get(
+                            to_remove_model_id, time.time()
+                        )
+                        lifetime_seconds = time.time() - load_time
+
+                        # Get inference count from model metrics
+                        inference_count = 0
+                        try:
+                            model = self.model_manager._models.get(to_remove_model_id)
+                            if model and hasattr(model, "metrics"):
+                                inference_count = model.metrics.get(
+                                    "num_inferences", 0
+                                )
+                        except Exception:
+                            pass
+
+                        # Capture memory state if detailed logging enabled
+                        memory_snapshot = measure_memory_for_eviction(
+                            detailed=GCP_LOGGING_DETAILED_MEMORY
+                        )
+
+                        gcp_logger.log_event(
+                            ModelEvictedEvent(
+                                model_id=to_remove_model_id,
+                                reason=eviction_reason,
+                                lifetime_seconds=lifetime_seconds,
+                                inference_count=inference_count,
+                                memory=memory_snapshot,
+                            ),
+                            sampled=False,  # Always log evictions (low volume, high value)
+                        )
+
+                        # Clean up load time tracking
+                        self._model_load_times.pop(to_remove_model_id, None)
+
                     super().remove(
                         to_remove_model_id, delete_from_disk=DISK_CACHE_CLEANUP
                     )  # LRU model overflow cleanup may or maynot need the weights removed from disk
@@ -107,6 +169,8 @@ class WithFixedSizeCache(ModelManagerDecorator):
                 gc.collect()
             logger.debug(f"Marking new model {queue_id} as most recently used.")
             self._key_queue.append(queue_id)
+            # Track load time for the new model
+            self._model_load_times[queue_id] = time.time()
         try:
             return super().add_model(
                 model_id,

@@ -308,7 +308,19 @@ class RoboflowInferenceModel(Model):
         service_secret: Optional[str] = None,
         **kwargs,
     ) -> None:
+        import time
+
+        from inference.core.gcp_logging import (
+            ModelLoadedToDiskEvent,
+            gcp_logger,
+            get_gcp_context,
+        )
+
         logger.debug("Downloading model artifacts from Roboflow API")
+
+        download_start_time = time.time()
+        total_download_bytes = 0
+        artifact_count = 0
 
         # Use the same lock file pattern as in clear_cache
         lock_dir = MODEL_CACHE_DIR + "/_file_locks"  # Dedicated lock directory
@@ -385,6 +397,10 @@ class RoboflowInferenceModel(Model):
                             model_id=self.endpoint,
                         )
 
+                # Track download bytes
+                total_download_bytes += len(model_weights_response.content)
+                artifact_count += 1
+
                 save_bytes_in_cache(
                     content=model_weights_response.content,
                     file=self.weights_file,
@@ -397,6 +413,8 @@ class RoboflowInferenceModel(Model):
                     file="environment.json",
                     model_id=self.endpoint,
                 )
+                artifact_count += 1  # environment.json
+
                 if "keypoints_metadata" in api_data:
                     # TODO: make sure backend provides that
                     save_json_in_cache(
@@ -404,6 +422,24 @@ class RoboflowInferenceModel(Model):
                         file="keypoints_metadata.json",
                         model_id=self.endpoint,
                     )
+                    artifact_count += 1
+
+                # Log model_loaded_to_disk event for GCP logging
+                if gcp_logger.enabled:
+                    download_duration_ms = (time.time() - download_start_time) * 1000
+                    ctx = get_gcp_context()
+                    gcp_logger.log_event(
+                        ModelLoadedToDiskEvent(
+                            request_id=ctx.request_id if ctx else None,
+                            model_id=self.endpoint,
+                            backend="onnx",
+                            download_bytes=total_download_bytes,
+                            download_duration_ms=download_duration_ms,
+                            artifact_count=artifact_count,
+                        ),
+                        sampled=False,  # Always log disk loads (low volume, high value)
+                    )
+
         except Exception as e:
             logger.error(f"Error downloading model artifacts: {e}")
             raise

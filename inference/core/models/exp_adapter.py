@@ -39,11 +39,22 @@ class InferenceExpObjectDetectionModelAdapter(Model):
         # Lazy import to avoid hard dependency if flag disabled
         from inference_models import AutoModel  # type: ignore
 
+        # Use GCP logging access manager to track downloads when enabled
+        from inference.core.gcp_logging import (
+            GCPLoggingModelAccessManager,
+            gcp_logger,
+        )
+
+        model_access_manager = None
+        if gcp_logger.enabled:
+            model_access_manager = GCPLoggingModelAccessManager()
+
         self._exp_model: ObjectDetectionModel = AutoModel.from_pretrained(
             model_id_or_path=model_id,
             api_key=self.api_key,
             allow_untrusted_packages=ALLOW_INFERENCE_EXP_UNTRUSTED_MODELS,
             allow_direct_local_storage_loading=False,
+            model_access_manager=model_access_manager,
         )
         # if hasattr(self._exp_model, "optimize_for_inference"):
         #     self._exp_model.optimize_for_inference()
