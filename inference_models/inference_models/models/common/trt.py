@@ -233,7 +233,7 @@ def infer_from_trt_engine(
         - `get_trt_engine_inputs_and_outputs()`: Get engine tensor names
     """
     if trt_config.static_batch_size is not None:
-        results, _ = _infer_from_trt_engine_with_batch_size_boundaries(
+        results, _ = infer_from_trt_engine_with_batch_size_boundaries(
             pre_processed_images=pre_processed_images,
             engine=engine,
             context=context,
@@ -246,7 +246,7 @@ def infer_from_trt_engine(
             trt_cuda_graph_state=None,
         )
         return results
-    results, _ = _infer_from_trt_engine_with_batch_size_boundaries(
+    results, _ = infer_from_trt_engine_with_batch_size_boundaries(
         pre_processed_images=pre_processed_images,
         engine=engine,
         context=context,
@@ -291,7 +291,7 @@ def infer_from_trt_engine_with_cudagraph(
         output tensors and trt_cuda_graph_state can be passed to subsequent calls.
     """
     if trt_config.static_batch_size is not None:
-        return _infer_from_trt_engine_with_batch_size_boundaries(
+        return infer_from_trt_engine_with_batch_size_boundaries(
             pre_processed_images=pre_processed_images,
             engine=engine,
             context=context,
@@ -303,7 +303,7 @@ def infer_from_trt_engine_with_cudagraph(
             use_cuda_graph=True,
             trt_cuda_graph_state=trt_cuda_graph_state,
         )
-    return _infer_from_trt_engine_with_batch_size_boundaries(
+    return infer_from_trt_engine_with_batch_size_boundaries(
         pre_processed_images=pre_processed_images,
         engine=engine,
         context=context,
@@ -317,7 +317,7 @@ def infer_from_trt_engine_with_cudagraph(
     )
 
 
-def _infer_from_trt_engine_with_batch_size_boundaries(
+def infer_from_trt_engine_with_batch_size_boundaries(
     pre_processed_images: torch.Tensor,
     engine: trt.ICudaEngine,
     context: trt.IExecutionContext,
