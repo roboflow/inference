@@ -280,9 +280,9 @@ class StitchOCRDetectionsBlockV2(WorkflowBlock):
     def run(
         self,
         predictions: Batch[sv.Detections],
-        stitching_algorithm: str,
-        reading_direction: str,
-        tolerance: int,
+        stitching_algorithm: str = "tolerance",
+        reading_direction: str = "auto",
+        tolerance: int = 10,
         delimiter: str = "",
         otsu_threshold_multiplier: float = 1.0,
         collimate_tolerance: int = 10,
