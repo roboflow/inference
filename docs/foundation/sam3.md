@@ -30,11 +30,10 @@ Here is an example of how to use SAM 3 with a text prompt to segment objects.
 
 ```python
 import os
+os.environ["API_KEY"] = "<YOUR_ROBOFLOW_API_KEY>"
+
 from inference.models.sam3 import SegmentAnything3
 from inference.core.entities.requests.sam3 import Sam3Prompt
-
-# Set your API key
-os.environ["API_KEY"] = "<YOUR_ROBOFLOW_API_KEY>"
 
 # Initialize the model
 # The model will automatically download weights if not present
