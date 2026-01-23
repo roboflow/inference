@@ -25,7 +25,7 @@ class InferenceModelsFlorence2Adapter(Model):
         self.metrics = {"num_inferences": 0, "avg_inference_time": 0.0}
 
         self.api_key = api_key if api_key else API_KEY
-        self.task_type = "object-detection"
+        self.task_type = "lmm"
 
         self._model: Florence2HF = AutoModel.from_pretrained(
             model_id_or_path=model_id,

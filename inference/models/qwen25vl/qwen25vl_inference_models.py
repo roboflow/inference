@@ -16,10 +16,10 @@ from inference.core.models.types import PreprocessReturnMetadata
 from inference.core.utils.image_utils import load_image_rgb
 from inference.models.aliases import resolve_roboflow_model_alias
 from inference_models import AutoModel
-from inference_models.models.paligemma.paligemma_hf import PaliGemmaHF
+from inference_models.models.qwen25vl.qwen25vl_hf import Qwen25VLHF
 
 
-class InferenceModelsPaligemmaAdapter(Model):
+class InferenceModelsQwen25VLAdapter(Model):
     def __init__(self, model_id: str, api_key: str = None, **kwargs):
         super().__init__()
 
@@ -30,7 +30,7 @@ class InferenceModelsPaligemmaAdapter(Model):
 
         self.task_type = "lmm"
 
-        self._model: PaliGemmaHF = AutoModel.from_pretrained(
+        self._model: Qwen25VLHF = AutoModel.from_pretrained(
             model_id_or_path=model_id,
             api_key=self.api_key,
             allow_untrusted_packages=ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES,
