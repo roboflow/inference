@@ -204,7 +204,7 @@ class RFDetrForObjectDetectionTRT(
         with self._lock:
             with use_cuda_context(context=self._cuda_context):
                 if use_cuda_graph:
-                    detections, labels, trt_cuda_graph_state = infer_from_trt_engine(
+                    (detections, labels), trt_cuda_graph_state = infer_from_trt_engine(
                         pre_processed_images=pre_processed_images,
                         trt_config=self._trt_config,
                         engine=self._engine,
@@ -217,7 +217,7 @@ class RFDetrForObjectDetectionTRT(
                     )
                     self._trt_cuda_graph_state = trt_cuda_graph_state
                 else:
-                    detections, labels, _ = infer_from_trt_engine(
+                    (detections, labels), _ = infer_from_trt_engine(
                         pre_processed_images=pre_processed_images,
                         trt_config=self._trt_config,
                         engine=self._engine,

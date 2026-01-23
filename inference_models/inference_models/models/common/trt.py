@@ -58,18 +58,17 @@ class InferenceTRTLogger(trt.ILogger):
     def get_memory(self) -> List[Tuple[trt.ILogger.Severity, str]]:
         return self._memory
 
-import pycuda.driver as cuda
+
 @dataclass
 class TRTCudaGraphState:
-    cuda_graph: cuda.GraphExec
+    cuda_graph: torch.cuda.CUDAGraph
     cuda_stream: torch.cuda.Stream
-    input_pointer: int
-    input_shape: Tuple[int, ...]
-    output_pointers: List[int]
-    output_shapes: List[Tuple[int, ...]]
+    input_buffer: torch.Tensor
+    output_buffers: List[torch.Tensor]
 
-    def has_changed_shape(self, input_shape: Tuple[int, ...], output_shapes: List[Tuple[int, ...]]) -> bool:
-        return self.input_shape != input_shape or self.output_shapes != output_shapes
+    def has_changed_shape(self, input_shape: Tuple[int, ...]) -> bool:
+        return tuple(self.input_buffer.shape) != input_shape
+
 
 def get_trt_engine_inputs_and_outputs(
     engine: trt.ICudaEngine,
@@ -143,7 +142,7 @@ def infer_from_trt_engine(
     outputs: List[str],
     use_cuda_graph: bool = False,
     trt_cuda_graph_state: Optional[TRTCudaGraphState] = None,
-) -> Tuple[List[torch.Tensor], List[torch.Tensor], TRTCudaGraphState]:
+) -> Tuple[List[torch.Tensor], TRTCudaGraphState]:
     """Run inference using a TensorRT engine.
 
     Executes inference on preprocessed images using a TensorRT engine and execution
@@ -347,44 +346,40 @@ def execute_trt_engine(
     trt_cuda_graph_state: Optional[TRTCudaGraphState] = None,
 ) -> Tuple[List[torch.Tensor], Optional[TRTCudaGraphState]]:
 
-    if use_cuda_graph:
-
-        batch_size = pre_processed_images.shape[0]
-        results = []
-        for output in outputs:
-            output_tensor_shape = engine.get_tensor_shape(output)
-            output_tensor_type = trt_dtype_to_torch(engine.get_tensor_dtype(output))
-            result = torch.empty(
-                (batch_size,) + output_tensor_shape[1:],
-                dtype=output_tensor_type,
+    if trt_cuda_graph_state is not None:
+        input_shape = tuple(pre_processed_images.shape)
+        if trt_cuda_graph_state.has_changed_shape(input_shape):
+            LOGGER.warning(
+                f"Input shape changed from {tuple(trt_cuda_graph_state.input_buffer.shape)} "
+                f"to {input_shape}. Recapturing CUDA graph."
+            )
+            return _capture_cuda_graph(
+                pre_processed_images=pre_processed_images,
+                engine=engine,
+                context=context,
                 device=device,
+                input_name=input_name,
+                outputs=outputs,
             )
-            context.set_tensor_address(output, result.data_ptr())
-            results.append(result)
-        status = context.set_input_shape(input_name, tuple(pre_processed_images.shape))
-        if not status:
-            raise ModelRuntimeError(
-                message="Failed to set TRT model input shape during forward pass from the model.",
-                help_url="https://todo",
-            )
-        status = context.set_tensor_address(input_name, pre_processed_images.data_ptr())
-        if not status:
-            raise ModelRuntimeError(
-                message="Failed to set input tensor data pointer during forward pass from the model.",
-                help_url="https://todo",
-            )
-        stream = torch.cuda.Stream(device=device)
-        status = context.execute_async_v3(stream_handle=stream.cuda_stream)
-        if not status:
-            raise ModelRuntimeError(
-                message="Failed to complete inference from TRT model",
-                help_url="https://todo",
-            )
+
+        stream = trt_cuda_graph_state.cuda_stream
+        trt_cuda_graph_state.input_buffer.copy_(pre_processed_images)
+        trt_cuda_graph_state.cuda_graph.replay()
         stream.synchronize()
-        return results, None  
+        results = [buf.clone() for buf in trt_cuda_graph_state.output_buffers]
+        return results, trt_cuda_graph_state
+
+    elif use_cuda_graph:
+        return _capture_cuda_graph(
+            pre_processed_images=pre_processed_images,
+            engine=engine,
+            context=context,
+            device=device,
+            input_name=input_name,
+            outputs=outputs,
+        )
 
     else:
-
         batch_size = pre_processed_images.shape[0]
         results = []
         for output in outputs:
@@ -420,7 +415,7 @@ def execute_trt_engine(
         return results, None
 
 
-def execute_trt_engine_with_cuda_graph(
+def _capture_cuda_graph(
     pre_processed_images: torch.Tensor,
     engine: trt.ICudaEngine,
     context: trt.IExecutionContext,
@@ -429,38 +424,64 @@ def execute_trt_engine_with_cuda_graph(
     outputs: List[str],
 ) -> Tuple[List[torch.Tensor], TRTCudaGraphState]:
     batch_size = pre_processed_images.shape[0]
-    results = []
+
+    input_buffer = torch.empty_like(pre_processed_images, device=device)
+    input_buffer.copy_(pre_processed_images)
+
+    output_buffers = []
     for output in outputs:
         output_tensor_shape = engine.get_tensor_shape(output)
         output_tensor_type = trt_dtype_to_torch(engine.get_tensor_dtype(output))
-        result = torch.empty(
+        output_buffer = torch.empty(
             (batch_size,) + output_tensor_shape[1:],
             dtype=output_tensor_type,
             device=device,
         )
-        context.set_tensor_address(output, result.data_ptr())
-        results.append(result)
+        context.set_tensor_address(output, output_buffer.data_ptr())
+        output_buffers.append(output_buffer)
+
     status = context.set_input_shape(input_name, tuple(pre_processed_images.shape))
     if not status:
         raise ModelRuntimeError(
-            message="Failed to set TRT model input shape during forward pass from the model.",
+            message="Failed to set TRT model input shape during CUDA graph capture.",
             help_url="https://todo",
         )
-    status = context.set_tensor_address(input_name, pre_processed_images.data_ptr())
+    status = context.set_tensor_address(input_name, input_buffer.data_ptr())
     if not status:
         raise ModelRuntimeError(
-            message="Failed to set input tensor data pointer during forward pass from the model.",
+            message="Failed to set input tensor data pointer during CUDA graph capture.",
             help_url="https://todo",
         )
+
     stream = torch.cuda.Stream(device=device)
-    status = context.execute_async_v3(stream_handle=stream.cuda_stream)
-    if not status:
-        raise ModelRuntimeError(
-            message="Failed to complete inference from TRT model",
-            help_url="https://todo",
-        )
+    with torch.cuda.stream(stream):
+        status = context.execute_async_v3(stream_handle=stream.cuda_stream)
+        if not status:
+            raise ModelRuntimeError(
+                message="Failed to execute TRT model warmup before CUDA graph capture.",
+                help_url="https://todo",
+            )
     stream.synchronize()
-    return results, None
+
+    cuda_graph = torch.cuda.CUDAGraph()
+    with torch.cuda.graph(cuda_graph, stream=stream):
+        status = context.execute_async_v3(stream_handle=stream.cuda_stream)
+        if not status:
+            raise ModelRuntimeError(
+                message="Failed to capture CUDA graph from TRT model execution.",
+                help_url="https://todo",
+            )
+
+    
+    trt_cuda_graph_state = TRTCudaGraphState(
+        cuda_graph=cuda_graph,
+        cuda_stream=stream,
+        input_buffer=input_buffer,
+        output_buffers=output_buffers,
+    )
+
+    results = [buf.clone() for buf in output_buffers]
+    return results, trt_cuda_graph_state
 
 
 def trt_dtype_to_torch(trt_dtype):
