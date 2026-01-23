@@ -4,12 +4,13 @@ import time
 import cv2
 import numpy as np
 import torch
+from tqdm import tqdm
 
 from inference_models import AutoModel
 
 IMAGE_PATH = os.environ.get("IMAGE_PATH", None)
 DEVICE = os.environ.get("DEVICE", "cuda:0")
-CYCLES = int(os.environ.get("CYCLES", "10_000"))
+CYCLES = int(os.environ.get("CYCLES", "100"))
 WARMUP = int(os.environ.get("WARMUP", "50"))
 
 
@@ -36,16 +37,27 @@ def main() -> None:
         model.forward(pre_processed, use_cuda_graph=False)
     baseline_fps = CYCLES / (time.perf_counter() - start)
 
-    print("Timing with CUDA graphs...")
+    print("Timing with forced CUDA graph recapture each step...")
+    start = time.perf_counter()
+    for _ in range(100): # not using CYCLES here bc this is wayyyy slower than the non-graph or the replay modes
+        model._trt_cuda_graph_state = None
+        model.forward(pre_processed, use_cuda_graph=True)
+       
+    cudagraph_recapture_fps = CYCLES / (time.perf_counter() - start)
+
+    print("Timing with CUDA graph caching and replaying...")
+    model.forward(pre_processed, use_cuda_graph=True) # initial capture
     start = time.perf_counter()
     for _ in range(CYCLES):
         model.forward(pre_processed, use_cuda_graph=True)
-    cudagraph_fps = CYCLES / (time.perf_counter() - start)
+    cudagraph_replay_fps = CYCLES / (time.perf_counter() - start)
 
     print(f"\n{'='*50}")
     print(f"Forward pass FPS (no CUDA graphs): {baseline_fps:.1f}")
-    print(f"Forward pass FPS (CUDA graphs):    {cudagraph_fps:.1f}")
-    print(f"Speedup: {cudagraph_fps / baseline_fps:.2f}x")
+    print(f"Forward pass FPS (CUDA graphs recapture):    {cudagraph_recapture_fps:.1f}")
+    print(f"Speed factor (recapture): {cudagraph_recapture_fps / baseline_fps:.2f}x")
+    print(f"Forward pass FPS (CUDA graphs replay):    {cudagraph_replay_fps:.1f}")
+    print(f"Speed factor (replay): {cudagraph_replay_fps / baseline_fps:.2f}x")
     print(f"{'='*50}")
 
 
