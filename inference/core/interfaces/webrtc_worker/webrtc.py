@@ -54,8 +54,11 @@ from inference.core.interfaces.webrtc_worker.entities import (
 )
 from inference.core.interfaces.webrtc_worker.utils import (
     detect_image_output,
+    get_cv2_rotation_code,
+    get_video_rotation,
     parse_video_file_chunk,
     process_frame,
+    rotate_video_frame,
 )
 from inference.core.managers.base import ModelManager
 from inference.core.roboflow_api import get_workflow_specification
@@ -108,6 +111,7 @@ class OnDemandVideoTrack(MediaStreamTrack):
     async def recv(self) -> VideoFrame:
         loop = asyncio.get_running_loop()
         frame = await loop.run_in_executor(None, lambda: next(self._iterator, None))
+
         if frame is None:
             self.stop()
             raise MediaStreamError("End of video file")
@@ -319,6 +323,7 @@ class VideoFrameProcessor:
         self.video_upload_handler: Optional[VideoFileUploadHandler] = None
         self._track_ready_event: asyncio.Event = asyncio.Event()
         self.realtime_processing = realtime_processing
+        self._rotation_code: Optional[int] = None
 
         # Optional receiver-paced flow control (enabled only after first ACK is received)
         self._ack_last: int = 0
@@ -360,9 +365,10 @@ class VideoFrameProcessor:
             _is_preview=is_preview,
         )
 
-    def set_track(self, track: MediaStreamTrack):
+    def set_track(self, track: MediaStreamTrack, rotation_code: Optional[int] = None):
         if not self.track:
             self.track = track
+            self._rotation_code = rotation_code
             self._track_ready_event.set()
 
     async def close(self):
@@ -686,6 +692,10 @@ class VideoFrameProcessor:
         include_errors_on_frame: bool = True,
     ) -> Tuple[Dict[str, Any], Optional[VideoFrame], List[str]]:
         """Async wrapper for process_frame using executor."""
+
+        if self._rotation_code is not None:
+            frame = rotate_video_frame(frame, self._rotation_code)
+
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(
             None,
@@ -1132,15 +1142,30 @@ async def init_rtc_peer_connection_with_loop(
                     None, process_video_upload_message, message, video_processor
                 )
                 if video_path:
+                    logger.info(
+                        "Video upload complete, processing: realtime=%s, path=%s",
+                        webrtc_request.webrtc_realtime_processing,
+                        video_path,
+                    )
+
+                    rotation = get_video_rotation(video_path)
+                    rotation_code = get_cv2_rotation_code(rotation)
+                    if rotation_code is not None:
+                        logger.info("Video has %d° rotation, will correct", rotation)
+
                     if webrtc_request.webrtc_realtime_processing:
                         # Throttled playback - use MediaPlayer
                         player = MediaPlayer(video_path, loop=False)
                         player._throttle_playback = True
-                        video_processor.set_track(track=player.video)
+                        video_processor.set_track(
+                            track=player.video, rotation_code=rotation_code
+                        )
                     else:
-                        # Fast processing - use OnDemandVideoTrack (no pre-buffering)
+                        # Fast processing - use OnDemandVideoTrack
                         track = OnDemandVideoTrack(video_path)
-                        video_processor.set_track(track=track)
+                        video_processor.set_track(
+                            track=track, rotation_code=rotation_code
+                        )
 
                     if not should_send_video:
                         # For DATA_ONLY, start data-only processing task

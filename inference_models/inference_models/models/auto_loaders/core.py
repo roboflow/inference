@@ -17,8 +17,13 @@ from inference_models.configuration import DEFAULT_DEVICE, INFERENCE_HOME
 from inference_models.errors import (
     CorruptedModelPackageError,
     DirectLocalStorageAccessError,
+    ForbiddenLocalCodePackageAccessError,
     InsecureModelIdentifierError,
+    InvalidModelInitParameterError,
+    InvalidParameterError,
+    MissingModelInitParameterError,
     ModelLoadingError,
+    ModelPackageAlternativesExhaustedError,
     NoModelPackagesAvailableError,
     UnauthorizedModelAccessError,
 )
@@ -82,7 +87,16 @@ MODEL_TYPES_TO_LOAD_FROM_CHECKPOINT = {
     "rfdetr-medium",
     "rfdetr-nano",
     "rfdetr-large",
+    "rfdetr-xlarge",
+    "rfdetr-2xlarge",
     "rfdetr-seg-preview",
+    "rfdetr-seg-nano",
+    "rfdetr-seg-small",
+    "rfdetr-seg-medium",
+    "rfdetr-seg-large",
+    "rfdetr-seg-xlarge",
+    "rfdetr-seg-2xlarge",
+    "rfdetr-seg-xxlarge",
 }
 
 DEFAULT_KWARGS_PARAMS_TO_BE_FORWARDED_TO_DEPENDENT_MODELS = [
@@ -102,6 +116,74 @@ class AutoModel:
         api_key: Optional[str] = None,
         pull_artefacts_size: bool = False,
     ) -> None:
+        """Display comprehensive metadata and available packages for a model.
+
+        Shows detailed information about a model without loading it, including:
+
+        - Model architecture and variant
+        - Task type (object detection, classification, etc.)
+        - Available model packages (different backends, quantizations, batch sizes)
+        - Package requirements and compatibility
+        - Model dependencies (if any)
+        - Package sizes (optional, requires network requests)
+
+        This is useful for:
+
+        - Exploring available models before loading
+        - Understanding which backends are available for a model
+        - Checking model requirements and compatibility
+        - Debugging model loading issues
+        - Selecting the right package for your environment
+
+        Args:
+            model_id: Model identifier. Can be:
+                - Pre-trained model ID (e.g., "yolov8n-640", "rfdetr-base")
+                - Custom Roboflow model (e.g., "my-project/2")
+
+            weights_provider: Source for model metadata. Options:
+                - "roboflow" (default): Query Roboflow platform
+                - Custom provider name (if registered)
+
+            api_key: Roboflow API key for accessing private models. If not provided,
+                uses the `ROBOFLOW_API_KEY` environment variable. Not required for
+                public pre-trained models.
+
+            pull_artefacts_size: Whether to calculate and display the total size of
+                each model package. This requires making network requests to check
+                file sizes, so it's slower. Default: False.
+
+        Returns:
+            None. Prints formatted tables to the console showing:
+                1. Model overview table with architecture, task type, and dependencies
+                2. Available packages table with backend, quantization, and batch size info
+
+        Raises:
+            UnauthorizedModelAccessError: If API key is invalid or model access is denied.
+            ModelNotFoundError: If the model ID doesn't exist in the weights provider.
+
+        Examples:
+            View model information:
+
+            >>> from inference_models import AutoModel
+            >>> AutoModel.describe_model("yolov8n-640")
+
+            View with package sizes:
+
+            >>> AutoModel.describe_model("rfdetr-base", pull_artefacts_size=True)
+            # Same as above, but includes a "Size" column showing package sizes
+
+            View private model:
+
+            >>> AutoModel.describe_model(
+            ...     "my-workspace/my-model/2",
+            ...     api_key="your_api_key"
+            ... )
+
+        See Also:
+            - `AutoModel.describe_model_package()`: View detailed info for a specific package
+            - `AutoModel.describe_compute_environment()`: Check your runtime environment
+            - `AutoModel.from_pretrained()`: Load a model after inspecting it
+        """
         model_metadata = get_model_from_provider(
             provider=weights_provider,
             model_id=model_id,
@@ -152,6 +234,76 @@ class AutoModel:
         api_key: Optional[str] = None,
         pull_artefacts_size: bool = True,
     ) -> None:
+        """Display detailed information about a specific model package.
+
+        Shows comprehensive details for a single model package, including:
+
+        - Backend type (PyTorch, ONNX, TensorRT, etc.)
+        - Quantization level (FP32, FP16, INT8, etc.)
+        - Batch size configuration (fixed or dynamic)
+        - Required dependencies and environment
+        - Package artifacts (model files, configs, etc.)
+        - Total package size (optional)
+        - Hardware requirements (CUDA version, TensorRT version, etc.)
+
+        This is useful for:
+
+        - Understanding package requirements before loading
+        - Debugging compatibility issues
+        - Checking package size before download
+        - Verifying package contents
+
+        Args:
+            model_id: Model identifier. Can be:
+                - Pre-trained model ID (e.g., "yolov8n-640", "rfdetr-base")
+                - Custom Roboflow model (e.g., "my-project/2")
+
+            package_id: Specific package identifier to inspect. Get this from
+                `AutoModel.describe_model()` output.
+
+            weights_provider: Source for model metadata. Options:
+                - "roboflow" (default): Query Roboflow platform
+                - Custom provider name (if registered)
+
+            api_key: Roboflow API key for accessing private models. If not provided,
+                uses the `ROBOFLOW_API_KEY` environment variable. Not required for
+                public pre-trained models.
+
+            pull_artefacts_size: Whether to calculate and display the size of each
+                artifact in the package. This requires making network requests to check
+                file sizes, so it's slower. Default: True.
+
+        Returns:
+            None. Prints a formatted table to the console showing package details.
+
+        Raises:
+            UnauthorizedModelAccessError: If API key is invalid or model access is denied.
+            ModelNotFoundError: If the model ID doesn't exist in the weights provider.
+            NoModelPackagesAvailableError: If the specified package_id doesn't exist
+                for this model.
+
+        Examples:
+            View package details:
+
+            >>> from inference_models import AutoModel
+            >>> # First, see available packages
+            >>> AutoModel.describe_model("yolov8n-640")
+            >>> # Then inspect a specific package
+            >>> AutoModel.describe_model_package("yolov8n-640", "pkg-trt-fp16-1-32")
+
+            View without artifact sizes (faster):
+
+            >>> AutoModel.describe_model_package(
+            ...     "rfdetr-base",
+            ...     "pkg-torch-fp32",
+            ...     pull_artefacts_size=False
+            ... )
+
+        See Also:
+            - `AutoModel.describe_model()`: View all available packages for a model
+            - `AutoModel.describe_compute_environment()`: Check your runtime environment
+            - `AutoModel.from_pretrained()`: Load a model with a specific package
+        """
         model_metadata = get_model_from_provider(
             provider=weights_provider,
             model_id=model_id,
@@ -190,6 +342,53 @@ class AutoModel:
 
     @classmethod
     def describe_compute_environment(cls) -> None:
+        """Inspect and display the current runtime environment and available backends.
+
+        Performs a comprehensive scan of your system to detect:
+
+        - **Hardware**: GPU availability, GPU models, compute capability
+        - **CUDA**: Driver version, CUDA toolkit version
+        - **TensorRT**: TensorRT version and availability
+        - **PyTorch**: PyTorch and torchvision versions
+        - **ONNX Runtime**: Version and available execution providers
+        - **Other backends**: Hugging Face Transformers, Ultralytics, MediaPipe
+        - **Platform**: OS version, Jetson type (if applicable), L4T version
+
+        This is useful for:
+
+        - Debugging model loading issues
+        - Verifying backend installations
+        - Checking hardware compatibility
+        - Understanding which model packages will work in your environment
+        - Troubleshooting performance issues
+
+        Returns:
+            None. Prints a formatted table to the console showing all detected
+            environment information.
+
+        Examples:
+            Check your environment:
+
+            >>> from inference_models import AutoModel
+            >>> AutoModel.describe_compute_environment()
+            # Displays output like:
+                                        Compute environment details
+            Detected GPUs:                      N/A
+            Detected GPUs CUDA CC:              N/A
+            NVIDIA driver:                      N/A
+            CUDA version:                       N/A
+            TRT version:                        N/A
+            TRT Python package available:       False
+            OS version:                         macos-26.2-arm64-arm-64bit
+            torch version:                      2.6.0
+            torchvision version:                0.21.0
+            ONNX runtime version:               1.21.0
+            Detected ONNX execution providers:  CoreMLExecutionProvider, AzureExecutionProvider, CPUExecutionProvider
+
+        See Also:
+            - `AutoModel.describe_model()`: View model metadata and requirements
+            - `AutoModel.from_pretrained()`: Load a model (uses this environment info)
+        """
         runtime_x_ray = x_ray_runtime_environment()
         table = render_runtime_x_ray(runtime_x_ray=runtime_x_ray)
         console = Console()
@@ -210,7 +409,7 @@ class AutoModel:
             Union[str, Quantization, List[Union[str, Quantization]]]
         ] = None,
         onnx_execution_providers: Optional[List[Union[str, tuple]]] = None,
-        device: torch.device = DEFAULT_DEVICE,
+        device: Union[torch.device, str] = DEFAULT_DEVICE,
         default_onnx_trt_options: bool = True,
         max_package_loading_attempts: Optional[int] = None,
         verbose: bool = False,
@@ -233,6 +432,205 @@ class AutoModel:
         forwarded_kwargs: Optional[List[str]] = None,
         **kwargs,
     ) -> AnyModel:
+        """Load and initialize a computer vision model with automatic backend selection.
+
+        This is the primary entry point for loading models in `inference-models`. It automatically:
+
+        - Downloads model weights from the specified provider (default: Roboflow)
+        - Selects the optimal backend (TensorRT > PyTorch Hugging Face> > ONNX > others)
+        - Configures the model for your hardware (CPU/GPU)
+        - Handles caching of atrefacts
+
+        Args:
+            model_id_or_path: Model identifier or local path. Can be:
+                - Pre-trained model ID (e.g., "yolov8n-640", "rfdetr-base", "resnet50")
+                - Custom Roboflow model (e.g., "my-project/2")
+                - Local directory path containing model files
+                - Local checkpoint file path (e.g., "/path/to/checkpoint.pth")
+
+            weights_provider: Source for model weights. Options:
+                - "roboflow" (default): Download from Roboflow platform
+                - "local": Load from local filesystem
+                - Custom provider name (if registered via `register_model_provider()`)
+
+            api_key: Roboflow API key for accessing private models. If not provided,
+                uses the `ROBOFLOW_API_KEY` environment variable. Not required for
+                public pre-trained models.
+
+            model_package_id: Specific model package to load (advanced). If not provided,
+                automatically selects the best package based on your environment and
+                requested backend/quantization. Use `AutoModel.describe_model()` to see
+                available packages.
+
+            backend: Preferred inference backend(s). Can be:
+                - Single backend: "torch", "onnx", "trt" (TensorRT), "hugging-face"
+                - List of backends: ["trt", "torch"] (tries in order)
+                - BackendType enum value(s)
+                - None (default): Automatic selection (TensorRT > PyTorch > ONNX > HF)
+
+            batch_size: Preferred batch size for inference. Can be:
+                - Single integer: Fixed batch size (e.g., 1, 8, 16)
+                - Tuple: Range of batch sizes (e.g., (1, 8) for dynamic batching)
+                - None (default): Use model's default batch size
+                Note: Only affects models with multiple batch size variants.
+
+            quantization: Model quantization level(s). Can be:
+                - Single value: "fp32", "fp16", "bf16", "int8"
+                - List: ["fp16", "fp32"] (tries in order)
+                - Quantization enum value(s)
+                - None (default): Automatic selection based on device capabilities
+
+            onnx_execution_providers: ONNX Runtime execution providers (ONNX backend only).
+                Examples:
+                - ["CUDAExecutionProvider", "CPUExecutionProvider"]
+                - [("TensorrtExecutionProvider", {"trt_fp16_enable": True})]
+                If not provided, automatically selects based on available hardware.
+
+            device: PyTorch device for model execution. Can be:
+                - String: "cpu", "cuda", "cuda:0", "cuda:1", "mps"
+                - torch.device object
+                Default: "cuda" if available, otherwise "cpu"
+
+            default_onnx_trt_options: Whether to use default TensorRT optimization options
+                for ONNX Runtime's TensorRT execution provider. Default: True.
+
+            max_package_loading_attempts: Maximum number of model packages to try before
+                failing. Useful when multiple packages are available. Default: Try all
+                matching packages.
+
+            verbose: Enable detailed logging during model loading. Useful for debugging
+                package selection and download issues. Default: False.
+
+            model_download_file_lock_acquire_timeout: Timeout in seconds for acquiring
+                file locks during concurrent downloads. Default: 10.
+
+            allow_untrusted_packages: Allow loading model packages with custom code that
+                haven't been verified. **Security risk** - only enable for trusted sources.
+                Default: False.
+
+            trt_engine_host_code_allowed: Allow TensorRT engines to execute host code.
+                Required for some TensorRT optimizations. Default: True.
+
+            allow_local_code_packages: Allow loading models with custom Python code from
+                local directories. Default: True.
+
+            verify_hash_while_download: Verify file integrity using checksums during
+                download. Recommended for production. Default: True.
+
+            download_files_without_hash: Allow downloading files that don't have checksums.
+                **Security risk** - only enable for trusted sources. Default: False.
+
+            use_auto_resolution_cache: Enable caching of model resolution results to speed
+                up subsequent loads. Default: True.
+
+            auto_resolution_cache: Custom cache implementation. If None, uses default
+                file-based cache. Advanced usage only.
+
+            allow_direct_local_storage_loading: Allow loading models directly from local
+                paths without going through the weights provider. Default: True.
+
+            model_access_manager: Custom model access control manager. If None, uses
+                permissive default. Advanced usage only.
+
+            nms_fusion_preferences: Non-Maximum Suppression fusion preferences for ONNX
+                models. Can be:
+                - True: Enable NMS fusion with default settings
+                - False: Disable NMS fusion
+                - dict: Custom NMS fusion configuration
+                - None (default): Use model's default settings
+
+            model_type: Override model architecture type (advanced). Only needed when
+                loading local models without metadata. Examples: "yolov8", "rfdetr".
+
+            task_type: Override task type (advanced). Only needed when loading local
+                models without metadata. Examples: "object-detection", "classification".
+
+            allow_loading_dependency_models: Allow loading models that depend on other
+                models (e.g., some VLMs depend on separate vision encoders). Default: True.
+
+            dependency_models_params: Parameters to pass to dependency models. Dict mapping
+                dependency names to parameter dicts. Advanced usage only.
+
+            point_model_directory: Callback function called with the model directory path
+                after loading. Advanced usage only.
+
+            forwarded_kwargs: List of kwargs to forward to dependency models. Advanced
+                usage only.
+
+            **kwargs: Additional model-specific parameters passed to the model's
+                `from_pretrained()` method. Varies by model type.
+
+        Returns:
+            Loaded model instance. The specific type depends on the model's task:
+                - ObjectDetectionModel: For object detection (YOLO, RF-DETR, etc.)
+                - ClassificationModel: For single-label classification
+                - MultiLabelClassificationModel: For multi-label classification
+                - InstanceSegmentationModel: For instance segmentation
+                - KeyPointsDetectionModel: For keypoint detection
+                - DepthEstimationModel: For depth estimation
+                - StructuredOCRModel: For OCR with structured output
+                - TextImageEmbeddingModel: For vision-language embeddings (CLIP, etc.)
+                - OpenVocabularyObjectDetectionModel: For open-vocabulary detection
+
+        Raises:
+            UnauthorizedModelAccessError: If API key is invalid or model access is denied.
+            ModelPackageNotFoundError: If no compatible model package is found for your
+                environment and requested parameters.
+            CorruptedModelPackageError: If model files are corrupted or incomplete.
+            InvalidParameterError: If provided parameters are invalid.
+            DirectLocalStorageAccessError: If local path loading is disabled but a local
+                path was provided.
+
+        Examples:
+            Basic usage with pre-trained model:
+
+            >>> from inference_models import AutoModel
+            >>> model = AutoModel.from_pretrained("yolov8n-640")
+            >>> predictions = model(image)
+
+            Load custom Roboflow model:
+
+            >>> model = AutoModel.from_pretrained(
+            ...     "my-project/2",
+            ...     api_key="your_api_key"
+            ... )
+
+            Force specific backend and device:
+
+            >>> model = AutoModel.from_pretrained(
+            ...     "rfdetr-base",
+            ...     backend="torch",
+            ...     device="cuda:1"
+            ... )
+
+            Load with quantization:
+
+            >>> model = AutoModel.from_pretrained(
+            ...     "yolov8n-640",
+            ...     quantization="fp16"
+            ... )
+
+            Load from local checkpoint:
+
+            >>> model = AutoModel.from_pretrained(
+            ...     "/path/to/checkpoint.pth",
+            ...     model_type="rfdetr-base",
+            ...     labels=["cat", "dog"]
+            ... )
+
+            Enable verbose logging:
+
+            >>> model = AutoModel.from_pretrained(
+            ...     "yolov8n-640",
+            ...     verbose=True
+            ... )
+
+        See Also:
+            - `AutoModel.describe_model()`: View model metadata before loading
+            - `AutoModel.describe_model_package()`: View specific package details
+            - `AutoModel.describe_compute_environment()`: Check available backends
+            - `AutoModel.list_available_models()`: List all registered models
+        """
         if model_access_manager is None:
             model_access_manager = LiberalModelAccessManager()
         if model_access_manager.is_model_access_forbidden(
@@ -267,6 +665,16 @@ class AutoModel:
                 on_file_created=register_file_created_for_model_package,
                 on_file_deleted=model_access_manager.on_file_deleted,
             )
+        if isinstance(device, str):
+            try:
+                device = torch.device(device)
+            except RuntimeError as error:
+                raise InvalidParameterError(
+                    message="Could not parse `device` parameter value - make sure that it is a valid string "
+                    f"representation of torch device. Valid values: 'cpu', 'cuda' or 'cuda:0'. If you see this error "
+                    "while using Roboflow infrastructure - contact us to get help. Otherwise - verify your setup.",
+                    help_url="https://todo",
+                ) from error
         model_init_kwargs = {
             "onnx_execution_providers": onnx_execution_providers,
             "device": device,
@@ -674,7 +1082,7 @@ def attempt_loading_matching_model_packages(
     if max_package_loading_attempts is not None:
         matching_model_packages = matching_model_packages[:max_package_loading_attempts]
     if not matching_model_packages:
-        raise ModelLoadingError(
+        raise NoModelPackagesAvailableError(
             message=f"Cannot load model {model_id} - no matching model package candidates for given model "
             f"running in this environment.",
             help_url="https://todo",
@@ -744,7 +1152,7 @@ def attempt_loading_matching_model_packages(
         f"\t* model_package_id={model_package_id} error={error} error_type={error.__class__.__name__}"
         for model_package_id, error in failed_load_attempts
     )
-    raise ModelLoadingError(
+    raise ModelPackageAlternativesExhaustedError(
         message=f"Could not load any of model package candidate for model {model_id}. This may "
         f"be caused several issues. If you see this warning after manually specifying model "
         f"package to be loaded - make sure that all required dependencies are installed. If "
@@ -1095,7 +1503,7 @@ def attempt_loading_model_from_local_storage(
             model_init_kwargs=model_init_kwargs,
         )
     if not allow_local_code_packages:
-        raise ModelLoadingError(
+        raise ForbiddenLocalCodePackageAccessError(
             message=f"Attempted to load model from local package with arbitrary code. This is not allowed in "
             f"this environment. To let inference loading such models, use `allow_local_code_packages=True` "
             f"parameter of `AutoModel.from_pretrained(...)`. If you see this error while using one of Roboflow "
@@ -1141,14 +1549,14 @@ def resolve_models_registry_entry(
 ) -> Tuple[str, str, BackendType]:
     #  TODO: in the future this check will grow in size
     if not model_type:
-        raise ModelLoadingError(
+        raise MissingModelInitParameterError(
             message="When loading model directly from checkpoint path, `model_type` parameter must be specified. "
             "Use one of the supported value, for example `rfdetr-nano` in case you refer checkpoint of "
             "RFDetr Nano model.",
             help_url="https://todo",
         )
     if model_type not in MODEL_TYPES_TO_LOAD_FROM_CHECKPOINT:
-        raise ModelLoadingError(
+        raise InvalidModelInitParameterError(
             message="When loading model directly from checkpoint path, `model_type` parameter must define "
             "one of the type of model that support loading directly from the checkpoints. "
             f"Models supported in current version: {MODEL_TYPES_TO_LOAD_FROM_CHECKPOINT}",
@@ -1162,7 +1570,7 @@ def resolve_models_registry_entry(
         else:
             task_type = OBJECT_DETECTION_TASK
     if task_type not in {OBJECT_DETECTION_TASK, INSTANCE_SEGMENTATION_TASK}:
-        raise ModelLoadingError(
+        raise InvalidModelInitParameterError(
             message=f"When loading model directly from checkpoint path, set `model_type` as {model_type} and "
             f"`task_type` as {task_type}, whereas selected model do only support `{OBJECT_DETECTION_TASK}` "
             f"task while loading from checkpoint file.",
@@ -1172,7 +1580,7 @@ def resolve_models_registry_entry(
         backend_type = BackendType.TORCH
     if isinstance(backend_type, list) and len(backend_type) != 1:
         if len(backend_type) != 1:
-            raise ModelLoadingError(
+            raise InvalidModelInitParameterError(
                 message=f"When loading model directly from checkpoint path, set `backend` parameter to be {backend_type}, "
                 f"whereas it is only supported to pass a single value.",
                 help_url="https://todo",
@@ -1181,7 +1589,7 @@ def resolve_models_registry_entry(
     if isinstance(backend_type, str):
         backend_type = parse_backend_type(value=backend_type)
     if backend_type is not BackendType.TORCH:
-        raise ModelLoadingError(
+        raise InvalidModelInitParameterError(
             message=f"When loading model directly from checkpoint path, selected the following backend {backend_type}, "
             f"but the backend supported for model {model_type} is {BackendType.TORCH}",
             help_url="https://todo",
@@ -1191,7 +1599,7 @@ def resolve_models_registry_entry(
 
 def parse_model_config(config_path: str) -> InferenceModelConfig:
     if not os.path.isfile(config_path):
-        raise ModelLoadingError(
+        raise CorruptedModelPackageError(
             message=f"Could not find model config while attempting to load model from "
             f"local directory. This error may be caused by misconfiguration of model package (lack of config "
             f"file), as well as by clash between model_id or model alias and contents of local disc drive which "

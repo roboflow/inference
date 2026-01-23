@@ -106,11 +106,9 @@ class BlockManifest(WorkflowBlockManifest):
         ge=1,
     )
 
-    reference_timestamp: Optional[
-        Union[float, WorkflowParameterSelector(kind=[FLOAT_KIND])]
-    ] = Field(
+    reference_timestamp: Optional[Union[float, Selector(kind=[FLOAT_KIND])]] = Field(
         default=None,
-        description="Unix timestamp when the video started. When provided, absolute timestamps (first_seen_timestamp, last_seen_timestamp) are included in output, calculated as relative time + reference_timestamp.",
+        description="Unix timestamp when the video started. When provided, absolute timestamps (first_seen_timestamp, last_seen_timestamp) are included in output, calculated as relative time + reference_timestamp. If not provided and the video metadata contains frame_timestamp, the reference timestamp will be automatically extracted from the first frame.",
         examples=[1726570875.0],
     )
 
@@ -143,6 +141,10 @@ class BlockManifest(WorkflowBlockManifest):
                 name="total_pending",
                 kind=[INTEGER_KIND],
             ),
+            OutputDefinition(
+                name="complete_events",
+                kind=[DICTIONARY_KIND],
+            ),
         ]
 
     @classmethod
@@ -173,6 +175,8 @@ class DetectionEventLogBlockV1(WorkflowBlock):
         self._frame_count: Dict[str, int] = {}
         # Dict[video_id, last_access_frame] - tracks when each video was last accessed (global frame count)
         self._last_access: Dict[str, int] = {}
+        # Dict[video_id, reference_timestamp] - stores extracted reference timestamp per video
+        self._reference_timestamps: Dict[str, float] = {}
         # Global frame counter for tracking video access order
         self._global_frame: int = 0
 
@@ -204,30 +208,36 @@ class DetectionEventLogBlockV1(WorkflowBlock):
         self._last_flush_frame.pop(oldest_video_id, None)
         self._frame_count.pop(oldest_video_id, None)
         self._last_access.pop(oldest_video_id, None)
+        self._reference_timestamps.pop(oldest_video_id, None)
 
     def _remove_stale_events(
         self,
         event_log: Dict[int, DetectionEvent],
         current_frame: int,
         stale_frames: int,
+        frame_threshold: int,
     ) -> List[DetectionEvent]:
         """Remove events that haven't been seen for stale_frames.
 
-        Returns list of removed events for logging purposes.
+        Returns list of removed LOGGED events (events that met frame_threshold).
+        These are "complete" events - objects that were tracked long enough
+        to be logged and have now left the scene.
         """
         stale_tracker_ids = []
-        removed_events = []
+        complete_events = []
 
         for tracker_id, event in event_log.items():
             frames_since_seen = current_frame - event.last_seen_frame
             if frames_since_seen > stale_frames:
                 stale_tracker_ids.append(tracker_id)
-                removed_events.append(event)
+                # Only return logged events as "complete" - pending events are just discarded
+                if event.frame_count >= frame_threshold:
+                    complete_events.append(event)
 
         for tracker_id in stale_tracker_ids:
             del event_log[tracker_id]
 
-        return removed_events
+        return complete_events
 
     def run(
         self,
@@ -267,6 +277,24 @@ class DetectionEventLogBlockV1(WorkflowBlock):
 
         current_time = self._get_relative_time(current_frame, metadata, fallback_fps)
 
+        # If reference_timestamp not provided, try to extract from video metadata
+        effective_reference_timestamp = reference_timestamp
+        if effective_reference_timestamp is None:
+            # Check if we already have a stored reference timestamp for this video
+            if video_id in self._reference_timestamps:
+                effective_reference_timestamp = self._reference_timestamps[video_id]
+            elif metadata.frame_timestamp is not None:
+                # Calculate reference timestamp: frame_timestamp - relative_time
+                # This gives us the timestamp when the video/stream started
+                # frame_timestamp is a datetime object, so we need to convert to Unix timestamp
+                frame_ts = metadata.frame_timestamp.timestamp()
+                effective_reference_timestamp = frame_ts - current_time
+                self._reference_timestamps[video_id] = effective_reference_timestamp
+                logger.debug(
+                    f"Extracted reference_timestamp for video {video_id}: {effective_reference_timestamp} "
+                    f"(frame_timestamp={frame_ts}, relative_time={current_time})"
+                )
+
         # Initialize event log for this video if needed
         event_log = self._event_logs.setdefault(video_id, {})
 
@@ -278,22 +306,31 @@ class DetectionEventLogBlockV1(WorkflowBlock):
             self._last_flush_frame[video_id] = current_frame
 
         # Check if it's time to run cleanup
+        complete_events_list = []
         last_flush = self._last_flush_frame.get(video_id, 0)
         if (current_frame - last_flush) >= flush_interval:
-            self._remove_stale_events(event_log, current_frame, stale_frames)
+            complete_events_list = self._remove_stale_events(
+                event_log, current_frame, stale_frames, frame_threshold
+            )
             self._last_flush_frame[video_id] = current_frame
+
+        # Format complete events
+        complete_events = self._format_complete_events(
+            complete_events_list, effective_reference_timestamp
+        )
 
         # Process detections
         if detections.tracker_id is None or len(detections.tracker_id) == 0:
             # No tracked detections, return current log
             event_log_dict, total_logged, total_pending = self._format_event_log(
-                event_log, frame_threshold, reference_timestamp
+                event_log, frame_threshold, effective_reference_timestamp
             )
             return {
                 OUTPUT_KEY: event_log_dict,
                 DETECTIONS_OUTPUT_KEY: detections,
                 "total_logged": total_logged,
                 "total_pending": total_pending,
+                "complete_events": complete_events,
             }
 
         # Get class names
@@ -337,14 +374,54 @@ class DetectionEventLogBlockV1(WorkflowBlock):
                 )
 
         event_log_dict, total_logged, total_pending = self._format_event_log(
-            event_log, frame_threshold, reference_timestamp
+            event_log, frame_threshold, effective_reference_timestamp
         )
         return {
             OUTPUT_KEY: event_log_dict,
             DETECTIONS_OUTPUT_KEY: detections,
             "total_logged": total_logged,
             "total_pending": total_pending,
+            "complete_events": complete_events,
         }
+
+    def _format_complete_events(
+        self,
+        complete_events: List[DetectionEvent],
+        reference_timestamp: Optional[float] = None,
+    ) -> Dict[str, Any]:
+        """Format complete events for output.
+
+        Args:
+            complete_events: List of DetectionEvent objects that have completed (gone stale).
+            reference_timestamp: Optional reference timestamp for absolute time calculation.
+
+        Returns:
+            Dictionary with tracker_id as key and event data as value.
+        """
+        formatted = {}
+        for event in complete_events:
+            event_data = asdict(event)
+            del event_data["logged"]
+
+            # Internal timestamps are relative (seconds since video start)
+            # Rename to *_relative in output
+            first_seen_relative = event_data.pop("first_seen_timestamp")
+            last_seen_relative = event_data.pop("last_seen_timestamp")
+            event_data["first_seen_relative"] = first_seen_relative
+            event_data["last_seen_relative"] = last_seen_relative
+
+            # Add absolute timestamps if reference_timestamp is provided
+            if reference_timestamp is not None:
+                event_data["first_seen_timestamp"] = (
+                    first_seen_relative + reference_timestamp
+                )
+                event_data["last_seen_timestamp"] = (
+                    last_seen_relative + reference_timestamp
+                )
+
+            formatted[str(event.tracker_id)] = event_data
+
+        return formatted
 
     def _format_event_log(
         self,

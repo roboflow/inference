@@ -15,8 +15,8 @@ from inference_models.models.base.embeddings import TextImageEmbeddingModel
 from inference_models.models.clip.preprocessing import create_clip_preprocessor
 from inference_models.models.common.model_packages import get_model_package_contents
 from inference_models.models.common.onnx import (
-    run_session_with_batch_size_limit,
-    set_execution_provider_defaults,
+    run_onnx_session_with_batch_size_limit,
+    set_onnx_execution_provider_defaults,
 )
 from inference_models.utils.onnx_introspection import (
     get_selected_onnx_execution_providers,
@@ -65,7 +65,7 @@ class ClipOnnx(TextImageEmbeddingModel):
                 f"contact the platform support.",
                 help_url="https://todo",
             )
-        onnx_execution_providers = set_execution_provider_defaults(
+        onnx_execution_providers = set_onnx_execution_provider_defaults(
             providers=onnx_execution_providers,
             model_package_path=model_name_or_path,
             device=device,
@@ -130,7 +130,7 @@ class ClipOnnx(TextImageEmbeddingModel):
             images, input_color_format, self._device
         )
         with self._visual_session_thread_lock:
-            return run_session_with_batch_size_limit(
+            return run_onnx_session_with_batch_size_limit(
                 session=self._visual_onnx_session,
                 inputs={self._visual_input_name: pre_processed_images},
                 max_batch_size=self._max_batch_size,
@@ -141,7 +141,7 @@ class ClipOnnx(TextImageEmbeddingModel):
             texts = [texts]
         tokenized_batch = clip.tokenize(texts)
         with self._textual_session_thread_lock:
-            return run_session_with_batch_size_limit(
+            return run_onnx_session_with_batch_size_limit(
                 session=self._textual_onnx_session,
                 inputs={self._textual_input_name: tokenized_batch},
                 max_batch_size=self._max_batch_size,
