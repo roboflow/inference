@@ -14,6 +14,7 @@ from transformers.utils import is_flash_attn_2_available
 
 from inference_models.configuration import (
     DEFAULT_DEVICE,
+    INFERENCE_MODELS_QWEN3_VL_DEFAULT_DO_SAMPLE,
     INFERENCE_MODELS_QWEN3_VL_DEFAULT_MAX_NEW_TOKENS,
 )
 from inference_models.entities import ColorFormat
@@ -51,6 +52,7 @@ class Qwen3VLHF:
                     ResizeMode.LETTERBOX,
                     ResizeMode.CENTER_CROP,
                     ResizeMode.LETTERBOX_REFLECT_EDGES,
+                    ResizeMode.FIT_LONGER_EDGE,
                 },
             )
 

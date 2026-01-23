@@ -15,10 +15,10 @@ from inference.core.models.base import Model
 from inference.core.models.types import PreprocessReturnMetadata
 from inference.core.utils.image_utils import load_image_rgb
 from inference_models import AutoModel
-from inference_models.models.qwen25vl.qwen25vl_hf import Qwen25VLHF
+from inference_models.models.qwen3vl.qwen3vl_hf import Qwen3VLHF
 
 
-class InferenceModelsQwen25VLAdapter(Model):
+class InferenceModelsQwen3VLAdapter(Model):
     def __init__(self, model_id: str, api_key: str = None, **kwargs):
         super().__init__()
 
@@ -28,7 +28,7 @@ class InferenceModelsQwen25VLAdapter(Model):
 
         self.task_type = "lmm"
 
-        self._model: Qwen25VLHF = AutoModel.from_pretrained(
+        self._model: Qwen3VLHF = AutoModel.from_pretrained(
             model_id_or_path=model_id,
             api_key=self.api_key,
             allow_untrusted_packages=ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES,

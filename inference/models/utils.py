@@ -764,6 +764,12 @@ if USE_INFERENCE_MODELS:
                 )
 
                 ROBOFLOW_MODEL_TYPES[(task, variant)] = InferenceModelsQwen25VLAdapter
+            elif variant.startswith("qwen3vl-"):
+                from inference.models.qwen3vl.qwen3vl_inference_models import (
+                    InferenceModelsQwen3VLAdapter,
+                )
+
+                ROBOFLOW_MODEL_TYPES[(task, variant)] = InferenceModelsQwen3VLAdapter
         except Exception as e:
             warnings.warn(
                 f"`inference-models` stack is unavailable for model: {variant} and task: {task}, "
