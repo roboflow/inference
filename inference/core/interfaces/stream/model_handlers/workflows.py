@@ -15,6 +15,7 @@ class WorkflowRunner:
         image_input_name: str,
         video_metadata_input_name: str,
         serialize_results: bool = False,
+        _is_preview: bool = False,
     ) -> List[dict]:
         if workflows_parameters is None:
             workflows_parameters = {}
@@ -55,4 +56,5 @@ class WorkflowRunner:
             runtime_parameters=workflows_parameters,
             fps=fps,
             serialize_results=serialize_results,
+            _is_preview=_is_preview,
         )

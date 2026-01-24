@@ -433,6 +433,9 @@ from inference.core.workflows.core_steps.transformations.stitch_images.v1 import
 from inference.core.workflows.core_steps.transformations.stitch_ocr_detections.v1 import (
     StitchOCRDetectionsBlockV1,
 )
+from inference.core.workflows.core_steps.transformations.stitch_ocr_detections.v2 import (
+    StitchOCRDetectionsBlockV2,
+)
 
 # Visualizers
 from inference.core.workflows.core_steps.visualizations.background_color.v1 import (
@@ -777,6 +780,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         StabilityAIOutpaintingBlockV1,
         StabilizeTrackedDetectionsBlockV1,
         StitchImagesBlockV1,
+        StitchOCRDetectionsBlockV2,
         StitchOCRDetectionsBlockV1,
         TemplateMatchingBlockV1,
         TimeInZoneBlockV1,
