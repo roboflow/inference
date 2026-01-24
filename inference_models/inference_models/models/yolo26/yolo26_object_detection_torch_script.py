@@ -2,8 +2,6 @@ from typing import List, Optional, Tuple, Union
 
 import numpy as np
 import torch
-import torchvision  # DO NOT REMOVE, THIS IMPORT ENABLES NMS OPERATION
-
 from inference_models import Detections, ObjectDetectionModel
 from inference_models.configuration import DEFAULT_DEVICE
 from inference_models.entities import ColorFormat
@@ -19,7 +17,6 @@ from inference_models.models.common.roboflow.model_packages import (
 from inference_models.models.common.roboflow.post_processing import (
     post_process_nms_fused_model_output,
     rescale_detections,
-    run_nms_for_object_detection,
 )
 from inference_models.models.common.roboflow.pre_processing import (
     pre_process_network_input,
@@ -58,11 +55,6 @@ class YOLO26ForObjectDetectionTorchScript(
                 ResizeMode.LETTERBOX_REFLECT_EDGES,
             },
         )
-        if inference_config.post_processing.type != "nms":
-            raise CorruptedModelPackageError(
-                message="Expected NMS to be the post-processing",
-                help_url="https://todo",
-            )
         if inference_config.forward_pass.static_batch_size is None:
             raise CorruptedModelPackageError(
                 message="Expected static batch size to be registered in the inference configuration.",
@@ -133,25 +125,13 @@ class YOLO26ForObjectDetectionTorchScript(
         model_results: torch.Tensor,
         pre_processing_meta: List[PreProcessingMetadata],
         conf_thresh: float = 0.25,
-        iou_thresh: float = 0.45,
-        max_detections: int = 100,
-        class_agnostic: bool = False,
         **kwargs,
     ) -> List[Detections]:
-        if self._inference_config.post_processing.fused:
-            nms_results = post_process_nms_fused_model_output(
-                output=model_results, conf_thresh=conf_thresh
-            )
-        else:
-            nms_results = run_nms_for_object_detection(
-                output=model_results,
-                conf_thresh=conf_thresh,
-                iou_thresh=iou_thresh,
-                max_detections=max_detections,
-                class_agnostic=class_agnostic,
-            )
+        filtered_results = post_process_nms_fused_model_output(
+            output=model_results, conf_thresh=conf_thresh
+        )
         rescaled_results = rescale_detections(
-            detections=nms_results,
+            detections=filtered_results,
             images_metadata=pre_processing_meta,
         )
         results = []

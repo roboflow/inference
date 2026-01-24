@@ -30,7 +30,6 @@ from inference_models.models.common.roboflow.model_packages import (
 from inference_models.models.common.roboflow.post_processing import (
     post_process_nms_fused_model_output,
     rescale_key_points_detections,
-    run_nms_for_key_points_detection,
 )
 from inference_models.models.common.roboflow.pre_processing import (
     pre_process_network_input,
@@ -103,11 +102,6 @@ class YOLO26ForKeyPointsDetectionTRT(
                 ResizeMode.LETTERBOX_REFLECT_EDGES,
             },
         )
-        if inference_config.post_processing.type != "nms":
-            raise CorruptedModelPackageError(
-                message="Expected NMS to be the post-processing",
-                help_url="https://todo",
-            )
         trt_config = parse_trt_config(
             config_path=model_package_content["trt_config.json"]
         )
@@ -225,28 +219,14 @@ class YOLO26ForKeyPointsDetectionTRT(
         model_results: torch.Tensor,
         pre_processing_meta: List[PreProcessingMetadata],
         conf_thresh: float = 0.25,
-        iou_thresh: float = 0.45,
-        max_detections: int = 100,
-        class_agnostic: bool = False,
         key_points_threshold: float = 0.3,
         **kwargs,
     ) -> Tuple[List[KeyPoints], Optional[List[Detections]]]:
-        if self._inference_config.post_processing.fused:
-            nms_results = post_process_nms_fused_model_output(
-                output=model_results, conf_thresh=conf_thresh
-            )
-        else:
-            nms_results = run_nms_for_key_points_detection(
-                output=model_results,
-                num_classes=len(self._class_names),
-                key_points_slots_in_prediction=self._key_points_slots_in_prediction,
-                conf_thresh=conf_thresh,
-                iou_thresh=iou_thresh,
-                max_detections=max_detections,
-                class_agnostic=class_agnostic,
-            )
+        filtered_results = post_process_nms_fused_model_output(
+            output=model_results, conf_thresh=conf_thresh
+        )
         rescaled_results = rescale_key_points_detections(
-            detections=nms_results,
+            detections=filtered_results,
             images_metadata=pre_processing_meta,
             num_classes=len(self._class_names),
             key_points_slots_in_prediction=self._key_points_slots_in_prediction,
