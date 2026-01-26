@@ -36,6 +36,7 @@ dependencies = [
   "pybase64~=1.0.0",
   "rf-segment-anything==1.0",
   "rf-sam-2==1.0.2",
+  "sam3==0.1.2; sys_platform != 'darwin'",
   "argon2-cffi>=25.1.0,<26.0.0",
 ]
 
