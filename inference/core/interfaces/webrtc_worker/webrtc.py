@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import datetime
 import av
 import json
@@ -8,6 +9,8 @@ import struct
 import threading
 import time
 from typing import Any, Callable, Dict, List, Optional, Tuple
+
+import supervision as sv
 
 from aioice import ice
 from aiortc import (
@@ -67,8 +70,10 @@ from inference.core.interfaces.webrtc_worker.utils import (
 from inference.core.managers.base import ModelManager
 from inference.core.roboflow_api import get_workflow_specification
 from inference.core.workflows.core_steps.common.serializers import (
-    serialize_wildcard_kind,
+    serialise_sv_detections,
+    serialize_timestamp,
 )
+from inference.core.utils.image_utils import encode_image_to_jpeg_bytes
 from inference.core.workflows.errors import WorkflowError, WorkflowSyntaxError
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
 from inference.usage_tracking.collector import usage_collector
@@ -77,6 +82,34 @@ logging.getLogger("aiortc").setLevel(logging.WARNING)
 
 # WebRTC data channel chunking configuration
 CHUNK_SIZE = 48 * 1024  # 48KB - safe for all WebRTC implementations
+
+# WebRTC image compression quality - lower = smaller file size, quality=10 reduces ~1MB to ~50KB
+WEBRTC_JPEG_QUALITY = 10
+
+
+def serialise_image_for_webrtc(image: WorkflowImageData) -> Dict[str, Any]:
+    """Serialize image with JPEG quality=10 for efficient WebRTC transmission."""
+    jpeg_bytes = encode_image_to_jpeg_bytes(image.numpy_image, jpeg_quality=WEBRTC_JPEG_QUALITY)
+    return {
+        "type": "base64",
+        "value": base64.b64encode(jpeg_bytes).decode("ascii"),
+        "video_metadata": image.video_metadata.dict() if image.video_metadata else None,
+    }
+
+
+def serialize_for_webrtc(value: Any) -> Any:
+    """Recursively serialize, compressing images with JPEG quality=10."""
+    if isinstance(value, WorkflowImageData):
+        return serialise_image_for_webrtc(value)
+    if isinstance(value, dict):
+        return {k: serialize_for_webrtc(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [serialize_for_webrtc(v) for v in value]
+    if isinstance(value, sv.Detections):
+        return serialise_sv_detections(value)
+    if isinstance(value, datetime.datetime):
+        return serialize_timestamp(value)
+    return value
 
 
 def create_chunked_binary_message(
@@ -479,7 +512,11 @@ class VideoFrameProcessor:
         workflow_output: Dict[str, Any],
         data_output_mode: DataOutputMode,
     ) -> Tuple[Dict[str, Any], List[str]]:
-        """Serialize workflow outputs in a thread to avoid blocking the event loop."""
+        """Serialize workflow outputs in a thread to avoid blocking the event loop.
+        
+        Uses low JPEG quality (quality=10) for image compression to reduce
+        frame size from ~1MB to ~50KB for efficient WebRTC transmission.
+        """
         serialized = {}
         serialization_errors = []
 
@@ -498,7 +535,7 @@ class VideoFrameProcessor:
                 continue
 
             try:
-                serialized_value = serialize_wildcard_kind(output_data)
+                serialized_value = serialize_for_webrtc(output_data)
                 serialized[field_name] = serialized_value
             except Exception as e:
                 serialization_errors.append(f"{field_name}: {e}")
