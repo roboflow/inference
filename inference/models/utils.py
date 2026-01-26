@@ -770,6 +770,12 @@ if USE_INFERENCE_MODELS:
                 )
 
                 ROBOFLOW_MODEL_TYPES[(task, variant)] = InferenceModelsQwen3VLAdapter
+            elif task == "embed" and variant == "sam":
+                from inference.models.sam.segment_anything_inference_models import (
+                    InferenceModelsObjectDetectionAdapter,
+                )
+
+                ROBOFLOW_MODEL_TYPES[(task, variant)] = InferenceModelsObjectDetectionAdapter
         except Exception as e:
             warnings.warn(
                 f"`inference-models` stack is unavailable for model: {variant} and task: {task}, "

@@ -37,6 +37,7 @@ class SAMTorch:
         max_batch_size: int = MAX_SAM_BATCH_SIZE,
         sam_image_embeddings_cache: Optional[SamImageEmbeddingsCache] = None,
         sam_low_resolution_masks_cache: Optional[SamLowResolutionMasksCache] = None,
+        sam_allow_client_generated_hash_ids: bool = False,
         **kwargs,
     ) -> "SAMTorch":
         if sam_image_embeddings_cache is None:
@@ -80,6 +81,7 @@ class SAMTorch:
             max_batch_size=max_batch_size,
             sam_image_embeddings_cache=sam_image_embeddings_cache,
             sam_low_resolution_masks_cache=sam_low_resolution_masks_cache,
+            sam_allow_client_generated_hash_ids=sam_allow_client_generated_hash_ids,
         )
 
     def __init__(
@@ -90,6 +92,7 @@ class SAMTorch:
         max_batch_size: int,
         sam_image_embeddings_cache: SamImageEmbeddingsCache,
         sam_low_resolution_masks_cache: SamLowResolutionMasksCache,
+        sam_allow_client_generated_hash_ids: bool,
     ):
         self._model = model
         self._transform = transform
@@ -97,21 +100,50 @@ class SAMTorch:
         self._max_batch_size = max_batch_size
         self._sam_image_embeddings_cache = sam_image_embeddings_cache
         self._sam_low_resolution_masks_cache = sam_low_resolution_masks_cache
+        self._sam_allow_client_generated_hash_ids = sam_allow_client_generated_hash_ids
 
     def embed_images(
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         input_color_format: Optional[ColorFormat] = None,
         use_embeddings_cache: bool = True,
+        image_hashes: Optional[Union[str, List[str]]] = None,
         **kwargs,
     ) -> List[SAMImageEmbeddings]:
-        model_input_images, image_hashes, original_image_sizes = (
-            self.pre_process_images(
-                images=images,
-                input_color_format=input_color_format,
-                **kwargs,
+        if not self._sam_allow_client_generated_hash_ids and image_hashes is not None:
+            raise ModelInputError(
+                message="When using SAM model, you are not allowed to provide image hashes, unless you explicitly "
+                "allow it by setting `sam_allow_client_generated_hash_ids` to `True` when loading the model. If you "
+                "see this error running on Roboflow Platform - this is due to configuration of the service - contact "
+                "us to get help. If you run inference locally, verify your integration making sure that the model "
+                "interface is used correctly.",
+                help_url="https://todo",
             )
-        )
+        if image_hashes is None:
+            model_input_images, image_hashes, original_image_sizes = (
+                self.pre_process_images(
+                    images=images,
+                    input_color_format=input_color_format,
+                    **kwargs,
+                )
+            )
+        else:
+            if isinstance(image_hashes, str):
+                image_hashes = [image_hashes]
+            model_input_images, locally_computed_image_hashes, original_image_sizes = (
+                self.pre_process_images(
+                    images=images,
+                    input_color_format=input_color_format,
+                    **kwargs,
+                )
+            )
+            if len(image_hashes) != len(locally_computed_image_hashes):
+                raise ModelInputError(
+                    message="When using SAM model with client-generated `image_hashes`, the number of provided "
+                    f"hashes ({len(image_hashes)}) must match the number of provided images "
+                    f"({len(locally_computed_image_hashes)}). Please verify your integration",
+                    help_url="https://todo",
+                )
         embeddings_from_cache: Dict[int, SAMImageEmbeddings] = {}
         images_to_compute = []
         for idx, (image, image_hash) in enumerate(
@@ -253,6 +285,7 @@ class SAMTorch:
         embeddings: Optional[
             Union[List[SAMImageEmbeddings], SAMImageEmbeddings]
         ] = None,
+        image_hashes: Optional[Union[str, List[str]]] = None,
         point_coordinates: Optional[Union[List[ArrayOrTensor], ArrayOrTensor]] = None,
         point_labels: Optional[Union[List[ArrayOrTensor], ArrayOrTensor]] = None,
         boxes: Optional[Union[List[ArrayOrTensor], ArrayOrTensor]] = None,
@@ -266,10 +299,10 @@ class SAMTorch:
         use_embeddings_cache: bool = True,
         **kwargs,
     ) -> List[SAMPrediction]:
-        if images is None and embeddings is None:
+        if images is None and embeddings is None and image_hashes is None:
             raise ModelInputError(
                 message="Attempted to use SAM model segment_images(...) method not providing valid input - "
-                "neither `images` nor `embeddings` parameter is given. If you run inference locally, "
+                "neither `images` nor `embeddings` nor `image_hashes` parameter is given. If you run inference locally, "
                 "verify your integration making sure that the model interface is used correctly. Running "
                 "on Roboflow platform - contact us to get help.",
                 help_url="https://todo",
@@ -279,8 +312,36 @@ class SAMTorch:
                 images=images,
                 input_color_format=input_color_format,
                 use_embeddings_cache=use_embeddings_cache,
+                image_hashes=image_hashes,
                 **kwargs,
             )
+        elif image_hashes is not None:
+            if isinstance(image_hashes, str):
+                image_hashes = [image_hashes]
+            if (
+                not use_embeddings_cache
+                or not self._sam_allow_client_generated_hash_ids
+            ):
+                raise ModelInputError(
+                    message="Attempted to use SAM model segment_images(...) method providing `image_hashes` "
+                    "without enabling `use_embeddings_cache` or `sam_allow_client_generated_hash_ids` which is not "
+                    "allowed. If you run inference locally, verify your integration making sure that the model "
+                    "interface is used correctly. Running on Roboflow platform - contact us to get help.",
+                    help_url="https://todo",
+                )
+            embeddings = []
+            for image_hash in image_hashes:
+                cache_content = self._sam_image_embeddings_cache.retrieve_embeddings(
+                    key=image_hash
+                )
+                if cache_content is None:
+                    raise ModelInputError(
+                        message=f"Attempted to use SAM model segment_images(...) method providing `image_hashes` "
+                        f"for which no embeddings were found in the cache. This may be an effect of cache expiry or "
+                        f"invalid integration.",
+                        help_url="https://todo",
+                    )
+                embeddings.append(cache_content)
         else:
             embeddings = maybe_wrap_in_list(value=embeddings)
         embeddings_tensors = [e.embeddings.to(self._device) for e in embeddings]
