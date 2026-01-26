@@ -20,12 +20,13 @@ from inference.core.entities.responses import (
 from inference.core.env import (
     ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES,
     ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES,
-    API_KEY,
+    API_KEY, SAM_MAX_EMBEDDING_CACHE_SIZE,
 )
 from inference.core.models.base import Model
 from inference.core.utils.image_utils import load_image_rgb
 from inference.core.utils.postprocess import masks2poly
 from inference_models import AutoModel
+from inference_models.models.sam.cache import SamImageEmbeddingsInMemoryCache, SamLowResolutionMasksInMemoryCache
 from inference_models.models.sam.entities import SAMImageEmbeddings
 from inference_models.models.sam.sam_torch import SAMTorch, compute_image_hash
 
@@ -42,11 +43,22 @@ class InferenceModelsObjectDetectionAdapter(Model):
 
         self.task_type = "unsupervised-segmentation"
 
+        sam_image_embeddings_cache = SamImageEmbeddingsInMemoryCache.init(
+            size_limit=SAM_MAX_EMBEDDING_CACHE_SIZE,
+            send_to_cpu=True,
+        )
+        sam_low_resolution_masks_cache = SamLowResolutionMasksInMemoryCache.init(
+            size_limit=SAM_MAX_EMBEDDING_CACHE_SIZE,
+            send_to_cpu=True,
+        )
         self._model: SAMTorch = AutoModel.from_pretrained(
             model_id_or_path=model_id,
             api_key=self.api_key,
             allow_untrusted_packages=ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES,
             allow_direct_local_storage_loading=ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES,
+            sam_image_embeddings_cache=sam_image_embeddings_cache,
+            sam_low_resolution_masks_cache=sam_low_resolution_masks_cache,
+            sam_allow_client_generated_hash_ids=True,
             **kwargs,
         )
 
