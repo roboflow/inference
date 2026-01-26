@@ -1,0 +1,34 @@
+name: Deploy Modal App serving custom python block
+permissions:
+  contents: read
+on:
+  release:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      inference_version:
+        type: string
+        description: "Optional inference version to deploy (e.g., 0.64.5)"
+        default: ""
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: python3 -m pip install modal
+      - name: Deploy Modal App
+        env:
+          MODAL_WORKSPACE_NAME: ${{ secrets.MODAL_WORKSPACE_NAME }}
+          MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+          MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
+          INFERENCE_VERSION: ${{ github.event.inputs.inference_version }} 
+        working-directory: modal
+        run: python3 deploy_modal_app.py
