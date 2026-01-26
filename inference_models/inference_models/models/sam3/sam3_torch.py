@@ -467,6 +467,8 @@ class SAM3Torch:
             np_image = image.cpu().numpy() if isinstance(image, torch.Tensor) else image
             if np_image.shape[0] == 3:
                 np_image = np_image.transpose(1, 2, 0)
+            if np_image.max() <= 1:
+                np_image = np_image * 255
 
             h, w = np_image.shape[:2]
             pil_image = Image.fromarray(np_image.astype(np.uint8))
