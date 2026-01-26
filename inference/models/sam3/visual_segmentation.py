@@ -448,11 +448,14 @@ def find_prior_prompt_in_cache(
     """
     Performs search over the cache to see if prior used prompts are subset of this one.
     """
+    num_points = initial_prompt_set.num_points()
+    if num_points <= 1:
+        return None  # there is only 1 point, hence no prior prompt can be found
 
     logits_for_image = [cache[k] for k in cache if k[0] == image_id]
     maxed_size = 0
     best_match: Optional[np.ndarray] = None
-    desired_size = initial_prompt_set.num_points() - 1
+    desired_size = num_points - 1
     for cached_dict in logits_for_image[::-1]:
         logits = cached_dict["logits"]
         prompt_set: Sam2PromptSet = cached_dict["prompt_set"]

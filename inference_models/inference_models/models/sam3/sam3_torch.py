@@ -453,7 +453,6 @@ class SAM3Torch:
         images: Union[np.ndarray, List[np.ndarray]],
         prompts: List[Dict],
         output_prob_thresh: float = 0.5,
-        use_embeddings_cache: bool = True,
         **kwargs,
     ) -> List[Dict]:
         images_list = maybe_wrap_in_list(images)
@@ -640,6 +639,17 @@ def equalize_batch_size(
 def pad_points(args: Dict) -> Dict:
     args = copy(args)
     if args.get("point_coords") is not None:
+        point_labels = args.get("point_labels")
+        if (
+            not isinstance(point_labels, list)
+            or len(point_labels) > 0
+            and any(not isinstance(p, list) for p in point_labels)
+        ):
+            raise ModelInputError(
+                message="point_labels must be a nested list (e.g., [[1, 0, 1]]). "
+                "Each inner list should contain labels for points in a single prompt.",
+                help_url="https://todo",
+            )
         max_len = max(max(len(prompt) for prompt in args["point_coords"]), 1)
         for prompt in args["point_coords"]:
             for _ in range(max_len - len(prompt)):
@@ -755,7 +765,12 @@ def find_prior_prompt_in_cache(
 ) -> Optional[torch.Tensor]:
     maxed_size = 0
     best_match: Optional[SAM3MaskCacheEntry] = None
-    desired_size = len(serialized_prompt) - 1
+    num_points = (
+        0 if not serialized_prompt else len(serialized_prompt[0].get("points", []))
+    )
+    if num_points <= 1:
+        return None  # there is only 1 point, hence no prior prompt can be found
+    desired_size = num_points - 1
 
     for cache_entry in matching_cache_entries[::-1]:
         is_viable = is_prompt_strict_subset(
@@ -768,7 +783,10 @@ def find_prior_prompt_in_cache(
         if not is_viable:
             continue
 
-        current_size = len(cache_entry.serialized_prompt)
+        cached_prompt = cache_entry.serialized_prompt
+        current_size = (
+            0 if not cached_prompt else len(cached_prompt[0].get("points", []))
+        )
         if current_size == desired_size:
             return cache_entry.mask.to(device=device)
         if current_size >= maxed_size:
