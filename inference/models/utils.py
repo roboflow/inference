@@ -823,6 +823,19 @@ if USE_INFERENCE_MODELS:
                 ROBOFLOW_MODEL_TYPES[(task, variant)] = (
                     InferenceModelsDepthAnythingV3Adapter
                 )
+            elif task == "lmm" and variant == "moondream2":
+                from inference.models.moondream2.moondream2_inference_models import (
+                    InferenceModelsMoondream2Adapter,
+                )
+
+                ROBOFLOW_MODEL_TYPES[(task, variant)] = InferenceModelsMoondream2Adapter
+            elif task == "ocr" and variant == "doctr":
+                from inference.models.doctr.doctr_model_inference_models import (
+                    InferenceModelsDocTRAdapter,
+                )
+
+                ROBOFLOW_MODEL_TYPES[(task, variant)] = InferenceModelsDocTRAdapter
+
         except Exception as e:
             warnings.warn(
                 f"`inference-models` stack is unavailable for model: {variant} and task: {task}, "

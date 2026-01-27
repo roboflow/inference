@@ -125,3 +125,6 @@ class InferenceModelsDepthAnythingV3Adapter(Model):
             }
             results.append(result)
         return results
+
+    def clear_cache(self, delete_from_disk: bool = True) -> None:
+        pass
