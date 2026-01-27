@@ -20,21 +20,31 @@ from inference.core.entities.responses import (
 from inference.core.env import (
     ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES,
     ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES,
-    API_KEY, SAM_MAX_EMBEDDING_CACHE_SIZE,
+    API_KEY,
+    SAM_MAX_EMBEDDING_CACHE_SIZE,
+    SAM_VERSION_ID,
 )
 from inference.core.models.base import Model
 from inference.core.utils.image_utils import load_image_rgb
 from inference.core.utils.postprocess import masks2poly
 from inference_models import AutoModel
-from inference_models.models.sam.cache import SamImageEmbeddingsInMemoryCache, SamLowResolutionMasksInMemoryCache
+from inference_models.models.sam.cache import (
+    SamImageEmbeddingsInMemoryCache,
+    SamLowResolutionMasksInMemoryCache,
+)
 from inference_models.models.sam.entities import SAMImageEmbeddings
 from inference_models.models.sam.sam_torch import SAMTorch, compute_image_hash
 
 MASK_THRESHOLD = 0.0
 
 
-class InferenceModelsObjectDetectionAdapter(Model):
-    def __init__(self, model_id: str, api_key: str = None, **kwargs):
+class InferenceModelsSAMAdapter(Model):
+    def __init__(
+        self,
+        model_id: str = f"sam/{SAM_VERSION_ID}",
+        api_key: Optional[str] = None,
+        **kwargs,
+    ):
         super().__init__()
 
         self.metrics = {"num_inferences": 0, "avg_inference_time": 0.0}

@@ -687,7 +687,6 @@ def get_roboflow_model(*args, **kwargs):
 
 if USE_INFERENCE_MODELS:
     # Ensure experimental package is importable before swapping
-    __import__("inference_models")
     from inference.core.models.inference_models_adapters import (
         InferenceModelsClassificationAdapter,
         InferenceModelsInstanceSegmentationAdapter,
@@ -772,10 +771,16 @@ if USE_INFERENCE_MODELS:
                 ROBOFLOW_MODEL_TYPES[(task, variant)] = InferenceModelsQwen3VLAdapter
             elif task == "embed" and variant == "sam":
                 from inference.models.sam.segment_anything_inference_models import (
-                    InferenceModelsObjectDetectionAdapter,
+                    InferenceModelsSAMAdapter,
                 )
 
-                ROBOFLOW_MODEL_TYPES[(task, variant)] = InferenceModelsObjectDetectionAdapter
+                ROBOFLOW_MODEL_TYPES[(task, variant)] = InferenceModelsSAMAdapter
+            elif task == "embed" and variant == "sam2":
+                from inference.models.sam2.segment_anything2_inference_models import (
+                    InferenceModelsSAM2Adapter,
+                )
+
+                ROBOFLOW_MODEL_TYPES[(task, variant)] = InferenceModelsSAM2Adapter
         except Exception as e:
             warnings.warn(
                 f"`inference-models` stack is unavailable for model: {variant} and task: {task}, "
