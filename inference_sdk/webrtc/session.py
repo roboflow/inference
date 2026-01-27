@@ -698,6 +698,40 @@ class WebRTCSession:
         pc = RTCPeerConnection(configuration=turn_config)
         relay = MediaRelay()
 
+        # Setup ICE connection state monitoring to detect consent expiry
+        @pc.on("iceconnectionstatechange")
+        async def _on_ice_connection_state_change() -> None:
+            state = pc.iceConnectionState
+            logger.info(f"ICE connection state: {state}")
+            
+            if state == "failed":
+                logger.error(
+                    "ICE connection failed - likely consent expiry. "
+                    "This can happen during large transfers (>20-30s) when "
+                    "the event loop is blocked and STUN consent refresh is delayed."
+                )
+                # Signal session to close
+                try:
+                    self._video_queue.put_nowait(None)
+                except Exception:
+                    pass
+            elif state == "disconnected":
+                logger.warning(
+                    "ICE connection disconnected - may recover automatically. "
+                    "If this persists, connection will transition to 'failed'."
+                )
+        
+        @pc.on("connectionstatechange")
+        async def _on_connection_state_change() -> None:
+            state = pc.connectionState
+            logger.info(f"Connection state: {state}")
+            if state == "failed":
+                logger.error("Connection failed - closing session")
+                try:
+                    self._video_queue.put_nowait(None)
+                except Exception:
+                    pass
+
         # Setup video receiver for frames from server
         @pc.on("track")
         def _on_track(track):  # noqa: ANN001

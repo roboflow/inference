@@ -306,14 +306,35 @@ async def wait_for_buffer_drain(
     data_channel: RTCDataChannel,
     timeout: float = 30.0,
     heartbeat_callback: Optional[Callable[[], None]] = None,
+    low_threshold: Optional[int] = None,
 ) -> bool:
-    """Wait for data channel buffer to have space, with timeout."""
+    """Wait for data channel buffer to drain below threshold, with timeout.
+    
+    Uses a low threshold (default: high_limit / 4) to implement proper backpressure.
+    We wait until buffer drops significantly before resuming to prevent oscillation.
+    
+    Args:
+        data_channel: The RTCDataChannel to monitor
+        timeout: Maximum time to wait in seconds
+        heartbeat_callback: Optional callback to call periodically while waiting
+        low_threshold: Buffer level to wait for (default: BUFFER_SIZE_LIMIT / 4)
+        
+    Returns:
+        True if buffer drained, False if timeout or channel closed
+    """
+    if low_threshold is None:
+        low_threshold = WEBRTC_DATA_CHANNEL_BUFFER_SIZE_LIMIT // 4
+    
     start_time = asyncio.get_event_loop().time()
-    while data_channel.bufferedAmount > WEBRTC_DATA_CHANNEL_BUFFER_SIZE_LIMIT:
+    while data_channel.bufferedAmount > low_threshold:
         if asyncio.get_event_loop().time() - start_time > timeout:
             logger.warning(
-                "Buffer drain timeout, buffered: %s", data_channel.bufferedAmount
+                "Buffer drain timeout after %.1fs, buffered: %d bytes",
+                timeout, data_channel.bufferedAmount
             )
+            return False
+        if data_channel.readyState != "open":
+            logger.warning("Channel closed while waiting for buffer drain")
             return False
         if heartbeat_callback:
             heartbeat_callback()
@@ -328,18 +349,35 @@ async def send_chunked_data(
     chunk_size: int = CHUNK_SIZE,
     heartbeat_callback: Optional[Callable[[], None]] = None,
     buffer_timeout: float = 30.0,
-) -> None:
-    """Send payload via data channel with chunking and backpressure."""
+) -> bool:
+    """Send payload via data channel with chunking and backpressure.
+    
+    Uses proper backpressure with high/low watermarks to prevent buffer overflow
+    while yielding to the event loop to maintain ICE consent freshness.
+    
+    Args:
+        data_channel: The RTCDataChannel to send on
+        frame_id: Frame identifier for chunked message headers
+        payload_bytes: Full payload to send
+        chunk_size: Size of each chunk (default 48KB)
+        heartbeat_callback: Optional callback for watchdog/heartbeat
+        buffer_timeout: Max time to wait for buffer drain
+        
+    Returns:
+        True if all chunks sent, False if channel closed or timeout
+    """
     if data_channel.readyState != "open":
         logger.warning("Cannot send frame %s: channel not open", frame_id)
-        return
+        return False
 
     total_chunks = (len(payload_bytes) + chunk_size - 1) // chunk_size
     view = memoryview(payload_bytes)
+    high_threshold = WEBRTC_DATA_CHANNEL_BUFFER_SIZE_LIMIT
+    
     for chunk_index in range(total_chunks):
         if data_channel.readyState != "open":
             logger.warning("Channel closed while sending frame %s", frame_id)
-            return
+            return False
 
         start = chunk_index * chunk_size
         end = min(start + chunk_size, len(payload_bytes))
@@ -348,15 +386,25 @@ async def send_chunked_data(
         message = create_chunked_binary_message(
             frame_id, chunk_index, total_chunks, chunk_data
         )
+        
+        # Check buffer before sending - wait if too full
+        if data_channel.bufferedAmount > high_threshold:
+            if not await wait_for_buffer_drain(
+                data_channel, buffer_timeout, heartbeat_callback
+            ):
+                logger.warning("Buffer drain failed for frame %s", frame_id)
+                return False
+        
         data_channel.send(message)
 
-        # Every N chunks: yield to event loop and check buffer
-        # we want to reduce context switching and keep the event loop responsive
+        # Yield to event loop every 10 chunks to prevent starvation
+        # This is critical for maintaining ICE consent freshness
         if chunk_index % 10 == 0:
-            await wait_for_buffer_drain(
-                data_channel, buffer_timeout, heartbeat_callback
-            )
+            if heartbeat_callback:
+                heartbeat_callback()
             await asyncio.sleep(0)
+    
+    return True
 
 
 class RTCPeerConnectionWithLoop(RTCPeerConnection):
@@ -1259,6 +1307,23 @@ async def init_rtc_peer_connection_with_loop(
             logger.info("Stopping WebRTC peer")
             await peer_connection.close()
             terminate_event.set()
+
+    @peer_connection.on("iceconnectionstatechange")
+    async def on_iceconnectionstatechange():
+        state = peer_connection.iceConnectionState
+        logger.info("ICE connection state changed: %s", state)
+        
+        if state == "failed":
+            logger.warning(
+                "ICE connection failed - likely consent expiry. "
+                "This can happen during large transfers (>20-30s) with event loop congestion."
+            )
+            # The connectionstatechange handler will clean up
+        elif state == "disconnected":
+            logger.warning(
+                "ICE connection disconnected - may recover. "
+                "If this persists, check network connectivity."
+            )
 
     def process_video_upload_message(
         message: bytes, video_processor: VideoTransformTrackWithLoop

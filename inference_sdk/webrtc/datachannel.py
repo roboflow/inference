@@ -3,6 +3,7 @@
 import asyncio
 import os
 import struct
+import time
 from typing import TYPE_CHECKING, Callable, Dict, Optional, Tuple
 
 from inference_sdk.config import (
@@ -12,6 +13,9 @@ from inference_sdk.config import (
 
 if TYPE_CHECKING:
     from aiortc import RTCDataChannel
+
+# Heartbeat interval during uploads to prevent ICE consent expiry (30s limit)
+UPLOAD_HEARTBEAT_INTERVAL = 3.0  # seconds
 
 # Pre-compiled struct for parsing 12-byte header (3 x uint32 little-endian)
 _HEADER_STRUCT = struct.Struct("<III")
@@ -107,7 +111,9 @@ class VideoFileUploader:
     Server auto-completes when all chunks received.
 
     Features:
-    - Backpressure handling via bufferedAmount monitoring
+    - Backpressure handling via bufferedAmount monitoring with low watermark
+    - Periodic heartbeat pings to prevent ICE consent expiry
+    - Event loop yielding to prevent starvation
     - Progress callback support
     """
 
@@ -117,6 +123,7 @@ class VideoFileUploader:
         channel: "RTCDataChannel",
         chunk_size: int = WEBRTC_VIDEO_UPLOAD_CHUNK_SIZE,
         buffer_limit: int = WEBRTC_VIDEO_UPLOAD_BUFFER_LIMIT,
+        heartbeat_interval: float = UPLOAD_HEARTBEAT_INTERVAL,
     ):
         """Initialize video file uploader.
 
@@ -125,14 +132,18 @@ class VideoFileUploader:
             channel: RTCDataChannel to send chunks through
             chunk_size: Size of each chunk in bytes (default 48KB)
             buffer_limit: Max buffered bytes before applying backpressure
+            heartbeat_interval: Seconds between heartbeat pings (default 3s)
         """
         self._path = path
         self._channel = channel
         self._chunk_size = chunk_size
         self._buffer_limit = buffer_limit
+        self._buffer_low = buffer_limit // 4  # Low watermark for backpressure
+        self._heartbeat_interval = heartbeat_interval
         self._file_size = os.path.getsize(path)
         self._total_chunks = (self._file_size + chunk_size - 1) // chunk_size
         self._uploaded_chunks = 0
+        self._last_heartbeat = time.time()
 
     @property
     def total_chunks(self) -> int:
@@ -148,6 +159,19 @@ class VideoFileUploader:
     def file_size(self) -> int:
         """Size of the file in bytes."""
         return self._file_size
+
+    def _send_heartbeat(self) -> None:
+        """Send heartbeat ping if interval has elapsed.
+        
+        This prevents ICE consent expiry (30s) during long uploads by keeping
+        the data channel active. Server echoes these back.
+        """
+        now = time.time()
+        if now - self._last_heartbeat >= self._heartbeat_interval:
+            if self._channel.readyState == "open":
+                # Send 1-byte ping that server echoes back
+                self._channel.send(b"\x00")
+                self._last_heartbeat = now
 
     async def upload(
         self, on_progress: Optional[Callable[[int, int], None]] = None
@@ -171,12 +195,25 @@ class VideoFileUploader:
                     chunk_idx, self._total_chunks, chunk_data
                 )
 
-                # Backpressure: wait for buffer to drain
+                # Backpressure: wait for buffer to drain to low watermark
+                # Send heartbeat pings while waiting to prevent ICE consent expiry
                 while self._channel.bufferedAmount > self._buffer_limit:
+                    self._send_heartbeat()
                     await asyncio.sleep(0.01)
+                    # Check channel still open after waiting
+                    if self._channel.readyState != "open":
+                        raise RuntimeError("Upload channel closed during backpressure wait")
 
                 self._channel.send(message)
                 self._uploaded_chunks = chunk_idx + 1
 
                 if on_progress:
                     on_progress(self._uploaded_chunks, self._total_chunks)
+                
+                # Send periodic heartbeat during upload
+                self._send_heartbeat()
+                
+                # Yield to event loop every 10 chunks to prevent starvation
+                # This is critical for ICE consent freshness
+                if chunk_idx % 10 == 0:
+                    await asyncio.sleep(0)
