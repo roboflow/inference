@@ -49,6 +49,7 @@ class SmolVLMHF:
                     ResizeMode.LETTERBOX,
                     ResizeMode.CENTER_CROP,
                     ResizeMode.LETTERBOX_REFLECT_EDGES,
+                    ResizeMode.FIT_LONGER_EDGE,
                 },
             )
         adapter_config_path = os.path.join(model_name_or_path, "adapter_config.json")
@@ -234,7 +235,11 @@ class SmolVLMHF:
         **kwargs,
     ) -> torch.Tensor:
         generation = self._model.generate(
-            **inputs, do_sample=do_sample, max_new_tokens=max_new_tokens
+            **inputs,
+            do_sample=do_sample,
+            max_new_tokens=max_new_tokens,
+            pad_token_id=self._processor.tokenizer.pad_token_id,
+            eos_token_id=self._processor.tokenizer.eos_token_id,
         )
         input_len = inputs["input_ids"].shape[-1]
         return generation[:, input_len:]
@@ -242,7 +247,7 @@ class SmolVLMHF:
     def post_process_generation(
         self,
         generated_ids: torch.Tensor,
-        skip_special_tokens: bool = False,
+        skip_special_tokens: bool = INFERENCE_MODELS_SMOL_VLM_DEFAULT_SKIP_SPECIAL_TOKENS,
         **kwargs,
     ) -> List[str]:
         decoded = self._processor.batch_decode(

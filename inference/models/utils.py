@@ -797,7 +797,16 @@ if USE_INFERENCE_MODELS:
                 )
 
                 ROBOFLOW_MODEL_TYPES[(task, variant)] = InferenceModelsGazeAdapter
+            elif task in {"lmm", "text-image-pairs"} and (
+                variant.startswith("smolvlm-2.2b")
+                or variant.startswith("smolvlm2")
+                or variant.startswith("smolvlm-256m")
+            ):
+                from inference.models.smolvlm.smolvlm_inference_models import (
+                    InferenceModelsSmolVLMAdapter,
+                )
 
+                ROBOFLOW_MODEL_TYPES[(task, variant)] = InferenceModelsSmolVLMAdapter
         except Exception as e:
             warnings.warn(
                 f"`inference-models` stack is unavailable for model: {variant} and task: {task}, "
