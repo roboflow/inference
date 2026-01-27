@@ -76,6 +76,8 @@ def extract_detections_property(
             f"expected sv.Detections object as value, got {value_as_str} of type {type(detections)}",
             context=f"step_execution | roboflow_query_language_evaluation | {execution_context}",
         )
+    if isinstance(detections, sv.Detections) and property_name.value in detections.data:
+        return detections[property_name.value]
     return PROPERTIES_EXTRACTORS[property_name](detections)
 
 
