@@ -787,6 +787,16 @@ if USE_INFERENCE_MODELS:
                 )
 
                 ROBOFLOW_MODEL_TYPES[(task, variant)] = InferenceModelsClipAdapter
+            elif task == "object-detection" and variant == "owlv2":
+                pass
+            elif task == "object-detection" and variant == "owlv2-finetuned":
+                pass
+            elif task == "gaze" and variant == "l2cs":
+                from inference.models.gaze.gaze_inference_models import (
+                    InferenceModelsGazeAdapter,
+                )
+
+                ROBOFLOW_MODEL_TYPES[(task, variant)] = InferenceModelsGazeAdapter
 
         except Exception as e:
             warnings.warn(

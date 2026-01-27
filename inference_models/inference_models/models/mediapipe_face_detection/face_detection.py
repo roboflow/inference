@@ -171,6 +171,11 @@ class MediaPipeFaceDetector(
             for detection in image_results:
                 if detection.categories[0].score < confidence:
                     continue
+                if (
+                    detection.bounding_box.width <= 0
+                    or detection.bounding_box.height <= 0
+                ):
+                    continue
                 xyxy = (
                     detection.bounding_box.origin_x,
                     detection.bounding_box.origin_y,

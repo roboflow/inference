@@ -1,11 +1,8 @@
-from threading import Lock
 from time import perf_counter
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Tuple, Union
 
-import clip
 import numpy as np
 import onnxruntime
-from PIL import Image
 
 from inference.core.entities.requests.clip import (
     ClipCompareRequest,
