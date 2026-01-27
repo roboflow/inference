@@ -84,8 +84,9 @@ logging.getLogger("aiortc").setLevel(logging.WARNING)
 # WebRTC data channel chunking configuration
 CHUNK_SIZE = 48 * 1024  # 48KB - safe for all WebRTC implementations
 
-# WebRTC image compression quality - lower = smaller file size, quality=10 reduces ~1MB to ~50KB
-WEBRTC_JPEG_QUALITY = 50
+# WebRTC image compression quality - lower = smaller file size
+# quality=10 reduces ~1MB raw to ~50KB, quality=50 produces ~150-200KB
+WEBRTC_JPEG_QUALITY = 70
 
 # Keepalive frame interval in seconds - send black frame to keep video track open
 WEBRTC_KEEPALIVE_INTERVAL = 1.0
@@ -121,7 +122,7 @@ def create_keepalive_frame(
 
 
 def serialise_image_for_webrtc(image: WorkflowImageData) -> Dict[str, Any]:
-    """Serialize image with JPEG quality=10 for efficient WebRTC transmission."""
+    """Serialize image with low JPEG quality for efficient WebRTC transmission."""
     jpeg_bytes = encode_image_to_jpeg_bytes(image.numpy_image, jpeg_quality=WEBRTC_JPEG_QUALITY)
     return {
         "type": "base64",
@@ -130,11 +131,58 @@ def serialise_image_for_webrtc(image: WorkflowImageData) -> Dict[str, Any]:
     }
 
 
+def _recompress_base64_image(base64_str: str) -> str:
+    """Decode base64 image and re-encode with low JPEG quality.
+    
+    Handles images that were pre-serialized with high quality (95) and
+    re-compresses them to ~50KB using quality=10 for efficient WebRTC transmission.
+    """
+    try:
+        import cv2
+        import numpy as np
+        # Decode base64 to bytes
+        image_bytes = base64.b64decode(base64_str)
+        # Decode image bytes to numpy array
+        np_arr = np.frombuffer(image_bytes, np.uint8)
+        img = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+        if img is None:
+            return base64_str  # Not a valid image, return as-is
+        # Re-encode with low quality
+        jpeg_bytes = encode_image_to_jpeg_bytes(img, jpeg_quality=WEBRTC_JPEG_QUALITY)
+        return base64.b64encode(jpeg_bytes).decode("ascii")
+    except Exception:
+        # If anything fails, return original
+        return base64_str
+
+
 def serialize_for_webrtc(value: Any) -> Any:
-    """Recursively serialize, compressing images with JPEG quality=10."""
+    """Recursively serialize, compressing images with low JPEG quality.
+    
+    Handles:
+    - WorkflowImageData objects
+    - Pre-serialized image dicts ({"type": "base64", "value": "..."}) with high-quality images
+    - Raw numpy arrays (images)
+    """
+    import numpy as np
+    
     if isinstance(value, WorkflowImageData):
         return serialise_image_for_webrtc(value)
+    if isinstance(value, np.ndarray):
+        # Raw image array - compress with low quality
+        if len(value.shape) >= 2:  # Looks like an image
+            jpeg_bytes = encode_image_to_jpeg_bytes(value, jpeg_quality=WEBRTC_JPEG_QUALITY)
+            return {
+                "type": "base64",
+                "value": base64.b64encode(jpeg_bytes).decode("ascii"),
+            }
+        return value.tolist()  # Not an image, convert to list
     if isinstance(value, dict):
+        # Check if this is a pre-serialized image dict with base64 data
+        # These come from workflow blocks that already serialized their output
+        if value.get("type") == "base64" and isinstance(value.get("value"), str):
+            # Re-compress the base64 image with low quality for WebRTC
+            recompressed = _recompress_base64_image(value["value"])
+            return {**value, "value": recompressed}
         return {k: serialize_for_webrtc(v) for k, v in value.items()}
     if isinstance(value, list):
         return [serialize_for_webrtc(v) for v in value]
@@ -313,10 +361,13 @@ async def wait_for_buffer_drain(
     Uses a low threshold (default: high_limit / 4) to implement proper backpressure.
     We wait until buffer drops significantly before resuming to prevent oscillation.
     
+    The asyncio.sleep() calls while waiting yield to the event loop, which is
+    critical for ICE health - aioice needs event loop time to send STUN packets.
+    
     Args:
         data_channel: The RTCDataChannel to monitor
         timeout: Maximum time to wait in seconds
-        heartbeat_callback: Optional callback to call periodically while waiting
+        heartbeat_callback: Optional callback for server watchdog (e.g., Modal timeout)
         low_threshold: Buffer level to wait for (default: BUFFER_SIZE_LIMIT / 4)
         
     Returns:
@@ -352,15 +403,18 @@ async def send_chunked_data(
 ) -> bool:
     """Send payload via data channel with chunking and backpressure.
     
-    Uses proper backpressure with high/low watermarks to prevent buffer overflow
-    while yielding to the event loop to maintain ICE consent freshness.
+    Uses proper backpressure with high/low watermarks to prevent buffer overflow.
+    
+    CRITICAL: Yields to event loop every N chunks via asyncio.sleep(0).
+    This allows aioice to send STUN Binding Indications to refresh ICE consent.
+    Without yielding, consent expires after ~30s causing "Consent to send expired".
     
     Args:
         data_channel: The RTCDataChannel to send on
         frame_id: Frame identifier for chunked message headers
         payload_bytes: Full payload to send
         chunk_size: Size of each chunk (default 48KB)
-        heartbeat_callback: Optional callback for watchdog/heartbeat
+        heartbeat_callback: Optional callback for server watchdog (e.g., Modal timeout)
         buffer_timeout: Max time to wait for buffer drain
         
     Returns:
@@ -397,11 +451,13 @@ async def send_chunked_data(
         
         data_channel.send(message)
 
-        # Yield to event loop every 10 chunks to prevent starvation
-        # This is critical for maintaining ICE consent freshness
+        # CRITICAL: Yield to event loop every 10 chunks
+        # Without this, aioice cannot send STUN Binding Indications to refresh
+        # ICE consent (expires after ~30s). Event loop starvation during large
+        # transfers is the root cause of "Consent to send expired" errors.
         if chunk_index % 10 == 0:
             if heartbeat_callback:
-                heartbeat_callback()
+                heartbeat_callback()  # Keep server watchdog alive
             await asyncio.sleep(0)
     
     return True
@@ -1308,6 +1364,7 @@ async def init_rtc_peer_connection_with_loop(
             await peer_connection.close()
             terminate_event.set()
 
+    # Monitor ICE connection state - consent expires after ~30s without STUN refresh
     @peer_connection.on("iceconnectionstatechange")
     async def on_iceconnectionstatechange():
         state = peer_connection.iceConnectionState
@@ -1316,7 +1373,9 @@ async def init_rtc_peer_connection_with_loop(
         if state == "failed":
             logger.warning(
                 "ICE connection failed - likely consent expiry. "
-                "This can happen during large transfers (>20-30s) with event loop congestion."
+                "This happens when event loop is blocked and aioice cannot "
+                "send STUN Binding Indications. Check for tight loops without "
+                "asyncio.sleep(0) yields."
             )
             # The connectionstatechange handler will clean up
         elif state == "disconnected":

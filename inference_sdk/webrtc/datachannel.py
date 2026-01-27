@@ -14,8 +14,11 @@ from inference_sdk.config import (
 if TYPE_CHECKING:
     from aiortc import RTCDataChannel
 
-# Heartbeat interval during uploads to prevent ICE consent expiry (30s limit)
-UPLOAD_HEARTBEAT_INTERVAL = 3.0  # seconds
+# Interval for sending keepalive pings to server watchdog during uploads
+# Note: This does NOT prevent ICE consent expiry - that's handled by yielding
+# to the event loop so aioice can send STUN packets. This ping is for the
+# server-side watchdog (Modal container timeout).
+WATCHDOG_PING_INTERVAL = 3.0  # seconds
 
 # Pre-compiled struct for parsing 12-byte header (3 x uint32 little-endian)
 _HEADER_STRUCT = struct.Struct("<III")
@@ -112,8 +115,9 @@ class VideoFileUploader:
 
     Features:
     - Backpressure handling via bufferedAmount monitoring with low watermark
-    - Periodic heartbeat pings to prevent ICE consent expiry
-    - Event loop yielding to prevent starvation
+    - Event loop yielding every N chunks to prevent starvation (critical for
+      ICE consent - aioice needs event loop time to send STUN refresh packets)
+    - Periodic pings to keep server watchdog alive
     - Progress callback support
     """
 
@@ -123,7 +127,7 @@ class VideoFileUploader:
         channel: "RTCDataChannel",
         chunk_size: int = WEBRTC_VIDEO_UPLOAD_CHUNK_SIZE,
         buffer_limit: int = WEBRTC_VIDEO_UPLOAD_BUFFER_LIMIT,
-        heartbeat_interval: float = UPLOAD_HEARTBEAT_INTERVAL,
+        watchdog_ping_interval: float = WATCHDOG_PING_INTERVAL,
     ):
         """Initialize video file uploader.
 
@@ -132,18 +136,18 @@ class VideoFileUploader:
             channel: RTCDataChannel to send chunks through
             chunk_size: Size of each chunk in bytes (default 48KB)
             buffer_limit: Max buffered bytes before applying backpressure
-            heartbeat_interval: Seconds between heartbeat pings (default 3s)
+            watchdog_ping_interval: Seconds between watchdog pings (default 3s)
         """
         self._path = path
         self._channel = channel
         self._chunk_size = chunk_size
         self._buffer_limit = buffer_limit
         self._buffer_low = buffer_limit // 4  # Low watermark for backpressure
-        self._heartbeat_interval = heartbeat_interval
+        self._watchdog_ping_interval = watchdog_ping_interval
         self._file_size = os.path.getsize(path)
         self._total_chunks = (self._file_size + chunk_size - 1) // chunk_size
         self._uploaded_chunks = 0
-        self._last_heartbeat = time.time()
+        self._last_watchdog_ping = time.time()
 
     @property
     def total_chunks(self) -> int:
@@ -160,18 +164,20 @@ class VideoFileUploader:
         """Size of the file in bytes."""
         return self._file_size
 
-    def _send_heartbeat(self) -> None:
-        """Send heartbeat ping if interval has elapsed.
+    def _send_watchdog_ping(self) -> None:
+        """Send ping to keep server watchdog alive if interval has elapsed.
         
-        This prevents ICE consent expiry (30s) during long uploads by keeping
-        the data channel active. Server echoes these back.
+        Note: This does NOT prevent ICE consent expiry - ICE consent is maintained
+        by aioice sending STUN Binding Indications at the transport layer.
+        This ping keeps the server-side watchdog (e.g., Modal container timeout)
+        alive during long uploads. Server echoes these back.
         """
         now = time.time()
-        if now - self._last_heartbeat >= self._heartbeat_interval:
+        if now - self._last_watchdog_ping >= self._watchdog_ping_interval:
             if self._channel.readyState == "open":
                 # Send 1-byte ping that server echoes back
                 self._channel.send(b"\x00")
-                self._last_heartbeat = now
+                self._last_watchdog_ping = now
 
     async def upload(
         self, on_progress: Optional[Callable[[int, int], None]] = None
@@ -196,9 +202,10 @@ class VideoFileUploader:
                 )
 
                 # Backpressure: wait for buffer to drain to low watermark
-                # Send heartbeat pings while waiting to prevent ICE consent expiry
+                # The asyncio.sleep() yields to event loop, allowing aioice to
+                # send STUN consent refresh packets (critical for ICE health)
                 while self._channel.bufferedAmount > self._buffer_limit:
-                    self._send_heartbeat()
+                    self._send_watchdog_ping()
                     await asyncio.sleep(0.01)
                     # Check channel still open after waiting
                     if self._channel.readyState != "open":
@@ -210,10 +217,12 @@ class VideoFileUploader:
                 if on_progress:
                     on_progress(self._uploaded_chunks, self._total_chunks)
                 
-                # Send periodic heartbeat during upload
-                self._send_heartbeat()
+                # Ping server watchdog periodically
+                self._send_watchdog_ping()
                 
-                # Yield to event loop every 10 chunks to prevent starvation
-                # This is critical for ICE consent freshness
+                # CRITICAL: Yield to event loop every 10 chunks
+                # Without this, aioice cannot send STUN Binding Indications to
+                # refresh ICE consent (expires after ~30s without refresh).
+                # Event loop starvation is the root cause of "Consent to send expired".
                 if chunk_idx % 10 == 0:
                     await asyncio.sleep(0)

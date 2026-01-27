@@ -698,7 +698,9 @@ class WebRTCSession:
         pc = RTCPeerConnection(configuration=turn_config)
         relay = MediaRelay()
 
-        # Setup ICE connection state monitoring to detect consent expiry
+        # Monitor ICE connection state for failures
+        # ICE consent expires after ~30s if STUN Binding Indications aren't sent.
+        # This happens when event loop is starved (e.g., tight send loops).
         @pc.on("iceconnectionstatechange")
         async def _on_ice_connection_state_change() -> None:
             state = pc.iceConnectionState
@@ -707,8 +709,9 @@ class WebRTCSession:
             if state == "failed":
                 logger.error(
                     "ICE connection failed - likely consent expiry. "
-                    "This can happen during large transfers (>20-30s) when "
-                    "the event loop is blocked and STUN consent refresh is delayed."
+                    "This happens when the event loop is blocked and aioice "
+                    "cannot send STUN consent refresh packets. Ensure code "
+                    "yields to event loop (asyncio.sleep(0)) during long operations."
                 )
                 # Signal session to close
                 try:
