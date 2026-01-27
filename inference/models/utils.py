@@ -781,6 +781,13 @@ if USE_INFERENCE_MODELS:
                 )
 
                 ROBOFLOW_MODEL_TYPES[(task, variant)] = InferenceModelsSAM2Adapter
+            elif task == "embed" and variant == "clip":
+                from inference.models.clip.clip_inference_models import (
+                    InferenceModelsClipAdapter,
+                )
+
+                ROBOFLOW_MODEL_TYPES[(task, variant)] = InferenceModelsClipAdapter
+
         except Exception as e:
             warnings.warn(
                 f"`inference-models` stack is unavailable for model: {variant} and task: {task}, "
