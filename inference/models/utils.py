@@ -807,6 +807,22 @@ if USE_INFERENCE_MODELS:
                 )
 
                 ROBOFLOW_MODEL_TYPES[(task, variant)] = InferenceModelsSmolVLMAdapter
+            elif task == "depth-estimation" and variant == "depth-anything-v2":
+                from inference.models.depth_anything_v2.depth_anything_v2_inference_models import (
+                    InferenceModelsDepthAnythingV2Adapter,
+                )
+
+                ROBOFLOW_MODEL_TYPES[(task, variant)] = (
+                    InferenceModelsDepthAnythingV2Adapter
+                )
+            elif task == "depth-estimation" and variant == "depth-anything-v3":
+                from inference.models.depth_anything_v3.depth_anything_v3_inference_models import (
+                    InferenceModelsDepthAnythingV3Adapter,
+                )
+
+                ROBOFLOW_MODEL_TYPES[(task, variant)] = (
+                    InferenceModelsDepthAnythingV3Adapter
+                )
         except Exception as e:
             warnings.warn(
                 f"`inference-models` stack is unavailable for model: {variant} and task: {task}, "

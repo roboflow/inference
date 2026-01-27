@@ -1,0 +1,127 @@
+# Copyright (c) 2025 Roboflow, Inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import warnings
+from typing import Any, List
+from uuid import uuid4
+
+import matplotlib.pyplot as plt
+import numpy as np
+import torch
+
+from inference.core.env import (
+    ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES,
+    ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES,
+    API_KEY,
+)
+from inference.core.models.base import Model
+from inference.core.models.types import PreprocessReturnMetadata
+from inference.core.utils.image_utils import load_image_rgb
+from inference.core.workflows.execution_engine.entities.base import (
+    ImageParentMetadata,
+    WorkflowImageData,
+)
+from inference_models import AutoModel
+from inference_models.entities import ImageDimensions
+from inference_models.models.depth_anything_v3.depth_anything_v3_torch import (
+    DepthAnythingV3Torch,
+)
+
+
+class InferenceModelsDepthAnythingV3Adapter(Model):
+    def __init__(self, model_id: str, api_key: str = None, **kwargs):
+        super().__init__()
+
+        self.metrics = {"num_inferences": 0, "avg_inference_time": 0.0}
+
+        self.api_key = api_key if api_key else API_KEY
+
+        self.task_type = "depth-estimation"
+
+        self._model: DepthAnythingV3Torch = AutoModel.from_pretrained(
+            model_id_or_path=model_id,
+            api_key=self.api_key,
+            allow_untrusted_packages=ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES,
+            allow_direct_local_storage_loading=ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES,
+            **kwargs,
+        )
+
+    def preprocess(self, image: Any, **kwargs):
+        if isinstance(image, list):
+            np_image = [
+                load_image_rgb(
+                    v,
+                    disable_preproc_auto_orient=kwargs.get(
+                        "disable_preproc_auto_orient", False
+                    ),
+                )
+                for v in image
+            ]
+        else:
+            np_image = load_image_rgb(
+                image,
+                disable_preproc_auto_orient=kwargs.get(
+                    "disable_preproc_auto_orient", False
+                ),
+            )
+            np_image = [np_image]
+        images, dimensions = self._model.pre_process(np_image)
+        dimensions = [
+            PreprocessReturnMetadata({"image_dims": (d.width, d.height)})
+            for d in dimensions
+        ]
+        return images, dimensions
+
+    def predict(self, inputs, **kwargs) -> torch.Tensor:
+        return self._model.forward(inputs)
+
+    def postprocess(
+        self,
+        predictions: torch.Tensor,
+        preprocess_return_metadata: List[PreprocessReturnMetadata],
+        **kwargs,
+    ) -> List[dict]:
+        post_processed_results = self._model.post_process(
+            predictions,
+            [
+                ImageDimensions(width=d["image_dims"][0], height=d["image_dims"][1])
+                for d in preprocess_return_metadata
+            ],
+        )
+        results = []
+        for result_element in post_processed_results:
+            depth_map = result_element.to(torch.float32).cpu().numpy()
+            # Normalize depth values
+            depth_min = depth_map.min()
+            depth_max = depth_map.max()
+            if depth_max == depth_min:
+                raise ValueError("Depth map has no variation (min equals max)")
+            normalized_depth = (depth_map - depth_min) / (depth_max - depth_min)
+
+            # Create visualization
+            depth_for_viz = (normalized_depth * 255.0).astype(np.uint8)
+            cmap = plt.get_cmap("viridis")
+            colored_depth = (cmap(depth_for_viz)[:, :, :3] * 255).astype(np.uint8)
+
+            # Convert numpy array to WorkflowImageData
+            parent_metadata = ImageParentMetadata(parent_id=f"{uuid4()}")
+            colored_depth_image = WorkflowImageData(
+                numpy_image=colored_depth, parent_metadata=parent_metadata
+            )
+            result = {
+                "image": colored_depth_image,
+                "normalized_depth": normalized_depth,
+            }
+            results.append(result)
+        return results
