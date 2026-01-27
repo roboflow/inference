@@ -84,7 +84,7 @@ logging.getLogger("aiortc").setLevel(logging.WARNING)
 CHUNK_SIZE = 48 * 1024  # 48KB - safe for all WebRTC implementations
 
 # WebRTC image compression quality - lower = smaller file size, quality=10 reduces ~1MB to ~50KB
-WEBRTC_JPEG_QUALITY = 10
+WEBRTC_JPEG_QUALITY = 50
 
 
 def serialise_image_for_webrtc(image: WorkflowImageData) -> Dict[str, Any]:
