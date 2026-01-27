@@ -163,6 +163,9 @@ SAM_PACKAGE_URL = (
 SAM2_PACKAGE_URL = (
     "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/sam2.zip"
 )
+SAM3_PACKAGE_URL = (
+    "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/sam3.zip"
+)
 
 
 @pytest.fixture(scope="module")
@@ -1272,4 +1275,12 @@ def sam2_package() -> str:
     return download_model_package(
         model_package_zip_url=SAM2_PACKAGE_URL,
         package_name="sam2",
+    )
+
+
+@pytest.fixture(scope="module")
+def sam3_package() -> str:
+    return download_model_package(
+        model_package_zip_url=SAM3_PACKAGE_URL,
+        package_name="sam3",
     )
