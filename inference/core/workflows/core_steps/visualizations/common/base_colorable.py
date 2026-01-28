@@ -115,11 +115,38 @@ class ColorableVisualizationManifest(PredictionsVisualizationManifest, ABC):
 class ColorableVisualizationBlock(PredictionsVisualizationBlock, ABC):
     @classmethod
     def getPalette(self, color_palette, palette_size, custom_colors):
+        # Initialize caches on the class object if they don't exist.
+        # _palette_cache maps keys describing a palette -> sv.ColorPalette
+        # _color_cache maps individual color string -> sv.Color
+        if not hasattr(self, "_palette_cache"):
+            self._palette_cache = {}
+        if not hasattr(self, "_color_cache"):
+            self._color_cache = {}
+
+        # Fast path for custom palettes: cache by the exact tuple of custom_colors
         if color_palette == "CUSTOM":
-            return sv.ColorPalette(
-                colors=[str_to_color(color) for color in custom_colors]
-            )
-        elif hasattr(sv.ColorPalette, color_palette):
+            # Use tuple(custom_colors) as a stable, hashable key
+            custom_key = ("CUSTOM", tuple(custom_colors))
+            if custom_key in self._palette_cache:
+                return self._palette_cache[custom_key]
+
+            # Convert colors, reusing any previously converted color objects
+            converted = []
+            color_cache = self._color_cache  # local reference for repeated access
+            for color in custom_colors:
+                if color in color_cache:
+                    converted.append(color_cache[color])
+                else:
+                    cobj = str_to_color(color)
+                    color_cache[color] = cobj
+                    converted.append(cobj)
+
+            palette = sv.ColorPalette(colors=converted)
+            self._palette_cache[custom_key] = palette
+            return palette
+
+        # If palette is a predefined attribute on sv.ColorPalette, return it directly
+        if hasattr(sv.ColorPalette, color_palette):
             return getattr(sv.ColorPalette, color_palette)
         else:
             palette_name = color_palette.replace("Matplotlib ", "")
@@ -145,7 +172,14 @@ class ColorableVisualizationBlock(PredictionsVisualizationBlock, ABC):
             else:
                 palette_name = palette_name.lower()
 
-            return sv.ColorPalette.from_matplotlib(palette_name, int(palette_size))
+            # Cache matplotlib-derived palettes by (name, size) to avoid repeated construction
+            mpl_key = ("MATPLOTLIB", palette_name, int(palette_size))
+            if mpl_key in self._palette_cache:
+                return self._palette_cache[mpl_key]
+
+            palette = sv.ColorPalette.from_matplotlib(palette_name, int(palette_size))
+            self._palette_cache[mpl_key] = palette
+            return palette
 
     @abstractmethod
     def run(
