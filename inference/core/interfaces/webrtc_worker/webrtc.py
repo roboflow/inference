@@ -267,6 +267,7 @@ class ThreadedVideoTrack(MediaStreamTrack):
         # 60 frames = ~2 seconds at 30fps, allows buffering during slow network
         self._queue = queue.Queue(maxsize=queue_size)
         self._stop_event = threading.Event()
+        logger.warning("RAFEL TEST Starting decode thread for %s", filepath)
         self._decode_thread = threading.Thread(
             target=_decode_worker,
             args=(filepath, self._queue, self._stop_event),
