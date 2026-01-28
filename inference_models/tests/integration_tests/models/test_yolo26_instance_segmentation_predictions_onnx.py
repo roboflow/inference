@@ -23,9 +23,6 @@ def test_onnx_package_stretch_static_bs_numpy(
 
     predictions = model(snake_image_numpy)
 
-    print(f"confidence: {predictions[0].confidence.cpu()}")
-    print(f"class_id: {predictions[0].class_id.cpu()}")
-    print(f"xyxy: {predictions[0].xyxy.cpu()}")
     xyxy = predictions[0].xyxy.cpu().tolist()[0]
     mask_region_sum = (
         predictions[0]
@@ -33,7 +30,6 @@ def test_onnx_package_stretch_static_bs_numpy(
         .mask[0, xyxy[1] : xyxy[3], xyxy[0] : xyxy[2]]
         .sum()
     )
-    print(f"mask_region_sum: {mask_region_sum}")
 
     assert len(predictions) == 1
     assert torch.allclose(
@@ -71,12 +67,6 @@ def test_onnx_package_stretch_static_bs_batch_numpy(
 
     predictions = model([snake_image_numpy, snake_image_numpy])
 
-    print(f"predictions[0].confidence: {predictions[0].confidence.cpu()}")
-    print(f"predictions[1].confidence: {predictions[1].confidence.cpu()}")
-    print(f"predictions[0].class_id: {predictions[0].class_id.cpu()}")
-    print(f"predictions[1].class_id: {predictions[1].class_id.cpu()}")
-    print(f"predictions[0].xyxy: {predictions[0].xyxy.cpu()}")
-    print(f"predictions[1].xyxy: {predictions[1].xyxy.cpu()}")
     xyxy_0 = predictions[0].xyxy.cpu().tolist()[0]
     xyxy_1 = predictions[1].xyxy.cpu().tolist()[0]
     mask_region_sum_0 = (
@@ -91,8 +81,6 @@ def test_onnx_package_stretch_static_bs_batch_numpy(
         .mask[0, xyxy_1[1] : xyxy_1[3], xyxy_1[0] : xyxy_1[2]]
         .sum()
     )
-    print(f"mask_region_sum_0: {mask_region_sum_0}")
-    print(f"mask_region_sum_1: {mask_region_sum_1}")
 
     assert len(predictions) == 2
     assert torch.allclose(
@@ -145,9 +133,6 @@ def test_onnx_package_stretch_static_bs_torch(
 
     predictions = model(snake_image_torch)
 
-    print(f"confidence: {predictions[0].confidence.cpu()}")
-    print(f"class_id: {predictions[0].class_id.cpu()}")
-    print(f"xyxy: {predictions[0].xyxy.cpu()}")
     xyxy = predictions[0].xyxy.cpu().tolist()[0]
     mask_region_sum = (
         predictions[0]
@@ -155,7 +140,6 @@ def test_onnx_package_stretch_static_bs_torch(
         .mask[0, xyxy[1] : xyxy[3], xyxy[0] : xyxy[2]]
         .sum()
     )
-    print(f"mask_region_sum: {mask_region_sum}")
 
     assert len(predictions) == 1
     assert torch.allclose(
@@ -193,9 +177,6 @@ def test_onnx_package_stretch_dynamic_bs_numpy(
 
     predictions = model(snake_image_numpy)
 
-    print(f"confidence: {predictions[0].confidence.cpu()}")
-    print(f"class_id: {predictions[0].class_id.cpu()}")
-    print(f"xyxy: {predictions[0].xyxy.cpu()}")
     xyxy = predictions[0].xyxy.cpu().tolist()[0]
     mask_region_sum = (
         predictions[0]
@@ -203,7 +184,6 @@ def test_onnx_package_stretch_dynamic_bs_numpy(
         .mask[0, xyxy[1] : xyxy[3], xyxy[0] : xyxy[2]]
         .sum()
     )
-    print(f"mask_region_sum: {mask_region_sum}")
 
     assert len(predictions) == 1
     assert torch.allclose(
@@ -241,12 +221,6 @@ def test_onnx_package_stretch_dynamic_bs_batch_numpy(
 
     predictions = model([snake_image_numpy, snake_image_numpy])
 
-    print(f"predictions[0].confidence: {predictions[0].confidence.cpu()}")
-    print(f"predictions[1].confidence: {predictions[1].confidence.cpu()}")
-    print(f"predictions[0].class_id: {predictions[0].class_id.cpu()}")
-    print(f"predictions[1].class_id: {predictions[1].class_id.cpu()}")
-    print(f"predictions[0].xyxy: {predictions[0].xyxy.cpu()}")
-    print(f"predictions[1].xyxy: {predictions[1].xyxy.cpu()}")
     xyxy_0 = predictions[0].xyxy.cpu().tolist()[0]
     xyxy_1 = predictions[1].xyxy.cpu().tolist()[0]
     mask_region_sum_0 = (
@@ -261,8 +235,6 @@ def test_onnx_package_stretch_dynamic_bs_batch_numpy(
         .mask[0, xyxy_1[1] : xyxy_1[3], xyxy_1[0] : xyxy_1[2]]
         .sum()
     )
-    print(f"mask_region_sum_0: {mask_region_sum_0}")
-    print(f"mask_region_sum_1: {mask_region_sum_1}")
 
     assert len(predictions) == 2
     assert torch.allclose(
@@ -315,9 +287,6 @@ def test_onnx_package_stretch_dynamic_bs_torch(
 
     predictions = model(snake_image_torch)
 
-    print(f"confidence: {predictions[0].confidence.cpu()}")
-    print(f"class_id: {predictions[0].class_id.cpu()}")
-    print(f"xyxy: {predictions[0].xyxy.cpu()}")
     xyxy = predictions[0].xyxy.cpu().tolist()[0]
     mask_region_sum = (
         predictions[0]
@@ -325,7 +294,6 @@ def test_onnx_package_stretch_dynamic_bs_torch(
         .mask[0, xyxy[1] : xyxy[3], xyxy[0] : xyxy[2]]
         .sum()
     )
-    print(f"mask_region_sum: {mask_region_sum}")
 
     assert len(predictions) == 1
     assert torch.allclose(
@@ -363,9 +331,6 @@ def test_onnx_package_letterbox_static_bs_numpy(
 
     predictions = model(snake_image_numpy)
 
-    print(f"confidence: {predictions[0].confidence.cpu()}")
-    print(f"class_id: {predictions[0].class_id.cpu()}")
-    print(f"xyxy: {predictions[0].xyxy.cpu()}")
     xyxy = predictions[0].xyxy.cpu().tolist()[0]
     mask_region_sum = (
         predictions[0]
@@ -373,7 +338,6 @@ def test_onnx_package_letterbox_static_bs_numpy(
         .mask[0, xyxy[1] : xyxy[3], xyxy[0] : xyxy[2]]
         .sum()
     )
-    print(f"mask_region_sum: {mask_region_sum}")
 
     assert len(predictions) == 1
     assert torch.allclose(
@@ -411,12 +375,6 @@ def test_onnx_package_letterbox_static_bs_batch_numpy(
 
     predictions = model([snake_image_numpy, snake_image_numpy])
 
-    print(f"predictions[0].confidence: {predictions[0].confidence.cpu()}")
-    print(f"predictions[1].confidence: {predictions[1].confidence.cpu()}")
-    print(f"predictions[0].class_id: {predictions[0].class_id.cpu()}")
-    print(f"predictions[1].class_id: {predictions[1].class_id.cpu()}")
-    print(f"predictions[0].xyxy: {predictions[0].xyxy.cpu()}")
-    print(f"predictions[1].xyxy: {predictions[1].xyxy.cpu()}")
     xyxy_0 = predictions[0].xyxy.cpu().tolist()[0]
     xyxy_1 = predictions[1].xyxy.cpu().tolist()[0]
     mask_region_sum_0 = (
@@ -431,8 +389,6 @@ def test_onnx_package_letterbox_static_bs_batch_numpy(
         .mask[0, xyxy_1[1] : xyxy_1[3], xyxy_1[0] : xyxy_1[2]]
         .sum()
     )
-    print(f"mask_region_sum_0: {mask_region_sum_0}")
-    print(f"mask_region_sum_1: {mask_region_sum_1}")
 
     assert len(predictions) == 2
     assert torch.allclose(
@@ -485,9 +441,6 @@ def test_onnx_package_letterbox_static_bs_torch(
 
     predictions = model(snake_image_torch)
 
-    print(f"confidence: {predictions[0].confidence.cpu()}")
-    print(f"class_id: {predictions[0].class_id.cpu()}")
-    print(f"xyxy: {predictions[0].xyxy.cpu()}")
     xyxy = predictions[0].xyxy.cpu().tolist()[0]
     mask_region_sum = (
         predictions[0]
@@ -495,7 +448,6 @@ def test_onnx_package_letterbox_static_bs_torch(
         .mask[0, xyxy[1] : xyxy[3], xyxy[0] : xyxy[2]]
         .sum()
     )
-    print(f"mask_region_sum: {mask_region_sum}")
 
     assert len(predictions) == 1
     assert torch.allclose(
@@ -533,9 +485,6 @@ def test_onnx_package_letterbox_dynamic_bs_numpy(
 
     predictions = model(snake_image_numpy)
 
-    print(f"confidence: {predictions[0].confidence.cpu()}")
-    print(f"class_id: {predictions[0].class_id.cpu()}")
-    print(f"xyxy: {predictions[0].xyxy.cpu()}")
     xyxy = predictions[0].xyxy.cpu().tolist()[0]
     mask_region_sum = (
         predictions[0]
@@ -543,7 +492,6 @@ def test_onnx_package_letterbox_dynamic_bs_numpy(
         .mask[0, xyxy[1] : xyxy[3], xyxy[0] : xyxy[2]]
         .sum()
     )
-    print(f"mask_region_sum: {mask_region_sum}")
 
     assert len(predictions) == 1
     assert torch.allclose(
@@ -581,12 +529,6 @@ def test_onnx_package_letterbox_dynamic_bs_batch_numpy(
 
     predictions = model([snake_image_numpy, snake_image_numpy])
 
-    print(f"predictions[0].confidence: {predictions[0].confidence.cpu()}")
-    print(f"predictions[1].confidence: {predictions[1].confidence.cpu()}")
-    print(f"predictions[0].class_id: {predictions[0].class_id.cpu()}")
-    print(f"predictions[1].class_id: {predictions[1].class_id.cpu()}")
-    print(f"predictions[0].xyxy: {predictions[0].xyxy.cpu()}")
-    print(f"predictions[1].xyxy: {predictions[1].xyxy.cpu()}")
     xyxy_0 = predictions[0].xyxy.cpu().tolist()[0]
     xyxy_1 = predictions[1].xyxy.cpu().tolist()[0]
     mask_region_sum_0 = (
@@ -601,8 +543,6 @@ def test_onnx_package_letterbox_dynamic_bs_batch_numpy(
         .mask[0, xyxy_1[1] : xyxy_1[3], xyxy_1[0] : xyxy_1[2]]
         .sum()
     )
-    print(f"mask_region_sum_0: {mask_region_sum_0}")
-    print(f"mask_region_sum_1: {mask_region_sum_1}")
 
     assert len(predictions) == 2
     assert torch.allclose(
@@ -655,9 +595,6 @@ def test_onnx_package_letterbox_dynamic_bs_torch(
 
     predictions = model(snake_image_torch)
 
-    print(f"confidence: {predictions[0].confidence.cpu()}")
-    print(f"class_id: {predictions[0].class_id.cpu()}")
-    print(f"xyxy: {predictions[0].xyxy.cpu()}")
     xyxy = predictions[0].xyxy.cpu().tolist()[0]
     mask_region_sum = (
         predictions[0]
@@ -665,7 +602,6 @@ def test_onnx_package_letterbox_dynamic_bs_torch(
         .mask[0, xyxy[1] : xyxy[3], xyxy[0] : xyxy[2]]
         .sum()
     )
-    print(f"mask_region_sum: {mask_region_sum}")
 
     assert len(predictions) == 1
     assert torch.allclose(

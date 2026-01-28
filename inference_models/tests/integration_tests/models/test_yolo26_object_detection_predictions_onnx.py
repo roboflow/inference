@@ -23,10 +23,6 @@ def test_onnx_package_stretch_static_bs_numpy(
 
     predictions = model(sunflowers_image_numpy)
 
-    print(f"confidence: {predictions[0].confidence.cpu().tolist()}")
-    print(f"class_id: {predictions[0].class_id.cpu().tolist()}")
-    print(f"xyxy: {predictions[0].xyxy.cpu().tolist()}")
-
     assert len(predictions) == 1
     assert torch.allclose(
         predictions[0].confidence.cpu(),
@@ -136,13 +132,6 @@ def test_onnx_package_stretch_static_bs_batch_numpy(
 
     predictions = model([sunflowers_image_numpy, sunflowers_image_numpy])
 
-    print(f"predictions[0].confidence: {predictions[0].confidence.cpu().tolist()}")
-    print(f"predictions[0].class_id: {predictions[0].class_id.cpu().tolist()}")
-    print(f"predictions[0].xyxy: {predictions[0].xyxy.cpu().tolist()}")
-    print(f"predictions[1].confidence: {predictions[1].confidence.cpu().tolist()}")
-    print(f"predictions[1].class_id: {predictions[1].class_id.cpu().tolist()}")
-    print(f"predictions[1].xyxy: {predictions[1].xyxy.cpu().tolist()}")
-
     expected_confidence = torch.tensor(
         [
             0.9143,
@@ -249,10 +238,6 @@ def test_onnx_package_stretch_static_bs_torch(
     )
 
     predictions = model(sunflowers_image_torch)
-
-    print(f"confidence: {predictions[0].confidence.cpu().tolist()}")
-    print(f"class_id: {predictions[0].class_id.cpu().tolist()}")
-    print(f"xyxy: {predictions[0].xyxy.cpu().tolist()}")
 
     assert len(predictions) == 1
     assert torch.allclose(
@@ -363,10 +348,6 @@ def test_onnx_package_stretch_dynamic_bs_numpy(
 
     predictions = model(sunflowers_image_numpy)
 
-    print(f"confidence: {predictions[0].confidence.cpu().tolist()}")
-    print(f"class_id: {predictions[0].class_id.cpu().tolist()}")
-    print(f"xyxy: {predictions[0].xyxy.cpu().tolist()}")
-
     assert len(predictions) == 1
     assert torch.allclose(
         predictions[0].confidence.cpu(),
@@ -475,13 +456,6 @@ def test_onnx_package_stretch_dynamic_bs_batch_numpy(
     )
 
     predictions = model([sunflowers_image_numpy, sunflowers_image_numpy])
-
-    print(f"predictions[0].confidence: {predictions[0].confidence.cpu().tolist()}")
-    print(f"predictions[0].class_id: {predictions[0].class_id.cpu().tolist()}")
-    print(f"predictions[0].xyxy: {predictions[0].xyxy.cpu().tolist()}")
-    print(f"predictions[1].confidence: {predictions[1].confidence.cpu().tolist()}")
-    print(f"predictions[1].class_id: {predictions[1].class_id.cpu().tolist()}")
-    print(f"predictions[1].xyxy: {predictions[1].xyxy.cpu().tolist()}")
 
     expected_confidence = torch.tensor(
         [
@@ -592,10 +566,6 @@ def test_onnx_package_stretch_dynamic_bs_torch(
 
     predictions = model(sunflowers_image_torch)
 
-    print(f"confidence: {predictions[0].confidence.cpu().tolist()}")
-    print(f"class_id: {predictions[0].class_id.cpu().tolist()}")
-    print(f"xyxy: {predictions[0].xyxy.cpu().tolist()}")
-
     assert len(predictions) == 1
     assert torch.allclose(
         predictions[0].confidence.cpu(),
@@ -704,10 +674,6 @@ def test_onnx_package_letterbox_static_bs_numpy(
     )
 
     predictions = model(sunflowers_image_numpy)
-
-    print(f"confidence: {predictions[0].confidence.cpu().tolist()}")
-    print(f"class_id: {predictions[0].class_id.cpu().tolist()}")
-    print(f"xyxy: {predictions[0].xyxy.cpu().tolist()}")
 
     assert len(predictions) == 1
     assert torch.allclose(
@@ -820,13 +786,6 @@ def test_onnx_package_letterbox_static_bs_batch_numpy(
 
     predictions = model([sunflowers_image_numpy, sunflowers_image_numpy])
 
-    print(f"predictions[0].confidence: {predictions[0].confidence.cpu().tolist()}")
-    print(f"predictions[0].class_id: {predictions[0].class_id.cpu().tolist()}")
-    print(f"predictions[0].xyxy: {predictions[0].xyxy.cpu().tolist()}")
-    print(f"predictions[1].confidence: {predictions[1].confidence.cpu().tolist()}")
-    print(f"predictions[1].class_id: {predictions[1].class_id.cpu().tolist()}")
-    print(f"predictions[1].xyxy: {predictions[1].xyxy.cpu().tolist()}")
-
     expected_confidence = torch.tensor(
         [
             0.9024,
@@ -935,10 +894,6 @@ def test_onnx_package_letterbox_static_bs_torch(
     )
 
     predictions = model(sunflowers_image_torch)
-
-    print(f"confidence: {predictions[0].confidence.cpu().tolist()}")
-    print(f"class_id: {predictions[0].class_id.cpu().tolist()}")
-    print(f"xyxy: {predictions[0].xyxy.cpu().tolist()}")
 
     assert len(predictions) == 1
     assert torch.allclose(
@@ -1051,10 +1006,6 @@ def test_onnx_package_letterbox_dynamic_bs_numpy(
 
     predictions = model(sunflowers_image_numpy)
 
-    print(f"confidence: {predictions[0].confidence.cpu().tolist()}")
-    print(f"class_id: {predictions[0].class_id.cpu().tolist()}")
-    print(f"xyxy: {predictions[0].xyxy.cpu().tolist()}")
-
     assert len(predictions) == 1
     assert torch.allclose(
         predictions[0].confidence.cpu(),
@@ -1166,13 +1117,6 @@ def test_onnx_package_letterbox_dynamic_bs_batch_numpy(
 
     predictions = model([sunflowers_image_numpy, sunflowers_image_numpy])
 
-    print(f"predictions[0].confidence: {predictions[0].confidence.cpu().tolist()}")
-    print(f"predictions[0].class_id: {predictions[0].class_id.cpu().tolist()}")
-    print(f"predictions[0].xyxy: {predictions[0].xyxy.cpu().tolist()}")
-    print(f"predictions[1].confidence: {predictions[1].confidence.cpu().tolist()}")
-    print(f"predictions[1].class_id: {predictions[1].class_id.cpu().tolist()}")
-    print(f"predictions[1].xyxy: {predictions[1].xyxy.cpu().tolist()}")
-
     expected_confidence = torch.tensor(
         [
             0.9026,
@@ -1281,10 +1225,6 @@ def test_onnx_package_letterbox_dynamic_bs_torch(
     )
 
     predictions = model(sunflowers_image_torch)
-
-    print(f"confidence: {predictions[0].confidence.cpu().tolist()}")
-    print(f"class_id: {predictions[0].class_id.cpu().tolist()}")
-    print(f"xyxy: {predictions[0].xyxy.cpu().tolist()}")
 
     assert len(predictions) == 1
     assert torch.allclose(

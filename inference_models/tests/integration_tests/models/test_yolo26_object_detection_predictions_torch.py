@@ -24,10 +24,6 @@ def test_torchscript_package_stretch_numpy(
 
     predictions = model(sunflowers_image_numpy)
 
-    print(f"confidence: {predictions[0].confidence.cpu().tolist()}")
-    print(f"class_id: {predictions[0].class_id.cpu().tolist()}")
-    print(f"xyxy: {predictions[0].xyxy.cpu().tolist()}")
-
     assert len(predictions) == 1
     assert torch.allclose(
         predictions[0].confidence.cpu(),
@@ -133,13 +129,6 @@ def test_torchscript_package_stretch_batch_numpy(
 
     predictions = model([sunflowers_image_numpy, sunflowers_image_numpy])
 
-    print(f"predictions[0].confidence: {predictions[0].confidence.cpu().tolist()}")
-    print(f"predictions[0].class_id: {predictions[0].class_id.cpu().tolist()}")
-    print(f"predictions[0].xyxy: {predictions[0].xyxy.cpu().tolist()}")
-    print(f"predictions[1].confidence: {predictions[1].confidence.cpu().tolist()}")
-    print(f"predictions[1].class_id: {predictions[1].class_id.cpu().tolist()}")
-    print(f"predictions[1].xyxy: {predictions[1].xyxy.cpu().tolist()}")
-
     expected_confidence = torch.tensor(
         [
             0.9141,
@@ -242,10 +231,6 @@ def test_torchscript_package_stretch_torch(
     )
 
     predictions = model(sunflowers_image_torch)
-
-    print(f"confidence: {predictions[0].confidence.cpu().tolist()}")
-    print(f"class_id: {predictions[0].class_id.cpu().tolist()}")
-    print(f"xyxy: {predictions[0].xyxy.cpu().tolist()}")
 
     assert len(predictions) == 1
     assert torch.allclose(
@@ -351,10 +336,6 @@ def test_torchscript_package_letterbox_numpy(
     )
 
     predictions = model(sunflowers_image_numpy)
-
-    print(f"confidence: {predictions[0].confidence.cpu().tolist()}")
-    print(f"class_id: {predictions[0].class_id.cpu().tolist()}")
-    print(f"xyxy: {predictions[0].xyxy.cpu().tolist()}")
 
     assert len(predictions) == 1
     assert torch.allclose(
@@ -463,13 +444,6 @@ def test_torchscript_package_letterbox_batch_numpy(
 
     predictions = model([sunflowers_image_numpy, sunflowers_image_numpy])
 
-    print(f"predictions[0].confidence: {predictions[0].confidence.cpu().tolist()}")
-    print(f"predictions[0].class_id: {predictions[0].class_id.cpu().tolist()}")
-    print(f"predictions[0].xyxy: {predictions[0].xyxy.cpu().tolist()}")
-    print(f"predictions[1].confidence: {predictions[1].confidence.cpu().tolist()}")
-    print(f"predictions[1].class_id: {predictions[1].class_id.cpu().tolist()}")
-    print(f"predictions[1].xyxy: {predictions[1].xyxy.cpu().tolist()}")
-
     expected_confidence = torch.tensor(
         [
             0.9024,
@@ -574,10 +548,6 @@ def test_torchscript_package_letterbox_torch(
     )
 
     predictions = model(sunflowers_image_torch)
-
-    print(f"confidence: {predictions[0].confidence.cpu().tolist()}")
-    print(f"class_id: {predictions[0].class_id.cpu().tolist()}")
-    print(f"xyxy: {predictions[0].xyxy.cpu().tolist()}")
 
     assert len(predictions) == 1
     assert torch.allclose(
