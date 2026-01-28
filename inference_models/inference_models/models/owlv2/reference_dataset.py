@@ -288,4 +288,6 @@ def compute_image_hash(image: Union[torch.Tensor, np.ndarray]) -> str:
 
 
 def hash_function(value: Union[str, bytes]) -> str:
+    if isinstance(value, str):
+        value = value.encode("utf-8")
     return hashlib.sha1(value).hexdigest()

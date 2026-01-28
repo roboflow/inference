@@ -788,7 +788,11 @@ if USE_INFERENCE_MODELS:
 
                 ROBOFLOW_MODEL_TYPES[(task, variant)] = InferenceModelsClipAdapter
             elif task == "object-detection" and variant == "owlv2":
-                pass
+                from inference.models.owlv2.owlv2_inference_models import (
+                    InferenceModelsOwlV2Adapter,
+                )
+
+                ROBOFLOW_MODEL_TYPES[(task, variant)] = InferenceModelsOwlV2Adapter
             elif task == "object-detection" and variant == "owlv2-finetuned":
                 pass
             elif task == "gaze" and variant == "l2cs":

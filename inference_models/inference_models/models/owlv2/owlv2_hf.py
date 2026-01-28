@@ -258,7 +258,7 @@ class OWLv2HF(
         class_embeddings: Dict[str, ReferenceExamplesClassEmbeddings],
         confidence: float = INFERENCE_MODELS_OWLV2_DEFAULT_CONFIDENCE,
         iou_threshold: float = INFERENCE_MODELS_OWLV2_DEFAULT_IOU_THRESHOLD,
-    ) -> List[Tuple[torch.Tensor, torch.Tensor, torch.Tensor]]:
+    ) -> List[Tuple[torch.Tensor, torch.Tensor, torch.Tensor, List[str]]]:
         results = []
         for image_embedding in images_embeddings:
             image_embedding = image_embedding.to(self._device)
@@ -288,29 +288,42 @@ class OWLv2HF(
                 all_predicted_scores.append(scores)
             if not all_predicted_boxes:
                 results.append(
-                    (torch.empty((0,)), torch.empty((0,)), torch.empty((0,)))
+                    (
+                        torch.empty((0,)),
+                        torch.empty((0,)),
+                        torch.empty((0,)),
+                        class_names,
+                    )
                 )
                 continue
             all_predicted_boxes = torch.cat(all_predicted_boxes, dim=0)
             all_predicted_classes = torch.cat(all_predicted_classes, dim=0)
             all_predicted_scores = torch.cat(all_predicted_scores, dim=0)
             results.append(
-                (all_predicted_boxes, all_predicted_classes, all_predicted_scores)
+                (
+                    all_predicted_boxes,
+                    all_predicted_classes,
+                    all_predicted_scores,
+                    class_names,
+                )
             )
         return results
 
     def post_process_predictions_for_precomputed_embeddings(
         self,
-        predictions: List[Tuple[torch.Tensor, torch.Tensor, torch.Tensor]],
+        predictions: List[Tuple[torch.Tensor, torch.Tensor, torch.Tensor, List[str]]],
         images_dimensions: List[ImageDimensions],
         max_detections: int = INFERENCE_MODELS_OWLV2_DEFAULT_MAX_DETECTIONS,
         iou_threshold: float = INFERENCE_MODELS_OWLV2_DEFAULT_IOU_THRESHOLD,
     ) -> List[Detections]:
         results = []
         for image_predictions, image_dimensions in zip(predictions, images_dimensions):
-            all_predicted_boxes, all_predicted_classes, all_predicted_scores = (
-                image_predictions
-            )
+            (
+                all_predicted_boxes,
+                all_predicted_classes,
+                all_predicted_scores,
+                class_names,
+            ) = image_predictions
             if all_predicted_boxes.numel() == 0:
                 results.append(
                     Detections(
@@ -345,6 +358,7 @@ class OWLv2HF(
                     xyxy=xyxy.int(),
                     confidence=all_predicted_scores,
                     class_id=all_predicted_classes.int(),
+                    image_metadata={"class_names": class_names},
                 )
             )
         return results

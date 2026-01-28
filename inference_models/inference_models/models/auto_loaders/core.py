@@ -22,7 +22,6 @@ from inference_models.errors import (
     InvalidModelInitParameterError,
     InvalidParameterError,
     MissingModelInitParameterError,
-    ModelLoadingError,
     ModelPackageAlternativesExhaustedError,
     NoModelPackagesAvailableError,
     UnauthorizedModelAccessError,
