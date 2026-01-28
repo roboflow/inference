@@ -32,7 +32,9 @@ from inference_models.models.common.roboflow.pre_processing import (
 from inference_models.models.common.trt import (
     get_trt_engine_inputs_and_outputs,
     infer_from_trt_engine,
+    infer_from_trt_engine_with_cudagraph,
     load_trt_model,
+    TRTCudaGraphState,
 )
 from inference_models.models.rfdetr.class_remapping import (
     ClassesReMapping,
@@ -171,6 +173,7 @@ class RFDetrForInstanceSegmentationTRT(
         self._cuda_context = cuda_context
         self._execution_context = execution_context
         self._trt_config = trt_config
+        self._trt_cuda_graph_state = None
         self._lock = threading.Lock()
 
     @property
@@ -194,19 +197,33 @@ class RFDetrForInstanceSegmentationTRT(
         )
 
     def forward(
-        self, pre_processed_images: torch.Tensor, **kwargs
+        self, pre_processed_images: torch.Tensor, use_cuda_graph: bool = False, **kwargs
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         with self._lock:
             with use_cuda_context(context=self._cuda_context):
-                detections, labels, masks = infer_from_trt_engine(
-                    pre_processed_images=pre_processed_images,
-                    trt_config=self._trt_config,
-                    engine=self._engine,
-                    context=self._execution_context,
-                    device=self._device,
-                    input_name=self._input_name,
-                    outputs=self._output_names,
-                )
+                if use_cuda_graph:
+                    (detections, labels, masks), self._trt_cuda_graph_state = (
+                        infer_from_trt_engine_with_cudagraph(
+                            pre_processed_images=pre_processed_images,
+                            trt_config=self._trt_config,
+                            engine=self._engine,
+                            context=self._execution_context,
+                            device=self._device,
+                            input_name=self._input_name,
+                            outputs=self._output_names,
+                            trt_cuda_graph_state=self._trt_cuda_graph_state,
+                        )
+                    )
+                else:
+                    detections, labels, masks = infer_from_trt_engine(
+                        pre_processed_images=pre_processed_images,
+                        trt_config=self._trt_config,
+                        engine=self._engine,
+                        context=self._execution_context,
+                        device=self._device,
+                        input_name=self._input_name,
+                        outputs=self._output_names,
+                    )
                 return detections, labels, masks
 
     def post_process(
