@@ -1,18 +1,29 @@
-from typing import List, Tuple, Optional
+from typing import List, Optional, Tuple
 
 from inference.core.entities.requests import ObjectDetectionInferenceRequest
-from inference.core.entities.responses import ObjectDetectionInferenceResponse, InferenceResponseImage, \
-    ObjectDetectionPrediction
-from inference.core.env import API_KEY, ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES, \
-    ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES, MAX_DETECTIONS
+from inference.core.entities.responses import (
+    InferenceResponseImage,
+    ObjectDetectionInferenceResponse,
+    ObjectDetectionPrediction,
+)
+from inference.core.env import (
+    ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES,
+    ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES,
+    API_KEY,
+    MAX_DETECTIONS,
+)
 from inference.core.models.base import Model
 from inference.core.models.roboflow import DEFAULT_COLOR_PALETTE
 from inference.core.utils.image_utils import load_image_bgr
 from inference.core.utils.visualisation import draw_detection_predictions
 from inference.models.owlv2.owlv2_inference_models import Owlv2AdapterSingleton
-from inference_models import AutoModel, Detections, AnyModel
-from inference_models.models.auto_loaders.access_manager import LiberalModelAccessManager
-from inference_models.models.roboflow_instant.roboflow_instant_hf import RoboflowInstantHF
+from inference_models import AnyModel, AutoModel, Detections
+from inference_models.models.auto_loaders.access_manager import (
+    LiberalModelAccessManager,
+)
+from inference_models.models.roboflow_instant.roboflow_instant_hf import (
+    RoboflowInstantHF,
+)
 
 
 class RFInstantSpecificLiberalModelAccessManager(LiberalModelAccessManager):
@@ -24,13 +35,16 @@ class RFInstantSpecificLiberalModelAccessManager(LiberalModelAccessManager):
         api_key: Optional[str],
         loading_parameter_digest: Optional[str],
     ) -> Optional[AnyModel]:
-        if not model_id.startswith("owlv2/") and not model_id.startswith("google/owlv2-"):
+        if not model_id.startswith("owlv2/") and not model_id.startswith(
+            "google/owlv2-"
+        ):
             return None
         print(f"Intercepted call to dependent model init, {model_id}")
         return Owlv2AdapterSingleton(
             model_id,
             api_key=api_key,
         ).model
+
 
 class InferenceModelsRFInstantModelAdapter(Model):
     def __init__(
@@ -75,7 +89,11 @@ class InferenceModelsRFInstantModelAdapter(Model):
             iou_threshold=iou_threshold,
             max_detections=max_detections,
         )
-        return self.make_response(predictions=results, image_sizes=image_sizes, class_names=self._model.class_names)
+        return self.make_response(
+            predictions=results,
+            image_sizes=image_sizes,
+            class_names=self._model.class_names,
+        )
 
     def draw_predictions(
         self,

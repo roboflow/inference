@@ -1,11 +1,12 @@
 import gc
 import time
 import weakref
-from typing import Any, List, Tuple, Optional
+from typing import Any, List, Optional, Tuple
 
 import numpy as np
 import torch
 
+from inference.core import logger
 from inference.core.entities.responses import (
     InferenceResponseImage,
     ObjectDetectionInferenceResponse,
@@ -15,15 +16,14 @@ from inference.core.env import (
     ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES,
     ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES,
     API_KEY,
+    DEVICE,
     MAX_DETECTIONS,
+    OWLV2_COMPILE_MODEL,
     OWLV2_IMAGE_CACHE_SIZE,
     OWLV2_MODEL_CACHE_SIZE,
-    OWLV2_COMPILE_MODEL,
     PRELOAD_HF_IDS,
     USE_INFERENCE_MODELS,
-    DEVICE,
 )
-from inference.core import logger
 from inference.core.models.base import Model
 from inference.core.models.roboflow import DEFAULT_COLOR_PALETTE
 from inference.core.utils.image_utils import load_image_bgr
@@ -40,6 +40,7 @@ from inference_models.models.owlv2.entities import (
 from inference_models.models.owlv2.owlv2_hf import OWLv2HF
 
 PRELOADED_HF_MODELS = {}
+
 
 class Owlv2AdapterSingleton:
     _instances = weakref.WeakValueDictionary()
@@ -66,16 +67,23 @@ class Owlv2AdapterSingleton:
                 owlv2_images_embeddings_cache=owlv2_images_embeddings_cache,
             )
             logger.info("Creating new OWLv2 instance for %s", huggingface_id)
-            instance = super().__new__(cls)
-            instance.huggingface_id = huggingface_id
             # Load model directly in the instance
             logger.info("Loading OWLv2 model from %s", huggingface_id)
             if OWLV2_COMPILE_MODEL:
                 torch._dynamo.config.suppress_errors = True
                 model.optimize_for_inference()
-            instance.model = model
-            cls._instances[huggingface_id] = instance
-        return cls._instances[huggingface_id]
+            cls._instances[huggingface_id] = model
+            instance = cls.assembly_instance(huggingface_id, model)
+            return instance
+        model = cls._instances[huggingface_id]
+        return cls.assembly_instance(huggingface_id, model)
+
+    @classmethod
+    def assembly_instance(cls, huggingface_id: str, model):
+        instance = super().__new__(cls)
+        instance.huggingface_id = huggingface_id
+        instance.model = model
+        return instance
 
 
 @torch.no_grad()

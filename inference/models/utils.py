@@ -798,7 +798,9 @@ if USE_INFERENCE_MODELS:
                     InferenceModelsRFInstantModelAdapter,
                 )
 
-                ROBOFLOW_MODEL_TYPES[(task, variant)] = InferenceModelsRFInstantModelAdapter
+                ROBOFLOW_MODEL_TYPES[(task, variant)] = (
+                    InferenceModelsRFInstantModelAdapter
+                )
             elif task == "gaze" and variant == "l2cs":
                 from inference.models.gaze.gaze_inference_models import (
                     InferenceModelsGazeAdapter,
