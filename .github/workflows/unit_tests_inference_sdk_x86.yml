@@ -7,6 +7,11 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      use_inference_models:
+        type: boolean
+        description: "Use inference_models"
+        default: false
 
 jobs:
   call_is_mergeable:
@@ -44,4 +49,6 @@ jobs:
           pip install -r requirements/requirements.sdk.http.txt -r requirements/requirements.sdk.webrtc.txt -r requirements/requirements.test.unit.txt
       - name: 🧪 Unit Tests of Inference SDK
         timeout-minutes: 30
+        env:
+          USE_INFERENCE_MODELS: ${{ github.event.inputs.use_inference_models == 'true' }}
         run: python -m pytest tests/inference_sdk/unit_tests

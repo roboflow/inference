@@ -8,6 +8,11 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      use_inference_models:
+        type: boolean
+        description: "Use inference_models"
+        default: false
 
 jobs:
   call_is_mergeable:
@@ -45,4 +50,6 @@ jobs:
           pip install -r requirements/_requirements.txt -r requirements/requirements.cpu.txt -r requirements/requirements.sdk.http.txt -r requirements/requirements.test.unit.txt -r requirements/requirements.http.txt -r requirements/requirements.transformers.txt
       - name: 🧪 Unit Tests of Inference
         timeout-minutes: 30
+        env:
+          USE_INFERENCE_MODELS: ${{ github.event.inputs.use_inference_models == 'true' }}
         run: python -m pytest tests/inference/unit_tests

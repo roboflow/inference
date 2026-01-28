@@ -7,6 +7,11 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      use_inference_models:
+        type: boolean
+        description: "Use inference_models"
+        default: false
 
 jobs:
   call_is_mergeable:
@@ -52,6 +57,8 @@ jobs:
 
       - name: 🧪 Integration Tests - WebRTC SDK (mocked)
         timeout-minutes: 10
+        env:
+          USE_INFERENCE_MODELS: ${{ github.event.inputs.use_inference_models == 'true' }}
         run: python -m pytest tests/inference_sdk/integration_tests -v --timeout=300
 
   e2e-tests:
@@ -95,4 +102,6 @@ jobs:
 
       - name: 🧪 E2E Tests - WebRTC SDK (real server)
         timeout-minutes: 15
+        env:
+          USE_INFERENCE_MODELS: ${{ github.event.inputs.use_inference_models == 'true' }}
         run: python -m pytest tests/inference_sdk/e2e_tests -m slow -v --timeout=300

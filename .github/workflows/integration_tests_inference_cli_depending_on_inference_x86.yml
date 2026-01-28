@@ -5,6 +5,11 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      use_inference_models:
+        type: boolean
+        description: "Use inference_models"
+        default: false
 
 jobs:
   call_is_mergeable:
@@ -41,4 +46,6 @@ jobs:
           pip install --upgrade setuptools
           pip install --extra-index-url https://download.pytorch.org/whl/cpu -r requirements/_requirements.txt -r requirements/requirements.cpu.txt -r requirements/requirements.sdk.http.txt -r requirements/requirements.test.unit.txt -r requirements/requirements.http.txt -r requirements/requirements.yolo_world.txt -r requirements/requirements.doctr.txt -r requirements/requirements.sam.txt -r requirements/requirements.transformers.txt -r requirements/requirements.cli.txt -r requirements/requirements.sdk.http.txt
       - name: 🧪 Integration Tests of Inference CLI
+        env:
+          USE_INFERENCE_MODELS: ${{ github.event.inputs.use_inference_models == 'true' }}
         run: RUN_TESTS_WITH_INFERENCE_PACKAGE=True INFERENCE_CLI_TESTS_API_KEY=${{ secrets.LOAD_TEST_PRODUCTION_API_KEY }} python -m pytest tests/inference_cli/integration_tests/test_workflows.py
