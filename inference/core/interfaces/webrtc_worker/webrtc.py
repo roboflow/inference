@@ -602,13 +602,13 @@ async def send_chunked_data(
         
         data_channel.send(message)
 
-        # CRITICAL: Yield to event loop every 10 chunks
-        # Without this, aioice cannot send STUN Binding Indications to refresh
-        # ICE consent (expires after ~30s). Event loop starvation during large
-        # transfers is the root cause of "Consent to send expired" errors.
+        # CRITICAL: Small sleep between chunks to:
+        # 1. Yield to event loop so aioice can send STUN/consent refreshes
+        # 2. Prevent overwhelming the network and causing RTT spikes
+        # 3. Allow the browser to ACK received data
         if heartbeat_callback:
             heartbeat_callback()  # Keep server watchdog alive
-        await asyncio.sleep(0)
+        await asyncio.sleep(0.01)  # 1ms between chunks
     
     total_elapsed = time.time() - send_start_time
     throughput_kbps = (payload_size / 1024) / total_elapsed if total_elapsed > 0 else 0
