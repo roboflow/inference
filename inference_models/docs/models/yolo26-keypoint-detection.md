@@ -6,7 +6,7 @@ YOLO26 is the latest addition to the Ultralytics YOLO model series. The keypoint
 
 YOLO26 for keypoint detection combines object detection with keypoint localization. Key features include:
 
-- **NMS-free end-to-end inference** - Native end-to-end predictions without non-maximum suppression
+- **NMS-free end-to-end inference** - Removing non-maximum suppression helps achieve lower inference latencies.
 - **DFL removal** - Distribution Focal Loss removed for simpler export and broader edge compatibility
 - **Residual Log-Likelihood Estimation (RLE)** - More accurate keypoint localization
 - **Multi-person support** - Detects and tracks keypoints for multiple instances simultaneously

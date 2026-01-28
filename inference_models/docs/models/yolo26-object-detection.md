@@ -6,7 +6,7 @@ YOLO26 is the latest addition to the Ultralytics YOLO object detection model ser
 
 YOLO26 for object detection removes unnecessary complexity while integrating targeted innovations. Key features include:
 
-- **NMS-free end-to-end inference** - Native end-to-end predictions without non-maximum suppression
+- **NMS-free end-to-end inference** - Removing non-maximum suppression helps achieve lower inference latencies.
 - **DFL removal** - Distribution Focal Loss removed for simpler export and broader edge compatibility
 - **MuSGD optimizer** - Hybrid SGD/Muon optimizer for more stable training
 - **ProgLoss + STAL** - Improved loss functions for better small-object detection
