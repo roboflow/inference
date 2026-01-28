@@ -788,10 +788,10 @@ WEBRTC_MODAL_USAGE_QUOTA_ENABLED = str2bool(
     os.getenv("WEBRTC_MODAL_USAGE_QUOTA_ENABLED", "False")
 )
 WEBRTC_DATA_CHANNEL_BUFFER_DRAINING_DELAY = float(
-    os.getenv("WEBRTC_DATA_CHANNEL_BUFFER_DRAINING_DELAY", "0.1")
+    os.getenv("WEBRTC_DATA_CHANNEL_BUFFER_DRAINING_DELAY", "2.0")
 )
 WEBRTC_DATA_CHANNEL_BUFFER_SIZE_LIMIT = int(
-    os.getenv("WEBRTC_DATA_CHANNEL_BUFFER_SIZE_LIMIT", str(1024 * 1024))  # 1MB
+    os.getenv("WEBRTC_DATA_CHANNEL_BUFFER_SIZE_LIMIT", str(1024 * 1024 * 32))  # 32MB
 )
 
 # Maximum number of frames the server is allowed to be ahead of the last client ACK
