@@ -474,6 +474,9 @@ from inference.core.workflows.core_steps.visualizations.grid.v1 import (
 from inference.core.workflows.core_steps.visualizations.halo.v1 import (
     HaloVisualizationBlockV1,
 )
+from inference.core.workflows.core_steps.visualizations.halo.v2 import (
+    HaloVisualizationBlockV2,
+)
 from inference.core.workflows.core_steps.visualizations.icon.v1 import (
     IconVisualizationBlockV1,
 )
@@ -497,6 +500,9 @@ from inference.core.workflows.core_steps.visualizations.pixelate.v1 import (
 )
 from inference.core.workflows.core_steps.visualizations.polygon.v1 import (
     PolygonVisualizationBlockV1,
+)
+from inference.core.workflows.core_steps.visualizations.polygon.v2 import (
+    PolygonVisualizationBlockV2,
 )
 from inference.core.workflows.core_steps.visualizations.polygon_zone.v1 import (
     PolygonZoneVisualizationBlockV1,
@@ -728,6 +734,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         GoogleVisionOCRBlockV1,
         GridVisualizationBlockV1,
         HaloVisualizationBlockV1,
+        HaloVisualizationBlockV2,
         IconVisualizationBlockV1,
         ImageBlurBlockV1,
         ImageContoursDetectionBlockV1,
@@ -757,6 +764,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         PixelateVisualizationBlockV1,
         PixelationCountBlockV1,
         PolygonVisualizationBlockV1,
+        PolygonVisualizationBlockV2,
         PolygonZoneVisualizationBlockV1,
         QRCodeDetectorBlockV1,
         RoboflowClassificationModelBlockV1,
