@@ -835,7 +835,18 @@ if USE_INFERENCE_MODELS:
                 )
 
                 ROBOFLOW_MODEL_TYPES[(task, variant)] = InferenceModelsDocTRAdapter
+            elif task == "ocr" and variant == "easy_ocr":
+                from inference.models.easy_ocr.easy_ocr_inference_models import (
+                    InferenceModelsEasyOCRAdapter,
+                )
 
+                ROBOFLOW_MODEL_TYPES[(task, variant)] = InferenceModelsEasyOCRAdapter
+            elif task == "ocr" and variant == "trocr":
+                from inference.models.trocr.trocr_inference_models import (
+                    InferenceModelsTrOCRAdapter,
+                )
+
+                ROBOFLOW_MODEL_TYPES[(task, variant)] = InferenceModelsTrOCRAdapter
         except Exception as e:
             warnings.warn(
                 f"`inference-models` stack is unavailable for model: {variant} and task: {task}, "
