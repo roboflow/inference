@@ -6,8 +6,8 @@ from typing_extensions import Annotated
 
 from inference_cli.lib.benchmark.dataset import PREDEFINED_DATASETS
 from inference_cli.lib.benchmark_adapter import (
-    run_inference_models_benchmark,
     run_infer_api_speed_benchmark,
+    run_inference_models_benchmark,
     run_python_package_speed_benchmark,
     run_workflow_api_speed_benchmark,
 )
