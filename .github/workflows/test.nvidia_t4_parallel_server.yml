@@ -15,9 +15,14 @@ on:
           - ''
           - regression_without_torch
           - regression_with_torch
+      use_inference_models:
+        type: boolean
+        description: "Use inference_models"
+        default: false
 
 jobs:
   build:
+    name: build${{ github.event.inputs.use_inference_models == 'true' && ' [inference_models]' || '' }}
     if: ${{ !github.event.act }}
     runs-on: Roboflow-GPU-VM-Runner
 
@@ -50,10 +55,12 @@ jobs:
       - name: 🔋 Start Test Docker without Torch Preprocessing - Parallel GPU
         if: ${{ github.event.inputs.test_name == '' || github.event.inputs.test_name == 'regression_without_torch' }}
         run: |
-          PORT=9101 USE_PYTORCH_FOR_PREPROCESSING=False INFERENCE_SERVER_REPO=roboflow-inference-server-gpu-parallel make start_test_docker_gpu
+          PORT=9101 USE_PYTORCH_FOR_PREPROCESSING=False INFERENCE_SERVER_REPO=roboflow-inference-server-gpu-parallel USE_INFERENCE_MODELS=${{ github.event.inputs.use_inference_models == 'true' }} make start_test_docker_gpu
       - name: 🧪 Regression Tests without Torch Preprocessing - Parallel GPU
         id: regression_tests_with_python_preprocessing
         if: ${{ github.event.inputs.test_name == '' || github.event.inputs.test_name == 'regression_without_torch' }}
+        env:
+          USE_INFERENCE_MODELS: ${{ github.event.inputs.use_inference_models == 'true' }}
         run: |
           source venv/bin/activate
           IS_PARALLEL_SERVER=true SKIP_VISUALISATION_TESTS=true FUNCTIONAL=true PORT=9101 API_KEY=${{ secrets.API_KEY }} asl_instance_segmentation_API_KEY=${{ secrets.ASL_INSTANCE_SEGMENTATION_API_KEY }} asl_poly_instance_seg_API_KEY=${{ secrets.ASL_POLY_INSTANCE_SEG_API_KEY }} bccd_favz3_API_KEY=${{ secrets.BCCD_FAVZ3_API_KEY }} bccd_i4nym_API_KEY=${{ secrets.BCCD_I4NYM_API_KEY }} cats_and_dogs_smnpl_API_KEY=${{ secrets.CATS_AND_DOGS_SMNPL_API_KEY }} coins_xaz9i_API_KEY=${{ secrets.COINS_XAZ9I_API_KEY }} melee_API_KEY=${{ secrets.MELEE_API_KEY }} yolonas_test_API_KEY=${{ secrets.YOLONAS_TEST_API_KEY }} python3 -m pytest tests/inference/integration_tests/regression_test.py tests/inference/integration_tests/batch_regression_test.py
@@ -67,10 +74,12 @@ jobs:
       - name: 🔋 Start Test Docker with Torch Preprocessing - Parallel GPU
         if: ${{ github.event.inputs.test_name == '' || github.event.inputs.test_name == 'regression_with_torch' }}
         run: |
-          PORT=9101 USE_PYTORCH_FOR_PREPROCESSING=True INFERENCE_SERVER_REPO=roboflow-inference-server-gpu-parallel make start_test_docker_gpu
+          PORT=9101 USE_PYTORCH_FOR_PREPROCESSING=True INFERENCE_SERVER_REPO=roboflow-inference-server-gpu-parallel USE_INFERENCE_MODELS=${{ github.event.inputs.use_inference_models == 'true' }} make start_test_docker_gpu
       - name: 🧪 Regression Tests with Torch Preprocessing - Parallel GPU
         id: regression_tests_without_python_preprocessing
         if: ${{ github.event.inputs.test_name == '' || github.event.inputs.test_name == 'regression_with_torch' }}
+        env:
+          USE_INFERENCE_MODELS: ${{ github.event.inputs.use_inference_models == 'true' }}
         run: |
           source venv/bin/activate
           IS_PARALLEL_SERVER=true SKIP_VISUALISATION_TESTS=true FUNCTIONAL=true PORT=9101 API_KEY=${{ secrets.API_KEY }} asl_instance_segmentation_API_KEY=${{ secrets.ASL_INSTANCE_SEGMENTATION_API_KEY }} asl_poly_instance_seg_API_KEY=${{ secrets.ASL_POLY_INSTANCE_SEG_API_KEY }} bccd_favz3_API_KEY=${{ secrets.BCCD_FAVZ3_API_KEY }} bccd_i4nym_API_KEY=${{ secrets.BCCD_I4NYM_API_KEY }} cats_and_dogs_smnpl_API_KEY=${{ secrets.CATS_AND_DOGS_SMNPL_API_KEY }} coins_xaz9i_API_KEY=${{ secrets.COINS_XAZ9I_API_KEY }} melee_API_KEY=${{ secrets.MELEE_API_KEY }} yolonas_test_API_KEY=${{ secrets.YOLONAS_TEST_API_KEY }} python3 -m pytest tests/inference/integration_tests/regression_test.py tests/inference/integration_tests/batch_regression_test.py

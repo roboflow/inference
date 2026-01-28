@@ -20,9 +20,14 @@ on:
           - sam2
           - sam3
           - moondream2
+      use_inference_models:
+        type: boolean
+        description: "Use inference_models"
+        default: false
 
 jobs:
   build:
+    name: build${{ github.event.inputs.use_inference_models == 'true' && ' [inference_models]' || '' }}
     if: ${{ !github.event.act }}
     runs-on: Roboflow-GPU-VM-Runner
     timeout-minutes: 120
@@ -49,10 +54,12 @@ jobs:
       - name: 🔋 Start Test Docker without Torch Preprocessing - GPU
         if: ${{ github.event.inputs.test_name == '' || github.event.inputs.test_name == 'regression_without_torch' }}
         run: |
-          PORT=9101 USE_PYTORCH_FOR_PREPROCESSING=False INFERENCE_SERVER_REPO=roboflow-inference-server-gpu make start_test_docker_gpu
+          PORT=9101 USE_PYTORCH_FOR_PREPROCESSING=False INFERENCE_SERVER_REPO=roboflow-inference-server-gpu USE_INFERENCE_MODELS=${{ github.event.inputs.use_inference_models == 'true' }} make start_test_docker_gpu
       - name: 🧪 Regression Tests without Torch Preprocessing - GPU
         id: regression_tests_without_torch
         if: ${{ github.event.inputs.test_name == '' || github.event.inputs.test_name == 'regression_without_torch' }}
+        env:
+          USE_INFERENCE_MODELS: ${{ github.event.inputs.use_inference_models == 'true' }}
         run: |
           source .venv/bin/activate
           MINIMUM_FPS=25 FUNCTIONAL=true PORT=9101 SKIP_LMM_TEST=True API_KEY=${{ secrets.API_KEY }} asl_instance_segmentation_API_KEY=${{ secrets.ASL_INSTANCE_SEGMENTATION_API_KEY }} asl_poly_instance_seg_API_KEY=${{ secrets.ASL_POLY_INSTANCE_SEG_API_KEY }} bccd_favz3_API_KEY=${{ secrets.BCCD_FAVZ3_API_KEY }} bccd_i4nym_API_KEY=${{ secrets.BCCD_I4NYM_API_KEY }} cats_and_dogs_smnpl_API_KEY=${{ secrets.CATS_AND_DOGS_SMNPL_API_KEY }} coins_xaz9i_API_KEY=${{ secrets.COINS_XAZ9I_API_KEY }} melee_API_KEY=${{ secrets.MELEE_API_KEY }} yolonas_test_API_KEY=${{ secrets.YOLONAS_TEST_API_KEY }} python3 -m pytest tests/inference/integration_tests/
@@ -63,10 +70,12 @@ jobs:
       - name: 🔋 Start Test Docker with Torch Preprocessing - GPU
         if: ${{ github.event.inputs.test_name == '' || github.event.inputs.test_name == 'regression_with_torch' }}
         run: |
-          PORT=9101 USE_PYTORCH_FOR_PREPROCESSING=True INFERENCE_SERVER_REPO=roboflow-inference-server-gpu make start_test_docker_gpu
+          PORT=9101 USE_PYTORCH_FOR_PREPROCESSING=True INFERENCE_SERVER_REPO=roboflow-inference-server-gpu USE_INFERENCE_MODELS=${{ github.event.inputs.use_inference_models == 'true' }} make start_test_docker_gpu
       - name: 🧪 Regression Tests with Torch Preprocessing - GPU
         id: regression_tests_with_torch
         if: ${{ github.event.inputs.test_name == '' || github.event.inputs.test_name == 'regression_with_torch' }}
+        env:
+          USE_INFERENCE_MODELS: ${{ github.event.inputs.use_inference_models == 'true' }}
         run: |
           source .venv/bin/activate
           MINIMUM_FPS=25 FUNCTIONAL=true PORT=9101 SKIP_LMM_TEST=True API_KEY=${{ secrets.API_KEY }} asl_instance_segmentation_API_KEY=${{ secrets.ASL_INSTANCE_SEGMENTATION_API_KEY }} asl_poly_instance_seg_API_KEY=${{ secrets.ASL_POLY_INSTANCE_SEG_API_KEY }} bccd_favz3_API_KEY=${{ secrets.BCCD_FAVZ3_API_KEY }} bccd_i4nym_API_KEY=${{ secrets.BCCD_I4NYM_API_KEY }} cats_and_dogs_smnpl_API_KEY=${{ secrets.CATS_AND_DOGS_SMNPL_API_KEY }} coins_xaz9i_API_KEY=${{ secrets.COINS_XAZ9I_API_KEY }} melee_API_KEY=${{ secrets.MELEE_API_KEY }} yolonas_test_API_KEY=${{ secrets.YOLONAS_TEST_API_KEY }} python3 -m pytest tests/inference/integration_tests/
@@ -77,10 +86,12 @@ jobs:
       - name: 🔋 Start Test Docker - GPU
         if: ${{ github.event.inputs.test_name == '' || github.event.inputs.test_name == 'paligemma' }}
         run: |
-          PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-gpu make start_test_docker_gpu
+          PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-gpu USE_INFERENCE_MODELS=${{ github.event.inputs.use_inference_models == 'true' }} make start_test_docker_gpu
       - name: 🧪 Regression Paligemma - GPU
         id: paligemma_tests
         if: ${{ github.event.inputs.test_name == '' || github.event.inputs.test_name == 'paligemma' }}
+        env:
+          USE_INFERENCE_MODELS: ${{ github.event.inputs.use_inference_models == 'true' }}
         run: |
           source .venv/bin/activate
           PORT=9101 melee_API_KEY=${{ secrets.MELEE_API_KEY }} python3 -m pytest tests/inference/integration_tests/test_paligemma.py
@@ -90,10 +101,12 @@ jobs:
       - name: 🔋 Start Test Docker - GPU
         if: ${{ github.event.inputs.test_name == '' || github.event.inputs.test_name == 'florence' }}
         run: |
-          PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-gpu make start_test_docker_gpu
+          PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-gpu USE_INFERENCE_MODELS=${{ github.event.inputs.use_inference_models == 'true' }} make start_test_docker_gpu
       - name: 🧪 Regression Florence - GPU
         id: florence_tests
         if: ${{ github.event.inputs.test_name == '' || github.event.inputs.test_name == 'florence' }}
+        env:
+          USE_INFERENCE_MODELS: ${{ github.event.inputs.use_inference_models == 'true' }}
         run: |
           source .venv/bin/activate
           PORT=9101 melee_API_KEY=${{ secrets.MELEE_API_KEY }} python3 -m pytest tests/inference/integration_tests/test_florence.py
@@ -103,10 +116,12 @@ jobs:
       - name: 🔋 Start Test Docker - SAM2
         if: ${{ github.event.inputs.test_name == '' || github.event.inputs.test_name == 'sam2' }}
         run: |
-          PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-gpu make start_test_docker_gpu
+          PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-gpu USE_INFERENCE_MODELS=${{ github.event.inputs.use_inference_models == 'true' }} make start_test_docker_gpu
       - name: 🧪 Regression Tests - SAM2
         id: sam2_tests
         if: ${{ github.event.inputs.test_name == '' || github.event.inputs.test_name == 'sam2' }}
+        env:
+          USE_INFERENCE_MODELS: ${{ github.event.inputs.use_inference_models == 'true' }}
         run: |
           source .venv/bin/activate
           PORT=9101 API_KEY=${{ secrets.API_KEY }} SKIP_SAM2_TESTS=False python3 -m pytest tests/inference/integration_tests/test_sam2.py
@@ -116,10 +131,12 @@ jobs:
       - name: 🔋 Start Test Docker - SAM3
         if: ${{ github.event.inputs.test_name == '' || github.event.inputs.test_name == 'sam3' }}
         run: |
-          PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-gpu make start_test_docker_gpu
+          PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-gpu USE_INFERENCE_MODELS=${{ github.event.inputs.use_inference_models == 'true' }} make start_test_docker_gpu
       - name: 🧪 Regression Tests - SAM3
         id: sam3_tests
         if: ${{ github.event.inputs.test_name == '' || github.event.inputs.test_name == 'sam3' }}
+        env:
+          USE_INFERENCE_MODELS: ${{ github.event.inputs.use_inference_models == 'true' }}
         run: |
           source .venv/bin/activate
           PORT=9101 API_KEY=${{ secrets.API_KEY }} SKIP_SAM3_TESTS=False python3 -m pytest tests/inference/integration_tests/test_sam3.py
@@ -142,10 +159,12 @@ jobs:
       - name: 🔋 Start Test Docker - MoonDream
         if: ${{ github.event.inputs.test_name == '' || github.event.inputs.test_name == 'moondream2' }}
         run: |
-          PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-gpu make start_test_docker_gpu
+          PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-gpu USE_INFERENCE_MODELS=${{ github.event.inputs.use_inference_models == 'true' }} make start_test_docker_gpu
       - name: 🧪 Regression Tests - MoonDream
         id: moondream_tests
         if: ${{ github.event.inputs.test_name == '' || github.event.inputs.test_name == 'moondream2' }}
+        env:
+          USE_INFERENCE_MODELS: ${{ github.event.inputs.use_inference_models == 'true' }}
         run: |
           source .venv/bin/activate
           PORT=9101 API_KEY=${{ secrets.API_KEY }} SKIP_MOONDREAM2_TEST=False python3 -m pytest tests/inference/integration_tests/test_moondream2.py

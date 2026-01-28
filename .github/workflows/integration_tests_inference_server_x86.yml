@@ -13,6 +13,7 @@ on:
 
 jobs:
   build:
+    name: build${{ github.event.inputs.use_inference_models == 'true' && ' [inference_models]' || '' }}
     if: ${{ !github.event.act }}
     runs-on:
       group: group8core

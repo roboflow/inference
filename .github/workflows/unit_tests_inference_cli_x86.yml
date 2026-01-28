@@ -18,6 +18,7 @@ jobs:
     uses: ./.github/workflows/check_if_branch_is_mergeable.yml
     secrets: inherit
   build-dev-test:
+    name: build-dev-test (${{ matrix.python-version }})${{ github.event.inputs.use_inference_models == 'true' && ' [inference_models]' || '' }}
     needs: call_is_mergeable
     if: ${{ github.event_name != 'pull_request' || needs.call_is_mergeable.outputs.mergeable_state != 'not_clean' }}
     runs-on:

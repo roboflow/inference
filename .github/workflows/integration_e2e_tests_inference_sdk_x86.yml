@@ -19,6 +19,7 @@ jobs:
     secrets: inherit
 
   integration-tests:
+    name: integration-tests (${{ matrix.python-version }})${{ github.event.inputs.use_inference_models == 'true' && ' [inference_models]' || '' }}
     needs: call_is_mergeable
     if: ${{ github.event_name != 'pull_request' || needs.call_is_mergeable.outputs.mergeable_state != 'not_clean' }}
     runs-on:
@@ -62,6 +63,7 @@ jobs:
         run: python -m pytest tests/inference_sdk/integration_tests -v --timeout=300
 
   e2e-tests:
+    name: e2e-tests (${{ matrix.python-version }})${{ github.event.inputs.use_inference_models == 'true' && ' [inference_models]' || '' }}
     needs: call_is_mergeable
     if: ${{ github.event_name != 'pull_request' || needs.call_is_mergeable.outputs.mergeable_state != 'not_clean' }}
     runs-on:
