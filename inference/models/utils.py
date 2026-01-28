@@ -847,6 +847,22 @@ if USE_INFERENCE_MODELS:
                 )
 
                 ROBOFLOW_MODEL_TYPES[(task, variant)] = InferenceModelsTrOCRAdapter
+            elif task == "object-detection" and variant == "grounding-dino":
+                from inference.models.grounding_dino.grounding_dino_inference_models import (
+                    InferenceModelsGroundingDINOAdapter,
+                )
+
+                ROBOFLOW_MODEL_TYPES[(task, variant)] = (
+                    InferenceModelsGroundingDINOAdapter
+                )
+            # elif task == "embed" and variant == "perception_encoder":
+            #     from inference.models.perception_encoder.perception_encoder_inference_models import (
+            #         InferenceModelsPerceptionEncoderAdapter,
+            #     )
+            #
+            #     ROBOFLOW_MODEL_TYPES[(task, variant)] = (
+            #         InferenceModelsPerceptionEncoderAdapter
+            #     )
         except Exception as e:
             warnings.warn(
                 f"`inference-models` stack is unavailable for model: {variant} and task: {task}, "
