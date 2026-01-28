@@ -116,7 +116,7 @@ class HaloManifest(ColorableVisualizationManifest):
         return ">=1.3.0,<2.0.0"
 
 
-class HaloVisualizationBlockV1(ColorableVisualizationBlock):
+class HaloVisualizationBlockV2(ColorableVisualizationBlock):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.annotatorCache = {}
@@ -133,7 +133,7 @@ class HaloVisualizationBlockV1(ColorableVisualizationBlock):
         color_axis: str,
         opacity: float,
         kernel_size: int,
-    ) -> sv.annotators.base.BaseAnnotator:
+    ) -> HaloAnnotator:
         key = "_".join(
             map(
                 str,

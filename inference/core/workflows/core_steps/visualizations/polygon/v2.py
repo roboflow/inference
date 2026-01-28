@@ -107,7 +107,7 @@ class PolygonManifest(ColorableVisualizationManifest):
         return ">=1.3.0,<2.0.0"
 
 
-class PolygonVisualizationBlockV1(ColorableVisualizationBlock):
+class PolygonVisualizationBlockV2(ColorableVisualizationBlock):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.annotatorCache = {}
@@ -123,7 +123,7 @@ class PolygonVisualizationBlockV1(ColorableVisualizationBlock):
         custom_colors: List[str],
         color_axis: str,
         thickness: int,
-    ) -> sv.annotators.base.BaseAnnotator:
+    ) -> PolygonAnnotator:
         key = "_".join(
             map(
                 str,
