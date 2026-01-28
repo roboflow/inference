@@ -132,6 +132,7 @@ class PolygonVisualizationBlockV2(ColorableVisualizationBlock):
                     palette_size,
                     color_axis,
                     thickness,
+                    "_".join(custom_colors) if custom_colors else "",
                 ],
             )
         )

@@ -143,6 +143,7 @@ class HaloVisualizationBlockV2(ColorableVisualizationBlock):
                     color_axis,
                     opacity,
                     kernel_size,
+                    "_".join(custom_colors) if custom_colors else "",
                 ],
             )
         )
