@@ -77,7 +77,7 @@ def extract_detections_property(
             context=f"step_execution | roboflow_query_language_evaluation | {execution_context}",
         )
     if isinstance(detections, sv.Detections) and property_name.value in detections.data:
-        return detections[property_name.value]
+        return detections.data[property_name.value].tolist()
     return PROPERTIES_EXTRACTORS[property_name](detections)
 
 
