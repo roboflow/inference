@@ -800,10 +800,10 @@ WEBRTC_DATA_CHANNEL_BUFFER_SIZE_LIMIT = int(
 # Example: if ack=1 and window=4, server may produce/send up to frame 5.
 try:
     WEBRTC_DATA_CHANNEL_ACK_WINDOW = int(
-        os.getenv("WEBRTC_DATA_CHANNEL_ACK_WINDOW", "20")
+        os.getenv("WEBRTC_DATA_CHANNEL_ACK_WINDOW", "5")
     )
 except (ValueError, TypeError):
-    WEBRTC_DATA_CHANNEL_ACK_WINDOW = 20
+    WEBRTC_DATA_CHANNEL_ACK_WINDOW = 5
 if WEBRTC_DATA_CHANNEL_ACK_WINDOW < 0:
     WEBRTC_DATA_CHANNEL_ACK_WINDOW = 0
 

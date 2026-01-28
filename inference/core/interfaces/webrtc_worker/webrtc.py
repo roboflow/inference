@@ -608,7 +608,7 @@ async def send_chunked_data(
         # 3. Allow the browser to ACK received data
         if heartbeat_callback:
             heartbeat_callback()  # Keep server watchdog alive
-        await asyncio.sleep(0.01)  # 1ms between chunks
+        await asyncio.sleep(0.001)  # 1ms between chunks
     
     total_elapsed = time.time() - send_start_time
     throughput_kbps = (payload_size / 1024) / total_elapsed if total_elapsed > 0 else 0
