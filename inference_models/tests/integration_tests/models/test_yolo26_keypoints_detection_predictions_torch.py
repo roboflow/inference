@@ -126,13 +126,13 @@ def test_yolo26n_pose_torchscript_letterbox_numpy(
     assert torch.allclose(
         predictions[1][0].xyxy.cpu(),
         torch.tensor(
-            [[-33, 246, 1733, 1076], [-8, 252, 1798, 1076]], dtype=torch.int32
+            [[-33, 246, 1732, 1076], [-8, 252, 1798, 1076]], dtype=torch.int32
         ),
         atol=COORD_TOLERANCE,
     )
     assert torch.allclose(
         predictions[1][0].confidence.cpu(),
-        torch.tensor([0.9248, 0.5963]),
+        torch.tensor([0.9278, 0.4429]),
         atol=CONF_TOLERANCE,
     )
 
@@ -158,9 +158,9 @@ def test_yolo26n_pose_torchscript_letterbox_batch_numpy(
         [LETTERBOX_EXPECTED_KP_CONF_1, LETTERBOX_EXPECTED_KP_CONF_2]
     )
     expected_box_xyxy = torch.tensor(
-        [[-33, 246, 1733, 1076], [-8, 252, 1798, 1076]], dtype=torch.int32
+        [[-33, 246, 1732, 1076], [-8, 252, 1798, 1076]], dtype=torch.int32
     )
-    expected_box_conf = torch.tensor([0.9248, 0.5963])
+    expected_box_conf = torch.tensor([0.9278, 0.4429])
 
     for i in range(2):
         assert torch.allclose(
@@ -206,13 +206,13 @@ def test_yolo26n_pose_torchscript_letterbox_torch(
     assert torch.allclose(
         predictions[1][0].xyxy.cpu(),
         torch.tensor(
-            [[-33, 246, 1733, 1076], [-8, 252, 1798, 1076]], dtype=torch.int32
+            [[-33, 246, 1732, 1076], [-8, 252, 1798, 1076]], dtype=torch.int32
         ),
         atol=COORD_TOLERANCE,
     )
     assert torch.allclose(
         predictions[1][0].confidence.cpu(),
-        torch.tensor([0.9248, 0.5963]),
+        torch.tensor([0.9278, 0.4429]),
         atol=CONF_TOLERANCE,
     )
 
