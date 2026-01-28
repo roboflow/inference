@@ -29,8 +29,8 @@ jobs:
       - name: Deploy Modal App
         env:
           MODAL_WORKSPACE_NAME: ${{ secrets.MODAL_WORKSPACE_NAME }}
-          MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
-          MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
+          MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID_FOR_DEPLOYMENT }}
+          MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET_FOR_DEPLOYMENT }}
           INFERENCE_VERSION: ${{ github.event.inputs.inference_version }} 
         working-directory: modal
         run: python3 deploy_modal_app.py
