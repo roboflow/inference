@@ -67,11 +67,11 @@ class Owlv2AdapterSingleton:
                 owlv2_images_embeddings_cache=owlv2_images_embeddings_cache,
             )
             logger.info("Creating new OWLv2 instance for %s", huggingface_id)
-            # Load model directly in the instance
-            logger.info("Loading OWLv2 model from %s", huggingface_id)
             if OWLV2_COMPILE_MODEL:
+                logger.info("Compiling OWLv2 model %s", huggingface_id)
                 torch._dynamo.config.suppress_errors = True
                 model.optimize_for_inference()
+            logger.info("Caching OWLv2 model %s", huggingface_id)
             cls._instances[huggingface_id] = model
             instance = cls.assembly_instance(huggingface_id, model)
             return instance
