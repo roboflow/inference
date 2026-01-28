@@ -59,7 +59,7 @@ The annotated image from this block can be connected to:
 
 
 class PolygonManifest(ColorableVisualizationManifest):
-    type: Literal[f"{TYPE}", "PolygonVisualization"]
+    type: Literal[TYPE]
     model_config = ConfigDict(
         json_schema_extra={
             "name": "Polygon Visualization",

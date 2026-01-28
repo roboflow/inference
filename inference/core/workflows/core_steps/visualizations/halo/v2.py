@@ -63,7 +63,7 @@ The annotated image from this block can be connected to:
 
 
 class HaloManifest(ColorableVisualizationManifest):
-    type: Literal[f"{TYPE}", "HaloVisualization"]
+    type: Literal[TYPE]
     model_config = ConfigDict(
         json_schema_extra={
             "name": "Halo Visualization",
