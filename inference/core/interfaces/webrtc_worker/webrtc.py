@@ -224,36 +224,54 @@ def create_chunked_binary_message(
 def _decode_worker(filepath: str, frame_queue, stop_event):
     """Decode video frames in a thread and put them on the queue."""
     import queue as queue_module
+    import time as time_module
     
     frame_count = 0
+    put_start_time = None
+    
     try:
+        logger.info("[DECODE_WORKER] Opening file: %s", filepath)
         container = av.open(filepath)
         stream = container.streams.video[0]
         stream.thread_type = "AUTO"
         total_frames = stream.frames or "unknown"
-        logger.info("[DECODE_WORKER] Starting decode: %s, total_frames=%s", filepath, total_frames)
+        duration = float(stream.duration * stream.time_base) if stream.duration else "unknown"
+        fps = float(stream.average_rate) if stream.average_rate else "unknown"
+        logger.info("[DECODE_WORKER] Starting decode: %s, total_frames=%s, duration=%s sec, fps=%s", 
+                    filepath, total_frames, duration, fps)
 
         for frame in container.decode(stream):
             if stop_event.is_set():
                 logger.info("[DECODE_WORKER] Stop event received at frame %d", frame_count)
                 break
+            
+            # Log every 10 frames for debugging
+            if frame_count % 10 == 0:
+                logger.info("[DECODE_WORKER] Decoded frame %d, queue=%d/%d, putting...", 
+                            frame_count, frame_queue.qsize(), frame_queue.maxsize)
+            
             try:
-                frame_queue.put(frame, timeout=300)
+                put_start_time = time_module.time()
+                frame_queue.put(frame, timeout=300)  # Original 300s timeout
+                put_time = time_module.time() - put_start_time
                 frame_count += 1
-                if frame_count % 100 == 0:
-                    logger.info("[DECODE_WORKER] Decoded %d frames, queue=%d/%d", 
-                                frame_count, frame_queue.qsize(), frame_queue.maxsize)
+                
+                # Log if put took a long time (queue was full)
+                if put_time > 1.0:
+                    logger.warning("[DECODE_WORKER] Frame %d put took %.2fs (queue was full)", frame_count - 1, put_time)
+                    
             except queue_module.Full:
-                logger.error("[DECODE_WORKER] Queue FULL timeout at frame %d! Queue stuck for 5 minutes.", frame_count)
+                logger.error("[DECODE_WORKER] Queue FULL timeout (300s) at frame %d!", frame_count)
                 frame_queue.put({"error": f"Queue full timeout at frame {frame_count}"})
                 return
 
         container.close()
-        logger.info("[DECODE_WORKER] Completed: %d frames decoded", frame_count)
+        logger.info("[DECODE_WORKER] COMPLETED: %d frames decoded successfully", frame_count)
     except Exception as e:
-        logger.error("[DECODE_WORKER] Error at frame %d: %s", frame_count, e)
+        logger.error("[DECODE_WORKER] ERROR at frame %d: %s", frame_count, e, exc_info=True)
         frame_queue.put({"error": str(e)})
     finally:
+        logger.info("[DECODE_WORKER] FINISHED: putting None marker, total frames=%d", frame_count)
         frame_queue.put(None)
 
 
@@ -276,21 +294,40 @@ class ThreadedVideoTrack(MediaStreamTrack):
         self._decode_thread.start()
 
     async def recv(self) -> VideoFrame:
+        wait_count = 0
+        wait_start = None
+        
         while True:
             try:
                 data = self._queue.get_nowait()
+                if wait_count > 0:
+                    wait_time = asyncio.get_event_loop().time() - wait_start
+                    if wait_time > 1.0:
+                        logger.warning("[RECV] Got frame after waiting %.2fs (%d iterations), queue=%d/%d",
+                                      wait_time, wait_count, self._queue.qsize(), self._queue.maxsize)
                 break
             except queue.Empty:
+                if wait_count == 0:
+                    wait_start = asyncio.get_event_loop().time()
+                wait_count += 1
+                
+                # Log every 5 seconds of waiting
+                if wait_count % 500 == 0:  # 500 * 0.01s = 5 seconds
+                    wait_time = asyncio.get_event_loop().time() - wait_start
+                    logger.warning("[RECV] Still waiting for frame: %.1fs, iterations=%d, queue=%d/%d, thread_alive=%s",
+                                  wait_time, wait_count, self._queue.qsize(), self._queue.maxsize,
+                                  self._decode_thread.is_alive())
+                
                 # we use a non-blocking get + sleep to avoid blocking the
                 # event loop.
-                # The queue is typically pre-filled by the decoder thread,
-                # so this sleep rarely triggers during normal operation.
                 await asyncio.sleep(0.01)
 
         if data is None:
+            logger.info("[RECV] Received END marker (None) - video complete")
             self.stop()
             raise MediaStreamError("End of video file")
         if isinstance(data, dict):
+            logger.error("[RECV] Received ERROR from decode worker: %s", data)
             self.stop()
             raise MediaStreamError(data.get("error", "Unknown decode error"))
 
@@ -729,12 +766,19 @@ class VideoFrameProcessor:
         if self._ack_last == 0:
             return
 
+        # Check if we need to wait
+        if next_frame_id > (self._ack_last + self._ack_window):
+            logger.info("[ACK_WAIT] Starting wait: next_frame=%d, ack_last=%d, window=%d, need_ack_for=%d",
+                       next_frame_id, self._ack_last, self._ack_window, 
+                       next_frame_id - self._ack_window)
+
         wait_counter = 0
         max_wait_iterations = 150  # this is...  150 * 0.2s, 30 seconds max wait
         while not self._stop_processing and next_frame_id > (
             self._ack_last + self._ack_window
         ):
             if self._check_termination():
+                logger.info("[ACK_WAIT] Termination during wait at next_frame=%d", next_frame_id)
                 return
             if self.heartbeat_callback:
                 self.heartbeat_callback()
@@ -743,11 +787,18 @@ class VideoFrameProcessor:
             self._ack_event.clear()
             try:
                 await asyncio.wait_for(self._ack_event.wait(), timeout=0.2)
+                logger.debug("[ACK_WAIT] ACK received, ack_last now %d", self._ack_last)
             except asyncio.TimeoutError:
                 wait_counter += 1
+                # Log every 5 seconds (25 iterations * 0.2s)
+                if wait_counter % 25 == 0:
+                    logger.warning(
+                        "[ACK_WAIT] Still waiting: %.1fs, next_frame=%d, ack_last=%d, window=%d",
+                        wait_counter * 0.2, next_frame_id, self._ack_last, self._ack_window
+                    )
                 if wait_counter >= max_wait_iterations:
                     logger.warning(
-                        "ACK wait timeout exceeded (30s). Disabling ACK pacing. "
+                        "[ACK_WAIT] TIMEOUT (30s). Disabling ACK pacing. "
                         "(next_frame_id=%s, ack_last=%s)",
                         next_frame_id,
                         self._ack_last,
