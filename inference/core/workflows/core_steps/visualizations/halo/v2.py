@@ -22,7 +22,7 @@ from inference.core.workflows.execution_engine.entities.types import (
 )
 from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
 
-TYPE: str = "roboflow_core/halo_visualization@v1"
+TYPE: str = "roboflow_core/halo_visualization@v2"
 SHORT_DESCRIPTION = "Paint a halo around detected objects in an image."
 LONG_DESCRIPTION = """
 Create a soft, glowing halo effect around detected objects by blurring and overlaying colored masks, providing a distinctive visual style that highlights object boundaries with a smooth, illuminated appearance.
@@ -154,6 +154,7 @@ class HaloVisualizationBlockV2(ColorableVisualizationBlock):
                 color=palette,
                 color_lookup=getattr(sv.ColorLookup, color_axis),
                 opacity=opacity,
+                kernel_size=kernel_size,
             )
 
         return self.annotatorCache[key]
