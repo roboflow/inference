@@ -676,7 +676,7 @@ class AutoModel:
             # QUESTION: is it enough to assume presence of local dir as the intent to load
             # model from disc drive? What if we have clash of model id / model alias with
             # contents of someone's local drive - shall we then try to load from both sources?
-            # that still may end up with ambiguous behaviour - probably the solution would be
+            # that still may end up with ambiguous behavior - probably the solution would be
             # to require prefix like file://... to denote the intent of loading model from local
             # drive?
             if api_key is not None:

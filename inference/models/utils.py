@@ -794,7 +794,11 @@ if USE_INFERENCE_MODELS:
 
                 ROBOFLOW_MODEL_TYPES[(task, variant)] = InferenceModelsOwlV2Adapter
             elif task == "object-detection" and variant == "owlv2-finetuned":
-                pass
+                from inference.models.owlv2.rf_instant_inference_models import (
+                    InferenceModelsRFInstantModelAdapter,
+                )
+
+                ROBOFLOW_MODEL_TYPES[(task, variant)] = InferenceModelsRFInstantModelAdapter
             elif task == "gaze" and variant == "l2cs":
                 from inference.models.gaze.gaze_inference_models import (
                     InferenceModelsGazeAdapter,
