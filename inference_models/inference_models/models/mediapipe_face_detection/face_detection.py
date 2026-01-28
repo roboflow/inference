@@ -5,6 +5,9 @@ import numpy as np
 import torch
 
 from inference_models import Detections, KeyPoints, KeyPointsDetectionModel
+from inference_models.configuration import (
+    INFERENCE_MODELS_MEDIAPIPE_FACE_DETECTOR_DEFAULT_CONFIDENCE,
+)
 from inference_models.entities import ColorFormat, ImageDimensions
 from inference_models.errors import MissingDependencyError, ModelRuntimeError
 from inference_models.models.common.model_packages import get_model_package_contents
@@ -158,7 +161,7 @@ class MediaPipeFaceDetector(
         self,
         model_results: List[List[Detection]],
         pre_processing_meta: List[ImageDimensions],
-        conf_thresh: float = 0.25,
+        confidence: float = INFERENCE_MODELS_MEDIAPIPE_FACE_DETECTOR_DEFAULT_CONFIDENCE,
         **kwargs,
     ) -> Tuple[List[KeyPoints], List[Detections]]:
         final_key_points, final_detections = [], []
@@ -166,7 +169,12 @@ class MediaPipeFaceDetector(
             detections_xyxy, detections_class_id, detections_confidence = [], [], []
             key_points_xy, key_points_class_id, key_points_confidence = [], [], []
             for detection in image_results:
-                if detection.categories[0].score < conf_thresh:
+                if detection.categories[0].score < confidence:
+                    continue
+                if (
+                    detection.bounding_box.width <= 0
+                    or detection.bounding_box.height <= 0
+                ):
                     continue
                 xyxy = (
                     detection.bounding_box.origin_x,

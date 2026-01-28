@@ -163,10 +163,6 @@ def get_model_type(
 
     model_id = resolve_roboflow_model_alias(model_id=model_id)
     dataset_id, version_id = get_model_id_chunks(model_id=model_id)
-    print(
-        f"Resolved model_id: {model_id}, dataset_id: {dataset_id}, version_id: {version_id}"
-    )
-
     # first check if the model id as a whole is in the GENERIC_MODELS dictionary
     if model_id in GENERIC_MODELS:
         logger.debug(f"Loading generic model: {model_id}.")

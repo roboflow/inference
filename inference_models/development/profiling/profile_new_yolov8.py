@@ -3,14 +3,14 @@ import time
 
 import cv2
 import torch
-from inference_models.models.yolov8.yolov8_object_detection_onnx import (
-    YOLOv8ForObjectDetectionOnnx,
-)
 from tqdm import tqdm
 
 from inference import get_model
 from inference.core.env import MODEL_CACHE_DIR
 from inference.models.aliases import resolve_roboflow_model_alias
+from inference_models.models.yolov8.yolov8_object_detection_onnx import (
+    YOLOv8ForObjectDetectionOnnx,
+)
 
 IMAGE_PATH = os.environ["IMAGE_PATH"]
 MODEL = os.environ["MODEL"]

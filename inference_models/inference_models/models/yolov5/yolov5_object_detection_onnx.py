@@ -5,7 +5,13 @@ import numpy as np
 import torch
 
 from inference_models import Detections, ObjectDetectionModel
-from inference_models.configuration import DEFAULT_DEVICE
+from inference_models.configuration import (
+    DEFAULT_DEVICE,
+    INFERENCE_MODELS_YOLOV5_DEFAULT_CLASS_AGNOSTIC_NMS,
+    INFERENCE_MODELS_YOLOV5_DEFAULT_CONFIDENCE,
+    INFERENCE_MODELS_YOLOV5_DEFAULT_IOU_THRESHOLD,
+    INFERENCE_MODELS_YOLOV5_DEFAULT_MAX_DETECTIONS,
+)
 from inference_models.entities import ColorFormat
 from inference_models.errors import (
     EnvironmentConfigurationError,
@@ -163,18 +169,18 @@ class YOLOv5ForObjectDetectionOnnx(
         self,
         model_results: torch.Tensor,
         pre_processing_meta: List[PreProcessingMetadata],
-        conf_thresh: float = 0.25,
-        iou_thresh: float = 0.45,
-        max_detections: int = 100,
-        class_agnostic: bool = False,
+        confidence: float = INFERENCE_MODELS_YOLOV5_DEFAULT_CONFIDENCE,
+        iou_threshold: float = INFERENCE_MODELS_YOLOV5_DEFAULT_IOU_THRESHOLD,
+        max_detections: int = INFERENCE_MODELS_YOLOV5_DEFAULT_MAX_DETECTIONS,
+        class_agnostic_nms: bool = INFERENCE_MODELS_YOLOV5_DEFAULT_CLASS_AGNOSTIC_NMS,
         **kwargs,
     ) -> List[Detections]:
         nms_results = run_nms_yolov5(
             output=model_results.permute(0, 2, 1),
-            conf_thresh=conf_thresh,
-            iou_thresh=iou_thresh,
+            conf_thresh=confidence,
+            iou_thresh=iou_threshold,
             max_detections=max_detections,
-            class_agnostic=class_agnostic,
+            class_agnostic=class_agnostic_nms,
         )
         rescaled_results = rescale_detections(
             detections=nms_results,

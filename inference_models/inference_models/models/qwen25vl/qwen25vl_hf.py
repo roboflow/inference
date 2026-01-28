@@ -1,3 +1,4 @@
+import json
 import os
 from typing import List, Optional, Tuple, Union
 
@@ -11,7 +12,12 @@ from transformers import (
 )
 from transformers.utils import is_flash_attn_2_available
 
-from inference_models.configuration import DEFAULT_DEVICE
+from inference_models.configuration import (
+    DEFAULT_DEVICE,
+    INFERENCE_MODELS_QWEN25_VL_DEFAULT_DO_SAMPLE,
+    INFERENCE_MODELS_QWEN25_VL_DEFAULT_MAX_NEW_TOKENS,
+    INFERENCE_MODELS_QWEN25_VL_DEFAULT_SKIP_SPECIAL_TOKENS,
+)
 from inference_models.entities import ColorFormat
 from inference_models.models.common.roboflow.model_packages import (
     InferenceConfig,
@@ -48,6 +54,7 @@ class Qwen25VLHF:
                     ResizeMode.LETTERBOX,
                     ResizeMode.CENTER_CROP,
                     ResizeMode.LETTERBOX_REFLECT_EDGES,
+                    ResizeMode.FIT_LONGER_EDGE,
                 },
             )
         if (
@@ -69,6 +76,7 @@ class Qwen25VLHF:
 
         if os.path.exists(adapter_config_path):
             base_model_path = os.path.join(model_name_or_path, "base")
+            _patch_preprocessor_config(cache_dir=base_model_path)
             model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
                 base_model_path,
                 dtype="auto",
@@ -78,6 +86,7 @@ class Qwen25VLHF:
                 quantization_config=quantization_config,
                 attn_implementation=attn_implementation,
             )
+            _patch_preprocessor_config(cache_dir=model_name_or_path)
             model = PeftModel.from_pretrained(model, model_name_or_path)
             if quantization_config is None:
                 model.merge_and_unload()
@@ -89,6 +98,7 @@ class Qwen25VLHF:
                 use_fast=True,
             )
         else:
+            _patch_preprocessor_config(cache_dir=model_name_or_path)
             model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
                 model_name_or_path,
                 dtype="auto",
@@ -132,9 +142,9 @@ class Qwen25VLHF:
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         prompt: str = None,
         input_color_format: ColorFormat = None,
-        max_new_tokens: int = 512,
-        do_sample: bool = False,
-        skip_special_tokens: bool = True,
+        max_new_tokens: int = INFERENCE_MODELS_QWEN25_VL_DEFAULT_MAX_NEW_TOKENS,
+        do_sample: bool = INFERENCE_MODELS_QWEN25_VL_DEFAULT_DO_SAMPLE,
+        skip_special_tokens: bool = INFERENCE_MODELS_QWEN25_VL_DEFAULT_SKIP_SPECIAL_TOKENS,
         **kwargs,
     ) -> List[str]:
         inputs = self.pre_process_generation(
@@ -238,8 +248,8 @@ class Qwen25VLHF:
     def generate(
         self,
         inputs: dict,
-        max_new_tokens: int = 512,
-        do_sample: bool = False,
+        max_new_tokens: int = INFERENCE_MODELS_QWEN25_VL_DEFAULT_MAX_NEW_TOKENS,
+        do_sample: bool = INFERENCE_MODELS_QWEN25_VL_DEFAULT_DO_SAMPLE,
         **kwargs,
     ) -> torch.Tensor:
         input_len = inputs["input_ids"].shape[-1]
@@ -294,3 +304,28 @@ def refactor_adapter_weights_key(key: str) -> str:
         .replace(".weight", ".default.weight")
         .replace(".lora_magnitude_vector", ".lora_magnitude_vector.default.weight")
     )
+
+
+def _patch_preprocessor_config(cache_dir: str):
+    """
+    Checks and patches the preprocessor_config.json in the given cache directory
+    to ensure the image_processor_type is recognized.
+    """
+    config_path = os.path.join(cache_dir, "preprocessor_config.json")
+    target_key = "image_processor_type"
+    correct_value = "Qwen2VLImageProcessor"
+
+    if not os.path.exists(config_path):
+        raise FileNotFoundError(f"Preprocessor config not found at {config_path}")
+
+    with open(config_path, "r") as f:
+        data = json.load(f)
+
+    if target_key in data and data[target_key] != correct_value:
+        data[target_key] = correct_value
+        with open(config_path, "w") as f:
+            json.dump(data, f, indent=4)
+    elif target_key in data:
+        pass
+    else:
+        raise ValueError(f"'{target_key}' not found in {config_path}")

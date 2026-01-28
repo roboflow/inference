@@ -5,7 +5,10 @@ import torch
 from torchvision.transforms import functional
 
 from inference_models import ColorFormat, SemanticSegmentationModel
-from inference_models.configuration import DEFAULT_DEVICE
+from inference_models.configuration import (
+    DEFAULT_DEVICE,
+    INFERENCE_MODELS_DEEP_LAB_V3_PLUS_DEFAULT_CONFIDENCE,
+)
 from inference_models.errors import (
     EnvironmentConfigurationError,
     MissingDependencyError,
@@ -168,7 +171,7 @@ class DeepLabV3PlusForSemanticSegmentationOnnx(
         self,
         model_results: RawPrediction,
         pre_processing_meta: PreprocessedInputs,
-        confidence_threshold: float = 0.5,
+        confidence: float = INFERENCE_MODELS_DEEP_LAB_V3_PLUS_DEFAULT_CONFIDENCE,
         **kwargs,
     ) -> List[SemanticSegmentationResult]:
         results = []
@@ -233,7 +236,7 @@ class DeepLabV3PlusForSemanticSegmentationOnnx(
                 )
             image_results = torch.nn.functional.softmax(image_results, dim=0)
             image_confidence, image_class_ids = torch.max(image_results, dim=0)
-            below_threshold = image_confidence < confidence_threshold
+            below_threshold = image_confidence < confidence
             image_confidence[below_threshold] = 0.0
             image_class_ids[below_threshold] = self._background_class_id
             if (

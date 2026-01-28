@@ -6,7 +6,10 @@ import numpy as np
 import torch
 
 from inference_models import InstanceDetections, InstanceSegmentationModel
-from inference_models.configuration import DEFAULT_DEVICE
+from inference_models.configuration import (
+    DEFAULT_DEVICE,
+    INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE,
+)
 from inference_models.entities import ColorFormat
 from inference_models.errors import (
     CorruptedModelPackageError,
@@ -369,7 +372,7 @@ class RFDetrForInstanceSegmentationTorch(
         self,
         model_results: dict,
         pre_processing_meta: List[PreProcessingMetadata],
-        threshold: float = 0.5,
+        confidence: float = INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE,
         **kwargs,
     ) -> List[InstanceDetections]:
         bboxes, logits, masks = (
@@ -382,6 +385,6 @@ class RFDetrForInstanceSegmentationTorch(
             logits=logits,
             masks=masks,
             pre_processing_meta=pre_processing_meta,
-            threshold=threshold,
+            threshold=confidence,
             classes_re_mapping=self._classes_re_mapping,
         )

@@ -6,7 +6,11 @@ from typing import Optional
 from dotenv import load_dotenv
 
 from inference.core.utils.environment import safe_split_value, str2bool
-from inference.core.warnings import InferenceDeprecationWarning, ModelDependencyMissing
+from inference.core.warnings import (
+    InferenceDeprecationWarning,
+    InferenceModelsStackMissing,
+    ModelDependencyMissing,
+)
 
 load_dotenv(os.getcwd() + "/.env")
 
@@ -211,9 +215,12 @@ CORE_MODEL_YOLO_WORLD_ENABLED = str2bool(
 )
 
 # Enable experimental RFDETR backend (inference_models) rollout, default is True
-USE_INFERENCE_EXP_MODELS = str2bool(os.getenv("USE_INFERENCE_EXP_MODELS", "False"))
-ALLOW_INFERENCE_EXP_UNTRUSTED_MODELS = str2bool(
-    os.getenv("ALLOW_INFERENCE_EXP_UNTRUSTED_MODELS", "False")
+USE_INFERENCE_MODELS = str2bool(os.getenv("USE_INFERENCE_MODELS", "False"))
+ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES = str2bool(
+    os.getenv("ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES", "False")
+)
+ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES = str2bool(
+    os.getenv("ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES", "False")
 )
 
 # ID of host device, default is None
@@ -595,6 +602,7 @@ INFERENCE_WARNINGS_DISABLED = str2bool(
 
 if INFERENCE_WARNINGS_DISABLED:
     warnings.simplefilter("ignore", InferenceDeprecationWarning)
+    warnings.simplefilter("ignore", InferenceModelsStackMissing)
 
 HUGGINGFACE_TOKEN = os.getenv("HUGGINGFACE_TOKEN")
 DEVICE = os.getenv("DEVICE")

@@ -12,7 +12,11 @@ from transformers import (
 )
 from transformers.utils import is_flash_attn_2_available
 
-from inference_models.configuration import DEFAULT_DEVICE
+from inference_models.configuration import (
+    DEFAULT_DEVICE,
+    INFERENCE_MODELS_QWEN3_VL_DEFAULT_DO_SAMPLE,
+    INFERENCE_MODELS_QWEN3_VL_DEFAULT_MAX_NEW_TOKENS,
+)
 from inference_models.entities import ColorFormat
 from inference_models.models.common.roboflow.model_packages import (
     InferenceConfig,
@@ -64,6 +68,7 @@ class Qwen3VLHF:
                     ResizeMode.LETTERBOX,
                     ResizeMode.CENTER_CROP,
                     ResizeMode.LETTERBOX_REFLECT_EDGES,
+                    ResizeMode.FIT_LONGER_EDGE,
                 },
             )
 
@@ -240,8 +245,8 @@ class Qwen3VLHF:
     def generate(
         self,
         inputs: dict,
-        max_new_tokens: int = 512,
-        do_sample: bool = False,
+        max_new_tokens: int = INFERENCE_MODELS_QWEN3_VL_DEFAULT_MAX_NEW_TOKENS,
+        do_sample: bool = INFERENCE_MODELS_QWEN3_VL_DEFAULT_DO_SAMPLE,
         **kwargs,
     ) -> torch.Tensor:
         input_len = inputs["input_ids"].shape[-1]

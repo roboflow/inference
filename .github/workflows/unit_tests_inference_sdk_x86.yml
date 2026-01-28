@@ -7,12 +7,18 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      use_inference_models:
+        type: boolean
+        description: "Use inference_models"
+        default: false
 
 jobs:
   call_is_mergeable:
     uses: ./.github/workflows/check_if_branch_is_mergeable.yml
     secrets: inherit
   build-dev-test:
+    name: build-dev-test (${{ matrix.python-version }})${{ github.event.inputs.use_inference_models == 'true' && ' [inference_models]' || '' }}
     needs: call_is_mergeable
     if: ${{ github.event_name != 'pull_request' || needs.call_is_mergeable.outputs.mergeable_state != 'not_clean' }}
     runs-on:
@@ -44,4 +50,6 @@ jobs:
           pip install -r requirements/requirements.sdk.http.txt -r requirements/requirements.sdk.webrtc.txt -r requirements/requirements.test.unit.txt
       - name: 🧪 Unit Tests of Inference SDK
         timeout-minutes: 30
+        env:
+          USE_INFERENCE_MODELS: ${{ github.event.inputs.use_inference_models == 'true' }}
         run: python -m pytest tests/inference_sdk/unit_tests

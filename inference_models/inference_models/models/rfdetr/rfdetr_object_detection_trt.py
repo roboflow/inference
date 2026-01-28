@@ -5,7 +5,10 @@ import numpy as np
 import torch
 
 from inference_models import Detections, ObjectDetectionModel
-from inference_models.configuration import DEFAULT_DEVICE
+from inference_models.configuration import (
+    DEFAULT_DEVICE,
+    INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE,
+)
 from inference_models.entities import ColorFormat
 from inference_models.errors import (
     CorruptedModelPackageError,
@@ -216,7 +219,7 @@ class RFDetrForObjectDetectionTRT(
         self,
         model_results: Tuple[torch.Tensor, torch.Tensor],
         pre_processing_meta: List[PreProcessingMetadata],
-        threshold: float = 0.5,
+        confidence: float = INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE,
         **kwargs,
     ) -> List[Detections]:
         bboxes, logits = model_results
@@ -226,7 +229,7 @@ class RFDetrForObjectDetectionTRT(
             bboxes, logits_sigmoid, pre_processing_meta
         ):
             confidence, top_classes = image_logits.max(dim=1)
-            confidence_mask = confidence > threshold
+            confidence_mask = confidence > confidence
             confidence = confidence[confidence_mask]
             top_classes = top_classes[confidence_mask]
             selected_boxes = image_bboxes[confidence_mask]
