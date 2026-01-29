@@ -86,7 +86,7 @@ CHUNK_SIZE = 48 * 1024  # 48KB - safe for all WebRTC implementations
 
 # WebRTC image compression quality - lower = smaller file size
 # quality=10 reduces ~1MB raw to ~50KB, quality=50 produces ~150-200KB
-WEBRTC_JPEG_QUALITY = 95
+WEBRTC_JPEG_QUALITY = 80
 
 # Keepalive frame interval in seconds - send black frame to keep video track open
 WEBRTC_KEEPALIVE_INTERVAL = 1.0
