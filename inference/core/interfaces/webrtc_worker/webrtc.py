@@ -11,6 +11,8 @@ import threading
 import time
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
+import cv2
+import numpy as np
 import supervision as sv
 
 from aioice import ice
@@ -99,42 +101,16 @@ def serialise_image_for_webrtc(image: WorkflowImageData) -> Dict[str, Any]:
 
 
 def _recompress_base64_image(base64_str: str) -> str:
-    """Decode base64 image and re-encode with low JPEG quality.
-    
-    Handles images that were pre-serialized with high quality (95) and
-    re-compresses them to ~50KB using quality=10 for efficient WebRTC transmission.
-    """
-    recompress_start = time.time()
-    original_size = len(base64_str)
-    
+    """Decode base64 image and re-encode with low JPEG quality."""
     try:
-        import cv2
-        import numpy as np
-        # Decode base64 to bytes
         image_bytes = base64.b64decode(base64_str)
-        # Decode image bytes to numpy array
-        np_arr = np.frombuffer(image_bytes, np.uint8)
-        img = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+        img = cv2.imdecode(np.frombuffer(image_bytes, np.uint8), cv2.IMREAD_COLOR)
         if img is None:
-            logger.warning("[RECOMPRESS] Failed to decode image, returning original (%d chars)", original_size)
-            return base64_str  # Not a valid image, return as-is
-        # Re-encode with low quality
+            return base64_str
         jpeg_bytes = encode_image_to_jpeg_bytes(img, jpeg_quality=WEBRTC_JPEG_QUALITY)
-        result = base64.b64encode(jpeg_bytes).decode("ascii")
-        
-        elapsed = time.time() - recompress_start
-        new_size = len(result)
-        reduction = (1 - new_size / original_size) * 100 if original_size > 0 else 0
-        
-        logger.info(
-            "[RECOMPRESS] Image %dx%d: %d->%d chars (%.1f%% reduction) in %.3fs, quality=%d",
-            img.shape[1], img.shape[0], original_size, new_size, reduction, elapsed, WEBRTC_JPEG_QUALITY
-        )
-        
-        return result
+        return base64.b64encode(jpeg_bytes).decode("ascii")
     except Exception as e:
-        logger.warning("[RECOMPRESS] Error recompressing image: %s", e)
-        # If anything fails, return original
+        logger.error("[RECOMPRESS] Error: %s", e)
         return base64_str
 
 
@@ -190,55 +166,28 @@ def create_chunked_binary_message(
 
 def _decode_worker(filepath: str, frame_queue, stop_event):
     """Decode video frames in a thread and put them on the queue."""
-    import queue as queue_module
-    import time as time_module
-    
     frame_count = 0
-    put_start_time = None
-    
     try:
-        logger.info("[DECODE_WORKER] Opening file: %s", filepath)
         container = av.open(filepath)
         stream = container.streams.video[0]
         stream.thread_type = "AUTO"
-        total_frames = stream.frames or "unknown"
-        duration = float(stream.duration * stream.time_base) if stream.duration else "unknown"
-        fps = float(stream.average_rate) if stream.average_rate else "unknown"
-        logger.info("[DECODE_WORKER] Starting decode: %s, total_frames=%s, duration=%s sec, fps=%s", 
-                    filepath, total_frames, duration, fps)
 
         for frame in container.decode(stream):
             if stop_event.is_set():
-                logger.info("[DECODE_WORKER] Stop event received at frame %d", frame_count)
                 break
-            
-            # Log every 10 frames for debugging
-            if frame_count % 10 == 0:
-                logger.info("[DECODE_WORKER] Decoded frame %d, queue=%d/%d, putting...", 
-                            frame_count, frame_queue.qsize(), frame_queue.maxsize)
-            
             try:
-                put_start_time = time_module.time()
-                frame_queue.put(frame, timeout=300)  # Original 300s timeout
-                put_time = time_module.time() - put_start_time
+                frame_queue.put(frame, timeout=300)
                 frame_count += 1
-                
-                # Log if put took a long time (queue was full)
-                if put_time > 1.0:
-                    logger.warning("[DECODE_WORKER] Frame %d put took %.2fs (queue was full)", frame_count - 1, put_time)
-                    
-            except queue_module.Full:
-                logger.error("[DECODE_WORKER] Queue FULL timeout (300s) at frame %d!", frame_count)
+            except queue.Full:
+                logger.error("[DECODE_WORKER] Queue full timeout at frame %d", frame_count)
                 frame_queue.put({"error": f"Queue full timeout at frame {frame_count}"})
                 return
 
         container.close()
-        logger.info("[DECODE_WORKER] COMPLETED: %d frames decoded successfully", frame_count)
     except Exception as e:
-        logger.error("[DECODE_WORKER] ERROR at frame %d: %s", frame_count, e, exc_info=True)
+        logger.error("[DECODE_WORKER] Error at frame %d: %s", frame_count, e)
         frame_queue.put({"error": str(e)})
     finally:
-        logger.info("[DECODE_WORKER] FINISHED: putting None marker, total frames=%d", frame_count)
         frame_queue.put(None)
 
 
@@ -249,10 +198,8 @@ class ThreadedVideoTrack(MediaStreamTrack):
 
     def __init__(self, filepath: str, queue_size: int = 60):
         super().__init__()
-        # 60 frames = ~2 seconds at 30fps, allows buffering during slow network
         self._queue = queue.Queue(maxsize=queue_size)
         self._stop_event = threading.Event()
-        logger.warning("RAFEL TEST Starting decode thread for %s", filepath)
         self._decode_thread = threading.Thread(
             target=_decode_worker,
             args=(filepath, self._queue, self._stop_event),
@@ -261,40 +208,18 @@ class ThreadedVideoTrack(MediaStreamTrack):
         self._decode_thread.start()
 
     async def recv(self) -> VideoFrame:
-        wait_count = 0
-        wait_start = None
-        
         while True:
             try:
                 data = self._queue.get_nowait()
-                if wait_count > 0:
-                    wait_time = asyncio.get_event_loop().time() - wait_start
-                    if wait_time > 1.0:
-                        logger.warning("[RECV] Got frame after waiting %.2fs (%d iterations), queue=%d/%d",
-                                      wait_time, wait_count, self._queue.qsize(), self._queue.maxsize)
                 break
             except queue.Empty:
-                if wait_count == 0:
-                    wait_start = asyncio.get_event_loop().time()
-                wait_count += 1
-                
-                # Log every 5 seconds of waiting
-                if wait_count % 500 == 0:  # 500 * 0.01s = 5 seconds
-                    wait_time = asyncio.get_event_loop().time() - wait_start
-                    logger.warning("[RECV] Still waiting for frame: %.1fs, iterations=%d, queue=%d/%d, thread_alive=%s",
-                                  wait_time, wait_count, self._queue.qsize(), self._queue.maxsize,
-                                  self._decode_thread.is_alive())
-                
-                # we use a non-blocking get + sleep to avoid blocking the
-                # event loop.
-                await asyncio.sleep(0.01)
+                await asyncio.sleep(0.001)
 
         if data is None:
-            logger.info("[RECV] Received END marker (None) - video complete")
             self.stop()
             raise MediaStreamError("End of video file")
         if isinstance(data, dict):
-            logger.error("[RECV] Received ERROR from decode worker: %s", data)
+            logger.error("[ThreadedVideoTrack] Decode error: %s", data)
             self.stop()
             raise MediaStreamError(data.get("error", "Unknown decode error"))
 
@@ -391,88 +316,23 @@ async def wait_for_buffer_drain(
     heartbeat_callback: Optional[Callable[[], None]] = None,
     low_threshold: Optional[int] = None,
 ) -> bool:
-    """Wait for data channel buffer to drain below threshold, with timeout.
-    
-    Uses a low threshold (default: high_limit / 4) to implement proper backpressure.
-    We wait until buffer drops significantly before resuming to prevent oscillation.
-    
-    The asyncio.sleep() calls while waiting yield to the event loop, which is
-    critical for ICE health - aioice needs event loop time to send STUN packets.
-    
-    Args:
-        data_channel: The RTCDataChannel to monitor
-        timeout: Maximum time to wait in seconds
-        heartbeat_callback: Optional callback for server watchdog (e.g., Modal timeout)
-        low_threshold: Buffer level to wait for (default: BUFFER_SIZE_LIMIT / 4)
-        
-    Returns:
-        True if buffer drained, False if timeout or channel closed
-    """
+    """Wait for data channel buffer to drain below threshold, with timeout."""
     if low_threshold is None:
         low_threshold = WEBRTC_DATA_CHANNEL_BUFFER_SIZE_LIMIT // 4
     
     start_time = asyncio.get_event_loop().time()
-    initial_buffer = data_channel.bufferedAmount
-    wait_count = 0
-    last_log_time = start_time
-    last_buffer_for_speed = initial_buffer
-    
-    logger.info(
-        "[BUFFER_DRAIN] Starting wait: buffered=%.1f KB, low_threshold=%.1f KB, timeout=%.1fs",
-        initial_buffer / 1024, low_threshold / 1024, timeout
-    )
     
     while data_channel.bufferedAmount > low_threshold:
         elapsed = asyncio.get_event_loop().time() - start_time
-        
-        # Log progress every 2 seconds
-        if asyncio.get_event_loop().time() - last_log_time >= 2.0:
-            current_buffer = data_channel.bufferedAmount
-            bytes_drained = last_buffer_for_speed - current_buffer
-            time_since_last = asyncio.get_event_loop().time() - last_log_time + 2.0  # approx
-            drain_speed_kbps = (bytes_drained / 1024) / time_since_last if time_since_last > 0 else 0
-            
-            logger.info(
-                "[BUFFER_DRAIN] Still waiting: buffered=%.1f KB (started at %.1f KB), "
-                "drain_speed=%.1f KB/s, elapsed=%.1fs/%.1fs, channel_state=%s",
-                current_buffer / 1024, initial_buffer / 1024, drain_speed_kbps,
-                elapsed, timeout, data_channel.readyState
-            )
-            last_log_time = asyncio.get_event_loop().time()
-            last_buffer_for_speed = current_buffer
-        
         if elapsed > timeout:
-            logger.error(
-                "[BUFFER_DRAIN] TIMEOUT after %.1fs! buffered=%d bytes (started at %d), "
-                "channel_state=%s, wait_iterations=%d",
-                timeout, data_channel.bufferedAmount, initial_buffer,
-                data_channel.readyState, wait_count
-            )
+            logger.error("[BUFFER_DRAIN] Timeout after %.1fs", timeout)
             return False
         if data_channel.readyState != "open":
-            logger.error(
-                "[BUFFER_DRAIN] Channel CLOSED while waiting! state=%s, "
-                "elapsed=%.1fs, buffered=%d, wait_iterations=%d",
-                data_channel.readyState, elapsed, data_channel.bufferedAmount, wait_count
-            )
+            logger.error("[BUFFER_DRAIN] Channel closed: %s", data_channel.readyState)
             return False
         if heartbeat_callback:
             heartbeat_callback()
         await asyncio.sleep(WEBRTC_DATA_CHANNEL_BUFFER_DRAINING_DELAY)
-        wait_count += 1
-    
-    total_elapsed = asyncio.get_event_loop().time() - start_time
-    final_buffer = data_channel.bufferedAmount
-    bytes_drained = initial_buffer - final_buffer
-    drain_speed_kbps = (bytes_drained / 1024) / total_elapsed if total_elapsed > 0 else 0
-    
-    if total_elapsed > 0.5:  # Only log if we actually waited
-        logger.info(
-            "[BUFFER_DRAIN] Completed: buffered=%.1f->%.1f KB, drained=%.1f KB in %.2fs "
-            "(avg %.1f KB/s)",
-            initial_buffer / 1024, final_buffer / 1024, bytes_drained / 1024,
-            total_elapsed, drain_speed_kbps
-        )
     
     return True
 
@@ -483,112 +343,38 @@ async def send_chunked_data(
     payload_bytes: bytes,
     chunk_size: int = CHUNK_SIZE,
     heartbeat_callback: Optional[Callable[[], None]] = None,
-    buffer_timeout: float = 120.0,  # 120 seconds should suffice to send 1MB 
+    buffer_timeout: float = 120.0,
 ) -> bool:
-    """Send payload via data channel with chunking and backpressure.
-    
-    Uses proper backpressure with high/low watermarks to prevent buffer overflow.
-    
-    CRITICAL: Yields to event loop every N chunks via asyncio.sleep(0).
-    This allows aioice to send STUN Binding Indications to refresh ICE consent.
-    Without yielding, consent expires after ~30s causing "Consent to send expired".
-    
-    Args:
-        data_channel: The RTCDataChannel to send on
-        frame_id: Frame identifier for chunked message headers
-        payload_bytes: Full payload to send
-        chunk_size: Size of each chunk (default 48KB)
-        heartbeat_callback: Optional callback for server watchdog (e.g., Modal timeout)
-        buffer_timeout: Max time to wait for buffer drain
-        
-    Returns:
-        True if all chunks sent, False if channel closed or timeout
-    """
-    send_start_time = time.time()
-    payload_size = len(payload_bytes)
-    
+    """Send payload via data channel with chunking and backpressure."""
     if data_channel.readyState != "open":
-        logger.warning(
-            "[SEND_CHUNKED] Cannot send frame %s: channel not open (state=%s)",
-            frame_id, data_channel.readyState
-        )
         return False
 
+    payload_size = len(payload_bytes)
     total_chunks = (payload_size + chunk_size - 1) // chunk_size
     view = memoryview(payload_bytes)
     high_threshold = WEBRTC_DATA_CHANNEL_BUFFER_SIZE_LIMIT
-    backpressure_waits = 0
-    
-    logger.info(
-        "[SEND_CHUNKED] Starting frame %d: payload=%.1f KB, chunks=%d, "
-        "buffer=%.1f/%.1f KB (%.0f%% full)",
-        frame_id, payload_size / 1024, total_chunks,
-        data_channel.bufferedAmount / 1024, high_threshold / 1024,
-        (data_channel.bufferedAmount / high_threshold) * 100 if high_threshold > 0 else 0
-    )
     
     for chunk_index in range(total_chunks):
         if data_channel.readyState != "open":
-            logger.error(
-                "[SEND_CHUNKED] Channel CLOSED during frame %d at chunk %d/%d! "
-                "state=%s, elapsed=%.2fs, backpressure_waits=%d",
-                frame_id, chunk_index, total_chunks, data_channel.readyState,
-                time.time() - send_start_time, backpressure_waits
-            )
+            logger.error("[SEND_CHUNKED] Channel closed at chunk %d/%d", chunk_index, total_chunks)
             return False
 
         start = chunk_index * chunk_size
         end = min(start + chunk_size, payload_size)
         chunk_data = view[start:end]
 
-        message = create_chunked_binary_message(
-            frame_id, chunk_index, total_chunks, chunk_data
-        )
+        message = create_chunked_binary_message(frame_id, chunk_index, total_chunks, chunk_data)
         
-        # Check buffer before sending - wait if too full
         if data_channel.bufferedAmount > high_threshold:
-            backpressure_waits += 1
-            logger.info(
-                "[SEND_CHUNKED] Backpressure at frame %d chunk %d/%d: "
-                "buffer=%.1f KB > threshold=%.1f KB (%.0f%% full), waiting... (#%d)",
-                frame_id, chunk_index, total_chunks, 
-                data_channel.bufferedAmount / 1024, high_threshold / 1024,
-                (data_channel.bufferedAmount / high_threshold) * 100,
-                backpressure_waits
-            )
-            if not await wait_for_buffer_drain(
-                data_channel, buffer_timeout, heartbeat_callback
-            ):
-                logger.error(
-                    "[SEND_CHUNKED] Buffer drain FAILED for frame %d at chunk %d/%d! "
-                    "elapsed=%.2fs, backpressure_waits=%d, channel_state=%s",
-                    frame_id, chunk_index, total_chunks,
-                    time.time() - send_start_time, backpressure_waits, data_channel.readyState
-                )
+            if not await wait_for_buffer_drain(data_channel, buffer_timeout, heartbeat_callback):
+                logger.error("[SEND_CHUNKED] Buffer drain failed at chunk %d/%d", chunk_index, total_chunks)
                 return False
         
         data_channel.send(message)
 
-        # CRITICAL: Small sleep between chunks to:
-        # 1. Yield to event loop so aioice can send STUN/consent refreshes
-        # 2. Prevent overwhelming the network and causing RTT spikes
-        # 3. Allow the browser to ACK received data
         if heartbeat_callback:
-            heartbeat_callback()  # Keep server watchdog alive
-        await asyncio.sleep(0.001)  # 1ms between chunks
-    
-    total_elapsed = time.time() - send_start_time
-    throughput_kbps = (payload_size / 1024) / total_elapsed if total_elapsed > 0 else 0
-    final_buffer = data_channel.bufferedAmount
-    
-    logger.info(
-        "[SEND_CHUNKED] Completed frame %d: %.1f KB in %.2fs (%.1f KB/s), "
-        "buffer=%.1f/%.1f KB (%.0f%% full), backpressure_waits=%d",
-        frame_id, payload_size / 1024, total_elapsed, throughput_kbps,
-        final_buffer / 1024, high_threshold / 1024,
-        (final_buffer / high_threshold) * 100 if high_threshold > 0 else 0,
-        backpressure_waits
-    )
+            heartbeat_callback()
+        await asyncio.sleep(0.001)
     
     return True
 
