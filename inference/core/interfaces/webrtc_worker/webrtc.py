@@ -547,71 +547,26 @@ class VideoFrameProcessor:
         workflow_output: Dict[str, Any],
         data_output_mode: DataOutputMode,
     ) -> Tuple[Dict[str, Any], List[str]]:
-        """Serialize workflow outputs in a thread to avoid blocking the event loop.
-        
-        Uses low JPEG quality (quality=10) for image compression to reduce
-        frame size from ~1MB to ~50KB for efficient WebRTC transmission.
-        """
-        serialize_start = time.time()
+        """Serialize workflow outputs for WebRTC transmission."""
         serialized = {}
         serialization_errors = []
-        field_times = {}
-
-        logger.info(
-            "[SERIALIZE] Starting: fields=%s, mode=%s",
-            fields_to_send, data_output_mode
-        )
 
         for field_name in fields_to_send:
-            field_start = time.time()
-            
             if field_name not in workflow_output:
-                serialization_errors.append(
-                    f"Requested output '{field_name}' not found in workflow outputs"
-                )
+                serialization_errors.append(f"Output '{field_name}' not found")
                 continue
 
             output_data = workflow_output[field_name]
-            output_type = type(output_data).__name__
 
-            if data_output_mode == DataOutputMode.ALL and isinstance(
-                output_data, WorkflowImageData
-            ):
-                logger.info("[SERIALIZE] Skipping image field '%s' in ALL mode", field_name)
+            if data_output_mode == DataOutputMode.ALL and isinstance(output_data, WorkflowImageData):
                 continue
 
             try:
-                serialized_value = serialize_for_webrtc(output_data)
-                serialized[field_name] = serialized_value
-                
-                field_elapsed = time.time() - field_start
-                field_times[field_name] = field_elapsed
-                
-                # Estimate size for logging
-                try:
-                    import json
-                    size_estimate = len(json.dumps(serialized_value))
-                except:
-                    size_estimate = 0
-                
-                if field_elapsed > 0.1:  # Log slow fields
-                    logger.info(
-                        "[SERIALIZE] Slow field '%s': type=%s, time=%.3fs, size=~%d bytes",
-                        field_name, output_type, field_elapsed, size_estimate
-                    )
-                    
+                serialized[field_name] = serialize_for_webrtc(output_data)
             except Exception as e:
                 serialization_errors.append(f"{field_name}: {e}")
                 serialized[field_name] = {"__serialization_error__": str(e)}
-                logger.error("[SERIALIZE] Error serializing '%s': %s", field_name, e)
-
-        total_elapsed = time.time() - serialize_start
-        if total_elapsed > 0.2:  # Log if serialization is slow
-            slow_fields = [(k, v) for k, v in field_times.items() if v > 0.05]
-            logger.warning(
-                "[SERIALIZE] Slow serialization: total=%.3fs, fields=%d, slow_fields=%s",
-                total_elapsed, len(fields_to_send), slow_fields
-            )
+                logger.error("[SERIALIZE] Error: %s - %s", field_name, e)
 
         return serialized, serialization_errors
 
