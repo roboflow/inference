@@ -11,8 +11,6 @@ import threading
 import time
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-import cv2
-import numpy as np
 import supervision as sv
 
 from aioice import ice
@@ -72,10 +70,7 @@ from inference.core.interfaces.webrtc_worker.utils import (
 )
 from inference.core.managers.base import ModelManager
 from inference.core.roboflow_api import get_workflow_specification
-from inference.core.workflows.core_steps.common.serializers import (
-    serialise_sv_detections,
-    serialize_timestamp,
-)
+from inference.core.workflows.core_steps.common.serializers import serialize_wildcard_kind
 from inference.core.utils.image_utils import encode_image_to_jpeg_bytes
 from inference.core.workflows.errors import WorkflowError, WorkflowSyntaxError
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
@@ -100,56 +95,16 @@ def serialise_image_for_webrtc(image: WorkflowImageData) -> Dict[str, Any]:
     }
 
 
-def _recompress_base64_image(base64_str: str) -> str:
-    """Decode base64 image and re-encode with low JPEG quality."""
-    try:
-        image_bytes = base64.b64decode(base64_str)
-        img = cv2.imdecode(np.frombuffer(image_bytes, np.uint8), cv2.IMREAD_COLOR)
-        if img is None:
-            return base64_str
-        jpeg_bytes = encode_image_to_jpeg_bytes(img, jpeg_quality=WEBRTC_JPEG_QUALITY)
-        return base64.b64encode(jpeg_bytes).decode("ascii")
-    except Exception as e:
-        logger.error("[RECOMPRESS] Error: %s", e)
-        return base64_str
-
-
 def serialize_for_webrtc(value: Any) -> Any:
-    """Recursively serialize, compressing images with low JPEG quality.
-    
-    Handles:
-    - WorkflowImageData objects
-    - Pre-serialized image dicts ({"type": "base64", "value": "..."}) with high-quality images
-    - Raw numpy arrays (images)
-    """
-    import numpy as np
-    
+    """Serialize for WebRTC, compressing images with low JPEG quality."""
     if isinstance(value, WorkflowImageData):
         return serialise_image_for_webrtc(value)
-    if isinstance(value, np.ndarray):
-        # Raw image array - compress with low quality
-        if len(value.shape) >= 2:  # Looks like an image
-            jpeg_bytes = encode_image_to_jpeg_bytes(value, jpeg_quality=WEBRTC_JPEG_QUALITY)
-            return {
-                "type": "base64",
-                "value": base64.b64encode(jpeg_bytes).decode("ascii"),
-            }
-        return value.tolist()  # Not an image, convert to list
     if isinstance(value, dict):
-        # Check if this is a pre-serialized image dict with base64 data
-        # These come from workflow blocks that already serialized their output
-        if value.get("type") == "base64" and isinstance(value.get("value"), str):
-            # Re-compress the base64 image with low quality for WebRTC
-            recompressed = _recompress_base64_image(value["value"])
-            return {**value, "value": recompressed}
         return {k: serialize_for_webrtc(v) for k, v in value.items()}
     if isinstance(value, list):
         return [serialize_for_webrtc(v) for v in value]
-    if isinstance(value, sv.Detections):
-        return serialise_sv_detections(value)
-    if isinstance(value, datetime.datetime):
-        return serialize_timestamp(value)
-    return value
+    return serialize_wildcard_kind(value)
+
 
 
 def create_chunked_binary_message(
