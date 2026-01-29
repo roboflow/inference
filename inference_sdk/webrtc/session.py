@@ -199,9 +199,6 @@ class WebRTCSession:
         # Chunk reassembly for binary messages
         self._chunk_reassembler = ChunkReassembler()
 
-        # Video track ACK state (for periodic ACK sending)
-        self._video_ack_last_time: float = 0.0
-        self._video_ack_last_frame_id: Optional[int] = None
         self._data_channel: Optional["RTCDataChannel"] = None
 
         # Public APIs
@@ -559,32 +556,6 @@ class WebRTCSession:
         if channel.readyState == "open":
             channel.send(json.dumps({"ack": frame_id}))
 
-    def _maybe_send_video_ack(self, frame_id: int) -> None:
-        """Send ACK for video track frames if interval has elapsed.
-
-        This method implements periodic ACK sending for frames received via
-        the video track. ACKs are sent at most once per configured interval.
-
-        Args:
-            frame_id: The frame ID to potentially ACK
-        """
-        # Skip if realtime processing or no interval configured
-        if self._config.realtime_processing:
-            return
-        if self._config.video_ack_interval is None:
-            return
-        if self._data_channel is None or self._data_channel.readyState != "open":
-            return
-
-        current_time = time.time()
-        time_since_last_ack = current_time - self._video_ack_last_time
-
-        # Send ACK if interval has elapsed
-        if time_since_last_ack >= self._config.video_ack_interval:
-            self._data_channel.send(json.dumps({"ack": frame_id}))
-            self._video_ack_last_time = current_time
-            self._video_ack_last_frame_id = frame_id
-
     async def _get_turn_config(self) -> Optional[RTCConfiguration]:
         """Get TURN configuration from user-provided config or Roboflow API.
 
@@ -785,15 +756,11 @@ class WebRTCSession:
                     except Exception:
                         pass
 
-                    # Send periodic ACK for video track flow control
-                    if current_metadata.frame_id is not None:
-                        self._maybe_send_video_ack(current_metadata.frame_id)
-
             asyncio.ensure_future(_reader())
 
         # Setup data channel
         ch = pc.createDataChannel("inference")
-        self._data_channel = ch  # Store reference for video track ACKs
+        self._data_channel = ch
 
         # Setup data channel message handler
         @ch.on("message")
