@@ -607,112 +607,48 @@ class VideoFrameProcessor:
         await send_chunked_data(
             self.data_channel, self._received_frames + 1, json_bytes
         )
-        logger.info(
-            "Sent processing_complete signal after %s frames", self._received_frames
-        )
 
     async def process_frames_data_only(self):
-        """Process frames for data extraction only, without video track output.
-
-        This is used when stream_output=[] and no video track is needed.
-        """
-        # Silencing swscaler warnings in multi-threading environment
+        """Process frames for data extraction only, without video track output."""
         if not self._av_logging_set:
             av_logging.set_libav_level(av_logging.ERROR)
             self._av_logging_set = True
 
-        logger.info("[DATA_ONLY] Starting data-only frame processing")
-        loop_start = time.time()
-        last_status_log = time.time()
-
         try:
             while not self._stop_processing:
-                frame_start = time.time()
-                
                 await self._wait_for_ack_window(next_frame_id=self._received_frames + 1)
                 if self._check_termination():
-                    logger.warning("[DATA_ONLY] Termination triggered at frame %d", self._received_frames)
                     break
                 if self.heartbeat_callback:
                     self.heartbeat_callback()
-
                 if not self.track or self.track.readyState == "ended":
-                    logger.info("[DATA_ONLY] Track ended at frame %d", self._received_frames)
                     break
 
-                # Drain queue if using PlayerStreamTrack (RTSP)
-                if (
-                    isinstance(self.track, PlayerStreamTrack)
-                    and self.realtime_processing
-                ):
-                    queue_size = self.track._queue.qsize()
-                    if queue_size > 30:
-                        drained = 0
-                        while self.track._queue.qsize() > 30:
-                            self.track._queue.get_nowait()
-                            drained += 1
-                        logger.info("[DATA_ONLY] Drained %d frames from queue", drained)
+                # Drain queue for realtime RTSP
+                if isinstance(self.track, PlayerStreamTrack) and self.realtime_processing:
+                    while self.track._queue.qsize() > 30:
+                        self.track._queue.get_nowait()
 
-                recv_start = time.time()
                 frame = await self.track.recv()
-                recv_elapsed = time.time() - recv_start
-                
                 self._received_frames += 1
-                frame_id = self._received_frames
                 frame_timestamp = datetime.datetime.now()
 
-                process_start = time.time()
                 workflow_output, _, errors = await self._process_frame_async(
                     frame=frame,
-                    frame_id=frame_id,
+                    frame_id=self._received_frames,
                     render_output=False,
                     include_errors_on_frame=False,
                 )
-                process_elapsed = time.time() - process_start
 
-                send_start = time.time()
-                await self._send_data_output(
-                    workflow_output, frame_timestamp, frame, errors
-                )
-                send_elapsed = time.time() - send_start
-                
-                frame_elapsed = time.time() - frame_start
-                
-                # Log progress every 5 seconds or every 30 frames
-                if time.time() - last_status_log >= 5.0 or frame_id % 30 == 1:
-                    data_channel_state = self.data_channel.readyState if self.data_channel else "N/A"
-                    data_channel_buffer = self.data_channel.bufferedAmount if self.data_channel else 0
-                    buffer_limit = WEBRTC_DATA_CHANNEL_BUFFER_SIZE_LIMIT
-                    elapsed_total = time.time() - loop_start
-                    fps = frame_id / elapsed_total if elapsed_total > 0 else 0
-                    
-                    logger.info(
-                        "[DATA_ONLY] Frame %d: total=%.2fs (recv=%.3fs, process=%.2fs, send=%.2fs), "
-                        "buffer=%.1f/%.1f KB (%.0f%%), avg_fps=%.1f",
-                        frame_id, frame_elapsed, recv_elapsed, process_elapsed, send_elapsed,
-                        data_channel_buffer / 1024, buffer_limit / 1024,
-                        (data_channel_buffer / buffer_limit) * 100 if buffer_limit > 0 else 0,
-                        fps
-                    )
-                    last_status_log = time.time()
-                
-                if errors:
-                    logger.warning("[DATA_ONLY] Frame %d errors: %s", frame_id, errors)
+                await self._send_data_output(workflow_output, frame_timestamp, frame, errors)
 
-        except asyncio.CancelledError as exc:
-            logger.warning("[DATA_ONLY] Processing CANCELLED at frame %d: %s", self._received_frames, exc)
-        except MediaStreamError as exc:
-            logger.info("[DATA_ONLY] Stream ended at frame %d: %s", self._received_frames, exc)
+        except asyncio.CancelledError:
+            pass
+        except MediaStreamError:
+            pass
         except Exception as exc:
-            logger.error("[DATA_ONLY] ERROR at frame %d: %s", self._received_frames, exc, exc_info=True)
+            logger.error("[DATA_ONLY] Error at frame %d: %s", self._received_frames, exc)
         finally:
-            total_elapsed = time.time() - loop_start
-            avg_fps = self._received_frames / total_elapsed if total_elapsed > 0 else 0
-            logger.info(
-                "[DATA_ONLY] Processing complete: %d frames in %.1fs (avg %.1f fps)",
-                self._received_frames, total_elapsed, avg_fps
-            )
-            # Send completion signal to client
             await self._send_processing_complete()
 
     @staticmethod
