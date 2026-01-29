@@ -199,8 +199,6 @@ class WebRTCSession:
         # Chunk reassembly for binary messages
         self._chunk_reassembler = ChunkReassembler()
 
-        self._data_channel: Optional["RTCDataChannel"] = None
-
         # Public APIs
         self.video = _VideoStream(self, self._video_queue)
 
@@ -760,7 +758,6 @@ class WebRTCSession:
 
         # Setup data channel
         ch = pc.createDataChannel("inference")
-        self._data_channel = ch
 
         # Setup data channel message handler
         @ch.on("message")
