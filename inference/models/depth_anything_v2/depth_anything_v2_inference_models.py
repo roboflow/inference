@@ -5,7 +5,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
-from inference.core.entities.responses import LMMInferenceResponse, InferenceResponseImage
+from inference.core.entities.responses import (
+    InferenceResponseImage,
+    LMMInferenceResponse,
+)
 from inference.core.env import (
     ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES,
     ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES,
@@ -13,7 +16,7 @@ from inference.core.env import (
 )
 from inference.core.models.base import Model
 from inference.core.models.types import PreprocessReturnMetadata
-from inference.core.utils.image_utils import load_image_rgb
+from inference.core.utils.image_utils import load_image_bgr
 from inference.core.workflows.execution_engine.entities.base import (
     ImageParentMetadata,
     WorkflowImageData,
@@ -46,13 +49,15 @@ class InferenceModelsDepthAnythingV2Adapter(Model):
         if isinstance(image, list):
             raise ValueError("DepthAnythingV2 does not support batched inference.")
 
-        np_image = load_image_rgb(
+        np_image = load_image_bgr(
             image,
             disable_preproc_auto_orient=kwargs.get(
                 "disable_preproc_auto_orient", False
             ),
         )
-        return np_image, PreprocessReturnMetadata({"image_dims": (np_image.shape[1], np_image.shape[0])})
+        return np_image, PreprocessReturnMetadata(
+            {"image_dims": (np_image.shape[1], np_image.shape[0])}
+        )
 
     def predict(self, inputs: np.ndarray, **kwargs) -> Tuple[dict]:
         predictions = self._model(inputs)[0]

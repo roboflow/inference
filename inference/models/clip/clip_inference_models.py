@@ -25,7 +25,7 @@ from inference.core.env import (
 )
 from inference.core.models.base import Model
 from inference.core.models.types import PreprocessReturnMetadata
-from inference.core.utils.image_utils import load_image_rgb
+from inference.core.utils.image_utils import load_image_bgr
 from inference.core.utils.postprocess import cosine_similarity
 from inference_models import AutoModel
 from inference_models.models.clip.clip_onnx import ClipOnnx
@@ -317,7 +317,7 @@ class InferenceModelsClipAdapter(Model):
         Returns:
             np.ndarray: A numpy array of the preprocessed image pixel data.
         """
-        return load_image_rgb(image)
+        return load_image_bgr(image)
 
     def preprocess(
         self, image: Any, **kwargs

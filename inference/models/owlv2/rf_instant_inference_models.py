@@ -10,7 +10,8 @@ from inference.core.env import (
     ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES,
     ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES,
     API_KEY,
-    MAX_DETECTIONS, OWLV2_VERSION_ID,
+    MAX_DETECTIONS,
+    OWLV2_VERSION_ID,
 )
 from inference.core.models.base import Model
 from inference.core.models.roboflow import DEFAULT_COLOR_PALETTE
@@ -35,7 +36,10 @@ class RFInstantSpecificLiberalModelAccessManager(LiberalModelAccessManager):
         api_key: Optional[str],
         loading_parameter_digest: Optional[str],
     ) -> Optional[AnyModel]:
-        if model_id != f"owlv2/{OWLV2_VERSION_ID}" and model_id != f"google/{OWLV2_VERSION_ID}":
+        if (
+            model_id != f"owlv2/{OWLV2_VERSION_ID}"
+            and model_id != f"google/{OWLV2_VERSION_ID}"
+        ):
             return None
         print(f"Intercepted call to dependent model init, {model_id}")
         return Owlv2AdapterSingleton(

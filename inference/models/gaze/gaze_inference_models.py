@@ -14,7 +14,7 @@ from inference.core.entities.responses.gaze import (
 from inference.core.entities.responses.inference import FaceDetectionPrediction, Point
 from inference.core.env import API_KEY, GAZE_MAX_BATCH_SIZE
 from inference.core.models.base import Model
-from inference.core.utils.image_utils import load_image_rgb
+from inference.core.utils.image_utils import load_image_bgr
 from inference_models import AutoModelPipeline
 from inference_models.model_pipelines.face_and_gaze_detection.mediapipe_l2cs import (
     FaceAndGazeDetectionMPAndL2CS,
@@ -63,13 +63,11 @@ class InferenceModelsGazeAdapter(Model):
             imgs = request.image
         else:
             imgs = [request.image]
-        np_imgs = [load_image_rgb(img) for img in imgs]
+        np_imgs = [load_image_bgr(img) for img in imgs]
         avg_image_loading_time = (perf_counter() - timer_start) / len(np_imgs)
         if not request.do_run_face_detection:
             predictions_time_start = perf_counter()
-            gaze_detections = self._pipeline._gaze_detector.infer(
-                images=np_imgs, input_color_format="rgb"
-            )
+            gaze_detections = self._pipeline._gaze_detector.infer(images=np_imgs)
             avg_image_prediction_time = (perf_counter() - predictions_time_start) / len(
                 np_imgs
             )
@@ -103,9 +101,7 @@ class InferenceModelsGazeAdapter(Model):
             return predictions
 
         predictions_time_start = perf_counter()
-        landmarks, faces, gazes = self._pipeline(
-            images=np_imgs, input_color_format="rgb"
-        )
+        landmarks, faces, gazes = self._pipeline(images=np_imgs)
         # prepare response
         avg_image_prediction_time = (perf_counter() - predictions_time_start) / len(
             np_imgs

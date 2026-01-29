@@ -1,4 +1,4 @@
-from typing import List, Tuple, Union
+from typing import Any, List, Tuple, Union
 
 import cv2
 import numpy as np
@@ -15,6 +15,7 @@ from inference.core.env import (
     API_KEY,
 )
 from inference.core.models.base import Model, PreprocessReturnMetadata
+from inference.core.utils.image_utils import load_image_bgr
 from inference_models import AutoModel, Detections
 from inference_models.models.moondream2.moondream2_hf import MoonDream2HF
 
@@ -37,6 +38,22 @@ class InferenceModelsMoondream2Adapter(Model):
             **kwargs,
         )
 
+    def preprocess(self, image: Any, prompt: str, **kwargs):
+        is_batch = isinstance(image, list)
+        if is_batch:
+            raise ValueError("This model does not support batched-inference.")
+        np_image = load_image_bgr(
+            image,
+            disable_preproc_auto_orient=kwargs.get(
+                "disable_preproc_auto_orient", False
+            ),
+        )
+        input_shape = PreprocessReturnMetadata({"image_dims": np_image.shape[:2][::-1]})
+        return (
+            np_image,
+            input_shape,
+        )
+
     def predict(
         self,
         image_in: Union[Image.Image, np.array],
@@ -44,6 +61,14 @@ class InferenceModelsMoondream2Adapter(Model):
         **kwargs,
     ):
         return self.detect(image_in, prompt=prompt, **kwargs)
+
+    def postprocess(
+        self,
+        predictions: List[ObjectDetectionInferenceResponse],
+        preprocess_return_metadata: PreprocessReturnMetadata,
+        **kwargs,
+    ) -> List[ObjectDetectionInferenceResponse]:
+        return predictions
 
     def caption(self, image_in: Union[Image.Image, np.array], **kwargs):
         if not isinstance(image_in, np.ndarray):

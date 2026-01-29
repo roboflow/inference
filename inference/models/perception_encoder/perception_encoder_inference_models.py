@@ -26,7 +26,7 @@ from inference.core.env import (
 )
 from inference.core.models.base import Model
 from inference.core.models.types import PreprocessReturnMetadata
-from inference.core.utils.image_utils import load_image_rgb
+from inference.core.utils.image_utils import load_image_bgr
 from inference.core.utils.postprocess import cosine_similarity
 from inference_models import AutoModel
 from inference_models.models.perception_encoder.perception_encoder_pytorch import (
@@ -64,7 +64,7 @@ class InferenceModelsPerceptionEncoderAdapter(Model):
 
     def preproc_image(self, image: InferenceRequestImage) -> np.ndarray:
         """Preprocesses an inference request image."""
-        return load_image_rgb(image)
+        return load_image_bgr(image)
 
     def preprocess(
         self, image: Any, **kwargs

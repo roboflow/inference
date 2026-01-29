@@ -12,7 +12,7 @@ from inference.core.env import (
     API_KEY,
 )
 from inference.core.models.base import Model
-from inference.core.utils.image_utils import load_image_rgb
+from inference.core.utils.image_utils import load_image_bgr
 from inference_models import AutoModel
 from inference_models.entities import ImageDimensions
 from inference_models.models.florence2.florence2_hf import Florence2HF
@@ -42,7 +42,7 @@ class InferenceModelsFlorence2Adapter(Model):
         is_batch = isinstance(image, list)
         if is_batch:
             raise ValueError("This model does not support batched-inference.")
-        np_image = load_image_rgb(
+        np_image = load_image_bgr(
             image,
             disable_preproc_auto_orient=kwargs.get(
                 "disable_preproc_auto_orient", False
@@ -69,15 +69,17 @@ class InferenceModelsFlorence2Adapter(Model):
             predictions,
             task=task,
             image_dimensions=preprocess_return_metadata,
-            **mapped_kwargs
+            **mapped_kwargs,
         )[0]
-        return [LMMInferenceResponse(
-            response=result,
-            image=InferenceResponseImage(
-                width=preprocess_return_metadata[0].width,
-                height=preprocess_return_metadata[0].height,
-            ),
-        )]
+        return [
+            LMMInferenceResponse(
+                response=result,
+                image=InferenceResponseImage(
+                    width=preprocess_return_metadata[0].width,
+                    height=preprocess_return_metadata[0].height,
+                ),
+            )
+        ]
 
     def clear_cache(self, delete_from_disk: bool = True) -> None:
         """Clears any cache if necessary. TODO: Implement this to delete the cache from the experimental model.

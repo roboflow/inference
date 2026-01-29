@@ -25,7 +25,7 @@ from inference.core.env import (
     SAM_VERSION_ID,
 )
 from inference.core.models.base import Model
-from inference.core.utils.image_utils import load_image_rgb
+from inference.core.utils.image_utils import load_image_bgr
 from inference.core.utils.postprocess import masks2poly
 from inference_models import AutoModel
 from inference_models.models.sam.cache import (
@@ -123,7 +123,7 @@ class InferenceModelsSAMAdapter(Model):
         # override state of the cache for other clients - letting it be only for
         # the sake of interface compatibility for inference 1.0 - moving forward
         # my recommendation is to remove that.
-        loaded_image = load_image_rgb(
+        loaded_image = load_image_bgr(
             image,
             disable_preproc_auto_orient=kwargs.get(
                 "disable_preproc_auto_orient", False
@@ -156,7 +156,7 @@ class InferenceModelsSAMAdapter(Model):
         # override state of the cache for other clients - letting it be only for
         # the sake of interface compatibility for inference 1.0 - moving forward
         # my recommendation is to remove that.
-        loaded_image = load_image_rgb(
+        loaded_image = load_image_bgr(
             image,
             disable_preproc_auto_orient=kwargs.get(
                 "disable_preproc_auto_orient", False

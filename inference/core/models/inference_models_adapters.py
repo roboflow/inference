@@ -671,7 +671,7 @@ def draw_predictions(inference_request, inference_response, class_names: List[st
     Returns:
         bytes: The bytes of the visualized image in JPEG format.
     """
-    image = (inference_request.image)
+    image = inference_request.image
     image = Image.fromarray(image)
     draw = ImageDraw.Draw(image)
     font = ImageFont.load_default()

@@ -13,7 +13,7 @@ from inference.core.env import (
     DEVICE,
 )
 from inference.core.models.types import PreprocessReturnMetadata
-from inference.core.utils.image_utils import load_image_rgb
+from inference.core.utils.image_utils import load_image_bgr
 from inference_models import AutoModel
 from inference_models.models.smolvlm.smolvlm_hf import SmolVLMHF
 
@@ -48,13 +48,13 @@ class InferenceModelsSmolVLMAdapter(Model):
         is_batch = isinstance(image, list)
         if is_batch:
             raise ValueError("This model does not support batched-inference.")
-        np_image = load_image_rgb(
+        np_image = load_image_bgr(
             image,
             disable_preproc_auto_orient=kwargs.get(
                 "disable_preproc_auto_orient", False
             ),
         )
-        input_shape = PreprocessReturnMetadata({"image_dims": image.shape[:2][::-1]})
+        input_shape = PreprocessReturnMetadata({"image_dims": np_image.shape[:2][::-1]})
         mapped_kwargs = self.map_inference_kwargs(kwargs)
         return (
             self._model.pre_process_generation(np_image, prompt, **mapped_kwargs),
@@ -76,10 +76,12 @@ class InferenceModelsSmolVLMAdapter(Model):
         result = self._model.post_process_generation(
             predictions, skip_special_tokens=skip_special_tokens, **mapped_kwargs
         )[0]
-        return [LMMInferenceResponse(
-            response=result,
-            image=InferenceResponseImage(
-                width=preprocess_return_metadata["image_dims"][0],
-                height=preprocess_return_metadata["image_dims"][1],
-            ),
-        )]
+        return [
+            LMMInferenceResponse(
+                response=result,
+                image=InferenceResponseImage(
+                    width=preprocess_return_metadata["image_dims"][0],
+                    height=preprocess_return_metadata["image_dims"][1],
+                ),
+            )
+        ]

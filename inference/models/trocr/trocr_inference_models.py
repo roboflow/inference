@@ -11,8 +11,9 @@ from inference.core.env import (
     API_KEY,
 )
 from inference.core.models.base import Model, PreprocessReturnMetadata
-from inference.core.utils.image_utils import load_image_rgb
+from inference.core.utils.image_utils import load_image_bgr
 from inference_models import AutoModel
+from inference_models.models.trocr.trocr_hf import TROcrHF
 
 
 class InferenceModelsTrOCRAdapter(Model):
@@ -36,7 +37,7 @@ class InferenceModelsTrOCRAdapter(Model):
     def preprocess(
         self, image: Any, **kwargs
     ) -> Tuple[np.ndarray, PreprocessReturnMetadata]:
-        return load_image_rgb(image), PreprocessReturnMetadata({})
+        return load_image_bgr(image), PreprocessReturnMetadata({})
 
     def postprocess(
         self,

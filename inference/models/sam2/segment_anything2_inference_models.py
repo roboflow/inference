@@ -48,7 +48,7 @@ from inference.core.env import (
     SAM2_VERSION_ID,
 )
 from inference.core.models.base import Model
-from inference.core.utils.image_utils import load_image_rgb
+from inference.core.utils.image_utils import load_image_bgr
 from inference.usage_tracking.collector import usage_collector
 
 if DEVICE is None:
@@ -207,7 +207,7 @@ class InferenceModelsSAM2Adapter(Model):
         Returns:
             np.array: The preprocessed image.
         """
-        return load_image_rgb(image)
+        return load_image_bgr(image)
 
     def segment_image(
         self,
@@ -287,6 +287,7 @@ class InferenceModelsSAM2Adapter(Model):
             load_from_mask_input_cache=load_logits_from_cache,
             save_to_mask_input_cache=save_logits_to_cache,
             use_embeddings_cache=True,
+            return_logits=True,
         )[0]
         return choose_most_confident_sam_prediction(
             masks=prediction.masks.cpu().numpy(),
