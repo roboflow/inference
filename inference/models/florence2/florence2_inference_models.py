@@ -60,19 +60,24 @@ class InferenceModelsFlorence2Adapter(Model):
         predictions: torch.Tensor,
         preprocess_return_metadata: List[ImageDimensions],
         **kwargs,
-    ) -> LMMInferenceResponse:
+    ) -> List[LMMInferenceResponse]:
         mapped_kwargs = self.map_inference_kwargs(kwargs)
         task = kwargs.get("prompt", "").split(">")[0] + ">"
+        if not task:
+            task = None
         result = self._model.post_process_generation(
-            predictions, task=task, **mapped_kwargs
+            predictions,
+            task=task,
+            image_dimensions=preprocess_return_metadata,
+            **mapped_kwargs
         )[0]
-        return LMMInferenceResponse(
+        return [LMMInferenceResponse(
             response=result,
             image=InferenceResponseImage(
                 width=preprocess_return_metadata[0].width,
                 height=preprocess_return_metadata[0].height,
             ),
-        )
+        )]
 
     def clear_cache(self, delete_from_disk: bool = True) -> None:
         """Clears any cache if necessary. TODO: Implement this to delete the cache from the experimental model.

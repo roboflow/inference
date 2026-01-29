@@ -26,7 +26,7 @@ from inference.core.env import (
     API_KEY,
 )
 from inference.core.models.base import Model
-from inference.core.utils.image_utils import load_image_rgb
+from inference.core.utils.image_utils import load_image_bgr
 from inference.core.utils.postprocess import masks2poly
 from inference.models.aliases import resolve_roboflow_model_alias
 from inference_models import (
@@ -96,7 +96,7 @@ class InferenceModelsObjectDetectionAdapter(Model):
         is_batch = isinstance(image, list)
         images = image if is_batch else [image]
         np_images: List[np.ndarray] = [
-            load_image_rgb(
+            load_image_bgr(
                 v,
                 disable_preproc_auto_orient=kwargs.get(
                     "disable_preproc_auto_orient", False
@@ -167,7 +167,6 @@ class InferenceModelsObjectDetectionAdapter(Model):
                     image=InferenceResponseImage(width=W, height=H),
                 )
             )
-
         return responses
 
     def clear_cache(self, delete_from_disk: bool = True) -> None:
@@ -206,7 +205,7 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
         is_batch = isinstance(image, list)
         images = image if is_batch else [image]
         np_images: List[np.ndarray] = [
-            load_image_rgb(
+            load_image_bgr(
                 v,
                 disable_preproc_auto_orient=kwargs.get(
                     "disable_preproc_auto_orient", False
@@ -325,7 +324,7 @@ class InferenceModelsKeyPointsDetectionAdapter(Model):
         is_batch = isinstance(image, list)
         images = image if is_batch else [image]
         np_images: List[np.ndarray] = [
-            load_image_rgb(
+            load_image_bgr(
                 v,
                 disable_preproc_auto_orient=kwargs.get(
                     "disable_preproc_auto_orient", False
@@ -493,7 +492,7 @@ class InferenceModelsClassificationAdapter(Model):
         is_batch = isinstance(image, list)
         images = image if is_batch else [image]
         np_images: List[np.ndarray] = [
-            load_image_rgb(
+            load_image_bgr(
                 v,
                 disable_preproc_auto_orient=kwargs.get(
                     "disable_preproc_auto_orient", False
@@ -672,7 +671,7 @@ def draw_predictions(inference_request, inference_response, class_names: List[st
     Returns:
         bytes: The bytes of the visualized image in JPEG format.
     """
-    image = load_image_rgb(inference_request.image)
+    image = (inference_request.image)
     image = Image.fromarray(image)
     draw = ImageDraw.Draw(image)
     font = ImageFont.load_default()

@@ -12,14 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import warnings
-from typing import Any, List
+from typing import Any, List, Tuple
 from uuid import uuid4
 
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
+from inference.core.entities.responses import LMMInferenceResponse, InferenceResponseImage
 from inference.core.env import (
     ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES,
     ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES,
@@ -33,7 +33,6 @@ from inference.core.workflows.execution_engine.entities.base import (
     WorkflowImageData,
 )
 from inference_models import AutoModel
-from inference_models.entities import ImageDimensions
 from inference_models.models.depth_anything_v3.depth_anything_v3_torch import (
     DepthAnythingV3Torch,
 )
@@ -59,72 +58,55 @@ class InferenceModelsDepthAnythingV3Adapter(Model):
 
     def preprocess(self, image: Any, **kwargs):
         if isinstance(image, list):
-            np_image = [
-                load_image_rgb(
-                    v,
-                    disable_preproc_auto_orient=kwargs.get(
-                        "disable_preproc_auto_orient", False
-                    ),
-                )
-                for v in image
-            ]
-        else:
-            np_image = load_image_rgb(
-                image,
-                disable_preproc_auto_orient=kwargs.get(
-                    "disable_preproc_auto_orient", False
-                ),
-            )
-            np_image = [np_image]
-        images, dimensions = self._model.pre_process(np_image)
-        dimensions = [
-            PreprocessReturnMetadata({"image_dims": (d.width, d.height)})
-            for d in dimensions
-        ]
-        return images, dimensions
+            raise ValueError("DepthAnythingV3 does not support batched inference.")
+        np_image = load_image_rgb(
+            image,
+            disable_preproc_auto_orient=kwargs.get(
+                "disable_preproc_auto_orient", False
+            ),
+        )
+        return np_image, PreprocessReturnMetadata({"image_dims": (np_image.shape[1], np_image.shape[0])})
 
-    def predict(self, inputs, **kwargs) -> torch.Tensor:
-        return self._model.forward(inputs)
+    def predict(self, inputs: np.ndarray, **kwargs) -> Tuple[dict]:
+        predictions = self._model(inputs)[0]
+        depth_map = predictions.to(torch.float32).cpu().numpy()
+        # Normalize depth values
+        depth_min = depth_map.min()
+        depth_max = depth_map.max()
+        if depth_max == depth_min:
+            raise ValueError("Depth map has no variation (min equals max)")
+        normalized_depth = (depth_map - depth_min) / (depth_max - depth_min)
+
+        # Create visualization
+        depth_for_viz = (normalized_depth * 255.0).astype(np.uint8)
+        cmap = plt.get_cmap("viridis")
+        colored_depth = (cmap(depth_for_viz)[:, :, :3] * 255).astype(np.uint8)
+
+        # Convert numpy array to WorkflowImageData
+        parent_metadata = ImageParentMetadata(parent_id=f"{uuid4()}")
+        colored_depth_image = WorkflowImageData(
+            numpy_image=colored_depth, parent_metadata=parent_metadata
+        )
+        result = {
+            "image": colored_depth_image,
+            "normalized_depth": normalized_depth,
+        }
+        return (result,)
 
     def postprocess(
         self,
         predictions: torch.Tensor,
-        preprocess_return_metadata: List[PreprocessReturnMetadata],
+        preprocess_return_metadata: PreprocessReturnMetadata,
         **kwargs,
-    ) -> List[dict]:
-        post_processed_results = self._model.post_process(
-            predictions,
-            [
-                ImageDimensions(width=d["image_dims"][0], height=d["image_dims"][1])
-                for d in preprocess_return_metadata
-            ],
+    ) -> List[LMMInferenceResponse]:
+        text = predictions[0]
+        image_dims = preprocess_return_metadata["image_dims"]
+        response = LMMInferenceResponse(
+            response=text,
+            image=InferenceResponseImage(width=image_dims[0], height=image_dims[1]),
         )
-        results = []
-        for result_element in post_processed_results:
-            depth_map = result_element.to(torch.float32).cpu().numpy()
-            # Normalize depth values
-            depth_min = depth_map.min()
-            depth_max = depth_map.max()
-            if depth_max == depth_min:
-                raise ValueError("Depth map has no variation (min equals max)")
-            normalized_depth = (depth_map - depth_min) / (depth_max - depth_min)
+        return [response]
 
-            # Create visualization
-            depth_for_viz = (normalized_depth * 255.0).astype(np.uint8)
-            cmap = plt.get_cmap("viridis")
-            colored_depth = (cmap(depth_for_viz)[:, :, :3] * 255).astype(np.uint8)
-
-            # Convert numpy array to WorkflowImageData
-            parent_metadata = ImageParentMetadata(parent_id=f"{uuid4()}")
-            colored_depth_image = WorkflowImageData(
-                numpy_image=colored_depth, parent_metadata=parent_metadata
-            )
-            result = {
-                "image": colored_depth_image,
-                "normalized_depth": normalized_depth,
-            }
-            results.append(result)
-        return results
 
     def clear_cache(self, delete_from_disk: bool = True) -> None:
         pass
