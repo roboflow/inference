@@ -57,3 +57,15 @@ class StreamConfig:
     Must be a valid Modal region. Only applicable when connecting to Roboflow serverless endpoints.
     See: https://modal.com/docs/guide/region-selection#region-options
     """
+
+    # Flow control configuration
+    video_ack_interval: Optional[float] = None
+    """Interval in seconds between sending ACKs for video frames received via video track.
+
+    When set, ACKs will be sent periodically (at most once per interval) for frames
+    received through the video track. This enables server-side flow control for
+    non-realtime processing.
+
+    Only effective when realtime_processing=False. Set to None to disable (default).
+    Recommended values: 0.1 to 1.0 seconds depending on your use case.
+    """

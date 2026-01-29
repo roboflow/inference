@@ -1,9 +1,17 @@
 import asyncio
+import base64
 import datetime
+import fractions
+import av
 import json
 import logging
+import queue
 import struct
+import threading
+import time
 from typing import Any, Callable, Dict, List, Optional, Tuple
+
+import supervision as sv
 
 from aioice import ice
 from aiortc import (
@@ -63,8 +71,10 @@ from inference.core.interfaces.webrtc_worker.utils import (
 from inference.core.managers.base import ModelManager
 from inference.core.roboflow_api import get_workflow_specification
 from inference.core.workflows.core_steps.common.serializers import (
-    serialize_wildcard_kind,
+    serialise_sv_detections,
+    serialize_timestamp,
 )
+from inference.core.utils.image_utils import encode_image_to_jpeg_bytes
 from inference.core.workflows.errors import WorkflowError, WorkflowSyntaxError
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
 from inference.usage_tracking.collector import usage_collector
@@ -73,6 +83,130 @@ logging.getLogger("aiortc").setLevel(logging.WARNING)
 
 # WebRTC data channel chunking configuration
 CHUNK_SIZE = 48 * 1024  # 48KB - safe for all WebRTC implementations
+
+# WebRTC image compression quality - lower = smaller file size
+# quality=10 reduces ~1MB raw to ~50KB, quality=50 produces ~150-200KB
+WEBRTC_JPEG_QUALITY = 80
+
+# Keepalive frame interval in seconds - send black frame to keep video track open
+WEBRTC_KEEPALIVE_INTERVAL = 1.0
+
+# Default keepalive frame dimensions
+KEEPALIVE_FRAME_WIDTH = 640
+KEEPALIVE_FRAME_HEIGHT = 480
+
+
+def create_keepalive_frame(
+    width: int = KEEPALIVE_FRAME_WIDTH,
+    height: int = KEEPALIVE_FRAME_HEIGHT,
+    pts: int = 0,
+    time_base: fractions.Fraction = fractions.Fraction(1, 30),
+) -> VideoFrame:
+    """Create a black keepalive frame to keep the video track open.
+    
+    Args:
+        width: Frame width in pixels
+        height: Frame height in pixels
+        pts: Presentation timestamp
+        time_base: Time base for the frame
+        
+    Returns:
+        A black VideoFrame
+    """
+    import numpy as np
+    black_frame = np.zeros((height, width, 3), dtype=np.uint8)
+    frame = VideoFrame.from_ndarray(black_frame, format="bgr24")
+    frame.pts = pts
+    frame.time_base = time_base
+    return frame
+
+
+def serialise_image_for_webrtc(image: WorkflowImageData) -> Dict[str, Any]:
+    """Serialize image with low JPEG quality for efficient WebRTC transmission."""
+    jpeg_bytes = encode_image_to_jpeg_bytes(image.numpy_image, jpeg_quality=WEBRTC_JPEG_QUALITY)
+    return {
+        "type": "base64",
+        "value": base64.b64encode(jpeg_bytes).decode("ascii"),
+        "video_metadata": image.video_metadata.dict() if image.video_metadata else None,
+    }
+
+
+def _recompress_base64_image(base64_str: str) -> str:
+    """Decode base64 image and re-encode with low JPEG quality.
+    
+    Handles images that were pre-serialized with high quality (95) and
+    re-compresses them to ~50KB using quality=10 for efficient WebRTC transmission.
+    """
+    recompress_start = time.time()
+    original_size = len(base64_str)
+    
+    try:
+        import cv2
+        import numpy as np
+        # Decode base64 to bytes
+        image_bytes = base64.b64decode(base64_str)
+        # Decode image bytes to numpy array
+        np_arr = np.frombuffer(image_bytes, np.uint8)
+        img = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+        if img is None:
+            logger.warning("[RECOMPRESS] Failed to decode image, returning original (%d chars)", original_size)
+            return base64_str  # Not a valid image, return as-is
+        # Re-encode with low quality
+        jpeg_bytes = encode_image_to_jpeg_bytes(img, jpeg_quality=WEBRTC_JPEG_QUALITY)
+        result = base64.b64encode(jpeg_bytes).decode("ascii")
+        
+        elapsed = time.time() - recompress_start
+        new_size = len(result)
+        reduction = (1 - new_size / original_size) * 100 if original_size > 0 else 0
+        
+        logger.info(
+            "[RECOMPRESS] Image %dx%d: %d->%d chars (%.1f%% reduction) in %.3fs, quality=%d",
+            img.shape[1], img.shape[0], original_size, new_size, reduction, elapsed, WEBRTC_JPEG_QUALITY
+        )
+        
+        return result
+    except Exception as e:
+        logger.warning("[RECOMPRESS] Error recompressing image: %s", e)
+        # If anything fails, return original
+        return base64_str
+
+
+def serialize_for_webrtc(value: Any) -> Any:
+    """Recursively serialize, compressing images with low JPEG quality.
+    
+    Handles:
+    - WorkflowImageData objects
+    - Pre-serialized image dicts ({"type": "base64", "value": "..."}) with high-quality images
+    - Raw numpy arrays (images)
+    """
+    import numpy as np
+    
+    if isinstance(value, WorkflowImageData):
+        return serialise_image_for_webrtc(value)
+    if isinstance(value, np.ndarray):
+        # Raw image array - compress with low quality
+        if len(value.shape) >= 2:  # Looks like an image
+            jpeg_bytes = encode_image_to_jpeg_bytes(value, jpeg_quality=WEBRTC_JPEG_QUALITY)
+            return {
+                "type": "base64",
+                "value": base64.b64encode(jpeg_bytes).decode("ascii"),
+            }
+        return value.tolist()  # Not an image, convert to list
+    if isinstance(value, dict):
+        # Check if this is a pre-serialized image dict with base64 data
+        # These come from workflow blocks that already serialized their output
+        if value.get("type") == "base64" and isinstance(value.get("value"), str):
+            # Re-compress the base64 image with low quality for WebRTC
+            recompressed = _recompress_base64_image(value["value"])
+            return {**value, "value": recompressed}
+        return {k: serialize_for_webrtc(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [serialize_for_webrtc(v) for v in value]
+    if isinstance(value, sv.Detections):
+        return serialise_sv_detections(value)
+    if isinstance(value, datetime.datetime):
+        return serialize_timestamp(value)
+    return value
 
 
 def create_chunked_binary_message(
@@ -87,41 +221,121 @@ def create_chunked_binary_message(
     return header + payload
 
 
-class OnDemandVideoTrack(MediaStreamTrack):
-    """Lazy video track that decodes frames on-demand without pre-buffering.
+def _decode_worker(filepath: str, frame_queue, stop_event):
+    """Decode video frames in a thread and put them on the queue."""
+    import queue as queue_module
+    import time as time_module
+    
+    frame_count = 0
+    put_start_time = None
+    
+    try:
+        logger.info("[DECODE_WORKER] Opening file: %s", filepath)
+        container = av.open(filepath)
+        stream = container.streams.video[0]
+        stream.thread_type = "AUTO"
+        total_frames = stream.frames or "unknown"
+        duration = float(stream.duration * stream.time_base) if stream.duration else "unknown"
+        fps = float(stream.average_rate) if stream.average_rate else "unknown"
+        logger.info("[DECODE_WORKER] Starting decode: %s, total_frames=%s, duration=%s sec, fps=%s", 
+                    filepath, total_frames, duration, fps)
 
-    Unlike MediaPlayer which spawns a background thread to decode ALL frames
-    into an unbounded queue, this class decodes one frame per recv() call.
-    This keeps memory usage constant (~50-100MB) regardless of video length.
+        for frame in container.decode(stream):
+            if stop_event.is_set():
+                logger.info("[DECODE_WORKER] Stop event received at frame %d", frame_count)
+                break
+            
+            # Log every 10 frames for debugging
+            if frame_count % 10 == 0:
+                logger.info("[DECODE_WORKER] Decoded frame %d, queue=%d/%d, putting...", 
+                            frame_count, frame_queue.qsize(), frame_queue.maxsize)
+            
+            try:
+                put_start_time = time_module.time()
+                frame_queue.put(frame, timeout=300)  # Original 300s timeout
+                put_time = time_module.time() - put_start_time
+                frame_count += 1
+                
+                # Log if put took a long time (queue was full)
+                if put_time > 1.0:
+                    logger.warning("[DECODE_WORKER] Frame %d put took %.2fs (queue was full)", frame_count - 1, put_time)
+                    
+            except queue_module.Full:
+                logger.error("[DECODE_WORKER] Queue FULL timeout (300s) at frame %d!", frame_count)
+                frame_queue.put({"error": f"Queue full timeout at frame {frame_count}"})
+                return
 
-    Use this for video file processing when realtime_processing=False.
-    For throttled playback (realtime_processing=True), use MediaPlayer instead.
-    """
+        container.close()
+        logger.info("[DECODE_WORKER] COMPLETED: %d frames decoded successfully", frame_count)
+    except Exception as e:
+        logger.error("[DECODE_WORKER] ERROR at frame %d: %s", frame_count, e, exc_info=True)
+        frame_queue.put({"error": str(e)})
+    finally:
+        logger.info("[DECODE_WORKER] FINISHED: putting None marker, total frames=%d", frame_count)
+        frame_queue.put(None)
+
+
+class ThreadedVideoTrack(MediaStreamTrack):
+    """Video track that decodes frames from a queue."""
 
     kind = "video"
 
-    def __init__(self, filepath: str):
+    def __init__(self, filepath: str, queue_size: int = 60):
         super().__init__()
-        import av
-
-        self._container = av.open(filepath)
-        self._stream = self._container.streams.video[0]
-        self._iterator = self._container.decode(self._stream)
+        # 60 frames = ~2 seconds at 30fps, allows buffering during slow network
+        self._queue = queue.Queue(maxsize=queue_size)
+        self._stop_event = threading.Event()
+        logger.warning("RAFEL TEST Starting decode thread for %s", filepath)
+        self._decode_thread = threading.Thread(
+            target=_decode_worker,
+            args=(filepath, self._queue, self._stop_event),
+            daemon=True,
+        )
+        self._decode_thread.start()
 
     async def recv(self) -> VideoFrame:
-        loop = asyncio.get_running_loop()
-        frame = await loop.run_in_executor(None, lambda: next(self._iterator, None))
+        wait_count = 0
+        wait_start = None
+        
+        while True:
+            try:
+                data = self._queue.get_nowait()
+                if wait_count > 0:
+                    wait_time = asyncio.get_event_loop().time() - wait_start
+                    if wait_time > 1.0:
+                        logger.warning("[RECV] Got frame after waiting %.2fs (%d iterations), queue=%d/%d",
+                                      wait_time, wait_count, self._queue.qsize(), self._queue.maxsize)
+                break
+            except queue.Empty:
+                if wait_count == 0:
+                    wait_start = asyncio.get_event_loop().time()
+                wait_count += 1
+                
+                # Log every 5 seconds of waiting
+                if wait_count % 500 == 0:  # 500 * 0.01s = 5 seconds
+                    wait_time = asyncio.get_event_loop().time() - wait_start
+                    logger.warning("[RECV] Still waiting for frame: %.1fs, iterations=%d, queue=%d/%d, thread_alive=%s",
+                                  wait_time, wait_count, self._queue.qsize(), self._queue.maxsize,
+                                  self._decode_thread.is_alive())
+                
+                # we use a non-blocking get + sleep to avoid blocking the
+                # event loop.
+                await asyncio.sleep(0.01)
 
-        if frame is None:
+        if data is None:
+            logger.info("[RECV] Received END marker (None) - video complete")
             self.stop()
             raise MediaStreamError("End of video file")
-        return frame
+        if isinstance(data, dict):
+            logger.error("[RECV] Received ERROR from decode worker: %s", data)
+            self.stop()
+            raise MediaStreamError(data.get("error", "Unknown decode error"))
+
+        return data
 
     def stop(self):
         super().stop()
-        if self._container:
-            self._container.close()
-            self._container = None
+        self._stop_event.set()
 
 
 class VideoFileUploadHandler:
@@ -204,70 +418,212 @@ class VideoFileUploadHandler:
                 pass
 
 
+async def wait_for_buffer_drain(
+    data_channel: RTCDataChannel,
+    timeout: float = 30.0,
+    heartbeat_callback: Optional[Callable[[], None]] = None,
+    low_threshold: Optional[int] = None,
+) -> bool:
+    """Wait for data channel buffer to drain below threshold, with timeout.
+    
+    Uses a low threshold (default: high_limit / 4) to implement proper backpressure.
+    We wait until buffer drops significantly before resuming to prevent oscillation.
+    
+    The asyncio.sleep() calls while waiting yield to the event loop, which is
+    critical for ICE health - aioice needs event loop time to send STUN packets.
+    
+    Args:
+        data_channel: The RTCDataChannel to monitor
+        timeout: Maximum time to wait in seconds
+        heartbeat_callback: Optional callback for server watchdog (e.g., Modal timeout)
+        low_threshold: Buffer level to wait for (default: BUFFER_SIZE_LIMIT / 4)
+        
+    Returns:
+        True if buffer drained, False if timeout or channel closed
+    """
+    if low_threshold is None:
+        low_threshold = WEBRTC_DATA_CHANNEL_BUFFER_SIZE_LIMIT // 4
+    
+    start_time = asyncio.get_event_loop().time()
+    initial_buffer = data_channel.bufferedAmount
+    wait_count = 0
+    last_log_time = start_time
+    last_buffer_for_speed = initial_buffer
+    
+    logger.info(
+        "[BUFFER_DRAIN] Starting wait: buffered=%.1f KB, low_threshold=%.1f KB, timeout=%.1fs",
+        initial_buffer / 1024, low_threshold / 1024, timeout
+    )
+    
+    while data_channel.bufferedAmount > low_threshold:
+        elapsed = asyncio.get_event_loop().time() - start_time
+        
+        # Log progress every 2 seconds
+        if asyncio.get_event_loop().time() - last_log_time >= 2.0:
+            current_buffer = data_channel.bufferedAmount
+            bytes_drained = last_buffer_for_speed - current_buffer
+            time_since_last = asyncio.get_event_loop().time() - last_log_time + 2.0  # approx
+            drain_speed_kbps = (bytes_drained / 1024) / time_since_last if time_since_last > 0 else 0
+            
+            logger.info(
+                "[BUFFER_DRAIN] Still waiting: buffered=%.1f KB (started at %.1f KB), "
+                "drain_speed=%.1f KB/s, elapsed=%.1fs/%.1fs, channel_state=%s",
+                current_buffer / 1024, initial_buffer / 1024, drain_speed_kbps,
+                elapsed, timeout, data_channel.readyState
+            )
+            last_log_time = asyncio.get_event_loop().time()
+            last_buffer_for_speed = current_buffer
+        
+        if elapsed > timeout:
+            logger.error(
+                "[BUFFER_DRAIN] TIMEOUT after %.1fs! buffered=%d bytes (started at %d), "
+                "channel_state=%s, wait_iterations=%d",
+                timeout, data_channel.bufferedAmount, initial_buffer,
+                data_channel.readyState, wait_count
+            )
+            return False
+        if data_channel.readyState != "open":
+            logger.error(
+                "[BUFFER_DRAIN] Channel CLOSED while waiting! state=%s, "
+                "elapsed=%.1fs, buffered=%d, wait_iterations=%d",
+                data_channel.readyState, elapsed, data_channel.bufferedAmount, wait_count
+            )
+            return False
+        if heartbeat_callback:
+            heartbeat_callback()
+        await asyncio.sleep(WEBRTC_DATA_CHANNEL_BUFFER_DRAINING_DELAY)
+        wait_count += 1
+    
+    total_elapsed = asyncio.get_event_loop().time() - start_time
+    final_buffer = data_channel.bufferedAmount
+    bytes_drained = initial_buffer - final_buffer
+    drain_speed_kbps = (bytes_drained / 1024) / total_elapsed if total_elapsed > 0 else 0
+    
+    if total_elapsed > 0.5:  # Only log if we actually waited
+        logger.info(
+            "[BUFFER_DRAIN] Completed: buffered=%.1f->%.1f KB, drained=%.1f KB in %.2fs "
+            "(avg %.1f KB/s)",
+            initial_buffer / 1024, final_buffer / 1024, bytes_drained / 1024,
+            total_elapsed, drain_speed_kbps
+        )
+    
+    return True
+
+
 async def send_chunked_data(
     data_channel: RTCDataChannel,
     frame_id: int,
     payload_bytes: bytes,
     chunk_size: int = CHUNK_SIZE,
     heartbeat_callback: Optional[Callable[[], None]] = None,
-) -> None:
-    """Send payload via data channel with rate limiting.
-
-    Automatically chunks large payloads and rate limits to prevent
-    SCTP buffer overflow.
-
+    buffer_timeout: float = 120.0,  # 120 seconds should suffice to send 1MB 
+) -> bool:
+    """Send payload via data channel with chunking and backpressure.
+    
+    Uses proper backpressure with high/low watermarks to prevent buffer overflow.
+    
+    CRITICAL: Yields to event loop every N chunks via asyncio.sleep(0).
+    This allows aioice to send STUN Binding Indications to refresh ICE consent.
+    Without yielding, consent expires after ~30s causing "Consent to send expired".
+    
     Args:
-        data_channel: RTCDataChannel to send on
-        frame_id: Frame identifier
-        payload_bytes: Data to send (JPEG, JSON UTF-8, etc.)
-        chunk_size: Maximum chunk size (default 48KB)
+        data_channel: The RTCDataChannel to send on
+        frame_id: Frame identifier for chunked message headers
+        payload_bytes: Full payload to send
+        chunk_size: Size of each chunk (default 48KB)
+        heartbeat_callback: Optional callback for server watchdog (e.g., Modal timeout)
+        buffer_timeout: Max time to wait for buffer drain
+        
+    Returns:
+        True if all chunks sent, False if channel closed or timeout
     """
+    send_start_time = time.time()
+    payload_size = len(payload_bytes)
+    
     if data_channel.readyState != "open":
-        logger.warning(f"Cannot send response for frame {frame_id}, channel not open")
-        return
-
-    sleep_count = 0
-
-    async def wait_for_buffer_drain() -> None:
-        nonlocal sleep_count
-        while data_channel.bufferedAmount > WEBRTC_DATA_CHANNEL_BUFFER_SIZE_LIMIT:
-            sleep_count += 1
-            if sleep_count % 10 == 0:
-                logger.debug(
-                    "Waiting for data channel buffer to drain. Data channel buffer size: %s",
-                    data_channel.bufferedAmount,
-                )
-            if heartbeat_callback:
-                heartbeat_callback()
-            await asyncio.sleep(WEBRTC_DATA_CHANNEL_BUFFER_DRAINING_DELAY)
-
-    await wait_for_buffer_drain()
-
-    total_chunks = (
-        len(payload_bytes) + chunk_size - 1
-    ) // chunk_size  # Ceiling division
-
-    if frame_id % 100 == 1:
-        logger.info(
-            f"Sending response for frame {frame_id}: {total_chunks} chunk(s), {len(payload_bytes)} bytes"
+        logger.warning(
+            "[SEND_CHUNKED] Cannot send frame %s: channel not open (state=%s)",
+            frame_id, data_channel.readyState
         )
+        return False
 
+    total_chunks = (payload_size + chunk_size - 1) // chunk_size
     view = memoryview(payload_bytes)
+    high_threshold = WEBRTC_DATA_CHANNEL_BUFFER_SIZE_LIMIT
+    backpressure_waits = 0
+    
+    logger.info(
+        "[SEND_CHUNKED] Starting frame %d: payload=%.1f KB, chunks=%d, "
+        "buffer=%.1f/%.1f KB (%.0f%% full)",
+        frame_id, payload_size / 1024, total_chunks,
+        data_channel.bufferedAmount / 1024, high_threshold / 1024,
+        (data_channel.bufferedAmount / high_threshold) * 100 if high_threshold > 0 else 0
+    )
+    
     for chunk_index in range(total_chunks):
         if data_channel.readyState != "open":
-            logger.warning("Channel closed while sending frame %s", frame_id)
-            return
-        await wait_for_buffer_drain()
+            logger.error(
+                "[SEND_CHUNKED] Channel CLOSED during frame %d at chunk %d/%d! "
+                "state=%s, elapsed=%.2fs, backpressure_waits=%d",
+                frame_id, chunk_index, total_chunks, data_channel.readyState,
+                time.time() - send_start_time, backpressure_waits
+            )
+            return False
 
         start = chunk_index * chunk_size
-        end = min(start + chunk_size, len(payload_bytes))
+        end = min(start + chunk_size, payload_size)
         chunk_data = view[start:end]
 
         message = create_chunked_binary_message(
             frame_id, chunk_index, total_chunks, chunk_data
         )
+        
+        # Check buffer before sending - wait if too full
+        if data_channel.bufferedAmount > high_threshold:
+            backpressure_waits += 1
+            logger.info(
+                "[SEND_CHUNKED] Backpressure at frame %d chunk %d/%d: "
+                "buffer=%.1f KB > threshold=%.1f KB (%.0f%% full), waiting... (#%d)",
+                frame_id, chunk_index, total_chunks, 
+                data_channel.bufferedAmount / 1024, high_threshold / 1024,
+                (data_channel.bufferedAmount / high_threshold) * 100,
+                backpressure_waits
+            )
+            if not await wait_for_buffer_drain(
+                data_channel, buffer_timeout, heartbeat_callback
+            ):
+                logger.error(
+                    "[SEND_CHUNKED] Buffer drain FAILED for frame %d at chunk %d/%d! "
+                    "elapsed=%.2fs, backpressure_waits=%d, channel_state=%s",
+                    frame_id, chunk_index, total_chunks,
+                    time.time() - send_start_time, backpressure_waits, data_channel.readyState
+                )
+                return False
+        
         data_channel.send(message)
-        await asyncio.sleep(0)
+
+        # CRITICAL: Small sleep between chunks to:
+        # 1. Yield to event loop so aioice can send STUN/consent refreshes
+        # 2. Prevent overwhelming the network and causing RTT spikes
+        # 3. Allow the browser to ACK received data
+        if heartbeat_callback:
+            heartbeat_callback()  # Keep server watchdog alive
+        await asyncio.sleep(0.001)  # 1ms between chunks
+    
+    total_elapsed = time.time() - send_start_time
+    throughput_kbps = (payload_size / 1024) / total_elapsed if total_elapsed > 0 else 0
+    final_buffer = data_channel.bufferedAmount
+    
+    logger.info(
+        "[SEND_CHUNKED] Completed frame %d: %.1f KB in %.2fs (%.1f KB/s), "
+        "buffer=%.1f/%.1f KB (%.0f%% full), backpressure_waits=%d",
+        frame_id, payload_size / 1024, total_elapsed, throughput_kbps,
+        final_buffer / 1024, high_threshold / 1024,
+        (final_buffer / high_threshold) * 100 if high_threshold > 0 else 0,
+        backpressure_waits
+    )
+    
+    return True
 
 
 class RTCPeerConnectionWithLoop(RTCPeerConnection):
@@ -403,32 +759,55 @@ class VideoFrameProcessor:
 
         Allows up to (_ack_window) frames in flight beyond the last ACK.
         Only active for non-realtime processing (video file uploads).
+
+        Has a maximum wait time of 30 seconds to prevent infinite blocking
+        if the client stops sending ACKs.
         """
         if self.realtime_processing:
             return
         if self._ack_last == 0:
             return
+
+        # Check if we need to wait
+        if next_frame_id > (self._ack_last + self._ack_window):
+            logger.info("[ACK_WAIT] Starting wait: next_frame=%d, ack_last=%d, window=%d, need_ack_for=%d",
+                       next_frame_id, self._ack_last, self._ack_window, 
+                       next_frame_id - self._ack_window)
+
         wait_counter = 0
+        max_wait_iterations = 150  # this is...  150 * 0.2s, 30 seconds max wait
         while not self._stop_processing and next_frame_id > (
             self._ack_last + self._ack_window
         ):
             if self._check_termination():
+                logger.info("[ACK_WAIT] Termination during wait at next_frame=%d", next_frame_id)
                 return
             if self.heartbeat_callback:
                 self.heartbeat_callback()
+
             # Wait briefly for an ACK; timeout keeps heartbeats flowing.
             self._ack_event.clear()
             try:
                 await asyncio.wait_for(self._ack_event.wait(), timeout=0.2)
+                logger.debug("[ACK_WAIT] ACK received, ack_last now %d", self._ack_last)
             except asyncio.TimeoutError:
                 wait_counter += 1
-                if wait_counter % 5 == 1:
-                    logger.info(
-                        "Timeout waiting for ACK window (next_frame_id=%s, ack_last=%s, ack_window=%s)",
+                # Log every 5 seconds (25 iterations * 0.2s)
+                if wait_counter % 25 == 0:
+                    logger.warning(
+                        "[ACK_WAIT] Still waiting: %.1fs, next_frame=%d, ack_last=%d, window=%d",
+                        wait_counter * 0.2, next_frame_id, self._ack_last, self._ack_window
+                    )
+                if wait_counter >= max_wait_iterations:
+                    logger.warning(
+                        "[ACK_WAIT] TIMEOUT (30s). Disabling ACK pacing. "
+                        "(next_frame_id=%s, ack_last=%s)",
                         next_frame_id,
                         self._ack_last,
-                        self._ack_window,
                     )
+
+                    self._ack_last = 0
+                    return
 
     def _check_termination(self):
         """Check if we should terminate based on timeout"""
@@ -449,11 +828,24 @@ class VideoFrameProcessor:
         workflow_output: Dict[str, Any],
         data_output_mode: DataOutputMode,
     ) -> Tuple[Dict[str, Any], List[str]]:
-        """Serialize workflow outputs in a thread to avoid blocking the event loop."""
+        """Serialize workflow outputs in a thread to avoid blocking the event loop.
+        
+        Uses low JPEG quality (quality=10) for image compression to reduce
+        frame size from ~1MB to ~50KB for efficient WebRTC transmission.
+        """
+        serialize_start = time.time()
         serialized = {}
         serialization_errors = []
+        field_times = {}
+
+        logger.info(
+            "[SERIALIZE] Starting: fields=%s, mode=%s",
+            fields_to_send, data_output_mode
+        )
 
         for field_name in fields_to_send:
+            field_start = time.time()
+            
             if field_name not in workflow_output:
                 serialization_errors.append(
                     f"Requested output '{field_name}' not found in workflow outputs"
@@ -461,18 +853,46 @@ class VideoFrameProcessor:
                 continue
 
             output_data = workflow_output[field_name]
+            output_type = type(output_data).__name__
 
             if data_output_mode == DataOutputMode.ALL and isinstance(
                 output_data, WorkflowImageData
             ):
+                logger.info("[SERIALIZE] Skipping image field '%s' in ALL mode", field_name)
                 continue
 
             try:
-                serialized_value = serialize_wildcard_kind(output_data)
+                serialized_value = serialize_for_webrtc(output_data)
                 serialized[field_name] = serialized_value
+                
+                field_elapsed = time.time() - field_start
+                field_times[field_name] = field_elapsed
+                
+                # Estimate size for logging
+                try:
+                    import json
+                    size_estimate = len(json.dumps(serialized_value))
+                except:
+                    size_estimate = 0
+                
+                if field_elapsed > 0.1:  # Log slow fields
+                    logger.info(
+                        "[SERIALIZE] Slow field '%s': type=%s, time=%.3fs, size=~%d bytes",
+                        field_name, output_type, field_elapsed, size_estimate
+                    )
+                    
             except Exception as e:
                 serialization_errors.append(f"{field_name}: {e}")
                 serialized[field_name] = {"__serialization_error__": str(e)}
+                logger.error("[SERIALIZE] Error serializing '%s': %s", field_name, e)
+
+        total_elapsed = time.time() - serialize_start
+        if total_elapsed > 0.2:  # Log if serialization is slow
+            slow_fields = [(k, v) for k, v in field_times.items() if v > 0.05]
+            logger.warning(
+                "[SERIALIZE] Slow serialization: total=%.3fs, fields=%d, slow_fields=%s",
+                total_elapsed, len(fields_to_send), slow_fields
+            )
 
         return serialized, serialization_errors
 
@@ -483,11 +903,21 @@ class VideoFrameProcessor:
         frame: VideoFrame,
         errors: List[str],
     ):
-        if not self.data_channel or self.data_channel.readyState != "open":
+        send_start = time.time()
+        frame_id = self._received_frames
+        
+        if not self.data_channel:
+            logger.info("[SEND_OUTPUT] No data channel for frame %d", frame_id)
+            return
+        if self.data_channel.readyState != "open":
+            logger.warning(
+                "[SEND_OUTPUT] Data channel not open for frame %d: state=%s",
+                frame_id, self.data_channel.readyState
+            )
             return
 
         video_metadata = WebRTCVideoMetadata(
-            frame_id=self._received_frames,
+            frame_id=frame_id,
             received_at=frame_timestamp.isoformat(),
             pts=frame.pts,
             time_base=frame.time_base,
@@ -505,12 +935,15 @@ class VideoFrameProcessor:
             json_bytes = await asyncio.to_thread(
                 lambda: json.dumps(webrtc_output.model_dump()).encode("utf-8")
             )
-            await send_chunked_data(
+            logger.info("[SEND_OUTPUT] Frame %d: NONE mode, sending %d bytes", frame_id, len(json_bytes))
+            success = await send_chunked_data(
                 self.data_channel,
-                self._received_frames,
+                frame_id,
                 json_bytes,
                 heartbeat_callback=self.heartbeat_callback,
             )
+            if not success:
+                logger.error("[SEND_OUTPUT] Frame %d: send_chunked_data FAILED", frame_id)
             return
 
         if self._data_mode == DataOutputMode.ALL:
@@ -519,28 +952,82 @@ class VideoFrameProcessor:
             fields_to_send = self.data_output
 
         # Offload CPU-intensive serialization (especially image base64 encoding) to thread
+        serialize_start = time.time()
         serialized_outputs, serialization_errors = await asyncio.to_thread(
             VideoFrameProcessor.serialize_outputs_sync,
             fields_to_send,
             workflow_output,
             self._data_mode,
         )
+        serialize_elapsed = time.time() - serialize_start
+        
+        if serialize_elapsed > 0.5:
+            logger.warning(
+                "[SEND_OUTPUT] Frame %d: Serialization took %.2fs (fields: %s)",
+                frame_id, serialize_elapsed, fields_to_send
+            )
+        
         webrtc_output.errors.extend(serialization_errors)
+        if serialization_errors:
+            logger.warning(
+                "[SEND_OUTPUT] Frame %d: Serialization errors: %s",
+                frame_id, serialization_errors
+            )
 
         # Set serialized outputs
         if serialized_outputs:
             webrtc_output.serialized_output_data = serialized_outputs
 
-        # Send using binary chunked protocol
-        json_bytes = await asyncio.to_thread(
-            lambda: json.dumps(webrtc_output.model_dump(mode="json")).encode("utf-8")
+        # Send using binary chunked protocol with gzip compression
+        json_start = time.time()
+        
+        def compress_json():
+            import gzip
+            json_str = json.dumps(webrtc_output.model_dump(mode="json"))
+            json_bytes = json_str.encode("utf-8")
+            compressed = gzip.compress(json_bytes, compresslevel=6)
+            return json_bytes, compressed
+        
+        raw_bytes, compressed_bytes = await asyncio.to_thread(compress_json)
+        json_elapsed = time.time() - json_start
+        
+        raw_kb = len(raw_bytes) / 1024
+        compressed_kb = len(compressed_bytes) / 1024
+        compression_ratio = (1 - len(compressed_bytes) / len(raw_bytes)) * 100 if raw_bytes else 0
+        
+        logger.info(
+            "[SEND_OUTPUT] Frame %d: raw=%.1f KB, compressed=%.1f KB (%.0f%% reduction), "
+            "serialize=%.2fs, buffer=%d, channel=%s",
+            frame_id, raw_kb, compressed_kb, compression_ratio,
+            serialize_elapsed, self.data_channel.bufferedAmount, self.data_channel.readyState
         )
-        await send_chunked_data(
+        
+        # Use compressed bytes for sending
+        json_bytes = compressed_bytes
+        
+        send_data_start = time.time()
+        success = await send_chunked_data(
             self.data_channel,
-            self._received_frames,
+            frame_id,
             json_bytes,
             heartbeat_callback=self.heartbeat_callback,
         )
+        send_data_elapsed = time.time() - send_data_start
+        total_elapsed = time.time() - send_start
+        
+        if not success:
+            logger.error(
+                "[SEND_OUTPUT] Frame %d: FAILED after %.2fs! "
+                "channel_state=%s, buffer=%d",
+                frame_id, total_elapsed, self.data_channel.readyState,
+                self.data_channel.bufferedAmount
+            )
+        elif total_elapsed > 1.0:
+            logger.warning(
+                "[SEND_OUTPUT] Frame %d: Slow send %.2fs (serialize=%.2fs, "
+                "json=%.2fs, send=%.2fs)",
+                frame_id, total_elapsed, serialize_elapsed, json_elapsed, send_data_elapsed
+            )
 
     async def _send_processing_complete(self):
         """Send final message indicating processing is complete."""
@@ -572,20 +1059,23 @@ class VideoFrameProcessor:
             av_logging.set_libav_level(av_logging.ERROR)
             self._av_logging_set = True
 
-        logger.info(
-            "Starting data-only frame processing. This mode is used when stream_output=[] and no video track is needed."
-        )
+        logger.info("[DATA_ONLY] Starting data-only frame processing")
+        loop_start = time.time()
+        last_status_log = time.time()
 
         try:
             while not self._stop_processing:
+                frame_start = time.time()
+                
                 await self._wait_for_ack_window(next_frame_id=self._received_frames + 1)
                 if self._check_termination():
+                    logger.warning("[DATA_ONLY] Termination triggered at frame %d", self._received_frames)
                     break
                 if self.heartbeat_callback:
                     self.heartbeat_callback()
 
-                # Get frame from media track (existing behavior)
                 if not self.track or self.track.readyState == "ended":
+                    logger.info("[DATA_ONLY] Track ended at frame %d", self._received_frames)
                     break
 
                 # Drain queue if using PlayerStreamTrack (RTSP)
@@ -593,33 +1083,73 @@ class VideoFrameProcessor:
                     isinstance(self.track, PlayerStreamTrack)
                     and self.realtime_processing
                 ):
-                    while self.track._queue.qsize() > 30:
-                        self.track._queue.get_nowait()
+                    queue_size = self.track._queue.qsize()
+                    if queue_size > 30:
+                        drained = 0
+                        while self.track._queue.qsize() > 30:
+                            self.track._queue.get_nowait()
+                            drained += 1
+                        logger.info("[DATA_ONLY] Drained %d frames from queue", drained)
 
+                recv_start = time.time()
                 frame = await self.track.recv()
+                recv_elapsed = time.time() - recv_start
+                
                 self._received_frames += 1
-
+                frame_id = self._received_frames
                 frame_timestamp = datetime.datetime.now()
 
+                process_start = time.time()
                 workflow_output, _, errors = await self._process_frame_async(
                     frame=frame,
-                    frame_id=self._received_frames,
+                    frame_id=frame_id,
                     render_output=False,
                     include_errors_on_frame=False,
                 )
+                process_elapsed = time.time() - process_start
 
-                # Send data via data channel (await for backpressure)
+                send_start = time.time()
                 await self._send_data_output(
                     workflow_output, frame_timestamp, frame, errors
                 )
+                send_elapsed = time.time() - send_start
+                
+                frame_elapsed = time.time() - frame_start
+                
+                # Log progress every 5 seconds or every 30 frames
+                if time.time() - last_status_log >= 5.0 or frame_id % 30 == 1:
+                    data_channel_state = self.data_channel.readyState if self.data_channel else "N/A"
+                    data_channel_buffer = self.data_channel.bufferedAmount if self.data_channel else 0
+                    buffer_limit = WEBRTC_DATA_CHANNEL_BUFFER_SIZE_LIMIT
+                    elapsed_total = time.time() - loop_start
+                    fps = frame_id / elapsed_total if elapsed_total > 0 else 0
+                    
+                    logger.info(
+                        "[DATA_ONLY] Frame %d: total=%.2fs (recv=%.3fs, process=%.2fs, send=%.2fs), "
+                        "buffer=%.1f/%.1f KB (%.0f%%), avg_fps=%.1f",
+                        frame_id, frame_elapsed, recv_elapsed, process_elapsed, send_elapsed,
+                        data_channel_buffer / 1024, buffer_limit / 1024,
+                        (data_channel_buffer / buffer_limit) * 100 if buffer_limit > 0 else 0,
+                        fps
+                    )
+                    last_status_log = time.time()
+                
+                if errors:
+                    logger.warning("[DATA_ONLY] Frame %d errors: %s", frame_id, errors)
 
         except asyncio.CancelledError as exc:
-            logger.info("Data-only processing cancelled: %s", exc)
+            logger.warning("[DATA_ONLY] Processing CANCELLED at frame %d: %s", self._received_frames, exc)
         except MediaStreamError as exc:
-            logger.info("Stream ended in data-only processing: %s", exc)
+            logger.info("[DATA_ONLY] Stream ended at frame %d: %s", self._received_frames, exc)
         except Exception as exc:
-            logger.error("Error in data-only processing: %s", exc)
+            logger.error("[DATA_ONLY] ERROR at frame %d: %s", self._received_frames, exc, exc_info=True)
         finally:
+            total_elapsed = time.time() - loop_start
+            avg_fps = self._received_frames / total_elapsed if total_elapsed > 0 else 0
+            logger.info(
+                "[DATA_ONLY] Processing complete: %d frames in %.1fs (avg %.1f fps)",
+                self._received_frames, total_elapsed, avg_fps
+            )
             # Send completion signal to client
             await self._send_processing_complete()
 
@@ -751,6 +1281,9 @@ class VideoTransformTrackWithLoop(VideoStreamTrack, VideoFrameProcessor):
             realtime_processing=realtime_processing,
             is_preview=is_preview,
         )
+        # Keepalive frame state
+        self._keepalive_pts = 0
+        self._keepalive_time_base = fractions.Fraction(1, int(declared_fps))
 
     async def _auto_detect_stream_output(
         self, frame: VideoFrame, frame_id: int
@@ -769,7 +1302,18 @@ class VideoTransformTrackWithLoop(VideoStreamTrack, VideoFrameProcessor):
             logger.warning("No image output detected, will use fallback")
             self.stream_output = ""
 
+    def _create_keepalive(self) -> VideoFrame:
+        """Create and return a keepalive frame, incrementing the pts counter."""
+        keepalive = create_keepalive_frame(
+            pts=self._keepalive_pts,
+            time_base=self._keepalive_time_base,
+        )
+        self._keepalive_pts += 1
+        return keepalive
+
     async def recv(self):
+        recv_start = time.time()
+        
         # Silencing swscaler warnings in multi-threading environment
         if not self._av_logging_set:
             av_logging.set_libav_level(av_logging.ERROR)
@@ -780,44 +1324,131 @@ class VideoTransformTrackWithLoop(VideoStreamTrack, VideoFrameProcessor):
 
         # Check if we should terminate
         if self._check_termination():
+            logger.warning("[RECV] Termination triggered, stopping")
             raise MediaStreamError("Processing terminated due to timeout")
 
         # Wait for track to be ready (video file upload case)
+        # Send keepalive frames while waiting to keep the video track open
         if self.track is None:
-            logger.info("Waiting for track to be ready...")
-            await self._track_ready_event.wait()
+            logger.info("[RECV] Track is None, waiting for track_ready_event...")
+            try:
+                await asyncio.wait_for(
+                    self._track_ready_event.wait(),
+                    timeout=WEBRTC_KEEPALIVE_INTERVAL
+                )
+            except asyncio.TimeoutError:
+                # Track not ready yet, send keepalive frame to keep connection alive
+                logger.info("[RECV] Track not ready, sending keepalive frame")
+                return self._create_keepalive()
+            
             if self.track is None:
+                logger.error("[RECV] Track still None after wait!")
                 raise MediaStreamError("Track not available after wait")
 
         # Optional ACK pacing: block producing the next frame if we're too far ahead.
-        await self._wait_for_ack_window(next_frame_id=self._received_frames + 1)
+        # Send keepalive frames while waiting for ACKs
+        ack_wait_result = await self._wait_for_ack_window_with_keepalive(
+            next_frame_id=self._received_frames + 1
+        )
+        if ack_wait_result == "keepalive":
+            logger.info("[RECV] Waiting for ACK, sending keepalive")
+            return self._create_keepalive()
 
         # Drain queue if using PlayerStreamTrack (RTSP/video file)
         if isinstance(self.track, PlayerStreamTrack) and self.realtime_processing:
-            while self.track._queue.qsize() > 30:
-                self.track._queue.get_nowait()
+            queue_size = self.track._queue.qsize()
+            if queue_size > 30:
+                drained = 0
+                while self.track._queue.qsize() > 30:
+                    self.track._queue.get_nowait()
+                    drained += 1
+                logger.info("[RECV] Drained %d frames from queue (was %d)", drained, queue_size)
 
+        frame_recv_start = time.time()
         frame: VideoFrame = await self.track.recv()
+        frame_recv_elapsed = time.time() - frame_recv_start
+        
         self._received_frames += 1
+        frame_id = self._received_frames
         frame_timestamp = datetime.datetime.now()
+        
+        # Log every 30 frames or if frame recv was slow
+        if frame_id % 30 == 1 or frame_recv_elapsed > 0.5:
+            data_channel_state = self.data_channel.readyState if self.data_channel else "N/A"
+            data_channel_buffer = self.data_channel.bufferedAmount if self.data_channel else 0
+            logger.info(
+                "[RECV] Frame %d: recv_time=%.3fs, channel=%s, buffer=%d bytes",
+                frame_id, frame_recv_elapsed, data_channel_state, data_channel_buffer
+            )
 
-        if self.stream_output is None and self._received_frames == 1:
-            await self._auto_detect_stream_output(frame, self._received_frames)
+        if self.stream_output is None and frame_id == 1:
+            await self._auto_detect_stream_output(frame, frame_id)
 
+        process_start = time.time()
         workflow_output, new_frame, errors = await self._process_frame_async(
             frame=frame,
-            frame_id=self._received_frames,
+            frame_id=frame_id,
             stream_output=self.stream_output,
             render_output=True,
             include_errors_on_frame=True,
         )
+        process_elapsed = time.time() - process_start
 
         new_frame.pts = frame.pts
         new_frame.time_base = frame.time_base
 
+        send_start = time.time()
         await self._send_data_output(workflow_output, frame_timestamp, frame, errors)
+        send_elapsed = time.time() - send_start
+        
+        total_elapsed = time.time() - recv_start
+        
+        # Log slow frames or every 30 frames
+        if total_elapsed > 1.0 or frame_id % 30 == 1:
+            logger.info(
+                "[RECV] Frame %d complete: total=%.2fs (recv=%.3fs, process=%.2fs, send=%.2fs)",
+                frame_id, total_elapsed, frame_recv_elapsed, process_elapsed, send_elapsed
+            )
+        
+        if errors:
+            logger.warning("[RECV] Frame %d errors: %s", frame_id, errors)
 
         return new_frame
+
+    async def _wait_for_ack_window_with_keepalive(self, next_frame_id: int) -> str:
+        """Wait for ACK window with keepalive frame support.
+        
+        Returns:
+            "ready" if ready to produce next frame
+            "keepalive" if should send keepalive frame instead
+        """
+        if self.realtime_processing:
+            return "ready"
+        if self._ack_last == 0:
+            return "ready"
+
+        # Check if we're within the ACK window
+        if next_frame_id <= (self._ack_last + self._ack_window):
+            return "ready"
+
+        # Need to wait for ACK - use timeout to send keepalive frames
+        try:
+            self._ack_event.clear()
+            await asyncio.wait_for(
+                self._ack_event.wait(),
+                timeout=WEBRTC_KEEPALIVE_INTERVAL
+            )
+            # ACK received, check again
+            if next_frame_id <= (self._ack_last + self._ack_window):
+                return "ready"
+            # Still outside window, send keepalive
+            return "keepalive"
+        except asyncio.TimeoutError:
+            # Timeout waiting for ACK, send keepalive to keep connection alive
+            logger.debug("Sending keepalive frame while waiting for ACK")
+            if self.heartbeat_callback:
+                self.heartbeat_callback()
+            return "keepalive"
 
 
 async def _wait_ice_complete(peer_connection: RTCPeerConnectionWithLoop, timeout=2.0):
@@ -851,6 +1482,17 @@ async def init_rtc_peer_connection_with_loop(
     shutdown_reserve: int = WEBRTC_MODAL_SHUTDOWN_RESERVE,
     heartbeat_callback: Optional[Callable[[], None]] = None,
 ) -> RTCPeerConnectionWithLoop:
+    logger.warning(
+        "=" * 60 + "\n"
+        "[WEBRTC_SESSION] STARTING NEW SESSION\n"
+        "  stream_output=%s\n"
+        "  data_output=%s\n"
+        "  timeout=%s\n"
+        + "=" * 60,
+        webrtc_request.stream_output,
+        webrtc_request.data_output,
+        webrtc_request.processing_timeout,
+    )
     logger.info("Initializing RTC peer connection with loop")
     # ice._mdns is instantiated on the module level, it has a lock that is bound to the event loop
     # avoid RuntimeError: asyncio.locks.Lock is bound to a different event loop
@@ -1097,15 +1739,57 @@ async def init_rtc_peer_connection_with_loop(
 
     @peer_connection.on("connectionstatechange")
     async def on_connectionstatechange():
-        logger.info("on_connectionstatechange: %s", peer_connection.connectionState)
-        if peer_connection.connectionState in {"failed", "closed"}:
+        state = peer_connection.connectionState
+        ice_state = peer_connection.iceConnectionState
+        logger.warning(
+            "[CONNECTION_STATE] Changed to: %s (ICE state: %s, "
+            "frames_received: %d, data_channel: %s)",
+            state, ice_state, video_processor._received_frames,
+            video_processor.data_channel.readyState if video_processor.data_channel else "N/A"
+        )
+        if state in {"failed", "closed"}:
+            logger.error(
+                "[CONNECTION_STATE] FATAL: Connection %s! ICE=%s, "
+                "frames_processed=%d. Cleaning up...",
+                state, ice_state, video_processor._received_frames
+            )
             if video_processor.track:
-                logger.info("Stopping video processor track")
+                logger.info("[CONNECTION_STATE] Stopping video processor track")
                 video_processor.track.stop()
             await video_processor.close()
-            logger.info("Stopping WebRTC peer")
+            logger.info("[CONNECTION_STATE] Stopping WebRTC peer")
             await peer_connection.close()
             terminate_event.set()
+
+    # Monitor ICE connection state - consent expires after ~30s without STUN refresh
+    @peer_connection.on("iceconnectionstatechange")
+    async def on_iceconnectionstatechange():
+        state = peer_connection.iceConnectionState
+        conn_state = peer_connection.connectionState
+        logger.warning(
+            "[ICE_STATE] Changed to: %s (connection state: %s, "
+            "frames_received: %d, data_channel: %s)",
+            state, conn_state, video_processor._received_frames,
+            video_processor.data_channel.readyState if video_processor.data_channel else "N/A"
+        )
+        
+        if state == "failed":
+            logger.error(
+                "[ICE_STATE] FAILED! This typically means STUN consent expired. "
+                "Causes: (1) Event loop starvation preventing aioice from sending "
+                "STUN packets, (2) Network issues, (3) NAT/firewall blocking. "
+                "Check logs for [BUFFER_DRAIN] timeouts or missing asyncio.sleep(0) yields."
+            )
+            # The connectionstatechange handler will clean up
+        elif state == "disconnected":
+            logger.warning(
+                "[ICE_STATE] DISCONNECTED - may recover automatically. "
+                "If this persists for >30s, will transition to 'failed'."
+            )
+        elif state == "checking":
+            logger.info("[ICE_STATE] Checking connectivity candidates...")
+        elif state == "connected":
+            logger.info("[ICE_STATE] Successfully connected via ICE")
 
     def process_video_upload_message(
         message: bytes, video_processor: VideoTransformTrackWithLoop
@@ -1161,14 +1845,13 @@ async def init_rtc_peer_connection_with_loop(
                             track=player.video, rotation_code=rotation_code
                         )
                     else:
-                        # Fast processing - use OnDemandVideoTrack
-                        track = OnDemandVideoTrack(video_path)
+                        # Fast processing - use ThreadedVideoTrack
+                        track = ThreadedVideoTrack(video_path)
                         video_processor.set_track(
                             track=track, rotation_code=rotation_code
                         )
 
                     if not should_send_video:
-                        # For DATA_ONLY, start data-only processing task
                         logger.info("Starting data-only processing for video file")
                         asyncio.create_task(video_processor.process_frames_data_only())
 

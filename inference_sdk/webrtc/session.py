@@ -8,6 +8,7 @@ import json
 import queue
 import struct
 import threading
+import time
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
@@ -197,6 +198,11 @@ class WebRTCSession:
 
         # Chunk reassembly for binary messages
         self._chunk_reassembler = ChunkReassembler()
+
+        # Video track ACK state (for periodic ACK sending)
+        self._video_ack_last_time: float = 0.0
+        self._video_ack_last_frame_id: Optional[int] = None
+        self._data_channel: Optional["RTCDataChannel"] = None
 
         # Public APIs
         self.video = _VideoStream(self, self._video_queue)
@@ -553,6 +559,32 @@ class WebRTCSession:
         if channel.readyState == "open":
             channel.send(json.dumps({"ack": frame_id}))
 
+    def _maybe_send_video_ack(self, frame_id: int) -> None:
+        """Send ACK for video track frames if interval has elapsed.
+
+        This method implements periodic ACK sending for frames received via
+        the video track. ACKs are sent at most once per configured interval.
+
+        Args:
+            frame_id: The frame ID to potentially ACK
+        """
+        # Skip if realtime processing or no interval configured
+        if self._config.realtime_processing:
+            return
+        if self._config.video_ack_interval is None:
+            return
+        if self._data_channel is None or self._data_channel.readyState != "open":
+            return
+
+        current_time = time.time()
+        time_since_last_ack = current_time - self._video_ack_last_time
+
+        # Send ACK if interval has elapsed
+        if time_since_last_ack >= self._config.video_ack_interval:
+            self._data_channel.send(json.dumps({"ack": frame_id}))
+            self._video_ack_last_time = current_time
+            self._video_ack_last_frame_id = frame_id
+
     async def _get_turn_config(self) -> Optional[RTCConfiguration]:
         """Get TURN configuration from user-provided config or Roboflow API.
 
@@ -666,6 +698,43 @@ class WebRTCSession:
         pc = RTCPeerConnection(configuration=turn_config)
         relay = MediaRelay()
 
+        # Monitor ICE connection state for failures
+        # ICE consent expires after ~30s if STUN Binding Indications aren't sent.
+        # This happens when event loop is starved (e.g., tight send loops).
+        @pc.on("iceconnectionstatechange")
+        async def _on_ice_connection_state_change() -> None:
+            state = pc.iceConnectionState
+            logger.info(f"ICE connection state: {state}")
+            
+            if state == "failed":
+                logger.error(
+                    "ICE connection failed - likely consent expiry. "
+                    "This happens when the event loop is blocked and aioice "
+                    "cannot send STUN consent refresh packets. Ensure code "
+                    "yields to event loop (asyncio.sleep(0)) during long operations."
+                )
+                # Signal session to close
+                try:
+                    self._video_queue.put_nowait(None)
+                except Exception:
+                    pass
+            elif state == "disconnected":
+                logger.warning(
+                    "ICE connection disconnected - may recover automatically. "
+                    "If this persists, connection will transition to 'failed'."
+                )
+        
+        @pc.on("connectionstatechange")
+        async def _on_connection_state_change() -> None:
+            state = pc.connectionState
+            logger.info(f"Connection state: {state}")
+            if state == "failed":
+                logger.error("Connection failed - closing session")
+                try:
+                    self._video_queue.put_nowait(None)
+                except Exception:
+                    pass
+
         # Setup video receiver for frames from server
         @pc.on("track")
         def _on_track(track):  # noqa: ANN001
@@ -716,10 +785,15 @@ class WebRTCSession:
                     except Exception:
                         pass
 
+                    # Send periodic ACK for video track flow control
+                    if current_metadata.frame_id is not None:
+                        self._maybe_send_video_ack(current_metadata.frame_id)
+
             asyncio.ensure_future(_reader())
 
         # Setup data channel
         ch = pc.createDataChannel("inference")
+        self._data_channel = ch  # Store reference for video track ACKs
 
         # Setup data channel message handler
         @ch.on("message")
@@ -775,7 +849,7 @@ class WebRTCSession:
                     try:
                         # filter out video frames if video is sent through datachannel
                         filtered_data = serialized_data
-                        if self._video_through_datachannel:
+                        if self._video_through_datachannel and serialized_data:
                             filtered_data = {
                                 k: v
                                 for k, v in serialized_data.items()
