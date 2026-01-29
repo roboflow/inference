@@ -103,7 +103,14 @@ async def wait_for_buffer_drain(
     heartbeat_callback: Optional[Callable[[], None]] = None,
     low_threshold: Optional[int] = None,
 ) -> bool:
-    """Wait for data channel buffer to drain below threshold, with timeout."""
+    """Wait for data channel buffer to drain below threshold, with timeout.
+
+    We use a low threshold (1/4 of limit) instead of just below the limit to avoid
+    hysteresis - constantly triggering this wait after sending just a few chunks.
+
+    And we wait WEBRTC_DATA_CHANNEL_BUFFER_DRAINING_DELAY to avoid starving the 
+    event loop.
+    """
     if low_threshold is None:
         low_threshold = WEBRTC_DATA_CHANNEL_BUFFER_SIZE_LIMIT // 4
 
@@ -132,7 +139,12 @@ async def send_chunked_data(
     heartbeat_callback: Optional[Callable[[], None]] = None,
     buffer_timeout: float = 120.0,
 ) -> bool:
-    """Send payload via data channel with chunking and backpressure."""
+    """Send payload via data channel with chunking and backpressure.
+
+    We chunk large payloads because WebRTC data channels have message size limits.
+    We apply backpressure (wait for buffer to drain) to avoid overwhelming the
+    network and causing ICE connection failures.
+    """
     if data_channel.readyState != "open":
         return False
 
@@ -505,13 +517,11 @@ class VideoFrameProcessor:
                 )
 
         except asyncio.CancelledError:
-            pass
+            raise
         except MediaStreamError:
-            pass
+            pass  # Expected when video ends
         except Exception as exc:
-            logger.error(
-                "[DATA_ONLY] Error at frame %d: %s", self._received_frames, exc
-            )
+            logger.error("[DATA_ONLY] Error at frame %d: %s", self._received_frames, exc)
         finally:
             await self._send_processing_complete()
 
@@ -698,34 +708,15 @@ class VideoTransformTrackWithLoop(VideoStreamTrack, VideoFrameProcessor):
                     "[RECV] Drained %d frames from queue (was %d)", drained, queue_size
                 )
 
-        frame_recv_start = time.time()
         frame: VideoFrame = await self.track.recv()
-        frame_recv_elapsed = time.time() - frame_recv_start
 
         self._received_frames += 1
         frame_id = self._received_frames
         frame_timestamp = datetime.datetime.now()
 
-        # Log every 30 frames or if frame recv was slow
-        if frame_id % 30 == 1 or frame_recv_elapsed > 0.5:
-            data_channel_state = (
-                self.data_channel.readyState if self.data_channel else "N/A"
-            )
-            data_channel_buffer = (
-                self.data_channel.bufferedAmount if self.data_channel else 0
-            )
-            logger.info(
-                "[RECV] Frame %d: recv_time=%.3fs, channel=%s, buffer=%d bytes",
-                frame_id,
-                frame_recv_elapsed,
-                data_channel_state,
-                data_channel_buffer,
-            )
-
         if self.stream_output is None and frame_id == 1:
             await self._auto_detect_stream_output(frame, frame_id)
 
-        process_start = time.time()
         workflow_output, new_frame, errors = await self._process_frame_async(
             frame=frame,
             frame_id=frame_id,
@@ -733,27 +724,11 @@ class VideoTransformTrackWithLoop(VideoStreamTrack, VideoFrameProcessor):
             render_output=True,
             include_errors_on_frame=True,
         )
-        process_elapsed = time.time() - process_start
 
         new_frame.pts = frame.pts
         new_frame.time_base = frame.time_base
 
-        send_start = time.time()
         await self._send_data_output(workflow_output, frame_timestamp, frame, errors)
-        send_elapsed = time.time() - send_start
-
-        total_elapsed = time.time() - recv_start
-
-        # Log slow frames or every 30 frames
-        if total_elapsed > 1.0 or frame_id % 30 == 1:
-            logger.info(
-                "[RECV] Frame %d complete: total=%.2fs (recv=%.3fs, process=%.2fs, send=%.2fs)",
-                frame_id,
-                total_elapsed,
-                frame_recv_elapsed,
-                process_elapsed,
-                send_elapsed,
-            )
 
         if errors:
             logger.warning("[RECV] Frame %d errors: %s", frame_id, errors)

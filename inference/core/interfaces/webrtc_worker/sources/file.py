@@ -13,7 +13,18 @@ from inference.core.interfaces.webrtc_worker.entities import VideoFileUploadStat
 
 
 def _decode_worker(filepath: str, frame_queue, stop_event):
-    """Decode video frames in a thread and put them on the queue."""
+    """Decode video frames in a separate thread and put them on a queue.
+
+    We decode in a background thread to avoid deadlocks. PyAV (the video decoder)
+    uses C code that can block while holding locks. If we decode directly in an
+    async method using run_in_executor, PyAV's internal locks can conflict with
+    Python's GIL and the asyncio event loop, causing the application to hang at
+    random points during video processing.
+
+    By running the decoder in its own dedicated thread with a queue, we completely
+    isolate it from the async event loop and we decouple it from the logic; so
+    we can create some backpressure
+    """
     frame_count = 0
     try:
         container = av.open(filepath)
@@ -39,8 +50,11 @@ def _decode_worker(filepath: str, frame_queue, stop_event):
         frame_queue.put(None)
 
 
-class ThreadedVideoTrack(MediaStreamTrack):
-    """Video track that decodes frames from a file in a background thread."""
+class ThreadedVideoFileTrack(MediaStreamTrack):
+    """Video track that decodes frames from a file in a background thread.
+
+    Uses a dedicated thread with a queue to avoid deadlocks with the event loop.
+    """
 
     kind = "video"
 
@@ -98,6 +112,7 @@ class VideoFileUploadHandler:
 
     def handle_chunk(self, chunk_index: int, total_chunks: int, data: bytes) -> None:
         """Handle a chunk. Auto-completes when all chunks received."""
+         # TODO: we need to refactor this...
         if self._total_chunks is None:
             self._total_chunks = total_chunks
             self._state = VideoFileUploadState.UPLOADING
@@ -112,7 +127,7 @@ class VideoFileUploadHandler:
     def _write_to_temp_file(self) -> None:
         """Reassemble chunks and write to temp file."""
         import tempfile
-
+        # TODO: we need to refactor this...
         with tempfile.NamedTemporaryFile(mode="wb", suffix=".mp4", delete=False) as f:
             for i in range(self._total_chunks):
                 f.write(self._chunks[i])
@@ -129,6 +144,7 @@ class VideoFileUploadHandler:
 
     async def cleanup(self) -> None:
         """Clean up temp file."""
+         # TODO: we need to refactor this...
         if self._temp_file_path:
             import os
             path = self._temp_file_path
