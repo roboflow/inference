@@ -234,7 +234,7 @@ def test_yolo26n_pose_onnx_static_letterbox_numpy(
 
     model = YOLO26ForKeyPointsDetectionOnnx.from_pretrained(
         model_name_or_path=yolo26n_pose_basketball_letterbox_onnx_static_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     predictions = model(basketball_image_numpy)
@@ -278,7 +278,7 @@ def test_yolo26n_pose_onnx_static_letterbox_batch_numpy(
 
     model = YOLO26ForKeyPointsDetectionOnnx.from_pretrained(
         model_name_or_path=yolo26n_pose_basketball_letterbox_onnx_static_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     predictions = model([basketball_image_numpy, basketball_image_numpy])
@@ -322,7 +322,7 @@ def test_yolo26n_pose_onnx_static_letterbox_torch(
 
     model = YOLO26ForKeyPointsDetectionOnnx.from_pretrained(
         model_name_or_path=yolo26n_pose_basketball_letterbox_onnx_static_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     predictions = model(basketball_image_torch)
@@ -366,7 +366,7 @@ def test_yolo26n_pose_onnx_dynamic_letterbox_numpy(
 
     model = YOLO26ForKeyPointsDetectionOnnx.from_pretrained(
         model_name_or_path=yolo26n_pose_basketball_letterbox_onnx_dynamic_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     predictions = model(basketball_image_numpy)
@@ -410,7 +410,7 @@ def test_yolo26n_pose_onnx_dynamic_letterbox_batch_numpy(
 
     model = YOLO26ForKeyPointsDetectionOnnx.from_pretrained(
         model_name_or_path=yolo26n_pose_basketball_letterbox_onnx_dynamic_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     predictions = model([basketball_image_numpy, basketball_image_numpy])
@@ -454,7 +454,7 @@ def test_yolo26n_pose_onnx_dynamic_letterbox_torch(
 
     model = YOLO26ForKeyPointsDetectionOnnx.from_pretrained(
         model_name_or_path=yolo26n_pose_basketball_letterbox_onnx_dynamic_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     predictions = model(basketball_image_torch)
@@ -498,7 +498,7 @@ def test_yolo26n_pose_onnx_static_stretch_numpy(
 
     model = YOLO26ForKeyPointsDetectionOnnx.from_pretrained(
         model_name_or_path=yolo26n_pose_basketball_stretch_onnx_static_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     predictions = model(basketball_image_numpy)
@@ -537,7 +537,7 @@ def test_yolo26n_pose_onnx_static_stretch_batch_numpy(
 
     model = YOLO26ForKeyPointsDetectionOnnx.from_pretrained(
         model_name_or_path=yolo26n_pose_basketball_stretch_onnx_static_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     predictions = model([basketball_image_numpy, basketball_image_numpy])
@@ -574,7 +574,7 @@ def test_yolo26n_pose_onnx_static_stretch_torch(
 
     model = YOLO26ForKeyPointsDetectionOnnx.from_pretrained(
         model_name_or_path=yolo26n_pose_basketball_stretch_onnx_static_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     predictions = model(basketball_image_torch)
@@ -613,7 +613,7 @@ def test_yolo26n_pose_onnx_dynamic_stretch_numpy(
 
     model = YOLO26ForKeyPointsDetectionOnnx.from_pretrained(
         model_name_or_path=yolo26n_pose_basketball_stretch_onnx_dynamic_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     predictions = model(basketball_image_numpy)
@@ -652,7 +652,7 @@ def test_yolo26n_pose_onnx_dynamic_stretch_batch_numpy(
 
     model = YOLO26ForKeyPointsDetectionOnnx.from_pretrained(
         model_name_or_path=yolo26n_pose_basketball_stretch_onnx_dynamic_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     predictions = model([basketball_image_numpy, basketball_image_numpy])
@@ -689,7 +689,7 @@ def test_yolo26n_pose_onnx_dynamic_stretch_torch(
 
     model = YOLO26ForKeyPointsDetectionOnnx.from_pretrained(
         model_name_or_path=yolo26n_pose_basketball_stretch_onnx_dynamic_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     predictions = model(basketball_image_torch)

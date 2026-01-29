@@ -18,7 +18,7 @@ def test_onnx_package_stretch_static_bs_numpy(
 
     model = YOLO26ForObjectDetectionOnnx.from_pretrained(
         model_name_or_path=yolo26n_object_detection_sunflowers_stretch_onnx_static_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     predictions = model(sunflowers_image_numpy)
@@ -129,7 +129,7 @@ def test_onnx_package_stretch_static_bs_batch_numpy(
 
     model = YOLO26ForObjectDetectionOnnx.from_pretrained(
         model_name_or_path=yolo26n_object_detection_sunflowers_stretch_onnx_static_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     predictions = model([sunflowers_image_numpy, sunflowers_image_numpy])
@@ -238,7 +238,7 @@ def test_onnx_package_stretch_static_bs_torch(
 
     model = YOLO26ForObjectDetectionOnnx.from_pretrained(
         model_name_or_path=yolo26n_object_detection_sunflowers_stretch_onnx_static_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     predictions = model(sunflowers_image_torch)
@@ -347,7 +347,7 @@ def test_onnx_package_stretch_dynamic_bs_numpy(
 
     model = YOLO26ForObjectDetectionOnnx.from_pretrained(
         model_name_or_path=yolo26n_object_detection_sunflowers_stretch_onnx_dynamic_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     predictions = model(sunflowers_image_numpy)
@@ -458,7 +458,7 @@ def test_onnx_package_stretch_dynamic_bs_batch_numpy(
 
     model = YOLO26ForObjectDetectionOnnx.from_pretrained(
         model_name_or_path=yolo26n_object_detection_sunflowers_stretch_onnx_dynamic_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     predictions = model([sunflowers_image_numpy, sunflowers_image_numpy])
@@ -567,7 +567,7 @@ def test_onnx_package_stretch_dynamic_bs_torch(
 
     model = YOLO26ForObjectDetectionOnnx.from_pretrained(
         model_name_or_path=yolo26n_object_detection_sunflowers_stretch_onnx_dynamic_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     predictions = model(sunflowers_image_torch)
@@ -676,7 +676,7 @@ def test_onnx_package_letterbox_static_bs_numpy(
 
     model = YOLO26ForObjectDetectionOnnx.from_pretrained(
         model_name_or_path=yolo26n_object_detection_sunflowers_letterbox_onnx_static_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     predictions = model(sunflowers_image_numpy)
@@ -787,7 +787,7 @@ def test_onnx_package_letterbox_static_bs_batch_numpy(
 
     model = YOLO26ForObjectDetectionOnnx.from_pretrained(
         model_name_or_path=yolo26n_object_detection_sunflowers_letterbox_onnx_static_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     predictions = model([sunflowers_image_numpy, sunflowers_image_numpy])
@@ -896,7 +896,7 @@ def test_onnx_package_letterbox_static_bs_torch(
 
     model = YOLO26ForObjectDetectionOnnx.from_pretrained(
         model_name_or_path=yolo26n_object_detection_sunflowers_letterbox_onnx_static_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     predictions = model(sunflowers_image_torch)
@@ -1007,7 +1007,7 @@ def test_onnx_package_letterbox_dynamic_bs_numpy(
 
     model = YOLO26ForObjectDetectionOnnx.from_pretrained(
         model_name_or_path=yolo26n_object_detection_sunflowers_letterbox_onnx_dynamic_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     predictions = model(sunflowers_image_numpy)
@@ -1118,7 +1118,7 @@ def test_onnx_package_letterbox_dynamic_bs_batch_numpy(
 
     model = YOLO26ForObjectDetectionOnnx.from_pretrained(
         model_name_or_path=yolo26n_object_detection_sunflowers_letterbox_onnx_dynamic_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     predictions = model([sunflowers_image_numpy, sunflowers_image_numpy])
@@ -1227,7 +1227,7 @@ def test_onnx_package_letterbox_dynamic_bs_torch(
 
     model = YOLO26ForObjectDetectionOnnx.from_pretrained(
         model_name_or_path=yolo26n_object_detection_sunflowers_letterbox_onnx_dynamic_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     predictions = model(sunflowers_image_torch)
