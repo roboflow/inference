@@ -976,20 +976,32 @@ class VideoFrameProcessor:
         if serialized_outputs:
             webrtc_output.serialized_output_data = serialized_outputs
 
-        # Send using binary chunked protocol
+        # Send using binary chunked protocol with gzip compression
         json_start = time.time()
-        json_bytes = await asyncio.to_thread(
-            lambda: json.dumps(webrtc_output.model_dump(mode="json")).encode("utf-8")
-        )
+        
+        def compress_json():
+            import gzip
+            json_str = json.dumps(webrtc_output.model_dump(mode="json"))
+            json_bytes = json_str.encode("utf-8")
+            compressed = gzip.compress(json_bytes, compresslevel=6)
+            return json_bytes, compressed
+        
+        raw_bytes, compressed_bytes = await asyncio.to_thread(compress_json)
         json_elapsed = time.time() - json_start
         
-        payload_kb = len(json_bytes) / 1024
+        raw_kb = len(raw_bytes) / 1024
+        compressed_kb = len(compressed_bytes) / 1024
+        compression_ratio = (1 - len(compressed_bytes) / len(raw_bytes)) * 100 if raw_bytes else 0
+        
         logger.info(
-            "[SEND_OUTPUT] Frame %d: payload=%.1f KB, serialize=%.2fs, json=%.2fs, "
-            "buffer=%d, channel=%s",
-            frame_id, payload_kb, serialize_elapsed, json_elapsed,
-            self.data_channel.bufferedAmount, self.data_channel.readyState
+            "[SEND_OUTPUT] Frame %d: raw=%.1f KB, compressed=%.1f KB (%.0f%% reduction), "
+            "serialize=%.2fs, buffer=%d, channel=%s",
+            frame_id, raw_kb, compressed_kb, compression_ratio,
+            serialize_elapsed, self.data_channel.bufferedAmount, self.data_channel.readyState
         )
+        
+        # Use compressed bytes for sending
+        json_bytes = compressed_bytes
         
         send_data_start = time.time()
         success = await send_chunked_data(
