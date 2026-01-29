@@ -164,7 +164,9 @@ class VideoFileUploader:
                 while self._channel.bufferedAmount > self._buffer_limit:
                     await asyncio.sleep(0.01)
                     if self._channel.readyState != "open":
-                        raise RuntimeError("Upload channel closed during backpressure wait")
+                        raise RuntimeError(
+                            "Upload channel closed during backpressure wait"
+                        )
 
                 self._channel.send(message)
                 self._uploaded_chunks = chunk_idx + 1
@@ -172,9 +174,5 @@ class VideoFileUploader:
                 if on_progress:
                     on_progress(self._uploaded_chunks, self._total_chunks)
 
-                # Yield to event loop every 10 chunks
-                # Without this, aioice cannot send STUN Binding Indications to
-                # refresh ICE consent (expires after ~30s without refresh).
-                # Event loop starvation is the root cause of "Consent to send expired".
                 if chunk_idx % 10 == 0:
                     await asyncio.sleep(0)
