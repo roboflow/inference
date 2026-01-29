@@ -60,6 +60,11 @@ from inference.core.interfaces.webrtc_worker.entities import (
     WebRTCWorkerRequest,
     WebRTCWorkerResult,
 )
+from inference.core.interfaces.webrtc_worker.serializers import serialize_for_webrtc
+from inference.core.interfaces.webrtc_worker.sources.file import (
+    ThreadedVideoTrack,
+    VideoFileUploadHandler,
+)
 from inference.core.interfaces.webrtc_worker.utils import (
     detect_image_output,
     get_cv2_rotation_code,
@@ -70,8 +75,6 @@ from inference.core.interfaces.webrtc_worker.utils import (
 )
 from inference.core.managers.base import ModelManager
 from inference.core.roboflow_api import get_workflow_specification
-from inference.core.workflows.core_steps.common.serializers import serialize_wildcard_kind
-from inference.core.utils.image_utils import encode_image_to_jpeg_bytes
 from inference.core.workflows.errors import WorkflowError, WorkflowSyntaxError
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
 from inference.usage_tracking.collector import usage_collector
@@ -80,31 +83,6 @@ logging.getLogger("aiortc").setLevel(logging.WARNING)
 
 # WebRTC data channel chunking configuration
 CHUNK_SIZE = 48 * 1024  # 48KB - safe for all WebRTC implementations
-
-# WebRTC image compression quality - lower = smaller file size
-# quality=10 reduces ~1MB raw to ~50KB, quality=50 produces ~150-200KB
-WEBRTC_JPEG_QUALITY = 80
-
-def serialise_image_for_webrtc(image: WorkflowImageData) -> Dict[str, Any]:
-    """Serialize image with low JPEG quality for efficient WebRTC transmission."""
-    jpeg_bytes = encode_image_to_jpeg_bytes(image.numpy_image, jpeg_quality=WEBRTC_JPEG_QUALITY)
-    return {
-        "type": "base64",
-        "value": base64.b64encode(jpeg_bytes).decode("ascii"),
-        "video_metadata": image.video_metadata.dict() if image.video_metadata else None,
-    }
-
-
-def serialize_for_webrtc(value: Any) -> Any:
-    """Serialize for WebRTC, compressing images with low JPEG quality."""
-    if isinstance(value, WorkflowImageData):
-        return serialise_image_for_webrtc(value)
-    if isinstance(value, dict):
-        return {k: serialize_for_webrtc(v) for k, v in value.items()}
-    if isinstance(value, list):
-        return [serialize_for_webrtc(v) for v in value]
-    return serialize_wildcard_kind(value)
-
 
 
 def create_chunked_binary_message(
@@ -117,152 +95,6 @@ def create_chunked_binary_message(
     """
     header = struct.pack("<III", frame_id, chunk_index, total_chunks)
     return header + payload
-
-
-def _decode_worker(filepath: str, frame_queue, stop_event):
-    """Decode video frames in a thread and put them on the queue."""
-    frame_count = 0
-    try:
-        container = av.open(filepath)
-        stream = container.streams.video[0]
-        stream.thread_type = "AUTO"
-
-        for frame in container.decode(stream):
-            if stop_event.is_set():
-                break
-            try:
-                frame_queue.put(frame, timeout=300)
-                frame_count += 1
-            except queue.Full:
-                logger.error("[DECODE_WORKER] Queue full timeout at frame %d", frame_count)
-                frame_queue.put({"error": f"Queue full timeout at frame {frame_count}"})
-                return
-
-        container.close()
-    except Exception as e:
-        logger.error("[DECODE_WORKER] Error at frame %d: %s", frame_count, e)
-        frame_queue.put({"error": str(e)})
-    finally:
-        frame_queue.put(None)
-
-
-class ThreadedVideoTrack(MediaStreamTrack):
-    """Video track that decodes frames from a queue."""
-
-    kind = "video"
-
-    def __init__(self, filepath: str, queue_size: int = 60):
-        super().__init__()
-        self._queue = queue.Queue(maxsize=queue_size)
-        self._stop_event = threading.Event()
-        self._decode_thread = threading.Thread(
-            target=_decode_worker,
-            args=(filepath, self._queue, self._stop_event),
-            daemon=True,
-        )
-        self._decode_thread.start()
-
-    async def recv(self) -> VideoFrame:
-        while True:
-            try:
-                data = self._queue.get_nowait()
-                break
-            except queue.Empty:
-                await asyncio.sleep(0.001)
-
-        if data is None:
-            self.stop()
-            raise MediaStreamError("End of video file")
-        if isinstance(data, dict):
-            logger.error("[ThreadedVideoTrack] Decode error: %s", data)
-            self.stop()
-            raise MediaStreamError(data.get("error", "Unknown decode error"))
-
-        return data
-
-    def stop(self):
-        super().stop()
-        self._stop_event.set()
-
-
-class VideoFileUploadHandler:
-    """Handles video file uploads via data channel.
-
-    Protocol: [chunk_index:u32][total_chunks:u32][payload]
-    Auto-completes when all chunks received.
-    """
-
-    def __init__(self):
-        self._chunks: Dict[int, bytes] = {}
-        self._total_chunks: Optional[int] = None
-        self._temp_file_path: Optional[str] = None
-        self._state = VideoFileUploadState.IDLE
-        self.upload_complete_event = asyncio.Event()
-
-    @property
-    def temp_file_path(self) -> Optional[str]:
-        return self._temp_file_path
-
-    def handle_chunk(self, chunk_index: int, total_chunks: int, data: bytes) -> None:
-        """Handle a chunk. Auto-completes when all chunks received."""
-        if self._total_chunks is None:
-            self._total_chunks = total_chunks
-            self._state = VideoFileUploadState.UPLOADING
-            logger.info(f"Starting video upload: {total_chunks} chunks")
-
-        self._chunks[chunk_index] = data
-
-        if chunk_index % 100 == 0:
-            logger.info(
-                "Upload progress: %s/%s chunks", len(self._chunks), total_chunks
-            )
-
-        # Auto-complete when all chunks received
-        # TODO: Handle the file writing without keeping all chunks in memory
-        if len(self._chunks) == total_chunks:
-            self._write_to_temp_file()
-            self._state = VideoFileUploadState.COMPLETE
-            self.upload_complete_event.set()
-
-    def _write_to_temp_file(self) -> None:
-        """Reassemble chunks and write to temp file."""
-        import tempfile
-
-        total_size = 0
-        with tempfile.NamedTemporaryFile(mode="wb", suffix=".mp4", delete=False) as f:
-            for i in range(self._total_chunks):
-                chunk_data = self._chunks[i]
-                f.write(chunk_data)
-                total_size += len(chunk_data)
-            self._temp_file_path = f.name
-
-        logger.info(
-            "Video upload complete: {total_size} bytes -> %s", self._temp_file_path
-        )
-        self._chunks.clear()  # Free memory
-
-    def try_start_processing(self) -> Optional[str]:
-        """Atomically check if upload is complete and transition to PROCESSING.
-
-        Returns video path if processing should start, None otherwise.
-        This ensures process_video_file() is only triggered once.
-        """
-        if self._state == VideoFileUploadState.COMPLETE:
-            self._state = VideoFileUploadState.PROCESSING
-            return self._temp_file_path
-        return None
-
-    async def cleanup(self) -> None:
-        """Clean up temp file."""
-        if self._temp_file_path:
-            import os
-
-            path_to_delete = self._temp_file_path
-            self._temp_file_path = None
-            try:
-                await asyncio.to_thread(os.unlink, path_to_delete)
-            except Exception:
-                pass
 
 
 async def wait_for_buffer_drain(
