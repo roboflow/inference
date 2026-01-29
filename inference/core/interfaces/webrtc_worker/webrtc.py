@@ -506,59 +506,27 @@ class VideoFrameProcessor:
             self._ack_event.set()
 
     async def _wait_for_ack_window(self, next_frame_id: int) -> None:
-        """Block frame production when too far ahead of client ACKs.
-
-        Allows up to (_ack_window) frames in flight beyond the last ACK.
-        Only active for non-realtime processing (video file uploads).
-
-        Has a maximum wait time of 30 seconds to prevent infinite blocking
-        if the client stops sending ACKs.
-        """
-        if self.realtime_processing:
+        """Block frame production when too far ahead of client ACKs."""
+        if self.realtime_processing or self._ack_last == 0:
             return
-        if self._ack_last == 0:
-            return
-
-        # Check if we need to wait
-        if next_frame_id > (self._ack_last + self._ack_window):
-            logger.info("[ACK_WAIT] Starting wait: next_frame=%d, ack_last=%d, window=%d, need_ack_for=%d",
-                       next_frame_id, self._ack_last, self._ack_window, 
-                       next_frame_id - self._ack_window)
 
         wait_counter = 0
-        max_wait_iterations = 150  # this is...  150 * 0.2s, 30 seconds max wait
-        while not self._stop_processing and next_frame_id > (
-            self._ack_last + self._ack_window
-        ):
+        while not self._stop_processing and next_frame_id > (self._ack_last + self._ack_window):
             if self._check_termination():
-                logger.info("[ACK_WAIT] Termination during wait at next_frame=%d", next_frame_id)
                 return
             if self.heartbeat_callback:
                 self.heartbeat_callback()
 
-            # Wait briefly for an ACK; timeout keeps heartbeats flowing.
             self._ack_event.clear()
             try:
                 await asyncio.wait_for(self._ack_event.wait(), timeout=0.2)
-                logger.debug("[ACK_WAIT] ACK received, ack_last now %d", self._ack_last)
             except asyncio.TimeoutError:
                 wait_counter += 1
-                # Log every 5 seconds (25 iterations * 0.2s)
-                if wait_counter % 25 == 0:
-                    logger.warning(
-                        "[ACK_WAIT] Still waiting: %.1fs, next_frame=%d, ack_last=%d, window=%d",
-                        wait_counter * 0.2, next_frame_id, self._ack_last, self._ack_window
+                if wait_counter % 5 == 1:
+                    logger.info(
+                        "Waiting for ACK window (next=%d, ack_last=%d, window=%d)",
+                        next_frame_id, self._ack_last, self._ack_window
                     )
-                if wait_counter >= max_wait_iterations:
-                    logger.warning(
-                        "[ACK_WAIT] TIMEOUT (30s). Disabling ACK pacing. "
-                        "(next_frame_id=%s, ack_last=%s)",
-                        next_frame_id,
-                        self._ack_last,
-                    )
-
-                    self._ack_last = 0
-                    return
 
     def _check_termination(self):
         """Check if we should terminate based on timeout"""
