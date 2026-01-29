@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, List
 
 import torch
 
@@ -71,15 +71,15 @@ class InferenceModelsSmolVLMAdapter(Model):
         preprocess_return_metadata: PreprocessReturnMetadata,
         skip_special_tokens: bool = True,
         **kwargs,
-    ) -> LMMInferenceResponse:
+    ) -> List[LMMInferenceResponse]:
         mapped_kwargs = self.map_inference_kwargs(kwargs)
         result = self._model.post_process_generation(
             predictions, skip_special_tokens=skip_special_tokens, **mapped_kwargs
         )[0]
-        return LMMInferenceResponse(
+        return [LMMInferenceResponse(
             response=result,
             image=InferenceResponseImage(
                 width=preprocess_return_metadata["image_dims"][0],
                 height=preprocess_return_metadata["image_dims"][1],
             ),
-        )
+        )]

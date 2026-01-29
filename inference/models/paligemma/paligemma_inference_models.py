@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, List
 
 import torch
 
@@ -67,16 +67,16 @@ class InferenceModelsPaligemmaAdapter(Model):
         predictions: torch.Tensor,
         preprocess_return_metadata: PreprocessReturnMetadata,
         **kwargs,
-    ) -> LMMInferenceResponse:
+    ) -> List[LMMInferenceResponse]:
         mapped_kwargs = self.map_inference_kwargs(kwargs)
         result = self._model.post_process_generation(predictions, **mapped_kwargs)[0]
-        return LMMInferenceResponse(
+        return [LMMInferenceResponse(
             response=result,
             image=InferenceResponseImage(
                 width=preprocess_return_metadata["image_dims"][0],
                 height=preprocess_return_metadata["image_dims"][1],
             ),
-        )
+        )]
 
     def clear_cache(self, delete_from_disk: bool = True) -> None:
         """Clears any cache if necessary. TODO: Implement this to delete the cache from the experimental model.
