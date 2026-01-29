@@ -225,6 +225,7 @@ class VideoFrameProcessor:
         terminate_event: Optional[asyncio.Event] = None,
         heartbeat_callback: Optional[Callable[[], None]] = None,
         realtime_processing: bool = True,
+        is_preview: bool = False,
     ):
         self._loop = asyncio_loop
         self._termination_date = termination_date
@@ -284,6 +285,7 @@ class VideoFrameProcessor:
             cancel_thread_pool_tasks_on_exit=workflow_configuration.cancel_thread_pool_tasks_on_exit,
             video_metadata_input_name=workflow_configuration.video_metadata_input_name,
             model_manager=model_manager,
+            _is_preview=is_preview,
         )
 
     def set_track(self, track: MediaStreamTrack, rotation_code: Optional[int] = None):
@@ -637,6 +639,7 @@ class VideoTransformTrackWithLoop(VideoStreamTrack, VideoFrameProcessor):
         terminate_event: Optional[asyncio.Event] = None,
         heartbeat_callback: Optional[Callable[[], None]] = None,
         realtime_processing: bool = True,
+        is_preview: bool = False,
         *args,
         **kwargs,
     ):
@@ -655,6 +658,7 @@ class VideoTransformTrackWithLoop(VideoStreamTrack, VideoFrameProcessor):
             model_manager=model_manager,
             heartbeat_callback=heartbeat_callback,
             realtime_processing=realtime_processing,
+            is_preview=is_preview,
         )
 
     async def _auto_detect_stream_output(
@@ -853,6 +857,7 @@ async def init_rtc_peer_connection_with_loop(
                 terminate_event=terminate_event,
                 heartbeat_callback=heartbeat_callback,
                 realtime_processing=webrtc_request.webrtc_realtime_processing,
+                is_preview=webrtc_request.is_preview,
             )
         else:
             # No video track - use base VideoFrameProcessor
@@ -869,6 +874,7 @@ async def init_rtc_peer_connection_with_loop(
                 terminate_event=terminate_event,
                 heartbeat_callback=heartbeat_callback,
                 realtime_processing=webrtc_request.webrtc_realtime_processing,
+                is_preview=webrtc_request.is_preview,
             )
     except (
         ValidationError,

@@ -433,6 +433,9 @@ from inference.core.workflows.core_steps.transformations.stitch_images.v1 import
 from inference.core.workflows.core_steps.transformations.stitch_ocr_detections.v1 import (
     StitchOCRDetectionsBlockV1,
 )
+from inference.core.workflows.core_steps.transformations.stitch_ocr_detections.v2 import (
+    StitchOCRDetectionsBlockV2,
+)
 
 # Visualizers
 from inference.core.workflows.core_steps.visualizations.background_color.v1 import (
@@ -471,6 +474,9 @@ from inference.core.workflows.core_steps.visualizations.grid.v1 import (
 from inference.core.workflows.core_steps.visualizations.halo.v1 import (
     HaloVisualizationBlockV1,
 )
+from inference.core.workflows.core_steps.visualizations.halo.v2 import (
+    HaloVisualizationBlockV2,
+)
 from inference.core.workflows.core_steps.visualizations.icon.v1 import (
     IconVisualizationBlockV1,
 )
@@ -494,6 +500,9 @@ from inference.core.workflows.core_steps.visualizations.pixelate.v1 import (
 )
 from inference.core.workflows.core_steps.visualizations.polygon.v1 import (
     PolygonVisualizationBlockV1,
+)
+from inference.core.workflows.core_steps.visualizations.polygon.v2 import (
+    PolygonVisualizationBlockV2,
 )
 from inference.core.workflows.core_steps.visualizations.polygon_zone.v1 import (
     PolygonZoneVisualizationBlockV1,
@@ -725,6 +734,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         GoogleVisionOCRBlockV1,
         GridVisualizationBlockV1,
         HaloVisualizationBlockV1,
+        HaloVisualizationBlockV2,
         IconVisualizationBlockV1,
         ImageBlurBlockV1,
         ImageContoursDetectionBlockV1,
@@ -754,6 +764,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         PixelateVisualizationBlockV1,
         PixelationCountBlockV1,
         PolygonVisualizationBlockV1,
+        PolygonVisualizationBlockV2,
         PolygonZoneVisualizationBlockV1,
         QRCodeDetectorBlockV1,
         RoboflowClassificationModelBlockV1,
@@ -777,6 +788,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         StabilityAIOutpaintingBlockV1,
         StabilizeTrackedDetectionsBlockV1,
         StitchImagesBlockV1,
+        StitchOCRDetectionsBlockV2,
         StitchOCRDetectionsBlockV1,
         TemplateMatchingBlockV1,
         TimeInZoneBlockV1,

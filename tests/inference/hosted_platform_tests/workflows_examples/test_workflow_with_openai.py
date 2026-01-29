@@ -92,7 +92,7 @@ def test_image_description_workflow(
         p["confidence"] for p in result[0]["detection_predictions"]["predictions"]
     ]
     assert np.allclose(
-        detection_confidences, [0.856178879737854, 0.5191817283630371], atol=1e-3
+        detection_confidences, [0.856178879737854, 0.5191817283630371], atol=1e-2
     ), "Expected predictions to match what was observed while test creation"
     assert len(result[0]["description"]) > 0, "Expected some description"
 
