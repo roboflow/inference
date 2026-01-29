@@ -108,7 +108,7 @@ async def wait_for_buffer_drain(
     We use a low threshold (1/4 of limit) instead of just below the limit to avoid
     hysteresis - constantly triggering this wait after sending just a few chunks.
 
-    And we wait WEBRTC_DATA_CHANNEL_BUFFER_DRAINING_DELAY to avoid starving the 
+    And we wait WEBRTC_DATA_CHANNEL_BUFFER_DRAINING_DELAY to avoid starving the
     event loop.
     """
     if low_threshold is None:
@@ -144,6 +144,9 @@ async def send_chunked_data(
     We chunk large payloads because WebRTC data channels have message size limits.
     We apply backpressure (wait for buffer to drain) to avoid overwhelming the
     network and causing ICE connection failures.
+
+    Heads up: buffer_timeout needs to be higher than WEBRTC_DATA_CHANNEL_BUFFER_DRAINING_DELAY!
+    Otherwise we will timeout ourselves.
     """
     if data_channel.readyState != "open":
         return False
@@ -521,7 +524,9 @@ class VideoFrameProcessor:
         except MediaStreamError:
             pass  # Expected when video ends
         except Exception as exc:
-            logger.error("[DATA_ONLY] Error at frame %d: %s", self._received_frames, exc)
+            logger.error(
+                "[DATA_ONLY] Error at frame %d: %s", self._received_frames, exc
+            )
         finally:
             await self._send_processing_complete()
 
