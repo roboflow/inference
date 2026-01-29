@@ -654,17 +654,9 @@ class VideoFrameProcessor:
         frame: VideoFrame,
         errors: List[str],
     ):
-        send_start = time.time()
         frame_id = self._received_frames
         
-        if not self.data_channel:
-            logger.info("[SEND_OUTPUT] No data channel for frame %d", frame_id)
-            return
-        if self.data_channel.readyState != "open":
-            logger.warning(
-                "[SEND_OUTPUT] Data channel not open for frame %d: state=%s",
-                frame_id, self.data_channel.readyState
-            )
+        if not self.data_channel or self.data_channel.readyState != "open":
             return
 
         video_metadata = WebRTCVideoMetadata(
@@ -682,19 +674,13 @@ class VideoFrameProcessor:
         )
 
         if self._data_mode == DataOutputMode.NONE:
-            # Even empty responses use binary protocol
             json_bytes = await asyncio.to_thread(
                 lambda: json.dumps(webrtc_output.model_dump()).encode("utf-8")
             )
-            logger.info("[SEND_OUTPUT] Frame %d: NONE mode, sending %d bytes", frame_id, len(json_bytes))
-            success = await send_chunked_data(
-                self.data_channel,
-                frame_id,
-                json_bytes,
+            await send_chunked_data(
+                self.data_channel, frame_id, json_bytes,
                 heartbeat_callback=self.heartbeat_callback,
             )
-            if not success:
-                logger.error("[SEND_OUTPUT] Frame %d: send_chunked_data FAILED", frame_id)
             return
 
         if self._data_mode == DataOutputMode.ALL:
@@ -702,83 +688,30 @@ class VideoFrameProcessor:
         else:
             fields_to_send = self.data_output
 
-        # Offload CPU-intensive serialization (especially image base64 encoding) to thread
-        serialize_start = time.time()
         serialized_outputs, serialization_errors = await asyncio.to_thread(
             VideoFrameProcessor.serialize_outputs_sync,
             fields_to_send,
             workflow_output,
             self._data_mode,
         )
-        serialize_elapsed = time.time() - serialize_start
-        
-        if serialize_elapsed > 0.5:
-            logger.warning(
-                "[SEND_OUTPUT] Frame %d: Serialization took %.2fs (fields: %s)",
-                frame_id, serialize_elapsed, fields_to_send
-            )
         
         webrtc_output.errors.extend(serialization_errors)
-        if serialization_errors:
-            logger.warning(
-                "[SEND_OUTPUT] Frame %d: Serialization errors: %s",
-                frame_id, serialization_errors
-            )
-
-        # Set serialized outputs
         if serialized_outputs:
             webrtc_output.serialized_output_data = serialized_outputs
 
-        # Send using binary chunked protocol with gzip compression
-        json_start = time.time()
-        
         def compress_json():
             import gzip
-            json_str = json.dumps(webrtc_output.model_dump(mode="json"))
-            json_bytes = json_str.encode("utf-8")
-            compressed = gzip.compress(json_bytes, compresslevel=6)
-            return json_bytes, compressed
+            json_bytes = json.dumps(webrtc_output.model_dump(mode="json")).encode("utf-8")
+            return gzip.compress(json_bytes, compresslevel=6)
         
-        raw_bytes, compressed_bytes = await asyncio.to_thread(compress_json)
-        json_elapsed = time.time() - json_start
+        compressed_bytes = await asyncio.to_thread(compress_json)
         
-        raw_kb = len(raw_bytes) / 1024
-        compressed_kb = len(compressed_bytes) / 1024
-        compression_ratio = (1 - len(compressed_bytes) / len(raw_bytes)) * 100 if raw_bytes else 0
-        
-        logger.info(
-            "[SEND_OUTPUT] Frame %d: raw=%.1f KB, compressed=%.1f KB (%.0f%% reduction), "
-            "serialize=%.2fs, buffer=%d, channel=%s",
-            frame_id, raw_kb, compressed_kb, compression_ratio,
-            serialize_elapsed, self.data_channel.bufferedAmount, self.data_channel.readyState
-        )
-        
-        # Use compressed bytes for sending
-        json_bytes = compressed_bytes
-        
-        send_data_start = time.time()
         success = await send_chunked_data(
-            self.data_channel,
-            frame_id,
-            json_bytes,
+            self.data_channel, frame_id, compressed_bytes,
             heartbeat_callback=self.heartbeat_callback,
         )
-        send_data_elapsed = time.time() - send_data_start
-        total_elapsed = time.time() - send_start
-        
         if not success:
-            logger.error(
-                "[SEND_OUTPUT] Frame %d: FAILED after %.2fs! "
-                "channel_state=%s, buffer=%d",
-                frame_id, total_elapsed, self.data_channel.readyState,
-                self.data_channel.bufferedAmount
-            )
-        elif total_elapsed > 1.0:
-            logger.warning(
-                "[SEND_OUTPUT] Frame %d: Slow send %.2fs (serialize=%.2fs, "
-                "json=%.2fs, send=%.2fs)",
-                frame_id, total_elapsed, serialize_elapsed, json_elapsed, send_data_elapsed
-            )
+            logger.error("[SEND_OUTPUT] Frame %d failed", frame_id)
 
     async def _send_processing_complete(self):
         """Send final message indicating processing is complete."""
