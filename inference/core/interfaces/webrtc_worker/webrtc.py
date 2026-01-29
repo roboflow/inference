@@ -88,39 +88,6 @@ CHUNK_SIZE = 48 * 1024  # 48KB - safe for all WebRTC implementations
 # quality=10 reduces ~1MB raw to ~50KB, quality=50 produces ~150-200KB
 WEBRTC_JPEG_QUALITY = 80
 
-# Keepalive frame interval in seconds - send black frame to keep video track open
-WEBRTC_KEEPALIVE_INTERVAL = 1.0
-
-# Default keepalive frame dimensions
-KEEPALIVE_FRAME_WIDTH = 640
-KEEPALIVE_FRAME_HEIGHT = 480
-
-
-def create_keepalive_frame(
-    width: int = KEEPALIVE_FRAME_WIDTH,
-    height: int = KEEPALIVE_FRAME_HEIGHT,
-    pts: int = 0,
-    time_base: fractions.Fraction = fractions.Fraction(1, 30),
-) -> VideoFrame:
-    """Create a black keepalive frame to keep the video track open.
-    
-    Args:
-        width: Frame width in pixels
-        height: Frame height in pixels
-        pts: Presentation timestamp
-        time_base: Time base for the frame
-        
-    Returns:
-        A black VideoFrame
-    """
-    import numpy as np
-    black_frame = np.zeros((height, width, 3), dtype=np.uint8)
-    frame = VideoFrame.from_ndarray(black_frame, format="bgr24")
-    frame.pts = pts
-    frame.time_base = time_base
-    return frame
-
-
 def serialise_image_for_webrtc(image: WorkflowImageData) -> Dict[str, Any]:
     """Serialize image with low JPEG quality for efficient WebRTC transmission."""
     jpeg_bytes = encode_image_to_jpeg_bytes(image.numpy_image, jpeg_quality=WEBRTC_JPEG_QUALITY)
@@ -1277,9 +1244,6 @@ class VideoTransformTrackWithLoop(VideoStreamTrack, VideoFrameProcessor):
             heartbeat_callback=heartbeat_callback,
             realtime_processing=realtime_processing,
         )
-        # Keepalive frame state
-        self._keepalive_pts = 0
-        self._keepalive_time_base = fractions.Fraction(1, int(declared_fps))
 
     async def _auto_detect_stream_output(
         self, frame: VideoFrame, frame_id: int
@@ -1298,15 +1262,6 @@ class VideoTransformTrackWithLoop(VideoStreamTrack, VideoFrameProcessor):
             logger.warning("No image output detected, will use fallback")
             self.stream_output = ""
 
-    def _create_keepalive(self) -> VideoFrame:
-        """Create and return a keepalive frame, incrementing the pts counter."""
-        keepalive = create_keepalive_frame(
-            pts=self._keepalive_pts,
-            time_base=self._keepalive_time_base,
-        )
-        self._keepalive_pts += 1
-        return keepalive
-
     async def recv(self):
         recv_start = time.time()
         
@@ -1324,31 +1279,15 @@ class VideoTransformTrackWithLoop(VideoStreamTrack, VideoFrameProcessor):
             raise MediaStreamError("Processing terminated due to timeout")
 
         # Wait for track to be ready (video file upload case)
-        # Send keepalive frames while waiting to keep the video track open
         if self.track is None:
             logger.info("[RECV] Track is None, waiting for track_ready_event...")
-            try:
-                await asyncio.wait_for(
-                    self._track_ready_event.wait(),
-                    timeout=WEBRTC_KEEPALIVE_INTERVAL
-                )
-            except asyncio.TimeoutError:
-                # Track not ready yet, send keepalive frame to keep connection alive
-                logger.info("[RECV] Track not ready, sending keepalive frame")
-                return self._create_keepalive()
-            
+            await self._track_ready_event.wait()
             if self.track is None:
                 logger.error("[RECV] Track still None after wait!")
                 raise MediaStreamError("Track not available after wait")
 
         # Optional ACK pacing: block producing the next frame if we're too far ahead.
-        # Send keepalive frames while waiting for ACKs
-        ack_wait_result = await self._wait_for_ack_window_with_keepalive(
-            next_frame_id=self._received_frames + 1
-        )
-        if ack_wait_result == "keepalive":
-            logger.info("[RECV] Waiting for ACK, sending keepalive")
-            return self._create_keepalive()
+        await self._wait_for_ack_window(next_frame_id=self._received_frames + 1)
 
         # Drain queue if using PlayerStreamTrack (RTSP/video file)
         if isinstance(self.track, PlayerStreamTrack) and self.realtime_processing:
@@ -1410,41 +1349,6 @@ class VideoTransformTrackWithLoop(VideoStreamTrack, VideoFrameProcessor):
             logger.warning("[RECV] Frame %d errors: %s", frame_id, errors)
 
         return new_frame
-
-    async def _wait_for_ack_window_with_keepalive(self, next_frame_id: int) -> str:
-        """Wait for ACK window with keepalive frame support.
-        
-        Returns:
-            "ready" if ready to produce next frame
-            "keepalive" if should send keepalive frame instead
-        """
-        if self.realtime_processing:
-            return "ready"
-        if self._ack_last == 0:
-            return "ready"
-
-        # Check if we're within the ACK window
-        if next_frame_id <= (self._ack_last + self._ack_window):
-            return "ready"
-
-        # Need to wait for ACK - use timeout to send keepalive frames
-        try:
-            self._ack_event.clear()
-            await asyncio.wait_for(
-                self._ack_event.wait(),
-                timeout=WEBRTC_KEEPALIVE_INTERVAL
-            )
-            # ACK received, check again
-            if next_frame_id <= (self._ack_last + self._ack_window):
-                return "ready"
-            # Still outside window, send keepalive
-            return "keepalive"
-        except asyncio.TimeoutError:
-            # Timeout waiting for ACK, send keepalive to keep connection alive
-            logger.debug("Sending keepalive frame while waiting for ACK")
-            if self.heartbeat_callback:
-                self.heartbeat_callback()
-            return "keepalive"
 
 
 async def _wait_ice_complete(peer_connection: RTCPeerConnectionWithLoop, timeout=2.0):
