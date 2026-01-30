@@ -12,7 +12,7 @@ from inference.core.workflows.execution_engine.entities.base import WorkflowImag
 WEBRTC_JPEG_QUALITY = 80
 
 
-def serialise_image_for_webrtc(image: WorkflowImageData) -> Dict[str, Any]:
+def compress_image_for_webrtc(image: WorkflowImageData) -> Dict[str, Any]:
     """Serialize image with low JPEG quality for efficient WebRTC transmission."""
     jpeg_bytes = encode_image_to_jpeg_bytes(
         image.numpy_image, jpeg_quality=WEBRTC_JPEG_QUALITY
@@ -27,7 +27,7 @@ def serialise_image_for_webrtc(image: WorkflowImageData) -> Dict[str, Any]:
 def serialize_for_webrtc(value: Any) -> Any:
     """Serialize for WebRTC, compressing images with low JPEG quality."""
     if isinstance(value, WorkflowImageData):
-        return serialise_image_for_webrtc(value)
+        return compress_image_for_webrtc(value)
     if isinstance(value, dict):
         return {k: serialize_for_webrtc(v) for k, v in value.items()}
     if isinstance(value, list):
