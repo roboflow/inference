@@ -230,8 +230,6 @@ STRETCH_EXPECTED_KP_CONF = [
 
 CPU_LETTERBOX_BOX_XYXY = [[-33, 246, 1732, 1076], [-8, 252, 1798, 1076]]
 CPU_LETTERBOX_BOX_CONF = [0.9278, 0.4428]
-GPU_LETTERBOX_BOX_XYXY = [[-33, 246, 1733, 1076], [-8, 252, 1798, 1076]]
-GPU_LETTERBOX_BOX_CONF = [0.9258, 0.5585]
 
 
 @pytest.mark.slow
@@ -265,12 +263,8 @@ def test_yolo26n_pose_onnx_static_letterbox_numpy(
         atol=CONF_TOLERANCE,
     )
 
-    if IS_GPU:
-        expected_box_xyxy = torch.tensor(GPU_LETTERBOX_BOX_XYXY, dtype=torch.int32)
-        expected_box_conf = torch.tensor(GPU_LETTERBOX_BOX_CONF)
-    else:
-        expected_box_xyxy = torch.tensor(CPU_LETTERBOX_BOX_XYXY, dtype=torch.int32)
-        expected_box_conf = torch.tensor(CPU_LETTERBOX_BOX_CONF)
+    expected_box_xyxy = torch.tensor(CPU_LETTERBOX_BOX_XYXY, dtype=torch.int32)
+    expected_box_conf = torch.tensor(CPU_LETTERBOX_BOX_CONF)
 
     assert torch.allclose(
         predictions[1][0].xyxy.cpu(), expected_box_xyxy, atol=COORD_TOLERANCE
@@ -305,12 +299,8 @@ def test_yolo26n_pose_onnx_static_letterbox_batch_numpy(
         [LETTERBOX_EXPECTED_KP_CONF_1, LETTERBOX_EXPECTED_KP_CONF_2]
     )
 
-    if IS_GPU:
-        expected_box_xyxy = torch.tensor(GPU_LETTERBOX_BOX_XYXY, dtype=torch.int32)
-        expected_box_conf = torch.tensor(GPU_LETTERBOX_BOX_CONF)
-    else:
-        expected_box_xyxy = torch.tensor(CPU_LETTERBOX_BOX_XYXY, dtype=torch.int32)
-        expected_box_conf = torch.tensor(CPU_LETTERBOX_BOX_CONF)
+    expected_box_xyxy = torch.tensor(CPU_LETTERBOX_BOX_XYXY, dtype=torch.int32)
+    expected_box_conf = torch.tensor(CPU_LETTERBOX_BOX_CONF)
 
     for i in range(2):
         assert torch.allclose(
@@ -358,12 +348,8 @@ def test_yolo26n_pose_onnx_static_letterbox_torch(
         atol=CONF_TOLERANCE,
     )
 
-    if IS_GPU:
-        expected_box_xyxy = torch.tensor(GPU_LETTERBOX_BOX_XYXY, dtype=torch.int32)
-        expected_box_conf = torch.tensor(GPU_LETTERBOX_BOX_CONF)
-    else:
-        expected_box_xyxy = torch.tensor(CPU_LETTERBOX_BOX_XYXY, dtype=torch.int32)
-        expected_box_conf = torch.tensor(CPU_LETTERBOX_BOX_CONF)
+    expected_box_xyxy = torch.tensor(CPU_LETTERBOX_BOX_XYXY, dtype=torch.int32)
+    expected_box_conf = torch.tensor(CPU_LETTERBOX_BOX_CONF)
 
     assert torch.allclose(
         predictions[1][0].xyxy.cpu(), expected_box_xyxy, atol=COORD_TOLERANCE
@@ -404,12 +390,8 @@ def test_yolo26n_pose_onnx_dynamic_letterbox_numpy(
         atol=CONF_TOLERANCE,
     )
 
-    if IS_GPU:
-        expected_box_xyxy = torch.tensor(GPU_LETTERBOX_BOX_XYXY, dtype=torch.int32)
-        expected_box_conf = torch.tensor(GPU_LETTERBOX_BOX_CONF)
-    else:
-        expected_box_xyxy = torch.tensor(CPU_LETTERBOX_BOX_XYXY, dtype=torch.int32)
-        expected_box_conf = torch.tensor(CPU_LETTERBOX_BOX_CONF)
+    expected_box_xyxy = torch.tensor(CPU_LETTERBOX_BOX_XYXY, dtype=torch.int32)
+    expected_box_conf = torch.tensor(CPU_LETTERBOX_BOX_CONF)
 
     assert torch.allclose(
         predictions[1][0].xyxy.cpu(), expected_box_xyxy, atol=COORD_TOLERANCE
@@ -444,12 +426,8 @@ def test_yolo26n_pose_onnx_dynamic_letterbox_batch_numpy(
         [LETTERBOX_EXPECTED_KP_CONF_1, LETTERBOX_EXPECTED_KP_CONF_2]
     )
 
-    if IS_GPU:
-        expected_box_xyxy = torch.tensor(GPU_LETTERBOX_BOX_XYXY, dtype=torch.int32)
-        expected_box_conf = torch.tensor(GPU_LETTERBOX_BOX_CONF)
-    else:
-        expected_box_xyxy = torch.tensor(CPU_LETTERBOX_BOX_XYXY, dtype=torch.int32)
-        expected_box_conf = torch.tensor(CPU_LETTERBOX_BOX_CONF)
+    expected_box_xyxy = torch.tensor(CPU_LETTERBOX_BOX_XYXY, dtype=torch.int32)
+    expected_box_conf = torch.tensor(CPU_LETTERBOX_BOX_CONF)
 
     for i in range(2):
         assert torch.allclose(
@@ -497,12 +475,8 @@ def test_yolo26n_pose_onnx_dynamic_letterbox_torch(
         atol=CONF_TOLERANCE,
     )
 
-    if IS_GPU:
-        expected_box_xyxy = torch.tensor(GPU_LETTERBOX_BOX_XYXY, dtype=torch.int32)
-        expected_box_conf = torch.tensor(GPU_LETTERBOX_BOX_CONF)
-    else:
-        expected_box_xyxy = torch.tensor(CPU_LETTERBOX_BOX_XYXY, dtype=torch.int32)
-        expected_box_conf = torch.tensor(CPU_LETTERBOX_BOX_CONF)
+    expected_box_xyxy = torch.tensor(CPU_LETTERBOX_BOX_XYXY, dtype=torch.int32)
+    expected_box_conf = torch.tensor(CPU_LETTERBOX_BOX_CONF)
 
     assert torch.allclose(
         predictions[1][0].xyxy.cpu(), expected_box_xyxy, atol=COORD_TOLERANCE

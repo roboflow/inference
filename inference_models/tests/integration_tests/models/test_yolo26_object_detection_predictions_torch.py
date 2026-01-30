@@ -12,118 +12,45 @@ XYXY_ATOL = 2
 
 IS_GPU = str(DEFAULT_DEVICE).startswith("cuda")
 
-GPU_STRETCH_NUMPY_CONFIDENCE = [
-    0.9141,
-    0.9095,
-    0.9091,
-    0.9089,
-    0.9074,
-    0.8875,
-    0.8866,
-    0.8809,
-    0.8679,
-    0.8653,
-    0.8646,
-    0.8546,
-    0.8504,
-    0.84,
-    0.8333,
-    0.8287,
-    0.8114,
-    0.807,
-    0.8066,
-    0.7848,
-    0.7598,
-    0.7347,
-    0.6763,
-    0.6251,
-    0.5841,
-    0.5538,
-    0.5237,
-    0.482,
-    0.3968,
-    0.379,
-    0.3727,
-    0.3702,
-    0.3431,
-    0.3355,
-]
-GPU_STRETCH_NUMPY_XYXY = [
-    [614, 75, 753, 215],
-    [284, 318, 372, 397],
-    [1375, 224, 1575, 427],
-    [8, 381, 92, 465],
-    [583, 236, 744, 351],
-    [301, 153, 416, 266],
-    [1242, 395, 1350, 488],
-    [323, 958, 385, 1022],
-    [571, 359, 796, 565],
-    [100, 335, 192, 431],
-    [1298, 260, 1379, 363],
-    [918, 282, 1067, 448],
-    [1806, 638, 1874, 710],
-    [470, 399, 571, 494],
-    [68, 1009, 183, 1080],
-    [1443, 867, 1502, 941],
-    [80, 686, 224, 826],
-    [122, 421, 198, 486],
-    [1498, 421, 1622, 558],
-    [445, 144, 508, 213],
-    [1233, 776, 1270, 812],
-    [1381, 480, 1437, 543],
-    [1478, 808, 1586, 933],
-    [1872, 637, 1920, 723],
-    [429, 575, 490, 637],
-    [1867, 734, 1919, 904],
-    [484, 158, 548, 237],
-    [1731, 517, 1811, 578],
-    [1612, 370, 1669, 419],
-    [194, 339, 278, 413],
-    [1708, 243, 1838, 375],
-    [877, 269, 917, 306],
-    [764, 210, 807, 262],
-    [1622, 448, 1782, 550],
-]
-
 GPU_STRETCH_TORCH_CONFIDENCE = [
-    0.9136,
-    0.9131,
-    0.9092,
-    0.9072,
-    0.9064,
+    0.9142,
+    0.9139,
+    0.9094,
+    0.9070,
+    0.9065,
     0.8872,
-    0.8867,
+    0.8866,
     0.8802,
-    0.8679,
+    0.8677,
     0.8652,
-    0.8647,
-    0.8553,
-    0.8514,
-    0.839,
-    0.8327,
-    0.8287,
-    0.8075,
-    0.8066,
-    0.7965,
-    0.7868,
-    0.7593,
-    0.734,
-    0.6744,
-    0.6271,
-    0.5702,
-    0.561,
-    0.5526,
-    0.5223,
-    0.4789,
-    0.3977,
-    0.3723,
-    0.3599,
-    0.3413,
-    0.3406,
+    0.8652,
+    0.8551,
+    0.8511,
+    0.8387,
+    0.8322,
+    0.8286,
+    0.8074,
+    0.8060,
+    0.7985,
+    0.7867,
+    0.7590,
+    0.7341,
+    0.6732,
+    0.6264,
+    0.5695,
+    0.5569,
+    0.5237,
+    0.5214,
+    0.4762,
+    0.3973,
+    0.3710,
+    0.3622,
+    0.3415,
+    0.3410,
 ]
 GPU_STRETCH_TORCH_XYXY = [
-    [614, 74, 753, 215],
     [1375, 224, 1575, 427],
+    [614, 75, 753, 215],
     [284, 318, 372, 397],
     [8, 381, 92, 465],
     [583, 236, 744, 351],
@@ -160,40 +87,40 @@ GPU_STRETCH_TORCH_XYXY = [
 
 GPU_LETTERBOX_TORCH_CONFIDENCE = [
     0.9027,
-    0.8974,
-    0.8921,
-    0.8907,
-    0.8801,
+    0.8973,
+    0.8923,
+    0.8909,
+    0.8802,
     0.8695,
-    0.8589,
-    0.8463,
-    0.8457,
-    0.8397,
-    0.838,
-    0.837,
-    0.8355,
+    0.8588,
+    0.8464,
+    0.8458,
+    0.8400,
+    0.8380,
+    0.8372,
     0.8352,
-    0.8201,
-    0.8039,
-    0.8005,
+    0.8343,
+    0.8204,
+    0.8042,
+    0.8010,
     0.8003,
-    0.7892,
-    0.7743,
+    0.7896,
+    0.7742,
     0.7239,
-    0.6152,
-    0.5801,
-    0.56,
+    0.6118,
+    0.5799,
+    0.5596,
     0.4578,
-    0.4525,
-    0.449,
-    0.4403,
-    0.4095,
-    0.3999,
-    0.3901,
-    0.3631,
-    0.3535,
-    0.3207,
-    0.2508,
+    0.4530,
+    0.4482,
+    0.4400,
+    0.4087,
+    0.3990,
+    0.3905,
+    0.3641,
+    0.3518,
+    0.3196,
+    0.2517,
 ]
 GPU_LETTERBOX_TORCH_XYXY = [
     [1374, 223, 1579, 422],
@@ -208,8 +135,8 @@ GPU_LETTERBOX_TORCH_XYXY = [
     [1500, 418, 1627, 553],
     [918, 285, 1066, 446],
     [557, 353, 800, 571],
-    [573, 233, 751, 350],
     [1297, 254, 1379, 358],
+    [573, 233, 751, 350],
     [1241, 395, 1345, 484],
     [10, 378, 95, 459],
     [465, 393, 576, 489],
@@ -217,7 +144,7 @@ GPU_LETTERBOX_TORCH_XYXY = [
     [1437, 861, 1505, 940],
     [1232, 771, 1272, 810],
     [120, 418, 199, 479],
-    [1868, 734, 1920, 888],
+    [1868, 734, 1920, 887],
     [483, 160, 547, 234],
     [64, 1003, 191, 1075],
     [428, 566, 490, 635],
@@ -472,14 +399,9 @@ def test_torchscript_package_stretch_numpy(
 
     assert len(predictions) == 1
 
-    if IS_GPU:
-        expected_confidence = torch.tensor(GPU_STRETCH_NUMPY_CONFIDENCE)
-        expected_class_id = torch.ones(34, dtype=torch.int32)
-        expected_xyxy = torch.tensor(GPU_STRETCH_NUMPY_XYXY, dtype=torch.float32)
-    else:
-        expected_confidence = torch.tensor(CPU_STRETCH_NUMPY_CONFIDENCE)
-        expected_class_id = torch.ones(35, dtype=torch.int32)
-        expected_xyxy = torch.tensor(CPU_STRETCH_NUMPY_XYXY, dtype=torch.float32)
+    expected_confidence = torch.tensor(CPU_STRETCH_NUMPY_CONFIDENCE)
+    expected_class_id = torch.ones(35, dtype=torch.int32)
+    expected_xyxy = torch.tensor(CPU_STRETCH_NUMPY_XYXY, dtype=torch.float32)
 
     assert torch.allclose(
         predictions[0].confidence.cpu(), expected_confidence, atol=CONFIDENCE_ATOL
@@ -503,14 +425,9 @@ def test_torchscript_package_stretch_batch_numpy(
 
     predictions = model([sunflowers_image_numpy, sunflowers_image_numpy])
 
-    if IS_GPU:
-        expected_confidence = torch.tensor(GPU_STRETCH_NUMPY_CONFIDENCE)
-        expected_class_id = torch.ones(34, dtype=torch.int32)
-        expected_xyxy = torch.tensor(GPU_STRETCH_NUMPY_XYXY, dtype=torch.float32)
-    else:
-        expected_confidence = torch.tensor(CPU_STRETCH_NUMPY_CONFIDENCE)
-        expected_class_id = torch.ones(35, dtype=torch.int32)
-        expected_xyxy = torch.tensor(CPU_STRETCH_NUMPY_XYXY, dtype=torch.float32)
+    expected_confidence = torch.tensor(CPU_STRETCH_NUMPY_CONFIDENCE)
+    expected_class_id = torch.ones(35, dtype=torch.int32)
+    expected_xyxy = torch.tensor(CPU_STRETCH_NUMPY_XYXY, dtype=torch.float32)
 
     assert len(predictions) == 2
     for i in range(2):

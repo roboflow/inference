@@ -12,118 +12,45 @@ ONNX_EXECUTION_PROVIDERS = (
     ["CUDAExecutionProvider", "CPUExecutionProvider"] if IS_GPU else ["CPUExecutionProvider"]
 )
 
-GPU_STRETCH_NUMPY_CONFIDENCE = [
-    0.9143,
-    0.9104,
-    0.9095,
-    0.909,
-    0.9074,
-    0.8875,
-    0.8867,
-    0.8808,
-    0.868,
-    0.8654,
-    0.865,
-    0.8545,
-    0.8507,
-    0.84,
-    0.8332,
-    0.8285,
-    0.8132,
-    0.8071,
-    0.8066,
-    0.7853,
-    0.7597,
-    0.7349,
-    0.6755,
-    0.6251,
-    0.5847,
-    0.5548,
-    0.5237,
-    0.4825,
-    0.4071,
-    0.3962,
-    0.3794,
-    0.3701,
-    0.3431,
-    0.3362,
-]
-GPU_STRETCH_NUMPY_XYXY = [
-    [614, 75, 753, 215],
-    [1375, 224, 1575, 427],
-    [284, 318, 372, 397],
-    [8, 381, 92, 465],
-    [583, 236, 744, 351],
-    [301, 153, 416, 266],
-    [1242, 395, 1350, 488],
-    [323, 958, 385, 1022],
-    [571, 359, 796, 564],
-    [100, 335, 192, 431],
-    [1298, 260, 1379, 363],
-    [918, 282, 1067, 448],
-    [1806, 638, 1874, 710],
-    [470, 399, 571, 494],
-    [68, 1009, 183, 1080],
-    [1443, 867, 1502, 941],
-    [80, 686, 224, 826],
-    [122, 421, 198, 486],
-    [1498, 421, 1622, 558],
-    [445, 144, 508, 213],
-    [1233, 776, 1270, 812],
-    [1381, 480, 1437, 543],
-    [1478, 808, 1586, 933],
-    [1872, 637, 1920, 723],
-    [429, 575, 490, 637],
-    [1867, 734, 1919, 904],
-    [484, 158, 548, 237],
-    [1731, 517, 1811, 578],
-    [1708, 243, 1838, 375],
-    [1612, 370, 1669, 419],
-    [194, 339, 278, 413],
-    [877, 269, 917, 306],
-    [764, 210, 807, 262],
-    [1622, 448, 1782, 550],
-]
-
 GPU_STRETCH_TORCH_CONFIDENCE = [
-    0.9138,
-    0.9129,
-    0.9093,
-    0.9072,
-    0.9066,
+    0.9142,
+    0.9139,
+    0.9094,
+    0.9070,
+    0.9065,
     0.8872,
     0.8866,
     0.8802,
     0.8677,
-    0.8655,
-    0.8649,
-    0.855,
-    0.8512,
-    0.8389,
-    0.8325,
-    0.8287,
-    0.8076,
-    0.8065,
-    0.7929,
-    0.7866,
-    0.7598,
-    0.7346,
-    0.674,
-    0.6266,
-    0.5711,
-    0.5586,
-    0.5413,
-    0.5219,
-    0.4788,
-    0.3979,
-    0.3721,
-    0.3587,
-    0.3419,
-    0.3406,
+    0.8652,
+    0.8652,
+    0.8551,
+    0.8511,
+    0.8387,
+    0.8322,
+    0.8286,
+    0.8074,
+    0.8060,
+    0.7985,
+    0.7867,
+    0.7590,
+    0.7341,
+    0.6732,
+    0.6264,
+    0.5695,
+    0.5569,
+    0.5237,
+    0.5214,
+    0.4762,
+    0.3973,
+    0.3710,
+    0.3622,
+    0.3415,
+    0.3410,
 ]
 GPU_STRETCH_TORCH_XYXY = [
-    [614, 75, 753, 215],
     [1375, 224, 1575, 427],
+    [614, 75, 753, 215],
     [284, 318, 372, 397],
     [8, 381, 92, 465],
     [583, 236, 744, 351],
@@ -223,81 +150,6 @@ GPU_LETTERBOX_TORCH_XYXY = [
     [428, 566, 490, 635],
     [1733, 511, 1809, 574],
     [1474, 805, 1581, 926],
-    [1873, 636, 1920, 726],
-    [1610, 368, 1668, 409],
-    [877, 266, 915, 304],
-    [1622, 437, 1766, 542],
-    [761, 277, 834, 333],
-    [770, 211, 811, 256],
-    [200, 338, 280, 408],
-    [766, 210, 807, 254],
-]
-
-GPU_LETTERBOX_BATCH_NUMPY_CONFIDENCE = [
-    0.9026,
-    0.8976,
-    0.8922,
-    0.8905,
-    0.8802,
-    0.8696,
-    0.8589,
-    0.8465,
-    0.8456,
-    0.84,
-    0.8384,
-    0.8371,
-    0.835,
-    0.8325,
-    0.8201,
-    0.8044,
-    0.8015,
-    0.8003,
-    0.7888,
-    0.7737,
-    0.7234,
-    0.6387,
-    0.5806,
-    0.5593,
-    0.4595,
-    0.4559,
-    0.4507,
-    0.4409,
-    0.4088,
-    0.4003,
-    0.3924,
-    0.3661,
-    0.357,
-    0.318,
-    0.2505,
-]
-GPU_LETTERBOX_BATCH_NUMPY_XYXY = [
-    [1374, 223, 1579, 422],
-    [1805, 633, 1873, 707],
-    [80, 691, 220, 824],
-    [299, 147, 419, 267],
-    [1706, 236, 1837, 371],
-    [327, 954, 380, 1017],
-    [282, 315, 375, 394],
-    [611, 73, 751, 214],
-    [99, 330, 194, 425],
-    [1500, 418, 1627, 553],
-    [918, 285, 1066, 446],
-    [557, 352, 800, 571],
-    [1297, 254, 1379, 358],
-    [573, 233, 751, 350],
-    [1241, 395, 1345, 484],
-    [10, 378, 95, 459],
-    [443, 142, 509, 212],
-    [465, 393, 576, 489],
-    [1437, 862, 1505, 940],
-    [1232, 771, 1272, 810],
-    [120, 418, 199, 479],
-    [1868, 734, 1920, 888],
-    [483, 160, 547, 234],
-    [64, 1003, 191, 1075],
-    [1474, 805, 1581, 926],
-    [428, 566, 490, 635],
-    [1732, 511, 1809, 574],
     [1873, 636, 1920, 726],
     [1610, 368, 1668, 409],
     [877, 266, 915, 304],
@@ -626,14 +478,9 @@ def test_onnx_package_stretch_static_bs_numpy(
 
     assert len(predictions) == 1
 
-    if IS_GPU:
-        expected_confidence = torch.tensor(GPU_STRETCH_NUMPY_CONFIDENCE)
-        expected_class_id = torch.ones(34, dtype=torch.int32)
-        expected_xyxy = torch.tensor(GPU_STRETCH_NUMPY_XYXY, dtype=torch.float32)
-    else:
-        expected_confidence = torch.tensor(CPU_STRETCH_NUMPY_CONFIDENCE)
-        expected_class_id = torch.ones(35, dtype=torch.int32)
-        expected_xyxy = torch.tensor(CPU_STRETCH_NUMPY_XYXY, dtype=torch.float32)
+    expected_confidence = torch.tensor(CPU_STRETCH_NUMPY_CONFIDENCE)
+    expected_class_id = torch.ones(35, dtype=torch.int32)
+    expected_xyxy = torch.tensor(CPU_STRETCH_NUMPY_XYXY, dtype=torch.float32)
 
     assert torch.allclose(
         predictions[0].confidence.cpu(), expected_confidence, atol=CONFIDENCE_ATOL
@@ -661,14 +508,9 @@ def test_onnx_package_stretch_static_bs_batch_numpy(
 
     predictions = model([sunflowers_image_numpy, sunflowers_image_numpy])
 
-    if IS_GPU:
-        expected_confidence = torch.tensor(GPU_STRETCH_NUMPY_CONFIDENCE)
-        expected_class_id = torch.ones(34, dtype=torch.int32)
-        expected_xyxy = torch.tensor(GPU_STRETCH_NUMPY_XYXY, dtype=torch.float32)
-    else:
-        expected_confidence = torch.tensor(CPU_STRETCH_NUMPY_CONFIDENCE)
-        expected_class_id = torch.ones(35, dtype=torch.int32)
-        expected_xyxy = torch.tensor(CPU_STRETCH_NUMPY_XYXY, dtype=torch.float32)
+    expected_confidence = torch.tensor(CPU_STRETCH_NUMPY_CONFIDENCE)
+    expected_class_id = torch.ones(35, dtype=torch.int32)
+    expected_xyxy = torch.tensor(CPU_STRETCH_NUMPY_XYXY, dtype=torch.float32)
 
     assert len(predictions) == 2
     for i in range(2):
@@ -737,14 +579,9 @@ def test_onnx_package_stretch_dynamic_bs_numpy(
 
     assert len(predictions) == 1
 
-    if IS_GPU:
-        expected_confidence = torch.tensor(GPU_STRETCH_NUMPY_CONFIDENCE)
-        expected_class_id = torch.ones(34, dtype=torch.int32)
-        expected_xyxy = torch.tensor(GPU_STRETCH_NUMPY_XYXY, dtype=torch.float32)
-    else:
-        expected_confidence = torch.tensor(CPU_STRETCH_NUMPY_CONFIDENCE)
-        expected_class_id = torch.ones(35, dtype=torch.int32)
-        expected_xyxy = torch.tensor(CPU_STRETCH_NUMPY_XYXY, dtype=torch.float32)
+    expected_confidence = torch.tensor(CPU_STRETCH_NUMPY_CONFIDENCE)
+    expected_class_id = torch.ones(35, dtype=torch.int32)
+    expected_xyxy = torch.tensor(CPU_STRETCH_NUMPY_XYXY, dtype=torch.float32)
 
     assert torch.allclose(
         predictions[0].confidence.cpu(), expected_confidence, atol=CONFIDENCE_ATOL
@@ -1287,16 +1124,8 @@ def test_onnx_package_letterbox_dynamic_bs_batch_numpy(
 
     predictions = model([sunflowers_image_numpy, sunflowers_image_numpy])
 
-    if IS_GPU:
-        expected_confidence = torch.tensor(GPU_LETTERBOX_BATCH_NUMPY_CONFIDENCE)
-        expected_xyxy = torch.tensor(
-            GPU_LETTERBOX_BATCH_NUMPY_XYXY, dtype=torch.float32
-        )
-    else:
-        expected_confidence = torch.tensor(CPU_LETTERBOX_BATCH_NUMPY_CONFIDENCE)
-        expected_xyxy = torch.tensor(
-            CPU_LETTERBOX_BATCH_NUMPY_XYXY, dtype=torch.float32
-        )
+    expected_confidence = torch.tensor(CPU_LETTERBOX_BATCH_NUMPY_CONFIDENCE)
+    expected_xyxy = torch.tensor(CPU_LETTERBOX_BATCH_NUMPY_XYXY, dtype=torch.float32)
 
     expected_class_id = torch.ones(35, dtype=torch.int32)
 
