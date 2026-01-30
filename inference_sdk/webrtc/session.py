@@ -3,6 +3,7 @@
 import asyncio
 import base64
 import functools
+import gzip
 import inspect
 import json
 import queue
@@ -687,6 +688,12 @@ class WebRTCSession:
                     self._video_queue.put_nowait(None)
                 except Exception:
                     pass
+            elif state == "closed":
+                logger.info("ICE connection closed - signaling end of stream")
+                try:
+                    self._video_queue.put_nowait(None)
+                except Exception:
+                    pass
             elif state == "disconnected":
                 logger.warning(
                     "ICE connection disconnected - may recover automatically. "
@@ -697,8 +704,11 @@ class WebRTCSession:
         async def _on_connection_state_change() -> None:
             state = pc.connectionState
             logger.info(f"Connection state: {state}")
-            if state == "failed":
-                logger.error("Connection failed - closing session")
+            if state in ("failed", "closed"):
+                if state == "failed":
+                    logger.error("Connection failed - closing session")
+                else:
+                    logger.info("Connection closed - signaling end of stream")
                 try:
                     self._video_queue.put_nowait(None)
                 except Exception:
@@ -775,6 +785,13 @@ class WebRTCSession:
                             if complete_payload is None:
                                 # Not all chunks received yet
                                 return
+                            # Server may send gzip-compressed JSON when data_output is set
+                            # Gzip magic bytes: \x1f\x8b
+                            if (
+                                len(complete_payload) >= 2
+                                and complete_payload[:2] == b"\x1f\x8b"
+                            ):
+                                complete_payload = gzip.decompress(complete_payload)
                             # Parse the complete JSON from reassembled payload
                             message = complete_payload.decode("utf-8")
                         except (struct.error, ValueError):
