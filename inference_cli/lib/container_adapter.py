@@ -1,6 +1,7 @@
 import os
+import re
 import subprocess
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional, Tuple, Union
 
 import typer
 from docker.errors import ImageNotFound
@@ -89,13 +90,119 @@ def get_image() -> str:
     jetpack_version = os.getenv("JETSON_JETPACK")
     if jetpack_version:
         return _get_jetpack_image(jetpack_version=jetpack_version)
+    detected_jetpack = _detect_jetpack_version()
+    if detected_jetpack is not None:
+        jetpack_version, detection_source = detected_jetpack
+        print(
+            f"Jetson detected via {detection_source}. "
+            f"Resolved JetPack version: {jetpack_version}"
+        )
+        return _get_jetpack_image(jetpack_version=jetpack_version)
     try:
         subprocess.check_output("nvidia-smi")
         print("GPU detected. Using a GPU image.")
         return "roboflow/roboflow-inference-server-gpu:latest"
-    except:
+    except Exception:
         print("No GPU detected. Using a CPU image.")
         return "roboflow/roboflow-inference-server-cpu:latest"
+
+
+# Maps L4T major version to the corresponding JetPack major.minor prefix.
+# See https://developer.nvidia.com/embedded/jetpack-archive for full mapping.
+_L4T_MAJOR_TO_JETPACK: Dict[int, str] = {
+    32: "4",  # L4T R32.x → JetPack 4.x (further refined below)
+    34: "5",  # L4T R34.x → JetPack 5.0
+    35: "5",  # L4T R35.x → JetPack 5.1
+    36: "6",  # L4T R36.x → JetPack 6.x
+}
+
+
+def _detect_jetpack_version() -> Optional[Tuple[str, str]]:
+    """Attempt to detect JetPack version through system introspection.
+
+    Returns a (jetpack_version_string, detection_source) tuple, or None if not
+    running on a Jetson device.
+    """
+    # Method 1: Read L4T version from /etc/nv_tegra_release (present on all
+    # Jetson devices regardless of JetPack version).
+    l4t = _get_l4t_version_from_tegra_release()
+    if l4t is not None:
+        l4t_major, l4t_minor = l4t
+        jetpack = _l4t_to_jetpack(l4t_major, l4t_minor)
+        if jetpack is not None:
+            return jetpack, f"/etc/nv_tegra_release (L4T R{l4t_major}.{l4t_minor})"
+
+    # Method 2: Query dpkg for the nvidia-jetpack meta-package (available when
+    # the full JetPack SDK is installed).
+    jetpack_from_dpkg = _get_jetpack_version_from_dpkg()
+    if jetpack_from_dpkg is not None:
+        return jetpack_from_dpkg, "dpkg (nvidia-jetpack)"
+
+    return None
+
+
+def _get_l4t_version_from_tegra_release() -> Optional[Tuple[int, str]]:
+    """Parse L4T version from /etc/nv_tegra_release.
+
+    Returns (major, minor_patch) e.g. (36, "4.0") or None.
+    """
+    try:
+        with open("/etc/nv_tegra_release") as f:
+            header = f.readline()
+            match = re.search(r"R(\d+).*REVISION:\s*([\d.]+)", header)
+            if match:
+                return int(match.group(1)), match.group(2)
+    except Exception:
+        pass
+    return None
+
+
+def _l4t_to_jetpack(l4t_major: int, l4t_minor: str) -> Optional[str]:
+    """Convert L4T version to a JetPack version string understood by
+    ``_get_jetpack_image``.
+    """
+    if l4t_major not in _L4T_MAJOR_TO_JETPACK:
+        return None
+
+    # L4T R32.x needs special handling: R32.5.x → JP 4.5, R32.6/7.x → JP 4.6
+    if l4t_major == 32:
+        try:
+            minor_int = int(l4t_minor.split(".")[0])
+        except (ValueError, IndexError):
+            return None
+        if minor_int <= 5:
+            return "4.5"
+        return "4.6"
+
+    # L4T R36.x: R36.2 → JP 6.0, R36.3 → JP 6.1, R36.4+ → JP 6.2
+    if l4t_major == 36:
+        try:
+            minor_int = int(l4t_minor.split(".")[0])
+        except (ValueError, IndexError):
+            return "6.0"
+        if minor_int <= 2:
+            return "6.0"
+        if minor_int == 3:
+            return "6.1"
+        return "6.2"
+
+    # L4T R35.x → JP 5.x
+    return _L4T_MAJOR_TO_JETPACK[l4t_major]
+
+
+def _get_jetpack_version_from_dpkg() -> Optional[str]:
+    """Query dpkg for the nvidia-jetpack package version."""
+    try:
+        output = subprocess.check_output(
+            ["dpkg-query", "--showformat=${Version}", "--show", "nvidia-jetpack"],
+            stderr=subprocess.DEVNULL,
+            text=True,
+        ).strip()
+        if output:
+            return output
+    except Exception:
+        pass
+    return None
 
 
 def _get_jetpack_image(jetpack_version: str) -> str:
@@ -105,6 +212,8 @@ def _get_jetpack_image(jetpack_version: str) -> str:
         return "roboflow/roboflow-inference-server-jetson-4.6.1:latest"
     if jetpack_version.startswith("5."):
         return "roboflow/roboflow-inference-server-jetson-5.1.1:latest"
+    if jetpack_version.startswith("6.2"):
+        return "roboflow/roboflow-inference-server-jetson-6.2.0:latest"
     if jetpack_version.startswith("6."):
         return "roboflow/roboflow-inference-server-jetson-6.0.0:latest"
     raise RuntimeError(f"Jetpack version: {jetpack_version} not supported")

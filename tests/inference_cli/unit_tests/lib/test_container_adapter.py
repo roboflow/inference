@@ -1,11 +1,18 @@
+import os
 from unittest import mock
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, mock_open, patch
 
+import pytest
 from rich.progress import Progress
 
 from inference_cli.lib import container_adapter
 from inference_cli.lib.container_adapter import (
+    _detect_jetpack_version,
+    _get_jetpack_image,
+    _get_l4t_version_from_tegra_release,
+    _l4t_to_jetpack,
     find_running_inference_containers,
+    get_image,
     is_container_running,
     is_inference_server_container,
     kill_containers,
@@ -258,3 +265,148 @@ def test_show_progress_when_unknown_status_given() -> None:
         assert (
             len(progress_tasks) == 0
         ), "No new task should be added on the update which is not recognised"
+
+
+# --- Tests for Jetson introspection and image selection ---
+
+
+class TestL4tVersionFromTegraRelease:
+    def test_parses_valid_tegra_release(self) -> None:
+        content = "# R36 (release), REVISION: 4.0, GCID: 12345, BOARD: generic"
+        with patch("builtins.open", mock_open(read_data=content)):
+            result = _get_l4t_version_from_tegra_release()
+        assert result == (36, "4.0")
+
+    def test_parses_r35_tegra_release(self) -> None:
+        content = "# R35 (release), REVISION: 2.1, GCID: 99999, BOARD: generic"
+        with patch("builtins.open", mock_open(read_data=content)):
+            result = _get_l4t_version_from_tegra_release()
+        assert result == (35, "2.1")
+
+    def test_parses_r32_tegra_release(self) -> None:
+        content = "# R32 (release), REVISION: 7.1, GCID: 55555, BOARD: t186ref"
+        with patch("builtins.open", mock_open(read_data=content)):
+            result = _get_l4t_version_from_tegra_release()
+        assert result == (32, "7.1")
+
+    def test_returns_none_when_file_missing(self) -> None:
+        with patch("builtins.open", side_effect=FileNotFoundError):
+            result = _get_l4t_version_from_tegra_release()
+        assert result is None
+
+    def test_returns_none_for_malformed_content(self) -> None:
+        with patch("builtins.open", mock_open(read_data="garbage content")):
+            result = _get_l4t_version_from_tegra_release()
+        assert result is None
+
+
+class TestL4tToJetpack:
+    @pytest.mark.parametrize(
+        "l4t_major, l4t_minor, expected",
+        [
+            (32, "5.0", "4.5"),
+            (32, "5.1", "4.5"),
+            (32, "4.3", "4.5"),
+            (32, "6.1", "4.6"),
+            (32, "7.1", "4.6"),
+            (35, "2.1", "5"),
+            (35, "4.1", "5"),
+            (36, "2.0", "6.0"),
+            (36, "3.0", "6.1"),
+            (36, "4.0", "6.2"),
+            (36, "5.0", "6.2"),
+        ],
+    )
+    def test_l4t_to_jetpack_mapping(
+        self, l4t_major: int, l4t_minor: str, expected: str
+    ) -> None:
+        assert _l4t_to_jetpack(l4t_major, l4t_minor) == expected
+
+    def test_returns_none_for_unknown_l4t_major(self) -> None:
+        assert _l4t_to_jetpack(99, "1.0") is None
+
+
+class TestGetJetpackImage:
+    @pytest.mark.parametrize(
+        "version, expected_image",
+        [
+            ("4.5", "roboflow/roboflow-inference-server-jetson-4.5.0:latest"),
+            ("4.5.1", "roboflow/roboflow-inference-server-jetson-4.5.0:latest"),
+            ("4.6", "roboflow/roboflow-inference-server-jetson-4.6.1:latest"),
+            ("4.6.1", "roboflow/roboflow-inference-server-jetson-4.6.1:latest"),
+            ("5.0", "roboflow/roboflow-inference-server-jetson-5.1.1:latest"),
+            ("5.1.1", "roboflow/roboflow-inference-server-jetson-5.1.1:latest"),
+            ("6.0", "roboflow/roboflow-inference-server-jetson-6.0.0:latest"),
+            ("6.1", "roboflow/roboflow-inference-server-jetson-6.0.0:latest"),
+            ("6.2", "roboflow/roboflow-inference-server-jetson-6.2.0:latest"),
+            ("6.2.0", "roboflow/roboflow-inference-server-jetson-6.2.0:latest"),
+        ],
+    )
+    def test_returns_correct_image(self, version: str, expected_image: str) -> None:
+        assert _get_jetpack_image(version) == expected_image
+
+    def test_raises_for_unsupported_version(self) -> None:
+        with pytest.raises(RuntimeError, match="not supported"):
+            _get_jetpack_image("3.0")
+
+
+class TestDetectJetpackVersion:
+    def test_detects_from_tegra_release(self) -> None:
+        content = "# R36 (release), REVISION: 4.0, GCID: 12345, BOARD: generic"
+        with patch("builtins.open", mock_open(read_data=content)):
+            result = _detect_jetpack_version()
+        assert result is not None
+        jetpack_version, source = result
+        assert jetpack_version == "6.2"
+        assert "/etc/nv_tegra_release" in source
+
+    @patch.object(container_adapter, "_get_l4t_version_from_tegra_release", return_value=None)
+    @patch.object(container_adapter, "_get_jetpack_version_from_dpkg", return_value="6.0")
+    def test_falls_back_to_dpkg(self, _dpkg_mock: MagicMock, _tegra_mock: MagicMock) -> None:
+        result = _detect_jetpack_version()
+        assert result is not None
+        jetpack_version, source = result
+        assert jetpack_version == "6.0"
+        assert "dpkg" in source
+
+    @patch.object(container_adapter, "_get_l4t_version_from_tegra_release", return_value=None)
+    @patch.object(container_adapter, "_get_jetpack_version_from_dpkg", return_value=None)
+    def test_returns_none_when_not_jetson(self, _dpkg_mock: MagicMock, _tegra_mock: MagicMock) -> None:
+        result = _detect_jetpack_version()
+        assert result is None
+
+
+class TestGetImage:
+    @mock.patch.dict(os.environ, {"JETSON_JETPACK": "6.2"}, clear=False)
+    def test_uses_env_var_when_set(self) -> None:
+        result = get_image()
+        assert result == "roboflow/roboflow-inference-server-jetson-6.2.0:latest"
+
+    @mock.patch.dict(os.environ, {}, clear=False)
+    @patch.object(container_adapter, "_detect_jetpack_version", return_value=("5.1", "test"))
+    def test_uses_introspection_when_no_env_var(self, _mock: MagicMock) -> None:
+        # Remove JETSON_JETPACK if present
+        os.environ.pop("JETSON_JETPACK", None)
+        result = get_image()
+        assert result == "roboflow/roboflow-inference-server-jetson-5.1.1:latest"
+
+    @mock.patch.dict(os.environ, {}, clear=False)
+    @patch.object(container_adapter, "_detect_jetpack_version", return_value=None)
+    @patch("subprocess.check_output")
+    def test_falls_back_to_gpu_when_nvidia_smi_works(
+        self, nvidia_smi_mock: MagicMock, _detect_mock: MagicMock
+    ) -> None:
+        os.environ.pop("JETSON_JETPACK", None)
+        nvidia_smi_mock.return_value = b"some output"
+        result = get_image()
+        assert result == "roboflow/roboflow-inference-server-gpu:latest"
+
+    @mock.patch.dict(os.environ, {}, clear=False)
+    @patch.object(container_adapter, "_detect_jetpack_version", return_value=None)
+    @patch("subprocess.check_output", side_effect=FileNotFoundError)
+    def test_falls_back_to_cpu_when_no_gpu(
+        self, _nvidia_mock: MagicMock, _detect_mock: MagicMock
+    ) -> None:
+        os.environ.pop("JETSON_JETPACK", None)
+        result = get_image()
+        assert result == "roboflow/roboflow-inference-server-cpu:latest"
