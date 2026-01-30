@@ -1,4 +1,4 @@
-from typing import List, Optional, Union
+from typing import List, Optional, Union, Tuple, Dict
 
 from rich.console import Console
 from rich.tree import Tree
@@ -76,6 +76,8 @@ class AutoModelPipeline:
         auto_resolution_cache: Optional[AutoResolutionCache] = None,
         allow_direct_local_storage_loading: bool = True,
         model_access_manager: Optional[ModelAccessManager] = None,
+        weights_provider_extra_query_params: Optional[List[Tuple[str, str]]] = None,
+        weights_provider_extra_headers: Optional[Dict[str, str]] = None,
         **kwargs,
     ) -> AnyModel:
         """Load and initialize a multi-model pipeline.
@@ -140,6 +142,12 @@ class AutoModelPipeline:
                 paths. Default: True.
 
             model_access_manager: Custom model access control manager. Advanced usage only.
+
+            weights_provider_extra_query_params: Extra query parameters to pass to the weights' provider. Advanced
+                usage only.
+
+            weights_provider_extra_headers: Extra headers to pass to the weights' provider. Advanced
+                usage only.
 
             **kwargs: Additional pipeline-specific parameters passed to the pipeline's
                 `with_models()` method.
@@ -239,6 +247,8 @@ class AutoModelPipeline:
                 nms_fusion_preferences=resolved_model_parameters.nms_fusion_preferences,
                 model_type=resolved_model_parameters.model_type,
                 task_type=resolved_model_parameters.task_type,
+                weights_provider_extra_query_params=weights_provider_extra_query_params,
+                weights_provider_extra_headers=weights_provider_extra_headers,
                 **resolved_model_parameters.kwargs,
             )
             models.append(model)

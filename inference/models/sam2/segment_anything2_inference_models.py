@@ -11,6 +11,7 @@ import torch
 from pycocotools import mask as mask_utils
 from torch.nn.attention import SDPBackend
 
+from inference.core.models.inference_models_adapters import get_extra_weights_provider_headers
 from inference.core.utils.postprocess import masks2multipoly
 from inference_models import AutoModel
 from inference_models.models.sam2.cache import (
@@ -99,6 +100,7 @@ class InferenceModelsSAM2Adapter(Model):
             size_limit=low_res_logits_cache_size,
             send_to_cpu=True,
         )
+        extra_weights_provider_headers = get_extra_weights_provider_headers()
         self._model: SAM2Torch = AutoModel.from_pretrained(
             model_id_or_path=model_id,
             api_key=self.api_key,
@@ -107,6 +109,7 @@ class InferenceModelsSAM2Adapter(Model):
             sam2_image_embeddings_cache=sam2_image_embeddings_cache,
             sam2_low_resolution_masks_cache=sam2_low_resolution_masks_cache,
             sam2_allow_client_generated_hash_ids=True,
+            extra_weights_provider_headers=extra_weights_provider_headers,
             **kwargs,
         )
 

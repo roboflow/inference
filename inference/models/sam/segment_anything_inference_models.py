@@ -25,6 +25,7 @@ from inference.core.env import (
     SAM_VERSION_ID,
 )
 from inference.core.models.base import Model
+from inference.core.models.inference_models_adapters import get_extra_weights_provider_headers
 from inference.core.utils.image_utils import load_image_bgr
 from inference.core.utils.postprocess import masks2poly
 from inference_models import AutoModel
@@ -61,6 +62,8 @@ class InferenceModelsSAMAdapter(Model):
             size_limit=SAM_MAX_EMBEDDING_CACHE_SIZE,
             send_to_cpu=True,
         )
+        extra_weights_provider_headers = get_extra_weights_provider_headers()
+
         self._model: SAMTorch = AutoModel.from_pretrained(
             model_id_or_path=model_id,
             api_key=self.api_key,
@@ -69,6 +72,7 @@ class InferenceModelsSAMAdapter(Model):
             sam_image_embeddings_cache=sam_image_embeddings_cache,
             sam_low_resolution_masks_cache=sam_low_resolution_masks_cache,
             sam_allow_client_generated_hash_ids=True,
+            extra_weights_provider_headers=extra_weights_provider_headers,
             **kwargs,
         )
 

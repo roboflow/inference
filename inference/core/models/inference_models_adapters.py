@@ -1,6 +1,6 @@
 from io import BytesIO
 from time import perf_counter
-from typing import Any, List, Optional, Tuple, Union
+from typing import Any, List, Optional, Tuple, Union, Dict
 
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
@@ -23,7 +23,7 @@ from inference.core.entities.responses.inference import (
 from inference.core.env import (
     ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES,
     ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES,
-    API_KEY,
+    API_KEY, GCP_SERVERLESS, ENFORCE_CREDITS_VERIFICATION,
 )
 from inference.core.models.base import Model
 from inference.core.utils.image_utils import load_image_bgr
@@ -80,11 +80,14 @@ class InferenceModelsObjectDetectionAdapter(Model):
 
         self.task_type = "object-detection"
 
+        extra_weights_provider_headers = get_extra_weights_provider_headers()
+
         self._model: ObjectDetectionModel = AutoModel.from_pretrained(
             model_id_or_path=model_id,
             api_key=self.api_key,
             allow_untrusted_packages=ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES,
             allow_direct_local_storage_loading=ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES,
+            extra_weights_provider_headers=extra_weights_provider_headers,
             **kwargs,
         )
         self.class_names = list(self._model.class_names)
@@ -189,11 +192,15 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
 
         self.task_type = "instance-segmentation"
 
+        extra_weights_provider_headers = get_extra_weights_provider_headers()
+
+
         self._model: InstanceSegmentationModel = AutoModel.from_pretrained(
             model_id_or_path=model_id,
             api_key=self.api_key,
             allow_untrusted_packages=ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES,
             allow_direct_local_storage_loading=ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES,
+            extra_weights_provider_headers=extra_weights_provider_headers,
             **kwargs,
         )
         self.class_names = list(self._model.class_names)
@@ -305,11 +312,14 @@ class InferenceModelsKeyPointsDetectionAdapter(Model):
 
         self.task_type = "keypoint-detection"
 
+        extra_weights_provider_headers = get_extra_weights_provider_headers()
+
         self._model: KeyPointsDetectionModel = AutoModel.from_pretrained(
             model_id_or_path=model_id,
             api_key=self.api_key,
             allow_untrusted_packages=ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES,
             allow_direct_local_storage_loading=ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES,
+            extra_weights_provider_headers=extra_weights_provider_headers,
             **kwargs,
         )
         self.class_names = list(self._model.class_names)
@@ -474,12 +484,15 @@ class InferenceModelsClassificationAdapter(Model):
 
         self.task_type = "classification"
 
+        extra_weights_provider_headers = get_extra_weights_provider_headers()
+
         self._model: Union[ClassificationModel, MultiLabelClassificationModel] = (
             AutoModel.from_pretrained(
                 model_id_or_path=model_id,
                 api_key=self.api_key,
                 allow_untrusted_packages=ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES,
                 allow_direct_local_storage_loading=ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES,
+                extra_weights_provider_headers=extra_weights_provider_headers,
                 **kwargs,
             )
         )
@@ -733,3 +746,14 @@ def draw_predictions(inference_request, inference_response, class_names: List[st
     image = image.convert("RGB")
     image.save(buffered, format="JPEG")
     return buffered.getvalue()
+
+
+def get_extra_weights_provider_headers() -> Optional[Dict[str, str]]:
+    headers = {}
+    if GCP_SERVERLESS:
+        headers["x-enforce-internal-artefacts-urls"] = "true"
+    if ENFORCE_CREDITS_VERIFICATION:
+        headers["x-enforce-credits-verification"] = "true"
+    if headers:
+        return headers
+    return None

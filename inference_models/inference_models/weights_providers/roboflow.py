@@ -1,5 +1,5 @@
 import json
-from typing import Annotated, Callable, Dict, List, Literal, Optional, Union
+from typing import Annotated, Callable, Dict, List, Literal, Optional, Union, Tuple
 
 import backoff
 import requests
@@ -82,9 +82,18 @@ class RoboflowModelMetadata(BaseModel):
 
 
 def get_roboflow_model(
-    model_id: str, api_key: Optional[str] = None, **kwargs
+    model_id: str,
+    api_key: Optional[str] = None,
+    weights_provider_extra_query_params: Optional[List[Tuple[str, str]]] = None,
+    weights_provider_extra_headers: Optional[Dict[str, str]] = None,
+    **kwargs
 ) -> ModelMetadata:
-    model_metadata = get_model_metadata(model_id=model_id, api_key=api_key)
+    model_metadata = get_model_metadata(
+        model_id=model_id,
+        api_key=api_key,
+        extra_query_params=weights_provider_extra_query_params,
+        extra_headers=weights_provider_extra_headers,
+    )
     parsed_model_packages = []
     for model_package in model_metadata.model_packages:
         parsed_model_package = parse_model_package_metadata(metadata=model_package)
@@ -116,6 +125,8 @@ def get_model_metadata(
     model_id: str,
     api_key: Optional[str],
     max_pages: int = MAX_MODEL_PACKAGE_PAGES,
+    extra_query_params: Optional[List[Tuple[str, str]]] = None,
+    extra_headers: Optional[Dict[str, str]] = None,
 ) -> RoboflowModelMetadata:
     if api_key is None:
         api_key = ROBOFLOW_API_KEY
@@ -123,7 +134,11 @@ def get_model_metadata(
     start_after = None
     while len(fetched_pages) < max_pages:
         pagination_result = get_one_page_of_model_metadata(
-            model_id=model_id, api_key=api_key, start_after=start_after
+            model_id=model_id,
+            api_key=api_key,
+            start_after=start_after,
+            extra_query_params=extra_query_params,
+            extra_headers=extra_headers,
         )
         fetched_pages.append(pagination_result)
         start_after = pagination_result.next_page
@@ -152,20 +167,30 @@ def get_one_page_of_model_metadata(
     api_key: Optional[str] = None,
     page_size: Optional[int] = None,
     start_after: Optional[str] = None,
+    extra_query_params: Optional[List[Tuple[str, str]]] = None,
+    extra_headers: Optional[Dict[str, str]] = None,
 ) -> RoboflowModelMetadata:
     query = {
         "modelId": model_id,
     }
+    headers = {}
     if api_key:
-        query["api_key"] = api_key
+        headers = {"Authorization": f"Bearer {api_key}"}
     if page_size:
-        query["pageSize"] = page_size
+        query["pageSize"] = str(page_size)
     if start_after:
         query["startAfter"] = start_after
+    query = append_extra_query_params(
+        query=query, extra_query_params=extra_query_params
+    )
+    headers = append_extra_headers(headers=headers, extra_headers=extra_headers)
+    if not headers:
+        headers = None
     try:
         response = requests.get(
             f"{ROBOFLOW_API_HOST}/models/v1/external/weights",
             params=query,
+            headers=headers,
             timeout=API_CALLS_TIMEOUT,
         )
     except (OSError, Timeout, requests.exceptions.ConnectionError):
@@ -183,6 +208,32 @@ def get_one_page_of_model_metadata(
             f"is not ephemeral - contact Roboflow.",
             help_url="https://todo",
         ) from error
+
+
+def append_extra_query_params(
+    query: Dict[str, Union[str, List[str]]],
+    extra_query_params: Optional[List[Tuple[str, str]]]
+) -> Dict[str, Union[str, List[str]]]:
+    if not extra_query_params:
+        return query
+    extra_query_params_dict = {}
+    for param_name, param_value in extra_query_params:
+        if param_name in extra_query_params_dict:
+            if isinstance(extra_query_params_dict[param_name], list):
+                extra_query_params_dict[param_name].append(param_value)
+            else:
+                extra_query_params_dict[param_name] = [extra_query_params_dict[param_name], param_value]
+        else:
+            extra_query_params_dict[param_name] = param_value
+    extra_query_params_dict.update(query)
+    return extra_query_params_dict
+
+
+def append_extra_headers(headers: Dict[str, str], extra_headers: Optional[Dict[str, str]]) -> Dict[str, str]:
+    if not extra_headers:
+        return headers
+    extra_headers.update(headers)
+    return extra_headers
 
 
 def handle_response_errors(response: Response, operation_name: str) -> None:
