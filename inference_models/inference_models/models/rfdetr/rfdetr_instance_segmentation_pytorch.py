@@ -46,6 +46,12 @@ from inference_models.models.rfdetr.post_processor import PostProcess
 from inference_models.models.rfdetr.rfdetr_base_pytorch import (
     LWDETR,
     RFDETRSegPreviewConfig,
+    RFDETRSegNanoConfig,
+    RFDETRSegSmallConfig,
+    RFDETRSegMediumConfig,
+    RFDETRSegLargeConfig,
+    RFDETRSegXLargeConfig,
+    RFDETRSeg2XLargeConfig,
     build_model,
 )
 
@@ -56,6 +62,13 @@ except:
 
 CONFIG_FOR_MODEL_TYPE = {
     "rfdetr-seg-preview": RFDETRSegPreviewConfig,
+    "rfdetr-seg-nano": RFDETRSegNanoConfig,
+    "rfdetr-seg-small": RFDETRSegSmallConfig,
+    "rfdetr-seg-medium": RFDETRSegMediumConfig,
+    "rfdetr-seg-large": RFDETRSegLargeConfig,
+    "rfdetr-seg-xlarge": RFDETRSegXLargeConfig,
+    "rfdetr-seg-2xlarge": RFDETRSeg2XLargeConfig,
+    "rfdetr-seg-xxlarge": RFDETRSeg2XLargeConfig,
 }
 
 

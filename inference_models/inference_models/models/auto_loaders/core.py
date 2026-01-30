@@ -86,7 +86,16 @@ MODEL_TYPES_TO_LOAD_FROM_CHECKPOINT = {
     "rfdetr-medium",
     "rfdetr-nano",
     "rfdetr-large",
+    "rfdetr-xlarge",
+    "rfdetr-2xlarge",
     "rfdetr-seg-preview",
+    "rfdetr-seg-nano",
+    "rfdetr-seg-small",
+    "rfdetr-seg-medium",
+    "rfdetr-seg-large",
+    "rfdetr-seg-xlarge",
+    "rfdetr-seg-2xlarge",
+    "rfdetr-seg-xxlarge",
 }
 
 DEFAULT_KWARGS_PARAMS_TO_BE_FORWARDED_TO_DEPENDENT_MODELS = [

@@ -47,6 +47,8 @@ from inference_models.models.rfdetr.rfdetr_base_pytorch import (
     RFDETRMediumConfig,
     RFDETRNanoConfig,
     RFDETRSmallConfig,
+    RFDETRXLargeConfig,
+    RFDETR2XLargeConfig,
     build_model,
 )
 
@@ -61,6 +63,8 @@ CONFIG_FOR_MODEL_TYPE = {
     "rfdetr-medium": RFDETRMediumConfig,
     "rfdetr-base": RFDETRBaseConfig,
     "rfdetr-large": RFDETRLargeConfig,
+    "rfdetr-xlarge": RFDETRXLargeConfig,
+    "rfdetr-2xlarge": RFDETR2XLargeConfig,
 }
 
 RESIZE_MODES_TO_REVERT_PADDING = {

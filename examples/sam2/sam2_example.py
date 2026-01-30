@@ -1,7 +1,7 @@
 import os
-import timeit
-
 os.environ["API_KEY"] = "API_KEY"
+
+import timeit
 import numpy as np
 import supervision as sv
 from PIL import Image
