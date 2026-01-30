@@ -2,7 +2,6 @@ import asyncio
 import base64
 import datetime
 import fractions
-import av
 import json
 import logging
 import queue
@@ -11,8 +10,8 @@ import threading
 import time
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
+import av
 import supervision as sv
-
 from aioice import ice
 from aiortc import (
     RTCConfiguration,
