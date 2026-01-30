@@ -5,7 +5,10 @@ import numpy as np
 import torch
 
 from inference_models import Detections, ObjectDetectionModel
-from inference_models.configuration import DEFAULT_DEVICE
+from inference_models.configuration import (
+    DEFAULT_DEVICE,
+    INFERENCE_MODELS_YOLO26_DEFAULT_CONFIDENCE,
+)
 from inference_models.entities import ColorFormat
 from inference_models.errors import (
     CorruptedModelPackageError,
@@ -191,11 +194,11 @@ class YOLO26ForObjectDetectionTRT(
         self,
         model_results: torch.Tensor,
         pre_processing_meta: List[PreProcessingMetadata],
-        conf_thresh: float = 0.25,
+        confidence: float = INFERENCE_MODELS_YOLO26_DEFAULT_CONFIDENCE,
         **kwargs,
     ) -> List[Detections]:
         filtered_results = post_process_nms_fused_model_output(
-            output=model_results, conf_thresh=conf_thresh
+            output=model_results, conf_thresh=confidence
         )
         rescaled_results = rescale_detections(
             detections=filtered_results,

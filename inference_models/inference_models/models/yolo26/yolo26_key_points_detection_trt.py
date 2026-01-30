@@ -5,7 +5,11 @@ import numpy as np
 import torch
 
 from inference_models import Detections, KeyPoints, KeyPointsDetectionModel
-from inference_models.configuration import DEFAULT_DEVICE
+from inference_models.configuration import (
+    DEFAULT_DEVICE,
+    INFERENCE_MODELS_YOLO26_DEFAULT_CONFIDENCE,
+    INFERENCE_MODELS_YOLO26_DEFAULT_KEY_POINTS_THRESHOLD,
+)
 from inference_models.entities import ColorFormat
 from inference_models.errors import (
     CorruptedModelPackageError,
@@ -218,12 +222,12 @@ class YOLO26ForKeyPointsDetectionTRT(
         self,
         model_results: torch.Tensor,
         pre_processing_meta: List[PreProcessingMetadata],
-        conf_thresh: float = 0.25,
-        key_points_threshold: float = 0.3,
+        confidence: float = INFERENCE_MODELS_YOLO26_DEFAULT_CONFIDENCE,
+        key_points_threshold: float = INFERENCE_MODELS_YOLO26_DEFAULT_KEY_POINTS_THRESHOLD,
         **kwargs,
     ) -> Tuple[List[KeyPoints], Optional[List[Detections]]]:
         filtered_results = post_process_nms_fused_model_output(
-            output=model_results, conf_thresh=conf_thresh
+            output=model_results, conf_thresh=confidence
         )
         rescaled_results = rescale_key_points_detections(
             detections=filtered_results,
@@ -245,7 +249,7 @@ class YOLO26ForKeyPointsDetectionTRT(
                 result.shape[0], self._key_points_slots_in_prediction, 3
             )
             xy = key_points_reshaped[:, :, :2]
-            confidence = key_points_reshaped[:, :, 2]
+            kp_confidence = key_points_reshaped[:, :, 2]
             key_points_classes_for_instance_class = (
                 (self._key_points_classes_for_instances[class_id])
                 .unsqueeze(1)
@@ -257,11 +261,13 @@ class YOLO26ForKeyPointsDetectionTRT(
                 .repeat(result.shape[0], 1)
                 < key_points_classes_for_instance_class
             )
-            confidence_mask = confidence < key_points_threshold
+            confidence_mask = kp_confidence < key_points_threshold
             mask = instances_class_mask & confidence_mask
             xy[mask] = 0.0
-            confidence[mask] = 0.0
+            kp_confidence[mask] = 0.0
             all_key_points.append(
-                KeyPoints(xy=xy.round().int(), class_id=class_id, confidence=confidence)
+                KeyPoints(
+                    xy=xy.round().int(), class_id=class_id, confidence=kp_confidence
+                )
             )
         return all_key_points, detections

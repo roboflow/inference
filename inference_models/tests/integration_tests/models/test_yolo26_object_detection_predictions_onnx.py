@@ -9,7 +9,9 @@ XYXY_ATOL = 2
 
 IS_GPU = str(DEFAULT_DEVICE).startswith("cuda")
 ONNX_EXECUTION_PROVIDERS = (
-    ["CUDAExecutionProvider", "CPUExecutionProvider"] if IS_GPU else ["CPUExecutionProvider"]
+    ["CUDAExecutionProvider", "CPUExecutionProvider"]
+    if IS_GPU
+    else ["CPUExecutionProvider"]
 )
 
 GPU_STRETCH_TORCH_CONFIDENCE = [

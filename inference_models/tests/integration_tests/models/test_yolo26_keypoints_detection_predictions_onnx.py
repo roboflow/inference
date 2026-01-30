@@ -9,7 +9,9 @@ CONF_TOLERANCE = 0.01
 
 IS_GPU = str(DEFAULT_DEVICE).startswith("cuda")
 ONNX_EXECUTION_PROVIDERS = (
-    ["CUDAExecutionProvider", "CPUExecutionProvider"] if IS_GPU else ["CPUExecutionProvider"]
+    ["CUDAExecutionProvider", "CPUExecutionProvider"]
+    if IS_GPU
+    else ["CPUExecutionProvider"]
 )
 
 LETTERBOX_EXPECTED_KP_XY_1 = [

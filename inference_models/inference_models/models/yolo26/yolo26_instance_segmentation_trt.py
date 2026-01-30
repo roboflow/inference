@@ -5,7 +5,10 @@ import numpy as np
 import torch
 
 from inference_models import InstanceDetections, InstanceSegmentationModel
-from inference_models.configuration import DEFAULT_DEVICE
+from inference_models.configuration import (
+    DEFAULT_DEVICE,
+    INFERENCE_MODELS_YOLO26_DEFAULT_CONFIDENCE,
+)
 from inference_models.entities import ColorFormat
 from inference_models.errors import (
     CorruptedModelPackageError,
@@ -204,12 +207,12 @@ class YOLO26ForInstanceSegmentationTRT(
         self,
         model_results: Tuple[torch.Tensor, torch.Tensor],
         pre_processing_meta: List[PreProcessingMetadata],
-        conf_thresh: float = 0.25,
+        confidence: float = INFERENCE_MODELS_YOLO26_DEFAULT_CONFIDENCE,
         **kwargs,
     ) -> List[InstanceDetections]:
         instances, protos = model_results
         filtered_results = post_process_nms_fused_model_output(
-            output=instances, conf_thresh=conf_thresh
+            output=instances, conf_thresh=confidence
         )
         final_results = []
         for image_bboxes, image_protos, image_meta in zip(
