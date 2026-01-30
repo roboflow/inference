@@ -674,7 +674,7 @@ class WebRTCSession:
         async def _on_ice_connection_state_change() -> None:
             state = pc.iceConnectionState
             logger.info(f"ICE connection state: {state}")
-            
+
             if state == "failed":
                 logger.error(
                     "ICE connection failed - likely consent expiry. "
@@ -692,7 +692,7 @@ class WebRTCSession:
                     "ICE connection disconnected - may recover automatically. "
                     "If this persists, connection will transition to 'failed'."
                 )
-        
+
         @pc.on("connectionstatechange")
         async def _on_connection_state_change() -> None:
             state = pc.connectionState

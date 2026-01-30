@@ -1,4 +1,5 @@
 """Video file source for WebRTC - handles uploaded video files."""
+
 import asyncio
 import queue
 import threading
@@ -38,7 +39,9 @@ def _decode_worker(filepath: str, frame_queue, stop_event):
                 frame_queue.put(frame, timeout=300)
                 frame_count += 1
             except queue.Full:
-                logger.error("[DECODE_WORKER] Queue full timeout at frame %d", frame_count)
+                logger.error(
+                    "[DECODE_WORKER] Queue full timeout at frame %d", frame_count
+                )
                 frame_queue.put({"error": f"Queue full timeout at frame {frame_count}"})
                 return
 
@@ -112,7 +115,7 @@ class VideoFileUploadHandler:
 
     def handle_chunk(self, chunk_index: int, total_chunks: int, data: bytes) -> None:
         """Handle a chunk. Auto-completes when all chunks received."""
-         # TODO: we need to refactor this...
+        # TODO: we need to refactor this...
         if self._total_chunks is None:
             self._total_chunks = total_chunks
             self._state = VideoFileUploadState.UPLOADING
@@ -127,6 +130,7 @@ class VideoFileUploadHandler:
     def _write_to_temp_file(self) -> None:
         """Reassemble chunks and write to temp file."""
         import tempfile
+
         # TODO: we need to refactor this...
         with tempfile.NamedTemporaryFile(mode="wb", suffix=".mp4", delete=False) as f:
             for i in range(self._total_chunks):
@@ -144,9 +148,10 @@ class VideoFileUploadHandler:
 
     async def cleanup(self) -> None:
         """Clean up temp file."""
-         # TODO: we need to refactor this...
+        # TODO: we need to refactor this...
         if self._temp_file_path:
             import os
+
             path = self._temp_file_path
             self._temp_file_path = None
             try:
