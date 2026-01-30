@@ -25,6 +25,7 @@ class InferenceModelsDocTRAdapter(Model):
     def __init__(
         self, model_id: str = "doctr_rec/crnn_vgg16_bn", api_key: str = None, **kwargs
     ):
+        print("Initializing InferenceModelsDocTRAdapter", flush=True)
         super().__init__()
 
         self.metrics = {"num_inferences": 0, "avg_inference_time": 0.0}

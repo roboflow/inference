@@ -64,7 +64,7 @@ class InferenceModelsEasyOCRAdapter(Model):
 
     def preprocess(
         self, image: Any, **kwargs
-    ) -> Tuple[np.ndarray, PreprocessReturnMetadata]:
+    ) -> Tuple[np.ndarray, InferenceResponseImage]:
         image = load_image_bgr(image)
         return image, InferenceResponseImage(
             width=image.shape[1], height=image.shape[0]

@@ -71,6 +71,7 @@ class DocTR(StructuredOCRModel[List[np.ndarray], ImageDimensions, Document]):
             assume_straight_pages=assume_straight_pages,
             preserve_aspect_ratio=preserve_aspect_ratio,
             batch_size=detection_max_batch_size,
+            pretrained_backbone=False,
         )
         det_model.model.to(device)
         detector_weights = torch.load(
@@ -83,6 +84,7 @@ class DocTR(StructuredOCRModel[List[np.ndarray], ImageDimensions, Document]):
             arch=config.rec_model,
             pretrained=False,
             batch_size=recognition_max_batch_size,
+            pretrained_backbone=False,
         )
         rec_model.model.to(device)
         rec_weights = torch.load(
