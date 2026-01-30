@@ -300,7 +300,9 @@ GCP_SERVERLESS = str2bool(os.getenv("GCP_SERVERLESS", "False"))
 # `inference-models` - only effective when `USE_INFERENCE_MODELS` is True and
 # makes the weights provider to reject request for model weights that are coming to
 # internal services and requires rejection when account exceeds limits
-ENFORCE_CREDITS_VERIFICATION = str2bool(os.getenv("ENFORCE_CREDITS_VERIFICATION", "False"))
+ENFORCE_CREDITS_VERIFICATION = str2bool(
+    os.getenv("ENFORCE_CREDITS_VERIFICATION", "False")
+)
 
 GET_MODEL_REGISTRY_ENABLED = str2bool(os.getenv("GET_MODEL_REGISTRY_ENABLED", "True"))
 

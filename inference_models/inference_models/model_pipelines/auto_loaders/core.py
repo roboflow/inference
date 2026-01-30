@@ -1,4 +1,4 @@
-from typing import List, Optional, Union, Tuple, Dict
+from typing import Dict, List, Optional, Tuple, Union
 
 from rich.console import Console
 from rich.tree import Tree

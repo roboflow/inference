@@ -25,7 +25,9 @@ from inference.core.env import (
     PERCEPTION_ENCODER_MODEL_ID,
 )
 from inference.core.models.base import Model
-from inference.core.models.inference_models_adapters import get_extra_weights_provider_headers
+from inference.core.models.inference_models_adapters import (
+    get_extra_weights_provider_headers,
+)
 from inference.core.models.types import PreprocessReturnMetadata
 from inference.core.utils.image_utils import load_image_bgr
 from inference.core.utils.postprocess import cosine_similarity

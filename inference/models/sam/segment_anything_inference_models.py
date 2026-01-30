@@ -25,7 +25,9 @@ from inference.core.env import (
     SAM_VERSION_ID,
 )
 from inference.core.models.base import Model
-from inference.core.models.inference_models_adapters import get_extra_weights_provider_headers
+from inference.core.models.inference_models_adapters import (
+    get_extra_weights_provider_headers,
+)
 from inference.core.utils.image_utils import load_image_bgr
 from inference.core.utils.postprocess import masks2poly
 from inference_models import AutoModel

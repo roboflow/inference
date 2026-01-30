@@ -1,6 +1,6 @@
 from io import BytesIO
 from time import perf_counter
-from typing import Any, List, Optional, Tuple, Union, Dict
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
@@ -23,7 +23,9 @@ from inference.core.entities.responses.inference import (
 from inference.core.env import (
     ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES,
     ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES,
-    API_KEY, GCP_SERVERLESS, ENFORCE_CREDITS_VERIFICATION,
+    API_KEY,
+    ENFORCE_CREDITS_VERIFICATION,
+    GCP_SERVERLESS,
 )
 from inference.core.models.base import Model
 from inference.core.utils.image_utils import load_image_bgr
@@ -193,7 +195,6 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
         self.task_type = "instance-segmentation"
 
         extra_weights_provider_headers = get_extra_weights_provider_headers()
-
 
         self._model: InstanceSegmentationModel = AutoModel.from_pretrained(
             model_id_or_path=model_id,

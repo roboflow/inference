@@ -1,5 +1,5 @@
 import json
-from typing import Annotated, Callable, Dict, List, Literal, Optional, Union, Tuple
+from typing import Annotated, Callable, Dict, List, Literal, Optional, Tuple, Union
 
 import backoff
 import requests
@@ -86,7 +86,7 @@ def get_roboflow_model(
     api_key: Optional[str] = None,
     weights_provider_extra_query_params: Optional[List[Tuple[str, str]]] = None,
     weights_provider_extra_headers: Optional[Dict[str, str]] = None,
-    **kwargs
+    **kwargs,
 ) -> ModelMetadata:
     model_metadata = get_model_metadata(
         model_id=model_id,
@@ -212,7 +212,7 @@ def get_one_page_of_model_metadata(
 
 def append_extra_query_params(
     query: Dict[str, Union[str, List[str]]],
-    extra_query_params: Optional[List[Tuple[str, str]]]
+    extra_query_params: Optional[List[Tuple[str, str]]],
 ) -> Dict[str, Union[str, List[str]]]:
     if not extra_query_params:
         return query
@@ -222,14 +222,19 @@ def append_extra_query_params(
             if isinstance(extra_query_params_dict[param_name], list):
                 extra_query_params_dict[param_name].append(param_value)
             else:
-                extra_query_params_dict[param_name] = [extra_query_params_dict[param_name], param_value]
+                extra_query_params_dict[param_name] = [
+                    extra_query_params_dict[param_name],
+                    param_value,
+                ]
         else:
             extra_query_params_dict[param_name] = param_value
     extra_query_params_dict.update(query)
     return extra_query_params_dict
 
 
-def append_extra_headers(headers: Dict[str, str], extra_headers: Optional[Dict[str, str]]) -> Dict[str, str]:
+def append_extra_headers(
+    headers: Dict[str, str], extra_headers: Optional[Dict[str, str]]
+) -> Dict[str, str]:
     if not extra_headers:
         return headers
     extra_headers.update(headers)

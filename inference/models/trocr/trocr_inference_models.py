@@ -11,7 +11,9 @@ from inference.core.env import (
     API_KEY,
 )
 from inference.core.models.base import Model, PreprocessReturnMetadata
-from inference.core.models.inference_models_adapters import get_extra_weights_provider_headers
+from inference.core.models.inference_models_adapters import (
+    get_extra_weights_provider_headers,
+)
 from inference.core.utils.image_utils import load_image_bgr
 from inference_models import AutoModel
 from inference_models.models.trocr.trocr_hf import TROcrHF

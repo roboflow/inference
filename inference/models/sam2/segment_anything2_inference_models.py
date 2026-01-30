@@ -11,7 +11,9 @@ import torch
 from pycocotools import mask as mask_utils
 from torch.nn.attention import SDPBackend
 
-from inference.core.models.inference_models_adapters import get_extra_weights_provider_headers
+from inference.core.models.inference_models_adapters import (
+    get_extra_weights_provider_headers,
+)
 from inference.core.utils.postprocess import masks2multipoly
 from inference_models import AutoModel
 from inference_models.models.sam2.cache import (
