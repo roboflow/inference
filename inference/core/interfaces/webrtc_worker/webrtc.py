@@ -449,6 +449,7 @@ class VideoFrameProcessor:
         def compress_json():
             import gzip
 
+            # TODO: use orjson
             json_bytes = json.dumps(webrtc_output.model_dump(mode="json")).encode(
                 "utf-8"
             )
@@ -521,10 +522,11 @@ class VideoFrameProcessor:
                     workflow_output, frame_timestamp, frame, errors
                 )
 
-        except asyncio.CancelledError:
-            raise
-        except MediaStreamError:
-            pass  # Expected when video ends
+        except asyncio.CancelledError as exc:
+            # No one will catch this exception as it's executed in a create_task
+            logger.info("[DATA_ONLY] Processing cancelled: %s", exc)
+        except MediaStreamError as exc:
+            logger.info("[DATA_ONLY] Media stream ended: %s", exc)
         except Exception as exc:
             logger.error(
                 "[DATA_ONLY] Error at frame %d: %s", self._received_frames, exc
@@ -776,7 +778,7 @@ async def init_rtc_peer_connection_with_loop(
     shutdown_reserve: int = WEBRTC_MODAL_SHUTDOWN_RESERVE,
     heartbeat_callback: Optional[Callable[[], None]] = None,
 ) -> RTCPeerConnectionWithLoop:
-    logger.warning(
+    logger.info(
         "=" * 60 + "\n"
         "[WEBRTC_SESSION] STARTING NEW SESSION\n"
         "  stream_output=%s\n"
@@ -786,7 +788,7 @@ async def init_rtc_peer_connection_with_loop(
         webrtc_request.data_output,
         webrtc_request.processing_timeout,
     )
-    logger.info("Initializing RTC peer connection with loop")
+
     # ice._mdns is instantiated on the module level, it has a lock that is bound to the event loop
     # avoid RuntimeError: asyncio.locks.Lock is bound to a different event loop
     if hasattr(ice, "_mdns"):

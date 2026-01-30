@@ -62,6 +62,7 @@ class ThreadedVideoFileTrack(MediaStreamTrack):
     kind = "video"
 
     def __init__(self, filepath: str, queue_size: int = 60):
+        # TODO: add parameter queue size in settings
         super().__init__()
         self._queue = queue.Queue(maxsize=queue_size)
         self._stop_event = threading.Event()

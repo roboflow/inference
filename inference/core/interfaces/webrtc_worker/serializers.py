@@ -8,6 +8,7 @@ from inference.core.workflows.core_steps.common.serializers import (
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
 
 # WebRTC image compression quality - lower = smaller file size
+# TODO: add paramterize in request (and settings by default)
 WEBRTC_JPEG_QUALITY = 80
 
 
