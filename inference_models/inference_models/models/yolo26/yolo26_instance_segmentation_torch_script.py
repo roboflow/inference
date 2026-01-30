@@ -3,6 +3,7 @@ from typing import List, Optional, Tuple, Union
 
 import numpy as np
 import torch
+
 from inference_models import InstanceDetections, InstanceSegmentationModel
 from inference_models.configuration import (
     DEFAULT_DEVICE,

@@ -42,13 +42,13 @@ from inference_models.models.rfdetr.default_labels import resolve_labels
 from inference_models.models.rfdetr.post_processor import PostProcess
 from inference_models.models.rfdetr.rfdetr_base_pytorch import (
     LWDETR,
+    RFDETR2XLargeConfig,
     RFDETRBaseConfig,
     RFDETRLargeConfig,
     RFDETRMediumConfig,
     RFDETRNanoConfig,
     RFDETRSmallConfig,
     RFDETRXLargeConfig,
-    RFDETR2XLargeConfig,
     build_model,
 )
 

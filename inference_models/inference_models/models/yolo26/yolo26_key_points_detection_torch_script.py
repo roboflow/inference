@@ -2,6 +2,7 @@ from typing import List, Optional, Tuple, Union
 
 import numpy as np
 import torch
+
 from inference_models import Detections, KeyPoints, KeyPointsDetectionModel
 from inference_models.configuration import (
     DEFAULT_DEVICE,
