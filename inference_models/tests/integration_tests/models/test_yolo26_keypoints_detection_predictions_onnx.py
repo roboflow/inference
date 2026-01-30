@@ -2,8 +2,15 @@ import numpy as np
 import pytest
 import torch
 
+from inference_models.configuration import DEFAULT_DEVICE
+
 COORD_TOLERANCE = 2
 CONF_TOLERANCE = 0.01
+
+IS_GPU = str(DEFAULT_DEVICE).startswith("cuda")
+ONNX_EXECUTION_PROVIDERS = (
+    ["CUDAExecutionProvider", "CPUExecutionProvider"] if IS_GPU else ["CPUExecutionProvider"]
+)
 
 LETTERBOX_EXPECTED_KP_XY_1 = [
     [617, 297],
@@ -221,6 +228,9 @@ STRETCH_EXPECTED_KP_CONF = [
     0.0,
 ]
 
+CPU_LETTERBOX_BOX_XYXY = [[-33, 246, 1732, 1076], [-8, 252, 1798, 1076]]
+CPU_LETTERBOX_BOX_CONF = [0.9278, 0.4428]
+
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
@@ -234,7 +244,7 @@ def test_yolo26n_pose_onnx_static_letterbox_numpy(
 
     model = YOLO26ForKeyPointsDetectionOnnx.from_pretrained(
         model_name_or_path=yolo26n_pose_basketball_letterbox_onnx_static_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=ONNX_EXECUTION_PROVIDERS,
     )
 
     predictions = model(basketball_image_numpy)
@@ -252,17 +262,15 @@ def test_yolo26n_pose_onnx_static_letterbox_numpy(
         torch.tensor([LETTERBOX_EXPECTED_KP_CONF_1, LETTERBOX_EXPECTED_KP_CONF_2]),
         atol=CONF_TOLERANCE,
     )
+
+    expected_box_xyxy = torch.tensor(CPU_LETTERBOX_BOX_XYXY, dtype=torch.int32)
+    expected_box_conf = torch.tensor(CPU_LETTERBOX_BOX_CONF)
+
     assert torch.allclose(
-        predictions[1][0].xyxy.cpu(),
-        torch.tensor(
-            [[-33, 246, 1732, 1076], [-8, 252, 1798, 1076]], dtype=torch.int32
-        ),
-        atol=COORD_TOLERANCE,
+        predictions[1][0].xyxy.cpu(), expected_box_xyxy, atol=COORD_TOLERANCE
     )
     assert torch.allclose(
-        predictions[1][0].confidence.cpu(),
-        torch.tensor([0.9278, 0.4428]),
-        atol=CONF_TOLERANCE,
+        predictions[1][0].confidence.cpu(), expected_box_conf, atol=CONF_TOLERANCE
     )
 
 
@@ -278,7 +286,7 @@ def test_yolo26n_pose_onnx_static_letterbox_batch_numpy(
 
     model = YOLO26ForKeyPointsDetectionOnnx.from_pretrained(
         model_name_or_path=yolo26n_pose_basketball_letterbox_onnx_static_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=ONNX_EXECUTION_PROVIDERS,
     )
 
     predictions = model([basketball_image_numpy, basketball_image_numpy])
@@ -290,10 +298,9 @@ def test_yolo26n_pose_onnx_static_letterbox_batch_numpy(
     expected_kp_conf = torch.tensor(
         [LETTERBOX_EXPECTED_KP_CONF_1, LETTERBOX_EXPECTED_KP_CONF_2]
     )
-    expected_box_xyxy = torch.tensor(
-        [[-33, 246, 1732, 1076], [-8, 252, 1798, 1076]], dtype=torch.int32
-    )
-    expected_box_conf = torch.tensor([0.9278, 0.4428])
+
+    expected_box_xyxy = torch.tensor(CPU_LETTERBOX_BOX_XYXY, dtype=torch.int32)
+    expected_box_conf = torch.tensor(CPU_LETTERBOX_BOX_CONF)
 
     for i in range(2):
         assert torch.allclose(
@@ -322,7 +329,7 @@ def test_yolo26n_pose_onnx_static_letterbox_torch(
 
     model = YOLO26ForKeyPointsDetectionOnnx.from_pretrained(
         model_name_or_path=yolo26n_pose_basketball_letterbox_onnx_static_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=ONNX_EXECUTION_PROVIDERS,
     )
 
     predictions = model(basketball_image_torch)
@@ -340,17 +347,15 @@ def test_yolo26n_pose_onnx_static_letterbox_torch(
         torch.tensor([LETTERBOX_EXPECTED_KP_CONF_1, LETTERBOX_EXPECTED_KP_CONF_2]),
         atol=CONF_TOLERANCE,
     )
+
+    expected_box_xyxy = torch.tensor(CPU_LETTERBOX_BOX_XYXY, dtype=torch.int32)
+    expected_box_conf = torch.tensor(CPU_LETTERBOX_BOX_CONF)
+
     assert torch.allclose(
-        predictions[1][0].xyxy.cpu(),
-        torch.tensor(
-            [[-33, 246, 1732, 1076], [-8, 252, 1798, 1076]], dtype=torch.int32
-        ),
-        atol=COORD_TOLERANCE,
+        predictions[1][0].xyxy.cpu(), expected_box_xyxy, atol=COORD_TOLERANCE
     )
     assert torch.allclose(
-        predictions[1][0].confidence.cpu(),
-        torch.tensor([0.9278, 0.4428]),
-        atol=CONF_TOLERANCE,
+        predictions[1][0].confidence.cpu(), expected_box_conf, atol=CONF_TOLERANCE
     )
 
 
@@ -366,7 +371,7 @@ def test_yolo26n_pose_onnx_dynamic_letterbox_numpy(
 
     model = YOLO26ForKeyPointsDetectionOnnx.from_pretrained(
         model_name_or_path=yolo26n_pose_basketball_letterbox_onnx_dynamic_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=ONNX_EXECUTION_PROVIDERS,
     )
 
     predictions = model(basketball_image_numpy)
@@ -384,17 +389,15 @@ def test_yolo26n_pose_onnx_dynamic_letterbox_numpy(
         torch.tensor([LETTERBOX_EXPECTED_KP_CONF_1, LETTERBOX_EXPECTED_KP_CONF_2]),
         atol=CONF_TOLERANCE,
     )
+
+    expected_box_xyxy = torch.tensor(CPU_LETTERBOX_BOX_XYXY, dtype=torch.int32)
+    expected_box_conf = torch.tensor(CPU_LETTERBOX_BOX_CONF)
+
     assert torch.allclose(
-        predictions[1][0].xyxy.cpu(),
-        torch.tensor(
-            [[-33, 246, 1732, 1076], [-8, 252, 1798, 1076]], dtype=torch.int32
-        ),
-        atol=COORD_TOLERANCE,
+        predictions[1][0].xyxy.cpu(), expected_box_xyxy, atol=COORD_TOLERANCE
     )
     assert torch.allclose(
-        predictions[1][0].confidence.cpu(),
-        torch.tensor([0.9278, 0.4428]),
-        atol=CONF_TOLERANCE,
+        predictions[1][0].confidence.cpu(), expected_box_conf, atol=CONF_TOLERANCE
     )
 
 
@@ -410,7 +413,7 @@ def test_yolo26n_pose_onnx_dynamic_letterbox_batch_numpy(
 
     model = YOLO26ForKeyPointsDetectionOnnx.from_pretrained(
         model_name_or_path=yolo26n_pose_basketball_letterbox_onnx_dynamic_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=ONNX_EXECUTION_PROVIDERS,
     )
 
     predictions = model([basketball_image_numpy, basketball_image_numpy])
@@ -422,10 +425,9 @@ def test_yolo26n_pose_onnx_dynamic_letterbox_batch_numpy(
     expected_kp_conf = torch.tensor(
         [LETTERBOX_EXPECTED_KP_CONF_1, LETTERBOX_EXPECTED_KP_CONF_2]
     )
-    expected_box_xyxy = torch.tensor(
-        [[-33, 246, 1732, 1076], [-8, 252, 1798, 1076]], dtype=torch.int32
-    )
-    expected_box_conf = torch.tensor([0.9278, 0.4428])
+
+    expected_box_xyxy = torch.tensor(CPU_LETTERBOX_BOX_XYXY, dtype=torch.int32)
+    expected_box_conf = torch.tensor(CPU_LETTERBOX_BOX_CONF)
 
     for i in range(2):
         assert torch.allclose(
@@ -454,7 +456,7 @@ def test_yolo26n_pose_onnx_dynamic_letterbox_torch(
 
     model = YOLO26ForKeyPointsDetectionOnnx.from_pretrained(
         model_name_or_path=yolo26n_pose_basketball_letterbox_onnx_dynamic_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=ONNX_EXECUTION_PROVIDERS,
     )
 
     predictions = model(basketball_image_torch)
@@ -472,17 +474,15 @@ def test_yolo26n_pose_onnx_dynamic_letterbox_torch(
         torch.tensor([LETTERBOX_EXPECTED_KP_CONF_1, LETTERBOX_EXPECTED_KP_CONF_2]),
         atol=CONF_TOLERANCE,
     )
+
+    expected_box_xyxy = torch.tensor(CPU_LETTERBOX_BOX_XYXY, dtype=torch.int32)
+    expected_box_conf = torch.tensor(CPU_LETTERBOX_BOX_CONF)
+
     assert torch.allclose(
-        predictions[1][0].xyxy.cpu(),
-        torch.tensor(
-            [[-33, 246, 1732, 1076], [-8, 252, 1798, 1076]], dtype=torch.int32
-        ),
-        atol=COORD_TOLERANCE,
+        predictions[1][0].xyxy.cpu(), expected_box_xyxy, atol=COORD_TOLERANCE
     )
     assert torch.allclose(
-        predictions[1][0].confidence.cpu(),
-        torch.tensor([0.9278, 0.4428]),
-        atol=CONF_TOLERANCE,
+        predictions[1][0].confidence.cpu(), expected_box_conf, atol=CONF_TOLERANCE
     )
 
 
@@ -498,7 +498,7 @@ def test_yolo26n_pose_onnx_static_stretch_numpy(
 
     model = YOLO26ForKeyPointsDetectionOnnx.from_pretrained(
         model_name_or_path=yolo26n_pose_basketball_stretch_onnx_static_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=ONNX_EXECUTION_PROVIDERS,
     )
 
     predictions = model(basketball_image_numpy)
@@ -537,7 +537,7 @@ def test_yolo26n_pose_onnx_static_stretch_batch_numpy(
 
     model = YOLO26ForKeyPointsDetectionOnnx.from_pretrained(
         model_name_or_path=yolo26n_pose_basketball_stretch_onnx_static_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=ONNX_EXECUTION_PROVIDERS,
     )
 
     predictions = model([basketball_image_numpy, basketball_image_numpy])
@@ -574,7 +574,7 @@ def test_yolo26n_pose_onnx_static_stretch_torch(
 
     model = YOLO26ForKeyPointsDetectionOnnx.from_pretrained(
         model_name_or_path=yolo26n_pose_basketball_stretch_onnx_static_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=ONNX_EXECUTION_PROVIDERS,
     )
 
     predictions = model(basketball_image_torch)
@@ -613,7 +613,7 @@ def test_yolo26n_pose_onnx_dynamic_stretch_numpy(
 
     model = YOLO26ForKeyPointsDetectionOnnx.from_pretrained(
         model_name_or_path=yolo26n_pose_basketball_stretch_onnx_dynamic_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=ONNX_EXECUTION_PROVIDERS,
     )
 
     predictions = model(basketball_image_numpy)
@@ -652,7 +652,7 @@ def test_yolo26n_pose_onnx_dynamic_stretch_batch_numpy(
 
     model = YOLO26ForKeyPointsDetectionOnnx.from_pretrained(
         model_name_or_path=yolo26n_pose_basketball_stretch_onnx_dynamic_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=ONNX_EXECUTION_PROVIDERS,
     )
 
     predictions = model([basketball_image_numpy, basketball_image_numpy])
@@ -689,7 +689,7 @@ def test_yolo26n_pose_onnx_dynamic_stretch_torch(
 
     model = YOLO26ForKeyPointsDetectionOnnx.from_pretrained(
         model_name_or_path=yolo26n_pose_basketball_stretch_onnx_dynamic_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=ONNX_EXECUTION_PROVIDERS,
     )
 
     predictions = model(basketball_image_torch)
