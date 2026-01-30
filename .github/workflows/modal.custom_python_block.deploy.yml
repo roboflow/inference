@@ -2,9 +2,9 @@ name: Deploy Modal App serving custom python block
 permissions:
   contents: read
 on:
-  workflow_run:
-    workflows: ["Publish Wheels to PyPi"]
-    types: [completed]
+  # workflow_run:
+  #   workflows: ["Publish Wheels to PyPi"]
+  #   types: [completed]
   workflow_dispatch:
     inputs:
       inference_version:
