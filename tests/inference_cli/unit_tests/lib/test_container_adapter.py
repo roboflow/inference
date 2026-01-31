@@ -7,6 +7,7 @@ from rich.progress import Progress
 
 from inference_cli.lib import container_adapter
 from inference_cli.lib.container_adapter import (
+    _JETSON_IMAGES,
     _detect_jetson,
     _get_jetpack_image,
     _image_for_l4t,
@@ -268,6 +269,17 @@ def test_show_progress_when_unknown_status_given() -> None:
 
 
 # --- Tests for Jetson introspection and image selection ---
+
+
+def test_jetson_images_table_is_sorted_descending() -> None:
+    """The table must be sorted (l4t_major DESC, l4t_minor_min DESC) so that
+    first-match lookup returns the most specific entry."""
+    keys = [(e.l4t_major, e.l4t_minor_min) for e in _JETSON_IMAGES]
+    assert keys == sorted(keys, reverse=True), (
+        "_JETSON_IMAGES is not sorted descending by (l4t_major, l4t_minor_min). "
+        "New entries must be inserted in the correct position."
+    )
+
 
 JETSON_450 = "roboflow/roboflow-inference-server-jetson-4.5.0:latest"
 JETSON_461 = "roboflow/roboflow-inference-server-jetson-4.6.1:latest"
