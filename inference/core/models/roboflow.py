@@ -310,10 +310,10 @@ class RoboflowInferenceModel(Model):
     ) -> None:
         import time
 
-        from inference.core.gcp_logging import (
+        from inference.core.structured_logging import (
             ModelLoadedToDiskEvent,
-            gcp_logger,
-            get_gcp_context,
+            structured_logger,
+            get_request_context,
         )
 
         logger.debug("Downloading model artifacts from Roboflow API")
@@ -424,11 +424,11 @@ class RoboflowInferenceModel(Model):
                     )
                     artifact_count += 1
 
-                # Log model_loaded_to_disk event for GCP logging
-                if gcp_logger.enabled:
+                # Log model_loaded_to_disk event for structured logging
+                if structured_logger.enabled:
                     download_duration_ms = (time.time() - download_start_time) * 1000
-                    ctx = get_gcp_context()
-                    gcp_logger.log_event(
+                    ctx = get_request_context()
+                    structured_logger.log_event(
                         ModelLoadedToDiskEvent(
                             request_id=ctx.request_id if ctx else None,
                             model_id=self.endpoint,

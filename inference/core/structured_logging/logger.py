@@ -1,7 +1,7 @@
 """
-GCP Serverless Structured Logger.
+Structured Event Logger.
 
-This module provides a structured JSON logger for GCP Cloud Logging.
+This module provides a structured JSON logger for observability.
 It is completely separate from the existing inference logging system.
 """
 
@@ -10,22 +10,22 @@ import random
 import sys
 from typing import Optional
 
-from inference.core.gcp_logging.events import BaseGCPEvent
+from inference.core.structured_logging.events import BaseEvent
 
 
-class GCPServerlessLogger:
+class StructuredLogger:
     """
-    Structured JSON logger for GCP Cloud Logging.
+    Structured JSON logger for Cloud Logging services.
 
-    Only active when GCP_SERVERLESS=True and GCP_LOGGING_ENABLED=True.
+    Only active when STRUCTURED_LOGGING_ENABLED=True.
     Completely separate from the existing inference logger.
 
-    Outputs JSON to stdout which GCP Cloud Logging automatically parses.
+    Outputs JSON to stdout which cloud logging services automatically parse.
     """
 
-    _instance: Optional["GCPServerlessLogger"] = None
+    _instance: Optional["StructuredLogger"] = None
 
-    def __new__(cls) -> "GCPServerlessLogger":
+    def __new__(cls) -> "StructuredLogger":
         if cls._instance is None:
             cls._instance = super().__new__(cls)
             cls._instance._initialized = False
@@ -38,18 +38,16 @@ class GCPServerlessLogger:
 
         # Import here to avoid circular imports
         from inference.core.env import (
-            GCP_LOGGING_ENABLED,
-            GCP_LOGGING_SAMPLE_RATE,
-            GCP_SERVERLESS,
+            STRUCTURED_LOGGING_ENABLED,
+            STRUCTURED_LOGGING_SAMPLE_RATE,
         )
 
-        self._gcp_serverless = GCP_SERVERLESS
-        self._enabled = GCP_LOGGING_ENABLED
-        self._sample_rate = GCP_LOGGING_SAMPLE_RATE
+        self._enabled = STRUCTURED_LOGGING_ENABLED
+        self._sample_rate = STRUCTURED_LOGGING_SAMPLE_RATE
 
     @property
     def enabled(self) -> bool:
-        """Check if GCP logging is enabled."""
+        """Check if structured logging is enabled."""
         return self._enabled
 
     @property
@@ -67,9 +65,9 @@ class GCPServerlessLogger:
             return True
         return random.random() < self._sample_rate
 
-    def log_event(self, event: BaseGCPEvent, sampled: bool = False) -> None:
+    def log_event(self, event: BaseEvent, sampled: bool = False) -> None:
         """
-        Log a structured event to GCP Cloud Logging.
+        Log a structured event.
 
         Args:
             event: The event to log
@@ -82,30 +80,30 @@ class GCPServerlessLogger:
             return
 
         try:
-            payload = self._format_for_gcp(event)
+            payload = self._format_event(event)
             json_line = json.dumps(payload, default=str)
             print(json_line, file=sys.stdout, flush=True)
         except Exception:
             # Silently fail to avoid breaking inference
             pass
 
-    def _format_for_gcp(self, event: BaseGCPEvent) -> dict:
+    def _format_event(self, event: BaseEvent) -> dict:
         """
-        Format event for GCP Cloud Logging structured JSON.
+        Format event for structured JSON logging.
 
-        GCP Cloud Logging expects specific fields like 'severity' and 'message'.
+        Cloud logging services expect specific fields like 'severity' and 'message'.
         """
         payload = event.to_dict()
 
-        # GCP Cloud Logging expected fields
-        gcp_payload = {
+        # Cloud Logging expected fields
+        formatted_payload = {
             "severity": "INFO",
             "message": event.event_type,
             **payload,
         }
 
-        return gcp_payload
+        return formatted_payload
 
 
 # Singleton instance
-gcp_logger = GCPServerlessLogger()
+structured_logger = StructuredLogger()

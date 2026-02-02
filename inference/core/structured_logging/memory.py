@@ -1,5 +1,5 @@
 """
-GCP Serverless Logging Memory Measurement Utilities.
+Structured Logging Memory Measurement Utilities.
 
 This module provides tiered memory measurement:
 - Basic mode: Just model footprint (cheap, always available)
@@ -8,7 +8,7 @@ This module provides tiered memory measurement:
 
 from typing import Optional, Tuple
 
-from inference.core.gcp_logging.events import MemorySnapshot
+from inference.core.structured_logging.events import MemorySnapshot
 
 
 def get_gpu_allocated() -> int:
@@ -111,7 +111,7 @@ def _measure_detailed_state() -> dict:
     Capture full memory state (expensive operation).
 
     This includes GPU memory (requires sync) and system memory (syscalls).
-    Only call when GCP_LOGGING_DETAILED_MEMORY is enabled.
+    Only call when STRUCTURED_LOGGING_DETAILED_MEMORY is enabled.
     """
     state = {}
 

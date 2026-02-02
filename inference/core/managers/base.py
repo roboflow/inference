@@ -94,24 +94,24 @@ class ModelManager:
                     f"Could not acquire lock for model with id={resolved_identifier}."
                 )
 
-            # Import GCP logging utilities
-            from inference.core.env import GCP_LOGGING_DETAILED_MEMORY
-            from inference.core.gcp_logging import (
+            # Import structured logging utilities
+            from inference.core.env import STRUCTURED_LOGGING_DETAILED_MEMORY
+            from inference.core.structured_logging import (
                 ModelCacheStatusEvent,
                 ModelLoadedToMemoryEvent,
-                gcp_logger,
-                get_gcp_context,
+                structured_logger,
+                get_request_context,
                 measure_memory_after_load,
                 measure_memory_before_load,
-                update_gcp_context,
+                update_request_context,
             )
 
             cache_hit = resolved_identifier in self._models
 
             # Log cache status event and store in context for inference_completed event
-            if gcp_logger.enabled:
-                ctx = get_gcp_context()
-                gcp_logger.log_event(
+            if structured_logger.enabled:
+                ctx = get_request_context()
+                structured_logger.log_event(
                     ModelCacheStatusEvent(
                         request_id=ctx.request_id if ctx else None,
                         model_id=model_id,
@@ -124,7 +124,7 @@ class ModelManager:
                     sampled=True,
                 )
                 # Store cache_hit in context so inference_completed can access it
-                update_gcp_context(last_model_cache_hit=cache_hit)
+                update_request_context(last_model_cache_hit=cache_hit)
 
             if cache_hit:
                 logger.debug(
@@ -134,11 +134,11 @@ class ModelManager:
             try:
                 logger.debug("ModelManager - model initialisation...")
 
-                # Measure memory before loading (for GCP logging)
+                # Measure memory before loading (for structured logging)
                 allocated_before, detailed_before = 0, None
-                if gcp_logger.enabled:
+                if structured_logger.enabled:
                     allocated_before, detailed_before = measure_memory_before_load(
-                        detailed=GCP_LOGGING_DETAILED_MEMORY
+                        detailed=STRUCTURED_LOGGING_DETAILED_MEMORY
                     )
                 load_start_time = time.time()
 
@@ -157,12 +157,12 @@ class ModelManager:
                 )
 
                 # Log model loaded to memory event
-                if gcp_logger.enabled:
+                if structured_logger.enabled:
                     load_duration_ms = (time.time() - load_start_time) * 1000
                     footprint, memory_snapshot = measure_memory_after_load(
                         allocated_before=allocated_before,
                         detailed_before=detailed_before,
-                        detailed=GCP_LOGGING_DETAILED_MEMORY,
+                        detailed=STRUCTURED_LOGGING_DETAILED_MEMORY,
                     )
 
                     # Try to get model architecture info
@@ -186,8 +186,8 @@ class ModelManager:
                         if hasattr(exp_model, "device"):
                             device = str(getattr(exp_model, "device", device))
 
-                    ctx = get_gcp_context()
-                    gcp_logger.log_event(
+                    ctx = get_request_context()
+                    structured_logger.log_event(
                         ModelLoadedToMemoryEvent(
                             request_id=ctx.request_id if ctx else None,
                             model_id=model_id,
@@ -355,23 +355,23 @@ class ModelManager:
                 model_id=model_id, request=request, **kwargs
             )
 
-            # Log inference_completed event for GCP logging
-            from inference.core.gcp_logging import (
+            # Log inference_completed event for structured logging
+            from inference.core.structured_logging import (
                 InferenceCompletedEvent,
-                gcp_logger,
-                get_gcp_context,
+                structured_logger,
+                get_request_context,
             )
 
-            if gcp_logger.enabled:
+            if structured_logger.enabled:
                 inference_duration_ms = (time.time() - inference_start_time) * 1000
-                ctx = get_gcp_context()
+                ctx = get_request_context()
 
                 # Try to determine batch size
                 batch_size = 1
                 if hasattr(request, "image") and isinstance(request.image, list):
                     batch_size = len(request.image)
 
-                gcp_logger.log_event(
+                structured_logger.log_event(
                     InferenceCompletedEvent(
                         request_id=ctx.request_id if ctx else None,
                         model_id=model_id,
