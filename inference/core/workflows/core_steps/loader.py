@@ -85,6 +85,9 @@ from inference.core.workflows.core_steps.classical_cv.sift.v1 import SIFTBlockV1
 from inference.core.workflows.core_steps.classical_cv.sift_comparison.v1 import (
     SIFTComparisonBlockV1,
 )
+from inference.core.workflows.core_steps.classical_cv.feature_comparison.v1 import (
+    FeatureComparisonBlockV1,
+)
 from inference.core.workflows.core_steps.classical_cv.sift_comparison.v2 import (
     SIFTComparisonBlockV2,
 )
@@ -776,6 +779,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         RoboflowMultiLabelClassificationModelBlockV1,
         RoboflowObjectDetectionModelBlockV1,
         SIFTBlockV1,
+        FeatureComparisonBlockV1,
         SIFTComparisonBlockV1,
         SIFTComparisonBlockV2,
         SegmentAnything2BlockV1,
