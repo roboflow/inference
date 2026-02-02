@@ -602,16 +602,13 @@ def _extract_gemini_response_text(response_data: dict) -> str:
     try:
         parts = candidate["content"]["parts"]
         # If code execution is enabled there will be multiple parts (with "executableCode" and "inlineData" fields)
-        if "code_execution" in parts[0]:
-            return parts[0]["code_execution"]["output"]
         for part in parts:
             if "text" in part:
                 return part["text"]
-        if not text_parts:
-            # Fallback if no parts are recognized
-            raise ValueError("No recognizable content found in Gemini API response.")
 
-        return "".join(text_parts)
+        # Fallback if no parts are recognized
+        return parts[0]["text"]
+
     except (KeyError, IndexError, TypeError):
         raise ValueError("Unable to parse Gemini API response.")
 
