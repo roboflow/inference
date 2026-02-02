@@ -391,6 +391,9 @@ from inference.core.workflows.core_steps.transformations.byte_tracker.v3 import 
 from inference.core.workflows.core_steps.transformations.camera_calibration.v1 import (
     CameraCalibrationBlockV1,
 )
+from inference.core.workflows.core_steps.transformations.essential_matrix.v1 import (
+    EssentialMatrixBlockV1,
+)
 from inference.core.workflows.core_steps.transformations.detection_offset.v1 import (
     DetectionOffsetBlockV1,
 )
@@ -688,6 +691,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         PerspectiveCorrectionBlockV1,
         DeltaFilterBlockV1,
         CameraCalibrationBlockV1,
+        EssentialMatrixBlockV1,
         DynamicZonesBlockV1,
         SizeMeasurementBlockV1,
         BufferBlockV1,
