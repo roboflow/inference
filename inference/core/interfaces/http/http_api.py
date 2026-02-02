@@ -172,6 +172,7 @@ from inference.core.env import (
     ROBOFLOW_INTERNAL_SERVICE_SECRET,
     ROBOFLOW_SERVICE_SECRET,
     SAM3_EXEC_MODE,
+    STRUCTURED_LOGGING_ENABLED,
     WEBRTC_WORKER_ENABLED,
     WORKFLOWS_MAX_CONCURRENT_STEPS,
     WORKFLOWS_PROFILER_BUFFER_SIZE,
@@ -291,15 +292,10 @@ class LambdaMiddleware(BaseHTTPMiddleware):
         return response
 
 
-class GCPServerlessMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request, call_next):
-        if execution_id is not None:
-            execution_id_value = request.headers.get(EXECUTION_ID_HEADER)
-            if not execution_id_value:
-                execution_id_value = f"{time.time_ns()}_{uuid4().hex[:4]}"
-            execution_id.set(execution_id_value)
+class StructuredLoggingMiddleware(BaseHTTPMiddleware):
+    """Middleware to set up request context for structured event logging."""
 
-        # Set up structured logging context
+    async def dispatch(self, request, call_next):
         from inference.core.structured_logging import (
             RequestContext,
             clear_request_context,
@@ -326,14 +322,27 @@ class GCPServerlessMiddleware(BaseHTTPMiddleware):
             )
             set_request_context(context)
 
-        t1 = time.time()
         try:
             response = await call_next(request)
         finally:
             if structured_event_logger.enabled:
                 clear_request_context()
 
+        return response
+
+
+class GCPServerlessMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        if execution_id is not None:
+            execution_id_value = request.headers.get(EXECUTION_ID_HEADER)
+            if not execution_id_value:
+                execution_id_value = f"{time.time_ns()}_{uuid4().hex[:4]}"
+            execution_id.set(execution_id_value)
+
+        t1 = time.time()
+        response = await call_next(request)
         t2 = time.time()
+
         response.headers[PROCESSING_TIME_HEADER] = str(t2 - t1)
         if execution_id is not None:
             response.headers[EXECUTION_ID_HEADER] = execution_id_value
@@ -414,6 +423,8 @@ class HttpInterface(BaseInterface):
             app.add_middleware(LambdaMiddleware)
         if GCP_SERVERLESS:
             app.add_middleware(GCPServerlessMiddleware)
+        if STRUCTURED_LOGGING_ENABLED:
+            app.add_middleware(StructuredLoggingMiddleware)
 
         if len(ALLOW_ORIGINS) > 0:
             # Add CORS Middleware (but not for /build**, which is controlled separately)
