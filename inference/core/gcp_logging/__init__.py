@@ -14,6 +14,7 @@ Environment Variables:
     GCP_LOGGING_ENABLED: Master switch (default: True when GCP_SERVERLESS)
     GCP_LOGGING_SAMPLE_RATE: Sample rate for high-volume events (default: 1.0)
     GCP_LOGGING_DETAILED_MEMORY: Enable detailed memory introspection (default: False)
+    GCP_LOGGING_DEBUG: Output logs to stderr instead of stdout for local visibility (default: False)
 """
 
 from inference.core.gcp_logging.context import (

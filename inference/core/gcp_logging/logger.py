@@ -38,6 +38,7 @@ class GCPServerlessLogger:
 
         # Import here to avoid circular imports
         from inference.core.env import (
+            GCP_LOGGING_DEBUG,
             GCP_LOGGING_ENABLED,
             GCP_LOGGING_SAMPLE_RATE,
             GCP_SERVERLESS,
@@ -46,6 +47,21 @@ class GCPServerlessLogger:
         self._gcp_serverless = GCP_SERVERLESS
         self._enabled = GCP_SERVERLESS and GCP_LOGGING_ENABLED
         self._sample_rate = GCP_LOGGING_SAMPLE_RATE
+        self._debug = GCP_LOGGING_DEBUG  # Output to stderr for local visibility
+
+        # Startup diagnostic (write to stderr so it's visible even if stdout is captured)
+        if self._enabled:
+            print(
+                f"[GCP_LOGGING] Enabled (sample_rate={self._sample_rate}, debug={self._debug})",
+                file=sys.stderr,
+                flush=True,
+            )
+        elif GCP_SERVERLESS:
+            print(
+                f"[GCP_LOGGING] Disabled (GCP_SERVERLESS={GCP_SERVERLESS}, GCP_LOGGING_ENABLED={GCP_LOGGING_ENABLED})",
+                file=sys.stderr,
+                flush=True,
+            )
 
     @property
     def enabled(self) -> bool:
@@ -84,7 +100,10 @@ class GCPServerlessLogger:
         try:
             payload = self._format_for_gcp(event)
             json_line = json.dumps(payload, default=str)
-            print(json_line, file=sys.stdout, flush=True)
+            # In debug mode, write to stderr for local visibility
+            # In production, write to stdout for GCP Cloud Logging
+            output = sys.stderr if self._debug else sys.stdout
+            print(json_line, file=output, flush=True)
         except Exception:
             # Silently fail to avoid breaking inference
             pass
