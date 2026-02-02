@@ -312,8 +312,8 @@ class RoboflowInferenceModel(Model):
 
         from inference.core.structured_logging import (
             ModelLoadedToDiskEvent,
-            structured_event_logger,
             get_request_context,
+            structured_event_logger,
         )
 
         logger.debug("Downloading model artifacts from Roboflow API")

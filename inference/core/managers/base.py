@@ -99,10 +99,10 @@ class ModelManager:
             from inference.core.structured_logging import (
                 ModelCacheStatusEvent,
                 ModelLoadedToMemoryEvent,
-                structured_event_logger,
                 get_request_context,
                 measure_memory_after_load,
                 measure_memory_before_load,
+                structured_event_logger,
                 update_request_context,
             )
 
@@ -358,8 +358,8 @@ class ModelManager:
             # Log inference_completed event for structured logging
             from inference.core.structured_logging import (
                 InferenceCompletedEvent,
-                structured_event_logger,
                 get_request_context,
+                structured_event_logger,
             )
 
             if structured_event_logger.enabled:

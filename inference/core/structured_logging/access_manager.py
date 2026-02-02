@@ -9,9 +9,9 @@ import os
 import time
 from typing import Optional
 
+from inference.core.structured_logging.context import get_request_context
 from inference.core.structured_logging.events import ModelLoadedToDiskEvent
 from inference.core.structured_logging.logger import structured_event_logger
-from inference.core.structured_logging.context import get_request_context
 
 
 class LoggingModelAccessManager:
@@ -61,9 +61,7 @@ class LoggingModelAccessManager:
         except OSError:
             pass
 
-    def on_file_renamed(
-        self, old_path: str, new_path: str, access_identifiers
-    ) -> None:
+    def on_file_renamed(self, old_path: str, new_path: str, access_identifiers) -> None:
         pass
 
     def on_symlink_created(

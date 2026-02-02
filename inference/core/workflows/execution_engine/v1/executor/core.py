@@ -169,7 +169,10 @@ def safe_execute_step(
         execution_id.set(workflow_execution_id)
 
     # Update structured logging context with step information
-    from inference.core.structured_logging import structured_event_logger, update_request_context
+    from inference.core.structured_logging import (
+        structured_event_logger,
+        update_request_context,
+    )
 
     step_name = get_last_chunk_of_selector(selector=step_selector)
     if structured_event_logger.enabled:

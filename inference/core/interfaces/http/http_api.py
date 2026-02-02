@@ -701,8 +701,8 @@ class HttpInterface(BaseInterface):
             # Log request_received event for structured logging
             from inference.core.structured_logging import (
                 RequestReceivedEvent,
-                structured_event_logger,
                 get_request_context,
+                structured_event_logger,
             )
 
             if structured_event_logger.enabled:
@@ -748,8 +748,8 @@ class HttpInterface(BaseInterface):
             # Log workflow_request_received event for structured logging
             from inference.core.structured_logging import (
                 WorkflowRequestReceivedEvent,
-                structured_event_logger,
                 get_request_context,
+                structured_event_logger,
                 update_request_context,
             )
 

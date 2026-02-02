@@ -97,8 +97,8 @@ class WithFixedSizeCache(ModelManagerDecorator):
             from inference.core.env import STRUCTURED_LOGGING_DETAILED_MEMORY
             from inference.core.structured_logging import (
                 ModelEvictedEvent,
-                structured_event_logger,
                 measure_memory_for_eviction,
+                structured_event_logger,
             )
 
             while self._key_queue and (
