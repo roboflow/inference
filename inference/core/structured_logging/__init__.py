@@ -19,7 +19,6 @@ from inference.core.structured_logging.context import (
     RequestContext,
     clear_request_context,
     get_request_context,
-    hash_api_key,
     set_request_context,
     update_request_context,
 )
@@ -34,7 +33,10 @@ from inference.core.structured_logging.events import (
     RequestReceivedEvent,
     WorkflowRequestReceivedEvent,
 )
-from inference.core.structured_logging.logger import StructuredEventLogger, structured_event_logger
+from inference.core.structured_logging.logger import (
+    StructuredEventLogger,
+    structured_event_logger,
+)
 from inference.core.structured_logging.memory import (
     get_gpu_allocated,
     measure_memory_after_load,
@@ -63,7 +65,6 @@ __all__ = [
     "get_request_context",
     "clear_request_context",
     "update_request_context",
-    "hash_api_key",
     # Memory
     "get_gpu_allocated",
     "measure_memory_before_load",

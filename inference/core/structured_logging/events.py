@@ -48,7 +48,6 @@ class RequestReceivedEvent(BaseEvent):
 
     event_type: str = field(default="request_received", init=False)
     model_id: Optional[str] = None
-    api_key_hash: Optional[str] = None
     endpoint_type: Optional[str] = None
     invocation_source: str = "direct"
 
@@ -60,7 +59,6 @@ class WorkflowRequestReceivedEvent(BaseEvent):
     event_type: str = field(default="workflow_request_received", init=False)
     workflow_id: Optional[str] = None
     workflow_instance_id: Optional[str] = None
-    api_key_hash: Optional[str] = None
     step_count: Optional[int] = None
 
 
@@ -147,7 +145,9 @@ class InferenceCompletedEvent(BaseEvent):
     model_id: str = ""
     inference_duration_ms: float = 0.0
     batch_size: int = 1
-    cache_hit: Optional[bool] = None  # Whether model was already loaded (from add_model)
+    cache_hit: Optional[bool] = (
+        None  # Whether model was already loaded (from add_model)
+    )
     invocation_source: str = "direct"
     workflow_instance_id: Optional[str] = None
     workflow_id: Optional[str] = None

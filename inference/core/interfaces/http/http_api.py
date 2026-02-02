@@ -303,7 +303,6 @@ class StructuredLoggingMiddleware(BaseHTTPMiddleware):
         from inference.core.structured_logging import (
             RequestContext,
             clear_request_context,
-            hash_api_key,
             set_request_context,
             structured_event_logger,
         )
@@ -314,14 +313,8 @@ class StructuredLoggingMiddleware(BaseHTTPMiddleware):
             if not request_id:
                 request_id = uuid4().hex
 
-            # Extract API key from request for hashing
-            api_key = request.headers.get("x-api-key") or request.query_params.get(
-                "api_key"
-            )
-
             context = RequestContext(
                 request_id=request_id,
-                api_key_hash=hash_api_key(api_key),
                 invocation_source="direct",
             )
             set_request_context(context)
@@ -726,7 +719,6 @@ class HttpInterface(BaseInterface):
                     RequestReceivedEvent(
                         request_id=ctx.request_id if ctx else None,
                         model_id=inference_request.model_id,
-                        api_key_hash=ctx.api_key_hash if ctx else None,
                         endpoint_type=endpoint_type,
                         invocation_source=ctx.invocation_source if ctx else "direct",
                     ),
@@ -783,7 +775,6 @@ class HttpInterface(BaseInterface):
                         request_id=ctx.request_id if ctx else None,
                         workflow_id=workflow_request.workflow_id,
                         workflow_instance_id=workflow_instance_id,
-                        api_key_hash=ctx.api_key_hash if ctx else None,
                         step_count=step_count,
                     ),
                     sampled=True,
