@@ -21,7 +21,8 @@ RUN python -m pip install \
     -r requirements.yolo_world.txt \
     -r requirements.easyocr.txt \
     -r requirements.gpu.txt \
-    "pycuda>=2025.0.0,<2026.0.0"
+    "pycuda>=2025.0.0,<2026.0.0" \
+    "torch==2.4.1" # ix the torch to stay in place
 
 
 WORKDIR /app/
@@ -57,8 +58,8 @@ ENV VERSION_CHECK_MODE=continuous \
     STREAM_API_PRELOADED_PROCESSES=2 \
     PYTHONPATH=/app:$PYTHONPATH
 ENV CORE_MODEL_SAM3_ENABLED=False \
-    ALLOW_INFERENCE_EXP_UNTRUSTED_MODELS=True \
-    USE_INFERENCE_EXP_MODELS=False \
+    ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES=True \
+    USE_INFERENCE_MODELS=False \
     RUNNING_ON_JETSON=True \
     L4T_VERSION=35.2.1
 
