@@ -488,6 +488,7 @@ class InferencePipeline:
         predictions_queue_size: int = PREDICTIONS_QUEUE_SIZE,
         decoding_buffer_size: int = DEFAULT_BUFFER_SIZE,
         model_manager: Optional[ModelManager] = None,
+        _is_preview: bool = False,
     ) -> "InferencePipeline":
         """
         This class creates the abstraction for making inferences from given workflow against video stream.
@@ -658,6 +659,7 @@ class InferencePipeline:
                 image_input_name=image_input_name,
                 video_metadata_input_name=video_metadata_input_name,
                 serialize_results=serialize_results,
+                _is_preview=_is_preview,
             )
         except ImportError as error:
             raise CannotInitialiseModelError(

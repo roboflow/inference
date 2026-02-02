@@ -39,7 +39,6 @@ from inference_cli.lib.roboflow_cloud.config import (
     SUGGESTED_MAX_VIDEOS_IN_BATCH,
 )
 from inference_cli.lib.roboflow_cloud.data_staging.entities import (
-    BatchExportResponse,
     BatchMetadata,
     DownloadLogEntry,
     FileMetadata,
@@ -165,10 +164,19 @@ def get_workspace_batches_list_page(
             params=params,
             timeout=REQUEST_TIMEOUT,
         )
-    except (ConnectionError, Timeout, requests.exceptions.ConnectionError):
+    except (ConnectionError, requests.exceptions.ConnectionError) as e:
         raise RetryError(
             f"Connectivity error. Try reaching Roboflow API in browser: {API_BASE_URL}"
-        )
+        ) from e
+    except Timeout as e:
+        raise RetryError(
+            f"Timeout error. Could not complete `get_workspace_batches_list_page(...)` operation "
+            f"within {REQUEST_TIMEOUT} seconds. This operation is backend-heavy, but problem may be caused by several "
+            f"reasons - including network connectivity issues on your end (or, of course, slow responses on Roboflow "
+            f"API side). Verify connectivity and try again. You may also set `ROBOFLOW_API_REQUEST_TIMEOUT` env "
+            f"variable to larger value (in seconds) via `export ROBOFLOW_API_REQUEST_TIMEOUT=120` for example to "
+            f"set timeout to 2 minutes. If the problem persists - contact Roboflow support."
+        ) from e
     handle_response_errors(response=response, operation_name="list batches")
     try:
         return ListBatchesResponse.model_validate(response.json())
@@ -364,10 +372,19 @@ def get_one_page_of_batch_content(
             params=params,
             timeout=REQUEST_TIMEOUT,
         )
-    except (ConnectionError, Timeout, requests.exceptions.ConnectionError):
+    except (ConnectionError, requests.exceptions.ConnectionError) as e:
         raise RetryError(
             f"Connectivity error. Try reaching Roboflow API in browser: {API_BASE_URL}"
-        )
+        ) from e
+    except Timeout as e:
+        raise RetryError(
+            f"Timeout error. Could not complete `get_workspace_batches_list_page(...)` operation "
+            f"within {REQUEST_TIMEOUT} seconds. This operation is backend-heavy, but problem may be caused by several "
+            f"reasons - including network connectivity issues on your end (or, of course, slow responses on Roboflow "
+            f"API side). Verify connectivity and try again. You may also set `ROBOFLOW_API_REQUEST_TIMEOUT` env "
+            f"variable to larger value (in seconds) via `export ROBOFLOW_API_REQUEST_TIMEOUT=120` for example to "
+            f"set timeout to 2 minutes. If the problem persists - contact Roboflow support."
+        ) from e
     handle_response_errors(response=response, operation_name="list batche")
     try:
         return ListBatchResponse.model_validate(response.json())
@@ -605,10 +622,21 @@ def trigger_images_references_ingest(
             timeout=2 * REQUEST_TIMEOUT,
             json=payload,
         )
-    except (ConnectionError, Timeout, requests.exceptions.ConnectionError) as error:
+    except (ConnectionError, requests.exceptions.ConnectionError) as error:
         raise RetryError(
             f"Connectivity error. Try reaching Roboflow API in browser: {API_BASE_URL}"
         ) from error
+    except Timeout as e:
+        raise RetryError(
+            f"Timeout error. Could not complete `trigger_images_references_ingest(...)` operation "
+            f"within {REQUEST_TIMEOUT} seconds. This operation may be both transfer-heavy and "
+            f"backend-heavy (especially when ingesting local file with large number of references), "
+            f"and problem may be caused by several reasons - including network connectivity issues on your end "
+            f"(or, of course, slow responses on Roboflow API side). Verify connectivity and try again. "
+            f"You may also set `ROBOFLOW_API_REQUEST_TIMEOUT` env "
+            f"variable to larger value (in seconds) via `export ROBOFLOW_API_REQUEST_TIMEOUT=120` for example to "
+            f"set timeout to 2 minutes. If the problem persists - contact Roboflow support."
+        ) from e
     handle_response_errors(response=response, operation_name="trigger images ingest")
     try:
         response_data = response.json()
@@ -741,10 +769,21 @@ def trigger_videos_references_ingest(
             timeout=2 * REQUEST_TIMEOUT,
             json=payload,
         )
-    except (ConnectionError, Timeout, requests.exceptions.ConnectionError) as error:
+    except (ConnectionError, requests.exceptions.ConnectionError) as error:
         raise RetryError(
             f"Connectivity error. Try reaching Roboflow API in browser: {API_BASE_URL}"
         ) from error
+    except Timeout as e:
+        raise RetryError(
+            f"Timeout error. Could not complete `trigger_videos_references_ingest(...)` operation "
+            f"within {REQUEST_TIMEOUT} seconds. This operation may be both transfer-heavy and "
+            f"backend-heavy (especially when ingesting local file with large number of references), "
+            f"and problem may be caused by several reasons - including network connectivity issues on your end "
+            f"(or, of course, slow responses on Roboflow API side). Verify connectivity and try again. "
+            "You may also set `ROBOFLOW_API_REQUEST_TIMEOUT` env "
+            f"variable to larger value (in seconds) via `export ROBOFLOW_API_REQUEST_TIMEOUT=120` for example to "
+            f"set timeout to 2 minutes. If the problem persists - contact Roboflow support."
+        ) from e
     handle_response_errors(response=response, operation_name="trigger videos ingest")
     try:
         return VideoReferencesIngestResponse.model_validate(response.json())
@@ -906,10 +945,20 @@ def upload_image(
                 image_file_name: image_content,
             },
         )
-    except (ConnectionError, Timeout, requests.exceptions.ConnectionError) as error:
+    except (ConnectionError, requests.exceptions.ConnectionError) as error:
         raise RetryError(
             f"Connectivity error. Try reaching Roboflow API in browser: {API_BASE_URL}"
         ) from error
+    except Timeout as e:
+        raise RetryError(
+            f"Timeout error. Could not complete `upload_image(...)` operation "
+            f"within {REQUEST_TIMEOUT} seconds. This operation is transfer-heavy but problem may be caused "
+            f"by several reasons - including network connectivity issues on your end "
+            f"(or, of course, slow responses on Roboflow API side). Verify connectivity and try again. "
+            f"You may also set `ROBOFLOW_API_REQUEST_TIMEOUT` env "
+            f"variable to larger value (in seconds) via `export ROBOFLOW_API_REQUEST_TIMEOUT=120` for example to "
+            f"set timeout to 2 minutes. If the problem persists - contact Roboflow support."
+        ) from e
     handle_response_errors(response=response, operation_name="upload image")
     upload_log.record_file(path=image_path)
 
@@ -943,10 +992,20 @@ def upload_video(
             params=params,
             timeout=REQUEST_TIMEOUT,
         )
-    except (ConnectionError, Timeout, requests.exceptions.ConnectionError) as error:
+    except (ConnectionError, requests.exceptions.ConnectionError) as error:
         raise RetryError(
             f"Connectivity error. Try reaching Roboflow API in browser: {API_BASE_URL}"
         ) from error
+    except Timeout as e:
+        raise RetryError(
+            f"Timeout error. Could not complete `upload_video(...)` operation "
+            f"within {REQUEST_TIMEOUT} seconds. This operation is transfer-heavy but problem may be caused "
+            f"by several reasons - including network connectivity issues on your end "
+            f"(or, of course, slow responses on Roboflow API side). Verify connectivity and try again. "
+            f"You may also set `ROBOFLOW_API_REQUEST_TIMEOUT` env "
+            f"variable to larger value (in seconds) via `export ROBOFLOW_API_REQUEST_TIMEOUT=120` for example to "
+            f"set timeout to 2 minutes. If the problem persists - contact Roboflow support."
+        ) from e
     handle_response_errors(response=response, operation_name="upload video")
     try:
         response_data = response.json()
@@ -991,10 +1050,20 @@ def upload_images_shard(
             params=params,
             timeout=REQUEST_TIMEOUT,
         )
-    except (ConnectionError, Timeout, requests.exceptions.ConnectionError) as error:
+    except (ConnectionError, requests.exceptions.ConnectionError) as error:
         raise RetryError(
             f"Connectivity error. Try reaching Roboflow API in browser: {API_BASE_URL}"
         ) from error
+    except Timeout as e:
+        raise RetryError(
+            f"Timeout error. Could not complete `upload_images_shard(...)` operation "
+            f"within {REQUEST_TIMEOUT} seconds. This operation is transfer-heavy but problem may be caused "
+            f"by several reasons - including network connectivity issues on your end "
+            f"(or, of course, slow responses on Roboflow API side). Verify connectivity and try again. "
+            "You may also set `ROBOFLOW_API_REQUEST_TIMEOUT` env "
+            f"variable to larger value (in seconds) via `export ROBOFLOW_API_REQUEST_TIMEOUT=120` for example to "
+            f"set timeout to 2 minutes. If the problem persists - contact Roboflow support."
+        ) from e
     handle_response_errors(response=response, operation_name="register images shard")
     try:
         response_data = response.json()
@@ -1049,10 +1118,20 @@ def get_batch_count(
             params=params,
             timeout=REQUEST_TIMEOUT,
         )
-    except (ConnectionError, Timeout, requests.exceptions.ConnectionError):
+    except (ConnectionError, requests.exceptions.ConnectionError) as e:
         raise RetryError(
             f"Connectivity error. Try reaching Roboflow API in browser: {API_BASE_URL}"
-        )
+        ) from e
+    except Timeout as e:
+        raise RetryError(
+            f"Timeout error. Could not complete `get_batch_count(...)` operation "
+            f"within {REQUEST_TIMEOUT} seconds. This operation is backend-heavy but problem may be caused "
+            f"by several reasons - including network connectivity issues on your end "
+            f"(or, of course, slow responses on Roboflow API side). Verify connectivity and try again. "
+            "You may also set `ROBOFLOW_API_REQUEST_TIMEOUT` env "
+            f"variable to larger value (in seconds) via `export ROBOFLOW_API_REQUEST_TIMEOUT=120` for example to "
+            f"set timeout to 2 minutes. If the problem persists - contact Roboflow support."
+        ) from e
     handle_response_errors(response=response, operation_name="get batch count")
     try:
         return response.json()["count"]
@@ -1185,10 +1264,20 @@ def get_batch_metadata(
             params=params,
             timeout=REQUEST_TIMEOUT,
         )
-    except (ConnectionError, Timeout, requests.exceptions.ConnectionError):
+    except (ConnectionError, requests.exceptions.ConnectionError) as e:
         raise RetryError(
             f"Connectivity error. Try reaching Roboflow API in browser: {API_BASE_URL}"
-        )
+        ) from e
+    except Timeout as e:
+        raise RetryError(
+            f"Timeout error. Could not complete `get_batch_metadata(...)` operation "
+            f"within {REQUEST_TIMEOUT} seconds. This operation is backend-heavy but problem may be caused "
+            f"by several reasons - including network connectivity issues on your end "
+            f"(or, of course, slow responses on Roboflow API side). Verify connectivity and try again. "
+            "You may also set `ROBOFLOW_API_REQUEST_TIMEOUT` env "
+            f"variable to larger value (in seconds) via `export ROBOFLOW_API_REQUEST_TIMEOUT=120` for example to "
+            f"set timeout to 2 minutes. If the problem persists - contact Roboflow support."
+        ) from e
     handle_response_errors(response=response, operation_name="list batch content")
     try:
         return BatchMetadata.model_validate(response.json()["batch"])
@@ -1216,10 +1305,20 @@ def list_multipart_batch_parts(
             params=params,
             timeout=REQUEST_TIMEOUT,
         )
-    except (ConnectionError, Timeout, requests.exceptions.ConnectionError):
+    except (ConnectionError, requests.exceptions.ConnectionError) as e:
         raise RetryError(
             f"Connectivity error. Try reaching Roboflow API in browser: {API_BASE_URL}"
-        )
+        ) from e
+    except Timeout as e:
+        raise RetryError(
+            f"Timeout error. Could not complete `list_multipart_batch_parts(...)` operation "
+            f"within {REQUEST_TIMEOUT} seconds. This operation is backend-heavy but problem may be caused "
+            f"by several reasons - including network connectivity issues on your end "
+            f"(or, of course, slow responses on Roboflow API side). Verify connectivity and try again. "
+            "You may also set `ROBOFLOW_API_REQUEST_TIMEOUT` env "
+            f"variable to larger value (in seconds) via `export ROBOFLOW_API_REQUEST_TIMEOUT=120` for example to "
+            f"set timeout to 2 minutes. If the problem persists - contact Roboflow support."
+        ) from e
     handle_response_errors(
         response=response, operation_name="list multipart batch parts"
     )
@@ -1600,9 +1699,18 @@ def get_one_page_of_batch_shards_statuses(
             params=params,
             timeout=REQUEST_TIMEOUT,
         )
-    except (ConnectionError, Timeout):
+    except (ConnectionError, requests.exceptions.ConnectionError) as e:
         raise RetryError(
             f"Connectivity error. Try reaching Roboflow API in browser: {API_BASE_URL}"
+        ) from e
+    except Timeout:
+        raise RetryError(
+            f"Timeout error. Could not complete `get_one_page_of_batch_shards_statuses(...)` operation "
+            f"within {REQUEST_TIMEOUT} seconds. This operation is backend-heavy, but problem may be caused by several "
+            f"reasons - including network connectivity issues on your end (or, of course, slow responses on Roboflow "
+            f"API side). Verify connectivity and try again. You may also set `ROBOFLOW_API_REQUEST_TIMEOUT` env "
+            f"variable to larger value (in seconds) via `export ROBOFLOW_API_REQUEST_TIMEOUT=120` for example to "
+            f"set timeout to 2 minutes. If the problem persists - contact Roboflow support."
         )
     handle_response_errors(response=response, operation_name="list batch shards")
     try:
