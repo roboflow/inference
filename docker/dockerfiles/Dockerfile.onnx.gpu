@@ -33,7 +33,7 @@ COPY requirements/requirements.sam.txt \
 
 RUN python3 -m pip install -U pip uv
 
-COPY insference_models/uv.lock insference_models/pyproject.toml build/inference_models/
+COPY inference_models/uv.lock inference_models/pyproject.toml build/inference_models/
 WORKDIR build/inference_models/
 RUN UV_PROJECT_ENVIRONMENT=/usr $HOME/.local/bin/uv sync --locked --extra torch-cu124 --extra onnx-cu12 --extra mediapipe --extra trt10
 
