@@ -289,6 +289,14 @@ LAMBDA = str2bool(os.getenv("LAMBDA", False))
 # Whether is's GCP serverless service
 GCP_SERVERLESS = str2bool(os.getenv("GCP_SERVERLESS", "False"))
 
+# Fixed usage duration for billing/tracking (in seconds). When set, overrides actual execution time.
+COUNT_FIXED_USAGE = os.getenv("COUNT_FIXED_USAGE")
+if COUNT_FIXED_USAGE:
+    try:
+        COUNT_FIXED_USAGE = float(COUNT_FIXED_USAGE)
+    except (ValueError, TypeError):
+        COUNT_FIXED_USAGE = None
+
 GET_MODEL_REGISTRY_ENABLED = str2bool(os.getenv("GET_MODEL_REGISTRY_ENABLED", "True"))
 
 # Flag to enable API logging, default is False

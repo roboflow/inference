@@ -27,6 +27,7 @@ from typing_extensions import ParamSpec
 
 from inference.core.env import (
     API_KEY,
+    COUNT_FIXED_USAGE,
     DEDICATED_DEPLOYMENT_ID,
     DEVICE_ID,
     GCP_SERVERLESS,
@@ -708,15 +709,14 @@ class UsageCollector:
                 usage_workflow_preview: bool = False,
                 usage_inference_test_run: bool = False,
                 usage_billable: bool = True,
-                usage_fixed_duration: Optional[float] = None,
                 **kwargs: P.kwargs,
             ) -> T:
                 try:
                     t1 = time.time()
                     res = func(*args, **kwargs)
                     t2 = time.time()
-                    if usage_fixed_duration is not None:
-                        execution_duration = usage_fixed_duration
+                    if COUNT_FIXED_USAGE is not None:
+                        execution_duration = COUNT_FIXED_USAGE
                     elif GCP_SERVERLESS is True:
                         execution_duration = max(t2 - t1, 0.1)
                     else:
@@ -739,8 +739,8 @@ class UsageCollector:
                     )
                 except Exception as exc:
                     t2 = time.time()
-                    if usage_fixed_duration is not None:
-                        execution_duration = usage_fixed_duration
+                    if COUNT_FIXED_USAGE is not None:
+                        execution_duration = COUNT_FIXED_USAGE
                     elif GCP_SERVERLESS is True:
                         execution_duration = max(t2 - t1, 0.1)
                     else:
@@ -777,15 +777,14 @@ class UsageCollector:
                 usage_workflow_preview: bool = False,
                 usage_inference_test_run: bool = False,
                 usage_billable: bool = True,
-                usage_fixed_duration: Optional[float] = None,
                 **kwargs: P.kwargs,
             ) -> T:
                 try:
                     t1 = time.time()
                     res = await func(*args, **kwargs)
                     t2 = time.time()
-                    if usage_fixed_duration is not None:
-                        execution_duration = usage_fixed_duration
+                    if COUNT_FIXED_USAGE is not None:
+                        execution_duration = COUNT_FIXED_USAGE
                     elif GCP_SERVERLESS is True:
                         execution_duration = max(t2 - t1, 0.1)
                     else:
@@ -808,8 +807,8 @@ class UsageCollector:
                     )
                 except Exception as exc:
                     t2 = time.time()
-                    if usage_fixed_duration is not None:
-                        execution_duration = usage_fixed_duration
+                    if COUNT_FIXED_USAGE is not None:
+                        execution_duration = COUNT_FIXED_USAGE
                     elif GCP_SERVERLESS is True:
                         execution_duration = max(t2 - t1, 0.1)
                     else:
