@@ -1,5 +1,5 @@
 """
-GCP Logging Model Access Manager for inference-models integration.
+Logging Model Access Manager for inference-models integration.
 
 This module provides a custom ModelAccessManager that logs ModelLoadedToDiskEvent
 when models are downloaded through the inference-models library.
@@ -9,27 +9,27 @@ import os
 import time
 from typing import Optional
 
-from inference.core.gcp_logging.events import ModelLoadedToDiskEvent
-from inference.core.gcp_logging.logger import gcp_logger
-from inference.core.gcp_logging.context import get_gcp_context
+from inference.core.structured_logging.events import ModelLoadedToDiskEvent
+from inference.core.structured_logging.logger import structured_event_logger
+from inference.core.structured_logging.context import get_request_context
 
 
-class GCPLoggingModelAccessManager:
+class LoggingModelAccessManager:
     """
-    A ModelAccessManager that logs download events to GCP structured logging.
+    A ModelAccessManager that logs download events to structured logging.
 
     This wraps the default LiberalModelAccessManager behavior and adds
     tracking of file downloads to emit ModelLoadedToDiskEvent when a model
     package is fully loaded.
 
     Usage:
-        from inference.core.gcp_logging.access_manager import GCPLoggingModelAccessManager
+        from inference.core.structured_logging.access_manager import LoggingModelAccessManager
         from inference_models import AutoModel
 
         model = AutoModel.from_pretrained(
             model_id,
             api_key=api_key,
-            model_access_manager=GCPLoggingModelAccessManager(),
+            model_access_manager=LoggingModelAccessManager(),
         )
     """
 
@@ -104,7 +104,7 @@ class GCPLoggingModelAccessManager:
         model_storage_path: str,
     ) -> None:
         """Called when model is fully loaded - log the disk event if files were downloaded."""
-        if not gcp_logger.enabled:
+        if not structured_event_logger.enabled:
             return
 
         # Only log if we actually downloaded files (not a cache hit)
@@ -120,8 +120,8 @@ class GCPLoggingModelAccessManager:
         if hasattr(model, "backend"):
             backend = f"inference-models/{model.backend}"
 
-        ctx = get_gcp_context()
-        gcp_logger.log_event(
+        ctx = get_request_context()
+        structured_event_logger.log_event(
             ModelLoadedToDiskEvent(
                 request_id=ctx.request_id if ctx else None,
                 model_id=access_identifiers.model_id,

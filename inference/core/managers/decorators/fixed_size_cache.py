@@ -94,10 +94,10 @@ class WithFixedSizeCache(ModelManagerDecorator):
                 )
             import time
 
-            from inference.core.env import GCP_LOGGING_DETAILED_MEMORY
-            from inference.core.gcp_logging import (
+            from inference.core.env import STRUCTURED_LOGGING_DETAILED_MEMORY
+            from inference.core.structured_logging import (
                 ModelEvictedEvent,
-                gcp_logger,
+                structured_event_logger,
                 measure_memory_for_eviction,
             )
 
@@ -124,8 +124,8 @@ class WithFixedSizeCache(ModelManagerDecorator):
                         break
                     to_remove_model_id = self._key_queue.popleft()
 
-                    # Capture model metrics before eviction for GCP logging
-                    if gcp_logger.enabled:
+                    # Capture model metrics before eviction for structured logging
+                    if structured_event_logger.enabled:
                         # Calculate lifetime
                         load_time = self._model_load_times.get(
                             to_remove_model_id, time.time()
@@ -145,10 +145,10 @@ class WithFixedSizeCache(ModelManagerDecorator):
 
                         # Capture memory state if detailed logging enabled
                         memory_snapshot = measure_memory_for_eviction(
-                            detailed=GCP_LOGGING_DETAILED_MEMORY
+                            detailed=STRUCTURED_LOGGING_DETAILED_MEMORY
                         )
 
-                        gcp_logger.log_event(
+                        structured_event_logger.log_event(
                             ModelEvictedEvent(
                                 model_id=to_remove_model_id,
                                 reason=eviction_reason,

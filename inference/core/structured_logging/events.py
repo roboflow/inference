@@ -1,7 +1,7 @@
 """
-GCP Serverless Logging Event Definitions.
+Structured Logging Event Definitions.
 
-This module defines structured event dataclasses for GCP Cloud Logging.
+This module defines structured event dataclasses for cloud logging.
 Each event type captures specific model lifecycle information.
 """
 
@@ -11,8 +11,8 @@ from typing import Any, Dict, Literal, Optional
 
 
 @dataclass
-class BaseGCPEvent:
-    """Base class for all GCP serverless logging events."""
+class BaseEvent:
+    """Base class for all structured logging events."""
 
     event_type: str
     timestamp: str = field(
@@ -43,7 +43,7 @@ class MemorySnapshot:
 
 
 @dataclass
-class RequestReceivedEvent(BaseGCPEvent):
+class RequestReceivedEvent(BaseEvent):
     """Event: Direct inference request received."""
 
     event_type: str = field(default="request_received", init=False)
@@ -54,7 +54,7 @@ class RequestReceivedEvent(BaseGCPEvent):
 
 
 @dataclass
-class WorkflowRequestReceivedEvent(BaseGCPEvent):
+class WorkflowRequestReceivedEvent(BaseEvent):
     """Event: Workflow request received."""
 
     event_type: str = field(default="workflow_request_received", init=False)
@@ -65,7 +65,7 @@ class WorkflowRequestReceivedEvent(BaseGCPEvent):
 
 
 @dataclass
-class ModelCacheStatusEvent(BaseGCPEvent):
+class ModelCacheStatusEvent(BaseEvent):
     """Event: Model cache status check (per request)."""
 
     event_type: str = field(default="model_cache_status", init=False)
@@ -79,7 +79,7 @@ class ModelCacheStatusEvent(BaseGCPEvent):
 
 
 @dataclass
-class ModelLoadedToDiskEvent(BaseGCPEvent):
+class ModelLoadedToDiskEvent(BaseEvent):
     """Event: Model artifacts downloaded to disk."""
 
     event_type: str = field(default="model_loaded_to_disk", init=False)
@@ -92,7 +92,7 @@ class ModelLoadedToDiskEvent(BaseGCPEvent):
 
 
 @dataclass
-class ModelLoadedToMemoryEvent(BaseGCPEvent):
+class ModelLoadedToMemoryEvent(BaseEvent):
     """Event: Model loaded to memory (GPU/CPU)."""
 
     event_type: str = field(default="model_loaded_to_memory", init=False)
@@ -117,7 +117,7 @@ class ModelLoadedToMemoryEvent(BaseGCPEvent):
 
 
 @dataclass
-class ModelEvictedEvent(BaseGCPEvent):
+class ModelEvictedEvent(BaseEvent):
     """Event: Model evicted from memory."""
 
     event_type: str = field(default="model_evicted", init=False)
@@ -140,7 +140,7 @@ class ModelEvictedEvent(BaseGCPEvent):
 
 
 @dataclass
-class InferenceCompletedEvent(BaseGCPEvent):
+class InferenceCompletedEvent(BaseEvent):
     """Event: Inference completed successfully."""
 
     event_type: str = field(default="inference_completed", init=False)

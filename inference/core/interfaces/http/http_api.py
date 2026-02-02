@@ -299,16 +299,16 @@ class GCPServerlessMiddleware(BaseHTTPMiddleware):
                 execution_id_value = f"{time.time_ns()}_{uuid4().hex[:4]}"
             execution_id.set(execution_id_value)
 
-        # Set up GCP logging context
-        from inference.core.gcp_logging import (
-            GCPRequestContext,
-            clear_gcp_context,
-            gcp_logger,
+        # Set up structured logging context
+        from inference.core.structured_logging import (
+            RequestContext,
+            clear_request_context,
+            structured_event_logger,
             hash_api_key,
-            set_gcp_context,
+            set_request_context,
         )
 
-        if gcp_logger.enabled:
+        if structured_event_logger.enabled:
             # Get request_id from correlation ID (set by CorrelationIdMiddleware)
             request_id = asgi_correlation_id.correlation_id.get()
             if not request_id:
@@ -319,19 +319,19 @@ class GCPServerlessMiddleware(BaseHTTPMiddleware):
                 "api_key"
             )
 
-            context = GCPRequestContext(
+            context = RequestContext(
                 request_id=request_id,
                 api_key_hash=hash_api_key(api_key),
                 invocation_source="direct",
             )
-            set_gcp_context(context)
+            set_request_context(context)
 
         t1 = time.time()
         try:
             response = await call_next(request)
         finally:
-            if gcp_logger.enabled:
-                clear_gcp_context()
+            if structured_event_logger.enabled:
+                clear_request_context()
 
         t2 = time.time()
         response.headers[PROCESSING_TIME_HEADER] = str(t2 - t1)
@@ -685,15 +685,15 @@ class HttpInterface(BaseInterface):
             Returns:
                 InferenceResponse: The response containing the inference results.
             """
-            # Log request_received event for GCP logging
-            from inference.core.gcp_logging import (
+            # Log request_received event for structured logging
+            from inference.core.structured_logging import (
                 RequestReceivedEvent,
-                gcp_logger,
-                get_gcp_context,
+                structured_event_logger,
+                get_request_context,
             )
 
-            if gcp_logger.enabled:
-                ctx = get_gcp_context()
+            if structured_event_logger.enabled:
+                ctx = get_request_context()
                 # Infer endpoint_type from request class name
                 request_class_name = type(inference_request).__name__
                 endpoint_type = (
@@ -702,7 +702,7 @@ class HttpInterface(BaseInterface):
                     .lower()
                     or None
                 )
-                gcp_logger.log_event(
+                structured_event_logger.log_event(
                     RequestReceivedEvent(
                         request_id=ctx.request_id if ctx else None,
                         model_id=inference_request.model_id,
@@ -733,16 +733,16 @@ class HttpInterface(BaseInterface):
             background_tasks: Optional[BackgroundTasks],
             profiler: WorkflowsProfiler,
         ) -> WorkflowInferenceResponse:
-            # Log workflow_request_received event for GCP logging
-            from inference.core.gcp_logging import (
+            # Log workflow_request_received event for structured logging
+            from inference.core.structured_logging import (
                 WorkflowRequestReceivedEvent,
-                gcp_logger,
-                get_gcp_context,
-                update_gcp_context,
+                structured_event_logger,
+                get_request_context,
+                update_request_context,
             )
 
-            if gcp_logger.enabled:
-                ctx = get_gcp_context()
+            if structured_event_logger.enabled:
+                ctx = get_request_context()
                 # Get workflow_instance_id from execution_id if available
                 workflow_instance_id = None
                 if execution_id is not None:
@@ -752,13 +752,13 @@ class HttpInterface(BaseInterface):
                 step_count = len(workflow_specification.get("steps", []))
 
                 # Update context to mark this as a workflow invocation
-                update_gcp_context(
+                update_request_context(
                     invocation_source="workflow",
                     workflow_id=workflow_request.workflow_id,
                     workflow_instance_id=workflow_instance_id,
                 )
 
-                gcp_logger.log_event(
+                structured_event_logger.log_event(
                     WorkflowRequestReceivedEvent(
                         request_id=ctx.request_id if ctx else None,
                         workflow_id=workflow_request.workflow_id,

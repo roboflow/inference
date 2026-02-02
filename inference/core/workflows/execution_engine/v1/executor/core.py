@@ -168,12 +168,12 @@ def safe_execute_step(
     if execution_id is not None:
         execution_id.set(workflow_execution_id)
 
-    # Update GCP logging context with step information
-    from inference.core.gcp_logging import gcp_logger, update_gcp_context
+    # Update structured logging context with step information
+    from inference.core.structured_logging import structured_event_logger, update_request_context
 
     step_name = get_last_chunk_of_selector(selector=step_selector)
-    if gcp_logger.enabled:
-        update_gcp_context(
+    if structured_event_logger.enabled:
+        update_request_context(
             workflow_instance_id=workflow_execution_id,
             step_name=step_name,
         )
