@@ -303,12 +303,12 @@ class GCPServerlessMiddleware(BaseHTTPMiddleware):
         from inference.core.structured_logging import (
             RequestContext,
             clear_request_context,
-            structured_logger,
+            structured_event_logger,
             hash_api_key,
             set_request_context,
         )
 
-        if structured_logger.enabled:
+        if structured_event_logger.enabled:
             # Get request_id from correlation ID (set by CorrelationIdMiddleware)
             request_id = asgi_correlation_id.correlation_id.get()
             if not request_id:
@@ -330,7 +330,7 @@ class GCPServerlessMiddleware(BaseHTTPMiddleware):
         try:
             response = await call_next(request)
         finally:
-            if structured_logger.enabled:
+            if structured_event_logger.enabled:
                 clear_request_context()
 
         t2 = time.time()
@@ -688,11 +688,11 @@ class HttpInterface(BaseInterface):
             # Log request_received event for structured logging
             from inference.core.structured_logging import (
                 RequestReceivedEvent,
-                structured_logger,
+                structured_event_logger,
                 get_request_context,
             )
 
-            if structured_logger.enabled:
+            if structured_event_logger.enabled:
                 ctx = get_request_context()
                 # Infer endpoint_type from request class name
                 request_class_name = type(inference_request).__name__
@@ -702,7 +702,7 @@ class HttpInterface(BaseInterface):
                     .lower()
                     or None
                 )
-                structured_logger.log_event(
+                structured_event_logger.log_event(
                     RequestReceivedEvent(
                         request_id=ctx.request_id if ctx else None,
                         model_id=inference_request.model_id,
@@ -736,12 +736,12 @@ class HttpInterface(BaseInterface):
             # Log workflow_request_received event for structured logging
             from inference.core.structured_logging import (
                 WorkflowRequestReceivedEvent,
-                structured_logger,
+                structured_event_logger,
                 get_request_context,
                 update_request_context,
             )
 
-            if structured_logger.enabled:
+            if structured_event_logger.enabled:
                 ctx = get_request_context()
                 # Get workflow_instance_id from execution_id if available
                 workflow_instance_id = None
@@ -758,7 +758,7 @@ class HttpInterface(BaseInterface):
                     workflow_instance_id=workflow_instance_id,
                 )
 
-                structured_logger.log_event(
+                structured_event_logger.log_event(
                     WorkflowRequestReceivedEvent(
                         request_id=ctx.request_id if ctx else None,
                         workflow_id=workflow_request.workflow_id,

@@ -10,7 +10,7 @@ import time
 from typing import Optional
 
 from inference.core.structured_logging.events import ModelLoadedToDiskEvent
-from inference.core.structured_logging.logger import structured_logger
+from inference.core.structured_logging.logger import structured_event_logger
 from inference.core.structured_logging.context import get_request_context
 
 
@@ -104,7 +104,7 @@ class LoggingModelAccessManager:
         model_storage_path: str,
     ) -> None:
         """Called when model is fully loaded - log the disk event if files were downloaded."""
-        if not structured_logger.enabled:
+        if not structured_event_logger.enabled:
             return
 
         # Only log if we actually downloaded files (not a cache hit)
@@ -121,7 +121,7 @@ class LoggingModelAccessManager:
             backend = f"inference-models/{model.backend}"
 
         ctx = get_request_context()
-        structured_logger.log_event(
+        structured_event_logger.log_event(
             ModelLoadedToDiskEvent(
                 request_id=ctx.request_id if ctx else None,
                 model_id=access_identifiers.model_id,

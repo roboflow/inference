@@ -1,7 +1,7 @@
 """
 Structured Event Logger.
 
-This module provides a structured JSON logger for observability.
+This module provides a structured JSON event logger for observability.
 It is completely separate from the existing inference logging system.
 """
 
@@ -13,9 +13,9 @@ from typing import Optional
 from inference.core.structured_logging.events import BaseEvent
 
 
-class StructuredLogger:
+class StructuredEventLogger:
     """
-    Structured JSON logger for Cloud Logging services.
+    Structured JSON event logger for Cloud Logging services.
 
     Only active when STRUCTURED_LOGGING_ENABLED=True.
     Completely separate from the existing inference logger.
@@ -23,9 +23,9 @@ class StructuredLogger:
     Outputs JSON to stdout which cloud logging services automatically parse.
     """
 
-    _instance: Optional["StructuredLogger"] = None
+    _instance: Optional["StructuredEventLogger"] = None
 
-    def __new__(cls) -> "StructuredLogger":
+    def __new__(cls) -> "StructuredEventLogger":
         if cls._instance is None:
             cls._instance = super().__new__(cls)
             cls._instance._initialized = False
@@ -106,4 +106,4 @@ class StructuredLogger:
 
 
 # Singleton instance
-structured_logger = StructuredLogger()
+structured_event_logger = StructuredEventLogger()

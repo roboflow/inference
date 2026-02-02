@@ -42,11 +42,11 @@ class InferenceExpObjectDetectionModelAdapter(Model):
         # Use logging access manager to track downloads when enabled
         from inference.core.structured_logging import (
             LoggingModelAccessManager,
-            structured_logger,
+            structured_event_logger,
         )
 
         model_access_manager = None
-        if structured_logger.enabled:
+        if structured_event_logger.enabled:
             model_access_manager = LoggingModelAccessManager()
 
         self._exp_model: ObjectDetectionModel = AutoModel.from_pretrained(

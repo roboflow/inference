@@ -97,7 +97,7 @@ class WithFixedSizeCache(ModelManagerDecorator):
             from inference.core.env import STRUCTURED_LOGGING_DETAILED_MEMORY
             from inference.core.structured_logging import (
                 ModelEvictedEvent,
-                structured_logger,
+                structured_event_logger,
                 measure_memory_for_eviction,
             )
 
@@ -125,7 +125,7 @@ class WithFixedSizeCache(ModelManagerDecorator):
                     to_remove_model_id = self._key_queue.popleft()
 
                     # Capture model metrics before eviction for structured logging
-                    if structured_logger.enabled:
+                    if structured_event_logger.enabled:
                         # Calculate lifetime
                         load_time = self._model_load_times.get(
                             to_remove_model_id, time.time()
@@ -148,7 +148,7 @@ class WithFixedSizeCache(ModelManagerDecorator):
                             detailed=STRUCTURED_LOGGING_DETAILED_MEMORY
                         )
 
-                        structured_logger.log_event(
+                        structured_event_logger.log_event(
                             ModelEvictedEvent(
                                 model_id=to_remove_model_id,
                                 reason=eviction_reason,

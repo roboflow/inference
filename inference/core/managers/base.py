@@ -99,7 +99,7 @@ class ModelManager:
             from inference.core.structured_logging import (
                 ModelCacheStatusEvent,
                 ModelLoadedToMemoryEvent,
-                structured_logger,
+                structured_event_logger,
                 get_request_context,
                 measure_memory_after_load,
                 measure_memory_before_load,
@@ -109,9 +109,9 @@ class ModelManager:
             cache_hit = resolved_identifier in self._models
 
             # Log cache status event and store in context for inference_completed event
-            if structured_logger.enabled:
+            if structured_event_logger.enabled:
                 ctx = get_request_context()
-                structured_logger.log_event(
+                structured_event_logger.log_event(
                     ModelCacheStatusEvent(
                         request_id=ctx.request_id if ctx else None,
                         model_id=model_id,
@@ -136,7 +136,7 @@ class ModelManager:
 
                 # Measure memory before loading (for structured logging)
                 allocated_before, detailed_before = 0, None
-                if structured_logger.enabled:
+                if structured_event_logger.enabled:
                     allocated_before, detailed_before = measure_memory_before_load(
                         detailed=STRUCTURED_LOGGING_DETAILED_MEMORY
                     )
@@ -157,7 +157,7 @@ class ModelManager:
                 )
 
                 # Log model loaded to memory event
-                if structured_logger.enabled:
+                if structured_event_logger.enabled:
                     load_duration_ms = (time.time() - load_start_time) * 1000
                     footprint, memory_snapshot = measure_memory_after_load(
                         allocated_before=allocated_before,
@@ -187,7 +187,7 @@ class ModelManager:
                             device = str(getattr(exp_model, "device", device))
 
                     ctx = get_request_context()
-                    structured_logger.log_event(
+                    structured_event_logger.log_event(
                         ModelLoadedToMemoryEvent(
                             request_id=ctx.request_id if ctx else None,
                             model_id=model_id,
@@ -358,11 +358,11 @@ class ModelManager:
             # Log inference_completed event for structured logging
             from inference.core.structured_logging import (
                 InferenceCompletedEvent,
-                structured_logger,
+                structured_event_logger,
                 get_request_context,
             )
 
-            if structured_logger.enabled:
+            if structured_event_logger.enabled:
                 inference_duration_ms = (time.time() - inference_start_time) * 1000
                 ctx = get_request_context()
 
@@ -371,7 +371,7 @@ class ModelManager:
                 if hasattr(request, "image") and isinstance(request.image, list):
                     batch_size = len(request.image)
 
-                structured_logger.log_event(
+                structured_event_logger.log_event(
                     InferenceCompletedEvent(
                         request_id=ctx.request_id if ctx else None,
                         model_id=model_id,

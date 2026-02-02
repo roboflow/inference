@@ -5,7 +5,7 @@ This module provides structured logging for serverless deployments.
 It captures model lifecycle events for observability and analysis.
 
 Usage:
-    from inference.core.structured_logging import structured_logger
+    from inference.core.structured_logging import structured_event_logger
 
     # The logger is enabled when STRUCTURED_LOGGING_ENABLED=True
 
@@ -34,7 +34,7 @@ from inference.core.structured_logging.events import (
     RequestReceivedEvent,
     WorkflowRequestReceivedEvent,
 )
-from inference.core.structured_logging.logger import StructuredLogger, structured_logger
+from inference.core.structured_logging.logger import StructuredEventLogger, structured_event_logger
 from inference.core.structured_logging.memory import (
     get_gpu_allocated,
     measure_memory_after_load,
@@ -45,8 +45,8 @@ from inference.core.structured_logging.access_manager import LoggingModelAccessM
 
 __all__ = [
     # Logger
-    "structured_logger",
-    "StructuredLogger",
+    "structured_event_logger",
+    "StructuredEventLogger",
     # Events
     "BaseEvent",
     "RequestReceivedEvent",
