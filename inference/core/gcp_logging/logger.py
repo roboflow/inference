@@ -44,7 +44,7 @@ class GCPServerlessLogger:
         )
 
         self._gcp_serverless = GCP_SERVERLESS
-        self._enabled = GCP_SERVERLESS and GCP_LOGGING_ENABLED
+        self._enabled = GCP_LOGGING_ENABLED
         self._sample_rate = GCP_LOGGING_SAMPLE_RATE
 
     @property
