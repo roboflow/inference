@@ -31,12 +31,12 @@ This block compares SIFT features from two images by matching their descriptors.
 2. Validates that both descriptor arrays have at least 2 descriptors (required for Lowe's ratio test)
 3. Selects matcher algorithm based on matcher parameter (FlannBasedMatcher or BFMatcher)
 4. Performs k-nearest neighbor matching (k=2) and filters matches using Lowe's ratio test
-5. Returns the list of good matches, each match represented as a dict with queryIdx, trainIdx, imgIdx, and distance
+5. Returns the list of good matches, each as keypoint_pairs (the pt coordinates (x, y) of the two matched points from image 1 and image 2) and distance
 
 The good_matches output can be used by downstream blocks for homography estimation, drawing matches, or custom analytics.
 """
 
-SHORT_DESCRIPTION = "Compare SIFT keypoints and descriptors; returns the good_matches list."
+SHORT_DESCRIPTION = "Compare SIFT keypoints and descriptors; returns good matches as point pairs (pt coords) and distance."
 
 
 class FeatureComparisonBlockManifest(WorkflowBlockManifest):
@@ -59,7 +59,7 @@ class FeatureComparisonBlockManifest(WorkflowBlockManifest):
     type: Literal["roboflow_core/feature_comparison@v1"]
 
     keypoints_1: Selector(kind=[IMAGE_KEYPOINTS_KIND]) = Field(
-        description="SIFT keypoints from the first image (e.g. from a SIFT block). List of keypoint dicts with pt, size, angle, response, octave, class_id.",
+        description="SIFT keypoints from the first image (e.g. from a SIFT block). Used to output pt coordinates in keypoint_pairs.",
         examples=["$steps.sift.keypoints"],
     )
     descriptors_1: Selector(kind=[NUMPY_ARRAY_KIND]) = Field(
@@ -100,12 +100,22 @@ class FeatureComparisonBlockManifest(WorkflowBlockManifest):
         ]
 
 
-def _match_to_dict(m: cv2.DMatch) -> dict[str, Any]:
-    """Serialize a cv2.DMatch to a JSON-serializable dict."""
+def _match_to_keypoint_pair(
+    m: cv2.DMatch,
+    keypoints_1: list,
+    keypoints_2: list,
+) -> dict[str, Any]:
+    """Convert a cv2.DMatch to a dict with keypoint_pairs (pt coords only) and distance."""
+    pt1 = None
+    pt2 = None
+    if m.queryIdx < len(keypoints_1):
+        kp1 = keypoints_1[m.queryIdx]
+        pt1 = kp1.get("pt") if isinstance(kp1, dict) else None
+    if m.trainIdx < len(keypoints_2):
+        kp2 = keypoints_2[m.trainIdx]
+        pt2 = kp2.get("pt") if isinstance(kp2, dict) else None
     return {
-        "queryIdx": int(m.queryIdx),
-        "trainIdx": int(m.trainIdx),
-        "imgIdx": int(m.imgIdx),
+        "keypoint_pairs": [pt1, pt2],
         "distance": float(m.distance),
     }
 
@@ -124,12 +134,13 @@ class FeatureComparisonBlockV1(WorkflowBlock):
         ratio_threshold: float = 0.7,
         matcher: str = "FlannBasedMatcher",
     ) -> BlockResult:
-        # Normalize keypoints: SIFT block may output list of dicts; we only need descriptors for matching
         if descriptors_1 is None or descriptors_2 is None:
             return {
                 "good_matches": [],
                 "good_matches_count": 0,
             }
+        keypoints_1 = keypoints_1 or []
+        keypoints_2 = keypoints_2 or []
         descriptors_1 = np.asarray(descriptors_1)
         descriptors_2 = np.asarray(descriptors_2)
 
@@ -151,7 +162,9 @@ class FeatureComparisonBlockV1(WorkflowBlock):
         good_matches: List[dict[str, Any]] = []
         for m, n in matches:
             if m.distance < ratio_threshold * n.distance:
-                good_matches.append(_match_to_dict(m))
+                good_matches.append(
+                    _match_to_keypoint_pair(m, keypoints_1, keypoints_2)
+                )
 
         return {
             "good_matches": good_matches,
