@@ -1,4 +1,4 @@
-FROM nvcr.io/nvidia/l4t-jetpack:r36.3.0
+FROM nvcr.io/nvidia/l4t-jetpack:r36.3.0 AS builder
 
 ARG DEBIAN_FRONTEND=noninteractive
 ARG CMAKE_VERSION=4.2.0
