@@ -20,8 +20,8 @@ from inference.core.workflows.execution_engine.entities.base import (
     WorkflowImageData,
 )
 from inference.core.workflows.execution_engine.entities.types import (
-    FLOAT_KIND,
     BOOLEAN_KIND,
+    FLOAT_KIND,
     IMAGE_KIND,
     LANGUAGE_MODEL_OUTPUT_KIND,
     LIST_OF_VALUES_KIND,
