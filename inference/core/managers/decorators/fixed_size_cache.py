@@ -109,7 +109,9 @@ class WithFixedSizeCache(ModelManagerDecorator):
                 is_memory_pressure = (
                     MEMORY_FREE_THRESHOLD and self.memory_pressure_detected()
                 )
-                eviction_reason = "memory_pressure" if is_memory_pressure else "capacity"
+                eviction_reason = (
+                    "memory_pressure" if is_memory_pressure else "capacity"
+                )
 
                 # To prevent flapping around the threshold, remove 3 models to make some space.
                 for _ in range(3):
@@ -137,9 +139,7 @@ class WithFixedSizeCache(ModelManagerDecorator):
                         try:
                             model = self.model_manager._models.get(to_remove_model_id)
                             if model and hasattr(model, "metrics"):
-                                inference_count = model.metrics.get(
-                                    "num_inferences", 0
-                                )
+                                inference_count = model.metrics.get("num_inferences", 0)
                         except Exception:
                             pass
 
@@ -159,8 +159,8 @@ class WithFixedSizeCache(ModelManagerDecorator):
                             sampled=False,  # Always log evictions (low volume, high value)
                         )
 
-                        # Clean up load time tracking
-                        self._model_load_times.pop(to_remove_model_id, None)
+                    # Clean up load time tracking (always, regardless of logging enabled state)
+                    self._model_load_times.pop(to_remove_model_id, None)
 
                     super().remove(
                         to_remove_model_id, delete_from_disk=DISK_CACHE_CLEANUP
@@ -198,6 +198,8 @@ class WithFixedSizeCache(ModelManagerDecorator):
         """Removes all models from the manager."""
         for model_id in list(self.keys()):
             self.remove(model_id)
+        # Clear all load time tracking
+        self._model_load_times.clear()
 
     def remove(self, model_id: str, delete_from_disk: bool = True) -> Model:
         with acquire_with_timeout(
@@ -208,6 +210,8 @@ class WithFixedSizeCache(ModelManagerDecorator):
                     "Could not acquire lock on Model Manager state to remove model from active models queue."
                 )
             self._safe_remove_model_from_queue(model_id=model_id)
+            # Clean up load time tracking (always, regardless of logging enabled state)
+            self._model_load_times.pop(model_id, None)
         return super().remove(model_id, delete_from_disk=delete_from_disk)
 
     async def infer_from_request(
