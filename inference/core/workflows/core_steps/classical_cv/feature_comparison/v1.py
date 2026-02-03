@@ -102,8 +102,8 @@ class FeatureComparisonBlockManifest(WorkflowBlockManifest):
 
 def _match_to_keypoint_pair(
     m: cv2.DMatch,
-    keypoints_1: list,
-    keypoints_2: list,
+    keypoints_1: list[dict[str, Any]],
+    keypoints_2: list[dict[str, Any]],
 ) -> dict[str, Any]:
     """Convert a cv2.DMatch to a dict with keypoint_pairs (pt coords only) and distance.
     keypoints_1/keypoints_2 are lists of dicts; each dict must have a "pt" key."""
