@@ -105,17 +105,12 @@ def _match_to_keypoint_pair(
     keypoints_1: list,
     keypoints_2: list,
 ) -> dict[str, Any]:
-    """Convert a cv2.DMatch to a dict with keypoint_pairs (pt coords only) and distance."""
-    pt1 = None
-    pt2 = None
-    if m.queryIdx < len(keypoints_1):
-        kp1 = keypoints_1[m.queryIdx]
-        pt1 = kp1.get("pt") if isinstance(kp1, dict) else None
-    if m.trainIdx < len(keypoints_2):
-        kp2 = keypoints_2[m.trainIdx]
-        pt2 = kp2.get("pt") if isinstance(kp2, dict) else None
+    """Convert a cv2.DMatch to a dict with keypoint_pairs (pt coords only) and distance.
+    keypoints_1/keypoints_2 are lists of dicts; each dict must have a "pt" key."""
+    kp1 = keypoints_1[m.queryIdx]
+    kp2 = keypoints_2[m.trainIdx]
     return {
-        "keypoint_pairs": [pt1, pt2],
+        "keypoint_pairs": [kp1["pt"], kp2["pt"]],
         "distance": float(m.distance),
     }
 
