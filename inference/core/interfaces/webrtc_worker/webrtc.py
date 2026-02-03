@@ -1,17 +1,12 @@
 import asyncio
-import base64
 import datetime
-import fractions
+import gzip
 import json
 import logging
-import queue
 import struct
-import threading
 import time
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-import av
-import supervision as sv
 from aioice import ice
 from aiortc import (
     RTCConfiguration,
@@ -54,7 +49,6 @@ from inference.core.interfaces.stream_manager.manager_app.entities import (
 from inference.core.interfaces.webrtc_worker.entities import (
     DataOutputMode,
     StreamOutputMode,
-    VideoFileUploadState,
     WebRTCOutput,
     WebRTCVideoMetadata,
     WebRTCWorkerRequest,
@@ -447,13 +441,13 @@ class VideoFrameProcessor:
             webrtc_output.serialized_output_data = serialized_outputs
 
         # TODO: use orjson
-        json_bytes = json.dumps(webrtc_output.model_dump(mode="json")).encode("utf-8")
+        json_bytes = await asyncio.to_thread(
+            lambda: json.dumps(webrtc_output.model_dump(mode="json")).encode("utf-8")
+        )
 
         if WEBRTC_GZIP_PREVIEW_FRAME_COMPRESSION:
 
             def compress_json():
-                import gzip
-
                 return gzip.compress(json_bytes, compresslevel=6)
 
             output_bytes = await asyncio.to_thread(compress_json)
@@ -684,8 +678,6 @@ class VideoTransformTrackWithLoop(VideoStreamTrack, VideoFrameProcessor):
             self.stream_output = ""
 
     async def recv(self):
-        recv_start = time.time()
-
         # Silencing swscaler warnings in multi-threading environment
         if not self._av_logging_set:
             av_logging.set_libav_level(av_logging.ERROR)

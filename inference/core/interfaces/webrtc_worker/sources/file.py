@@ -42,15 +42,24 @@ def _decode_worker(filepath: str, frame_queue, stop_event):
                 logger.error(
                     "[DECODE_WORKER] Queue full timeout at frame %d", frame_count
                 )
-                frame_queue.put({"error": f"Queue full timeout at frame {frame_count}"})
+                try:
+                    frame_queue.put_nowait({"error": f"Queue full timeout at frame {frame_count}"})
+                except queue.Full:
+                    pass
                 return
 
         container.close()
     except Exception as e:
         logger.error("[DECODE_WORKER] Error at frame %d: %s", frame_count, e)
-        frame_queue.put({"error": str(e)})
+        try:
+            frame_queue.put_nowait({"error": str(e)})
+        except queue.Full:
+            pass
     finally:
-        frame_queue.put(None)
+        try:
+            frame_queue.put_nowait(None)
+        except queue.Full:
+            pass
 
 
 class ThreadedVideoFileTrack(MediaStreamTrack):

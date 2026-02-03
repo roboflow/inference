@@ -118,7 +118,6 @@ class VideoFileUploader:
         self._channel = channel
         self._chunk_size = chunk_size
         self._buffer_limit = buffer_limit
-        self._buffer_low = buffer_limit // 4
         self._file_size = os.path.getsize(path)
         self._total_chunks = (self._file_size + chunk_size - 1) // chunk_size
         self._uploaded_chunks = 0
