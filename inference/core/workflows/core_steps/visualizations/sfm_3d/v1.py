@@ -1,8 +1,10 @@
 """
-Visualize triangulated 3D points and camera positions (matplotlib 3D plot).
+Visualize triangulated 3D points and camera positions (Plotly 3D plot).
 Outputs the plot as an image for use in workflows or display.
+Requires: plotly, kaleido (for static image export).
 """
 
+import io
 from typing import Any, List, Literal, Optional, Type, Union
 
 import numpy as np
@@ -25,28 +27,18 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 
-# Optional matplotlib; block may run in headless or script context
 try:
-    import matplotlib
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-    _HAS_MATPLOTLIB = True
+    import plotly.graph_objects as go
+    _HAS_PLOTLY = True
 except ImportError:
-    _HAS_MATPLOTLIB = False
+    _HAS_PLOTLY = False
 
 
 LONG_DESCRIPTION = """
-Create a 3D visualization of triangulated points and camera positions. Plots points in the first camera's coordinate frame and draws camera 1 at the origin and camera 2 at its position derived from R and t (camera 2 position in camera 1 frame is -R^T @ t). Outputs the plot as an image (e.g. for display in workflows or saving to file).
-
-## How This Block Works
-
-1. Receives points_3d (list of [x,y,z] or Nx3 array from TriangulationBlockV1), rotation and translation (from EssentialMatrixBlockV1).
-2. Builds camera 2 position in camera 1 frame: cam2_pos = -R^T @ t.
-3. Uses matplotlib to create a 3D scatter of points and markers for camera positions.
-4. Renders the figure to an RGB image and returns it as WorkflowImageData.
+Create a 3D visualization of triangulated points and camera positions using Plotly. Plots points in the first camera's coordinate frame and draws camera 1 at the origin and camera 2 at its position derived from R and t (camera 2 position in camera 1 frame is -R^T @ t). Outputs the plot as an image (e.g. for display in workflows or saving to file). Requires plotly and kaleido for static image export.
 """
 
-SHORT_DESCRIPTION = "Visualize triangulated 3D points and camera positions (matplotlib 3D → image)."
+SHORT_DESCRIPTION = "Visualize triangulated 3D points and camera positions (Plotly 3D → image)."
 
 
 def _points_to_array(points_3d: Any) -> np.ndarray:
@@ -67,6 +59,84 @@ def _points_to_array(points_3d: Any) -> np.ndarray:
     return np.zeros((0, 3))
 
 
+def create_sfm_3d_figure(
+    points_3d: np.ndarray,
+    rotation: np.ndarray,
+    translation: np.ndarray,
+    point_size: float = 2.0,
+    camera_scale: float = 0.5,
+):
+    """
+    Create a Plotly 3D figure of triangulated points and camera positions.
+
+    - points_3d: Nx3 array in camera 1 frame.
+    - rotation: 3x3 (camera 2 w.r.t. camera 1).
+    - translation: 3-vector (up to scale).
+    - Returns: plotly.go.Figure, or None if plotly is not available.
+    """
+    if not _HAS_PLOTLY:
+        return None
+
+    R = np.asarray(rotation, dtype=np.float64).reshape(3, 3)
+    t = np.asarray(translation, dtype=np.float64).ravel()[:3]
+    cam2_pos = -R.T @ t
+    t_norm = np.linalg.norm(t)
+    if t_norm > 1e-8:
+        cam2_pos = cam2_pos / t_norm * camera_scale
+
+    traces = []
+
+    if points_3d.size > 0:
+        traces.append(
+            go.Scatter3d(
+                x=points_3d[:, 0].tolist(),
+                y=points_3d[:, 1].tolist(),
+                z=points_3d[:, 2].tolist(),
+                mode="markers",
+                marker=dict(size=point_size, color="royalblue", opacity=0.6),
+                name="Points",
+            )
+        )
+
+    traces.append(
+        go.Scatter3d(
+            x=[0],
+            y=[0],
+            z=[0],
+            mode="markers+text",
+            marker=dict(size=10, color="red", symbol="diamond"),
+            text=["Cam 1"],
+            textposition="top center",
+            name="Cam 1",
+        )
+    )
+    traces.append(
+        go.Scatter3d(
+            x=[cam2_pos[0]],
+            y=[cam2_pos[1]],
+            z=[cam2_pos[2]],
+            mode="markers+text",
+            marker=dict(size=10, color="green", symbol="diamond"),
+            text=["Cam 2"],
+            textposition="top center",
+            name="Cam 2",
+        )
+    )
+
+    fig = go.Figure(data=traces)
+    fig.update_layout(
+        scene=dict(
+            xaxis_title="X",
+            yaxis_title="Y",
+            zaxis_title="Z",
+            aspectmode="data",
+        ),
+        margin=dict(l=0, r=0, b=0, t=30),
+        showlegend=True,
+    )
+    return fig
+
+
 def render_sfm_3d_plot(
     points_3d: np.ndarray,
     rotation: np.ndarray,
@@ -77,65 +147,38 @@ def render_sfm_3d_plot(
     camera_scale: float = 0.5,
 ) -> np.ndarray:
     """
-    Render 3D points and two camera positions to an RGB image.
+    Render 3D points and two camera positions to an RGB image using Plotly.
 
     - points_3d: Nx3 array in camera 1 frame.
     - rotation: 3x3 (camera 2 w.r.t. camera 1).
     - translation: 3-vector (up to scale).
     - Returns: HxWx3 uint8 RGB image.
     """
-    if not _HAS_MATPLOTLIB:
-        return np.zeros((int(figsize[1] * dpi), int(figsize[0] * dpi), 3), dtype=np.uint8)
+    width_px = int(figsize[0] * dpi)
+    height_px = int(figsize[1] * dpi)
+    placeholder = np.zeros((height_px, width_px, 3), dtype=np.uint8)
 
-    R = np.asarray(rotation, dtype=np.float64).reshape(3, 3)
-    t = np.asarray(translation, dtype=np.float64).ravel()[:3]
-    cam2_pos = -R.T @ t
-    # Scale for visibility if t is normalized
-    t_norm = np.linalg.norm(t)
-    if t_norm > 1e-8:
-        cam2_pos = cam2_pos / t_norm * camera_scale
-
-    fig = plt.figure(figsize=figsize, dpi=dpi)
-    ax = fig.add_subplot(111, projection="3d")
-
-    if points_3d.size > 0:
-        ax.scatter(
-            points_3d[:, 0],
-            points_3d[:, 1],
-            points_3d[:, 2],
-            c="b",
-            s=point_size,
-            alpha=0.6,
-        )
-
-    ax.scatter(0, 0, 0, c="r", s=80, marker="^", label="Cam 1")
-    ax.scatter(
-        cam2_pos[0], cam2_pos[1], cam2_pos[2],
-        c="g", s=80, marker="^", label="Cam 2",
+    fig = create_sfm_3d_figure(
+        points_3d, rotation, translation,
+        point_size=point_size, camera_scale=camera_scale,
     )
-    ax.set_xlabel("X")
-    ax.set_ylabel("Y")
-    ax.set_zlabel("Z")
-    ax.legend()
+    if fig is None:
+        return placeholder
 
-    # Equal aspect and auto limits
-    if points_3d.size > 0:
-        all_pts = np.vstack([points_3d, np.zeros((1, 3)), cam2_pos.reshape(1, 3)])
-    else:
-        all_pts = np.array([[0, 0, 0], cam2_pos])
-    mn = all_pts.min(axis=0)
-    mx = all_pts.max(axis=0)
-    margin = max(np.ptp(all_pts) * 0.2, 0.1)
-    ax.set_xlim(mn[0] - margin, mx[0] + margin)
-    ax.set_ylim(mn[1] - margin, mx[1] + margin)
-    ax.set_zlim(mn[2] - margin, mx[2] + margin)
+    try:
+        img_bytes = fig.to_image(format="png", width=width_px, height=height_px)
+    except Exception:
+        return placeholder
 
-    fig.canvas.draw()
-    w, h = fig.canvas.get_width_height()
-    buf = np.asarray(fig.canvas.buffer_rgba(), dtype=np.uint8)
-    buf = buf.reshape((h, w, 4))[:, :, :3].copy()
-    plt.close(fig)
-    return buf
+    try:
+        from PIL import Image
+        img = Image.open(io.BytesIO(img_bytes))
+        arr = np.array(img)
+        if arr.ndim == 3 and arr.shape[2] == 4:
+            arr = arr[:, :, :3]
+        return arr
+    except Exception:
+        return placeholder
 
 
 class SfMVisualization3DBlockManifest(WorkflowBlockManifest):
