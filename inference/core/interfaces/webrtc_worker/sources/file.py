@@ -52,7 +52,8 @@ def _decode_worker(filepath: str, frame_queue, stop_event):
         try:
             frame_queue.put_nowait({"error": str(e)})
         except queue.Full:
-            pass
+            frame_queue.get_nowait()
+            frame_queue.put_nowait({"error": str(e)})
     finally:
         try:
             frame_queue.put_nowait(None)
