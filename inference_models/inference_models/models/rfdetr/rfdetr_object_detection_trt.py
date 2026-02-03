@@ -37,7 +37,7 @@ from inference_models.models.common.trt import (
     infer_from_trt_engine,
     infer_from_trt_engine_with_cudagraph,
     load_trt_model,
-    TRTCudaGraphState,
+    TRTCudaGraphLRUCache,
 )
 from inference_models.models.rfdetr.class_remapping import (
     ClassesReMapping,
@@ -73,7 +73,6 @@ class RFDetrForObjectDetectionTRT(
         ]
     )
 ):
-
     @classmethod
     def from_pretrained(
         cls,
@@ -178,7 +177,7 @@ class RFDetrForObjectDetectionTRT(
         self._cuda_context = cuda_context
         self._execution_context = execution_context
         self._trt_config = trt_config
-        self._trt_cuda_graph_state = None
+        self._trt_cuda_graph_cache: Optional[TRTCudaGraphLRUCache] = None
         self._lock = threading.Lock()
 
     @property
@@ -205,7 +204,7 @@ class RFDetrForObjectDetectionTRT(
         with self._lock:
             with use_cuda_context(context=self._cuda_context):
                 if use_cuda_graph:
-                    (detections, labels), self._trt_cuda_graph_state = (
+                    (detections, labels), self._trt_cuda_graph_cache = (
                         infer_from_trt_engine_with_cudagraph(
                             pre_processed_images=pre_processed_images,
                             trt_config=self._trt_config,
@@ -214,7 +213,7 @@ class RFDetrForObjectDetectionTRT(
                             device=self._device,
                             input_name=self._input_name,
                             outputs=self._output_names,
-                            trt_cuda_graph_state=self._trt_cuda_graph_state,
+                            trt_cuda_graph_cache=self._trt_cuda_graph_cache,
                         )
                     )
                 else:
