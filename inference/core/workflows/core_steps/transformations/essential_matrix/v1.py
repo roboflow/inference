@@ -322,8 +322,8 @@ def _choose_pose_by_cheirality(
 
 def _recover_pose_from_essential(
     E: np.ndarray,
-    n1: Optional[np.ndarray] = None,
-    n2: Optional[np.ndarray] = None,
+    n1: np.ndarray,
+    n2: np.ndarray,
     parallax_cos_threshold: float = DEFAULT_PARALLAX_COS_THRESHOLD,
     min_positive: int = DEFAULT_MIN_POSITIVE,
 ) -> tuple:
@@ -344,7 +344,13 @@ def _recover_pose_from_essential(
         (U @ W.T @ Vt, -U[:, 2]),
     ]
 
-    best = _choose_pose_by_cheirality(candidates, [n1], [n2], parallax_cos_threshold=parallax_cos_threshold, min_positive=min_positive)
+    best = _choose_pose_by_cheirality(
+        candidates,
+        n1,
+        n2,
+        parallax_cos_threshold=parallax_cos_threshold,
+        min_positive=min_positive,
+    )
 
     return best
 
@@ -434,10 +440,8 @@ class EssentialMatrixBlockV1(WorkflowBlock):
             max_iterations=int(ransac_max_iterations),
         )
 
-        inlier_idx = np.flatnonzero(inlier_mask)
-        i0 = int(inlier_idx[0]) if len(inlier_idx) > 0 else 0
-        n1 = pts1[i0]
-        n2 = pts2[i0]
+        n1 = pts1[inlier_mask, :]
+        n2 = pts2[inlier_mask, :]
 
         R, t = _recover_pose_from_essential(
             E,
