@@ -308,7 +308,6 @@ def test_rank_model_packages_when_cuda_device_match_should_be_prioritised_correc
             "CPUExecutionProvider",
         },
         hf_transformers_available=True,
-        ultralytics_available=True,
         trt_python_package_available=True,
         mediapipe_available=False,
     )
@@ -386,7 +385,6 @@ def test_rank_model_packages_when_cuda_device_match_should_be_prioritised_correc
             "CPUExecutionProvider",
         },
         hf_transformers_available=True,
-        ultralytics_available=True,
         trt_python_package_available=True,
         mediapipe_available=False,
     )
@@ -542,7 +540,6 @@ def test_rank_model_packages_when_onnx_incompatible_providers_should_be_prioriti
             "CPUExecutionProvider",
         },
         hf_transformers_available=True,
-        ultralytics_available=True,
         trt_python_package_available=True,
         mediapipe_available=False,
     )
@@ -672,7 +669,6 @@ def test_rank_model_packages_when_os_version_match_should_be_prioritised_correct
             "CPUExecutionProvider",
         },
         hf_transformers_available=True,
-        ultralytics_available=True,
         trt_python_package_available=True,
         mediapipe_available=False,
     )
@@ -742,7 +738,6 @@ def test_rank_model_packages_when_l4t_version_match_should_be_prioritised_correc
             "CPUExecutionProvider",
         },
         hf_transformers_available=True,
-        ultralytics_available=True,
         trt_python_package_available=True,
         mediapipe_available=False,
     )
@@ -814,7 +809,6 @@ def test_rank_model_packages_when_driver_version_match_should_be_prioritised_cor
             "CPUExecutionProvider",
         },
         hf_transformers_available=True,
-        ultralytics_available=True,
         trt_python_package_available=True,
         mediapipe_available=False,
     )
@@ -886,7 +880,6 @@ def test_rank_model_packages_when_jetson_device_match_should_be_prioritised_corr
             "CPUExecutionProvider",
         },
         hf_transformers_available=True,
-        ultralytics_available=True,
         trt_python_package_available=True,
         mediapipe_available=False,
     )

@@ -840,23 +840,6 @@ def hf_transformers_package_matches_runtime_environment(
     return True, None
 
 
-def ultralytics_package_matches_runtime_environment(
-    model_package: ModelPackageMetadata,
-    runtime_x_ray: RuntimeXRayResult,
-    device: Optional[torch.device] = None,
-    onnx_execution_providers: Optional[List[Union[str, tuple]]] = None,
-    trt_engine_host_code_allowed: bool = True,
-    verbose: bool = False,
-) -> Tuple[bool, Optional[str]]:
-    if not runtime_x_ray.ultralytics_available:
-        verbose_info(
-            message=f"Mode package with id '{model_package.package_id}' filtered out as ultralytics not detected",
-            verbose_requested=verbose,
-        )
-        return False, "Ultralytics backend not installed"
-    return True, None
-
-
 def mediapipe_package_matches_runtime_environment(
     model_package: ModelPackageMetadata,
     runtime_x_ray: RuntimeXRayResult,
@@ -1221,7 +1204,6 @@ MODEL_TO_RUNTIME_COMPATIBILITY_MATCHERS = {
     BackendType.TRT: trt_package_matches_runtime_environment,
     BackendType.ONNX: onnx_package_matches_runtime_environment,
     BackendType.TORCH: torch_package_matches_runtime_environment,
-    BackendType.ULTRALYTICS: ultralytics_package_matches_runtime_environment,
     BackendType.TORCH_SCRIPT: torch_script_package_matches_runtime_environment,
     BackendType.MEDIAPIPE: mediapipe_package_matches_runtime_environment,
 }

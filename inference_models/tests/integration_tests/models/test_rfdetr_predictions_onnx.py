@@ -68,7 +68,9 @@ def test_onnx_package_with_stretch_resize_and_contrast_stretching_batch_numpy(
     )
 
     # when
-    predictions = model([coins_counting_image_numpy, coins_counting_image_numpy])
+    predictions = model(
+        [coins_counting_image_numpy, coins_counting_image_numpy], confidence=0.5
+    )
 
     # then
     assert torch.allclose(
@@ -128,7 +130,7 @@ def test_onnx_package_with_stretch_resize_and_contrast_stretching_torch(
     )
 
     # when
-    predictions = model(coins_counting_image_torch)
+    predictions = model(coins_counting_image_torch, confidence=0.5)
 
     # then
     assert torch.allclose(
@@ -176,7 +178,9 @@ def test_onnx_package_with_stretch_resize_and_contrast_stretching_torch_batch(
     )
 
     # when
-    predictions = model(torch.stack([coins_counting_image_torch] * 2, dim=0))
+    predictions = model(
+        torch.stack([coins_counting_image_torch] * 2, dim=0), confidence=0.5
+    )
 
     # then
     assert torch.allclose(
@@ -236,7 +240,7 @@ def test_onnx_package_with_static_crop_letterbox_numpy(
     )
 
     # when
-    predictions = model(coins_counting_image_numpy)
+    predictions = model(coins_counting_image_numpy, confidence=0.5)
 
     # then
     assert torch.allclose(
@@ -283,7 +287,9 @@ def test_onnx_package_with_static_crop_letterbox_numpy_batch(
     )
 
     # when
-    predictions = model([coins_counting_image_numpy, coins_counting_image_numpy])
+    predictions = model(
+        [coins_counting_image_numpy, coins_counting_image_numpy], confidence=0.5
+    )
 
     # then
     assert torch.allclose(
@@ -343,7 +349,7 @@ def test_onnx_package_with_static_crop_letterbox_torch(
     )
 
     # when
-    predictions = model(coins_counting_image_torch)
+    predictions = model(coins_counting_image_torch, confidence=0.5)
 
     # then
     assert torch.allclose(
@@ -395,7 +401,9 @@ def test_onnx_package_with_static_crop_letterbox_torch_batch(
     )
 
     # when
-    predictions = model(torch.stack([coins_counting_image_torch] * 2, dim=0))
+    predictions = model(
+        torch.stack([coins_counting_image_torch] * 2, dim=0), confidence=0.5
+    )
 
     # then
     assert torch.allclose(
@@ -463,7 +471,9 @@ def test_onnx_package_with_static_crop_letterbox_torch_list(
     )
 
     # when
-    predictions = model([coins_counting_image_torch, coins_counting_image_torch])
+    predictions = model(
+        [coins_counting_image_torch, coins_counting_image_torch], confidence=0.5
+    )
 
     # then
     assert torch.allclose(
@@ -530,7 +540,7 @@ def test_onnx_package_with_center_crop_numpy(
     )
 
     # when
-    predictions = model(coins_counting_image_numpy, threshold=0.55)
+    predictions = model(coins_counting_image_numpy, confidence=0.55)
 
     # then
     assert torch.allclose(
@@ -571,7 +581,7 @@ def test_onnx_package_with_center_crop_batch_numpy(
 
     # when
     predictions = model(
-        [coins_counting_image_numpy, coins_counting_image_numpy], threshold=0.55
+        [coins_counting_image_numpy, coins_counting_image_numpy], confidence=0.55
     )
 
     # then
@@ -626,7 +636,7 @@ def test_onnx_package_with_center_crop_torch(
     )
 
     # when
-    predictions = model(coins_counting_image_torch, threshold=0.55)
+    predictions = model(coins_counting_image_torch, confidence=0.55)
 
     # then
     assert torch.allclose(
@@ -668,7 +678,7 @@ def test_onnx_package_with_center_crop_batch_torch(
     # when
     predictions = model(
         torch.stack([coins_counting_image_torch, coins_counting_image_torch], dim=0),
-        threshold=0.55,
+        confidence=0.55,
     )
 
     # then
@@ -724,7 +734,7 @@ def test_onnx_package_with_center_crop_list_of_torch(
 
     # when
     predictions = model(
-        [coins_counting_image_torch, coins_counting_image_torch], threshold=0.55
+        [coins_counting_image_torch, coins_counting_image_torch], confidence=0.55
     )
 
     # then
@@ -779,7 +789,7 @@ def test_onnx_package_with_static_crop_and_center_crop_numpy(
     )
 
     # when
-    predictions = model(coins_counting_image_numpy)
+    predictions = model(coins_counting_image_numpy, confidence=0.5)
 
     # then
     assert torch.allclose(
@@ -819,7 +829,9 @@ def test_onnx_package_with_static_crop_and_center_crop_numpy_when_image_smaller_
     )
 
     # when
-    predictions = model(coins_counting_image_numpy[2000:2300, 1250:1450])
+    predictions = model(
+        coins_counting_image_numpy[2000:2300, 1250:1450], confidence=0.5
+    )
 
     # then
     assert torch.allclose(
@@ -857,7 +869,9 @@ def test_onnx_package_with_static_crop_and_center_crop_batch_numpy(
     )
 
     # when
-    predictions = model([coins_counting_image_numpy, coins_counting_image_numpy])
+    predictions = model(
+        [coins_counting_image_numpy, coins_counting_image_numpy], confidence=0.5
+    )
 
     # then
     assert torch.allclose(
@@ -911,7 +925,7 @@ def test_onnx_package_with_static_crop_and_center_crop_torch(
     )
 
     # when
-    predictions = model(coins_counting_image_torch)
+    predictions = model(coins_counting_image_torch, confidence=0.5)
 
     # then
     assert torch.allclose(
@@ -952,7 +966,8 @@ def test_onnx_package_with_static_crop_and_center_crop_batch_torch(
 
     # when
     predictions = model(
-        torch.stack([coins_counting_image_torch, coins_counting_image_torch], dim=0)
+        torch.stack([coins_counting_image_torch, coins_counting_image_torch], dim=0),
+        confidence=0.5,
     )
 
     # then

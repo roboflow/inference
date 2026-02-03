@@ -38,7 +38,14 @@ def test_owlv2_predictions_for_open_vocabulary(
     dog_image_numpy: np.ndarray,
 ) -> None:
     # when
-    predictions = owlv2_model(dog_image_numpy, classes=["dog", "person"])
+    predictions = owlv2_model(
+        dog_image_numpy,
+        classes=["dog", "person"],
+        confidence=0.99,
+        iou_threshold=0.3,
+        class_agnostic_nms=False,
+        max_detections=300,
+    )
 
     # then
     assert np.allclose(
@@ -66,6 +73,9 @@ def test_owlv2_predictions_for_reference_dataset(
                 ],
             )
         ],
+        confidence=0.99,
+        iou_threshold=0.3,
+        max_detections=300,
     )
 
     # then
@@ -80,7 +90,13 @@ def test_instant_model_predictions(
     coins_counting_image_numpy: np.ndarray,
 ) -> None:
     # when
-    predictions = instant_model(coins_counting_image_torch)
+    predictions = instant_model(
+        coins_counting_image_torch,
+        confidence=0.99,
+        iou_threshold=0.3,
+        class_agnostic_nms=False,
+        max_detections=300,
+    )
 
     # then
     assert np.allclose(

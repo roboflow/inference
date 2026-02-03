@@ -16,7 +16,7 @@ def test_face_detector_predictions_for_numpy_image(
     model = MediaPipeFaceDetector.from_pretrained(mediapipe_face_detector_package)
 
     # when
-    results = model(man_image_numpy)
+    results = model(man_image_numpy, confidence=0.25)
 
     # then
     assert len(results) == 2
@@ -45,7 +45,7 @@ def test_face_detector_predictions_for_numpy_image_list(
     model = MediaPipeFaceDetector.from_pretrained(mediapipe_face_detector_package)
 
     # when
-    results = model([man_image_numpy, man_image_numpy])
+    results = model([man_image_numpy, man_image_numpy], confidence=0.25)
 
     # then
     assert len(results) == 2
@@ -83,7 +83,7 @@ def test_face_detector_predictions_for_torch_image(
     model = MediaPipeFaceDetector.from_pretrained(mediapipe_face_detector_package)
 
     # when
-    results = model(man_image_torch)
+    results = model(man_image_torch, confidence=0.25)
 
     # then
     assert len(results) == 2
@@ -111,7 +111,9 @@ def test_face_detector_predictions_for_torch_batch(
     model = MediaPipeFaceDetector.from_pretrained(mediapipe_face_detector_package)
 
     # when
-    results = model(torch.stack([man_image_torch, man_image_torch], dim=0))
+    results = model(
+        torch.stack([man_image_torch, man_image_torch], dim=0), confidence=0.25
+    )
 
     # then
     assert len(results) == 2
@@ -149,7 +151,7 @@ def test_face_detector_predictions_for_torch_list(
     model = MediaPipeFaceDetector.from_pretrained(mediapipe_face_detector_package)
 
     # when
-    results = model([man_image_torch, man_image_torch])
+    results = model([man_image_torch, man_image_torch], confidence=0.25)
 
     # then
     assert len(results) == 2

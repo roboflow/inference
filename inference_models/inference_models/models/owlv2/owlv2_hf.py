@@ -697,6 +697,7 @@ def get_class_predictions_from_embedings(
     positive = positive[survival_indices]
     is_positive = positive == 1
     # return only positive elements of tensor
+    # return only positive elements of tensor
     return pred_boxes[is_positive], pred_classes[is_positive], pred_scores[is_positive]
 
 
