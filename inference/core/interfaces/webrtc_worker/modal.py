@@ -479,33 +479,66 @@ if modal is not None:
         def start(self):
             self._cold_start = False
             time_start = time.time()
+
+            # Reload volume to get latest cached models from disk
+            t0 = time.time()
+            rfcache_volume.reload()
+            logger.warning("[TIMING] Volume reload (disk read) took %.3fs", time.time() - t0)
+
+            # CUDA warmup
+            t0 = time.time()
             warmup_cuda(max_retries=10, retry_delay=0.5)
+            logger.warning("[TIMING] CUDA warmup took %.3fs", time.time() - t0)
+
+            # GPU detection
+            t0 = time.time()
             self._gpu = check_nvidia_smi_gpu()
+            logger.warning("[TIMING] GPU detection took %.3fs", time.time() - t0)
+
             logger.info("Starting GPU container on %s", self._gpu)
             logger.info("Preload hf ids: %s", self.preload_hf_ids)
             logger.info("Preload models: %s", self.preload_models)
+
+            # Preload HuggingFace models
             if self.preload_hf_ids:
+                t0 = time.time()
                 preload_hf_ids = [m.strip() for m in self.preload_hf_ids.split(",")]
                 for preload_hf_id in preload_hf_ids:
+                    t1 = time.time()
                     logger.info("Preloading owlv2 base model: %s", preload_hf_id)
                     preload_owlv2_model(preload_hf_id)
+                    logger.warning(
+                        "[TIMING] Preload HF model %s took %.3fs",
+                        preload_hf_id,
+                        time.time() - t1,
+                    )
+                logger.warning(
+                    "[TIMING] Total HF models preload took %.3fs", time.time() - t0
+                )
+
+            # Preload Roboflow models
             if self.preload_models:
-                preload_models = []
-                if self.preload_models:
-                    preload_models = [m.strip() for m in self.preload_models.split(",")]
+                t0 = time.time()
+                preload_models = [m.strip() for m in self.preload_models.split(",")]
                 model_registry = RoboflowModelRegistry(ROBOFLOW_MODEL_TYPES)
                 model_manager = ModelManager(model_registry=model_registry)
                 for model_id in preload_models:
                     try:
+                        t1 = time.time()
                         de_aliased_model_id = resolve_roboflow_model_alias(
                             model_id=model_id
                         )
-                        logger.info(f"Preloading model: {de_aliased_model_id}")
+                        logger.info("Preloading model: %s", de_aliased_model_id)
                         model_manager.add_model(
                             model_id=de_aliased_model_id,
                             api_key=WEBRTC_MODAL_MODELS_PRELOAD_API_KEY,
                             countinference=False,
                             service_secret=ROBOFLOW_INTERNAL_SERVICE_SECRET,
+                        )
+                        logger.warning(
+                            "[TIMING] Preload model %s took %.3fs",
+                            de_aliased_model_id,
+                            time.time() - t1,
                         )
                     except Exception as exc:
                         logger.error(
@@ -514,8 +547,22 @@ if modal is not None:
                             exc,
                         )
                 self._model_manager = model_manager
+                logger.warning(
+                    "[TIMING] Total Roboflow models preload took %.3fs",
+                    time.time() - t0,
+                )
+
+            # Commit volume changes to persist downloaded models to disk
+            t0 = time.time()
+            rfcache_volume.commit()
+            logger.warning("[TIMING] Volume commit (disk write) took %.3fs", time.time() - t0)
+
             time_end = time.time()
             self._container_startup_time_seconds = time_end - time_start
+            logger.warning(
+                "[TIMING] Total container startup took %.3fs",
+                self._container_startup_time_seconds,
+            )
 
     def spawn_rtc_peer_connection_modal(
         webrtc_request: WebRTCWorkerRequest,
