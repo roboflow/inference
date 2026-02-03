@@ -10,7 +10,7 @@ from inference_models import AutoModel
 
 IMAGE_PATH = os.environ.get("IMAGE_PATH", None)
 DEVICE = os.environ.get("DEVICE", "cuda:0")
-CYCLES = int(os.environ.get("CYCLES", "100"))
+CYCLES = int(os.environ.get("CYCLES", "10_000"))
 WARMUP = int(os.environ.get("WARMUP", "50"))
 
 
@@ -40,10 +40,10 @@ def main() -> None:
     print("Timing with forced CUDA graph recapture each step...")
     start = time.perf_counter()
     for _ in range(100): # not using CYCLES here bc this is wayyyy slower than the non-graph or the replay modes
-        model._trt_cuda_graph_state = None
+        model._trt_cuda_graph_cache = None
         model.forward(pre_processed, use_cuda_graph=True)
        
-    cudagraph_recapture_fps = CYCLES / (time.perf_counter() - start)
+    cudagraph_recapture_fps = 100 / (time.perf_counter() - start)
 
     print("Timing with CUDA graph caching and replaying...")
     model.forward(pre_processed, use_cuda_graph=True) # initial capture
