@@ -56,9 +56,10 @@ def _decode_worker(filepath: str, frame_queue, stop_event):
             frame_queue.put_nowait({"error": str(e)})
     finally:
         try:
-            frame_queue.put_nowait(None)
+            frame_queue.put(None, timeout=300)
         except queue.Full:
-            pass
+            frame_queue.get_nowait()
+            frame_queue.put_nowait(None)
 
 
 class ThreadedVideoFileTrack(MediaStreamTrack):
