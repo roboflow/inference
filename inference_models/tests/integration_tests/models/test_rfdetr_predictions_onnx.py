@@ -20,7 +20,7 @@ def test_onnx_package_with_stretch_resize_and_contrast_stretching_numpy(
     )
 
     # when
-    predictions = model(coins_counting_image_numpy)
+    predictions = model(coins_counting_image_numpy, confidence=0.5)
 
     # then
     assert torch.allclose(
