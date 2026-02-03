@@ -217,14 +217,12 @@ class EssentialMatrixBlockV1(WorkflowBlock):
     ) -> BlockResult:
         pairs = _extract_point_pairs(good_matches)
         if len(pairs) < MIN_POINT_PAIRS:
-            return {
-                "essential_matrix": np.eye(3, dtype=np.float64),
-                "rotation": np.eye(3, dtype=np.float64),
-                "translation": np.zeros(3, dtype=np.float64),
-            }
+            raise ValueError(f"Not enough point pairs for essential matrix: {len(pairs)} < {MIN_POINT_PAIRS}")
+
         K1 = _intrinsics_to_K(camera_intrinsics_1)
         K2 = _intrinsics_to_K(camera_intrinsics_2)
         E = _eight_point_essential(pairs, K1, K2)
+
         K1_inv = np.linalg.inv(K1)
         K2_inv = np.linalg.inv(K2)
         (x1, y1), (x2, y2) = pairs[0]
@@ -233,6 +231,7 @@ class EssentialMatrixBlockV1(WorkflowBlock):
         n1 = (K1_inv @ p1).ravel()
         n2 = (K2_inv @ p2).ravel()
         R, t = _recover_pose_from_essential(E, n1=n1, n2=n2)
+
         return {
             "essential_matrix": E,
             "rotation": R,
