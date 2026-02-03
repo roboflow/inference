@@ -29,17 +29,18 @@ from inference.core.workflows.prototypes.block import (
 MIN_POINT_PAIRS = 8
 
 LONG_DESCRIPTION = """
-Compute the Essential Matrix from keypoint correspondences and camera intrinsics using the epipolar constraint. The Essential Matrix encodes the rigid transformation (rotation and translation) between two camera views. The block converts 2D keypoint pairs to normalized rays using camera intrinsics, builds the linear system from the epipolar constraint (x2^T E x1 = 0), solves for E via SVD (8-point algorithm), enforces the rank-2 constraint, and recovers rotation R and translation t from E.
+Compute the Essential Matrix from keypoint correspondences and camera intrinsics using the epipolar constraint with Hartley normalization for numerical stability. The Essential Matrix encodes the rigid transformation (rotation and translation) between two camera views. The block converts 2D keypoint pairs to normalized rays using camera intrinsics, applies Hartley normalization (translate centroid to origin, scale so mean distance is sqrt(2)), builds the linear system from the epipolar constraint, solves for E via SVD (8-point algorithm), denormalizes E, enforces the rank-2 constraint, and recovers rotation R and translation t from E.
 
 ## How This Block Works
 
 1. Receives good_matches from FeatureComparisonBlockV1 (list of {keypoint_pairs: [pt1, pt2], distance}) and camera intrinsics for both images.
 2. Converts keypoint correspondences to homogeneous coordinates and unprojects to normalized bearing rays using K1^{-1} and K2^{-1}.
-3. Builds the epipolar constraint matrix: for each pair (n1, n2), one row (n2 ⊗ n1) so that n2^T E n1 = 0.
-4. Solves A @ vec(E) = 0 via SVD; the solution is the last right singular vector, reshaped to 3x3 E.
-5. Enforces the essential matrix constraint (two equal singular values, one zero) by SVD of E and replacing with diag(1,1,0).
-6. Recovers R and t from E: E = U diag(1,1,0) V^T; R = U W V^T or U W^T V^T, t = ±U[:,2]; chooses the solution with positive depth in both cameras.
-7. Returns essential_matrix (3x3), rotation (3x3), and translation (3,) (translation is up to scale).
+3. Applies Hartley normalization to each set of points: translate so centroid is at origin, scale so average distance from origin is sqrt(2). This improves conditioning of the 8-point linear system.
+4. Builds the epipolar constraint matrix on normalized points: for each pair (n1_norm, n2_norm), one row (n2_norm ⊗ n1_norm) so that n2_norm^T E_norm n1_norm = 0.
+5. Solves A @ vec(E_norm) = 0 via SVD; denormalizes to get E = T2^T E_norm T1.
+6. Enforces the essential matrix constraint (two equal singular values, one zero) by SVD of E and replacing with diag(1,1,0).
+7. Recovers R and t from E; chooses the solution with positive depth in both cameras.
+8. Returns essential_matrix (3x3), rotation (3x3), and translation (3,) (translation is up to scale).
 """
 
 SHORT_DESCRIPTION = "Compute Essential Matrix and rigid transformation (R, t) from keypoint pairs and camera intrinsics."
@@ -81,38 +82,85 @@ def _extract_point_pairs(good_matches: List[Any]) -> List[tuple]:
     return pairs
 
 
+def _hartley_normalization_matrix(points_2d_hom: np.ndarray) -> np.ndarray:
+    """
+    Compute 3x3 Hartley normalization matrix for a set of 2D points in homogeneous coords.
+    points_2d_hom: (N, 3) with last column 1. Translates centroid to origin and scales
+    so mean distance from origin is sqrt(2). Returns T such that p_norm = T @ p.
+    """
+    # Inhomogeneous (x, y)
+    x = points_2d_hom[:, 0] / points_2d_hom[:, 2]
+    y = points_2d_hom[:, 1] / points_2d_hom[:, 2]
+    cx = float(np.mean(x))
+    cy = float(np.mean(y))
+    dx = x - cx
+    dy = y - cy
+    scale = np.sqrt(2.0) / (np.mean(np.sqrt(dx * dx + dy * dy)) + 1e-12)
+    T = np.array(
+        [
+            [scale, 0, -scale * cx],
+            [0, scale, -scale * cy],
+            [0, 0, 1],
+        ],
+        dtype=np.float64,
+    )
+    return T
+
+
 def _eight_point_essential(
     pairs: List[tuple], K1: np.ndarray, K2: np.ndarray
 ) -> np.ndarray:
-    """Compute E from point pairs and calibration matrices (8-point + SVD cleanup)."""
+    """Compute E from point pairs and calibration matrices (8-point with Hartley normalization + SVD cleanup)."""
     K1_inv = np.linalg.inv(K1)
     K2_inv = np.linalg.inv(K2)
-    A = []
+
+    # Unproject to normalized image coordinates (bearing rays); use homogeneous (x, y, 1) for 2D
+    n1_list = []
+    n2_list = []
     for (x1, y1), (x2, y2) in pairs:
         p1 = np.array([x1, y1, 1.0])
         p2 = np.array([x2, y2, 1.0])
         n1 = (K1_inv @ p1).ravel()
         n2 = (K2_inv @ p2).ravel()
-        # n2^T E n1 = 0 => row = [n2[0]*n1[0], n2[0]*n1[1], n2[0]*n1[2], ..., n2[2]*n1[2]]
+        # Store as homogeneous 2D: (nx/nz, ny/nz, 1) for Hartley normalization
+        n1_list.append(np.array([n1[0] / n1[2], n1[1] / n1[2], 1.0]))
+        n2_list.append(np.array([n2[0] / n2[2], n2[1] / n2[2], 1.0]))
+
+    pts1 = np.array(n1_list, dtype=np.float64)
+    pts2 = np.array(n2_list, dtype=np.float64)
+
+    # Hartley normalization
+    T1 = _hartley_normalization_matrix(pts1)
+    T2 = _hartley_normalization_matrix(pts2)
+    pts1_norm = (T1 @ pts1.T).T
+    pts2_norm = (T2 @ pts2.T).T
+
+    # Build constraint matrix: for each (p1_norm, p2_norm), row = p2_norm ⊗ p1_norm so p2_norm^T E_norm p1_norm = 0
+    A = []
+    for i in range(len(pts1_norm)):
+        p1 = pts1_norm[i]
+        p2 = pts2_norm[i]
         row = [
-            n2[0] * n1[0],
-            n2[0] * n1[1],
-            n2[0] * n1[2],
-            n2[1] * n1[0],
-            n2[1] * n1[1],
-            n2[1] * n1[2],
-            n2[2] * n1[0],
-            n2[2] * n1[1],
-            n2[2] * n1[2],
+            p2[0] * p1[0],
+            p2[0] * p1[1],
+            p2[0] * p1[2],
+            p2[1] * p1[0],
+            p2[1] * p1[1],
+            p2[1] * p1[2],
+            p2[2] * p1[0],
+            p2[2] * p1[1],
+            p2[2] * p1[2],
         ]
         A.append(row)
     A = np.array(A, dtype=np.float64)
     _, _, Vt = np.linalg.svd(A)
     e = Vt[-1]
-    E = e.reshape(3, 3)
-    # Enforce rank-2: replace singular values with (1, 1, 0)
-    U, S, Vt = np.linalg.svd(E)
-    E = U @ np.diag([1.0, 1.0, 0.0]) @ Vt
+    E_norm = e.reshape(3, 3)
+    # Enforce rank-2
+    U, S, Vt = np.linalg.svd(E_norm)
+    E_norm = U @ np.diag([1.0, 1.0, 0.0]) @ Vt
+    # Denormalize: E such that p2^T E p1 = 0 with p1,p2 original; p_norm = T p => E = T2^T E_norm T1
+    E = T2.T @ E_norm @ T1
     return E
 
 
