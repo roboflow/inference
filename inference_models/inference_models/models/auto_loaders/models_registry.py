@@ -230,6 +230,42 @@ REGISTERED_MODELS: Dict[
         module_name="inference_models.models.yolov12.yolov12_trt",
         class_name="YOLOv12ForObjectDetectionTRT",
     ),
+    ("yolo26", OBJECT_DETECTION_TASK, BackendType.ONNX): LazyClass(
+        module_name="inference_models.models.yolo26.yolo26_object_detection_onnx",
+        class_name="YOLO26ForObjectDetectionOnnx",
+    ),
+    ("yolo26", OBJECT_DETECTION_TASK, BackendType.TORCH_SCRIPT): LazyClass(
+        module_name="inference_models.models.yolo26.yolo26_object_detection_torch_script",
+        class_name="YOLO26ForObjectDetectionTorchScript",
+    ),
+    ("yolo26", OBJECT_DETECTION_TASK, BackendType.TRT): LazyClass(
+        module_name="inference_models.models.yolo26.yolo26_object_detection_trt",
+        class_name="YOLO26ForObjectDetectionTRT",
+    ),
+    ("yolo26", KEYPOINT_DETECTION_TASK, BackendType.ONNX): LazyClass(
+        module_name="inference_models.models.yolo26.yolo26_key_points_detection_onnx",
+        class_name="YOLO26ForKeyPointsDetectionOnnx",
+    ),
+    ("yolo26", KEYPOINT_DETECTION_TASK, BackendType.TORCH_SCRIPT): LazyClass(
+        module_name="inference_models.models.yolo26.yolo26_key_points_detection_torch_script",
+        class_name="YOLO26ForKeyPointsDetectionTorchScript",
+    ),
+    ("yolo26", KEYPOINT_DETECTION_TASK, BackendType.TRT): LazyClass(
+        module_name="inference_models.models.yolo26.yolo26_key_points_detection_trt",
+        class_name="YOLO26ForKeyPointsDetectionTRT",
+    ),
+    ("yolo26", INSTANCE_SEGMENTATION_TASK, BackendType.ONNX): LazyClass(
+        module_name="inference_models.models.yolo26.yolo26_instance_segmentation_onnx",
+        class_name="YOLO26ForInstanceSegmentationOnnx",
+    ),
+    ("yolo26", INSTANCE_SEGMENTATION_TASK, BackendType.TORCH_SCRIPT): LazyClass(
+        module_name="inference_models.models.yolo26.yolo26_instance_segmentation_torch_script",
+        class_name="YOLO26ForInstanceSegmentationTorchScript",
+    ),
+    ("yolo26", INSTANCE_SEGMENTATION_TASK, BackendType.TRT): LazyClass(
+        module_name="inference_models.models.yolo26.yolo26_instance_segmentation_trt",
+        class_name="YOLO26ForInstanceSegmentationTRT",
+    ),
     ("paligemma-2", VLM_TASK, BackendType.HF): LazyClass(
         module_name="inference_models.models.paligemma.paligemma_hf",
         class_name="PaliGemmaHF",
