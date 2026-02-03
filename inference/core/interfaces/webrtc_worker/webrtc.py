@@ -33,6 +33,7 @@ from inference.core.env import (
     WEBRTC_DATA_CHANNEL_ACK_WINDOW,
     WEBRTC_DATA_CHANNEL_BUFFER_DRAINING_DELAY,
     WEBRTC_DATA_CHANNEL_BUFFER_SIZE_LIMIT,
+    WEBRTC_GZIP_PREVIEW_FRAME_COMPRESSION,
     WEBRTC_MODAL_PUBLIC_STUN_SERVERS,
     WEBRTC_MODAL_RTSP_PLACEHOLDER,
     WEBRTC_MODAL_RTSP_PLACEHOLDER_URL,
@@ -445,21 +446,24 @@ class VideoFrameProcessor:
         if serialized_outputs:
             webrtc_output.serialized_output_data = serialized_outputs
 
-        def compress_json():
-            import gzip
+        # TODO: use orjson
+        json_bytes = json.dumps(webrtc_output.model_dump(mode="json")).encode("utf-8")
 
-            # TODO: use orjson
-            json_bytes = json.dumps(webrtc_output.model_dump(mode="json")).encode(
-                "utf-8"
-            )
-            return gzip.compress(json_bytes, compresslevel=6)
+        if WEBRTC_GZIP_PREVIEW_FRAME_COMPRESSION:
 
-        compressed_bytes = await asyncio.to_thread(compress_json)
+            def compress_json():
+                import gzip
+
+                return gzip.compress(json_bytes, compresslevel=6)
+
+            output_bytes = await asyncio.to_thread(compress_json)
+        else:
+            output_bytes = json_bytes
 
         success = await send_chunked_data(
             self.data_channel,
             frame_id,
-            compressed_bytes,
+            output_bytes,
             heartbeat_callback=self.heartbeat_callback,
         )
         if not success:
