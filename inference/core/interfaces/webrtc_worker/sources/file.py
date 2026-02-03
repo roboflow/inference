@@ -42,10 +42,8 @@ def _decode_worker(filepath: str, frame_queue, stop_event):
                 logger.error(
                     "[DECODE_WORKER] Queue full timeout at frame %d", frame_count
                 )
-                try:
-                    frame_queue.put_nowait({"error": f"Queue full timeout at frame {frame_count}"})
-                except queue.Full:
-                    pass
+                frame_queue.get_nowait()
+                frame_queue.put_nowait({"error": f"Queue full timeout at frame {frame_count}"})
                 return
 
         container.close()
