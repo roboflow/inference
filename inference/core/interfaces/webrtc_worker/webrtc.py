@@ -142,6 +142,15 @@ async def send_chunked_data(
     Heads up: buffer_timeout needs to be higher than WEBRTC_DATA_CHANNEL_BUFFER_DRAINING_DELAY!
     Otherwise we will timeout ourselves.
     """
+    
+    if buffer_timeout <= WEBRTC_DATA_CHANNEL_BUFFER_DRAINING_DELAY:
+        logger.warning(
+            "[SEND_CHUNKED] buffer_timeout (%.2fs) <= WEBRTC_DATA_CHANNEL_BUFFER_DRAINING_DELAY (%.2fs), "
+            "this will likely cause immediate timeouts during buffer drain",
+            buffer_timeout,
+            WEBRTC_DATA_CHANNEL_BUFFER_DRAINING_DELAY,
+        )
+
     if data_channel.readyState != "open":
         return False
 
