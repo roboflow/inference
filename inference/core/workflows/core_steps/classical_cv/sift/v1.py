@@ -157,7 +157,8 @@ def apply_sift(image: np.ndarray) -> (np.ndarray, list, np.ndarray):
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     sift = cv2.SIFT_create()
     kp, des = sift.detectAndCompute(gray, None)
-    img_with_kp = cv2.drawKeypoints(gray, kp, image)
+    # Draw onto a copy so we do not mutate the caller's cached numpy_image (e.g. WorkflowImageData)
+    img_with_kp = cv2.drawKeypoints(gray, kp, image.copy())
     # Convert keypoints to the desired format
     keypoints = [
         {
