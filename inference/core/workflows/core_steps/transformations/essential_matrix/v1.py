@@ -32,6 +32,9 @@ MIN_POINT_PAIRS = 8
 DEFAULT_RANSAC_THRESHOLD = 1e-4  # Sampson error in normalized coords
 DEFAULT_RANSAC_MAX_ITERATIONS = 1000
 
+DEFAULT_PARALLAX_COS_THRESHOLD = 0.995
+DEFAULT_MIN_POSITIVE = 10
+
 LONG_DESCRIPTION = """
 Compute the Essential Matrix from keypoint correspondences and camera intrinsics using RANSAC with Sampson error in normalized coordinates, plus Hartley normalization for numerical stability. The Essential Matrix encodes the rigid transformation (rotation and translation) between two camera views. The block converts 2D point pairs to normalized coordinates, runs RANSAC (sample 8 points, fit E with 8-point + Hartley, score all points with Sampson error, keep best inliers), refits E on inliers, enforces rank-2, and recovers R and t.
 
@@ -247,48 +250,103 @@ def _essential_matrix_ransac(
     return E_refined, best_inliers
 
 
-def _triangulate_one_point(
-    n1: np.ndarray, n2: np.ndarray, R: np.ndarray, t: np.ndarray
-) -> np.ndarray:
-    """Triangulate one point from normalized rays and (R, t). Returns 3D point in camera 1 frame."""
-    # n2 = R @ (lambda2 * n2_3d) + t  with n2_3d = n2 (normalized ray in cam2). So n2 ≈ R @ (d2 * n2) + t.
-    # In cam1: ray1 = n1, point = d1 * n1. In cam2: point_cam2 = R @ (d1*n1) + t = d1 * R@n1 + t, and ray2 = n2.
-    # So d1 * R@n1 + t = d2 * n2 => [R@n1, -n2] @ [d1; d2] = -t. Solve for d1, d2; take d1*n1.
-    A = np.column_stack([R @ n1, -n2])
-    d1_d2 = np.linalg.lstsq(A, -t, rcond=None)[0]
-    return d1_d2[0] * n1
+def _parallax_cos(x1: np.ndarray, x2: np.ndarray, R: np.ndarray) -> float:
+    """Compute cosine of parallax angle between two points."""
+    r1 = x1 / np.linalg.norm(x1)
+    r2 = R.T @ x2
+    r2 = r2 / np.linalg.norm(r2)
+    return np.dot(r1, r2)
+
+
+def triangulate_dlt(x1: np.ndarray, x2: np.ndarray, R: np.ndarray, t: np.ndarray) -> np.ndarray:
+    """
+    Linear triangulation (DLT).
+    x1, x2: (3,) homogeneous normalized image points [u,v,1]
+    Returns X in camera1 coordinates (3,)
+    """
+    P1 = np.hstack([np.eye(3), np.zeros((3,1))])
+    P2 = np.hstack([R, t.reshape(3,1)])
+
+    u1, v1 = x1[0]/x1[2], x1[1]/x1[2]
+    u2, v2 = x2[0]/x2[2], x2[1]/x2[2]
+
+    A = np.zeros((4,4), dtype=float)
+    A[0] = u1 * P1[2] - P1[0]
+    A[1] = v1 * P1[2] - P1[1]
+    A[2] = u2 * P2[2] - P2[0]
+    A[3] = v2 * P2[2] - P2[1]
+
+    _, _, Vt = np.linalg.svd(A)
+    X = Vt[-1]
+    X = X[:3] / X[3]
+    return X
+
+
+def _choose_pose_by_cheirality(
+    candidates: List[tuple],
+    x1s: List[np.ndarray],
+    x2s: List[np.ndarray],
+    parallax_cos_threshold: float = DEFAULT_PARALLAX_COS_THRESHOLD,
+    min_positive: int = DEFAULT_MIN_POSITIVE,
+) -> tuple:
+    """Choose pose by cheirality."""
+    best = None
+    best_count = -1
+
+    for R, t in candidates:
+        if np.linalg.det(R) < 0:
+            R, t = -R, -t
+
+        count = 0
+        for x1, x2 in zip(x1s, x2s):
+            cos_parallax = _parallax_cos(x1, x2, R)
+            if cos_parallax > parallax_cos_threshold:
+                continue
+
+            X = triangulate_dlt(x1, x2, R, t)  # X in cam1
+
+            z1 = X[2]
+            z2 = (R @ X + t)[2]
+            if z1 > 0 and z2 > 0:
+                count += 1
+
+        if count > best_count:
+            best_count = count
+            best = (R, t)
+
+    if best is None or best_count < min_positive:
+        raise ValueError("Cheirality failed / too few points in front")
+
+    return best
 
 
 def _recover_pose_from_essential(
     E: np.ndarray,
     n1: Optional[np.ndarray] = None,
     n2: Optional[np.ndarray] = None,
+    parallax_cos_threshold: float = DEFAULT_PARALLAX_COS_THRESHOLD,
+    min_positive: int = DEFAULT_MIN_POSITIVE,
 ) -> tuple:
     """Recover R and t from E. If n1, n2 given, choose solution with positive depth in both cameras."""
     U, _, Vt = np.linalg.svd(E)
+
     if np.linalg.det(U) < 0:
         U[:, -1] *= -1
     if np.linalg.det(Vt) < 0:
         Vt[-1, :] *= -1
+
     W = np.array([[0, -1, 0], [1, 0, 0], [0, 0, 1]], dtype=np.float64)
+
     candidates = [
         (U @ W @ Vt, U[:, 2]),
         (U @ W @ Vt, -U[:, 2]),
         (U @ W.T @ Vt, U[:, 2]),
         (U @ W.T @ Vt, -U[:, 2]),
     ]
-    for R, t in candidates:
-        if np.linalg.det(R) < 0:
-            R, t = -R, -t
-        if n1 is not None and n2 is not None:
-            P = _triangulate_one_point(n1, n2, R, t)
-            depth1 = P[2]
-            depth2 = (R @ P + t)[2]
-            if depth1 > 0 and depth2 > 0:
-                return R, t
 
-    logger.warning(f"No solution found for R and t: {candidates}")
-    return candidates[0][0], candidates[0][1]
+    best = _choose_pose_by_cheirality(candidates, [n1], [n2], parallax_cos_threshold=parallax_cos_threshold, min_positive=min_positive)
+
+    return best
 
 
 class EssentialMatrixBlockManifest(WorkflowBlockManifest):
@@ -355,6 +413,8 @@ class EssentialMatrixBlockV1(WorkflowBlock):
         camera_intrinsics_2: Union[dict, CameraIntrinsics],
         ransac_threshold: float = DEFAULT_RANSAC_THRESHOLD,
         ransac_max_iterations: int = DEFAULT_RANSAC_MAX_ITERATIONS,
+        parallax_cos_threshold: float = DEFAULT_PARALLAX_COS_THRESHOLD,
+        min_positive: int = DEFAULT_MIN_POSITIVE,
     ) -> BlockResult:
         pairs = _extract_point_pairs(good_matches)
 
@@ -379,7 +439,13 @@ class EssentialMatrixBlockV1(WorkflowBlock):
         n1 = pts1[i0]
         n2 = pts2[i0]
 
-        R, t = _recover_pose_from_essential(E, n1=n1, n2=n2)
+        R, t = _recover_pose_from_essential(
+            E,
+            n1=n1,
+            n2=n2,
+            parallax_cos_threshold=parallax_cos_threshold,
+            min_positive=min_positive,
+        )
 
         return {
             "essential_matrix": E,
