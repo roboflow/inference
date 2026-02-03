@@ -5,7 +5,10 @@ import numpy as np
 import torch
 
 from inference_models import InstanceDetections, InstanceSegmentationModel
-from inference_models.configuration import DEFAULT_DEVICE
+from inference_models.configuration import (
+    DEFAULT_DEVICE,
+    USE_CUDA_GRAPHS_FOR_TRT_BACKEND,
+)
 from inference_models.entities import ColorFormat
 from inference_models.errors import (
     CorruptedModelPackageError,
@@ -196,8 +199,14 @@ class RFDetrForInstanceSegmentationTRT(
         )
 
     def forward(
-        self, pre_processed_images: torch.Tensor, use_cuda_graph: bool = False, **kwargs
+        self,
+        pre_processed_images: torch.Tensor,
+        use_cuda_graph: Optional[bool] = None,
+        **kwargs,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        if use_cuda_graph is None:
+            use_cuda_graph = USE_CUDA_GRAPHS_FOR_TRT_BACKEND
+
         with self._lock:
             with use_cuda_context(context=self._cuda_context):
                 if use_cuda_graph:
