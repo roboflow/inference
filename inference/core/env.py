@@ -812,9 +812,11 @@ WEBRTC_GZIP_PREVIEW_FRAME_COMPRESSION = str2bool(
     os.getenv("WEBRTC_GZIP_PREVIEW_FRAME_COMPRESSION", "True")
 )
 
-# JPEG quality for WebRTC preview frames 
+# JPEG quality for WebRTC preview frames
 # (1-100, higher means better quality, but larger payload size and we might time out)
-WEBRTC_PREVIEW_FRAME_JPEG_QUALITY = int(os.getenv("WEBRTC_PREVIEW_FRAME_JPEG_QUALITY", "80"))
+WEBRTC_PREVIEW_FRAME_JPEG_QUALITY = int(
+    os.getenv("WEBRTC_PREVIEW_FRAME_JPEG_QUALITY", "80")
+)
 
 HTTP_API_SHARED_WORKFLOWS_THREAD_POOL_ENABLED = str2bool(
     os.getenv("HTTP_API_SHARED_WORKFLOWS_THREAD_POOL_ENABLED", "True")
