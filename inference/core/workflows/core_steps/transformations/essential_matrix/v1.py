@@ -132,8 +132,11 @@ def _eight_point_essential(
     # Hartley normalization
     T1 = _hartley_normalization_matrix(pts1)
     T2 = _hartley_normalization_matrix(pts2)
+
     pts1_norm = (T1 @ pts1.T).T
     pts2_norm = (T2 @ pts2.T).T
+    pts1_norm /= pts1_norm[:, [2]]
+    pts2_norm /= pts2_norm[:, [2]]
 
     # Build constraint matrix: for each (p1_norm, p2_norm), row = p2_norm ⊗ p1_norm so p2_norm^T E_norm p1_norm = 0
     A = []
@@ -153,14 +156,20 @@ def _eight_point_essential(
         ]
         A.append(row)
     A = np.array(A, dtype=np.float64)
+
     _, _, Vt = np.linalg.svd(A)
-    e = Vt[-1]
-    E_norm = e.reshape(3, 3)
+    E_norm = Vt[-1].reshape(3, 3)
+
     # Enforce rank-2
-    U, S, Vt = np.linalg.svd(E_norm)
+    U, _, Vt = np.linalg.svd(E_norm)
     E_norm = U @ np.diag([1.0, 1.0, 0.0]) @ Vt
+
     # Denormalize: E such that p2^T E p1 = 0 with p1,p2 original; p_norm = T p => E = T2^T E_norm T1
     E = T2.T @ E_norm @ T1
+
+    U, _, Vt = np.linalg.svd(E)
+    E = U @ np.diag([1.0, 1.0, 0.0]) @ Vt
+
     return E
 
 
