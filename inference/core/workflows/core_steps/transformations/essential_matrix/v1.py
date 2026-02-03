@@ -28,19 +28,21 @@ from inference.core.workflows.prototypes.block import (
 # Minimum point pairs for 8-point algorithm
 MIN_POINT_PAIRS = 8
 
+# RANSAC defaults
+DEFAULT_RANSAC_THRESHOLD = 1e-4  # Sampson error in normalized coords
+DEFAULT_RANSAC_MAX_ITERATIONS = 1000
+
 LONG_DESCRIPTION = """
-Compute the Essential Matrix from keypoint correspondences and camera intrinsics using the epipolar constraint with Hartley normalization for numerical stability. The Essential Matrix encodes the rigid transformation (rotation and translation) between two camera views. The block converts 2D keypoint pairs to normalized rays using camera intrinsics, applies Hartley normalization (translate centroid to origin, scale so mean distance is sqrt(2)), builds the linear system from the epipolar constraint, solves for E via SVD (8-point algorithm), denormalizes E, enforces the rank-2 constraint, and recovers rotation R and translation t from E.
+Compute the Essential Matrix from keypoint correspondences and camera intrinsics using RANSAC with Sampson error in normalized coordinates, plus Hartley normalization for numerical stability. The Essential Matrix encodes the rigid transformation (rotation and translation) between two camera views. The block converts 2D point pairs to normalized coordinates, runs RANSAC (sample 8 points, fit E with 8-point + Hartley, score all points with Sampson error, keep best inliers), refits E on inliers, enforces rank-2, and recovers R and t.
 
 ## How This Block Works
 
-1. Receives good_matches from FeatureComparisonBlockV1 (list of {keypoint_pairs: [pt1, pt2], distance}) and camera intrinsics for both images.
-2. Converts keypoint correspondences to homogeneous coordinates and unprojects to normalized bearing rays using K1^{-1} and K2^{-1}.
-3. Applies Hartley normalization to each set of points: translate so centroid is at origin, scale so average distance from origin is sqrt(2). This improves conditioning of the 8-point linear system.
-4. Builds the epipolar constraint matrix on normalized points: for each pair (n1_norm, n2_norm), one row (n2_norm ⊗ n1_norm) so that n2_norm^T E_norm n1_norm = 0.
-5. Solves A @ vec(E_norm) = 0 via SVD; denormalizes to get E = T2^T E_norm T1.
-6. Enforces the essential matrix constraint (two equal singular values, one zero) by SVD of E and replacing with diag(1,1,0).
-7. Recovers R and t from E; chooses the solution with positive depth in both cameras.
-8. Returns essential_matrix (3x3), rotation (3x3), and translation (3,) (translation is up to scale).
+1. Receives good_matches from FeatureComparisonBlockV1 and camera intrinsics for both images.
+2. Converts point pairs to normalized homogeneous 2D using K1^{-1} and K2^{-1}.
+3. RANSAC: repeatedly sample 8 point pairs, fit E using 8-point algorithm with Hartley normalization, compute Sampson error for all pairs in normalized coordinates, keep the E with the most inliers (error below ransac_threshold).
+4. Refit E on all inliers with 8-point + Hartley; enforce rank-2 constraint.
+5. Recovers R and t from E; chooses the solution with positive depth in both cameras.
+6. Returns essential_matrix (3x3), rotation (3x3), and translation (3,) (translation is up to scale).
 """
 
 SHORT_DESCRIPTION = "Compute Essential Matrix and rigid transformation (R, t) from keypoint pairs and camera intrinsics."
@@ -91,11 +93,14 @@ def _hartley_normalization_matrix(points_2d_hom: np.ndarray) -> np.ndarray:
     # Inhomogeneous (x, y)
     x = points_2d_hom[:, 0] / points_2d_hom[:, 2]
     y = points_2d_hom[:, 1] / points_2d_hom[:, 2]
+
     cx = float(np.mean(x))
     cy = float(np.mean(y))
     dx = x - cx
     dy = y - cy
+
     scale = np.sqrt(2.0) / (np.mean(np.sqrt(dx * dx + dy * dy)) + 1e-12)
+
     T = np.array(
         [
             [scale, 0, -scale * cx],
@@ -104,32 +109,42 @@ def _hartley_normalization_matrix(points_2d_hom: np.ndarray) -> np.ndarray:
         ],
         dtype=np.float64,
     )
+
     return T
 
 
-def _eight_point_essential(
+def _pairs_to_normalized_points(
     pairs: List[tuple], K1: np.ndarray, K2: np.ndarray
-) -> np.ndarray:
-    """Compute E from point pairs and calibration matrices (8-point with Hartley normalization + SVD cleanup)."""
+) -> tuple:
+    """Convert 2D point pairs to normalized homogeneous 2D (N, 3) with last column 1."""
     K1_inv = np.linalg.inv(K1)
     K2_inv = np.linalg.inv(K2)
 
-    # Unproject to normalized image coordinates (bearing rays); use homogeneous (x, y, 1) for 2D
     n1_list = []
     n2_list = []
+
     for (x1, y1), (x2, y2) in pairs:
         p1 = np.array([x1, y1, 1.0])
         p2 = np.array([x2, y2, 1.0])
         n1 = (K1_inv @ p1).ravel()
         n2 = (K2_inv @ p2).ravel()
+
         # Store as homogeneous 2D: (nx/nz, ny/nz, 1) for Hartley normalization
         n1_list.append(np.array([n1[0] / n1[2], n1[1] / n1[2], 1.0]))
         n2_list.append(np.array([n2[0] / n2[2], n2[1] / n2[2], 1.0]))
 
-    pts1 = np.array(n1_list, dtype=np.float64)
-    pts2 = np.array(n2_list, dtype=np.float64)
+    n1 = np.array(n1_list, dtype=np.float64)
+    n2 = np.array(n2_list, dtype=np.float64)
 
-    # Hartley normalization
+    return n1, n2
+
+
+def _eight_point_essential_from_normalized(
+    pts1: np.ndarray, pts2: np.ndarray
+) -> np.ndarray:
+    """Compute E from normalized homogeneous 2D points (N, 3) with Hartley + SVD cleanup."""
+    if len(pts1) < MIN_POINT_PAIRS or len(pts2) < MIN_POINT_PAIRS:
+        raise ValueError(f"Need at least {MIN_POINT_PAIRS} points")
     T1 = _hartley_normalization_matrix(pts1)
     T2 = _hartley_normalization_matrix(pts2)
 
@@ -144,15 +159,9 @@ def _eight_point_essential(
         p1 = pts1_norm[i]
         p2 = pts2_norm[i]
         row = [
-            p2[0] * p1[0],
-            p2[0] * p1[1],
-            p2[0] * p1[2],
-            p2[1] * p1[0],
-            p2[1] * p1[1],
-            p2[1] * p1[2],
-            p2[2] * p1[0],
-            p2[2] * p1[1],
-            p2[2] * p1[2],
+            p2[0] * p1[0], p2[0] * p1[1], p2[0] * p1[2],
+            p2[1] * p1[0], p2[1] * p1[1], p2[1] * p1[2],
+            p2[2] * p1[0], p2[2] * p1[1], p2[2] * p1[2],
         ]
         A.append(row)
     A = np.array(A, dtype=np.float64)
@@ -171,6 +180,71 @@ def _eight_point_essential(
     E = U @ np.diag([1.0, 1.0, 0.0]) @ Vt
 
     return E
+
+
+def _sampson_errors(E: np.ndarray, x1: np.ndarray, x2: np.ndarray) -> np.ndarray:
+    """
+    Sampson error for Nx3 homogeneous correspondences.
+    x1, x2 are row-vectors (N,3).
+    Returns squared Sampson error (N,).
+    """
+    Ex1   = x1 @ E.T        # (E x1)^T
+    Etx2  = x2 @ E          # (E^T x2)^T
+
+    x2tEx1 = np.sum(x2 * Ex1, axis=1)  # x2^T E x1
+
+    denom = Ex1[:,0]**2 + Ex1[:,1]**2 + Etx2[:,0]**2 + Etx2[:,1]**2
+    error_values =  (x2tEx1**2) / (denom + 1e-12)
+
+    return error_values
+
+
+def _essential_matrix_ransac(
+    pts1: np.ndarray,
+    pts2: np.ndarray,
+    threshold: float = DEFAULT_RANSAC_THRESHOLD,
+    max_iterations: int = DEFAULT_RANSAC_MAX_ITERATIONS,
+) -> tuple:
+    """RANSAC for Essential Matrix using Sampson error in normalized coords. Returns E, inlier_mask."""
+    rng = np.random.default_rng()
+    n = len(pts1)
+
+    if n < MIN_POINT_PAIRS:
+        raise ValueError(f"Need at least {MIN_POINT_PAIRS} point pairs for RANSAC")
+
+    best_inliers = np.zeros(n, dtype=bool)
+    best_E = None
+    best_cost = np.inf
+
+    for _ in range(max_iterations):
+        idx = rng.choice(n, size=MIN_POINT_PAIRS, replace=False)
+
+        try:
+            E = _eight_point_essential_from_normalized(pts1[idx], pts2[idx])
+        except Exception:
+            continue
+
+        err = _sampson_errors(E, pts1, pts2)
+        inliers = err < threshold
+
+        num = int(inliers.sum())
+        if num < MIN_POINT_PAIRS:
+            continue
+
+        cost = float(err[inliers].sum())
+
+        if (num > best_inliers.sum()) or (num == best_inliers.sum() and cost < best_cost):
+            best_inliers = inliers
+            best_E = E
+            best_cost = cost
+
+    if best_E is None or best_inliers.sum() < MIN_POINT_PAIRS:
+        raise ValueError("RANSAC failed to find a valid essential matrix")
+
+    # Refit on inliers
+    E_refined = _eight_point_essential_from_normalized(pts1[best_inliers], pts2[best_inliers])
+
+    return E_refined, best_inliers
 
 
 def _triangulate_one_point(
@@ -247,6 +321,14 @@ class EssentialMatrixBlockManifest(WorkflowBlockManifest):
         description="Camera intrinsics for the second image.",
         examples=["$inputs.camera_intrinsics_2"],
     )
+    ransac_threshold: Union[float, Selector] = Field(
+        default=DEFAULT_RANSAC_THRESHOLD,
+        description="Sampson error threshold in normalized coords for RANSAC inlier (smaller = stricter).",
+    )
+    ransac_max_iterations: Union[int, Selector] = Field(
+        default=DEFAULT_RANSAC_MAX_ITERATIONS,
+        description="Max RANSAC iterations.",
+    )
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
@@ -271,22 +353,32 @@ class EssentialMatrixBlockV1(WorkflowBlock):
         good_matches: List[Any],
         camera_intrinsics_1: Union[dict, CameraIntrinsics],
         camera_intrinsics_2: Union[dict, CameraIntrinsics],
+        ransac_threshold: float = DEFAULT_RANSAC_THRESHOLD,
+        ransac_max_iterations: int = DEFAULT_RANSAC_MAX_ITERATIONS,
     ) -> BlockResult:
         pairs = _extract_point_pairs(good_matches)
+
         if len(pairs) < MIN_POINT_PAIRS:
-            raise ValueError(f"Not enough point pairs for essential matrix: {len(pairs)} < {MIN_POINT_PAIRS}")
+            raise ValueError(
+                f"Not enough point pairs for essential matrix: {len(pairs)} < {MIN_POINT_PAIRS}"
+            )
 
         K1 = _intrinsics_to_K(camera_intrinsics_1)
         K2 = _intrinsics_to_K(camera_intrinsics_2)
-        E = _eight_point_essential(pairs, K1, K2)
 
-        K1_inv = np.linalg.inv(K1)
-        K2_inv = np.linalg.inv(K2)
-        (x1, y1), (x2, y2) = pairs[0]
-        p1 = np.array([x1, y1, 1.0])
-        p2 = np.array([x2, y2, 1.0])
-        n1 = (K1_inv @ p1).ravel()
-        n2 = (K2_inv @ p2).ravel()
+        pts1, pts2 = _pairs_to_normalized_points(pairs, K1, K2)
+
+        E, inlier_mask = _essential_matrix_ransac(
+            pts1, pts2,
+            threshold=float(ransac_threshold),
+            max_iterations=int(ransac_max_iterations),
+        )
+
+        inlier_idx = np.flatnonzero(inlier_mask)
+        i0 = int(inlier_idx[0]) if len(inlier_idx) > 0 else 0
+        n1 = pts1[i0]
+        n2 = pts2[i0]
+
         R, t = _recover_pose_from_essential(E, n1=n1, n2=n2)
 
         return {
