@@ -394,6 +394,9 @@ from inference.core.workflows.core_steps.transformations.camera_calibration.v1 i
 from inference.core.workflows.core_steps.transformations.essential_matrix.v1 import (
     EssentialMatrixBlockV1,
 )
+from inference.core.workflows.core_steps.transformations.triangulation.v1 import (
+    TriangulationBlockV1,
+)
 from inference.core.workflows.core_steps.transformations.detection_offset.v1 import (
     DetectionOffsetBlockV1,
 )
@@ -515,6 +518,9 @@ from inference.core.workflows.core_steps.visualizations.polygon_zone.v1 import (
 )
 from inference.core.workflows.core_steps.visualizations.reference_path.v1 import (
     ReferencePathVisualizationBlockV1,
+)
+from inference.core.workflows.core_steps.visualizations.sfm_3d.v1 import (
+    SfMVisualization3DBlockV1,
 )
 from inference.core.workflows.core_steps.visualizations.text_display.v1 import (
     TextDisplayVisualizationBlockV1,
@@ -692,6 +698,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         DeltaFilterBlockV1,
         CameraCalibrationBlockV1,
         EssentialMatrixBlockV1,
+        TriangulationBlockV1,
         DynamicZonesBlockV1,
         SizeMeasurementBlockV1,
         BufferBlockV1,
@@ -816,6 +823,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         LocalFileSinkBlockV1,
         TraceVisualizationBlockV1,
         ReferencePathVisualizationBlockV1,
+        SfMVisualization3DBlockV1,
         ByteTrackerBlockV3,
         WebhookSinkBlockV1,
         VelocityBlockV1,
