@@ -8,6 +8,7 @@ from typing import Any, List, Literal, Optional, Type, Union
 import numpy as np
 from pydantic import ConfigDict, Field
 
+from inference.core.logger import logger
 from inference.core.workflows.execution_engine.entities.base import (
     CameraIntrinsics,
     OutputDefinition,
@@ -154,6 +155,8 @@ def _recover_pose_from_essential(
             depth2 = (R @ P + t)[2]
             if depth1 > 0 and depth2 > 0:
                 return R, t
+
+    logger.warning(f"No solution found for R and t: {candidates}")
     return candidates[0][0], candidates[0][1]
 
 
