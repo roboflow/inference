@@ -65,6 +65,10 @@ class InferenceModelsDepthAnythingV3Adapter(Model):
             **kwargs,
         )
 
+        # Precompute viridis colormap lookup table once during initialization
+        cmap = plt.get_cmap("viridis")
+        self._viridis_lut = (cmap(np.arange(256))[:, :3] * 255).astype(np.uint8)
+
     def preprocess(self, image: Any, **kwargs):
         if isinstance(image, list):
             raise ValueError("DepthAnythingV3 does not support batched inference.")
@@ -90,8 +94,9 @@ class InferenceModelsDepthAnythingV3Adapter(Model):
 
         # Create visualization
         depth_for_viz = (normalized_depth * 255.0).astype(np.uint8)
-        cmap = plt.get_cmap("viridis")
-        colored_depth = (cmap(depth_for_viz)[:, :, :3] * 255).astype(np.uint8)
+        colored_depth = self._viridis_lut[depth_for_viz]
+
+        # Convert numpy array to WorkflowImageData
 
         # Convert numpy array to WorkflowImageData
         parent_metadata = ImageParentMetadata(parent_id=f"{uuid4()}")
