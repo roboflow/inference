@@ -7,6 +7,7 @@ from typing import Optional, Tuple
 import click
 import cv2
 import numpy as np
+import plotly.graph_objects as go
 from inference_models import AutoModel
 import supervision as sv
 
@@ -156,13 +157,31 @@ def main(sequence_name: str, frame_number: int, output_path: Optional[Path] = No
         subsample=4,
     )
 
-    ply_path = OUTPUT_DIR / "teddybear_pointcloud.ply"
-    with open(ply_path, "w") as f:
-        f.write("ply\nformat ascii 1.0\nelement vertex {}\n".format(len(points_3d)))
-        f.write("property float x\nproperty float y\nproperty float z\nend_header\n")
-        for x, y, z in points_3d:
-            f.write("{} {} {}\n".format(x, y, z))
-    logging.info("Saved %d 3D points to %s", len(points_3d), ply_path)
+    fig = go.Figure(
+        data=[
+            go.Scatter3d(
+                x=points_3d[:, 0],
+                y=points_3d[:, 1],
+                z=points_3d[:, 2],
+                mode="markers",
+                marker=dict(size=1.5, color=points_3d[:, 2], colorscale="Viridis", opacity=0.8),
+                name="teddybear",
+            )
+        ],
+        layout=go.Layout(
+            title="Teddy bear 3D point cloud (camera coordinates)",
+            scene=dict(
+                xaxis_title="X (right)",
+                yaxis_title="Y (down)",
+                zaxis_title="Z (forward)",
+                aspectmode="data",
+            ),
+        ),
+    )
+    html_path = OUTPUT_DIR / "teddybear_pointcloud.html"
+    fig.write_html(str(html_path))
+    logging.info("Saved %d 3D points to %s", len(points_3d), html_path)
+    fig.show()
 
     sv.plot_images_grid(
         [cv2.cvtColor(image, cv2.COLOR_RGB2BGR), annotated_image, best_mask_prompt * 255, depth_map],
