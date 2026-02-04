@@ -1,4 +1,5 @@
 """Unit tests for Segment Anything 2 block including remote execution."""
+
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -21,9 +22,7 @@ def mock_model_manager():
     mock_prediction = MagicMock()
     mock_prediction.masks = [[[0, 0], [100, 0], [100, 100], [0, 100]]]
     mock_prediction.confidence = 0.95
-    mock.infer_from_request_sync.return_value = MagicMock(
-        predictions=[mock_prediction]
-    )
+    mock.infer_from_request_sync.return_value = MagicMock(predictions=[mock_prediction])
     return mock
 
 
@@ -39,6 +38,7 @@ def mock_workflow_image_data():
 def test_manifest_parsing_valid():
     data = {
         "type": "roboflow_core/segment_anything@v1",
+        "name": "my_sam2_step",
         "images": "$inputs.image",
         "version": "hiera_tiny",
     }
@@ -92,7 +92,7 @@ def test_run_remotely_with_prompts(
 ):
     """Test that remote execution passes prompts correctly."""
     import supervision as sv
-    
+
     mock_client = MagicMock()
     mock_client.sam2_segment_image.return_value = {
         "predictions": [

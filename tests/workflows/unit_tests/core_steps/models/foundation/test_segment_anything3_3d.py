@@ -1,4 +1,5 @@
 """Unit tests for Segment Anything 3 3D block including remote execution."""
+
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -51,6 +52,7 @@ def mock_mask_input():
 def test_manifest_parsing_valid():
     data = {
         "type": "roboflow_core/segment_anything3_3d_objects@v1",
+        "name": "my_sam3_3d_step",
         "images": "$inputs.image",
         "mask_input": "$steps.sam2.predictions",
     }

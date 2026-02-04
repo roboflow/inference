@@ -1,4 +1,5 @@
 """Unit tests for Depth Estimation block including remote execution."""
+
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -40,6 +41,7 @@ def mock_workflow_image_data():
 def test_manifest_parsing_valid():
     data = {
         "type": "roboflow_core/depth_estimation@v1",
+        "name": "my_depth_step",
         "images": "$inputs.image",
         "model_version": "depth-anything-v3/small",
     }
@@ -51,6 +53,7 @@ def test_manifest_parsing_valid():
 def test_manifest_parsing_with_default_model():
     data = {
         "type": "roboflow_core/depth_estimation@v1",
+        "name": "my_depth_step",
         "images": "$inputs.image",
     }
     result = BlockManifest.model_validate(data)
