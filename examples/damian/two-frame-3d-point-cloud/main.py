@@ -77,10 +77,18 @@ def main(sequence_name: str, frame_number: int, output_path: Optional[Path] = No
     best_mask_idx = scores_prompt.argmax()
     best_mask_prompt = masks_prompt[best_mask_idx].numpy()
 
+    depth_anything_model = AutoModel.from_pretrained("depth-anything-v3/small", api_key=os.getenv("ROBOFLOW_API_KEY"))
+
+    depth_results = depth_anything_model.infer(
+        images=image,
+    )
+
+    depth_map = depth_results[0].numpy()
+
     sv.plot_images_grid(
-        [cv2.cvtColor(image, cv2.COLOR_RGB2BGR), annotated_image, best_mask_prompt * 255],
-        grid_size=(1, 3),
-        titles=["Image", "Annotated Image", "Mask Prompt"],
+        [cv2.cvtColor(image, cv2.COLOR_RGB2BGR), annotated_image, best_mask_prompt * 255, depth_map],
+        grid_size=(2, 2),
+        titles=["Image", "Annotated Image", "Mask Prompt", "Depth Map"],
     )
 
 if __name__ == "__main__":
