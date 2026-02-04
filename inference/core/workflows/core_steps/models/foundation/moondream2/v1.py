@@ -174,6 +174,7 @@ class Moondream2BlockV1(WorkflowBlock):
                 inference_input=image.base64_image,
                 model_id=model_version,
                 prompt=prompt,
+                model_id_in_path=True,
             )
             predictions.append(result)
 

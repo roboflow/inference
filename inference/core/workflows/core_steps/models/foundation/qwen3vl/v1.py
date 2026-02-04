@@ -185,6 +185,7 @@ class Qwen3VLBlockV1(WorkflowBlock):
                 inference_input=image.base64_image,
                 model_id=model_version,
                 prompt=combined_prompt,
+                model_id_in_path=True,
             )
             response_text = result.get("response", result)
             predictions.append({"parsed_output": response_text})

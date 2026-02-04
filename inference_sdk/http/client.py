@@ -1565,6 +1565,7 @@ class InferenceHTTPClient:
         inference_input: Union[ImagesReference, List[ImagesReference]],
         model_id: str,
         prompt: Optional[str] = None,
+        model_id_in_path: bool = False,
     ) -> Union[dict, List[dict]]:
         """Run inference using a Large Multimodal Model (LMM).
 
@@ -1581,6 +1582,9 @@ class InferenceHTTPClient:
                 - "qwen25-vl-7b" for Qwen2.5-VL
                 - "qwen3vl-2b-instruct" for Qwen3-VL
             prompt (Optional[str], optional): Text prompt to guide the model. Defaults to None.
+            model_id_in_path (bool, optional): If True, includes model_id in the URL path
+                (e.g., /infer/lmm/florence-2-base) which enables path-based routing.
+                If False (default), model_id is only sent in the request body.
 
         Returns:
             Union[dict, List[dict]]: Inference results containing the model response.
@@ -1593,9 +1597,15 @@ class InferenceHTTPClient:
         extra_payload = {"model_id": model_id}
         if prompt is not None:
             extra_payload["prompt"] = prompt
+
+        if model_id_in_path:
+            endpoint = f"/infer/lmm/{model_id}"
+        else:
+            endpoint = "/infer/lmm"
+
         result = self._post_images(
             inference_input=inference_input,
-            endpoint="/infer/lmm",
+            endpoint=endpoint,
             extra_payload=extra_payload,
         )
         return result
@@ -1606,6 +1616,7 @@ class InferenceHTTPClient:
         inference_input: Union[ImagesReference, List[ImagesReference]],
         model_id: str,
         prompt: Optional[str] = None,
+        model_id_in_path: bool = False,
     ) -> Union[dict, List[dict]]:
         """Run inference using a Large Multimodal Model (LMM) asynchronously.
 
@@ -1617,6 +1628,9 @@ class InferenceHTTPClient:
                 for inference. Can be file paths, URLs, base64 strings, numpy arrays, or PIL images.
             model_id (str): The identifier of the LMM model to use.
             prompt (Optional[str], optional): Text prompt to guide the model. Defaults to None.
+            model_id_in_path (bool, optional): If True, includes model_id in the URL path
+                (e.g., /infer/lmm/florence-2-base) which enables path-based routing.
+                If False (default), model_id is only sent in the request body.
 
         Returns:
             Union[dict, List[dict]]: Inference results containing the model response.
@@ -1628,9 +1642,15 @@ class InferenceHTTPClient:
         extra_payload = {"model_id": model_id}
         if prompt is not None:
             extra_payload["prompt"] = prompt
+
+        if model_id_in_path:
+            endpoint = f"/infer/lmm/{model_id}"
+        else:
+            endpoint = "/infer/lmm"
+
         result = await self._post_images_async(
             inference_input=inference_input,
-            endpoint="/infer/lmm",
+            endpoint=endpoint,
             extra_payload=extra_payload,
         )
         return result

@@ -1180,16 +1180,70 @@ class HttpInterface(BaseInterface):
                     countinference: Optional[bool] = None,
                     service_secret: Optional[str] = None,
                 ):
-                    """Run inference with the specified object detection model.
+                    """Run inference with the specified large multi-modal model.
 
                     Args:
-                        inference_request (ObjectDetectionInferenceRequest): The request containing the necessary details for object detection.
-                        background_tasks: (BackgroundTasks) pool of fastapi background tasks
+                        inference_request (LMMInferenceRequest): The request containing the necessary details for LMM inference.
 
                     Returns:
-                        Union[ObjectDetectionInferenceResponse, List[ObjectDetectionInferenceResponse]]: The response containing the inference results.
+                        Union[LMMInferenceResponse, List[LMMInferenceResponse]]: The response containing the inference results.
                     """
                     logger.debug(f"Reached /infer/lmm")
+                    return process_inference_request(
+                        inference_request,
+                        countinference=countinference,
+                        service_secret=service_secret,
+                    )
+
+                @app.post(
+                    "/infer/lmm/{model_id:path}",
+                    response_model=Union[
+                        LMMInferenceResponse,
+                        List[LMMInferenceResponse],
+                        StubResponse,
+                    ],
+                    summary="Large multi-modal model infer with model ID in path",
+                    description="Run inference with the specified large multi-modal model. Model ID is specified in the URL path (can contain slashes).",
+                    response_model_exclude_none=True,
+                )
+                @with_route_exceptions
+                @usage_collector("request")
+                def infer_lmm_with_model_id(
+                    model_id: str,
+                    inference_request: LMMInferenceRequest,
+                    countinference: Optional[bool] = None,
+                    service_secret: Optional[str] = None,
+                ):
+                    """Run inference with the specified large multi-modal model.
+
+                    The model_id can be specified in the URL path. If model_id is also provided
+                    in the request body, it must match the path parameter.
+
+                    Args:
+                        model_id (str): The model identifier from the URL path.
+                        inference_request (LMMInferenceRequest): The request containing the necessary details for LMM inference.
+
+                    Returns:
+                        Union[LMMInferenceResponse, List[LMMInferenceResponse]]: The response containing the inference results.
+
+                    Raises:
+                        HTTPException: If model_id in path and request body don't match.
+                    """
+                    logger.debug(f"Reached /infer/lmm/{model_id}")
+
+                    # Validate model_id consistency between path and request body
+                    if (
+                        inference_request.model_id is not None
+                        and inference_request.model_id != model_id
+                    ):
+                        raise HTTPException(
+                            status_code=400,
+                            detail=f"Model ID mismatch: path specifies '{model_id}' but request body specifies '{inference_request.model_id}'",
+                        )
+
+                    # Set the model_id from path if not in request body
+                    inference_request.model_id = model_id
+
                     return process_inference_request(
                         inference_request,
                         countinference=countinference,

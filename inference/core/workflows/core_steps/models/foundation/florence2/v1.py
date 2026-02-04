@@ -434,6 +434,7 @@ class Florence2BlockV1(WorkflowBlock):
                 inference_input=image.base64_image,
                 model_id=model_version,
                 prompt=final_prompt,
+                model_id_in_path=True,
             )
 
             # Parse response
