@@ -3,11 +3,13 @@
 import asyncio
 import base64
 import functools
+import gzip
 import inspect
 import json
 import queue
 import struct
 import threading
+import time
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
@@ -666,6 +668,52 @@ class WebRTCSession:
         pc = RTCPeerConnection(configuration=turn_config)
         relay = MediaRelay()
 
+        # Monitor ICE connection state for failures
+        # ICE consent expires after ~30s if STUN Binding Indications aren't sent.
+        # This happens when event loop is starved (e.g., tight send loops).
+        @pc.on("iceconnectionstatechange")
+        async def _on_ice_connection_state_change() -> None:
+            state = pc.iceConnectionState
+            logger.info(f"ICE connection state: {state}")
+
+            if state == "failed":
+                logger.error(
+                    "ICE connection failed - likely consent expiry. "
+                    "This happens when the event loop is blocked and aioice "
+                    "cannot send STUN consent refresh packets. Ensure code "
+                    "yields to event loop (asyncio.sleep(0)) during long operations."
+                )
+                # Signal session to close
+                try:
+                    self._video_queue.put_nowait(None)
+                except Exception:
+                    pass
+            elif state == "closed":
+                logger.info("ICE connection closed - signaling end of stream")
+                try:
+                    self._video_queue.put_nowait(None)
+                except Exception:
+                    pass
+            elif state == "disconnected":
+                logger.warning(
+                    "ICE connection disconnected - may recover automatically. "
+                    "If this persists, connection will transition to 'failed'."
+                )
+
+        @pc.on("connectionstatechange")
+        async def _on_connection_state_change() -> None:
+            state = pc.connectionState
+            logger.info(f"Connection state: {state}")
+            if state in ("failed", "closed"):
+                if state == "failed":
+                    logger.error("Connection failed - closing session")
+                else:
+                    logger.info("Connection closed - signaling end of stream")
+                try:
+                    self._video_queue.put_nowait(None)
+                except Exception:
+                    pass
+
         # Setup video receiver for frames from server
         @pc.on("track")
         def _on_track(track):  # noqa: ANN001
@@ -737,6 +785,13 @@ class WebRTCSession:
                             if complete_payload is None:
                                 # Not all chunks received yet
                                 return
+                            # Server may send gzip-compressed JSON when data_output is set
+                            # Gzip magic bytes: \x1f\x8b
+                            if (
+                                len(complete_payload) >= 2
+                                and complete_payload[:2] == b"\x1f\x8b"
+                            ):
+                                complete_payload = gzip.decompress(complete_payload)
                             # Parse the complete JSON from reassembled payload
                             message = complete_payload.decode("utf-8")
                         except (struct.error, ValueError):
@@ -775,7 +830,7 @@ class WebRTCSession:
                     try:
                         # filter out video frames if video is sent through datachannel
                         filtered_data = serialized_data
-                        if self._video_through_datachannel:
+                        if self._video_through_datachannel and serialized_data:
                             filtered_data = {
                                 k: v
                                 for k, v in serialized_data.items()
