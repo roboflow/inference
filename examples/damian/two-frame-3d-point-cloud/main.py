@@ -13,11 +13,14 @@ import torch
 import supervision as sv
 
 from inference.core.utils.image_utils import load_image_rgb
+from inference.core.workflows.core_steps.classical_cv.feature_comparison.v1 import FeatureComparisonBlockV1
 from inference.core.workflows.core_steps.classical_cv.sift.v1 import SIFTBlockV1
+from inference.core.workflows.prototypes.block import BlockResult
 from inference.models.yolo_world.yolo_world import YOLOWorld, ObjectDetectionInferenceResponse
 from inference_models import AutoModel
 from inference_models.models.sam2.sam2_torch import SAM2Prediction
-# from inference.core.workflows.core_steps.classical_cv.feature_comparison.v1 import FeatureComparisonBlockV1
+
+
 # from inference.core.workflows.core_steps.transformations.essential_matrix.v1 import EssentialMatrixBlockV1
 
 
@@ -345,20 +348,49 @@ def main(
         titles=[title for sublist in titles for title in sublist],
     )
 
-    # sift_block = SIFTBlockV1()
-    # feature_comparison_block = FeatureComparisonBlockV1()
+    sift_block = SIFTBlockV1()
+    sift_results_batch: list[BlockResult] = []
+
+    for frame_annotation in frame_annotations:
+        image = cv2.imread(frame_annotation.image_path)
+        sift_results = sift_block.run(image=image)
+        sift_results_batch.append(sift_results)
+        
+
+    feature_comparison_block = FeatureComparisonBlockV1()
+
+    r1, r2 = sift_results_batch[0], sift_results_batch[1]
+    img1_h, img1_w = cv2.imread(frame_annotations[0].image_path).shape[:2]
+    img2_h, img2_w = cv2.imread(frame_annotations[1].image_path).shape[:2]
+    mask_1 = final_masks[0]
+    mask_2 = final_masks[1]
+    if mask_1.shape[:2] != (img1_h, img1_w):
+        mask_1 = cv2.resize(
+            mask_1.astype(np.uint8),
+            (img1_w, img1_h),
+            interpolation=cv2.INTER_NEAREST,
+        )
+    if mask_2.shape[:2] != (img2_h, img2_w):
+        mask_2 = cv2.resize(
+            mask_2.astype(np.uint8),
+            (img2_w, img2_h),
+            interpolation=cv2.INTER_NEAREST,
+        )
+
+    fc_results = feature_comparison_block.run(
+        keypoints_1=r1["keypoints"],
+        descriptors_1=r1["descriptors"],
+        keypoints_2=r2["keypoints"],
+        descriptors_2=r2["descriptors"],
+        mask_1=mask_1,
+        mask_2=mask_2,
+    )
+    logging.info(
+        "Feature comparison (masked): %d good matches",
+        fc_results["good_matches_count"],
+    )
+
     # essential_matrix_block = EssentialMatrixBlockV1()
-
-    # results_1 = sift_block.run(image=image_1)
-    # results_2 = sift_block.run(image=image_2)
-
-    # fc_results = feature_comparison_block.run(
-    #     keypoints_1=results_1["keypoints"],
-    #     descriptors_1=results_1["descriptors"],
-    #     keypoints_2=results_2["keypoints"],
-    #     descriptors_2=results_2["descriptors"],
-    # )
-
     # em_results = essential_matrix_block.run(
     #     good_matches=fc_results["good_matches"],
     #     camera_intrinsics_1=camera_intrinsics,
