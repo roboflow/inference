@@ -2455,10 +2455,53 @@ class HttpInterface(BaseInterface):
                     logger.debug(f"Reached /sam3/visual_segment")
 
                     if SAM3_EXEC_MODE == "remote":
-                        raise HTTPException(
-                            status_code=501,
-                            detail="SAM3 visual segmentation is not supported in remote execution mode.",
-                        )
+                        endpoint = f"{API_BASE_URL}/inferenceproxy/seg-preview-pvs"
+
+                        http_image = {
+                            "type": inference_request.image.type,
+                            "value": inference_request.image.value,
+                        }
+
+                        prompts_data = inference_request.prompts.dict(exclude_none=True) if inference_request.prompts else None
+
+                        payload = {
+                            "image": http_image,
+                            "prompts": prompts_data,
+                            "multimask_output": inference_request.multimask_output,
+                        }
+
+                        try:
+                            headers = {"Content-Type": "application/json"}
+                            if ROBOFLOW_INTERNAL_SERVICE_NAME:
+                                headers["X-Roboflow-Internal-Service-Name"] = (
+                                    ROBOFLOW_INTERNAL_SERVICE_NAME
+                                )
+                            if ROBOFLOW_INTERNAL_SERVICE_SECRET:
+                                headers["X-Roboflow-Internal-Service-Secret"] = (
+                                    ROBOFLOW_INTERNAL_SERVICE_SECRET
+                                )
+
+                            headers = build_roboflow_api_headers(
+                                explicit_headers=headers
+                            )
+
+                            response = requests.post(
+                                f"{endpoint}?api_key={api_key}",
+                                json=payload,
+                                headers=headers,
+                                timeout=60,
+                            )
+                            response.raise_for_status()
+                            resp_json = response.json()
+
+                            return Sam2SegmentationResponse(**resp_json)
+
+                        except Exception as e:
+                            logger.error(f"SAM3 visual_segment remote request failed: {e}")
+                            raise HTTPException(
+                                status_code=500,
+                                detail=f"SAM3 visual_segment remote request failed: {str(e)}",
+                            )
 
                     self.model_manager.add_model(
                         "sam3/sam3_interactive",
