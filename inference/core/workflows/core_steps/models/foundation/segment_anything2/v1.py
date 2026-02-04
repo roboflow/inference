@@ -17,8 +17,14 @@ from inference.core.entities.responses.inference import (
     Point,
 )
 from inference.core.entities.responses.sam2 import Sam2SegmentationPrediction
+from inference.core.env import (
+    HOSTED_CORE_MODEL_URL,
+    LOCAL_INFERENCE_API_URL,
+    WORKFLOWS_REMOTE_API_TARGET,
+)
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
+from inference_sdk import InferenceHTTPClient
 from inference.core.workflows.core_steps.common.utils import (
     attach_parents_coordinates_to_batch_of_sv_detections,
     attach_prediction_type_info_to_sv_detections_batch,
@@ -176,13 +182,155 @@ class SegmentAnything2BlockV1(WorkflowBlock):
                 multimask_output=multimask_output,
             )
         elif self._step_execution_mode is StepExecutionMode.REMOTE:
-            raise NotImplementedError(
-                "Remote execution is not supported for Segment Anything. Run a local or dedicated inference server to use this block (GPU recommended)."
+            return self.run_remotely(
+                images=images,
+                boxes=boxes,
+                version=version,
+                threshold=threshold,
+                multimask_output=multimask_output,
             )
         else:
             raise ValueError(
                 f"Unknown step execution mode: {self._step_execution_mode}"
             )
+
+    def run_remotely(
+        self,
+        images: Batch[WorkflowImageData],
+        boxes: Optional[Batch[sv.Detections]],
+        version: str,
+        threshold: float,
+        multimask_output: bool,
+    ) -> BlockResult:
+        api_url = (
+            LOCAL_INFERENCE_API_URL
+            if WORKFLOWS_REMOTE_API_TARGET != "hosted"
+            else HOSTED_CORE_MODEL_URL
+        )
+        client = InferenceHTTPClient(
+            api_url=api_url,
+            api_key=self._api_key,
+        )
+        if WORKFLOWS_REMOTE_API_TARGET == "hosted":
+            client.select_api_v0()
+
+        if boxes is None:
+            boxes = [None] * len(images)
+
+        predictions = []
+        for single_image, boxes_for_image in zip(images, boxes):
+            prompt_class_ids: List[Optional[int]] = []
+            prompt_class_names: List[str] = []
+            prompt_detection_ids: List[Optional[str]] = []
+
+            prompts = []
+            if boxes_for_image is not None:
+                for xyxy, _, confidence, class_id, _, bbox_data in boxes_for_image:
+                    x1, y1, x2, y2 = xyxy
+                    prompt_class_ids.append(class_id)
+                    prompt_class_names.append(bbox_data[DETECTIONS_CLASS_NAME_FIELD])
+                    prompt_detection_ids.append(bbox_data[DETECTION_ID_FIELD])
+                    width = x2 - x1
+                    height = y2 - y1
+                    cx = x1 + width / 2
+                    cy = y1 + height / 2
+                    prompts.append({
+                        "box": {
+                            "x": float(cx),
+                            "y": float(cy),
+                            "width": float(width),
+                            "height": float(height),
+                        }
+                    })
+
+            result = client.sam2_segment_image(
+                inference_input=single_image.base64_image,
+                prompts=prompts if prompts else None,
+                sam2_version_id=version,
+                multimask_output=multimask_output,
+            )
+
+            # Convert remote response to InstanceSegmentationInferenceResponse
+            prediction = self._convert_remote_response_to_inference_response(
+                result=result,
+                image=single_image,
+                prompt_class_ids=prompt_class_ids,
+                prompt_class_names=prompt_class_names,
+                prompt_detection_ids=prompt_detection_ids,
+                threshold=threshold,
+            )
+            predictions.append(prediction)
+
+        predictions = [
+            e.model_dump(by_alias=True, exclude_none=True) for e in predictions
+        ]
+        return self._post_process_result(
+            images=images,
+            predictions=predictions,
+        )
+
+    def _convert_remote_response_to_inference_response(
+        self,
+        result: dict,
+        image: WorkflowImageData,
+        prompt_class_ids: List[Optional[int]],
+        prompt_class_names: List[Optional[str]],
+        prompt_detection_ids: List[Optional[str]],
+        threshold: float,
+    ) -> InstanceSegmentationInferenceResponse:
+        """Convert remote SAM2 response to InstanceSegmentationInferenceResponse."""
+        image_width = image.numpy_image.shape[1]
+        image_height = image.numpy_image.shape[0]
+        predictions = []
+
+        remote_predictions = result.get("predictions", [])
+
+        if len(prompt_class_ids) == 0:
+            prompt_class_ids = [0 for _ in range(len(remote_predictions))]
+            prompt_class_names = ["foreground" for _ in range(len(remote_predictions))]
+            prompt_detection_ids = [None for _ in range(len(remote_predictions))]
+
+        for idx, pred in enumerate(remote_predictions):
+            confidence = pred.get("confidence", 0.0)
+            if confidence < threshold:
+                continue
+
+            masks = pred.get("masks", [])
+            for mask in masks:
+                if len(mask) < 3:
+                    continue
+
+                x_coords = [coord[0] for coord in mask]
+                y_coords = [coord[1] for coord in mask]
+                min_x = np.min(x_coords)
+                max_x = np.max(x_coords)
+                min_y = np.min(y_coords)
+                max_y = np.max(y_coords)
+                center_x = (min_x + max_x) / 2
+                center_y = (min_y + max_y) / 2
+
+                class_id = prompt_class_ids[idx] if idx < len(prompt_class_ids) else 0
+                class_name = prompt_class_names[idx] if idx < len(prompt_class_names) else "foreground"
+                detection_id = prompt_detection_ids[idx] if idx < len(prompt_detection_ids) else None
+
+                predictions.append(
+                    InstanceSegmentationPrediction(
+                        x=center_x,
+                        y=center_y,
+                        width=max_x - min_x,
+                        height=max_y - min_y,
+                        points=[Point(x=point[0], y=point[1]) for point in mask],
+                        confidence=confidence,
+                        **{"class": class_name},
+                        class_id=class_id,
+                        parent_id=detection_id,
+                    )
+                )
+
+        return InstanceSegmentationInferenceResponse(
+            predictions=predictions,
+            image=InferenceResponseImage(width=image_width, height=image_height),
+        )
 
     def run_locally(
         self,

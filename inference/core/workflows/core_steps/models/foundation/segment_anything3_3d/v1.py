@@ -7,8 +7,14 @@ from pydantic import ConfigDict, Field
 
 from inference.core.entities.requests.sam3_3d import Sam3_3D_Objects_InferenceRequest
 from inference.core.entities.responses.sam3_3d import Sam3_3D_Objects_Response
+from inference.core.env import (
+    HOSTED_CORE_MODEL_URL,
+    LOCAL_INFERENCE_API_URL,
+    WORKFLOWS_REMOTE_API_TARGET,
+)
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
+from inference_sdk import InferenceHTTPClient
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     OutputDefinition,
@@ -131,13 +137,63 @@ class SegmentAnything3_3D_ObjectsBlockV1(WorkflowBlock):
                 mask_input=mask_input,
             )
         elif self._step_execution_mode is StepExecutionMode.REMOTE:
-            raise NotImplementedError(
-                "Remote execution is not supported for Segment Anything 3_3D. Run a local or dedicated inference server to use this block (GPU strongly recommended)."
+            return self.run_remotely(
+                images=images,
+                mask_input=mask_input,
             )
         else:
             raise ValueError(
                 f"Unknown step execution mode: {self._step_execution_mode}"
             )
+
+    def run_remotely(
+        self,
+        images: Batch[WorkflowImageData],
+        mask_input: Batch[Union[sv.Detections, List[float]]],
+    ) -> BlockResult:
+        api_url = (
+            LOCAL_INFERENCE_API_URL
+            if WORKFLOWS_REMOTE_API_TARGET != "hosted"
+            else HOSTED_CORE_MODEL_URL
+        )
+        client = InferenceHTTPClient(
+            api_url=api_url,
+            api_key=self._api_key,
+        )
+        if WORKFLOWS_REMOTE_API_TARGET == "hosted":
+            client.select_api_v0()
+
+        results = []
+        model_id = "sam3-3d-objects"
+
+        for single_image, single_mask_input in zip(images, mask_input):
+            converted_mask = extract_masks_from_input(single_mask_input)
+
+            # Convert numpy arrays to lists for JSON serialization
+            if isinstance(converted_mask, list):
+                serializable_mask = []
+                for mask in converted_mask:
+                    if isinstance(mask, np.ndarray):
+                        serializable_mask.append(mask.tolist())
+                    else:
+                        serializable_mask.append(mask)
+                converted_mask = serializable_mask
+
+            result = client.sam3_3d_infer(
+                inference_input=single_image.base64_image,
+                mask_input=converted_mask,
+                model_id=model_id,
+            )
+
+            # Result already comes formatted from the endpoint
+            results.append({
+                "mesh_glb": result.get("mesh_glb"),
+                "gaussian_ply": result.get("gaussian_ply"),
+                "objects": result.get("objects", []),
+                "inference_time": result.get("time", 0.0),
+            })
+
+        return results
 
     def run_locally(
         self,

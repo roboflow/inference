@@ -65,6 +65,7 @@ from inference.core.entities.requests.sam2 import (
     Sam2SegmentationRequest,
 )
 from inference.core.entities.requests.sam3 import Sam3SegmentationRequest
+from inference.core.entities.requests.sam3_3d import Sam3_3D_Objects_InferenceRequest
 from inference.core.entities.requests.server_state import (
     AddModelRequest,
     ClearModelRequest,
@@ -2612,6 +2613,85 @@ class HttpInterface(BaseInterface):
                             headers={"Content-Type": "application/octet-stream"},
                         )
                     return model_response
+
+            if CORE_MODEL_SAM3_ENABLED and not GCP_SERVERLESS:
+
+                @app.post(
+                    "/sam3_3d/infer",
+                    summary="SAM3 3D Object Generation",
+                    description="Generate 3D meshes and Gaussian splatting from 2D images with mask prompts.",
+                )
+                @with_route_exceptions
+                @usage_collector("request")
+                def sam3_3d_infer(
+                    inference_request: Sam3_3D_Objects_InferenceRequest,
+                    request: Request,
+                    api_key: Optional[str] = Query(
+                        None,
+                        description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
+                    ),
+                    countinference: Optional[bool] = None,
+                    service_secret: Optional[str] = None,
+                ):
+                    """Generate 3D meshes and Gaussian splatting from 2D images with mask prompts.
+
+                    Args:
+                        inference_request (Sam3_3D_Objects_InferenceRequest): The request containing
+                            the image and mask input for 3D generation.
+                        api_key (Optional[str]): Roboflow API Key for artifact retrieval.
+
+                    Returns:
+                        dict: Response containing base64-encoded 3D outputs:
+                            - mesh_glb: Scene mesh in GLB format (base64)
+                            - gaussian_ply: Combined Gaussian splatting in PLY format (base64)
+                            - objects: List of individual objects with their 3D data
+                            - time: Inference time in seconds
+                    """
+                    logger.debug("Reached /sam3_3d/infer")
+                    model_id = inference_request.model_id or "sam3-3d-objects"
+
+                    self.model_manager.add_model(
+                        model_id,
+                        api_key=api_key,
+                        endpoint_type=ModelEndpointType.CORE_MODEL,
+                        countinference=countinference,
+                        service_secret=service_secret,
+                    )
+
+                    model_response = self.model_manager.infer_from_request_sync(
+                        model_id, inference_request
+                    )
+
+                    if LAMBDA:
+                        actor = request.scope["aws.event"]["requestContext"][
+                            "authorizer"
+                        ]["lambda"]["actor"]
+                        trackUsage(model_id, actor)
+
+                    # Convert bytes to base64 for JSON serialization
+                    def encode_bytes(data):
+                        if data is None:
+                            return None
+                        return base64.b64encode(data).decode("utf-8")
+
+                    objects_list = []
+                    for obj in model_response.objects:
+                        objects_list.append({
+                            "mesh_glb": encode_bytes(obj.mesh_glb),
+                            "gaussian_ply": encode_bytes(obj.gaussian_ply),
+                            "metadata": {
+                                "rotation": obj.metadata.rotation,
+                                "translation": obj.metadata.translation,
+                                "scale": obj.metadata.scale,
+                            },
+                        })
+
+                    return {
+                        "mesh_glb": encode_bytes(model_response.mesh_glb),
+                        "gaussian_ply": encode_bytes(model_response.gaussian_ply),
+                        "objects": objects_list,
+                        "time": model_response.time,
+                    }
 
             if CORE_MODEL_OWLV2_ENABLED:
 

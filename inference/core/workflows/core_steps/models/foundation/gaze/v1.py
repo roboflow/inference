@@ -5,8 +5,14 @@ import supervision as sv
 from pydantic import ConfigDict, Field
 
 from inference.core.entities.requests.gaze import GazeDetectionInferenceRequest
+from inference.core.env import (
+    HOSTED_CORE_MODEL_URL,
+    LOCAL_INFERENCE_API_URL,
+    WORKFLOWS_REMOTE_API_TARGET,
+)
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
+from inference_sdk import InferenceHTTPClient
 from inference.core.workflows.core_steps.common.utils import (
     add_inference_keypoints_to_sv_detections,
     attach_parents_coordinates_to_batch_of_sv_detections,
@@ -206,10 +212,127 @@ class GazeBlockV1(WorkflowBlock):
                 images=images,
                 do_run_face_detection=do_run_face_detection,
             )
+        elif self._step_execution_mode is StepExecutionMode.REMOTE:
+            return self.run_remotely(
+                images=images,
+                do_run_face_detection=do_run_face_detection,
+            )
         else:
             raise ValueError(
                 f"Unsupported step execution mode: {self._step_execution_mode}"
             )
+
+    def run_remotely(
+        self,
+        images: Batch[WorkflowImageData],
+        do_run_face_detection: bool,
+    ) -> BlockResult:
+        api_url = (
+            LOCAL_INFERENCE_API_URL
+            if WORKFLOWS_REMOTE_API_TARGET != "hosted"
+            else HOSTED_CORE_MODEL_URL
+        )
+        client = InferenceHTTPClient(
+            api_url=api_url,
+            api_key=self._api_key,
+        )
+        if WORKFLOWS_REMOTE_API_TARGET == "hosted":
+            client.select_api_v0()
+        else:
+            client.select_api_v1()
+
+        inference_images = [i.base64_image for i in images]
+        predictions = client.detect_gazes(inference_input=inference_images)
+
+        if not isinstance(predictions, list):
+            predictions = [predictions]
+
+        # Process remote predictions into the expected format
+        return self._process_remote_predictions(
+            images=images,
+            predictions=predictions,
+        )
+
+    def _process_remote_predictions(
+        self,
+        images: Batch[WorkflowImageData],
+        predictions: List[dict],
+    ) -> BlockResult:
+        """Process predictions from remote execution into the expected format."""
+        face_predictions = []
+        yaw_degrees = []
+        pitch_degrees = []
+
+        for single_image, prediction in zip(images, predictions):
+            height, width = single_image.numpy_image.shape[:2]
+
+            image_face_preds = {
+                "predictions": [],
+                "image": {"width": width, "height": height},
+            }
+            batch_yaw = []
+            batch_pitch = []
+
+            for pred in prediction.get("predictions", []):
+                face = pred.get("face", {})
+
+                face_pred = {
+                    "x": face.get("x", 0),
+                    "y": face.get("y", 0),
+                    "width": face.get("width", 0),
+                    "height": face.get("height", 0),
+                    "confidence": face.get("confidence", 0),
+                    "class": "face",
+                    "class_id": 0,
+                    "keypoints": [
+                        {
+                            "x": l.get("x", 0),
+                            "y": l.get("y", 0),
+                            "confidence": face.get("confidence", 0),
+                            "class": str(i),
+                            "class_id": i,
+                        }
+                        for i, l in enumerate(face.get("landmarks", []))
+                    ],
+                }
+
+                image_face_preds["predictions"].append(face_pred)
+
+                # Store angles in degrees (remote already returns radians)
+                batch_yaw.append(pred.get("yaw", 0) * 180 / np.pi)
+                batch_pitch.append(pred.get("pitch", 0) * 180 / np.pi)
+
+            face_predictions.append(image_face_preds)
+            yaw_degrees.append(batch_yaw)
+            pitch_degrees.append(batch_pitch)
+
+        # Process predictions
+        face_preds = convert_inference_detections_batch_to_sv_detections(face_predictions)
+
+        # Add keypoints to supervision detections
+        for prediction, detections in zip(face_predictions, face_preds):
+            add_inference_keypoints_to_sv_detections(
+                inference_prediction=prediction["predictions"],
+                detections=detections,
+            )
+
+        face_preds = attach_prediction_type_info_to_sv_detections_batch(
+            predictions=face_preds,
+            prediction_type="facial-landmark",
+        )
+        face_preds = attach_parents_coordinates_to_batch_of_sv_detections(
+            images=images,
+            predictions=face_preds,
+        )
+
+        return [
+            {
+                "face_predictions": face_pred,
+                "yaw_degrees": yaw,
+                "pitch_degrees": pitch,
+            }
+            for face_pred, yaw, pitch in zip(face_preds, yaw_degrees, pitch_degrees)
+        ]
 
     def run_locally(
         self,
