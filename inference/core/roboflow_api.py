@@ -875,28 +875,19 @@ def _get_from_url(
                 )
 
     if verify_content_length:
-        # Skip content-length verification if response was compressed, since
-        # Content-Length header refers to compressed size while response.content
-        # is the decompressed content
-        content_encoding = response.headers.get("Content-Encoding")
-        if content_encoding:
-            logger.debug(
-                f"Skipping content-length verification due to Content-Encoding: {content_encoding}"
+        content_length = str(response.headers.get("Content-Length"))
+        if not content_length.isnumeric():
+            raise RoboflowAPIUnsuccessfulRequestError(
+                "Content-Length header is not numeric"
             )
-        else:
-            content_length = str(response.headers.get("Content-Length"))
-            if not content_length.isnumeric():
-                raise RoboflowAPIUnsuccessfulRequestError(
-                    "Content-Length header is not numeric"
+        if int(content_length) != len(response.content):
+            error = "Content-Length header does not match response content length"
+            if RETRY_CONNECTION_ERRORS_TO_ROBOFLOW_API:
+                raise RetryRequestError(
+                    message=error,
+                    inner_error=RuntimeError("Content-length validation failed"),
                 )
-            if int(content_length) != len(response.content):
-                error = "Content-Length header does not match response content length"
-                if RETRY_CONNECTION_ERRORS_TO_ROBOFLOW_API:
-                    raise RetryRequestError(
-                        message=error,
-                        inner_error=RuntimeError("Content-length validation failed"),
-                    )
-                raise RoboflowAPIUnsuccessfulRequestError(error)
+            raise RoboflowAPIUnsuccessfulRequestError(error)
 
     if json_response:
         return response.json()
