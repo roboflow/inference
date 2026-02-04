@@ -20,11 +20,22 @@ on:
           - sam2
           - sam3
           - moondream2
+      use-inference-models:
+        description: "USE_INFERENCE_MODELS value (or all)"
+        type: choice
+        default: all
+        options:
+          - all
+          - "true"
+          - "false"
 
 jobs:
   build:
     if: ${{ !github.event.act }}
     runs-on: Roboflow-GPU-VM-Runner
+    strategy:
+      matrix:
+        use-inference-models: ${{ fromJSON((github.event.inputs.use-inference-models || 'all') == 'all'&& '["true","false"]'|| format('["{0}"]', github.event.inputs.use-inference-models)) }}
     timeout-minutes: 120
 
     steps:
@@ -49,7 +60,7 @@ jobs:
       - name: 🔋 Start Test Docker without Torch Preprocessing - GPU
         if: ${{ github.event.inputs.test_name == '' || github.event.inputs.test_name == 'regression_without_torch' }}
         run: |
-          PORT=9101 USE_PYTORCH_FOR_PREPROCESSING=False INFERENCE_SERVER_REPO=roboflow-inference-server-gpu make start_test_docker_gpu
+          USE_INFERENCE_MODELS=${{ matrix.use-inference-models }} PORT=9101 USE_PYTORCH_FOR_PREPROCESSING=False INFERENCE_SERVER_REPO=roboflow-inference-server-gpu make start_test_docker_gpu
       - name: 🧪 Regression Tests without Torch Preprocessing - GPU
         id: regression_tests_without_torch
         if: ${{ github.event.inputs.test_name == '' || github.event.inputs.test_name == 'regression_without_torch' }}
@@ -63,7 +74,7 @@ jobs:
       - name: 🔋 Start Test Docker with Torch Preprocessing - GPU
         if: ${{ github.event.inputs.test_name == '' || github.event.inputs.test_name == 'regression_with_torch' }}
         run: |
-          PORT=9101 USE_PYTORCH_FOR_PREPROCESSING=True INFERENCE_SERVER_REPO=roboflow-inference-server-gpu make start_test_docker_gpu
+          USE_INFERENCE_MODELS=${{ matrix.use-inference-models }} PORT=9101 USE_PYTORCH_FOR_PREPROCESSING=True INFERENCE_SERVER_REPO=roboflow-inference-server-gpu make start_test_docker_gpu
       - name: 🧪 Regression Tests with Torch Preprocessing - GPU
         id: regression_tests_with_torch
         if: ${{ github.event.inputs.test_name == '' || github.event.inputs.test_name == 'regression_with_torch' }}
@@ -77,7 +88,7 @@ jobs:
       - name: 🔋 Start Test Docker - GPU
         if: ${{ github.event.inputs.test_name == '' || github.event.inputs.test_name == 'paligemma' }}
         run: |
-          PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-gpu make start_test_docker_gpu
+          USE_INFERENCE_MODELS=${{ matrix.use-inference-models }} PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-gpu make start_test_docker_gpu
       - name: 🧪 Regression Paligemma - GPU
         id: paligemma_tests
         if: ${{ github.event.inputs.test_name == '' || github.event.inputs.test_name == 'paligemma' }}
@@ -90,7 +101,7 @@ jobs:
       - name: 🔋 Start Test Docker - GPU
         if: ${{ github.event.inputs.test_name == '' || github.event.inputs.test_name == 'florence' }}
         run: |
-          PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-gpu make start_test_docker_gpu
+          USE_INFERENCE_MODELS=${{ matrix.use-inference-models }} PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-gpu make start_test_docker_gpu
       - name: 🧪 Regression Florence - GPU
         id: florence_tests
         if: ${{ github.event.inputs.test_name == '' || github.event.inputs.test_name == 'florence' }}
@@ -103,7 +114,7 @@ jobs:
       - name: 🔋 Start Test Docker - SAM2
         if: ${{ github.event.inputs.test_name == '' || github.event.inputs.test_name == 'sam2' }}
         run: |
-          PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-gpu make start_test_docker_gpu
+          USE_INFERENCE_MODELS=${{ matrix.use-inference-models }} PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-gpu make start_test_docker_gpu
       - name: 🧪 Regression Tests - SAM2
         id: sam2_tests
         if: ${{ github.event.inputs.test_name == '' || github.event.inputs.test_name == 'sam2' }}
@@ -116,7 +127,7 @@ jobs:
       - name: 🔋 Start Test Docker - SAM3
         if: ${{ github.event.inputs.test_name == '' || github.event.inputs.test_name == 'sam3' }}
         run: |
-          PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-gpu make start_test_docker_gpu
+          USE_INFERENCE_MODELS=${{ matrix.use-inference-models }} PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-gpu make start_test_docker_gpu
       - name: 🧪 Regression Tests - SAM3
         id: sam3_tests
         if: ${{ github.event.inputs.test_name == '' || github.event.inputs.test_name == 'sam3' }}
@@ -129,7 +140,7 @@ jobs:
 #      - name: 🔋 Start Test Docker - GPU
 #        if: ${{ github.event.inputs.test_name == '' || github.event.inputs.test_name == 'qwen25' }}
 #        run: |
-#          PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-gpu make start_test_docker_gpu
+#          USE_INFERENCE_MODELS=${{ matrix.use-inference-models }} PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-gpu make start_test_docker_gpu
 #      - name: 🧪 Regression Tests - Qwen2.5
 #        id: qwen25_tests
 #        if: ${{ github.event.inputs.test_name == '' || github.event.inputs.test_name == 'qwen25' }}
@@ -142,7 +153,7 @@ jobs:
       - name: 🔋 Start Test Docker - MoonDream
         if: ${{ github.event.inputs.test_name == '' || github.event.inputs.test_name == 'moondream2' }}
         run: |
-          PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-gpu make start_test_docker_gpu
+          USE_INFERENCE_MODELS=${{ matrix.use-inference-models }} PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-gpu make start_test_docker_gpu
       - name: 🧪 Regression Tests - MoonDream
         id: moondream_tests
         if: ${{ github.event.inputs.test_name == '' || github.event.inputs.test_name == 'moondream2' }}
