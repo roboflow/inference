@@ -192,6 +192,8 @@ class InferenceModelsSAM2Adapter(Model):
             (array([...]), (224, 224))
         """
         loaded_image = self.preproc_image(image)
+        if loaded_image is None:
+            raise ValueError("Image must be provided to handle this request.")
         embeddings = self._model.embed_images(
             images=loaded_image, image_hashes=image_id, **kwargs
         )[0]
@@ -212,7 +214,9 @@ class InferenceModelsSAM2Adapter(Model):
         Returns:
             np.array: The preprocessed image.
         """
-        return load_image_bgr(image)
+        if image is not None:
+            return load_image_bgr(image)
+        return None
 
     def segment_image(
         self,

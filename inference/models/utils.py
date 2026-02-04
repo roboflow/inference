@@ -271,6 +271,10 @@ ROBOFLOW_MODEL_TYPES = {
     ): YOLOv7InstanceSegmentation,
     (
         "instance-segmentation",
+        "yolov7s-seg",
+    ): YOLOv7InstanceSegmentation,
+    (
+        "instance-segmentation",
         "yolov8n",
     ): YOLOv8InstanceSegmentation,
     (
