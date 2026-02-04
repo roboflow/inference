@@ -50,4 +50,5 @@ class TROcrHF(TextOnlyOCRModel[torch.Tensor, torch.Tensor]):
             return self._model.generate(pre_processed_images)
 
     def post_process(self, model_results: torch.Tensor, **kwargs) -> List[str]:
-        return self._processor.batch_decode(model_results, skip_special_tokens=True)
+        decoded = self._processor.batch_decode(model_results, skip_special_tokens=True)
+        return decoded

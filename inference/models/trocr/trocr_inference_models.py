@@ -62,5 +62,5 @@ class InferenceModelsTrOCRAdapter(Model):
         t1 = perf_counter()
         text = self.infer(**request.model_dump())
         t2 = perf_counter()
-        response = OCRInferenceResponse(result=text[0], time=t2 - t1)
+        response = OCRInferenceResponse(result=text, time=t2 - t1)
         return response
