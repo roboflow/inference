@@ -1,4 +1,5 @@
 import copy
+import uuid
 from time import perf_counter
 from typing import Any, List, Tuple, Union
 
@@ -90,16 +91,16 @@ class InferenceModelsEasyOCRAdapter(Model):
 
     def single_request(self, request: EasyOCRInferenceRequest) -> OCRInferenceResponse:
         t1 = perf_counter()
-        prediction_result, image_metadata = self.infer(**request.dict())
+        kwargs = request.dict()
+        kwargs["confidence"] = 0.0
+        prediction_result, image_metadata = self.infer(**kwargs)
         predictions_for_image = []
-        classes = self._model.class_names
         for instance_id in range(prediction_result[1].xyxy.shape[0]):
             x_min, y_min, x_max, y_max = prediction_result[1].xyxy[instance_id].tolist()
             width = x_max - x_min
             height = y_max - y_min
             center_x = (x_min + x_max) / 2
             center_y = (y_min + y_max) / 2
-            class_id = prediction_result[1].class_id[instance_id].item()
             predictions_for_image.append(
                 ObjectDetectionPrediction(
                     # Passing args as a dictionary here since one of the args is 'class' (a protected term in Python)
@@ -109,8 +110,11 @@ class InferenceModelsEasyOCRAdapter(Model):
                         "width": width,
                         "height": height,
                         "confidence": 1.0,  # confidence is not returned by the model
-                        "class": classes[class_id],
-                        "class_id": class_id,  # you can only prompt for one object at once
+                        "class": prediction_result[1].bboxes_metadata[instance_id][
+                            "text"
+                        ],
+                        "class_id": 0,  # you can only prompt for one object at once
+                        "detection_id": str(uuid.uuid4()),
                     }
                 )
             )

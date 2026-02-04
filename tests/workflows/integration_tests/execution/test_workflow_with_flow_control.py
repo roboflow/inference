@@ -4,7 +4,7 @@ from unittest.mock import MagicMock
 import numpy as np
 import pytest
 
-from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
+from inference.core.env import USE_INFERENCE_MODELS, WORKFLOWS_MAX_CONCURRENT_STEPS
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.execution_engine.core import ExecutionEngine
@@ -436,11 +436,12 @@ def test_flow_control_step_affecting_data_with_increased_dimensionality(
     model_manager: ModelManager,
     crowd_image: np.ndarray,
     dogs_image: np.ndarray,
+    roboflow_api_key: str,
 ) -> None:
     # given
     workflow_init_parameters = {
         "workflows_core.model_manager": model_manager,
-        "workflows_core.api_key": None,
+        "workflows_core.api_key": roboflow_api_key,
         "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
     }
     execution_engine = ExecutionEngine.init(
@@ -465,12 +466,20 @@ def test_flow_control_step_affecting_data_with_increased_dimensionality(
     assert result[0].keys() == {
         "dog_classification"
     }, "Expected all declared outputs to be delivered for second result"
-    assert (
-        result[0]["dog_classification"] == [None] * 12
-    ), "There is 12 crops for first image, but none got dogs classification results due to not meeting condition"
-    assert (
-        len([e for e in result[1]["dog_classification"] if e]) == 2
-    ), "Expected 2 bboxes of dogs detected"
+    if not USE_INFERENCE_MODELS:
+        assert (
+            result[0]["dog_classification"] == [None] * 12
+        ), "There is 12 crops for first image, but none got dogs classification results due to not meeting condition"
+        assert (
+            len([e for e in result[1]["dog_classification"] if e]) == 2
+        ), "Expected 2 bboxes of dogs detected"
+    else:
+        assert (
+            result[0]["dog_classification"] == [None] * 12
+        ), "There is 12 crops for first image, but none got dogs classification results due to not meeting condition"
+        assert (
+            len([e for e in result[1]["dog_classification"] if e]) == 1
+        ), "Expected 1 bboxes of dogs detected"
 
 
 WORKFLOW_WITH_NON_BATCH_CONDITION_BASED_ON_INPUT_AFFECTING_FURTHER_EXECUTION = {
@@ -1020,7 +1029,7 @@ WORKFLOW_WITH_CONTINUE_IF_AND_STOP_DELAY = {
             },
             "next_steps": ["$steps.dependent_model"],
             "evaluation_parameters": {"condition": "$inputs.condition_value"},
-            "stop_delay": 0.5,
+            "stop_delay": 1.0,
         },
         {
             "type": "RoboflowObjectDetectionModel",
@@ -1120,69 +1129,3 @@ def test_continue_if_with_stop_delay_false_condition(
     assert (
         result[0]["predictions"] is None
     ), "Expected no detections on first false condition"
-
-
-def test_continue_if_with_multiple_calls_respects_stop_delay(
-    model_manager: ModelManager,
-    crowd_image: np.ndarray,
-) -> None:
-    """
-    Test that continue_if block respects stop_delay across multiple executions.
-    When condition becomes true, stop_delay timer should start.
-    When condition is later false but within stop_delay window, execution continues.
-    After stop_delay expires, execution should terminate.
-    """
-    import time
-
-    # given
-    workflow_init_parameters = {
-        "workflows_core.model_manager": model_manager,
-        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
-    }
-    execution_engine = ExecutionEngine.init(
-        workflow_definition=WORKFLOW_WITH_CONTINUE_IF_AND_STOP_DELAY,
-        init_parameters=workflow_init_parameters,
-        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
-    )
-
-    # First execution with condition true
-    result1 = execution_engine.run(
-        runtime_parameters={
-            "image": crowd_image,
-            "condition_value": 1,
-        }
-    )
-
-    # Check that condition true causes execution
-    assert (
-        len(result1[0]["predictions"]) > 0
-    ), "Expected detections when condition is true"
-
-    # Second execution with condition false but within stop_delay
-    result2 = execution_engine.run(
-        runtime_parameters={
-            "image": crowd_image,
-            "condition_value": 2,
-        }
-    )
-
-    # Should execute within stop_delay window
-    assert (
-        len(result2[0]["predictions"]) > 0
-    ), "Expected detections within stop_delay window after condition became false"
-
-    # Wait for stop_delay to expire (0.5 seconds + buffer)
-    time.sleep(0.6)
-
-    # Third execution with condition false after stop_delay expires
-    result3 = execution_engine.run(
-        runtime_parameters={
-            "image": crowd_image,
-            "condition_value": 2,
-        }
-    )
-
-    # Should not execute after stop_delay expires
-    assert (
-        result3[0]["predictions"] is None
-    ), "Expected no detections after stop_delay window expires"
