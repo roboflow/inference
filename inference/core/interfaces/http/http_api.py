@@ -2676,15 +2676,17 @@ class HttpInterface(BaseInterface):
 
                     objects_list = []
                     for obj in model_response.objects:
-                        objects_list.append({
-                            "mesh_glb": encode_bytes(obj.mesh_glb),
-                            "gaussian_ply": encode_bytes(obj.gaussian_ply),
-                            "metadata": {
-                                "rotation": obj.metadata.rotation,
-                                "translation": obj.metadata.translation,
-                                "scale": obj.metadata.scale,
-                            },
-                        })
+                        objects_list.append(
+                            {
+                                "mesh_glb": encode_bytes(obj.mesh_glb),
+                                "gaussian_ply": encode_bytes(obj.gaussian_ply),
+                                "metadata": {
+                                    "rotation": obj.metadata.rotation,
+                                    "translation": obj.metadata.translation,
+                                    "scale": obj.metadata.scale,
+                                },
+                            }
+                        )
 
                     return {
                         "mesh_glb": encode_bytes(model_response.mesh_glb),

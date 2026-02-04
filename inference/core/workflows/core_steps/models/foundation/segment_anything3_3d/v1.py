@@ -14,7 +14,6 @@ from inference.core.env import (
 )
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
-from inference_sdk import InferenceHTTPClient
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     OutputDefinition,
@@ -34,6 +33,7 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
+from inference_sdk import InferenceHTTPClient
 
 LONG_DESCRIPTION = """
 Generate 3D meshes and Gaussian splatting from 2D images with mask prompts.
@@ -186,12 +186,14 @@ class SegmentAnything3_3D_ObjectsBlockV1(WorkflowBlock):
             )
 
             # Result already comes formatted from the endpoint
-            results.append({
-                "mesh_glb": result.get("mesh_glb"),
-                "gaussian_ply": result.get("gaussian_ply"),
-                "objects": result.get("objects", []),
-                "inference_time": result.get("time", 0.0),
-            })
+            results.append(
+                {
+                    "mesh_glb": result.get("mesh_glb"),
+                    "gaussian_ply": result.get("gaussian_ply"),
+                    "objects": result.get("objects", []),
+                    "inference_time": result.get("time", 0.0),
+                }
+            )
 
         return results
 

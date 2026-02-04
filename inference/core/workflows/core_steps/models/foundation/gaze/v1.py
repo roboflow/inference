@@ -12,7 +12,6 @@ from inference.core.env import (
 )
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
-from inference_sdk import InferenceHTTPClient
 from inference.core.workflows.core_steps.common.utils import (
     add_inference_keypoints_to_sv_detections,
     attach_parents_coordinates_to_batch_of_sv_detections,
@@ -38,6 +37,7 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
+from inference_sdk import InferenceHTTPClient
 
 LONG_DESCRIPTION = """
 Run L2CS Gaze detection model on faces in images.
@@ -307,7 +307,9 @@ class GazeBlockV1(WorkflowBlock):
             pitch_degrees.append(batch_pitch)
 
         # Process predictions
-        face_preds = convert_inference_detections_batch_to_sv_detections(face_predictions)
+        face_preds = convert_inference_detections_batch_to_sv_detections(
+            face_predictions
+        )
 
         # Add keypoints to supervision detections
         for prediction, detections in zip(face_predictions, face_preds):

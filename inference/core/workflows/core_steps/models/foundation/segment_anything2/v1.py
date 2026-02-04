@@ -24,7 +24,6 @@ from inference.core.env import (
 )
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
-from inference_sdk import InferenceHTTPClient
 from inference.core.workflows.core_steps.common.utils import (
     attach_parents_coordinates_to_batch_of_sv_detections,
     attach_prediction_type_info_to_sv_detections_batch,
@@ -52,6 +51,7 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
+from inference_sdk import InferenceHTTPClient
 
 T = TypeVar("T")
 K = TypeVar("K")
@@ -234,14 +234,16 @@ class SegmentAnything2BlockV1(WorkflowBlock):
                     height = y2 - y1
                     cx = x1 + width / 2
                     cy = y1 + height / 2
-                    prompts.append({
-                        "box": {
-                            "x": float(cx),
-                            "y": float(cy),
-                            "width": float(width),
-                            "height": float(height),
+                    prompts.append(
+                        {
+                            "box": {
+                                "x": float(cx),
+                                "y": float(cy),
+                                "width": float(width),
+                                "height": float(height),
+                            }
                         }
-                    })
+                    )
 
             result = client.sam2_segment_image(
                 inference_input=single_image.base64_image,
@@ -310,8 +312,16 @@ class SegmentAnything2BlockV1(WorkflowBlock):
                 center_y = (min_y + max_y) / 2
 
                 class_id = prompt_class_ids[idx] if idx < len(prompt_class_ids) else 0
-                class_name = prompt_class_names[idx] if idx < len(prompt_class_names) else "foreground"
-                detection_id = prompt_detection_ids[idx] if idx < len(prompt_detection_ids) else None
+                class_name = (
+                    prompt_class_names[idx]
+                    if idx < len(prompt_class_names)
+                    else "foreground"
+                )
+                detection_id = (
+                    prompt_detection_ids[idx]
+                    if idx < len(prompt_detection_ids)
+                    else None
+                )
 
                 predictions.append(
                     InstanceSegmentationPrediction(

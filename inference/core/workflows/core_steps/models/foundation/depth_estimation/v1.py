@@ -11,8 +11,6 @@ from inference.core.env import (
 )
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
-from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
-from inference_sdk import InferenceHTTPClient
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     OutputDefinition,
@@ -32,6 +30,7 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
+from inference_sdk import InferenceHTTPClient
 
 
 class BlockManifest(WorkflowBlockManifest):
@@ -192,10 +191,12 @@ class DepthEstimationBlockV1(WorkflowBlock):
             else:
                 image_data = single_image
 
-            predictions.append({
-                "image": image_data,
-                "normalized_depth": normalized_depth,
-            })
+            predictions.append(
+                {
+                    "image": image_data,
+                    "normalized_depth": normalized_depth,
+                }
+            )
 
         return predictions
 
