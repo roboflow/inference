@@ -5,7 +5,10 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
-from inference.core.entities.requests import ClassificationInferenceRequest
+from inference.core.entities.requests import (
+    ClassificationInferenceRequest,
+    InferenceRequest,
+)
 from inference.core.entities.responses.inference import (
     ClassificationInferenceResponse,
     InferenceResponse,
@@ -30,6 +33,7 @@ from inference.core.env import (
 from inference.core.models.base import Model
 from inference.core.utils.image_utils import load_image_bgr
 from inference.core.utils.postprocess import masks2poly
+from inference.core.utils.visualisation import draw_detection_predictions
 from inference.models.aliases import resolve_roboflow_model_alias
 from inference_models import (
     AutoModel,
@@ -47,27 +51,27 @@ from inference_models import (
 from inference_models.models.base.types import PreprocessingMetadata
 
 DEFAULT_COLOR_PALETTE = [
-    "A351FB",
-    "FF4040",
-    "FFA1A0",
-    "FF7633",
-    "FFB633",
-    "D1D435",
-    "4CFB12",
-    "94CF1A",
-    "40DE8A",
-    "1B9640",
-    "00D6C1",
-    "2E9CAA",
-    "00C4FF",
-    "364797",
-    "6675FF",
-    "0019EF",
-    "863AFF",
-    "530087",
-    "CD3AFF",
-    "FF97CA",
-    "FF39C9",
+    "#A351FB",
+    "#FF4040",
+    "#FFA1A0",
+    "#FF7633",
+    "#FFB633",
+    "#D1D435",
+    "#4CFB12",
+    "#94CF1A",
+    "#40DE8A",
+    "#1B9640",
+    "#00D6C1",
+    "#2E9CAA",
+    "#00C4FF",
+    "#364797",
+    "#6675FF",
+    "#0019EF",
+    "#863AFF",
+    "#530087",
+    "#CD3AFF",
+    "#FF97CA",
+    "#FF39C9",
 ]
 
 
@@ -181,6 +185,30 @@ class InferenceModelsObjectDetectionAdapter(Model):
             delete_from_disk (bool, optional): Whether to delete cached files from disk. Defaults to True.
         """
         pass
+
+    def draw_predictions(
+        self,
+        inference_request: InferenceRequest,
+        inference_response: InferenceResponse,
+    ) -> bytes:
+        """Draw predictions from an inference response onto the original image provided by an inference request
+
+        Args:
+            inference_request (ObjectDetectionInferenceRequest): The inference request containing the image on which to draw predictions
+            inference_response (ObjectDetectionInferenceResponse): The inference response containing predictions to be drawn
+
+        Returns:
+            str: A base64 encoded image string
+        """
+        class_id_2_color = {
+            i: DEFAULT_COLOR_PALETTE[i % len(DEFAULT_COLOR_PALETTE)]
+            for i, class_name in enumerate(self._model.class_names)
+        }
+        return draw_detection_predictions(
+            inference_request=inference_request,
+            inference_response=inference_response,
+            colors=class_id_2_color,
+        )
 
 
 class InferenceModelsInstanceSegmentationAdapter(Model):
@@ -300,6 +328,30 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
             delete_from_disk (bool, optional): Whether to delete cached files from disk. Defaults to True.
         """
         pass
+
+    def draw_predictions(
+        self,
+        inference_request: InferenceRequest,
+        inference_response: InferenceResponse,
+    ) -> bytes:
+        """Draw predictions from an inference response onto the original image provided by an inference request
+
+        Args:
+            inference_request (ObjectDetectionInferenceRequest): The inference request containing the image on which to draw predictions
+            inference_response (ObjectDetectionInferenceResponse): The inference response containing predictions to be drawn
+
+        Returns:
+            str: A base64 encoded image string
+        """
+        class_id_2_color = {
+            i: DEFAULT_COLOR_PALETTE[i % len(DEFAULT_COLOR_PALETTE)]
+            for i, class_name in enumerate(self._model.class_names)
+        }
+        return draw_detection_predictions(
+            inference_request=inference_request,
+            inference_response=inference_response,
+            colors=class_id_2_color,
+        )
 
 
 class InferenceModelsKeyPointsDetectionAdapter(Model):
@@ -446,6 +498,30 @@ class InferenceModelsKeyPointsDetectionAdapter(Model):
             delete_from_disk (bool, optional): Whether to delete cached files from disk. Defaults to True.
         """
         pass
+
+    def draw_predictions(
+        self,
+        inference_request: InferenceRequest,
+        inference_response: InferenceResponse,
+    ) -> bytes:
+        """Draw predictions from an inference response onto the original image provided by an inference request
+
+        Args:
+            inference_request (ObjectDetectionInferenceRequest): The inference request containing the image on which to draw predictions
+            inference_response (ObjectDetectionInferenceResponse): The inference response containing predictions to be drawn
+
+        Returns:
+            str: A base64 encoded image string
+        """
+        class_id_2_color = {
+            i: DEFAULT_COLOR_PALETTE[i % len(DEFAULT_COLOR_PALETTE)]
+            for i, class_name in enumerate(self._model.class_names)
+        }
+        return draw_detection_predictions(
+            inference_request=inference_request,
+            inference_response=inference_response,
+            colors=class_id_2_color,
+        )
 
 
 def model_keypoints_to_response(
