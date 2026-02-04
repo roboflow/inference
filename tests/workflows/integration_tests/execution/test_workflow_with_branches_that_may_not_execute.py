@@ -146,14 +146,9 @@ def test_workflow_with_optional_execution_of_branches_impacting_results_in_batch
     # then
     assert isinstance(result, list), "Expected result to be list"
     assert len(result) == 3, "Three images provided - three outputs expected"
-    if not USE_INFERENCE_MODELS:
-        assert (
-            len(result[0]["people"]) == 11
-        ), "Expected 11 crops of person class instance for crowd image"
-    else:
-        assert (
-            len(result[0]["people"]) == 12
-        ), "Expected 12 crops of person class instance for crowd image"
+    assert (
+        len(result[0]["people"]) == 12
+    ), "Expected 12 crops of person class instance for crowd image"
     assert (
         len(result[0]["dogs"]) == 0
     ), "Expected 0 crops of dogs class instance for crowd image"
@@ -268,14 +263,9 @@ def test_workflow_with_optional_execution_of_branches_impacting_results_when_onl
     # then
     assert isinstance(result, list), "Expected result to be list"
     assert len(result) == 1, "One image provided - one output expected"
-    if not USE_INFERENCE_MODELS:
-        assert (
-            len(result[0]["people"]) == 11
-        ), "Expected 11 crops of person class instance for crowd image"
-    else:
-        assert (
-            len(result[0]["people"]) == 12
-        ), "Expected 12 crops of person class instance for crowd image"
+    assert (
+        len(result[0]["people"]) == 12
+    ), "Expected 12 crops of person class instance for crowd image"
     assert (
         len(result[0]["dogs"]) == 0
     ), "Expected 0 crops of dogs class instance for crowd image"
