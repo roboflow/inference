@@ -14,7 +14,7 @@ import supervision as sv
 
 from inference.core.utils.image_utils import load_image_rgb
 from inference.core.workflows.core_steps.classical_cv.feature_comparison.v1 import FeatureComparisonBlockV1
-from inference.core.workflows.core_steps.classical_cv.sift.v1 import SIFTBlockV1
+from inference.core.workflows.core_steps.classical_cv.sift.v1 import apply_sift
 from inference.core.workflows.prototypes.block import BlockResult
 from inference.models.yolo_world.yolo_world import YOLOWorld, ObjectDetectionInferenceResponse
 from inference_models import AutoModel
@@ -348,12 +348,11 @@ def main(
         titles=[title for sublist in titles for title in sublist],
     )
 
-    sift_block = SIFTBlockV1()
-    sift_results_batch: list[BlockResult] = []
+    sift_results_batch: list[tuple[np.ndarray, list, np.ndarray]] = []
 
     for frame_annotation in frame_annotations:
         image = cv2.imread(frame_annotation.image_path)
-        sift_results = sift_block.run(image=image)
+        sift_results = apply_sift(image)
         sift_results_batch.append(sift_results)
         
 
@@ -378,10 +377,10 @@ def main(
         )
 
     fc_results = feature_comparison_block.run(
-        keypoints_1=r1["keypoints"],
-        descriptors_1=r1["descriptors"],
-        keypoints_2=r2["keypoints"],
-        descriptors_2=r2["descriptors"],
+        keypoints_1=r1[1],
+        descriptors_1=r1[2],
+        keypoints_2=r2[1],
+        descriptors_2=r2[2],
         mask_1=mask_1,
         mask_2=mask_2,
     )
