@@ -115,6 +115,7 @@ if API_LOGGING_ENABLED:
     processors = [
         add_correlation,
         structlog.stdlib.filter_by_level,
+        structlog.stdlib.PositionalArgumentsFormatter(),
         structlog.processors.TimeStamper(fmt="%Y-%m-%d %H:%M.%S"),
         structlog.processors.StackInfoRenderer(),
         structlog_exception_formatter,

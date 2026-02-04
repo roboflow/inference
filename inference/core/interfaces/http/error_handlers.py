@@ -82,7 +82,7 @@ def with_route_exceptions(route):
         try:
             return route(*args, **kwargs)
         except ContentTypeInvalid as error:
-            logger.exception(f"{type(error).__name__}: {error}")
+            logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
                 status_code=400,
                 content={
@@ -90,13 +90,13 @@ def with_route_exceptions(route):
                 },
             )
         except ContentTypeMissing as error:
-            logger.exception(f"{type(error).__name__}: {error}")
+            logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
                 status_code=400,
                 content={"message": "Content-Type header not provided with request."},
             )
         except InputImageLoadError as error:
-            logger.exception(f"{type(error).__name__}: {error}")
+            logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
                 status_code=400,
                 content={
@@ -104,13 +104,13 @@ def with_route_exceptions(route):
                 },
             )
         except InvalidModelIDError as error:
-            logger.exception(f"{type(error).__name__}: {error}")
+            logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
                 status_code=400,
                 content={"message": "Invalid Model ID sent in request."},
             )
         except InvalidMaskDecodeArgument as error:
-            logger.exception(f"{type(error).__name__}: {error}")
+            logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
                 status_code=400,
                 content={
@@ -119,7 +119,7 @@ def with_route_exceptions(route):
                 },
             )
         except MissingApiKeyError as error:
-            logger.exception(f"{type(error).__name__}: {error}")
+            logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
                 status_code=400,
                 content={
@@ -133,7 +133,7 @@ def with_route_exceptions(route):
             ExecutionGraphStructureError,
             StepInputDimensionalityError,
         ) as error:
-            logger.exception(f"{type(error).__name__}: {error}")
+            logger.exception("%s: %s", type(error).__name__, error)
             content = WorkflowErrorResponse(
                 message=str(error.public_message),
                 error_type=error.__class__.__name__,
@@ -153,7 +153,7 @@ def with_route_exceptions(route):
             WorkflowExecutionEngineVersionError,
             NotSupportedExecutionEngineError,
         ) as error:
-            logger.exception(f"{type(error).__name__}: {error}")
+            logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
                 status_code=400,
                 content={
@@ -169,7 +169,7 @@ def with_route_exceptions(route):
             MalformedPayloadError,
             MessageToBigError,
         ) as error:
-            logger.exception(f"{type(error).__name__}: {error}")
+            logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
                 status_code=400,
                 content={
@@ -182,7 +182,7 @@ def with_route_exceptions(route):
             RoboflowAPINotAuthorizedError,
             ProcessesManagerAuthorisationError,
         ) as error:
-            logger.exception(f"{type(error).__name__}: {error}")
+            logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
                 status_code=401,
                 content={
@@ -192,7 +192,7 @@ def with_route_exceptions(route):
                 },
             )
         except RoboflowAPIForbiddenError as error:
-            logger.exception(f"{type(error).__name__}: {error}")
+            logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
                 status_code=403,
                 content={
@@ -202,7 +202,7 @@ def with_route_exceptions(route):
                 },
             )
         except RoboflowAPINotNotFoundError as error:
-            logger.exception(f"{type(error).__name__}: {error}")
+            logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
                 status_code=404,
                 content={
@@ -211,7 +211,7 @@ def with_route_exceptions(route):
                 },
             )
         except ProcessesManagerNotFoundError as error:
-            logger.exception(f"{type(error).__name__}: {error}")
+            logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
                 status_code=404,
                 content={
@@ -225,7 +225,7 @@ def with_route_exceptions(route):
             MissingServiceSecretError,
             ServiceConfigurationError,
         ) as error:
-            logger.exception(f"{type(error).__name__}: {error}")
+            logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
                 status_code=500, content={"message": "Service misconfiguration."}
             )
@@ -233,7 +233,7 @@ def with_route_exceptions(route):
             PreProcessingError,
             PostProcessingError,
         ) as error:
-            logger.exception(f"{type(error).__name__}: {error}")
+            logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
                 status_code=500,
                 content={
@@ -241,12 +241,12 @@ def with_route_exceptions(route):
                 },
             )
         except ModelArtefactError as error:
-            logger.exception(f"{type(error).__name__}: {error}")
+            logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
                 status_code=500, content={"message": "Model package is broken."}
             )
         except OnnxProviderNotAvailable as error:
-            logger.exception(f"{type(error).__name__}: {error}")
+            logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
                 status_code=501,
                 content={
@@ -260,20 +260,20 @@ def with_route_exceptions(route):
             WorkspaceLoadError,
             MalformedWorkflowResponseError,
         ) as error:
-            logger.exception(f"{type(error).__name__}: {error}")
+            logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
                 status_code=502,
                 content={"message": "Internal error. Request to Roboflow API failed."},
             )
         except InferenceModelNotFound as error:
-            logger.exception(f"{type(error).__name__}: {error}")
+            logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
                 status_code=503,
                 content={"message": "Model is temporarily not ready - retry request."},
                 headers={"Retry-After": "1"},
             )
         except RoboflowAPIConnectionError as error:
-            logger.exception(f"{type(error).__name__}: {error}")
+            logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
                 status_code=503,
                 content={
@@ -281,7 +281,7 @@ def with_route_exceptions(route):
                 },
             )
         except ModelManagerLockAcquisitionError as error:
-            logger.exception(f"{type(error).__name__}: {error}")
+            logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
                 status_code=503,
                 content={
@@ -291,7 +291,7 @@ def with_route_exceptions(route):
                 headers={"Retry-After": "1"},
             )
         except RoboflowAPITimeoutError as error:
-            logger.exception(f"{type(error).__name__}: {error}")
+            logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
                 status_code=504,
                 content={
@@ -299,7 +299,7 @@ def with_route_exceptions(route):
                 },
             )
         except ClientCausedStepExecutionError as error:
-            logger.exception(f"{type(error).__name__}: {error}")
+            logger.exception("%s: %s", type(error).__name__, error)
             content = WorkflowErrorResponse(
                 message=str(error.public_message),
                 error_type=error.__class__.__name__,
@@ -317,7 +317,7 @@ def with_route_exceptions(route):
                 content=content.model_dump(),
             )
         except StepExecutionError as error:
-            logger.exception(f"{type(error).__name__}: {error}")
+            logger.exception("%s: %s", type(error).__name__, error)
             content = WorkflowErrorResponse(
                 message=str(error.public_message),
                 error_type=error.__class__.__name__,
@@ -336,7 +336,7 @@ def with_route_exceptions(route):
                 content=content.model_dump(),
             )
         except WorkflowError as error:
-            logger.exception(f"{type(error).__name__}: {error}")
+            logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
                 status_code=500,
                 content={
@@ -351,7 +351,7 @@ def with_route_exceptions(route):
             ProcessesManagerClientError,
             CommunicationProtocolError,
         ) as error:
-            logger.exception(f"{type(error).__name__}: {error}")
+            logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
                 status_code=500,
                 content={
@@ -379,7 +379,7 @@ def with_route_exceptions(route):
                 },
             )
         except Exception as error:
-            logger.exception(f"{type(error).__name__}: {error}")
+            logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(status_code=500, content={"message": "Internal error."})
         return resp
 
@@ -403,7 +403,7 @@ def with_route_exceptions_async(route):
         try:
             return await route(*args, **kwargs)
         except ContentTypeInvalid as error:
-            logger.exception(f"{type(error).__name__}: {error}")
+            logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
                 status_code=400,
                 content={
@@ -411,13 +411,13 @@ def with_route_exceptions_async(route):
                 },
             )
         except ContentTypeMissing as error:
-            logger.exception(f"{type(error).__name__}: {error}")
+            logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
                 status_code=400,
                 content={"message": "Content-Type header not provided with request."},
             )
         except InputImageLoadError as error:
-            logger.exception(f"{type(error).__name__}: {error}")
+            logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
                 status_code=400,
                 content={
@@ -425,13 +425,13 @@ def with_route_exceptions_async(route):
                 },
             )
         except InvalidModelIDError as error:
-            logger.exception(f"{type(error).__name__}: {error}")
+            logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
                 status_code=400,
                 content={"message": "Invalid Model ID sent in request."},
             )
         except InvalidMaskDecodeArgument as error:
-            logger.exception(f"{type(error).__name__}: {error}")
+            logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
                 status_code=400,
                 content={
@@ -440,7 +440,7 @@ def with_route_exceptions_async(route):
                 },
             )
         except MissingApiKeyError as error:
-            logger.exception(f"{type(error).__name__}: {error}")
+            logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
                 status_code=400,
                 content={
@@ -454,7 +454,7 @@ def with_route_exceptions_async(route):
             ExecutionGraphStructureError,
             StepInputDimensionalityError,
         ) as error:
-            logger.exception(f"{type(error).__name__}: {error}")
+            logger.exception("%s: %s", type(error).__name__, error)
             content = WorkflowErrorResponse(
                 message=str(error.public_message),
                 error_type=error.__class__.__name__,
@@ -474,7 +474,7 @@ def with_route_exceptions_async(route):
             WorkflowExecutionEngineVersionError,
             NotSupportedExecutionEngineError,
         ) as error:
-            logger.exception(f"{type(error).__name__}: {error}")
+            logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
                 status_code=400,
                 content={
@@ -490,7 +490,7 @@ def with_route_exceptions_async(route):
             MalformedPayloadError,
             MessageToBigError,
         ) as error:
-            logger.exception(f"{type(error).__name__}: {error}")
+            logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
                 status_code=400,
                 content={
@@ -503,7 +503,7 @@ def with_route_exceptions_async(route):
             RoboflowAPINotAuthorizedError,
             ProcessesManagerAuthorisationError,
         ) as error:
-            logger.exception(f"{type(error).__name__}: {error}")
+            logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
                 status_code=401,
                 content={
@@ -513,7 +513,7 @@ def with_route_exceptions_async(route):
                 },
             )
         except RoboflowAPIForbiddenError as error:
-            logger.exception(f"{type(error).__name__}: {error}")
+            logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
                 status_code=403,
                 content={
@@ -523,7 +523,7 @@ def with_route_exceptions_async(route):
                 },
             )
         except RoboflowAPINotNotFoundError as error:
-            logger.exception(f"{type(error).__name__}: {error}")
+            logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
                 status_code=404,
                 content={
@@ -532,7 +532,7 @@ def with_route_exceptions_async(route):
                 },
             )
         except ProcessesManagerNotFoundError as error:
-            logger.exception(f"{type(error).__name__}: {error}")
+            logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
                 status_code=404,
                 content={
@@ -546,7 +546,7 @@ def with_route_exceptions_async(route):
             MissingServiceSecretError,
             ServiceConfigurationError,
         ) as error:
-            logger.exception(f"{type(error).__name__}: {error}")
+            logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
                 status_code=500, content={"message": "Service misconfiguration."}
             )
@@ -554,7 +554,7 @@ def with_route_exceptions_async(route):
             PreProcessingError,
             PostProcessingError,
         ) as error:
-            logger.exception(f"{type(error).__name__}: {error}")
+            logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
                 status_code=500,
                 content={
@@ -562,12 +562,12 @@ def with_route_exceptions_async(route):
                 },
             )
         except ModelArtefactError as error:
-            logger.exception(f"{type(error).__name__}: {error}")
+            logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
                 status_code=500, content={"message": "Model package is broken."}
             )
         except OnnxProviderNotAvailable as error:
-            logger.exception(f"{type(error).__name__}: {error}")
+            logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
                 status_code=501,
                 content={
@@ -581,20 +581,20 @@ def with_route_exceptions_async(route):
             WorkspaceLoadError,
             MalformedWorkflowResponseError,
         ) as error:
-            logger.exception(f"{type(error).__name__}: {error}")
+            logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
                 status_code=502,
                 content={"message": "Internal error. Request to Roboflow API failed."},
             )
         except InferenceModelNotFound as error:
-            logger.exception(f"{type(error).__name__}: {error}")
+            logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
                 status_code=503,
                 content={"message": "Model is temporarily not ready - retry request."},
                 headers={"Retry-After": "1"},
             )
         except RoboflowAPIConnectionError as error:
-            logger.exception(f"{type(error).__name__}: {error}")
+            logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
                 status_code=503,
                 content={
@@ -602,7 +602,7 @@ def with_route_exceptions_async(route):
                 },
             )
         except ModelManagerLockAcquisitionError as error:
-            logger.exception(f"{type(error).__name__}: {error}")
+            logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
                 status_code=503,
                 content={
@@ -612,7 +612,7 @@ def with_route_exceptions_async(route):
                 headers={"Retry-After": "1"},
             )
         except RoboflowAPITimeoutError as error:
-            logger.exception(f"{type(error).__name__}: {error}")
+            logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
                 status_code=504,
                 content={
@@ -620,7 +620,7 @@ def with_route_exceptions_async(route):
                 },
             )
         except ClientCausedStepExecutionError as error:
-            logger.exception(f"{type(error).__name__}: {error}")
+            logger.exception("%s: %s", type(error).__name__, error)
             content = WorkflowErrorResponse(
                 message=str(error.public_message),
                 error_type=error.__class__.__name__,
@@ -638,7 +638,7 @@ def with_route_exceptions_async(route):
                 content=content.model_dump(),
             )
         except StepExecutionError as error:
-            logger.exception(f"{type(error).__name__}: {error}")
+            logger.exception("%s: %s", type(error).__name__, error)
             content = WorkflowErrorResponse(
                 message=str(error.public_message),
                 error_type=error.__class__.__name__,
@@ -657,7 +657,7 @@ def with_route_exceptions_async(route):
                 content=content.model_dump(),
             )
         except WorkflowError as error:
-            logger.exception(f"{type(error).__name__}: {error}")
+            logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
                 status_code=500,
                 content={
@@ -672,7 +672,7 @@ def with_route_exceptions_async(route):
             ProcessesManagerClientError,
             CommunicationProtocolError,
         ) as error:
-            logger.exception(f"{type(error).__name__}: {error}")
+            logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
                 status_code=500,
                 content={
@@ -700,7 +700,7 @@ def with_route_exceptions_async(route):
                 },
             )
         except Exception as error:
-            logger.exception(f"{type(error).__name__}: {error}")
+            logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(status_code=500, content={"message": "Internal error."})
         return resp
 
