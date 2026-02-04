@@ -249,6 +249,21 @@ class DocTR(StructuredOCRModel[List[np.ndarray], ImageDimensions, Document]):
                 ],
                 device=self._device,
             )
+            if not detections:
+                empty_detections = Detections(
+                    xyxy=torch.empty(
+                        (0, 4), dtype=torch.int32, device=self._device
+                    ),
+                    confidence=torch.empty(
+                        (0,), dtype=torch.float32, device=self._device
+                    ),
+                    class_id=torch.empty(
+                        (0,), dtype=torch.int32, device=self._device
+                    ),
+                    bboxes_metadata=[],
+                )
+                all_detections.append(empty_detections)
+                continue
             xyxy = (
                 (
                     torch.tensor([e["xyxy"] for e in detections], device=self._device)

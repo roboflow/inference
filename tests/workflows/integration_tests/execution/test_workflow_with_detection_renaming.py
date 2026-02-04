@@ -4,7 +4,7 @@ from typing import Dict
 import numpy as np
 import pytest
 
-from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
+from inference.core.env import USE_INFERENCE_MODELS, WORKFLOWS_MAX_CONCURRENT_STEPS
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.query_language.errors import (
@@ -116,20 +116,38 @@ def test_class_rename_workflow_with_non_strict_mapping(
     assert isinstance(result, list), "Expected result to be list"
     assert len(result) == 1, "Single image provided - single output expected"
 
-    assert result[0]["renamed_predictions"]["class_name"].tolist() == [
-        "fruit",
-        "fruit",
-        "fruit",
-        "orange",
-        "fruit",
-    ], "Expected renamed set of classes to be the same as when test was created"
-    assert result[0]["renamed_predictions"].class_id.tolist() == [
-        1024,
-        1024,
-        1024,
-        49,
-        1024,
-    ], "Expected renamed set of class ids to be the same as when test was created"
+    if not USE_INFERENCE_MODELS:
+        assert result[0]["renamed_predictions"]["class_name"].tolist() == [
+            "fruit",
+            "fruit",
+            "fruit",
+            "orange",
+            "fruit",
+        ], "Expected renamed set of classes to be the same as when test was created"
+        assert result[0]["renamed_predictions"].class_id.tolist() == [
+            1024,
+            1024,
+            1024,
+            49,
+            1024,
+        ], "Expected renamed set of class ids to be the same as when test was created"
+    else:
+        assert result[0]["renamed_predictions"]["class_name"].tolist() == [
+            "fruit",
+            "fruit",
+            "fruit",
+            "orange",
+            "fruit",
+            "fruit",
+        ], "Expected renamed set of classes to be the same as when test was created"
+        assert result[0]["renamed_predictions"].class_id.tolist() == [
+            1024,
+            1024,
+            1024,
+            49,
+            1024,
+            1024,
+        ], "Expected renamed set of class ids to be the same as when test was created"
     assert len(result[0]["renamed_predictions"]) == len(
         result[0]["original_predictions"]
     ), "Expected length of predictions no to change"
@@ -167,20 +185,38 @@ def test_class_rename_workflow_with_strict_mapping_when_all_classes_are_remapped
     assert isinstance(result, list), "Expected result to be list"
     assert len(result) == 1, "Single image provided - single output expected"
 
-    assert result[0]["renamed_predictions"]["class_name"].tolist() == [
-        "fruit",
-        "fruit",
-        "fruit",
-        "my-orange",
-        "fruit",
-    ], "Expected renamed set of classes to be the same as when test was created"
-    assert result[0]["renamed_predictions"].class_id.tolist() == [
-        0,
-        0,
-        0,
-        1,
-        0,
-    ], "Expected renamed set of class ids to be the same as when test was created"
+    if not USE_INFERENCE_MODELS:
+        assert result[0]["renamed_predictions"]["class_name"].tolist() == [
+            "fruit",
+            "fruit",
+            "fruit",
+            "my-orange",
+            "fruit",
+        ], "Expected renamed set of classes to be the same as when test was created"
+        assert result[0]["renamed_predictions"].class_id.tolist() == [
+            0,
+            0,
+            0,
+            1,
+            0,
+        ], "Expected renamed set of class ids to be the same as when test was created"
+    else:
+        assert result[0]["renamed_predictions"]["class_name"].tolist() == [
+            "fruit",
+            "fruit",
+            "fruit",
+            "my-orange",
+            "fruit",
+            "fruit",
+        ], "Expected renamed set of classes to be the same as when test was created"
+        assert result[0]["renamed_predictions"].class_id.tolist() == [
+            0,
+            0,
+            0,
+            1,
+            0,
+            0,
+        ], "Expected renamed set of class ids to be the same as when test was created"
     assert len(result[0]["renamed_predictions"]) == len(
         result[0]["original_predictions"]
     ), "Expected length of predictions no to change"
@@ -293,20 +329,38 @@ def test_class_rename_workflow_when_mapping_is_parametrised(
     assert isinstance(result, list), "Expected result to be list"
     assert len(result) == 1, "Single image provided - single output expected"
 
-    assert result[0]["renamed_predictions"]["class_name"].tolist() == [
-        "fruit",
-        "fruit",
-        "fruit",
-        "orange",
-        "fruit",
-    ], "Expected renamed set of classes to be the same as when test was created"
-    assert result[0]["renamed_predictions"].class_id.tolist() == [
-        1024,
-        1024,
-        1024,
-        49,
-        1024,
-    ], "Expected renamed set of class ids to be the same as when test was created"
+    if not USE_INFERENCE_MODELS:
+        assert result[0]["renamed_predictions"]["class_name"].tolist() == [
+            "fruit",
+            "fruit",
+            "fruit",
+            "orange",
+            "fruit",
+        ], "Expected renamed set of classes to be the same as when test was created"
+        assert result[0]["renamed_predictions"].class_id.tolist() == [
+            1024,
+            1024,
+            1024,
+            49,
+            1024,
+        ], "Expected renamed set of class ids to be the same as when test was created"
+    else:
+        assert result[0]["renamed_predictions"]["class_name"].tolist() == [
+            "fruit",
+            "fruit",
+            "fruit",
+            "orange",
+            "fruit",
+            "fruit",
+        ], "Expected renamed set of classes to be the same as when test was created"
+        assert result[0]["renamed_predictions"].class_id.tolist() == [
+            1024,
+            1024,
+            1024,
+            49,
+            1024,
+            1024,
+        ], "Expected renamed set of class ids to be the same as when test was created"
     assert len(result[0]["renamed_predictions"]) == len(
         result[0]["original_predictions"]
     ), "Expected length of predictions no to change"
