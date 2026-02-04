@@ -2838,7 +2838,7 @@ class HttpInterface(BaseInterface):
                     depth_data = response.response
                     depth_response = DepthEstimationResponse(
                         normalized_depth=depth_data["normalized_depth"].tolist(),
-                        image=depth_data["image"].numpy_image.tobytes().hex(),
+                        image=depth_data["image"].base64_image,
                     )
                     return depth_response
 

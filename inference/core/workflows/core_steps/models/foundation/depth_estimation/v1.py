@@ -180,20 +180,11 @@ class DepthEstimationBlockV1(WorkflowBlock):
             # Convert the result back to the expected format
             # Remote returns: {"normalized_depth": [...], "image": hex_string}
             normalized_depth = np.array(result.get("normalized_depth", []))
-            # Decode hex image back to WorkflowImageData format
-            image_hex = result.get("image", "")
-            if image_hex:
-                image_bytes = bytes.fromhex(image_hex)
-                # Create a simple image representation
-                image_data = WorkflowImageData.from_numpy(
-                    single_image.numpy_image  # Use original dimensions
-                )
-            else:
-                image_data = single_image
 
+            # Return in the same format as local execution expects
             predictions.append(
                 {
-                    "image": image_data,
+                    "image": single_image,
                     "normalized_depth": normalized_depth,
                 }
             )
