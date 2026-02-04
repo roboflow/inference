@@ -179,14 +179,38 @@ class Qwen3VLBlockV1(WorkflowBlock):
         )
         combined_prompt = prompt + "<system_prompt>" + system_prompt
 
-        predictions = []
-        for image in images:
+        # Collect inputs into a list so we can batch the HTTP request.
+        inputs = [image.base64_image for image in images]
+
+        if not inputs:
+            return []
+
+        # Perform a batched HTTP call when there are multiple images to reduce network overhead.
+        if len(inputs) == 1:
             result = client.infer_lmm(
-                inference_input=image.base64_image,
+                inference_input=inputs[0],
                 model_id=model_version,
                 prompt=combined_prompt,
             )
-            response_text = result.get("response", result)
+            # Normalize single-item result to a list for unified processing.
+            results_iterable = [result]
+        else:
+            results_iterable = client.infer_lmm(
+                inference_input=inputs,
+                model_id=model_version,
+                prompt=combined_prompt,
+            )
+
+        predictions = []
+        # results_iterable may be a list of dicts or a single dict wrapped above.
+        # Iterate and extract "response" if present.
+        if isinstance(results_iterable, list):
+            for item in results_iterable:
+                response_text = item.get("response", item)
+                predictions.append({"parsed_output": response_text})
+        else:
+            # In case the client returns a non-list for multi inputs (defensive).
+            response_text = results_iterable.get("response", results_iterable)
             predictions.append({"parsed_output": response_text})
 
         return predictions
@@ -208,19 +232,21 @@ class Qwen3VLBlockV1(WorkflowBlock):
             system_prompt
             or "You are a Qwen3-VL model that can answer questions about any image."
         )
-        prompts = [prompt + "<system_prompt>" + system_prompt] * len(inference_images)
+        combined_prompt = prompt + "<system_prompt>" + system_prompt
+        # Register Qwen3-VL with the model manager.
         # Register Qwen3-VL with the model manager.
         self._model_manager.add_model(model_id=model_version, api_key=self._api_key)
 
         predictions = []
-        for image, single_prompt in zip(inference_images, prompts):
+        for image in inference_images:
+            # Build an LMMInferenceRequest with both prompt and image.
             # Build an LMMInferenceRequest with both prompt and image.
             request = LMMInferenceRequest(
                 api_key=self._api_key,
                 model_id=model_version,
                 image=image,
                 source="workflow-execution",
-                prompt=single_prompt,
+                prompt=combined_prompt,
             )
             # Run inference.
             prediction = self._model_manager.infer_from_request_sync(
