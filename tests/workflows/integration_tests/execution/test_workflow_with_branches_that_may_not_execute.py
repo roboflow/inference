@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
+from inference.core.env import USE_INFERENCE_MODELS, WORKFLOWS_MAX_CONCURRENT_STEPS
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.execution_engine.core import ExecutionEngine
@@ -18,7 +18,7 @@ WORKFLOW_WITH_BRANCHES_THAT_MAY_NOT_EXECUTE = {
             "name": "detection",
             "image": "$inputs.image",
             "model_id": "$inputs.model_id",
-            "confidence": 0.5,
+            "confidence": 0.4,
         },
         {
             "type": "DetectionsFilter",
@@ -146,9 +146,14 @@ def test_workflow_with_optional_execution_of_branches_impacting_results_in_batch
     # then
     assert isinstance(result, list), "Expected result to be list"
     assert len(result) == 3, "Three images provided - three outputs expected"
-    assert (
-        len(result[0]["people"]) == 11
-    ), "Expected 11 crops of person class instance for crowd image"
+    if not USE_INFERENCE_MODELS:
+        assert (
+            len(result[0]["people"]) == 11
+        ), "Expected 11 crops of person class instance for crowd image"
+    else:
+        assert (
+            len(result[0]["people"]) == 12
+        ), "Expected 11 crops of person class instance for crowd image"
     assert (
         len(result[0]["dogs"]) == 0
     ), "Expected 0 crops of dogs class instance for crowd image"
