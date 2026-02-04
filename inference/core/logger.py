@@ -44,6 +44,7 @@ def add_gcp_severity(
         "info": "INFO",
         "warning": "WARNING",
         "error": "ERROR",
+        "exception": "ERROR",  # exception logs at ERROR level
         "critical": "CRITICAL",
     }
     event_dict["severity"] = level_to_severity.get(method_name, "DEFAULT")
@@ -114,6 +115,7 @@ if API_LOGGING_ENABLED:
     processors = [
         add_correlation,
         structlog.stdlib.filter_by_level,
+        structlog.stdlib.PositionalArgumentsFormatter(),
         structlog.processors.TimeStamper(fmt="%Y-%m-%d %H:%M.%S"),
         structlog.processors.StackInfoRenderer(),
         structlog_exception_formatter,
