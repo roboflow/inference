@@ -608,9 +608,13 @@ def prepare_multi_label_classification_response(
     for prediction, image_size in zip(post_processed_predictions, image_sizes):
         image_predictions_dict = dict()
         predicted_classes = []
-        for class_id, confidence in zip(
-            prediction.class_ids.cpu().tolist(), prediction.confidence.cpu().tolist()
-        ):
+
+        # Convert tensors/arrays to Python lists only once per prediction
+        class_ids_list = _tensor_to_list(prediction.class_ids)
+        confidences_list = _tensor_to_list(prediction.confidence)
+
+        # Single-pass loop to populate both the predictions dict and predicted classes
+        for class_id, confidence in zip(class_ids_list, confidences_list):
             cls_name = class_names[class_id]
             image_predictions_dict[cls_name] = {
                 "confidence": confidence,
@@ -758,3 +762,36 @@ def get_extra_weights_provider_headers() -> Optional[Dict[str, str]]:
     if headers:
         return headers
     return None
+
+
+def _tensor_to_list(t):
+    """
+    Convert a tensor-like object to a Python list while avoiding unnecessary .cpu() calls.
+    Handles PyTorch tensors (with .device and .cpu), numpy arrays, and general iterables.
+    """
+    # Fast-path for objects that aren't torch tensors (no .device attribute)
+    if not hasattr(t, "device"):
+        try:
+            return t.tolist()
+        except Exception:
+            return list(t)
+
+    # Detach if available to avoid potential graph retention
+    if hasattr(t, "detach"):
+        try:
+            t = t.detach()
+        except Exception:
+            pass
+
+    # Only move to CPU if tensor is not already on CPU
+    try:
+        if getattr(t, "device").type != "cpu":
+            t = t.cpu()
+    except Exception:
+        # If something goes wrong with device introspection, fall back to cpu() attempt
+        try:
+            t = t.cpu()
+        except Exception:
+            pass
+
+    return t.tolist()
