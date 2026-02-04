@@ -5,25 +5,6 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
-    inputs:
-      python-version:
-        description: "Python version to run (or all)"
-        type: choice
-        default: all
-        options:
-          - all
-          - "3.9"
-          - "3.10"
-          - "3.11"
-          - "3.12"
-      use-inference-models:
-        description: "USE_INFERENCE_MODELS value (or all)"
-        type: choice
-        default: all
-        options:
-          - all
-          - "true"
-          - "false"
 
 jobs:
   call_is_mergeable:
@@ -38,8 +19,7 @@ jobs:
     timeout-minutes: 45
     strategy:
       matrix:
-        python-version: ${{ fromJSON((github.event.inputs.python-version || 'all') == 'all' && '["3.9","3.10","3.11","3.12"]' || format('["{0}"]', github.event.inputs.python-version)) }}
-        use-inference-models: ${{ fromJSON((github.event.inputs.use-inference-models || 'all') == 'all'&& '["true","false"]'|| format('["{0}"]', github.event.inputs.use-inference-models)) }}
+        python-version: ["3.9", "3.10", "3.11", "3.12"]
     steps:
       - name: 🛎️ Checkout
         uses: actions/checkout@v4
@@ -64,4 +44,4 @@ jobs:
           pip install --extra-index-url https://download.pytorch.org/whl/cpu -r requirements/_requirements.txt -r requirements/requirements.cpu.txt -r requirements/requirements.sdk.http.txt -r requirements/requirements.test.unit.txt -r requirements/requirements.http.txt -r requirements/requirements.yolo_world.txt -r requirements/requirements.sam.txt -r requirements/requirements.transformers.txt
       - name: 🧪 Integration Tests of Inference models
         timeout-minutes: 45
-        run: USE_INFERENCE_MODELS=${{ matrix.use-inference-models }} MAX_BATCH_SIZE=6 python -m pytest tests/inference/models_predictions_tests
+        run: MAX_BATCH_SIZE=6 python -m pytest tests/inference/models_predictions_tests
