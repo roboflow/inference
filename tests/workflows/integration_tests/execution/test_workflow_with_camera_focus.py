@@ -145,4 +145,6 @@ def test_workflow_with_camera_focus_v2(
         result[0]["camera_focus_measure"], float
     ), "Expected camera focus output to be a float"
     assert result[0]["camera_focus_measure"] > 0, "Expected focus score to be positive"
-    assert result[0]["bbox_focus_measures"] == [], "Expected empty bbox_focus_measures when no detections provided"
+    assert (
+        result[0]["bbox_focus_measures"] == []
+    ), "Expected empty bbox_focus_measures when no detections provided"

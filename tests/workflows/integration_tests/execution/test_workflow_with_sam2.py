@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 from pydantic import ValidationError
 
-from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS, USE_INFERENCE_MODELS
+from inference.core.env import USE_INFERENCE_MODELS, WORKFLOWS_MAX_CONCURRENT_STEPS
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.models.foundation.segment_anything2.v1 import (
@@ -238,7 +238,9 @@ def test_grounded_sam2_workflow(
             atol=1e-1,
         ), "Expected bboxes to be the same as measured while test creation"
         assert np.allclose(
-            result[0]["sam_predictions"].confidence, np.array([0.9602, 0.93673]), atol=1e-4
+            result[0]["sam_predictions"].confidence,
+            np.array([0.9602, 0.93673]),
+            atol=1e-4,
         ), "Expected confidence to be the same as measured while test creation"
         assert result[0]["sam_predictions"]["class_name"].tolist() == [
             "dog",
@@ -251,15 +253,13 @@ def test_grounded_sam2_workflow(
     else:
         assert np.allclose(
             result[0]["sam_predictions"].xyxy,
-            np.array([
-                [321, 223, 582, 405],
-                [370, 208, 371, 209],
-                [226, 73, 378, 381]
-            ]),
+            np.array([[321, 223, 582, 405], [370, 208, 371, 209], [226, 73, 378, 381]]),
             atol=1e-1,
         ), "Expected bboxes to be the same as measured while test creation"
         assert np.allclose(
-            result[0]["sam_predictions"].confidence, np.array([0.9594, 0.92467, 0.92467]), atol=1e-4
+            result[0]["sam_predictions"].confidence,
+            np.array([0.9594, 0.92467, 0.92467]),
+            atol=1e-4,
         ), "Expected confidence to be the same as measured while test creation"
         assert result[0]["sam_predictions"]["class_name"].tolist() == [
             "dog",
