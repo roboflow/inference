@@ -14,7 +14,7 @@ from typing import Optional
 class RequestContext:
     """Context for a single request."""
 
-    request_id: str
+    request_id: Optional[str]
     invocation_source: str = "direct"  # "direct" or "workflow"
     workflow_instance_id: Optional[str] = None
     workflow_id: Optional[str] = None

@@ -258,10 +258,36 @@ class ModelManager:
         if METRICS_ENABLED and self.pingback and enable_model_monitoring:
             logger.debug("ModelManager - setting pingback fallback api key...")
             self.pingback.fallback_api_key = request.api_key
+        inference_start_time = time.time()
         try:
             rtn_val = await self.model_infer(
                 model_id=model_id, request=request, **kwargs
             )
+
+            if structured_event_logger.enabled:
+                inference_duration_ms = (time.time() - inference_start_time) * 1000
+                ctx = get_request_context()
+
+                # Try to determine batch size
+                batch_size = 1
+                if hasattr(request, "image") and isinstance(request.image, list):
+                    batch_size = len(request.image)
+
+                structured_event_logger.log_event(
+                    InferenceCompletedEvent(
+                        request_id=ctx.request_id if ctx else None,
+                        model_id=model_id,
+                        inference_duration_ms=inference_duration_ms,
+                        batch_size=batch_size,
+                        cache_hit=ctx.last_model_cache_hit if ctx else None,
+                        invocation_source=ctx.invocation_source if ctx else "direct",
+                        workflow_instance_id=ctx.workflow_instance_id if ctx else None,
+                        workflow_id=ctx.workflow_id if ctx else None,
+                        step_name=ctx.step_name if ctx else None,
+                    ),
+                    sampled=True,
+                )
+
             logger.debug(
                 f"ModelManager - inference from request finished for model_id={model_id}."
             )
