@@ -106,6 +106,17 @@ class YOLO26ForInstanceSegmentationTRT(
                 ResizeMode.CENTER_CROP,
                 ResizeMode.LETTERBOX_REFLECT_EDGES,
             },
+            implicit_resize_mode_substitutions={
+                ResizeMode.FIT_LONGER_EDGE: (
+                    ResizeMode.LETTERBOX,
+                    127,
+                    "YOLO26 Instance Segmentation model running with TRT backend was trained with "
+                    "`fit-longer-edge` input resize mode. This transform cannot be applied properly for "
+                    "models with input dimensions fixed during weights export. To ensure interoperability, `letterbox` "
+                    "resize mode with gray edges will be used instead. If model was trained on Roboflow platform, "
+                    "we recommend using preprocessing method different that `fit-longer-edge`.",
+                )
+            },
         )
         trt_config = parse_trt_config(
             config_path=model_package_content["trt_config.json"]

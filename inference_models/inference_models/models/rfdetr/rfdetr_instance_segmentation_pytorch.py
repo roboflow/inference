@@ -117,6 +117,7 @@ class RFDetrForInstanceSegmentationTorch(
                 ResizeMode.LETTERBOX,
                 ResizeMode.CENTER_CROP,
                 ResizeMode.LETTERBOX_REFLECT_EDGES,
+                ResizeMode.FIT_LONGER_EDGE,
             },
         )
         classes_re_mapping = None

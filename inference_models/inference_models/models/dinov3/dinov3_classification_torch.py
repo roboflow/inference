@@ -86,6 +86,7 @@ class DinoV3ForClassificationTorch(ClassificationModel[torch.Tensor, torch.Tenso
                 ResizeMode.LETTERBOX,
                 ResizeMode.CENTER_CROP,
                 ResizeMode.LETTERBOX_REFLECT_EDGES,
+                ResizeMode.FIT_LONGER_EDGE,
             },
         )
 

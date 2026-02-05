@@ -60,6 +60,7 @@ class DeepLabV3PlusForSemanticSegmentationTorch(
                 ResizeMode.LETTERBOX,
                 ResizeMode.CENTER_CROP,
                 ResizeMode.LETTERBOX_REFLECT_EDGES,
+                ResizeMode.FIT_LONGER_EDGE,
             },
         )
         if inference_config.model_initialization is None:
