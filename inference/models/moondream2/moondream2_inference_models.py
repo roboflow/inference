@@ -107,7 +107,10 @@ class InferenceModelsMoondream2Adapter(Model):
         return self.make_response(detections, [bgr_img.shape[:2]], prompt=prompt)
 
     def make_response(
-        self, predictions: List[Detections], image_sizes, prompt: str,
+        self,
+        predictions: List[Detections],
+        image_sizes,
+        prompt: str,
     ):
         responses = []
 
