@@ -800,16 +800,16 @@ WEBRTC_DATA_CHANNEL_BUFFER_SIZE_LIMIT = int(
 # Example: if ack=1 and window=4, server may produce/send up to frame 5.
 try:
     WEBRTC_DATA_CHANNEL_ACK_WINDOW = int(
-        os.getenv("WEBRTC_DATA_CHANNEL_ACK_WINDOW", "2")
+        os.getenv("WEBRTC_DATA_CHANNEL_ACK_WINDOW", "1")
     )
 except (ValueError, TypeError):
-    WEBRTC_DATA_CHANNEL_ACK_WINDOW = 2
+    WEBRTC_DATA_CHANNEL_ACK_WINDOW = 1
 
 if WEBRTC_DATA_CHANNEL_ACK_WINDOW < 0:
     WEBRTC_DATA_CHANNEL_ACK_WINDOW = 0
 
 WEBRTC_GZIP_PREVIEW_FRAME_COMPRESSION = str2bool(
-    os.getenv("WEBRTC_GZIP_PREVIEW_FRAME_COMPRESSION", "True")
+    os.getenv("WEBRTC_GZIP_PREVIEW_FRAME_COMPRESSION", "False")
 )
 
 # JPEG quality for WebRTC preview frames
