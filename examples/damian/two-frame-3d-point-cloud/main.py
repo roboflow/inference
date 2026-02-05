@@ -15,13 +15,10 @@ import supervision as sv
 from inference.core.utils.image_utils import load_image_rgb
 from inference.core.workflows.core_steps.classical_cv.feature_comparison.v1 import FeatureComparisonBlockV1
 from inference.core.workflows.core_steps.classical_cv.sift.v1 import apply_sift
-from inference.core.workflows.prototypes.block import BlockResult
+from inference.core.workflows.core_steps.transformations.essential_matrix.v1 import EssentialMatrixBlockV1
 from inference.models.yolo_world.yolo_world import YOLOWorld, ObjectDetectionInferenceResponse
 from inference_models import AutoModel
 from inference_models.models.sam2.sam2_torch import SAM2Prediction
-
-
-# from inference.core.workflows.core_steps.transformations.essential_matrix.v1 import EssentialMatrixBlockV1
 
 
 API_KEY = os.getenv("ROBOFLOW_API_KEY")
@@ -48,8 +45,22 @@ class FrameAnnotation:
         return str(Path(DATA_DIR) / self.image_data["path"])
 
     @property
-    def camera_intrinsics(self) -> Tuple[float, float, float, float]:
+    def camera_intrinsics(self) -> dict[str, float]:
         return camera_intrinsics_from_annotation(self)
+
+    @property
+    def camera_extrinsics(self) -> dict[str, np.ndarray]:
+        R = np.asarray(self.viewpoint["R"])
+        T = np.asarray(self.viewpoint["T"])
+
+        S = np.diag([-1, -1, 1]).astype(np.float32)
+        R = S @ R
+        T = S @ T
+
+        return {
+            "R": R,
+            "t": T,
+        }
 
 
 def get_frame_sequence(frame_sequence_id: str) -> list[dict]:
@@ -93,7 +104,7 @@ def get_frame_annotations_from_sequence(frame_sequence_id: str, frame_ids: list[
     ]
 
 
-def camera_intrinsics_from_annotation(frame_annotation: FrameAnnotation) -> Tuple[float, float, float, float]:
+def camera_intrinsics_from_annotation(frame_annotation: FrameAnnotation) -> dict[str, float]:
     """Compute (fx, fy, cx, cy) from frame viewpoint and image size."""
     p = frame_annotation.viewpoint["principal_point"]
     f = frame_annotation.viewpoint["focal_length"]
@@ -106,7 +117,91 @@ def camera_intrinsics_from_annotation(frame_annotation: FrameAnnotation) -> Tupl
     cx = -p[0] * s + (w - 1) / 2
     cy = -p[1] * s + (h - 1) / 2
 
-    return fx, fy, cx, cy
+    return {
+        "fx": fx,
+        "fy": fy,
+        "cx": cx,
+        "cy": cy,
+    }
+
+
+def _intrinsics_to_K(intrinsics: dict[str, float]) -> np.ndarray:
+    """Build 3x3 calibration matrix from camera intrinsics dict."""
+    return np.array(
+        [
+            [float(intrinsics["fx"]), 0, float(intrinsics["cx"])],
+            [0, float(intrinsics["fy"]), float(intrinsics["cy"])],
+            [0, 0, 1],
+        ],
+        dtype=np.float64,
+    )
+
+
+def _extract_point_pairs(good_matches: list) -> list[tuple[tuple[float, float], tuple[float, float]]]:
+    """Extract (pt1, pt2) from good_matches; pt1/pt2 are (x, y)."""
+    pairs = []
+    for m in good_matches or []:
+        if not isinstance(m, dict):
+            continue
+        kp = m.get("keypoint_pairs")
+        if not kp or len(kp) != 2:
+            continue
+        pt1, pt2 = kp[0], kp[1]
+        if pt1 is None or pt2 is None:
+            continue
+        try:
+            x1, y1 = float(pt1[0]), float(pt1[1])
+            x2, y2 = float(pt2[0]), float(pt2[1])
+        except (TypeError, IndexError):
+            continue
+        pairs.append(((x1, y1), (x2, y2)))
+    return pairs
+
+
+def triangulate_points_opencv(
+    good_matches: list,
+    camera_intrinsics_1: dict[str, float],
+    camera_intrinsics_2: dict[str, float],
+    R: np.ndarray,
+    t: np.ndarray,
+) -> np.ndarray:
+    """
+    Triangulate matched keypoints using OpenCV's triangulatePoints.
+    Returns (N, 3) array of 3D points in camera 1 coordinate frame.
+    """
+    pairs = _extract_point_pairs(good_matches)
+    if not pairs:
+        return np.zeros((0, 3), dtype=np.float64)
+    pts1 = np.array([[p[0][0], p[0][1]] for p in pairs], dtype=np.float64)
+    pts2 = np.array([[p[1][0], p[1][1]] for p in pairs], dtype=np.float64)
+    K1 = _intrinsics_to_K(camera_intrinsics_1)
+    K2 = _intrinsics_to_K(camera_intrinsics_2)
+    t = np.asarray(t, dtype=np.float64).ravel()[:3]
+    R = np.asarray(R, dtype=np.float64).reshape(3, 3)
+    P1 = np.hstack([K1, np.zeros((3, 1), dtype=np.float64)])
+    P2 = K2 @ np.hstack([R, t.reshape(3, 1)])
+    points_4d = cv2.triangulatePoints(P1, P2, pts1.T, pts2.T)
+    points_3d = (points_4d[:3] / (points_4d[3] + 1e-12)).T
+    return points_3d
+
+
+def relative_pose_wold2cam(
+    R_i: np.ndarray,
+    t_i: np.ndarray,
+    R_j: np.ndarray,
+    t_j: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Inputs:
+      R_i, R_j: (3,3) world->cam rotations
+      t_i, t_j: (3,)  world->cam translations
+
+    Returns:
+      R_rel, t_rel such that x_j = R_rel @ x_i + t_rel
+    """
+    R_rel = R_j @ R_i.T
+    t_rel = t_j - R_rel @ t_i
+    return R_rel, t_rel
 
 
 def backproject_mask_to_camera_xyz(
@@ -273,19 +368,19 @@ def main(
     )
     depth_maps: list[np.ndarray] = [map.numpy() for map in depth_maps_batch]
 
-    camera_intrinsics: list[Tuple[float, float, float, float]] = [frame_annotation.camera_intrinsics for frame_annotation in frame_annotations]
+    camera_intrinsics: list[dict[str, float]] = [frame_annotation.camera_intrinsics for frame_annotation in frame_annotations]
 
     points_3d: list[np.ndarray] = [
         backproject_mask_to_camera_xyz(
             mask=mask,
             depth_map=depth_map,
-            fx=fx,
-            fy=fy,
-            cx=cx,
-            cy=cy,
+            fx=camera_intrinsics["fx"],
+            fy=camera_intrinsics["fy"],
+            cx=camera_intrinsics["cx"],
+            cy=camera_intrinsics["cy"],
             subsample=point_cloud_subsample,
         )
-        for mask, depth_map, (fx, fy, cx, cy) in zip(final_masks, depth_maps, camera_intrinsics)
+        for mask, depth_map, camera_intrinsics in zip(final_masks, depth_maps, camera_intrinsics)
     ]
 
     for point_cloud, frame_annotation in zip(points_3d, frame_annotations):
@@ -389,12 +484,122 @@ def main(
         fc_results["good_matches_count"],
     )
 
-    # essential_matrix_block = EssentialMatrixBlockV1()
-    # em_results = essential_matrix_block.run(
-    #     good_matches=fc_results["good_matches"],
-    #     camera_intrinsics_1=camera_intrinsics,
-    #     camera_intrinsics_2=camera_intrinsics,
-    # )
+    R_rel, t_rel = relative_pose_wold2cam(
+        R_i=frame_annotations[0].camera_extrinsics["R"],
+        t_i=frame_annotations[0].camera_extrinsics["t"],
+        R_j=frame_annotations[1].camera_extrinsics["R"],
+        t_j=frame_annotations[1].camera_extrinsics["t"],
+    )
+
+    logging.info(
+        "Relative pose: %s",
+        R_rel,
+    )
+    logging.info(
+        "Relative translation: %s",
+        t_rel,
+    )
+
+    essential_matrix_block = EssentialMatrixBlockV1()
+
+    em_results = essential_matrix_block.run(
+        good_matches=fc_results["good_matches"],
+        camera_intrinsics_1=camera_intrinsics[0],
+        camera_intrinsics_2=camera_intrinsics[1],
+        pose_estimation="opencv",
+    )
+
+    logging.info(
+        "Essential matrix: %s",
+        em_results["essential_matrix"],
+    )
+    logging.info(
+        "Rotation: %s",
+        em_results["rotation"],
+    )
+    logging.info(
+        "Translation: %s",
+        em_results["translation"],
+    )
+
+    # Triangulate keypoint correspondences with OpenCV
+    R_est = em_results["rotation"]
+    t_est = em_results["translation"]
+    triangulated_3d = triangulate_points_opencv(
+        good_matches=fc_results["good_matches"],
+        camera_intrinsics_1=camera_intrinsics[0],
+        camera_intrinsics_2=camera_intrinsics[1],
+        R=R_est,
+        t=t_est,
+    )
+    object_center = np.mean(triangulated_3d, axis=0) if len(triangulated_3d) > 0 else np.zeros(3)
+    cam1_position = np.array([0.0, 0.0, 0.0])
+    cam2_position = -R_est.T @ np.asarray(t_est).ravel()[:3]
+
+    # 3D visualization: cameras and object center (camera 1 frame)
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter3d(
+            x=[cam1_position[0]],
+            y=[cam1_position[1]],
+            z=[cam1_position[2]],
+            mode="markers+text",
+            marker=dict(size=10, color="blue", symbol="diamond"),
+            text=["Cam 1"],
+            textposition="top center",
+            name="Camera 1",
+        )
+    )
+    fig.add_trace(
+        go.Scatter3d(
+            x=[cam2_position[0]],
+            y=[cam2_position[1]],
+            z=[cam2_position[2]],
+            mode="markers+text",
+            marker=dict(size=10, color="green", symbol="diamond"),
+            text=["Cam 2"],
+            textposition="top center",
+            name="Camera 2",
+        )
+    )
+    fig.add_trace(
+        go.Scatter3d(
+            x=[object_center[0]],
+            y=[object_center[1]],
+            z=[object_center[2]],
+            mode="markers+text",
+            marker=dict(size=10, color="red", symbol="circle"),
+            text=["Object center"],
+            textposition="top center",
+            name="Object center",
+        )
+    )
+    if len(triangulated_3d) > 0:
+        fig.add_trace(
+            go.Scatter3d(
+                x=triangulated_3d[:, 0],
+                y=triangulated_3d[:, 1],
+                z=triangulated_3d[:, 2],
+                mode="markers",
+                marker=dict(size=2, color="gray", opacity=0.5),
+                name="Triangulated points",
+            )
+        )
+    fig.update_layout(
+        title="Cameras and object center (camera 1 frame)",
+        scene=dict(
+            xaxis_title="X",
+            yaxis_title="Y",
+            zaxis_title="Z",
+            aspectmode="data",
+        ),
+        showlegend=True,
+    )
+    viz_path = OUTPUT_DIR / f"{class_name}_cameras_and_object_center.html"
+    fig.write_html(str(viz_path))
+    logging.info("Saved cameras + object center 3D viz to %s", viz_path)
+    fig.show()
+
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
