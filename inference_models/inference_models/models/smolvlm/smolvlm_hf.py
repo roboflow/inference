@@ -5,6 +5,7 @@ import numpy as np
 import torch
 from peft import PeftModel
 from transformers import AutoModelForImageTextToText, AutoProcessor, BitsAndBytesConfig
+from transformers.utils import is_flash_attn_2_available
 
 from inference_models.configuration import (
     DEFAULT_DEVICE,
@@ -21,6 +22,31 @@ from inference_models.models.common.roboflow.model_packages import (
 from inference_models.models.common.roboflow.pre_processing import (
     pre_process_network_input,
 )
+
+
+def _get_smolvlm_attn_implementation(device: torch.device) -> str:
+    """Use flash_attention_2 if available, otherwise eager.
+
+    SDPA has dtype mismatch issues with some transformers versions.
+    """
+    if is_flash_attn_2_available() and device and "cuda" in str(device):
+        # Verify flash_attn can actually be imported (not just installed)
+        try:
+            import flash_attn  # noqa: F401
+
+            if _is_model_running_against_ampere_plus_aarch(device=device):
+                return "flash_attention_2"
+            return "eager"
+        except ImportError:
+            pass
+    return "eager"
+
+
+def _is_model_running_against_ampere_plus_aarch(device: torch.device) -> bool:
+    if device.type != "cuda":
+        return False
+    major, _ = torch.cuda.get_device_capability(device=device)
+    return major >= 8
 
 
 class SmolVLMHF:
@@ -52,6 +78,7 @@ class SmolVLMHF:
                     ResizeMode.FIT_LONGER_EDGE,
                 },
             )
+        attn_implementation = _get_smolvlm_attn_implementation(device=device)
         adapter_config_path = os.path.join(model_name_or_path, "adapter_config.json")
         if (
             quantization_config is None
@@ -72,6 +99,7 @@ class SmolVLMHF:
                 trust_remote_code=trust_remote_code,
                 local_files_only=local_files_only,
                 quantization_config=quantization_config,
+                attn_implementation=attn_implementation,
             )
             model = PeftModel.from_pretrained(model, model_name_or_path)
             if quantization_config is None:
@@ -93,6 +121,7 @@ class SmolVLMHF:
                 trust_remote_code=trust_remote_code,
                 local_files_only=local_files_only,
                 quantization_config=quantization_config,
+                attn_implementation=attn_implementation,
             ).eval()
             processor = AutoProcessor.from_pretrained(
                 model_name_or_path,

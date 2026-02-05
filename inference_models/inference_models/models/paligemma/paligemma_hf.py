@@ -22,10 +22,19 @@ def _get_paligemma_attn_implementation(device: torch.device) -> str:
         try:
             import flash_attn  # noqa: F401
 
-            return "flash_attention_2"
+            if _is_model_running_against_ampere_plus_aarch(device=device):
+                return "flash_attention_2"
+            return "eager"
         except ImportError:
             pass
     return "eager"
+
+
+def _is_model_running_against_ampere_plus_aarch(device: torch.device) -> bool:
+    if device.type != "cuda":
+        return False
+    major, _ = torch.cuda.get_device_capability(device=device)
+    return major >= 8
 
 
 from inference_models.configuration import (
