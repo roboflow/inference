@@ -160,6 +160,24 @@ def _intrinsics_to_K_and_D(intrinsics: dict[str, float]) -> tuple[np.ndarray, np
     return K, D
 
 
+def _unproject_point(
+    u: float,
+    v: float,
+    depth: float,
+    fx: float,
+    fy: float,
+    cx: float,
+    cy: float,
+) -> np.ndarray:
+    """Unproject a single pixel (u, v) with depth to 3D camera coordinates (X, Y, Z)."""
+    z = float(depth)
+    if z <= 0:
+        return np.full(3, np.nan)
+    x = (u - cx) * z / fx
+    y = (v - cy) * z / fy
+    return np.array([x, y, z], dtype=np.float64)
+
+
 def _extract_point_pairs(good_matches: list) -> list[tuple[tuple[float, float], tuple[float, float]]]:
     """Extract (pt1, pt2) from good_matches; pt1/pt2 are (x, y)."""
     pairs = []
@@ -231,6 +249,7 @@ def transform_cam2_to_cam1(
     points_cam2: np.ndarray,
     R: np.ndarray,
     t: np.ndarray,
+    scale: tuple[float, float, float] = (2.5, 1.0, 1.0),
 ) -> np.ndarray:
     """
     Transform 3D points from camera 2 frame to camera 1 frame.
@@ -239,7 +258,7 @@ def transform_cam2_to_cam1(
     """
     t = np.asarray(t, dtype=np.float64).ravel()[:3]
     R = np.asarray(R, dtype=np.float64).reshape(3, 3)
-    return (points_cam2 - t) @ R
+    return points_cam2 @ R - t * np.array(scale)
 
 
 def backproject_mask_to_camera_xyz(
@@ -344,6 +363,71 @@ def remove_outliers(points: np.ndarray, threshold: float = 3.0) -> np.ndarray:
     within = np.abs(points - mean) < threshold * std
     keep = np.all(within, axis=1)
     return points[keep]
+
+
+def robust_median(depth: np.ndarray, mask: np.ndarray, clip_percentiles=(5, 95)) -> float:
+    """
+    Robust median depth inside mask, with percentile clipping to reduce outliers.
+    depth: HxW float depth map (Depth-Anything output)
+    mask:  HxW bool or {0,1} teddy mask (SAM output)
+    """
+    vals = depth[mask.astype(bool)]
+    vals = vals[np.isfinite(vals)]
+    if vals.size == 0:
+        raise ValueError("Mask contains no valid depth values.")
+    # remove non-positive if your depth has invalid zeros
+    vals = vals[vals > 0]
+    if vals.size == 0:
+        raise ValueError("No positive depth values inside mask.")
+
+    lo, hi = np.percentile(vals, clip_percentiles)
+    vals = vals[(vals >= lo) & (vals <= hi)]
+    return float(np.median(vals))
+
+
+def scale_translation_from_median_depths(
+    t: np.ndarray,
+    depth1: np.ndarray,
+    mask1: np.ndarray,
+    depth2: np.ndarray,
+    mask2: np.ndarray,
+    alpha: float = 0.05,
+    clip_percentiles=(5, 95),
+) -> np.ndarray:
+    """
+    Heuristic: choose scale s so ||s * t|| ~= alpha * m,
+    where m is the average of robust median teddy depths in the two views.
+
+    Why it works (heuristic):
+    - Depth-Anything is relative depth => scale is arbitrary.
+    - Essential matrix translation is also up-to-scale.
+    - We pick a baseline magnitude as a small fraction (alpha) of typical object depth.
+
+    Inputs:
+      t: (3,) translation direction from Essential decomposition (up to scale)
+      depth1/mask1: frame1 depth + teddy mask
+      depth2/mask2: frame2 depth + teddy mask
+      alpha: fraction of typical depth to use as baseline magnitude (0.02-0.10 is a good range)
+
+    Returns:
+      t_scaled: (3,) scaled translation vector
+    """
+    t = np.asarray(t, dtype=np.float64).reshape(3)
+    t_norm = np.linalg.norm(t)
+    if t_norm < 1e-9:
+        raise ValueError("t is near zero; cannot scale.")
+
+    m1 = robust_median(depth1, mask1, clip_percentiles=clip_percentiles)
+    m2 = robust_median(depth2, mask2, clip_percentiles=clip_percentiles)
+    m = 0.5 * (m1 + m2)
+
+    # baseline magnitude in the same arbitrary units as the depth maps
+    baseline = alpha * m
+
+    s = baseline / t_norm
+    t_scaled = (s * t)
+
+    return t_scaled
 
 
 @click.command()
@@ -619,9 +703,19 @@ def main(
     R_est = em_results["rotation"]
     t_est = em_results["translation"]
 
+
+    t_est_scaled = scale_translation_from_median_depths(
+        t=t_est,
+        depth1=depth_maps[0],
+        mask1=final_masks[0],
+        depth2=depth_maps[1],
+        mask2=final_masks[1],
+        alpha=0.05,
+    )
+
     # Fuse backprojected point clouds into camera 1 frame
     points_cam1 = points_3d[0]
-    points_cam2_in_cam1 = transform_cam2_to_cam1(points_3d[1], R_est, t_est)
+    points_cam2_in_cam1 = transform_cam2_to_cam1(points_3d[1], R_est, t_est_scaled)
     fused_point_cloud = np.vstack([points_cam1, points_cam2_in_cam1])
     logging.info(
         "Fused point cloud: %d from image 1 + %d from image 2 = %d points (camera 1 frame)",
@@ -629,26 +723,55 @@ def main(
         len(points_cam2_in_cam1),
         len(fused_point_cloud),
     )
-    # Log point sets side by side (first N points from each)
-    _n_show = min(10, len(points_cam1), len(points_cam2_in_cam1))
+    # Log 3D point correspondences only for keypoint-matched pairs (from depth)
+    kp_pairs = _extract_point_pairs(fc_results["good_matches"])
+    depth1 = depth_maps[0]
+    depth2 = depth_maps[1]
+    h1, w1 = depth1.shape[:2]
+    h2, w2 = depth2.shape[:2]
+    intrinsics1 = camera_intrinsics[0]
+    intrinsics2 = camera_intrinsics[1]
+    correspondences_logged = 0
+    _n_show = min(10, len(kp_pairs))
     if _n_show > 0:
         logging.info(
-            "Point correspondences (camera 1 frame) — image 1 vs image 2 (first %d):",
+            "Point correspondences (camera 1 frame) from keypoint pairs — 3D from image 1 | 3D from image 2 (first %d with valid depth):",
             _n_show,
         )
-        for i in range(_n_show):
-            p1 = points_cam1[i]
-            p2 = points_cam2_in_cam1[i]
+        for i in range(len(kp_pairs)):
+            if correspondences_logged >= _n_show:
+                break
+            (x1, y1), (x2, y2) = kp_pairs[i]
+            ix1, iy1 = int(round(x1)), int(round(y1))
+            ix2, iy2 = int(round(x2)), int(round(y2))
+            if not (0 <= iy1 < h1 and 0 <= ix1 < w1 and 0 <= iy2 < h2 and 0 <= ix2 < w2):
+                continue
+            d1 = float(depth1[iy1, ix1])
+            d2 = float(depth2[iy2, ix2])
+            if d1 <= 0 or d2 <= 0:
+                continue
+            p1_cam1 = _unproject_point(
+                x1, y1, d1,
+                intrinsics1["fx"], intrinsics1["fy"],
+                intrinsics1["cx"], intrinsics1["cy"],
+            )
+            p2_cam2 = _unproject_point(
+                x2, y2, d2,
+                intrinsics2["fx"], intrinsics2["fy"],
+                intrinsics2["cx"], intrinsics2["cy"],
+            )
+            p2_cam1 = transform_cam2_to_cam1(
+                p2_cam2.reshape(1, 3), R_est, t_est_scaled
+            )[0]
             logging.info(
                 "  [%d]  (%.4f, %.4f, %.4f)  |  (%.4f, %.4f, %.4f)",
-                i,
-                p1[0],
-                p1[1],
-                p1[2],
-                p2[0],
-                p2[1],
-                p2[2],
+                correspondences_logged,
+                p1_cam1[0], p1_cam1[1], p1_cam1[2],
+                p2_cam1[0], p2_cam1[1], p2_cam1[2],
             )
+            correspondences_logged += 1
+        if correspondences_logged == 0:
+            logging.info("  (no keypoint pairs with valid depth in first %d)", len(kp_pairs))
     if len(fused_point_cloud) > 0:
         fig_fused = go.Figure(
             data=[
