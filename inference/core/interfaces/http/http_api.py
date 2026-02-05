@@ -295,7 +295,7 @@ class LambdaMiddleware(BaseHTTPMiddleware):
 class StructuredLoggingMiddleware(BaseHTTPMiddleware):
     """Middleware to set up structured logging request context.
 
-    Sets up RequestContext with request_id (from correlation ID) and hashed api_key.
+    Sets up RequestContext with request_id (from correlation ID).
     Only active when STRUCTURED_LOGGING_ENABLED=True.
     """
 
