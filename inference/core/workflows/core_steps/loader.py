@@ -394,12 +394,6 @@ from inference.core.workflows.core_steps.transformations.camera_calibration.v1 i
 from inference.core.workflows.core_steps.transformations.essential_matrix.v1 import (
     EssentialMatrixBlockV1,
 )
-from inference.core.workflows.core_steps.transformations.triangulation.v1 import (
-    TriangulationBlockV1,
-)
-from inference.core.workflows.core_steps.transformations.stereo_rectification.v1 import (
-    StereoRectificationBlockV1,
-)
 from inference.core.workflows.core_steps.transformations.detection_offset.v1 import (
     DetectionOffsetBlockV1,
 )
@@ -701,8 +695,6 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         DeltaFilterBlockV1,
         CameraCalibrationBlockV1,
         EssentialMatrixBlockV1,
-        TriangulationBlockV1,
-        StereoRectificationBlockV1,
         DynamicZonesBlockV1,
         SizeMeasurementBlockV1,
         BufferBlockV1,
