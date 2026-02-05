@@ -254,32 +254,9 @@ class OriginCoordinatesSystem:
 
 
 @dataclass(frozen=True)
-class CameraIntrinsics:
-    """Camera intrinsics (e.g. from a calibration file)."""
-
-    fx: float
-    fy: float
-    cx: float
-    cy: float
-    k1: float
-    k2: float
-    p1: float
-    p2: float
-    k3: float
-
-    def to_calibration_matrix(self) -> np.ndarray:
-        return np.array([
-            [self.fx, 0, self.cx],
-            [0, self.fy, self.cy],
-            [0, 0, 1],
-        ])
-
-
-@dataclass(frozen=True)
 class ImageParentMetadata:
     parent_id: str
     origin_coordinates: Optional[OriginCoordinatesSystem] = None
-    camera_intrinsics: Optional[CameraIntrinsics] = None
 
 
 class WorkflowImageData:
