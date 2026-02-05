@@ -83,6 +83,8 @@ STANDARD_MODELS = {
     "ResNetClassification": "inference.models.resnet",
     "RFDETRObjectDetection": "inference.models.rfdetr",
     "RFDETRInstanceSegmentation": "inference.models.rfdetr",
+    "RFDETRNasObjectDetection": "inference.models.rfdetr_nas",
+    "RFDETRNasInstanceSegmentation": "inference.models.rfdetr_nas",
     "VitClassification": "inference.models.vit",
     "DinoV3Classification": "inference.models.dinov3",
     "YOLACT": "inference.models.yolact",
