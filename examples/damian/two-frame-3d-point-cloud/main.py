@@ -13,12 +13,13 @@ import torch
 import supervision as sv
 
 from inference.core.utils.image_utils import load_image_rgb
-from inference.core.workflows.core_steps.classical_cv.feature_comparison.v1 import FeatureComparisonBlockV1
 from inference.core.workflows.core_steps.classical_cv.sift.v1 import apply_sift
-from inference.core.workflows.core_steps.transformations.essential_matrix.v1 import EssentialMatrixBlockV1
 from inference.models.yolo_world.yolo_world import YOLOWorld, ObjectDetectionInferenceResponse
 from inference_models import AutoModel
 from inference_models.models.sam2.sam2_torch import SAM2Prediction
+
+from inference.core.workflows.core_steps.transformations.essential_matrix.v1 import EssentialMatrixBlockV1
+from inference.core.workflows.core_steps.classical_cv.feature_comparison.v1 import FeatureComparisonBlockV1
 
 
 API_KEY = os.getenv("ROBOFLOW_API_KEY")
@@ -329,6 +330,22 @@ def rectify_images(
     return rect1, rect2
 
 
+def remove_outliers(points: np.ndarray, threshold: float = 3.0) -> np.ndarray:
+    """Remove outliers from point cloud using statistical methods.
+    Drops an observation if at least one of its coordinates is over the threshold
+    (in units of per-coordinate standard deviation from the mean).
+    """
+    if len(points) < 3:
+        return points
+
+    mean = np.mean(points, axis=0)
+    cov = np.cov(points, rowvar=False)
+    std = np.sqrt(np.diag(cov))
+    within = np.abs(points - mean) < threshold * std
+    keep = np.all(within, axis=1)
+    return points[keep]
+
+
 @click.command()
 @click.option(
     "--frame-sequence-id",
@@ -510,13 +527,15 @@ def main(
         visualizations.append(depth_map)
         visualizations_list.append(visualizations)
 
-    titles = [[f"Image {idx}", f"Detection {idx}", f"Mask {idx}", f"Depth Map {idx}"] for idx in range(len(visualizations_list))]
+    titles_list = [[f"Image {idx}", f"Detection {idx}", f"Mask {idx}", f"Depth Map {idx}"] for idx in range(len(visualizations_list))]
 
-    sv.plot_images_grid(
-        images=[visualization for visualizations in visualizations_list for visualization in visualizations],
-        grid_size=(len(visualizations_list), 4),
-        titles=[title for sublist in titles for title in sublist],
-    )
+    for visualizations, titles in zip(visualizations_list, titles_list):
+        sv.plot_images_grid(
+            images=visualizations,
+            grid_size=(2, 2),
+            titles=titles,
+        )
+
 
     sift_results_batch: list[tuple[np.ndarray, list, np.ndarray]] = []
 
@@ -674,6 +693,9 @@ def main(
     cam1_position = np.array([0.0, 0.0, 0.0])
     cam2_position = -R_est.T @ np.asarray(t_est).ravel()[:3]
 
+    # Remove outliers from triangulated_3d before visualization
+    triangulated_3d = remove_outliers(triangulated_3d)
+
     # 3D visualization: cameras and object center (camera 1 frame)
     fig = go.Figure()
     fig.add_trace(
@@ -738,9 +760,12 @@ def main(
     logging.info("Saved cameras + object center 3D viz to %s", viz_path)
     fig.show()
 
+    img1 = cv2.imread(frame_annotations[0].image_path)
+    img2 = cv2.imread(frame_annotations[1].image_path)
+
     rect_results = rectify_images(
-        img1=cv2.imread(frame_annotations[0].image_path),
-        img2=cv2.imread(frame_annotations[1].image_path),
+        img1=img1,
+        img2=img2,
         camera_intrinsics_1=camera_intrinsics[0],
         camera_intrinsics_2=camera_intrinsics[1],
         rotation=em_results["rotation"],
@@ -749,9 +774,9 @@ def main(
 
     rect1, rect2 = rect_results
     sv.plot_images_grid(
-        images=[rect1, rect2],
-        grid_size=(1, 2),
-        titles=["Rectified image 1", "Rectified image 2"],
+        images=[img1, img2, rect1, rect2],
+        grid_size=(2, 2),
+        titles=["Image 1", "Image 2", "Rectified image 1", "Rectified image 2"],
     )
 
 if __name__ == "__main__":
