@@ -204,6 +204,21 @@ def relative_pose_wold2cam(
     return R_rel, t_rel
 
 
+def transform_cam2_to_cam1(
+    points_cam2: np.ndarray,
+    R: np.ndarray,
+    t: np.ndarray,
+) -> np.ndarray:
+    """
+    Transform 3D points from camera 2 frame to camera 1 frame.
+    Convention: x_cam2 = R @ x_cam1 + t, so x_cam1 = R.T @ (x_cam2 - t).
+    points_cam2: (N, 3). Returns (N, 3) in camera 1 frame.
+    """
+    t = np.asarray(t, dtype=np.float64).ravel()[:3]
+    R = np.asarray(R, dtype=np.float64).reshape(3, 3)
+    return (points_cam2 - t) @ R
+
+
 def backproject_mask_to_camera_xyz(
     mask: np.ndarray,
     depth_map: np.ndarray,
@@ -522,9 +537,52 @@ def main(
         em_results["translation"],
     )
 
-    # Triangulate keypoint correspondences with OpenCV
     R_est = em_results["rotation"]
     t_est = em_results["translation"]
+
+    # Fuse backprojected point clouds into camera 1 frame
+    points_cam1 = points_3d[0]
+    points_cam2_in_cam1 = transform_cam2_to_cam1(points_3d[1], R_est, t_est)
+    fused_point_cloud = np.vstack([points_cam1, points_cam2_in_cam1])
+    logging.info(
+        "Fused point cloud: %d from image 1 + %d from image 2 = %d points (camera 1 frame)",
+        len(points_cam1),
+        len(points_cam2_in_cam1),
+        len(fused_point_cloud),
+    )
+    if len(fused_point_cloud) > 0:
+        fig_fused = go.Figure(
+            data=[
+                go.Scatter3d(
+                    x=fused_point_cloud[:, 0],
+                    y=fused_point_cloud[:, 1],
+                    z=fused_point_cloud[:, 2],
+                    mode="markers",
+                    marker=dict(
+                        size=1.5,
+                        color=fused_point_cloud[:, 2],
+                        colorscale="Viridis",
+                        opacity=0.8,
+                    ),
+                    name="Fused point cloud",
+                )
+            ],
+            layout=go.Layout(
+                title=f"{class_name} fused point cloud (camera 1 frame)",
+                scene=dict(
+                    xaxis_title="X (right)",
+                    yaxis_title="Y (down)",
+                    zaxis_title="Z (forward)",
+                    aspectmode="data",
+                ),
+            ),
+        )
+        fused_html_path = OUTPUT_DIR / f"{class_name}_fused_pointcloud.html"
+        fig_fused.write_html(str(fused_html_path))
+        logging.info("Saved fused point cloud to %s", fused_html_path)
+        fig_fused.show()
+
+    # Triangulate keypoint correspondences with OpenCV
     triangulated_3d = triangulate_points_opencv(
         good_matches=fc_results["good_matches"],
         camera_intrinsics_1=camera_intrinsics[0],
