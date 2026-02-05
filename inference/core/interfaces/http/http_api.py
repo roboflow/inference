@@ -172,6 +172,7 @@ from inference.core.env import (
     ROBOFLOW_INTERNAL_SERVICE_SECRET,
     ROBOFLOW_SERVICE_SECRET,
     SAM3_EXEC_MODE,
+    USE_INFERENCE_MODELS,
     WEBRTC_WORKER_ENABLED,
     WORKFLOWS_MAX_CONCURRENT_STEPS,
     WORKFLOWS_PROFILER_BUFFER_SIZE,
@@ -616,6 +617,15 @@ class HttpInterface(BaseInterface):
                         return _unauthorized_response("Unauthorized api_key")
 
                 return await call_next(request)
+
+        @app.middleware("http")
+        async def add_inference_engine_headers(request: Request, call_next):
+            response = await call_next(request)
+            inference_engine = (
+                "inference-models" if USE_INFERENCE_MODELS else "old-inference"
+            )
+            response.headers["x-inference-engine"] = inference_engine
+            return response
 
         self.app = app
         self.model_manager = model_manager
