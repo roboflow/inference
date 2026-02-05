@@ -1,7 +1,8 @@
 import gc
+import time
 from collections import deque
 from threading import Lock
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from inference.core import logger
 from inference.core.entities.requests.inference import InferenceRequest
@@ -11,6 +12,7 @@ from inference.core.env import (
     HOT_MODELS_QUEUE_LOCK_ACQUIRE_TIMEOUT,
     MEMORY_FREE_THRESHOLD,
     MODELS_CACHE_AUTH_ENABLED,
+    STRUCTURED_LOGGING_DETAILED_MEMORY,
 )
 from inference.core.exceptions import (
     ModelManagerLockAcquisitionError,
@@ -23,6 +25,11 @@ from inference.core.registries.roboflow import (
     ModelEndpointType,
     _check_if_api_key_has_access_to_model,
 )
+from inference.core.structured_logging import (
+    ModelEvictedEvent,
+    measure_memory_for_eviction,
+    structured_event_logger,
+)
 
 
 class WithFixedSizeCache(ModelManagerDecorator):
@@ -33,14 +40,12 @@ class WithFixedSizeCache(ModelManagerDecorator):
             model_manager (ModelManager): Instance of a ModelManager.
             max_size (int, optional): Max number of models at the same time. Defaults to 8.
         """
-        import time
-
         super().__init__(model_manager)
         self.max_size = max_size
         self._key_queue = deque(self.model_manager.keys())
         self._queue_lock = Lock()
         # Track when models were loaded for lifetime calculation in eviction events
-        self._model_load_times: dict = {}
+        self._model_load_times: Dict[str, float] = {}
         # Initialize load times for pre-existing models
         current_time = time.time()
         for model_id in self.model_manager.keys():
@@ -92,23 +97,15 @@ class WithFixedSizeCache(ModelManagerDecorator):
                 raise ModelManagerLockAcquisitionError(
                     "Could not acquire lock on Model Manager state to add model from active models queue."
                 )
-            import time
-
-            from inference.core.env import STRUCTURED_LOGGING_DETAILED_MEMORY
-            from inference.core.structured_logging import (
-                ModelEvictedEvent,
-                measure_memory_for_eviction,
-                structured_event_logger,
-            )
-
-            while self._key_queue and (
-                len(self) >= self.max_size
-                or (MEMORY_FREE_THRESHOLD and self.memory_pressure_detected())
-            ):
-                # Determine eviction reason
-                is_memory_pressure = (
+            while self._key_queue:
+                memory_pressure = (
                     MEMORY_FREE_THRESHOLD and self.memory_pressure_detected()
                 )
+                if len(self) < self.max_size and not memory_pressure:
+                    break
+                # Determine eviction reason
+                # Re-evaluate memory pressure each loop; reason can change over time.
+                is_memory_pressure = memory_pressure
                 eviction_reason = (
                     "memory_pressure" if is_memory_pressure else "capacity"
                 )
@@ -135,11 +132,11 @@ class WithFixedSizeCache(ModelManagerDecorator):
                         lifetime_seconds = time.time() - load_time
 
                         # Get inference count from model metrics
-                        inference_count = 0
+                        inference_count: Optional[int] = None
                         try:
-                            model = self.model_manager._models.get(to_remove_model_id)
+                            model = self.model_manager.models().get(to_remove_model_id)
                             if model and hasattr(model, "metrics"):
-                                inference_count = model.metrics.get("num_inferences", 0)
+                                inference_count = model.metrics.get("num_inferences")
                         except Exception:
                             pass
 
@@ -198,7 +195,7 @@ class WithFixedSizeCache(ModelManagerDecorator):
         """Removes all models from the manager."""
         for model_id in list(self.keys()):
             self.remove(model_id)
-        # Clear all load time tracking
+        # Clear all load time tracking as a safety measure.
         self._model_load_times.clear()
 
     def remove(self, model_id: str, delete_from_disk: bool = True) -> Model:

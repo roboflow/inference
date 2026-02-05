@@ -19,6 +19,7 @@ from inference.core.env import (
     MODEL_LOCK_ACQUIRE_TIMEOUT,
     MODELS_CACHE_AUTH_ENABLED,
     ROBOFLOW_SERVER_UUID,
+    STRUCTURED_LOGGING_DETAILED_MEMORY,
 )
 from inference.core.exceptions import (
     InferenceModelNotFound,
@@ -33,6 +34,16 @@ from inference.core.registries.base import ModelRegistry
 from inference.core.registries.roboflow import (
     ModelEndpointType,
     _check_if_api_key_has_access_to_model,
+)
+from inference.core.structured_logging import (
+    InferenceCompletedEvent,
+    ModelCacheStatusEvent,
+    ModelLoadedToMemoryEvent,
+    get_request_context,
+    measure_memory_after_load,
+    measure_memory_before_load,
+    structured_event_logger,
+    update_request_context,
 )
 
 
@@ -94,18 +105,6 @@ class ModelManager:
                     f"Could not acquire lock for model with id={resolved_identifier}."
                 )
 
-            # Import structured logging utilities
-            from inference.core.env import STRUCTURED_LOGGING_DETAILED_MEMORY
-            from inference.core.structured_logging import (
-                ModelCacheStatusEvent,
-                ModelLoadedToMemoryEvent,
-                get_request_context,
-                measure_memory_after_load,
-                measure_memory_before_load,
-                structured_event_logger,
-                update_request_context,
-            )
-
             cache_hit = resolved_identifier in self._models
 
             # Log cache status event and store in context for inference_completed event
@@ -166,9 +165,7 @@ class ModelManager:
                     )
 
                     # Try to get model architecture info
-                    model_architecture = None
-                    if hasattr(model, "task_type"):
-                        model_architecture = getattr(model, "task_type", None)
+                    model_architecture = getattr(model, "task_type", None)
 
                     # Try to get device info
                     device = None
@@ -353,13 +350,6 @@ class ModelManager:
         try:
             rtn_val = self.model_infer_sync(
                 model_id=model_id, request=request, **kwargs
-            )
-
-            # Log inference_completed event for structured logging
-            from inference.core.structured_logging import (
-                InferenceCompletedEvent,
-                get_request_context,
-                structured_event_logger,
             )
 
             if structured_event_logger.enabled:

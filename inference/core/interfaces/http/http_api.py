@@ -270,6 +270,16 @@ if LAMBDA:
 import time
 
 from inference.core.roboflow_api import ModelEndpointType
+from inference.core.structured_logging import (
+    RequestContext,
+    RequestReceivedEvent,
+    WorkflowRequestReceivedEvent,
+    clear_request_context,
+    get_request_context,
+    set_request_context,
+    structured_event_logger,
+    update_request_context,
+)
 from inference.core.version import __version__
 
 try:
@@ -300,30 +310,25 @@ class StructuredLoggingMiddleware(BaseHTTPMiddleware):
     """
 
     async def dispatch(self, request, call_next):
-        from inference.core.structured_logging import (
-            RequestContext,
-            clear_request_context,
-            set_request_context,
-            structured_event_logger,
-        )
-
-        if structured_event_logger.enabled:
-            # Get request_id from correlation ID (set by CorrelationIdMiddleware)
-            request_id = asgi_correlation_id.correlation_id.get()
-            if not request_id:
-                request_id = uuid4().hex
-
-            context = RequestContext(
-                request_id=request_id,
-                invocation_source="direct",
+        # Get request_id from correlation ID (set by CorrelationIdMiddleware)
+        request_id = asgi_correlation_id.correlation_id.get()
+        if not request_id:
+            logger.warning(
+                "Structured logging request_id missing; "
+                "CorrelationIdMiddleware may be mis-ordered."
             )
-            set_request_context(context)
+            request_id = uuid4().hex
+
+        context = RequestContext(
+            request_id=request_id,
+            invocation_source="direct",
+        )
+        set_request_context(context)
 
         try:
             response = await call_next(request)
         finally:
-            if structured_event_logger.enabled:
-                clear_request_context()
+            clear_request_context()
 
         return response
 
@@ -426,6 +431,8 @@ class HttpInterface(BaseInterface):
         if GCP_SERVERLESS:
             app.add_middleware(GCPServerlessMiddleware)
         if STRUCTURED_LOGGING_ENABLED:
+            # StructuredLoggingMiddleware expects CorrelationIdMiddleware to run first.
+            # CorrelationIdMiddleware is added later so it executes earlier in the stack.
             app.add_middleware(StructuredLoggingMiddleware)
 
         if len(ALLOW_ORIGINS) > 0:
@@ -699,12 +706,6 @@ class HttpInterface(BaseInterface):
                 InferenceResponse: The response containing the inference results.
             """
             # Log request_received event for structured logging
-            from inference.core.structured_logging import (
-                RequestReceivedEvent,
-                get_request_context,
-                structured_event_logger,
-            )
-
             if structured_event_logger.enabled:
                 ctx = get_request_context()
                 # Infer endpoint_type from request class name
@@ -746,13 +747,6 @@ class HttpInterface(BaseInterface):
             profiler: WorkflowsProfiler,
         ) -> WorkflowInferenceResponse:
             # Log workflow_request_received event for structured logging
-            from inference.core.structured_logging import (
-                WorkflowRequestReceivedEvent,
-                get_request_context,
-                structured_event_logger,
-                update_request_context,
-            )
-
             if structured_event_logger.enabled:
                 ctx = get_request_context()
                 # Get workflow_instance_id from execution_id if available
@@ -769,6 +763,7 @@ class HttpInterface(BaseInterface):
                     workflow_id=workflow_request.workflow_id,
                     workflow_instance_id=workflow_instance_id,
                 )
+                ctx = get_request_context()
 
                 structured_event_logger.log_event(
                     WorkflowRequestReceivedEvent(

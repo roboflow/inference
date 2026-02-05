@@ -2,6 +2,7 @@ import itertools
 import json
 import os
 import random
+import time
 from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
@@ -71,6 +72,11 @@ from inference.core.roboflow_api import (
     get_from_url,
     get_roboflow_instant_model_data,
     get_roboflow_model_data,
+)
+from inference.core.structured_logging import (
+    ModelLoadedToDiskEvent,
+    get_request_context,
+    structured_event_logger,
 )
 from inference.core.utils.image_utils import load_image
 from inference.core.utils.onnx import get_onnxruntime_execution_providers
@@ -308,14 +314,6 @@ class RoboflowInferenceModel(Model):
         service_secret: Optional[str] = None,
         **kwargs,
     ) -> None:
-        import time
-
-        from inference.core.structured_logging import (
-            ModelLoadedToDiskEvent,
-            get_request_context,
-            structured_event_logger,
-        )
-
         logger.debug("Downloading model artifacts from Roboflow API")
 
         download_start_time = time.time()

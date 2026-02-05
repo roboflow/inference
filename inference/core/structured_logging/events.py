@@ -122,7 +122,7 @@ class ModelEvictedEvent(BaseEvent):
     model_id: str = ""
     reason: Literal["capacity", "memory_pressure", "explicit"] = "capacity"
     lifetime_seconds: float = 0.0
-    inference_count: int = 0
+    inference_count: Optional[int] = None
     memory: Optional[MemorySnapshot] = None
 
     def to_dict(self) -> Dict[str, Any]:

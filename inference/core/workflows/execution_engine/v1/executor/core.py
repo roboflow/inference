@@ -41,6 +41,10 @@ from inference.core.workflows.execution_engine.v1.executor.utils import (
     run_steps_in_parallel,
 )
 from inference.core.workflows.prototypes.block import WorkflowBlock
+from inference.core.structured_logging import (
+    structured_event_logger,
+    update_request_context,
+)
 from inference.usage_tracking.collector import usage_collector
 
 
@@ -169,11 +173,6 @@ def safe_execute_step(
         execution_id.set(workflow_execution_id)
 
     # Update structured logging context with step information
-    from inference.core.structured_logging import (
-        structured_event_logger,
-        update_request_context,
-    )
-
     step_name = get_last_chunk_of_selector(selector=step_selector)
     if structured_event_logger.enabled:
         update_request_context(
