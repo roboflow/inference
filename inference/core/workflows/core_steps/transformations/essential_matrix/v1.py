@@ -5,6 +5,7 @@ via the epipolar constraint (8-point algorithm + SVD), then recover R and t.
 
 from typing import Any, List, Literal, Optional, Type, Union
 
+import cv2
 import numpy as np
 from pydantic import ConfigDict, Field
 
@@ -66,6 +67,33 @@ def _intrinsics_to_K(intrinsics: Any) -> np.ndarray:
     raise TypeError("camera_intrinsics must be CameraIntrinsics or dict with fx, fy, cx, cy")
 
 
+def _intrinsics_to_dist_coeffs(intrinsics: Any) -> np.ndarray:
+    """Build distortion coeffs (k1, k2, p1, p2, k3) from CameraIntrinsics or dict. Empty if missing."""
+    if isinstance(intrinsics, dict):
+        return np.array(
+            [
+                float(intrinsics.get("k1", 0)),
+                float(intrinsics.get("k2", 0)),
+                float(intrinsics.get("p1", 0)),
+                float(intrinsics.get("p2", 0)),
+                float(intrinsics.get("k3", 0)),
+            ],
+            dtype=np.float64,
+        )
+    if hasattr(intrinsics, "k1"):
+        return np.array(
+            [
+                float(intrinsics.k1),
+                float(intrinsics.k2),
+                float(intrinsics.p1),
+                float(intrinsics.p2),
+                float(intrinsics.k3),
+            ],
+            dtype=np.float64,
+        )
+    return np.zeros(5, dtype=np.float64)
+
+
 def _extract_point_pairs(good_matches: List[Any]) -> List[tuple]:
     """Extract (pt1, pt2) from good_matches; pt1/pt2 are (x, y). Skip pairs with None."""
     pairs = []
@@ -85,6 +113,13 @@ def _extract_point_pairs(good_matches: List[Any]) -> List[tuple]:
             continue
         pairs.append(((x1, y1), (x2, y2)))
     return pairs
+
+
+def _pairs_to_pixel_arrays(pairs: List[tuple]) -> tuple:
+    """Convert list of ((x1,y1),(x2,y2)) to pts1 (N,2), pts2 (N,2) float64 for OpenCV."""
+    pts1 = np.array([[p[0][0], p[0][1]] for p in pairs], dtype=np.float64)
+    pts2 = np.array([[p[1][0], p[1][1]] for p in pairs], dtype=np.float64)
+    return pts1, pts2
 
 
 def _hartley_normalization_matrix(points_2d_hom: np.ndarray) -> np.ndarray:
@@ -250,6 +285,51 @@ def _essential_matrix_ransac(
     return E_refined, best_inliers
 
 
+def _essential_matrix_and_pose_opencv(
+    pairs: List[tuple],
+    K1: np.ndarray,
+    K2: np.ndarray,
+    dist_coeffs1: np.ndarray,
+    dist_coeffs2: np.ndarray,
+    threshold: float = 1.0,
+    prob: float = 0.999,
+) -> tuple:
+    """
+    One-shot E, R, t from 2D correspondences using cv2.recoverPose (two-camera overload).
+    Expects pixel point pairs and camera matrices + distortion. Returns (E, R, t).
+    """
+    if len(pairs) < MIN_POINT_PAIRS:
+        raise ValueError(
+            f"Need at least {MIN_POINT_PAIRS} point pairs for recoverPose"
+        )
+    pts1, pts2 = _pairs_to_pixel_arrays(pairs)
+    K1 = np.ascontiguousarray(np.asarray(K1, dtype=np.float64))
+    K2 = np.ascontiguousarray(np.asarray(K2, dtype=np.float64))
+    dist_coeffs1 = np.ascontiguousarray(np.asarray(dist_coeffs1, dtype=np.float64))
+    dist_coeffs2 = np.ascontiguousarray(np.asarray(dist_coeffs2, dtype=np.float64))
+
+    _retval, E, R, t, _mask = cv2.recoverPose(
+        pts1,
+        pts2,
+        K1,
+        dist_coeffs1,
+        K2,
+        dist_coeffs2,
+        method=cv2.RANSAC,
+        prob=prob,
+        threshold=float(threshold),
+    )
+    if E is None or R is None or t is None:
+        raise ValueError("recoverPose failed to find a valid essential matrix and pose")
+    if _retval < MIN_POINT_PAIRS:
+        raise ValueError(
+            f"recoverPose found too few inliers ({_retval}) for a valid pose"
+        )
+    # t from OpenCV is (3, 1); return (3,) for consistency with custom path
+    t_flat = t.ravel()
+    return E, R, t_flat
+
+
 def _parallax_cos(x1: np.ndarray, x2: np.ndarray, R: np.ndarray) -> float:
     """Compute cosine of parallax angle between two points."""
     r1 = x1 / np.linalg.norm(x1)
@@ -393,6 +473,10 @@ class EssentialMatrixBlockManifest(WorkflowBlockManifest):
         default=DEFAULT_RANSAC_MAX_ITERATIONS,
         description="Max RANSAC iterations.",
     )
+    pose_estimation: Union[Literal["custom", "opencv"], Selector] = Field(
+        default="custom",
+        description="Pose estimation path: 'custom' (normalize + RANSAC for E + recover R,t from E) or 'opencv' (single cv2.recoverPose from 2D correspondences with two camera matrices).",
+    )
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
@@ -419,6 +503,7 @@ class EssentialMatrixBlockV1(WorkflowBlock):
         camera_intrinsics_2: Union[dict, CameraIntrinsics],
         ransac_threshold: float = DEFAULT_RANSAC_THRESHOLD,
         ransac_max_iterations: int = DEFAULT_RANSAC_MAX_ITERATIONS,
+        pose_estimation: str = "custom",
         parallax_cos_threshold: float = DEFAULT_PARALLAX_COS_THRESHOLD,
         min_positive: int = DEFAULT_MIN_POSITIVE,
     ) -> BlockResult:
@@ -432,8 +517,26 @@ class EssentialMatrixBlockV1(WorkflowBlock):
         K1 = _intrinsics_to_K(camera_intrinsics_1)
         K2 = _intrinsics_to_K(camera_intrinsics_2)
 
+        if pose_estimation == "opencv":
+            dist1 = _intrinsics_to_dist_coeffs(camera_intrinsics_1)
+            dist2 = _intrinsics_to_dist_coeffs(camera_intrinsics_2)
+            # OpenCV recoverPose uses max distance to epipolar line in pixels (typical 1–3)
+            E, R, t = _essential_matrix_and_pose_opencv(
+                pairs,
+                K1,
+                K2,
+                dist1,
+                dist2,
+                threshold=1.0,
+                prob=0.999,
+            )
+            return {
+                "essential_matrix": E,
+                "rotation": R,
+                "translation": t,
+            }
+        # Custom path: normalize, RANSAC for E, then recover R,t from E
         pts1, pts2 = _pairs_to_normalized_points(pairs, K1, K2)
-
         E, inlier_mask = _essential_matrix_ransac(
             pts1, pts2,
             threshold=float(ransac_threshold),
