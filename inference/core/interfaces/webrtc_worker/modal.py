@@ -276,10 +276,12 @@ if modal is not None:
             webrtc_request: WebRTCWorkerRequest,
             q: modal.Queue,
         ):
+            _workspace_id = get_roboflow_workspace(api_key=webrtc_request.api_key)
             self._function_call_number_on_container += 1
             logger.info("*** Spawning %s:", self.__class__.__name__)
             logger.info("Running on %s", self._gpu)
             logger.info("Inference tag: %s", docker_tag)
+            logger.info("Workspace ID: %s", _workspace_id)
             logger.info(
                 "Preloaded models: %s",
                 (
