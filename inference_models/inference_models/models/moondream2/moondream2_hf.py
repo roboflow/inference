@@ -10,7 +10,7 @@ from inference_models.configuration import (
     INFERENCE_MODELS_MOONDREAM2_DEFAULT_MAX_NEW_TOKENS,
 )
 from inference_models.entities import ColorFormat, ImageDimensions
-from inference_models.errors import ModelRuntimeError
+from inference_models.errors import ModelInputError, ModelRuntimeError
 from inference_models.models.common.model_packages import get_model_package_contents
 from inference_models.models.common.roboflow.pre_processing import images_to_pillow
 from inference_models.utils.imports import import_class_from_file
@@ -229,7 +229,7 @@ def are_images_encoded(
 ) -> bool:
     if isinstance(images, list):
         if not len(images):
-            raise ModelRuntimeError(
+            raise ModelInputError(
                 message="Detected empty input to the model", help_url="https://todo"
             )
         return isinstance(images[0], EncodedImage)

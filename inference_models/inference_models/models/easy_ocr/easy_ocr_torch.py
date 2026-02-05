@@ -11,7 +11,11 @@ from inference_models.configuration import (
     INFERENCE_MODELS_EASYOCR_DEFAULT_CONFIDENCE,
 )
 from inference_models.entities import ColorFormat, ImageDimensions
-from inference_models.errors import CorruptedModelPackageError, ModelRuntimeError
+from inference_models.errors import (
+    CorruptedModelPackageError,
+    ModelInputError,
+    ModelRuntimeError,
+)
 from inference_models.models.common.model_packages import get_model_package_contents
 from inference_models.utils.file_system import read_json
 
@@ -115,12 +119,12 @@ class EasyOCRTorch(
                 )
             return result, dimensions
         if not isinstance(images, list):
-            raise ModelRuntimeError(
+            raise ModelInputError(
                 message="Pre-processing supports only np.array or torch.Tensor or list of above.",
                 help_url="https://todo",
             )
         if not len(images):
-            raise ModelRuntimeError(
+            raise ModelInputError(
                 message="Detected empty input to the model", help_url="https://todo"
             )
         if isinstance(images[0], np.ndarray):
@@ -144,7 +148,7 @@ class EasyOCRTorch(
                     ImageDimensions(height=np_image.shape[0], width=np_image.shape[1])
                 )
             return result, dimensions
-        raise ModelRuntimeError(
+        raise ModelInputError(
             message=f"Detected unknown input batch element: {type(images[0])}",
             help_url="https://todo",
         )

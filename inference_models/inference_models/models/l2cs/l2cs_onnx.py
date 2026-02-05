@@ -11,6 +11,7 @@ from inference_models.entities import ColorFormat
 from inference_models.errors import (
     EnvironmentConfigurationError,
     MissingDependencyError,
+    ModelInputError,
     ModelRuntimeError,
 )
 from inference_models.models.base.types import PreprocessedInputs
@@ -158,12 +159,12 @@ class L2CSNetOnnx:
                 images = images[:, [2, 1, 0], :, :]
             return self._tensors_transformations(images.float())
         if not isinstance(images, list):
-            raise ModelRuntimeError(
+            raise ModelInputError(
                 message="Pre-processing supports only np.array or torch.Tensor or list of above.",
                 help_url="https://todo",
             )
         if not len(images):
-            raise ModelRuntimeError(
+            raise ModelInputError(
                 message="Detected empty input to the model", help_url="https://todo"
             )
         if isinstance(images[0], np.ndarray):
@@ -184,7 +185,7 @@ class L2CSNetOnnx:
                     image = image[:, [2, 1, 0], :, :]
                 pre_processed.append(self._tensors_transformations(image.float()))
             return torch.cat(pre_processed, dim=0).to(self._device)
-        raise ModelRuntimeError(
+        raise ModelInputError(
             message=f"Detected unknown input batch element: {type(images[0])}",
             help_url="https://todo",
         )

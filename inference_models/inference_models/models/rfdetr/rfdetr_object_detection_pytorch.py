@@ -15,6 +15,7 @@ from inference_models.errors import (
     CorruptedModelPackageError,
     InvalidModelInitParameterError,
     MissingModelInitParameterError,
+    ModelInputError,
     ModelRuntimeError,
 )
 from inference_models.logger import LOGGER
@@ -334,7 +335,7 @@ class RFDetrForObjectDetectionTorch(
             if (self._resolution, self._resolution) != tuple(
                 pre_processed_images.shape[2:]
             ):
-                raise ModelRuntimeError(
+                raise ModelInputError(
                     message=f"Resolution mismatch. Model was optimized for resolution {self._resolution}, "
                     f"but got {tuple(pre_processed_images.shape[2:])}. "
                     "You can explicitly remove the optimized model by calling model.remove_optimized_model().",
@@ -342,7 +343,7 @@ class RFDetrForObjectDetectionTorch(
                 )
             if self._optimized_has_been_compiled:
                 if self._optimized_batch_size != pre_processed_images.shape[0]:
-                    raise ModelRuntimeError(
+                    raise ModelInputError(
                         message="Batch size mismatch. Optimized model was compiled for batch size "
                         f"{self._optimized_batch_size}, but got {pre_processed_images.shape[0]}. "
                         "You can explicitly remove the optimized model by calling model.remove_optimized_model(). "

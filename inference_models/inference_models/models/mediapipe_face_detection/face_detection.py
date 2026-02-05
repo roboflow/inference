@@ -9,7 +9,11 @@ from inference_models.configuration import (
     INFERENCE_MODELS_MEDIAPIPE_FACE_DETECTOR_DEFAULT_CONFIDENCE,
 )
 from inference_models.entities import ColorFormat, ImageDimensions
-from inference_models.errors import MissingDependencyError, ModelRuntimeError
+from inference_models.errors import (
+    MissingDependencyError,
+    ModelInputError,
+    ModelRuntimeError,
+)
 from inference_models.models.common.model_packages import get_model_package_contents
 
 try:
@@ -103,12 +107,12 @@ class MediaPipeFaceDetector(
                 )
             return preprocessed_images, dimensions
         if not isinstance(images, list):
-            raise ModelRuntimeError(
+            raise ModelInputError(
                 message="Pre-processing supports only np.array or torch.Tensor or list of above.",
                 help_url="https://todo",
             )
         if not len(images):
-            raise ModelRuntimeError(
+            raise ModelInputError(
                 message="Detected empty input to the model", help_url="https://todo"
             )
         if isinstance(images[0], np.ndarray):
@@ -142,7 +146,7 @@ class MediaPipeFaceDetector(
                     ImageDimensions(height=np_image.shape[0], width=np_image.shape[1])
                 )
             return preprocessed_images, dimensions
-        raise ModelRuntimeError(
+        raise ModelInputError(
             message=f"Detected unknown input batch element: {type(images[0])}",
             help_url="https://todo",
         )
