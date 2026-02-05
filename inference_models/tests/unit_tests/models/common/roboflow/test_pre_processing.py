@@ -4,7 +4,7 @@ import torch
 from PIL.Image import Image
 
 from inference_models.entities import ImageDimensions
-from inference_models.errors import ModelRuntimeError
+from inference_models.errors import ModelInputError, ModelRuntimeError
 from inference_models.models.common.roboflow.model_packages import (
     ColorMode,
     Contrast,
@@ -564,19 +564,19 @@ def test_images_to_pillow_when_input_is_multi_element_tensor_in_rgb_and_model_in
 
 def test_images_to_pillow_when_empty_batch_provided() -> None:
     # when
-    with pytest.raises(ModelRuntimeError):
+    with pytest.raises(ModelInputError):
         _ = images_to_pillow(images=[])
 
 
 def test_images_to_pillow_when_invalid_input_provided() -> None:
     # when
-    with pytest.raises(ModelRuntimeError):
+    with pytest.raises(ModelInputError):
         _ = images_to_pillow(images="invalid")
 
 
 def test_images_to_pillow_when_ilist_of_nvalid_input_provided() -> None:
     # when
-    with pytest.raises(ModelRuntimeError):
+    with pytest.raises(ModelInputError):
         _ = images_to_pillow(images=["invalid"])
 
 
@@ -657,19 +657,19 @@ def test_extract_input_images_dimensions_when_list_of_tensor_images_provided() -
 
 def test_extract_input_images_dimensions_when_empty_batch_provided() -> None:
     # when
-    with pytest.raises(ModelRuntimeError):
+    with pytest.raises(ModelInputError):
         _ = extract_input_images_dimensions(images=[])
 
 
 def test_extract_input_images_dimensions_when_invalid_data_provided() -> None:
     # when
-    with pytest.raises(ModelRuntimeError):
+    with pytest.raises(ModelInputError):
         _ = extract_input_images_dimensions(images="some")
 
 
 def test_extract_input_images_dimensions_when_invalid_batch_element_provided() -> None:
     # when
-    with pytest.raises(ModelRuntimeError):
+    with pytest.raises(ModelInputError):
         _ = extract_input_images_dimensions(images=["some"])
 
 
@@ -989,7 +989,7 @@ def test_pre_process_list_of_4d_torch_image_with_stretch() -> None:
     image = torch.unsqueeze(image, dim=0)
 
     # when
-    with pytest.raises(ModelRuntimeError):
+    with pytest.raises(ModelInputError):
         _ = pre_process_network_input(
             images=[image, image],
             image_pre_processing=image_pre_processing,
@@ -1418,7 +1418,7 @@ def test_pre_process_list_of_torch_4d_image_with_stretch_and_crop() -> None:
     image = torch.unsqueeze(image, dim=0)
 
     # when
-    with pytest.raises(ModelRuntimeError):
+    with pytest.raises(ModelInputError):
         _ = pre_process_network_input(
             images=[image, image],
             image_pre_processing=image_pre_processing,
@@ -1925,7 +1925,7 @@ def test_pre_process_list_of_torch_4d_image_with_stretch_and_rescaling() -> None
     image = torch.unsqueeze(image, dim=0)
 
     # when
-    with pytest.raises(ModelRuntimeError):
+    with pytest.raises(ModelInputError):
         _ = pre_process_network_input(
             images=[image, image],
             image_pre_processing=image_pre_processing,
@@ -2276,7 +2276,7 @@ def test_pre_process_list_of_torch_4d_image_with_stretch_rescaling_and_normaliza
     image = torch.unsqueeze(image, dim=0)
 
     # when
-    with pytest.raises(ModelRuntimeError):
+    with pytest.raises(ModelInputError):
         _ = pre_process_network_input(
             images=[image, image],
             image_pre_processing=image_pre_processing,
@@ -2781,7 +2781,7 @@ def test_pre_process_list_of_torch_4d_image_with_letterbox_selected() -> None:
     image = torch.unsqueeze(image, dim=0)
 
     # when
-    with pytest.raises(ModelRuntimeError):
+    with pytest.raises(ModelInputError):
         _ = pre_process_network_input(
             images=[image, image],
             image_pre_processing=image_pre_processing,
@@ -4348,7 +4348,7 @@ def test_pre_process_list_of_torch_4d_image_with_center_crop_selected_and_crop_n
     image = torch.unsqueeze(image, dim=0)
 
     # when
-    with pytest.raises(ModelRuntimeError):
+    with pytest.raises(ModelInputError):
         _ = pre_process_network_input(
             images=[image, image],
             image_pre_processing=image_pre_processing,
@@ -9291,7 +9291,7 @@ def test_grayscale_pre_processing_for_list_of_4d_torch_tensor_images() -> None:
     image = torch.unsqueeze(image, dim=0)
 
     # when
-    with pytest.raises(ModelRuntimeError):
+    with pytest.raises(ModelInputError):
         _ = pre_process_network_input(
             images=[image, image],
             image_pre_processing=image_pre_processing,
@@ -9318,7 +9318,7 @@ def test_grayscale_pre_processing_for_list_of_4d_torch_tensor_not_permuted_image
     image = torch.unsqueeze(image, dim=0)
 
     # when
-    with pytest.raises(ModelRuntimeError):
+    with pytest.raises(ModelInputError):
         _ = pre_process_network_input(
             images=[image, image],
             image_pre_processing=image_pre_processing,
