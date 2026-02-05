@@ -491,8 +491,8 @@ def main(
         descriptors_1=r1[2],
         keypoints_2=r2[1],
         descriptors_2=r2[2],
-        mask_1=mask_1,
-        mask_2=mask_2,
+        mask_1=None,
+        mask_2=None,
     )
     logging.info(
         "Feature comparison (masked): %d good matches",
@@ -550,6 +550,26 @@ def main(
         len(points_cam2_in_cam1),
         len(fused_point_cloud),
     )
+    # Log point sets side by side (first N points from each)
+    _n_show = min(10, len(points_cam1), len(points_cam2_in_cam1))
+    if _n_show > 0:
+        logging.info(
+            "Point correspondences (camera 1 frame) — image 1 vs image 2 (first %d):",
+            _n_show,
+        )
+        for i in range(_n_show):
+            p1 = points_cam1[i]
+            p2 = points_cam2_in_cam1[i]
+            logging.info(
+                "  [%d]  (%.4f, %.4f, %.4f)  |  (%.4f, %.4f, %.4f)",
+                i,
+                p1[0],
+                p1[1],
+                p1[2],
+                p2[0],
+                p2[1],
+                p2[2],
+            )
     if len(fused_point_cloud) > 0:
         fig_fused = go.Figure(
             data=[
