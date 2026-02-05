@@ -137,6 +137,28 @@ def _intrinsics_to_K(intrinsics: dict[str, float]) -> np.ndarray:
     )
 
 
+def _intrinsics_to_K_and_D(intrinsics: dict[str, float]) -> tuple[np.ndarray, np.ndarray]:
+    """Build 3x3 K and 5-element dist (k1, k2, p1, p2, k3) from dict."""
+    K = np.array(
+        [
+            [float(intrinsics["fx"]), 0, float(intrinsics["cx"])],
+            [0, float(intrinsics["fy"]), float(intrinsics["cy"])],
+            [0, 0, 1],
+        ]
+    )
+    D = np.array(
+        [
+            float(intrinsics.get("k1", 0)),
+            float(intrinsics.get("k2", 0)),
+            float(intrinsics.get("p1", 0)),
+            float(intrinsics.get("p2", 0)),
+            float(intrinsics.get("k3", 0)),
+        ],
+        dtype=np.float64,
+    )
+    return K, D
+
+
 def _extract_point_pairs(good_matches: list) -> list[tuple[tuple[float, float], tuple[float, float]]]:
     """Extract (pt1, pt2) from good_matches; pt1/pt2 are (x, y)."""
     pairs = []
@@ -267,7 +289,45 @@ def backproject_mask_to_camera_xyz(
     y = (v_flat - cy) * z_flat / fy
 
     return np.column_stack([x, y, z_flat])
-    
+
+
+def rectify_images(
+    img1: np.ndarray,
+    img2: np.ndarray,
+    camera_intrinsics_1: dict[str, float],
+    camera_intrinsics_2: dict[str, float],
+    rotation: np.ndarray,
+    translation: np.ndarray,
+    alpha: float = 0.0,
+) -> tuple[np.ndarray, np.ndarray]:
+    if img1 is None or img2 is None:
+        raise ValueError("Stereo rectification requires loaded numpy images.")
+    h, w = img1.shape[:2]
+    size = (w, h)
+
+    K1, D1 = _intrinsics_to_K_and_D(camera_intrinsics_1)
+    K2, D2 = _intrinsics_to_K_and_D(camera_intrinsics_2)
+    R = np.asarray(rotation, dtype=np.float64).reshape(3, 3)
+    T = np.asarray(translation, dtype=np.float64).ravel()[:3]
+
+    R1, R2, P1, P2, Q, roi1, roi2 = cv2.stereoRectify(
+        K1, D1, K2, D2, size, R, T,
+        flags=cv2.CALIB_ZERO_DISPARITY,
+        alpha=float(alpha),
+    )
+
+    map1_1, map1_2 = cv2.initUndistortRectifyMap(
+        K1, D1, R1, P1, size, cv2.CV_32FC1
+    )
+    map2_1, map2_2 = cv2.initUndistortRectifyMap(
+        K2, D2, R2, P2, size, cv2.CV_32FC1
+    )
+
+    rect1 = cv2.remap(img1, map1_1, map1_2, cv2.INTER_LINEAR)
+    rect2 = cv2.remap(img2, map2_1, map2_2, cv2.INTER_LINEAR)
+
+    return rect1, rect2
+
 
 @click.command()
 @click.option(
@@ -678,6 +738,21 @@ def main(
     logging.info("Saved cameras + object center 3D viz to %s", viz_path)
     fig.show()
 
+    rect_results = rectify_images(
+        img1=cv2.imread(frame_annotations[0].image_path),
+        img2=cv2.imread(frame_annotations[1].image_path),
+        camera_intrinsics_1=camera_intrinsics[0],
+        camera_intrinsics_2=camera_intrinsics[1],
+        rotation=em_results["rotation"],
+        translation=em_results["translation"],
+    )
+
+    rect1, rect2 = rect_results
+    sv.plot_images_grid(
+        images=[rect1, rect2],
+        grid_size=(1, 2),
+        titles=["Rectified image 1", "Rectified image 2"],
+    )
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
