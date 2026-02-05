@@ -277,7 +277,7 @@ if modal is not None:
             q: modal.Queue,
         ):
             _workspace_id = get_roboflow_workspace(api_key=webrtc_request.api_key)
-            
+
             workflow_id = webrtc_request.workflow_configuration.workflow_id
             if not workflow_id:
                 if webrtc_request.workflow_configuration.workflow_specification:
