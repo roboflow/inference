@@ -23,6 +23,7 @@ from inference.core.env import (
     ROBOFLOW_INTERNAL_SERVICE_SECRET,
     WEBRTC_DATA_CHANNEL_ACK_WINDOW,
     WEBRTC_DATA_CHANNEL_BUFFER_SIZE_LIMIT,
+    WEBRTC_GZIP_PREVIEW_FRAME_COMPRESSION,
     WEBRTC_MODAL_APP_NAME,
     WEBRTC_MODAL_FUNCTION_BUFFER_CONTAINERS,
     WEBRTC_MODAL_FUNCTION_ENABLE_MEMORY_SNAPSHOT,
@@ -206,6 +207,9 @@ if modal is not None:
             "WEBRTC_MODAL_SHUTDOWN_RESERVE": str(WEBRTC_MODAL_SHUTDOWN_RESERVE),
             "WEBRTC_MODAL_USAGE_QUOTA_ENABLED": str(WEBRTC_MODAL_USAGE_QUOTA_ENABLED),
             "WEBRTC_MODAL_WATCHDOG_TIMEMOUT": str(WEBRTC_MODAL_WATCHDOG_TIMEMOUT),
+            "WEBRTC_GZIP_PREVIEW_FRAME_COMPRESSION": str(
+                WEBRTC_GZIP_PREVIEW_FRAME_COMPRESSION
+            ),
         },
         "volumes": {MODEL_CACHE_DIR: rfcache_volume},
     }
@@ -272,10 +276,23 @@ if modal is not None:
             webrtc_request: WebRTCWorkerRequest,
             q: modal.Queue,
         ):
+            _workspace_id = get_roboflow_workspace(api_key=webrtc_request.api_key)
+
+            workflow_id = webrtc_request.workflow_configuration.workflow_id
+            if not workflow_id:
+                if webrtc_request.workflow_configuration.workflow_specification:
+                    workflow_id = usage_collector._calculate_resource_hash(
+                        resource_details=webrtc_request.workflow_configuration.workflow_specification
+                    )
+                else:
+                    workflow_id = "unknown"
+
             self._function_call_number_on_container += 1
             logger.info("*** Spawning %s:", self.__class__.__name__)
             logger.info("Running on %s", self._gpu)
             logger.info("Inference tag: %s", docker_tag)
+            logger.info("Workspace ID: %s", _workspace_id)
+            logger.info("Workflow ID: %s", workflow_id)
             logger.info(
                 "Preloaded models: %s",
                 (
@@ -400,14 +417,6 @@ if modal is not None:
                 raise Exception(
                     "WebRTC worker was terminated before processing a single frame"
                 )
-            workflow_id = webrtc_request.workflow_configuration.workflow_id
-            if not workflow_id:
-                if webrtc_request.workflow_configuration.workflow_specification:
-                    workflow_id = usage_collector._calculate_resource_hash(
-                        resource_details=webrtc_request.workflow_configuration.workflow_specification
-                    )
-                else:
-                    workflow_id = "unknown"
 
             # requested plan is guaranteed to be set due to validation in spawn_rtc_peer_connection_modal
             webrtc_plan = webrtc_request.requested_plan
