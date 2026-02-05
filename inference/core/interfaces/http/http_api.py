@@ -317,7 +317,6 @@ class StructuredLoggingMiddleware(BaseHTTPMiddleware):
                 "Structured logging request_id missing; "
                 "CorrelationIdMiddleware may be mis-ordered."
             )
-            request_id = uuid4().hex
 
         context = RequestContext(
             request_id=request_id,
