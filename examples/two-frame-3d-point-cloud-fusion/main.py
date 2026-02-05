@@ -3,7 +3,6 @@ import logging
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Tuple
 
 import click
 import cv2
@@ -21,29 +20,19 @@ from inference_models.models.sam2.sam2_torch import SAM2Prediction
 from inference.core.workflows.core_steps.transformations.essential_matrix.v1 import EssentialMatrixBlockV1
 from inference.core.workflows.core_steps.classical_cv.feature_comparison.v1 import FeatureComparisonBlockV1
 
-
 API_KEY = os.getenv("ROBOFLOW_API_KEY")
-
-DATA_DIR_NAME = "data"
-DATA_DIR = Path(__file__).resolve().parent.parent / DATA_DIR_NAME
-
-FRAME_ANNOTATIONS_FILENAME = "frame_annotations.json"
-FRAME_ANNOTATIONS_PATH = DATA_DIR / FRAME_ANNOTATIONS_FILENAME
-
-OUTPUT_DIR_NAME = "output"
-OUTPUT_DIR = Path(__file__).resolve().parent / OUTPUT_DIR_NAME
-OUTPUT_DIR.mkdir(exist_ok=True)
 
 
 @dataclass
 class FrameAnnotation:
+    data_dir: Path
     frame_id: int
     viewpoint: dict
     image_data: dict
 
     @property
     def image_path(self) -> str:
-        return str(Path(DATA_DIR) / self.image_data["path"])
+        return str(self.data_dir / self.image_data["path"])
 
     @property
     def camera_intrinsics(self) -> dict[str, float]:
@@ -64,7 +53,11 @@ class FrameAnnotation:
         }
 
 
-def get_frame_sequence(frame_sequence_id: str) -> list[dict]:
+def get_frame_sequence(
+    data_dir: Path,
+    frame_annotations_filename: str,
+    frame_sequence_id: str,
+) -> list[dict]:
     """Get the frame sequence for the given frame sequence ID.
 
     Args:
@@ -73,7 +66,7 @@ def get_frame_sequence(frame_sequence_id: str) -> list[dict]:
     Returns:
         A list of frame annotations.
     """
-    with open(DATA_DIR / FRAME_ANNOTATIONS_FILENAME, "r") as f:
+    with open(data_dir / frame_annotations_filename, "r") as f:
         frame_annotations = json.load(f)
 
     frame_sequence = [
@@ -84,10 +77,17 @@ def get_frame_sequence(frame_sequence_id: str) -> list[dict]:
     return frame_sequence
 
 
-def get_frame_annotations_from_sequence(frame_sequence_id: str, frame_ids: list[int]) -> list[FrameAnnotation]:
+def get_frame_annotations_from_sequence(
+    data_dir: Path,
+    frame_annotations_filename: str,
+    frame_sequence_id: str,
+    frame_ids: list[int],
+) -> list[FrameAnnotation]:
     """Get the frame annotations from a frame sequence for the given frame IDs.
     
     Args:
+        data_dir: The data directory to load the data from.
+        frame_annotations_filename: The frame annotations filename to load the frame annotations from.
         frame_sequence_id: The frame sequence ID.
         frame_ids: The frame IDs to get the annotations for.
 
@@ -100,7 +100,11 @@ def get_frame_annotations_from_sequence(frame_sequence_id: str, frame_ids: list[
             viewpoint=fa["viewpoint"],
             image_data=fa["image"],
         )
-        for fa in get_frame_sequence(frame_sequence_id=frame_sequence_id)
+        for fa in get_frame_sequence(
+            data_dir=data_dir,
+            frame_annotations_filename=frame_annotations_filename,
+            frame_sequence_id=frame_sequence_id,
+        )
         if fa["frame_number"] in frame_ids
     ]
 
@@ -432,6 +436,24 @@ def scale_translation_from_median_depths(
 
 @click.command()
 @click.option(
+    "--output-dir",
+    type=str,
+    default="output",
+    help="Output directory to save the results.",
+)
+@click.option(
+    "--data-dir",
+    type=str,
+    default="data",
+    help="Data directory to load the data from.",
+)
+@click.option(
+    "--frame-annotations-filename",
+    type=str,
+    default="frame_annotations.json",
+    help="Frame annotations filename to load the frame annotations from.",
+)
+@click.option(
     "--frame-sequence-id",
     type=str,
     default="246_26304_51384",
@@ -481,6 +503,9 @@ def scale_translation_from_median_depths(
     help="Subsample factor for depth map.",
 )
 def main(
+    output_dir: str,
+    data_dir: str,
+    frame_annotations_filename: str,
     frame_sequence_id: str,
     frame_ids: list[int],
     class_name: str,
@@ -490,6 +515,12 @@ def main(
     detection_confidence: float,
     point_cloud_subsample: int,
 ) -> None:
+    output_dir = Path(output_dir)
+    output_dir.mkdir(exist_ok=True)
+
+    data_dir = Path(data_dir)
+    frame_annotations_path = data_dir / frame_annotations_filename
+
     object_detection_model = YOLOWorld(
         model_id=yolo_world_model_id
     )
@@ -503,6 +534,8 @@ def main(
     )
 
     frame_annotations: list[FrameAnnotation] = get_frame_annotations_from_sequence(
+        data_dir=data_dir,
+        frame_annotations_filename=frame_annotations_filename,
         frame_sequence_id=frame_sequence_id,
         frame_ids=frame_ids,
     )
@@ -582,7 +615,7 @@ def main(
             ),
         )
 
-        html_path = OUTPUT_DIR / f"{class_name}_{frame_annotation.frame_id}_pointcloud.html"
+        html_path = output_dir / f"{class_name}_{frame_annotation.frame_id}_pointcloud.html"
         fig.write_html(str(html_path))
         logging.info("Saved %d 3D points to %s", len(points_3d), html_path)
         fig.show()
@@ -799,7 +832,7 @@ def main(
                 ),
             ),
         )
-        fused_html_path = OUTPUT_DIR / f"{class_name}_fused_pointcloud.html"
+        fused_html_path = output_dir / f"{class_name}_fused_pointcloud.html"
         fig_fused.write_html(str(fused_html_path))
         logging.info("Saved fused point cloud to %s", fused_html_path)
         fig_fused.show()
@@ -878,7 +911,7 @@ def main(
         ),
         showlegend=True,
     )
-    viz_path = OUTPUT_DIR / f"{class_name}_cameras_and_object_center.html"
+    viz_path = output_dir / f"{class_name}_cameras_and_object_center.html"
     fig.write_html(str(viz_path))
     logging.info("Saved cameras + object center 3D viz to %s", viz_path)
     fig.show()
