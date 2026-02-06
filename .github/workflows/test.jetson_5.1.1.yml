@@ -50,7 +50,7 @@ jobs:
       
       - name: 🔋 Start Test Docker with Torch Preprocessing - Jetson 5.1.1
         run: |
-          PORT=9101 USE_PYTORCH_FOR_PREPROCESSING=True INFERENCE_SERVER_REPO=roboflow-inference-server-jetson-5.1.1 make start_test_docker_jetson
+          USE_INFERENCE_MODELS=false PORT=9101 USE_PYTORCH_FOR_PREPROCESSING=True INFERENCE_SERVER_REPO=roboflow-inference-server-jetson-5.1.1 make start_test_docker_jetson
       - name: 🧪 Regression Tests with Torch Preprocessing - Jetson 5.1.1
         run: |
           SKIP_VISUALISATION_TESTS=true SKIP_LMM_TEST=True MAX_WAIT=300 SKIP_PE_TEST=True SKIP_GROUNDING_DINO_TEST=true SKIP_SAM_TEST=true SKIP_GAZE_TEST=true FUNCTIONAL=true PORT=9101 API_KEY=${{ secrets.API_KEY }} asl_instance_segmentation_API_KEY=${{ secrets.ASL_INSTANCE_SEGMENTATION_API_KEY }} asl_poly_instance_seg_API_KEY=${{ secrets.ASL_POLY_INSTANCE_SEG_API_KEY }} bccd_favz3_API_KEY=${{ secrets.BCCD_FAVZ3_API_KEY }} bccd_i4nym_API_KEY=${{ secrets.BCCD_I4NYM_API_KEY }} cats_and_dogs_smnpl_API_KEY=${{ secrets.CATS_AND_DOGS_SMNPL_API_KEY }} coins_xaz9i_API_KEY=${{ secrets.COINS_XAZ9I_API_KEY }} melee_API_KEY=${{ secrets.MELEE_API_KEY }} yolonas_test_API_KEY=${{ secrets.YOLONAS_TEST_API_KEY }} python -m pytest tests/inference/integration_tests/
