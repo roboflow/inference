@@ -32,6 +32,7 @@ from inference.core.env import (
     REQUIRED_ONNX_PROVIDERS,
     TENSORRT_CACHE_PATH,
     USE_PYTORCH_FOR_PREPROCESSING,
+    DISK_CACHE_CLEANUP
 )
 from inference.core.logger import logger
 
@@ -934,7 +935,7 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
                     sess_options=session_options,
                 )
             except Exception as e:
-                self.clear_cache()
+                self.clear_cache(delete_from_disk=DISK_CACHE_CLEANUP)
                 raise ModelArtefactError(
                     f"Unable to load ONNX session. Cause: {e}"
                 ) from e

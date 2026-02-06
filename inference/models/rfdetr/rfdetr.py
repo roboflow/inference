@@ -19,6 +19,7 @@ from inference.core.env import (
     RFDETR_ONNX_MAX_RESOLUTION,
     TENSORRT_CACHE_PATH,
     USE_PYTORCH_FOR_PREPROCESSING,
+    DISK_CACHE_CLEANUP
 )
 from inference.core.exceptions import (
     CannotInitialiseModelError,
@@ -471,7 +472,7 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
                     sess_options=session_options,
                 )
             except Exception as e:
-                self.clear_cache()
+                self.clear_cache(delete_from_disk=DISK_CACHE_CLEANUP)
                 raise ModelArtefactError(
                     f"Unable to load ONNX session. Cause: {e}"
                 ) from e
