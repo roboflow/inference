@@ -12,6 +12,7 @@ from inference.core.entities.requests.inference import InferenceRequestImage
 from inference.core.entities.responses.inference import InferenceResponseImage
 from inference.core.env import (
     DISABLE_PREPROC_AUTO_ORIENT,
+    DISK_CACHE_CLEANUP,
     FIX_BATCH_SIZE,
     MAX_BATCH_SIZE,
     ONNXRUNTIME_EXECUTION_PROVIDERS,
@@ -19,7 +20,6 @@ from inference.core.env import (
     RFDETR_ONNX_MAX_RESOLUTION,
     TENSORRT_CACHE_PATH,
     USE_PYTORCH_FOR_PREPROCESSING,
-    DISK_CACHE_CLEANUP
 )
 from inference.core.exceptions import (
     CannotInitialiseModelError,

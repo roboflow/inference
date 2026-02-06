@@ -32,7 +32,6 @@ from inference.core.env import (
     REQUIRED_ONNX_PROVIDERS,
     TENSORRT_CACHE_PATH,
     USE_PYTORCH_FOR_PREPROCESSING,
-    DISK_CACHE_CLEANUP
 )
 from inference.core.logger import logger
 
