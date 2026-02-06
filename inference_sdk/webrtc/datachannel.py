@@ -105,10 +105,6 @@ class VideoFileUploader:
 
     Protocol: [chunk_index:u32][total_chunks:u32][payload]
     Server auto-completes when all chunks received.
-
-    Features:
-    - Backpressure handling via bufferedAmount monitoring
-    - Progress callback support
     """
 
     def __init__(
@@ -118,14 +114,6 @@ class VideoFileUploader:
         chunk_size: int = WEBRTC_VIDEO_UPLOAD_CHUNK_SIZE,
         buffer_limit: int = WEBRTC_VIDEO_UPLOAD_BUFFER_LIMIT,
     ):
-        """Initialize video file uploader.
-
-        Args:
-            path: Path to the video file to upload
-            channel: RTCDataChannel to send chunks through
-            chunk_size: Size of each chunk in bytes (default 48KB)
-            buffer_limit: Max buffered bytes before applying backpressure
-        """
         self._path = path
         self._channel = channel
         self._chunk_size = chunk_size
@@ -174,9 +162,16 @@ class VideoFileUploader:
                 # Backpressure: wait for buffer to drain
                 while self._channel.bufferedAmount > self._buffer_limit:
                     await asyncio.sleep(0.01)
+                    if self._channel.readyState != "open":
+                        raise RuntimeError(
+                            "Upload channel closed during backpressure wait"
+                        )
 
                 self._channel.send(message)
                 self._uploaded_chunks = chunk_idx + 1
 
                 if on_progress:
                     on_progress(self._uploaded_chunks, self._total_chunks)
+
+                if chunk_idx % 10 == 0:
+                    await asyncio.sleep(0)

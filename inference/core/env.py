@@ -791,7 +791,7 @@ WEBRTC_DATA_CHANNEL_BUFFER_DRAINING_DELAY = float(
     os.getenv("WEBRTC_DATA_CHANNEL_BUFFER_DRAINING_DELAY", "0.1")
 )
 WEBRTC_DATA_CHANNEL_BUFFER_SIZE_LIMIT = int(
-    os.getenv("WEBRTC_DATA_CHANNEL_BUFFER_SIZE_LIMIT", str(1024 * 1024))  # 1MB
+    os.getenv("WEBRTC_DATA_CHANNEL_BUFFER_SIZE_LIMIT", str(1024 * 1024 * 32))  # 32MB
 )
 
 # Maximum number of frames the server is allowed to be ahead of the last client ACK
@@ -800,12 +800,23 @@ WEBRTC_DATA_CHANNEL_BUFFER_SIZE_LIMIT = int(
 # Example: if ack=1 and window=4, server may produce/send up to frame 5.
 try:
     WEBRTC_DATA_CHANNEL_ACK_WINDOW = int(
-        os.getenv("WEBRTC_DATA_CHANNEL_ACK_WINDOW", "20")
+        os.getenv("WEBRTC_DATA_CHANNEL_ACK_WINDOW", "1")
     )
 except (ValueError, TypeError):
-    WEBRTC_DATA_CHANNEL_ACK_WINDOW = 20
+    WEBRTC_DATA_CHANNEL_ACK_WINDOW = 1
+
 if WEBRTC_DATA_CHANNEL_ACK_WINDOW < 0:
     WEBRTC_DATA_CHANNEL_ACK_WINDOW = 0
+
+WEBRTC_GZIP_PREVIEW_FRAME_COMPRESSION = str2bool(
+    os.getenv("WEBRTC_GZIP_PREVIEW_FRAME_COMPRESSION", "False")
+)
+
+# JPEG quality for WebRTC preview frames
+# (1-100, higher means better quality, but larger payload size and we might time out)
+WEBRTC_PREVIEW_FRAME_JPEG_QUALITY = int(
+    os.getenv("WEBRTC_PREVIEW_FRAME_JPEG_QUALITY", "80")
+)
 
 HTTP_API_SHARED_WORKFLOWS_THREAD_POOL_ENABLED = str2bool(
     os.getenv("HTTP_API_SHARED_WORKFLOWS_THREAD_POOL_ENABLED", "True")
