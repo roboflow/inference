@@ -121,7 +121,7 @@ SHORT_DESCRIPTION = "Parse a raw string into a classification prediction."
 class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
-            "name": "VLM as Classifier",
+            "name": "VLM As Classifier",
             "version": "v2",
             "short_description": SHORT_DESCRIPTION,
             "long_description": LONG_DESCRIPTION,
