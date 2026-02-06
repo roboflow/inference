@@ -26,7 +26,6 @@ from inference.core.env import (
 from inference.core.models.base import Model
 from inference.core.models.types import PreprocessReturnMetadata
 from inference.core.utils.image_utils import load_image_bgr
-from inference.core.utils.postprocess import cosine_similarity
 from inference_models import AutoModel
 from inference_models.models.clip.clip_onnx import ClipOnnx
 from inference_models.models.clip.clip_pytorch import ClipTorch
@@ -124,9 +123,39 @@ class InferenceModelsClipAdapter(Model):
                 "prompt_type must be either 'image' or 'text', but got {request.prompt_type}"
             )
 
-        similarities = [
-            cosine_similarity(subject_embeddings, p) for p in prompt_embeddings
-        ]
+        # Vectorized cosine similarity computation to avoid per-prompt Python loop.
+        # Maintain exact behavior for array shapes as the original per-prompt computation:
+        # for each prompt p: np.dot(subject_embeddings, p) / (np.linalg.norm(subject_embeddings) * np.linalg.norm(p))
+        A = np.asarray(subject_embeddings)
+        B = np.asarray(prompt_embeddings)
+
+        # Ensure B is 2D (n_prompts, D) for unified processing
+        if B.ndim == 1:
+            B = B.reshape(1, -1)
+
+        normA = np.linalg.norm(A)
+        # Compute per-prompt norms
+        normB = np.linalg.norm(B, axis=1)
+
+        # Compute dot-products consistent with numpy.dot behavior used in the original loop:
+        # If A is 1D, dot = B @ A -> shape (n_prompts,)
+        # If A is 2D, we want for each prompt p: np.dot(A, p) -> which yields shape (n_subjects,)
+        # So compute dot_matrix as (n_prompts, n_subjects) when A is 2D, or (n_prompts,) when A is 1D.
+        if A.ndim == 1:
+            dot = B @ A  # shape (n_prompts,)
+            # denom shape (n_prompts,)
+            denom = normA * normB
+            sims = dot / denom
+            # Convert to list of numpy scalars to match original list comprehension behavior
+            similarities = list(sims)
+        else:
+            # A is 2D: compute (n_prompts, n_subjects)
+            dot_matrix = B @ A.T  # shape (n_prompts, n_subjects)
+            # denom shape (n_prompts, 1)
+            denom = (normA * normB)[:, None]
+            sims_matrix = dot_matrix / denom
+            # Produce a list where each element corresponds to a prompt (same order as original)
+            similarities = [sims_matrix[i] for i in range(sims_matrix.shape[0])]
 
         if prompt_obj == "dict":
             similarities = dict(zip(prompt_keys, similarities))
