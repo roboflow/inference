@@ -22,7 +22,6 @@ from inference_models.errors import (
     InvalidModelInitParameterError,
     InvalidParameterError,
     MissingModelInitParameterError,
-    ModelLoadingError,
     ModelPackageAlternativesExhaustedError,
     NoModelPackagesAvailableError,
     UnauthorizedModelAccessError,
@@ -115,6 +114,8 @@ class AutoModel:
         weights_provider: str = "roboflow",
         api_key: Optional[str] = None,
         pull_artefacts_size: bool = False,
+        weights_provider_extra_query_params: Optional[List[Tuple[str, str]]] = None,
+        weights_provider_extra_headers: Optional[Dict[str, str]] = None,
     ) -> None:
         """Display comprehensive metadata and available packages for a model.
 
@@ -152,6 +153,12 @@ class AutoModel:
                 each model package. This requires making network requests to check
                 file sizes, so it's slower. Default: False.
 
+            weights_provider_extra_query_params: Extra query parameters to pass to the weights' provider. Advanced
+                usage only.
+
+            weights_provider_extra_headers: Extra headers to pass to the weights' provider. Advanced
+                usage only.
+
         Returns:
             None. Prints formatted tables to the console showing:
                 1. Model overview table with architecture, task type, and dependencies
@@ -188,6 +195,8 @@ class AutoModel:
             provider=weights_provider,
             model_id=model_id,
             api_key=api_key,
+            weights_provider_extra_query_params=weights_provider_extra_query_params,
+            weights_provider_extra_headers=weights_provider_extra_headers,
         )
         model_packages_size = None
         if pull_artefacts_size:
@@ -233,6 +242,8 @@ class AutoModel:
         weights_provider: str = "roboflow",
         api_key: Optional[str] = None,
         pull_artefacts_size: bool = True,
+        weights_provider_extra_query_params: Optional[List[Tuple[str, str]]] = None,
+        weights_provider_extra_headers: Optional[Dict[str, str]] = None,
     ) -> None:
         """Display detailed information about a specific model package.
 
@@ -273,6 +284,12 @@ class AutoModel:
                 artifact in the package. This requires making network requests to check
                 file sizes, so it's slower. Default: True.
 
+            weights_provider_extra_query_params: Extra query parameters to pass to the weights' provider. Advanced
+                usage only.
+
+            weights_provider_extra_headers: Extra headers to pass to the weights' provider. Advanced
+                usage only.
+
         Returns:
             None. Prints a formatted table to the console showing package details.
 
@@ -308,6 +325,8 @@ class AutoModel:
             provider=weights_provider,
             model_id=model_id,
             api_key=api_key,
+            weights_provider_extra_query_params=weights_provider_extra_query_params,
+            weights_provider_extra_headers=weights_provider_extra_headers,
         )
         selected_package = None
         for package in model_metadata.model_packages:
@@ -430,6 +449,8 @@ class AutoModel:
         dependency_models_params: Optional[dict] = None,
         point_model_directory: Optional[Callable[[str], None]] = None,
         forwarded_kwargs: Optional[List[str]] = None,
+        weights_provider_extra_query_params: Optional[List[Tuple[str, str]]] = None,
+        weights_provider_extra_headers: Optional[Dict[str, str]] = None,
         **kwargs,
     ) -> AnyModel:
         """Load and initialize a computer vision model with automatic backend selection.
@@ -555,6 +576,12 @@ class AutoModel:
                 after loading. Advanced usage only.
 
             forwarded_kwargs: List of kwargs to forward to dependency models. Advanced
+                usage only.
+
+            weights_provider_extra_query_params: Extra query parameters to pass to the weights' provider. Advanced
+                usage only.
+
+            weights_provider_extra_headers: Extra headers to pass to the weights' provider. Advanced
                 usage only.
 
             **kwargs: Additional model-specific parameters passed to the model's
@@ -686,7 +713,7 @@ class AutoModel:
             # QUESTION: is it enough to assume presence of local dir as the intent to load
             # model from disc drive? What if we have clash of model id / model alias with
             # contents of someone's local drive - shall we then try to load from both sources?
-            # that still may end up with ambiguous behaviour - probably the solution would be
+            # that still may end up with ambiguous behavior - probably the solution would be
             # to require prefix like file://... to denote the intent of loading model from local
             # drive?
             if api_key is not None:
@@ -708,6 +735,8 @@ class AutoModel:
                     "allow_untrusted_packages": allow_untrusted_packages,
                     "trt_engine_host_code_allowed": trt_engine_host_code_allowed,
                     "nms_fusion_preferences": nms_fusion_preferences,
+                    "weights_provider_extra_query_params": weights_provider_extra_query_params,
+                    "weights_provider_extra_headers": weights_provider_extra_headers,
                 }
             )
             model_from_access_manager = model_access_manager.retrieve_model_instance(
@@ -746,6 +775,8 @@ class AutoModel:
                 download_files_without_hash=download_files_without_hash,
                 allow_direct_local_storage_loading=allow_direct_local_storage_loading,
                 dependency_models_params=dependency_models_params,
+                weights_provider_extra_query_params=weights_provider_extra_query_params,
+                weights_provider_extra_headers=weights_provider_extra_headers,
             )
             if model_from_cache:
                 return model_from_cache
@@ -754,6 +785,8 @@ class AutoModel:
                     provider=weights_provider,
                     model_id=model_id_or_path,
                     api_key=api_key,
+                    weights_provider_extra_query_params=weights_provider_extra_query_params,
+                    weights_provider_extra_headers=weights_provider_extra_headers,
                 )
                 if (
                     model_metadata.model_dependencies
@@ -940,6 +973,8 @@ def attempt_loading_model_with_auto_load_cache(
     download_files_without_hash: bool = False,
     allow_direct_local_storage_loading: bool = True,
     dependency_models_params: Optional[dict] = None,
+    weights_provider_extra_query_params: Optional[List[Tuple[str, str]]] = None,
+    weights_provider_extra_headers: Optional[Dict[str, str]] = None,
 ) -> Optional[AnyModel]:
     if not use_auto_resolution_cache:
         return None
@@ -1023,6 +1058,8 @@ def attempt_loading_model_with_auto_load_cache(
                 task_type=resolved_model_parameters.task_type,
                 allow_loading_dependency_models=False,
                 dependency_models_params=None,
+                weights_provider_extra_query_params=weights_provider_extra_query_params,
+                weights_provider_extra_headers=weights_provider_extra_headers,
                 **resolved_model_parameters.kwargs,
             )
             model_dependencies_instances[model_dependency.name] = dependency_instance

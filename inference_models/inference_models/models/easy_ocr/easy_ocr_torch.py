@@ -6,9 +6,16 @@ import torch
 from pydantic import BaseModel
 
 from inference_models import Detections, StructuredOCRModel
-from inference_models.configuration import DEFAULT_DEVICE
+from inference_models.configuration import (
+    DEFAULT_DEVICE,
+    INFERENCE_MODELS_EASYOCR_DEFAULT_CONFIDENCE,
+)
 from inference_models.entities import ColorFormat, ImageDimensions
-from inference_models.errors import CorruptedModelPackageError, ModelRuntimeError
+from inference_models.errors import (
+    CorruptedModelPackageError,
+    ModelInputError,
+    ModelRuntimeError,
+)
 from inference_models.models.common.model_packages import get_model_package_contents
 from inference_models.utils.file_system import read_json
 
@@ -112,12 +119,12 @@ class EasyOCRTorch(
                 )
             return result, dimensions
         if not isinstance(images, list):
-            raise ModelRuntimeError(
+            raise ModelInputError(
                 message="Pre-processing supports only np.array or torch.Tensor or list of above.",
                 help_url="https://todo",
             )
         if not len(images):
-            raise ModelRuntimeError(
+            raise ModelInputError(
                 message="Detected empty input to the model", help_url="https://todo"
             )
         if isinstance(images[0], np.ndarray):
@@ -141,7 +148,7 @@ class EasyOCRTorch(
                     ImageDimensions(height=np_image.shape[0], width=np_image.shape[1])
                 )
             return result, dimensions
-        raise ModelRuntimeError(
+        raise ModelInputError(
             message=f"Detected unknown input batch element: {type(images[0])}",
             help_url="https://todo",
         )
@@ -170,7 +177,7 @@ class EasyOCRTorch(
         self,
         model_results: List[EasyOCRRawPrediction],
         pre_processing_meta: List[ImageDimensions],
-        confidence_threshold: float = 0.3,
+        confidence: float = INFERENCE_MODELS_EASYOCR_DEFAULT_CONFIDENCE,
         text_regions_separator: str = " ",
         **kwargs,
     ) -> Tuple[List[str], List[Detections]]:
@@ -180,10 +187,10 @@ class EasyOCRTorch(
         ):
             whole_image_text = []
             xyxy = []
-            confidence = []
+            predictions_confidence = []
             class_id = []
             for box, text, text_confidence in single_image_result:
-                if text_confidence < confidence_threshold:
+                if text_confidence < confidence:
                     continue
                 whole_image_text.append(text)
                 min_x = min(p[0] for p in box)
@@ -192,7 +199,7 @@ class EasyOCRTorch(
                 max_y = max(p[1] for p in box)
                 box_xyxy = [min_x, min_y, max_x, max_y]
                 xyxy.append(box_xyxy)
-                confidence.append(float(text_confidence))
+                predictions_confidence.append(float(text_confidence))
                 class_id.append(0)
             while_image_text_joined = text_regions_separator.join(whole_image_text)
             rendered_texts.append(while_image_text_joined)
@@ -201,7 +208,9 @@ class EasyOCRTorch(
                 Detections(
                     xyxy=torch.tensor(xyxy, device=self._device),
                     class_id=torch.tensor(class_id, device=self._device),
-                    confidence=torch.tensor(confidence, device=self._device),
+                    confidence=torch.tensor(
+                        predictions_confidence, device=self._device
+                    ),
                     bboxes_metadata=data,
                 )
             )

@@ -21,7 +21,7 @@ def test_onnx_package_stretch_static_bs_numpy(
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
-    predictions = model(snake_image_numpy)
+    predictions = model(snake_image_numpy, confidence=0.25)
 
     xyxy = predictions[0].xyxy.cpu().tolist()[0]
     mask_region_sum = (
@@ -65,7 +65,7 @@ def test_onnx_package_stretch_static_bs_batch_numpy(
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
-    predictions = model([snake_image_numpy, snake_image_numpy])
+    predictions = model([snake_image_numpy, snake_image_numpy], confidence=0.25)
 
     xyxy_0 = predictions[0].xyxy.cpu().tolist()[0]
     xyxy_1 = predictions[1].xyxy.cpu().tolist()[0]
@@ -131,7 +131,7 @@ def test_onnx_package_stretch_static_bs_torch(
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
-    predictions = model(snake_image_torch)
+    predictions = model(snake_image_torch, confidence=0.25)
 
     xyxy = predictions[0].xyxy.cpu().tolist()[0]
     mask_region_sum = (
@@ -175,7 +175,7 @@ def test_onnx_package_stretch_dynamic_bs_numpy(
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
-    predictions = model(snake_image_numpy)
+    predictions = model(snake_image_numpy, confidence=0.25)
 
     xyxy = predictions[0].xyxy.cpu().tolist()[0]
     mask_region_sum = (
@@ -219,7 +219,7 @@ def test_onnx_package_stretch_dynamic_bs_batch_numpy(
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
-    predictions = model([snake_image_numpy, snake_image_numpy])
+    predictions = model([snake_image_numpy, snake_image_numpy], confidence=0.25)
 
     xyxy_0 = predictions[0].xyxy.cpu().tolist()[0]
     xyxy_1 = predictions[1].xyxy.cpu().tolist()[0]
@@ -285,7 +285,7 @@ def test_onnx_package_stretch_dynamic_bs_torch(
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
-    predictions = model(snake_image_torch)
+    predictions = model(snake_image_torch, confidence=0.25)
 
     xyxy = predictions[0].xyxy.cpu().tolist()[0]
     mask_region_sum = (
@@ -329,7 +329,7 @@ def test_onnx_package_letterbox_static_bs_numpy(
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
-    predictions = model(snake_image_numpy)
+    predictions = model(snake_image_numpy, confidence=0.25)
 
     xyxy = predictions[0].xyxy.cpu().tolist()[0]
     mask_region_sum = (
@@ -373,7 +373,7 @@ def test_onnx_package_letterbox_static_bs_batch_numpy(
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
-    predictions = model([snake_image_numpy, snake_image_numpy])
+    predictions = model([snake_image_numpy, snake_image_numpy], confidence=0.25)
 
     xyxy_0 = predictions[0].xyxy.cpu().tolist()[0]
     xyxy_1 = predictions[1].xyxy.cpu().tolist()[0]
@@ -439,7 +439,7 @@ def test_onnx_package_letterbox_static_bs_torch(
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
-    predictions = model(snake_image_torch)
+    predictions = model(snake_image_torch, confidence=0.25)
 
     xyxy = predictions[0].xyxy.cpu().tolist()[0]
     mask_region_sum = (
@@ -483,7 +483,7 @@ def test_onnx_package_letterbox_dynamic_bs_numpy(
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
-    predictions = model(snake_image_numpy)
+    predictions = model(snake_image_numpy, confidence=0.25)
 
     xyxy = predictions[0].xyxy.cpu().tolist()[0]
     mask_region_sum = (
@@ -527,7 +527,7 @@ def test_onnx_package_letterbox_dynamic_bs_batch_numpy(
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
-    predictions = model([snake_image_numpy, snake_image_numpy])
+    predictions = model([snake_image_numpy, snake_image_numpy], confidence=0.25)
 
     xyxy_0 = predictions[0].xyxy.cpu().tolist()[0]
     xyxy_1 = predictions[1].xyxy.cpu().tolist()[0]
@@ -593,7 +593,7 @@ def test_onnx_package_letterbox_dynamic_bs_torch(
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
-    predictions = model(snake_image_torch)
+    predictions = model(snake_image_torch, confidence=0.25)
 
     xyxy = predictions[0].xyxy.cpu().tolist()[0]
     mask_region_sum = (

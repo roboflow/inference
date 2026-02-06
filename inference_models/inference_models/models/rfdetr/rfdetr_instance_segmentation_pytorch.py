@@ -6,12 +6,16 @@ import numpy as np
 import torch
 
 from inference_models import InstanceDetections, InstanceSegmentationModel
-from inference_models.configuration import DEFAULT_DEVICE
+from inference_models.configuration import (
+    DEFAULT_DEVICE,
+    INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE,
+)
 from inference_models.entities import ColorFormat
 from inference_models.errors import (
     CorruptedModelPackageError,
     InvalidModelInitParameterError,
     MissingModelInitParameterError,
+    ModelInputError,
     ModelRuntimeError,
 )
 from inference_models.logger import LOGGER
@@ -42,13 +46,13 @@ from inference_models.models.rfdetr.default_labels import resolve_labels
 from inference_models.models.rfdetr.post_processor import PostProcess
 from inference_models.models.rfdetr.rfdetr_base_pytorch import (
     LWDETR,
-    RFDETRSegPreviewConfig,
-    RFDETRSegNanoConfig,
-    RFDETRSegSmallConfig,
-    RFDETRSegMediumConfig,
-    RFDETRSegLargeConfig,
-    RFDETRSegXLargeConfig,
     RFDETRSeg2XLargeConfig,
+    RFDETRSegLargeConfig,
+    RFDETRSegMediumConfig,
+    RFDETRSegNanoConfig,
+    RFDETRSegPreviewConfig,
+    RFDETRSegSmallConfig,
+    RFDETRSegXLargeConfig,
     build_model,
 )
 
@@ -113,6 +117,7 @@ class RFDetrForInstanceSegmentationTorch(
                 ResizeMode.LETTERBOX,
                 ResizeMode.CENTER_CROP,
                 ResizeMode.LETTERBOX_REFLECT_EDGES,
+                ResizeMode.FIT_LONGER_EDGE,
             },
         )
         classes_re_mapping = None
@@ -334,7 +339,7 @@ class RFDetrForInstanceSegmentationTorch(
             if (self._resolution, self._resolution) != tuple(
                 pre_processed_images.shape[2:]
             ):
-                raise ModelRuntimeError(
+                raise ModelInputError(
                     message=f"Resolution mismatch. Model was optimized for resolution {self._resolution}, "
                     f"but got {tuple(pre_processed_images.shape[2:])}. "
                     "You can explicitly remove the optimized model by calling model.remove_optimized_model().",
@@ -342,7 +347,7 @@ class RFDetrForInstanceSegmentationTorch(
                 )
             if self._optimized_has_been_compiled:
                 if self._optimized_batch_size != pre_processed_images.shape[0]:
-                    raise ModelRuntimeError(
+                    raise ModelInputError(
                         message="Batch size mismatch. Optimized model was compiled for batch size "
                         f"{self._optimized_batch_size}, but got {pre_processed_images.shape[0]}. "
                         "You can explicitly remove the optimized model by calling model.remove_optimized_model(). "
@@ -369,7 +374,7 @@ class RFDetrForInstanceSegmentationTorch(
         self,
         model_results: dict,
         pre_processing_meta: List[PreProcessingMetadata],
-        threshold: float = 0.5,
+        confidence: float = INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE,
         **kwargs,
     ) -> List[InstanceDetections]:
         bboxes, logits, masks = (
@@ -382,6 +387,6 @@ class RFDetrForInstanceSegmentationTorch(
             logits=logits,
             masks=masks,
             pre_processing_meta=pre_processing_meta,
-            threshold=threshold,
+            threshold=confidence,
             classes_re_mapping=self._classes_re_mapping,
         )

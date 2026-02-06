@@ -5,7 +5,10 @@ import torch
 from torchvision.transforms import functional
 
 from inference_models import ColorFormat, SemanticSegmentationModel
-from inference_models.configuration import DEFAULT_DEVICE
+from inference_models.configuration import (
+    DEFAULT_DEVICE,
+    INFERENCE_MODELS_DEEP_LAB_V3_PLUS_DEFAULT_CONFIDENCE,
+)
 from inference_models.errors import (
     EnvironmentConfigurationError,
     MissingDependencyError,
@@ -97,6 +100,17 @@ class DeepLabV3PlusForSemanticSegmentationOnnx(
                 ResizeMode.CENTER_CROP,
                 ResizeMode.LETTERBOX_REFLECT_EDGES,
             },
+            implicit_resize_mode_substitutions={
+                ResizeMode.FIT_LONGER_EDGE: (
+                    ResizeMode.LETTERBOX,
+                    0,
+                    "DeepLabV3Plus model running with ONNX backend was trained with `fit-longer-edge` input "
+                    "resize mode. This transform cannot be applied properly for  models with input dimensions "
+                    "fixed during weights export. To ensure interoperability, `letterbox` resize mode with black "
+                    "edges will be used instead. If model was trained on Roboflow platform, we recommend using "
+                    "preprocessing method different that `fit-longer-edge`.",
+                )
+            },
         )
         session = onnxruntime.InferenceSession(
             path_or_bytes=model_package_content["weights.onnx"],
@@ -168,7 +182,7 @@ class DeepLabV3PlusForSemanticSegmentationOnnx(
         self,
         model_results: RawPrediction,
         pre_processing_meta: PreprocessedInputs,
-        confidence_threshold: float = 0.5,
+        confidence: float = INFERENCE_MODELS_DEEP_LAB_V3_PLUS_DEFAULT_CONFIDENCE,
         **kwargs,
     ) -> List[SemanticSegmentationResult]:
         results = []
@@ -233,7 +247,7 @@ class DeepLabV3PlusForSemanticSegmentationOnnx(
                 )
             image_results = torch.nn.functional.softmax(image_results, dim=0)
             image_confidence, image_class_ids = torch.max(image_results, dim=0)
-            below_threshold = image_confidence < confidence_threshold
+            below_threshold = image_confidence < confidence
             image_confidence[below_threshold] = 0.0
             image_class_ids[below_threshold] = self._background_class_id
             if (

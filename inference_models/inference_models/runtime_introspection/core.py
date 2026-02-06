@@ -44,7 +44,6 @@ class RuntimeXRayResult:
     onnxruntime_version: Optional[Version]
     available_onnx_execution_providers: Optional[Set[str]]
     hf_transformers_available: bool
-    ultralytics_available: bool
     trt_python_package_available: bool
     mediapipe_available: bool
 
@@ -57,7 +56,6 @@ class RuntimeXRayResult:
             f"jetson_type={self.jetson_type}, l4t_version={self.l4t_version}, os_version={self.os_version}, "
             f"torch_available={self.torch_available}, onnxruntime_version={self.onnxruntime_version}, "
             f"available_onnx_execution_providers={self.available_onnx_execution_providers}, hf_transformers_available={self.hf_transformers_available}, "
-            f"ultralytics_available={self.ultralytics_available}, "
             f"trt_python_package_available={self.trt_python_package_available}, torch_version={self.torch_version}, "
             f"torchvision_version={self.torchvision_version}, mediapipe_available={self.mediapipe_available})"
         )
@@ -107,8 +105,6 @@ def x_ray_runtime_environment() -> RuntimeXRayResult:
             - available_onnx_execution_providers (Optional[Set[str]]): Available ONNX EPs
 
             - hf_transformers_available (bool): Whether Hugging Face Transformers is installed
-
-            - ultralytics_available (bool): Whether Ultralytics is installed
 
             - trt_python_package_available (bool): Whether TensorRT Python package is installed
 
@@ -173,7 +169,6 @@ def x_ray_runtime_environment() -> RuntimeXRayResult:
     else:
         onnxruntime_version, available_onnx_execution_providers = None, None
     hf_transformers_available = is_hf_transformers_available()
-    ultralytics_available = is_ultralytics_available()
     trt_python_package_available = is_trt_python_package_available()
     mediapipe_available = is_mediapipe_available()
     return RuntimeXRayResult(
@@ -192,7 +187,6 @@ def x_ray_runtime_environment() -> RuntimeXRayResult:
         onnxruntime_version=onnxruntime_version,
         available_onnx_execution_providers=available_onnx_execution_providers,
         hf_transformers_available=hf_transformers_available,
-        ultralytics_available=ultralytics_available,
         trt_python_package_available=trt_python_package_available,
         mediapipe_available=mediapipe_available,
     )
@@ -459,16 +453,6 @@ def get_onnxruntime_info() -> Optional[Tuple[Version, Set[str]]]:
 def is_hf_transformers_available() -> bool:
     try:
         import transformers
-
-        return True
-    except ImportError:
-        return False
-
-
-@cache
-def is_ultralytics_available() -> bool:
-    try:
-        import ultralytics
 
         return True
     except ImportError:

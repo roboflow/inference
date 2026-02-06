@@ -44,9 +44,7 @@ def test_v2_manifest_parsing_when_input_is_valid(
         "sms_provider": sms_provider,
         "receiver_number": receiver_number,
         "message": "Alert! Detected {{ $parameters.num_detections }} objects",
-        "message_parameters": {
-            "num_detections": "$steps.model.predictions"
-        },
+        "message_parameters": {"num_detections": "$steps.model.predictions"},
         "fire_and_forget": True,
     }
 
@@ -219,7 +217,6 @@ def test_serialize_media_for_api_with_workflow_image() -> None:
     assert media_base64[0]["mimeType"] == "image/jpeg"
 
 
-
 @mock.patch.object(v2, "post_to_roboflow_api")
 def test_send_sms_via_roboflow_proxy_success(mock_post: MagicMock) -> None:
     # given
@@ -380,7 +377,9 @@ def test_twilio_block_v2_custom_twilio_success() -> None:
     mock_messages = MagicMock()
     mock_client.messages = mock_messages
 
-    with mock.patch("inference.core.workflows.core_steps.sinks.twilio.sms.v2.Client") as mock_client_class:
+    with mock.patch(
+        "inference.core.workflows.core_steps.sinks.twilio.sms.v2.Client"
+    ) as mock_client_class:
         mock_client_class.return_value = mock_client
 
         # when
@@ -474,7 +473,9 @@ def test_twilio_block_v2_custom_twilio_with_mms_list() -> None:
     mock_messages = MagicMock()
     mock_client.messages = mock_messages
 
-    with mock.patch("inference.core.workflows.core_steps.sinks.twilio.sms.v2.Client") as mock_client_class:
+    with mock.patch(
+        "inference.core.workflows.core_steps.sinks.twilio.sms.v2.Client"
+    ) as mock_client_class:
         mock_client_class.return_value = mock_client
 
         # when
@@ -484,7 +485,10 @@ def test_twilio_block_v2_custom_twilio_with_mms_list() -> None:
             message="Check out these images",
             message_parameters={},
             message_parameters_operations={},
-            media_url=["https://example.com/image1.jpg", "https://example.com/image2.jpg"],
+            media_url=[
+                "https://example.com/image1.jpg",
+                "https://example.com/image2.jpg",
+            ],
             twilio_account_sid="AC123",
             twilio_auth_token="auth_token",
             sender_number="+15559876543",
@@ -519,9 +523,12 @@ def test_twilio_block_v2_custom_twilio_with_workflow_image() -> None:
     mock_messages = MagicMock()
     mock_client.messages = mock_messages
 
-    with mock.patch("inference.core.workflows.core_steps.sinks.twilio.sms.v2.Client") as mock_client_class, \
-         mock.patch("inference.core.workflows.core_steps.sinks.twilio.sms.v2._upload_image_to_ephemeral_host") as mock_upload:
-        
+    with mock.patch(
+        "inference.core.workflows.core_steps.sinks.twilio.sms.v2.Client"
+    ) as mock_client_class, mock.patch(
+        "inference.core.workflows.core_steps.sinks.twilio.sms.v2._upload_image_to_ephemeral_host"
+    ) as mock_upload:
+
         mock_client_class.return_value = mock_client
         mock_upload.return_value = "https://example.org/dl/12345/image.jpg"
 
@@ -659,7 +666,7 @@ def test_twilio_block_v2_cooldown_expires() -> None:
 def test_twilio_block_v2_fire_and_forget_with_thread_pool() -> None:
     # given
     from concurrent.futures import ThreadPoolExecutor
-    
+
     executor = ThreadPoolExecutor(max_workers=2)
     block = TwilioSMSNotificationBlockV2(
         background_tasks=None,
@@ -697,7 +704,7 @@ def test_twilio_block_v2_fire_and_forget_with_thread_pool() -> None:
 def test_twilio_block_v2_fire_and_forget_with_background_tasks() -> None:
     # given
     from fastapi import BackgroundTasks
-    
+
     background_tasks = BackgroundTasks()
     block = TwilioSMSNotificationBlockV2(
         background_tasks=background_tasks,

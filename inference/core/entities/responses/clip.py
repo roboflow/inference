@@ -18,7 +18,7 @@ class ClipEmbeddingResponse(InferenceResponse):
         description="A list of embeddings, each embedding is a list of floats",
     )
     time: Optional[float] = Field(
-        None,
+        default=None,
         description="The time in seconds it took to produce the embeddings including preprocessing",
     )
 
@@ -33,7 +33,7 @@ class ClipCompareResponse(InferenceResponse):
 
     similarity: Union[List[float], Dict[str, float]]
     time: Optional[float] = Field(
-        None,
+        default=None,
         description="The time in seconds it took to produce the similarity scores including preprocessing",
     )
     parent_id: Optional[str] = Field(

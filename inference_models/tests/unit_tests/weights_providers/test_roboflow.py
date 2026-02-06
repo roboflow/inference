@@ -1150,10 +1150,9 @@ def test_get_one_page_of_model_metadata_when_retry_not_needed_and_parsable_respo
         ],
         nextPage="some",
     )
-
+    assert requests_mock.last_request.headers["Authorization"] == "Bearer some"
     parsed_params = urllib.parse.parse_qs(requests_mock.last_request.query)
     assert parsed_params["modelid"][0] == "my-model"
-    assert parsed_params["api_key"][0] == "some"
     assert parsed_params["pagesize"][0] == "100"
     assert parsed_params["startafter"][0] == "start"
 

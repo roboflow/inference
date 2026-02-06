@@ -186,8 +186,8 @@ def infer_request_with_base64_image(
         "base64",
     )
 
-
-with open(os.path.join(Path(__file__).resolve().parent, "batch_tests.json"), "r") as f:
+TESTS_FILE = "batch_tests.json" if os.getenv("USE_INFERENCE_MODELS", "false").lower() != "true" else "batch_tests_inference_models.json"
+with open(os.path.join(Path(__file__).resolve().parent, TESTS_FILE), "r") as f:
     TESTS = json.load(f)
 
 
@@ -244,6 +244,7 @@ def test_detection(test, res_function, clean_loaded_models_fixture):
             )
         if not bool_env(os.getenv("FUNCTIONAL", False)):
             for d, test_data in zip(data, test["expected_response"][image_type]):
+                print(d)
                 compare_prediction_response(
                     d,
                     test_data,

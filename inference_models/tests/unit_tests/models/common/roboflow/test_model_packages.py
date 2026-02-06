@@ -393,6 +393,49 @@ def test_parse_inference_config_when_parsing_should_succeed(
     assert result == expected_result
 
 
+def test_parse_inference_config_when_parsing_should_succeed_with_implicit_conversion(
+    inference_config_valid_config: str,
+) -> None:
+    # when
+    result = parse_inference_config(
+        config_path=inference_config_valid_config,
+        allowed_resize_modes={ResizeMode.STRETCH_TO, ResizeMode.LETTERBOX},
+        implicit_resize_mode_substitutions={
+            ResizeMode.STRETCH_TO: (ResizeMode.LETTERBOX, 127, "some warning")
+        },
+    )
+
+    # then
+    expected_result = InferenceConfig(
+        image_pre_processing=ImagePreProcessing(
+            **{
+                "auto-orient": AutoOrient(enabled=True),
+                "static-crop": StaticCrop(
+                    enabled=True, x_min=9, x_max=94, y_min=9, y_max=75
+                ),
+            }
+        ),
+        network_input=NetworkInputDefinition(
+            training_input_size=TrainingInputSize(height=412, width=412),
+            dynamic_spatial_size_supported=True,
+            dynamic_spatial_size_mode=AnySizePadding(type="any-size"),
+            color_mode=ColorMode.RGB,
+            resize_mode=ResizeMode.LETTERBOX,
+            padding_value=127,
+            input_channels=3,
+            scaling_factor=None,
+            normalization=None,
+        ),
+        forward_pass=ForwardPassConfiguration(
+            static_batch_size=None, max_dynamic_batch_size=None
+        ),
+        post_processing=None,
+        model_initialization=None,
+        class_names_operations=None,
+    )
+    assert result == expected_result
+
+
 def test_parse_inference_config_when_resize_mode_is_invalid(
     inference_config_valid_config: str,
 ) -> None:

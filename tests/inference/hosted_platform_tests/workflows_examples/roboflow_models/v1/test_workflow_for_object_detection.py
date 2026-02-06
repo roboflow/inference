@@ -39,18 +39,18 @@ DETECTION_WORKFLOW = {
 DETECTION_RESULTS_FOR_ENVIRONMENT = {
     PlatformEnvironment.ROBOFLOW_STAGING_LAMBDA: np.array(
         [
-            0.84734064,
-            0.83652675,
-            0.81773603,
-            0.80830157,
-            0.76712507,
-            0.75515783,
-            0.72345364,
-            0.71747637,
-            0.71143329,
-            0.56274879,
-            0.5306859,
-            0.42601129,
+            0.84716797,
+            0.8359375,
+            0.81835938,
+            0.80761719,
+            0.76757812,
+            0.75439453,
+            0.72265625,
+            0.71630859,
+            0.71142578,
+            0.56201172,
+            0.52929688,
+            0.5,
         ]
     ),
     PlatformEnvironment.ROBOFLOW_PLATFORM_LAMBDA: np.array(

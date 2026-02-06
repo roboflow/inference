@@ -76,10 +76,12 @@ def test_camera_focus_v2_block_with_detections(dogs_image: np.ndarray) -> None:
     start_image = dogs_image
 
     detections = sv.Detections(
-        xyxy=np.array([
-            [10, 10, 100, 100],
-            [150, 150, 300, 300],
-        ]),
+        xyxy=np.array(
+            [
+                [10, 10, 100, 100],
+                [150, 150, 300, 300],
+            ]
+        ),
     )
 
     output = block.run(
@@ -185,10 +187,12 @@ def test_camera_focus_v2_block_with_out_of_bounds_detections() -> None:
     image = np.random.randint(0, 256, (100, 100, 3), dtype=np.uint8)
 
     detections = sv.Detections(
-        xyxy=np.array([
-            [-50, -50, 50, 50],
-            [80, 80, 200, 200],
-        ]),
+        xyxy=np.array(
+            [
+                [-50, -50, 50, 50],
+                [80, 80, 200, 200],
+            ]
+        ),
     )
 
     output = block.run(
@@ -216,11 +220,13 @@ def test_camera_focus_v2_block_with_completely_out_of_bounds_detections() -> Non
     image = np.random.randint(0, 256, (100, 100, 3), dtype=np.uint8)
 
     detections = sv.Detections(
-        xyxy=np.array([
-            [200, 200, 300, 300],
-            [-100, -100, -50, -50],
-            [10, 10, 50, 50],
-        ]),
+        xyxy=np.array(
+            [
+                [200, 200, 300, 300],
+                [-100, -100, -50, -50],
+                [10, 10, 50, 50],
+            ]
+        ),
     )
 
     output = block.run(

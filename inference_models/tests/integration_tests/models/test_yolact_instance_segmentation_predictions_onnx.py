@@ -20,7 +20,13 @@ def test_seg_onnx_package_with_static_batch_size_and_letterbox_numpy(
     )
 
     # when
-    predictions = model(asl_image_numpy)
+    predictions = model(
+        asl_image_numpy,
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert len(predictions) == 1
@@ -49,7 +55,13 @@ def test_seg_onnx_package_with_static_batch_size_and_letterbox_numpy_list(
     )
 
     # when
-    predictions = model([asl_image_numpy, asl_image_numpy])
+    predictions = model(
+        [asl_image_numpy, asl_image_numpy],
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert len(predictions) == 2
@@ -83,7 +95,13 @@ def test_seg_onnx_package_with_static_batch_size_and_letterbox_torch(
     )
 
     # when
-    predictions = model(asl_image_torch)
+    predictions = model(
+        asl_image_torch,
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert len(predictions) == 1
@@ -111,7 +129,13 @@ def test_seg_onnx_package_with_static_batch_size_and_letterbox_torch_list(
     )
 
     # when
-    predictions = model([asl_image_torch, asl_image_torch])
+    predictions = model(
+        [asl_image_torch, asl_image_torch],
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert len(predictions) == 2
@@ -145,7 +169,13 @@ def test_seg_onnx_package_with_static_batch_size_and_letterbox_torch_tensor(
     )
 
     # when
-    predictions = model(torch.stack([asl_image_torch, asl_image_torch], dim=0))
+    predictions = model(
+        torch.stack([asl_image_torch, asl_image_torch], dim=0),
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert len(predictions) == 2
@@ -180,7 +210,13 @@ def test_seg_onnx_package_with_static_batch_size_and_stretch_numpy(
     )
 
     # when
-    predictions = model(asl_image_numpy, conf_thresh=0.8)
+    predictions = model(
+        asl_image_numpy,
+        confidence=0.8,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert len(predictions) == 1
@@ -209,7 +245,13 @@ def test_seg_onnx_package_with_static_batch_size_and_stretch_numpy_list(
     )
 
     # when
-    predictions = model([asl_image_numpy, asl_image_numpy], conf_thresh=0.8)
+    predictions = model(
+        [asl_image_numpy, asl_image_numpy],
+        confidence=0.8,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert len(predictions) == 2
@@ -243,7 +285,13 @@ def test_seg_onnx_package_with_static_batch_size_and_stretch_torch(
     )
 
     # when
-    predictions = model(asl_image_torch, conf_thresh=0.8)
+    predictions = model(
+        asl_image_torch,
+        confidence=0.8,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert len(predictions) == 1
@@ -271,7 +319,13 @@ def test_seg_onnx_package_with_static_batch_size_and_stretch_torch_list(
     )
 
     # when
-    predictions = model([asl_image_torch, asl_image_torch], conf_thresh=0.8)
+    predictions = model(
+        [asl_image_torch, asl_image_torch],
+        confidence=0.8,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert len(predictions) == 2
@@ -306,7 +360,11 @@ def test_seg_onnx_package_with_static_batch_size_and_stretch_torch_tensor(
 
     # when
     predictions = model(
-        torch.stack([asl_image_torch, asl_image_torch], dim=0), conf_thresh=0.8
+        torch.stack([asl_image_torch, asl_image_torch], dim=0),
+        confidence=0.8,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
     )
 
     # then
@@ -343,7 +401,13 @@ def test_seg_onnx_package_with_static_batch_size_static_crop_and_stretch_numpy(
     )
 
     # when
-    predictions = model(asl_image_numpy)
+    predictions = model(
+        asl_image_numpy,
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert len(predictions) == 1
@@ -372,7 +436,13 @@ def test_seg_onnx_package_with_static_batch_size_static_crop_and_stretch_numpy_l
     )
 
     # when
-    predictions = model([asl_image_numpy, asl_image_numpy])
+    predictions = model(
+        [asl_image_numpy, asl_image_numpy],
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert len(predictions) == 2
@@ -407,7 +477,13 @@ def test_seg_onnx_package_with_static_batch_size_static_crop_and_stretch_torch(
     )
 
     # when
-    predictions = model(asl_image_torch)
+    predictions = model(
+        asl_image_torch,
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert len(predictions) == 1
@@ -436,7 +512,13 @@ def test_seg_onnx_package_with_static_batch_size_static_crop_and_stretch_torch_l
     )
 
     # when
-    predictions = model([asl_image_torch, asl_image_torch])
+    predictions = model(
+        [asl_image_torch, asl_image_torch],
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert len(predictions) == 2
@@ -471,7 +553,13 @@ def test_seg_onnx_package_with_static_batch_size_static_crop_and_stretch_torch_t
     )
 
     # when
-    predictions = model(torch.stack([asl_image_torch, asl_image_torch], dim=0))
+    predictions = model(
+        torch.stack([asl_image_torch, asl_image_torch], dim=0),
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert len(predictions) == 2

@@ -10,7 +10,7 @@ from skimage import exposure
 from torchvision.transforms import Grayscale, functional
 
 from inference_models.entities import ColorFormat, ImageDimensions
-from inference_models.errors import ModelRuntimeError
+from inference_models.errors import ModelInputError, ModelRuntimeError
 from inference_models.logger import LOGGER
 from inference_models.models.common.roboflow.model_packages import (
     AnySizePadding,
@@ -64,12 +64,12 @@ def pre_process_network_input(
             image_size_wh=image_size_wh,
         )
     if not isinstance(images, list):
-        raise ModelRuntimeError(
+        raise ModelInputError(
             message="Pre-processing supports only np.array or torch.Tensor or list of above.",
             help_url="https://todo",
         )
     if not len(images):
-        raise ModelRuntimeError(
+        raise ModelInputError(
             message="Detected empty input to the model", help_url="https://todo"
         )
     if network_input.resize_mode is ResizeMode.FIT_LONGER_EDGE:
@@ -96,7 +96,7 @@ def pre_process_network_input(
             target_device=target_device,
             image_size_wh=image_size_wh,
         )
-    raise ModelRuntimeError(
+    raise ModelInputError(
         message=f"Detected unknown input batch element: {type(images[0])}",
         help_url="https://todo",
     )
@@ -606,7 +606,7 @@ def apply_pre_processing_to_list_of_torch_image(
     result_images, result_offsets, original_sizes = [], [], []
     for image in images:
         if len(image.shape) != 3:
-            raise ModelRuntimeError(
+            raise ModelInputError(
                 message="When providing List[torch.Tensor] as input, model requires tensors to have 3 dimensions.",
                 help_url="https://todo",
             )
@@ -707,7 +707,7 @@ def handle_tensor_list_input_preparation_with_letterbox(
     for i in range(num_images):
         img = images[i]
         if len(img.shape) != 4:
-            raise ModelRuntimeError(
+            raise ModelInputError(
                 message="When providing List[torch.Tensor] as input, model requires tensors to have 3 dimensions.",
                 help_url="https://todo",
             )
@@ -771,8 +771,7 @@ def handle_tensor_list_input_preparation_with_center_crop(
         images, static_crop_offsets, original_sizes
     ):
         if len(image.shape) != 4:
-            # TODO!
-            raise ModelRuntimeError(
+            raise ModelInputError(
                 message="When providing List[torch.Tensor] as input, model requires tensors to have 3 dimensions.",
                 help_url="https://todo",
             )
@@ -1242,12 +1241,12 @@ def extract_input_images_dimensions(
             )
         return image_dimensions
     if not isinstance(images, list):
-        raise ModelRuntimeError(
+        raise ModelInputError(
             message="Pre-processing supports only np.array or torch.Tensor or list of above.",
             help_url="https://todo",
         )
     if not len(images):
-        raise ModelRuntimeError(
+        raise ModelInputError(
             message="Detected empty input to the model", help_url="https://todo"
         )
     if isinstance(images[0], np.ndarray):
@@ -1259,7 +1258,7 @@ def extract_input_images_dimensions(
                 ImageDimensions(height=image.shape[1], width=image.shape[2])
             )
         return image_dimensions
-    raise ModelRuntimeError(
+    raise ModelInputError(
         message=f"Detected unknown input batch element: {type(images[0])}",
         help_url="https://todo",
     )
@@ -1292,12 +1291,12 @@ def images_to_pillow(
             )
         return result, dimensions
     if not isinstance(images, list):
-        raise ModelRuntimeError(
+        raise ModelInputError(
             message="Pre-processing supports only np.array or torch.Tensor or list of above.",
             help_url="https://todo",
         )
     if not len(images):
-        raise ModelRuntimeError(
+        raise ModelInputError(
             message="Detected empty input to the model", help_url="https://todo"
         )
     if isinstance(images[0], np.ndarray):
@@ -1322,7 +1321,7 @@ def images_to_pillow(
                 ImageDimensions(height=np_image.shape[0], width=np_image.shape[1])
             )
         return result, dimensions
-    raise ModelRuntimeError(
+    raise ModelInputError(
         message=f"Detected unknown input batch element: {type(images[0])}",
         help_url="https://todo",
     )

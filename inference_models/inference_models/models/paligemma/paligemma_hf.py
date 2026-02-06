@@ -22,13 +22,27 @@ def _get_paligemma_attn_implementation(device: torch.device) -> str:
         try:
             import flash_attn  # noqa: F401
 
-            return "flash_attention_2"
+            if _is_model_running_against_ampere_plus_aarch(device=device):
+                return "flash_attention_2"
+            return "eager"
         except ImportError:
             pass
     return "eager"
 
 
-from inference_models.configuration import DEFAULT_DEVICE
+def _is_model_running_against_ampere_plus_aarch(device: torch.device) -> bool:
+    if device.type != "cuda":
+        return False
+    major, _ = torch.cuda.get_device_capability(device=device)
+    return major >= 8
+
+
+from inference_models.configuration import (
+    DEFAULT_DEVICE,
+    INFERENCE_MODELS_PALIGEMMA_DEFAULT_DO_SAMPLE,
+    INFERENCE_MODELS_PALIGEMMA_DEFAULT_MAX_NEW_TOKENS,
+    INFERENCE_MODELS_PALIGEMMA_DEFAULT_SKIP_SPECIAL_TOKENS,
+)
 from inference_models.entities import ColorFormat
 from inference_models.models.common.roboflow.model_packages import (
     InferenceConfig,
@@ -66,6 +80,7 @@ class PaliGemmaHF:
                     ResizeMode.LETTERBOX,
                     ResizeMode.CENTER_CROP,
                     ResizeMode.LETTERBOX_REFLECT_EDGES,
+                    ResizeMode.FIT_LONGER_EDGE,
                 },
             )
         if (
@@ -144,9 +159,9 @@ class PaliGemmaHF:
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         prompt: str,
         input_color_format: Optional[ColorFormat] = None,
-        max_new_tokens: int = 400,
-        do_sample: bool = False,
-        skip_special_tokens: bool = True,
+        max_new_tokens: int = INFERENCE_MODELS_PALIGEMMA_DEFAULT_MAX_NEW_TOKENS,
+        do_sample: bool = INFERENCE_MODELS_PALIGEMMA_DEFAULT_DO_SAMPLE,
+        skip_special_tokens: bool = INFERENCE_MODELS_PALIGEMMA_DEFAULT_SKIP_SPECIAL_TOKENS,
         **kwargs,
     ) -> List[str]:
         inputs = self.pre_process_generation(
@@ -208,8 +223,8 @@ class PaliGemmaHF:
     def generate(
         self,
         inputs: dict,
-        max_new_tokens: int = 400,
-        do_sample: bool = False,
+        max_new_tokens: int = INFERENCE_MODELS_PALIGEMMA_DEFAULT_MAX_NEW_TOKENS,
+        do_sample: bool = INFERENCE_MODELS_PALIGEMMA_DEFAULT_DO_SAMPLE,
         **kwargs,
     ) -> torch.Tensor:
         with torch.inference_mode():

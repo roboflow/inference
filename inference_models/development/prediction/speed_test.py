@@ -4,9 +4,10 @@ import time
 from typing import List, Optional
 
 import numpy as np
+from tqdm import tqdm
+
 from inference_models import AutoModel
 from inference_models.models.auto_loaders.entities import AnyModel
-from tqdm import tqdm
 
 from .dataset import download_dataset
 from .serialization import dump_json
