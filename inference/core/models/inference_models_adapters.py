@@ -31,7 +31,7 @@ from inference.core.env import (
     GCP_SERVERLESS,
 )
 from inference.core.models.base import Model
-from inference.core.utils.image_utils import load_image_bgr
+from inference.core.utils.image_utils import load_image_bgr, load_image_rgb
 from inference.core.utils.postprocess import masks2poly
 from inference.core.utils.visualisation import draw_detection_predictions
 from inference.models.aliases import resolve_roboflow_model_alias
@@ -761,7 +761,7 @@ def draw_predictions(inference_request, inference_response, class_names: List[st
     Returns:
         bytes: The bytes of the visualized image in JPEG format.
     """
-    image = inference_request.image
+    image = load_image_rgb(inference_request.image)
     image = Image.fromarray(image)
     draw = ImageDraw.Draw(image)
     font = ImageFont.load_default()
