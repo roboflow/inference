@@ -1,0 +1,347 @@
+# Jetson 7.1.0 with PyTorch/OpenCV compiled from source for numpy 2.x support
+# Stage 1: Builder - Compile everything from source
+FROM ubuntu:24.04 AS builder
+
+ARG DEBIAN_FRONTEND=noninteractive
+ARG CMAKE_VERSION=4.2.0
+ARG PYTORCH_VERSION=2.10.0
+ARG TORCHVISION_VERSION=0.25.0
+ARG OPENCV_VERSION=4.10.0
+ARG ONNXRUNTIME_VERSION=1.21.0
+ENV LANG=en_US.UTF-8
+
+WORKDIR /build
+
+# Add NVIDIA Jetson repositories for r38.4
+RUN apt-get update -y && \
+    apt-get install -y --no-install-recommends \
+    ca-certificates \
+    gnupg \
+    wget \
+    && wget -qO - https://repo.download.nvidia.com/jetson/jetson-ota-public.asc | gpg --dearmor -o /usr/share/keyrings/nvidia-jetson.gpg \
+    && echo "deb [signed-by=/usr/share/keyrings/nvidia-jetson.gpg] https://repo.download.nvidia.com/jetson/common r38.4 main" > /etc/apt/sources.list.d/nvidia-jetson.list \
+    && echo "deb [signed-by=/usr/share/keyrings/nvidia-jetson.gpg] https://repo.download.nvidia.com/jetson/som r38.4 main" >> /etc/apt/sources.list.d/nvidia-jetson.list \
+    && apt-get update -y
+
+# Install NVIDIA JetPack components and build dependencies
+RUN apt-get install -y --no-install-recommends \
+    cuda-toolkit-13-0 \
+    libcudnn9-cuda-13 \
+    libcudnn9-dev-cuda-13 \
+    tensorrt \
+    python3-libnvinfer \
+    python3-libnvinfer-dev \
+    python3-libnvinfer-dispatch \
+    python3-libnvinfer-lean \
+    build-essential \
+    cmake \
+    ninja-build \
+    git \
+    curl \
+    python3-dev \
+    python3-pip \
+    python3-venv \
+    libopenblas-dev \
+    libproj-dev \
+    libsqlite3-dev \
+    libtiff-dev \
+    libcurl4-openssl-dev \
+    libssl-dev \
+    zlib1g-dev \
+    libxext6 \
+    libvips-dev \
+    pkg-config \
+    libjpeg-dev \
+    libpng-dev \
+    libavcodec-dev \
+    libavformat-dev \
+    libswscale-dev \
+    libv4l-dev \
+    libatlas-base-dev \
+    liblapack-dev \
+    gfortran \
+    libhdf5-dev \
+    libgflags-dev \
+    libgoogle-glog-dev \
+    liblmdb-dev \
+    libleveldb-dev \
+    libsnappy-dev \
+    libprotobuf-dev \
+    protobuf-compiler \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install CMake
+RUN wget -q https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-aarch64.sh && \
+    chmod +x cmake-${CMAKE_VERSION}-linux-aarch64.sh && \
+    ./cmake-${CMAKE_VERSION}-linux-aarch64.sh --prefix=/usr/local --skip-license && \
+    rm cmake-${CMAKE_VERSION}-linux-aarch64.sh
+
+# Install pip and numpy 2.x FIRST (use --ignore-installed to avoid conflicts with system packages)
+RUN python3 -m pip install --break-system-packages --ignore-installed pip setuptools wheel && \
+    python3 -m pip install --break-system-packages "numpy>=2.0.0,<2.4.0"
+
+# Install uv
+RUN curl -LsSf https://astral.sh/uv/install.sh | env INSTALLER_NO_MODIFY_PATH=1 sh && \
+    ln -s /root/.local/bin/uv /usr/local/bin/uv
+
+# Compile GDAL from source
+WORKDIR /build/gdal
+RUN wget https://github.com/OSGeo/gdal/releases/download/v3.11.5/gdal-3.11.5.tar.gz && \
+    tar -xzf gdal-3.11.5.tar.gz && \
+    cd gdal-3.11.5 && mkdir build && cd build && \
+    cmake .. -GNinja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr/local -DBUILD_PYTHON_BINDINGS=OFF && \
+    ninja && ninja install && ldconfig && \
+    cd ../.. && rm -rf gdal-3.11.5*
+
+# Set CUDA environment variables
+ENV CUDA_HOME=/usr/local/cuda \
+    PATH=/usr/local/cuda/bin:$PATH \
+    LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
+
+# Compile PyTorch from source with Jetson Thor optimizations
+WORKDIR /build/pytorch
+RUN git clone --recursive --branch v${PYTORCH_VERSION} https://github.com/pytorch/pytorch && \
+    cd pytorch && \
+    python3 -m pip install --break-system-packages -r requirements.txt && \
+    export USE_CUDA=1 USE_CUDNN=1 CUDA_HOME=/usr/local/cuda && \
+    export CUDNN_LIB_DIR=/usr/lib/aarch64-linux-gnu CUDNN_INCLUDE_DIR=/usr/include && \
+    export TORCH_CUDA_ARCH_LIST="11.0" && \
+    export USE_MKLDNN=0 USE_OPENMP=0 && \
+    export USE_DISTRIBUTED=0 USE_GLOO=0 USE_MPI=0 USE_TENSORPIPE=0 USE_NCCL=0 && \
+    export BUILD_TEST=0 && \
+    export USE_QNNPACK=0 USE_PYTORCH_QNNPACK=0 USE_XNNPACK=0 USE_NNPACK=0 && \
+    export USE_FBGEMM=0 USE_KINETO=0 USE_CUPTI_SO=0 && \
+    export USE_FLASH_ATTENTION=1 USE_MEM_EFF_ATTENTION=1 && \
+    export USE_MPS=0 USE_ROCM=0 && \
+    export PYTORCH_BUILD_VERSION=${PYTORCH_VERSION} PYTORCH_BUILD_NUMBER=1 && \
+    export CMAKE_BUILD_TYPE=Release BUILD_SHARED_LIBS=ON USE_PRIORITIZED_TEXT_FOR_LD=1 && \
+    export MAX_JOBS=12 && \
+    export CMAKE_POLICY_VERSION_MINIMUM=3.5 && \
+    python3 setup.py bdist_wheel && \
+    python3 -m pip install --break-system-packages dist/torch-*.whl
+
+# Compile torchvision from source (with retry for transient GitHub issues)
+WORKDIR /build/torchvision
+RUN for i in 1 2 3; do \
+        git clone --branch v${TORCHVISION_VERSION} https://github.com/pytorch/vision && break || sleep 60; \
+    done && \
+    cd vision && \
+    export BUILD_VERSION=${TORCHVISION_VERSION} TORCH_CUDA_ARCH_LIST="11.0" && \
+    export FORCE_CUDA=1 CMAKE_BUILD_TYPE=Release USE_PRIORITIZED_TEXT_FOR_LD=1 && \
+    python3 setup.py bdist_wheel && \
+    python3 -m pip install --break-system-packages dist/torchvision-*.whl
+
+# Build ONNX Runtime GPU from source with CUDA 13 and TensorRT 10.13 support
+# Using main branch (TOT) which has CUDA 13 fixes (PR #26153) and TensorRT 10.13 support
+# No prebuilt ARM64 CUDA 13 packages available - must build from source
+WORKDIR /build/onnxruntime
+RUN git clone --recursive https://github.com/microsoft/onnxruntime.git && \
+    cd onnxruntime && \
+    git submodule sync && \
+    git submodule update --init --recursive && \
+    python3 -m pip install --break-system-packages -r requirements-dev.txt && \
+    ./build.sh --config Release --update --build --parallel \
+        --build_wheel \
+        --allow_running_as_root \
+        --compile_no_warning_as_error \
+        --use_cuda \
+        --cuda_home /usr/local/cuda \
+        --cudnn_home /usr \
+        --use_tensorrt \
+        --tensorrt_home /usr \
+        --skip_tests \
+        --cmake_extra_defines \
+            CMAKE_POLICY_VERSION_MINIMUM=3.5 \
+            CMAKE_CUDA_ARCHITECTURES="110-real;110-virtual" \
+            onnxruntime_BUILD_UNIT_TESTS=OFF && \
+    python3 -m pip install --break-system-packages build/Linux/Release/dist/onnxruntime_gpu*.whl
+
+# Install flash-attn package (requires CUDA-enabled PyTorch already installed)
+# Limit MAX_JOBS to prevent timeout during CUDA kernel compilation
+# Using 2.8.3 - removed legacy features (rotary, xentropy, fused_softmax, ft_attention) for faster builds
+RUN export MAX_JOBS=4 && \
+    python3 -m pip install --break-system-packages --no-build-isolation flash-attn==2.8.3
+
+# Copy requirements files (done after compilation to improve cache efficiency)
+WORKDIR /build/reqs
+COPY requirements/_requirements.txt \
+     requirements/requirements.http.txt \
+     requirements/requirements.clip.txt \
+     requirements/requirements.transformers.txt \
+     requirements/requirements.sam.txt \
+     requirements/requirements.gaze.txt \
+     requirements/requirements.groundingdino.txt \
+     requirements/requirements.yolo_world.txt \
+     requirements/requirements.doctr.txt \
+     requirements/requirements.sdk.http.txt \
+     requirements/requirements.easyocr.txt \
+     requirements/requirements.jetson.txt \
+     ./
+
+# Install Python dependencies
+# IMPORTANT: Use --override to protect our source-compiled torch/torchvision from being replaced
+RUN echo "torch==${PYTORCH_VERSION}" > /tmp/overrides.txt && \
+    echo "torchvision==${TORCHVISION_VERSION}" >> /tmp/overrides.txt && \
+    uv pip install --system --break-system-packages --index-strategy unsafe-best-match \
+    --override /tmp/overrides.txt \
+    -r _requirements.txt \
+    -r requirements.http.txt \
+    -r requirements.clip.txt \
+    -r requirements.transformers.txt \
+    -r requirements.sam.txt \
+    -r requirements.gaze.txt \
+    -r requirements.groundingdino.txt \
+    -r requirements.yolo_world.txt \
+    -r requirements.doctr.txt \
+    -r requirements.sdk.http.txt \
+    -r requirements.easyocr.txt \
+    -r requirements.jetson.txt \
+    "pycuda>=2025.0.0,<2026.0.0" \
+    "setuptools<=75.5.0" \
+    packaging \
+    && rm -rf ~/.cache/uv /tmp/overrides.txt
+
+# Build inference packages
+WORKDIR /build/inference
+COPY . .
+RUN ln -sf /usr/bin/python3 /usr/bin/python && \
+    python -m pip install --break-system-packages wheel twine requests && \
+    rm -f dist/* && \
+    python .release/pypi/inference.core.setup.py bdist_wheel && \
+    python .release/pypi/inference.gpu.setup.py bdist_wheel && \
+    python .release/pypi/inference.cli.setup.py bdist_wheel && \
+    python .release/pypi/inference.sdk.setup.py bdist_wheel && \
+    python -m pip install --break-system-packages --no-deps dist/inference_gpu*.whl && \
+    python -m pip install --break-system-packages \
+        dist/inference_core*.whl \
+        dist/inference_cli*.whl \
+        dist/inference_sdk*.whl \
+        "setuptools<=75.5.0"
+
+# Remove test directories, development tools, and unnecessary packages to reduce image size
+# This happens AFTER all package installations to ensure everything gets cleaned
+# Note: Keep numpy/torch test dirs (public APIs depend on them), keep .pyi files (lazy_loader needs them)
+RUN cd /usr/local/lib/python3.12/dist-packages && \
+    find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true && \
+    rm -rf debugpy* jupyterlab* jupyter_* notebook* ipython* ipykernel* || true && \
+    rm -rf onnx/backend/test onnx/test || true && \
+    rm -rf scipy/*/tests pandas/tests || true && \
+    rm -rf */examples */benchmarks */docs || true && \
+    rm -rf skimage/data || true
+
+# Stage 2: Runtime
+FROM ubuntu:24.04
+
+ARG DEBIAN_FRONTEND=noninteractive
+ENV LANG=en_US.UTF-8
+
+WORKDIR /app
+
+# Add NVIDIA Jetson repositories for r38.4
+RUN apt-get update -y && \
+    apt-get install -y --no-install-recommends \
+    ca-certificates \
+    gnupg \
+    wget \
+    && wget -qO - https://repo.download.nvidia.com/jetson/jetson-ota-public.asc | gpg --dearmor -o /usr/share/keyrings/nvidia-jetson.gpg \
+    && echo "deb [signed-by=/usr/share/keyrings/nvidia-jetson.gpg] https://repo.download.nvidia.com/jetson/common r38.4 main" > /etc/apt/sources.list.d/nvidia-jetson.list \
+    && echo "deb [signed-by=/usr/share/keyrings/nvidia-jetson.gpg] https://repo.download.nvidia.com/jetson/som r38.4 main" >> /etc/apt/sources.list.d/nvidia-jetson.list \
+    && apt-get update -y
+
+RUN ln -sf /usr/bin/python3 /usr/bin/python
+
+# Install runtime dependencies including NVIDIA packages
+RUN apt-get install -y --no-install-recommends \
+    cuda-cudart-13-0 \
+    cuda-libraries-13-0 \
+    libcudnn9-cuda-13 \
+    tensorrt-libs \
+    python3-libnvinfer \
+    python3-libnvinfer-dispatch \
+    python3-libnvinfer-lean \
+    file \
+    libopenblas0 \
+    libproj25 \
+    libsqlite3-0 \
+    libtiff6 \
+    libcurl4t64 \
+    libssl3t64 \
+    zlib1g \
+    libgomp1 \
+    python3 \
+    python3-pip \
+    libxext6 \
+    libvips42 \
+    libglib2.0-0 \
+    libsm6 \
+    libjpeg-turbo8 \
+    libpng16-16t64 \
+    libexpat1 \
+    curl \
+    libv4l-0 \
+    libavcodec60 \
+    libavformat60 \
+    libswscale7 \
+    libatlas3-base \
+    libgl1 \
+    libglib2.0-0 \
+    libatomic1 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy GDAL (skip headers - not needed in runtime)
+COPY --from=builder /usr/local/bin/gdal* /usr/local/bin/
+COPY --from=builder /usr/local/bin/ogr* /usr/local/bin/
+COPY --from=builder /usr/local/bin/gnm* /usr/local/bin/
+COPY --from=builder /usr/local/lib/libgdal* /usr/local/lib/
+COPY --from=builder /usr/local/share/gdal /usr/local/share/gdal
+
+ENV GDAL_DATA=/usr/local/share/gdal
+ENV LD_LIBRARY_PATH=/usr/local/lib:/usr/local/cuda/lib64:$LD_LIBRARY_PATH
+
+RUN ldconfig
+
+# Copy Python packages from builder
+COPY --from=builder /usr/local/lib/python3.12/dist-packages /usr/local/lib/python3.12/dist-packages
+
+# Copy TensorRT Python bindings (installed via apt in runtime stage, but ensure paths are correct)
+# Note: python3-libnvinfer packages install to /usr/lib/python3.12/dist-packages
+ENV PYTHONPATH=/usr/local/lib/python3.12/dist-packages:/usr/lib/python3.12/dist-packages:$PYTHONPATH
+
+COPY --from=builder /usr/local/bin/inference /usr/local/bin/inference
+
+# Copy application code
+COPY inference inference
+COPY inference_cli inference_cli
+COPY inference_sdk inference_sdk
+COPY docker/config/gpu_http.py gpu_http.py
+
+RUN python -m pip install --break-system-packages "boto3>=1.40.0,<=1.41.5" "botocore>=1.40.0,<=1.41.5"
+
+# Environment variables
+ENV NVIDIA_VISIBLE_DEVICES=all \
+    VERSION_CHECK_MODE=once \
+    CORE_MODEL_SAM2_ENABLED=True \
+    NUM_WORKERS=1 \
+    HOST=0.0.0.0 \
+    PORT=9001 \
+    ORT_TENSORRT_FP16_ENABLE=1 \
+    ORT_TENSORRT_ENGINE_CACHE_ENABLE=1 \
+    ORT_TENSORRT_ENGINE_CACHE_PATH=/tmp/ort_cache \
+    ORT_TENSORRT_MAX_WORKSPACE_SIZE=4294967296 \
+    ORT_TENSORRT_BUILDER_OPTIMIZATION_LEVEL=5 \
+    OPENBLAS_CORETYPE=ARMV8 \
+    LD_PRELOAD=/usr/lib/aarch64-linux-gnu/libgomp.so.1 \
+    WORKFLOWS_STEP_EXECUTION_MODE=local \
+    WORKFLOWS_MAX_CONCURRENT_STEPS=4 \
+    API_LOGGING_ENABLED=True \
+    DISABLE_WORKFLOW_ENDPOINTS=false \
+    ALLOW_INFERENCE_EXP_UNTRUSTED_MODELS=True \
+    USE_INFERENCE_EXP_MODELS=False \
+    RUNNING_ON_JETSON=True \
+    L4T_VERSION=38.4.0
+
+LABEL org.opencontainers.image.description="Inference Server - Jetson 7.1.0 (PyTorch from source, numpy 2.x)"
+
+EXPOSE 9001
+
+ENTRYPOINT ["/bin/sh", "-c", "python3 -m uvicorn gpu_http:app --workers $NUM_WORKERS --host $HOST --port $PORT"]
