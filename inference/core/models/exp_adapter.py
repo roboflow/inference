@@ -37,13 +37,23 @@ class InferenceExpObjectDetectionModelAdapter(Model):
         self.task_type = "object-detection"
 
         # Lazy import to avoid hard dependency if flag disabled
+        # Use logging access manager to track downloads when enabled
+        from inference.core.structured_logging import (
+            LoggingModelAccessManager,
+            structured_event_logger,
+        )
         from inference_models import AutoModel  # type: ignore
+
+        model_access_manager = None
+        if structured_event_logger.enabled:
+            model_access_manager = LoggingModelAccessManager()
 
         self._exp_model: ObjectDetectionModel = AutoModel.from_pretrained(
             model_id_or_path=model_id,
             api_key=self.api_key,
             allow_untrusted_packages=ALLOW_INFERENCE_EXP_UNTRUSTED_MODELS,
             allow_direct_local_storage_loading=False,
+            model_access_manager=model_access_manager,
         )
         # if hasattr(self._exp_model, "optimize_for_inference"):
         #     self._exp_model.optimize_for_inference()

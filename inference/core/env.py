@@ -289,6 +289,16 @@ LAMBDA = str2bool(os.getenv("LAMBDA", False))
 # Whether is's GCP serverless service
 GCP_SERVERLESS = str2bool(os.getenv("GCP_SERVERLESS", "False"))
 
+# Structured Event Logging
+# Provides structured JSON logging for observability and analysis
+STRUCTURED_LOGGING_ENABLED = str2bool(os.getenv("STRUCTURED_LOGGING_ENABLED", "False"))
+STRUCTURED_LOGGING_SAMPLE_RATE = float(
+    os.getenv("STRUCTURED_LOGGING_SAMPLE_RATE", "1.0")
+)
+STRUCTURED_LOGGING_DETAILED_MEMORY = str2bool(
+    os.getenv("STRUCTURED_LOGGING_DETAILED_MEMORY", "False")
+)
+
 GET_MODEL_REGISTRY_ENABLED = str2bool(os.getenv("GET_MODEL_REGISTRY_ENABLED", "True"))
 
 # Flag to enable API logging, default is False
