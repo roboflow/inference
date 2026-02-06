@@ -2517,7 +2517,11 @@ class HttpInterface(BaseInterface):
                             "value": inference_request.image.value,
                         }
 
-                        prompts_data = inference_request.prompts.dict(exclude_none=True) if inference_request.prompts else None
+                        prompts_data = (
+                            inference_request.prompts.dict(exclude_none=True)
+                            if inference_request.prompts
+                            else None
+                        )
 
                         payload = {
                             "image": http_image,
@@ -2552,7 +2556,9 @@ class HttpInterface(BaseInterface):
                             return Sam2SegmentationResponse(**resp_json)
 
                         except Exception as e:
-                            logger.error(f"SAM3 visual_segment remote request failed: {e}")
+                            logger.error(
+                                f"SAM3 visual_segment remote request failed: {e}"
+                            )
                             raise HTTPException(
                                 status_code=500,
                                 detail=f"SAM3 visual_segment remote request failed: {str(e)}",
