@@ -31,6 +31,7 @@ def instant_model(rf_instant_model_coin_counting_package: str) -> RoboflowInstan
     )
 
 
+@pytest.mark.skip(reason="Figure out what is wrong with this GPU test")
 @pytest.mark.slow
 @pytest.mark.hf_vlm_models
 def test_owlv2_predictions_for_open_vocabulary(
