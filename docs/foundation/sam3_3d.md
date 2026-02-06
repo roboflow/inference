@@ -2,7 +2,14 @@
 
 3D object generation model that converts 2D images with masks into 3D assets (meshes and Gaussian splats).
 
-This model is currenlty in Beta state! The model is only available if "SAM3_3D_OBJECTS_ENABLED" flag is on. The model can currently be ran using inference package, and also be used in Roboflow Worklows as a part of local inference server.
+This model is currently in Beta state! The model is only available if "SAM3_3D_OBJECTS_ENABLED" flag is on. The model can currently be ran using inference package, and also be used in Roboflow Workflows as a part of local inference server.
+
+## Execution Modes
+
+SAM3-3D supports both local and remote execution modes when used in workflows:
+
+- **Local execution**: The model runs directly on your inference server (32GB+ VRAM GPU strongly recommended)
+- **Remote execution**: The model can be invoked via HTTP API on a remote inference server using the `sam3_3d_infer()` client method or the `/sam3_3d/infer` endpoint
 
 ## DISCLAIMER: In order to run this model you will need a 32GB+ VRAM GPU machine. 
 
