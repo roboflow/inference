@@ -41,7 +41,7 @@ def test_owlv2_predictions_for_open_vocabulary(
     predictions = owlv2_model(
         dog_image_numpy,
         classes=["dog", "person"],
-        confidence=0.99,
+        confidence=0.98,
         iou_threshold=0.3,
         class_agnostic_nms=False,
         max_detections=300,
