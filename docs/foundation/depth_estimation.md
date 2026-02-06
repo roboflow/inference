@@ -7,6 +7,13 @@ You can use Depth-Anything-V2-Small to estimate the depth of objects in images, 
 
 You can deploy Depth-Anything-V2-Small with Inference.
 
+### Execution Modes
+
+Depth Estimation supports both local and remote execution modes when used in workflows:
+
+- **Local execution**: The model runs directly on your inference server (GPU recommended for faster inference)
+- **Remote execution**: The model can be invoked via HTTP API on a remote inference server using the `depth_estimation()` client method
+
 ### Installation
 
 To install inference with the extra dependencies necessary to run Depth-Anything-V2-Small, run
