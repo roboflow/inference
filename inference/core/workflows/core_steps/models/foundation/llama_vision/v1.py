@@ -140,7 +140,7 @@ TASKS_REQUIRING_OUTPUT_STRUCTURE = {
 class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
-            "name": "Llama 3.2 Vision",
+            "name": "Llama 3_2 Vision",
             "version": "v1",
             "short_description": "Run Llama model with Vision capabilities",
             "long_description": LONG_DESCRIPTION,
