@@ -49,7 +49,7 @@ class BlockManifest(WorkflowBlockManifest):
     # Standard model configuration for UI, schema, etc.
     model_config = ConfigDict(
         json_schema_extra={
-            "name": "Qwen2.5-VL",
+            "name": "Qwen2_5-VL",
             "version": "v1",
             "short_description": "Run Qwen2.5-VL on an image.",
             "long_description": (
