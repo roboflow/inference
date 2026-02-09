@@ -1083,13 +1083,23 @@ async def init_rtc_peer_connection_with_loop(
             terminate_event.set()
 
     # Monitor ICE connection state - consent expires after ~30s without STUN refresh
+    # Track when ICE checking started to measure connection time
+    _ice_checking_start_time = [None]  # Use list to allow mutation in closure
+    
     @peer_connection.on("iceconnectionstatechange")
     async def on_iceconnectionstatechange():
         state = peer_connection.iceConnectionState
         conn_state = peer_connection.connectionState
+        
+        # Calculate time since ICE checking started
+        ice_elapsed = ""
+        if _ice_checking_start_time[0] is not None:
+            elapsed = time.perf_counter() - _ice_checking_start_time[0]
+            ice_elapsed = f" [ICE_ELAPSED: {elapsed:.1f}s]"
+        
         logger.warning(
             "[ICE_STATE] Changed to: %s (connection state: %s, "
-            "frames_received: %d, data_channel: %s)",
+            "frames_received: %d, data_channel: %s)%s",
             state,
             conn_state,
             video_processor._received_frames,
@@ -1098,14 +1108,20 @@ async def init_rtc_peer_connection_with_loop(
                 if video_processor.data_channel
                 else "N/A"
             ),
+            ice_elapsed,
         )
 
         if state == "failed":
+            elapsed_msg = ""
+            if _ice_checking_start_time[0] is not None:
+                elapsed = time.perf_counter() - _ice_checking_start_time[0]
+                elapsed_msg = f" ICE was checking for {elapsed:.1f}s before failing."
             logger.error(
-                "[ICE_STATE] FAILED! This typically means STUN consent expired. "
+                "[ICE_STATE] FAILED!%s This typically means STUN consent expired. "
                 "Causes: (1) Event loop starvation preventing aioice from sending "
                 "STUN packets, (2) Network issues, (3) NAT/firewall blocking. "
-                "Check logs for [BUFFER_DRAIN] timeouts or missing asyncio.sleep(0) yields."
+                "Check logs for [BUFFER_DRAIN] timeouts or missing asyncio.sleep(0) yields.",
+                elapsed_msg,
             )
             # The connectionstatechange handler will clean up
         elif state == "disconnected":
@@ -1114,9 +1130,20 @@ async def init_rtc_peer_connection_with_loop(
                 "If this persists for >30s, will transition to 'failed'."
             )
         elif state == "checking":
-            logger.info("[ICE_STATE] Checking connectivity candidates...")
+            _ice_checking_start_time[0] = time.perf_counter()
+            logger.info("[ICE_STATE] Checking connectivity candidates... (timer started)")
         elif state == "connected":
-            logger.info("[ICE_STATE] Successfully connected via ICE")
+            elapsed_msg = ""
+            if _ice_checking_start_time[0] is not None:
+                elapsed = time.perf_counter() - _ice_checking_start_time[0]
+                elapsed_msg = f" (connected in {elapsed:.3f}s)"
+            logger.info("[ICE_STATE] Successfully connected via ICE%s", elapsed_msg)
+        elif state == "completed":
+            elapsed_msg = ""
+            if _ice_checking_start_time[0] is not None:
+                elapsed = time.perf_counter() - _ice_checking_start_time[0]
+                elapsed_msg = f" (ICE completed in {elapsed:.3f}s)"
+            logger.info("[ICE_STATE] ICE negotiation completed%s", elapsed_msg)
 
     def process_video_upload_message(
         message: bytes, video_processor: VideoTransformTrackWithLoop

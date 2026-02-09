@@ -376,7 +376,10 @@ if modal is not None:
             q: modal.Queue,
         ):
             _method_start = time.perf_counter()
+            import datetime
+            _wall_clock_start = datetime.datetime.utcnow().isoformat()
             logger.info("[COLD_START] ========== MODAL METHOD EXECUTION BEGIN ==========")
+            logger.info("[COLD_START] Container received function call at %s (UTC)", _wall_clock_start)
             logger.info("[COLD_START] Container received function call, starting execution...")
             
             _workspace_api_start = time.perf_counter()
@@ -913,7 +916,9 @@ if modal is not None:
             
             try:
                 _queue_get_start = time.perf_counter()
-                logger.warning("[COLD_START] Waiting for response from Modal queue (timeout=%ss)...", WEBRTC_MODAL_RESPONSE_TIMEOUT)
+                import datetime
+                _wait_start_utc = datetime.datetime.utcnow().isoformat()
+                logger.warning("[COLD_START] Waiting for response from Modal queue at %s (UTC) (timeout=%ss)...", _wait_start_utc, WEBRTC_MODAL_RESPONSE_TIMEOUT)
                 answer = WebRTCWorkerResult.model_validate(
                     q.get(block=True, timeout=WEBRTC_MODAL_RESPONSE_TIMEOUT)
                 )
