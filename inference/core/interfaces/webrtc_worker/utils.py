@@ -205,26 +205,34 @@ def warmup_cuda(
     max_retries: int = 10,
     retry_delay: float = 0.5,
 ):
+    _warmup_start = time.perf_counter()
+    logger.warning("[COLD_START] warmup_cuda: Loading libcuda.so.1...")
+    _lib_load_start = time.perf_counter()
     cu = ctypes.CDLL("libcuda.so.1")
+    logger.warning("[COLD_START] warmup_cuda: libcuda.so.1 loaded in %.3fs", time.perf_counter() - _lib_load_start)
 
     for attempt in range(max_retries):
+        _cuinit_start = time.perf_counter()
+        logger.warning("[COLD_START] warmup_cuda: Calling cuInit(0) attempt %d/%d...", attempt + 1, max_retries)
         rc = cu.cuInit(0)
+        logger.warning("[COLD_START] warmup_cuda: cuInit(0) returned %d in %.3fs", rc, time.perf_counter() - _cuinit_start)
 
         if rc == 0:
             break
         else:
             if attempt < max_retries - 1:
                 logger.warning(
-                    "cuInit failed on attempt %s/%s with code %s, retrying...",
+                    "[COLD_START] cuInit failed on attempt %s/%s with code %s, retrying after %.1fs...",
                     attempt + 1,
                     max_retries,
                     rc,
+                    retry_delay,
                 )
                 time.sleep(retry_delay)
     else:
         raise RuntimeError(f"CUDA initialization failed after {max_retries} attempts")
 
-    logger.info("CUDA initialization succeeded")
+    logger.info("[COLD_START] warmup_cuda: CUDA initialization succeeded in %.3fs total", time.perf_counter() - _warmup_start)
 
 
 def is_over_quota(api_key: str) -> bool:

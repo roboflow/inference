@@ -276,6 +276,8 @@ class VideoFrameProcessor:
 
         self._validate_output_fields(workflow_configuration)
 
+        _pipeline_init_start = time.perf_counter()
+        logger.info("[COLD_START] VideoFrameProcessor: Creating InferencePipeline...")
         self._inference_pipeline = InferencePipeline.init_with_workflow(
             video_reference=VideoFrameProducer,
             workflow_specification=workflow_configuration.workflow_specification,
@@ -290,6 +292,7 @@ class VideoFrameProcessor:
             model_manager=model_manager,
             _is_preview=is_preview,
         )
+        logger.info("[COLD_START] VideoFrameProcessor: InferencePipeline created in %.3fs", time.perf_counter() - _pipeline_init_start)
 
     def set_track(self, track: MediaStreamTrack, rotation_code: Optional[int] = None):
         if not self.track:
@@ -782,6 +785,8 @@ async def init_rtc_peer_connection_with_loop(
     shutdown_reserve: int = WEBRTC_MODAL_SHUTDOWN_RESERVE,
     heartbeat_callback: Optional[Callable[[], None]] = None,
 ) -> RTCPeerConnectionWithLoop:
+    _init_start = time.perf_counter()
+    logger.info("[COLD_START] init_rtc_peer_connection_with_loop: Starting...")
     logger.info(
         "=" * 60 + "\n"
         "[WEBRTC_SESSION] STARTING NEW SESSION\n"
@@ -849,7 +854,9 @@ async def init_rtc_peer_connection_with_loop(
     try:
         should_send_video = stream_mode != StreamOutputMode.NO_VIDEO
 
+        _video_processor_start = time.perf_counter()
         if should_send_video:
+            logger.info("[COLD_START] init_rtc_peer_connection_with_loop: Creating VideoTransformTrackWithLoop...")
             video_processor = VideoTransformTrackWithLoop(
                 asyncio_loop=asyncio_loop,
                 workflow_configuration=webrtc_request.workflow_configuration,
@@ -865,8 +872,10 @@ async def init_rtc_peer_connection_with_loop(
                 realtime_processing=webrtc_request.webrtc_realtime_processing,
                 is_preview=webrtc_request.is_preview,
             )
+            logger.info("[COLD_START] init_rtc_peer_connection_with_loop: VideoTransformTrackWithLoop created in %.3fs", time.perf_counter() - _video_processor_start)
         else:
             # No video track - use base VideoFrameProcessor
+            logger.info("[COLD_START] init_rtc_peer_connection_with_loop: Creating VideoFrameProcessor...")
             video_processor = VideoFrameProcessor(
                 asyncio_loop=asyncio_loop,
                 workflow_configuration=webrtc_request.workflow_configuration,
@@ -882,6 +891,7 @@ async def init_rtc_peer_connection_with_loop(
                 realtime_processing=webrtc_request.webrtc_realtime_processing,
                 is_preview=webrtc_request.is_preview,
             )
+            logger.info("[COLD_START] init_rtc_peer_connection_with_loop: VideoFrameProcessor created in %.3fs", time.perf_counter() - _video_processor_start)
     except (
         ValidationError,
         MissingApiKeyError,
@@ -979,10 +989,14 @@ async def init_rtc_peer_connection_with_loop(
                     )
     else:
         ice_servers = None
+    
+    _peer_connection_start = time.perf_counter()
+    logger.info("[COLD_START] init_rtc_peer_connection_with_loop: Creating RTCPeerConnectionWithLoop...")
     peer_connection = RTCPeerConnectionWithLoop(
         configuration=RTCConfiguration(iceServers=ice_servers) if ice_servers else None,
         asyncio_loop=asyncio_loop,
     )
+    logger.info("[COLD_START] init_rtc_peer_connection_with_loop: RTCPeerConnectionWithLoop created in %.3fs", time.perf_counter() - _peer_connection_start)
 
     relay = MediaRelay()
 
@@ -1213,21 +1227,41 @@ async def init_rtc_peer_connection_with_loop(
 
         video_processor.data_channel = channel
 
+    _sdp_negotiation_start = time.perf_counter()
+    logger.info("[COLD_START] init_rtc_peer_connection_with_loop: Starting SDP negotiation...")
+    
+    _set_remote_start = time.perf_counter()
+    logger.warning("[COLD_START] init_rtc_peer_connection_with_loop: Setting remote description...")
     await peer_connection.setRemoteDescription(
         RTCSessionDescription(
             sdp=webrtc_request.webrtc_offer.sdp, type=webrtc_request.webrtc_offer.type
         )
     )
+    logger.warning("[COLD_START] init_rtc_peer_connection_with_loop: Remote description set in %.3fs", time.perf_counter() - _set_remote_start)
+    
+    _create_answer_start = time.perf_counter()
+    logger.warning("[COLD_START] init_rtc_peer_connection_with_loop: Creating answer...")
     answer = await peer_connection.createAnswer()
+    logger.warning("[COLD_START] init_rtc_peer_connection_with_loop: Answer created in %.3fs", time.perf_counter() - _create_answer_start)
+    
+    _set_local_start = time.perf_counter()
+    logger.warning("[COLD_START] init_rtc_peer_connection_with_loop: Setting local description...")
     await peer_connection.setLocalDescription(answer)
+    logger.warning("[COLD_START] init_rtc_peer_connection_with_loop: Local description set in %.3fs", time.perf_counter() - _set_local_start)
 
+    _ice_complete_start = time.perf_counter()
+    logger.warning("[COLD_START] init_rtc_peer_connection_with_loop: Waiting for ICE gathering to complete...")
     await _wait_ice_complete(peer_connection, timeout=2.0)
+    logger.warning("[COLD_START] init_rtc_peer_connection_with_loop: ICE gathering completed in %.3fs", time.perf_counter() - _ice_complete_start)
+    
+    logger.info("[COLD_START] init_rtc_peer_connection_with_loop: SDP negotiation completed in %.3fs", time.perf_counter() - _sdp_negotiation_start)
 
     logger.info(
         "Initialized RTC peer connection with loop (status: %s), sending answer",
         peer_connection.connectionState,
     )
 
+    _send_answer_start = time.perf_counter()
     send_answer(
         WebRTCWorkerResult(
             answer={
@@ -1236,6 +1270,7 @@ async def init_rtc_peer_connection_with_loop(
             },
         )
     )
+    logger.info("[COLD_START] init_rtc_peer_connection_with_loop: Answer sent in %.3fs, total init time: %.3fs", time.perf_counter() - _send_answer_start, time.perf_counter() - _init_start)
 
     logger.info("Answer sent, waiting for termination event")
     await terminate_event.wait()

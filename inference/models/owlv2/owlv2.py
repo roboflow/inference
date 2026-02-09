@@ -97,17 +97,20 @@ class Owlv2Singleton:
     _instances = weakref.WeakValueDictionary()
 
     def __new__(cls, huggingface_id: str):
+        _new_start = time.perf_counter()
         if huggingface_id in PRELOADED_HF_MODELS:
-            logger.info("Using preloaded OWLv2 instance for %s", huggingface_id)
+            logger.info("[COLD_START] Owlv2Singleton: Using preloaded OWLv2 instance for %s", huggingface_id)
             return PRELOADED_HF_MODELS[huggingface_id]
         if huggingface_id not in cls._instances:
-            logger.info("Creating new OWLv2 instance for %s", huggingface_id)
+            logger.info("[COLD_START] Owlv2Singleton: Creating new OWLv2 instance for %s", huggingface_id)
             instance = super().__new__(cls)
             instance.huggingface_id = huggingface_id
             # Load model directly in the instance
-            logger.info("Loading OWLv2 model from %s", huggingface_id)
+            logger.info("[COLD_START] Owlv2Singleton: Loading OWLv2 model from %s...", huggingface_id)
             # TODO: to further reduce GPU memory usage we could use torch.float16
             # torch_dtype = torch.float16 if str(DEVICE).startswith("cuda") else torch.float32
+            _model_load_start = time.perf_counter()
+            logger.warning("[COLD_START] Owlv2Singleton: Calling Owlv2ForObjectDetection.from_pretrained(%s)...", huggingface_id)
             model = (
                 Owlv2ForObjectDetection.from_pretrained(
                     huggingface_id,
@@ -116,12 +119,19 @@ class Owlv2Singleton:
                 .eval()
                 .to(DEVICE)
             )
+            logger.warning("[COLD_START] Owlv2Singleton: Model loaded and moved to %s in %.3fs", DEVICE, time.perf_counter() - _model_load_start)
 
             if OWLV2_COMPILE_MODEL:
+                _compile_start = time.perf_counter()
+                logger.warning("[COLD_START] Owlv2Singleton: Compiling model with torch.compile...")
                 torch._dynamo.config.suppress_errors = True
                 model.owlv2.vision_model = torch.compile(model.owlv2.vision_model)
+                logger.warning("[COLD_START] Owlv2Singleton: Model compiled in %.3fs", time.perf_counter() - _compile_start)
             instance.model = model
             cls._instances[huggingface_id] = instance
+            logger.info("[COLD_START] Owlv2Singleton: Total instance creation time for %s: %.3fs", huggingface_id, time.perf_counter() - _new_start)
+        else:
+            logger.warning("[COLD_START] Owlv2Singleton: Returning cached instance for %s", huggingface_id)
         return cls._instances[huggingface_id]
 
 
@@ -172,10 +182,22 @@ def preprocess_image(
 
 @torch.no_grad()
 def dummy_infer(hf_id: str):
+    _dummy_infer_start = time.perf_counter()
+    logger.warning("[COLD_START] dummy_infer: Starting for %s", hf_id)
+    
     # Below code is copied from Owlv2.__init__
+    _singleton_start = time.perf_counter()
+    logger.warning("[COLD_START] dummy_infer: Creating Owlv2Singleton...")
     singleton = Owlv2Singleton(hf_id)
+    logger.warning("[COLD_START] dummy_infer: Owlv2Singleton created in %.3fs", time.perf_counter() - _singleton_start)
+    
     model = singleton.model
+    
+    _processor_start = time.perf_counter()
+    logger.warning("[COLD_START] dummy_infer: Loading Owlv2Processor from_pretrained(%s)...", hf_id)
     processor = Owlv2Processor.from_pretrained(hf_id)
+    logger.warning("[COLD_START] dummy_infer: Owlv2Processor loaded in %.3fs", time.perf_counter() - _processor_start)
+    
     image_size = tuple(processor.image_processor.size.values())
     image_mean = torch.tensor(processor.image_processor.image_mean, device=DEVICE).view(
         1, 3, 1, 1
@@ -185,43 +207,59 @@ def dummy_infer(hf_id: str):
     )
 
     np_image = np.zeros((image_size[0] // 2, image_size[1] // 2, 3))
+    
+    _preprocess_start = time.perf_counter()
+    logger.warning("[COLD_START] dummy_infer: Preprocessing image...")
     pixel_values = preprocess_image(np_image, image_size, image_mean, image_std)
+    logger.warning("[COLD_START] dummy_infer: Image preprocessed in %.3fs", time.perf_counter() - _preprocess_start)
 
     # Below code is copied from Owlv2.embed_image
     device_str = "cuda" if str(DEVICE).startswith("cuda") else "cpu"
+    logger.warning("[COLD_START] dummy_infer: Running inference warmup on %s...", device_str)
+    _inference_start = time.perf_counter()
     with torch.autocast(
         device_type=device_str, dtype=torch.float16, enabled=device_str == "cuda"
     ):
         image_embeds, _ = model.image_embedder(pixel_values=pixel_values)
+    logger.warning("[COLD_START] dummy_infer: Inference warmup completed in %.3fs", time.perf_counter() - _inference_start)
+    
     del pixel_values, np_image, image_embeds
     gc.collect()
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
+    
+    logger.warning("[COLD_START] dummy_infer: Total time %.3fs", time.perf_counter() - _dummy_infer_start)
     return singleton
 
 
 def preload_owlv2_model(hf_id: str):
-    logger.info("Preloading OWLv2 model for %s (this may take a while)", hf_id)
+    _preload_start = time.perf_counter()
+    logger.info("[COLD_START] preload_owlv2_model: Starting for %s (this may take a while)", hf_id)
     try:
         if torch.cuda.is_available():
+            _cache_clear_start = time.perf_counter()
+            logger.warning("[COLD_START] preload_owlv2_model: Clearing CUDA cache...")
             torch.cuda.empty_cache()
+            logger.warning("[COLD_START] preload_owlv2_model: CUDA cache cleared in %.3fs", time.perf_counter() - _cache_clear_start)
             allocated_gpu_memory = torch.cuda.memory_allocated() / (1024**3)
             logger.info(
-                f"Allocated GPU memory before loading model: {allocated_gpu_memory:.2f} GB"
+                f"[COLD_START] preload_owlv2_model: Allocated GPU memory before loading model: {allocated_gpu_memory:.2f} GB"
             )
         t1 = time.time()
+        logger.warning("[COLD_START] preload_owlv2_model: Calling dummy_infer(%s)...", hf_id)
         singleton = dummy_infer(hf_id)
         t2 = time.time()
-        logger.info("Preloaded OWLv2 model for %s in %0.2f seconds", hf_id, t2 - t1)
+        logger.info("[COLD_START] preload_owlv2_model: Preloaded OWLv2 model for %s in %0.2f seconds", hf_id, t2 - t1)
         if torch.cuda.is_available():
             allocated_gpu_memory = torch.cuda.memory_allocated() / (1024**3)
             logger.info(
-                f"Allocated GPU memory after loading model: {allocated_gpu_memory:.2f} GB"
+                f"[COLD_START] preload_owlv2_model: Allocated GPU memory after loading model: {allocated_gpu_memory:.2f} GB"
             )
         # Store the singleton instance directly in PRELOADED_HF_MODELS
         PRELOADED_HF_MODELS[hf_id] = singleton
+        logger.info("[COLD_START] preload_owlv2_model: Total time for %s: %.3fs", hf_id, time.perf_counter() - _preload_start)
     except Exception as exc:
-        logger.error("Failed to preload OWLv2 model for %s: %s", hf_id, exc)
+        logger.error("[COLD_START] preload_owlv2_model: Failed to preload OWLv2 model for %s: %s", hf_id, exc)
 
 
 if PRELOAD_HF_IDS:

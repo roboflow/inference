@@ -1,3 +1,4 @@
+import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from enum import Enum
@@ -586,6 +587,9 @@ class InferencePipeline:
             * MissingApiKeyError - if API key is not provided in situation when retrieving workflow definition
                 from Roboflow API is needed
         """
+        _init_with_workflow_start = time.perf_counter()
+        logger.info("[COLD_START] InferencePipeline.init_with_workflow: Starting initialization...")
+        
         if ENABLE_WORKFLOWS_PROFILING:
             profiler = BaseWorkflowsProfiler.init(
                 max_runs_in_buffer=WORKFLOWS_PROFILER_BUFFER_SIZE
@@ -602,11 +606,14 @@ class InferencePipeline:
                 "Either (`workspace_name`, `workflow_id`) or `workflow_specification` must be provided."
             )
         try:
+            _imports_start = time.perf_counter()
+            logger.warning("[COLD_START] InferencePipeline.init_with_workflow: Importing WorkflowRunner, ExecutionEngine...")
             from inference.core.interfaces.stream.model_handlers.workflows import (
                 WorkflowRunner,
             )
             from inference.core.roboflow_api import get_workflow_specification
             from inference.core.workflows.execution_engine.core import ExecutionEngine
+            logger.warning("[COLD_START] InferencePipeline.init_with_workflow: Imports completed in %.3fs", time.perf_counter() - _imports_start)
 
             if workflow_specification is None:
                 if api_key is None:
@@ -626,8 +633,14 @@ class InferencePipeline:
                         workflow_id=workflow_id,
                         use_cache=use_workflow_definition_cache,
                     )
+            _registry_start = time.perf_counter()
+            logger.warning("[COLD_START] InferencePipeline.init_with_workflow: Creating RoboflowModelRegistry...")
             model_registry = RoboflowModelRegistry(ROBOFLOW_MODEL_TYPES)
+            logger.warning("[COLD_START] InferencePipeline.init_with_workflow: RoboflowModelRegistry created in %.3fs", time.perf_counter() - _registry_start)
+            
             if model_manager is None:
+                _manager_start = time.perf_counter()
+                logger.warning("[COLD_START] InferencePipeline.init_with_workflow: Creating BackgroundTaskActiveLearningManager...")
                 model_manager = BackgroundTaskActiveLearningManager(
                     model_registry=model_registry, cache=cache
                 )
@@ -635,22 +648,36 @@ class InferencePipeline:
                     model_manager,
                     max_size=MAX_ACTIVE_MODELS,
                 )
+                logger.warning("[COLD_START] InferencePipeline.init_with_workflow: ModelManager created in %.3fs", time.perf_counter() - _manager_start)
+            else:
+                logger.warning("[COLD_START] InferencePipeline.init_with_workflow: Using provided model_manager")
+            
             if workflow_init_parameters is None:
                 workflow_init_parameters = {}
+            
+            _thread_pool_start = time.perf_counter()
+            logger.warning("[COLD_START] InferencePipeline.init_with_workflow: Creating ThreadPoolExecutor with %d workers...", workflows_thread_pool_workers)
             thread_pool_executor = ThreadPoolExecutor(
                 max_workers=workflows_thread_pool_workers
             )
+            logger.warning("[COLD_START] InferencePipeline.init_with_workflow: ThreadPoolExecutor created in %.3fs", time.perf_counter() - _thread_pool_start)
+            
             workflow_init_parameters["workflows_core.model_manager"] = model_manager
             workflow_init_parameters["workflows_core.api_key"] = api_key
             workflow_init_parameters["workflows_core.thread_pool_executor"] = (
                 thread_pool_executor
             )
+            
+            _engine_start = time.perf_counter()
+            logger.info("[COLD_START] InferencePipeline.init_with_workflow: Creating ExecutionEngine...")
             execution_engine = ExecutionEngine.init(
                 workflow_definition=workflow_specification,
                 init_parameters=workflow_init_parameters,
                 workflow_id=workflow_id,
                 profiler=profiler,
             )
+            logger.info("[COLD_START] InferencePipeline.init_with_workflow: ExecutionEngine created in %.3fs", time.perf_counter() - _engine_start)
+            
             workflow_runner = WorkflowRunner()
             on_video_frame = partial(
                 workflow_runner.run_workflow,
@@ -673,6 +700,7 @@ class InferencePipeline:
             profiler=profiler,
             profiling_directory=profiling_directory,
         )
+        logger.info("[COLD_START] InferencePipeline.init_with_workflow: Setup complete in %.3fs, calling init_with_custom_logic...", time.perf_counter() - _init_with_workflow_start)
         return cls.init_with_custom_logic(
             video_reference=video_reference,
             on_video_frame=on_video_frame,
