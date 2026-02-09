@@ -896,12 +896,28 @@ if modal is not None:
                 gpu=requested_gpu,
             )
         if webrtc_request.requested_region:
+            # Map broad regions to specific regions to ensure consistent snapshot usage
+            # Without this, Modal picks random specific regions and each needs its own snapshot
+            REGION_MAPPING = {
+                "us": "us-east-1",      # Pin US to us-east-1 for consistent snapshots
+                "eu": "eu-west-1",      # Pin EU to eu-west-1
+                "asia": "ap-northeast-1", # Pin Asia to Tokyo
+            }
+            requested_region = webrtc_request.requested_region
+            actual_region = REGION_MAPPING.get(requested_region, requested_region)
+            
+            if actual_region != requested_region:
+                logger.warning(
+                    "[COLD_START] Region mapping: '%s' -> '%s' (for consistent snapshots)",
+                    requested_region, actual_region,
+                )
+            
             logger.info(
                 "[COLD_START] Spawning webrtc modal function with region %s",
-                webrtc_request.requested_region,
+                actual_region,
             )
             cls_with_options = cls_with_options.with_options(
-                region=webrtc_request.requested_region,
+                region=actual_region,
             )
         if requested_ram_mb is not None:
             logger.info(
