@@ -1,33 +1,67 @@
 import os
+import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Callable, Dict, List, Optional, Union
 
 from packaging.version import Version
 
 from inference.core.logger import logger
+
+_v1_module_start = time.perf_counter()
+logger.warning("[COLD_START] execution_engine/v1/core.py: Module loading started...")
+
+_errors_start = time.perf_counter()
 from inference.core.workflows.errors import WorkflowEnvironmentConfigurationError
+logger.warning("[COLD_START] execution_engine/v1/core.py: workflows.errors in %.3fs", time.perf_counter() - _errors_start)
+
+_entities_start = time.perf_counter()
 from inference.core.workflows.execution_engine.entities.engine import (
     BaseExecutionEngine,
 )
+logger.warning("[COLD_START] execution_engine/v1/core.py: entities.engine in %.3fs", time.perf_counter() - _entities_start)
+
+_profiling_start = time.perf_counter()
 from inference.core.workflows.execution_engine.profiling.core import (
     NullWorkflowsProfiler,
     WorkflowsProfiler,
 )
+logger.warning("[COLD_START] execution_engine/v1/core.py: profiling.core in %.3fs", time.perf_counter() - _profiling_start)
+
+_compiler_start = time.perf_counter()
+logger.warning("[COLD_START] execution_engine/v1/core.py: Starting compiler.core import (loads all blocks)...")
 from inference.core.workflows.execution_engine.v1.compiler.core import compile_workflow
+logger.warning("[COLD_START] execution_engine/v1/core.py: compiler.core in %.3fs", time.perf_counter() - _compiler_start)
+
+_compiler_entities_start = time.perf_counter()
 from inference.core.workflows.execution_engine.v1.compiler.entities import (
     CompiledWorkflow,
 )
+logger.warning("[COLD_START] execution_engine/v1/core.py: compiler.entities in %.3fs", time.perf_counter() - _compiler_entities_start)
+
+_executor_start = time.perf_counter()
 from inference.core.workflows.execution_engine.v1.executor.core import run_workflow
+logger.warning("[COLD_START] execution_engine/v1/core.py: executor.core in %.3fs", time.perf_counter() - _executor_start)
+
+_assembler_start = time.perf_counter()
 from inference.core.workflows.execution_engine.v1.executor.runtime_input_assembler import (
     assemble_runtime_parameters,
 )
+logger.warning("[COLD_START] execution_engine/v1/core.py: runtime_input_assembler in %.3fs", time.perf_counter() - _assembler_start)
+
+_validator_start = time.perf_counter()
 from inference.core.workflows.execution_engine.v1.executor.runtime_input_validator import (
     validate_runtime_input,
 )
+logger.warning("[COLD_START] execution_engine/v1/core.py: runtime_input_validator in %.3fs", time.perf_counter() - _validator_start)
+
+_handlers_start = time.perf_counter()
 from inference.core.workflows.execution_engine.v1.step_error_handlers import (
     extended_roboflow_errors_handler,
     legacy_step_error_handler,
 )
+logger.warning("[COLD_START] execution_engine/v1/core.py: step_error_handlers in %.3fs", time.perf_counter() - _handlers_start)
+
+logger.warning("[COLD_START] execution_engine/v1/core.py: Module loading completed in %.3fs", time.perf_counter() - _v1_module_start)
 
 EXECUTION_ENGINE_V1_VERSION = Version("1.7.0")
 

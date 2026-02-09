@@ -1,4 +1,7 @@
+import time
 from typing import List, Type
+
+_loader_module_start = time.perf_counter()
 
 from inference.core.cache import cache
 from inference.core.env import (
@@ -11,6 +14,10 @@ from inference.core.env import (
     WORKFLOW_DISABLED_BLOCK_TYPES,
     WORKFLOWS_STEP_EXECUTION_MODE,
 )
+from inference.core import logger as inf_logger
+inf_logger.warning("[COLD_START] core_steps/loader.py: Starting block imports (THIS IS THE HEAVIEST FILE)...")
+
+_analytics_start = time.perf_counter()
 from inference.core.workflows.core_steps.analytics.data_aggregator.v1 import (
     DataAggregatorBlockV1,
 )
@@ -181,6 +188,10 @@ from inference.core.workflows.core_steps.fusion.dimension_collapse.v1 import (
 from inference.core.workflows.core_steps.math.cosine_similarity.v1 import (
     CosineSimilarityBlockV1,
 )
+inf_logger.warning("[COLD_START] core_steps/loader.py: Analytics/classical_cv/flow_control/formatters/fusion/math blocks in %.3fs", time.perf_counter() - _analytics_start)
+
+_models_start = time.perf_counter()
+inf_logger.warning("[COLD_START] core_steps/loader.py: Starting MODEL blocks import...")
 from inference.core.workflows.core_steps.models.foundation.anthropic_claude.v1 import (
     AnthropicClaudeBlockV1,
 )
@@ -340,6 +351,9 @@ from inference.core.workflows.core_steps.sampling.identify_outliers.v1 import (
 from inference.core.workflows.core_steps.secrets_providers.environment_secrets_store.v1 import (
     EnvironmentSecretsStoreBlockV1,
 )
+inf_logger.warning("[COLD_START] core_steps/loader.py: MODEL blocks (foundation+roboflow+third_party+sampling+secrets) in %.3fs", time.perf_counter() - _models_start)
+
+_sinks_start = time.perf_counter()
 from inference.core.workflows.core_steps.sinks.email_notification.v1 import (
     EmailNotificationBlockV1,
 )
@@ -436,8 +450,10 @@ from inference.core.workflows.core_steps.transformations.stitch_ocr_detections.v
 from inference.core.workflows.core_steps.transformations.stitch_ocr_detections.v2 import (
     StitchOCRDetectionsBlockV2,
 )
+inf_logger.warning("[COLD_START] core_steps/loader.py: SINKS + TRANSFORMATIONS blocks in %.3fs", time.perf_counter() - _sinks_start)
 
 # Visualizers
+_visualizers_start = time.perf_counter()
 from inference.core.workflows.core_steps.visualizations.background_color.v1 import (
     BackgroundColorVisualizationBlockV1,
 )
@@ -519,6 +535,9 @@ from inference.core.workflows.core_steps.visualizations.trace.v1 import (
 from inference.core.workflows.core_steps.visualizations.triangle.v1 import (
     TriangleVisualizationBlockV1,
 )
+inf_logger.warning("[COLD_START] core_steps/loader.py: VISUALIZATIONS blocks in %.3fs", time.perf_counter() - _visualizers_start)
+
+_types_start = time.perf_counter()
 from inference.core.workflows.execution_engine.entities.types import (
     BAR_CODE_DETECTION_KIND,
     BOOLEAN_KIND,
@@ -562,6 +581,9 @@ from inference.core.workflows.execution_engine.entities.types import (
     Kind,
 )
 from inference.core.workflows.prototypes.block import WorkflowBlock
+inf_logger.warning("[COLD_START] core_steps/loader.py: Types + prototypes.block in %.3fs", time.perf_counter() - _types_start)
+
+inf_logger.warning("[COLD_START] core_steps/loader.py: ALL IMPORTS COMPLETED in %.3fs total", time.perf_counter() - _loader_module_start)
 
 REGISTERED_INITIALIZERS = {
     "api_key": API_KEY,

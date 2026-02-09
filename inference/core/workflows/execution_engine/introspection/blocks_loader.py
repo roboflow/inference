@@ -1,6 +1,7 @@
 import importlib
 import logging
 import os
+import time
 from collections import Counter
 from copy import copy
 from functools import lru_cache
@@ -9,7 +10,16 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 from packaging.specifiers import SpecifierSet
 from packaging.version import Version
 
+from inference.core import logger as inf_logger
+
+_blocks_loader_module_start = time.perf_counter()
+inf_logger.warning("[COLD_START] blocks_loader.py: Module loading started...")
+
 from inference.core.env import LOAD_ENTERPRISE_BLOCKS
+inf_logger.warning("[COLD_START] blocks_loader.py: env imported in %.3fs", time.perf_counter() - _blocks_loader_module_start)
+
+_core_steps_start = time.perf_counter()
+inf_logger.warning("[COLD_START] blocks_loader.py: Starting core_steps.loader import (THIS LOADS ALL WORKFLOW BLOCKS)...")
 from inference.core.workflows.core_steps.loader import (
     KINDS_DESERIALIZERS,
     KINDS_SERIALIZERS,
@@ -17,34 +27,64 @@ from inference.core.workflows.core_steps.loader import (
     load_blocks,
     load_kinds,
 )
+inf_logger.warning("[COLD_START] blocks_loader.py: core_steps.loader imported in %.3fs", time.perf_counter() - _core_steps_start)
+
+_errors_start = time.perf_counter()
 from inference.core.workflows.errors import (
     PluginInterfaceError,
     PluginLoadingError,
     WorkflowExecutionEngineVersionError,
 )
+inf_logger.warning("[COLD_START] blocks_loader.py: errors in %.3fs", time.perf_counter() - _errors_start)
+
+_types_start = time.perf_counter()
 from inference.core.workflows.execution_engine.entities.types import Kind
+inf_logger.warning("[COLD_START] blocks_loader.py: entities.types in %.3fs", time.perf_counter() - _types_start)
+
+_entities_start = time.perf_counter()
 from inference.core.workflows.execution_engine.introspection.entities import (
     BlockDescription,
     BlocksDescription,
 )
+inf_logger.warning("[COLD_START] blocks_loader.py: introspection.entities in %.3fs", time.perf_counter() - _entities_start)
+
+_utils_start = time.perf_counter()
 from inference.core.workflows.execution_engine.introspection.utils import (
     build_human_friendly_block_name,
     get_full_type_name,
 )
+inf_logger.warning("[COLD_START] blocks_loader.py: introspection.utils in %.3fs", time.perf_counter() - _utils_start)
+
+_profiling_start = time.perf_counter()
 from inference.core.workflows.execution_engine.profiling.core import (
     WorkflowsProfiler,
     execution_phase,
 )
+inf_logger.warning("[COLD_START] blocks_loader.py: profiling.core in %.3fs", time.perf_counter() - _profiling_start)
+
+_compiler_entities_start = time.perf_counter()
 from inference.core.workflows.execution_engine.v1.compiler.entities import (
     BlockSpecification,
 )
+inf_logger.warning("[COLD_START] blocks_loader.py: compiler.entities in %.3fs", time.perf_counter() - _compiler_entities_start)
+
+_dynamic_blocks_start = time.perf_counter()
 from inference.core.workflows.execution_engine.v1.dynamic_blocks.entities import (
     BLOCK_SOURCE,
 )
+inf_logger.warning("[COLD_START] blocks_loader.py: dynamic_blocks.entities in %.3fs", time.perf_counter() - _dynamic_blocks_start)
+
+_prototypes_start = time.perf_counter()
 from inference.core.workflows.prototypes.block import WorkflowBlock
+inf_logger.warning("[COLD_START] blocks_loader.py: prototypes.block in %.3fs", time.perf_counter() - _prototypes_start)
+
+_enterprise_start = time.perf_counter()
 from inference.enterprise.workflows.enterprise_blocks.loader import (
     load_enterprise_blocks,
 )
+inf_logger.warning("[COLD_START] blocks_loader.py: enterprise_blocks.loader in %.3fs", time.perf_counter() - _enterprise_start)
+
+inf_logger.warning("[COLD_START] blocks_loader.py: Module loading completed in %.3fs", time.perf_counter() - _blocks_loader_module_start)
 
 WORKFLOWS_PLUGINS_ENV = "WORKFLOWS_PLUGINS"
 WORKFLOWS_CORE_PLUGIN_NAME = "workflows_core"

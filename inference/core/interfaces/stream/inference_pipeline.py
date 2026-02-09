@@ -607,13 +607,26 @@ class InferencePipeline:
             )
         try:
             _imports_start = time.perf_counter()
-            logger.warning("[COLD_START] InferencePipeline.init_with_workflow: Importing WorkflowRunner, ExecutionEngine...")
+            logger.warning("[COLD_START] InferencePipeline.init_with_workflow: Starting imports...")
+            
+            _import1_start = time.perf_counter()
+            logger.warning("[COLD_START] InferencePipeline.init_with_workflow: Importing WorkflowRunner...")
             from inference.core.interfaces.stream.model_handlers.workflows import (
                 WorkflowRunner,
             )
+            logger.warning("[COLD_START] InferencePipeline.init_with_workflow: WorkflowRunner imported in %.3fs", time.perf_counter() - _import1_start)
+            
+            _import2_start = time.perf_counter()
+            logger.warning("[COLD_START] InferencePipeline.init_with_workflow: Importing get_workflow_specification...")
             from inference.core.roboflow_api import get_workflow_specification
+            logger.warning("[COLD_START] InferencePipeline.init_with_workflow: get_workflow_specification imported in %.3fs", time.perf_counter() - _import2_start)
+            
+            _import3_start = time.perf_counter()
+            logger.warning("[COLD_START] InferencePipeline.init_with_workflow: Importing ExecutionEngine...")
             from inference.core.workflows.execution_engine.core import ExecutionEngine
-            logger.warning("[COLD_START] InferencePipeline.init_with_workflow: Imports completed in %.3fs", time.perf_counter() - _imports_start)
+            logger.warning("[COLD_START] InferencePipeline.init_with_workflow: ExecutionEngine imported in %.3fs", time.perf_counter() - _import3_start)
+            
+            logger.warning("[COLD_START] InferencePipeline.init_with_workflow: All imports completed in %.3fs", time.perf_counter() - _imports_start)
 
             if workflow_specification is None:
                 if api_key is None:

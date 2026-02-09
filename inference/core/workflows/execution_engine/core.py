@@ -1,23 +1,44 @@
+import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Callable, Dict, List, Optional, Type, Union
 
+from inference.core import logger
+
+_module_start = time.perf_counter()
+logger.warning("[COLD_START] execution_engine/core.py: Module loading started...")
+
 from packaging.specifiers import SpecifierSet
 from packaging.version import Version
+logger.warning("[COLD_START] execution_engine/core.py: packaging imports in %.3fs", time.perf_counter() - _module_start)
 
+_errors_start = time.perf_counter()
 from inference.core.workflows.errors import (
     NotSupportedExecutionEngineError,
     WorkflowDefinitionError,
     WorkflowEnvironmentConfigurationError,
 )
+logger.warning("[COLD_START] execution_engine/core.py: workflows.errors imported in %.3fs", time.perf_counter() - _errors_start)
+
+_entities_start = time.perf_counter()
 from inference.core.workflows.execution_engine.entities.engine import (
     BaseExecutionEngine,
 )
+logger.warning("[COLD_START] execution_engine/core.py: entities.engine imported in %.3fs", time.perf_counter() - _entities_start)
+
+_profiling_start = time.perf_counter()
 from inference.core.workflows.execution_engine.profiling.core import WorkflowsProfiler
+logger.warning("[COLD_START] execution_engine/core.py: profiling.core imported in %.3fs", time.perf_counter() - _profiling_start)
+
+_v1_core_start = time.perf_counter()
+logger.warning("[COLD_START] execution_engine/core.py: Starting v1.core import (this loads all blocks)...")
 from inference.core.workflows.execution_engine.v1.core import (
     DEFAULT_WORKFLOWS_STEP_ERROR_HANDLER,
     EXECUTION_ENGINE_V1_VERSION,
     ExecutionEngineV1,
 )
+logger.warning("[COLD_START] execution_engine/core.py: v1.core imported in %.3fs", time.perf_counter() - _v1_core_start)
+
+logger.warning("[COLD_START] execution_engine/core.py: Module loading completed in %.3fs", time.perf_counter() - _module_start)
 
 REGISTERED_ENGINES = {
     EXECUTION_ENGINE_V1_VERSION: ExecutionEngineV1,
