@@ -217,18 +217,24 @@ class HeatmapVisualizationBlockV1(PredictionsVisualizationBlock):
 
             # Calculate centers for current detections
             # Use the specified position anchor for tracking consistency
-            anchor_position = getattr(sv.Position, position) if position else sv.Position.BOTTOM_CENTER
+            anchor_position = (
+                getattr(sv.Position, position)
+                if position
+                else sv.Position.BOTTOM_CENTER
+            )
             anchors = predictions.get_anchors_coordinates(anchor=anchor_position)
 
-            for i, (tracker_id, point) in enumerate(zip(predictions.tracker_id, anchors)):
+            for i, (tracker_id, point) in enumerate(
+                zip(predictions.tracker_id, anchors)
+            ):
                 tracker_id = int(tracker_id)
                 x, y = point
-                
+
                 if tracker_id in current_history:
                     # Check for movement
                     prev_x, prev_y = current_history[tracker_id]
                     dist = np.sqrt((x - prev_x) ** 2 + (y - prev_y) ** 2)
-                    
+
                     if dist >= motion_threshold:
                         moving_indices.append(i)
                         # Update history
@@ -236,13 +242,13 @@ class HeatmapVisualizationBlockV1(PredictionsVisualizationBlock):
                 else:
                     # New track, initialize history
                     current_history[tracker_id] = (x, y)
-            
+
             # Filter detections
             if len(moving_indices) > 0:
                 detections_to_plot = predictions[np.array(moving_indices)]
             else:
                 detections_to_plot = sv.Detections.empty()
-        
+
         annotator = self.getAnnotator(
             position,
             opacity,
