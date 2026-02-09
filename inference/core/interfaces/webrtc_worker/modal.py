@@ -380,6 +380,15 @@ if modal is not None:
             _wall_clock_start = datetime.datetime.utcnow().isoformat()
             logger.info("[COLD_START] ========== MODAL METHOD EXECUTION BEGIN ==========")
             logger.info("[COLD_START] Container received function call at %s (UTC)", _wall_clock_start)
+            
+            # Log snapshot-related info to help debug
+            # If you see @modal.enter() logs ABOVE this, a new snapshot was created
+            # If you jump straight to this without @modal.enter() logs, snapshot was RESTORED
+            logger.warning("[COLD_START] [SNAPSHOT_CHECK] If you see '@modal.enter()' logs above, NEW snapshot was created")
+            logger.warning("[COLD_START] [SNAPSHOT_CHECK] If this is the FIRST log you see, snapshot was RESTORED")
+            logger.warning("[COLD_START] [SNAPSHOT_CHECK] Current params: MODAL_IMAGE_ID=%s, MODAL_REGION=%s", 
+                          os.getenv("MODAL_IMAGE_ID", "N/A"), os.getenv("MODAL_REGION", "N/A"))
+            
             logger.info("[COLD_START] Container received function call, starting execution...")
             
             _workspace_api_start = time.perf_counter()
@@ -581,6 +590,17 @@ if modal is not None:
         def start(self):
             _cpu_start_time = time.perf_counter()
             logger.info("[COLD_START] ========== CPU CONTAINER STARTUP BEGIN ==========")
+            
+            # Log all parameters that affect snapshot creation/restoration
+            logger.warning("[COLD_START] ========== SNAPSHOT-AFFECTING PARAMETERS ==========")
+            logger.warning("[COLD_START] [SNAPSHOT_PARAM] preload_models='%s'", self.preload_models)
+            logger.warning("[COLD_START] [SNAPSHOT_PARAM] preload_hf_ids='%s'", self.preload_hf_ids)
+            logger.warning("[COLD_START] [SNAPSHOT_PARAM] MODAL_IMAGE_ID=%s", os.getenv("MODAL_IMAGE_ID", "N/A"))
+            logger.warning("[COLD_START] [SNAPSHOT_PARAM] MODAL_CLOUD_PROVIDER=%s", os.getenv("MODAL_CLOUD_PROVIDER", "N/A"))
+            logger.warning("[COLD_START] [SNAPSHOT_PARAM] MODAL_REGION=%s", os.getenv("MODAL_REGION", "N/A"))
+            logger.warning("[COLD_START] [SNAPSHOT_PARAM] WEBRTC_MODAL_IMAGE_TAG=%s", WEBRTC_MODAL_IMAGE_TAG)
+            logger.warning("[COLD_START] ========== END SNAPSHOT PARAMETERS ==========")
+            
             logger.info("[COLD_START] Starting CPU container")
             self._gpu = "CPU"
             self._cold_start = False
@@ -611,6 +631,24 @@ if modal is not None:
         def start(self):
             _gpu_start_time = time.perf_counter()
             logger.info("[COLD_START] ========== GPU CONTAINER STARTUP BEGIN ==========")
+            
+            # Log all parameters that affect snapshot creation/restoration
+            # If ANY of these change, Modal will create a NEW snapshot instead of restoring
+            logger.warning("[COLD_START] ========== SNAPSHOT-AFFECTING PARAMETERS ==========")
+            logger.warning("[COLD_START] [SNAPSHOT_PARAM] preload_models='%s'", self.preload_models)
+            logger.warning("[COLD_START] [SNAPSHOT_PARAM] preload_hf_ids='%s'", self.preload_hf_ids)
+            logger.warning("[COLD_START] [SNAPSHOT_PARAM] MODAL_IMAGE_ID=%s", os.getenv("MODAL_IMAGE_ID", "N/A"))
+            logger.warning("[COLD_START] [SNAPSHOT_PARAM] MODAL_CLOUD_PROVIDER=%s", os.getenv("MODAL_CLOUD_PROVIDER", "N/A"))
+            logger.warning("[COLD_START] [SNAPSHOT_PARAM] MODAL_REGION=%s", os.getenv("MODAL_REGION", "N/A"))
+            logger.warning("[COLD_START] [SNAPSHOT_PARAM] WEBRTC_MODAL_IMAGE_TAG=%s", WEBRTC_MODAL_IMAGE_TAG)
+            logger.warning("[COLD_START] [SNAPSHOT_PARAM] GPU_TYPE=%s", WEBRTC_MODAL_FUNCTION_GPU)
+            logger.warning("[COLD_START] [SNAPSHOT_PARAM] ENABLE_MEMORY_SNAPSHOT=%s", WEBRTC_MODAL_FUNCTION_ENABLE_MEMORY_SNAPSHOT)
+            logger.warning("[COLD_START] ========== END SNAPSHOT PARAMETERS ==========")
+            logger.warning("[COLD_START] NOTE: This @modal.enter() is running, meaning either:")
+            logger.warning("[COLD_START]   1. First container start (creating new snapshot)")
+            logger.warning("[COLD_START]   2. Parameters changed from previous snapshot")
+            logger.warning("[COLD_START]   3. Snapshot was evicted/expired")
+            logger.warning("[COLD_START]   4. Different region than cached snapshot")
             
             self._cold_start = False
             time_start = time.time()
