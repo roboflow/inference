@@ -49,6 +49,7 @@ from inference.core.env import (
     USE_FILE_CACHE_FOR_WORKFLOWS_DEFINITIONS,
     WORKFLOWS_DEFINITION_CACHE_EXPIRY,
 )
+from inference.core.version import __version__
 from inference.core.exceptions import (
     MalformedRoboflowAPIResponseError,
     MalformedWorkflowResponseError,
@@ -85,6 +86,8 @@ NOT_FOUND_ERROR_MESSAGE = (
     "Could not find requested Roboflow resource. Check that the provided dataset and "
     "version are correct, and check that the provided Roboflow API key has the correct permissions."
 )
+
+ROBOFLOW_INFERENCE_VERSION_HEADER = "X-Roboflow-Inference-Version"
 
 
 def raise_from_lambda(
@@ -975,17 +978,25 @@ def send_inference_results_to_model_monitoring(
 
 def build_roboflow_api_headers(
     explicit_headers: Optional[Dict[str, Union[str, List[str]]]] = None,
-) -> Optional[Dict[str, Union[List[str]]]]:
-    if not ROBOFLOW_API_EXTRA_HEADERS:
-        return explicit_headers
-    try:
-        extra_headers: dict = json.loads(ROBOFLOW_API_EXTRA_HEADERS)
-        if explicit_headers:
-            extra_headers.update(explicit_headers)
-        return extra_headers
-    except ValueError:
-        logger.warning("Could not decode ROBOFLOW_API_EXTRA_HEADERS")
-        return explicit_headers
+) -> Dict[str, Union[str, List[str]]]:
+    headers: Dict[str, Union[str, List[str]]] = {
+        ROBOFLOW_INFERENCE_VERSION_HEADER: __version__,
+    }
+
+    if ROBOFLOW_API_EXTRA_HEADERS:
+        try:
+            extra_headers: dict = json.loads(ROBOFLOW_API_EXTRA_HEADERS)
+            headers.update(extra_headers)
+        except ValueError:
+            logger.warning("Could not decode ROBOFLOW_API_EXTRA_HEADERS")
+
+    if explicit_headers:
+        headers.update(explicit_headers)
+
+    # Always enforce the inference version header even if caller or extras tried to override it.
+    headers[ROBOFLOW_INFERENCE_VERSION_HEADER] = __version__
+
+    return headers
 
 
 def post_to_roboflow_api(
