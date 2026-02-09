@@ -136,6 +136,33 @@ except ImportError:
 logger.warning("[COLD_START] Total module imports completed in %.3fs", time.perf_counter() - _module_import_start)
 
 
+def preload_workflow_blocks():
+    """
+    Pre-import all workflow blocks to avoid 8+ second import time during function calls.
+    This should be called during @modal.enter() to include in the memory snapshot.
+    """
+    # TODO: DEBUG ADDED RAFEL
+    _total_start = time.perf_counter()
+    logger.warning("[COLD_START] Preloading workflow blocks (this takes ~8s on first run)...")
+    
+    # Import the WorkflowRunner which triggers the entire import chain
+    _workflow_runner_start = time.perf_counter()
+    from inference.core.interfaces.stream.model_handlers.workflows import WorkflowRunner
+    logger.warning("[COLD_START] WorkflowRunner imported in %.3fs", time.perf_counter() - _workflow_runner_start)
+    
+    # Import ExecutionEngine to ensure all blocks are loaded
+    _execution_engine_start = time.perf_counter()
+    from inference.core.workflows.execution_engine.core import ExecutionEngine
+    logger.warning("[COLD_START] ExecutionEngine imported in %.3fs", time.perf_counter() - _execution_engine_start)
+    
+    # Also import the blocks_loader directly to ensure all blocks are registered
+    _blocks_loader_start = time.perf_counter()
+    from inference.core.workflows.execution_engine.introspection import blocks_loader
+    logger.warning("[COLD_START] blocks_loader imported in %.3fs", time.perf_counter() - _blocks_loader_start)
+    
+    logger.warning("[COLD_START] All workflow blocks preloaded in %.3fs total", time.perf_counter() - _total_start)
+
+
 # https://modal.com/docs/guide/environment_variables#environment-variables
 MODAL_CLOUD_PROVIDER = os.getenv("MODAL_CLOUD_PROVIDER")
 MODAL_IMAGE_ID = os.getenv("MODAL_IMAGE_ID")
@@ -551,10 +578,13 @@ if modal is not None:
         def start(self):
             _cpu_start_time = time.perf_counter()
             logger.info("[COLD_START] ========== CPU CONTAINER STARTUP BEGIN ==========")
-            # TODO: pre-load models on CPU
             logger.info("[COLD_START] Starting CPU container")
             self._gpu = "CPU"
             self._cold_start = False
+            
+            # Pre-import workflow blocks to avoid 8+ second import during function calls
+            preload_workflow_blocks()
+            
             logger.info("[COLD_START] CPU container startup completed in %.3fs", time.perf_counter() - _cpu_start_time)
             logger.info("[COLD_START] ========== CPU CONTAINER STARTUP END ==========")
 
@@ -597,6 +627,9 @@ if modal is not None:
             logger.info("[COLD_START] Starting GPU container on %s", self._gpu)
             logger.info("[COLD_START] Preload hf ids: %s", self.preload_hf_ids)
             logger.info("[COLD_START] Preload models: %s", self.preload_models)
+            
+            # Pre-import workflow blocks to avoid 8+ second import during function calls
+            preload_workflow_blocks()
             
             # HF model preloading (OwlV2)
             if self.preload_hf_ids:
