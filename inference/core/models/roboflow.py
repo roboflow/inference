@@ -934,7 +934,7 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
                     sess_options=session_options,
                 )
             except Exception as e:
-                self.clear_cache()
+                self.clear_cache(delete_from_disk=DISK_CACHE_CLEANUP)
                 raise ModelArtefactError(
                     f"Unable to load ONNX session. Cause: {e}"
                 ) from e

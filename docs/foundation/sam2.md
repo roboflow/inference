@@ -2,6 +2,13 @@
 
 You can use Segment Anything 2 to identify the precise location of objects in an image. This process can generate masks for objects in an image iteratively, by specifying points to be included or discluded from the segmentation mask.
 
+## Execution Modes
+
+Segment Anything 2 supports both local and remote execution modes when used in workflows:
+
+- **Local execution**: The model runs directly on your inference server (GPU strongly recommended)
+- **Remote execution**: The model can be invoked via HTTP API on a remote inference server using the `sam2_segment_image()` client method
+
 ## How to Use Segment Anything
 
 To use Segment Anything 2 with Inference, you will need a Roboflow API key. If you don't already have a Roboflow account, <a href="https://app.roboflow.com" target="_blank">sign up for a free Roboflow account</a>. Then, retrieve your API key from the Roboflow dashboard.
