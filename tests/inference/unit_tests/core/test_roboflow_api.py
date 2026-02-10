@@ -409,7 +409,10 @@ async def test_get_roboflow_workspace_async_when_response_is_valid() -> None:
         registered_requests = request_mock.requests[
             ("GET", URL(f"{API_BASE_URL}/?api_key=my_api_key&nocache=true"))
         ]
-        assert registered_requests[0].kwargs["headers"] == {"extra": "header"}
+        assert registered_requests[0].kwargs["headers"] == {
+            "extra": "header",
+            roboflow_api.ROBOFLOW_INFERENCE_VERSION_HEADER: __version__,
+        }
 
 
 def test_get_roboflow_dataset_type_when_wrong_key_used(
