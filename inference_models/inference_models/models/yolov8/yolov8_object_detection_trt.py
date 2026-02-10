@@ -5,7 +5,10 @@ import numpy as np
 import torch
 
 from inference_models import Detections, ObjectDetectionModel
-from inference_models.configuration import DEFAULT_DEVICE
+from inference_models.configuration import (
+    DEFAULT_DEVICE,
+    USE_CUDA_GRAPHS_FOR_TRT_BACKEND,
+)
 from inference_models.entities import ColorFormat
 from inference_models.errors import (
     CorruptedModelPackageError,
@@ -35,8 +38,10 @@ from inference_models.models.common.roboflow.pre_processing import (
     pre_process_network_input,
 )
 from inference_models.models.common.trt import (
+    TRTCudaGraphLRUCache,
     get_trt_engine_inputs_and_outputs,
     infer_from_trt_engine,
+    infer_from_trt_engine_with_cudagraph,
     load_trt_model,
 )
 
@@ -160,6 +165,7 @@ class YOLOv8ForObjectDetectionTRT(
         self._device = device
         self._cuda_context = cuda_context
         self._execution_context = execution_context
+        self._trt_cuda_graph_cache: Optional[TRTCudaGraphLRUCache] = None
         self._lock = threading.Lock()
 
     @property
@@ -180,18 +186,41 @@ class YOLOv8ForObjectDetectionTRT(
             input_color_format=input_color_format,
         )
 
-    def forward(self, pre_processed_images: torch.Tensor, **kwargs) -> torch.Tensor:
+    def forward(
+        self,
+        pre_processed_images: torch.Tensor,
+        use_cuda_graph: Optional[bool] = None,
+        **kwargs,
+    ) -> torch.Tensor:
+        if use_cuda_graph is None:
+            use_cuda_graph = USE_CUDA_GRAPHS_FOR_TRT_BACKEND
+
         with self._lock:
             with use_cuda_context(context=self._cuda_context):
-                return infer_from_trt_engine(
-                    pre_processed_images=pre_processed_images,
-                    trt_config=self._trt_config,
-                    engine=self._engine,
-                    context=self._execution_context,
-                    device=self._device,
-                    input_name=self._input_name,
-                    outputs=self._output_names,
-                )[0]
+                if use_cuda_graph:
+                    results, self._trt_cuda_graph_cache = (
+                        infer_from_trt_engine_with_cudagraph(
+                            pre_processed_images=pre_processed_images,
+                            trt_config=self._trt_config,
+                            engine=self._engine,
+                            context=self._execution_context,
+                            device=self._device,
+                            input_name=self._input_name,
+                            outputs=self._output_names,
+                            trt_cuda_graph_cache=self._trt_cuda_graph_cache,
+                        )
+                    )
+                    return results[0]
+                else:
+                    return infer_from_trt_engine(
+                        pre_processed_images=pre_processed_images,
+                        trt_config=self._trt_config,
+                        engine=self._engine,
+                        context=self._execution_context,
+                        device=self._device,
+                        input_name=self._input_name,
+                        outputs=self._output_names,
+                    )[0]
 
     def post_process(
         self,

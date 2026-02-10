@@ -461,18 +461,6 @@ def execute_trt_engine(
             return results, trt_cuda_graph_cache
 
     else:
-        batch_size = pre_processed_images.shape[0]
-        results = []
-        for output in outputs:
-            output_tensor_shape = engine.get_tensor_shape(output)
-            output_tensor_type = trt_dtype_to_torch(engine.get_tensor_dtype(output))
-            result = torch.empty(
-                (batch_size,) + output_tensor_shape[1:],
-                dtype=output_tensor_type,
-                device=device,
-            )
-            context.set_tensor_address(output, result.data_ptr())
-            results.append(result)
         status = context.set_input_shape(input_name, tuple(pre_processed_images.shape))
         if not status:
             raise ModelRuntimeError(
@@ -485,6 +473,17 @@ def execute_trt_engine(
                 message="Failed to set input tensor data pointer during forward pass from the model.",
                 help_url="https://todo",
             )
+        results = []
+        for output in outputs:
+            output_tensor_shape = context.get_tensor_shape(output)
+            output_tensor_type = trt_dtype_to_torch(engine.get_tensor_dtype(output))
+            result = torch.empty(
+                tuple(output_tensor_shape),
+                dtype=output_tensor_type,
+                device=device,
+            )
+            context.set_tensor_address(output, result.data_ptr())
+            results.append(result)
         stream = torch.cuda.Stream(device=device)
         status = context.execute_async_v3(stream_handle=stream.cuda_stream)
         if not status:
@@ -504,22 +503,8 @@ def _capture_cuda_graph(
     input_name: str,
     outputs: List[str],
 ) -> Tuple[List[torch.Tensor], TRTCudaGraphState]:
-    batch_size = pre_processed_images.shape[0]
-
     input_buffer = torch.empty_like(pre_processed_images, device=device)
     input_buffer.copy_(pre_processed_images)
-
-    output_buffers = []
-    for output in outputs:
-        output_tensor_shape = engine.get_tensor_shape(output)
-        output_tensor_type = trt_dtype_to_torch(engine.get_tensor_dtype(output))
-        output_buffer = torch.empty(
-            (batch_size,) + output_tensor_shape[1:],
-            dtype=output_tensor_type,
-            device=device,
-        )
-        context.set_tensor_address(output, output_buffer.data_ptr())
-        output_buffers.append(output_buffer)
 
     status = context.set_input_shape(input_name, tuple(pre_processed_images.shape))
     if not status:
@@ -533,6 +518,18 @@ def _capture_cuda_graph(
             message="Failed to set input tensor data pointer during CUDA graph capture.",
             help_url="https://todo",
         )
+
+    output_buffers = []
+    for output in outputs:
+        output_tensor_shape = context.get_tensor_shape(output)
+        output_tensor_type = trt_dtype_to_torch(engine.get_tensor_dtype(output))
+        output_buffer = torch.empty(
+            tuple(output_tensor_shape),
+            dtype=output_tensor_type,
+            device=device,
+        )
+        context.set_tensor_address(output, output_buffer.data_ptr())
+        output_buffers.append(output_buffer)
 
     stream = torch.cuda.Stream(device=device)
     with torch.cuda.stream(stream):

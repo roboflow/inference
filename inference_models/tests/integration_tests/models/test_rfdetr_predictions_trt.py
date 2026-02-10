@@ -57,7 +57,7 @@ def test_trt_cudagraph_output_matches_non_cudagraph_output(
 
 @pytest.mark.slow
 @pytest.mark.trt_extras
-def test_trt_outputs_shapes(
+def test_trt_outputs_match_expected_shapes(
     rfdetr_nano_t4_trt_package: str,
     dog_image_numpy: np.ndarray,
 ) -> None:
