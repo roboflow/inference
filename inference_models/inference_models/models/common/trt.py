@@ -65,6 +65,7 @@ class TRTCudaGraphState:
     cuda_stream: torch.cuda.Stream
     input_buffer: torch.Tensor
     output_buffers: List[torch.Tensor]
+    execution_context: trt.IExecutionContext
 
 
 class TRTCudaGraphLRUCache:
@@ -292,7 +293,6 @@ def infer_from_trt_engine_with_cudagraph(
     pre_processed_images: torch.Tensor,
     trt_config: TRTConfig,
     engine: trt.ICudaEngine,
-    context: trt.IExecutionContext,
     device: torch.device,
     input_name: str,
     outputs: List[str],
@@ -307,7 +307,6 @@ def infer_from_trt_engine_with_cudagraph(
         pre_processed_images: Preprocessed input tensor on CUDA device.
         trt_config: TensorRT configuration object.
         engine: TensorRT CUDA engine (ICudaEngine).
-        context: TensorRT execution context (IExecutionContext).
         device: PyTorch CUDA device.
         input_name: Name of the input tensor in the TensorRT engine.
         outputs: List of output tensor names.
@@ -321,7 +320,7 @@ def infer_from_trt_engine_with_cudagraph(
         return infer_from_trt_engine_with_batch_size_boundaries(
             pre_processed_images=pre_processed_images,
             engine=engine,
-            context=context,
+            context=None, # the graph cache has its own contexts
             device=device,
             input_name=input_name,
             outputs=outputs,
@@ -333,7 +332,7 @@ def infer_from_trt_engine_with_cudagraph(
     return infer_from_trt_engine_with_batch_size_boundaries(
         pre_processed_images=pre_processed_images,
         engine=engine,
-        context=context,
+        context=None, # the graph cache has its own contexts
         device=device,
         input_name=input_name,
         outputs=outputs,
@@ -442,7 +441,6 @@ def execute_trt_engine(
             results, trt_cuda_graph = _capture_cuda_graph(
                 pre_processed_images=pre_processed_images,
                 engine=engine,
-                context=context,
                 device=device,
                 input_name=input_name,
                 outputs=outputs,
@@ -498,21 +496,25 @@ def execute_trt_engine(
 def _capture_cuda_graph(
     pre_processed_images: torch.Tensor,
     engine: trt.ICudaEngine,
-    context: trt.IExecutionContext,
     device: torch.device,
     input_name: str,
     outputs: List[str],
 ) -> Tuple[List[torch.Tensor], TRTCudaGraphState]:
+    # Each CUDA graph needs its own execution context. Sharing a single context
+    # across graphs for different input shapes causes TRT to reallocate internal
+    # workspace buffers, invalidating GPU addresses baked into earlier graphs.
+    graph_context = engine.create_execution_context()
+
     input_buffer = torch.empty_like(pre_processed_images, device=device)
     input_buffer.copy_(pre_processed_images)
 
-    status = context.set_input_shape(input_name, tuple(pre_processed_images.shape))
+    status = graph_context.set_input_shape(input_name, tuple(pre_processed_images.shape))
     if not status:
         raise ModelRuntimeError(
             message="Failed to set TRT model input shape during CUDA graph capture.",
             help_url="https://todo",
         )
-    status = context.set_tensor_address(input_name, input_buffer.data_ptr())
+    status = graph_context.set_tensor_address(input_name, input_buffer.data_ptr())
     if not status:
         raise ModelRuntimeError(
             message="Failed to set input tensor data pointer during CUDA graph capture.",
@@ -521,19 +523,19 @@ def _capture_cuda_graph(
 
     output_buffers = []
     for output in outputs:
-        output_tensor_shape = context.get_tensor_shape(output)
+        output_tensor_shape = graph_context.get_tensor_shape(output)
         output_tensor_type = trt_dtype_to_torch(engine.get_tensor_dtype(output))
         output_buffer = torch.empty(
             tuple(output_tensor_shape),
             dtype=output_tensor_type,
             device=device,
         )
-        context.set_tensor_address(output, output_buffer.data_ptr())
+        graph_context.set_tensor_address(output, output_buffer.data_ptr())
         output_buffers.append(output_buffer)
 
     stream = torch.cuda.Stream(device=device)
     with torch.cuda.stream(stream):
-        status = context.execute_async_v3(stream_handle=stream.cuda_stream)
+        status = graph_context.execute_async_v3(stream_handle=stream.cuda_stream)
         if not status:
             raise ModelRuntimeError(
                 message="Failed to execute TRT model warmup before CUDA graph capture.",
@@ -543,7 +545,7 @@ def _capture_cuda_graph(
 
     cuda_graph = torch.cuda.CUDAGraph()
     with torch.cuda.graph(cuda_graph, stream=stream):
-        status = context.execute_async_v3(stream_handle=stream.cuda_stream)
+        status = graph_context.execute_async_v3(stream_handle=stream.cuda_stream)
         if not status:
             raise ModelRuntimeError(
                 message="Failed to capture CUDA graph from TRT model execution.",
@@ -553,14 +555,15 @@ def _capture_cuda_graph(
         results = [buf.clone() for buf in output_buffers]
     stream.synchronize()
 
-    trt_cuda_graph_cache = TRTCudaGraphState(
+    trt_cuda_graph_state = TRTCudaGraphState(
         cuda_graph=cuda_graph,
         cuda_stream=stream,
         input_buffer=input_buffer,
         output_buffers=output_buffers,
+        execution_context=graph_context,
     )
 
-    return results, trt_cuda_graph_cache
+    return results, trt_cuda_graph_state
 
 
 def trt_dtype_to_torch(trt_dtype):

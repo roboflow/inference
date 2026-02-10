@@ -203,7 +203,6 @@ class YOLOv8ForObjectDetectionTRT(
                             pre_processed_images=pre_processed_images,
                             trt_config=self._trt_config,
                             engine=self._engine,
-                            context=self._execution_context,
                             device=self._device,
                             input_name=self._input_name,
                             outputs=self._output_names,
