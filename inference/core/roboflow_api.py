@@ -979,19 +979,18 @@ def send_inference_results_to_model_monitoring(
 def build_roboflow_api_headers(
     explicit_headers: Optional[Dict[str, Union[str, List[str]]]] = None,
 ) -> Dict[str, Union[str, List[str]]]:
-    headers: Dict[str, Union[str, List[str]]] = {
-        ROBOFLOW_INFERENCE_VERSION_HEADER: __version__,
-    }
+    headers: Dict[str, Union[str, List[str]]] = {}
+
+    if explicit_headers:
+        headers.update(explicit_headers)
 
     if ROBOFLOW_API_EXTRA_HEADERS:
         try:
             extra_headers: dict = json.loads(ROBOFLOW_API_EXTRA_HEADERS)
-            headers.update(extra_headers)
+            # Explicit headers should override extras if keys collide.
+            headers = {**extra_headers, **headers}
         except ValueError:
             logger.warning("Could not decode ROBOFLOW_API_EXTRA_HEADERS")
-
-    if explicit_headers:
-        headers.update(explicit_headers)
 
     # Always enforce the inference version header even if caller or extras tried to override it.
     headers[ROBOFLOW_INFERENCE_VERSION_HEADER] = __version__
