@@ -1156,13 +1156,13 @@ async def init_rtc_peer_connection_with_loop(
                         logger.info(
                             "FPS detection: detected=%.2f, previous=%s",
                             detected_fps,
-                            video_processor._declared_fps
+                            video_processor._declared_fps,
                         )
                         video_processor._declared_fps = detected_fps
                     else:
                         logger.warning(
                             "FPS detection failed, keeping default: %s",
-                            video_processor._declared_fps
+                            video_processor._declared_fps,
                         )
 
                     if webrtc_request.webrtc_realtime_processing:

@@ -280,7 +280,9 @@ def get_video_fps(filepath: str) -> Optional[float]:
                         if int(den) != 0:
                             fps = int(num) / int(den)
                             if fps > 0:
-                                logger.info("Video FPS detected: %.2f from %s", fps, rate_key)
+                                logger.info(
+                                    "Video FPS detected: %.2f from %s", fps, rate_key
+                                )
                                 return fps
         else:
             logger.warning("ffprobe FPS detection failed: %s", result.stderr.strip())
