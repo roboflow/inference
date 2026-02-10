@@ -49,7 +49,6 @@ from inference.core.env import (
     USE_FILE_CACHE_FOR_WORKFLOWS_DEFINITIONS,
     WORKFLOWS_DEFINITION_CACHE_EXPIRY,
 )
-from inference.core.version import __version__
 from inference.core.exceptions import (
     MalformedRoboflowAPIResponseError,
     MalformedWorkflowResponseError,
@@ -72,6 +71,7 @@ from inference.core.utils.requests import (
     api_key_safe_raise_for_status_aiohttp,
 )
 from inference.core.utils.url_utils import wrap_url
+from inference.core.version import __version__
 
 MODEL_TYPE_DEFAULTS = {
     "object-detection": "yolov5v2s",
@@ -981,7 +981,10 @@ def build_roboflow_api_headers(
 ) -> Dict[str, Union[str, List[str]]]:
     if explicit_headers is None:
         explicit_headers = {}
-    explicit_headers[ROBOFLOW_INFERENCE_VERSION_HEADER] = __version__
+    explicit_headers = {
+        **explicit_headers,
+        ROBOFLOW_INFERENCE_VERSION_HEADER: __version__,
+    }
     if not ROBOFLOW_API_EXTRA_HEADERS:
         return explicit_headers
     try:
