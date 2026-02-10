@@ -184,6 +184,7 @@ SAM2_PACKAGE_URL = (
 )
 
 RFDETR_NANO_T4_TRT_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-nano-t4-trt.zip"
+RFDETR_SEG_NANO_T4_TRT_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-nano-seg-t4-trt.zip"
 YOLOV8N_640_T4_TRT_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov8n-640-t4-trt.zip"
 
 
@@ -415,6 +416,14 @@ def rfdetr_nano_t4_trt_package() -> str:
     return download_model_package(
         model_package_zip_url=RFDETR_NANO_T4_TRT_PACKAGE_URL,
         package_name="rfdetr-nano-t4-trt",
+    )
+
+
+@pytest.fixture(scope="module")
+def rfdetr_seg_nano_t4_trt_package() -> str:
+    return download_model_package(
+        model_package_zip_url=RFDETR_SEG_NANO_T4_TRT_PACKAGE_URL,
+        package_name="rfdetr-seg-nano-t4-trt",
     )
 
 
