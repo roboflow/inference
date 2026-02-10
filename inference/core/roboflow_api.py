@@ -977,6 +977,7 @@ def send_inference_results_to_model_monitoring(
 
 
 def build_roboflow_api_headers(
+    explicit_headers: Optional[Dict[str, Union[str, List[str]]]] = None,
 ) -> Dict[str, Union[str, List[str]]]:
     if explicit_headers is None:
         explicit_headers = {}
