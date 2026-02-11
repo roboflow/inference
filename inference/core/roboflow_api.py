@@ -32,6 +32,8 @@ from inference.core.entities.types import (
 )
 from inference.core.env import (
     API_BASE_URL,
+    ENFORCE_CREDITS_VERIFICATION,
+    GCP_SERVERLESS,
     INTERNAL_WEIGHTS_URL_SUFFIX,
     MD5_VERIFICATION_ENABLED,
     MODEL_CACHE_DIR,
@@ -974,6 +976,15 @@ def send_inference_results_to_model_monitoring(
         verify=ROBOFLOW_API_VERIFY_SSL,
     )
     api_key_safe_raise_for_status(response=response)
+
+
+def get_extra_weights_provider_headers() -> Optional[Dict[str, str]]:
+    headers = {}
+    if GCP_SERVERLESS:
+        headers["x-enforce-internal-artefacts-urls"] = "true"
+    if ENFORCE_CREDITS_VERIFICATION:
+        headers["x-enforce-credits-verification"] = "true"
+    return build_roboflow_api_headers(explicit_headers=headers)
 
 
 def build_roboflow_api_headers(
