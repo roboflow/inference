@@ -11,6 +11,7 @@ from inference.core.workflows.execution_engine.entities.base import (
 from inference.core.workflows.execution_engine.entities.types import (
     FLOAT_KIND,
     IMAGE_KIND,
+    BOOLEAN_KIND,
     Selector,
 )
 from inference.core.workflows.prototypes.block import (
@@ -153,6 +154,14 @@ class BlockManifest(WorkflowBlockManifest):
         description="Second tangential distortion coefficient. Part of the camera's distortion parameters used to correct additional tangential distortion effects. p2 works together with p1 to correct lens misalignment distortions. Obtained through camera calibration. For well-aligned lenses, p1 and p2 are often close to zero.",
         examples=[0.123, "$inputs.p2"],
     )
+    use_fisheye_model: Union[
+        Optional[bool],
+        Selector(kind=[BOOLEAN_KIND]),
+    ] = Field(
+        default=False,
+        description="Enable Fisheye distortion model (Rational/Divisional). If true, uses a different mathematical model better suited for fisheye lenses. When enabled, k1 is the primary parameter, and other coefficients are typically 0.",
+        examples=[True, "$inputs.use_fisheye_model"],
+    )
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
@@ -183,6 +192,7 @@ class CameraCalibrationBlockV1(WorkflowBlock):
         k3: float,
         p1: float,
         p2: float,
+        use_fisheye_model: bool = False,
     ) -> BlockResult:
         return {
             OUTPUT_CALIBRATED_IMAGE_KEY: remove_distortions(
@@ -196,6 +206,7 @@ class CameraCalibrationBlockV1(WorkflowBlock):
                 k3=k3,
                 p1=p1,
                 p2=p2,
+                use_fisheye_model=use_fisheye_model,
             )
         }
 
@@ -211,9 +222,44 @@ def remove_distortions(
     k3: float,
     p1: float,
     p2: float,
+    use_fisheye_model: bool = False,
 ) -> Optional[WorkflowImageData]:
     img = image.numpy_image
     h, w = img.shape[:2]
+
+    if use_fisheye_model:
+        # 1. Generate grid for the destination (undistorted) image
+        grid_y, grid_x = np.mgrid[0:h, 0:w].astype(np.float32)
+
+        # 2. Normalize coordinates using original matrix (results in a center crop)
+        x = (grid_x - cx) / fx
+        y = (grid_y - cy) / fy
+        r2 = x**2 + y**2
+
+        # 3. Apply the SimpleDivisional Distortion formula (matches GeoCalib)
+        if abs(k1) < 1e-8:
+            scale = 1.0
+        else:
+            # Formula: p_dist = p_undist * (1 - sqrt(1 - 4*k1*r2)) / (2*k1*r2)
+            discriminant = 1 - 4 * k1 * r2
+            # Clamp to 0 to avoid NaNs
+            discriminant[discriminant < 0] = 0
+            scale = (1 - np.sqrt(discriminant)) / (2 * k1 * r2)
+            # Handle center pixel or very small r2 to avoid division by zero / instability
+            scale[np.abs(r2) < 1e-8] = 1.0
+
+        # 4. Map back to Source (distorted) pixels
+        map_x = (x * scale * fx) + cx
+        map_y = (y * scale * fy) + cy
+
+        # 5. Remap using OpenCV
+        dst = cv.remap(
+            img, map_x.astype(np.float32), map_y.astype(np.float32), cv.INTER_LINEAR
+        )
+        return WorkflowImageData(
+            parent_metadata=image.parent_metadata,
+            numpy_image=dst,
+        )
 
     cameraMatrix = np.array([[fx, 0, cx], [0, fy, cy], [0, 0, 1]], dtype=np.float64)
     distCoeffs = np.array([k1, k2, p1, p2, k3], dtype=np.float64)
