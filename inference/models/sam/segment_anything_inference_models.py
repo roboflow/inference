@@ -25,9 +25,7 @@ from inference.core.env import (
     SAM_VERSION_ID,
 )
 from inference.core.models.base import Model
-from inference.core.models.inference_models_adapters import (
-    get_extra_weights_provider_headers,
-)
+from inference.core.roboflow_api import get_extra_weights_provider_headers
 from inference.core.utils.image_utils import load_image_bgr
 from inference.core.utils.postprocess import masks2poly
 from inference_models import AutoModel
@@ -74,7 +72,7 @@ class InferenceModelsSAMAdapter(Model):
             sam_image_embeddings_cache=sam_image_embeddings_cache,
             sam_low_resolution_masks_cache=sam_low_resolution_masks_cache,
             sam_allow_client_generated_hash_ids=True,
-            extra_weights_provider_headers=extra_weights_provider_headers,
+            weights_provider_extra_headers=extra_weights_provider_headers,
             **kwargs,
         )
 

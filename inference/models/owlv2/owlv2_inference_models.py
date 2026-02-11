@@ -26,6 +26,7 @@ from inference.core.env import (
 )
 from inference.core.models.base import Model
 from inference.core.models.roboflow import DEFAULT_COLOR_PALETTE
+from inference.core.roboflow_api import get_extra_weights_provider_headers
 from inference.core.utils.image_utils import load_image_bgr
 from inference.core.utils.visualisation import draw_detection_predictions
 from inference_models import AutoModel, Detections
@@ -58,6 +59,7 @@ class Owlv2AdapterSingleton:
                 size_limit=OWLV2_IMAGE_CACHE_SIZE,
                 send_to_cpu=True,
             )
+            weights_provider_extra_headers = get_extra_weights_provider_headers()
             model: OWLv2HF = AutoModel.from_pretrained(
                 model_id_or_path=huggingface_id,
                 api_key=api_key or API_KEY,
@@ -65,6 +67,7 @@ class Owlv2AdapterSingleton:
                 allow_direct_local_storage_loading=ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES,
                 owlv2_class_embeddings_cache=owlv2_class_embeddings_cache,
                 owlv2_images_embeddings_cache=owlv2_images_embeddings_cache,
+                weights_provider_extra_headers=weights_provider_extra_headers,
             )
             logger.info("Creating new OWLv2 instance for %s", huggingface_id)
             if OWLV2_COMPILE_MODEL:

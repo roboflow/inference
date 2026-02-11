@@ -46,6 +46,7 @@ from inference.core.roboflow_api import (
     register_image_at_roboflow,
     wrap_roboflow_api_errors,
 )
+from inference.core.version import __version__
 from inference.core.utils.url_utils import wrap_url
 
 
@@ -408,7 +409,10 @@ async def test_get_roboflow_workspace_async_when_response_is_valid() -> None:
         registered_requests = request_mock.requests[
             ("GET", URL(f"{API_BASE_URL}/?api_key=my_api_key&nocache=true"))
         ]
-        assert registered_requests[0].kwargs["headers"] == {"extra": "header"}
+        assert registered_requests[0].kwargs["headers"] == {
+            "extra": "header",
+            roboflow_api.ROBOFLOW_INFERENCE_VERSION_HEADER: __version__,
+        }
 
 
 def test_get_roboflow_dataset_type_when_wrong_key_used(
@@ -2362,7 +2366,9 @@ def test_build_roboflow_api_headers_when_no_extra_headers() -> None:
     result = build_roboflow_api_headers()
 
     # then
-    assert result is None
+    assert result == {
+        roboflow_api.ROBOFLOW_INFERENCE_VERSION_HEADER: __version__,
+    }
 
 
 @mock.patch.object(roboflow_api, "ROBOFLOW_API_EXTRA_HEADERS", None)
@@ -2373,7 +2379,10 @@ def test_build_roboflow_api_headers_when_no_extra_headers_but_explicit_headers_g
     result = build_roboflow_api_headers(explicit_headers={"my": "header"})
 
     # then
-    assert result == {"my": "header"}, "Expected to preserve explicit header"
+    assert result == {
+        "my": "header",
+        roboflow_api.ROBOFLOW_INFERENCE_VERSION_HEADER: __version__,
+    }, "Expected to preserve explicit header and inject version"
 
 
 @mock.patch.object(
@@ -2389,6 +2398,7 @@ def test_build_roboflow_api_headers_when_extra_headers_given() -> None:
     assert result == {
         "extra": "header",
         "another": "extra",
+        roboflow_api.ROBOFLOW_INFERENCE_VERSION_HEADER: __version__,
     }, "Expected extra headers to be decoded"
 
 
@@ -2408,6 +2418,7 @@ def test_build_roboflow_api_headers_when_extra_headers_given_and_explicit_header
         "my": "header",
         "extra": "header",
         "another": "extra",
+        roboflow_api.ROBOFLOW_INFERENCE_VERSION_HEADER: __version__,
     }, "Expected extra headers to be decoded and shipped along with explicit headers"
 
 
@@ -2419,6 +2430,7 @@ def test_build_roboflow_api_headers_when_extra_headers_given_as_invalid_json() -
     # then
     assert result == {
         "my": "header",
+        roboflow_api.ROBOFLOW_INFERENCE_VERSION_HEADER: __version__,
     }, "Expected extra headers to be decoded and shipped along with explicit headers"
 
 
@@ -2443,7 +2455,22 @@ def test_build_roboflow_api_headers_when_extra_headers_given_and_explicit_header
         "another": "extra",
         "extra": "explicit-is-better",
         "my": "header",
-    }, "Expected extra headers to be decoded and explicit header to override implicit one"
+        roboflow_api.ROBOFLOW_INFERENCE_VERSION_HEADER: __version__,
+    }, "Expected extra headers to be decoded and explicit header to override implicit one while keeping version header"
+
+
+def test_build_roboflow_api_headers_always_sets_version_header() -> None:
+    # when
+    result = build_roboflow_api_headers(
+        explicit_headers={
+            roboflow_api.ROBOFLOW_INFERENCE_VERSION_HEADER: "should-be-overwritten",
+            "custom": "value",
+        }
+    )
+
+    # then
+    assert result[roboflow_api.ROBOFLOW_INFERENCE_VERSION_HEADER] == __version__
+    assert result["custom"] == "value"
 
 
 @mock.patch.object(roboflow_api, "RETRY_CONNECTION_ERRORS_TO_ROBOFLOW_API", False)
