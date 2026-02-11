@@ -261,8 +261,8 @@ def remove_distortions(
             numpy_image=dst,
         )
 
-    cameraMatrix = np.array([[fx, 0, cx], [0, fy, cy], [0, 0, 1]], dtype=np.float64)
-    distCoeffs = np.array([k1, k2, p1, p2, k3], dtype=np.float64)
+    cameraMatrix = np.array([[fx, 0, cx], [0, fy, cy], [0, 0, 1]], dtype=np.float32)
+    distCoeffs = np.array([k1, k2, p1, p2, k3], dtype=np.float32)
 
     # https://docs.opencv.org/4.11.0/d9/d0c/group__calib3d.html#ga7a6c4e032c97f03ba747966e6ad862b1
     newcameramtx, roi = cv.getOptimalNewCameraMatrix(
