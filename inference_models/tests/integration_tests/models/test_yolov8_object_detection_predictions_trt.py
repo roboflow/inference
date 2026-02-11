@@ -2,8 +2,6 @@ import numpy as np
 import pytest
 import torch
 
-from inference_models.models.common.trt import TRTCudaGraphLRUCache
-
 
 @pytest.mark.slow
 @pytest.mark.trt_extras
@@ -12,6 +10,7 @@ def test_trt_cudagraph_cache_reuses_previously_seen_input_shapes(
     dog_image_numpy: np.ndarray,
 ) -> None:
     from inference_models import AutoModel
+    from inference_models.models.common.trt import TRTCudaGraphLRUCache
 
     device = torch.device("cuda:0")
     model = AutoModel.from_pretrained(
@@ -20,7 +19,7 @@ def test_trt_cudagraph_cache_reuses_previously_seen_input_shapes(
     )
 
     pre_processed_single, _ = model.pre_process(dog_image_numpy)
-    model._trt_cuda_graph_cache = TRTCudaGraphLRUCache()
+    model._trt_cuda_graph_cache = TRTCudaGraphLRUCache(capacity=16)
 
     seen_shapes = set()
     capture_outputs = {}
@@ -58,6 +57,7 @@ def test_trt_cudagraph_output_matches_non_cudagraph_output(
     dog_image_numpy: np.ndarray,
 ) -> None:
     from inference_models import AutoModel
+    from inference_models.models.common.trt import TRTCudaGraphLRUCache
 
     device = torch.device("cuda:0")
     model = AutoModel.from_pretrained(
@@ -71,7 +71,7 @@ def test_trt_cudagraph_output_matches_non_cudagraph_output(
 
         no_graph = model.forward(batch, use_cuda_graph=False)
 
-        model._trt_cuda_graph_cache = TRTCudaGraphLRUCache()
+        model._trt_cuda_graph_cache = TRTCudaGraphLRUCache(capacity=16)
         capture_graph = model.forward(batch, use_cuda_graph=True)
         replay_graph = model.forward(batch, use_cuda_graph=True)
 
@@ -86,6 +86,7 @@ def test_trt_cudagraph_cache_eviction(
     dog_image_numpy: np.ndarray,
 ) -> None:
     from inference_models import AutoModel
+    from inference_models.models.common.trt import TRTCudaGraphLRUCache
 
     device = torch.device("cuda:0")
     model = AutoModel.from_pretrained(
