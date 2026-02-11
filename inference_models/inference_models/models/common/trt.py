@@ -294,7 +294,7 @@ def infer_from_trt_engine(
     else:
         min_batch_size = trt_config.dynamic_batch_size_min
         max_batch_size = trt_config.dynamic_batch_size_max
-    return _infer_from_trt_engine_with_batch_size_boundaries(
+    return infer_from_trt_engine_with_batch_size_boundaries(
         pre_processed_images=pre_processed_images,
         engine=engine,
         context=context,
@@ -307,7 +307,7 @@ def infer_from_trt_engine(
     )
 
 
-def _infer_from_trt_engine_with_batch_size_boundaries(
+def infer_from_trt_engine_with_batch_size_boundaries(
     pre_processed_images: torch.Tensor,
     engine: trt.ICudaEngine,
     context: Optional[trt.IExecutionContext],
@@ -332,7 +332,7 @@ def _infer_from_trt_engine_with_batch_size_boundaries(
                 ),
                 dim=0,
             )
-        results = _execute_trt_engine(
+        results = execute_trt_engine(
             pre_processed_images=pre_processed_images,
             engine=engine,
             context=context,
@@ -362,7 +362,7 @@ def _infer_from_trt_engine_with_batch_size_boundaries(
                 ),
                 dim=0,
             )
-        results = _execute_trt_engine(
+        results = execute_trt_engine(
             pre_processed_images=batch,
             engine=engine,
             context=context,
@@ -378,7 +378,7 @@ def _infer_from_trt_engine_with_batch_size_boundaries(
     return [torch.cat(e, dim=0).contiguous() for e in all_results]
 
 
-def _execute_trt_engine(
+def execute_trt_engine(
     pre_processed_images: torch.Tensor,
     engine: trt.ICudaEngine,
     context: Optional[trt.IExecutionContext],
