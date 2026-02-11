@@ -95,7 +95,11 @@ class TRTCudaGraphLRUCache:
         self.cache[key] = value
         self.cache.move_to_end(key)
         if len(self.cache) > self.capacity:
-            self.cache.popitem(last=False)
+            _, evicted = self.cache.popitem(last=False)
+            del evicted.cuda_graph
+            del evicted.input_buffer
+            del evicted.output_buffers
+            del evicted.execution_context
 
 
 def get_trt_engine_inputs_and_outputs(
@@ -393,7 +397,7 @@ def execute_trt_engine(
         cache_key = (input_shape, input_dtype, device)
 
         if cache_key not in trt_cuda_graph_cache:
-            LOGGER.debug(f"Capturing CUDA graph for shape {input_shape}")
+            LOGGER.debug("Capturing CUDA graph for shape %s", input_shape)
 
             results, trt_cuda_graph = _capture_cuda_graph(
                 pre_processed_images=pre_processed_images,
@@ -416,6 +420,11 @@ def execute_trt_engine(
             return results
 
     else:
+        if context is None:
+            raise ModelRuntimeError(
+                message="An execution context is required when not using CUDA graphs.",
+                help_url="https://todo",
+            )
         status = context.set_input_shape(input_name, tuple(pre_processed_images.shape))
         if not status:
             raise ModelRuntimeError(

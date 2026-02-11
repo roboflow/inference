@@ -46,7 +46,7 @@ def test_trt_cudagraph_cache_reuses_previously_seen_input_shapes(
             continue
 
         assert cache_size_after == cache_size_before
-        assert torch.allclose(capture_outputs[cache_key], output, atol=1e-3)
+        assert torch.allclose(capture_outputs[cache_key], output, atol=1e-6)
 
     assert set(model._trt_cuda_graph_cache.cache.keys()) == seen_shapes
 
@@ -75,5 +75,5 @@ def test_trt_cudagraph_output_matches_non_cudagraph_output(
         capture_graph = model.forward(batch, use_cuda_graph=True)
         replay_graph = model.forward(batch, use_cuda_graph=True)
 
-        assert torch.allclose(no_graph, capture_graph, atol=1e-3)
-        assert torch.allclose(no_graph, replay_graph, atol=1e-3)
+        assert torch.allclose(no_graph, capture_graph, atol=1e-6)
+        assert torch.allclose(no_graph, replay_graph, atol=1e-6)
