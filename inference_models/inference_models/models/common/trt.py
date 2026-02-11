@@ -69,7 +69,7 @@ class TRTCudaGraphState:
 
 
 class TRTCudaGraphLRUCache:
-    def __init__(self, capacity: int = 64):
+    def __init__(self, capacity: int = 16):
         self.cache: OrderedDict[
             Tuple[Tuple[int, ...], torch.dtype, torch.device], TRTCudaGraphState
         ] = OrderedDict()
