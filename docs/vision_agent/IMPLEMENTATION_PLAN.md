@@ -1,741 +1,1231 @@
-# Vision Agent: Implementation Plan
+# Vision Agent: Implementation Plan (v2)
 
 ## Table of Contents
-1. [Architecture Summary](#1-architecture-summary)
-2. [Interface Contracts](#2-interface-contracts)
-3. [Work Streams (Parallelizable)](#3-work-streams)
-4. [MVP: Minimum Testable Assumption](#4-mvp)
-5. [Risk Register & Derisking Strategy](#5-risk-register)
-6. [Dependency Graph & Sequencing](#6-dependency-graph)
-7. [Detailed Implementation: Each Work Stream](#7-detailed-implementation)
+1. [Architecture — Revised](#1-architecture)
+2. [Three Execution Backends](#2-execution-backends)
+3. [Interface Contracts — Revised](#3-interface-contracts)
+4. [OpenClaw-Inspired Workspace & Lifecycle](#4-workspace)
+5. [Tool Inventory — Revised](#5-tool-inventory)
+6. [System Prompt Design](#6-system-prompt)
+7. [Claude API Integration Details](#7-claude-api)
+8. [Work Streams (Parallelizable)](#8-work-streams)
+9. [MVP — Minimum Testable Assumption](#9-mvp)
+10. [Risk Register & Derisking](#10-risks)
+11. [Dependency Graph & Sequencing](#11-sequencing)
+12. [Detailed Implementation — Each Work Stream](#12-implementation)
 
 ---
 
-## 1. Architecture Summary
+## 1. Architecture — Revised
 
-The Vision Agent is a Python process that runs an **agentic loop** powered by the
-Claude API (tool-use). It receives natural language instructions, reasons about what
-Inference capabilities are needed, and orchestrates them autonomously — either by
-making direct SDK calls or by dynamically composing Workflow specifications and
-deploying them on InferencePipelines.
+The Vision Agent is a long-running Python process modeled after OpenClaw's
+**gateway architecture**: a single control plane that manages conversations,
+video sources, inference backends, and proactive monitoring.
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                          AGENT PROCESS                              │
-│                                                                     │
-│  ┌─────────────┐    ┌──────────────┐    ┌────────────────────────┐ │
-│  │  Interface   │◄──►│  Agent Core  │◄──►│  Tool Executor         │ │
-│  │  (CLI/Slack/ │    │  (agentic    │    │  (dispatches to        │ │
-│  │   REST/...)  │    │   loop)      │    │   capability modules)  │ │
-│  └─────────────┘    └──────┬───────┘    └───────────┬────────────┘ │
-│                            │                        │              │
-│                     ┌──────┴───────┐    ┌───────────┴────────────┐ │
-│                     │  LLM Client  │    │   Capability Registry  │ │
-│                     │  (Claude API │    │   (auto-generated      │ │
-│                     │   w/ tools)  │    │    tool definitions)   │ │
-│                     └──────────────┘    └───────────┬────────────┘ │
-│                                                     │              │
-│  ┌──────────────────────────────────────────────────┴────────────┐ │
-│  │                    Capability Modules                          │ │
-│  │  ┌──────────┐ ┌───────────┐ ┌──────────┐ ┌────────────────┐  │ │
-│  │  │ Workflow  │ │  Stream   │ │  Direct  │ │    Memory      │  │ │
-│  │  │ Composer  │ │  Manager  │ │  Infer   │ │   (files +     │  │ │
-│  │  │          │ │           │ │          │ │    search)     │  │ │
-│  │  └──────────┘ └───────────┘ └──────────┘ └────────────────┘  │ │
-│  └──────────────────────────────────────────────────────────────┘ │
-│                              │                                     │
-├──────────────────────────────┼─────────────────────────────────────┤
-│                    INFERENCE (existing)                             │
-│  ┌──────────────┐  ┌───────────────────┐  ┌────────────────────┐  │
-│  │  Models (38+) │  │  Workflow Engine   │  │  InferencePipeline │  │
-│  │  via SDK or   │  │  (103+ blocks)    │  │  (video streams)   │  │
-│  │  HTTP client  │  │                   │  │                    │  │
-│  └──────────────┘  └───────────────────┘  └────────────────────┘  │
-└───────────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────────┐
+│                           AGENT PROCESS                                │
+│                                                                        │
+│  ┌────────────┐  ┌──────────────────┐  ┌───────────────────────────┐  │
+│  │ Interfaces  │  │   Session Mgr    │  │     Heartbeat / Cron      │  │
+│  │ (CLI, Slack │──│  (conversation   │──│  (proactive monitoring    │  │
+│  │  REST, ...)│  │   history,       │  │   periodic scene check,   │  │
+│  └────────────┘  │   JSONL logs)    │  │   scheduled reports)      │  │
+│                  └────────┬─────────┘  └─────────────┬─────────────┘  │
+│                           │                          │                 │
+│  ┌────────────────────────┴──────────────────────────┴──────────────┐ │
+│  │                        Agent Core (agentic loop)                  │ │
+│  │  1. Receive message / heartbeat tick                              │ │
+│  │  2. Build system prompt (workspace files + capabilities + state)  │ │
+│  │  3. Call Claude API with tools                                    │ │
+│  │  4. Execute tool calls → feed results back → repeat              │ │
+│  │  5. Emit response / alert to interface                           │ │
+│  └───────────────────────────┬──────────────────────────────────────┘ │
+│                              │                                        │
+│  ┌───────────────────────────┴──────────────────────────────────────┐ │
+│  │                       Tool Registry                               │ │
+│  │  Inference │ Workflows │ Streams │ Memory │ Notifications │ Think │ │
+│  └──────────────────────────┬───────────────────────────────────────┘ │
+│                             │                                         │
+│  ┌──────────────────────────┴───────────────────────────────────────┐ │
+│  │                 Execution Backends (choose per task)              │ │
+│  │                                                                   │ │
+│  │  ┌─────────────────┐ ┌─────────────────┐ ┌───────────────────┐  │ │
+│  │  │  Direct SDK      │ │  HTTP Client    │ │  WebRTC Client    │  │ │
+│  │  │  (same machine,  │ │  (remote server │ │  (real-time       │  │ │
+│  │  │   embedded       │ │   inference,    │ │   streaming to    │  │ │
+│  │  │   InferencePipe- │ │   hosted pipe-  │ │   browser or      │  │ │
+│  │  │   line)          │ │   line mgmt)    │ │   programmatic    │  │ │
+│  │  └─────────────────┘ └─────────────────┘ │   frame access)   │  │ │
+│  │                                           └───────────────────┘  │ │
+│  └──────────────────────────────────────────────────────────────────┘ │
+│                                                                        │
+├────────────────────────────────────────────────────────────────────────┤
+│                 INFERENCE (existing, untouched)                         │
+│  Server (:9001)  │  Stream Manager (:7070)  │  Model Registry          │
+│  Workflow Engine  │  InferencePipeline       │  WebRTC Worker           │
+└────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Key Architectural Decisions
+### Key Architectural Decisions (Revised)
 
-1. **Build our own agent loop on the raw Anthropic SDK** (`pip install anthropic`),
-   not the Claude Agent SDK. Reason: we need fine-grained control over image content
-   in tool results, custom tool execution with video hardware, and precise control
-   over loop timing for proactive monitoring. The Claude Agent SDK is optimized for
-   code-editing agents, not vision agents.
+1. **Raw `anthropic` Python SDK for the agent loop.** We need fine-grained
+   control over image content blocks in tool results, prompt caching
+   placement, extended thinking with interleaved beta, and the "think" tool
+   pattern. The Claude Agent SDK is designed for code-editing agents.
 
-2. **Workflow-first for streaming** — The agent composes Workflow specification JSON
-   and deploys it on InferencePipeline. The LLM is never in the frame-processing hot
-   path. The existing workflow engine handles 30+ FPS on GPU; Claude is only consulted
-   for setup, event interpretation, and user interaction.
+2. **Three execution backends**, not one. Users have different deployment
+   scenarios:
+   - **Direct SDK**: Edge devices, Jetson, local dev — runs InferencePipeline
+     in-process
+   - **HTTP Client**: Cloud/remote inference server — uses
+     `InferenceHTTPClient.start_inference_pipeline_with_workflow()` for hosted
+     pipeline management and `run_workflow()` for single-shot inference
+   - **WebRTC Client**: Real-time browser visualization or programmatic frame
+     access — uses `WebRTCClient.stream()` with any source (RTSP, webcam,
+     MJPEG, file, manual)
 
-3. **Auto-generated tool schemas from block manifests** — Rather than manually
-   maintaining tool definitions, we generate them from the existing block manifest
-   system. This keeps the agent's knowledge in sync with Inference's capabilities as
-   blocks are added/updated.
+3. **User-centric, not auto-discovery-centric.** Rather than only
+   auto-discovering models, the agent should:
+   - **Ask** the user what model they want (they may have fine-tuned models on
+     Roboflow: `my-workspace/hard-hat-detection/3`)
+   - **Ask** if they already have a workflow configured on Roboflow (reference
+     by `workspace_name` + `workflow_id`)
+   - **Offer** zero-shot alternatives (YOLO-World, GroundingDINO) if they
+     don't have a trained model
+   - **Fall back** to discovery tools only when the user doesn't know what
+     they need
 
-4. **File-based memory with hybrid search** (OpenClaw pattern) — Markdown + JSON
-   files for transparency, with BM25 + vector hybrid search for retrieval. Users can
-   inspect, edit, and version-control the agent's memory.
+4. **OpenClaw-inspired workspace with skills.** The agent has a workspace
+   directory with Markdown files that shape its behavior — editable by both
+   the user and the agent. Skills are Markdown instruction packs for
+   domain-specific CV tasks (not executable code).
 
-5. **Interface-first design** — All components communicate through well-defined
-   Python protocols/ABCs. This enables parallel development and easy testing via mocks.
+5. **JSONL session transcripts** for full auditability and crash recovery.
+   Every tool call, result, and response is logged append-only.
+
+6. **Heartbeat for proactive monitoring** — a periodic tick that checks active
+   streams for events, runs scene analysis, and alerts the user. Cron for
+   scheduled reports.
 
 ---
 
-## 2. Interface Contracts
+## 2. Three Execution Backends
 
-These interfaces are the **critical path** — they must be designed and agreed upon
-before parallel work streams begin. Each interface is a Python Protocol or ABC.
+The agent must support three ways to interact with Inference. Which backend is
+used depends on the deployment and the task.
 
-### 2.1 `AgentCore` — The Agentic Loop
+### 2.1 Direct SDK Backend
+
+For running on the same machine as inference (edge devices, dev boxes).
+
+```python
+# Uses InferencePipeline directly
+from inference import InferencePipeline
+
+pipeline = InferencePipeline.init_with_workflow(
+    video_reference="rtsp://192.168.1.50/stream1",
+    workflow_specification=spec,         # Agent-composed OR
+    # workspace_name="my-ws",           # User's pre-built workflow
+    # workflow_id="my-workflow",
+    on_prediction=result_handler,
+    max_fps=10,
+)
+pipeline.start(use_main_thread=False)
+```
+
+**Capabilities**: Full InferencePipeline feature set — multi-source, all buffer
+strategies, all sink types, on_prediction callbacks.
+
+### 2.2 HTTP Client Backend
+
+For connecting to a remote inference server. Uses the `InferenceHTTPClient`.
+
+```python
+from inference_sdk import InferenceHTTPClient
+
+client = InferenceHTTPClient(api_url="http://server:9001", api_key=key)
+
+# Single-shot inference
+result = client.infer("image.jpg", model_id="my-workspace/model/3")
+
+# Run a pre-built workflow by ID
+result = client.run_workflow(
+    workspace_name="my-workspace",
+    workflow_id="my-workflow",
+    images={"image": "frame.jpg"},
+)
+
+# Run an agent-composed workflow spec
+result = client.run_workflow(
+    specification=agent_composed_spec,
+    images={"image": "frame.jpg"},
+)
+
+# Start a HOSTED pipeline (server manages it)
+pipeline = client.start_inference_pipeline_with_workflow(
+    video_reference="rtsp://192.168.1.50/stream1",
+    workflow_id="my-workflow",
+    workspace_name="my-workspace",
+    max_fps=10,
+)
+
+# Poll for results
+results = client.consume_inference_pipeline_result(pipeline["pipeline_id"])
+```
+
+**Capabilities**: All InferenceHTTPClient methods — model management, workflow
+execution, hosted pipeline lifecycle (start/pause/resume/terminate/consume),
+OCR, CLIP, SAM, depth estimation, gaze, VLMs.
+
+### 2.3 WebRTC Client Backend
+
+For real-time streaming with browser visualization or programmatic frame access.
+
+```python
+from inference_sdk import InferenceHTTPClient
+from inference_sdk.webrtc.sources import RTSPSource, WebcamSource
+
+client = InferenceHTTPClient(api_url="http://server:9001", api_key=key)
+
+session = client.webrtc.stream(
+    source=RTSPSource("rtsp://192.168.1.50/stream1"),
+    workflow="my-workflow-id",
+    workspace="my-workspace",
+    config=StreamConfig(
+        data_output=["detections", "count"],  # What to send via data channel
+        stream_output=["annotated_image"],     # What to stream as video
+    ),
+)
+
+@session.on_data("detections")
+def on_detections(detections, metadata):
+    # Real-time detection results via data channel
+    process_detections(detections, metadata.frame_id)
+
+@session.on_frame
+def on_frame(frame, metadata):
+    # Annotated video frame (numpy array)
+    display_or_save(frame)
+
+session.run()  # Blocks until stream ends
+```
+
+**Capabilities**: Real-time bidirectional streaming, low latency, browser-
+compatible via WebRTC, supports all source types (Webcam, RTSP, MJPEG, file
+upload, manual frame injection), chunked binary data channel with ACK-based
+flow control.
+
+### Backend Selection Logic
+
+```python
+def select_backend(config: AgentConfig, task: str) -> str:
+    """Select the best execution backend for a task."""
+    if config.inference_mode == "direct":
+        return "direct"        # Always use direct if configured
+    if task == "realtime_visualization":
+        return "webrtc"        # Browser viewing needs WebRTC
+    if task == "continuous_monitoring":
+        return "http_pipeline" # Hosted pipeline for long-running monitoring
+    return "http_client"       # Default: HTTP for single-shot tasks
+```
+
+---
+
+## 3. Interface Contracts — Revised
+
+### 3.1 `AgentCore` — The Agentic Loop
 
 ```python
 # inference_agent/core/protocols.py
 
 from typing import Protocol, AsyncIterator, Any
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from enum import Enum
+import time
 
-@dataclass
-class AgentMessage:
-    """A message in the agent's conversation."""
-    role: str  # "user", "assistant", "system"
-    content: Any  # str, list of content blocks, or tool results
-    metadata: dict  # timestamps, source info, etc.
+class EventType(Enum):
+    THINKING = "thinking"          # Agent is reasoning (extended thinking)
+    TOOL_CALL = "tool_call"        # Agent is calling a tool
+    TOOL_RESULT = "tool_result"    # Tool returned a result
+    RESPONSE = "response"          # Final text response to user
+    ALERT = "alert"                # Proactive alert from monitoring
+    STREAM_EVENT = "stream_event"  # Notable event on a video stream
+    ERROR = "error"                # Error occurred
+    ASK_USER = "ask_user"          # Agent needs user input
 
 @dataclass
 class AgentEvent:
-    """Events emitted by the agent during processing."""
-    type: str  # "thinking", "tool_call", "tool_result", "response",
-               # "stream_started", "alert", "error"
+    type: EventType
     data: Any
-    timestamp: float
+    timestamp: float = field(default_factory=time.time)
 
 class AgentCore(Protocol):
-    """The main agent loop. Receives messages, reasons, acts, responds."""
 
-    async def process_message(self, message: str,
-                              attachments: list[bytes] | None = None
-                              ) -> AsyncIterator[AgentEvent]:
-        """Process a user message. Yields events as the agent works.
+    async def process_message(
+        self,
+        message: str,
+        attachments: list[bytes] | None = None,
+    ) -> AsyncIterator[AgentEvent]:
+        """Process a user message. Yields events as the agent works."""
+        ...
 
-        The caller consumes events to:
-        - Display thinking/progress to the user
-        - Show tool calls being made
-        - Deliver the final response
-        - React to alerts from proactive monitoring
+    async def process_heartbeat(self) -> AsyncIterator[AgentEvent]:
+        """Run a heartbeat check. Called periodically by the scheduler.
 
-        Args:
-            message: User's natural language instruction
-            attachments: Optional image bytes (e.g., user sends a photo)
-
-        Yields:
-            AgentEvent objects as the agent reasons and acts
+        Reads HEARTBEAT.md for checklist, checks active streams,
+        yields alert events if anything significant is detected.
         """
         ...
 
-    async def start_monitoring(self) -> None:
-        """Start the proactive monitoring loop (heartbeat).
-
-        Periodically checks active streams, runs scheduled analyses,
-        and emits alert events when relevant things are detected.
-        """
-        ...
-
-    async def stop_monitoring(self) -> None:
-        """Stop the proactive monitoring loop."""
-        ...
-
-    @property
-    def active_streams(self) -> dict[str, "StreamInfo"]:
-        """Currently active video stream pipelines."""
+    async def shutdown(self) -> None:
+        """Graceful shutdown: stop streams, flush memory, save state."""
         ...
 ```
 
-### 2.2 `LLMClient` — Claude API Wrapper
+### 3.2 `LLMClient` — Claude API Wrapper
 
 ```python
 # inference_agent/llm/protocols.py
 
-from typing import Protocol
-from dataclasses import dataclass
-
 @dataclass
 class ToolDefinition:
-    """A tool the LLM can call."""
     name: str
     description: str
-    input_schema: dict  # JSON Schema
-    category: str | None = None  # For grouping in system prompt
-
-@dataclass
-class ToolCall:
-    """A tool call from the LLM."""
-    id: str
-    name: str
-    arguments: dict
-
-@dataclass
-class ToolResult:
-    """Result of executing a tool, sent back to the LLM."""
-    tool_call_id: str
-    content: Any  # str, or list of content blocks (text + images)
-    is_error: bool = False
+    input_schema: dict             # JSON Schema
+    cache_control: dict | None = None  # For prompt caching on last tool
 
 @dataclass
 class LLMResponse:
-    """Response from the LLM."""
-    text: str | None  # Final text response (None if tool_use)
-    tool_calls: list[ToolCall]  # Tool calls to execute
-    stop_reason: str  # "end_turn", "tool_use", "max_tokens"
-    thinking: str | None  # Extended thinking content
-    usage: dict  # Token usage stats
+    content_blocks: list[dict]     # Raw content blocks (text, tool_use, thinking)
+    text: str | None               # Extracted text (convenience)
+    tool_calls: list[ToolCall]     # Extracted tool calls (convenience)
+    stop_reason: str               # "end_turn", "tool_use", "max_tokens"
+    usage: dict                    # input_tokens, output_tokens, cache stats
 
 class LLMClient(Protocol):
-    """Wrapper around Claude API with tool-use support."""
 
     async def chat(
         self,
         messages: list[dict],
         tools: list[ToolDefinition],
-        system_prompt: str,
+        system: list[dict],           # System prompt as content blocks
         max_tokens: int = 4096,
-        thinking: bool = False,
-        thinking_budget: int | None = None,
+        thinking: dict | None = None, # {"type":"enabled","budget_tokens":N}
     ) -> LLMResponse:
-        """Send messages to Claude and get a response.
-
-        Handles:
-        - Message formatting for the Anthropic API
-        - Image content blocks in tool results
-        - Extended thinking when enabled
-        - Prompt caching for system prompt + tool definitions
-        - Streaming (internal, aggregates to LLMResponse)
-        - Rate limit retry with exponential backoff
-        """
-        ...
-
-    async def chat_stream(
-        self,
-        messages: list[dict],
-        tools: list[ToolDefinition],
-        system_prompt: str,
-        **kwargs,
-    ) -> AsyncIterator[AgentEvent]:
-        """Streaming variant — yields events as they arrive."""
+        """Send messages to Claude. Handles caching, retries, thinking."""
         ...
 ```
 
-### 2.3 `ToolExecutor` — Tool Dispatch
+### 3.3 `InferenceBackend` — Unified Backend Interface
 
 ```python
-# inference_agent/tools/protocols.py
-
-from typing import Protocol, Callable, Awaitable, Any
-
-class Tool(Protocol):
-    """A single tool the agent can use."""
-    name: str
-    description: str
-    input_schema: dict  # JSON Schema for parameters
-    category: str
-
-    async def execute(self, **kwargs) -> Any:
-        """Execute the tool with given arguments. Returns result for LLM."""
-        ...
-
-class ToolRegistry(Protocol):
-    """Registry of all available tools."""
-
-    @property
-    def tools(self) -> list[Tool]:
-        """All registered tools."""
-        ...
-
-    @property
-    def definitions(self) -> list[ToolDefinition]:
-        """Tool definitions formatted for the LLM."""
-        ...
-
-    def get_tool(self, name: str) -> Tool | None:
-        """Look up a tool by name."""
-        ...
-
-    async def execute(self, name: str, arguments: dict) -> Any:
-        """Execute a tool by name. Returns result content for LLM.
-
-        Result can be:
-        - str: Simple text result
-        - list: Content blocks (text + images) for multimodal results
-        - dict: Structured data (will be JSON-serialized)
-
-        Raises ToolExecutionError on failure.
-        """
-        ...
-```
-
-### 2.4 `CapabilityModule` — Pluggable Capability Groups
-
-```python
-# inference_agent/capabilities/protocols.py
+# inference_agent/backends/protocols.py
 
 from typing import Protocol
+from dataclasses import dataclass
 
-class CapabilityModule(Protocol):
-    """A group of related tools. Each module provides tools to the registry."""
+@dataclass
+class PipelineHandle:
+    """Reference to a running pipeline, backend-agnostic."""
+    pipeline_id: str
+    backend: str            # "direct", "http", "webrtc"
+    video_reference: str
+    workflow_description: str  # Human-readable summary
+    started_at: float
+    status: str             # "running", "paused", "stopped", "error"
 
-    @property
-    def name(self) -> str:
-        """Module name (e.g., 'stream_manager', 'direct_inference')."""
+@dataclass
+class InferenceResult:
+    """Unified result from any backend."""
+    predictions: dict       # Workflow output dict
+    frame: bytes | None     # JPEG-encoded frame (optional)
+    frame_id: int | None
+    timestamp: float
+
+class InferenceBackend(Protocol):
+    """Unified interface for all three execution backends."""
+
+    async def run_single(
+        self,
+        image: str | bytes,
+        model_id: str | None = None,
+        workflow_spec: dict | None = None,
+        workspace_name: str | None = None,
+        workflow_id: str | None = None,
+        parameters: dict | None = None,
+    ) -> InferenceResult:
+        """Run inference on a single image.
+
+        The caller provides EITHER:
+        - model_id (for simple single-model inference), OR
+        - workflow_spec (agent-composed workflow), OR
+        - workspace_name + workflow_id (user's pre-built workflow on Roboflow)
+        """
         ...
 
-    def get_tools(self) -> list[Tool]:
-        """Return all tools provided by this module."""
+    async def start_pipeline(
+        self,
+        video_reference: str,
+        workflow_spec: dict | None = None,
+        workspace_name: str | None = None,
+        workflow_id: str | None = None,
+        max_fps: float | None = None,
+        parameters: dict | None = None,
+    ) -> PipelineHandle:
+        """Start a continuous video processing pipeline.
+
+        Same three modes: agent-composed spec, user's workflow ID, or both.
+        """
         ...
 
-    async def initialize(self) -> None:
-        """Called once at startup. Connect to inference server, etc."""
+    async def consume_results(
+        self,
+        pipeline_id: str,
+        max_results: int = 5,
+    ) -> list[InferenceResult]:
+        """Consume latest results from a running pipeline."""
         ...
 
-    async def shutdown(self) -> None:
-        """Called on agent shutdown. Clean up resources."""
-        ...
+    async def stop_pipeline(self, pipeline_id: str) -> None: ...
+    async def pause_pipeline(self, pipeline_id: str) -> None: ...
+    async def resume_pipeline(self, pipeline_id: str) -> None: ...
+    async def list_pipelines(self) -> list[PipelineHandle]: ...
+    async def get_pipeline_status(self, pipeline_id: str) -> PipelineHandle: ...
 ```
 
-### 2.5 `Memory` — Persistent Scene Memory
+### 3.4 `Memory` — Persistent Workspace Memory
 
 ```python
 # inference_agent/memory/protocols.py
 
-from typing import Protocol
-from dataclasses import dataclass
-
-@dataclass
-class MemoryEntry:
-    """A single memory entry."""
-    content: str
-    source: str  # "observation", "user_preference", "configuration", "knowledge"
-    timestamp: float
-    metadata: dict  # camera_id, stream_id, tags, etc.
-
-@dataclass
-class SearchResult:
-    """A memory search result with relevance score."""
-    entry: MemoryEntry
-    score: float  # 0.0 - 1.0
-    source_file: str
-
 class Memory(Protocol):
-    """Persistent memory with hybrid search."""
 
-    async def store(self, content: str, source: str,
+    async def store(self, content: str, category: str,
                     metadata: dict | None = None) -> None:
-        """Store a new memory entry.
+        """Append to the appropriate memory file."""
+        ...
 
-        Appends to the appropriate file based on source:
-        - "observation" -> observations/YYYY-MM-DD.md
-        - "user_preference" -> preferences.md
-        - "configuration" -> config.json
-        - "knowledge" -> knowledge.md
+    async def search(self, query: str, max_results: int = 10) -> list[SearchResult]:
+        """Hybrid BM25 + vector search over all memory files."""
+        ...
+
+    async def get_daily_observations(self, date: str | None = None,
+                                      camera_id: str | None = None) -> str:
+        """Get observations for a specific day (default: today)."""
+        ...
+
+    def load_workspace_files(self) -> dict[str, str]:
+        """Load workspace context files for system prompt injection.
+
+        Returns dict: filename -> content for:
+        - AGENTS.md (operating instructions)
+        - USER.md (user identity and preferences)
+        - CAMERAS.md (camera registry)
+        - HEARTBEAT.md (heartbeat checklist)
+        - Recent daily observations
         """
         ...
 
-    async def search(self, query: str, max_results: int = 10,
-                     source_filter: str | None = None
-                     ) -> list[SearchResult]:
-        """Hybrid BM25 + vector search over all memory files.
-
-        Args:
-            query: Natural language search query
-            max_results: Maximum results to return
-            source_filter: Optional filter by source type
-
-        Returns:
-            Ranked list of matching memory entries
-        """
+    async def save_active_state(self, state: dict) -> None:
+        """Persist active pipelines/tasks for restart recovery."""
         ...
 
-    async def get_recent_observations(self, camera_id: str | None = None,
-                                       hours: int = 1
-                                       ) -> list[MemoryEntry]:
-        """Get recent observation entries, optionally filtered by camera."""
-        ...
-
-    async def get_active_config(self) -> dict:
-        """Get the current agent configuration (cameras, tasks, etc.)."""
-        ...
-
-    async def save_active_config(self, config: dict) -> None:
-        """Persist active configuration for restart recovery."""
+    async def load_active_state(self) -> dict | None:
+        """Load previously active state (for restart recovery)."""
         ...
 ```
 
-### 2.6 `UserInterface` — Channel Abstraction
+### 3.5 `UserInterface` — Channel Abstraction
 
 ```python
 # inference_agent/interfaces/protocols.py
 
-from typing import Protocol, AsyncIterator
-
-@dataclass
-class IncomingMessage:
-    """Message from the user."""
-    text: str
-    attachments: list[bytes]  # Images
-    channel_id: str  # Which interface it came from
-    user_id: str | None
-    metadata: dict
-
-@dataclass
-class OutgoingMessage:
-    """Message to send to the user."""
-    text: str
-    images: list[bytes] | None = None  # Annotated frames
-    channel_id: str | None = None  # None = broadcast to all
-
 class UserInterface(Protocol):
-    """Abstraction for user-facing communication channels."""
 
-    async def start(self) -> None:
-        """Start listening for user messages."""
+    async def start(self, event_callback: Callable[[AgentEvent], Awaitable[None]]) -> None:
+        """Start the interface. Calls event_callback for proactive alerts."""
         ...
 
-    async def stop(self) -> None:
-        """Stop the interface."""
+    async def run_conversation(self, agent: AgentCore) -> None:
+        """Main loop: receive messages, call agent, display events."""
         ...
 
-    async def receive(self) -> AsyncIterator[IncomingMessage]:
-        """Yield incoming user messages."""
-        ...
-
-    async def send(self, message: OutgoingMessage) -> None:
-        """Send a message to the user."""
-        ...
-
-    async def send_alert(self, message: OutgoingMessage) -> None:
-        """Send a proactive alert. May use different formatting/priority."""
+    async def emit_event(self, event: AgentEvent) -> None:
+        """Push a proactive event to the user (alert, status update)."""
         ...
 ```
 
-### 2.7 `WorkflowComposer` — Dynamic Workflow Generation
+---
+
+## 4. OpenClaw-Inspired Workspace & Lifecycle
+
+### 4.1 Workspace Directory Structure
+
+Following OpenClaw's pattern of plain files as the source of truth:
+
+```
+~/.vision_agent/                       # Default workspace
+├── config.yaml                        # Agent configuration (validated w/ Pydantic)
+├── AGENTS.md                          # Operating instructions for the agent
+│                                      #   (injected into system prompt every turn)
+├── USER.md                            # User identity, preferences, contact info
+│                                      #   (injected into system prompt every turn)
+├── CAMERAS.md                         # Camera registry with names and URLs
+│                                      #   (injected into system prompt every turn)
+├── HEARTBEAT.md                       # Heartbeat checklist
+│                                      #   ("Check cameras for anomalies,
+│                                      #    report only if something new")
+├── skills/                            # Domain-specific instruction packs
+│   ├── ppe-compliance/
+│   │   └── SKILL.md                   # "How to monitor PPE compliance"
+│   ├── parking-lot/
+│   │   └── SKILL.md                   # "How to count vehicles and occupancy"
+│   ├── package-delivery/
+│   │   └── SKILL.md                   # "How to detect package deliveries"
+│   └── quality-inspection/
+│       └── SKILL.md                   # "How to inspect items on conveyor"
+├── memory/
+│   ├── KNOWLEDGE.md                   # Long-term learned knowledge
+│   ├── 2026-02-11.md                  # Daily observation log (today)
+│   ├── 2026-02-10.md                  # Yesterday
+│   └── ...
+├── sessions/
+│   ├── session_abc123.jsonl           # JSONL transcript (append-only)
+│   └── ...
+├── active_state.json                  # Running pipelines, tasks (for recovery)
+└── .index/
+    └── memory.db                      # SQLite FTS5 + vec0 index
+```
+
+### 4.2 Workspace Files Loaded Into System Prompt
+
+Following OpenClaw's pattern, certain workspace files are injected into the
+system prompt on **every turn**. This makes them the primary way to configure
+the agent's behavior.
+
+**AGENTS.md** — Operating instructions:
+```markdown
+# Vision Agent Instructions
+
+## Behavior
+- When the user asks you to monitor a camera, always confirm the setup
+- When you detect a safety violation, include a frame snapshot in the alert
+- Summarize observations hourly, not per-frame
+- Use YOLO-World for zero-shot detection unless the user specifies a model
+
+## Defaults
+- Default confidence threshold: 0.5
+- Default max FPS for monitoring: 5
+- Alert channel: Slack (#security-alerts)
+
+## Domain Context
+- This is a warehouse facility
+- Cameras 1-3 are on the production floor
+- Camera 4 is the loading dock
+- Shift change at 6am, 2pm, 10pm
+```
+
+**CAMERAS.md** — Camera registry:
+```markdown
+# Cameras
+
+| Name | URL | Location | Notes |
+|------|-----|----------|-------|
+| cam1 | rtsp://192.168.1.50/stream1 | Production Floor East | 1080p, 15fps |
+| cam2 | rtsp://192.168.1.51/stream1 | Production Floor West | 1080p, 15fps |
+| cam3 | rtsp://192.168.1.52/stream1 | Assembly Line | 720p, 30fps |
+| cam4 | rtsp://192.168.1.53/stream1 | Loading Dock | 1080p, 10fps |
+```
+
+**HEARTBEAT.md** — Proactive check checklist:
+```markdown
+# Heartbeat Checklist
+
+Every 15 minutes, check the following:
+
+1. Are all registered cameras still streaming? If any dropped, alert the user.
+2. Check production floor cameras for PPE violations. Alert immediately.
+3. Check loading dock for vehicles that have been stationary > 30 minutes.
+4. If it's near shift change (±30min), note any unusual activity.
+5. If nothing notable, respond with HEARTBEAT_OK (silent, no user notification).
+```
+
+### 4.3 Skills — Loadable Domain Expertise
+
+Skills are Markdown files that provide **domain-specific instructions** the
+agent loads on demand. They are NOT executable code — they guide the agent's
+reasoning and tool usage for specific scenarios.
+
+**Example: `skills/ppe-compliance/SKILL.md`**
+```markdown
+---
+name: ppe-compliance
+description: Monitor PPE compliance on camera feeds
+models:
+  - hard-hat-detection/3   # Roboflow model for hard hats
+  - safety-vest/2          # Roboflow model for safety vests
+---
+
+# PPE Compliance Monitoring
+
+## Setup
+1. Use the `hard-hat-detection/3` model for hard hat detection
+2. Use the `safety-vest/2` model for safety vest detection
+3. Set confidence threshold to 0.6 (these models are well-calibrated)
+4. Add ByteTracker for consistent person tracking across frames
+
+## Workflow Pattern
+- Detect people → detect hard hats → detect safety vests
+- Use DetectionsFilter to find people WITHOUT matching PPE
+- Use DeltaFilter to avoid re-alerting on the same person
+
+## Alert Format
+Include: camera name, timestamp, annotated frame, violation type
+(missing hard hat / missing vest / both)
+```
+
+The agent reads skill files when the user's request matches a skill, or when
+explicitly asked: "use the PPE compliance skill on camera 3."
+
+### 4.4 Session Transcripts (JSONL)
+
+Every interaction is logged as append-only JSONL, following OpenClaw's pattern:
+
+```jsonl
+{"id":"msg_001","type":"user","content":"Watch cam1 for people without hard hats","ts":"2026-02-11T10:00:00Z"}
+{"id":"msg_002","type":"assistant","content":[{"type":"thinking","text":"User wants PPE..."},{"type":"tool_use","id":"tu_01","name":"start_pipeline",...}],"ts":"2026-02-11T10:00:02Z"}
+{"id":"msg_003","type":"tool_result","tool_use_id":"tu_01","content":"Pipeline started: pipe_abc","ts":"2026-02-11T10:00:05Z"}
+{"id":"msg_004","type":"assistant","content":[{"type":"text","text":"I've started monitoring..."}],"ts":"2026-02-11T10:00:06Z"}
+```
+
+This provides: full audit trail, crash recovery (replay from last checkpoint),
+debugging, and analytics.
+
+### 4.5 Heartbeat & Cron
+
+**Heartbeat** (inspired by OpenClaw):
+- Fires every N minutes (configurable, default 15)
+- Reads `HEARTBEAT.md` for the checklist
+- Runs an agent turn with a special system prompt:
+  "You are running a heartbeat check. Review the checklist and your active
+  streams. If nothing notable, respond with HEARTBEAT_OK. Otherwise, compose
+  an alert message."
+- If the response is `HEARTBEAT_OK`, silently proceed (no user notification)
+- If the response contains content, emit it as an alert event
+
+**Cron** (scheduled tasks):
+- Stored in `active_state.json`
+- Examples: "Daily summary at 6pm", "Capture snapshot every hour"
+- Runs in isolated context (doesn't pollute main conversation)
+
+---
+
+## 5. Tool Inventory — Revised
+
+### 5.1 Core Tools (Always Available)
 
 ```python
-# inference_agent/capabilities/workflow_composer/protocols.py
+# These are always in the tool list. ~15 tools, fits comfortably in cache.
 
-from typing import Protocol
-from dataclasses import dataclass
+tools = {
+    # === Inference (single image) ===
+    "run_inference": {
+        "description": "Run inference on a single image using a model or workflow. "
+                       "Accepts a Roboflow model_id (e.g. 'my-workspace/model/3') "
+                       "or a workflow (by ID or inline spec).",
+        "params": {
+            "image": "str — file path, URL, or base64",
+            "model_id": "str | None — Roboflow model ID",
+            "workspace_name": "str | None — for workflow by ID",
+            "workflow_id": "str | None — for workflow by ID",
+            "workflow_spec": "dict | None — inline workflow specification",
+            "parameters": "dict | None — additional workflow parameters",
+            "confidence": "float | None — confidence threshold (default 0.4)",
+        },
+    },
 
-@dataclass
-class BlockInfo:
-    """Information about a workflow block, derived from manifest."""
-    type_identifier: str  # e.g., "roboflow_core/roboflow_object_detection_model@v2"
-    name: str  # Human-friendly name
-    short_description: str
-    category: str  # "model", "analytics", "visualization", "sink", etc.
-    input_schema: dict  # JSON Schema of parameters
-    outputs: list[dict]  # [{name, kind}]
-    long_description: str | None = None
+    "ask_about_image": {
+        "description": "Ask a vision-language model a question about an image. "
+                       "Uses Florence-2, PaliGemma, Qwen2.5-VL, or Claude's own vision.",
+        "params": {
+            "image": "str — file path, URL, or base64",
+            "question": "str — question to ask about the image",
+            "model": "str — 'florence2', 'qwen2.5-vl', 'paligemma' (default 'florence2')",
+        },
+    },
 
-class WorkflowComposer(Protocol):
-    """Knows about all workflow blocks and can compose workflow specs."""
+    "detect_zero_shot": {
+        "description": "Detect objects by text description without a trained model. "
+                       "Uses YOLO-World for fast detection by class name prompts.",
+        "params": {
+            "image": "str",
+            "class_names": "list[str] — objects to detect, e.g. ['person', 'hard hat']",
+            "confidence": "float (default 0.3)",
+        },
+    },
 
-    @property
-    def available_blocks(self) -> list[BlockInfo]:
-        """All available workflow blocks."""
-        ...
+    # === Pipeline Management ===
+    "start_pipeline": {
+        "description": "Start continuous video processing on a camera/video source. "
+                       "The pipeline runs a workflow on every frame. Accepts: "
+                       "(1) a Roboflow workflow by workspace_name + workflow_id, "
+                       "(2) an inline workflow_spec, or (3) a simple model_id. "
+                       "Video sources: RTSP URL, webcam device, video file path.",
+        "params": {
+            "video_reference": "str — RTSP URL, file path, webcam (0,1,2)",
+            "pipeline_name": "str — human-friendly name for this pipeline",
+            "workflow_spec": "dict | None — inline workflow specification",
+            "workspace_name": "str | None",
+            "workflow_id": "str | None",
+            "model_id": "str | None — simple detection model",
+            "max_fps": "float | None — frame rate limit",
+            "parameters": "dict | None",
+        },
+    },
 
-    def get_blocks_summary(self) -> str:
-        """Concise summary of all blocks for LLM system prompt."""
-        ...
+    "get_pipeline_results": {
+        "description": "Get the latest results from a running pipeline. "
+                       "Returns detection summaries. Set include_frame=true "
+                       "to get an annotated snapshot.",
+        "params": {
+            "pipeline_id": "str",
+            "max_results": "int (default 5)",
+            "include_frame": "bool (default false)",
+        },
+    },
 
-    def validate_workflow(self, spec: dict) -> tuple[bool, str | None]:
-        """Validate a workflow specification. Returns (valid, error_msg)."""
-        ...
+    "list_pipelines": {
+        "description": "List all active video processing pipelines with status.",
+    },
 
-    def get_block_info(self, type_identifier: str) -> BlockInfo | None:
-        """Get detailed info about a specific block."""
-        ...
+    "stop_pipeline": {
+        "description": "Stop a running video pipeline.",
+        "params": {"pipeline_id": "str"},
+    },
 
-    def get_blocks_by_category(self, category: str) -> list[BlockInfo]:
-        """Get all blocks in a category."""
-        ...
+    "pause_pipeline": {
+        "description": "Pause a running pipeline (can be resumed).",
+        "params": {"pipeline_id": "str"},
+    },
+
+    "resume_pipeline": {
+        "description": "Resume a paused pipeline.",
+        "params": {"pipeline_id": "str"},
+    },
+
+    # === Workflow Discovery (on-demand) ===
+    "list_workflow_blocks": {
+        "description": "List available workflow blocks, optionally filtered by category "
+                       "(model, analytics, visualization, transformation, sink, flow_control, "
+                       "classical_cv, fusion, tracking). Use this when you need to compose "
+                       "a custom workflow and want to know what blocks exist.",
+        "params": {"category": "str | None"},
+    },
+
+    "get_block_details": {
+        "description": "Get the full schema, parameters, and example usage for a "
+                       "specific workflow block. Use this before composing a workflow "
+                       "to understand a block's inputs, outputs, and required parameters.",
+        "params": {"block_type": "str — e.g. 'roboflow_core/line_counter@v2'"},
+    },
+
+    # === Memory ===
+    "remember": {
+        "description": "Store an observation, fact, or user preference in persistent memory. "
+                       "Use this to record significant events, patterns, or things the user "
+                       "asks you to remember.",
+        "params": {
+            "content": "str — what to remember",
+            "category": "str — 'observation', 'knowledge', 'preference'",
+            "camera_id": "str | None — associated camera",
+        },
+    },
+
+    "recall": {
+        "description": "Search memory for relevant past observations, knowledge, or preferences.",
+        "params": {
+            "query": "str — search query",
+            "max_results": "int (default 5)",
+        },
+    },
+
+    # === Reasoning ===
+    "think": {
+        "description": "Use this to think through complex problems step-by-step before "
+                       "taking action. Use when you need to plan a workflow, analyze "
+                       "ambiguous results, or decide between approaches. No side effects.",
+        "params": {"thought": "str — your step-by-step reasoning"},
+    },
+}
+```
+
+### 5.2 Tool Count & Caching Strategy
+
+- **15 tools** total (well within Claude's comfort zone)
+- All tool definitions are **prompt-cached** via `cache_control` on the last
+  tool definition
+- System prompt (identity + workspace files + block summary) is also cached
+- Total cached prefix: ~10K tokens → $0.001 per call at cache-read rate
+
+---
+
+## 6. System Prompt Design
+
+### 6.1 Structure
+
+The system prompt is built dynamically per turn, following OpenClaw's pattern:
+
+```python
+def build_system_prompt(workspace: Memory, tools: ToolRegistry,
+                        active_pipelines: list[PipelineHandle]) -> list[dict]:
+    """Build system prompt as cacheable content blocks."""
+
+    # --- Cached section (stable across turns) ---
+    cached_blocks = []
+
+    # Core identity + instructions
+    cached_blocks.append({
+        "type": "text",
+        "text": CORE_IDENTITY_PROMPT,
+    })
+
+    # Workspace files (AGENTS.md, USER.md, CAMERAS.md)
+    ws_files = workspace.load_workspace_files()
+    for filename, content in ws_files.items():
+        if content.strip():
+            cached_blocks.append({
+                "type": "text",
+                "text": f"# {filename}\n\n{content}",
+            })
+
+    # Block summary (available workflow blocks)
+    cached_blocks.append({
+        "type": "text",
+        "text": tools.get_capabilities_summary(),
+    })
+
+    # Workflow examples
+    cached_blocks.append({
+        "type": "text",
+        "text": WORKFLOW_EXAMPLES,
+    })
+
+    # Mark last cached block for prompt caching
+    cached_blocks[-1]["cache_control"] = {"type": "ephemeral"}
+
+    # --- Dynamic section (changes every turn) ---
+    dynamic_blocks = []
+
+    # Active pipelines summary
+    if active_pipelines:
+        summary = format_active_pipelines(active_pipelines)
+        dynamic_blocks.append({"type": "text", "text": summary})
+
+    # Available skills
+    skills = workspace.list_available_skills()
+    if skills:
+        skills_text = format_skills_list(skills)
+        dynamic_blocks.append({"type": "text", "text": skills_text})
+
+    return cached_blocks + dynamic_blocks
+```
+
+### 6.2 Core Identity Prompt
+
+```
+You are a Vision Agent — an autonomous computer vision assistant powered by
+Roboflow Inference. You help users monitor cameras, analyze images, and detect
+events using state-of-the-art CV models.
+
+## How You Work
+
+You have tools for running inference on images and managing video processing
+pipelines. For continuous monitoring tasks, you create Workflow specifications
+(JSON) that define processing pipelines, then deploy them on video sources.
+
+## Important Behaviors
+
+1. **Ask before assuming.** If the user mentions a model or camera, ask for
+   the specific model_id or RTSP URL if not provided. They may have fine-tuned
+   models on Roboflow they want to use.
+
+2. **Check for existing workflows.** The user may already have workflows
+   configured on Roboflow. Ask if they have one, or if they want you to
+   compose a new one.
+
+3. **Use the think tool** for complex tasks. Before composing a workflow,
+   think through what blocks you need, how they connect, and what parameters
+   to set.
+
+4. **Validate before deploying.** Always check that your workflow spec is
+   correct. If deployment fails, read the error and fix the issue.
+
+5. **Be proactive but not noisy.** When monitoring, only alert on significant
+   events. Use local filtering in the workflow (DeltaFilter, ContinueIf) to
+   avoid redundant alerts.
+
+6. **Show, don't tell.** When reporting detections, include an annotated frame
+   snapshot (set include_frame=true in get_pipeline_results).
+
+## Workflow Specification Format
+
+{workflow_format_docs}
+
+## Supported Video Sources
+- RTSP streams: rtsp://host/path
+- Webcam devices: 0, 1, 2 (integer)
+- Video files: /path/to/video.mp4
+- MJPEG streams: http://host/stream
+
+## Model References
+- Roboflow models: "workspace/project/version" (e.g., "my-ws/hard-hat/3")
+- Zero-shot: use the detect_zero_shot tool with class names
+- COCO pre-trained: "coco/9" for 80 common object classes
 ```
 
 ---
 
-## 3. Work Streams (Parallelizable)
+## 7. Claude API Integration Details
 
-After the interface contracts are agreed upon (1-2 days of design), the following
-work streams can proceed **in parallel**:
+### 7.1 Prompt Caching Placement
 
+```python
+# Cache the system prompt + tool definitions for 90% input cost savings.
+# Cache order: tools → system → messages
+
+# Tools: add cache_control to LAST tool definition
+tools[-1]["cache_control"] = {"type": "ephemeral"}
+
+# System: add cache_control to last stable content block
+system_blocks[-1]["cache_control"] = {"type": "ephemeral"}
+
+# This caches ~10K tokens. At Sonnet pricing:
+# Cache write: 10K * $3.75/MTok = $0.0375 (first call only)
+# Cache read:  10K * $0.30/MTok = $0.003  (every subsequent call)
 ```
-                    ┌─────────────────────┐
-                    │  WS0: Interface     │
-                    │  Contract Design    │
-                    │  (1-2 days)         │
-                    └────────┬────────────┘
-                             │
-           ┌─────────────────┼─────────────────┐
-           │                 │                  │
-           ▼                 ▼                  ▼
-┌──────────────────┐ ┌──────────────┐ ┌──────────────────┐
-│ WS1: Agent Core  │ │ WS2: Capabil-│ │ WS3: Memory      │
-│ + LLM Client     │ │ ity Modules  │ │ System           │
-│ (5-7 days)       │ │ (5-7 days)   │ │ (3-5 days)       │
-└────────┬─────────┘ └──────┬───────┘ └────────┬─────────┘
-         │                  │                   │
-         │      ┌───────────┼───────────┐       │
-         │      │           │           │       │
-         ▼      ▼           ▼           ▼       ▼
-┌──────────────────────────────────────────────────────┐
-│                WS4: Integration + MVP                 │
-│                (3-5 days)                             │
-└──────────────────────────────────────────────────────┘
-         │
-         ▼
-┌──────────────────┐
-│ WS5: Streaming   │
-│ + Proactive      │
-│ Monitoring       │
-│ (5-7 days)       │
-└──────────────────┘
+
+### 7.2 Images in Tool Results
+
+When the agent needs to see a frame (e.g., from `get_pipeline_results` with
+`include_frame=true`), the tool result includes image content blocks:
+
+```python
+# Tool result with image
+tool_result = {
+    "type": "tool_result",
+    "tool_use_id": call.id,
+    "content": [
+        {
+            "type": "image",
+            "source": {
+                "type": "base64",
+                "media_type": "image/jpeg",
+                "data": base64_jpeg,  # Resized to ~640px max dimension
+            },
+        },
+        {
+            "type": "text",
+            "text": "Frame #1234 from cam1 (loading dock). "
+                    "3 detections: person (0.92), forklift (0.87), pallet (0.76)",
+        },
+    ],
+}
 ```
+
+### 7.3 Extended Thinking for Complex Workflows
+
+For complex workflow composition, enable extended thinking with the interleaved
+thinking beta header:
+
+```python
+response = await self._client.messages.create(
+    model=self._model,
+    max_tokens=8192,
+    thinking={"type": "enabled", "budget_tokens": 4096},
+    tools=tool_defs,
+    system=system_blocks,
+    messages=messages,
+    extra_headers={"anthropic-beta": "interleaved-thinking-2025-05-14"},
+)
+```
+
+This lets Claude reason between tool calls — e.g., after getting block details,
+it can think about how to wire blocks together before composing the workflow.
+
+### 7.4 The "think" Tool
+
+In addition to extended thinking, we include a `think` tool (recommended by
+Anthropic) that gives Claude an explicit scratchpad during multi-step agentic
+workflows:
+
+```python
+{
+    "name": "think",
+    "description": "Think through a problem step-by-step. No side effects.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "thought": {
+                "type": "string",
+                "description": "Your step-by-step reasoning"
+            }
+        },
+        "required": ["thought"]
+    }
+}
+```
+
+When Claude calls `think`, the executor returns an empty string and continues
+the loop. This is especially useful for:
+- Planning a workflow before composing it
+- Analyzing ambiguous detection results before alerting
+- Deciding which backend to use for a task
+
+### 7.5 Conversation History Management
+
+To prevent context overflow during long sessions:
+
+1. **Token budget tracking**: After each turn, estimate total context size
+2. **Compaction trigger**: When approaching 80% of context window, summarize
+   old messages and write important state to memory files (pre-compaction flush,
+   per OpenClaw pattern)
+3. **Thinking block handling**: Include thinking blocks in history (Claude
+   requires them via signatures), but the API automatically excludes them from
+   context budget
+4. **Result truncation**: Pipeline results are summarized before sending to
+   Claude to control token growth
 
 ---
 
-## 4. MVP: Minimum Testable Assumption
+## 8. Work Streams (Parallelizable)
 
-### What We're Testing
+```
+                    ┌──────────────────────────┐
+                    │  WS0: Interfaces +       │
+                    │  Workspace Skeleton       │
+                    │  (2-3 days)               │
+                    └─────────┬────────────────┘
+                              │
+        ┌─────────────────────┼──────────────────────┐
+        │                     │                      │
+        ▼                     ▼                      ▼
+┌───────────────┐  ┌──────────────────┐  ┌──────────────────┐
+│ WS1: Agent    │  │ WS2: Backends    │  │ WS3: Memory +    │
+│ Core + LLM    │  │ + Tools          │  │ Workspace        │
+│ + System      │  │ (5-7 days)       │  │ (4-6 days)       │
+│ Prompt        │  │                  │  │                  │
+│ (5-7 days)    │  │ WS2a: HTTP       │  │                  │
+│               │  │ WS2b: Direct SDK │  │                  │
+│               │  │ WS2c: Workflow   │  │                  │
+│               │  │       Composer   │  │                  │
+└───────┬───────┘  └────────┬─────────┘  └────────┬─────────┘
+        │                   │                      │
+        └───────────────────┼──────────────────────┘
+                            │
+                            ▼
+                ┌───────────────────────┐
+                │  WS4: Integration     │
+                │  + MVP Validation     │
+                │  (3-5 days)           │
+                └───────────┬───────────┘
+                            │
+                            ▼
+                ┌───────────────────────┐
+                │  WS5: Heartbeat +     │
+                │  Proactive Monitoring │
+                │  + Skills             │
+                │  (5-7 days)           │
+                └───────────────────────┘
+```
 
-The **core risk** is: Can Claude, given tool definitions auto-generated from
-Inference's workflow block manifests, reliably compose workflow specifications and
-orchestrate inference pipelines from natural language instructions?
+**WS2 can be further parallelized** — the three backends (HTTP, Direct, Workflow
+Composer) share the `InferenceBackend` interface and can be developed by
+separate people simultaneously.
 
-This breaks down into three testable assumptions:
+---
 
-| # | Assumption | How We Test It | Success Criteria |
-|---|-----------|----------------|-----------------|
-| 1 | Claude can understand auto-generated tool schemas derived from workflow block manifests and use them correctly | Give Claude block descriptions + ask it to compose a workflow JSON | Valid workflow specs that pass `validate_workflow` >80% of the time |
-| 2 | Claude can orchestrate multi-step vision tasks (detect → track → filter → alert) through tool calls | End-to-end: user says "watch for X" → agent composes workflow → pipeline runs → results consumed | Working pipeline producing correct detections from a test video |
-| 3 | The agent loop is responsive enough for interactive use (plan + deploy in <30s) | Measure time from user instruction to pipeline running | <30s for common monitoring tasks, <60s for complex multi-step setups |
+## 9. MVP — Minimum Testable Assumption
+
+### What We're Derisking
+
+The #1 risk is: **Can Claude reliably orchestrate Inference capabilities from
+natural language, including composing valid workflows and managing pipelines?**
+
+The #2 risk is: **Can the agent use existing user resources (models, workflows)
+on Roboflow, not just auto-discovered capabilities?**
 
 ### MVP Scope
 
+```
+MVP = CLI REPL + Agent Core + HTTP Backend + 15 Tools
+```
+
 **In scope:**
-- CLI REPL interface (simplest possible UI)
-- Agent loop with Claude API tool-use
-- 5 core tools:
-  1. `list_available_models` — list Roboflow models
-  2. `list_workflow_blocks` — list available blocks with descriptions
-  3. `get_block_details` — get full schema for a specific block
-  4. `deploy_workflow_pipeline` — compose + validate + start InferencePipeline
-  5. `get_pipeline_results` — consume latest results from a running pipeline
-- Direct SDK mode (agent runs on same machine as inference)
-- One test scenario: "Watch this video file and detect all people"
+- CLI REPL interface
+- Agent loop with Claude API (tool-use + prompt caching + think tool)
+- HTTP client backend (InferenceHTTPClient to a running inference server)
+- All 15 tools from Section 5.1
+- System prompt with workspace file injection (AGENTS.md, CAMERAS.md)
+- Workflow composer (block discovery + schema generation)
+- Minimal memory (file append, no search yet)
+- JSONL session logging
 
 **Out of scope for MVP:**
-- Memory system (hardcode in system prompt)
-- Proactive monitoring / heartbeat
-- Multi-channel interfaces
-- HTTP client mode
-- RTSP/live streams (use video files)
-- Notification sinks
-- Persistence across restarts
+- Direct SDK backend (added in Phase 2)
+- WebRTC backend (added in Phase 2)
+- Hybrid memory search (added in Phase 2)
+- Heartbeat/proactive monitoring (added in Phase 3)
+- Skills system (added in Phase 3)
+- Multi-channel interfaces (added in Phase 4)
 
-### MVP File Structure
+### MVP Test Scenarios
 
-```
-inference_agent/
-├── __init__.py
-├── __main__.py                    # Entry point: `python -m inference_agent`
-├── core/
-│   ├── __init__.py
-│   ├── agent.py                   # AgentCore implementation
-│   ├── protocols.py               # Interface definitions (Section 2)
-│   └── config.py                  # AgentConfig dataclass
-├── llm/
-│   ├── __init__.py
-│   ├── claude_client.py           # LLMClient implementation (Anthropic SDK)
-│   └── protocols.py
-├── tools/
-│   ├── __init__.py
-│   ├── registry.py                # ToolRegistry implementation
-│   └── protocols.py
-├── capabilities/
-│   ├── __init__.py
-│   ├── workflow_composer/
-│   │   ├── __init__.py
-│   │   ├── composer.py            # WorkflowComposer implementation
-│   │   ├── block_discovery.py     # Auto-discover blocks from manifests
-│   │   └── schema_generator.py    # Generate LLM tool schemas from blocks
-│   ├── stream_manager/
-│   │   ├── __init__.py
-│   │   └── manager.py             # Pipeline lifecycle management
-│   └── direct_inference/
-│       ├── __init__.py
-│       └── inference.py           # Single-image inference tools
-├── memory/                        # Stub for MVP, full impl later
-│   ├── __init__.py
-│   └── protocols.py
-└── interfaces/
-    ├── __init__.py
-    └── cli.py                     # CLI REPL interface
-```
+| # | Instruction | Tests | Success |
+|---|------------|-------|---------|
+| 1 | "I have a model my-ws/hard-hat/3. Run it on this image." | User-provided model_id, single image | Correct detections returned |
+| 2 | "I have a workflow called 'ppe-check' in my 'acme' workspace. Run it on cam1." | User-provided workflow_id + hosted pipeline | Pipeline starts, results consumable |
+| 3 | "Watch this video for people." (no model specified) | Agent asks user for model preference or suggests YOLO-World/COCO | Appropriate follow-up question or zero-shot detection |
+| 4 | "Count cars crossing the middle of the frame in test.mp4" | Agent composes workflow: detection → tracker → line_counter | Valid workflow, accurate counts |
+| 5 | "What blocks are available for tracking?" | Discovery tool usage | Correct block list returned |
+| 6 | "What's in this image?" [attach photo] | VLM tool with image attachment | Accurate description |
+| 7 | Agent composes invalid workflow | Self-correction loop | Fixes and deploys within 2 attempts |
+| 8 | "Stop all pipelines and summarize what you observed." | Pipeline management + recall | Clean shutdown, observation summary |
+| 9 | "Use my workflow 'inventory-count' on rtsp://192.168.1.52/stream1 at 2 FPS" | User's workflow by ID + specific params | Hosted pipeline with correct config |
+| 10 | Complex: "Monitor cam1 and cam2. Detect people on cam1, vehicles on cam2. Alert me if a person is near a vehicle on cam2." | Multi-pipeline, think tool usage | Two pipelines running, coherent plan |
 
 ---
 
-## 5. Risk Register & Derisking Strategy
+## 10. Risk Register & Derisking
 
-### Risk 1: Tool Schema Explosion (HIGH)
+### Risk 1: Tool Schema Explosion → MITIGATED by Design
 
-**Risk:** Inference has 130+ workflow blocks. If we generate a tool definition for
-each block parameter, the system prompt will be enormous (50K+ tokens), expensive,
-and may confuse Claude.
+Two-tier approach: 15 action tools + 2 discovery tools. Block details are
+returned on-demand, not embedded in tool definitions. System prompt contains
+only a one-line summary per block (~2.5K tokens for 130+ blocks).
 
-**Derisking strategy:**
-- **Two-tier tool design**: High-level tools (`deploy_workflow_pipeline`) that accept
-  a workflow spec, plus discovery tools (`list_workflow_blocks`, `get_block_details`)
-  that let Claude explore what's available on demand.
-- **NOT** one tool per block. Instead, Claude uses discovery tools to learn about
-  blocks, then composes a workflow JSON that references them.
-- The system prompt contains a **summary** of capabilities (block names + one-line
-  descriptions), not full schemas.
-- Full block schemas are returned only when Claude calls `get_block_details`.
+### Risk 2: Workflow Composition Accuracy → DERISK in MVP
 
-**Test:** Measure system prompt token count with summary approach vs. full schema
-approach. Target: system prompt < 8K tokens.
+**Mitigation layers:**
+1. Few-shot examples in system prompt (3 working workflow patterns)
+2. `think` tool — Claude reasons about the workflow before composing it
+3. Validate-before-deploy in `start_pipeline` tool
+4. Self-correction: validation errors are returned as `is_error` tool results
+5. Template approach: user can reference existing Roboflow workflows instead
+   of the agent composing from scratch
 
-### Risk 2: Workflow Composition Accuracy (HIGH)
+**MVP test:** Benchmark 20 natural language instructions. Target: >70% valid
+on first attempt, >90% after self-correction.
 
-**Risk:** Claude may generate invalid workflow JSON — wrong block type identifiers,
-incorrect selector syntax (`$steps.x.y`), incompatible kind connections, etc.
+### Risk 3: User Doesn't Know What They Need → DERISK by UX
 
-**Derisking strategy:**
-- **Validate before deploy**: The `deploy_workflow_pipeline` tool validates the
-  workflow spec using the existing `validate_workflow` endpoint before starting the
-  pipeline. If validation fails, the error is returned to Claude as a tool result so
-  it can self-correct.
-- **Few-shot examples**: Include 3-5 working workflow examples in the system prompt
-  (common patterns: detect+track, detect+filter+alert, detect+count).
-- **Template library**: Pre-built workflow templates for common patterns that Claude
-  can customize rather than building from scratch.
-- **Iterative refinement**: The agent loop naturally supports Claude trying, failing,
-  reading the error, and fixing — just like a human developer.
+The agent should be conversational, not assume. If the user says "watch for
+defects," the agent should ask:
+- "Do you have a trained defect detection model on Roboflow? If so, what's
+  the model ID?"
+- "Or would you like me to try zero-shot detection? I can look for specific
+  types of defects using YOLO-World."
+- "Do you already have a workflow set up for this?"
 
-**Test:** Create a benchmark of 20 natural language instructions and measure what
-percentage produce valid workflows on first attempt vs. after self-correction.
+This is encoded in the system prompt's "ask before assuming" rule.
 
-### Risk 3: Pipeline Result Interpretation (MEDIUM)
+### Risk 4: Backend Complexity → MITIGATED by Interface
 
-**Risk:** Workflow pipeline outputs are raw dicts with nested detection data
-(supervision Detections serialized). Claude needs to understand these to decide
-whether to alert the user.
+The `InferenceBackend` protocol abstracts all three backends. The agent core
+doesn't know or care which backend is in use. The tool executor selects the
+backend based on config + task type.
 
-**Derisking strategy:**
-- **Result summarizer**: A utility function that converts raw pipeline output into a
-  human-readable summary before sending to Claude:
-  ```
-  "Frame 1234 from source 0: 3 detections (2 person [0.92, 0.87], 1 car [0.76])"
-  ```
-- **Selective image forwarding**: Only send frame images to Claude when the agent
-  needs visual confirmation (anomaly detected, ambiguous result). Most of the time,
-  the structured detection data is sufficient.
-- **Token budget management**: Limit result verbosity to prevent context overflow
-  during long monitoring sessions.
+### Risk 5: Cost for Always-On Monitoring → DERISK in Phase 3
 
-### Risk 4: Proactive Monitoring Cost (MEDIUM)
-
-**Risk:** An always-on agent calling Claude API for every pipeline result would be
-prohibitively expensive.
-
-**Derisking strategy:**
-- **Event-driven, not poll-driven**: The pipeline runs autonomously. Claude is only
-  consulted when:
-  1. A relevant event is detected (e.g., new objects appearing, threshold exceeded)
-  2. The user asks a question
-  3. A scheduled heartbeat fires (configurable: every 15-60 min)
-- **Local filtering**: Python code in the result consumer decides whether an event is
-  "interesting" enough to escalate to Claude. Simple heuristics (new object count > 0,
-  confidence > threshold) avoid unnecessary LLM calls.
-- **Model tiering**: Use Haiku 4.5 ($1/$5 per MTok) for routine event classification,
-  Sonnet 4.5 ($3/$15) for complex analysis, Opus only when explicitly requested.
-- **Prompt caching**: Cache the system prompt + tool definitions (saves 90% on
-  repeated input tokens).
-
-### Risk 5: Multi-Camera Complexity (LOW for MVP)
-
-**Deferred**: MVP uses single video files. Multi-camera support is a Phase 2 concern.
+Heartbeat approach: Claude is only consulted periodically, not per-frame. The
+workflow pipeline runs at 30+ FPS autonomously; the LLM is called at most once
+per heartbeat interval (default 15 min). With prompt caching, each heartbeat
+check costs ~$0.01.
 
 ---
 
-## 6. Dependency Graph & Sequencing
+## 11. Dependency Graph & Sequencing
 
-### Phase 0: Foundation (Week 1, days 1-2)
+### Phase 0: Foundation (Days 1-3)
 
-**Goal:** Agree on interfaces and set up the project skeleton.
+| Task | Deliverable |
+|------|-------------|
+| P0.1 Define Protocol interfaces | All `protocols.py` files |
+| P0.2 Project skeleton + pyproject.toml | `inference_agent/` package |
+| P0.3 Workspace directory initialization | Default workspace creation |
+| P0.4 Contract tests for each Protocol | Pytest fixtures with mock implementations |
 
-| Task | Dependencies | Owner | Deliverable |
-|------|-------------|-------|-------------|
-| P0.1 Define all Protocol interfaces | None | Architect | `protocols.py` files in each module |
-| P0.2 Set up package structure | None | Anyone | `inference_agent/` with `pyproject.toml` |
-| P0.3 Write interface tests (contract tests) | P0.1 | Anyone | Tests that validate any implementation of each Protocol |
-
-### Phase 1: Parallel Work Streams (Week 1-2, days 3-10)
-
-All three streams can proceed simultaneously once interfaces are defined.
+### Phase 1: Parallel Streams (Days 3-10)
 
 **WS1: Agent Core + LLM Client**
-| Task | Dependencies | Deliverable |
-|------|-------------|-------------|
-| WS1.1 Implement `ClaudeClient` (LLMClient protocol) | P0.1 | `llm/claude_client.py` |
-| WS1.2 Implement `AgentLoop` (AgentCore protocol) | P0.1 | `core/agent.py` |
-| WS1.3 System prompt engineering | WS1.1 | System prompt template with block summaries + examples |
-| WS1.4 Implement CLI REPL | P0.1 | `interfaces/cli.py` |
-| WS1.5 Unit tests with mock tools | WS1.2 | Test agent loop with fake tool implementations |
 
-**WS2: Capability Modules**
-| Task | Dependencies | Deliverable |
-|------|-------------|-------------|
-| WS2.1 Block discovery from manifests | P0.1 | `capabilities/workflow_composer/block_discovery.py` |
-| WS2.2 LLM tool schema generation | WS2.1 | `capabilities/workflow_composer/schema_generator.py` |
-| WS2.3 WorkflowComposer implementation | WS2.1, WS2.2 | `capabilities/workflow_composer/composer.py` |
-| WS2.4 StreamManager capability module | P0.1 | `capabilities/stream_manager/manager.py` |
-| WS2.5 DirectInference capability module | P0.1 | `capabilities/direct_inference/inference.py` |
-| WS2.6 ToolRegistry implementation | P0.1, WS2.3-5 | `tools/registry.py` |
+| Task | Deliverable |
+|------|-------------|
+| WS1.1 `ClaudeClient` — Anthropic SDK wrapper | `llm/claude_client.py` |
+| WS1.2 `VisionAgent` — agentic loop | `core/agent.py` |
+| WS1.3 System prompt builder | `core/prompt_builder.py` |
+| WS1.4 System prompt engineering + few-shot examples | Prompt text + test results |
+| WS1.5 `CLIInterface` | `interfaces/cli.py` |
+| WS1.6 Session transcript logger (JSONL) | `core/session_log.py` |
+| WS1.7 Unit tests with mock backend | Agent loop tests |
 
-**WS3: Memory System**
-| Task | Dependencies | Deliverable |
-|------|-------------|-------------|
-| WS3.1 File-based memory store | P0.1 | `memory/store.py` |
-| WS3.2 BM25 search (SQLite FTS5) | WS3.1 | `memory/search.py` |
-| WS3.3 Vector search (CLIP or sentence-transformers) | WS3.1 | `memory/search.py` |
-| WS3.4 Hybrid search with union ranking | WS3.2, WS3.3 | `memory/search.py` |
-| WS3.5 Memory tools (remember, recall, get_observations) | WS3.1-4 | `memory/tools.py` |
+**WS2: Backends + Tools**
 
-### Phase 2: Integration + MVP (Week 2-3, days 8-14)
+| Task | Deliverable |
+|------|-------------|
+| WS2.1 `HTTPBackend` — InferenceHTTPClient wrapper | `backends/http_backend.py` |
+| WS2.2 Block discovery (from HTTP or direct import) | `capabilities/block_discovery.py` |
+| WS2.3 Schema generator (block → LLM tool description) | `capabilities/schema_generator.py` |
+| WS2.4 `ToolRegistry` + all 15 tool implementations | `tools/` directory |
+| WS2.5 Result summarizer (raw output → human-readable) | `tools/result_summarizer.py` |
+| WS2.6 Unit tests for each tool | Tool tests with mock backend |
 
-| Task | Dependencies | Deliverable |
-|------|-------------|-------------|
-| I.1 Wire all modules together | WS1, WS2 | Working agent with real tools |
-| I.2 End-to-end test: "detect people in video" | I.1 | Passing integration test |
-| I.3 End-to-end test: "count cars" with line counter | I.1 | Passing integration test |
-| I.4 End-to-end test: self-correction on invalid workflow | I.1 | Agent recovers from validation errors |
-| I.5 Benchmark: workflow composition accuracy | I.1 | Accuracy metrics on 20-task benchmark |
-| I.6 Integrate memory module | WS3, I.1 | Agent can remember and recall |
-| I.7 Performance profiling | I.1-5 | Response time measurements |
+**WS3: Memory + Workspace**
 
-### Phase 3: Streaming + Proactive (Week 3-4)
+| Task | Deliverable |
+|------|-------------|
+| WS3.1 Workspace initialization + file management | `memory/workspace.py` |
+| WS3.2 File-based memory store (append to .md files) | `memory/store.py` |
+| WS3.3 BM25 search (SQLite FTS5) | `memory/search.py` |
+| WS3.4 `remember` and `recall` tool implementations | `memory/tools.py` |
+| WS3.5 Workspace file loader (for system prompt) | `memory/workspace.py` |
+| WS3.6 Active state persistence (JSON) | `memory/state.py` |
 
-| Task | Dependencies | Deliverable |
-|------|-------------|-------------|
-| S.1 Result consumer with event detection | I.2 | Background thread consuming pipeline results |
-| S.2 Event → LLM escalation logic | S.1 | Decides when to consult Claude about an event |
-| S.3 Heartbeat / periodic analysis loop | S.1 | Configurable timer-based scene analysis |
-| S.4 RTSP stream support | S.1 | Live camera streams working |
-| S.5 Multi-camera management | S.4 | Multiple streams with per-camera context |
-| S.6 Alert routing | S.2 | Route alerts to correct user interface |
+### Phase 2: Integration + MVP (Days 8-14)
+
+| Task | Deliverable |
+|------|-------------|
+| I.1 Wire all modules, end-to-end smoke test | Working agent |
+| I.2 Run MVP test scenarios 1-10 | Test results |
+| I.3 Benchmark: workflow composition accuracy | Accuracy report |
+| I.4 Add Direct SDK backend | `backends/direct_backend.py` |
+| I.5 Add WebRTC backend | `backends/webrtc_backend.py` |
+| I.6 Vector search (CLIP embeddings) for memory | `memory/search.py` |
+| I.7 Performance profiling + cost analysis | Report |
+
+### Phase 3: Proactive Monitoring (Days 12-18)
+
+| Task | Deliverable |
+|------|-------------|
+| S.1 Heartbeat scheduler | `core/heartbeat.py` |
+| S.2 Event detection + LLM escalation logic | `core/event_handler.py` |
+| S.3 Cron scheduler for periodic tasks | `core/scheduler.py` |
+| S.4 Skills loader + system prompt injection | `skills/loader.py` |
+| S.5 Pre-compaction memory flush | `core/context_guard.py` |
+| S.6 Multi-camera correlation | Backend enhancements |
+
+### Phase 4: Multi-Channel (Days 16-22)
+
+| Task | Deliverable |
+|------|-------------|
+| C.1 Slack bot interface | `interfaces/slack.py` |
+| C.2 REST API interface | `interfaces/rest.py` |
+| C.3 Alert routing (different channels for different events) | `core/alert_router.py` |
+| C.4 Web dashboard (optional) | `interfaces/web/` |
 
 ---
 
-## 7. Detailed Implementation: Each Work Stream
+## 12. Detailed Implementation — Each Work Stream
 
 ### WS1: Agent Core + LLM Client
 
@@ -745,681 +1235,397 @@ All three streams can proceed simultaneously once interfaces are defined.
 # inference_agent/llm/claude_client.py
 
 import anthropic
-from .protocols import LLMClient, LLMResponse, ToolDefinition, ToolCall
+from typing import AsyncIterator
 
 class ClaudeClient:
-    """LLMClient implementation using the Anthropic Python SDK."""
+    """Claude API wrapper with tool-use, caching, thinking, and streaming."""
 
-    def __init__(self, api_key: str, model: str = "claude-sonnet-4-5",
-                 max_retries: int = 3):
+    def __init__(self, api_key: str, model: str = "claude-sonnet-4-5"):
         self._client = anthropic.AsyncAnthropic(api_key=api_key)
         self._model = model
-        self._max_retries = max_retries
+        self._total_usage = {"input": 0, "output": 0, "cache_read": 0, "cache_write": 0}
 
-    async def chat(self, messages, tools, system_prompt,
-                   max_tokens=4096, thinking=False,
-                   thinking_budget=None) -> LLMResponse:
-        """Core implementation notes:
+    async def chat(self, messages, tools, system, max_tokens=4096,
+                   thinking=None) -> LLMResponse:
+        """Core implementation:
 
-        1. Convert ToolDefinition list to Anthropic API format
-        2. Use prompt caching on system prompt + tool definitions:
-           system=[{"type": "text", "text": prompt,
-                    "cache_control": {"type": "ephemeral"}}]
-        3. Handle tool_use stop_reason by extracting ToolCall objects
-        4. Handle extended thinking: pass thinking blocks back in
-           subsequent messages (CRITICAL for multi-turn tool use)
-        5. Retry on 429/529 with exponential backoff using
-           response headers (retry-after, anthropic-ratelimit-*)
-        6. Track token usage for cost monitoring
+        1. Convert ToolDefinition objects to Anthropic API dicts.
+           Add cache_control to the LAST tool definition.
+        2. Build the request:
+           - model, max_tokens, system, tools, messages
+           - If thinking: add thinking param + interleaved-thinking beta header
+        3. Call self._client.messages.create(**request)
+        4. Handle rate limits: retry with exponential backoff on 429/529
+        5. Parse response:
+           - Extract text blocks → response.text
+           - Extract tool_use blocks → response.tool_calls
+           - Extract thinking blocks → response.thinking
+           - Copy stop_reason and usage
+        6. Accumulate usage stats for cost monitoring
+        7. Return LLMResponse
+        """
+        ...
+
+    def format_tool_result(self, tool_call_id: str, content,
+                           is_error: bool = False) -> dict:
+        """Format a tool result for the messages array.
+
+        If content is a string: simple text result.
+        If content is a list: content blocks (text + images).
+        If content is a dict: JSON-serialize to string.
+
+        For images: encode as base64 JPEG, max 640px on longest side.
         """
         ...
 ```
 
-**Key implementation details:**
-- Use `anthropic.AsyncAnthropic` for async support
-- Enable prompt caching on system prompt (saves 90% on repeated calls)
-- When `thinking=True` and tools are used, preserve thinking blocks in
-  the message history (Claude requires this for coherent multi-turn reasoning)
-- Parse `tool_use` content blocks into `ToolCall` dataclasses
-- Parse images in tool results into proper content blocks:
-  ```python
-  {
-      "type": "tool_result",
-      "tool_use_id": call_id,
-      "content": [
-          {"type": "image", "source": {"type": "base64", ...}},
-          {"type": "text", "text": "Frame 1234 from camera front_door"}
-      ]
-  }
-  ```
-
-#### WS1.2: AgentLoop
+#### WS1.2: VisionAgent (Agent Loop)
 
 ```python
 # inference_agent/core/agent.py
 
 class VisionAgent:
-    """Main agent loop implementation."""
-
-    def __init__(self, config: AgentConfig, llm: LLMClient,
-                 tools: ToolRegistry, memory: Memory):
-        self._config = config
-        self._llm = llm
-        self._tools = tools
-        self._memory = memory
-        self._messages: list[dict] = []
-        self._monitoring_task: asyncio.Task | None = None
 
     async def process_message(self, message, attachments=None):
-        """Agent loop pseudocode:
+        """The agentic loop. Pseudocode:
 
-        1. Add user message to conversation history
-        2. If attachments, include as image content blocks
-        3. Build system prompt:
-           a. Core identity and instructions
-           b. Available capabilities summary (from WorkflowComposer)
-           c. Active streams summary
-           d. Recent memory context (last observations)
-        4. Loop:
-           a. Call LLM with messages + tools
-           b. If stop_reason == "end_turn":
-              - Yield response event
+        1. Append user message to self._messages
+           - If attachments: include as image content blocks
+        2. Build system prompt via PromptBuilder
+        3. Loop (max 20 iterations):
+           a. Call self._llm.chat(messages, tools, system, thinking=...)
+           b. Append assistant response (including thinking blocks) to messages
+           c. If stop_reason == "end_turn":
+              - Yield AgentEvent(RESPONSE, response.text)
               - Break
-           c. If stop_reason == "tool_use":
-              - For each tool_call:
-                - Yield tool_call event (for UI display)
-                - Execute tool via ToolRegistry
-                - Yield tool_result event
-              - Add assistant message + tool results to history
+           d. If stop_reason == "tool_use":
+              - For each tool_call in response.tool_calls:
+                - Yield AgentEvent(TOOL_CALL, {name, args})
+                - result = await self._tools.execute(tool_call)
+                - Yield AgentEvent(TOOL_RESULT, {name, summary})
+              - Append tool_result user message to messages
               - Continue loop
-           d. If stop_reason == "max_tokens":
-              - Yield warning event
+           e. If stop_reason == "max_tokens":
+              - Yield AgentEvent(ERROR, "Response truncated")
               - Break
-        5. Post-processing:
-           - If a pipeline was started, register it for monitoring
-           - If user preference was expressed, store in memory
+        4. Log full turn to session JSONL
+        5. Check context size → trigger compaction if needed
+        """
+        ...
+
+    async def process_heartbeat(self):
+        """Heartbeat turn. Pseudocode:
+
+        1. Load HEARTBEAT.md from workspace
+        2. Build heartbeat system prompt (lighter than full prompt)
+        3. Compose a user message:
+           "Heartbeat check. Active pipelines: [list]. Please review
+            your checklist."
+        4. Run agent loop (same as process_message but in heartbeat context)
+        5. If response == "HEARTBEAT_OK": yield nothing
+        6. Else: yield AgentEvent(ALERT, response)
         """
         ...
 ```
 
-**System prompt structure:**
+#### WS1.3: PromptBuilder
 
 ```python
-SYSTEM_PROMPT_TEMPLATE = """You are a Vision Agent — an autonomous computer vision
-assistant powered by Roboflow Inference.
+# inference_agent/core/prompt_builder.py
 
-## Your Capabilities
+class PromptBuilder:
+    """Builds system prompt from workspace files + capabilities."""
 
-You can analyze images and video streams using state-of-the-art computer vision
-models. You orchestrate these capabilities by composing Workflow specifications
-— JSON documents that define processing pipelines.
+    def build(self, workspace: Memory, tools: ToolRegistry,
+              active_pipelines: list, mode: str = "full") -> list[dict]:
+        """Build system prompt as content blocks.
 
-### Available Model Types
-{model_summary}
+        mode="full": All sections (normal conversation)
+        mode="heartbeat": Lighter prompt (skip examples, skill list)
 
-### Available Analytics Blocks
-{analytics_summary}
-
-### Available Visualization Blocks
-{viz_summary}
-
-### Available Sink Blocks (for notifications/actions)
-{sink_summary}
-
-## How to Deploy a Monitoring Pipeline
-
-To watch a video stream, you compose a workflow specification and deploy it:
-
-1. Use `list_workflow_blocks` to see available blocks (filtered by category)
-2. Use `get_block_details` to understand a specific block's parameters
-3. Compose a workflow JSON with the required steps
-4. Use `deploy_workflow_pipeline` to validate and start it
-5. Use `get_pipeline_results` to check what's been detected
-
-### Workflow Specification Format
-
-```json
-{{
-  "version": "1.0",
-  "inputs": [
-    {{"type": "WorkflowImage", "name": "image"}},
-    {{"type": "WorkflowVideoMetadata", "name": "video_metadata"}}
-  ],
-  "steps": [
-    {{
-      "type": "<block_type_identifier>",
-      "name": "<unique_step_name>",
-      "<param>": "$inputs.<name>" or "$steps.<step>.<output>" or <literal_value>
-    }}
-  ],
-  "outputs": [
-    {{"type": "JsonField", "name": "<output_name>",
-      "selector": "$steps.<step>.<output>"}}
-  ]
-}}
+        Returns list of dicts suitable for the Anthropic API system param.
+        Last stable block gets cache_control for prompt caching.
+        """
+        ...
 ```
 
-### Example Workflows
+### WS2: Backends + Tools
 
-#### Detect and track people
-```json
-{detect_track_example}
-```
-
-#### Count objects crossing a line
-```json
-{line_count_example}
-```
-
-## Currently Active Streams
-{active_streams_summary}
-
-## Recent Observations
-{recent_observations}
-
-## Rules
-- Always validate workflow specs before deployment
-- If a workflow fails validation, read the error and fix the issue
-- When the user asks about what's happening, check pipeline results first
-- For proactive monitoring, set up workflows that filter for events of interest
-- When sending annotated frames to the user, resize to reasonable dimensions
-- Be concise in responses. The user wants results, not explanations of your process.
-"""
-```
-
-#### WS1.3: System Prompt Engineering
-
-This is a **critical deliverable**. The system prompt must:
-1. Be under 8K tokens (for cost and focus)
-2. Include enough block information for Claude to compose workflows
-3. Include 3-5 few-shot workflow examples covering common patterns
-4. Be dynamically updated with active streams and recent observations
-
-**Key few-shot examples to include:**
-1. Simple detection: image → object_detection_model → output
-2. Detection + tracking: image → detection → byte_tracker → output
-3. Detection + filter + alert: image → detection → filter → continue_if → sink
-4. Analytics: image → detection → tracker → line_counter → data_aggregator
-5. Multi-model: image → [model_A, model_B] → consensus → output
-
-#### WS1.4: CLI REPL
+#### WS2.1: HTTPBackend
 
 ```python
-# inference_agent/interfaces/cli.py
+# inference_agent/backends/http_backend.py
 
-import asyncio
-from prompt_toolkit import PromptSession
-from prompt_toolkit.history import FileHistory
+from inference_sdk import InferenceHTTPClient
 
-class CLIInterface:
-    """Simple CLI REPL for interacting with the Vision Agent."""
+class HTTPBackend:
+    """InferenceBackend implementation using the HTTP client SDK."""
 
-    def __init__(self, agent: AgentCore):
-        self._agent = agent
-        self._session = PromptSession(
-            history=FileHistory('.vision_agent_history')
+    def __init__(self, api_url: str, api_key: str | None = None):
+        self._client = InferenceHTTPClient(api_url=api_url, api_key=api_key)
+
+    async def run_single(self, image, model_id=None, workflow_spec=None,
+                         workspace_name=None, workflow_id=None,
+                         parameters=None) -> InferenceResult:
+        """Implementation:
+
+        If model_id provided:
+            result = self._client.infer(image, model_id=model_id)
+        Elif workspace_name and workflow_id:
+            result = self._client.run_workflow(
+                workspace_name=workspace_name,
+                workflow_id=workflow_id,
+                images={"image": image},
+                parameters=parameters,
+            )
+        Elif workflow_spec:
+            result = self._client.run_workflow(
+                specification=workflow_spec,
+                images={"image": image},
+                parameters=parameters,
+            )
+
+        Return InferenceResult(predictions=result, ...)
+        """
+        ...
+
+    async def start_pipeline(self, video_reference, workflow_spec=None,
+                             workspace_name=None, workflow_id=None,
+                             max_fps=None, parameters=None) -> PipelineHandle:
+        """Implementation:
+
+        response = self._client.start_inference_pipeline_with_workflow(
+            video_reference=video_reference,
+            workflow_specification=workflow_spec,
+            workspace_name=workspace_name,
+            workflow_id=workflow_id,
+            max_fps=max_fps,
+            workflows_parameters=parameters,
         )
+        return PipelineHandle(pipeline_id=response["pipeline_id"], ...)
+        """
+        ...
 
-    async def run(self):
-        """Main REPL loop:
+    async def consume_results(self, pipeline_id, max_results=5):
+        """Implementation:
 
-        1. Print welcome message
-        2. Loop:
-           a. Prompt for user input
-           b. Call agent.process_message()
-           c. Consume events:
-              - "thinking" → show spinner
-              - "tool_call" → show "Calling: tool_name..."
-              - "tool_result" → show brief summary
-              - "response" → print response text
-              - "alert" → print with alert formatting
-              - "error" → print error
-        3. Handle /commands:
-           /status — show active streams
-           /streams — list pipeline details
-           /stop <id> — stop a pipeline
-           /memory <query> — search memory
-           /quit — exit
+        results = []
+        for _ in range(max_results):
+            try:
+                r = self._client.consume_inference_pipeline_result(pipeline_id)
+                results.append(InferenceResult(predictions=r, ...))
+            except:
+                break
+        return results
         """
         ...
 ```
 
-### WS2: Capability Modules
-
-#### WS2.1: Block Discovery
+#### WS2.4: Tool Implementations
 
 ```python
-# inference_agent/capabilities/workflow_composer/block_discovery.py
+# inference_agent/tools/inference_tools.py
 
-"""
-Discovers all available workflow blocks and extracts their metadata.
+class RunInferenceTool:
+    """The primary inference tool — runs a model or workflow on an image."""
 
-Two modes:
-1. Direct (embedded): Import from inference.core.workflows.core_steps.loader
-2. HTTP (remote): Call POST /workflows/blocks/describe on inference server
+    name = "run_inference"
+    description = "Run inference on a single image..."
+    input_schema = { ... }
+    category = "inference"
 
-For MVP, we use Direct mode.
-"""
+    def __init__(self, backend: InferenceBackend, summarizer: ResultSummarizer):
+        self._backend = backend
+        self._summarizer = summarizer
 
-from inference.core.workflows.core_steps.loader import load_blocks, load_kinds
-from inference.core.workflows.execution_engine.introspection.blocks_loader import (
-    describe_available_blocks,
-)
+    async def execute(self, image: str, model_id: str | None = None,
+                      workspace_name: str | None = None,
+                      workflow_id: str | None = None,
+                      workflow_spec: dict | None = None,
+                      parameters: dict | None = None,
+                      confidence: float | None = None) -> Any:
+        """
+        1. Determine which inference path to use:
+           - If model_id → direct model inference
+           - If workspace_name + workflow_id → user's pre-built workflow
+           - If workflow_spec → agent-composed workflow
+        2. Call self._backend.run_single(...)
+        3. Summarize results via self._summarizer
+        4. Return [text_summary, optional_annotated_image]
+        """
+        ...
 
-def discover_blocks() -> list[BlockInfo]:
-    """Discover all available blocks and convert to BlockInfo objects.
+class StartPipelineTool:
+    """Start a continuous video processing pipeline."""
 
-    Implementation:
-    1. Call describe_available_blocks(dynamic_blocks=[])
-    2. For each BlockDescription in result.blocks:
-       a. Extract json_schema_extra from block_schema for metadata
-          (name, short_description, long_description, block_type, version)
-       b. Extract properties from block_schema["properties"],
-          skipping "type" and "name" (fixed fields)
-       c. For each property, classify as:
-          - Selector (has "reference": true in json_schema_extra)
-          - Static parameter (no reference)
-       d. Extract outputs_manifest as [{name, kind}]
-       e. Construct BlockInfo dataclass
-    3. Return list of BlockInfo objects
-
-    Key consideration: Filter out deprecated blocks and blocks that
-    require enterprise features or specific hardware.
-    """
-    ...
+    async def execute(self, video_reference, pipeline_name, ...) -> str:
+        """
+        1. If workflow_spec provided: validate using block discovery
+        2. If model_id provided but no workflow: compose a simple
+           detect → output workflow automatically
+        3. Call self._backend.start_pipeline(...)
+        4. Register pipeline in the pipeline registry
+        5. Return "Pipeline '{name}' started (id: {id}). Processing
+           {video_reference} at {max_fps} FPS."
+        """
+        ...
 ```
 
-#### WS2.2: Schema Generator
+#### WS2.5: Result Summarizer
 
 ```python
-# inference_agent/capabilities/workflow_composer/schema_generator.py
+# inference_agent/tools/result_summarizer.py
 
-"""
-Generates LLM tool schemas from block manifests.
+class ResultSummarizer:
+    """Converts raw inference output to human-readable summaries.
 
-CRITICAL DESIGN DECISION: We do NOT create one tool per block.
-Instead, we create a few high-level tools and embed block knowledge
-in the system prompt and discoverable via query tools.
-
-Tools generated:
-1. list_workflow_blocks(category?) → concise list of blocks
-2. get_block_details(block_type) → full schema for one block
-3. deploy_workflow_pipeline(spec, video_ref) → validate + start pipeline
-4. validate_workflow(spec) → validate without deploying
-
-The actual block schemas are returned as tool results when Claude
-calls get_block_details, not embedded in the tool definitions.
-"""
-
-def generate_blocks_summary(blocks: list[BlockInfo]) -> str:
-    """Generate a concise summary for the system prompt.
-
-    Format:
-    ## Models
-    - roboflow_core/roboflow_object_detection_model@v2: Detect objects with bounding boxes (YOLO, RF-DETR)
-    - roboflow_core/roboflow_instance_segmentation_model@v2: Segment objects with pixel masks
-    - roboflow_core/yolo_world_model@v2: Zero-shot object detection from text prompts
-    ...
-
-    ## Analytics
-    - roboflow_core/line_counter@v2: Count objects crossing a line
-    - roboflow_core/time_in_zone@v3: Measure time objects spend in a zone
-    ...
-
-    Target: <3K tokens for the entire summary.
+    This is CRITICAL for controlling token usage. Raw workflow output
+    can be 10K+ tokens per frame. The summarizer reduces it to ~100 tokens.
     """
-    ...
 
-def generate_block_detail_response(block: BlockInfo) -> str:
-    """Generate a detailed description of one block for tool result.
+    def summarize(self, result: InferenceResult,
+                  include_frame: bool = False) -> str | list:
+        """
+        Input: raw workflow output dict with nested detections
+        Output: "Frame #1234: 3 detections - 2 person (0.92, 0.87), 1 car (0.76)"
 
-    Format:
-    Block: roboflow_core/line_counter@v2
-    Category: analytics
-    Description: Count objects crossing a line in a video stream.
-
-    Required Parameters:
-    - metadata: Selector(video_metadata) — Video metadata from $inputs.video_metadata
-    - detections: Selector(object_detection_prediction | instance_segmentation_prediction)
-      — Tracked detections, e.g., $steps.tracker.tracked_detections
-    - line_segment: list | Selector(list_of_values) — Two points [[x1,y1],[x2,y2]]
-
-    Optional Parameters:
-    - triggering_anchor: str — Point on bbox crossing the line (default: "CENTER")
-      Options: CENTER, TOP_CENTER, BOTTOM_CENTER, ...
-
-    Outputs:
-    - count_in: integer — Objects crossing line inward
-    - count_out: integer — Objects crossing line outward
-
-    Example step:
-    {
-      "type": "roboflow_core/line_counter@v2",
-      "name": "my_counter",
-      "metadata": "$inputs.video_metadata",
-      "detections": "$steps.tracker.tracked_detections",
-      "line_segment": [[0, 300], [640, 300]]
-    }
-    """
-    ...
-```
-
-#### WS2.3: WorkflowComposer
-
-```python
-# inference_agent/capabilities/workflow_composer/composer.py
-
-class WorkflowComposerModule:
-    """CapabilityModule that provides workflow composition tools."""
-
-    def get_tools(self) -> list[Tool]:
-        return [
-            ListWorkflowBlocksTool(self._blocks),
-            GetBlockDetailsTool(self._blocks),
-            ValidateWorkflowTool(),
-            DeployWorkflowPipelineTool(self._stream_manager),
+        If include_frame=True, returns content blocks:
+        [
+            {"type": "image", "source": {"type": "base64", ...}},
+            {"type": "text", "text": "Frame #1234: 3 detections..."},
         ]
-
-class DeployWorkflowPipelineTool:
-    """Validates and deploys a workflow on an InferencePipeline.
-
-    Parameters:
-    - workflow_specification: dict — The workflow JSON
-    - video_reference: str — Video file path, RTSP URL, or camera device
-    - pipeline_name: str — Human-readable name for this pipeline
-    - max_fps: float | None — Frame rate limit
-    - workflows_parameters: dict | None — Additional workflow parameters
-
-    Implementation:
-    1. Validate the workflow spec using the execution engine
-    2. If invalid, return the validation error (Claude will self-correct)
-    3. Create an InMemoryBufferSink for result consumption
-    4. Call InferencePipeline.init_with_workflow() with:
-       - workflow_specification=spec
-       - video_reference=video_ref
-       - on_prediction=buffer_sink.on_prediction
-       - max_fps=max_fps
-       - serialize_results=True  (so results are JSON-serializable)
-    5. Start pipeline on a background thread
-    6. Register pipeline + sink in the StreamManager
-    7. Return success message with pipeline_id
-    """
-    ...
+        """
+        ...
 ```
 
-#### WS2.4: StreamManager
+### WS3: Memory + Workspace
+
+#### WS3.1: Workspace Manager
 
 ```python
-# inference_agent/capabilities/stream_manager/manager.py
+# inference_agent/memory/workspace.py
 
-class StreamManagerModule:
-    """Manages InferencePipeline lifecycle and result consumption."""
+class WorkspaceManager:
+    """Manages the agent's workspace directory."""
 
-    def __init__(self):
-        self._pipelines: dict[str, ManagedPipeline] = {}
+    def __init__(self, workspace_path: str = "~/.vision_agent"):
+        self._path = Path(workspace_path).expanduser()
 
-    def get_tools(self) -> list[Tool]:
-        return [
-            ListActiveStreamsTool(self),
-            GetStreamStatusTool(self),
-            GetPipelineResultsTool(self),
-            StopPipelineTool(self),
-            PausePipelineTool(self),
-            ResumePipelineTool(self),
-        ]
+    def initialize(self):
+        """Create workspace directory with default files if not exists.
 
-@dataclass
-class ManagedPipeline:
-    """A pipeline managed by the agent."""
-    pipeline_id: str
-    pipeline_name: str  # User-friendly name
-    pipeline: InferencePipeline
-    buffer_sink: InMemoryBufferSink
-    video_reference: str
-    workflow_spec: dict
-    started_at: float
-    status: str  # "running", "paused", "stopped", "error"
+        Creates:
+        - AGENTS.md with default instructions
+        - USER.md with placeholder
+        - CAMERAS.md with empty table
+        - HEARTBEAT.md with default checklist
+        - memory/ directory
+        - sessions/ directory
+        - skills/ directory
+        """
+        ...
 
-class GetPipelineResultsTool:
-    """Consume latest results from a pipeline's buffer sink.
+    def load_workspace_files(self) -> dict[str, str]:
+        """Load workspace context files for system prompt injection.
 
-    Parameters:
-    - pipeline_id: str
-    - max_results: int (default 5)
-    - include_frame: bool (default False) — whether to include a frame image
+        Returns dict of filename → content for all .md files in workspace root.
+        Skips files larger than 4K tokens to prevent prompt bloat.
+        """
+        ...
 
-    Implementation:
-    1. Get ManagedPipeline by id
-    2. Consume up to max_results from buffer_sink
-    3. For each (predictions, frames) pair:
-       a. Summarize predictions into human-readable text:
-          "3 objects detected: person (0.92), person (0.87), car (0.76)"
-       b. If include_frame and frame is not None:
-          - Encode frame as JPEG, base64
-          - Return as content block list [image, text]
-       c. Else return text summary only
-    4. Return list of result summaries
+    def list_available_skills(self) -> list[dict]:
+        """Discover skills in skills/ directory.
 
-    IMPORTANT: Summarize predictions to control token usage.
-    Don't send raw detection dicts to Claude.
-    """
-    ...
-```
+        Returns [{name, description, path}] for each SKILL.md found.
+        """
+        ...
 
-#### WS2.5: DirectInference
-
-```python
-# inference_agent/capabilities/direct_inference/inference.py
-
-class DirectInferenceModule:
-    """Tools for single-image inference (not streaming)."""
-
-    def get_tools(self) -> list[Tool]:
-        return [
-            DetectObjectsTool(self._model_manager),
-            ClassifyImageTool(self._model_manager),
-            RunOCRTool(self._model_manager),
-            AskVLMTool(self._model_manager),
-            DetectZeroShotTool(self._model_manager),
-        ]
-
-class DetectObjectsTool:
-    """Run object detection on a single image.
-
-    Parameters:
-    - image: str — File path or URL
-    - model_id: str — Roboflow model ID (e.g., "coco/9")
-    - confidence: float (default 0.4)
-    - classes: list[str] | None — Filter to specific classes
-
-    Returns: Text summary of detections + optionally annotated image
-
-    Implementation:
-    Uses the existing inference model manager and workflow execution engine
-    to run a simple single-step workflow on the image.
-    """
-    ...
-
-class AskVLMTool:
-    """Ask a vision-language model a question about an image.
-
-    This is particularly useful for the agent to understand ambiguous
-    scenes, verify detections, or answer user questions about what's
-    in a frame.
-
-    Parameters:
-    - image: str — File path, URL, or base64
-    - question: str — Question to ask about the image
-    - model: str — "claude", "gpt4", "gemini", "florence2" (default "claude")
-
-    Note: Uses the EXISTING Claude/GPT/Gemini workflow blocks in inference,
-    not the agent's own LLM client. This keeps the VLM call in the Inference
-    pipeline and avoids double-billing.
-    """
-    ...
-```
-
-### WS3: Memory System
-
-#### WS3.1-3.4: Memory Implementation
-
-```python
-# inference_agent/memory/store.py
-
-class FileMemoryStore:
-    """File-based memory store with hybrid search.
-
-    Directory layout:
-    {workspace}/
-    ├── config.json              # Agent config (cameras, tasks, preferences)
-    ├── knowledge.md             # Long-term knowledge and patterns
-    ├── preferences.md           # User preferences
-    ├── observations/
-    │   ├── 2024-03-15.md        # Daily observation logs
-    │   └── 2024-03-16.md
-    └── .index/
-        └── memory.db            # SQLite with FTS5 + vec0
-
-    Search approach (from OpenClaw):
-    1. Chunk all .md files into ~400-token segments with 80-token overlap
-    2. Index in SQLite:
-       - FTS5 virtual table for BM25 keyword search
-       - vec0 virtual table (sqlite-vec) for vector search
-    3. Hybrid search: union of BM25 and vector results
-       score = vector_weight * vector_score + text_weight * text_score
-       Default weights: vector 0.7, text 0.3
-    4. File watcher triggers re-indexing on changes (debounced)
-
-    Embedding provider (for MVP): Use CLIP embeddings from inference
-    (already available via the inference SDK). Falls back to BM25-only
-    if CLIP is not loaded.
-
-    For production: Support sentence-transformers or OpenAI embeddings.
-    """
-    ...
-
-# inference_agent/memory/tools.py
-
-class MemoryTools:
-    """Tools that the agent can use to interact with memory."""
-
-    def get_tools(self) -> list[Tool]:
-        return [
-            RememberTool(self._store),       # Store an observation/fact
-            RecallTool(self._store),          # Search memory
-            GetObservationsTool(self._store), # Recent observations by camera
-            GetConfigTool(self._store),       # Read agent config
-            SaveConfigTool(self._store),      # Write agent config
-        ]
-
-class RememberTool:
-    """Store information in persistent memory.
-
-    Parameters:
-    - content: str — What to remember
-    - category: str — "observation", "knowledge", "preference"
-    - camera_id: str | None — Associated camera (for observations)
-
-    The agent calls this to persist:
-    - Significant events: "Person entered zone A at 14:23 without hard hat"
-    - Learned patterns: "Deliveries usually arrive between 10am-2pm"
-    - User preferences: "User prefers Slack alerts for urgent events"
-    - Domain knowledge: "The red zone is the loading dock area"
-    """
-    ...
+    def load_skill(self, skill_name: str) -> str | None:
+        """Load a specific skill's SKILL.md content."""
+        ...
 ```
 
 ---
 
 ## Appendix A: Key Existing Code to Reuse
 
-| What We Need | Existing Code | How to Reuse |
-|-------------|--------------|-------------|
-| Block manifests & discovery | `inference/core/workflows/core_steps/loader.py` → `load_blocks()` | Import directly, call to get all block classes |
-| Block introspection | `inference/core/workflows/execution_engine/introspection/blocks_loader.py` → `describe_available_blocks()` | Import directly, generates full block metadata |
-| Kind type system | `inference/core/workflows/execution_engine/entities/types.py` | Import Kind constants for type checking |
-| Workflow validation | Execution engine compilation + `/workflows/validate` endpoint | Use execution engine directly or HTTP call |
-| InferencePipeline | `inference/core/interfaces/stream/inference_pipeline.py` → `InferencePipeline.init_with_workflow()` | Direct instantiation |
-| InMemoryBufferSink | `inference/core/interfaces/stream/sinks.py` → `InMemoryBufferSink` | Direct instantiation for result consumption |
-| Claude API patterns | `inference/core/workflows/core_steps/models/foundation/anthropic_claude/v3.py` | Reference for image encoding, API key handling, response parsing |
-| Image encoding | `inference/core/utils/image_utils.py` → `load_image()`, `encode_image_to_jpeg_bytes()` | Import directly |
-| Model manager | `inference/core/managers/base.py` → `ModelManager` | Instantiate for direct inference mode |
-| Workflow examples | `inference/development/workflows_examples/` | Reference for few-shot examples in system prompt |
+| Need | Existing Code | How |
+|------|--------------|-----|
+| HTTP client (full API) | `inference_sdk/http/client.py` → `InferenceHTTPClient` | Wrap in HTTPBackend |
+| WebRTC streaming | `inference_sdk/webrtc/client.py` → `WebRTCClient` | Wrap in WebRTCBackend |
+| Hosted pipeline mgmt | `InferenceHTTPClient.start_inference_pipeline_with_workflow()` | Call via HTTPBackend |
+| Block discovery (HTTP) | `POST /workflows/blocks/describe` endpoint | Call from HTTPBackend |
+| Block discovery (direct) | `inference.core.workflows.execution_engine.introspection.blocks_loader` | Import directly |
+| Workflow validation | `POST /workflows/validate` or execution engine | Call via backend |
+| InferencePipeline | `inference.core.interfaces.stream.inference_pipeline` | Use in DirectBackend |
+| Image utilities | `inference.core.utils.image_utils` | Import directly |
+| Claude API patterns | `inference/core/workflows/core_steps/models/foundation/anthropic_claude/v3.py` | Reference impl |
+| Model manager | `inference.core.managers.base.ModelManager` | Use in DirectBackend |
+| WebRTC sources | `inference_sdk.webrtc.sources` → RTSPSource, WebcamSource, etc. | Use in WebRTCBackend |
 
-## Appendix B: Estimated Token Budget
+## Appendix B: Estimated Token Budget (Revised)
 
 | Component | Tokens | Notes |
 |-----------|--------|-------|
-| System prompt (core) | ~2,000 | Identity, rules, format instructions |
-| Block summary | ~2,500 | One-line per block, grouped by category |
-| Workflow examples (3) | ~1,500 | Few-shot examples of common patterns |
-| Active streams context | ~500 | Updated each turn |
-| Recent observations | ~1,000 | Last few observations from memory |
-| **Total system prompt** | **~7,500** | Well within budget |
-| Tool definitions (5 MVP) | ~1,500 | Cached via prompt caching |
-| **Total cached input** | **~9,000** | At $0.30/MTok cache read (Sonnet) = $0.003/call |
+| Core identity prompt | ~1,500 | Rules, format, workflow docs |
+| AGENTS.md | ~500 | User-editable instructions |
+| CAMERAS.md | ~200 | Camera registry table |
+| USER.md | ~200 | User preferences |
+| Block summary (130+ blocks) | ~2,500 | One-line per block |
+| Workflow examples (3) | ~1,500 | Few-shot patterns |
+| **Total cached system** | **~6,400** | |
+| Tool definitions (15 tools) | ~2,500 | Also cached |
+| **Total cached prefix** | **~8,900** | $0.003/call at cache read |
+| Active pipelines (dynamic) | ~300 | Per-turn |
+| Available skills (dynamic) | ~200 | Per-turn |
+| **Total per-call overhead** | **~9,400** | |
 
-With prompt caching, the per-call cost for a routine interaction is approximately:
-- Cached input (9K tokens): $0.003
-- New input (user message, ~200 tokens): $0.0006
-- Output (~500 tokens): $0.0075
-- **Total: ~$0.01 per interaction**
+**Cost per interaction (Sonnet 4.5 with caching):**
+- Cached input: 8,900 tokens × $0.30/MTok = $0.003
+- Dynamic input: 500 tokens × $3/MTok = $0.002
+- User message: ~200 tokens × $3/MTok = $0.001
+- Output: ~500 tokens × $15/MTok = $0.008
+- **Total: ~$0.014 per interaction**
 
-For always-on monitoring with 6 LLM calls/hour:
-- **~$1.50/day** on Sonnet 4.5 with prompt caching
+**Heartbeat cost (every 15 min, 24/7):**
+- 96 calls/day × $0.014 = **~$1.35/day** on Sonnet 4.5
 
-## Appendix C: MVP Test Scenarios
+## Appendix C: Configuration (Revised)
 
-| # | User Instruction | Expected Agent Behavior | Success Criteria |
-|---|-----------------|------------------------|-----------------|
-| 1 | "Detect all people in this video: test.mp4" | Compose workflow: detection → output. Deploy pipeline. Report detections. | Pipeline runs, detections returned |
-| 2 | "Watch test.mp4 and count people crossing the middle of the frame" | Compose workflow: detection → tracker → line_counter. Deploy. | Line counts accumulate correctly |
-| 3 | "What objects can you detect?" | Call list_workflow_blocks(category="model"). Report available models. | Accurate list of model blocks |
-| 4 | "Use the YOLO-World model to find all 'coffee cups' in image.jpg" | Call direct inference with YOLO-World, class prompt "coffee cup". | Detections with correct class |
-| 5 | "Stop all pipelines" | Call stop on all active pipelines. Confirm. | All pipelines terminated |
-| 6 | "Set up PPE detection — alert when someone doesn't have a hard hat" | Compose workflow: detection(hard-hat model) → filter(no-hardhat class) → output. | Pipeline detects PPE violations |
-| 7 | "What's in this image?" [with attachment] | Use AskVLM tool. Return description. | Accurate image description |
-| 8 | Invalid workflow (agent makes a mistake) | Validation fails. Agent reads error. Fixes workflow. Redeploys. | Self-correction within 2 attempts |
+```yaml
+# ~/.vision_agent/config.yaml
 
-## Appendix D: Configuration
+llm:
+  provider: anthropic
+  model: claude-sonnet-4-5           # Primary model
+  api_key: ${ANTHROPIC_API_KEY}      # From env var
+  max_tokens: 4096
+  thinking:
+    enabled: false                   # Enable for complex tasks
+    budget_tokens: 4096
+  cost_limit_daily: 10.00            # USD, hard stop
 
-```python
-# inference_agent/core/config.py
+inference:
+  backend: http                      # "http", "direct", or "webrtc"
+  server_url: http://localhost:9001
+  api_key: ${ROBOFLOW_API_KEY}       # From env var
 
-from dataclasses import dataclass, field
-from typing import Optional
+workspace:
+  path: ~/.vision_agent
 
-@dataclass
-class AgentConfig:
-    """Configuration for the Vision Agent."""
+heartbeat:
+  enabled: true
+  interval_minutes: 15
 
-    # LLM
-    anthropic_api_key: str
-    model: str = "claude-sonnet-4-5"
-    thinking_model: str = "claude-sonnet-4-5"  # For complex planning
-    max_tokens: int = 4096
-    enable_thinking: bool = False
-    thinking_budget: int = 8000
+monitoring:
+  escalation_confidence: 0.5         # Min confidence to escalate to LLM
+  max_results_per_consume: 10
+  result_image_max_dimension: 640    # Resize frames before sending to LLM
 
-    # Inference
-    inference_mode: str = "direct"  # "direct" or "http"
-    inference_server_url: str = "http://localhost:9001"
-    roboflow_api_key: str | None = None
-
-    # Memory
-    workspace_path: str = "~/.vision_agent"
-    memory_vector_weight: float = 0.7
-    memory_text_weight: float = 0.3
-
-    # Monitoring
-    heartbeat_interval_minutes: int = 30
-    event_escalation_confidence: float = 0.5  # Min confidence to escalate to LLM
-    max_results_per_consume: int = 10
-
-    # Cost control
-    max_llm_calls_per_hour: int = 60
-    max_image_tokens_per_call: int = 2000  # Resize frames to stay under this
-
-    # Interface
-    interface: str = "cli"  # "cli", "slack", "rest"
+interface:
+  type: cli                          # "cli", "slack", "rest"
+  # slack:
+  #   bot_token: ${SLACK_BOT_TOKEN}
+  #   app_token: ${SLACK_APP_TOKEN}
+  #   alert_channel: "#security-alerts"
 ```
