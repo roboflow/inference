@@ -71,6 +71,7 @@ from inference.core.utils.requests import (
     api_key_safe_raise_for_status_aiohttp,
 )
 from inference.core.utils.url_utils import wrap_url
+from inference.core.version import __version__
 
 MODEL_TYPE_DEFAULTS = {
     "object-detection": "yolov5v2s",
@@ -85,6 +86,8 @@ NOT_FOUND_ERROR_MESSAGE = (
     "Could not find requested Roboflow resource. Check that the provided dataset and "
     "version are correct, and check that the provided Roboflow API key has the correct permissions."
 )
+
+ROBOFLOW_INFERENCE_VERSION_HEADER = "X-Roboflow-Inference-Version"
 
 
 def raise_from_lambda(
@@ -975,7 +978,13 @@ def send_inference_results_to_model_monitoring(
 
 def build_roboflow_api_headers(
     explicit_headers: Optional[Dict[str, Union[str, List[str]]]] = None,
-) -> Optional[Dict[str, Union[List[str]]]]:
+) -> Dict[str, Union[str, List[str]]]:
+    if explicit_headers is None:
+        explicit_headers = {}
+    explicit_headers = {
+        **explicit_headers,
+        ROBOFLOW_INFERENCE_VERSION_HEADER: __version__,
+    }
     if not ROBOFLOW_API_EXTRA_HEADERS:
         return explicit_headers
     try:
