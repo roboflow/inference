@@ -904,6 +904,8 @@ class AutoModel:
                     allow_loading_dependency_models=False,
                     dependency_models_params=None,
                     point_model_directory=model_directory_pointer,
+                    weights_provider_extra_query_params=weights_provider_extra_query_params,
+                    weights_provider_extra_headers=weights_provider_extra_headers,
                     **resolved_model_parameters.kwargs,
                 )
                 model_dependencies_instances[model_dependency.name] = (
