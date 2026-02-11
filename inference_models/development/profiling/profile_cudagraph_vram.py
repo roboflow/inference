@@ -1,15 +1,34 @@
-"""Profile GPU and CPU memory usage as CUDA graphs are cached.
+"""Profile GPU and CPU memory usage as CUDA graphs are cached and evicted.
 
 Loads yolov8n-640 as a TRT model with dynamic batch size, runs forward passes
-with batch sizes 1-16 in a deterministic random order, and after each capture
-records both GPU VRAM (driver-level) and process CPU RSS. Produces a two-panel
-plot: cumulative memory over capture order, and per-graph delta sorted by batch
-size.
+with random batch sizes, and after each step records both GPU VRAM
+(driver-level) and process CPU RSS. The cache capacity is smaller than the
+number of distinct batch sizes, so eviction is exercised and memory usage
+should plateau.
 
 Example invocation:
-    python profile_cudagraph_vram.py --device cuda:0
+    python profile_cudagraph_vram.py \
+        --device cuda:0 \
+        --num-steps 64 \
+        --max-batch-size 16 \
+        --cache-capacity 16 \
+        --output vram_sequential.png
 
-    python profile_cudagraph_vram.py --device cuda:0 --shuffle --max-batch-size 32 --output mem.png
+    python profile_cudagraph_vram.py \
+        --device cuda:0 \
+        --num-steps 64 \
+        --max-batch-size 16 \
+        --cache-capacity 16 \
+        --shuffle \
+        --output vram_shuffle.png
+
+    python profile_cudagraph_vram.py \
+        --device cuda:0 \
+        --shuffle \
+        --num-steps 64 \
+        --max-batch-size 16 \
+        --cache-capacity 8 \
+        --output vram_shuffle_eviction.png
 """
 
 import argparse
@@ -46,7 +65,10 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--device", type=str, default="cuda:0")
     parser.add_argument("--max-batch-size", type=int, default=16)
-    parser.add_argument("--shuffle", action="store_true", help="Randomize batch size order (deterministic seed).")
+    parser.add_argument("--cache-capacity", type=int, default=8)
+    parser.add_argument("--num-steps", type=int, default=32)
+    parser.add_argument("--shuffle", action="store_true", help="Randomize batch size order instead of sequential cycling.")
+    parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--output", type=str, default=None)
     return parser.parse_args()
 
@@ -55,12 +77,14 @@ def main() -> None:
     args = parse_args()
     device = torch.device(args.device)
 
+    rng = random.Random(args.seed)
+
     model = AutoModel.from_pretrained(
         model_id_or_path=MODEL_ID,
         device=device,
         backend="trt",
         batch_size=(1, args.max_batch_size),
-        cuda_graph_cache_capacity=args.max_batch_size + 10,
+        cuda_graph_cache_capacity=args.cache_capacity,
     )
 
     image = (np.random.rand(640, 640, 3) * 255).astype(np.uint8)
@@ -75,23 +99,31 @@ def main() -> None:
     baseline_cpu = cpu_rss_bytes()
 
     model._trt_cuda_graph_cache = TRTCudaGraphLRUCache(
-        capacity=args.max_batch_size + 10,
+        capacity=args.cache_capacity,
     )
 
-    batch_size_order = list(range(1, args.max_batch_size + 1))
     if args.shuffle:
-        random.Random(42).shuffle(batch_size_order)
+        batch_size_sequence = [
+            rng.randint(1, args.max_batch_size) for _ in range(args.num_steps)
+        ]
+    else:
+        all_sizes = list(range(1, args.max_batch_size + 1))
+        batch_size_sequence = [
+            all_sizes[i % len(all_sizes)] for i in range(args.num_steps)
+        ]
+
+    from collections import defaultdict
 
     batch_sizes = []
     cumulative_gpu_mb = []
     cumulative_cpu_mb = []
-    delta_gpu_mb = []
-    delta_cpu_mb = []
+    gpu_deltas_by_bs: dict[int, list[float]] = defaultdict(list)
+    cpu_deltas_by_bs: dict[int, list[float]] = defaultdict(list)
 
     prev_gpu = baseline_gpu
     prev_cpu = baseline_cpu
 
-    for i, bs in enumerate(batch_size_order):
+    for i, bs in enumerate(batch_size_sequence):
         batched = single_preprocessed.expand(bs, -1, -1, -1).contiguous()
         output = model.forward(batched, use_cuda_graph=True)
         del output
@@ -100,69 +132,73 @@ def main() -> None:
 
         gpu = gpu_used_bytes(device)
         cpu = cpu_rss_bytes()
+        cache_size = len(model._trt_cuda_graph_cache.cache)
+
+        gpu_delta = (gpu - prev_gpu) / MB
+        cpu_delta = (cpu - prev_cpu) / MB
 
         batch_sizes.append(bs)
         cumulative_gpu_mb.append((gpu - baseline_gpu) / MB)
         cumulative_cpu_mb.append((cpu - baseline_cpu) / MB)
-        delta_gpu_mb.append((gpu - prev_gpu) / MB)
-        delta_cpu_mb.append((cpu - prev_cpu) / MB)
+        gpu_deltas_by_bs[bs].append(gpu_delta)
+        cpu_deltas_by_bs[bs].append(cpu_delta)
 
         print(
-            f"[{i + 1}/{args.max_batch_size}] bs={bs:>2d} | "
-            f"GPU: {cumulative_gpu_mb[-1]:>7.1f} MB (+{delta_gpu_mb[-1]:>6.1f}) | "
-            f"CPU: {cumulative_cpu_mb[-1]:>7.1f} MB (+{delta_cpu_mb[-1]:>6.1f})"
+            f"[{i + 1}/{args.num_steps}] bs={bs:>2d} | "
+            f"cache: {cache_size}/{args.cache_capacity} | "
+            f"GPU: {cumulative_gpu_mb[-1]:>7.1f} MB (+{gpu_delta:>6.1f}) | "
+            f"CPU: {cumulative_cpu_mb[-1]:>7.1f} MB (+{cpu_delta:>6.1f})"
         )
         prev_gpu = gpu
         prev_cpu = cpu
 
-    autogenerated_name = f"vram_{MODEL_ID}_{'shuffle' if args.shuffle else 'sequential'}.png"
+    mode = "shuffle" if args.shuffle else "sequential"
+    autogenerated_name = f"vram_{MODEL_ID}_cap{args.cache_capacity}_{mode}.png"
     output_path = Path(args.output) if args.output else Path(autogenerated_name)
 
     fig, (ax_cum, ax_delta) = plt.subplots(2, 1, figsize=(14, 10))
     fig.suptitle(
-        f"Memory vs. CUDA Graph Count (varying batch size) — {MODEL_ID}",
+        f"Memory vs. Step (cache capacity={args.cache_capacity}, "
+        f"batch sizes 1–{args.max_batch_size}) — {MODEL_ID}",
         fontsize=14,
     )
 
-    capture_order = list(range(1, len(batch_sizes) + 1))
-    x = np.arange(len(capture_order))
-    w = 0.35
+    steps = np.arange(len(batch_sizes))
 
-    ax_cum.bar(x - w / 2, cumulative_gpu_mb, w, color="steelblue", label="GPU VRAM")
-    ax_cum.bar(x + w / 2, cumulative_cpu_mb, w, color="seagreen", label="CPU RSS")
+    ax_cum.plot(steps, cumulative_gpu_mb, color="steelblue", marker=".", label="GPU VRAM")
+    ax_cum.plot(steps, cumulative_cpu_mb, color="seagreen", marker=".", label="CPU RSS")
     ax_cum.set_ylabel("Memory above baseline (MB)")
-    ax_cum.set_xlabel("Capture order")
-    ax_cum.set_xticks(x)
-    ax_cum.set_xticklabels(
-        [f"{n}\n(bs={bs})" for n, bs in zip(capture_order, batch_sizes)],
-        fontsize=7,
-    )
+    ax_cum.set_xlabel("Step")
+    for i, bs in enumerate(batch_sizes):
+        ax_cum.annotate(
+            str(bs), (i, cumulative_gpu_mb[i]),
+            textcoords="offset points", xytext=(0, 6),
+            fontsize=6, ha="center", color="steelblue",
+        )
     ax_cum.legend()
 
-    sorted_idx = sorted(range(len(batch_sizes)), key=lambda k: batch_sizes[k])
-    s_bs = [batch_sizes[k] for k in sorted_idx]
-    s_gpu = [delta_gpu_mb[k] for k in sorted_idx]
-    s_cpu = [delta_cpu_mb[k] for k in sorted_idx]
+    sorted_bs = sorted(gpu_deltas_by_bs.keys())
+    avg_gpu = [np.mean(gpu_deltas_by_bs[bs]) for bs in sorted_bs]
+    avg_cpu = [np.mean(cpu_deltas_by_bs[bs]) for bs in sorted_bs]
 
-    x2 = np.arange(len(s_bs))
-    ax_delta.bar(x2 - w / 2, s_gpu, w, color="steelblue", label="GPU VRAM")
-    ax_delta.bar(x2 + w / 2, s_cpu, w, color="seagreen", label="CPU RSS")
-    ax_delta.set_ylabel("Per-graph memory delta (MB)")
+    x2 = np.arange(len(sorted_bs))
+    w = 0.35
+    ax_delta.bar(x2 - w / 2, avg_gpu, w, color="steelblue", label="GPU VRAM")
+    ax_delta.bar(x2 + w / 2, avg_cpu, w, color="seagreen", label="CPU RSS")
+    ax_delta.set_ylabel("Mean per-step memory delta (MB)")
     ax_delta.set_xlabel("Batch size")
     ax_delta.set_xticks(x2)
-    ax_delta.set_xticklabels([str(bs) for bs in s_bs])
+    ax_delta.set_xticklabels([str(bs) for bs in sorted_bs])
     ax_delta.legend()
 
     plt.tight_layout()
     fig.savefig(output_path, dpi=150)
     print(f"\nPlot saved to {output_path}")
 
-    final_gpu = (prev_gpu - baseline_gpu) / MB
-    final_cpu = (prev_cpu - baseline_cpu) / MB
-    n = len(batch_sizes)
-    print(f"\nAfter {n} graphs:")
-    print(f"  GPU VRAM: +{final_gpu:.1f} MB total ({final_gpu / n:.1f} MB/graph avg)")
-    print(f"  CPU RSS:  +{final_cpu:.1f} MB total ({final_cpu / n:.1f} MB/graph avg)")
+    print(f"\nFinal GPU VRAM above baseline: {cumulative_gpu_mb[-1]:.1f} MB")
+    print(f"Final CPU RSS above baseline:  {cumulative_cpu_mb[-1]:.1f} MB")
+    print(f"Peak GPU VRAM above baseline:  {max(cumulative_gpu_mb):.1f} MB")
+    print(f"Cache entries at end: {cache_size}/{args.cache_capacity}")
 
 
 if __name__ == "__main__":
