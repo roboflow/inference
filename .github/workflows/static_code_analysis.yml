@@ -10,7 +10,7 @@ on:
 jobs:
   build-dev-test:
     runs-on:
-      labels: depot-ubuntu-22.04-small
+      labels: depot-ubuntu-24.04-small
       group: public-depot
     timeout-minutes: 5
     steps:
