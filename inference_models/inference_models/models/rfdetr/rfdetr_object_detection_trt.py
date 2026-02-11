@@ -81,7 +81,7 @@ class RFDetrForObjectDetectionTRT(
         model_name_or_path: str,
         device: torch.device = DEFAULT_DEVICE,
         engine_host_code_allowed: bool = False,
-        cuda_graph_cache_capacity: int = 64,
+        cuda_graph_cache_capacity: int = 16,
         **kwargs,
     ) -> "RFDetrForObjectDetectionTRT":
         if device.type != "cuda":

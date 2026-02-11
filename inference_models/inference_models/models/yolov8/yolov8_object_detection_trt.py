@@ -156,7 +156,7 @@ class YOLOv8ForObjectDetectionTRT(
         device: torch.device,
         cuda_context: cuda.Context,
         execution_context: trt.IExecutionContext,
-        cuda_graph_cache_capacity: int = 64,
+        cuda_graph_cache_capacity: int = 16,
     ):
         self._engine = engine
         self._input_name = input_name
