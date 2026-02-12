@@ -1,3 +1,4 @@
+import time
 from typing import Dict, Literal, Optional, Type, Union
 
 import numpy as np
@@ -147,15 +148,46 @@ class HeatmapVisualizationBlockV1(PredictionsVisualizationBlock):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.annotatorCache = {}
-        # Dictionary to store track history: {video_id: {tracker_id: (x, y)}}
+        # Dictionary to store track history: {video_id: {tracker_id: (x, y, timestamp)}}
         self._track_history: Dict[str, Dict[int, tuple]] = {}
+        self._last_cleanup_time = time.time()
+        self._cleanup_interval = 10.0  # seconds
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return HeatmapManifest
 
+    def _cleanup_history(self):
+        current_time = time.time()
+        if current_time - self._last_cleanup_time < self._cleanup_interval:
+            return
+
+        # Clean up stale trackers (e.g., older than 60s)
+        # Using 60s as a conservative estimate for ~1800 frames at 30fps
+        stale_threshold = 60.0
+        empty_videos = []
+
+        for video_id, history in self._track_history.items():
+            expired_trackers = [
+                tid
+                for tid, data in history.items()
+                if current_time - data[2] > stale_threshold
+            ]
+            for tid in expired_trackers:
+                del history[tid]
+
+            if not history:
+                empty_videos.append(video_id)
+
+        # Clean up empty video histories
+        for video_id in empty_videos:
+            del self._track_history[video_id]
+
+        self._last_cleanup_time = current_time
+
     def getAnnotator(
         self,
+        video_id: str,
         position: str,
         opacity: float,
         radius: int,
@@ -167,6 +199,7 @@ class HeatmapVisualizationBlockV1(PredictionsVisualizationBlock):
             map(
                 str,
                 [
+                    video_id,
                     position,
                     opacity,
                     radius,
@@ -205,15 +238,17 @@ class HeatmapVisualizationBlockV1(PredictionsVisualizationBlock):
         ignore_stationary: bool = True,
         motion_threshold: int = 25,
     ) -> BlockResult:
+        self._cleanup_history()
         detections_to_plot = predictions
+        video_id = metadata.video_identifier if metadata else "default_video"
 
         if ignore_stationary and predictions.tracker_id is not None:
-            video_id = metadata.video_identifier if metadata else "default_video"
             if video_id not in self._track_history:
                 self._track_history[video_id] = {}
 
             current_history = self._track_history[video_id]
             moving_indices = []
+            current_time = time.time()
 
             # Calculate centers for current detections
             # Use the specified position anchor for tracking consistency
@@ -232,16 +267,16 @@ class HeatmapVisualizationBlockV1(PredictionsVisualizationBlock):
 
                 if tracker_id in current_history:
                     # Check for movement
-                    prev_x, prev_y = current_history[tracker_id]
+                    prev_x, prev_y, _ = current_history[tracker_id]
                     dist = np.sqrt((x - prev_x) ** 2 + (y - prev_y) ** 2)
 
                     if dist >= motion_threshold:
                         moving_indices.append(i)
-                        # Update history
-                        current_history[tracker_id] = (x, y)
+                        # Update history with new position and timestamp
+                        current_history[tracker_id] = (x, y, current_time)
                 else:
                     # New track, initialize history
-                    current_history[tracker_id] = (x, y)
+                    current_history[tracker_id] = (x, y, current_time)
 
             # Filter detections
             if len(moving_indices) > 0:
@@ -250,6 +285,7 @@ class HeatmapVisualizationBlockV1(PredictionsVisualizationBlock):
                 detections_to_plot = sv.Detections.empty()
 
         annotator = self.getAnnotator(
+            video_id,
             position,
             opacity,
             radius,
