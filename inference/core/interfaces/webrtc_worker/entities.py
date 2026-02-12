@@ -57,6 +57,8 @@ class WebRTCVideoMetadata(BaseModel):
     time_base: Optional[float] = None
     declared_fps: Optional[float] = None
     measured_fps: Optional[float] = None
+    width: Optional[int] = None
+    height: Optional[int] = None
 
 
 class WebRTCOutput(BaseModel):
