@@ -533,6 +533,8 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
                     f"Model {self.endpoint} is loaded with dynamic batching disabled"
                 )
 
+        self._normalize_fit_within_resize_mode()
+
         if ROBOFLOW_BACKGROUND_CLASS in self.class_names:
             self.is_one_indexed = True
             self.background_class_index = self.class_names.index(
@@ -545,6 +547,45 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
         else:
             self.is_one_indexed = False
         logger.debug("Model initialisation finished.")
+
+    def _normalize_fit_within_resize_mode(self) -> None:
+        resize_config = self.preproc.get("resize")
+        if not isinstance(resize_config, dict):
+            return
+        if resize_config.get("format") != "Fit within":
+            return
+        try:
+            input_height = int(self.img_size_h)
+            input_width = int(self.img_size_w)
+        except (TypeError, ValueError):
+            logger.warning(
+                "RF-DETR model %s uses 'Fit within' preprocessing but resolved input dimensions are invalid; leaving resize mode '%s'.",
+                self.endpoint,
+                self.resize_method,
+            )
+            return
+        if input_height != input_width:
+            logger.warning(
+                "RF-DETR model %s uses 'Fit within' preprocessing but resolved input is non-square (%sx%s); leaving resize mode '%s'.",
+                self.endpoint,
+                input_width,
+                input_height,
+                self.resize_method,
+            )
+            return
+        self.preproc["resize"] = {
+            **resize_config,
+            "format": "Stretch to",
+            "height": input_height,
+            "width": input_width,
+        }
+        self.resize_method = "Stretch to"
+        logger.info(
+            "RF-DETR model %s normalized preprocessing resize from 'Fit within' to 'Stretch to' using square input %sx%s.",
+            self.endpoint,
+            input_width,
+            input_height,
+        )
 
     def validate_model_classes(self) -> None:
         pass

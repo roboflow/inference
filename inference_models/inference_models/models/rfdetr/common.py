@@ -6,8 +6,11 @@ from torchvision.transforms import functional
 from inference_models import InstanceDetections
 from inference_models.entities import ImageDimensions
 from inference_models.errors import CorruptedModelPackageError
+from inference_models.logger import LOGGER
 from inference_models.models.common.roboflow.model_packages import (
+    InferenceConfig,
     PreProcessingMetadata,
+    ResizeMode,
     StaticCropOffset,
 )
 from inference_models.models.common.roboflow.post_processing import (
@@ -40,6 +43,34 @@ def parse_model_type(config_path: str) -> str:
             f"verify its consistency in docs.",
             help_url="https://todo",
         ) from error
+
+
+def normalize_rfdetr_fit_longer_edge_resize_mode(
+    inference_config: InferenceConfig,
+    model_name_or_path: str,
+) -> InferenceConfig:
+    if inference_config.network_input.resize_mode is not ResizeMode.FIT_LONGER_EDGE:
+        return inference_config
+    input_height = inference_config.network_input.training_input_size.height
+    input_width = inference_config.network_input.training_input_size.width
+    if input_height != input_width:
+        LOGGER.warning(
+            "RF-DETR model package %s defines `fit-longer-edge` resize mode with non-square training input size (%sx%s); keeping original resize mode.",
+            model_name_or_path,
+            input_width,
+            input_height,
+        )
+        return inference_config
+    LOGGER.info(
+        "RF-DETR model package %s defines `fit-longer-edge` resize mode; normalizing to `stretch` for square training input size (%sx%s).",
+        model_name_or_path,
+        input_width,
+        input_height,
+    )
+    updated_network_input = inference_config.network_input.model_copy(
+        update={"resize_mode": ResizeMode.STRETCH_TO}
+    )
+    return inference_config.model_copy(update={"network_input": updated_network_input})
 
 
 def post_process_instance_segmentation_results(
