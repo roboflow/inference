@@ -41,6 +41,9 @@ def detect_image_output(
 def process_frame(
     frame: VideoFrame,
     frame_id: int,
+    declared_fps: float,
+    measured_fps: float,
+    comes_from_video_file: bool,
     inference_pipeline: InferencePipeline,
     stream_output: Optional[str] = None,
     render_output: bool = True,
@@ -59,9 +62,9 @@ def process_frame(
             image=np_image,
             frame_id=frame_id,
             frame_timestamp=datetime.datetime.now(),
-            comes_from_video_file=False,
-            fps=30,  # placeholder
-            measured_fps=30,  # placeholder
+            comes_from_video_file=comes_from_video_file,
+            fps=declared_fps,
+            measured_fps=measured_fps,
         )
         workflow_output = inference_pipeline._on_video_frame([video_frame])[0]
     except Exception as e:
