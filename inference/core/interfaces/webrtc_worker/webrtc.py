@@ -415,6 +415,8 @@ class VideoFrameProcessor:
             pts=frame.pts,
             time_base=frame.time_base,
             declared_fps=self._declared_fps,
+            height=frame.height,
+            width=frame.width,
         )
 
         webrtc_output = WebRTCOutput(
