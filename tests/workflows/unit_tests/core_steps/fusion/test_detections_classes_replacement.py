@@ -571,9 +571,7 @@ def test_classes_replacement_with_list_of_strings_gemini_style() -> None:
         class_id=np.array([1, 1, 1]),
         confidence=np.array([0.9, 0.8, 0.85]),
         data={
-            "class_name": np.array(
-                ["license_plate", "license_plate", "license_plate"]
-            ),
+            "class_name": np.array(["license_plate", "license_plate", "license_plate"]),
             "detection_id": np.array(["id1", "id2", "id3"]),
         },
     )
@@ -692,7 +690,9 @@ def test_classes_replacement_with_strings_and_none_no_fallback() -> None:
     )
 
     # then
-    assert len(result["predictions"]) == 1, "Expected only one detection (second had None)"
+    assert (
+        len(result["predictions"]) == 1
+    ), "Expected only one detection (second had None)"
     assert result["predictions"].data["class_name"].tolist() == ["K619879"]
 
 
@@ -735,4 +735,3 @@ def test_classes_replacement_with_strings_and_none_with_fallback() -> None:
     ]
     assert result["predictions"].confidence[1] == 0.0
     assert result["predictions"].class_id[1] == 99
-

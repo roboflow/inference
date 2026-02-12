@@ -20,9 +20,9 @@ from inference.core.workflows.execution_engine.entities.types import (
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
     INTEGER_KIND,
     KEYPOINT_DETECTION_PREDICTION_KIND,
+    LIST_OF_VALUES_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
     STRING_KIND,
-    LIST_OF_VALUES_KIND,
     Selector,
 )
 from inference.core.workflows.prototypes.block import (
@@ -212,7 +212,9 @@ class DetectionsClassesReplacementBlockV1(WorkflowBlock):
     def run(
         self,
         object_detection_predictions: Optional[sv.Detections],
-        classification_predictions: Optional[Batch[Optional[Union[dict, str, List[str]]]]],
+        classification_predictions: Optional[
+            Batch[Optional[Union[dict, str, List[str]]]]
+        ],
         fallback_class_name: Optional[str],
         fallback_class_id: Optional[int],
     ) -> BlockResult:
@@ -232,67 +234,81 @@ class DetectionsClassesReplacementBlockV1(WorkflowBlock):
             # For string predictions, we match by index (positional mapping)
             # We must have exact match in count between detections and predictions
             # or we need to handle mismatch gracefully
-            
-            # Since object_detection_predictions might be filtered or change order, 
+
+            # Since object_detection_predictions might be filtered or change order,
             # ideally we want strict 1:1 mapping if possible.
             # But here we rely on the batch indices to align with detections.
-            
-            # The classification_predictions Batch is expected to be aligned with 
+
+            # The classification_predictions Batch is expected to be aligned with
             # the crops that were generated from object_detection_predictions.
-            
+
             # If we assume 1:1 mapping between detections and classification_predictions:
             if len(object_detection_predictions) != len(classification_predictions):
                 # Fallback to empty if counts don't match, or maybe log warning?
                 # For now, let's return empty to be safe, or we could try to zip as much as possible.
                 # Given the user request implies a workflow where crops -> step -> replacement,
                 # the counts should match.
-                pass 
-            
+                pass
+
             new_class_names = []
             new_class_ids = []
             new_confidences = []
-            
+
             # We iterate over both. Detections are in object_detection_predictions.
             # classification_predictions is a Batch.
-            
+
             valid_indices = []
-            
-            for i, (det_idx, prediction) in enumerate(zip(range(len(object_detection_predictions)), classification_predictions)):
+
+            for i, (det_idx, prediction) in enumerate(
+                zip(
+                    range(len(object_detection_predictions)), classification_predictions
+                )
+            ):
                 if prediction is None:
                     if fallback_class_name:
-                         class_name, class_id, confidence = (fallback_class_name, fallback_class_id or sys.maxsize, 0.0)
+                        class_name, class_id, confidence = (
+                            fallback_class_name,
+                            fallback_class_id or sys.maxsize,
+                            0.0,
+                        )
                     else:
                         continue
                 else:
                     extracted = extract_leading_class_from_prediction(
-                        prediction, 
+                        prediction,
                         fallback_class_name=fallback_class_name,
-                        fallback_class_id=fallback_class_id
+                        fallback_class_id=fallback_class_id,
                     )
                     if extracted is None:
-                         continue
+                        continue
                     class_name, class_id, confidence = extracted
-                
+
                 new_class_names.append(class_name)
                 new_class_ids.append(class_id)
                 new_confidences.append(confidence)
                 valid_indices.append(i)
-                
+
             if not valid_indices:
-                 return {"predictions": sv.Detections.empty()}
+                return {"predictions": sv.Detections.empty()}
 
             # Filter detections to keep only those with valid predictions
-            selected_object_detection_predictions = object_detection_predictions[np.array(valid_indices)]
-            
+            selected_object_detection_predictions = object_detection_predictions[
+                np.array(valid_indices)
+            ]
+
             selected_object_detection_predictions.class_id = np.array(new_class_ids)
             selected_object_detection_predictions.confidence = np.array(new_confidences)
-            selected_object_detection_predictions.data[CLASS_NAME_DATA_FIELD] = np.array(new_class_names)
-            selected_object_detection_predictions.data[DETECTION_ID_KEY] = np.array(
-                [f"{uuid4()}" for _ in range(len(selected_object_detection_predictions))]
+            selected_object_detection_predictions.data[CLASS_NAME_DATA_FIELD] = (
+                np.array(new_class_names)
             )
-            
-            return {"predictions": selected_object_detection_predictions}
+            selected_object_detection_predictions.data[DETECTION_ID_KEY] = np.array(
+                [
+                    f"{uuid4()}"
+                    for _ in range(len(selected_object_detection_predictions))
+                ]
+            )
 
+            return {"predictions": selected_object_detection_predictions}
 
         if all(
             p is None or "top" in p and not p["top"] or "predictions" not in p
@@ -357,7 +373,7 @@ def extract_leading_class_from_prediction(
 ) -> Optional[Tuple[str, int, float]]:
     if isinstance(prediction, str):
         return prediction, 0, 1.0
-    
+
     if isinstance(prediction, list):
         if not prediction:
             if fallback_class_name:
@@ -369,17 +385,17 @@ def extract_leading_class_from_prediction(
                     fallback_class_id = sys.maxsize
                 return fallback_class_name, fallback_class_id, 0.0
             return None
-        
+
         # Take the first string in the list if it contains strings
         # Recursive call would be cleaner but let's be explicit
         first_item = prediction[0]
         if isinstance(first_item, str):
-             return first_item, 0, 1.0
+            return first_item, 0, 1.0
         # If it's a list of something else (not expected for now based on user request "nested arrays"),
-        # we might need recursion or just fail. 
+        # we might need recursion or just fail.
         # User said: "gemini_out": [ ["K619879"], ... ] which is List[List[str]]
         # So prediction passed here is ["K619879"] (List[str])
-        
+
         return None
 
     if "top" in prediction:
