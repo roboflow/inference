@@ -315,7 +315,14 @@ REGISTERED_MODELS: Dict[
             module_name="inference_models.models.rfdetr.rfdetr_object_detection_onnx",
             class_name="RFDetrForObjectDetectionONNX",
         ),
-        supported_model_features={'resolution', 'patch_size', 'num_windows', 'dec_layers', 'num_queries', 'num_select'},
+        supported_model_features={
+            "resolution",
+            "patch_size",
+            "num_windows",
+            "dec_layers",
+            "num_queries",
+            "num_select",
+        },
     ),
     ("rfdetr", INSTANCE_SEGMENTATION_TASK, BackendType.TORCH): LazyClass(
         module_name="inference_models.models.rfdetr.rfdetr_instance_segmentation_pytorch",
