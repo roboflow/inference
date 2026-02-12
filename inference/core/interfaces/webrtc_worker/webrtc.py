@@ -231,6 +231,7 @@ class VideoFrameProcessor:
         realtime_processing: bool = True,
         is_preview: bool = False,
     ):
+        self._file_processing = False
         self._loop = asyncio_loop
         self._termination_date = termination_date
         self._terminate_event = terminate_event
@@ -414,6 +415,8 @@ class VideoFrameProcessor:
             pts=frame.pts,
             time_base=frame.time_base,
             declared_fps=self._declared_fps,
+            height=frame.height,
+            width=frame.width,
         )
 
         webrtc_output = WebRTCOutput(
@@ -620,6 +623,9 @@ class VideoFrameProcessor:
             process_frame,
             frame,
             frame_id,
+            self._declared_fps,
+            self._declared_fps,  # TODO: measure fps
+            self._file_processing,
             self._inference_pipeline,
             stream_output,
             render_output,
@@ -1140,6 +1146,7 @@ async def init_rtc_peer_connection_with_loop(
                     None, process_video_upload_message, message, video_processor
                 )
                 if video_path:
+                    video_processor._file_processing = True
                     logger.info(
                         "Video upload complete, processing: realtime=%s, path=%s",
                         webrtc_request.webrtc_realtime_processing,
