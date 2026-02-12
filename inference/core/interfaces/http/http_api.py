@@ -173,6 +173,7 @@ from inference.core.env import (
     ROBOFLOW_INTERNAL_SERVICE_SECRET,
     ROBOFLOW_SERVICE_SECRET,
     SAM3_EXEC_MODE,
+    STRUCTURED_LOGGING_ENABLED,
     WEBRTC_WORKER_ENABLED,
     WORKFLOWS_MAX_CONCURRENT_STEPS,
     WORKFLOWS_PROFILER_BUFFER_SIZE,
@@ -270,6 +271,16 @@ if LAMBDA:
 import time
 
 from inference.core.roboflow_api import ModelEndpointType
+from inference.core.structured_logging import (
+    RequestContext,
+    RequestReceivedEvent,
+    WorkflowRequestReceivedEvent,
+    clear_request_context,
+    get_request_context,
+    set_request_context,
+    structured_event_logger,
+    update_request_context,
+)
 from inference.core.version import __version__
 
 try:
@@ -292,13 +303,50 @@ class LambdaMiddleware(BaseHTTPMiddleware):
         return response
 
 
+class StructuredLoggingMiddleware(BaseHTTPMiddleware):
+    """Middleware to set up structured logging request context.
+
+    Sets up RequestContext with request_id (from correlation ID).
+    Only active when STRUCTURED_LOGGING_ENABLED=True.
+    """
+
+    async def dispatch(self, request, call_next):
+        # Get request_id from correlation ID (set by CorrelationIdMiddleware)
+        request_id = asgi_correlation_id.correlation_id.get()
+        if not request_id:
+            logger.warning(
+                "Structured logging request_id missing; "
+                "CorrelationIdMiddleware may be mis-ordered."
+            )
+
+        context = RequestContext(
+            request_id=request_id,
+            invocation_source="direct",
+        )
+        set_request_context(context)
+
+        try:
+            response = await call_next(request)
+        finally:
+            clear_request_context()
+
+        return response
+
+
 class GCPServerlessMiddleware(BaseHTTPMiddleware):
+    """Middleware for GCP-specific serverless concerns.
+
+    Handles execution_id header and processing time header.
+    Only active when GCP_SERVERLESS=True.
+    """
+
     async def dispatch(self, request, call_next):
         if execution_id is not None:
             execution_id_value = request.headers.get(EXECUTION_ID_HEADER)
             if not execution_id_value:
                 execution_id_value = f"{time.time_ns()}_{uuid4().hex[:4]}"
             execution_id.set(execution_id_value)
+
         t1 = time.time()
         response = await call_next(request)
         t2 = time.time()
@@ -382,6 +430,10 @@ class HttpInterface(BaseInterface):
             app.add_middleware(LambdaMiddleware)
         if GCP_SERVERLESS:
             app.add_middleware(GCPServerlessMiddleware)
+        if STRUCTURED_LOGGING_ENABLED:
+            # StructuredLoggingMiddleware expects CorrelationIdMiddleware to run first.
+            # CorrelationIdMiddleware is added later so it executes earlier in the stack.
+            app.add_middleware(StructuredLoggingMiddleware)
 
         if len(ALLOW_ORIGINS) > 0:
             # Add CORS Middleware (but not for /build**, which is controlled separately)
@@ -653,6 +705,27 @@ class HttpInterface(BaseInterface):
             Returns:
                 InferenceResponse: The response containing the inference results.
             """
+            # Log request_received event for structured logging
+            if structured_event_logger.enabled:
+                ctx = get_request_context()
+                # Infer endpoint_type from request class name
+                request_class_name = type(inference_request).__name__
+                endpoint_type = (
+                    request_class_name.replace("InferenceRequest", "")
+                    .replace("Request", "")
+                    .lower()
+                    or None
+                )
+                structured_event_logger.log_event(
+                    RequestReceivedEvent(
+                        request_id=ctx.request_id if ctx else None,
+                        model_id=inference_request.model_id,
+                        endpoint_type=endpoint_type,
+                        invocation_source=ctx.invocation_source if ctx else "direct",
+                    ),
+                    sampled=True,
+                )
+
             de_aliased_model_id = resolve_roboflow_model_alias(
                 model_id=inference_request.model_id
             )
@@ -673,6 +746,34 @@ class HttpInterface(BaseInterface):
             background_tasks: Optional[BackgroundTasks],
             profiler: WorkflowsProfiler,
         ) -> WorkflowInferenceResponse:
+            # Log workflow_request_received event for structured logging
+            if structured_event_logger.enabled:
+                ctx = get_request_context()
+                # Get workflow_instance_id from execution_id if available
+                workflow_instance_id = None
+                if execution_id is not None:
+                    workflow_instance_id = execution_id.get()
+
+                # Count steps in workflow
+                step_count = len(workflow_specification.get("steps", []))
+
+                # Update context to mark this as a workflow invocation
+                update_request_context(
+                    invocation_source="workflow",
+                    workflow_id=workflow_request.workflow_id,
+                    workflow_instance_id=workflow_instance_id,
+                )
+                ctx = get_request_context()
+
+                structured_event_logger.log_event(
+                    WorkflowRequestReceivedEvent(
+                        request_id=ctx.request_id if ctx else None,
+                        workflow_id=workflow_request.workflow_id,
+                        workflow_instance_id=workflow_instance_id,
+                        step_count=step_count,
+                    ),
+                    sampled=True,
+                )
 
             workflow_init_parameters = {
                 "workflows_core.model_manager": model_manager,
