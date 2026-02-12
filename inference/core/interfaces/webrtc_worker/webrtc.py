@@ -62,6 +62,7 @@ from inference.core.interfaces.webrtc_worker.sources.file import (
 from inference.core.interfaces.webrtc_worker.utils import (
     detect_image_output,
     get_cv2_rotation_code,
+    get_video_fps,
     get_video_rotation,
     parse_video_file_chunk,
     process_frame,
@@ -230,6 +231,7 @@ class VideoFrameProcessor:
         realtime_processing: bool = True,
         is_preview: bool = False,
     ):
+        self._file_processing = False
         self._loop = asyncio_loop
         self._termination_date = termination_date
         self._terminate_event = terminate_event
@@ -619,6 +621,9 @@ class VideoFrameProcessor:
             process_frame,
             frame,
             frame_id,
+            self._declared_fps,
+            self._declared_fps,  # TODO: measure fps
+            self._file_processing,
             self._inference_pipeline,
             stream_output,
             render_output,
@@ -1139,6 +1144,7 @@ async def init_rtc_peer_connection_with_loop(
                     None, process_video_upload_message, message, video_processor
                 )
                 if video_path:
+                    video_processor._file_processing = True
                     logger.info(
                         "Video upload complete, processing: realtime=%s, path=%s",
                         webrtc_request.webrtc_realtime_processing,
@@ -1149,6 +1155,20 @@ async def init_rtc_peer_connection_with_loop(
                     rotation_code = get_cv2_rotation_code(rotation)
                     if rotation_code is not None:
                         logger.info("Video has %d° rotation, will correct", rotation)
+
+                    detected_fps = get_video_fps(video_path)
+                    if detected_fps is not None:
+                        logger.info(
+                            "FPS detection: detected=%.2f, previous=%s",
+                            detected_fps,
+                            video_processor._declared_fps,
+                        )
+                        video_processor._declared_fps = detected_fps
+                    else:
+                        logger.warning(
+                            "FPS detection failed, keeping default: %s",
+                            video_processor._declared_fps,
+                        )
 
                     if webrtc_request.webrtc_realtime_processing:
                         # We are dealing with a live video stream,

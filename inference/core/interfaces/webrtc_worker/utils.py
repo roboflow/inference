@@ -41,6 +41,9 @@ def detect_image_output(
 def process_frame(
     frame: VideoFrame,
     frame_id: int,
+    declared_fps: float,
+    measured_fps: float,
+    comes_from_video_file: bool,
     inference_pipeline: InferencePipeline,
     stream_output: Optional[str] = None,
     render_output: bool = True,
@@ -59,9 +62,9 @@ def process_frame(
             image=np_image,
             frame_id=frame_id,
             frame_timestamp=datetime.datetime.now(),
-            comes_from_video_file=False,
-            fps=30,  # placeholder
-            measured_fps=30,  # placeholder
+            comes_from_video_file=comes_from_video_file,
+            fps=declared_fps,
+            measured_fps=measured_fps,
         )
         workflow_output = inference_pipeline._on_video_frame([video_frame])[0]
     except Exception as e:
@@ -235,6 +238,65 @@ def is_over_quota(api_key: str) -> bool:
         usage_collector._plan_details._over_quota_col_name
     )
     return is_over_quota
+
+
+def get_video_fps(filepath: str) -> Optional[float]:
+    """Detect video FPS from container metadata.
+
+    Args:
+        filepath: Path to the video file
+
+    Returns:
+        FPS as float, or None if detection fails
+    """
+    import json
+    import subprocess
+
+    try:
+        result = subprocess.run(
+            [
+                "ffprobe",
+                "-v",
+                "error",
+                "-select_streams",
+                "v:0",
+                "-show_entries",
+                "stream=r_frame_rate,avg_frame_rate",
+                "-of",
+                "json",
+                filepath,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode == 0:
+            data = json.loads(result.stdout)
+            streams = data.get("streams", [])
+            if streams:
+                stream = streams[0]
+                # Prefer avg_frame_rate (actual average) over r_frame_rate (container rate)
+                for rate_key in ["avg_frame_rate", "r_frame_rate"]:
+                    rate_str = stream.get(rate_key, "0/1")
+                    if "/" in rate_str:
+                        num, den = rate_str.split("/")
+                        if int(den) != 0:
+                            fps = int(num) / int(den)
+                            if fps > 0:
+                                logger.info(
+                                    "Video FPS detected: %.2f from %s", fps, rate_key
+                                )
+                                return fps
+        else:
+            logger.warning("ffprobe FPS detection failed: %s", result.stderr.strip())
+    except FileNotFoundError:
+        logger.warning("ffprobe not available for FPS detection")
+    except subprocess.TimeoutExpired:
+        logger.warning("ffprobe timed out during FPS detection")
+    except Exception as e:
+        logger.warning("ffprobe FPS detection failed: %s", e)
+
+    return None
 
 
 def get_video_rotation(filepath: str) -> int:
