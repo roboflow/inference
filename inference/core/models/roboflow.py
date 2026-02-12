@@ -451,29 +451,7 @@ class RoboflowInferenceModel(Model):
             self.preproc = json.loads(self.environment["PREPROCESSING"])
         if self.preproc.get("resize"):
             self.resize_method = self.preproc["resize"].get("format", "Stretch to")
-            if self.resize_method in [
-                "Fit (reflect edges) in",
-                "Fit within",
-                "Fill (with center crop) in",
-            ]:
-                fallback_resize_method = "Fit (black edges) in"
-                logger.warning(
-                    "Unsupported resize method '%s', defaulting to '%s' - this may result in degraded model performance.",
-                    self.resize_method,
-                    fallback_resize_method,
-                )
-                self.resize_method = fallback_resize_method
-            if self.resize_method not in [
-                "Stretch to",
-                "Fit (black edges) in",
-                "Fit (grey edges) in",
-                "Fit (white edges) in",
-            ]:
-                logger.error(
-                    "Unsupported resize method '%s', defaulting to 'Stretch to' - this may result in degraded model performance.",
-                    self.resize_method,
-                )
-                self.resize_method = "Stretch to"
+            self.resize_method = self.validate_resize_method(self.resize_method)
         else:
             logger.error(
                 "Unknown resize method, defaulting to 'Stretch to' - this may result in degraded model performance."
@@ -481,6 +459,37 @@ class RoboflowInferenceModel(Model):
             self.resize_method = "Stretch to"
         logger.debug(f"Resize method is '{self.resize_method}'")
         self.multiclass = self.environment.get("MULTICLASS", False)
+
+    def validate_resize_method(self, resize_method: str) -> str:
+        validated_resize_method = resize_method
+        if validated_resize_method in [
+            "Fit (reflect edges) in",
+            "Fit within",
+            "Fill (with center crop) in",
+        ]:
+            fallback_resize_method = "Fit (black edges) in"
+            logger.warning(
+                "Unsupported resize method '%s', defaulting to '%s' - this may result in degraded model performance.",
+                validated_resize_method,
+                fallback_resize_method,
+            )
+            validated_resize_method = fallback_resize_method
+            return validated_resize_method
+        elif validated_resize_method not in [
+            "Stretch to",
+            "Fit (black edges) in",
+            "Fit (grey edges) in",
+            "Fit (white edges) in",
+        ]:
+            logger.error(
+                "Unsupported resize method '%s', defaulting to 'Stretch to' - this may result in degraded model performance.",
+                validated_resize_method,
+            )
+            return "Stretch to"
+        else:
+            return validated_resize_method
+
+        
 
     def initialize_model(self, **kwargs) -> None:
         """Initialize the model.
