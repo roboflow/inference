@@ -700,6 +700,8 @@ class RFDETRInstanceSegmentation(
                 # For letterbox resizing, the mask is in the padded input
                 # coordinate space. Crop out the padding so the mask only
                 # contains actual image content before any resizing.
+
+                # All resize modes except "Stretch to" are some form of letterboxing
                 if self.resize_method != "Stretch to":
                     input_h, input_w = self.img_size_h, self.img_size_w
                     mask_h, mask_w = mask.shape[0], mask.shape[1]
