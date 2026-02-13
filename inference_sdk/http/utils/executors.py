@@ -16,7 +16,12 @@ from aiohttp import (
 )
 from requests import Response, Timeout
 
-from inference_sdk.config import EXECUTION_ID_HEADER, execution_id
+from inference_sdk.config import (
+    EXECUTION_ID_HEADER,
+    PROCESSING_TIME_HEADER,
+    execution_id,
+    remote_processing_times,
+)
 from inference_sdk.http.errors import RetryError
 from inference_sdk.http.utils.iterables import make_batches
 from inference_sdk.http.utils.request_building import RequestData
@@ -57,15 +62,53 @@ def execute_requests_packages(
         batch_size=max_concurrent_requests,
     )
     results = []
+    all_request_data = []
     for requests_data_package in requests_data_packages:
         responses = make_parallel_requests(
             requests_data=requests_data_package,
             request_method=request_method,
         )
         results.extend(responses)
+        all_request_data.extend(requests_data_package)
+    _collect_remote_processing_times(results, all_request_data)
     for response in results:
         api_key_safe_raise_for_status(response=response)
     return results
+
+
+def _extract_model_id_from_request_data(request_data: RequestData) -> str:
+    if request_data.payload and isinstance(request_data.payload, dict):
+        model_id = request_data.payload.get("model_id")
+        if model_id:
+            return str(model_id)
+    try:
+        from urllib.parse import urlparse
+
+        path = urlparse(request_data.url).path
+        return path.strip("/")
+    except Exception:
+        return "unknown"
+
+
+def _collect_remote_processing_times(
+    responses: List[Response],
+    requests_data: List[RequestData],
+) -> None:
+    collector = remote_processing_times.get()
+    if collector is None:
+        return
+    for i, response in enumerate(responses):
+        pt = response.headers.get(PROCESSING_TIME_HEADER)
+        if pt is not None:
+            model_id = (
+                _extract_model_id_from_request_data(requests_data[i])
+                if i < len(requests_data)
+                else "unknown"
+            )
+            try:
+                collector.add(float(pt), model_id=model_id)
+            except (ValueError, TypeError):
+                pass
 
 
 def make_parallel_requests(

@@ -17,7 +17,12 @@ import requests
 from aiohttp import ClientConnectionError, ClientResponseError
 from requests import HTTPError, Response
 
-from inference_sdk.config import EXECUTION_ID_HEADER, execution_id
+from inference_sdk.config import (
+    EXECUTION_ID_HEADER,
+    PROCESSING_TIME_HEADER,
+    execution_id,
+    remote_processing_times,
+)
 from inference_sdk.http.entities import (
     ALL_ROBOFLOW_API_URLS,
     CLASSIFICATION_TASK,
@@ -103,6 +108,21 @@ BufferConsumptionStrategy = Literal["LAZY", "EAGER"]
 
 if TYPE_CHECKING:
     from inference_sdk.webrtc.client import WebRTCClient
+
+
+def _collect_processing_time_from_response(
+    response: requests.Response,
+    model_id: str = "unknown",
+) -> None:
+    collector = remote_processing_times.get()
+    if collector is None:
+        return
+    pt = response.headers.get(PROCESSING_TIME_HEADER)
+    if pt is not None:
+        try:
+            collector.add(float(pt), model_id=model_id)
+        except (ValueError, TypeError):
+            pass
 
 
 def wrap_errors(function: callable) -> callable:
@@ -1343,6 +1363,9 @@ class InferenceHTTPClient:
             json=payload,
             headers=headers,
         )
+        _collect_processing_time_from_response(
+            response, model_id=clip_version or "clip"
+        )
         api_key_safe_raise_for_status(response=response)
         return unwrap_single_element_list(sequence=response.json())
 
@@ -1445,6 +1468,9 @@ class InferenceHTTPClient:
             self.__wrap_url_with_api_key(f"{self.__api_url}/clip/compare"),
             json=payload,
             headers=headers,
+        )
+        _collect_processing_time_from_response(
+            response, model_id=clip_version or "clip"
         )
         api_key_safe_raise_for_status(response=response)
         return response.json()
@@ -1555,6 +1581,10 @@ class InferenceHTTPClient:
             ),
             json=payload,
             headers=headers,
+        )
+        _collect_processing_time_from_response(
+            response,
+            model_id=perception_encoder_version or "perception_encoder",
         )
         api_key_safe_raise_for_status(response=response)
         return unwrap_single_element_list(sequence=response.json())

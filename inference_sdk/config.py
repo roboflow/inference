@@ -1,9 +1,43 @@
 import contextvars
 import os
+import threading
 
 from inference_sdk.utils.environment import str2bool
 
 execution_id = contextvars.ContextVar("execution_id", default=None)
+
+
+class RemoteProcessingTimeCollector:
+    """Thread-safe collector for GPU processing times from remote execution responses.
+
+    A single instance is shared across all threads handling a single request.
+    Each entry stores a model_id alongside the processing time.
+    """
+
+    def __init__(self):
+        self._entries: list = []  # list of (model_id, time) tuples
+        self._lock = threading.Lock()
+
+    def add(self, processing_time: float, model_id: str = "unknown") -> None:
+        with self._lock:
+            self._entries.append((model_id, processing_time))
+
+    def get_total(self) -> float:
+        with self._lock:
+            return sum(t for _, t in self._entries)
+
+    def get_entries(self) -> list:
+        with self._lock:
+            return list(self._entries)
+
+    def has_data(self) -> bool:
+        with self._lock:
+            return len(self._entries) > 0
+
+
+remote_processing_times = contextvars.ContextVar(
+    "remote_processing_times", default=None
+)
 
 WORKFLOW_RUN_RETRIES_ENABLED = str2bool(
     os.getenv("WORKFLOW_RUN_RETRIES_ENABLED", "True")
