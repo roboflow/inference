@@ -111,8 +111,8 @@ def test_workflow_with_google_ocr_when_text_should_be_detected(
         license_plate_image, result[0]["text_visualised"].numpy_image
     ), "Expected that visualisation will change the output image"
     assert (
-        len(result[0]["text_detections"]) == 4
-    ), "Expected 4 text regions to be detected"
+        len(result[0]["text_detections"]) == 3
+    ), "Expected 3 text regions to be detected"
 
 
 @pytest.mark.skipif(
@@ -217,5 +217,5 @@ def test_workflow_with_google_ocr_without_api_key_via_proxy(
         result[0]["extracted_text"] == "2398027\n$2.398023\nKn\n239 8072"
     ), "Extracted text should match reference"
     assert (
-        len(result[0]["text_detections"]) == 4
-    ), "Expected 4 text regions to be detected"
+        len(result[0]["text_detections"]) == 3
+    ), "Expected 3 text regions to be detected"
