@@ -41,9 +41,6 @@ from inference_models.models.rfdetr.class_remapping import (
     ClassesReMapping,
     prepare_class_remapping,
 )
-from inference_models.models.rfdetr.common import (
-    normalize_rfdetr_fit_longer_edge_resize_mode,
-)
 
 try:
     import tensorrt as trt
@@ -109,10 +106,6 @@ class RFDetrForObjectDetectionTRT(
                 ResizeMode.LETTERBOX_REFLECT_EDGES,
                 ResizeMode.FIT_LONGER_EDGE,
             },
-        )
-        inference_config = normalize_rfdetr_fit_longer_edge_resize_mode(
-            inference_config=inference_config,
-            model_name_or_path=model_name_or_path,
         )
         classes_re_mapping = None
         if inference_config.class_names_operations:
