@@ -86,7 +86,17 @@ class DinoV3ForClassificationTorch(ClassificationModel[torch.Tensor, torch.Tenso
                 ResizeMode.LETTERBOX,
                 ResizeMode.CENTER_CROP,
                 ResizeMode.LETTERBOX_REFLECT_EDGES,
-                ResizeMode.FIT_LONGER_EDGE,
+            },
+            implicit_resize_mode_substitutions={
+                ResizeMode.FIT_LONGER_EDGE: (
+                    ResizeMode.STRETCH_TO,
+                    None,
+                    "DinoV3Classification model running with Torch backend was trained with `fit-longer-edge` input "
+                    "resize mode. This transform cannot be applied properly for  models with input dimensions "
+                    "fixed during weights export. To ensure interoperability, `stretch` resize mode "
+                    "will be used instead. If model was trained on Roboflow platform, we recommend using "
+                    "preprocessing method different that `fit-longer-edge`.",
+                )
             },
         )
 
@@ -217,6 +227,17 @@ class DinoV3ForMultiLabelClassificationTorch(
                 ResizeMode.LETTERBOX,
                 ResizeMode.CENTER_CROP,
                 ResizeMode.LETTERBOX_REFLECT_EDGES,
+            },
+            implicit_resize_mode_substitutions={
+                ResizeMode.FIT_LONGER_EDGE: (
+                    ResizeMode.STRETCH_TO,
+                    None,
+                    "DinoV3MultiLabelClassification model running with ONNX backend was trained with "
+                    "`fit-longer-edge` input resize mode. This transform cannot be applied properly for "
+                    "models with input dimensions fixed during weights export. To ensure interoperability, `stretch` "
+                    "resize mode will be used instead. If model was trained on Roboflow platform, "
+                    "we recommend using preprocessing method different that `fit-longer-edge`.",
+                )
             },
         )
 
