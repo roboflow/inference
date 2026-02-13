@@ -33,6 +33,19 @@ COPY requirements/requirements.sam.txt \
     ./
 
 RUN python3 -m pip install -U pip uv
+
+# Well - this is good and bad, dependent on how we see this - on one end, we resolve exactly what
+# is in inference-models lock, but also install that prior other requirements and w/o the `inference-models`
+# package content, which lands in the `runtime` part - here we just install all dependencies and it works
+# so far. Given that there is more to come regading new inference, I would assume that the moment we fix
+# the main inference dependencies management is when we should structure build differently - but, given how
+# world works, sooner or later I will regret that.
+COPY inference_models/uv.lock inference_models/pyproject.toml build/inference_models/
+WORKDIR build/inference_models/
+RUN UV_PROJECT_ENVIRONMENT=/usr uv sync --locked --extra torch-cu124 --extra onnx-cu12 --extra mediapipe --extra trt10
+
+WORKDIR /app
+
 RUN uv pip install --system \
     -r _requirements.txt \
     -r requirements.doctr.txt \

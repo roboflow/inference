@@ -5,7 +5,10 @@ import numpy as np
 import torch
 
 from inference_models import InstanceDetections, InstanceSegmentationModel
-from inference_models.configuration import DEFAULT_DEVICE
+from inference_models.configuration import (
+    DEFAULT_DEVICE,
+    INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE,
+)
 from inference_models.entities import ColorFormat
 from inference_models.errors import (
     EnvironmentConfigurationError,
@@ -106,6 +109,17 @@ class RFDetrForInstanceSegmentationOnnx(
                 ResizeMode.CENTER_CROP,
                 ResizeMode.LETTERBOX_REFLECT_EDGES,
             },
+            implicit_resize_mode_substitutions={
+                ResizeMode.FIT_LONGER_EDGE: (
+                    ResizeMode.STRETCH_TO,
+                    None,
+                    "RFDetr Instance Segmentation model running with ONNX backend was trained with "
+                    "`fit-longer-edge` input resize mode. This transform cannot be applied properly for "
+                    "RFDetr models. To ensure interoperability, `stretch` "
+                    "resize mode will be used instead. If model was trained on Roboflow platform, "
+                    "we recommend using preprocessing method different that `fit-longer-edge`.",
+                )
+            },
         )
         classes_re_mapping = None
         if inference_config.class_names_operations:
@@ -192,7 +206,7 @@ class RFDetrForInstanceSegmentationOnnx(
         self,
         model_results: Tuple[torch.Tensor, torch.Tensor, torch.Tensor],
         pre_processing_meta: List[PreProcessingMetadata],
-        threshold: float = 0.5,
+        confidence: float = INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE,
         **kwargs,
     ) -> List[InstanceDetections]:
         bboxes, logits, masks = model_results
@@ -201,6 +215,6 @@ class RFDetrForInstanceSegmentationOnnx(
             logits=logits,
             masks=masks,
             pre_processing_meta=pre_processing_meta,
-            threshold=threshold,
+            threshold=confidence,
             classes_re_mapping=self._classes_re_mapping,
         )

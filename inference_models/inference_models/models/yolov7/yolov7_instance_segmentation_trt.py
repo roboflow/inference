@@ -5,7 +5,13 @@ import numpy as np
 import torch
 
 from inference_models import InstanceDetections, InstanceSegmentationModel
-from inference_models.configuration import DEFAULT_DEVICE
+from inference_models.configuration import (
+    DEFAULT_DEVICE,
+    INFERENCE_MODELS_YOLOV7_DEFAULT_CLASS_AGNOSTIC_NMS,
+    INFERENCE_MODELS_YOLOV7_DEFAULT_CONFIDENCE,
+    INFERENCE_MODELS_YOLOV7_DEFAULT_IOU_THRESHOLD,
+    INFERENCE_MODELS_YOLOV7_DEFAULT_MAX_DETECTIONS,
+)
 from inference_models.entities import ColorFormat
 from inference_models.errors import (
     CorruptedModelPackageError,
@@ -102,6 +108,17 @@ class YOLOv7ForInstanceSegmentationTRT(
                 ResizeMode.LETTERBOX,
                 ResizeMode.CENTER_CROP,
                 ResizeMode.LETTERBOX_REFLECT_EDGES,
+            },
+            implicit_resize_mode_substitutions={
+                ResizeMode.FIT_LONGER_EDGE: (
+                    ResizeMode.LETTERBOX,
+                    127,
+                    "YOLOv7 Instance Segmentation model running with TRT backend was trained with "
+                    "`fit-longer-edge` input resize mode. This transform cannot be applied properly for "
+                    "models with input dimensions fixed during weights export. To ensure interoperability, `letterbox` "
+                    "resize mode with gray edges will be used instead. If model was trained on Roboflow platform, "
+                    "we recommend using preprocessing method different that `fit-longer-edge`.",
+                )
             },
         )
         trt_config = parse_trt_config(
@@ -200,19 +217,19 @@ class YOLOv7ForInstanceSegmentationTRT(
         self,
         model_results: Tuple[torch.Tensor, torch.Tensor],
         pre_processing_meta: List[PreProcessingMetadata],
-        conf_thresh: float = 0.25,
-        iou_thresh: float = 0.45,
-        max_detections: int = 100,
-        class_agnostic: bool = False,
+        confidence: float = INFERENCE_MODELS_YOLOV7_DEFAULT_CONFIDENCE,
+        iou_threshold: float = INFERENCE_MODELS_YOLOV7_DEFAULT_IOU_THRESHOLD,
+        max_detections: int = INFERENCE_MODELS_YOLOV7_DEFAULT_MAX_DETECTIONS,
+        class_agnostic_nms: bool = INFERENCE_MODELS_YOLOV7_DEFAULT_CLASS_AGNOSTIC_NMS,
         **kwargs,
     ) -> List[InstanceDetections]:
         instances, protos = model_results
         nms_results = run_nms_for_instance_segmentation(
             output=instances.permute(0, 2, 1),
-            conf_thresh=conf_thresh,
-            iou_thresh=iou_thresh,
+            conf_thresh=confidence,
+            iou_thresh=iou_threshold,
             max_detections=max_detections,
-            class_agnostic=class_agnostic,
+            class_agnostic=class_agnostic_nms,
         )
         final_results = []
         for image_bboxes, image_protos, image_meta in zip(

@@ -20,7 +20,6 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 
-
 # =============================================================================
 # Test Block Definitions
 # =============================================================================
@@ -181,7 +180,9 @@ class TestShouldFilterBlockByType:
         result = loader._should_filter_block(SinkBlock)
 
         # then
-        assert result is True, "Block with type 'sink' should be filtered when 'sink' is disabled"
+        assert (
+            result is True
+        ), "Block with type 'sink' should be filtered when 'sink' is disabled"
 
     @mock.patch.object(loader, "WORKFLOW_DISABLED_BLOCK_TYPES", ["sink"])
     @mock.patch.object(loader, "WORKFLOW_DISABLED_BLOCK_PATTERNS", [])
@@ -190,11 +191,13 @@ class TestShouldFilterBlockByType:
         result = loader._should_filter_block(TransformationBlock)
 
         # then
-        assert result is False, (
-            "Block with type 'transformation' should not be filtered when only 'sink' is disabled"
-        )
+        assert (
+            result is False
+        ), "Block with type 'transformation' should not be filtered when only 'sink' is disabled"
 
-    @mock.patch.object(loader, "WORKFLOW_DISABLED_BLOCK_TYPES", ["sink"])  # env.py normalizes to lowercase
+    @mock.patch.object(
+        loader, "WORKFLOW_DISABLED_BLOCK_TYPES", ["sink"]
+    )  # env.py normalizes to lowercase
     @mock.patch.object(loader, "WORKFLOW_DISABLED_BLOCK_PATTERNS", [])
     def test_should_filter_block_with_case_insensitive_block_type_value(self) -> None:
         """Test that block_type from schema is lowercased before comparison.
@@ -207,7 +210,9 @@ class TestShouldFilterBlockByType:
         result = loader._should_filter_block(SinkBlock)
 
         # then
-        assert result is True, "Block type from schema should be lowercased for comparison"
+        assert (
+            result is True
+        ), "Block type from schema should be lowercased for comparison"
 
     @mock.patch.object(loader, "WORKFLOW_DISABLED_BLOCK_TYPES", ["sink", "model"])
     @mock.patch.object(loader, "WORKFLOW_DISABLED_BLOCK_PATTERNS", [])
@@ -220,7 +225,9 @@ class TestShouldFilterBlockByType:
         # then
         assert sink_result is True, "Sink block should be filtered"
         assert model_result is True, "Model block should be filtered"
-        assert transformation_result is False, "Transformation block should not be filtered"
+        assert (
+            transformation_result is False
+        ), "Transformation block should not be filtered"
 
 
 # =============================================================================
@@ -238,9 +245,9 @@ class TestShouldFilterBlockByPattern:
         result = loader._should_filter_block(WebhookNotificationBlock)
 
         # then
-        assert result is True, (
-            "Block should be filtered when pattern 'webhook' matches friendly name 'Webhook Notification'"
-        )
+        assert (
+            result is True
+        ), "Block should be filtered when pattern 'webhook' matches friendly name 'Webhook Notification'"
 
     @mock.patch.object(loader, "WORKFLOW_DISABLED_BLOCK_TYPES", [])
     @mock.patch.object(loader, "WORKFLOW_DISABLED_BLOCK_PATTERNS", ["sinkblock"])
@@ -249,12 +256,14 @@ class TestShouldFilterBlockByPattern:
         result = loader._should_filter_block(SinkBlock)
 
         # then
-        assert result is True, (
-            "Block should be filtered when pattern 'sinkblock' matches class name 'SinkBlock'"
-        )
+        assert (
+            result is True
+        ), "Block should be filtered when pattern 'sinkblock' matches class name 'SinkBlock'"
 
     @mock.patch.object(loader, "WORKFLOW_DISABLED_BLOCK_TYPES", [])
-    @mock.patch.object(loader, "WORKFLOW_DISABLED_BLOCK_PATTERNS", ["WEBHOOK"])  # uppercase
+    @mock.patch.object(
+        loader, "WORKFLOW_DISABLED_BLOCK_PATTERNS", ["WEBHOOK"]
+    )  # uppercase
     def test_should_filter_block_with_case_insensitive_pattern_matching(self) -> None:
         # when
         result = loader._should_filter_block(WebhookNotificationBlock)
@@ -263,28 +272,36 @@ class TestShouldFilterBlockByPattern:
         assert result is True, "Pattern matching should be case-insensitive"
 
     @mock.patch.object(loader, "WORKFLOW_DISABLED_BLOCK_TYPES", [])
-    @mock.patch.object(loader, "WORKFLOW_DISABLED_BLOCK_PATTERNS", ["nonexistent_pattern"])
+    @mock.patch.object(
+        loader, "WORKFLOW_DISABLED_BLOCK_PATTERNS", ["nonexistent_pattern"]
+    )
     def test_should_not_filter_block_when_pattern_does_not_match(self) -> None:
         # when
         result = loader._should_filter_block(SinkBlock)
 
         # then
-        assert result is False, "Block should not be filtered when pattern doesn't match"
+        assert (
+            result is False
+        ), "Block should not be filtered when pattern doesn't match"
 
     @mock.patch.object(loader, "WORKFLOW_DISABLED_BLOCK_TYPES", ["sink"])  # type match
-    @mock.patch.object(loader, "WORKFLOW_DISABLED_BLOCK_PATTERNS", ["modelblock"])  # pattern match
+    @mock.patch.object(
+        loader, "WORKFLOW_DISABLED_BLOCK_PATTERNS", ["modelblock"]
+    )  # pattern match
     def test_should_filter_block_when_either_type_or_pattern_matches(self) -> None:
         # when
         sink_result = loader._should_filter_block(SinkBlock)  # matches type
         model_result = loader._should_filter_block(ModelBlock)  # matches pattern
-        transformation_result = loader._should_filter_block(TransformationBlock)  # neither
+        transformation_result = loader._should_filter_block(
+            TransformationBlock
+        )  # neither
 
         # then
         assert sink_result is True, "Sink block should be filtered by type"
         assert model_result is True, "Model block should be filtered by pattern"
-        assert transformation_result is False, (
-            "Transformation block matches neither and should not be filtered"
-        )
+        assert (
+            transformation_result is False
+        ), "Transformation block matches neither and should not be filtered"
 
 
 # =============================================================================
@@ -302,9 +319,9 @@ class TestFeatureToggleBehavior:
         result = loader._should_filter_block(SinkBlock)
 
         # then
-        assert result is False, (
-            "No filtering should occur when no types or patterns are specified"
-        )
+        assert (
+            result is False
+        ), "No filtering should occur when no types or patterns are specified"
 
     @mock.patch.object(loader, "WORKFLOW_DISABLED_BLOCK_TYPES", ["sink"])
     @mock.patch.object(loader, "WORKFLOW_DISABLED_BLOCK_PATTERNS", [])
@@ -319,9 +336,9 @@ class TestFeatureToggleBehavior:
                 schema = manifest_class.model_json_schema()
                 # Note: Pydantic V2 puts json_schema_extra values at top level of schema
                 block_type = schema.get("block_type", "")
-                assert block_type.lower() != "sink", (
-                    f"Sink block {block_class.__name__} should have been filtered"
-                )
+                assert (
+                    block_type.lower() != "sink"
+                ), f"Sink block {block_class.__name__} should have been filtered"
             except Exception:
                 # Skip blocks that don't have proper manifest structure
                 pass

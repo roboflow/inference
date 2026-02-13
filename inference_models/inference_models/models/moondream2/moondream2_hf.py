@@ -5,9 +5,12 @@ import numpy as np
 import torch
 
 from inference_models import Detections
-from inference_models.configuration import DEFAULT_DEVICE
+from inference_models.configuration import (
+    DEFAULT_DEVICE,
+    INFERENCE_MODELS_MOONDREAM2_DEFAULT_MAX_NEW_TOKENS,
+)
 from inference_models.entities import ColorFormat, ImageDimensions
-from inference_models.errors import ModelRuntimeError
+from inference_models.errors import ModelInputError, ModelRuntimeError
 from inference_models.models.common.model_packages import get_model_package_contents
 from inference_models.models.common.roboflow.pre_processing import images_to_pillow
 from inference_models.utils.imports import import_class_from_file
@@ -68,7 +71,7 @@ class MoonDream2HF:
             List[np.ndarray],
         ],
         classes: List[str],
-        max_tokens: int = 700,
+        max_new_tokens: int = INFERENCE_MODELS_MOONDREAM2_DEFAULT_MAX_NEW_TOKENS,
         input_color_format: Optional[ColorFormat] = None,
     ) -> List[Detections]:
         encoded_images = self.encode_images(
@@ -81,7 +84,7 @@ class MoonDream2HF:
                 class_detections = self._model.detect(
                     image=encoded_image.moondream_encoded_image,
                     object=class_name,
-                    settings={"max_tokens": max_tokens},
+                    settings={"max_tokens": max_new_tokens},
                 )["objects"]
                 image_detections.append((class_id, class_detections))
             image_results = post_process_detections(
@@ -103,7 +106,7 @@ class MoonDream2HF:
             List[np.ndarray],
         ],
         length: Literal["normal", "short", "long"] = "normal",
-        max_tokens: int = 700,
+        max_new_tokens: int = INFERENCE_MODELS_MOONDREAM2_DEFAULT_MAX_NEW_TOKENS,
         input_color_format: Optional[ColorFormat] = None,
     ) -> List[str]:
         encoded_images = self.encode_images(
@@ -114,7 +117,7 @@ class MoonDream2HF:
             result = self._model.caption(
                 image=encoded_image.moondream_encoded_image,
                 length=length,
-                settings={"max_tokens": max_tokens},
+                settings={"max_tokens": max_new_tokens},
             )
             results.append(result["caption"].strip())
         return results
@@ -130,7 +133,7 @@ class MoonDream2HF:
             List[np.ndarray],
         ],
         question: str,
-        max_tokens: int = 700,
+        max_new_tokens: int = INFERENCE_MODELS_MOONDREAM2_DEFAULT_MAX_NEW_TOKENS,
         input_color_format: Optional[ColorFormat] = None,
     ) -> List[str]:
         encoded_images = self.encode_images(
@@ -141,7 +144,7 @@ class MoonDream2HF:
             result = self._model.query(
                 image=encoded_image.moondream_encoded_image,
                 question=question,
-                settings={"max_tokens": max_tokens},
+                settings={"max_tokens": max_new_tokens},
             )
             results.append(result["answer"].strip())
         return results
@@ -157,7 +160,7 @@ class MoonDream2HF:
             List[np.ndarray],
         ],
         classes: List[str],
-        max_tokens: int = 700,
+        max_new_tokens: int = INFERENCE_MODELS_MOONDREAM2_DEFAULT_MAX_NEW_TOKENS,
         input_color_format: Optional[ColorFormat] = None,
     ) -> List[Points]:
         encoded_images = self.encode_images(
@@ -170,7 +173,7 @@ class MoonDream2HF:
                 class_points = self._model.point(
                     image=encoded_image.moondream_encoded_image,
                     object=class_name,
-                    settings={"max_tokens": max_tokens},
+                    settings={"max_tokens": max_new_tokens},
                 )["points"]
                 image_points.append((class_id, class_points))
             image_results = post_process_points(
@@ -226,7 +229,7 @@ def are_images_encoded(
 ) -> bool:
     if isinstance(images, list):
         if not len(images):
-            raise ModelRuntimeError(
+            raise ModelInputError(
                 message="Detected empty input to the model", help_url="https://todo"
             )
         return isinstance(images[0], EncodedImage)

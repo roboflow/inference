@@ -12,7 +12,10 @@ from inference_models import (
     MultiLabelClassificationModel,
     MultiLabelClassificationPrediction,
 )
-from inference_models.configuration import DEFAULT_DEVICE
+from inference_models.configuration import (
+    DEFAULT_DEVICE,
+    INFERENCE_MODELS_VIT_CLASSIFIER_DEFAULT_CONFIDENCE,
+)
 from inference_models.entities import ColorFormat
 from inference_models.errors import CorruptedModelPackageError
 from inference_models.models.common.model_packages import get_model_package_contents
@@ -77,7 +80,17 @@ class VITForClassificationHF(ClassificationModel[torch.Tensor, torch.Tensor]):
                 ResizeMode.LETTERBOX,
                 ResizeMode.CENTER_CROP,
                 ResizeMode.LETTERBOX_REFLECT_EDGES,
-                ResizeMode.FIT_LONGER_EDGE,
+            },
+            implicit_resize_mode_substitutions={
+                ResizeMode.FIT_LONGER_EDGE: (
+                    ResizeMode.STRETCH_TO,
+                    None,
+                    "VIT Classification model running with HF backend was trained with "
+                    "`fit-longer-edge` input resize mode. This transform cannot be applied properly for "
+                    "models with input dimensions fixed during training. To ensure interoperability, `stretch` "
+                    "resize mode will be used instead. If model was trained on Roboflow platform, "
+                    "we recommend using preprocessing method different that `fit-longer-edge`.",
+                )
             },
         )
         if inference_config.model_initialization is None:
@@ -220,7 +233,17 @@ class VITForMultiLabelClassificationHF(
                 ResizeMode.LETTERBOX,
                 ResizeMode.CENTER_CROP,
                 ResizeMode.LETTERBOX_REFLECT_EDGES,
-                ResizeMode.FIT_LONGER_EDGE,
+            },
+            implicit_resize_mode_substitutions={
+                ResizeMode.FIT_LONGER_EDGE: (
+                    ResizeMode.STRETCH_TO,
+                    None,
+                    "VIT Multi-Label Classification model running with HF backend was trained with "
+                    "`fit-longer-edge` input resize mode. This transform cannot be applied properly for "
+                    "models with input dimensions fixed during training. To ensure interoperability, `stretch` "
+                    "resize mode will be used instead. If model was trained on Roboflow platform, "
+                    "we recommend using preprocessing method different that `fit-longer-edge`.",
+                )
             },
         )
         if inference_config.model_initialization is None:
@@ -302,7 +325,7 @@ class VITForMultiLabelClassificationHF(
     def post_process(
         self,
         model_results: torch.Tensor,
-        confidence: float = 0.5,
+        confidence: float = INFERENCE_MODELS_VIT_CLASSIFIER_DEFAULT_CONFIDENCE,
         **kwargs,
     ) -> List[MultiLabelClassificationPrediction]:
         results = []

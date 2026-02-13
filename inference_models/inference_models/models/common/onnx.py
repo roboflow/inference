@@ -3,7 +3,11 @@ from typing import Any, Dict, List, Optional, Union
 import numpy as np
 import torch
 
-from inference_models.errors import MissingDependencyError, ModelRuntimeError
+from inference_models.errors import (
+    MissingDependencyError,
+    ModelInputError,
+    ModelRuntimeError,
+)
 
 try:
     import onnxruntime
@@ -270,7 +274,7 @@ def run_onnx_session_with_batch_size_limit(
     for input_tensor in inputs.values():
         input_batch_sizes.add(input_tensor.shape[0])
     if len(input_batch_sizes) != 1:
-        raise ModelRuntimeError(
+        raise ModelInputError(
             message="When running forward pass through ONNX model detected inputs with different batch sizes. "
             "This is the error with the model you run. If the model was trained or exported "
             "on Roboflow platform - contact us to get help. Otherwise, verify your model package or "

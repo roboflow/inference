@@ -143,6 +143,20 @@ class YourObjectDetectionModel(ObjectDetectionModel[torch.Tensor, dict, torch.Te
         pass
 ```
 
+!!! tip "Follow Parameter Naming Conventions"
+    When implementing your model's `__call__`, `pre_process`, `post_process`, or task-specific methods, follow the standard parameter naming conventions documented in [Prediction Parameters](../how-to/prediction-parameters.md). This ensures consistency across the library and makes your model easier to use.
+
+    Common parameters include:
+
+    - `confidence` - Confidence threshold for filtering predictions
+    - `iou_threshold` - IoU threshold for NMS
+    - `max_detections` - Maximum number of detections to return
+    - `max_new_tokens` - Maximum tokens for VLM generation
+    - `num_beams` - Beam search parameter for VLMs
+    - `input_color_format` - Input color format specification
+
+    While this is a "gentleman's agreement" rather than a strict requirement, following these conventions improves the developer experience.
+
 ### Example: Standalone Model
 
 For models with unique behaviors:

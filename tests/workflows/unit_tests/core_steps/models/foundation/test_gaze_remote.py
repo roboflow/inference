@@ -1,4 +1,5 @@
 """Unit tests for Gaze Detection block remote execution."""
+
 from unittest.mock import MagicMock, patch
 
 import numpy as np

@@ -34,6 +34,7 @@ from inference.core.env import (
     OWLV2_MODEL_CACHE_SIZE,
     OWLV2_VERSION_ID,
     PRELOAD_HF_IDS,
+    USE_INFERENCE_MODELS,
 )
 from inference.core.exceptions import InvalidModelIDError, ModelArtefactError
 from inference.core.models.roboflow import (
@@ -224,7 +225,7 @@ def preload_owlv2_model(hf_id: str):
         logger.error("Failed to preload OWLv2 model for %s: %s", hf_id, exc)
 
 
-if PRELOAD_HF_IDS:
+if PRELOAD_HF_IDS and not USE_INFERENCE_MODELS:
     hf_ids = PRELOAD_HF_IDS
     if not isinstance(hf_ids, list):
         hf_ids = [hf_ids]

@@ -7,6 +7,25 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      python-version:
+        description: "Python version to run (or all)"
+        type: choice
+        default: all
+        options:
+          - all
+          - "3.9"
+          - "3.10"
+          - "3.11"
+          - "3.12"
+      use-inference-models:
+        description: "USE_INFERENCE_MODELS value (or all)"
+        type: choice
+        default: all
+        options:
+          - all
+          - "true"
+          - "false"
 
 jobs:
   call_is_mergeable:
@@ -20,7 +39,8 @@ jobs:
       group: public-depot
     strategy:
       matrix:
-        python-version: ["3.9", "3.10", "3.11", "3.12"]
+        python-version: ${{ fromJSON((github.event.inputs.python-version || 'all') == 'all' && '["3.9","3.10","3.11","3.12"]' || format('["{0}"]', github.event.inputs.python-version)) }}
+        use-inference-models: ${{ fromJSON((github.event.inputs.use-inference-models || 'all') == 'all'&& '["true","false"]'|| format('["{0}"]', github.event.inputs.use-inference-models)) }}
     timeout-minutes: 15
     steps:
       - name: 🛎️ Checkout
@@ -45,4 +65,4 @@ jobs:
           pip install --upgrade setuptools
           pip install --extra-index-url https://download.pytorch.org/whl/cpu -r requirements/_requirements.txt -r requirements/requirements.sam.txt -r requirements/requirements.cpu.txt -r requirements/requirements.http.txt -r requirements/requirements.test.unit.txt -r requirements/requirements.doctr.txt -r requirements/requirements.yolo_world.txt -r requirements/requirements.transformers.txt -r requirements/requirements.sdk.http.txt -r requirements/requirements.easyocr.txt
       - name: 🧪 Integration Tests of Workflows
-        run: ROBOFLOW_API_KEY=${{ secrets.API_KEY }} MODAL_TOKEN_ID=${{ secrets.MODAL_TOKEN_ID }} MODAL_TOKEN_SECRET=${{ secrets.MODAL_TOKEN_SECRET }} MODAL_ALLOW_ANONYMOUS_EXECUTION=True MODAL_ANONYMOUS_WORKSPACE_NAME=github-test MODAL_SKIP_FLORENCE2_TEST=FALSE LOAD_ENTERPRISE_BLOCKS=TRUE python -m pytest tests/workflows/integration_tests
+        run: USE_INFERENCE_MODELS=${{ matrix.use-inference-models }} ROBOFLOW_API_KEY=${{ secrets.API_KEY }} MODAL_TOKEN_ID=${{ secrets.MODAL_TOKEN_ID }} MODAL_TOKEN_SECRET=${{ secrets.MODAL_TOKEN_SECRET }} MODAL_ALLOW_ANONYMOUS_EXECUTION=True MODAL_ANONYMOUS_WORKSPACE_NAME=github-test MODAL_SKIP_FLORENCE2_TEST=FALSE LOAD_ENTERPRISE_BLOCKS=TRUE python -m pytest tests/workflows/integration_tests

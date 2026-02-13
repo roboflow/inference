@@ -226,8 +226,12 @@ def test_workflow_with_detection_event_log_auto_extracts_reference_timestamp(
         assert "first_seen_relative" in first_event
         assert "last_seen_relative" in first_event
         # Absolute timestamps should be present due to auto-extraction
-        assert "first_seen_timestamp" in first_event, "Expected auto-extracted first_seen_timestamp"
-        assert "last_seen_timestamp" in first_event, "Expected auto-extracted last_seen_timestamp"
+        assert (
+            "first_seen_timestamp" in first_event
+        ), "Expected auto-extracted first_seen_timestamp"
+        assert (
+            "last_seen_timestamp" in first_event
+        ), "Expected auto-extracted last_seen_timestamp"
         # first_seen_relative = 0.0, so first_seen_timestamp should equal reference_timestamp
         # reference_timestamp = frame_ts - relative_time = 1726570875.0 - 0.0 = 1726570875.0
         assert first_event["first_seen_timestamp"] == 1726570875.0

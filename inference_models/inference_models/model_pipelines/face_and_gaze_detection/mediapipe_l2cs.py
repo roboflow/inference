@@ -6,7 +6,7 @@ import torch
 from inference_models import Detections, KeyPoints
 from inference_models.configuration import DEFAULT_DEVICE
 from inference_models.entities import ColorFormat
-from inference_models.errors import ModelPipelineInitializationError, ModelRuntimeError
+from inference_models.errors import ModelInputError, ModelPipelineInitializationError
 from inference_models.models.l2cs.l2cs_onnx import (
     DEFAULT_GAZE_MAX_BATCH_SIZE,
     L2CSGazeDetection,
@@ -104,7 +104,7 @@ class FaceAndGazeDetectionMPAndL2CS:
         input_color_format: Optional[ColorFormat] = None,
         conf_threshold: float = 0.25,
         **kwargs,
-    ) -> Tuple[List[KeyPoints], List[Detections], List[L2CSGazeDetection]]:
+    ) -> Tuple[List[KeyPoints], List[Detections], List[Optional[L2CSGazeDetection]]]:
         key_points, detections = self._face_detector(
             images,
             input_color_format=input_color_format,
@@ -116,15 +116,23 @@ class FaceAndGazeDetectionMPAndL2CS:
             detections=detections,
             device=self._gaze_detector.device,
         )
-        gaze_detections = self._gaze_detector(crops, input_color_format="rgb", **kwargs)
+        if len(crops) == 0:
+            gaze_detections = []
+        else:
+            gaze_detections = self._gaze_detector(
+                crops, input_color_format="rgb", **kwargs
+            )
         gaze_detections_dispatched = []
         for start, end in crops_images_bounds:
-            gaze_detections_dispatched.append(
-                L2CSGazeDetection(
-                    yaw=gaze_detections.yaw[start:end],
-                    pitch=gaze_detections.pitch[start:end],
+            if start == end:
+                gaze_detections_dispatched.append(None)
+            else:
+                gaze_detections_dispatched.append(
+                    L2CSGazeDetection(
+                        yaw=gaze_detections.yaw[start:end],
+                        pitch=gaze_detections.pitch[start:end],
+                    )
                 )
-            )
         return key_points, detections, gaze_detections_dispatched
 
     def __call__(
@@ -162,7 +170,7 @@ def crop_images_to_detections(
             images = images[:, [2, 1, 0], :, :]
         prepared_images = [i for i in images]
     elif isinstance(images, list) and len(images) == 0:
-        raise ModelRuntimeError(
+        raise ModelInputError(
             message="Detected empty input to the model",
             help_url="https://todo",
         )
@@ -181,7 +189,7 @@ def crop_images_to_detections(
                 image = image[[2, 1, 0], :, :]
             prepared_images.append(image.to(device))
     else:
-        raise ModelRuntimeError(
+        raise ModelInputError(
             message=f"Detected unknown input batch element: {type(images)}",
             help_url="https://todo",
         )
@@ -192,8 +200,11 @@ def crop_images_to_detections(
         for xyxy in image_detections.xyxy:
             x_min, y_min, x_max, y_max = xyxy.tolist()
             crop = image[:, y_min:y_max, x_min:x_max]
-            if crop.numel() == 0:
-                continue
+            # we are assuming here that no empty crops are generated -
+            # this pre-condition should be met as at the level of face detection
+            # we are filtering out such detections - removing filtering as that would
+            # cause ambiguity downstream, when we would not know which face
+            # corresponds to which gaze detection
             crops.append(crop)
         end_bound = len(crops)
         crops_images_bounds.append((start_bound, end_bound))

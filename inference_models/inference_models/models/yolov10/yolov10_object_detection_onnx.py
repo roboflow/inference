@@ -5,7 +5,11 @@ import numpy as np
 import torch
 
 from inference_models import Detections, ObjectDetectionModel
-from inference_models.configuration import DEFAULT_DEVICE
+from inference_models.configuration import (
+    DEFAULT_DEVICE,
+    INFERENCE_MODELS_YOLOV10_DEFAULT_CONFIDENCE,
+    INFERENCE_MODELS_YOLOV10_DEFAULT_MAX_DETECTIONS,
+)
 from inference_models.entities import ColorFormat
 from inference_models.errors import (
     CorruptedModelPackageError,
@@ -99,6 +103,17 @@ class YOLOv10ForObjectDetectionOnnx(
                 ResizeMode.CENTER_CROP,
                 ResizeMode.LETTERBOX_REFLECT_EDGES,
             },
+            implicit_resize_mode_substitutions={
+                ResizeMode.FIT_LONGER_EDGE: (
+                    ResizeMode.LETTERBOX,
+                    127,
+                    "YOLOv10 Object Detection model running with ONNX backend was trained with "
+                    "`fit-longer-edge` input resize mode. This transform cannot be applied properly for "
+                    "models with input dimensions fixed during weights export. To ensure interoperability, `letterbox` "
+                    "resize mode with gray edges will be used instead. If model was trained on Roboflow platform, "
+                    "we recommend using preprocessing method different that `fit-longer-edge`.",
+                )
+            },
         )
         session = onnxruntime.InferenceSession(
             path_or_bytes=model_package_content["weights.onnx"],
@@ -165,13 +180,13 @@ class YOLOv10ForObjectDetectionOnnx(
         self,
         model_results: torch.Tensor,
         pre_processing_meta: List[PreProcessingMetadata],
-        conf_thresh: float = 0.25,
-        max_detections: int = 100,
+        confidence: float = INFERENCE_MODELS_YOLOV10_DEFAULT_CONFIDENCE,
+        max_detections: int = INFERENCE_MODELS_YOLOV10_DEFAULT_MAX_DETECTIONS,
         **kwargs,
     ) -> List[Detections]:
         results = []
         for image_result, metadata in zip(model_results, pre_processing_meta):
-            mask = image_result[:, 4] > conf_thresh
+            mask = image_result[:, 4] > confidence
             filtered = image_result[mask][:max_detections]
             rescaled = rescale_image_detections(
                 image_detections=filtered,

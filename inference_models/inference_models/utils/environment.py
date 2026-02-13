@@ -34,6 +34,24 @@ def get_integer_from_env(variable_name: str, default: Optional[int] = None) -> i
         )
 
 
+def get_float_from_env(variable_name: str, default: Optional[float] = None) -> float:
+    value = os.getenv(variable_name)
+    if value is None:
+        if default is None:
+            raise InvalidEnvVariable(
+                message=f"Environment variable {variable_name} is required",
+                help_url="https://todo",
+            )
+        return default
+    try:
+        return float(value)
+    except ValueError:
+        raise InvalidEnvVariable(
+            message=f"Expected a environment variable `{variable_name}` to be integer but got '{value}'",
+            help_url="https://todo",
+        )
+
+
 def get_comma_separated_list_of_integers_from_env(
     variable_name: str, default: Optional[List[int]] = None
 ) -> List[int]:

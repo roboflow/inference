@@ -8,3 +8,7 @@ class InferenceExperimentalFeatureWarning(Warning):
 
 class ModelDependencyMissing(Warning):
     pass
+
+
+class InferenceModelsStackMissing(Warning):
+    pass
