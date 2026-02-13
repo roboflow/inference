@@ -706,9 +706,9 @@ class RFDETRInstanceSegmentation(
                     input_h, input_w = self.img_size_h, self.img_size_w
                     mask_h, mask_w = mask.shape[0], mask.shape[1]
 
-                    lb_scale = min(input_w / orig_w, input_h / orig_h)
-                    scaled_w = int(orig_w * lb_scale)
-                    scaled_h = int(orig_h * lb_scale)
+                    letterbox_scale = min(input_w / orig_w, input_h / orig_h)
+                    scaled_w = int(orig_w * letterbox_scale)
+                    scaled_h = int(orig_h * letterbox_scale)
 
                     pad_x_input = (input_w - scaled_w) / 2
                     pad_y_input = (input_h - scaled_h) / 2
