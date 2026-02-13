@@ -43,6 +43,7 @@ RUN apt-get update -y && \
     libatlas-base-dev \
     liblapack-dev \
     gfortran \
+    ffmpeg \
     libhdf5-dev \
     libgflags-dev \
     libgoogle-glog-dev \
