@@ -2510,7 +2510,7 @@ class HttpInterface(BaseInterface):
                     logger.debug(f"Reached /sam3/visual_segment")
 
                     if SAM3_EXEC_MODE == "remote":
-                        endpoint = f"{API_BASE_URL}/inferenceproxy/seg-preview-pvs"
+                        endpoint = f"{API_BASE_URL}/inferenceproxy/sam3-pvs"
 
                         http_image = {
                             "type": inference_request.image.type,
