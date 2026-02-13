@@ -715,6 +715,7 @@ class AutoModel:
             # that still may end up with ambiguous behavior - probably the solution would be
             # to require prefix like file://... to denote the intent of loading model from local
             # drive?
+            runtime_x_ray = x_ray_runtime_environment()
             auto_negotiation_hash = hash_dict_content(
                 content={
                     "provider": weights_provider,
@@ -731,6 +732,9 @@ class AutoModel:
                     "nms_fusion_preferences": nms_fusion_preferences,
                     "weights_provider_extra_query_params": weights_provider_extra_query_params,
                     "weights_provider_extra_headers": weights_provider_extra_headers,
+                    "runtime_x_ray": str(
+                        runtime_x_ray
+                    ),  # x-ray to serve as environment setup digest
                 }
             )
             model_from_access_manager = model_access_manager.retrieve_model_instance(

@@ -75,6 +75,9 @@ from inference.core.utils.requests import (
 from inference.core.utils.url_utils import wrap_url
 from inference.core.version import __version__
 
+ENFORCE_CREDITS_VERIFICATION_HEADER = "x-enforce-credits-verification"
+ENFORCE_INTERNAL_ARTIFACTS_URLS_HEADER = "x-enforce-internal-artefacts-urls"
+
 MODEL_TYPE_DEFAULTS = {
     "object-detection": "yolov5v2s",
     "instance-segmentation": "yolact",
@@ -981,9 +984,9 @@ def send_inference_results_to_model_monitoring(
 def get_extra_weights_provider_headers() -> Optional[Dict[str, str]]:
     headers = {}
     if GCP_SERVERLESS:
-        headers["x-enforce-internal-artefacts-urls"] = "true"
+        headers[ENFORCE_INTERNAL_ARTIFACTS_URLS_HEADER] = "true"
     if ENFORCE_CREDITS_VERIFICATION:
-        headers["x-enforce-credits-verification"] = "true"
+        headers[ENFORCE_CREDITS_VERIFICATION_HEADER] = "true"
     return build_roboflow_api_headers(explicit_headers=headers)
 
 
