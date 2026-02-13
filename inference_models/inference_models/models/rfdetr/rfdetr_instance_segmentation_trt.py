@@ -40,6 +40,7 @@ from inference_models.models.rfdetr.class_remapping import (
 )
 from inference_models.models.rfdetr.common import (
     post_process_instance_segmentation_results,
+    replace_fit_longer_edge_with_stretch,
 )
 
 try:
@@ -107,6 +108,7 @@ class RFDetrForInstanceSegmentationTRT(
                 ResizeMode.FIT_LONGER_EDGE,
             },
         )
+        inference_config = replace_fit_longer_edge_with_stretch(inference_config)
         classes_re_mapping = None
         if inference_config.class_names_operations:
             class_names, classes_re_mapping = prepare_class_remapping(

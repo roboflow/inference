@@ -116,3 +116,9 @@ def post_process_instance_segmentation_results(
         )
         results.append(detections)
     return results
+
+def replace_fit_longer_edge_with_stretch(inference_config: InferenceConfig) -> InferenceConfig:
+    if inference_config.network_input.resize_mode is not ResizeMode.FIT_LONGER_EDGE:
+        return inference_config
+    else:
+        return inference_config.model_copy(update={"network_input": inference_config.network_input.model_copy(update={"resize_mode": ResizeMode.STRETCH_TO})})

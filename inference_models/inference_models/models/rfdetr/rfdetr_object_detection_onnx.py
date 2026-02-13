@@ -25,6 +25,7 @@ from inference_models.models.common.roboflow.model_packages import (
 )
 from inference_models.models.common.roboflow.post_processing import (
     rescale_image_detections,
+    replace_fit_longer_edge_with_stretch,
 )
 from inference_models.models.common.roboflow.pre_processing import (
     pre_process_network_input,
@@ -108,6 +109,7 @@ class RFDetrForObjectDetectionONNX(
                 ResizeMode.FIT_LONGER_EDGE,
             },
         )
+        inference_config = replace_fit_longer_edge_with_stretch(inference_config)
         classes_re_mapping = None
         if inference_config.class_names_operations:
             class_names, classes_re_mapping = prepare_class_remapping(

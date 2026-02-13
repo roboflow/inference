@@ -489,8 +489,6 @@ class RoboflowInferenceModel(Model):
         else:
             return validated_resize_method
 
-        
-
     def initialize_model(self, **kwargs) -> None:
         """Initialize the model.
 

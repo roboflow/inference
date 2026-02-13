@@ -36,6 +36,7 @@ from inference_models.models.rfdetr.class_remapping import (
 )
 from inference_models.models.rfdetr.common import (
     parse_model_type,
+    replace_fit_longer_edge_with_stretch,
 )
 from inference_models.models.rfdetr.default_labels import resolve_labels
 from inference_models.models.rfdetr.post_processor import PostProcess
@@ -115,6 +116,7 @@ class RFDetrForObjectDetectionTorch(
                 ResizeMode.FIT_LONGER_EDGE,
             },
         )
+        inference_config = replace_fit_longer_edge_with_stretch(inference_config)
         classes_re_mapping = None
         if inference_config.class_names_operations:
             class_names, classes_re_mapping = prepare_class_remapping(
