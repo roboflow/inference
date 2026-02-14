@@ -108,7 +108,9 @@ def _collect_remote_processing_times(
             try:
                 collector.add(float(pt), model_id=model_id)
             except (ValueError, TypeError):
-                pass
+                logging.warning(
+                    "Malformed %s header value: %r", PROCESSING_TIME_HEADER, pt
+                )
 
 
 def make_parallel_requests(

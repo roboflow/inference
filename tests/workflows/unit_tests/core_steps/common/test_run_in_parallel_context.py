@@ -33,8 +33,9 @@ def test_run_in_parallel_propagates_processing_time_collector() -> None:
     # then
     assert all(has_collector for has_collector, _ in results)
     assert all(eid == "test-exec-id" for _, eid in results)
-    assert len(collector.get_entries()) == 2
-    assert collector.get_entries()[0][0] == "test_model"
+    entries = collector.drain()
+    assert len(entries) == 2
+    assert entries[0][0] == "test_model"
 
 
 def test_run_in_parallel_works_without_collector_set() -> None:
@@ -78,5 +79,7 @@ def test_run_in_parallel_shared_collector_across_threads() -> None:
 
     # then
     assert sorted(results) == ["m1", "m2", "m3"]
-    assert len(collector.get_entries()) == 3
-    assert abs(collector.get_total() - 1.5) < 1e-9
+    entries = collector.drain()
+    assert len(entries) == 3
+    total = sum(t for _, t in entries)
+    assert abs(total - 1.5) < 1e-9

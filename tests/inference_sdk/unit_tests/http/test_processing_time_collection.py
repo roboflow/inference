@@ -44,7 +44,7 @@ class TestCollectProcessingTimeFromResponse:
             remote_processing_times.reset(token)
 
         # then
-        entries = collector.get_entries()
+        entries = collector.drain()
         assert len(entries) == 1
         assert entries[0] == ("clip", 0.42)
 
@@ -91,5 +91,5 @@ class TestCollectProcessingTimeFromResponse:
             remote_processing_times.reset(token)
 
         # then
-        entries = collector.get_entries()
+        entries = collector.drain()
         assert entries[0][0] == "unknown"

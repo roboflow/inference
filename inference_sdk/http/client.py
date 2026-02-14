@@ -1,3 +1,4 @@
+import logging
 from contextlib import contextmanager
 from typing import (
     TYPE_CHECKING,
@@ -110,6 +111,9 @@ if TYPE_CHECKING:
     from inference_sdk.webrtc.client import WebRTCClient
 
 
+logger = logging.getLogger(__name__)
+
+
 def _collect_processing_time_from_response(
     response: requests.Response,
     model_id: str = "unknown",
@@ -122,7 +126,9 @@ def _collect_processing_time_from_response(
         try:
             collector.add(float(pt), model_id=model_id)
         except (ValueError, TypeError):
-            pass
+            logger.warning(
+                "Malformed %s header value: %r", PROCESSING_TIME_HEADER, pt
+            )
 
 
 def wrap_errors(function: callable) -> callable:

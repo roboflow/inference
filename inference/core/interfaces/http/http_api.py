@@ -1,6 +1,5 @@
 import base64
 import concurrent
-import json
 import os
 import re
 from concurrent.futures import CancelledError, Future, ThreadPoolExecutor
@@ -325,15 +324,10 @@ class GCPServerlessMiddleware(BaseHTTPMiddleware):
         t2 = time.time()
         response.headers[PROCESSING_TIME_HEADER] = str(t2 - t1)
         if collector is not None and collector.has_data():
-            response.headers[REMOTE_PROCESSING_TIME_HEADER] = str(
-                collector.get_total()
-            )
-            response.headers[REMOTE_PROCESSING_TIMES_HEADER] = json.dumps(
-                [
-                    {"model_id": model_id, "time": t}
-                    for model_id, t in collector.get_entries()
-                ]
-            )
+            total, detail = collector.summarize()
+            response.headers[REMOTE_PROCESSING_TIME_HEADER] = str(total)
+            if detail is not None:
+                response.headers[REMOTE_PROCESSING_TIMES_HEADER] = detail
         if execution_id is not None:
             response.headers[EXECUTION_ID_HEADER] = execution_id_value
         return response

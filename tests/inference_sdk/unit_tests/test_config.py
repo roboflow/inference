@@ -1,9 +1,10 @@
+import json
 import threading
 
 from inference_sdk.config import RemoteProcessingTimeCollector, remote_processing_times
 
 
-def test_collector_add_and_get_entries() -> None:
+def test_collector_add_and_drain() -> None:
     # given
     collector = RemoteProcessingTimeCollector()
 
@@ -12,22 +13,23 @@ def test_collector_add_and_get_entries() -> None:
     collector.add(0.3, model_id="model_b")
 
     # then
-    entries = collector.get_entries()
+    entries = collector.drain()
     assert entries == [("model_a", 0.5), ("model_b", 0.3)]
 
 
-def test_collector_get_total() -> None:
+def test_drain_clears_entries() -> None:
     # given
     collector = RemoteProcessingTimeCollector()
     collector.add(0.5, model_id="m1")
-    collector.add(0.3, model_id="m2")
-    collector.add(0.2, model_id="m1")
 
     # when
-    total = collector.get_total()
+    first = collector.drain()
+    second = collector.drain()
 
     # then
-    assert abs(total - 1.0) < 1e-9
+    assert len(first) == 1
+    assert len(second) == 0
+    assert collector.has_data() is False
 
 
 def test_collector_has_data_when_empty() -> None:
@@ -55,21 +57,8 @@ def test_collector_default_model_id() -> None:
     collector.add(0.5)
 
     # then
-    entries = collector.get_entries()
+    entries = collector.drain()
     assert entries == [("unknown", 0.5)]
-
-
-def test_collector_get_entries_returns_copy() -> None:
-    # given
-    collector = RemoteProcessingTimeCollector()
-    collector.add(0.5, model_id="m1")
-
-    # when
-    entries = collector.get_entries()
-    entries.append(("m2", 0.9))
-
-    # then
-    assert len(collector.get_entries()) == 1
 
 
 def test_collector_thread_safety() -> None:
@@ -92,9 +81,44 @@ def test_collector_thread_safety() -> None:
         t.join()
 
     # then
-    entries = collector.get_entries()
+    entries = collector.drain()
     assert len(entries) == num_threads * adds_per_thread
-    assert abs(collector.get_total() - num_threads * adds_per_thread * 0.001) < 1e-6
+    total = sum(t for _, t in entries)
+    assert abs(total - num_threads * adds_per_thread * 0.001) < 1e-6
+
+
+def test_summarize_returns_total_and_json() -> None:
+    # given
+    collector = RemoteProcessingTimeCollector()
+    collector.add(0.5, model_id="yolov8")
+    collector.add(0.3, model_id="clip")
+
+    # when
+    total, detail = collector.summarize()
+
+    # then
+    assert abs(total - 0.8) < 1e-9
+    parsed = json.loads(detail)
+    assert parsed == [
+        {"m": "yolov8", "t": 0.5},
+        {"m": "clip", "t": 0.3},
+    ]
+    # drain was called internally, so collector should be empty
+    assert collector.has_data() is False
+
+
+def test_summarize_omits_detail_when_too_large() -> None:
+    # given
+    collector = RemoteProcessingTimeCollector()
+    for i in range(200):
+        collector.add(0.1, model_id=f"model_{i:04d}")
+
+    # when
+    total, detail = collector.summarize(max_detail_bytes=100)
+
+    # then
+    assert total > 0
+    assert detail is None
 
 
 def test_contextvar_default_is_none() -> None:

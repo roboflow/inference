@@ -112,7 +112,7 @@ class TestCollectRemoteProcessingTimes:
             remote_processing_times.reset(token)
 
         # then
-        entries = collector.get_entries()
+        entries = collector.drain()
         assert len(entries) == 1
         assert entries[0] == ("coco/1", 0.523)
 
@@ -138,9 +138,10 @@ class TestCollectRemoteProcessingTimes:
             remote_processing_times.reset(token)
 
         # then
-        entries = collector.get_entries()
+        entries = collector.drain()
         assert len(entries) == 3
-        assert abs(collector.get_total() - 1.0) < 1e-9
+        total = sum(t for _, t in entries)
+        assert abs(total - 1.0) < 1e-9
 
     def test_skips_responses_without_processing_time_header(self) -> None:
         # given
@@ -164,7 +165,7 @@ class TestCollectRemoteProcessingTimes:
             remote_processing_times.reset(token)
 
         # then
-        entries = collector.get_entries()
+        entries = collector.drain()
         assert len(entries) == 2
 
     def test_skips_malformed_processing_time_header(self) -> None:
@@ -187,7 +188,7 @@ class TestCollectRemoteProcessingTimes:
             remote_processing_times.reset(token)
 
         # then
-        entries = collector.get_entries()
+        entries = collector.drain()
         assert len(entries) == 1
         assert entries[0] == ("m2", 0.5)
 
@@ -205,7 +206,7 @@ class TestCollectRemoteProcessingTimes:
             remote_processing_times.reset(token)
 
         # then
-        entries = collector.get_entries()
+        entries = collector.drain()
         assert len(entries) == 2
         assert entries[0][0] == "m1"
         assert entries[1][0] == "unknown"
