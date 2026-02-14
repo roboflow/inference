@@ -398,6 +398,12 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
         res = self.make_response(processed_predictions, img_dims, **kwargs)
         return res
 
+    def validate_resize_method(self, resize_method: str) -> str:
+        if resize_method == "Fit within":
+            return super().validate_resize_method("Stretch to")
+        else:
+            return super().validate_resize_method(resize_method)
+
     def initialize_model(self, **kwargs) -> None:
         """Initializes the ONNX model, setting up the inference session and other necessary properties."""
         logger.debug("Getting model artefacts")
@@ -644,6 +650,7 @@ class RFDETRInstanceSegmentation(
                 scale_fct = np.array([orig_w, orig_h, orig_w, orig_h], dtype=np.float32)
                 boxes_xyxy *= scale_fct
             else:
+                # If resize is not Stretch to, all other methods are some form of letterboxing
                 input_h, input_w = self.img_size_h, self.img_size_w
 
                 scale = min(input_w / orig_w, input_h / orig_h)

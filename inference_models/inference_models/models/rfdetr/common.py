@@ -6,8 +6,11 @@ from torchvision.transforms import functional
 from inference_models import InstanceDetections
 from inference_models.entities import ImageDimensions
 from inference_models.errors import CorruptedModelPackageError
+from inference_models.logger import LOGGER
 from inference_models.models.common.roboflow.model_packages import (
+    InferenceConfig,
     PreProcessingMetadata,
+    ResizeMode,
     StaticCropOffset,
 )
 from inference_models.models.common.roboflow.post_processing import (
@@ -113,3 +116,9 @@ def post_process_instance_segmentation_results(
         )
         results.append(detections)
     return results
+
+def replace_fit_longer_edge_with_stretch(inference_config: InferenceConfig) -> InferenceConfig:
+    if inference_config.network_input.resize_mode is not ResizeMode.FIT_LONGER_EDGE:
+        return inference_config
+    else:
+        return inference_config.model_copy(update={"network_input": inference_config.network_input.model_copy(update={"resize_mode": ResizeMode.STRETCH_TO})})
