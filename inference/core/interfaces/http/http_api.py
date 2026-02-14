@@ -176,6 +176,7 @@ from inference.core.env import (
     WEBRTC_WORKER_ENABLED,
     WORKFLOWS_MAX_CONCURRENT_STEPS,
     WORKFLOWS_PROFILER_BUFFER_SIZE,
+    WORKFLOWS_REMOTE_EXECUTION_TIME_FORWARDING,
     WORKFLOWS_STEP_EXECUTION_MODE,
 )
 from inference.core.exceptions import (
@@ -273,9 +274,16 @@ from inference.core.roboflow_api import ModelEndpointType
 from inference.core.version import __version__
 
 try:
-    from inference_sdk.config import EXECUTION_ID_HEADER, execution_id
+    from inference_sdk.config import (
+        EXECUTION_ID_HEADER,
+        RemoteProcessingTimeCollector,
+        execution_id,
+        remote_processing_times,
+    )
 except ImportError:
     execution_id = None
+    remote_processing_times = None
+    RemoteProcessingTimeCollector = None
     EXECUTION_ID_HEADER = None
 
 
@@ -292,6 +300,10 @@ class LambdaMiddleware(BaseHTTPMiddleware):
         return response
 
 
+REMOTE_PROCESSING_TIME_HEADER = "X-Remote-Processing-Time"
+REMOTE_PROCESSING_TIMES_HEADER = "X-Remote-Processing-Times"
+
+
 class GCPServerlessMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
         if execution_id is not None:
@@ -299,10 +311,23 @@ class GCPServerlessMiddleware(BaseHTTPMiddleware):
             if not execution_id_value:
                 execution_id_value = f"{time.time_ns()}_{uuid4().hex[:4]}"
             execution_id.set(execution_id_value)
+        collector = None
+        if (
+            WORKFLOWS_REMOTE_EXECUTION_TIME_FORWARDING
+            and remote_processing_times is not None
+            and RemoteProcessingTimeCollector is not None
+        ):
+            collector = RemoteProcessingTimeCollector()
+            remote_processing_times.set(collector)
         t1 = time.time()
         response = await call_next(request)
         t2 = time.time()
         response.headers[PROCESSING_TIME_HEADER] = str(t2 - t1)
+        if collector is not None and collector.has_data():
+            total, detail = collector.summarize()
+            response.headers[REMOTE_PROCESSING_TIME_HEADER] = str(total)
+            if detail is not None:
+                response.headers[REMOTE_PROCESSING_TIMES_HEADER] = detail
         if execution_id is not None:
             response.headers[EXECUTION_ID_HEADER] = execution_id_value
         return response
@@ -392,7 +417,11 @@ class HttpInterface(BaseInterface):
                 allow_credentials=True,
                 allow_methods=["*"],
                 allow_headers=["*"],
-                expose_headers=[PROCESSING_TIME_HEADER],
+                expose_headers=[
+                    PROCESSING_TIME_HEADER,
+                    REMOTE_PROCESSING_TIME_HEADER,
+                    REMOTE_PROCESSING_TIMES_HEADER,
+                ],
             )
 
         # Optionally add middleware for profiling the FastAPI server and underlying inference API code

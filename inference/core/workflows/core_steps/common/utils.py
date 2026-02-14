@@ -463,9 +463,29 @@ def post_process_ocr_result(
 
 
 def run_in_parallel(tasks: List[Callable[[], T]], max_workers: int = 1) -> List[T]:
+    try:
+        from inference_sdk.config import execution_id, remote_processing_times
+
+        exec_id = execution_id.get() if execution_id is not None else None
+        collector = (
+            remote_processing_times.get()
+            if remote_processing_times is not None
+            else None
+        )
+    except ImportError:
+        exec_id = None
+        collector = None
+
+    def _run_with_context(fun: Callable[[], T]) -> T:
+        if exec_id is not None:
+            from inference_sdk.config import execution_id
+
+            execution_id.set(exec_id)
+        if collector is not None:
+            from inference_sdk.config import remote_processing_times
+
+            remote_processing_times.set(collector)
+        return fun()
+
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        return list(executor.map(_run, tasks))
-
-
-def _run(fun: Callable[[], T]) -> T:
-    return fun()
+        return list(executor.map(_run_with_context, tasks))
