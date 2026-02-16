@@ -365,11 +365,12 @@ class VideoFrameProcessor:
         if (
             self._termination_date
             and self._termination_date < datetime.datetime.now()
-            or self._terminate_event
-            and self._terminate_event.is_set()
         ):
             logger.info("Timeout reached, terminating inference pipeline")
             self._termination_reason = "timeout_reached"
+            return True
+        if self._terminate_event and self._terminate_event.is_set():
+            logger.info("Terminate event set, terminating inference pipeline")
             return True
         return False
 
