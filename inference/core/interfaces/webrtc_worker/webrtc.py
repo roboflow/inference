@@ -739,6 +739,12 @@ class VideoTransformTrackWithLoop(VideoStreamTrack, VideoFrameProcessor):
         # Optional ACK pacing: block producing the next frame if we're too far ahead.
         await self._wait_for_ack_window(next_frame_id=self._received_frames + 1)
 
+        if self._check_termination():
+            logger.warning("[RECV] Termination triggered after ACK wait, closing gracefully")
+            await self._send_processing_complete()
+            self._signal_termination()
+            raise MediaStreamError("Processing terminated due to timeout")
+
         # Drain queue if using PlayerStreamTrack (RTSP/video file)
         if isinstance(self.track, PlayerStreamTrack) and self.realtime_processing:
             queue_size = self.track._queue.qsize()
