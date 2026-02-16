@@ -241,6 +241,8 @@ class VideoFrameProcessor:
         self._received_frames = 0
         self._declared_fps = declared_fps
         self._stop_processing = False
+        self._termination_reason: Optional[str] = None
+        self._processing_complete_sent = False
         self.heartbeat_callback = heartbeat_callback
 
         self.has_video_track = has_video_track
@@ -354,17 +356,24 @@ class VideoFrameProcessor:
                     )
 
     def _check_termination(self):
-        """Check if we should terminate based on timeout"""
-        if (
-            self._termination_date
-            and self._termination_date < datetime.datetime.now()
-            or self._terminate_event
-            and self._terminate_event.is_set()
-        ):
+        """Check if we should terminate based on timeout.
+
+        Does NOT set terminate_event — callers must call _signal_termination()
+        after sending final data-channel messages to avoid a race with the
+        cleanup task closing the peer connection.
+        """
+        if self._termination_date and self._termination_date < datetime.datetime.now():
             logger.info("Timeout reached, terminating inference pipeline")
-            self._terminate_event.set()
+            self._termination_reason = "timeout_reached"
+            return True
+        if self._terminate_event and self._terminate_event.is_set():
+            logger.info("Terminate event set, terminating inference pipeline")
             return True
         return False
+
+    def _signal_termination(self):
+        if self._terminate_event:
+            self._terminate_event.set()
 
     @staticmethod
     def serialize_outputs_sync(
@@ -477,12 +486,20 @@ class VideoFrameProcessor:
             logger.error("[SEND_OUTPUT] Frame %d failed", frame_id)
 
     async def _send_processing_complete(self):
-        """Send final message indicating processing is complete."""
+        """Send final message indicating processing is complete.
+
+        Also drains the data channel buffer to ensure delivery before the
+        connection is closed.
+        """
+        if self._processing_complete_sent:
+            return
         if not self.data_channel or self.data_channel.readyState != "open":
             return
 
+        self._processing_complete_sent = True
         completion_output = WebRTCOutput(
             processing_complete=True,
+            termination_reason=self._termination_reason,
             video_metadata=WebRTCVideoMetadata(
                 frame_id=self._received_frames,
                 received_at=datetime.datetime.now().isoformat(),
@@ -492,6 +509,7 @@ class VideoFrameProcessor:
         await send_chunked_data(
             self.data_channel, self._received_frames + 1, json_bytes
         )
+        await wait_for_buffer_drain(self.data_channel, timeout=2.0, low_threshold=0)
 
     async def process_frames_data_only(self):
         """Process frames for data extraction only, without video track output."""
@@ -503,6 +521,8 @@ class VideoFrameProcessor:
             while not self._stop_processing:
                 await self._wait_for_ack_window(next_frame_id=self._received_frames + 1)
                 if self._check_termination():
+                    await self._send_processing_complete()
+                    self._signal_termination()
                     break
                 if self.heartbeat_callback:
                     self.heartbeat_callback()
@@ -702,9 +722,10 @@ class VideoTransformTrackWithLoop(VideoStreamTrack, VideoFrameProcessor):
         if self.heartbeat_callback:
             self.heartbeat_callback()
 
-        # Check if we should terminate
         if self._check_termination():
-            logger.warning("[RECV] Termination triggered, stopping")
+            logger.warning("[RECV] Termination triggered, closing gracefully")
+            await self._send_processing_complete()
+            self._signal_termination()
             raise MediaStreamError("Processing terminated due to timeout")
 
         # Wait for track to be ready (video file upload case)
@@ -718,6 +739,12 @@ class VideoTransformTrackWithLoop(VideoStreamTrack, VideoFrameProcessor):
         # Optional ACK pacing: block producing the next frame if we're too far ahead.
         await self._wait_for_ack_window(next_frame_id=self._received_frames + 1)
 
+        if self._check_termination():
+            logger.warning("[RECV] Termination triggered, closing gracefully")
+            await self._send_processing_complete()
+            self._signal_termination()
+            raise MediaStreamError("Processing terminated due to timeout")
+
         # Drain queue if using PlayerStreamTrack (RTSP/video file)
         if isinstance(self.track, PlayerStreamTrack) and self.realtime_processing:
             queue_size = self.track._queue.qsize()
@@ -730,7 +757,12 @@ class VideoTransformTrackWithLoop(VideoStreamTrack, VideoFrameProcessor):
                     "[RECV] Drained %d frames from queue (was %d)", drained, queue_size
                 )
 
-        frame: VideoFrame = await self.track.recv()
+        try:
+            frame: VideoFrame = await self.track.recv()
+        except MediaStreamError:
+            logger.info("[RECV] Track ended after %d frames", self._received_frames)
+            await self._send_processing_complete()
+            raise
 
         self._received_frames += 1
         frame_id = self._received_frames
