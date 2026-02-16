@@ -107,7 +107,7 @@ class Owlv2AdapterSingleton:
         return instance
 
 
-@torch.no_grad()
+@torch.inference_mode()
 def dummy_infer(
     hf_id: str,
     api_key: Optional[str] = None,
@@ -121,13 +121,11 @@ def dummy_infer(
     )
     model = singleton.model
     # Below code is copied from Owlv2.embed_image
-    device_str = "cuda" if str(DEVICE).startswith("cuda") else "cpu"
     np_image = np.zeros((256, 256, 3), dtype=np.uint8)
-    pixel_values = model._processor(images=np_image, return_tensors="pt")[
-        "pixel_values"
-    ].to(model._device)
+    pixel_values, _ = model.pre_process(np_image)
+    device_type = model._device.type
     with torch.autocast(
-        device_type=device_str, dtype=torch.float16, enabled=device_str == "cuda"
+        device_type=device_type, dtype=torch.float16, enabled=device_type == "cuda"
     ):
         embeddings, *_ = model._model.image_embedder(pixel_values=pixel_values)
     del pixel_values, np_image, embeddings
