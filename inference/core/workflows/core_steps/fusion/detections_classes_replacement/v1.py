@@ -7,6 +7,7 @@ import supervision as sv
 from pydantic import ConfigDict, Field
 from supervision.config import CLASS_NAME_DATA_FIELD
 
+from inference.core import logger
 from inference.core.workflows.execution_engine.constants import (
     DETECTION_ID_KEY,
     PARENT_ID_KEY,
@@ -231,32 +232,28 @@ class DetectionsClassesReplacementBlockV1(WorkflowBlock):
         is_string_prediction = isinstance(first_valid_pred, (str, list))
 
         if is_string_prediction:
-            # For string predictions, we match by index (positional mapping)
-            # We must have exact match in count between detections and predictions
-            # or we need to handle mismatch gracefully
-
-            # Since object_detection_predictions might be filtered or change order,
-            # ideally we want strict 1:1 mapping if possible.
-            # But here we rely on the batch indices to align with detections.
-
-            # The classification_predictions Batch is expected to be aligned with
-            # the crops that were generated from object_detection_predictions.
-
-            # If we assume 1:1 mapping between detections and classification_predictions:
             if len(object_detection_predictions) != len(classification_predictions):
-                # Fallback to empty if counts don't match, or maybe log warning?
-                # For now, let's return empty to be safe, or we could try to zip as much as possible.
-                # Given the user request implies a workflow where crops -> step -> replacement,
-                # the counts should match.
-                pass
+                logger.warning(
+                    "Detections count (%d) does not match classification predictions "
+                    "count (%d). Unmatched detections will use the fallback class "
+                    "(if configured) or be discarded.",
+                    len(object_detection_predictions),
+                    len(classification_predictions),
+                )
+                # Pad classification_predictions with None so every detection is
+                # processed through the fallback path instead of being silently
+                # truncated by zip.
+                padded_predictions = list(classification_predictions) + [
+                    None
+                ] * (
+                    len(object_detection_predictions)
+                    - len(classification_predictions)
+                )
+                classification_predictions = padded_predictions
 
             new_class_names = []
             new_class_ids = []
             new_confidences = []
-
-            # We iterate over both. Detections are in object_detection_predictions.
-            # classification_predictions is a Batch.
-
             valid_indices = []
 
             for i, (det_idx, prediction) in enumerate(
@@ -266,9 +263,14 @@ class DetectionsClassesReplacementBlockV1(WorkflowBlock):
             ):
                 if prediction is None:
                     if fallback_class_name:
+                        resolved_fallback_id = (
+                            fallback_class_id
+                            if fallback_class_id is not None
+                            else sys.maxsize
+                        )
                         class_name, class_id, confidence = (
                             fallback_class_name,
-                            fallback_class_id or sys.maxsize,
+                            resolved_fallback_id,
                             0.0,
                         )
                     else:
