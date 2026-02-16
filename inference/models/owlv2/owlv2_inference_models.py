@@ -88,7 +88,8 @@ class Owlv2AdapterSingleton:
             if OWLV2_COMPILE_MODEL:
                 logger.info("Compiling OWLv2 model %s", huggingface_id)
                 torch._dynamo.config.suppress_errors = True
-                model.optimize_for_inference()
+                torch.compile(model._model.owlv2.vision_model)
+                model._compiled = True
             logger.info("Caching OWLv2 model %s", huggingface_id)
             cls._instances[huggingface_id] = model
             instance = cls.assembly_instance(huggingface_id, model)
@@ -120,11 +121,14 @@ def dummy_infer(
     # Below code is copied from Owlv2.embed_image
     device_str = "cuda" if str(DEVICE).startswith("cuda") else "cpu"
     np_image = np.zeros((256, 256, 3), dtype=np.uint8)
+    pixel_values = model._processor(
+        images=np_image, return_tensors="pt"
+    )["pixel_values"]
     with torch.autocast(
         device_type=device_str, dtype=torch.float16, enabled=device_str == "cuda"
     ):
-        embeddings = model.embed_image(np_image)
-        del embeddings
+        embeddings, *_ = model._model.image_embedder(pixel_values=pixel_values)
+    del pixel_values, np_image, embeddings
     gc.collect()
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
