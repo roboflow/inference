@@ -127,7 +127,8 @@ def _collect_processing_time_from_response(
             collector.add(float(pt), model_id=model_id)
         except (ValueError, TypeError):
             logger.warning(
-                "Malformed %s header value: %r", PROCESSING_TIME_HEADER, pt
+                "Malformed %s header value; could not parse as float",
+                PROCESSING_TIME_HEADER,
             )
 
 
