@@ -40,9 +40,7 @@ class RemoteProcessingTimeCollector:
         with self._lock:
             return len(self._entries) > 0
 
-    def summarize(
-        self, max_detail_bytes: int = 4096
-    ) -> Tuple[float, Optional[str]]:
+    def summarize(self, max_detail_bytes: int = 4096) -> Tuple[float, Optional[str]]:
         """Atomically drain entries and return (total_time, entries_json_or_none).
 
         Returns the total processing time and a JSON string of individual entries.
@@ -50,9 +48,7 @@ class RemoteProcessingTimeCollector:
         """
         entries = self.drain()
         total = sum(t for _, t in entries)
-        detail = json.dumps(
-            [{"m": m, "t": t} for m, t in entries]
-        )
+        detail = json.dumps([{"m": m, "t": t} for m, t in entries])
         if len(detail) > max_detail_bytes:
             detail = None
         return total, detail
