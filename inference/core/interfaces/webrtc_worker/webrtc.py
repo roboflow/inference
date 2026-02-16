@@ -726,7 +726,8 @@ class VideoTransformTrackWithLoop(VideoStreamTrack, VideoFrameProcessor):
             logger.warning("[RECV] Termination triggered, closing gracefully")
             await self._send_processing_complete()
             self._signal_termination()
-            raise MediaStreamError("Processing terminated due to timeout")
+            reason = self._termination_reason or "terminate_event"
+            raise MediaStreamError(f"Processing terminated: {reason}")
 
         # Wait for track to be ready (video file upload case)
         if self.track is None:
@@ -743,7 +744,8 @@ class VideoTransformTrackWithLoop(VideoStreamTrack, VideoFrameProcessor):
             logger.warning("[RECV] Termination triggered, closing gracefully")
             await self._send_processing_complete()
             self._signal_termination()
-            raise MediaStreamError("Processing terminated due to timeout")
+            reason = self._termination_reason or "terminate_event"
+            raise MediaStreamError(f"Processing terminated: {reason}")
 
         # Drain queue if using PlayerStreamTrack (RTSP/video file)
         if isinstance(self.track, PlayerStreamTrack) and self.realtime_processing:
