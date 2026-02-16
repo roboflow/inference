@@ -123,7 +123,7 @@ def dummy_infer(
     np_image = np.zeros((256, 256, 3), dtype=np.uint8)
     pixel_values = model._processor(images=np_image, return_tensors="pt")[
         "pixel_values"
-    ]
+    ].to(model._device)
     with torch.autocast(
         device_type=device_str, dtype=torch.float16, enabled=device_str == "cuda"
     ):
