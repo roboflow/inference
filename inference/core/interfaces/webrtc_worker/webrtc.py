@@ -509,7 +509,12 @@ class VideoFrameProcessor:
         await send_chunked_data(
             self.data_channel, self._received_frames + 1, json_bytes
         )
-        await wait_for_buffer_drain(self.data_channel, timeout=2.0, low_threshold=0)
+        if not await wait_for_buffer_drain(
+            self.data_channel, timeout=2.0, low_threshold=0
+        ):
+            logger.warning(
+                "Buffer drain timed out, processing_complete may not reach client"
+            )
 
     async def process_frames_data_only(self):
         """Process frames for data extraction only, without video track output."""
