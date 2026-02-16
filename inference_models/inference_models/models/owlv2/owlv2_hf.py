@@ -90,10 +90,14 @@ class OWLv2HF(
             local_files_only=local_files_only,
             use_fast=True,
         )
-        model = Owlv2ForObjectDetection.from_pretrained(
-            model_name_or_path,
-            local_files_only=local_files_only,
-        ).to(device)
+        model = (
+            Owlv2ForObjectDetection.from_pretrained(
+                model_name_or_path,
+                local_files_only=local_files_only,
+            )
+            .eval()
+            .to(device)
+        )
         instance = cls(
             model=model,
             processor=processor,

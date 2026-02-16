@@ -50,4 +50,4 @@ filelock>=3.12.0,<=3.17.0
 onvif-zeep-async==2.0.0 # versions > 2.0.0 will not work with Python 3.9 despite docs
 simple-pid~=2.0.1
 qrcode~=8.0.0
-inference-models==0.18.6rc14
+inference-models==0.18.6rc15
