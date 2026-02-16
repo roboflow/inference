@@ -243,11 +243,8 @@ class DetectionsClassesReplacementBlockV1(WorkflowBlock):
                 # Pad classification_predictions with None so every detection is
                 # processed through the fallback path instead of being silently
                 # truncated by zip.
-                padded_predictions = list(classification_predictions) + [
-                    None
-                ] * (
-                    len(object_detection_predictions)
-                    - len(classification_predictions)
+                padded_predictions = list(classification_predictions) + [None] * (
+                    len(object_detection_predictions) - len(classification_predictions)
                 )
                 classification_predictions = padded_predictions
 
