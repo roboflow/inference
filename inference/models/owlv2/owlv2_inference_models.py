@@ -88,7 +88,9 @@ class Owlv2AdapterSingleton:
             if OWLV2_COMPILE_MODEL:
                 logger.info("Compiling OWLv2 model %s", huggingface_id)
                 torch._dynamo.config.suppress_errors = True
-                torch.compile(model._model.owlv2.vision_model)
+                model._model.owlv2.vision_model = torch.compile(
+                    model._model.owlv2.vision_model
+                )
                 model._compiled = True
             logger.info("Caching OWLv2 model %s", huggingface_id)
             cls._instances[huggingface_id] = model
