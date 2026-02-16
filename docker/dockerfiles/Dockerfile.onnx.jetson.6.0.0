@@ -11,6 +11,7 @@ RUN apt-get update -y && \
     lshw \
     git \
     gfortran \
+    ffmpeg \
     build-essential \
     libatlas-base-dev \
     libsm6 \
