@@ -2489,94 +2489,6 @@ class HttpInterface(BaseInterface):
                     )
                     return model_response
 
-                @app.post(
-                    "/sam3/visual_segment",
-                    response_model=Sam2SegmentationResponse,
-                    summary="SAM3 PVS (promptable visual segmentation)",
-                    description="Run the SAM3 PVS (promptable visual segmentation) to generate segmentations for image data.",
-                )
-                @with_route_exceptions
-                @usage_collector("request")
-                def sam3_visual_segment(
-                    inference_request: Sam2SegmentationRequest,
-                    request: Request,
-                    api_key: Optional[str] = Query(
-                        None,
-                        description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
-                    ),
-                    countinference: Optional[bool] = None,
-                    service_secret: Optional[str] = None,
-                ):
-                    logger.debug(f"Reached /sam3/visual_segment")
-
-                    if SAM3_EXEC_MODE == "remote":
-                        endpoint = f"{API_BASE_URL}/inferenceproxy/sam3-pvs"
-
-                        http_image = {
-                            "type": inference_request.image.type,
-                            "value": inference_request.image.value,
-                        }
-
-                        prompts_data = (
-                            inference_request.prompts.dict(exclude_none=True)
-                            if inference_request.prompts
-                            else None
-                        )
-
-                        payload = {
-                            "image": http_image,
-                            "prompts": prompts_data,
-                            "multimask_output": inference_request.multimask_output,
-                        }
-
-                        try:
-                            headers = {"Content-Type": "application/json"}
-                            if ROBOFLOW_INTERNAL_SERVICE_NAME:
-                                headers["X-Roboflow-Internal-Service-Name"] = (
-                                    ROBOFLOW_INTERNAL_SERVICE_NAME
-                                )
-                            if ROBOFLOW_INTERNAL_SERVICE_SECRET:
-                                headers["X-Roboflow-Internal-Service-Secret"] = (
-                                    ROBOFLOW_INTERNAL_SERVICE_SECRET
-                                )
-
-                            headers = build_roboflow_api_headers(
-                                explicit_headers=headers
-                            )
-
-                            response = requests.post(
-                                f"{endpoint}?api_key={api_key}",
-                                json=payload,
-                                headers=headers,
-                                timeout=60,
-                            )
-                            response.raise_for_status()
-                            resp_json = response.json()
-
-                            return Sam2SegmentationResponse(**resp_json)
-
-                        except Exception as e:
-                            logger.error(
-                                f"SAM3 visual_segment remote request failed: {e}"
-                            )
-                            raise HTTPException(
-                                status_code=500,
-                                detail=f"SAM3 visual_segment remote request failed: {str(e)}",
-                            )
-
-                    self.model_manager.add_model(
-                        "sam3/sam3_interactive",
-                        api_key=api_key,
-                        endpoint_type=ModelEndpointType.CORE_MODEL,
-                        countinference=countinference,
-                        service_secret=service_secret,
-                    )
-
-                    model_response = self.model_manager.infer_from_request_sync(
-                        "sam3/sam3_interactive", inference_request
-                    )
-                    return model_response
-
             if CORE_MODEL_SAM3_ENABLED:
 
                 @app.post(
@@ -2716,6 +2628,96 @@ class HttpInterface(BaseInterface):
                             headers={"Content-Type": "application/octet-stream"},
                         )
                     return model_response
+
+            
+                @app.post(
+                    "/sam3/visual_segment",
+                    response_model=Sam2SegmentationResponse,
+                    summary="SAM3 PVS (promptable visual segmentation)",
+                    description="Run the SAM3 PVS (promptable visual segmentation) to generate segmentations for image data.",
+                )
+                @with_route_exceptions
+                @usage_collector("request")
+                def sam3_visual_segment(
+                    inference_request: Sam2SegmentationRequest,
+                    request: Request,
+                    api_key: Optional[str] = Query(
+                        None,
+                        description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
+                    ),
+                    countinference: Optional[bool] = None,
+                    service_secret: Optional[str] = None,
+                ):
+                    logger.debug(f"Reached /sam3/visual_segment")
+
+                    if SAM3_EXEC_MODE == "remote":
+                        endpoint = f"{API_BASE_URL}/inferenceproxy/sam3-pvs"
+
+                        http_image = {
+                            "type": inference_request.image.type,
+                            "value": inference_request.image.value,
+                        }
+
+                        prompts_data = (
+                            inference_request.prompts.dict(exclude_none=True)
+                            if inference_request.prompts
+                            else None
+                        )
+
+                        payload = {
+                            "image": http_image,
+                            "prompts": prompts_data,
+                            "multimask_output": inference_request.multimask_output,
+                        }
+
+                        try:
+                            headers = {"Content-Type": "application/json"}
+                            if ROBOFLOW_INTERNAL_SERVICE_NAME:
+                                headers["X-Roboflow-Internal-Service-Name"] = (
+                                    ROBOFLOW_INTERNAL_SERVICE_NAME
+                                )
+                            if ROBOFLOW_INTERNAL_SERVICE_SECRET:
+                                headers["X-Roboflow-Internal-Service-Secret"] = (
+                                    ROBOFLOW_INTERNAL_SERVICE_SECRET
+                                )
+
+                            headers = build_roboflow_api_headers(
+                                explicit_headers=headers
+                            )
+
+                            response = requests.post(
+                                f"{endpoint}?api_key={api_key}",
+                                json=payload,
+                                headers=headers,
+                                timeout=60,
+                            )
+                            response.raise_for_status()
+                            resp_json = response.json()
+
+                            return Sam2SegmentationResponse(**resp_json)
+
+                        except Exception as e:
+                            logger.error(
+                                f"SAM3 visual_segment remote request failed: {e}"
+                            )
+                            raise HTTPException(
+                                status_code=500,
+                                detail=f"SAM3 visual_segment remote request failed: {str(e)}",
+                            )
+
+                    self.model_manager.add_model(
+                        "sam3/sam3_interactive",
+                        api_key=api_key,
+                        endpoint_type=ModelEndpointType.CORE_MODEL,
+                        countinference=countinference,
+                        service_secret=service_secret,
+                    )
+
+                    model_response = self.model_manager.infer_from_request_sync(
+                        "sam3/sam3_interactive", inference_request
+                    )
+                    return model_response
+
 
             if CORE_MODEL_SAM3_ENABLED and not GCP_SERVERLESS:
 
