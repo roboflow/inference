@@ -2629,7 +2629,6 @@ class HttpInterface(BaseInterface):
                         )
                     return model_response
 
-            
                 @app.post(
                     "/sam3/visual_segment",
                     response_model=Sam2SegmentationResponse,
@@ -2717,7 +2716,6 @@ class HttpInterface(BaseInterface):
                         "sam3/sam3_interactive", inference_request
                     )
                     return model_response
-
 
             if CORE_MODEL_SAM3_ENABLED and not GCP_SERVERLESS:
 
