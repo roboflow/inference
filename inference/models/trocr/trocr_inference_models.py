@@ -2,6 +2,7 @@ from time import perf_counter
 from typing import Any, Tuple
 
 import numpy as np
+import torch
 
 from inference.core.entities.requests.trocr import TrOCRInferenceRequest
 from inference.core.entities.responses.ocr import OCRInferenceResponse
@@ -52,6 +53,8 @@ class InferenceModelsTrOCRAdapter(Model):
 
     def predict(self, image_in: np.ndarray, **kwargs):
         results = self._model.infer(images=image_in, **kwargs)[0]
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
         return (results,)
 
     def infer_from_request(
@@ -62,3 +65,12 @@ class InferenceModelsTrOCRAdapter(Model):
         t2 = perf_counter()
         response = OCRInferenceResponse(result=text, time=t2 - t1)
         return response
+
+    def clear_cache(self, delete_from_disk: bool = True) -> None:
+        """Clears any cache if necessary. TODO: Implement this to delete the cache from the experimental model.
+
+        Args:
+            delete_from_disk (bool, optional): Whether to delete cached files from disk. Defaults to True.
+        """
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()

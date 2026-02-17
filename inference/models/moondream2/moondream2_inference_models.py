@@ -2,6 +2,7 @@ from typing import Any, List, Tuple, Union
 
 import cv2
 import numpy as np
+import torch
 from PIL import Image
 
 from inference.core.entities.responses.inference import (
@@ -102,7 +103,10 @@ class InferenceModelsMoondream2Adapter(Model):
         else:
             bgr_img = image_in
         detections = self._model.detect(bgr_img, classes=[prompt])
-        return self.make_response(detections, [bgr_img.shape[:2]], prompt=prompt)
+        results = self.make_response(detections, [bgr_img.shape[:2]], prompt=prompt)
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        return results
 
     def make_response(
         self,
@@ -151,3 +155,12 @@ class InferenceModelsMoondream2Adapter(Model):
         **kwargs,
     ) -> List[ObjectDetectionInferenceResponse]:
         return predictions
+
+    def clear_cache(self, delete_from_disk: bool = True) -> None:
+        """Clears any cache if necessary. TODO: Implement this to delete the cache from the experimental model.
+
+        Args:
+            delete_from_disk (bool, optional): Whether to delete cached files from disk. Defaults to True.
+        """
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()

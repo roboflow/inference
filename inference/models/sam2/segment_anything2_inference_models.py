@@ -201,6 +201,8 @@ class InferenceModelsSAM2Adapter(Model):
                 f.cpu().numpy() for f in embeddings.high_resolution_features
             ],
         }
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
         return embedding_dict, embeddings.image_size_hw, embeddings.image_hash
 
     def preproc_image(self, image: InferenceRequestImage):
@@ -296,11 +298,23 @@ class InferenceModelsSAM2Adapter(Model):
             use_embeddings_cache=True,
             return_logits=True,
         )[0]
-        return choose_most_confident_sam_prediction(
+        result = choose_most_confident_sam_prediction(
             masks=prediction.masks.cpu().numpy(),
             scores=prediction.scores.cpu().numpy(),
             low_resolution_logits=prediction.logits.cpu().numpy(),
         )
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        return result
+
+    def clear_cache(self, delete_from_disk: bool = True) -> None:
+        """Clears any cache if necessary. TODO: Implement this to delete the cache from the experimental model.
+
+        Args:
+            delete_from_disk (bool, optional): Whether to delete cached files from disk. Defaults to True.
+        """
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
 
 def pad_points(args: Dict[str, Any]) -> Dict[str, Any]:

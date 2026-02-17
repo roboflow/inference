@@ -66,6 +66,8 @@ class InferenceModelsDepthAnythingV2Adapter(Model):
     def predict(self, inputs: np.ndarray, **kwargs) -> Tuple[dict]:
         predictions = self._model(inputs)[0]
         depth_map = predictions.to(torch.float32).cpu().numpy()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
         # Normalize depth values
         depth_min = depth_map.min()
         depth_max = depth_map.max()
@@ -109,4 +111,5 @@ class InferenceModelsDepthAnythingV2Adapter(Model):
         Args:
             delete_from_disk (bool, optional): Whether to delete cached files from disk. Defaults to True.
         """
-        pass
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()

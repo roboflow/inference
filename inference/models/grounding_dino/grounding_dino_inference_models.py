@@ -1,6 +1,8 @@
 from time import perf_counter
 from typing import Any, List
 
+import torch
+
 from inference.core.entities.requests.groundingdino import GroundingDINOInferenceRequest
 from inference.core.entities.requests.inference import InferenceRequestImage
 from inference.core.entities.responses.inference import (
@@ -139,8 +141,19 @@ class InferenceModelsGroundingDINOAdapter(Model):
                     }
                 )
             )
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
         return ObjectDetectionInferenceResponse(
             predictions=predictions_for_image,
             image=InferenceResponseImage(width=img_dims[1], height=img_dims[0]),
             time=t2,
         )
+
+    def clear_cache(self, delete_from_disk: bool = True) -> None:
+        """Clears any cache if necessary. TODO: Implement this to delete the cache from the experimental model.
+
+        Args:
+            delete_from_disk (bool, optional): Whether to delete cached files from disk. Defaults to True.
+        """
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()

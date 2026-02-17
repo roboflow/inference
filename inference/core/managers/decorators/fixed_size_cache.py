@@ -237,6 +237,7 @@ class WithFixedSizeCache(ModelManagerDecorator):
             import torch
 
             if torch.cuda.is_available():
+                torch.cuda.empty_cache()
                 free_memory, total_memory = torch.cuda.mem_get_info()
                 return_boolean = (
                     float(free_memory / total_memory) < MEMORY_FREE_THRESHOLD

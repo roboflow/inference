@@ -75,6 +75,8 @@ class InferenceModelsFlorence2Adapter(Model):
             image_dimensions=preprocess_return_metadata,
             **mapped_kwargs,
         )[0]
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
         return [
             LMMInferenceResponse(
                 response=result,
@@ -91,4 +93,5 @@ class InferenceModelsFlorence2Adapter(Model):
         Args:
             delete_from_disk (bool, optional): Whether to delete cached files from disk. Defaults to True.
         """
-        pass
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()

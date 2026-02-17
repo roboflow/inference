@@ -3,6 +3,7 @@ from typing import Any, Dict, List, Tuple, Union
 
 import numpy as np
 import onnxruntime
+import torch
 
 from inference.core.entities.requests.clip import (
     ClipCompareRequest,
@@ -190,11 +191,17 @@ class InferenceModelsClipAdapter(Model):
         else:
             img_in = self.preproc_image(image)
         embeddings = self._model.embed_images(images=img_in)
-        return embeddings.cpu().numpy()
+        result = embeddings.cpu().numpy()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        return result
 
     def predict(self, img_in: np.ndarray, **kwargs) -> Tuple[np.ndarray]:
         embeddings = self._model.embed_images(images=img_in)
-        return (embeddings.cpu().numpy(),)
+        result = embeddings.cpu().numpy()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        return (result,)
 
     def make_embed_image_response(
         self, embeddings: np.ndarray
@@ -242,8 +249,10 @@ class InferenceModelsClipAdapter(Model):
             texts = text
         else:
             texts = [text]
-        embeddings = self._model.embed_text(texts=texts)
-        return embeddings.cpu().numpy()
+        embeddings = self._model.embed_text(texts=texts).cpu().numpy()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        return embeddings
 
     def make_embed_text_response(self, embeddings: np.ndarray) -> ClipEmbeddingResponse:
         """
@@ -326,3 +335,12 @@ class InferenceModelsClipAdapter(Model):
         self, image: Any, **kwargs
     ) -> Tuple[np.ndarray, PreprocessReturnMetadata]:
         return self.preproc_image(image), PreprocessReturnMetadata({})
+
+    def clear_cache(self, delete_from_disk: bool = True) -> None:
+        """Clears any cache if necessary. TODO: Implement this to delete the cache from the experimental model.
+
+        Args:
+            delete_from_disk (bool, optional): Whether to delete cached files from disk. Defaults to True.
+        """
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()

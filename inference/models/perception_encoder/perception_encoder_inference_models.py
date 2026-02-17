@@ -168,7 +168,10 @@ class InferenceModelsPerceptionEncoderAdapter(Model):
         else:
             img_in = [self.preproc_image(image)]
 
-        return self._model.embed_images(img_in).cpu().numpy()
+        result = self._model.embed_images(img_in).cpu().numpy()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        return result
 
     def embed_text(
         self,
@@ -193,7 +196,10 @@ class InferenceModelsPerceptionEncoderAdapter(Model):
             raise ValueError(
                 f"The maximum number of texts that can be embedded at once is {CLIP_MAX_BATCH_SIZE}"
             )
-        return self._model.embed_text(texts).cpu().numpy()
+        result = self._model.embed_text(texts).cpu().numpy()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        return result
 
     def predict(self, img_in: np.ndarray, **kwargs) -> Tuple[np.ndarray]:
         """Predict embeddings for an input tensor.
@@ -206,6 +212,8 @@ class InferenceModelsPerceptionEncoderAdapter(Model):
             Tuple[np.ndarray]: A tuple containing the embeddings as a numpy array.
         """
         embeddings = self._model.embed_images(img_in).cpu().numpy()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
         return (embeddings,)
 
     def make_embed_image_response(
@@ -259,3 +267,12 @@ class InferenceModelsPerceptionEncoderAdapter(Model):
     def infer(self, image: Any, **kwargs) -> Any:
         """Embeds an image"""
         return super().infer(image, **kwargs)
+
+    def clear_cache(self, delete_from_disk: bool = True) -> None:
+        """Clears any cache if necessary. TODO: Implement this to delete the cache from the experimental model.
+
+        Args:
+            delete_from_disk (bool, optional): Whether to delete cached files from disk. Defaults to True.
+        """
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()

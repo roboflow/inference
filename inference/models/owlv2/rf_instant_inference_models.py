@@ -1,5 +1,7 @@
 from typing import List, Optional, Tuple
 
+import torch
+
 from inference.core.entities.requests import ObjectDetectionInferenceRequest
 from inference.core.entities.responses import (
     InferenceResponseImage,
@@ -94,11 +96,14 @@ class InferenceModelsRFInstantModelAdapter(Model):
             iou_threshold=iou_threshold,
             max_detections=max_detections,
         )
-        return self.make_response(
+        result = self.make_response(
             predictions=results,
             image_sizes=image_sizes,
             class_names=self._model.class_names,
         )
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        return result
 
     def draw_predictions(
         self,
@@ -167,3 +172,12 @@ class InferenceModelsRFInstantModelAdapter(Model):
                 )
             )
         return responses
+
+    def clear_cache(self, delete_from_disk: bool = True) -> None:
+        """Clears any cache if necessary. TODO: Implement this to delete the cache from the experimental model.
+
+        Args:
+            delete_from_disk (bool, optional): Whether to delete cached files from disk. Defaults to True.
+        """
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()

@@ -2,6 +2,7 @@ from copy import copy
 from time import perf_counter
 from typing import Any, List, Tuple, Union
 
+import torch
 from PIL import Image
 
 from inference.core.entities.requests.doctr import DoctrOCRInferenceRequest
@@ -47,7 +48,8 @@ class InferenceModelsDocTRAdapter(Model):
         )
 
     def clear_cache(self, delete_from_disk: bool = True) -> None:
-        pass
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
     def preprocess_image(self, image: Image.Image) -> Image.Image:
         """
@@ -132,6 +134,8 @@ class InferenceModelsDocTRAdapter(Model):
                     }
                 )
             )
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
         return (
             detected_text,
             InferenceResponseImage(width=image_width, height=image_height),
