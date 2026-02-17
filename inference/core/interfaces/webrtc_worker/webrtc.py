@@ -727,13 +727,6 @@ class VideoTransformTrackWithLoop(VideoStreamTrack, VideoFrameProcessor):
         if self.heartbeat_callback:
             self.heartbeat_callback()
 
-        if self._check_termination():
-            logger.warning("[RECV] Termination triggered, closing gracefully")
-            await self._send_processing_complete()
-            self._signal_termination()
-            reason = self._termination_reason or "terminate_event"
-            raise MediaStreamError(f"Processing terminated: {reason}")
-
         # Wait for track to be ready (video file upload case)
         if self.track is None:
             logger.info("[RECV] Track is None, waiting for track_ready_event...")
