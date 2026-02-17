@@ -28,6 +28,7 @@ from inference_sdk.http.utils.request_building import RequestData
 from inference_sdk.http.utils.requests import api_key_safe_raise_for_status
 
 RETRYABLE_STATUS_CODES = {429, 503, 504}
+EXCEPTION_RAISED_MODEL_ID_PLACEHOLDER = "unknown"
 
 
 class RequestMethod(Enum):
@@ -87,7 +88,7 @@ def _extract_model_id_from_request_data(request_data: RequestData) -> str:
         path = urlparse(request_data.url).path
         return path.strip("/")
     except Exception:
-        return "unknown"
+        return EXCEPTION_RAISED_MODEL_ID_PLACEHOLDER
 
 
 def _collect_remote_processing_times(
@@ -98,13 +99,11 @@ def _collect_remote_processing_times(
     if collector is None:
         return
     for i, response in enumerate(responses):
+        if i >= len(requests_data):
+            break
         pt = response.headers.get(PROCESSING_TIME_HEADER)
         if pt is not None:
-            model_id = (
-                _extract_model_id_from_request_data(requests_data[i])
-                if i < len(requests_data)
-                else "unknown"
-            )
+            model_id = _extract_model_id_from_request_data(requests_data[i])
             try:
                 collector.add(float(pt), model_id=model_id)
             except (ValueError, TypeError):
