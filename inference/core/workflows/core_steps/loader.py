@@ -60,8 +60,14 @@ from inference.core.workflows.core_steps.classical_cv.contrast_equalization.v1 i
 from inference.core.workflows.core_steps.classical_cv.convert_grayscale.v1 import (
     ConvertGrayscaleBlockV1,
 )
+from inference.core.workflows.core_steps.classical_cv.detection_to_contour_distance.v1 import (
+    DetectionToContourDistanceBlockV1,
+)
 from inference.core.workflows.core_steps.classical_cv.distance_measurement.v1 import (
     DistanceMeasurementBlockV1,
+)
+from inference.core.workflows.core_steps.classical_cv.detection_dominant_color.v1 import (
+    DetectionDominantColorBlockV1,
 )
 from inference.core.workflows.core_steps.classical_cv.dominant_color.v1 import (
     DominantColorBlockV1,
@@ -345,6 +351,9 @@ from inference.core.workflows.core_steps.secrets_providers.environment_secrets_s
 )
 from inference.core.workflows.core_steps.sinks.email_notification.v1 import (
     EmailNotificationBlockV1,
+)
+from inference.core.workflows.core_steps.sinks.event_store.v1 import (
+    EventStoreSinkBlockV1,
 )
 from inference.core.workflows.core_steps.sinks.email_notification.v2 import (
     EmailNotificationBlockV2,
@@ -728,7 +737,9 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         CropVisualizationBlockV1,
         DetectionsConsensusBlockV1,
         DetectionsStitchBlockV1,
+        DetectionToContourDistanceBlockV1,
         DistanceMeasurementBlockV1,
+        DetectionDominantColorBlockV1,
         DominantColorBlockV1,
         DotVisualizationBlockV1,
         EllipseVisualizationBlockV1,
@@ -813,6 +824,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         EmailNotificationBlockV1,
         EmailNotificationBlockV2,
         LocalFileSinkBlockV1,
+        EventStoreSinkBlockV1,
         TraceVisualizationBlockV1,
         ReferencePathVisualizationBlockV1,
         ByteTrackerBlockV3,

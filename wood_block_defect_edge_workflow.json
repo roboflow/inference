@@ -1,0 +1,80 @@
+{
+    "version": "1.0",
+    "inputs": [
+        {
+            "type": "InferenceImage",
+            "name": "image"
+        },
+        {
+            "type": "InferenceParameter",
+            "name": "distance_threshold",
+            "default_value": 50
+        },
+        {
+            "type": "InferenceParameter",
+            "name": "confidence_threshold",
+            "default_value": 0.4
+        }
+    ],
+    "steps": [
+        {
+            "type": "roboflow_core/object_detection_model@v2",
+            "name": "defect_detector",
+            "image": "$inputs.image",
+            "model_id": "YOUR-DEFECT-MODEL-ID/1",
+            "confidence": "$inputs.confidence_threshold"
+        },
+        {
+            "type": "roboflow_core/convert_grayscale@v1",
+            "name": "grayscale",
+            "image": "$inputs.image"
+        },
+        {
+            "type": "roboflow_core/image_blur@v1",
+            "name": "blur",
+            "image": "$steps.grayscale.image"
+        },
+        {
+            "type": "roboflow_core/threshold@v1",
+            "name": "threshold",
+            "image": "$steps.blur.image",
+            "thresh_value": 127,
+            "threshold_type": "binary"
+        },
+        {
+            "type": "roboflow_core/contours_detection@v1",
+            "name": "contours",
+            "image": "$steps.threshold.image",
+            "line_thickness": 3
+        },
+        {
+            "type": "roboflow_core/detection_to_contour_distance@v1",
+            "name": "edge_distance",
+            "predictions": "$steps.defect_detector.predictions",
+            "contours": "$steps.contours.contours",
+            "distance_threshold": "$inputs.distance_threshold"
+        }
+    ],
+    "outputs": [
+        {
+            "type": "JsonField",
+            "name": "defects_near_edge",
+            "selector": "$steps.edge_distance.close_to_edge"
+        },
+        {
+            "type": "JsonField",
+            "name": "defect_distances",
+            "selector": "$steps.edge_distance.distances"
+        },
+        {
+            "type": "JsonField",
+            "name": "all_defects_flagged",
+            "selector": "$steps.edge_distance.all_detections_with_flag"
+        },
+        {
+            "type": "JsonField",
+            "name": "contour_image",
+            "selector": "$steps.contours.image"
+        }
+    ]
+}
