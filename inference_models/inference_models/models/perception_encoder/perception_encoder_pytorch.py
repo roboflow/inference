@@ -1,4 +1,5 @@
 import json
+from threading import Lock
 from typing import Callable, List, Optional, Union
 
 import numpy as np
@@ -119,6 +120,7 @@ class PerceptionEncoderTorch(TextImageEmbeddingModel):
         self.device = device
         self.preprocessor = create_preprocessor(model.image_size)
         self.tokenizer = transforms.get_text_tokenizer(model.context_length)
+        self._lock = Lock()
 
     @classmethod
     def from_pretrained(
@@ -162,11 +164,11 @@ class PerceptionEncoderTorch(TextImageEmbeddingModel):
         )
 
         if self.device.type == "cpu" or self.device.type == "mps":
-            with torch.inference_mode():
+            with self._lock, torch.inference_mode():
                 image_features, _, _ = self.model(img_in, None)
                 embeddings = image_features.float()
         else:
-            with torch.inference_mode(), torch.autocast(self.device.type):
+            with self._lock, torch.inference_mode(), torch.autocast(self.device.type):
                 image_features, _, _ = self.model(img_in, None)
                 embeddings = image_features.float()
 
@@ -187,10 +189,10 @@ class PerceptionEncoderTorch(TextImageEmbeddingModel):
         # I will leave it out for now, see https://github.com/roboflow/inference/blob/main/inference/models/perception_encoder/perception_encoder.py#L227
         tokenized = self.tokenizer(texts_to_embed).to(self.device)
         if self.device.type == "cpu" or self.device.type == "mps":
-            with torch.no_grad():
+            with self._lock, torch.no_grad():
                 _, text_features, _ = self.model(None, tokenized)
         else:
-            with torch.inference_mode(), torch.autocast(self.device.type):
+            with self._lock, torch.inference_mode(), torch.autocast(self.device.type):
                 _, text_features, _ = self.model(None, tokenized)
 
         embeddings = text_features.float()

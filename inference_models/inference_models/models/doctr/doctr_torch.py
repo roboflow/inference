@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from threading import Lock
 from typing import Callable, List, Optional, Tuple, Union
 
 import numpy as np
@@ -110,6 +111,7 @@ class DocTR(StructuredOCRModel[List[np.ndarray], ImageDimensions, Document]):
     ):
         self._model = model
         self._device = device
+        self._lock = Lock()
 
     @property
     def class_names(self) -> List[str]:
@@ -182,7 +184,8 @@ class DocTR(StructuredOCRModel[List[np.ndarray], ImageDimensions, Document]):
         pre_processed_images: List[np.ndarray],
         **kwargs,
     ) -> Document:
-        return self._model(pre_processed_images)
+        with self._lock:
+            return self._model(pre_processed_images)
 
     def post_process(
         self,

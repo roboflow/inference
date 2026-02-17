@@ -1,5 +1,6 @@
 import json
 import os
+from threading import Lock
 from typing import List, Optional, Tuple, Union
 
 import numpy as np
@@ -157,6 +158,7 @@ class Qwen25VLHF:
         self.default_system_prompt = (
             "You are a Qwen2.5-VL model that can answer questions about any image."
         )
+        self._lock = Lock()
 
     def prompt(
         self,
@@ -275,7 +277,7 @@ class Qwen25VLHF:
     ) -> torch.Tensor:
         input_len = inputs["input_ids"].shape[-1]
 
-        with torch.inference_mode():
+        with self._lock, torch.inference_mode():
             generation = self._model.generate(
                 **inputs,
                 max_new_tokens=max_new_tokens,

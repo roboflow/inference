@@ -1,4 +1,5 @@
 import os
+from threading import Lock
 from typing import List, Optional, Tuple, Union
 
 import numpy as np
@@ -153,6 +154,7 @@ class PaliGemmaHF:
         self._inference_config = inference_config
         self._device = device
         self._torch_dtype = torch_dtype
+        self._lock = Lock()
 
     def prompt(
         self,
@@ -227,7 +229,7 @@ class PaliGemmaHF:
         do_sample: bool = INFERENCE_MODELS_PALIGEMMA_DEFAULT_DO_SAMPLE,
         **kwargs,
     ) -> torch.Tensor:
-        with torch.inference_mode():
+        with self._lock, torch.inference_mode():
             generation = self._model.generate(
                 **inputs, max_new_tokens=max_new_tokens, do_sample=do_sample
             )

@@ -1,3 +1,4 @@
+from threading import Lock
 from typing import List, Optional, Tuple, Union
 
 import easyocr
@@ -86,6 +87,7 @@ class EasyOCRTorch(
     ):
         self._model = model
         self._device = device
+        self._lock = Lock()
 
     @property
     def class_names(self) -> List[str]:
@@ -158,7 +160,8 @@ class EasyOCRTorch(
     ) -> List[EasyOCRRawPrediction]:
         all_results = []
         for image in pre_processed_images:
-            image_results_raw = self._model.readtext(image)
+            with self._lock:
+                image_results_raw = self._model.readtext(image)
             image_results_parsed = [
                 (
                     [

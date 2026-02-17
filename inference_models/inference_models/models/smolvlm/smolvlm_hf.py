@@ -1,4 +1,5 @@
 import os
+from threading import Lock
 from typing import List, Optional, Tuple, Union
 
 import numpy as np
@@ -151,6 +152,7 @@ class SmolVLMHF:
         self._inference_config = inference_config
         self._device = device
         self._torch_dtype = torch_dtype
+        self._lock = Lock()
 
     def prompt(
         self,
@@ -263,13 +265,14 @@ class SmolVLMHF:
         do_sample: bool = INFERENCE_MODELS_SMOL_VLM_DEFAULT_DO_SAMPLE,
         **kwargs,
     ) -> torch.Tensor:
-        generation = self._model.generate(
-            **inputs,
-            do_sample=do_sample,
-            max_new_tokens=max_new_tokens,
-            pad_token_id=self._processor.tokenizer.pad_token_id,
-            eos_token_id=self._processor.tokenizer.eos_token_id,
-        )
+        with self._lock:
+            generation = self._model.generate(
+                **inputs,
+                do_sample=do_sample,
+                max_new_tokens=max_new_tokens,
+                pad_token_id=self._processor.tokenizer.pad_token_id,
+                eos_token_id=self._processor.tokenizer.eos_token_id,
+            )
         input_len = inputs["input_ids"].shape[-1]
         return generation[:, input_len:]
 

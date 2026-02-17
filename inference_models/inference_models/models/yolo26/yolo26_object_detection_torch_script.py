@@ -1,3 +1,4 @@
+from threading import Lock
 from typing import List, Optional, Tuple, Union
 
 import numpy as np
@@ -96,6 +97,7 @@ class YOLO26ForObjectDetectionTorchScript(
         self._inference_config = inference_config
         self._class_names = class_names
         self._device = device
+        self._lock = Lock()
 
     @property
     def class_names(self) -> List[str]:
@@ -118,7 +120,7 @@ class YOLO26ForObjectDetectionTorchScript(
         )
 
     def forward(self, pre_processed_images: torch.Tensor, **kwargs) -> torch.Tensor:
-        with torch.inference_mode():
+        with self._lock, torch.inference_mode():
             if (
                 pre_processed_images.shape[0]
                 == self._inference_config.forward_pass.static_batch_size

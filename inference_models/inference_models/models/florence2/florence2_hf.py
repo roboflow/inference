@@ -1,6 +1,7 @@
 import json
 import os
 import re
+from threading import Lock
 from typing import List, Literal, Optional, Tuple, Union
 
 import cv2
@@ -196,6 +197,7 @@ class Florence2HF:
         self._inference_config = inference_config
         self._device = device
         self._torch_dtype = torch_dtype
+        self._lock = Lock()
 
     def classify_image_region(
         self,
@@ -610,13 +612,14 @@ class Florence2HF:
         do_sample: bool = INFERENCE_MODELS_FLORENCE2_DEFAULT_DO_SAMPLE,
         **kwargs,
     ) -> torch.Tensor:
-        return self._model.generate(
-            input_ids=inputs["input_ids"],
-            pixel_values=inputs["pixel_values"],
-            max_new_tokens=max_new_tokens,
-            num_beams=num_beams,
-            do_sample=do_sample,
-        )
+        with self._lock:
+            return self._model.generate(
+                input_ids=inputs["input_ids"],
+                pixel_values=inputs["pixel_values"],
+                max_new_tokens=max_new_tokens,
+                num_beams=num_beams,
+                do_sample=do_sample,
+            )
 
     def post_process_generation(
         self,

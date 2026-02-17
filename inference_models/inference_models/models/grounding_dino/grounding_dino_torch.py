@@ -1,4 +1,5 @@
 import os.path
+from threading import Lock
 from typing import List, Optional, Tuple, Union
 
 import numpy as np
@@ -78,6 +79,7 @@ class GroundingDinoForObjectDetectionTorch(
                 ),
             ]
         )
+        self._lock = Lock()
 
     def pre_process(
         self,
@@ -159,7 +161,7 @@ class GroundingDinoForObjectDetectionTorch(
             text_confidence = box_confidence
         caption = ". ".join(classes)
         all_boxes, all_logits, all_phrases = [], [], []
-        with torch.inference_mode():
+        with self._lock, torch.inference_mode():
             for image in pre_processed_images:
                 boxes, logits, phrases = predict(
                     model=self._model,

@@ -1,3 +1,4 @@
+from threading import Lock
 from typing import List, Optional, Tuple, Union
 
 import numpy as np
@@ -124,6 +125,7 @@ class YOLOv8ForKeyPointsDetectionTorchScript(
         self._key_points_slots_in_prediction = max(
             len(e) for e in parsed_key_points_metadata
         )
+        self._lock = Lock()
 
     @property
     def class_names(self) -> List[str]:
@@ -152,7 +154,7 @@ class YOLOv8ForKeyPointsDetectionTorchScript(
         )
 
     def forward(self, pre_processed_images: torch.Tensor, **kwargs) -> torch.Tensor:
-        with torch.inference_mode():
+        with self._lock, torch.inference_mode():
             if (
                 pre_processed_images.shape[0]
                 == self._inference_config.forward_pass.static_batch_size

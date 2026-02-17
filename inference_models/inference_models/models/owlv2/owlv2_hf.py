@@ -1,4 +1,5 @@
 from collections import defaultdict
+from threading import RLock
 from typing import Dict, Iterable, List, Optional, Tuple, Union
 
 import numpy as np
@@ -143,16 +144,20 @@ class OWLv2HF(
             allow_local_storage_access_for_reference_images
         )
         self._compiled = False
+        self._lock = RLock()
 
     def optimize_for_inference(self) -> None:
-        if self._compiled:
-            return None
-        self._model.owlv2.vision_model = torch.compile(self._model.owlv2.vision_model)
-        example_image = torch.randint(
-            low=0, high=255, size=(3, 128, 128), dtype=torch.uint8
-        ).to(self._device)
-        _ = self.infer(example_image, ["some", "other"])
-        self._compiled = True
+        with self._lock:
+            if self._compiled:
+                return None
+            self._model.owlv2.vision_model = torch.compile(
+                self._model.owlv2.vision_model
+            )
+            example_image = torch.randint(
+                low=0, high=255, size=(3, 128, 128), dtype=torch.uint8
+            ).to(self._device)
+            _ = self.infer(example_image, ["some", "other"])
+            self._compiled = True
 
     def pre_process(
         self,
@@ -172,7 +177,7 @@ class OWLv2HF(
         input_ids = self._processor(text=[classes], return_tensors="pt")[
             "input_ids"
         ].to(self._device)
-        with torch.inference_mode():
+        with self._lock, torch.inference_mode():
             return self._model(input_ids=input_ids, pixel_values=pre_processed_images)
 
     def post_process(
@@ -547,26 +552,31 @@ class OWLv2HF(
             return cached_embeddings
         pixel_values, image_dimensions = self.pre_process(image_instance)
         device_type = self._device.type
-        with torch.autocast(
-            device_type=device_type, dtype=torch.float16, enabled=device_type == "cuda"
-        ):
-            image_embeds, *_ = self._model.image_embedder(pixel_values=pixel_values)
-            batch_size, h, w, dim = image_embeds.shape
-            image_features = image_embeds.reshape(batch_size, h * w, dim)
-            objectness = self._model.objectness_predictor(image_features)
-            boxes = self._model.box_predictor(image_features, feature_map=image_embeds)
-        image_class_embeddings = self._model.class_head.dense0(image_features)
-        image_class_embeddings /= (
-            torch.linalg.norm(image_class_embeddings, ord=2, dim=-1, keepdim=True)
-            + 1e-6
-        )
-        logit_shift = self._model.class_head.logit_shift(image_features)
-        logit_scale = (
-            self._model.class_head.elu(
-                self._model.class_head.logit_scale(image_features)
+        with self._lock:
+            with torch.autocast(
+                device_type=device_type,
+                dtype=torch.float16,
+                enabled=device_type == "cuda",
+            ):
+                image_embeds, *_ = self._model.image_embedder(pixel_values=pixel_values)
+                batch_size, h, w, dim = image_embeds.shape
+                image_features = image_embeds.reshape(batch_size, h * w, dim)
+                objectness = self._model.objectness_predictor(image_features)
+                boxes = self._model.box_predictor(
+                    image_features, feature_map=image_embeds
+                )
+            image_class_embeddings = self._model.class_head.dense0(image_features)
+            image_class_embeddings /= (
+                torch.linalg.norm(image_class_embeddings, ord=2, dim=-1, keepdim=True)
+                + 1e-6
             )
-            + 1
-        )
+            logit_shift = self._model.class_head.logit_shift(image_features)
+            logit_scale = (
+                self._model.class_head.elu(
+                    self._model.class_head.logit_scale(image_features)
+                )
+                + 1
+            )
         objectness = objectness.sigmoid()
         objectness, boxes, image_class_embeddings, logit_shift, logit_scale = (
             filter_tensors_by_objectness(
