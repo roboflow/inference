@@ -96,6 +96,7 @@ def get_frame_annotations_from_sequence(
     """
     return [
         FrameAnnotation(
+            data_dir=data_dir,
             frame_id=fa["frame_number"],
             viewpoint=fa["viewpoint"],
             image_data=fa["image"],

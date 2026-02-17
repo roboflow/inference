@@ -11,7 +11,6 @@ from pydantic import ConfigDict, Field
 
 from inference.core.logger import logger
 from inference.core.workflows.execution_engine.entities.base import (
-    CameraIntrinsics,
     OutputDefinition,
 )
 from inference.core.workflows.execution_engine.entities.types import (
@@ -499,8 +498,8 @@ class EssentialMatrixBlockV1(WorkflowBlock):
     def run(
         self,
         good_matches: List[Any],
-        camera_intrinsics_1: Union[dict, CameraIntrinsics],
-        camera_intrinsics_2: Union[dict, CameraIntrinsics],
+        camera_intrinsics_1: dict[str, float],
+        camera_intrinsics_2: dict[str, float],
         ransac_threshold: float = DEFAULT_RANSAC_THRESHOLD,
         ransac_max_iterations: int = DEFAULT_RANSAC_MAX_ITERATIONS,
         pose_estimation: str = "custom",
