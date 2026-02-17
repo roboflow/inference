@@ -6,7 +6,7 @@ from inference.core.models.semantic_segmentation_base import SemanticSegmentatio
 
 from inference.core.utils.onnx import run_session_via_iobinding
 
-class DeepLabV3PlusSegmentation(SemanticSegmentationBaseOnnxRoboflowInferenceModel):
+class DeepLabV3PlusSemanticSegmentation(SemanticSegmentationBaseOnnxRoboflowInferenceModel):
     """DeepLabV3Plus Semantic Segmentation ONNX Inference Model.
 
     This class is responsible for performing semantic segmentation using the DeepLabV3Plus model

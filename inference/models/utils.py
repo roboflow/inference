@@ -56,6 +56,7 @@ from inference.models import (
     YOLOv11InstanceSegmentation,
     YOLOv11ObjectDetection,
     YOLOv12ObjectDetection,
+    DeepLabV3PlusSemanticSegmentation,
 )
 from inference.models.yolo26.yolo26_keypoints_detection import YOLO26KeypointsDetection
 from inference.models.yolov8.yolov8_keypoints_detection import YOLOv8KeypointsDetection
@@ -333,6 +334,7 @@ ROBOFLOW_MODEL_TYPES = {
     ("keypoint-detection", "yolov8m-pose"): YOLOv8KeypointsDetection,
     ("keypoint-detection", "yolov8l-pose"): YOLOv8KeypointsDetection,
     ("keypoint-detection", "yolov8x-pose"): YOLOv8KeypointsDetection,
+    ("semantic-segmentation", "deep-lab-v3-plus"): DeepLabV3PlusSemanticSegmentation,
 }
 
 try:
