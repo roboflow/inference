@@ -7,6 +7,7 @@ import supervision as sv
 from pydantic import ConfigDict, Field
 from supervision.config import CLASS_NAME_DATA_FIELD
 
+from inference.core import logger
 from inference.core.workflows.execution_engine.constants import (
     DETECTION_ID_KEY,
     PARENT_ID_KEY,
@@ -20,6 +21,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
     INTEGER_KIND,
     KEYPOINT_DETECTION_PREDICTION_KIND,
+    LIST_OF_VALUES_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
     STRING_KIND,
     Selector,
@@ -39,10 +41,10 @@ This block combines results from a detection model (with bounding boxes and gene
 
 1. Receives two inputs with different dimensionality levels:
    - `object_detection_predictions`: Detection results (dimensionality level 1) containing bounding boxes with generic classes (e.g., "dog", "person", "vehicle")
-   - `classification_predictions`: Classification results (dimensionality level 2) from a classifier applied to cropped regions of each detection (e.g., "Golden Retriever", "Labrador" for dog detections)
+   - `classification_predictions`: Classification results (dimensionality level 2) from a classifier applied to cropped regions of each detection (e.g., "Golden Retriever", "Labrador" for dog detections). Can also be a list of strings (e.g. from OCR).
 2. Matches classifications to detections:
-   - Uses `PARENT_ID_KEY` (detection_id) in classification predictions to link each classification result to its source detection
-   - Creates a mapping from detection IDs to classification results
+   - Uses `PARENT_ID_KEY` (detection_id) in classification predictions to link each classification result to its source detection, OR
+   - Uses positional mapping (order-based) if predictions are raw strings/lists without parent IDs.
 3. Extracts leading class from each classification prediction:
 
    **For single-label classifications:**
@@ -53,6 +55,10 @@ This block combines results from a detection model (with bounding boxes and gene
    - Finds the class with the highest confidence score
    - Uses the most confident label as the replacement class
    - Extracts class name, class ID, and confidence from the highest-confidence prediction
+   
+   **For string predictions:**
+   - Uses the string as the class name
+   - Assigns a default confidence of 1.0 and class ID of 0
 
 4. Handles missing classifications:
    - Detections without corresponding classification predictions are discarded by default
@@ -137,12 +143,19 @@ class BlockManifest(WorkflowBlockManifest):
             "$steps.instance_segmentation_model.predictions",
         ],
     )
-    classification_predictions: Selector(kind=[CLASSIFICATION_PREDICTION_KIND]) = Field(
-        title="Classification results for crops",
-        description="Classification predictions from a classifier applied to cropped regions of the detections. Each classification result must have PARENT_ID_KEY (detection_id) linking it to its source detection. Supports both single-label (uses 'top' class) and multi-label (uses most confident class) classifications. Classification results at dimensionality level 2 (one classification per crop/detection).",
+    classification_predictions: Selector(
+        kind=[
+            CLASSIFICATION_PREDICTION_KIND,
+            LIST_OF_VALUES_KIND,
+            STRING_KIND,
+        ]
+    ) = Field(
+        title="Replacement Class Labels",
+        description="Labels to replace detection class names with. Accepts classification predictions (linked via parent_id), plain strings, or lists of strings (e.g. OCR/LMM output like Gemini). String inputs are matched to detections positionally (1:1 by index). Classification inputs support single-label ('top' class) and multi-label (most confident class).",
         examples=[
             "$steps.classification_model.predictions",
             "$steps.breed_classifier.predictions",
+            "$steps.ocr_model.predictions",
         ],
     )
     fallback_class_name: Union[Optional[str], Selector(kind=[STRING_KIND])] = Field(
@@ -200,7 +213,9 @@ class DetectionsClassesReplacementBlockV1(WorkflowBlock):
     def run(
         self,
         object_detection_predictions: Optional[sv.Detections],
-        classification_predictions: Optional[Batch[Optional[dict]]],
+        classification_predictions: Optional[
+            Batch[Optional[Union[dict, str, List[str]]]]
+        ],
         fallback_class_name: Optional[str],
         fallback_class_id: Optional[int],
     ) -> BlockResult:
@@ -208,6 +223,92 @@ class DetectionsClassesReplacementBlockV1(WorkflowBlock):
             return {"predictions": None}
         if not classification_predictions:
             return {"predictions": sv.Detections.empty()}
+
+        # Check if predictions are string-based (e.g. from OCR/LMM models)
+        # rather than classification dicts with parent_id
+        first_valid_pred = next(
+            (p for p in classification_predictions if p is not None), None
+        )
+        is_string_prediction = isinstance(first_valid_pred, (str, list))
+
+        if is_string_prediction:
+            if len(object_detection_predictions) != len(classification_predictions):
+                logger.warning(
+                    "Detections count (%d) does not match classification predictions "
+                    "count (%d). Unmatched detections will use the fallback class "
+                    "(if configured) or be discarded.",
+                    len(object_detection_predictions),
+                    len(classification_predictions),
+                )
+                # Pad classification_predictions with None so every detection is
+                # processed through the fallback path instead of being silently
+                # truncated by zip.
+                padded_predictions = list(classification_predictions) + [None] * (
+                    len(object_detection_predictions) - len(classification_predictions)
+                )
+                classification_predictions = padded_predictions
+
+            new_class_names = []
+            new_class_ids = []
+            new_confidences = []
+            valid_indices = []
+
+            for i, (det_idx, prediction) in enumerate(
+                zip(
+                    range(len(object_detection_predictions)), classification_predictions
+                )
+            ):
+                if prediction is None:
+                    if fallback_class_name:
+                        resolved_fallback_id = (
+                            fallback_class_id
+                            if fallback_class_id is not None
+                            else sys.maxsize
+                        )
+                        class_name, class_id, confidence = (
+                            fallback_class_name,
+                            resolved_fallback_id,
+                            0.0,
+                        )
+                    else:
+                        continue
+                else:
+                    extracted = extract_leading_class_from_prediction(
+                        prediction,
+                        fallback_class_name=fallback_class_name,
+                        fallback_class_id=fallback_class_id,
+                    )
+                    if extracted is None:
+                        continue
+                    class_name, class_id, confidence = extracted
+
+                new_class_names.append(class_name)
+                new_class_ids.append(class_id)
+                new_confidences.append(confidence)
+                valid_indices.append(i)
+
+            if not valid_indices:
+                return {"predictions": sv.Detections.empty()}
+
+            # Filter detections to keep only those with valid predictions
+            selected_object_detection_predictions = object_detection_predictions[
+                np.array(valid_indices)
+            ]
+
+            selected_object_detection_predictions.class_id = np.array(new_class_ids)
+            selected_object_detection_predictions.confidence = np.array(new_confidences)
+            selected_object_detection_predictions.data[CLASS_NAME_DATA_FIELD] = (
+                np.array(new_class_names)
+            )
+            selected_object_detection_predictions.data[DETECTION_ID_KEY] = np.array(
+                [
+                    f"{uuid4()}"
+                    for _ in range(len(selected_object_detection_predictions))
+                ]
+            )
+
+            return {"predictions": selected_object_detection_predictions}
+
         if all(
             p is None or "top" in p and not p["top"] or "predictions" not in p
             for p in classification_predictions
@@ -265,10 +366,37 @@ class DetectionsClassesReplacementBlockV1(WorkflowBlock):
 
 
 def extract_leading_class_from_prediction(
-    prediction: dict,
+    prediction: Union[dict, str, List[str]],
     fallback_class_name: Optional[str] = None,
     fallback_class_id: Optional[int] = None,
 ) -> Optional[Tuple[str, int, float]]:
+    if isinstance(prediction, str):
+        return prediction, 0, 1.0
+
+    if isinstance(prediction, list):
+        if not prediction:
+            if fallback_class_name:
+                try:
+                    fallback_class_id = int(fallback_class_id)
+                except (ValueError, TypeError):
+                    fallback_class_id = None
+                if fallback_class_id is None or fallback_class_id < 0:
+                    fallback_class_id = sys.maxsize
+                return fallback_class_name, fallback_class_id, 0.0
+            return None
+
+        # Take the first string in the list if it contains strings
+        # Recursive call would be cleaner but let's be explicit
+        first_item = prediction[0]
+        if isinstance(first_item, str):
+            return first_item, 0, 1.0
+        # If it's a list of something else (not expected for now based on user request "nested arrays"),
+        # we might need recursion or just fail.
+        # User said: "gemini_out": [ ["K619879"], ... ] which is List[List[str]]
+        # So prediction passed here is ["K619879"] (List[str])
+
+        return None
+
     if "top" in prediction:
         if not prediction.get("predictions") and not fallback_class_name:
             return None
