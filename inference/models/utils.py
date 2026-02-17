@@ -334,7 +334,7 @@ ROBOFLOW_MODEL_TYPES = {
     ("keypoint-detection", "yolov8m-pose"): YOLOv8KeypointsDetection,
     ("keypoint-detection", "yolov8l-pose"): YOLOv8KeypointsDetection,
     ("keypoint-detection", "yolov8x-pose"): YOLOv8KeypointsDetection,
-    ("semantic-segmentation", "deep-lab-v3-plus"): DeepLabV3PlusSemanticSegmentation,
+    ("semantic-segmentation", "deeplabv3plus"): DeepLabV3PlusSemanticSegmentation,
 }
 
 try:
