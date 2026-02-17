@@ -3,7 +3,6 @@ from time import perf_counter
 from typing import Any, List, Optional, Tuple, Union
 
 import numpy as np
-import torch
 from PIL import Image, ImageDraw, ImageFont
 
 from inference.core.entities.requests import (
@@ -176,8 +175,6 @@ class InferenceModelsObjectDetectionAdapter(Model):
                     image=InferenceResponseImage(width=W, height=H),
                 )
             )
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
         return responses
 
     def clear_cache(self, delete_from_disk: bool = True) -> None:
@@ -186,8 +183,7 @@ class InferenceModelsObjectDetectionAdapter(Model):
         Args:
             delete_from_disk (bool, optional): Whether to delete cached files from disk. Defaults to True.
         """
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
+        pass
 
     def draw_predictions(
         self,
@@ -322,8 +318,6 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
                     image=InferenceResponseImage(width=W, height=H),
                 )
             )
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
         return responses
 
     def clear_cache(self, delete_from_disk: bool = True) -> None:
@@ -332,8 +326,7 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
         Args:
             delete_from_disk (bool, optional): Whether to delete cached files from disk. Defaults to True.
         """
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
+        pass
 
     def draw_predictions(
         self,
@@ -494,8 +487,7 @@ class InferenceModelsKeyPointsDetectionAdapter(Model):
                     image=InferenceResponseImage(width=W, height=H),
                 )
             )
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
+
         return responses
 
     def clear_cache(self, delete_from_disk: bool = True) -> None:
@@ -504,8 +496,7 @@ class InferenceModelsKeyPointsDetectionAdapter(Model):
         Args:
             delete_from_disk (bool, optional): Whether to delete cached files from disk. Defaults to True.
         """
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
+        pass
 
     def draw_predictions(
         self,
@@ -621,7 +612,7 @@ class InferenceModelsClassificationAdapter(Model):
         )
         if isinstance(post_processed_predictions, list):
             # multi-label classification
-            result = prepare_multi_label_classification_response(
+            return prepare_multi_label_classification_response(
                 post_processed_predictions,
                 image_sizes=returned_metadata,
                 class_names=self.class_names,
@@ -629,15 +620,12 @@ class InferenceModelsClassificationAdapter(Model):
             )
         else:
             # single-label classification
-            result = prepare_classification_response(
+            return prepare_classification_response(
                 post_processed_predictions,
                 image_sizes=returned_metadata,
                 class_names=self.class_names,
                 confidence_threshold=kwargs.get("confidence", 0.5),
             )
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-        return result
 
     def clear_cache(self, delete_from_disk: bool = True) -> None:
         """Clears any cache if necessary. TODO: Implement this to delete the cache from the experimental model.
@@ -645,8 +633,7 @@ class InferenceModelsClassificationAdapter(Model):
         Args:
             delete_from_disk (bool, optional): Whether to delete cached files from disk. Defaults to True.
         """
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
+        pass
 
     def infer_from_request(
         self,

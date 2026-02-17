@@ -228,8 +228,6 @@ class InferenceModelsOwlV2Adapter(Model):
             image_embeddings.logit_shift,
             image_embeddings.logit_scale,
         )
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
         return image_embeddings.image_hash, image_embeds
 
     def infer(
@@ -264,10 +262,7 @@ class InferenceModelsOwlV2Adapter(Model):
             iou_threshold=iou_threshold,
             max_detections=max_detections,
         )
-        results = self.make_response(predictions=results, image_sizes=image_sizes)
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-        return results
+        return self.make_response(predictions=results, image_sizes=image_sizes)
 
     def make_response(
         self,
@@ -317,5 +312,4 @@ class InferenceModelsOwlV2Adapter(Model):
         Args:
             delete_from_disk (bool, optional): Whether to delete cached files from disk. Defaults to True.
         """
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
+        pass

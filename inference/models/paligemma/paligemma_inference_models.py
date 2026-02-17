@@ -74,8 +74,6 @@ class InferenceModelsPaligemmaAdapter(Model):
     ) -> List[LMMInferenceResponse]:
         mapped_kwargs = self.map_inference_kwargs(kwargs)
         result = self._model.post_process_generation(predictions, **mapped_kwargs)[0]
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
         return [
             LMMInferenceResponse(
                 response=result,
@@ -92,5 +90,4 @@ class InferenceModelsPaligemmaAdapter(Model):
         Args:
             delete_from_disk (bool, optional): Whether to delete cached files from disk. Defaults to True.
         """
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
+        pass

@@ -1,7 +1,6 @@
 from time import perf_counter
 from typing import List, Optional, Tuple
 
-import torch
 from mediapipe.tasks.python.components.containers.bounding_box import BoundingBox
 from mediapipe.tasks.python.components.containers.category import Category
 from mediapipe.tasks.python.components.containers.detections import Detection
@@ -166,8 +165,6 @@ class InferenceModelsGazeAdapter(Model):
                     avg_image_prediction_time + avg_image_loading_time,
                 )
             )
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
         return response
 
     def _make_response(
@@ -230,12 +227,3 @@ class InferenceModelsGazeAdapter(Model):
             time_face_det=time_face_det,
             time_gaze_det=time_gaze_det,
         )
-
-    def clear_cache(self, delete_from_disk: bool = True) -> None:
-        """Clears any cache if necessary. TODO: Implement this to delete the cache from the experimental model.
-
-        Args:
-            delete_from_disk (bool, optional): Whether to delete cached files from disk. Defaults to True.
-        """
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()

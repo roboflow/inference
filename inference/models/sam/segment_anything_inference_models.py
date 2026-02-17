@@ -138,10 +138,7 @@ class InferenceModelsSAMAdapter(Model):
         enbeddings = self._model.embed_images(
             images=loaded_image, image_hashes=image_id, **kwargs
         )[0]
-        result = enbeddings.embeddings.cpu().numpy(), enbeddings.image_size_hw
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-        return result
+        return enbeddings.embeddings.cpu().numpy(), enbeddings.image_size_hw
 
     def segment_image(
         self,
@@ -236,10 +233,7 @@ class InferenceModelsSAMAdapter(Model):
             use_mask_input_cache=use_mask_input_cache,
             use_embeddings_cache=use_embeddings_cache,
         )
-        result = predictions[0].masks.cpu().numpy(), predictions[0].logits.cpu().numpy()
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-        return result
+        return predictions[0].masks.cpu().numpy(), predictions[0].logits.cpu().numpy()
 
     def clear_cache(self, delete_from_disk: bool = True) -> None:
         """Clears any cache if necessary. TODO: Implement this to delete the cache from the experimental model.
@@ -247,5 +241,4 @@ class InferenceModelsSAMAdapter(Model):
         Args:
             delete_from_disk (bool, optional): Whether to delete cached files from disk. Defaults to True.
         """
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
+        pass

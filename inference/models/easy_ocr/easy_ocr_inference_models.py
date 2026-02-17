@@ -4,7 +4,6 @@ from time import perf_counter
 from typing import Any, List, Tuple, Union
 
 import numpy as np
-import torch
 
 from inference.core.entities.requests.easy_ocr import EasyOCRInferenceRequest
 from inference.core.entities.responses.inference import (
@@ -117,20 +116,9 @@ class InferenceModelsEasyOCRAdapter(Model):
                     }
                 )
             )
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
         return OCRInferenceResponse(
             result=prediction_result[0],
             image=image_metadata,
             predictions=predictions_for_image,
             time=perf_counter() - t1,
         )
-
-    def clear_cache(self, delete_from_disk: bool = True) -> None:
-        """Clears any cache if necessary. TODO: Implement this to delete the cache from the experimental model.
-
-        Args:
-            delete_from_disk (bool, optional): Whether to delete cached files from disk. Defaults to True.
-        """
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
