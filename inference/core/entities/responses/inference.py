@@ -111,6 +111,16 @@ class InstanceSegmentationRLEPrediction(InstanceSegmentationBasePrediction):
     )
 
 
+class SemanticSegmentationPrediction(BaseModel):
+    segmentation_map: List[List[int]] = Field(
+        description="Predicted class label at each pixel (size: H x W)"
+    )
+    class_confidence: Union[List[List[float]], None] = Field(
+        None,
+        description="The class label confidence at each pixel as a fraction between 0 and 1 (size: H x W)",
+    )
+
+
 class ClassificationPrediction(BaseModel):
     """Classification prediction.
 
@@ -245,6 +255,16 @@ class InstanceSegmentationInferenceResponse(
 
     predictions: List[InstanceSegmentationPrediction]
 
+class SemanticSegmentationInferenceResponse(
+    CvInferenceResponse, WithVisualizationResponse
+):
+    """Semantic Segmentation inference response.
+
+    Attributes:
+        predictions (inference.core.entities.responses.inference.SemanticSegmentationPrediction): Semantic segmentation predictions.
+    """
+
+    predictions: SemanticSegmentationPrediction
 
 class ClassificationInferenceResponse(CvInferenceResponse, WithVisualizationResponse):
     """Classification inference response.
@@ -337,6 +357,8 @@ def response_from_type(model_type, response_dict):
             return MultiLabelClassificationInferenceResponse(**response_dict)
     elif model_type == "instance-segmentation":
         return InstanceSegmentationInferenceResponse(**response_dict)
+    elif model_type == "semantic-segmentation":
+        return SemanticSegmentationInferenceResponse(**response_dict)
     elif model_type == "object-detection":
         return ObjectDetectionInferenceResponse(**response_dict)
     else:
