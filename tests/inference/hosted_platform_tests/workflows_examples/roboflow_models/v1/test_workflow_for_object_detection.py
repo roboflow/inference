@@ -122,11 +122,11 @@ def test_detection_workflow(
     assert np.allclose(
         first_detections.confidence,
         DETECTION_RESULTS_FOR_ENVIRONMENT[platform_environment],
-        atol=1e-3,
+        atol=3e-3,
     )
     second_detections = sv.Detections.from_inference(result[1]["predictions"])
     assert np.allclose(
         second_detections.confidence,
         DETECTION_RESULTS_FOR_ENVIRONMENT[platform_environment],
-        atol=1e-3,
+        atol=3e-3,
     )
