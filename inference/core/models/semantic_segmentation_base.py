@@ -89,31 +89,26 @@ class SemanticSegmentationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceMo
         # (N,H,W)
         batch_confidence, batch_class_ids = torch.max(batch_class_probs, dim=1)
 
+        # we will return class_id and confidence masks as b64-encoded uint8 images but for now
+        # they need to be float for interpolation since torch interpolate doesn't support uint8
+        batch_class_ids = batch_class_ids.to(torch.float)
+        # rescale and discretize confidence scores [0,1]->[0, 255] for later
+        batch_confidence = torch.round(batch_confidence * 255)
+
         responses = []
         for confidence, class_ids, img_dim in zip(
             batch_confidence, batch_class_ids, img_dims
         ):
-            # resize to img_dim
-            confidence = torch.nn.functional.interpolate(
-                confidence.unsqueeze(dim=0).unsqueeze(dim=0),
-                size=img_dim,
-                mode="nearest",
-            ).squeeze()
-            class_ids = (
-                torch.nn.functional.interpolate(
-                    class_ids.unsqueeze(dim=0).unsqueeze(dim=0).to(torch.float),
-                    size=img_dim,
-                    mode="nearest",
-                )
-                .squeeze()
-                .to(torch.uint8)
-            )
+            # resize to original img_dim and convert to uint8
+            confidence = self.resize_img(confidence, img_dim).to(torch.uint8)
+            class_ids = self.resize_img(class_ids, img_dim).to(torch.uint8)
 
-            # pack up
+            # pack up response
             response_image = InferenceResponseImage(width=img_dim[1], height=img_dim[0])
 
             response_predictions = SemanticSegmentationPrediction(
                 segmentation_mask=self.img_to_b64_str(class_ids),
+                confidence_mask=self.img_to_b64_str(confidence),
                 class_map=self.class_map,
                 image=dict(response_image),
             )
@@ -126,7 +121,16 @@ class SemanticSegmentationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceMo
 
             return responses
 
+    def resize_img(self, img: torch.Tensor, img_dim: Tuple[int, int]) -> torch.Tensor:
+        return torch.nn.functional.interpolate(
+            img.unsqueeze(dim=0).unsqueeze(dim=0),
+            size=img_dim,
+            mode="nearest",
+        ).squeeze()
+
     def img_to_b64_str(self, img: torch.Tensor) -> str:
+        assert img.dtype == torch.uint8
+
         img = Image.fromarray(img.numpy())
         buffered = io.BytesIO()
         img.save(buffered, format="PNG")

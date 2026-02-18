@@ -120,6 +120,10 @@ class SemanticSegmentationPrediction(BaseModel):
         description="Map of pixel intensity value to class label"
     )
     image: Dict[str, int] = Field("Original image width and height")
+    # added
+    confidence_mask: str = Field(
+        description="base64-encoded PNG of predicted class confidence at each pixel"
+    )
 
 
 class ClassificationPrediction(BaseModel):
