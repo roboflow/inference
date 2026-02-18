@@ -112,13 +112,10 @@ class InstanceSegmentationRLEPrediction(InstanceSegmentationBasePrediction):
 
 
 class SemanticSegmentationPrediction(BaseModel):
-    segmentation_map: List[List[int]] = Field(
-        description="Predicted class label at each pixel (size: H x W)"
-    )
-    class_confidence: Union[List[List[float]], None] = Field(
-        None,
-        description="The class label confidence at each pixel as a fraction between 0 and 1 (size: H x W)",
-    )
+    # match inference-internal/blob/main/deploy/helpers/helpers.py#L107-L128
+    segmentation_mask: str = Field(description="base64-encoded PNG of predicted class label at each pixel")
+    class_map: Dict[str, str] = Field(description="Map of pixel intensity value to class label")
+    image: Dict[str, int] = Field("Original image width and height")
 
 
 class ClassificationPrediction(BaseModel):

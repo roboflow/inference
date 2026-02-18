@@ -1,7 +1,11 @@
 from typing import Any, List, Tuple
 
+import base64
+import io
 import numpy as np
 import torch
+
+from PIL import Image
 
 from inference.core.entities.responses.inference import (
     InferenceResponseImage,
@@ -21,6 +25,11 @@ class SemanticSegmentationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceMo
 
     preprocess_means = [0.5, 0.5, 0.5]
     preprocess_stds = [0.5, 0.5, 0.5]
+
+    @property
+    def class_map(self):
+        # match inference-internal/blob/main/deploy/helpers/helpers.py#L107-L128
+        return {str(k): v for k, v in enumerate(self.class_names)}
 
     def preprocess(
         self, image: Any, **kwargs
@@ -98,20 +107,32 @@ class SemanticSegmentationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceMo
                     mode="nearest",
                 )
                 .squeeze()
-                .to(torch.long)
+                .to(torch.uint8)
             )
 
             # pack up
+            response_image = InferenceResponseImage(width=img_dim[1], height=img_dim[0])
+
+            response_predictions = SemanticSegmentationPrediction(
+                segmentation_mask=self.img_to_b64_str(class_ids),
+                class_map=self.class_map,
+                image=dict(response_image),
+            )
+
             response = SemanticSegmentationInferenceResponse(
-                predictions=SemanticSegmentationPrediction(
-                    segmentation_map=class_ids,
-                    class_confidence=confidence,
-                ),
-                image=InferenceResponseImage(
-                    width=img_dim[1],
-                    height=img_dim[0],
-                ),
+                predictions=response_predictions,
+                image=response_image,
             )
             responses.append(response)
 
             return responses
+
+    def img_to_b64_str(self, img: torch.Tensor) -> str:
+        img = Image.fromarray(img.numpy())
+        buffered = io.BytesIO()
+        img.save(buffered, format="PNG")
+
+        img_str = base64.b64encode(buffered.getvalue())
+        img_str = img_str.decode("ascii")
+
+        return img_str
