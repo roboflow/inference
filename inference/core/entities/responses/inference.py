@@ -255,6 +255,7 @@ class InstanceSegmentationInferenceResponse(
 
     predictions: List[InstanceSegmentationPrediction]
 
+
 class SemanticSegmentationInferenceResponse(
     CvInferenceResponse, WithVisualizationResponse
 ):
@@ -265,6 +266,7 @@ class SemanticSegmentationInferenceResponse(
     """
 
     predictions: SemanticSegmentationPrediction
+
 
 class ClassificationInferenceResponse(CvInferenceResponse, WithVisualizationResponse):
     """Classification inference response.

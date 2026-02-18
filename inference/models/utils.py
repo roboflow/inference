@@ -35,6 +35,7 @@ from inference.core.registries.roboflow import get_model_type
 from inference.core.warnings import ModelDependencyMissing
 from inference.models import (
     YOLACT,
+    DeepLabV3PlusSemanticSegmentation,
     DinoV3Classification,
     ResNetClassification,
     RFDETRInstanceSegmentation,
@@ -56,7 +57,6 @@ from inference.models import (
     YOLOv11InstanceSegmentation,
     YOLOv11ObjectDetection,
     YOLOv12ObjectDetection,
-    DeepLabV3PlusSemanticSegmentation,
 )
 from inference.models.yolo26.yolo26_keypoints_detection import YOLO26KeypointsDetection
 from inference.models.yolov8.yolov8_keypoints_detection import YOLOv8KeypointsDetection

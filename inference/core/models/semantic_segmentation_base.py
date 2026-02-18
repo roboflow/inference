@@ -3,15 +3,14 @@ from typing import Any, List, Tuple
 import numpy as np
 import torch
 
-from inference.core.models.roboflow import OnnxRoboflowInferenceModel
-from inference.core.models.types import PreprocessReturnMetadata
-from inference.core.utils.onnx import run_session_via_iobinding
 from inference.core.entities.responses.inference import (
     InferenceResponseImage,
     SemanticSegmentationInferenceResponse,
     SemanticSegmentationPrediction,
 )
-
+from inference.core.models.roboflow import OnnxRoboflowInferenceModel
+from inference.core.models.types import PreprocessReturnMetadata
+from inference.core.utils.onnx import run_session_via_iobinding
 
 SemanticSegmentationRawPredictions = Tuple[np.ndarray]
 
@@ -83,7 +82,9 @@ class SemanticSegmentationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceMo
         batch_confidence, batch_class_ids = torch.max(batch_class_probs, dim=1)
 
         responses = []
-        for confidence, class_ids, img_dim in zip(batch_confidence, batch_class_ids, img_dims):
+        for confidence, class_ids, img_dim in zip(
+            batch_confidence, batch_class_ids, img_dims
+        ):
             # resize to img_dim
             confidence = torch.nn.functional.interpolate(
                 confidence.unsqueeze(dim=0).unsqueeze(dim=0),
