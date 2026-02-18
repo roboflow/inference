@@ -67,8 +67,10 @@ from inference.core.exceptions import (
 )
 from inference.core.utils.file_system import sanitize_path_segment
 from inference.core.utils.requests import (
+    API_KEY_PATTERN,
     api_key_safe_raise_for_status,
     api_key_safe_raise_for_status_aiohttp,
+    deduct_api_key,
 )
 from inference.core.utils.url_utils import wrap_url
 from inference.core.version import __version__
@@ -862,9 +864,10 @@ def _get_from_url(
 
     if MD5_VERIFICATION_ENABLED:
         if "x-goog-hash" not in response.headers:
+            safe_url = API_KEY_PATTERN.sub(deduct_api_key, wrap_url(url))
             logger.warning(
                 f"MD5 verification enabled but response missing x-goog-hash header. "
-                f"Request url: {wrap_url(url)}"
+                f"Request url: {safe_url}"
             )
         else:
             x_goog_hash = response.headers["x-goog-hash"]

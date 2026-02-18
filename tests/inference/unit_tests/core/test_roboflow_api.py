@@ -2550,3 +2550,26 @@ def test_get_from_url_when_md5_verification_enabled_but_x_goog_hash_header_missi
     call_args = logger_mock.warning.call_args[0][0]
     assert "x-goog-hash" in call_args
     assert request_url in call_args
+
+
+@mock.patch.object(roboflow_api, "MD5_VERIFICATION_ENABLED", True)
+@mock.patch.object(roboflow_api, "RETRY_CONNECTION_ERRORS_TO_ROBOFLOW_API", False)
+@mock.patch.object(roboflow_api, "TRANSIENT_ROBOFLOW_API_ERRORS", set())
+def test_get_from_url_when_md5_verification_enabled_but_x_goog_hash_missing_does_not_log_api_key(
+    requests_mock: Mocker,
+) -> None:
+    secret_api_key = "my-secret-api-key-12345"
+    request_url = wrap_url(f"{API_BASE_URL}/some?api_key={secret_api_key}")
+    requests_mock.get(
+        url=request_url,
+        json={"status": "ok"},
+        status_code=200,
+        headers={},
+    )
+
+    with mock.patch.object(roboflow_api, "logger") as logger_mock:
+        get_from_url(url=request_url, json_response=True)
+
+    logged_message = logger_mock.warning.call_args[0][0]
+    assert secret_api_key not in logged_message
+    assert "x-goog-hash" in logged_message
