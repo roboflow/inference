@@ -224,6 +224,14 @@ class InstanceSegmentationInferenceRequest(ObjectDetectionInferenceRequest):
     )
 
 
+class SemanticSegmentationInferenceRequest(CVInferenceRequest):
+    """Semantic Segmentation inference request."""
+
+    def __init__(self, **kwargs):
+        kwargs["model_type"] = "semantic-segmentation"
+        super().__init__(**kwargs)
+
+
 class ClassificationInferenceRequest(CVInferenceRequest):
     """Classification inference request.
 
