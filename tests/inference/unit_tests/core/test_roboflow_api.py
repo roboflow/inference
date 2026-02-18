@@ -2607,3 +2607,24 @@ def test_get_from_url_when_md5_verification_enabled_but_x_goog_hash_has_no_md5_p
     logged_message = logger_mock.warning.call_args[0][0]
     assert "no md5= part" in logged_message
     assert "/some" in logged_message
+
+
+@mock.patch.object(roboflow_api, "MD5_VERIFICATION_ENABLED", True)
+@mock.patch.object(roboflow_api, "RETRY_CONNECTION_ERRORS_TO_ROBOFLOW_API", False)
+@mock.patch.object(roboflow_api, "TRANSIENT_ROBOFLOW_API_ERRORS", set())
+def test_get_from_url_when_md5_verification_enabled_but_md5_part_is_invalid_base64(
+    requests_mock: Mocker,
+) -> None:
+    request_url = wrap_url(f"{API_BASE_URL}/some")
+    requests_mock.get(
+        url=request_url,
+        json={"status": "ok"},
+        status_code=200,
+        headers={"x-goog-hash": "md5=!!!invalid-base64!!!"},
+    )
+
+    with pytest.raises(RoboflowAPIUnsuccessfulRequestError) as exc_info:
+        get_from_url(url=request_url, json_response=True)
+
+    assert "not valid base64" in str(exc_info.value)
+    assert exc_info.value.__cause__ is not None

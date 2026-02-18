@@ -1,5 +1,6 @@
 import asyncio
 import base64
+import binascii
 import hashlib
 import json
 import os
@@ -876,7 +877,12 @@ def _get_from_url(
                     md5_part = part.strip()[4:]
                     break
             if md5_part is not None:
-                md5_from_header = base64.b64decode(md5_part)
+                try:
+                    md5_from_header = base64.b64decode(md5_part)
+                except binascii.Error as decode_error:
+                    raise RoboflowAPIUnsuccessfulRequestError(
+                        "Invalid MD5 value in x-goog-hash header: not valid base64"
+                    ) from decode_error
                 if md5_from_header != hashlib.md5(response.content).digest():
                     raise RoboflowAPIUnsuccessfulRequestError(
                         "MD5 hash does not match MD5 received from x-goog-hash header"
