@@ -74,15 +74,16 @@ class SemanticSegmentationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceMo
         return self.make_response(predictions, img_dims, **kwargs)
 
     def make_response(
-        self, predictions, img_dims, **kwargs
+        self, batch_predictions, img_dims, **kwargs
     ) -> List[SemanticSegmentationInferenceResponse]:
-        predictions = [torch.tensor(p) for p in predictions]
+        # (N,C,H,W)
+        batch_predictions = torch.tensor(batch_predictions)
+        batch_class_probs = torch.nn.functional.softmax(batch_predictions, dim=1)
+        # (N,H,W)
+        batch_confidence, batch_class_ids = torch.max(batch_class_probs, dim=1)
+
         responses = []
-
-        for pred, img_dim in zip(predictions, img_dims):
-            class_probs = torch.nn.functional.softmax(pred, dim=0)
-            confidence, class_ids = torch.max(class_probs, dim=0)
-
+        for confidence, class_ids, img_dim in zip(batch_confidence, batch_class_ids, img_dims):
             # resize to img_dim
             confidence = torch.nn.functional.interpolate(
                 confidence.unsqueeze(dim=0).unsqueeze(dim=0),
