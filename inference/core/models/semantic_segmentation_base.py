@@ -1,10 +1,9 @@
-from typing import Any, List, Tuple
-
 import base64
 import io
+from typing import Any, List, Tuple
+
 import numpy as np
 import torch
-
 from PIL import Image
 
 from inference.core.entities.responses.inference import (
