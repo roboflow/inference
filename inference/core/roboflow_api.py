@@ -90,6 +90,7 @@ NOT_FOUND_ERROR_MESSAGE = (
 )
 
 ROBOFLOW_INFERENCE_VERSION_HEADER = "X-Roboflow-Inference-Version"
+ALLOW_CHUNKED_RESPONSE_HEADER = "X-Allow-Chunked"
 
 
 def raise_from_lambda(
@@ -975,6 +976,7 @@ def build_roboflow_api_headers(
     explicit_headers = {
         **explicit_headers,
         ROBOFLOW_INFERENCE_VERSION_HEADER: __version__,
+        ALLOW_CHUNKED_RESPONSE_HEADER: "true",
     }
     if not ROBOFLOW_API_EXTRA_HEADERS:
         return explicit_headers

@@ -412,6 +412,7 @@ async def test_get_roboflow_workspace_async_when_response_is_valid() -> None:
         assert registered_requests[0].kwargs["headers"] == {
             "extra": "header",
             roboflow_api.ROBOFLOW_INFERENCE_VERSION_HEADER: __version__,
+            roboflow_api.ALLOW_CHUNKED_RESPONSE_HEADER: "true",
         }
 
 
@@ -2366,6 +2367,7 @@ def test_build_roboflow_api_headers_when_no_extra_headers() -> None:
     # then
     assert result == {
         roboflow_api.ROBOFLOW_INFERENCE_VERSION_HEADER: __version__,
+        roboflow_api.ALLOW_CHUNKED_RESPONSE_HEADER: "true",
     }
 
 
@@ -2380,6 +2382,7 @@ def test_build_roboflow_api_headers_when_no_extra_headers_but_explicit_headers_g
     assert result == {
         "my": "header",
         roboflow_api.ROBOFLOW_INFERENCE_VERSION_HEADER: __version__,
+        roboflow_api.ALLOW_CHUNKED_RESPONSE_HEADER: "true",
     }, "Expected to preserve explicit header and inject version"
 
 
@@ -2397,6 +2400,7 @@ def test_build_roboflow_api_headers_when_extra_headers_given() -> None:
         "extra": "header",
         "another": "extra",
         roboflow_api.ROBOFLOW_INFERENCE_VERSION_HEADER: __version__,
+        roboflow_api.ALLOW_CHUNKED_RESPONSE_HEADER: "true",
     }, "Expected extra headers to be decoded"
 
 
@@ -2417,6 +2421,7 @@ def test_build_roboflow_api_headers_when_extra_headers_given_and_explicit_header
         "extra": "header",
         "another": "extra",
         roboflow_api.ROBOFLOW_INFERENCE_VERSION_HEADER: __version__,
+        roboflow_api.ALLOW_CHUNKED_RESPONSE_HEADER: "true",
     }, "Expected extra headers to be decoded and shipped along with explicit headers"
 
 
@@ -2429,6 +2434,7 @@ def test_build_roboflow_api_headers_when_extra_headers_given_as_invalid_json() -
     assert result == {
         "my": "header",
         roboflow_api.ROBOFLOW_INFERENCE_VERSION_HEADER: __version__,
+        roboflow_api.ALLOW_CHUNKED_RESPONSE_HEADER: "true",
     }, "Expected extra headers to be decoded and shipped along with explicit headers"
 
 
@@ -2454,6 +2460,7 @@ def test_build_roboflow_api_headers_when_extra_headers_given_and_explicit_header
         "extra": "explicit-is-better",
         "my": "header",
         roboflow_api.ROBOFLOW_INFERENCE_VERSION_HEADER: __version__,
+        roboflow_api.ALLOW_CHUNKED_RESPONSE_HEADER: "true",
     }, "Expected extra headers to be decoded and explicit header to override implicit one while keeping version header"
 
 
@@ -2468,6 +2475,7 @@ def test_build_roboflow_api_headers_always_sets_version_header() -> None:
 
     # then
     assert result[roboflow_api.ROBOFLOW_INFERENCE_VERSION_HEADER] == __version__
+    assert result[roboflow_api.ALLOW_CHUNKED_RESPONSE_HEADER] == "true"
     assert result["custom"] == "value"
 
 
