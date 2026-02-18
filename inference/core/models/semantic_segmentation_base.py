@@ -1,14 +1,115 @@
-from inference.core.models.roboflow import OnnxRoboflowInferenceModel
-
-from typing import Tuple
+from typing import Any, List, Tuple
 
 import numpy as np
+import torch
 
-SemanticSegmentationModelOutput = Tuple[np.ndarray]
+from inference.core.models.roboflow import OnnxRoboflowInferenceModel
+from inference.core.models.types import PreprocessReturnMetadata
+from inference.core.utils.onnx import run_session_via_iobinding
+from inference.core.entities.responses.inference import (
+    InferenceResponseImage,
+    SemanticSegmentationInferenceResponse,
+    SemanticSegmentationPrediction,
+)
+
+
+SemanticSegmentationRawPredictions = Tuple[np.ndarray]
+
 
 class SemanticSegmentationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
-    
+
     task_type = "semantic-segmentation"
 
     preprocess_means = [0.5, 0.5, 0.5]
     preprocess_stds = [0.5, 0.5, 0.5]
+
+    def preprocess(
+        self, image: Any, **kwargs
+    ) -> Tuple[np.ndarray, PreprocessReturnMetadata]:
+        img_in, img_dims = self.load_image(image)
+
+        # NB: range scaling and normalization are not automatically applied in load_image
+        # see classification_base.py
+        img_in /= 255.0
+
+        mean = self.preprocess_means
+        std = self.preprocess_stds
+        img_in[:, 0, :, :] = (img_in[:, 0, :, :] - mean[0]) / std[0]
+        img_in[:, 1, :, :] = (img_in[:, 1, :, :] - mean[1]) / std[1]
+        img_in[:, 2, :, :] = (img_in[:, 2, :, :] - mean[2]) / std[2]
+
+        return img_in, PreprocessReturnMetadata(
+            {
+                "img_dims": img_dims,
+                "im_shape": img_in.shape,
+            }
+        )
+
+    def predict(
+        self, img_in: np.ndarray, **kwargs
+    ) -> SemanticSegmentationRawPredictions:
+        """Performs inference on the given image using the ONNX session.
+
+        Args:
+            img_in (np.ndarray): Input image as a NumPy array.
+
+        Returns:
+            SemanticSegmentationRawPredictions: Tuple containing a NumPy array representing the raw predictions.
+            Raw predictions are a (C x H x W) array of logits per class per pixel.
+        """
+        with self._session_lock:
+            predictions = run_session_via_iobinding(
+                self.onnx_session, self.input_name, img_in
+            )  # List[np.ndarray]
+        return tuple(predictions)
+
+    def postprocess(
+        self,
+        predictions: SemanticSegmentationRawPredictions,
+        preprocess_return_metadata: PreprocessReturnMetadata,
+        **kwargs
+    ) -> List[SemanticSegmentationInferenceResponse]:
+        img_dims = preprocess_return_metadata["img_dims"]
+        predictions = predictions[0]
+        return self.make_response(predictions, img_dims, **kwargs)
+
+    def make_response(
+        self, predictions, img_dims, **kwargs
+    ) -> List[SemanticSegmentationInferenceResponse]:
+        predictions = [torch.tensor(p) for p in predictions]
+        responses = []
+
+        for pred, img_dim in zip(predictions, img_dims):
+            class_probs = torch.nn.functional.softmax(pred, dim=0)
+            confidence, class_ids = torch.max(class_probs, dim=0)
+
+            # resize to img_dim
+            confidence = torch.nn.functional.interpolate(
+                confidence.unsqueeze(dim=0).unsqueeze(dim=0),
+                size=img_dim,
+                mode="nearest",
+            ).squeeze()
+            class_ids = (
+                torch.nn.functional.interpolate(
+                    class_ids.unsqueeze(dim=0).unsqueeze(dim=0).to(torch.float),
+                    size=img_dim,
+                    mode="nearest",
+                )
+                .squeeze()
+                .to(torch.long)
+            )
+
+            # pack up
+            response = SemanticSegmentationInferenceResponse(
+                predictions=SemanticSegmentationPrediction(
+                    segmentation_map=class_ids,
+                    class_confidence=confidence,
+                ),
+                image=InferenceResponseImage(
+                    width=img_dim[1],
+                    height=img_dim[0],
+                ),
+            )
+            responses.append(response)
+
+            return responses
