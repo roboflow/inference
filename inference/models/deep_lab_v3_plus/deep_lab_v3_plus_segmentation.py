@@ -95,6 +95,21 @@ class DeepLabV3PlusSemanticSegmentation(
 
             class_probs = torch.nn.functional.softmax(pred, dim=0)
             confidence, class_ids = torch.max(class_probs, dim=0)
+            # stretch to img_dim
+            confidence = torch.nn.functional.interpolate(
+                confidence.unsqueeze(dim=0).unsqueeze(dim=0),
+                size=img_dim,
+                mode="nearest",
+            ).squeeze()
+            class_ids = (
+                torch.nn.functional.interpolate(
+                    class_ids.unsqueeze(dim=0).unsqueeze(dim=0).to(torch.float),
+                    size=img_dim,
+                    mode="nearest",
+                )
+                .squeeze()
+                .to(torch.long)
+            )
 
             response_predictions = SemanticSegmentationPrediction(
                 segmentation_map=class_ids, class_confidence=confidence
