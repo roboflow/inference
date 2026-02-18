@@ -500,3 +500,238 @@ def test_extract_leading_class_from_prediction_when_prediction_is_multi_class_wi
 
     # then
     assert result is None
+
+
+def test_extract_leading_class_from_prediction_when_prediction_is_string() -> None:
+    # given
+    prediction = "K619879"
+
+    # when
+    result = extract_leading_class_from_prediction(prediction=prediction)
+
+    # then
+    assert result == ("K619879", 0, 1.0)
+
+
+def test_extract_leading_class_from_prediction_when_prediction_is_list_of_strings() -> (
+    None
+):
+    # given
+    prediction = ["K619879"]
+
+    # when
+    result = extract_leading_class_from_prediction(prediction=prediction)
+
+    # then
+    assert result == ("K619879", 0, 1.0)
+
+
+def test_extract_leading_class_from_prediction_when_prediction_is_empty_list() -> None:
+    # given
+    prediction = []
+
+    # when
+    result = extract_leading_class_from_prediction(prediction=prediction)
+
+    # then
+    assert result is None
+
+
+def test_extract_leading_class_from_prediction_when_prediction_is_empty_list_with_fallback() -> (
+    None
+):
+    # given
+    prediction = []
+
+    # when
+    result = extract_leading_class_from_prediction(
+        prediction=prediction,
+        fallback_class_name="unknown",
+        fallback_class_id=99,
+    )
+
+    # then
+    assert result == ("unknown", 99, 0.0)
+
+
+def test_classes_replacement_with_list_of_strings_gemini_style() -> None:
+    """Test the user's exact use case: Gemini outputs nested arrays like
+    [["K619879"], ["C98191P"], ["K657648"]] which become a Batch of List[str].
+    """
+    # given
+    step = DetectionsClassesReplacementBlockV1()
+    detections = sv.Detections(
+        xyxy=np.array(
+            [
+                [10, 10, 50, 50],
+                [60, 60, 100, 100],
+                [110, 110, 150, 150],
+            ]
+        ),
+        class_id=np.array([1, 1, 1]),
+        confidence=np.array([0.9, 0.8, 0.85]),
+        data={
+            "class_name": np.array(["license_plate", "license_plate", "license_plate"]),
+            "detection_id": np.array(["id1", "id2", "id3"]),
+        },
+    )
+    # Gemini output: [["K619879"], ["C98191P"], ["K657648"]]
+    classification_predictions = Batch(
+        content=[
+            ["K619879"],
+            ["C98191P"],
+            ["K657648"],
+        ],
+        indices=[(0, 0), (0, 1), (0, 2)],
+    )
+
+    # when
+    result = step.run(
+        object_detection_predictions=detections,
+        classification_predictions=classification_predictions,
+        fallback_class_name=None,
+        fallback_class_id=None,
+    )
+
+    # then
+    assert len(result["predictions"]) == 3, "Expected all 3 detections to remain"
+    assert np.allclose(
+        result["predictions"].xyxy,
+        np.array([[10, 10, 50, 50], [60, 60, 100, 100], [110, 110, 150, 150]]),
+    ), "Expected coordinates not to be touched"
+    assert result["predictions"].data["class_name"].tolist() == [
+        "K619879",
+        "C98191P",
+        "K657648",
+    ], "Expected LP numbers as class names"
+    assert np.allclose(
+        result["predictions"].confidence, np.array([1.0, 1.0, 1.0])
+    ), "Expected confidence to be 1.0 for string predictions"
+    assert np.allclose(
+        result["predictions"].class_id, np.array([0, 0, 0])
+    ), "Expected class_id to be 0 for string predictions"
+    assert result["predictions"].data["detection_id"].tolist() != [
+        "id1",
+        "id2",
+        "id3",
+    ], "Expected new detection ids"
+
+
+def test_classes_replacement_with_plain_strings() -> None:
+    """Test with plain string predictions (not wrapped in lists)."""
+    # given
+    step = DetectionsClassesReplacementBlockV1()
+    detections = sv.Detections(
+        xyxy=np.array(
+            [
+                [10, 20, 30, 40],
+                [11, 21, 31, 41],
+            ]
+        ),
+        class_id=np.array([7, 7]),
+        confidence=np.array([0.36, 0.91]),
+        data={
+            "class_name": np.array(["animal", "animal"]),
+            "detection_id": np.array(["zero", "one"]),
+        },
+    )
+    classification_predictions = Batch(
+        content=["golden_retriever", "labrador"],
+        indices=[(0, 0), (0, 1)],
+    )
+
+    # when
+    result = step.run(
+        object_detection_predictions=detections,
+        classification_predictions=classification_predictions,
+        fallback_class_name=None,
+        fallback_class_id=None,
+    )
+
+    # then
+    assert len(result["predictions"]) == 2
+    assert result["predictions"].data["class_name"].tolist() == [
+        "golden_retriever",
+        "labrador",
+    ]
+    assert np.allclose(result["predictions"].confidence, np.array([1.0, 1.0]))
+    assert np.allclose(result["predictions"].class_id, np.array([0, 0]))
+
+
+def test_classes_replacement_with_strings_and_none_no_fallback() -> None:
+    """Test that None predictions are filtered out when no fallback is set."""
+    # given
+    step = DetectionsClassesReplacementBlockV1()
+    detections = sv.Detections(
+        xyxy=np.array(
+            [
+                [10, 20, 30, 40],
+                [11, 21, 31, 41],
+            ]
+        ),
+        class_id=np.array([7, 7]),
+        confidence=np.array([0.36, 0.91]),
+        data={
+            "class_name": np.array(["plate", "plate"]),
+            "detection_id": np.array(["zero", "one"]),
+        },
+    )
+    classification_predictions = Batch(
+        content=["K619879", None],
+        indices=[(0, 0), (0, 1)],
+    )
+
+    # when
+    result = step.run(
+        object_detection_predictions=detections,
+        classification_predictions=classification_predictions,
+        fallback_class_name=None,
+        fallback_class_id=None,
+    )
+
+    # then
+    assert (
+        len(result["predictions"]) == 1
+    ), "Expected only one detection (second had None)"
+    assert result["predictions"].data["class_name"].tolist() == ["K619879"]
+
+
+def test_classes_replacement_with_strings_and_none_with_fallback() -> None:
+    """Test that None predictions use fallback class when provided."""
+    # given
+    step = DetectionsClassesReplacementBlockV1()
+    detections = sv.Detections(
+        xyxy=np.array(
+            [
+                [10, 20, 30, 40],
+                [11, 21, 31, 41],
+            ]
+        ),
+        class_id=np.array([7, 7]),
+        confidence=np.array([0.36, 0.91]),
+        data={
+            "class_name": np.array(["plate", "plate"]),
+            "detection_id": np.array(["zero", "one"]),
+        },
+    )
+    classification_predictions = Batch(
+        content=["K619879", None],
+        indices=[(0, 0), (0, 1)],
+    )
+
+    # when
+    result = step.run(
+        object_detection_predictions=detections,
+        classification_predictions=classification_predictions,
+        fallback_class_name="unreadable",
+        fallback_class_id=99,
+    )
+
+    # then
+    assert len(result["predictions"]) == 2
+    assert result["predictions"].data["class_name"].tolist() == [
+        "K619879",
+        "unreadable",
+    ]
+    assert result["predictions"].confidence[1] == 0.0
+    assert result["predictions"].class_id[1] == 99
