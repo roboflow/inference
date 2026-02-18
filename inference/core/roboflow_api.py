@@ -209,7 +209,7 @@ def wrap_roboflow_api_errors_async(
 @wrap_roboflow_api_errors()
 def get_roboflow_workspace(api_key: str) -> WorkspaceID:
     if not api_key:
-        raise WorkspaceLoadError(f"Empty workspace encountered, check your API key.")
+        raise WorkspaceLoadError("Empty workspace encountered, check your API key.")
 
     api_url = _add_params_to_url(
         url=f"{API_BASE_URL}/",
@@ -218,7 +218,7 @@ def get_roboflow_workspace(api_key: str) -> WorkspaceID:
     api_key_info = _get_from_url(url=api_url)
     workspace_id = api_key_info.get("workspace")
     if workspace_id is None:
-        raise WorkspaceLoadError(f"Empty workspace encountered, check your API key.")
+        raise WorkspaceLoadError("Empty workspace encountered, check your API key.")
     return workspace_id
 
 
@@ -251,7 +251,7 @@ async def get_roboflow_workspace_async(api_key: str) -> WorkspaceID:
                 workspace_id = response_payload.get("workspace")
                 if workspace_id is None:
                     raise WorkspaceLoadError(
-                        f"Empty workspace encountered, check your API key."
+                        "Empty workspace encountered, check your API key."
                     )
                 return workspace_id
     except (aiohttp.ClientConnectionError, ConnectionError) as error:
@@ -676,7 +676,7 @@ def load_cached_workflow_response(
     try:
         with open(workflow_cache_file, "r") as f:
             return json.load(f)
-    except:
+    except Exception:
         delete_cached_workflow_response_if_exists(
             workspace_id=workspace_id,
             workflow_id=workflow_id,
