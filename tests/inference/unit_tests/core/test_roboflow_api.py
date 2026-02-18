@@ -2581,3 +2581,4 @@ def test_get_from_url_when_md5_verification_enabled_but_x_goog_hash_missing_does
     logged_message = logger_mock.warning.call_args[0][0]
     assert secret_api_key not in logged_message
     assert "x-goog-hash" in logged_message
+    assert "/some" in logged_message  # URL path logged without query params

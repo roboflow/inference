@@ -67,10 +67,8 @@ from inference.core.exceptions import (
 )
 from inference.core.utils.file_system import sanitize_path_segment
 from inference.core.utils.requests import (
-    API_KEY_PATTERN,
     api_key_safe_raise_for_status,
     api_key_safe_raise_for_status_aiohttp,
-    deduct_api_key,
 )
 from inference.core.utils.url_utils import wrap_url
 from inference.core.version import __version__
@@ -842,9 +840,10 @@ def _get_from_url(
     url: str,
     json_response: bool = True,
 ) -> Union[Response, dict]:
+    full_url = wrap_url(url)
     try:
         response = requests.get(
-            wrap_url(url),
+            full_url,
             headers=build_roboflow_api_headers(),
             timeout=ROBOFLOW_API_REQUEST_TIMEOUT,
             verify=ROBOFLOW_API_VERIFY_SSL,
@@ -865,10 +864,9 @@ def _get_from_url(
 
     if MD5_VERIFICATION_ENABLED:
         if "x-goog-hash" not in response.headers:
-            safe_url = API_KEY_PATTERN.sub(deduct_api_key, wrap_url(url))
             logger.warning(
                 f"MD5 verification enabled but response missing x-goog-hash header. "
-                f"Request url: {safe_url}"
+                f"Request url: {_url_for_safe_logging(full_url)}"
             )
         else:
             x_goog_hash = response.headers["x-goog-hash"]
@@ -936,6 +934,19 @@ def stream_url_to_cache(
         raise RoboflowAPIUnsuccessfulRequestError(
             f"Failed to download {filename}: {str(e)}"
         ) from e
+
+
+def _url_for_safe_logging(url: str) -> str:
+    """Return a URL safe to log by stripping the query string (and params/fragment).
+
+    Expects the full URL as used for the request (e.g. already wrapped).
+    Use this when logging request URLs so that sensitive query parameters
+    (e.g. api_key, tokens) are never written to logs.
+    """
+    parsed = urllib.parse.urlparse(url)
+    return urllib.parse.urlunparse(
+        (parsed.scheme, parsed.netloc, parsed.path, "", "", "")
+    )
 
 
 def _add_params_to_url(url: str, params: List[Tuple[str, str]]) -> str:
