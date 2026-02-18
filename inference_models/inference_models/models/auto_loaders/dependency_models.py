@@ -34,7 +34,7 @@ class DependencyModelParameters(BaseModel):
 
 
 def prepare_dependency_model_parameters(
-    model_parameters: Union[str, dict, DependencyModelParameters]
+    model_parameters: Union[str, dict, DependencyModelParameters],
 ) -> DependencyModelParameters:
     if isinstance(model_parameters, dict):
         try:
