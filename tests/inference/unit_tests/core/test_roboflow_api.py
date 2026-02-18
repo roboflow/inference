@@ -2526,3 +2526,27 @@ def test_get_from_url_when_retires_possible_but_given_up(
     # when
     with pytest.raises(RoboflowAPIUnsuccessfulRequestError):
         _ = get_from_url(url=wrap_url(f"{API_BASE_URL}/some"), json_response=True)
+
+
+@mock.patch.object(roboflow_api, "MD5_VERIFICATION_ENABLED", True)
+@mock.patch.object(roboflow_api, "RETRY_CONNECTION_ERRORS_TO_ROBOFLOW_API", False)
+@mock.patch.object(roboflow_api, "TRANSIENT_ROBOFLOW_API_ERRORS", set())
+def test_get_from_url_when_md5_verification_enabled_but_x_goog_hash_header_missing(
+    requests_mock: Mocker,
+) -> None:
+    request_url = wrap_url(f"{API_BASE_URL}/some")
+    requests_mock.get(
+        url=request_url,
+        json={"status": "ok"},
+        status_code=200,
+        headers={},
+    )
+
+    with mock.patch.object(roboflow_api, "logger") as logger_mock:
+        result = get_from_url(url=request_url, json_response=True)
+
+    assert result == {"status": "ok"}
+    logger_mock.warning.assert_called_once()
+    call_args = logger_mock.warning.call_args[0][0]
+    assert "x-goog-hash" in call_args
+    assert request_url in call_args
