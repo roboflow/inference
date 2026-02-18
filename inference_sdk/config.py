@@ -72,6 +72,8 @@ ALL_ROBOFLOW_API_URLS = {
     "https://infer.roboflow.com",
     "https://serverless.roboflow.com",
     "https://serverless.roboflow.one",
+    "https://asyncinfer.roboflow.com",
+    "https://asyncinfer.roboflow.one",
 }
 
 
