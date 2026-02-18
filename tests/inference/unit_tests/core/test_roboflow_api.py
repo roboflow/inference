@@ -46,6 +46,7 @@ from inference.core.roboflow_api import (
     register_image_at_roboflow,
     wrap_roboflow_api_errors,
 )
+from inference.core.version import __version__
 from inference.core.utils.url_utils import wrap_url
 
 
@@ -408,7 +409,11 @@ async def test_get_roboflow_workspace_async_when_response_is_valid() -> None:
         registered_requests = request_mock.requests[
             ("GET", URL(f"{API_BASE_URL}/?api_key=my_api_key&nocache=true"))
         ]
-        assert registered_requests[0].kwargs["headers"] == {"extra": "header"}
+        assert registered_requests[0].kwargs["headers"] == {
+            "extra": "header",
+            roboflow_api.ROBOFLOW_INFERENCE_VERSION_HEADER: __version__,
+            roboflow_api.ALLOW_CHUNKED_RESPONSE_HEADER: "true",
+        }
 
 
 def test_get_roboflow_dataset_type_when_wrong_key_used(
@@ -798,7 +803,6 @@ def test_get_roboflow_model_data_when_response_parsing_error_occurs(
     requests_mock.get(
         url=wrap_url(f"{API_BASE_URL}/ort/coins_detection/1"),
         content=expected_response,
-        headers={"Content-Length": str(len(expected_response))},
     )
 
     # when
@@ -837,7 +841,6 @@ def test_get_roboflow_model_data_when_valid_response_expected(
     requests_mock.get(
         url=wrap_url(f"{API_BASE_URL}/ort/coins_detection/1"),
         json=expected_response,
-        headers={"Content-Length": str(len(json.dumps(expected_response)))},
     )
 
     # when
@@ -2362,7 +2365,10 @@ def test_build_roboflow_api_headers_when_no_extra_headers() -> None:
     result = build_roboflow_api_headers()
 
     # then
-    assert result is None
+    assert result == {
+        roboflow_api.ROBOFLOW_INFERENCE_VERSION_HEADER: __version__,
+        roboflow_api.ALLOW_CHUNKED_RESPONSE_HEADER: "true",
+    }
 
 
 @mock.patch.object(roboflow_api, "ROBOFLOW_API_EXTRA_HEADERS", None)
@@ -2373,7 +2379,11 @@ def test_build_roboflow_api_headers_when_no_extra_headers_but_explicit_headers_g
     result = build_roboflow_api_headers(explicit_headers={"my": "header"})
 
     # then
-    assert result == {"my": "header"}, "Expected to preserve explicit header"
+    assert result == {
+        "my": "header",
+        roboflow_api.ROBOFLOW_INFERENCE_VERSION_HEADER: __version__,
+        roboflow_api.ALLOW_CHUNKED_RESPONSE_HEADER: "true",
+    }, "Expected to preserve explicit header and inject version"
 
 
 @mock.patch.object(
@@ -2389,6 +2399,8 @@ def test_build_roboflow_api_headers_when_extra_headers_given() -> None:
     assert result == {
         "extra": "header",
         "another": "extra",
+        roboflow_api.ROBOFLOW_INFERENCE_VERSION_HEADER: __version__,
+        roboflow_api.ALLOW_CHUNKED_RESPONSE_HEADER: "true",
     }, "Expected extra headers to be decoded"
 
 
@@ -2408,6 +2420,8 @@ def test_build_roboflow_api_headers_when_extra_headers_given_and_explicit_header
         "my": "header",
         "extra": "header",
         "another": "extra",
+        roboflow_api.ROBOFLOW_INFERENCE_VERSION_HEADER: __version__,
+        roboflow_api.ALLOW_CHUNKED_RESPONSE_HEADER: "true",
     }, "Expected extra headers to be decoded and shipped along with explicit headers"
 
 
@@ -2419,6 +2433,8 @@ def test_build_roboflow_api_headers_when_extra_headers_given_as_invalid_json() -
     # then
     assert result == {
         "my": "header",
+        roboflow_api.ROBOFLOW_INFERENCE_VERSION_HEADER: __version__,
+        roboflow_api.ALLOW_CHUNKED_RESPONSE_HEADER: "true",
     }, "Expected extra headers to be decoded and shipped along with explicit headers"
 
 
@@ -2443,7 +2459,24 @@ def test_build_roboflow_api_headers_when_extra_headers_given_and_explicit_header
         "another": "extra",
         "extra": "explicit-is-better",
         "my": "header",
-    }, "Expected extra headers to be decoded and explicit header to override implicit one"
+        roboflow_api.ROBOFLOW_INFERENCE_VERSION_HEADER: __version__,
+        roboflow_api.ALLOW_CHUNKED_RESPONSE_HEADER: "true",
+    }, "Expected extra headers to be decoded and explicit header to override implicit one while keeping version header"
+
+
+def test_build_roboflow_api_headers_always_sets_version_header() -> None:
+    # when
+    result = build_roboflow_api_headers(
+        explicit_headers={
+            roboflow_api.ROBOFLOW_INFERENCE_VERSION_HEADER: "should-be-overwritten",
+            "custom": "value",
+        }
+    )
+
+    # then
+    assert result[roboflow_api.ROBOFLOW_INFERENCE_VERSION_HEADER] == __version__
+    assert result[roboflow_api.ALLOW_CHUNKED_RESPONSE_HEADER] == "true"
+    assert result["custom"] == "value"
 
 
 @mock.patch.object(roboflow_api, "RETRY_CONNECTION_ERRORS_TO_ROBOFLOW_API", False)
@@ -2501,3 +2534,97 @@ def test_get_from_url_when_retires_possible_but_given_up(
     # when
     with pytest.raises(RoboflowAPIUnsuccessfulRequestError):
         _ = get_from_url(url=wrap_url(f"{API_BASE_URL}/some"), json_response=True)
+
+
+@mock.patch.object(roboflow_api, "MD5_VERIFICATION_ENABLED", True)
+@mock.patch.object(roboflow_api, "RETRY_CONNECTION_ERRORS_TO_ROBOFLOW_API", False)
+@mock.patch.object(roboflow_api, "TRANSIENT_ROBOFLOW_API_ERRORS", set())
+def test_get_from_url_when_md5_verification_enabled_but_x_goog_hash_header_missing(
+    requests_mock: Mocker,
+) -> None:
+    request_url = wrap_url(f"{API_BASE_URL}/some")
+    requests_mock.get(
+        url=request_url,
+        json={"status": "ok"},
+        status_code=200,
+        headers={},
+    )
+
+    with mock.patch.object(roboflow_api, "logger") as logger_mock:
+        result = get_from_url(url=request_url, json_response=True)
+
+    assert result == {"status": "ok"}
+    logger_mock.warning.assert_called_once()
+    call_args = logger_mock.warning.call_args[0][0]
+    assert "x-goog-hash" in call_args
+    assert request_url in call_args
+
+
+@mock.patch.object(roboflow_api, "MD5_VERIFICATION_ENABLED", True)
+@mock.patch.object(roboflow_api, "RETRY_CONNECTION_ERRORS_TO_ROBOFLOW_API", False)
+@mock.patch.object(roboflow_api, "TRANSIENT_ROBOFLOW_API_ERRORS", set())
+def test_get_from_url_when_md5_verification_enabled_but_x_goog_hash_missing_does_not_log_api_key(
+    requests_mock: Mocker,
+) -> None:
+    secret_api_key = "my-secret-api-key-12345"
+    request_url = wrap_url(f"{API_BASE_URL}/some?api_key={secret_api_key}")
+    requests_mock.get(
+        url=request_url,
+        json={"status": "ok"},
+        status_code=200,
+        headers={},
+    )
+
+    with mock.patch.object(roboflow_api, "logger") as logger_mock:
+        get_from_url(url=request_url, json_response=True)
+
+    logged_message = logger_mock.warning.call_args[0][0]
+    assert secret_api_key not in logged_message
+    assert "x-goog-hash" in logged_message
+    assert "/some" in logged_message  # URL path logged without query params
+
+
+@mock.patch.object(roboflow_api, "MD5_VERIFICATION_ENABLED", True)
+@mock.patch.object(roboflow_api, "RETRY_CONNECTION_ERRORS_TO_ROBOFLOW_API", False)
+@mock.patch.object(roboflow_api, "TRANSIENT_ROBOFLOW_API_ERRORS", set())
+def test_get_from_url_when_md5_verification_enabled_but_x_goog_hash_has_no_md5_part(
+    requests_mock: Mocker,
+) -> None:
+    request_url = wrap_url(f"{API_BASE_URL}/some")
+    header_value = "crc32c=abc123"
+    requests_mock.get(
+        url=request_url,
+        json={"status": "ok"},
+        status_code=200,
+        headers={"x-goog-hash": header_value},
+    )
+
+    with mock.patch.object(roboflow_api, "logger") as logger_mock:
+        result = get_from_url(url=request_url, json_response=True)
+
+    assert result == {"status": "ok"}
+    logger_mock.warning.assert_called_once()
+    logged_message = logger_mock.warning.call_args[0][0]
+    assert "no md5= part" in logged_message
+    assert "/some" in logged_message
+
+
+@mock.patch.object(roboflow_api, "MD5_VERIFICATION_ENABLED", True)
+@mock.patch.object(roboflow_api, "RETRY_CONNECTION_ERRORS_TO_ROBOFLOW_API", False)
+@mock.patch.object(roboflow_api, "TRANSIENT_ROBOFLOW_API_ERRORS", set())
+def test_get_from_url_when_md5_verification_enabled_but_md5_part_is_invalid_base64(
+    requests_mock: Mocker,
+) -> None:
+    request_url = wrap_url(f"{API_BASE_URL}/some")
+    requests_mock.get(
+        url=request_url,
+        json={"status": "ok"},
+        status_code=200,
+        headers={"x-goog-hash": "md5=!!!invalid-base64!!!"},
+    )
+
+    with pytest.raises(RoboflowAPIUnsuccessfulRequestError) as exc_info:
+        get_from_url(url=request_url, json_response=True)
+
+    assert "not valid base64" in str(exc_info.value)
+    assert exc_info.value.__cause__ is not None

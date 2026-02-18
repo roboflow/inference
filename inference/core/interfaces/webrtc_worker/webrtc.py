@@ -62,6 +62,7 @@ from inference.core.interfaces.webrtc_worker.sources.file import (
 from inference.core.interfaces.webrtc_worker.utils import (
     detect_image_output,
     get_cv2_rotation_code,
+    get_video_fps,
     get_video_rotation,
     parse_video_file_chunk,
     process_frame,
@@ -230,6 +231,7 @@ class VideoFrameProcessor:
         realtime_processing: bool = True,
         is_preview: bool = False,
     ):
+        self._file_processing = False
         self._loop = asyncio_loop
         self._termination_date = termination_date
         self._terminate_event = terminate_event
@@ -239,6 +241,8 @@ class VideoFrameProcessor:
         self._received_frames = 0
         self._declared_fps = declared_fps
         self._stop_processing = False
+        self._termination_reason: Optional[str] = None
+        self._processing_complete_sent = False
         self.heartbeat_callback = heartbeat_callback
 
         self.has_video_track = has_video_track
@@ -352,17 +356,24 @@ class VideoFrameProcessor:
                     )
 
     def _check_termination(self):
-        """Check if we should terminate based on timeout"""
-        if (
-            self._termination_date
-            and self._termination_date < datetime.datetime.now()
-            or self._terminate_event
-            and self._terminate_event.is_set()
-        ):
+        """Check if we should terminate based on timeout.
+
+        Does NOT set terminate_event — callers must call _signal_termination()
+        after sending final data-channel messages to avoid a race with the
+        cleanup task closing the peer connection.
+        """
+        if self._termination_date and self._termination_date < datetime.datetime.now():
             logger.info("Timeout reached, terminating inference pipeline")
-            self._terminate_event.set()
+            self._termination_reason = "timeout_reached"
+            return True
+        if self._terminate_event and self._terminate_event.is_set():
+            logger.info("Terminate event set, terminating inference pipeline")
             return True
         return False
+
+    def _signal_termination(self):
+        if self._terminate_event:
+            self._terminate_event.set()
 
     @staticmethod
     def serialize_outputs_sync(
@@ -413,6 +424,8 @@ class VideoFrameProcessor:
             pts=frame.pts,
             time_base=frame.time_base,
             declared_fps=self._declared_fps,
+            height=frame.height,
+            width=frame.width,
         )
 
         webrtc_output = WebRTCOutput(
@@ -473,12 +486,20 @@ class VideoFrameProcessor:
             logger.error("[SEND_OUTPUT] Frame %d failed", frame_id)
 
     async def _send_processing_complete(self):
-        """Send final message indicating processing is complete."""
+        """Send final message indicating processing is complete.
+
+        Also drains the data channel buffer to ensure delivery before the
+        connection is closed.
+        """
+        if self._processing_complete_sent:
+            return
         if not self.data_channel or self.data_channel.readyState != "open":
             return
 
+        self._processing_complete_sent = True
         completion_output = WebRTCOutput(
             processing_complete=True,
+            termination_reason=self._termination_reason,
             video_metadata=WebRTCVideoMetadata(
                 frame_id=self._received_frames,
                 received_at=datetime.datetime.now().isoformat(),
@@ -488,6 +509,12 @@ class VideoFrameProcessor:
         await send_chunked_data(
             self.data_channel, self._received_frames + 1, json_bytes
         )
+        if not await wait_for_buffer_drain(
+            self.data_channel, timeout=2.0, low_threshold=0
+        ):
+            logger.warning(
+                "Buffer drain timed out, processing_complete may not reach client"
+            )
 
     async def process_frames_data_only(self):
         """Process frames for data extraction only, without video track output."""
@@ -499,6 +526,8 @@ class VideoFrameProcessor:
             while not self._stop_processing:
                 await self._wait_for_ack_window(next_frame_id=self._received_frames + 1)
                 if self._check_termination():
+                    await self._send_processing_complete()
+                    self._signal_termination()
                     break
                 if self.heartbeat_callback:
                     self.heartbeat_callback()
@@ -619,6 +648,9 @@ class VideoFrameProcessor:
             process_frame,
             frame,
             frame_id,
+            self._declared_fps,
+            self._declared_fps,  # TODO: measure fps
+            self._file_processing,
             self._inference_pipeline,
             stream_output,
             render_output,
@@ -695,11 +727,6 @@ class VideoTransformTrackWithLoop(VideoStreamTrack, VideoFrameProcessor):
         if self.heartbeat_callback:
             self.heartbeat_callback()
 
-        # Check if we should terminate
-        if self._check_termination():
-            logger.warning("[RECV] Termination triggered, stopping")
-            raise MediaStreamError("Processing terminated due to timeout")
-
         # Wait for track to be ready (video file upload case)
         if self.track is None:
             logger.info("[RECV] Track is None, waiting for track_ready_event...")
@@ -710,6 +737,13 @@ class VideoTransformTrackWithLoop(VideoStreamTrack, VideoFrameProcessor):
 
         # Optional ACK pacing: block producing the next frame if we're too far ahead.
         await self._wait_for_ack_window(next_frame_id=self._received_frames + 1)
+
+        if self._check_termination():
+            logger.warning("[RECV] Termination triggered, closing gracefully")
+            await self._send_processing_complete()
+            self._signal_termination()
+            reason = self._termination_reason or "terminate_event"
+            raise MediaStreamError(f"Processing terminated: {reason}")
 
         # Drain queue if using PlayerStreamTrack (RTSP/video file)
         if isinstance(self.track, PlayerStreamTrack) and self.realtime_processing:
@@ -723,7 +757,12 @@ class VideoTransformTrackWithLoop(VideoStreamTrack, VideoFrameProcessor):
                     "[RECV] Drained %d frames from queue (was %d)", drained, queue_size
                 )
 
-        frame: VideoFrame = await self.track.recv()
+        try:
+            frame: VideoFrame = await self.track.recv()
+        except MediaStreamError:
+            logger.info("[RECV] Track ended after %d frames", self._received_frames)
+            await self._send_processing_complete()
+            raise
 
         self._received_frames += 1
         frame_id = self._received_frames
@@ -1139,6 +1178,7 @@ async def init_rtc_peer_connection_with_loop(
                     None, process_video_upload_message, message, video_processor
                 )
                 if video_path:
+                    video_processor._file_processing = True
                     logger.info(
                         "Video upload complete, processing: realtime=%s, path=%s",
                         webrtc_request.webrtc_realtime_processing,
@@ -1149,6 +1189,20 @@ async def init_rtc_peer_connection_with_loop(
                     rotation_code = get_cv2_rotation_code(rotation)
                     if rotation_code is not None:
                         logger.info("Video has %d° rotation, will correct", rotation)
+
+                    detected_fps = get_video_fps(video_path)
+                    if detected_fps is not None:
+                        logger.info(
+                            "FPS detection: detected=%.2f, previous=%s",
+                            detected_fps,
+                            video_processor._declared_fps,
+                        )
+                        video_processor._declared_fps = detected_fps
+                    else:
+                        logger.warning(
+                            "FPS detection failed, keeping default: %s",
+                            video_processor._declared_fps,
+                        )
 
                     if webrtc_request.webrtc_realtime_processing:
                         # We are dealing with a live video stream,

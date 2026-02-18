@@ -1,5 +1,6 @@
 import asyncio
 import base64
+import binascii
 import hashlib
 import json
 import os
@@ -71,6 +72,7 @@ from inference.core.utils.requests import (
     api_key_safe_raise_for_status_aiohttp,
 )
 from inference.core.utils.url_utils import wrap_url
+from inference.core.version import __version__
 
 MODEL_TYPE_DEFAULTS = {
     "object-detection": "yolov5v2s",
@@ -85,6 +87,9 @@ NOT_FOUND_ERROR_MESSAGE = (
     "Could not find requested Roboflow resource. Check that the provided dataset and "
     "version are correct, and check that the provided Roboflow API key has the correct permissions."
 )
+
+ROBOFLOW_INFERENCE_VERSION_HEADER = "X-Roboflow-Inference-Version"
+ALLOW_CHUNKED_RESPONSE_HEADER = "X-Allow-Chunked"
 
 
 def raise_from_lambda(
@@ -203,7 +208,7 @@ def wrap_roboflow_api_errors_async(
 @wrap_roboflow_api_errors()
 def get_roboflow_workspace(api_key: str) -> WorkspaceID:
     if not api_key:
-        raise WorkspaceLoadError(f"Empty workspace encountered, check your API key.")
+        raise WorkspaceLoadError("Empty workspace encountered, check your API key.")
 
     api_url = _add_params_to_url(
         url=f"{API_BASE_URL}/",
@@ -212,7 +217,7 @@ def get_roboflow_workspace(api_key: str) -> WorkspaceID:
     api_key_info = _get_from_url(url=api_url)
     workspace_id = api_key_info.get("workspace")
     if workspace_id is None:
-        raise WorkspaceLoadError(f"Empty workspace encountered, check your API key.")
+        raise WorkspaceLoadError("Empty workspace encountered, check your API key.")
     return workspace_id
 
 
@@ -245,7 +250,7 @@ async def get_roboflow_workspace_async(api_key: str) -> WorkspaceID:
                 workspace_id = response_payload.get("workspace")
                 if workspace_id is None:
                     raise WorkspaceLoadError(
-                        f"Empty workspace encountered, check your API key."
+                        "Empty workspace encountered, check your API key."
                     )
                 return workspace_id
     except (aiohttp.ClientConnectionError, ConnectionError) as error:
@@ -381,7 +386,7 @@ def get_roboflow_model_data(
             url=f"{api_base_url}/{endpoint_type.value}/{model_id}",
             params=params,
         )
-        api_data = _get_from_url(url=api_url, verify_content_length=True)
+        api_data = _get_from_url(url=api_url)
         cache.set(
             api_data_cache_key,
             api_data,
@@ -428,7 +433,7 @@ def get_roboflow_instant_model_data(
             url=f"{api_base_url}/getWeights",
             params=params,
         )
-        api_data = _get_from_url(url=api_url, verify_content_length=True)
+        api_data = _get_from_url(url=api_url)
         cache.set(
             api_data_cache_key,
             api_data,
@@ -670,7 +675,7 @@ def load_cached_workflow_response(
     try:
         with open(workflow_cache_file, "r") as f:
             return json.load(f)
-    except:
+    except Exception:
         delete_cached_workflow_response_if_exists(
             workspace_id=workspace_id,
             workflow_id=workflow_id,
@@ -819,12 +824,10 @@ def _prepare_workflow_response_cache_key(
 def get_from_url(
     url: str,
     json_response: bool = True,
-    verify_content_length: bool = False,
 ) -> Union[Response, dict]:
     return _get_from_url(
         url=url,
         json_response=json_response,
-        verify_content_length=verify_content_length,
     )
 
 
@@ -837,11 +840,11 @@ def get_from_url(
 def _get_from_url(
     url: str,
     json_response: bool = True,
-    verify_content_length: bool = False,
 ) -> Union[Response, dict]:
+    full_url = wrap_url(url)
     try:
         response = requests.get(
-            wrap_url(url),
+            full_url,
             headers=build_roboflow_api_headers(),
             timeout=ROBOFLOW_API_REQUEST_TIMEOUT,
             verify=ROBOFLOW_API_VERIFY_SSL,
@@ -860,34 +863,35 @@ def _get_from_url(
             raise RetryRequestError(message=str(error), inner_error=error) from error
         raise error
 
-    if MD5_VERIFICATION_ENABLED and "x-goog-hash" in response.headers:
-        x_goog_hash = response.headers["x-goog-hash"]
-        md5_part = None
-        for part in x_goog_hash.split(","):
-            if part.strip().startswith("md5="):
-                md5_part = part.strip()[4:]
-                break
-        if md5_part is not None:
-            md5_from_header = base64.b64decode(md5_part)
-            if md5_from_header != hashlib.md5(response.content).digest():
-                raise RoboflowAPIUnsuccessfulRequestError(
-                    "MD5 hash does not match MD5 received from x-goog-hash header"
-                )
-
-    if verify_content_length:
-        content_length = str(response.headers.get("Content-Length"))
-        if not content_length.isnumeric():
-            raise RoboflowAPIUnsuccessfulRequestError(
-                "Content-Length header is not numeric"
+    if MD5_VERIFICATION_ENABLED:
+        x_goog_hash = response.headers.get("x-goog-hash")
+        if x_goog_hash is None:
+            logger.warning(
+                f"MD5 verification enabled but response missing x-goog-hash header. "
+                f"Request url: {_url_for_safe_logging(full_url)}"
             )
-        if int(content_length) != len(response.content):
-            error = "Content-Length header does not match response content length"
-            if RETRY_CONNECTION_ERRORS_TO_ROBOFLOW_API:
-                raise RetryRequestError(
-                    message=error,
-                    inner_error=RuntimeError("Content-length validation failed"),
+        else:
+            md5_part = None
+            for part in x_goog_hash.split(","):
+                if part.strip().startswith("md5="):
+                    md5_part = part.strip()[4:]
+                    break
+            if md5_part is not None:
+                try:
+                    md5_from_header = base64.b64decode(md5_part)
+                except binascii.Error as decode_error:
+                    raise RoboflowAPIUnsuccessfulRequestError(
+                        "Invalid MD5 value in x-goog-hash header: not valid base64"
+                    ) from decode_error
+                if md5_from_header != hashlib.md5(response.content).digest():
+                    raise RoboflowAPIUnsuccessfulRequestError(
+                        "MD5 hash does not match MD5 received from x-goog-hash header"
+                    )
+            else:
+                logger.warning(
+                    f"MD5 verification enabled but x-goog-hash header has no md5= part. "
+                    f"Request url: {_url_for_safe_logging(full_url)}"
                 )
-            raise RoboflowAPIUnsuccessfulRequestError(error)
 
     if json_response:
         return response.json()
@@ -943,6 +947,19 @@ def stream_url_to_cache(
         ) from e
 
 
+def _url_for_safe_logging(url: str) -> str:
+    """Return a URL safe to log by stripping the query string (and params/fragment).
+
+    Expects the full URL as used for the request (e.g. already wrapped).
+    Use this when logging request URLs so that sensitive query parameters
+    (e.g. api_key, tokens) are never written to logs.
+    """
+    parsed = urllib.parse.urlparse(url)
+    return urllib.parse.urlunparse(
+        (parsed.scheme, parsed.netloc, parsed.path, "", "", "")
+    )
+
+
 def _add_params_to_url(url: str, params: List[Tuple[str, str]]) -> str:
     if len(params) == 0:
         return url
@@ -975,7 +992,14 @@ def send_inference_results_to_model_monitoring(
 
 def build_roboflow_api_headers(
     explicit_headers: Optional[Dict[str, Union[str, List[str]]]] = None,
-) -> Optional[Dict[str, Union[List[str]]]]:
+) -> Dict[str, Union[str, List[str]]]:
+    if explicit_headers is None:
+        explicit_headers = {}
+    explicit_headers = {
+        **explicit_headers,
+        ROBOFLOW_INFERENCE_VERSION_HEADER: __version__,
+        ALLOW_CHUNKED_RESPONSE_HEADER: "true",
+    }
     if not ROBOFLOW_API_EXTRA_HEADERS:
         return explicit_headers
     try:
