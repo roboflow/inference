@@ -2,6 +2,7 @@ import itertools
 import json
 import os
 import random
+import time
 from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
@@ -71,6 +72,11 @@ from inference.core.roboflow_api import (
     get_from_url,
     get_roboflow_instant_model_data,
     get_roboflow_model_data,
+)
+from inference.core.structured_logging import (
+    ModelLoadedToDiskEvent,
+    get_request_context,
+    structured_event_logger,
 )
 from inference.core.utils.image_utils import load_image
 from inference.core.utils.onnx import get_onnxruntime_execution_providers
@@ -310,6 +316,10 @@ class RoboflowInferenceModel(Model):
     ) -> None:
         logger.debug("Downloading model artifacts from Roboflow API")
 
+        download_start_time = time.time()
+        total_download_bytes = 0
+        artifact_count = 0
+
         # Use the same lock file pattern as in clear_cache
         lock_dir = MODEL_CACHE_DIR + "/_file_locks"  # Dedicated lock directory
         os.makedirs(lock_dir, exist_ok=True)  # Ensure lock directory exists.
@@ -381,6 +391,10 @@ class RoboflowInferenceModel(Model):
                             model_id=self.endpoint,
                         )
 
+                # Track download bytes
+                total_download_bytes += len(model_weights_response.content)
+                artifact_count += 1
+
                 save_bytes_in_cache(
                     content=model_weights_response.content,
                     file=self.weights_file,
@@ -393,6 +407,8 @@ class RoboflowInferenceModel(Model):
                     file="environment.json",
                     model_id=self.endpoint,
                 )
+                artifact_count += 1  # environment.json
+
                 if "keypoints_metadata" in api_data:
                     # TODO: make sure backend provides that
                     save_json_in_cache(
@@ -400,6 +416,24 @@ class RoboflowInferenceModel(Model):
                         file="keypoints_metadata.json",
                         model_id=self.endpoint,
                     )
+                    artifact_count += 1
+
+                # Log model_loaded_to_disk event for structured logging
+                if structured_event_logger.enabled:
+                    download_duration_ms = (time.time() - download_start_time) * 1000
+                    ctx = get_request_context()
+                    structured_event_logger.log_event(
+                        ModelLoadedToDiskEvent(
+                            request_id=ctx.request_id if ctx else None,
+                            model_id=self.endpoint,
+                            backend="onnx",
+                            download_bytes=total_download_bytes,
+                            download_duration_ms=download_duration_ms,
+                            artifact_count=artifact_count,
+                        ),
+                        sampled=False,  # Always log disk loads (low volume, high value)
+                    )
+
         except Exception as e:
             logger.error(f"Error downloading model artifacts: {e}")
             raise

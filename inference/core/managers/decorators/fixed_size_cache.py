@@ -1,7 +1,8 @@
 import gc
+import time
 from collections import deque
 from threading import Lock
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from inference.core import logger
 from inference.core.entities.requests.inference import InferenceRequest
@@ -11,6 +12,7 @@ from inference.core.env import (
     HOT_MODELS_QUEUE_LOCK_ACQUIRE_TIMEOUT,
     MEMORY_FREE_THRESHOLD,
     MODELS_CACHE_AUTH_ENABLED,
+    STRUCTURED_LOGGING_DETAILED_MEMORY,
 )
 from inference.core.exceptions import (
     ModelManagerLockAcquisitionError,
@@ -22,6 +24,11 @@ from inference.core.managers.entities import ModelDescription
 from inference.core.registries.roboflow import (
     ModelEndpointType,
     _check_if_api_key_has_access_to_model,
+)
+from inference.core.structured_logging import (
+    ModelEvictedEvent,
+    measure_memory_for_eviction,
+    structured_event_logger,
 )
 
 
@@ -37,6 +44,12 @@ class WithFixedSizeCache(ModelManagerDecorator):
         self.max_size = max_size
         self._key_queue = deque(self.model_manager.keys())
         self._queue_lock = Lock()
+        # Track when models were loaded for lifetime calculation in eviction events
+        self._model_load_times: Dict[str, float] = {}
+        # Initialize load times for pre-existing models
+        current_time = time.time()
+        for model_id in self.model_manager.keys():
+            self._model_load_times[model_id] = current_time
 
     def add_model(
         self,
@@ -84,10 +97,19 @@ class WithFixedSizeCache(ModelManagerDecorator):
                 raise ModelManagerLockAcquisitionError(
                     "Could not acquire lock on Model Manager state to add model from active models queue."
                 )
-            while self._key_queue and (
-                len(self) >= self.max_size
-                or (MEMORY_FREE_THRESHOLD and self.memory_pressure_detected())
-            ):
+            while self._key_queue:
+                memory_pressure = (
+                    MEMORY_FREE_THRESHOLD and self.memory_pressure_detected()
+                )
+                if len(self) < self.max_size and not memory_pressure:
+                    break
+                # Determine eviction reason
+                # Re-evaluate memory pressure each loop; reason can change over time.
+                is_memory_pressure = memory_pressure
+                eviction_reason = (
+                    "memory_pressure" if is_memory_pressure else "capacity"
+                )
+
                 # To prevent flapping around the threshold, remove 3 models to make some space.
                 for _ in range(3):
                     if not self._key_queue:
@@ -100,6 +122,43 @@ class WithFixedSizeCache(ModelManagerDecorator):
                         )
                         break
                     to_remove_model_id = self._key_queue.popleft()
+
+                    # Capture model metrics before eviction for structured logging
+                    if structured_event_logger.enabled:
+                        # Calculate lifetime
+                        load_time = self._model_load_times.get(
+                            to_remove_model_id, time.time()
+                        )
+                        lifetime_seconds = time.time() - load_time
+
+                        # Get inference count from model metrics
+                        inference_count: Optional[int] = None
+                        try:
+                            model = self.model_manager.models().get(to_remove_model_id)
+                            if model and hasattr(model, "metrics"):
+                                inference_count = model.metrics.get("num_inferences")
+                        except Exception:
+                            pass
+
+                        # Capture memory state if detailed logging enabled
+                        memory_snapshot = measure_memory_for_eviction(
+                            detailed=STRUCTURED_LOGGING_DETAILED_MEMORY
+                        )
+
+                        structured_event_logger.log_event(
+                            ModelEvictedEvent(
+                                model_id=to_remove_model_id,
+                                reason=eviction_reason,
+                                lifetime_seconds=lifetime_seconds,
+                                inference_count=inference_count,
+                                memory=memory_snapshot,
+                            ),
+                            sampled=False,  # Always log evictions (low volume, high value)
+                        )
+
+                    # Clean up load time tracking (always, regardless of logging enabled state)
+                    self._model_load_times.pop(to_remove_model_id, None)
+
                     super().remove(
                         to_remove_model_id, delete_from_disk=DISK_CACHE_CLEANUP
                     )  # LRU model overflow cleanup may or maynot need the weights removed from disk
@@ -107,6 +166,8 @@ class WithFixedSizeCache(ModelManagerDecorator):
                 gc.collect()
             logger.debug(f"Marking new model {queue_id} as most recently used.")
             self._key_queue.append(queue_id)
+            # Track load time for the new model
+            self._model_load_times[queue_id] = time.time()
         try:
             return super().add_model(
                 model_id,
@@ -134,6 +195,8 @@ class WithFixedSizeCache(ModelManagerDecorator):
         """Removes all models from the manager."""
         for model_id in list(self.keys()):
             self.remove(model_id)
+        # Clear all load time tracking as a safety measure.
+        self._model_load_times.clear()
 
     def remove(self, model_id: str, delete_from_disk: bool = True) -> Model:
         with acquire_with_timeout(
@@ -144,6 +207,8 @@ class WithFixedSizeCache(ModelManagerDecorator):
                     "Could not acquire lock on Model Manager state to remove model from active models queue."
                 )
             self._safe_remove_model_from_queue(model_id=model_id)
+            # Clean up load time tracking (always, regardless of logging enabled state)
+            self._model_load_times.pop(model_id, None)
         return super().remove(model_id, delete_from_disk=delete_from_disk)
 
     async def infer_from_request(
