@@ -24,6 +24,7 @@ from inference_sdk.config import (
     execution_id,
     remote_processing_times,
 )
+from inference_sdk.http.utils.executors import UNKNOWN_MODEL_ID
 from inference_sdk.http.entities import (
     ALL_ROBOFLOW_API_URLS,
     CLASSIFICATION_TASK,
@@ -116,7 +117,7 @@ logger = logging.getLogger(__name__)
 
 def _collect_processing_time_from_response(
     response: requests.Response,
-    model_id: str = "unknown",
+    model_id: str = UNKNOWN_MODEL_ID,
 ) -> None:
     collector = remote_processing_times.get()
     if collector is None:

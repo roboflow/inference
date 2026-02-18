@@ -192,7 +192,7 @@ class TestCollectRemoteProcessingTimes:
         assert len(entries) == 1
         assert entries[0] == ("m2", 0.5)
 
-    def test_handles_more_responses_than_request_data(self) -> None:
+    def test_handles_more_responses_than_request_data(self, caplog) -> None:
         # given
         collector = RemoteProcessingTimeCollector()
         token = remote_processing_times.set(collector)
@@ -201,12 +201,13 @@ class TestCollectRemoteProcessingTimes:
 
         try:
             # when
-            _collect_remote_processing_times(responses, requests_data)
+            with caplog.at_level("WARNING"):
+                _collect_remote_processing_times(responses, requests_data)
         finally:
             remote_processing_times.reset(token)
 
-        # then
+        # then - only the paired entry is collected, extra response is skipped
         entries = collector.drain()
-        assert len(entries) == 2
+        assert len(entries) == 1
         assert entries[0][0] == "m1"
-        assert entries[1][0] == "unknown"
+        assert "does not match" in caplog.text

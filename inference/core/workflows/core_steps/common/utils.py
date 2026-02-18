@@ -463,6 +463,18 @@ def post_process_ocr_result(
 
 
 def run_in_parallel(tasks: List[Callable[[], T]], max_workers: int = 1) -> List[T]:
+    tasks = _propagate_inference_context(tasks)
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        return list(executor.map(lambda f: f(), tasks))
+
+
+def _propagate_inference_context(
+    tasks: List[Callable[[], T]],
+) -> List[Callable[[], T]]:
+    """Wrap each task so that inference_sdk context vars are propagated into
+    worker threads.  Returns the tasks unchanged when inference_sdk is not
+    installed or no context is active.
+    """
     try:
         from inference_sdk.config import execution_id, remote_processing_times
 
@@ -473,19 +485,23 @@ def run_in_parallel(tasks: List[Callable[[], T]], max_workers: int = 1) -> List[
             else None
         )
     except ImportError:
-        exec_id = None
-        collector = None
+        return tasks
 
-    def _run_with_context(fun: Callable[[], T]) -> T:
-        if exec_id is not None:
-            from inference_sdk.config import execution_id
+    if exec_id is None and collector is None:
+        return tasks
 
-            execution_id.set(exec_id)
-        if collector is not None:
-            from inference_sdk.config import remote_processing_times
+    def _wrap(fun: Callable[[], T]) -> Callable[[], T]:
+        def _with_context() -> T:
+            if exec_id is not None:
+                from inference_sdk.config import execution_id
 
-            remote_processing_times.set(collector)
-        return fun()
+                execution_id.set(exec_id)
+            if collector is not None:
+                from inference_sdk.config import remote_processing_times
 
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        return list(executor.map(_run_with_context, tasks))
+                remote_processing_times.set(collector)
+            return fun()
+
+        return _with_context
+
+    return [_wrap(t) for t in tasks]
