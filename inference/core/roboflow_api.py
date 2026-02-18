@@ -863,13 +863,13 @@ def _get_from_url(
         raise error
 
     if MD5_VERIFICATION_ENABLED:
-        if "x-goog-hash" not in response.headers:
+        x_goog_hash = response.headers.get("x-goog-hash")
+        if x_goog_hash is None:
             logger.warning(
                 f"MD5 verification enabled but response missing x-goog-hash header. "
                 f"Request url: {_url_for_safe_logging(full_url)}"
             )
         else:
-            x_goog_hash = response.headers["x-goog-hash"]
             md5_part = None
             for part in x_goog_hash.split(","):
                 if part.strip().startswith("md5="):
@@ -881,6 +881,11 @@ def _get_from_url(
                     raise RoboflowAPIUnsuccessfulRequestError(
                         "MD5 hash does not match MD5 received from x-goog-hash header"
                     )
+            else:
+                logger.warning(
+                    f"MD5 verification enabled but x-goog-hash header has no md5= part. "
+                    f"Request url: {_url_for_safe_logging(full_url)}"
+                )
 
     if json_response:
         return response.json()

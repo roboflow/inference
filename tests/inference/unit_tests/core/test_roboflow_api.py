@@ -2582,3 +2582,28 @@ def test_get_from_url_when_md5_verification_enabled_but_x_goog_hash_missing_does
     assert secret_api_key not in logged_message
     assert "x-goog-hash" in logged_message
     assert "/some" in logged_message  # URL path logged without query params
+
+
+@mock.patch.object(roboflow_api, "MD5_VERIFICATION_ENABLED", True)
+@mock.patch.object(roboflow_api, "RETRY_CONNECTION_ERRORS_TO_ROBOFLOW_API", False)
+@mock.patch.object(roboflow_api, "TRANSIENT_ROBOFLOW_API_ERRORS", set())
+def test_get_from_url_when_md5_verification_enabled_but_x_goog_hash_has_no_md5_part(
+    requests_mock: Mocker,
+) -> None:
+    request_url = wrap_url(f"{API_BASE_URL}/some")
+    header_value = "crc32c=abc123"
+    requests_mock.get(
+        url=request_url,
+        json={"status": "ok"},
+        status_code=200,
+        headers={"x-goog-hash": header_value},
+    )
+
+    with mock.patch.object(roboflow_api, "logger") as logger_mock:
+        result = get_from_url(url=request_url, json_response=True)
+
+    assert result == {"status": "ok"}
+    logger_mock.warning.assert_called_once()
+    logged_message = logger_mock.warning.call_args[0][0]
+    assert "no md5= part" in logged_message
+    assert "/some" in logged_message
