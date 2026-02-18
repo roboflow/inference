@@ -10,6 +10,7 @@ from rich.progress import Progress, TaskID
 
 import docker
 from inference_cli.lib.exceptions import DockerConnectionErrorException
+from inference_cli.lib.logger import CLI_LOGGER
 from inference_cli.lib.utils import read_env_file
 
 
@@ -113,7 +114,7 @@ def get_image() -> str:
     detected = _detect_jetson()
     if detected is not None:
         image, source = detected
-        print(f"Jetson detected via {source}. Using image: {image}")
+        CLI_LOGGER.info(f"Jetson detected via {source}. Using image: {image}")
         return image
     try:
         subprocess.check_output("nvidia-smi")
