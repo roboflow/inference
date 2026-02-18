@@ -384,7 +384,7 @@ def get_roboflow_model_data(
             url=f"{api_base_url}/{endpoint_type.value}/{model_id}",
             params=params,
         )
-        api_data = _get_from_url(url=api_url, verify_content_length=True)
+        api_data = _get_from_url(url=api_url)
         cache.set(
             api_data_cache_key,
             api_data,
@@ -431,7 +431,7 @@ def get_roboflow_instant_model_data(
             url=f"{api_base_url}/getWeights",
             params=params,
         )
-        api_data = _get_from_url(url=api_url, verify_content_length=True)
+        api_data = _get_from_url(url=api_url)
         cache.set(
             api_data_cache_key,
             api_data,
@@ -822,12 +822,10 @@ def _prepare_workflow_response_cache_key(
 def get_from_url(
     url: str,
     json_response: bool = True,
-    verify_content_length: bool = False,
 ) -> Union[Response, dict]:
     return _get_from_url(
         url=url,
         json_response=json_response,
-        verify_content_length=verify_content_length,
     )
 
 
@@ -840,7 +838,6 @@ def get_from_url(
 def _get_from_url(
     url: str,
     json_response: bool = True,
-    verify_content_length: bool = False,
 ) -> Union[Response, dict]:
     try:
         response = requests.get(
@@ -876,21 +873,6 @@ def _get_from_url(
                 raise RoboflowAPIUnsuccessfulRequestError(
                     "MD5 hash does not match MD5 received from x-goog-hash header"
                 )
-
-    if verify_content_length:
-        content_length = str(response.headers.get("Content-Length"))
-        if not content_length.isnumeric():
-            raise RoboflowAPIUnsuccessfulRequestError(
-                "Content-Length header is not numeric"
-            )
-        if int(content_length) != len(response.content):
-            error = "Content-Length header does not match response content length"
-            if RETRY_CONNECTION_ERRORS_TO_ROBOFLOW_API:
-                raise RetryRequestError(
-                    message=error,
-                    inner_error=RuntimeError("Content-length validation failed"),
-                )
-            raise RoboflowAPIUnsuccessfulRequestError(error)
 
     if json_response:
         return response.json()
