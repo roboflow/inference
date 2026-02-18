@@ -24,7 +24,6 @@ from inference_sdk.config import (
     execution_id,
     remote_processing_times,
 )
-from inference_sdk.http.utils.executors import UNKNOWN_MODEL_ID
 from inference_sdk.http.entities import (
     ALL_ROBOFLOW_API_URLS,
     CLASSIFICATION_TASK,
@@ -55,6 +54,7 @@ from inference_sdk.http.utils.aliases import (
     resolve_roboflow_model_alias,
 )
 from inference_sdk.http.utils.executors import (
+    UNKNOWN_MODEL_ID,
     RequestMethod,
     execute_requests_packages,
     execute_requests_packages_async,
