@@ -27,7 +27,7 @@ class SemanticSegmentationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceMo
 
     @property
     def class_map(self):
-        # match inference-internal/blob/main/deploy/helpers/helpers.py#L107-L128
+        # match segment.roboflow.com
         return {str(k): v for k, v in enumerate(self.class_names)}
 
     def preprocess(

@@ -18,7 +18,7 @@ class DeepLabV3PlusSemanticSegmentation(
         predict: Performs inference on the given image using the ONNX session.
     """
 
-    # trainer params: see train/src/ml_trainers/deeplab_semantic_segmentation.py#L69
+    # match train params
     preprocess_means = [0.485, 0.456, 0.406]
     preprocess_stds = [0.229, 0.224, 0.225]
 
