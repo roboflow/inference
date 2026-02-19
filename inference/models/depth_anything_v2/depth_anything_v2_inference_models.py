@@ -82,8 +82,6 @@ class InferenceModelsDepthAnythingV2Adapter(Model):
         colored_depth = cv2.cvtColor(colored_depth, cv2.COLOR_BGR2RGB)
 
         # Convert numpy array to WorkflowImageData
-
-        # Convert numpy array to WorkflowImageData
         parent_metadata = ImageParentMetadata(parent_id=f"{uuid4()}")
         colored_depth_image = WorkflowImageData(
             numpy_image=colored_depth, parent_metadata=parent_metadata
