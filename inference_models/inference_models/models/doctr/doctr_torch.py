@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from threading import Lock
 from typing import Callable, List, Optional, Tuple, Union
 
 import numpy as np
@@ -9,7 +10,11 @@ from doctr.models import detection_predictor, ocr_predictor, recognition_predict
 from inference_models import Detections
 from inference_models.configuration import DEFAULT_DEVICE
 from inference_models.entities import ColorFormat, ImageDimensions
-from inference_models.errors import CorruptedModelPackageError, ModelRuntimeError
+from inference_models.errors import (
+    CorruptedModelPackageError,
+    ModelInputError,
+    ModelRuntimeError,
+)
 from inference_models.models.base.documents_parsing import StructuredOCRModel
 from inference_models.models.common.model_packages import get_model_package_contents
 from inference_models.utils.file_system import read_json
@@ -106,6 +111,7 @@ class DocTR(StructuredOCRModel[List[np.ndarray], ImageDimensions, Document]):
     ):
         self._model = model
         self._device = device
+        self._lock = Lock()
 
     @property
     def class_names(self) -> List[str]:
@@ -139,12 +145,12 @@ class DocTR(StructuredOCRModel[List[np.ndarray], ImageDimensions, Document]):
                 )
             return result, dimensions
         if not isinstance(images, list):
-            raise ModelRuntimeError(
+            raise ModelInputError(
                 message="Pre-processing supports only np.array or torch.Tensor or list of above.",
                 help_url="https://todo",
             )
         if not len(images):
-            raise ModelRuntimeError(
+            raise ModelInputError(
                 message="Detected empty input to the model", help_url="https://todo"
             )
         if isinstance(images[0], np.ndarray):
@@ -168,7 +174,7 @@ class DocTR(StructuredOCRModel[List[np.ndarray], ImageDimensions, Document]):
                     ImageDimensions(height=np_image.shape[0], width=np_image.shape[1])
                 )
             return result, dimensions
-        raise ModelRuntimeError(
+        raise ModelInputError(
             message=f"Detected unknown input batch element: {type(images[0])}",
             help_url="https://todo",
         )
@@ -178,7 +184,8 @@ class DocTR(StructuredOCRModel[List[np.ndarray], ImageDimensions, Document]):
         pre_processed_images: List[np.ndarray],
         **kwargs,
     ) -> Document:
-        return self._model(pre_processed_images)
+        with self._lock:
+            return self._model(pre_processed_images)
 
     def post_process(
         self,
@@ -251,15 +258,11 @@ class DocTR(StructuredOCRModel[List[np.ndarray], ImageDimensions, Document]):
             )
             if not detections:
                 empty_detections = Detections(
-                    xyxy=torch.empty(
-                        (0, 4), dtype=torch.int32, device=self._device
-                    ),
+                    xyxy=torch.empty((0, 4), dtype=torch.int32, device=self._device),
                     confidence=torch.empty(
                         (0,), dtype=torch.float32, device=self._device
                     ),
-                    class_id=torch.empty(
-                        (0,), dtype=torch.int32, device=self._device
-                    ),
+                    class_id=torch.empty((0,), dtype=torch.int32, device=self._device),
                     bboxes_metadata=[],
                 )
                 all_detections.append(empty_detections)

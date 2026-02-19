@@ -14,10 +14,8 @@ from inference.core.env import (
     OWLV2_VERSION_ID,
 )
 from inference.core.models.base import Model
-from inference.core.models.inference_models_adapters import (
-    get_extra_weights_provider_headers,
-)
 from inference.core.models.roboflow import DEFAULT_COLOR_PALETTE
+from inference.core.roboflow_api import get_extra_weights_provider_headers
 from inference.core.utils.image_utils import load_image_bgr
 from inference.core.utils.visualisation import draw_detection_predictions
 from inference.models.owlv2.owlv2_inference_models import Owlv2AdapterSingleton
@@ -73,7 +71,7 @@ class InferenceModelsRFInstantModelAdapter(Model):
             allow_untrusted_packages=ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES,
             allow_direct_local_storage_loading=ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES,
             model_access_manager=model_access_manager,
-            extra_weights_provider_headers=extra_weights_provider_headers,
+            weights_provider_extra_headers=extra_weights_provider_headers,
             **kwargs,
         )
 

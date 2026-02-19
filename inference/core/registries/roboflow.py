@@ -235,6 +235,7 @@ def get_model_type(
         # some very old model versions do not have modelType reported - and API respond in a generic way -
         # then we shall attempt using default model for given task type
         model_type = MODEL_TYPE_DEFAULTS.get(project_task_type)
+
     if model_type is None or project_task_type is None:
         raise ModelArtefactError("Error loading model artifacts from Roboflow API.")
     save_model_metadata_in_cache(

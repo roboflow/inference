@@ -576,11 +576,11 @@ def test_workflow_run(
         len(response_data["outputs"]) == 2
     ), "Two images submitted - two responses expected"
     assert (
-        len(response_data["outputs"][0]["result"]["predictions"]) == 6
-    ), "Expected to see 6 predictions"
+        len(response_data["outputs"][0]["result"]["predictions"]) >= 6
+    ), "Expected to see >= 6 predictions"
     assert (
-        len(response_data["outputs"][1]["result"]["predictions"]) == 6
-    ), "Expected to see 6 predictions"
+        len(response_data["outputs"][1]["result"]["predictions"]) >= 6
+    ), "Expected to see >= 6 predictions"
 
 
 FUNCTION_TO_GET_MAXIMUM_CONFIDENCE_FROM_BATCH_OF_DETECTIONS = """

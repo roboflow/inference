@@ -1,4 +1,5 @@
 import os
+from threading import Lock
 from typing import List, Optional, Union
 
 import numpy as np
@@ -80,7 +81,17 @@ class VITForClassificationHF(ClassificationModel[torch.Tensor, torch.Tensor]):
                 ResizeMode.LETTERBOX,
                 ResizeMode.CENTER_CROP,
                 ResizeMode.LETTERBOX_REFLECT_EDGES,
-                ResizeMode.FIT_LONGER_EDGE,
+            },
+            implicit_resize_mode_substitutions={
+                ResizeMode.FIT_LONGER_EDGE: (
+                    ResizeMode.STRETCH_TO,
+                    None,
+                    "VIT Classification model running with HF backend was trained with "
+                    "`fit-longer-edge` input resize mode. This transform cannot be applied properly for "
+                    "models with input dimensions fixed during training. To ensure interoperability, `stretch` "
+                    "resize mode will be used instead. If model was trained on Roboflow platform, "
+                    "we recommend using preprocessing method different that `fit-longer-edge`.",
+                )
             },
         )
         if inference_config.model_initialization is None:
@@ -136,6 +147,7 @@ class VITForClassificationHF(ClassificationModel[torch.Tensor, torch.Tensor]):
         self._inference_config = inference_config
         self._class_names = class_names
         self._device = device
+        self._lock = Lock()
 
     @property
     def class_names(self) -> List[str]:
@@ -156,7 +168,7 @@ class VITForClassificationHF(ClassificationModel[torch.Tensor, torch.Tensor]):
         )[0]
 
     def forward(self, pre_processed_images: torch.Tensor, **kwargs) -> torch.Tensor:
-        with torch.inference_mode():
+        with self._lock, torch.inference_mode():
             return self._model(pre_processed_images)
 
     def post_process(
@@ -223,7 +235,17 @@ class VITForMultiLabelClassificationHF(
                 ResizeMode.LETTERBOX,
                 ResizeMode.CENTER_CROP,
                 ResizeMode.LETTERBOX_REFLECT_EDGES,
-                ResizeMode.FIT_LONGER_EDGE,
+            },
+            implicit_resize_mode_substitutions={
+                ResizeMode.FIT_LONGER_EDGE: (
+                    ResizeMode.STRETCH_TO,
+                    None,
+                    "VIT Multi-Label Classification model running with HF backend was trained with "
+                    "`fit-longer-edge` input resize mode. This transform cannot be applied properly for "
+                    "models with input dimensions fixed during training. To ensure interoperability, `stretch` "
+                    "resize mode will be used instead. If model was trained on Roboflow platform, "
+                    "we recommend using preprocessing method different that `fit-longer-edge`.",
+                )
             },
         )
         if inference_config.model_initialization is None:

@@ -1,12 +1,13 @@
 from collections import namedtuple
 from dataclasses import dataclass
 from enum import Enum
-from typing import Annotated, List, Literal, Optional, Set, Tuple, Union
+from typing import Annotated, Dict, List, Literal, Optional, Set, Tuple, Union
 
 from pydantic import BaseModel, BeforeValidator, Field, ValidationError
 
 from inference_models.entities import ImageDimensions
 from inference_models.errors import CorruptedModelPackageError
+from inference_models.logger import LOGGER
 from inference_models.utils.file_system import read_json, stream_file_lines
 
 
@@ -327,6 +328,9 @@ class InferenceConfig(BaseModel):
 def parse_inference_config(
     config_path: str,
     allowed_resize_modes: Set[ResizeMode],
+    implicit_resize_mode_substitutions: Optional[
+        Dict[ResizeMode, Tuple[ResizeMode, Optional[int], Optional[str]]]
+    ] = None,
 ) -> InferenceConfig:
     try:
         decoded_config = read_json(path=config_path)
@@ -349,6 +353,16 @@ def parse_inference_config(
             message=f"Could not parse the inference config from the model package.",
             help_url="https://todo",
         ) from error
+    if implicit_resize_mode_substitutions is None:
+        implicit_resize_mode_substitutions = {}
+    if parsed_config.network_input.resize_mode in implicit_resize_mode_substitutions:
+        substitution, padding, reason = implicit_resize_mode_substitutions[
+            parsed_config.network_input.resize_mode
+        ]
+        if reason is not None:
+            LOGGER.warning(reason)
+        parsed_config.network_input.resize_mode = substitution
+        parsed_config.network_input.padding_value = padding
     if parsed_config.network_input.resize_mode not in allowed_resize_modes:
         allowed_resize_modes_str = ", ".join([e.value for e in allowed_resize_modes])
         raise CorruptedModelPackageError(

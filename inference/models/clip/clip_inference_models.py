@@ -25,6 +25,7 @@ from inference.core.env import (
 )
 from inference.core.models.base import Model
 from inference.core.models.types import PreprocessReturnMetadata
+from inference.core.roboflow_api import get_extra_weights_provider_headers
 from inference.core.utils.image_utils import load_image_bgr
 from inference.core.utils.postprocess import cosine_similarity
 from inference_models import AutoModel
@@ -57,11 +58,13 @@ class InferenceModelsClipAdapter(Model):
 
         self.api_key = api_key if api_key else API_KEY
         self.task_type = "embedding"
+        weights_provider_extra_headers = get_extra_weights_provider_headers()
         self._model: Union[ClipOnnx, ClipTorch] = AutoModel.from_pretrained(
             model_id_or_path=model_id,
             api_key=self.api_key,
             allow_untrusted_packages=ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES,
             allow_direct_local_storage_loading=ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES,
+            weights_provider_extra_headers=weights_provider_extra_headers,
             **kwargs,
         )
 

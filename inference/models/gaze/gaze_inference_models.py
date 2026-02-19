@@ -12,11 +12,14 @@ from inference.core.entities.responses.gaze import (
     GazeDetectionPrediction,
 )
 from inference.core.entities.responses.inference import FaceDetectionPrediction, Point
-from inference.core.env import API_KEY, GAZE_MAX_BATCH_SIZE
-from inference.core.models.base import Model
-from inference.core.models.inference_models_adapters import (
-    get_extra_weights_provider_headers,
+from inference.core.env import (
+    ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES,
+    ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES,
+    API_KEY,
+    GAZE_MAX_BATCH_SIZE,
 )
+from inference.core.models.base import Model
+from inference.core.roboflow_api import get_extra_weights_provider_headers
 from inference.core.utils.image_utils import load_image_bgr
 from inference_models import AutoModelPipeline
 from inference_models.model_pipelines.face_and_gaze_detection.mediapipe_l2cs import (
@@ -46,6 +49,8 @@ class InferenceModelsGazeAdapter(Model):
                 "face-and-gaze-detection",
                 api_key=self.api_key,
                 extra_weights_provider_headers=extra_weights_provider_headers,
+                allow_untrusted_packages=ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES,
+                allow_direct_local_storage_loading=ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES,
             )
         )
 

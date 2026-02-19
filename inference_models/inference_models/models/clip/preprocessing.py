@@ -12,7 +12,7 @@ from torchvision.transforms import (
 )
 
 from inference_models.entities import ColorFormat
-from inference_models.errors import ModelRuntimeError
+from inference_models.errors import ModelInputError
 
 MEAN = (0.48145466, 0.4578275, 0.40821073)
 STD = (0.26862954, 0.26130258, 0.27577711)
@@ -83,12 +83,12 @@ def inputs_to_tensor(
     input_color_format: Optional[ColorFormat] = None,
 ) -> Union[torch.Tensor, List[torch.Tensor]]:
     if not isinstance(images, (list, np.ndarray, torch.Tensor)):
-        raise ModelRuntimeError(
+        raise ModelInputError(
             f"Unsupported input type: {type(images)}. Must be one of list, np.ndarray, or torch.Tensor."
         )
     if isinstance(images, list):
         if not images:
-            raise ModelRuntimeError("Input image list cannot be empty.")
+            raise ModelInputError("Input image list cannot be empty.")
         return [
             input_to_tensor(
                 image=image,
@@ -112,18 +112,18 @@ def input_to_tensor(
     batched_tensors_allowed: bool = True,
 ) -> torch.Tensor:
     if not isinstance(image, (np.ndarray, torch.Tensor)):
-        raise ModelRuntimeError(
+        raise ModelInputError(
             f"Unsupported input type: {type(image)}. Each element must be one of np.ndarray, or torch.Tensor."
         )
     is_numpy = isinstance(image, np.ndarray)
     if is_numpy:
         if len(image.shape) != 3:
-            raise ModelRuntimeError(
+            raise ModelInputError(
                 f"Unsupported input type: detected np.ndarray image of shape {image.shape} which has "
                 f"number of dimensions different than 3. This input is invalid."
             )
         if image.shape[-1] != 3:
-            raise ModelRuntimeError(
+            raise ModelInputError(
                 f"Unsupported input type: detected np.ndarray image of shape {image.shape} which has "
                 f"incorrect number of color channels (expected: 3)."
             )
@@ -134,19 +134,19 @@ def input_to_tensor(
             "expected: 3 or 4" if batched_tensors_allowed else "expected: 3"
         )
         if len(image.shape) == 4 and not batched_tensors_allowed:
-            raise ModelRuntimeError(
+            raise ModelInputError(
                 f"Unsupported input type: detected torch.Tensor image of shape {image.shape} which has "
                 f"incorrect number of dimensions ({expected_dimensions_str})."
             )
         if len(image.shape) != 3 and len(image.shape) != 4:
-            raise ModelRuntimeError(
+            raise ModelInputError(
                 f"Unsupported input type: detected torch.Tensor image of shape {image.shape} which has "
                 f"incorrect number of dimensions ({expected_dimensions_str})."
             )
         if (len(image.shape) == 3 and image.shape[0] != 3) or (
             len(image.shape) == 4 and image.shape[1] != 3
         ):
-            raise ModelRuntimeError(
+            raise ModelInputError(
                 f"Unsupported input type: detected torch.Tensor image of shape {image.shape} which has "
                 f"incorrect number of color channels (expected: 3)."
             )

@@ -15,10 +15,8 @@ from inference.core.env import (
     API_KEY,
 )
 from inference.core.models.base import Model
-from inference.core.models.inference_models_adapters import (
-    get_extra_weights_provider_headers,
-)
 from inference.core.models.types import PreprocessReturnMetadata
+from inference.core.roboflow_api import get_extra_weights_provider_headers
 from inference.core.utils.image_utils import load_image_bgr
 from inference.core.workflows.execution_engine.entities.base import (
     ImageParentMetadata,
@@ -28,6 +26,7 @@ from inference_models import AutoModel
 from inference_models.models.depth_anything_v2.depth_anything_v2_hf import (
     DepthAnythingV2HF,
 )
+import cv2
 
 
 class InferenceModelsDepthAnythingV2Adapter(Model):
@@ -47,7 +46,7 @@ class InferenceModelsDepthAnythingV2Adapter(Model):
             api_key=self.api_key,
             allow_untrusted_packages=ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES,
             allow_direct_local_storage_loading=ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES,
-            extra_weights_provider_headers=extra_weights_provider_headers,
+            weights_provider_extra_headers=extra_weights_provider_headers,
             **kwargs,
         )
 
@@ -77,8 +76,8 @@ class InferenceModelsDepthAnythingV2Adapter(Model):
 
         # Create visualization
         depth_for_viz = (normalized_depth * 255.0).astype(np.uint8)
-        cmap = plt.get_cmap("viridis")
-        colored_depth = (cmap(depth_for_viz)[:, :, :3] * 255).astype(np.uint8)
+        colored_depth = cv2.applyColorMap(depth_for_viz, cv2.COLORMAP_VIRIDIS)
+        colored_depth = cv2.cvtColor(colored_depth, cv2.COLOR_BGR2RGB)
 
         # Convert numpy array to WorkflowImageData
         parent_metadata = ImageParentMetadata(parent_id=f"{uuid4()}")

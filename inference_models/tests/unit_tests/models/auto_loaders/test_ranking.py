@@ -2475,7 +2475,7 @@ def test_rank_packages_ids() -> None:
     "nms_fusion_preferences", [None, True, False, {"max_detections": (100, 200)}]
 )
 def test_retrieve_fused_nms_rank_when_no_model_features_declared(
-    nms_fusion_preferences: Union[bool, dict, None]
+    nms_fusion_preferences: Union[bool, dict, None],
 ) -> None:
     # given
     model_package = ModelPackageMetadata(
@@ -2505,7 +2505,7 @@ def test_retrieve_fused_nms_rank_when_no_model_features_declared(
     "nms_fusion_preferences", [None, True, False, {"max_detections": (100, 200)}]
 )
 def test_retrieve_fused_nms_rank_when_model_features_declared_but_without_nsm_fused(
-    nms_fusion_preferences: Union[bool, dict, None]
+    nms_fusion_preferences: Union[bool, dict, None],
 ) -> None:
     # given
     model_package = ModelPackageMetadata(
@@ -2533,7 +2533,7 @@ def test_retrieve_fused_nms_rank_when_model_features_declared_but_without_nsm_fu
 
 @pytest.mark.parametrize("nms_fusion_preferences", [None, False])
 def test_retrieve_fused_nms_rank_when_model_features_declared_but_with_nms_fused_turned_on_and_no_nms_preferences(
-    nms_fusion_preferences: Union[bool, dict, None]
+    nms_fusion_preferences: Union[bool, dict, None],
 ) -> None:
     # given
     model_package = ModelPackageMetadata(
@@ -2586,7 +2586,7 @@ def test_retrieve_fused_nms_rank_when_model_features_declared_but_with_nms_fused
     ],
 )
 def test_retrieve_fused_nms_rank_when_model_features_declared_but_with_nms_fused_turned_on_nms_preferences_not_matching(
-    nms_fusion_preferences: Union[bool, dict, None]
+    nms_fusion_preferences: Union[bool, dict, None],
 ) -> None:
     # given
     model_package = ModelPackageMetadata(

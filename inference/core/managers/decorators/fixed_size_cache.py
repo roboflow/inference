@@ -241,6 +241,13 @@ class WithFixedSizeCache(ModelManagerDecorator):
                 return_boolean = (
                     float(free_memory / total_memory) < MEMORY_FREE_THRESHOLD
                 )
+                if return_boolean:
+                    # just to make sure we are not flapping around the threshold for no reason
+                    torch.cuda.empty_cache()
+                    free_memory, total_memory = torch.cuda.mem_get_info()
+                    return_boolean = (
+                        float(free_memory / total_memory) < MEMORY_FREE_THRESHOLD
+                    )
                 logger.debug(
                     f"Free memory: {free_memory}, Total memory: {total_memory}, threshold: {MEMORY_FREE_THRESHOLD}, return_boolean: {return_boolean}"
                 )

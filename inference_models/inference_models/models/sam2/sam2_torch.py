@@ -1,6 +1,7 @@
 import hashlib
 import json
 from copy import copy
+from threading import Lock
 from typing import Dict, Generator, List, Optional, Tuple, TypeVar, Union
 
 import numpy as np
@@ -136,6 +137,7 @@ class SAM2Torch:
         self._sam2_allow_client_generated_hash_ids = (
             sam2_allow_client_generated_hash_ids
         )
+        self._lock = Lock()
 
     def embed_images(
         self,
@@ -280,8 +282,11 @@ class SAM2Torch:
                 i : i + self._max_batch_size
             ].contiguous()
             batch_size = input_images_batch.shape[0]
-            backbone_out = self._model.forward_image(input_images_batch)
-            _, vision_feats, _, _ = self._model._prepare_backbone_features(backbone_out)
+            with self._lock:
+                backbone_out = self._model.forward_image(input_images_batch)
+                _, vision_feats, _, _ = self._model._prepare_backbone_features(
+                    backbone_out
+                )
             if self._model.directly_add_no_mem_embed:
                 vision_feats[-1] = vision_feats[-1] + self._model.no_mem_embed
             feats = [
@@ -430,19 +435,20 @@ class SAM2Torch:
                     sam2_low_resolution_masks_cache=self._sam2_low_resolution_masks_cache,
                     device=self._device,
                 )
-            prediction = predict_for_single_image(
-                model=self._model,
-                transform=self._transform,
-                embeddings=image_embedding,
-                original_image_size=image_size,
-                point_coordinates=image_point_coordinates,
-                point_labels=image_point_labels,
-                boxes=image_boxes,
-                mask_input=image_mask_input,
-                multi_mask_output=multi_mask_output,
-                return_logits=return_logits,
-                mask_threshold=mask_threshold,
-            )
+            with self._lock:
+                prediction = predict_for_single_image(
+                    model=self._model,
+                    transform=self._transform,
+                    embeddings=image_embedding,
+                    original_image_size=image_size,
+                    point_coordinates=image_point_coordinates,
+                    point_labels=image_point_labels,
+                    boxes=image_boxes,
+                    mask_input=image_mask_input,
+                    multi_mask_output=multi_mask_output,
+                    return_logits=return_logits,
+                    mask_threshold=mask_threshold,
+                )
             if save_to_mask_input_cache and len(prediction[0].shape) == 3:
                 max_score_id = torch.argmax(prediction[1]).item()
                 mask = SAM2MaskCacheEntry(

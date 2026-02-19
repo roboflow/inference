@@ -12,10 +12,8 @@ from inference.core.env import (
     API_KEY,
 )
 from inference.core.models.base import Model
-from inference.core.models.inference_models_adapters import (
-    get_extra_weights_provider_headers,
-)
 from inference.core.models.types import PreprocessReturnMetadata
+from inference.core.roboflow_api import get_extra_weights_provider_headers
 from inference.core.utils.image_utils import load_image_bgr
 from inference_models import AutoModel
 from inference_models.models.qwen3vl.qwen3vl_hf import Qwen3VLHF
@@ -38,7 +36,7 @@ class InferenceModelsQwen3VLAdapter(Model):
             api_key=self.api_key,
             allow_untrusted_packages=ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES,
             allow_direct_local_storage_loading=ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES,
-            extra_weights_provider_headers=extra_weights_provider_headers,
+            weights_provider_extra_headers=extra_weights_provider_headers,
             **kwargs,
         )
 

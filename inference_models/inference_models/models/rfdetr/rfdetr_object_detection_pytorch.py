@@ -1,5 +1,6 @@
 import os.path
 from copy import deepcopy
+from threading import RLock
 from typing import List, Optional, Tuple, Union
 
 import numpy as np
@@ -15,6 +16,7 @@ from inference_models.errors import (
     CorruptedModelPackageError,
     InvalidModelInitParameterError,
     MissingModelInitParameterError,
+    ModelInputError,
     ModelRuntimeError,
 )
 from inference_models.logger import LOGGER
@@ -113,6 +115,17 @@ class RFDetrForObjectDetectionTorch(
                 ResizeMode.LETTERBOX,
                 ResizeMode.CENTER_CROP,
                 ResizeMode.LETTERBOX_REFLECT_EDGES,
+            },
+            implicit_resize_mode_substitutions={
+                ResizeMode.FIT_LONGER_EDGE: (
+                    ResizeMode.STRETCH_TO,
+                    None,
+                    "RFDetr Object Detection model running with Torch backend was trained with "
+                    "`fit-longer-edge` input resize mode. This transform cannot be applied properly for "
+                    "RFDetr models. To ensure interoperability, `stretch` "
+                    "resize mode will be used instead. If model was trained on Roboflow platform, "
+                    "we recommend using preprocessing method different that `fit-longer-edge`.",
+                )
             },
         )
         classes_re_mapping = None
@@ -265,6 +278,7 @@ class RFDetrForObjectDetectionTorch(
         self._optimized_has_been_compiled = False
         self._optimized_batch_size = None
         self._optimized_dtype = None
+        self._lock = RLock()
 
     @property
     def class_names(self) -> List[str]:
@@ -276,32 +290,34 @@ class RFDetrForObjectDetectionTorch(
         batch_size: int = 1,
         dtype: torch.dtype = torch.float32,
     ) -> None:
-        self.remove_optimized_model()
-        self._inference_model = deepcopy(self._model)
-        self._inference_model.eval()
-        self._inference_model.export()
-        self._inference_model = self._inference_model.to(dtype=dtype)
-        self._optimized_dtype = dtype
-        if compile:
-            self._inference_model = torch.jit.trace(
-                self._inference_model,
-                torch.randn(
-                    batch_size,
-                    3,
-                    self._resolution,
-                    self._resolution,
-                    device=self._device,
-                    dtype=dtype,
-                ),
-            )
-            self._optimized_has_been_compiled = True
-            self._optimized_batch_size = batch_size
+        with self._lock:
+            self.remove_optimized_model()
+            self._inference_model = deepcopy(self._model)
+            self._inference_model.eval()
+            self._inference_model.export()
+            self._inference_model = self._inference_model.to(dtype=dtype)
+            self._optimized_dtype = dtype
+            if compile:
+                self._inference_model = torch.jit.trace(
+                    self._inference_model,
+                    torch.randn(
+                        batch_size,
+                        3,
+                        self._resolution,
+                        self._resolution,
+                        device=self._device,
+                        dtype=dtype,
+                    ),
+                )
+                self._optimized_has_been_compiled = True
+                self._optimized_batch_size = batch_size
 
     def remove_optimized_model(self) -> None:
-        self._has_warned_about_not_being_optimized_for_inference = False
-        self._inference_model = None
-        self._optimized_has_been_compiled = False
-        self._optimized_batch_size = None
+        with self._lock:
+            self._has_warned_about_not_being_optimized_for_inference = False
+            self._inference_model = None
+            self._optimized_has_been_compiled = False
+            self._optimized_batch_size = None
 
     def pre_process(
         self,
@@ -334,7 +350,7 @@ class RFDetrForObjectDetectionTorch(
             if (self._resolution, self._resolution) != tuple(
                 pre_processed_images.shape[2:]
             ):
-                raise ModelRuntimeError(
+                raise ModelInputError(
                     message=f"Resolution mismatch. Model was optimized for resolution {self._resolution}, "
                     f"but got {tuple(pre_processed_images.shape[2:])}. "
                     "You can explicitly remove the optimized model by calling model.remove_optimized_model().",
@@ -342,7 +358,7 @@ class RFDetrForObjectDetectionTorch(
                 )
             if self._optimized_has_been_compiled:
                 if self._optimized_batch_size != pre_processed_images.shape[0]:
-                    raise ModelRuntimeError(
+                    raise ModelInputError(
                         message="Batch size mismatch. Optimized model was compiled for batch size "
                         f"{self._optimized_batch_size}, but got {pre_processed_images.shape[0]}. "
                         "You can explicitly remove the optimized model by calling model.remove_optimized_model(). "
@@ -350,7 +366,7 @@ class RFDetrForObjectDetectionTorch(
                         "by calling model.optimize_for_inference(batch_size=<new_batch_size>).",
                         help_url="https://todo",
                     )
-        with torch.inference_mode():
+        with self._lock, torch.inference_mode():
             if self._inference_model:
                 predictions = self._inference_model(
                     pre_processed_images.to(dtype=self._optimized_dtype)

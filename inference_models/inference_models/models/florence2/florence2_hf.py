@@ -1,6 +1,7 @@
 import json
 import os
 import re
+from threading import Lock
 from typing import List, Literal, Optional, Tuple, Union
 
 import cv2
@@ -23,7 +24,11 @@ from inference_models.configuration import (
     INFERENCE_MODELS_FLORENCE2_DEFAULT_NUM_BEAMS,
 )
 from inference_models.entities import ColorFormat, ImageDimensions
-from inference_models.errors import CorruptedModelPackageError, ModelRuntimeError
+from inference_models.errors import (
+    CorruptedModelPackageError,
+    ModelInputError,
+    ModelRuntimeError,
+)
 from inference_models.models.common.roboflow.model_packages import (
     InferenceConfig,
     PreProcessingMetadata,
@@ -192,6 +197,7 @@ class Florence2HF:
         self._inference_config = inference_config
         self._device = device
         self._torch_dtype = torch_dtype
+        self._lock = Lock()
 
     def classify_image_region(
         self,
@@ -586,7 +592,7 @@ class Florence2HF:
 
         if isinstance(prompt, list):
             if len(prompt) != len(image_dimensions):
-                raise ModelRuntimeError(
+                raise ModelInputError(
                     message="Provided prompt as list, but the number of prompt elements does not match number of input images.",
                     help_url="https://todo",
                 )
@@ -606,13 +612,14 @@ class Florence2HF:
         do_sample: bool = INFERENCE_MODELS_FLORENCE2_DEFAULT_DO_SAMPLE,
         **kwargs,
     ) -> torch.Tensor:
-        return self._model.generate(
-            input_ids=inputs["input_ids"],
-            pixel_values=inputs["pixel_values"],
-            max_new_tokens=max_new_tokens,
-            num_beams=num_beams,
-            do_sample=do_sample,
-        )
+        with self._lock:
+            return self._model.generate(
+                input_ids=inputs["input_ids"],
+                pixel_values=inputs["pixel_values"],
+                max_new_tokens=max_new_tokens,
+                num_beams=num_beams,
+                do_sample=do_sample,
+            )
 
     def post_process_generation(
         self,
@@ -655,14 +662,14 @@ def region_to_loc_phrase(
         xyxy = xyxy.tolist()
     image_dimensions = extract_input_images_dimensions(images=images)
     if not xyxy:
-        raise ModelRuntimeError(
+        raise ModelInputError(
             message="Provided empty region grounding.", help_url="https://todo"
         )
     nested = isinstance(xyxy[0], list)
     if not nested:
         xyxy = [xyxy] * len(image_dimensions)
     if len(xyxy) != len(image_dimensions):
-        raise ModelRuntimeError(
+        raise ModelInputError(
             message="Provided multiple regions - it is expected to provide a single region for each image, but number "
             "of regions does not match number of input images.",
             help_url="https://todo",

@@ -96,6 +96,10 @@ class ManifestDescription(BaseModel):
     output_dimensionality_offset: int = Field(
         default=0, ge=-1, le=1, description="Definition of output dimensionality offset"
     )
+    ui_manifest: Optional[Dict[str, Any]] = Field(
+        default_factory=lambda: {"icon": "fas fa-code", "section": "custom"},
+        description="Configuration for UI representation of the block (icon, section, etc.)",
+    )
     accepts_batch_input: bool = Field(
         default=False,
         description="Flag to decide if function will be provided with batch data as whole or with singular "

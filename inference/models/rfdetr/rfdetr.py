@@ -12,6 +12,7 @@ from inference.core.entities.requests.inference import InferenceRequestImage
 from inference.core.entities.responses.inference import InferenceResponseImage
 from inference.core.env import (
     DISABLE_PREPROC_AUTO_ORIENT,
+    DISK_CACHE_CLEANUP,
     FIX_BATCH_SIZE,
     MAX_BATCH_SIZE,
     ONNXRUNTIME_EXECUTION_PROVIDERS,
@@ -471,7 +472,7 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
                     sess_options=session_options,
                 )
             except Exception as e:
-                self.clear_cache()
+                self.clear_cache(delete_from_disk=DISK_CACHE_CLEANUP)
                 raise ModelArtefactError(
                     f"Unable to load ONNX session. Cause: {e}"
                 ) from e
@@ -695,7 +696,30 @@ class RFDETRInstanceSegmentation(
                     if pred_class_name not in class_filter_local:
                         continue
                 mask = selected_masks[i]
-                # Per-mask optional upscaling for better polygon quality without retaining all high-res masks
+
+                # For letterbox resizing, the mask is in the padded input
+                # coordinate space. Crop out the padding so the mask only
+                # contains actual image content before any resizing.
+
+                # All resize modes except "Stretch to" are some form of letterboxing
+                if self.resize_method != "Stretch to":
+                    input_h, input_w = self.img_size_h, self.img_size_w
+                    mask_h, mask_w = mask.shape[0], mask.shape[1]
+
+                    letterbox_scale = min(input_w / orig_w, input_h / orig_h)
+                    scaled_w = int(orig_w * letterbox_scale)
+                    scaled_h = int(orig_h * letterbox_scale)
+
+                    pad_x_input = (input_w - scaled_w) / 2
+                    pad_y_input = (input_h - scaled_h) / 2
+
+                    crop_x1 = int(round(pad_x_input * mask_w / input_w))
+                    crop_y1 = int(round(pad_y_input * mask_h / input_h))
+                    crop_x2 = int(round((pad_x_input + scaled_w) * mask_w / input_w))
+                    crop_y2 = int(round((pad_y_input + scaled_h) * mask_h / input_h))
+
+                    mask = mask[crop_y1:crop_y2, crop_x1:crop_x2]
+
                 mask_decode_mode = kwargs.get("mask_decode_mode", "accurate")
                 if mask_decode_mode == "accurate":
                     target_res = (orig_w, orig_h)
@@ -725,22 +749,17 @@ class RFDETRInstanceSegmentation(
                             target_res,
                             interpolation=cv2.INTER_LINEAR,
                         )
-                # Ensure binary for polygonization
+
                 mask_bin = (mask > 0).astype(np.uint8)
                 points = mask2poly(mask_bin)
-                # Scale polygon points back to original image coordinates if needed
+
+                # After letterbox cropping, both paths reduce to a simple
+                # linear rescale from prediction dims to original dims.
                 new_points = []
                 prediction_h, prediction_w = mask_bin.shape[0], mask_bin.shape[1]
                 for point in points:
-                    if self.resize_method == "Stretch to":
-                        new_x = point[0] * (orig_w / prediction_w)
-                        new_y = point[1] * (orig_h / prediction_h)
-                    else:
-                        scale = max(orig_w / prediction_w, orig_h / prediction_h)
-                        pad_x = (orig_w - prediction_w * scale) / 2
-                        pad_y = (orig_h - prediction_h * scale) / 2
-                        new_x = point[0] * scale + pad_x
-                        new_y = point[1] * scale + pad_y
+                    new_x = point[0] * (orig_w / prediction_w)
+                    new_y = point[1] * (orig_h / prediction_h)
                     new_points.append(np.array([new_x, new_y]))
                 outputs_polygons.append(new_points)
                 outputs_predictions.append(list(pred))
