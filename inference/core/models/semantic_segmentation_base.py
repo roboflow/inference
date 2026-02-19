@@ -119,7 +119,7 @@ class SemanticSegmentationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceMo
             )
             responses.append(response)
 
-            return responses
+        return responses
 
     def resize_img(self, img: torch.Tensor, img_dim: Tuple[int, int]) -> torch.Tensor:
         return torch.nn.functional.interpolate(
