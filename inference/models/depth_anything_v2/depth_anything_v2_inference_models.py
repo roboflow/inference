@@ -26,6 +26,7 @@ from inference_models import AutoModel
 from inference_models.models.depth_anything_v2.depth_anything_v2_hf import (
     DepthAnythingV2HF,
 )
+import cv2
 
 
 class InferenceModelsDepthAnythingV2Adapter(Model):
@@ -75,8 +76,8 @@ class InferenceModelsDepthAnythingV2Adapter(Model):
 
         # Create visualization
         depth_for_viz = (normalized_depth * 255.0).astype(np.uint8)
-        cmap = plt.get_cmap("viridis")
-        colored_depth = (cmap(depth_for_viz)[:, :, :3] * 255).astype(np.uint8)
+        colored_depth = cv2.applyColorMap(depth_for_viz, cv2.COLORMAP_VIRIDIS)
+        colored_depth = cv2.cvtColor(colored_depth, cv2.COLOR_BGR2RGB)
 
         # Convert numpy array to WorkflowImageData
         parent_metadata = ImageParentMetadata(parent_id=f"{uuid4()}")
