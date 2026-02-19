@@ -1,4 +1,4 @@
-from functools import wraps
+from functools import update_wrapper, wraps
 
 from starlette.responses import JSONResponse
 
@@ -464,7 +464,6 @@ def with_route_exceptions_async(route):
         Callable: The wrapped route.
     """
 
-    @wraps(route)
     async def wrapped_route(*args, **kwargs):
         try:
             return await route(*args, **kwargs)
@@ -821,4 +820,7 @@ def with_route_exceptions_async(route):
             resp = JSONResponse(status_code=500, content={"message": "Internal error."})
         return resp
 
+    # Use update_wrapper to preserve essential metadata but avoid copying the original function's __dict__,
+    # which can be expensive when many routes are decorated.
+    update_wrapper(wrapped_route, route, updated=())
     return wrapped_route
