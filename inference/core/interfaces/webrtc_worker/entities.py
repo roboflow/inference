@@ -74,6 +74,7 @@ class WebRTCOutput(BaseModel):
     video_metadata: Optional[WebRTCVideoMetadata] = None
     errors: List[str] = Field(default_factory=list)
     processing_complete: bool = False  # Signals end of video file processing
+    termination_reason: Optional[str] = None
 
 
 class WebRTCWorkerResult(BaseModel):
