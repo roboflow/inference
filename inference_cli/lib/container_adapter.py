@@ -118,7 +118,7 @@ def get_image() -> str:
         return image
     try:
         subprocess.check_output("nvidia-smi")
-        print("GPU detected. Using a GPU image.")
+        CLI_LOGGER.info("GPU detected. Using a GPU image.")
         return "roboflow/roboflow-inference-server-gpu:latest"
     except Exception:
         print("No GPU detected. Using a CPU image.")
