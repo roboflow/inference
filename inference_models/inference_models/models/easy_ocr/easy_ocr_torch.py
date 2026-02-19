@@ -1,3 +1,4 @@
+from threading import Lock
 from typing import List, Optional, Tuple, Union
 
 import easyocr
@@ -11,7 +12,11 @@ from inference_models.configuration import (
     INFERENCE_MODELS_EASYOCR_DEFAULT_CONFIDENCE,
 )
 from inference_models.entities import ColorFormat, ImageDimensions
-from inference_models.errors import CorruptedModelPackageError, ModelRuntimeError
+from inference_models.errors import (
+    CorruptedModelPackageError,
+    ModelInputError,
+    ModelRuntimeError,
+)
 from inference_models.models.common.model_packages import get_model_package_contents
 from inference_models.utils.file_system import read_json
 
@@ -82,6 +87,7 @@ class EasyOCRTorch(
     ):
         self._model = model
         self._device = device
+        self._lock = Lock()
 
     @property
     def class_names(self) -> List[str]:
@@ -115,12 +121,12 @@ class EasyOCRTorch(
                 )
             return result, dimensions
         if not isinstance(images, list):
-            raise ModelRuntimeError(
+            raise ModelInputError(
                 message="Pre-processing supports only np.array or torch.Tensor or list of above.",
                 help_url="https://todo",
             )
         if not len(images):
-            raise ModelRuntimeError(
+            raise ModelInputError(
                 message="Detected empty input to the model", help_url="https://todo"
             )
         if isinstance(images[0], np.ndarray):
@@ -144,7 +150,7 @@ class EasyOCRTorch(
                     ImageDimensions(height=np_image.shape[0], width=np_image.shape[1])
                 )
             return result, dimensions
-        raise ModelRuntimeError(
+        raise ModelInputError(
             message=f"Detected unknown input batch element: {type(images[0])}",
             help_url="https://todo",
         )
@@ -154,7 +160,8 @@ class EasyOCRTorch(
     ) -> List[EasyOCRRawPrediction]:
         all_results = []
         for image in pre_processed_images:
-            image_results_raw = self._model.readtext(image)
+            with self._lock:
+                image_results_raw = self._model.readtext(image)
             image_results_parsed = [
                 (
                     [

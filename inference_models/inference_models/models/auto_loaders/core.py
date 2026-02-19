@@ -8,7 +8,6 @@ from functools import partial
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union
 
 import torch
-from argon2 import PasswordHasher
 from filelock import FileLock
 from rich.console import Console
 from rich.text import Text
@@ -716,16 +715,12 @@ class AutoModel:
             # that still may end up with ambiguous behavior - probably the solution would be
             # to require prefix like file://... to denote the intent of loading model from local
             # drive?
-            if api_key is not None:
-                password_hashed = PasswordHasher()
-                api_key_hash = password_hashed.hash(api_key)
-            else:
-                api_key_hash = api_key
+            runtime_x_ray = x_ray_runtime_environment()
             auto_negotiation_hash = hash_dict_content(
                 content={
                     "provider": weights_provider,
                     "model_id": model_id_or_path,
-                    "api_key": api_key_hash,
+                    "api_key": api_key,
                     "requested_model_package_id": model_package_id,
                     "requested_backends": backend,
                     "requested_batch_size": batch_size,
@@ -737,6 +732,9 @@ class AutoModel:
                     "nms_fusion_preferences": nms_fusion_preferences,
                     "weights_provider_extra_query_params": weights_provider_extra_query_params,
                     "weights_provider_extra_headers": weights_provider_extra_headers,
+                    "runtime_x_ray": str(
+                        runtime_x_ray
+                    ),  # x-ray to serve as environment setup digest
                 }
             )
             model_from_access_manager = model_access_manager.retrieve_model_instance(
@@ -904,6 +902,8 @@ class AutoModel:
                     allow_loading_dependency_models=False,
                     dependency_models_params=None,
                     point_model_directory=model_directory_pointer,
+                    weights_provider_extra_query_params=weights_provider_extra_query_params,
+                    weights_provider_extra_headers=weights_provider_extra_headers,
                     **resolved_model_parameters.kwargs,
                 )
                 model_dependencies_instances[model_dependency.name] = (

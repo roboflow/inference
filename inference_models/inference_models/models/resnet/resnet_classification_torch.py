@@ -1,3 +1,4 @@
+from threading import Lock
 from typing import List, Optional, Tuple, Union
 
 import numpy as np
@@ -71,6 +72,17 @@ class ResNetForClassificationTorch(ClassificationModel[torch.Tensor, torch.Tenso
                 ResizeMode.CENTER_CROP,
                 ResizeMode.LETTERBOX_REFLECT_EDGES,
             },
+            implicit_resize_mode_substitutions={
+                ResizeMode.FIT_LONGER_EDGE: (
+                    ResizeMode.STRETCH_TO,
+                    None,
+                    "ResNetForClassification model running with Torch backend was trained with "
+                    "`fit-longer-edge` input resize mode. This transform cannot be applied properly for "
+                    "models with input dimensions fixed during weights export. To ensure interoperability, `stretch` "
+                    "resize mode will be used instead. If model was trained on Roboflow platform, "
+                    "we recommend using preprocessing method different that `fit-longer-edge`.",
+                )
+            },
         )
         if inference_config.model_initialization is None:
             raise CorruptedModelPackageError(
@@ -127,6 +139,7 @@ class ResNetForClassificationTorch(ClassificationModel[torch.Tensor, torch.Tenso
         self._inference_config = inference_config
         self._class_names = class_names
         self._device = device
+        self._lock = Lock()
 
     @property
     def class_names(self) -> List[str]:
@@ -149,7 +162,7 @@ class ResNetForClassificationTorch(ClassificationModel[torch.Tensor, torch.Tenso
         )[0]
 
     def forward(self, pre_processed_images: torch.Tensor, **kwargs) -> torch.Tensor:
-        with torch.inference_mode():
+        with self._lock, torch.inference_mode():
             return self._model(pre_processed_images)
 
     def post_process(
@@ -206,6 +219,17 @@ class ResNetForMultiLabelClassificationTorch(
                 ResizeMode.LETTERBOX,
                 ResizeMode.CENTER_CROP,
                 ResizeMode.LETTERBOX_REFLECT_EDGES,
+            },
+            implicit_resize_mode_substitutions={
+                ResizeMode.FIT_LONGER_EDGE: (
+                    ResizeMode.STRETCH_TO,
+                    None,
+                    "ResNetForMultiLabelClassification model running with Torch backend was trained with "
+                    "`fit-longer-edge` input resize mode. This transform cannot be applied properly for "
+                    "models with input dimensions fixed during weights export. To ensure interoperability, `stretch` "
+                    "resize mode will be used instead. If model was trained on Roboflow platform, "
+                    "we recommend using preprocessing method different that `fit-longer-edge`.",
+                )
             },
         )
         if inference_config.model_initialization is None:

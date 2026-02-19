@@ -1,3 +1,4 @@
+from threading import Lock
 from typing import List, Optional, Tuple, Union
 
 import segmentation_models_pytorch as smp
@@ -60,6 +61,7 @@ class DeepLabV3PlusForSemanticSegmentationTorch(
                 ResizeMode.LETTERBOX,
                 ResizeMode.CENTER_CROP,
                 ResizeMode.LETTERBOX_REFLECT_EDGES,
+                ResizeMode.FIT_LONGER_EDGE,
             },
         )
         if inference_config.model_initialization is None:
@@ -124,6 +126,7 @@ class DeepLabV3PlusForSemanticSegmentationTorch(
         self._class_names = class_names
         self._background_class_id = background_class_id
         self._device = device
+        self._lock = Lock()
 
     @property
     def class_names(self) -> List[str]:
@@ -146,7 +149,7 @@ class DeepLabV3PlusForSemanticSegmentationTorch(
         )
 
     def forward(self, pre_processed_images: torch.Tensor, **kwargs) -> torch.Tensor:
-        with torch.inference_mode():
+        with self._lock, torch.inference_mode():
             return self._model(pre_processed_images)
 
     def post_process(

@@ -11,9 +11,7 @@ import torch
 from pycocotools import mask as mask_utils
 from torch.nn.attention import SDPBackend
 
-from inference.core.models.inference_models_adapters import (
-    get_extra_weights_provider_headers,
-)
+from inference.core.roboflow_api import get_extra_weights_provider_headers
 from inference.core.utils.postprocess import masks2multipoly
 from inference_models import AutoModel
 from inference_models.models.sam2.cache import (
@@ -111,7 +109,7 @@ class InferenceModelsSAM2Adapter(Model):
             sam2_image_embeddings_cache=sam2_image_embeddings_cache,
             sam2_low_resolution_masks_cache=sam2_low_resolution_masks_cache,
             sam2_allow_client_generated_hash_ids=True,
-            extra_weights_provider_headers=extra_weights_provider_headers,
+            weights_provider_extra_headers=extra_weights_provider_headers,
             **kwargs,
         )
 
@@ -192,6 +190,8 @@ class InferenceModelsSAM2Adapter(Model):
             (array([...]), (224, 224))
         """
         loaded_image = self.preproc_image(image)
+        if loaded_image is None:
+            raise ValueError("Image must be provided to handle this request.")
         embeddings = self._model.embed_images(
             images=loaded_image, image_hashes=image_id, **kwargs
         )[0]
@@ -212,7 +212,9 @@ class InferenceModelsSAM2Adapter(Model):
         Returns:
             np.array: The preprocessed image.
         """
-        return load_image_bgr(image)
+        if image is not None:
+            return load_image_bgr(image)
+        return None
 
     def segment_image(
         self,

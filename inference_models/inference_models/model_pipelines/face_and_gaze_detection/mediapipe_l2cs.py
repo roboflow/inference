@@ -6,7 +6,7 @@ import torch
 from inference_models import Detections, KeyPoints
 from inference_models.configuration import DEFAULT_DEVICE
 from inference_models.entities import ColorFormat
-from inference_models.errors import ModelPipelineInitializationError, ModelRuntimeError
+from inference_models.errors import ModelInputError, ModelPipelineInitializationError
 from inference_models.models.l2cs.l2cs_onnx import (
     DEFAULT_GAZE_MAX_BATCH_SIZE,
     L2CSGazeDetection,
@@ -170,7 +170,7 @@ def crop_images_to_detections(
             images = images[:, [2, 1, 0], :, :]
         prepared_images = [i for i in images]
     elif isinstance(images, list) and len(images) == 0:
-        raise ModelRuntimeError(
+        raise ModelInputError(
             message="Detected empty input to the model",
             help_url="https://todo",
         )
@@ -189,7 +189,7 @@ def crop_images_to_detections(
                 image = image[[2, 1, 0], :, :]
             prepared_images.append(image.to(device))
     else:
-        raise ModelRuntimeError(
+        raise ModelInputError(
             message=f"Detected unknown input batch element: {type(images)}",
             help_url="https://todo",
         )

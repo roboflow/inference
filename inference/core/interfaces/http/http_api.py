@@ -65,6 +65,7 @@ from inference.core.entities.requests.sam2 import (
     Sam2SegmentationRequest,
 )
 from inference.core.entities.requests.sam3 import Sam3SegmentationRequest
+from inference.core.entities.requests.sam3_3d import Sam3_3D_Objects_InferenceRequest
 from inference.core.entities.requests.server_state import (
     AddModelRequest,
     ClearModelRequest,
@@ -172,6 +173,7 @@ from inference.core.env import (
     ROBOFLOW_INTERNAL_SERVICE_SECRET,
     ROBOFLOW_SERVICE_SECRET,
     SAM3_EXEC_MODE,
+    USE_INFERENCE_MODELS,
     WEBRTC_WORKER_ENABLED,
     WORKFLOWS_MAX_CONCURRENT_STEPS,
     WORKFLOWS_PROFILER_BUFFER_SIZE,
@@ -616,6 +618,15 @@ class HttpInterface(BaseInterface):
                         return _unauthorized_response("Unauthorized api_key")
 
                 return await call_next(request)
+
+        @app.middleware("http")
+        async def add_inference_engine_headers(request: Request, call_next):
+            response = await call_next(request)
+            inference_engine = (
+                "inference-models" if USE_INFERENCE_MODELS else "old-inference"
+            )
+            response.headers["x-inference-engine"] = inference_engine
+            return response
 
         self.app = app
         self.model_manager = model_manager
@@ -1179,16 +1190,70 @@ class HttpInterface(BaseInterface):
                     countinference: Optional[bool] = None,
                     service_secret: Optional[str] = None,
                 ):
-                    """Run inference with the specified object detection model.
+                    """Run inference with the specified large multi-modal model.
 
                     Args:
-                        inference_request (ObjectDetectionInferenceRequest): The request containing the necessary details for object detection.
-                        background_tasks: (BackgroundTasks) pool of fastapi background tasks
+                        inference_request (LMMInferenceRequest): The request containing the necessary details for LMM inference.
 
                     Returns:
-                        Union[ObjectDetectionInferenceResponse, List[ObjectDetectionInferenceResponse]]: The response containing the inference results.
+                        Union[LMMInferenceResponse, List[LMMInferenceResponse]]: The response containing the inference results.
                     """
                     logger.debug(f"Reached /infer/lmm")
+                    return process_inference_request(
+                        inference_request,
+                        countinference=countinference,
+                        service_secret=service_secret,
+                    )
+
+                @app.post(
+                    "/infer/lmm/{model_id:path}",
+                    response_model=Union[
+                        LMMInferenceResponse,
+                        List[LMMInferenceResponse],
+                        StubResponse,
+                    ],
+                    summary="Large multi-modal model infer with model ID in path",
+                    description="Run inference with the specified large multi-modal model. Model ID is specified in the URL path (can contain slashes).",
+                    response_model_exclude_none=True,
+                )
+                @with_route_exceptions
+                @usage_collector("request")
+                def infer_lmm_with_model_id(
+                    model_id: str,
+                    inference_request: LMMInferenceRequest,
+                    countinference: Optional[bool] = None,
+                    service_secret: Optional[str] = None,
+                ):
+                    """Run inference with the specified large multi-modal model.
+
+                    The model_id can be specified in the URL path. If model_id is also provided
+                    in the request body, it must match the path parameter.
+
+                    Args:
+                        model_id (str): The model identifier from the URL path.
+                        inference_request (LMMInferenceRequest): The request containing the necessary details for LMM inference.
+
+                    Returns:
+                        Union[LMMInferenceResponse, List[LMMInferenceResponse]]: The response containing the inference results.
+
+                    Raises:
+                        HTTPException: If model_id in path and request body don't match.
+                    """
+                    logger.debug(f"Reached /infer/lmm/{model_id}")
+
+                    # Validate model_id consistency between path and request body
+                    if (
+                        inference_request.model_id is not None
+                        and inference_request.model_id != model_id
+                    ):
+                        raise HTTPException(
+                            status_code=400,
+                            detail=f"Model ID mismatch: path specifies '{model_id}' but request body specifies '{inference_request.model_id}'",
+                        )
+
+                    # Set the model_id from path if not in request body
+                    inference_request.model_id = model_id
+
                     return process_inference_request(
                         inference_request,
                         countinference=countinference,
@@ -2434,45 +2499,6 @@ class HttpInterface(BaseInterface):
                     )
                     return model_response
 
-                @app.post(
-                    "/sam3/visual_segment",
-                    response_model=Sam2SegmentationResponse,
-                    summary="SAM3 PVS (promptable visual segmentation)",
-                    description="Run the SAM3 PVS (promptable visual segmentation) to generate segmentations for image data.",
-                )
-                @with_route_exceptions
-                @usage_collector("request")
-                def sam3_visual_segment(
-                    inference_request: Sam2SegmentationRequest,
-                    request: Request,
-                    api_key: Optional[str] = Query(
-                        None,
-                        description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
-                    ),
-                    countinference: Optional[bool] = None,
-                    service_secret: Optional[str] = None,
-                ):
-                    logger.debug(f"Reached /sam3/visual_segment")
-
-                    if SAM3_EXEC_MODE == "remote":
-                        raise HTTPException(
-                            status_code=501,
-                            detail="SAM3 visual segmentation is not supported in remote execution mode.",
-                        )
-
-                    self.model_manager.add_model(
-                        "sam3/sam3_interactive",
-                        api_key=api_key,
-                        endpoint_type=ModelEndpointType.CORE_MODEL,
-                        countinference=countinference,
-                        service_secret=service_secret,
-                    )
-
-                    model_response = self.model_manager.infer_from_request_sync(
-                        "sam3/sam3_interactive", inference_request
-                    )
-                    return model_response
-
             if CORE_MODEL_SAM3_ENABLED:
 
                 @app.post(
@@ -2612,6 +2638,175 @@ class HttpInterface(BaseInterface):
                             headers={"Content-Type": "application/octet-stream"},
                         )
                     return model_response
+
+                @app.post(
+                    "/sam3/visual_segment",
+                    response_model=Sam2SegmentationResponse,
+                    summary="SAM3 PVS (promptable visual segmentation)",
+                    description="Run the SAM3 PVS (promptable visual segmentation) to generate segmentations for image data.",
+                )
+                @with_route_exceptions
+                @usage_collector("request")
+                def sam3_visual_segment(
+                    inference_request: Sam2SegmentationRequest,
+                    request: Request,
+                    api_key: Optional[str] = Query(
+                        None,
+                        description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
+                    ),
+                    countinference: Optional[bool] = None,
+                    service_secret: Optional[str] = None,
+                ):
+                    logger.debug(f"Reached /sam3/visual_segment")
+
+                    if SAM3_EXEC_MODE == "remote":
+                        endpoint = f"{API_BASE_URL}/inferenceproxy/sam3-pvs"
+
+                        http_image = {
+                            "type": inference_request.image.type,
+                            "value": inference_request.image.value,
+                        }
+
+                        prompts_data = (
+                            inference_request.prompts.dict(exclude_none=True)
+                            if inference_request.prompts
+                            else None
+                        )
+
+                        payload = {
+                            "image": http_image,
+                            "prompts": prompts_data,
+                            "multimask_output": inference_request.multimask_output,
+                        }
+
+                        try:
+                            headers = {"Content-Type": "application/json"}
+                            if ROBOFLOW_INTERNAL_SERVICE_NAME:
+                                headers["X-Roboflow-Internal-Service-Name"] = (
+                                    ROBOFLOW_INTERNAL_SERVICE_NAME
+                                )
+                            if ROBOFLOW_INTERNAL_SERVICE_SECRET:
+                                headers["X-Roboflow-Internal-Service-Secret"] = (
+                                    ROBOFLOW_INTERNAL_SERVICE_SECRET
+                                )
+
+                            headers = build_roboflow_api_headers(
+                                explicit_headers=headers
+                            )
+
+                            response = requests.post(
+                                f"{endpoint}?api_key={api_key}",
+                                json=payload,
+                                headers=headers,
+                                timeout=60,
+                            )
+                            response.raise_for_status()
+                            resp_json = response.json()
+
+                            return Sam2SegmentationResponse(**resp_json)
+
+                        except Exception as e:
+                            logger.error(
+                                f"SAM3 visual_segment remote request failed: {e}"
+                            )
+                            raise HTTPException(
+                                status_code=500,
+                                detail=f"SAM3 visual_segment remote request failed: {str(e)}",
+                            )
+
+                    self.model_manager.add_model(
+                        "sam3/sam3_interactive",
+                        api_key=api_key,
+                        endpoint_type=ModelEndpointType.CORE_MODEL,
+                        countinference=countinference,
+                        service_secret=service_secret,
+                    )
+
+                    model_response = self.model_manager.infer_from_request_sync(
+                        "sam3/sam3_interactive", inference_request
+                    )
+                    return model_response
+
+            if CORE_MODEL_SAM3_ENABLED and not GCP_SERVERLESS:
+
+                @app.post(
+                    "/sam3_3d/infer",
+                    summary="SAM3 3D Object Generation",
+                    description="Generate 3D meshes and Gaussian splatting from 2D images with mask prompts.",
+                )
+                @with_route_exceptions
+                @usage_collector("request")
+                def sam3_3d_infer(
+                    inference_request: Sam3_3D_Objects_InferenceRequest,
+                    request: Request,
+                    api_key: Optional[str] = Query(
+                        None,
+                        description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
+                    ),
+                    countinference: Optional[bool] = None,
+                    service_secret: Optional[str] = None,
+                ):
+                    """Generate 3D meshes and Gaussian splatting from 2D images with mask prompts.
+
+                    Args:
+                        inference_request (Sam3_3D_Objects_InferenceRequest): The request containing
+                            the image and mask input for 3D generation.
+                        api_key (Optional[str]): Roboflow API Key for artifact retrieval.
+
+                    Returns:
+                        dict: Response containing base64-encoded 3D outputs:
+                            - mesh_glb: Scene mesh in GLB format (base64)
+                            - gaussian_ply: Combined Gaussian splatting in PLY format (base64)
+                            - objects: List of individual objects with their 3D data
+                            - time: Inference time in seconds
+                    """
+                    logger.debug("Reached /sam3_3d/infer")
+                    model_id = inference_request.model_id or "sam3-3d-objects"
+
+                    self.model_manager.add_model(
+                        model_id,
+                        api_key=api_key,
+                        endpoint_type=ModelEndpointType.CORE_MODEL,
+                        countinference=countinference,
+                        service_secret=service_secret,
+                    )
+
+                    model_response = self.model_manager.infer_from_request_sync(
+                        model_id, inference_request
+                    )
+
+                    if LAMBDA:
+                        actor = request.scope["aws.event"]["requestContext"][
+                            "authorizer"
+                        ]["lambda"]["actor"]
+                        trackUsage(model_id, actor)
+
+                    # Convert bytes to base64 for JSON serialization
+                    def encode_bytes(data):
+                        if data is None:
+                            return None
+                        return base64.b64encode(data).decode("utf-8")
+
+                    objects_list = []
+                    for obj in model_response.objects:
+                        objects_list.append(
+                            {
+                                "mesh_glb": encode_bytes(obj.mesh_glb),
+                                "gaussian_ply": encode_bytes(obj.gaussian_ply),
+                                "metadata": {
+                                    "rotation": obj.metadata.rotation,
+                                    "translation": obj.metadata.translation,
+                                    "scale": obj.metadata.scale,
+                                },
+                            }
+                        )
+
+                    return {
+                        "mesh_glb": encode_bytes(model_response.mesh_glb),
+                        "gaussian_ply": encode_bytes(model_response.gaussian_ply),
+                        "objects": objects_list,
+                        "time": model_response.time,
+                    }
 
             if CORE_MODEL_OWLV2_ENABLED:
 
@@ -2756,7 +2951,7 @@ class HttpInterface(BaseInterface):
                     depth_data = response.response
                     depth_response = DepthEstimationResponse(
                         normalized_depth=depth_data["normalized_depth"].tolist(),
-                        image=depth_data["image"].numpy_image.tobytes().hex(),
+                        image=depth_data["image"].base64_image,
                     )
                     return depth_response
 

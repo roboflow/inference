@@ -1,5 +1,6 @@
 import json
 import os
+from threading import Lock
 from typing import List, Optional, Tuple, Union
 
 import numpy as np
@@ -35,10 +36,19 @@ def _get_qwen3vl_attn_implementation(device: torch.device) -> str:
         try:
             import flash_attn  # noqa: F401
 
-            return "flash_attention_2"
+            if _is_model_running_against_ampere_plus_aarch(device=device):
+                return "flash_attention_2"
+            return "eager"
         except ImportError:
             pass
     return "eager"
+
+
+def _is_model_running_against_ampere_plus_aarch(device: torch.device) -> bool:
+    if device.type != "cuda":
+        return False
+    major, _ = torch.cuda.get_device_capability(device=device)
+    return major >= 8
 
 
 class Qwen3VLHF:
@@ -161,6 +171,7 @@ class Qwen3VLHF:
         self.default_system_prompt = (
             "You are a Qwen3-VL a helpful assistant for any visual task."
         )
+        self._lock = Lock()
 
     def prompt(
         self,
@@ -251,7 +262,7 @@ class Qwen3VLHF:
     ) -> torch.Tensor:
         input_len = inputs["input_ids"].shape[-1]
 
-        with torch.inference_mode():
+        with self._lock, torch.inference_mode():
             generation = self._model.generate(
                 **inputs,
                 max_new_tokens=max_new_tokens,

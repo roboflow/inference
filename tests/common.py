@@ -1,3 +1,5 @@
+from typing import Optional
+
 import numpy as np
 import supervision as sv
 
@@ -10,9 +12,24 @@ def assert_localized_predictions_match(
     mask_iou_threshold: float = 0.999,
     keypoint_pixel_tolerance: float = 1,
     keypoint_confidence_tolerance: float = 5e-2,
+    image_url: Optional[str] = None,
 ) -> None:
     sv_result_prediction = sv.Detections.from_inference(result_prediction)
     sv_reference_prediction = sv.Detections.from_inference(reference_prediction)
+    hw = result_prediction["image"]["height"], result_prediction["image"]["width"]
+    image = np.zeros((hw[0], hw[1], 3), dtype=np.uint8)
+    # if image_url:
+    #     import cv2
+    #     import requests
+    #     response = requests.get(image_url)
+    #     image = np.array(bytearray(response.content), dtype="uint8")
+    #     image = cv2.imdecode(image, cv2.IMREAD_COLOR)
+    # annotated_image_source = sv.BoxAnnotator().annotate(image.copy(), sv_reference_prediction)
+    # annotated_image_result = sv.BoxAnnotator().annotate(image.copy(), sv_result_prediction)
+    # concatenated_image = np.concatenate((annotated_image_source, annotated_image_result), axis=1)
+    # import matplotlib.pyplot as plt
+    # plt.imshow(concatenated_image)
+    # plt.show()
 
     # the sv prediction objects have attributes in batch format, so we run batch-based comparisons
     # NOTE: this requires that the detections are in the same order in both predictions

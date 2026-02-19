@@ -1,5 +1,6 @@
 import json
 import os
+from threading import Lock
 from typing import List, Optional, Tuple, Union
 
 import numpy as np
@@ -27,6 +28,31 @@ from inference_models.models.common.roboflow.model_packages import (
 from inference_models.models.common.roboflow.pre_processing import (
     pre_process_network_input,
 )
+
+
+def _get_qwen25vl_attn_implementation(device: torch.device) -> str:
+    """Use flash_attention_2 if available, otherwise eager.
+
+    SDPA has dtype mismatch issues with some transformers versions.
+    """
+    if is_flash_attn_2_available() and device and "cuda" in str(device):
+        # Verify flash_attn can actually be imported (not just installed)
+        try:
+            import flash_attn  # noqa: F401
+
+            if _is_model_running_against_ampere_plus_aarch(device=device):
+                return "flash_attention_2"
+            return "eager"
+        except ImportError:
+            pass
+    return "eager"
+
+
+def _is_model_running_against_ampere_plus_aarch(device: torch.device) -> bool:
+    if device.type != "cuda":
+        return False
+    major, _ = torch.cuda.get_device_capability(device=device)
+    return major >= 8
 
 
 class Qwen25VLHF:
@@ -68,11 +94,7 @@ class Qwen25VLHF:
                 bnb_4bit_quant_type="nf4",
             )
 
-        attn_implementation = (
-            "flash_attention_2"
-            if (is_flash_attn_2_available() and device and "cuda" in str(device))
-            else "eager"
-        )
+        attn_implementation = _get_qwen25vl_attn_implementation(device=device)
 
         if os.path.exists(adapter_config_path):
             base_model_path = os.path.join(model_name_or_path, "base")
@@ -136,6 +158,7 @@ class Qwen25VLHF:
         self.default_system_prompt = (
             "You are a Qwen2.5-VL model that can answer questions about any image."
         )
+        self._lock = Lock()
 
     def prompt(
         self,
@@ -254,7 +277,7 @@ class Qwen25VLHF:
     ) -> torch.Tensor:
         input_len = inputs["input_ids"].shape[-1]
 
-        with torch.inference_mode():
+        with self._lock, torch.inference_mode():
             generation = self._model.generate(
                 **inputs,
                 max_new_tokens=max_new_tokens,

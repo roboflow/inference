@@ -26,6 +26,10 @@ from inference.core.env import (
 )
 from inference.core.models.base import Model
 from inference.core.models.roboflow import DEFAULT_COLOR_PALETTE
+from inference.core.roboflow_api import (
+    ENFORCE_CREDITS_VERIFICATION_HEADER,
+    get_extra_weights_provider_headers,
+)
 from inference.core.utils.image_utils import load_image_bgr
 from inference.core.utils.visualisation import draw_detection_predictions
 from inference_models import AutoModel, Detections
@@ -45,7 +49,12 @@ PRELOADED_HF_MODELS = {}
 class Owlv2AdapterSingleton:
     _instances = weakref.WeakValueDictionary()
 
-    def __new__(cls, huggingface_id: str, api_key: Optional[str] = None):
+    def __new__(
+        cls,
+        huggingface_id: str,
+        api_key: Optional[str] = None,
+        disable_credits_verification_enforcement: bool = False,
+    ):
         if huggingface_id in PRELOADED_HF_MODELS:
             logger.info("Using preloaded OWLv2 instance for %s", huggingface_id)
             return PRELOADED_HF_MODELS[huggingface_id]
@@ -58,6 +67,14 @@ class Owlv2AdapterSingleton:
                 size_limit=OWLV2_IMAGE_CACHE_SIZE,
                 send_to_cpu=True,
             )
+            weights_provider_extra_headers = get_extra_weights_provider_headers()
+            if (
+                disable_credits_verification_enforcement
+                and weights_provider_extra_headers is not None
+            ):
+                weights_provider_extra_headers.pop(
+                    ENFORCE_CREDITS_VERIFICATION_HEADER, None
+                )
             model: OWLv2HF = AutoModel.from_pretrained(
                 model_id_or_path=huggingface_id,
                 api_key=api_key or API_KEY,
@@ -65,12 +82,16 @@ class Owlv2AdapterSingleton:
                 allow_direct_local_storage_loading=ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES,
                 owlv2_class_embeddings_cache=owlv2_class_embeddings_cache,
                 owlv2_images_embeddings_cache=owlv2_images_embeddings_cache,
+                weights_provider_extra_headers=weights_provider_extra_headers,
             )
             logger.info("Creating new OWLv2 instance for %s", huggingface_id)
             if OWLV2_COMPILE_MODEL:
                 logger.info("Compiling OWLv2 model %s", huggingface_id)
                 torch._dynamo.config.suppress_errors = True
-                model.optimize_for_inference()
+                model._model.owlv2.vision_model = torch.compile(
+                    model._model.owlv2.vision_model
+                )
+                model._compiled = True
             logger.info("Caching OWLv2 model %s", huggingface_id)
             cls._instances[huggingface_id] = model
             instance = cls.assembly_instance(huggingface_id, model)
@@ -86,26 +107,39 @@ class Owlv2AdapterSingleton:
         return instance
 
 
-@torch.no_grad()
-def dummy_infer(hf_id: str, api_key: Optional[str] = None):
+@torch.inference_mode()
+def dummy_infer(
+    hf_id: str,
+    api_key: Optional[str] = None,
+    disable_credits_verification_enforcement: bool = False,
+):
     # Below code is copied from Owlv2.__init__
-    singleton = Owlv2AdapterSingleton(hf_id)
+    singleton = Owlv2AdapterSingleton(
+        hf_id,
+        api_key=api_key,
+        disable_credits_verification_enforcement=disable_credits_verification_enforcement,
+    )
     model = singleton.model
     # Below code is copied from Owlv2.embed_image
-    device_str = "cuda" if str(DEVICE).startswith("cuda") else "cpu"
     np_image = np.zeros((256, 256, 3), dtype=np.uint8)
+    pixel_values, _ = model.pre_process(np_image)
+    device_type = model._device.type
     with torch.autocast(
-        device_type=device_str, dtype=torch.float16, enabled=device_str == "cuda"
+        device_type=device_type, dtype=torch.float16, enabled=device_type == "cuda"
     ):
-        embeddings = model.embed_image(np_image)
-        del embeddings
+        embeddings, *_ = model._model.image_embedder(pixel_values=pixel_values)
+    del pixel_values, np_image, embeddings
     gc.collect()
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
     return singleton
 
 
-def preload_owlv2_model(hf_id: str, api_key: Optional[str] = None):
+def preload_owlv2_model(
+    hf_id: str,
+    api_key: Optional[str] = None,
+    disable_credits_verification_enforcement: bool = False,
+):
     logger.info("Preloading OWLv2 model for %s (this may take a while)", hf_id)
     try:
         if torch.cuda.is_available():
@@ -115,7 +149,11 @@ def preload_owlv2_model(hf_id: str, api_key: Optional[str] = None):
                 f"Allocated GPU memory before loading model: {allocated_gpu_memory:.2f} GB"
             )
         t1 = time.time()
-        singleton = dummy_infer(hf_id, api_key=api_key)
+        singleton = dummy_infer(
+            hf_id,
+            api_key=api_key,
+            disable_credits_verification_enforcement=disable_credits_verification_enforcement,
+        )
         t2 = time.time()
         logger.info("Preloaded OWLv2 model for %s in %0.2f seconds", hf_id, t2 - t1)
         if torch.cuda.is_available():
@@ -134,7 +172,9 @@ if PRELOAD_HF_IDS and USE_INFERENCE_MODELS:
     if not isinstance(hf_ids, list):
         hf_ids = [hf_ids]
     for hf_id in hf_ids:
-        preload_owlv2_model(hf_id, api_key=API_KEY)
+        preload_owlv2_model(
+            hf_id, api_key=API_KEY, disable_credits_verification_enforcement=True
+        )
 
 
 class InferenceModelsOwlV2Adapter(Model):

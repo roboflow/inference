@@ -15,9 +15,10 @@ from inference_models.configuration import (
     ROBOFLOW_API_KEY,
 )
 from inference_models.errors import (
-    BaseInferenceError,
+    BaseInferenceModelsError,
     ModelMetadataConsistencyError,
     ModelMetadataHandlerNotImplementedError,
+    ModelNotFoundError,
     ModelRetrievalError,
     RetryError,
     UnauthorizedModelAccessError,
@@ -249,6 +250,12 @@ def handle_response_errors(response: Response, operation_name: str) -> None:
             "export key to `ROBOFLOW_API_KEY` environment variable",
             help_url="https://todo",
         )
+    if response.status_code == 404:
+        raise ModelNotFoundError(
+            message=f"Could not {operation_name}. Model not found. Are you sure that the identifier is correct "
+            f"and provided credentials ensure access to the model?",
+            help_url="https://todo",
+        )
     if response.status_code in IDEMPOTENT_API_REQUEST_CODES_TO_RETRY:
         raise RetryError(
             message=f"Roboflow API returned invalid response code for {operation_name} operation "
@@ -299,7 +306,7 @@ def parse_model_package_metadata(
         return None
     try:
         return MODEL_PACKAGE_PARSERS[manifest_type](metadata)
-    except BaseInferenceError as error:
+    except BaseInferenceModelsError as error:
         raise error
     except Exception as error:
         raise ModelMetadataConsistencyError(

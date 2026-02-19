@@ -1,11 +1,14 @@
 from io import BytesIO
 from time import perf_counter
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, List, Optional, Tuple, Union
 
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
-from inference.core.entities.requests import ClassificationInferenceRequest
+from inference.core.entities.requests import (
+    ClassificationInferenceRequest,
+    InferenceRequest,
+)
 from inference.core.entities.responses.inference import (
     ClassificationInferenceResponse,
     InferenceResponse,
@@ -24,12 +27,12 @@ from inference.core.env import (
     ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES,
     ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES,
     API_KEY,
-    ENFORCE_CREDITS_VERIFICATION,
-    GCP_SERVERLESS,
 )
 from inference.core.models.base import Model
-from inference.core.utils.image_utils import load_image_bgr
+from inference.core.roboflow_api import get_extra_weights_provider_headers
+from inference.core.utils.image_utils import load_image_bgr, load_image_rgb
 from inference.core.utils.postprocess import masks2poly
+from inference.core.utils.visualisation import draw_detection_predictions
 from inference.models.aliases import resolve_roboflow_model_alias
 from inference_models import (
     AutoModel,
@@ -47,27 +50,27 @@ from inference_models import (
 from inference_models.models.base.types import PreprocessingMetadata
 
 DEFAULT_COLOR_PALETTE = [
-    "A351FB",
-    "FF4040",
-    "FFA1A0",
-    "FF7633",
-    "FFB633",
-    "D1D435",
-    "4CFB12",
-    "94CF1A",
-    "40DE8A",
-    "1B9640",
-    "00D6C1",
-    "2E9CAA",
-    "00C4FF",
-    "364797",
-    "6675FF",
-    "0019EF",
-    "863AFF",
-    "530087",
-    "CD3AFF",
-    "FF97CA",
-    "FF39C9",
+    "#A351FB",
+    "#FF4040",
+    "#FFA1A0",
+    "#FF7633",
+    "#FFB633",
+    "#D1D435",
+    "#4CFB12",
+    "#94CF1A",
+    "#40DE8A",
+    "#1B9640",
+    "#00D6C1",
+    "#2E9CAA",
+    "#00C4FF",
+    "#364797",
+    "#6675FF",
+    "#0019EF",
+    "#863AFF",
+    "#530087",
+    "#CD3AFF",
+    "#FF97CA",
+    "#FF39C9",
 ]
 
 
@@ -89,7 +92,7 @@ class InferenceModelsObjectDetectionAdapter(Model):
             api_key=self.api_key,
             allow_untrusted_packages=ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES,
             allow_direct_local_storage_loading=ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES,
-            extra_weights_provider_headers=extra_weights_provider_headers,
+            weights_provider_extra_headers=extra_weights_provider_headers,
             **kwargs,
         )
         self.class_names = list(self._model.class_names)
@@ -182,6 +185,30 @@ class InferenceModelsObjectDetectionAdapter(Model):
         """
         pass
 
+    def draw_predictions(
+        self,
+        inference_request: InferenceRequest,
+        inference_response: InferenceResponse,
+    ) -> bytes:
+        """Draw predictions from an inference response onto the original image provided by an inference request
+
+        Args:
+            inference_request (ObjectDetectionInferenceRequest): The inference request containing the image on which to draw predictions
+            inference_response (ObjectDetectionInferenceResponse): The inference response containing predictions to be drawn
+
+        Returns:
+            str: A base64 encoded image string
+        """
+        class_id_2_color = {
+            i: DEFAULT_COLOR_PALETTE[i % len(DEFAULT_COLOR_PALETTE)]
+            for i, class_name in enumerate(self._model.class_names)
+        }
+        return draw_detection_predictions(
+            inference_request=inference_request,
+            inference_response=inference_response,
+            colors=class_id_2_color,
+        )
+
 
 class InferenceModelsInstanceSegmentationAdapter(Model):
     def __init__(self, model_id: str, api_key: str = None, **kwargs):
@@ -201,7 +228,7 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
             api_key=self.api_key,
             allow_untrusted_packages=ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES,
             allow_direct_local_storage_loading=ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES,
-            extra_weights_provider_headers=extra_weights_provider_headers,
+            weights_provider_extra_headers=extra_weights_provider_headers,
             **kwargs,
         )
         self.class_names = list(self._model.class_names)
@@ -301,6 +328,30 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
         """
         pass
 
+    def draw_predictions(
+        self,
+        inference_request: InferenceRequest,
+        inference_response: InferenceResponse,
+    ) -> bytes:
+        """Draw predictions from an inference response onto the original image provided by an inference request
+
+        Args:
+            inference_request (ObjectDetectionInferenceRequest): The inference request containing the image on which to draw predictions
+            inference_response (ObjectDetectionInferenceResponse): The inference response containing predictions to be drawn
+
+        Returns:
+            str: A base64 encoded image string
+        """
+        class_id_2_color = {
+            i: DEFAULT_COLOR_PALETTE[i % len(DEFAULT_COLOR_PALETTE)]
+            for i, class_name in enumerate(self._model.class_names)
+        }
+        return draw_detection_predictions(
+            inference_request=inference_request,
+            inference_response=inference_response,
+            colors=class_id_2_color,
+        )
+
 
 class InferenceModelsKeyPointsDetectionAdapter(Model):
     def __init__(self, model_id: str, api_key: str = None, **kwargs):
@@ -320,7 +371,7 @@ class InferenceModelsKeyPointsDetectionAdapter(Model):
             api_key=self.api_key,
             allow_untrusted_packages=ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES,
             allow_direct_local_storage_loading=ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES,
-            extra_weights_provider_headers=extra_weights_provider_headers,
+            weights_provider_extra_headers=extra_weights_provider_headers,
             **kwargs,
         )
         self.class_names = list(self._model.class_names)
@@ -447,6 +498,30 @@ class InferenceModelsKeyPointsDetectionAdapter(Model):
         """
         pass
 
+    def draw_predictions(
+        self,
+        inference_request: InferenceRequest,
+        inference_response: InferenceResponse,
+    ) -> bytes:
+        """Draw predictions from an inference response onto the original image provided by an inference request
+
+        Args:
+            inference_request (ObjectDetectionInferenceRequest): The inference request containing the image on which to draw predictions
+            inference_response (ObjectDetectionInferenceResponse): The inference response containing predictions to be drawn
+
+        Returns:
+            str: A base64 encoded image string
+        """
+        class_id_2_color = {
+            i: DEFAULT_COLOR_PALETTE[i % len(DEFAULT_COLOR_PALETTE)]
+            for i, class_name in enumerate(self._model.class_names)
+        }
+        return draw_detection_predictions(
+            inference_request=inference_request,
+            inference_response=inference_response,
+            colors=class_id_2_color,
+        )
+
 
 def model_keypoints_to_response(
     instance_keypoints_xy: List[
@@ -493,7 +568,7 @@ class InferenceModelsClassificationAdapter(Model):
                 api_key=self.api_key,
                 allow_untrusted_packages=ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES,
                 allow_direct_local_storage_loading=ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES,
-                extra_weights_provider_headers=extra_weights_provider_headers,
+                weights_provider_extra_headers=extra_weights_provider_headers,
                 **kwargs,
             )
         )
@@ -685,7 +760,7 @@ def draw_predictions(inference_request, inference_response, class_names: List[st
     Returns:
         bytes: The bytes of the visualized image in JPEG format.
     """
-    image = inference_request.image
+    image = load_image_rgb(inference_request.image)
     image = Image.fromarray(image)
     draw = ImageDraw.Draw(image)
     font = ImageFont.load_default()
@@ -747,14 +822,3 @@ def draw_predictions(inference_request, inference_response, class_names: List[st
     image = image.convert("RGB")
     image.save(buffered, format="JPEG")
     return buffered.getvalue()
-
-
-def get_extra_weights_provider_headers() -> Optional[Dict[str, str]]:
-    headers = {}
-    if GCP_SERVERLESS:
-        headers["x-enforce-internal-artefacts-urls"] = "true"
-    if ENFORCE_CREDITS_VERIFICATION:
-        headers["x-enforce-credits-verification"] = "true"
-    if headers:
-        return headers
-    return None

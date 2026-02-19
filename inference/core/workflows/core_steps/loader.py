@@ -477,6 +477,9 @@ from inference.core.workflows.core_steps.visualizations.halo.v1 import (
 from inference.core.workflows.core_steps.visualizations.halo.v2 import (
     HaloVisualizationBlockV2,
 )
+from inference.core.workflows.core_steps.visualizations.heatmap.v1 import (
+    HeatmapVisualizationBlockV1,
+)
 from inference.core.workflows.core_steps.visualizations.icon.v1 import (
     IconVisualizationBlockV1,
 )
@@ -740,6 +743,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         ImageContoursDetectionBlockV1,
         ImagePreprocessingBlockV1,
         ImageSlicerBlockV1,
+        HeatmapVisualizationBlockV1,
         ImageThresholdBlockV1,
         MotionDetectionBlockV1,
         BackgroundSubtractionBlockV1,

@@ -257,6 +257,7 @@ RUN apt-get update -y && \
     libavformat58 \
     libswscale5 \
     libatlas3-base \
+    ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy GDAL (skip headers - not needed in runtime)

@@ -1,3 +1,4 @@
+from threading import Lock
 from typing import List, Optional, Tuple, Union
 
 import numpy as np
@@ -66,6 +67,17 @@ class YOLOv8ForKeyPointsDetectionTorchScript(
                 ResizeMode.CENTER_CROP,
                 ResizeMode.LETTERBOX_REFLECT_EDGES,
             },
+            implicit_resize_mode_substitutions={
+                ResizeMode.FIT_LONGER_EDGE: (
+                    ResizeMode.LETTERBOX,
+                    127,
+                    "YOLOv8 Key Points detection model running with TorchScript backend was trained with "
+                    "`fit-longer-edge` input resize mode. This transform cannot be applied properly for "
+                    "models with input dimensions fixed during weights export. To ensure interoperability, `letterbox` "
+                    "resize mode with gray edges will be used instead. If model was trained on Roboflow platform, "
+                    "we recommend using preprocessing method different that `fit-longer-edge`.",
+                )
+            },
         )
         if inference_config.post_processing.type != "nms":
             raise CorruptedModelPackageError(
@@ -113,6 +125,7 @@ class YOLOv8ForKeyPointsDetectionTorchScript(
         self._key_points_slots_in_prediction = max(
             len(e) for e in parsed_key_points_metadata
         )
+        self._lock = Lock()
 
     @property
     def class_names(self) -> List[str]:
@@ -141,7 +154,7 @@ class YOLOv8ForKeyPointsDetectionTorchScript(
         )
 
     def forward(self, pre_processed_images: torch.Tensor, **kwargs) -> torch.Tensor:
-        with torch.inference_mode():
+        with self._lock, torch.inference_mode():
             if (
                 pre_processed_images.shape[0]
                 == self._inference_config.forward_pass.static_batch_size

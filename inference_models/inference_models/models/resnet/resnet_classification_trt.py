@@ -100,6 +100,17 @@ class ResNetForClassificationTRT(ClassificationModel[torch.Tensor, torch.Tensor]
                 ResizeMode.CENTER_CROP,
                 ResizeMode.LETTERBOX_REFLECT_EDGES,
             },
+            implicit_resize_mode_substitutions={
+                ResizeMode.FIT_LONGER_EDGE: (
+                    ResizeMode.STRETCH_TO,
+                    None,
+                    "ResNetForClassification model running with TRT backend was trained with "
+                    "`fit-longer-edge` input resize mode. This transform cannot be applied properly for "
+                    "models with input dimensions fixed during weights export. To ensure interoperability, `stretch` "
+                    "resize mode will be used instead. If model was trained on Roboflow platform, "
+                    "we recommend using preprocessing method different that `fit-longer-edge`.",
+                )
+            },
         )
         if inference_config.post_processing.type != "softmax":
             raise CorruptedModelPackageError(
@@ -249,6 +260,17 @@ class ResNetForMultiLabelClassificationTRT(
                 ResizeMode.LETTERBOX,
                 ResizeMode.CENTER_CROP,
                 ResizeMode.LETTERBOX_REFLECT_EDGES,
+            },
+            implicit_resize_mode_substitutions={
+                ResizeMode.FIT_LONGER_EDGE: (
+                    ResizeMode.STRETCH_TO,
+                    None,
+                    "ResNetForMultiLabelClassification model running with TRT backend was trained with "
+                    "`fit-longer-edge` input resize mode. This transform cannot be applied properly for "
+                    "models with input dimensions fixed during weights export. To ensure interoperability, `letterbox` "
+                    "resize mode with black edges will be used instead. If model was trained on Roboflow platform, "
+                    "we recommend using preprocessing method different that `fit-longer-edge`.",
+                )
             },
         )
         if inference_config.post_processing.type != "sigmoid":

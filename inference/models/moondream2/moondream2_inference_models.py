@@ -15,9 +15,7 @@ from inference.core.env import (
     API_KEY,
 )
 from inference.core.models.base import Model, PreprocessReturnMetadata
-from inference.core.models.inference_models_adapters import (
-    get_extra_weights_provider_headers,
-)
+from inference.core.roboflow_api import get_extra_weights_provider_headers
 from inference.core.utils.image_utils import load_image_bgr
 from inference_models import AutoModel, Detections
 from inference_models.models.moondream2.moondream2_hf import MoonDream2HF
@@ -40,7 +38,7 @@ class InferenceModelsMoondream2Adapter(Model):
             api_key=self.api_key,
             allow_untrusted_packages=ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES,
             allow_direct_local_storage_loading=ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES,
-            extra_weights_provider_headers=extra_weights_provider_headers,
+            weights_provider_extra_headers=extra_weights_provider_headers,
             **kwargs,
         )
 
@@ -95,20 +93,22 @@ class InferenceModelsMoondream2Adapter(Model):
     def detect(
         self,
         image_in: Union[Image.Image, np.array],
-        prompt: Union[str, List[str]] = "",
+        prompt: str = "",
         **kwargs,
     ):
-        prompt = prompt if isinstance(prompt, list) else [prompt]
         if not isinstance(image_in, np.ndarray):
             np_img = np.array(image_in)  # RGB
             bgr_img = cv2.cvtColor(np_img, cv2.COLOR_RGB2BGR)
         else:
             bgr_img = image_in
-        detections = self._model.detect(bgr_img, classes=prompt)
+        detections = self._model.detect(bgr_img, classes=[prompt])
         return self.make_response(detections, [bgr_img.shape[:2]], prompt=prompt)
 
     def make_response(
-        self, predictions: List[Detections], image_sizes, prompt: List[str]
+        self,
+        predictions: List[Detections],
+        image_sizes,
+        prompt: str,
     ):
         responses = []
 
@@ -120,7 +120,6 @@ class InferenceModelsMoondream2Adapter(Model):
                 height = y_max - y_min
                 center_x = (x_min + x_max) / 2
                 center_y = (y_min + y_max) / 2
-                class_id = image_detections.class_id[instance_id].item()
                 predictions_for_image.append(
                     ObjectDetectionPrediction(
                         # Passing args as a dictionary here since one of the args is 'class' (a protected term in Python)
@@ -130,8 +129,8 @@ class InferenceModelsMoondream2Adapter(Model):
                             "width": width,
                             "height": height,
                             "confidence": 1.0,  # confidence is not returned by the model
-                            "class": prompt[class_id],
-                            "class_id": class_id,  # you can only prompt for one object at once
+                            "class": prompt if prompt is not None else "",
+                            "class_id": 0,  # you can only prompt for one object at once
                         }
                     )
                 )

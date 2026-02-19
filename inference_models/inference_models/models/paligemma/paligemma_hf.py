@@ -1,4 +1,5 @@
 import os
+from threading import Lock
 from typing import List, Optional, Tuple, Union
 
 import numpy as np
@@ -22,10 +23,19 @@ def _get_paligemma_attn_implementation(device: torch.device) -> str:
         try:
             import flash_attn  # noqa: F401
 
-            return "flash_attention_2"
+            if _is_model_running_against_ampere_plus_aarch(device=device):
+                return "flash_attention_2"
+            return "eager"
         except ImportError:
             pass
     return "eager"
+
+
+def _is_model_running_against_ampere_plus_aarch(device: torch.device) -> bool:
+    if device.type != "cuda":
+        return False
+    major, _ = torch.cuda.get_device_capability(device=device)
+    return major >= 8
 
 
 from inference_models.configuration import (
@@ -144,6 +154,7 @@ class PaliGemmaHF:
         self._inference_config = inference_config
         self._device = device
         self._torch_dtype = torch_dtype
+        self._lock = Lock()
 
     def prompt(
         self,
@@ -218,7 +229,7 @@ class PaliGemmaHF:
         do_sample: bool = INFERENCE_MODELS_PALIGEMMA_DEFAULT_DO_SAMPLE,
         **kwargs,
     ) -> torch.Tensor:
-        with torch.inference_mode():
+        with self._lock, torch.inference_mode():
             generation = self._model.generate(
                 **inputs, max_new_tokens=max_new_tokens, do_sample=do_sample
             )

@@ -4,7 +4,7 @@ from pathlib import Path
 
 import requests
 from PIL import Image
-from regression_test import (
+from .regression_test import (
     legacy_infer_with_base64_image,
     legacy_infer_with_image_url,
     legacy_infer_with_multipart_form_image,
@@ -19,12 +19,14 @@ response_functions = {
     legacy_infer_with_multipart_form_image,
 }
 
+TESTS_FILE = "tests.json" if os.getenv("USE_INFERENCE_MODELS", "false").lower() != "true" else "tests_inference_models.json"
+
 
 def main():
     # Utility function to populate the expected responses for the tests. This likely shouldn't be run very often and should only be run when hosted inference is in working order.
 
     # Load tests.json
-    with open(os.path.join(Path(__file__).resolve().parent, "tests.json"), "r") as f:
+    with open(os.path.join(Path(__file__).resolve().parent, TESTS_FILE), "r") as f:
         tests = json.load(f)
 
     # Iterate through list of tests
@@ -53,8 +55,8 @@ def main():
             del test["pil_image"]
 
     # Save the response to a file
-    with open(os.path.join(Path(__file__).resolve().parent, "tests.json"), "w") as f:
-        json.dump(tests, f)
+    with open(os.path.join(Path(__file__).resolve().parent, TESTS_FILE), "w") as f:
+        json.dump(tests, f, indent=4)
 
 
 if __name__ == "__main__":

@@ -1,4 +1,5 @@
 import os.path
+from threading import Lock
 from typing import List, Optional, Tuple, Union
 
 import numpy as np
@@ -17,7 +18,7 @@ from inference_models.configuration import (
     INFERENCE_MODELS_GROUNDING_DINO_DEFAULT_MAX_DETECTIONS,
 )
 from inference_models.entities import ColorFormat, ImageDimensions
-from inference_models.errors import ModelRuntimeError
+from inference_models.errors import ModelInputError, ModelRuntimeError
 from inference_models.models.base.object_detection import (
     OpenVocabularyObjectDetectionModel,
 )
@@ -78,6 +79,7 @@ class GroundingDinoForObjectDetectionTorch(
                 ),
             ]
         )
+        self._lock = Lock()
 
     def pre_process(
         self,
@@ -109,12 +111,12 @@ class GroundingDinoForObjectDetectionTorch(
                 [image_dimensions] * images.shape[0],
             )
         if not isinstance(images, list):
-            raise ModelRuntimeError(
+            raise ModelInputError(
                 message="Pre-processing supports only np.array or torch.Tensor or list of above.",
                 help_url="https://todo",
             )
         if not len(images):
-            raise ModelRuntimeError(
+            raise ModelInputError(
                 message="Detected empty input to the model",
                 help_url="https://todo",
             )
@@ -142,7 +144,7 @@ class GroundingDinoForObjectDetectionTorch(
                 )
                 pre_processed.append(self._tensors_transformations(image.float()))
             return torch.cat(pre_processed, dim=0).to(self._device), image_dimensions
-        raise ModelRuntimeError(
+        raise ModelInputError(
             message=f"Detected unknown input batch element: {type(images[0])}",
             help_url="https://todo",
         )
@@ -159,7 +161,7 @@ class GroundingDinoForObjectDetectionTorch(
             text_confidence = box_confidence
         caption = ". ".join(classes)
         all_boxes, all_logits, all_phrases = [], [], []
-        with torch.inference_mode():
+        with self._lock, torch.inference_mode():
             for image in pre_processed_images:
                 boxes, logits, phrases = predict(
                     model=self._model,

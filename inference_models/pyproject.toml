@@ -1,6 +1,6 @@
 [project]
 name = "inference-models"
-version = "0.18.6rc2"
+version = "0.18.6rc17"
 description = "The new inference engine for Computer Vision models"
 readme = "README.md"
 requires-python = ">=3.9,<3.13"
@@ -36,7 +36,6 @@ dependencies = [
   "pybase64~=1.0.0",
   "rf-segment-anything==1.0",
   "rf-sam-2==1.0.3",
-  "argon2-cffi>=25.1.0,<26.0.0",
 ]
 
 [project.optional-dependencies]

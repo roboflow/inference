@@ -25,9 +25,7 @@ from inference.core.env import (
     SAM_VERSION_ID,
 )
 from inference.core.models.base import Model
-from inference.core.models.inference_models_adapters import (
-    get_extra_weights_provider_headers,
-)
+from inference.core.roboflow_api import get_extra_weights_provider_headers
 from inference.core.utils.image_utils import load_image_bgr
 from inference.core.utils.postprocess import masks2poly
 from inference_models import AutoModel
@@ -74,7 +72,7 @@ class InferenceModelsSAMAdapter(Model):
             sam_image_embeddings_cache=sam_image_embeddings_cache,
             sam_low_resolution_masks_cache=sam_low_resolution_masks_cache,
             sam_allow_client_generated_hash_ids=True,
-            extra_weights_provider_headers=extra_weights_provider_headers,
+            weights_provider_extra_headers=extra_weights_provider_headers,
             **kwargs,
         )
 
@@ -129,6 +127,8 @@ class InferenceModelsSAMAdapter(Model):
         # override state of the cache for other clients - letting it be only for
         # the sake of interface compatibility for inference 1.0 - moving forward
         # my recommendation is to remove that.
+        if image is None:
+            raise ValueError("image is required")
         loaded_image = load_image_bgr(
             image,
             disable_preproc_auto_orient=kwargs.get(
@@ -162,12 +162,17 @@ class InferenceModelsSAMAdapter(Model):
         # override state of the cache for other clients - letting it be only for
         # the sake of interface compatibility for inference 1.0 - moving forward
         # my recommendation is to remove that.
-        loaded_image = load_image_bgr(
-            image,
-            disable_preproc_auto_orient=kwargs.get(
-                "disable_preproc_auto_orient", False
-            ),
-        )
+        if image is not None:
+            loaded_image = load_image_bgr(
+                image,
+                disable_preproc_auto_orient=kwargs.get(
+                    "disable_preproc_auto_orient", False
+                ),
+            )
+        else:
+            if image_id is None:
+                raise ValueError("image_id is required when image not provided")
+            loaded_image = None
         if embeddings is not None:
             if embeddings_format == "json":
                 embeddings = np.array(embeddings)
@@ -179,10 +184,17 @@ class InferenceModelsSAMAdapter(Model):
                 image_hash = image_id
             else:
                 image_hash = compute_image_hash(image=loaded_image)
-            image_size_hw: Tuple[int, int] = (
-                loaded_image.shape[0],
-                loaded_image.shape[1],
-            )
+            if loaded_image is None:
+                if orig_im_size is None:
+                    raise ValueError(
+                        "orig_im_size is required when image not provided and embeddings are injected by client."
+                    )
+                image_size_hw = (orig_im_size[0], orig_im_size[1])
+            else:
+                image_size_hw: Tuple[int, int] = (
+                    loaded_image.shape[0],
+                    loaded_image.shape[1],
+                )
             embeddings = SAMImageEmbeddings(
                 image_hash=image_hash,
                 image_size_hw=image_size_hw,
@@ -221,7 +233,7 @@ class InferenceModelsSAMAdapter(Model):
             use_mask_input_cache=use_mask_input_cache,
             use_embeddings_cache=use_embeddings_cache,
         )
-        return predictions[0].masks.cpu().numpy(), predictions[0].scores.cpu().numpy()
+        return predictions[0].masks.cpu().numpy(), predictions[0].logits.cpu().numpy()
 
     def clear_cache(self, delete_from_disk: bool = True) -> None:
         """Clears any cache if necessary. TODO: Implement this to delete the cache from the experimental model.

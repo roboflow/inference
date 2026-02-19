@@ -1,4 +1,5 @@
 import hashlib
+from threading import Lock
 from typing import Dict, Generator, List, Optional, Tuple, TypeVar, Union
 
 import numpy as np
@@ -101,6 +102,7 @@ class SAMTorch:
         self._sam_image_embeddings_cache = sam_image_embeddings_cache
         self._sam_low_resolution_masks_cache = sam_low_resolution_masks_cache
         self._sam_allow_client_generated_hash_ids = sam_allow_client_generated_hash_ids
+        self._lock = Lock()
 
     def embed_images(
         self,
@@ -271,9 +273,10 @@ class SAMTorch:
                 i : i + self._max_batch_size
             ].contiguous()
             pre_processed_images_batch = self._model.preprocess(input_images_batch)
-            batch_embeddings = self._model.image_encoder(pre_processed_images_batch).to(
-                device=self._device
-            )
+            with self._lock:
+                batch_embeddings = self._model.image_encoder(
+                    pre_processed_images_batch
+                ).to(device=self._device)
             result_embeddings.append(batch_embeddings)
         return torch.cat(result_embeddings, dim=0)
 
@@ -405,19 +408,20 @@ class SAMTorch:
             boxes=boxes,
             mask_input=mask_input,
         ):
-            prediction = predict_for_single_image(
-                model=self._model,
-                transform=self._transform,
-                embeddings=image_embedding,
-                original_image_size=image_size,
-                point_coordinates=image_point_coordinates,
-                point_labels=image_point_labels,
-                boxes=image_boxes,
-                mask_input=image_mask_input,
-                multi_mask_output=multi_mask_output,
-                return_logits=return_logits,
-                mask_threshold=mask_threshold,
-            )
+            with self._lock:
+                prediction = predict_for_single_image(
+                    model=self._model,
+                    transform=self._transform,
+                    embeddings=image_embedding,
+                    original_image_size=image_size,
+                    point_coordinates=image_point_coordinates,
+                    point_labels=image_point_labels,
+                    boxes=image_boxes,
+                    mask_input=image_mask_input,
+                    multi_mask_output=multi_mask_output,
+                    return_logits=return_logits,
+                    mask_threshold=mask_threshold,
+                )
             if use_mask_input_cache and len(prediction[0].shape) == 3:
                 max_score_id = torch.argmax(prediction[1]).item()
                 self._sam_low_resolution_masks_cache.save_mask(
