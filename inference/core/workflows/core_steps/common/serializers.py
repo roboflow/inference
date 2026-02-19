@@ -77,9 +77,14 @@ def serialise_sv_detections(detections: sv.Detections) -> dict:
     for xyxy, mask, confidence, class_id, tracker_id, data in detections:
         detection_dict = {}
         image_dimensions = data.get(IMAGE_DIMENSIONS_KEY)
-        if isinstance(xyxy, np.ndarray):
-            xyxy = xyxy.astype(float).tolist()
-        x1, y1, x2, y2 = xyxy
+
+        # Avoid converting the whole xyxy array to a python list when unnecessary.
+        # Extract numeric components directly which handles both sequences and numpy arrays.
+        x1 = float(xyxy[0])
+        y1 = float(xyxy[1])
+        x2 = float(xyxy[2])
+        y2 = float(xyxy[3])
+
         detection_dict[WIDTH_KEY] = abs(x2 - x1)
         detection_dict[HEIGHT_KEY] = abs(y2 - y1)
         detection_dict[X_KEY] = x1 + detection_dict[WIDTH_KEY] / 2
@@ -99,14 +104,10 @@ def serialise_sv_detections(detections: sv.Detections) -> dict:
             if polygon is None:
                 # ignoring the whole instance
                 continue
-            detection_dict[POLYGON_KEY] = []
-            for x, y in polygon:
-                detection_dict[POLYGON_KEY].append(
-                    {
-                        X_KEY: float(x),
-                        Y_KEY: float(y),
-                    }
-                )
+            # Use list comprehension to build polygon point dicts more efficiently.
+            detection_dict[POLYGON_KEY] = [
+                {X_KEY: float(x), Y_KEY: float(y)} for x, y in polygon
+            ]
         if tracker_id is not None:
             detection_dict[TRACKER_ID_KEY] = int(tracker_id)
         detection_dict[CLASS_NAME_KEY] = str(data["class_name"])
@@ -183,22 +184,23 @@ def serialise_sv_detections(detections: sv.Detections) -> dict:
             kp_class_name = data[KEYPOINTS_CLASS_NAME_KEY_IN_SV_DETECTIONS]
             kp_confidence = data[KEYPOINTS_CONFIDENCE_KEY_IN_SV_DETECTIONS]
             kp_xy = data[KEYPOINTS_XY_KEY_IN_SV_DETECTIONS]
-            detection_dict[KEYPOINTS_KEY_IN_INFERENCE_RESPONSE] = []
-            for (
-                keypoint_class_id,
-                keypoint_class_name,
-                keypoint_confidence,
-                (x, y),
-            ) in zip(kp_class_id, kp_class_name, kp_confidence, kp_xy):
-                detection_dict[KEYPOINTS_KEY_IN_INFERENCE_RESPONSE].append(
-                    {
-                        "class_id": int(keypoint_class_id),
-                        "class": str(keypoint_class_name),
-                        "confidence": float(keypoint_confidence),
-                        "x": float(x),
-                        "y": float(y),
-                    }
-                )
+            # Build keypoints list using list comprehension and bounded length to match zip behaviour.
+            n_kp = min(
+                len(kp_class_id),
+                len(kp_class_name),
+                len(kp_confidence),
+                len(kp_xy),
+            )
+            detection_dict[KEYPOINTS_KEY_IN_INFERENCE_RESPONSE] = [
+                {
+                    "class_id": int(kp_class_id[i]),
+                    "class": str(kp_class_name[i]),
+                    "confidence": float(kp_confidence[i]),
+                    "x": float(kp_xy[i][0]),
+                    "y": float(kp_xy[i][1]),
+                }
+                for i in range(n_kp)
+            ]
         if DETECTED_CODE_KEY in data:
             detection_dict[DETECTED_CODE_KEY] = data[DETECTED_CODE_KEY]
         if VELOCITY_KEY_IN_SV_DETECTIONS in data:
