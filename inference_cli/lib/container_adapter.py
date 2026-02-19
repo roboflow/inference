@@ -121,7 +121,7 @@ def get_image() -> str:
         CLI_LOGGER.info("GPU detected. Using a GPU image.")
         return "roboflow/roboflow-inference-server-gpu:latest"
     except Exception:
-        print("No GPU detected. Using a CPU image.")
+        CLI_LOGGER.info("No GPU detected. Using a CPU image.")
         return "roboflow/roboflow-inference-server-cpu:latest"
 
 
