@@ -198,6 +198,11 @@ article > a.md-content__button.md-icon:first-child {{
 """
 
 INLINE_UQL_PARAMETER_PATTERN = re.compile(r"({{\s*\$parameters\.(\w+)\s*}})")
+# Pattern to match any {{ ... }} containing a $ sign that hasn't already been escaped.
+# This catches patterns like {{ $parameters.xxx }} in LONG_DESCRIPTION strings,
+# Field descriptions, and other generated content that would cause mkdocs-macros
+# Jinja2 parse errors ("unexpected char '$'").
+JINJA2_DOLLAR_EXPRESSION_PATTERN = re.compile(r"(\{\{(?:(?!\}\}).)*?\$(?:(?!\}\}).)*?\}\})")
 
 BLOCK_SECTIONS = [
         {
@@ -330,6 +335,7 @@ def write_individual_block_pages(block_families, blocks_description):
             family_name=family_name,
             content=all_versions_combined,
         )
+        family_document_content = _escape_jinja2_expressions(family_document_content)
         with open(documentation_file_path, "w") as documentation_file:
             documentation_file.write(family_document_content)
 
@@ -439,6 +445,20 @@ def _dump_step_example_definition(example_definition: dict) -> str:
 
 def _escape_uql_brackets(match: re.Match) -> str:
     content = match.group(0)
+    return "{{ '{{' }}" + content[2:-2] + "{{ '}}' }}"
+
+
+def _escape_jinja2_expressions(content: str) -> str:
+    """Escape any {{ ... }} expressions containing $ signs so mkdocs-macros
+    (Jinja2) does not attempt to evaluate them. Already-escaped expressions
+    like ``{{ '{{' }}`` are left untouched because they do not contain ``$``.
+    """
+    return JINJA2_DOLLAR_EXPRESSION_PATTERN.sub(_escape_jinja2_dollar_expression, content)
+
+
+def _escape_jinja2_dollar_expression(match: re.Match) -> str:
+    content = match.group(0)
+    # Replace outer {{ }} with Jinja2 literal escapes, keep inner content
     return "{{ '{{' }}" + content[2:-2] + "{{ '}}' }}"
 
 
@@ -658,6 +678,7 @@ def write_kinds_docs(blocks_description):
             f"* [`{declared_kind.name}`]({relative_link}): {description}\n"
         )
         kind_file_path = build_kind_page_path(kind_name=declared_kind.name)
+        kind_page = _escape_jinja2_expressions(kind_page)
         with open(kind_file_path, "w") as documentation_file:
             documentation_file.write(kind_page)
     
