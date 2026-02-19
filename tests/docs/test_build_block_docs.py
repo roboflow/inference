@@ -5,7 +5,6 @@ These tests ensure that generated Markdown docs do not contain raw
 (Jinja2) parse errors like "unexpected char '$'".
 """
 
-import pytest
 from jinja2 import Environment
 
 from development.docs.build_block_docs import (
