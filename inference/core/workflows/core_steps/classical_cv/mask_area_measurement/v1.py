@@ -5,10 +5,12 @@ import numpy as np
 import supervision as sv
 from pydantic import ConfigDict, Field
 
+from inference.core.workflows.execution_engine.constants import (
+    AREA_KEY_IN_SV_DETECTIONS,
+)
 from inference.core.workflows.execution_engine.entities.base import OutputDefinition
 from inference.core.workflows.execution_engine.entities.types import (
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
-    LIST_OF_VALUES_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
     Selector,
 )
@@ -18,16 +20,16 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 
-OUTPUT_KEY = "areas"
+OUTPUT_KEY = "predictions"
 SHORT_DESCRIPTION = "Measure the mask area of detected objects in square pixels."
 LONG_DESCRIPTION = """
-Measure the area of detected objects in square pixels. For detections with segmentation masks, the area is computed from the largest contour using `cv2.contourArea`. For bounding-box-only detections, the area is the bounding box width multiplied by height.
+Measure the area of detected objects in square pixels. For detections with segmentation masks, the area is computed by counting non-zero mask pixels. For bounding-box-only detections, the area is the bounding box width multiplied by height.
 
 ## How This Block Works
 
 This block calculates the area of each detected object in an image, returning a list of area values in square pixels. The block operates in two modes depending on the type of predictions it receives:
 
-1. **Polygon/Mask Area (Instance Segmentation)**: When the input detections include segmentation masks, the block extracts the mask for each detection, finds the largest external contour using OpenCV's `findContours`, and computes its area with `cv2.contourArea`. This provides a precise measurement that follows the actual shape of the object rather than its bounding rectangle.
+1. **Mask Pixel Area (Instance Segmentation)**: When the input detections include segmentation masks, the block counts the non-zero pixels in each mask. This correctly handles masks with holes — hole pixels are zero and are excluded from the count, giving an accurate measurement of the actual filled region.
 
 2. **Bounding Box Area (Object Detection)**: When no segmentation mask is available, the block falls back to computing the area as the bounding box width multiplied by height (`w * h`). This is less precise but works with any object detection model output.
 
@@ -69,7 +71,7 @@ area_cm² = area_px / (130 ** 2) = area_px / 16900
 
 A common mistake is dividing by `pixels_per_unit` instead of `pixels_per_unit²`, which produces values that are off by a factor of the ratio itself.
 
-**How to determine pixels_per_unit:** Place an object of known size in the camera's field of view (e.g., a ruler or calibration target). Measure its length in pixels in the image and divide by its real-world length. For instance, if a 10 cm reference object spans 1300 pixels, then `pixels_per_cm = 1300 / 10 = 130`.
+**How to determine pixels_per_unit:** Place an object of known size in the camera's field of view (e.g., a ruler or calibration target). Measure its length in pixels in the image and divide by its real-world length. For instance, if a 10 cm reference object spans 1300 pixels, then `pixels_per_cm = 1300 / 10 = 130`. **Important:** If you are using perspective correction, the calibration object must be placed on the same plane from which the perspective correction was calculated. Placing it on a different plane will produce an incorrect pixels_per_unit ratio because the correction only maps distances accurately on the reference plane.
 
 You can perform this conversion downstream using a Dynamic Python Block or a simple post-processing step in your application code.
 
@@ -95,7 +97,7 @@ Both corrections should be applied **before** the detection model runs, so that 
 
 ## Requirements
 
-This block requires detection predictions from an object detection or instance segmentation model. No additional environment variables, API keys, or external dependencies are needed beyond the standard OpenCV and NumPy libraries included with inference. For the most accurate area measurements, use instance segmentation models that produce per-object masks. Bounding-box-only detections will yield rectangular area approximations.
+This block requires detection predictions from an object detection or instance segmentation model. No additional environment variables, API keys, or external dependencies are needed beyond the standard NumPy library included with inference. For the most accurate area measurements, use instance segmentation models that produce per-object masks. Bounding-box-only detections will yield rectangular area approximations.
 """
 
 
@@ -131,7 +133,13 @@ class MaskAreaMeasurementManifest(WorkflowBlockManifest):
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
-            OutputDefinition(name=OUTPUT_KEY, kind=[LIST_OF_VALUES_KIND]),
+            OutputDefinition(
+                name=OUTPUT_KEY,
+                kind=[
+                    OBJECT_DETECTION_PREDICTION_KIND,
+                    INSTANCE_SEGMENTATION_PREDICTION_KIND,
+                ],
+            ),
         ]
 
     @classmethod
@@ -139,33 +147,36 @@ class MaskAreaMeasurementManifest(WorkflowBlockManifest):
         return ">=1.3.0,<2.0.0"
 
 
-def get_detection_area(detection: sv.Detections, index: int) -> float:
-    """Compute the area of a single detection in square pixels.
+def compute_detection_areas(detections: sv.Detections) -> List[float]:
+    """Compute the area of all detections in square pixels.
 
-    If a segmentation mask is available, the area is computed from the largest
-    contour found in the mask using ``cv2.contourArea``.  Otherwise the area
-    falls back to bounding-box width * height.
+    For bounding-box-only detections, areas are computed in a single vectorized
+    operation. For detections with segmentation masks, the area is the count of
+    non-zero mask pixels (via ``cv2.countNonZero``). This correctly handles masks
+    with holes — hole pixels are zero and are not counted. Falls back to the
+    bounding box area when the mask pixel count is zero.
 
     Args:
-        detection: A supervision Detections object.
-        index: Index of the detection to measure.
+        detections: A supervision Detections object.
 
     Returns:
-        Area in square pixels.
+        List of areas in square pixels, one per detection.
     """
-    if detection.mask is not None:
-        mask = detection.mask[index].astype(np.uint8)
-        contours, _ = cv.findContours(mask, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
-        if contours:
-            largest_contour = max(contours, key=cv.contourArea)
-            area = cv.contourArea(largest_contour)
-            if area > 0:
-                return float(area)
+    n = len(detections)
+    if n == 0:
+        return []
 
-    bbox = detection.xyxy[index]
-    w = bbox[2] - bbox[0]
-    h = bbox[3] - bbox[1]
-    return float(w * h)
+    areas = []
+    for i in range(n):
+        if detections.mask is not None:
+            count = cv.countNonZero(detections.mask[i].astype(np.uint8))
+            if count > 0:
+                areas.append(float(count))
+                continue
+        x1, y1, x2, y2 = detections.xyxy[i]
+        areas.append(float((x2 - x1) * (y2 - y1)))
+
+    return areas
 
 
 class MaskAreaMeasurementBlockV1(WorkflowBlock):
@@ -177,7 +188,7 @@ class MaskAreaMeasurementBlockV1(WorkflowBlock):
         self,
         predictions: sv.Detections,
     ) -> BlockResult:
-        areas = []
-        for i in range(len(predictions)):
-            areas.append(get_detection_area(predictions, i))
-        return {OUTPUT_KEY: areas}
+        predictions.data[AREA_KEY_IN_SV_DETECTIONS] = np.array(
+            compute_detection_areas(predictions)
+        )
+        return {OUTPUT_KEY: predictions}
