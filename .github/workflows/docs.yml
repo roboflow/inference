@@ -114,6 +114,10 @@ jobs:
         run: python -m development.docs.write_openapi_spec
         working-directory: ./inference_repo
 
+      - name: Validate generated docs (Jinja2 syntax)
+        run: python -m development.docs.validate_docs_jinja2
+        working-directory: ./inference_repo
+
       - name: Deploy docs
         # Only deploy if release event OR if deploy input was set to true
         if: ${{ github.event_name == 'release' || github.event.inputs.deploy == 'true' }}
