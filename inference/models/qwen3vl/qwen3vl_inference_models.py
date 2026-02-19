@@ -43,7 +43,7 @@ class InferenceModelsQwen3VLAdapter(Model):
     def map_inference_kwargs(self, kwargs: dict) -> dict:
         return kwargs
 
-    def preprocess(self, image: Any, prompt: str, **kwargs):
+    def preprocess(self, image: Any, prompt: str = "", **kwargs):
         is_batch = isinstance(image, list)
         if is_batch:
             raise ValueError("This model does not support batched-inference.")
