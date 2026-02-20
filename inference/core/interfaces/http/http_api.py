@@ -49,6 +49,7 @@ from inference.core.entities.requests.inference import (
     KeypointsDetectionInferenceRequest,
     LMMInferenceRequest,
     ObjectDetectionInferenceRequest,
+    SemanticSegmentationInferenceRequest,
 )
 from inference.core.entities.requests.owlv2 import OwlV2InferenceRequest
 from inference.core.entities.requests.perception_encoder import (
@@ -94,6 +95,7 @@ from inference.core.entities.responses.inference import (
     LMMInferenceResponse,
     MultiLabelClassificationInferenceResponse,
     ObjectDetectionInferenceResponse,
+    SemanticSegmentationInferenceResponse,
     StubResponse,
 )
 from inference.core.entities.responses.notebooks import NotebookStartResponse
@@ -176,6 +178,7 @@ from inference.core.env import (
     WEBRTC_WORKER_ENABLED,
     WORKFLOWS_MAX_CONCURRENT_STEPS,
     WORKFLOWS_PROFILER_BUFFER_SIZE,
+    WORKFLOWS_REMOTE_EXECUTION_TIME_FORWARDING,
     WORKFLOWS_STEP_EXECUTION_MODE,
 )
 from inference.core.exceptions import (
@@ -273,9 +276,16 @@ from inference.core.roboflow_api import ModelEndpointType
 from inference.core.version import __version__
 
 try:
-    from inference_sdk.config import EXECUTION_ID_HEADER, execution_id
+    from inference_sdk.config import (
+        EXECUTION_ID_HEADER,
+        RemoteProcessingTimeCollector,
+        execution_id,
+        remote_processing_times,
+    )
 except ImportError:
     execution_id = None
+    remote_processing_times = None
+    RemoteProcessingTimeCollector = None
     EXECUTION_ID_HEADER = None
 
 
@@ -292,6 +302,10 @@ class LambdaMiddleware(BaseHTTPMiddleware):
         return response
 
 
+REMOTE_PROCESSING_TIME_HEADER = "X-Remote-Processing-Time"
+REMOTE_PROCESSING_TIMES_HEADER = "X-Remote-Processing-Times"
+
+
 class GCPServerlessMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
         if execution_id is not None:
@@ -299,10 +313,23 @@ class GCPServerlessMiddleware(BaseHTTPMiddleware):
             if not execution_id_value:
                 execution_id_value = f"{time.time_ns()}_{uuid4().hex[:4]}"
             execution_id.set(execution_id_value)
+        collector = None
+        if (
+            WORKFLOWS_REMOTE_EXECUTION_TIME_FORWARDING
+            and remote_processing_times is not None
+            and RemoteProcessingTimeCollector is not None
+        ):
+            collector = RemoteProcessingTimeCollector()
+            remote_processing_times.set(collector)
         t1 = time.time()
         response = await call_next(request)
         t2 = time.time()
         response.headers[PROCESSING_TIME_HEADER] = str(t2 - t1)
+        if collector is not None and collector.has_data():
+            total, detail = collector.summarize()
+            response.headers[REMOTE_PROCESSING_TIME_HEADER] = str(total)
+            if detail is not None:
+                response.headers[REMOTE_PROCESSING_TIMES_HEADER] = detail
         if execution_id is not None:
             response.headers[EXECUTION_ID_HEADER] = execution_id_value
         return response
@@ -392,7 +419,11 @@ class HttpInterface(BaseInterface):
                 allow_credentials=True,
                 allow_methods=["*"],
                 allow_headers=["*"],
-                expose_headers=[PROCESSING_TIME_HEADER],
+                expose_headers=[
+                    PROCESSING_TIME_HEADER,
+                    REMOTE_PROCESSING_TIME_HEADER,
+                    REMOTE_PROCESSING_TIMES_HEADER,
+                ],
             )
 
         # Optionally add middleware for profiling the FastAPI server and underlying inference API code
@@ -1088,6 +1119,40 @@ class HttpInterface(BaseInterface):
                     InstanceSegmentationInferenceResponse: The response containing the inference results.
                 """
                 logger.debug(f"Reached /infer/instance_segmentation")
+                return process_inference_request(
+                    inference_request,
+                    active_learning_eligible=True,
+                    background_tasks=background_tasks,
+                    countinference=countinference,
+                    service_secret=service_secret,
+                )
+
+            @app.post(
+                "/infer/semantic_segmentation",
+                response_model=Union[
+                    SemanticSegmentationInferenceResponse, StubResponse
+                ],
+                summary="Semantic segmentation infer",
+                description="Run inference with the specified semantic segmentation model",
+            )
+            @with_route_exceptions
+            @usage_collector("request")
+            def infer_semantic_segmentation(
+                inference_request: SemanticSegmentationInferenceRequest,
+                background_tasks: BackgroundTasks,
+                countinference: Optional[bool] = None,
+                service_secret: Optional[str] = None,
+            ):
+                """Run inference with the specified semantic segmentation model.
+
+                Args:
+                    inference_request (SemanticSegmentationInferenceRequest): The request containing the necessary details for semantic segmentation.
+                    background_tasks: (BackgroundTasks) pool of fastapi background tasks
+
+                Returns:
+                    SemanticSegmentationInferenceResponse: The response containing the inference results.
+                """
+                logger.debug(f"Reached /infer/semantic_segmentation")
                 return process_inference_request(
                     inference_request,
                     active_learning_eligible=True,
@@ -3064,6 +3129,7 @@ class HttpInterface(BaseInterface):
                     ObjectDetectionInferenceResponse,
                     ClassificationInferenceResponse,
                     MultiLabelClassificationInferenceResponse,
+                    SemanticSegmentationInferenceResponse,
                     StubResponse,
                     Any,
                 ],
@@ -3078,6 +3144,7 @@ class HttpInterface(BaseInterface):
                     ObjectDetectionInferenceResponse,
                     ClassificationInferenceResponse,
                     MultiLabelClassificationInferenceResponse,
+                    SemanticSegmentationInferenceResponse,
                     StubResponse,
                     Any,
                 ],
@@ -3201,7 +3268,7 @@ class HttpInterface(BaseInterface):
                     # Other parameters described in the function signature...
 
                 Returns:
-                    Union[InstanceSegmentationInferenceResponse, KeypointsDetectionInferenceRequest, ObjectDetectionInferenceResponse, ClassificationInferenceResponse, MultiLabelClassificationInferenceResponse, Any]: The response containing the inference results.
+                    Union[InstanceSegmentationInferenceResponse, KeypointsDetectionInferenceRequest, ObjectDetectionInferenceResponse, ClassificationInferenceResponse, MultiLabelClassificationInferenceResponse, SemanticSegmentationInferenceResponse, Any]: The response containing the inference results.
                 """
                 logger.debug(
                     f"Reached legacy route /:dataset_id/:version_id with {dataset_id}/{version_id}"
@@ -3294,6 +3361,8 @@ class HttpInterface(BaseInterface):
                 elif task_type == "keypoint-detection":
                     inference_request_type = KeypointsDetectionInferenceRequest
                     args = {"keypoint_confidence": keypoint_confidence}
+                elif task_type == "semantic-segmentation":
+                    inference_request_type = SemanticSegmentationInferenceRequest
                 inference_request = inference_request_type(
                     api_key=api_key,
                     model_id=model_id,

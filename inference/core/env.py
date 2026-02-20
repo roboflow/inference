@@ -289,6 +289,10 @@ LAMBDA = str2bool(os.getenv("LAMBDA", False))
 # Whether is's GCP serverless service
 GCP_SERVERLESS = str2bool(os.getenv("GCP_SERVERLESS", "False"))
 
+WORKFLOWS_REMOTE_EXECUTION_TIME_FORWARDING = str2bool(
+    os.getenv("WORKFLOWS_REMOTE_EXECUTION_TIME_FORWARDING", "True")
+)
+
 GET_MODEL_REGISTRY_ENABLED = str2bool(os.getenv("GET_MODEL_REGISTRY_ENABLED", "True"))
 
 # Flag to enable API logging, default is False
