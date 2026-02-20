@@ -11,6 +11,7 @@ from inference.core.env import (
     HOT_MODELS_QUEUE_LOCK_ACQUIRE_TIMEOUT,
     MEMORY_FREE_THRESHOLD,
     MODELS_CACHE_AUTH_ENABLED,
+    USE_INFERENCE_MODELS,
 )
 from inference.core.exceptions import (
     ModelManagerLockAcquisitionError,
@@ -241,7 +242,9 @@ class WithFixedSizeCache(ModelManagerDecorator):
                 return_boolean = (
                     float(free_memory / total_memory) < MEMORY_FREE_THRESHOLD
                 )
-                if return_boolean:
+                if return_boolean and USE_INFERENCE_MODELS:
+                    # we only enable this under condition that USE_INFERENCE_MODELS is True
+                    # and we are about to remove a model
                     # just to make sure we are not flapping around the threshold for no reason
                     torch.cuda.empty_cache()
                     free_memory, total_memory = torch.cuda.mem_get_info()

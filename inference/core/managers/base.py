@@ -19,6 +19,7 @@ from inference.core.env import (
     MODEL_LOCK_ACQUIRE_TIMEOUT,
     MODELS_CACHE_AUTH_ENABLED,
     ROBOFLOW_SERVER_UUID,
+    USE_INFERENCE_MODELS,
 )
 from inference.core.exceptions import (
     InferenceModelNotFound,
@@ -561,6 +562,9 @@ def acquire_with_timeout(
 
 
 def try_releasing_cuda_memory() -> None:
+    if not USE_INFERENCE_MODELS:
+        # For now, we only want to have purge CUDA memory when USE_INFERENCE_MODELS is True
+        return None
     try:
         import torch
 

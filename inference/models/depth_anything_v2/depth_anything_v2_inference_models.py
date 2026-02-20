@@ -1,6 +1,7 @@
 from typing import Any, List, Tuple
 from uuid import uuid4
 
+import cv2
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
@@ -26,7 +27,6 @@ from inference_models import AutoModel
 from inference_models.models.depth_anything_v2.depth_anything_v2_hf import (
     DepthAnythingV2HF,
 )
-import cv2
 
 
 class InferenceModelsDepthAnythingV2Adapter(Model):
