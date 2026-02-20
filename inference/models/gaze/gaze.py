@@ -1,7 +1,6 @@
-import math
 from threading import Lock
 from time import perf_counter
-from typing import List, Optional, Tuple, Union
+from typing import List, Tuple
 
 import cv2
 import mediapipe as mp

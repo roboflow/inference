@@ -103,6 +103,6 @@ def resolve_labels(labels: str) -> List[str]:
         raise InvalidModelInitParameterError(
             message=f"While loading RFDetr model, `labels` parameter was set to `{labels}` which is invalid. "
             f"Supported set of labels: `coco`.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/model-loading/#invalidmodelinitparametererror",
         )
     return deepcopy(COCO_LABELS)

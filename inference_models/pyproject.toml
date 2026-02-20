@@ -1,6 +1,6 @@
 [project]
 name = "inference-models"
-version = "0.18.5"
+version = "0.19.0"
 description = "The new inference engine for Computer Vision models"
 readme = "README.md"
 requires-python = ">=3.9,<3.13"
@@ -35,8 +35,7 @@ dependencies = [
   "tldextract~=5.1.2",
   "pybase64~=1.0.0",
   "rf-segment-anything==1.0",
-  "rf-sam-2==1.0.2",
-  "argon2-cffi>=25.1.0,<26.0.0",
+  "rf-sam-2==1.0.3",
 ]
 
 [project.optional-dependencies]
@@ -108,7 +107,9 @@ docs = [
   "mike>=2.0.0",
   "mkdocs-jupyter>=0.24.3",
   "mkdocs-git-committers-plugin-2>=2.4.1; python_version >= '3.9' and python_version < '4'",
-  "mkdocs-git-revision-date-localized-plugin>=1.2.4"
+  "mkdocs-git-revision-date-localized-plugin>=1.2.4",
+  "mkdocs-literate-nav~=0.6.2",
+  "mkdocs-gen-files~=0.6.0"
 ]
 
 [tool.uv.sources]
@@ -224,5 +225,6 @@ conflicts = [
 
 [tool.setuptools.package-data]
 inference_models = [
-  "models/rfdetr/dinov2_configs/*.json"
+  "models/rfdetr/dinov2_configs/*.json",
+  "models/perception_encoder/vision_encoder/bpe_simple_vocab_16e6.txt.gz"
 ]

@@ -34,7 +34,7 @@ class DependencyModelParameters(BaseModel):
 
 
 def prepare_dependency_model_parameters(
-    model_parameters: Union[str, dict, DependencyModelParameters]
+    model_parameters: Union[str, dict, DependencyModelParameters],
 ) -> DependencyModelParameters:
     if isinstance(model_parameters, dict):
         try:
@@ -45,7 +45,7 @@ def prepare_dependency_model_parameters(
                 f"that you initialise model properly, as at least one parameter parameter specified in "
                 f"dictionary with model options is invalid. If you use Roboflow hosted offering, contact us to "
                 f"get help.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#dependencymodelparametersvalidationerror",
             ) from error
     if isinstance(model_parameters, str):
         model_parameters = DependencyModelParameters(model_id_or_path=model_parameters)

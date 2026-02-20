@@ -75,6 +75,7 @@ class WorkflowConfiguration(BaseModel):
     workflow_specification: Optional[dict] = None
     workspace_name: Optional[str] = None
     workflow_id: Optional[str] = None
+    workflow_version_id: Optional[str] = None
     image_input_name: str = "image"
     workflows_parameters: Optional[Dict[str, Any]] = None
     workflows_thread_pool_workers: int = 4

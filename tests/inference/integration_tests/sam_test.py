@@ -30,6 +30,7 @@ def test_sam(test, clean_loaded_models_fixture):
         json=payload,
     )
     try:
+        print(response.json())
         response.raise_for_status()
         data = response.json()
         if test["type"] == "embed_image":

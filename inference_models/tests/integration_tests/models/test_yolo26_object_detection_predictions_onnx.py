@@ -9,7 +9,9 @@ XYXY_ATOL = 2
 
 IS_GPU = str(DEFAULT_DEVICE).startswith("cuda")
 ONNX_EXECUTION_PROVIDERS = (
-    ["CUDAExecutionProvider", "CPUExecutionProvider"] if IS_GPU else ["CPUExecutionProvider"]
+    ["CUDAExecutionProvider", "CPUExecutionProvider"]
+    if IS_GPU
+    else ["CPUExecutionProvider"]
 )
 
 GPU_STRETCH_TORCH_CONFIDENCE = [
@@ -474,7 +476,9 @@ def test_onnx_package_stretch_static_bs_numpy(
         onnx_execution_providers=ONNX_EXECUTION_PROVIDERS,
     )
 
-    predictions = model(sunflowers_image_numpy)
+    predictions = model(
+        sunflowers_image_numpy, confidence=0.25, key_points_threshold=0.3
+    )
 
     assert len(predictions) == 1
 
@@ -506,7 +510,11 @@ def test_onnx_package_stretch_static_bs_batch_numpy(
         onnx_execution_providers=ONNX_EXECUTION_PROVIDERS,
     )
 
-    predictions = model([sunflowers_image_numpy, sunflowers_image_numpy])
+    predictions = model(
+        [sunflowers_image_numpy, sunflowers_image_numpy],
+        confidence=0.25,
+        key_points_threshold=0.3,
+    )
 
     expected_confidence = torch.tensor(CPU_STRETCH_NUMPY_CONFIDENCE)
     expected_class_id = torch.ones(35, dtype=torch.int32)
@@ -538,7 +546,9 @@ def test_onnx_package_stretch_static_bs_torch(
         onnx_execution_providers=ONNX_EXECUTION_PROVIDERS,
     )
 
-    predictions = model(sunflowers_image_torch)
+    predictions = model(
+        sunflowers_image_torch, confidence=0.25, key_points_threshold=0.3
+    )
 
     assert len(predictions) == 1
 
@@ -575,7 +585,9 @@ def test_onnx_package_stretch_dynamic_bs_numpy(
         onnx_execution_providers=ONNX_EXECUTION_PROVIDERS,
     )
 
-    predictions = model(sunflowers_image_numpy)
+    predictions = model(
+        sunflowers_image_numpy, confidence=0.25, key_points_threshold=0.3
+    )
 
     assert len(predictions) == 1
 
@@ -607,7 +619,11 @@ def test_onnx_package_stretch_dynamic_bs_batch_numpy(
         onnx_execution_providers=ONNX_EXECUTION_PROVIDERS,
     )
 
-    predictions = model([sunflowers_image_numpy, sunflowers_image_numpy])
+    predictions = model(
+        [sunflowers_image_numpy, sunflowers_image_numpy],
+        confidence=0.25,
+        key_points_threshold=0.3,
+    )
 
     expected_confidence = torch.tensor(
         [
@@ -716,7 +732,9 @@ def test_onnx_package_stretch_dynamic_bs_torch(
         onnx_execution_providers=ONNX_EXECUTION_PROVIDERS,
     )
 
-    predictions = model(sunflowers_image_torch)
+    predictions = model(
+        sunflowers_image_torch, confidence=0.25, key_points_threshold=0.3
+    )
 
     assert len(predictions) == 1
 
@@ -753,7 +771,9 @@ def test_onnx_package_letterbox_static_bs_numpy(
         onnx_execution_providers=ONNX_EXECUTION_PROVIDERS,
     )
 
-    predictions = model(sunflowers_image_numpy)
+    predictions = model(
+        sunflowers_image_numpy, confidence=0.25, key_points_threshold=0.3
+    )
 
     assert len(predictions) == 1
     assert torch.allclose(
@@ -864,7 +884,11 @@ def test_onnx_package_letterbox_static_bs_batch_numpy(
         onnx_execution_providers=ONNX_EXECUTION_PROVIDERS,
     )
 
-    predictions = model([sunflowers_image_numpy, sunflowers_image_numpy])
+    predictions = model(
+        [sunflowers_image_numpy, sunflowers_image_numpy],
+        confidence=0.25,
+        key_points_threshold=0.3,
+    )
 
     expected_confidence = torch.tensor(
         [
@@ -973,7 +997,9 @@ def test_onnx_package_letterbox_static_bs_torch(
         onnx_execution_providers=ONNX_EXECUTION_PROVIDERS,
     )
 
-    predictions = model(sunflowers_image_torch)
+    predictions = model(
+        sunflowers_image_torch, confidence=0.25, key_points_threshold=0.3
+    )
 
     assert len(predictions) == 1
 
@@ -1011,7 +1037,9 @@ def test_onnx_package_letterbox_dynamic_bs_numpy(
         onnx_execution_providers=ONNX_EXECUTION_PROVIDERS,
     )
 
-    predictions = model(sunflowers_image_numpy)
+    predictions = model(
+        sunflowers_image_numpy, confidence=0.25, key_points_threshold=0.3
+    )
 
     assert len(predictions) == 1
     assert torch.allclose(
@@ -1122,7 +1150,11 @@ def test_onnx_package_letterbox_dynamic_bs_batch_numpy(
         onnx_execution_providers=ONNX_EXECUTION_PROVIDERS,
     )
 
-    predictions = model([sunflowers_image_numpy, sunflowers_image_numpy])
+    predictions = model(
+        [sunflowers_image_numpy, sunflowers_image_numpy],
+        confidence=0.25,
+        key_points_threshold=0.3,
+    )
 
     expected_confidence = torch.tensor(CPU_LETTERBOX_BATCH_NUMPY_CONFIDENCE)
     expected_xyxy = torch.tensor(CPU_LETTERBOX_BATCH_NUMPY_XYXY, dtype=torch.float32)
@@ -1155,7 +1187,9 @@ def test_onnx_package_letterbox_dynamic_bs_torch(
         onnx_execution_providers=ONNX_EXECUTION_PROVIDERS,
     )
 
-    predictions = model(sunflowers_image_torch)
+    predictions = model(
+        sunflowers_image_torch, confidence=0.25, key_points_threshold=0.3
+    )
 
     assert len(predictions) == 1
 

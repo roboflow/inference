@@ -21,7 +21,7 @@ def test_classification_onnx_static_package_numpy(
     )
 
     # when
-    predictions = model(chess_piece_image_numpy)
+    predictions = model(chess_piece_image_numpy, confidence=0.5)
 
     # then
     assert torch.allclose(
@@ -52,7 +52,7 @@ def test_classification_onnx_static_package_numpy_no_detection(
     )
 
     # when
-    predictions = model(flowers_image_numpy)
+    predictions = model(flowers_image_numpy, confidence=0.5)
 
     # then
     assert torch.allclose(
@@ -83,7 +83,7 @@ def test_classification_onnx_static_package_numpy_custom_image_size(
     )
 
     # when
-    predictions = model(chess_piece_image_numpy, image_size=(100, 100))
+    predictions = model(chess_piece_image_numpy, image_size=(100, 100), confidence=0.5)
 
     # then
     assert torch.allclose(
@@ -115,7 +115,7 @@ def test_classification_onnx_static_package_batch_numpy(
     )
 
     # when
-    predictions = model([chess_piece_image_numpy, flowers_image_numpy])
+    predictions = model([chess_piece_image_numpy, flowers_image_numpy], confidence=0.5)
 
     # then
     assert torch.allclose(
@@ -146,7 +146,7 @@ def test_classification_onnx_static_package_torch_tensor(
     )
 
     # when
-    predictions = model(chess_piece_image_torch)
+    predictions = model(chess_piece_image_torch, confidence=0.5)
 
     # then
     if torch.cuda.is_available():
@@ -184,7 +184,9 @@ def test_classification_onnx_static_package_batch_torch_tensor_stack(
     flowers_resized = resize(flowers_image_torch, [target_h, target_w])
 
     # when
-    predictions = model(torch.stack([chess_piece_image_torch, flowers_resized], dim=0))
+    predictions = model(
+        torch.stack([chess_piece_image_torch, flowers_resized], dim=0), confidence=0.5
+    )
 
     # then
     if torch.cuda.is_available():
@@ -220,7 +222,7 @@ def test_classification_onnx_static_package_batch_torch_tensor_list(
     )
 
     # when
-    predictions = model([chess_piece_image_torch, flowers_image_torch])
+    predictions = model([chess_piece_image_torch, flowers_image_torch], confidence=0.5)
 
     # then
     if torch.cuda.is_available():
@@ -255,7 +257,7 @@ def test_multi_label_onnx_static_package_numpy(
     )
 
     # when
-    predictions = model(chess_set_image_numpy)
+    predictions = model(chess_set_image_numpy, confidence=0.5)
 
     # then
     assert torch.allclose(
@@ -301,7 +303,7 @@ def test_multi_label_onnx_static_package_numpy_custom_image_size(
     )
 
     # when
-    predictions = model(chess_set_image_numpy, image_size=(100, 100))
+    predictions = model(chess_set_image_numpy, image_size=(100, 100), confidence=0.5)
 
     # then
     assert torch.allclose(
@@ -348,7 +350,9 @@ def test_multi_label_onnx_static_package_batch_numpy(
     )
 
     # when
-    predictions = model([chess_set_image_numpy, chess_piece_image_numpy])
+    predictions = model(
+        [chess_set_image_numpy, chess_piece_image_numpy], confidence=0.5
+    )
 
     # then
     assert torch.allclose(
@@ -418,7 +422,7 @@ def test_multi_label_onnx_static_package_torch_tensor(
     )
 
     # when
-    predictions = model(chess_set_image_torch)
+    predictions = model(chess_set_image_torch, confidence=0.5)
 
     # then
     if torch.cuda.is_available():
@@ -485,7 +489,8 @@ def test_multi_label_onnx_static_package_batch_torch_tensor_stack(
 
     # when
     predictions = model(
-        torch.stack([chess_set_image_torch, chess_piece_image_torch], dim=0)
+        torch.stack([chess_set_image_torch, chess_piece_image_torch], dim=0),
+        confidence=0.5,
     )
 
     # then
@@ -595,7 +600,9 @@ def test_multi_label_onnx_static_package_batch_torch_tensor_list(
     )
 
     # when
-    predictions = model([chess_set_image_torch, chess_piece_image_torch])
+    predictions = model(
+        [chess_set_image_torch, chess_piece_image_torch], confidence=0.5
+    )
 
     # then
     if torch.cuda.is_available():

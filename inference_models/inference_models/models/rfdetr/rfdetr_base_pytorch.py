@@ -112,6 +112,7 @@ class RFDETRMediumConfig(RFDETRBaseConfig):
     positional_encoding_size: int = 36
     pretrain_weights: Optional[str] = "rf-detr-medium.pth"
 
+
 class RFDETRXLargeConfig(ModelConfig):
     encoder: Literal["dinov2_windowed_base"] = "dinov2_windowed_base"
     hidden_dim: int = 512
@@ -146,7 +147,7 @@ class RFDETR2XLargeConfig(ModelConfig):
     resolution: int = 880
     pretrain_weights: str = "rf-detr-xxlarge.pth"
     license: str = "PML-1.0"
-    
+
 
 class RFDETRSegPreviewConfig(RFDETRBaseConfig):
     segmentation_head: bool = True
@@ -161,6 +162,7 @@ class RFDETRSegPreviewConfig(RFDETRBaseConfig):
     pretrain_weights: Optional[str] = "rf-detr-seg-preview.pt"
     num_classes: int = 90
 
+
 class RFDETRSegNanoConfig(RFDETRBaseConfig):
     segmentation_head: bool = True
     out_feature_indexes: List[int] = [3, 6, 9, 12]
@@ -173,6 +175,7 @@ class RFDETRSegNanoConfig(RFDETRBaseConfig):
     num_select: int = 100
     pretrain_weights: Optional[str] = "rf-detr-seg-nano.pt"
     num_classes: int = 90
+
 
 class RFDETRSegSmallConfig(RFDETRBaseConfig):
     segmentation_head: bool = True
@@ -242,7 +245,6 @@ class RFDETRSeg2XLargeConfig(RFDETRBaseConfig):
     num_select: int = 300
     pretrain_weights: Optional[str] = "rf-detr-seg-xxlarge.pt"
     num_classes: int = 90
-
 
 
 class LWDETR(nn.Module):

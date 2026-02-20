@@ -1,4 +1,5 @@
 import os.path
+from threading import Lock
 from typing import List, Optional, Tuple, Union
 
 import numpy as np
@@ -10,9 +11,14 @@ from torchvision import transforms
 from torchvision.ops import box_convert
 
 from inference_models import Detections
-from inference_models.configuration import DEFAULT_DEVICE
+from inference_models.configuration import (
+    DEFAULT_DEVICE,
+    INFERENCE_MODELS_GROUNDING_DINO_DEFAULT_BOX_CONFIDENCE,
+    INFERENCE_MODELS_GROUNDING_DINO_DEFAULT_IOU_THRESHOLD,
+    INFERENCE_MODELS_GROUNDING_DINO_DEFAULT_MAX_DETECTIONS,
+)
 from inference_models.entities import ColorFormat, ImageDimensions
-from inference_models.errors import ModelRuntimeError
+from inference_models.errors import ModelInputError, ModelRuntimeError
 from inference_models.models.base.object_detection import (
     OpenVocabularyObjectDetectionModel,
 )
@@ -73,6 +79,7 @@ class GroundingDinoForObjectDetectionTorch(
                 ),
             ]
         )
+        self._lock = Lock()
 
     def pre_process(
         self,
@@ -104,14 +111,14 @@ class GroundingDinoForObjectDetectionTorch(
                 [image_dimensions] * images.shape[0],
             )
         if not isinstance(images, list):
-            raise ModelRuntimeError(
+            raise ModelInputError(
                 message="Pre-processing supports only np.array or torch.Tensor or list of above.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
             )
         if not len(images):
-            raise ModelRuntimeError(
+            raise ModelInputError(
                 message="Detected empty input to the model",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
             )
         if isinstance(images[0], np.ndarray):
             input_color_format = input_color_format or "bgr"
@@ -137,31 +144,31 @@ class GroundingDinoForObjectDetectionTorch(
                 )
                 pre_processed.append(self._tensors_transformations(image.float()))
             return torch.cat(pre_processed, dim=0).to(self._device), image_dimensions
-        raise ModelRuntimeError(
+        raise ModelInputError(
             message=f"Detected unknown input batch element: {type(images[0])}",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
         )
 
     def forward(
         self,
         pre_processed_images: torch.Tensor,
         classes: List[str],
-        conf_thresh: float = 0.5,
-        text_threshold: Optional[float] = None,
+        box_confidence: float = INFERENCE_MODELS_GROUNDING_DINO_DEFAULT_BOX_CONFIDENCE,
+        text_confidence: Optional[float] = None,
         **kwargs,
     ) -> Tuple[List[torch.Tensor], List[torch.Tensor], List[List[str]], List[str]]:
-        if text_threshold is None:
-            text_threshold = conf_thresh
+        if text_confidence is None:
+            text_confidence = box_confidence
         caption = ". ".join(classes)
         all_boxes, all_logits, all_phrases = [], [], []
-        with torch.inference_mode():
+        with self._lock, torch.inference_mode():
             for image in pre_processed_images:
                 boxes, logits, phrases = predict(
                     model=self._model,
                     image=image,
                     caption=caption,
-                    box_threshold=conf_thresh,
-                    text_threshold=text_threshold,
+                    box_threshold=box_confidence,
+                    text_threshold=text_confidence,
                     device=self._device,
                     remove_combined=True,
                 )
@@ -176,9 +183,9 @@ class GroundingDinoForObjectDetectionTorch(
             List[torch.Tensor], List[torch.Tensor], List[List[str]], List[str]
         ],
         pre_processing_meta: List[ImageDimensions],
-        iou_thresh: float = 0.45,
-        max_detections: int = 100,
-        class_agnostic: bool = False,
+        iou_threshold: float = INFERENCE_MODELS_GROUNDING_DINO_DEFAULT_IOU_THRESHOLD,
+        max_detections: int = INFERENCE_MODELS_GROUNDING_DINO_DEFAULT_MAX_DETECTIONS,
+        class_agnostic_nms: bool = False,
         **kwargs,
     ) -> List[Detections]:
         all_boxes, all_logits, all_phrases, classes = model_results
@@ -200,8 +207,12 @@ class GroundingDinoForObjectDetectionTorch(
                 phrases=phrases,
                 classes=classes,
             ).to(boxes.device)
-            nms_class_ids = torch.zeros_like(class_id) if class_agnostic else class_id
-            keep = torchvision.ops.batched_nms(xyxy, logits, nms_class_ids, iou_thresh)
+            nms_class_ids = (
+                torch.zeros_like(class_id) if class_agnostic_nms else class_id
+            )
+            keep = torchvision.ops.batched_nms(
+                xyxy, logits, nms_class_ids, iou_threshold
+            )
             if keep.numel() > max_detections:
                 keep = keep[:max_detections]
             results.append(
