@@ -345,13 +345,10 @@ class RoboflowInferenceModel(Model):
                         raise ModelArtefactError(
                             "Could not find `environment` key in roboflow API model description response."
                         )
-                    environment = get_from_url(
-                        api_data["environment"], verify_content_length=True
-                    )
+                    environment = get_from_url(api_data["environment"])
                     model_weights_response = get_from_url(
                         api_data["model"],
                         json_response=False,
-                        verify_content_length=True,
                     )
                 else:
                     api_data = get_roboflow_instant_model_data(
@@ -375,7 +372,6 @@ class RoboflowInferenceModel(Model):
                     model_weights_response = get_from_url(
                         api_data["modelFiles"]["ort"]["model"],
                         json_response=False,
-                        verify_content_length=True,
                     )
                     environment = api_data["environment"]
                     if "classes" in api_data:
@@ -934,7 +930,7 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
                     sess_options=session_options,
                 )
             except Exception as e:
-                self.clear_cache()
+                self.clear_cache(delete_from_disk=DISK_CACHE_CLEANUP)
                 raise ModelArtefactError(
                     f"Unable to load ONNX session. Cause: {e}"
                 ) from e

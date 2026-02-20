@@ -35,10 +35,12 @@ The models supported by Roboflow Inference have their own licenses. View the lic
 | `inference/models/smolvlm2`           | [Apache 2.0](https://huggingface.co/HuggingFaceTB/SmolVLM2-2.2B-Instruct)          |              👍              |
 | `inference/models/depth_estimation`   | [Apache 2.0](https://huggingface.co/depth-anything/Depth-Anything-V2-Small)          |              👍              |
 | `inference/models/rfdetr`             | [Apache 2.0](https://github.com/roboflow/rf-detr/blob/main/LICENSE)                  |              👍              |
+| `inference/models/rfdetr_nas`         | [PML 1.0](https://github.com/roboflow/rf-detr/blob/develop/rfdetr/platform/LICENSE.platform)|           ✅           |
 | `inference/models/moondream2`         | [Apache 2.0](https://github.com/vikhyat/moondream/blob/main/LICENSE)          |              👍              |
 | `inference/models/perception_encoder` | [Apache 2.0](https://github.com/facebookresearch/perception_models/blob/main/LICENSE.PE) |              👍              |
 | `inference/models/sam3`               | [SAM License](https://github.com/facebookresearch/sam3/blob/main/LICENSE) |               👍               |
 | `inference/models/sam3_3d`               | [SAM License](https://github.com/facebookresearch/sam-3d-objects/blob/main/LICENSE) |               👍               |
+| `inference/models/deep_lab_v3_plus`   | [MIT](https://github.com/VainF/DeepLabV3Plus-Pytorch/blob/master/LICENSE)            |              👍              |
 ## Commercial Licenses
 
 Models listed with a 👍 above are permissively licensed for commercial use by default. Typically no additional license is needed.

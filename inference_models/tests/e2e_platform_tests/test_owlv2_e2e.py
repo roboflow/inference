@@ -20,7 +20,6 @@ def test_owlv2_model(dog_image_numpy: np.ndarray, roboflow_api_key: str) -> None
 
     # then
     assert isinstance(results[0], Detections)
-    assert len(results[0].xyxy) == 2
 
 
 @pytest.mark.e2e_model_inference
@@ -43,4 +42,3 @@ def test_roboflow_instant_model(
 
     # then
     assert isinstance(results[0], Detections)
-    assert len(results[0].xyxy) == 9

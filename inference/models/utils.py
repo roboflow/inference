@@ -22,7 +22,7 @@ from inference.core.env import (
     QWEN_3_ENABLED,
     SAM3_3D_OBJECTS_ENABLED,
     SMOLVLM2_ENABLED,
-    USE_INFERENCE_EXP_MODELS,
+    USE_INFERENCE_MODELS,
 )
 from inference.core.models.base import Model
 from inference.core.models.stubs import (
@@ -32,12 +32,15 @@ from inference.core.models.stubs import (
     ObjectDetectionModelStub,
 )
 from inference.core.registries.roboflow import get_model_type
-from inference.core.warnings import ModelDependencyMissing
+from inference.core.warnings import InferenceModelsStackMissing, ModelDependencyMissing
 from inference.models import (
     YOLACT,
+    DeepLabV3PlusSemanticSegmentation,
     DinoV3Classification,
     ResNetClassification,
     RFDETRInstanceSegmentation,
+    RFDETRNasInstanceSegmentation,
+    RFDETRNasObjectDetection,
     RFDETRObjectDetection,
     VitClassification,
     YOLO26InstanceSegmentation,
@@ -128,6 +131,7 @@ ROBOFLOW_MODEL_TYPES = {
     ("object-detection", "rfdetr-large"): RFDETRObjectDetection,
     ("object-detection", "rfdetr-xlarge"): RFDETRObjectDetection,
     ("object-detection", "rfdetr-2xlarge"): RFDETRObjectDetection,
+    ("object-detection", "rfdetr-nas"): RFDETRNasObjectDetection,
     ("instance-segmentation", "rfdetr-seg-preview"): RFDETRInstanceSegmentation,
     ("instance-segmentation", "rfdetr-seg-nano"): RFDETRInstanceSegmentation,
     ("instance-segmentation", "rfdetr-seg-small"): RFDETRInstanceSegmentation,
@@ -136,6 +140,7 @@ ROBOFLOW_MODEL_TYPES = {
     ("instance-segmentation", "rfdetr-seg-xlarge"): RFDETRInstanceSegmentation,
     ("instance-segmentation", "rfdetr-seg-xxlarge"): RFDETRInstanceSegmentation,
     ("instance-segmentation", "rfdetr-seg-2xlarge"): RFDETRInstanceSegmentation,
+    ("instance-segmentation", "rfdetr-nas-seg"): RFDETRNasInstanceSegmentation,
     (
         "instance-segmentation",
         "yolov11n",
@@ -271,6 +276,10 @@ ROBOFLOW_MODEL_TYPES = {
     ): YOLOv7InstanceSegmentation,
     (
         "instance-segmentation",
+        "yolov7s-seg",
+    ): YOLOv7InstanceSegmentation,
+    (
+        "instance-segmentation",
         "yolov8n",
     ): YOLOv8InstanceSegmentation,
     (
@@ -329,6 +338,7 @@ ROBOFLOW_MODEL_TYPES = {
     ("keypoint-detection", "yolov8m-pose"): YOLOv8KeypointsDetection,
     ("keypoint-detection", "yolov8l-pose"): YOLOv8KeypointsDetection,
     ("keypoint-detection", "yolov8x-pose"): YOLOv8KeypointsDetection,
+    ("semantic-segmentation", "deeplabv3plus"): DeepLabV3PlusSemanticSegmentation,
 }
 
 try:
@@ -688,28 +698,185 @@ def get_roboflow_model(*args, **kwargs):
     return get_model(*args, **kwargs)
 
 
-# Prefer inference_exp backend for RF-DETR variants when enabled and available
-try:
-    if USE_INFERENCE_EXP_MODELS:
-        # Ensure experimental package is importable before swapping
-        __import__("inference_models")
-        from inference.models.rfdetr.rfdetr_exp import RFDetrExperimentalModel
-        from inference.models.yolov8.yolov8_object_detection_exp import (
-            Yolo8ODExperimentalModel,
-        )
-
-        for task, variant in ROBOFLOW_MODEL_TYPES.keys():
-            if task == "object-detection" and variant.startswith("rfdetr-"):
-                ROBOFLOW_MODEL_TYPES[(task, variant)] = RFDetrExperimentalModel
-
-        # iterate over ROBOFLOW_MODEL_TYPES and replace all valuses where the model variatn starts with yolov8 with the experimental model
-        for task, variant in ROBOFLOW_MODEL_TYPES.keys():
-            if task == "object-detection" and variant.startswith("yolov8"):
-                ROBOFLOW_MODEL_TYPES[(task, variant)] = Yolo8ODExperimentalModel
-
-
-except Exception:
-    # Fallback silently to legacy ONNX RFDETR when experimental stack is unavailable
-    warnings.warn(
-        "Inference experimental stack is unavailable, falling back to regular model inference stack"
+if USE_INFERENCE_MODELS:
+    # Ensure experimental package is importable before swapping
+    from inference.core.models.inference_models_adapters import (
+        InferenceModelsClassificationAdapter,
+        InferenceModelsInstanceSegmentationAdapter,
+        InferenceModelsKeyPointsDetectionAdapter,
+        InferenceModelsObjectDetectionAdapter,
     )
+
+    for task, variant in ROBOFLOW_MODEL_TYPES.keys():
+        try:
+            if task == "object-detection" and variant.startswith("rfdetr"):
+                ROBOFLOW_MODEL_TYPES[(task, variant)] = (
+                    InferenceModelsObjectDetectionAdapter
+                )
+            elif task == "object-detection" and variant.startswith("yolov"):
+                ROBOFLOW_MODEL_TYPES[(task, variant)] = (
+                    InferenceModelsObjectDetectionAdapter
+                )
+            elif task == "object-detection" and variant.startswith("yolo_nas"):
+                ROBOFLOW_MODEL_TYPES[(task, variant)] = (
+                    InferenceModelsObjectDetectionAdapter
+                )
+            elif task == "instance-segmentation" and variant.startswith("rfdetr"):
+                ROBOFLOW_MODEL_TYPES[(task, variant)] = (
+                    InferenceModelsInstanceSegmentationAdapter
+                )
+            elif task == "instance-segmentation" and variant.startswith("yolov"):
+                ROBOFLOW_MODEL_TYPES[(task, variant)] = (
+                    InferenceModelsInstanceSegmentationAdapter
+                )
+            elif task == "instance-segmentation" and variant.startswith("yolact"):
+                ROBOFLOW_MODEL_TYPES[(task, variant)] = (
+                    InferenceModelsInstanceSegmentationAdapter
+                )
+            elif task == "keypoint-detection" and variant.startswith("yolov"):
+                ROBOFLOW_MODEL_TYPES[(task, variant)] = (
+                    InferenceModelsKeyPointsDetectionAdapter
+                )
+            elif task == "classification" and (
+                variant.startswith("yolov")
+                or variant.startswith("dinov3")
+                or variant.startswith("resnet")
+                or variant.startswith("vit")
+            ):
+                ROBOFLOW_MODEL_TYPES[(task, variant)] = (
+                    InferenceModelsClassificationAdapter
+                )
+            elif variant.startswith("paligemma-") or variant.startswith("paligemma2-"):
+                from inference.models.paligemma.paligemma_inference_models import (
+                    InferenceModelsPaligemmaAdapter,
+                )
+
+                ROBOFLOW_MODEL_TYPES[(task, variant)] = InferenceModelsPaligemmaAdapter
+            elif variant.startswith("florence-2"):
+                from inference.models.florence2.florence2_inference_models import (
+                    InferenceModelsFlorence2Adapter,
+                )
+
+                ROBOFLOW_MODEL_TYPES[(task, variant)] = InferenceModelsFlorence2Adapter
+            elif variant.startswith("qwen25-vl"):
+                from inference.models.qwen25vl.qwen25vl_inference_models import (
+                    InferenceModelsQwen25VLAdapter,
+                )
+
+                ROBOFLOW_MODEL_TYPES[(task, variant)] = InferenceModelsQwen25VLAdapter
+            elif variant.startswith("qwen3vl-"):
+                from inference.models.qwen3vl.qwen3vl_inference_models import (
+                    InferenceModelsQwen3VLAdapter,
+                )
+
+                ROBOFLOW_MODEL_TYPES[(task, variant)] = InferenceModelsQwen3VLAdapter
+            elif task == "embed" and variant == "sam":
+                from inference.models.sam.segment_anything_inference_models import (
+                    InferenceModelsSAMAdapter,
+                )
+
+                ROBOFLOW_MODEL_TYPES[(task, variant)] = InferenceModelsSAMAdapter
+            elif task == "embed" and variant == "sam2":
+                from inference.models.sam2.segment_anything2_inference_models import (
+                    InferenceModelsSAM2Adapter,
+                )
+
+                ROBOFLOW_MODEL_TYPES[(task, variant)] = InferenceModelsSAM2Adapter
+            elif task == "embed" and variant == "clip":
+                from inference.models.clip.clip_inference_models import (
+                    InferenceModelsClipAdapter,
+                )
+
+                ROBOFLOW_MODEL_TYPES[(task, variant)] = InferenceModelsClipAdapter
+            elif task == "object-detection" and variant == "owlv2":
+                from inference.models.owlv2.owlv2_inference_models import (
+                    InferenceModelsOwlV2Adapter,
+                )
+
+                ROBOFLOW_MODEL_TYPES[(task, variant)] = InferenceModelsOwlV2Adapter
+            elif task == "object-detection" and variant == "owlv2-finetuned":
+                from inference.models.owlv2.rf_instant_inference_models import (
+                    InferenceModelsRFInstantModelAdapter,
+                )
+
+                ROBOFLOW_MODEL_TYPES[(task, variant)] = (
+                    InferenceModelsRFInstantModelAdapter
+                )
+            elif task == "gaze" and variant == "l2cs":
+                from inference.models.gaze.gaze_inference_models import (
+                    InferenceModelsGazeAdapter,
+                )
+
+                ROBOFLOW_MODEL_TYPES[(task, variant)] = InferenceModelsGazeAdapter
+            elif task in {"lmm", "text-image-pairs"} and (
+                variant.startswith("smolvlm-2.2b")
+                or variant.startswith("smolvlm2")
+                or variant.startswith("smolvlm-256m")
+            ):
+                from inference.models.smolvlm.smolvlm_inference_models import (
+                    InferenceModelsSmolVLMAdapter,
+                )
+
+                ROBOFLOW_MODEL_TYPES[(task, variant)] = InferenceModelsSmolVLMAdapter
+            elif task == "depth-estimation" and variant == "depth-anything-v2":
+                from inference.models.depth_anything_v2.depth_anything_v2_inference_models import (
+                    InferenceModelsDepthAnythingV2Adapter,
+                )
+
+                ROBOFLOW_MODEL_TYPES[(task, variant)] = (
+                    InferenceModelsDepthAnythingV2Adapter
+                )
+            elif task == "depth-estimation" and variant == "depth-anything-v3":
+                from inference.models.depth_anything_v3.depth_anything_v3_inference_models import (
+                    InferenceModelsDepthAnythingV3Adapter,
+                )
+
+                ROBOFLOW_MODEL_TYPES[(task, variant)] = (
+                    InferenceModelsDepthAnythingV3Adapter
+                )
+            elif task == "lmm" and variant == "moondream2":
+                from inference.models.moondream2.moondream2_inference_models import (
+                    InferenceModelsMoondream2Adapter,
+                )
+
+                ROBOFLOW_MODEL_TYPES[(task, variant)] = InferenceModelsMoondream2Adapter
+            elif task == "ocr" and variant == "doctr":
+                from inference.models.doctr.doctr_model_inference_models import (
+                    InferenceModelsDocTRAdapter,
+                )
+
+                ROBOFLOW_MODEL_TYPES[(task, variant)] = InferenceModelsDocTRAdapter
+            elif task == "ocr" and variant == "easy_ocr":
+                from inference.models.easy_ocr.easy_ocr_inference_models import (
+                    InferenceModelsEasyOCRAdapter,
+                )
+
+                ROBOFLOW_MODEL_TYPES[(task, variant)] = InferenceModelsEasyOCRAdapter
+            elif task == "ocr" and variant == "trocr":
+                from inference.models.trocr.trocr_inference_models import (
+                    InferenceModelsTrOCRAdapter,
+                )
+
+                ROBOFLOW_MODEL_TYPES[(task, variant)] = InferenceModelsTrOCRAdapter
+            elif task == "object-detection" and variant == "grounding-dino":
+                from inference.models.grounding_dino.grounding_dino_inference_models import (
+                    InferenceModelsGroundingDINOAdapter,
+                )
+
+                ROBOFLOW_MODEL_TYPES[(task, variant)] = (
+                    InferenceModelsGroundingDINOAdapter
+                )
+            elif task == "embed" and variant == "perception_encoder":
+                from inference.models.perception_encoder.perception_encoder_inference_models import (
+                    InferenceModelsPerceptionEncoderAdapter,
+                )
+
+                ROBOFLOW_MODEL_TYPES[(task, variant)] = (
+                    InferenceModelsPerceptionEncoderAdapter
+                )
+        except Exception as e:
+            warnings.warn(
+                f"`inference-models` stack is unavailable for model: {variant} and task: {task}, "
+                f"falling back to regular `inference` stack - error: {e}",
+                category=InferenceModelsStackMissing,
+            )

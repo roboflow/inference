@@ -2,6 +2,13 @@
 
 You can deploy Moondream2 with Inference.
 
+### Execution Modes
+
+Moondream2 supports both local and remote execution modes when used in workflows:
+
+- **Local execution**: The model runs directly on your inference server (GPU recommended)
+- **Remote execution**: The model can be invoked via HTTP API on a remote inference server using the `infer_lmm()` client method
+
 ### Installation
 
 To install inference with the extra dependencies necessary to run Moondream2, run

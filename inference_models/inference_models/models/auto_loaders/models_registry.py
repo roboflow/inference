@@ -230,6 +230,42 @@ REGISTERED_MODELS: Dict[
         module_name="inference_models.models.yolov12.yolov12_trt",
         class_name="YOLOv12ForObjectDetectionTRT",
     ),
+    ("yolo26", OBJECT_DETECTION_TASK, BackendType.ONNX): LazyClass(
+        module_name="inference_models.models.yolo26.yolo26_object_detection_onnx",
+        class_name="YOLO26ForObjectDetectionOnnx",
+    ),
+    ("yolo26", OBJECT_DETECTION_TASK, BackendType.TORCH_SCRIPT): LazyClass(
+        module_name="inference_models.models.yolo26.yolo26_object_detection_torch_script",
+        class_name="YOLO26ForObjectDetectionTorchScript",
+    ),
+    ("yolo26", OBJECT_DETECTION_TASK, BackendType.TRT): LazyClass(
+        module_name="inference_models.models.yolo26.yolo26_object_detection_trt",
+        class_name="YOLO26ForObjectDetectionTRT",
+    ),
+    ("yolo26", KEYPOINT_DETECTION_TASK, BackendType.ONNX): LazyClass(
+        module_name="inference_models.models.yolo26.yolo26_key_points_detection_onnx",
+        class_name="YOLO26ForKeyPointsDetectionOnnx",
+    ),
+    ("yolo26", KEYPOINT_DETECTION_TASK, BackendType.TORCH_SCRIPT): LazyClass(
+        module_name="inference_models.models.yolo26.yolo26_key_points_detection_torch_script",
+        class_name="YOLO26ForKeyPointsDetectionTorchScript",
+    ),
+    ("yolo26", KEYPOINT_DETECTION_TASK, BackendType.TRT): LazyClass(
+        module_name="inference_models.models.yolo26.yolo26_key_points_detection_trt",
+        class_name="YOLO26ForKeyPointsDetectionTRT",
+    ),
+    ("yolo26", INSTANCE_SEGMENTATION_TASK, BackendType.ONNX): LazyClass(
+        module_name="inference_models.models.yolo26.yolo26_instance_segmentation_onnx",
+        class_name="YOLO26ForInstanceSegmentationOnnx",
+    ),
+    ("yolo26", INSTANCE_SEGMENTATION_TASK, BackendType.TORCH_SCRIPT): LazyClass(
+        module_name="inference_models.models.yolo26.yolo26_instance_segmentation_torch_script",
+        class_name="YOLO26ForInstanceSegmentationTorchScript",
+    ),
+    ("yolo26", INSTANCE_SEGMENTATION_TASK, BackendType.TRT): LazyClass(
+        module_name="inference_models.models.yolo26.yolo26_instance_segmentation_trt",
+        class_name="YOLO26ForInstanceSegmentationTRT",
+    ),
     ("paligemma-2", VLM_TASK, BackendType.HF): LazyClass(
         module_name="inference_models.models.paligemma.paligemma_hf",
         class_name="PaliGemmaHF",
@@ -274,9 +310,19 @@ REGISTERED_MODELS: Dict[
         module_name="inference_models.models.rfdetr.rfdetr_object_detection_pytorch",
         class_name="RFDetrForObjectDetectionTorch",
     ),
-    ("rfdetr", OBJECT_DETECTION_TASK, BackendType.ONNX): LazyClass(
-        module_name="inference_models.models.rfdetr.rfdetr_object_detection_onnx",
-        class_name="RFDetrForObjectDetectionONNX",
+    ("rfdetr", OBJECT_DETECTION_TASK, BackendType.ONNX): RegistryEntry(
+        model_class=LazyClass(
+            module_name="inference_models.models.rfdetr.rfdetr_object_detection_onnx",
+            class_name="RFDetrForObjectDetectionONNX",
+        ),
+        supported_model_features={
+            "resolution",
+            "patch_size",
+            "num_windows",
+            "dec_layers",
+            "num_queries",
+            "num_select",
+        },
     ),
     ("rfdetr", INSTANCE_SEGMENTATION_TASK, BackendType.TORCH): LazyClass(
         module_name="inference_models.models.rfdetr.rfdetr_instance_segmentation_pytorch",
@@ -479,7 +525,7 @@ def resolve_model_class(
         raise ModelImplementationNotFoundError(
             message=f"Did not find implementation for model with architecture: {model_architecture}, "
             f"task type: {task_type} backend: {backend} and model features: {model_features}",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/model-loading/#modelimplementationnotfounderror",
         )
     matched_model = REGISTERED_MODELS[(model_architecture, task_type, backend)]
     if isinstance(matched_model, RegistryEntry):

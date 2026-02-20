@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 import supervision as sv
 
-from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
+from inference.core.env import USE_INFERENCE_MODELS, WORKFLOWS_MAX_CONCURRENT_STEPS
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.errors import (
@@ -40,7 +40,7 @@ OBJECT_DETECTION_WORKFLOW = {
     ],
 }
 
-EXPECTED_OBJECT_DETECTION_BBOXES = np.array(
+EXPECTED_OBJECT_DETECTION_BBOXES_OLD_INFERENCE = np.array(
     [
         [180, 273, 244, 383],
         [271, 266, 328, 383],
@@ -56,7 +56,7 @@ EXPECTED_OBJECT_DETECTION_BBOXES = np.array(
         [239, 251, 249, 282],
     ]
 )
-EXPECTED_OBJECT_DETECTION_CONFIDENCES = np.array(
+EXPECTED_OBJECT_DETECTION_CONFIDENCES_OLD_INFERENCE = np.array(
     [
         0.84284,
         0.83957,
@@ -70,6 +70,45 @@ EXPECTED_OBJECT_DETECTION_CONFIDENCES = np.array(
         0.56938,
         0.54092,
         0.43511,
+    ]
+)
+
+EXPECTED_OBJECT_DETECTION_BBOXES_NEW_INFERENCE = np.array(
+    [
+        [180, 273, 244, 384],
+        [271, 267, 328, 384],
+        [552, 260, 598, 365],
+        [113, 270, 145, 348],
+        [416, 259, 457, 365],
+        [521, 257, 555, 360],
+        [387, 264, 414, 342],
+        [158, 268, 183, 350],
+        [324, 257, 345, 321],
+        [341, 262, 362, 338],
+        [247, 251, 262, 285],
+        [240, 251, 250, 282],
+        [412, 265, 432, 337],
+        [145, 265, 165, 329],
+        [300, 264, 319, 296],
+    ]
+)
+EXPECTED_OBJECT_DETECTION_CONFIDENCES_NEW_INFERENCE = np.array(
+    [
+        0.84284,
+        0.83957,
+        0.81555,
+        0.80455,
+        0.75804,
+        0.75794,
+        0.71715,
+        0.71408,
+        0.71003,
+        0.56938,
+        0.54092,
+        0.51359,
+        0.36387,
+        0.35772,
+        0.34012,
     ]
 )
 
@@ -112,16 +151,28 @@ def test_object_detection_workflow_when_minimal_valid_input_provided(
     assert isinstance(result, list), "Expected result to be list"
     assert len(result) == 1, "Single image provided - single output expected"
     detections: sv.Detections = result[0]["result"]["predictions"]
-    assert np.allclose(
-        detections.xyxy,
-        EXPECTED_OBJECT_DETECTION_BBOXES,
-        atol=1,
-    ), "Expected bboxes to match what was validated manually as workflow outcome"
-    assert np.allclose(
-        detections.confidence,
-        EXPECTED_OBJECT_DETECTION_CONFIDENCES,
-        atol=0.01,
-    ), "Expected confidences to match what was validated manually as workflow outcome"
+    if not USE_INFERENCE_MODELS:
+        assert np.allclose(
+            detections.xyxy,
+            EXPECTED_OBJECT_DETECTION_BBOXES_OLD_INFERENCE,
+            atol=1,
+        ), "Expected bboxes to match what was validated manually as workflow outcome"
+        assert np.allclose(
+            detections.confidence,
+            EXPECTED_OBJECT_DETECTION_CONFIDENCES_OLD_INFERENCE,
+            atol=0.01,
+        ), "Expected confidences to match what was validated manually as workflow outcome"
+    else:
+        assert np.allclose(
+            detections.xyxy,
+            EXPECTED_OBJECT_DETECTION_BBOXES_NEW_INFERENCE,
+            atol=1,
+        ), "Expected bboxes to match what was validated manually as workflow outcome"
+        assert np.allclose(
+            detections.confidence,
+            EXPECTED_OBJECT_DETECTION_CONFIDENCES_NEW_INFERENCE,
+            atol=0.01,
+        ), "Expected confidences to match what was validated manually as workflow outcome"
 
 
 def test_object_detection_workflow_when_batch_input_provided(
@@ -153,26 +204,48 @@ def test_object_detection_workflow_when_batch_input_provided(
     assert len(result) == 2, "Two images provided - two outputs expected"
     detections_1: sv.Detections = result[0]["result"]["predictions"]
     detections_2: sv.Detections = result[1]["result"]["predictions"]
-    assert np.allclose(
-        detections_1.xyxy,
-        EXPECTED_OBJECT_DETECTION_BBOXES,
-        atol=1,
-    ), "Expected bboxes for first image to match what was validated manually as workflow outcome"
-    assert np.allclose(
-        detections_1.confidence,
-        EXPECTED_OBJECT_DETECTION_CONFIDENCES,
-        atol=0.01,
-    ), "Expected confidences for first image to match what was validated manually as workflow outcome"
-    assert np.allclose(
-        detections_2.xyxy,
-        EXPECTED_OBJECT_DETECTION_BBOXES,
-        atol=1,
-    ), "Expected bboxes for 2nd image to match what was validated manually as workflow outcome"
-    assert np.allclose(
-        detections_2.confidence,
-        EXPECTED_OBJECT_DETECTION_CONFIDENCES,
-        atol=0.01,
-    ), "Expected confidences for 2nd image to match what was validated manually as workflow outcome"
+    if not USE_INFERENCE_MODELS:
+        assert np.allclose(
+            detections_1.xyxy,
+            EXPECTED_OBJECT_DETECTION_BBOXES_OLD_INFERENCE,
+            atol=1,
+        ), "Expected bboxes for first image to match what was validated manually as workflow outcome"
+        assert np.allclose(
+            detections_1.confidence,
+            EXPECTED_OBJECT_DETECTION_CONFIDENCES_OLD_INFERENCE,
+            atol=0.01,
+        ), "Expected confidences for first image to match what was validated manually as workflow outcome"
+        assert np.allclose(
+            detections_2.xyxy,
+            EXPECTED_OBJECT_DETECTION_BBOXES_OLD_INFERENCE,
+            atol=1,
+        ), "Expected bboxes for 2nd image to match what was validated manually as workflow outcome"
+        assert np.allclose(
+            detections_2.confidence,
+            EXPECTED_OBJECT_DETECTION_CONFIDENCES_OLD_INFERENCE,
+            atol=0.01,
+        ), "Expected confidences for 2nd image to match what was validated manually as workflow outcome"
+    else:
+        assert np.allclose(
+            detections_1.xyxy,
+            EXPECTED_OBJECT_DETECTION_BBOXES_NEW_INFERENCE,
+            atol=1,
+        ), "Expected bboxes for first image to match what was validated manually as workflow outcome"
+        assert np.allclose(
+            detections_1.confidence,
+            EXPECTED_OBJECT_DETECTION_CONFIDENCES_NEW_INFERENCE,
+            atol=0.01,
+        ), "Expected confidences for first image to match what was validated manually as workflow outcome"
+        assert np.allclose(
+            detections_2.xyxy,
+            EXPECTED_OBJECT_DETECTION_BBOXES_NEW_INFERENCE,
+            atol=1,
+        ), "Expected bboxes for 2nd image to match what was validated manually as workflow outcome"
+        assert np.allclose(
+            detections_2.confidence,
+            EXPECTED_OBJECT_DETECTION_CONFIDENCES_NEW_INFERENCE,
+            atol=0.01,
+        ), "Expected confidences for 2nd image to match what was validated manually as workflow outcome"
 
 
 def test_object_detection_workflow_when_batch_input_provided_and_serialization_requested(
@@ -205,26 +278,48 @@ def test_object_detection_workflow_when_batch_input_provided_and_serialization_r
     assert len(result) == 2, "Two images provided - two outputs expected"
     detections_1 = sv.Detections.from_inference(result[0]["result"]["predictions"])
     detections_2 = sv.Detections.from_inference(result[1]["result"]["predictions"])
-    assert np.allclose(
-        detections_1.xyxy,
-        EXPECTED_OBJECT_DETECTION_BBOXES,
-        atol=1,
-    ), "Expected bboxes for first image to match what was validated manually as workflow outcome"
-    assert np.allclose(
-        detections_1.confidence,
-        EXPECTED_OBJECT_DETECTION_CONFIDENCES,
-        atol=0.01,
-    ), "Expected confidences for first image to match what was validated manually as workflow outcome"
-    assert np.allclose(
-        detections_2.xyxy,
-        EXPECTED_OBJECT_DETECTION_BBOXES,
-        atol=1,
-    ), "Expected bboxes for 2nd image to match what was validated manually as workflow outcome"
-    assert np.allclose(
-        detections_2.confidence,
-        EXPECTED_OBJECT_DETECTION_CONFIDENCES,
-        atol=0.01,
-    ), "Expected confidences for 2nd image to match what was validated manually as workflow outcome"
+    if not USE_INFERENCE_MODELS:
+        assert np.allclose(
+            detections_1.xyxy,
+            EXPECTED_OBJECT_DETECTION_BBOXES_OLD_INFERENCE,
+            atol=1,
+        ), "Expected bboxes for first image to match what was validated manually as workflow outcome"
+        assert np.allclose(
+            detections_1.confidence,
+            EXPECTED_OBJECT_DETECTION_CONFIDENCES_OLD_INFERENCE,
+            atol=0.01,
+        ), "Expected confidences for first image to match what was validated manually as workflow outcome"
+        assert np.allclose(
+            detections_2.xyxy,
+            EXPECTED_OBJECT_DETECTION_BBOXES_OLD_INFERENCE,
+            atol=1,
+        ), "Expected bboxes for 2nd image to match what was validated manually as workflow outcome"
+        assert np.allclose(
+            detections_2.confidence,
+            EXPECTED_OBJECT_DETECTION_CONFIDENCES_OLD_INFERENCE,
+            atol=0.01,
+        ), "Expected confidences for 2nd image to match what was validated manually as workflow outcome"
+    else:
+        assert np.allclose(
+            detections_1.xyxy,
+            EXPECTED_OBJECT_DETECTION_BBOXES_NEW_INFERENCE,
+            atol=1,
+        ), "Expected bboxes for first image to match what was validated manually as workflow outcome"
+        assert np.allclose(
+            detections_1.confidence,
+            EXPECTED_OBJECT_DETECTION_CONFIDENCES_NEW_INFERENCE,
+            atol=0.01,
+        ), "Expected confidences for first image to match what was validated manually as workflow outcome"
+        assert np.allclose(
+            detections_2.xyxy,
+            EXPECTED_OBJECT_DETECTION_BBOXES_NEW_INFERENCE,
+            atol=1,
+        ), "Expected bboxes for 2nd image to match what was validated manually as workflow outcome"
+        assert np.allclose(
+            detections_2.confidence,
+            EXPECTED_OBJECT_DETECTION_CONFIDENCES_NEW_INFERENCE,
+            atol=0.01,
+        ), "Expected confidences for 2nd image to match what was validated manually as workflow outcome"
 
 
 def test_object_detection_workflow_when_confidence_is_restricted_by_input_parameter(
@@ -258,12 +353,12 @@ def test_object_detection_workflow_when_confidence_is_restricted_by_input_parame
     detections: sv.Detections = result[0]["result"]["predictions"]
     assert np.allclose(
         detections.xyxy,
-        EXPECTED_OBJECT_DETECTION_BBOXES[:4],
+        EXPECTED_OBJECT_DETECTION_BBOXES_OLD_INFERENCE[:4],
         atol=1,
     ), "Expected bboxes to match what was validated manually as workflow outcome"
     assert np.allclose(
         detections.confidence,
-        EXPECTED_OBJECT_DETECTION_CONFIDENCES[:4],
+        EXPECTED_OBJECT_DETECTION_CONFIDENCES_OLD_INFERENCE[:4],
         atol=0.01,
     ), "Expected confidences to match what was validated manually as workflow outcome"
 

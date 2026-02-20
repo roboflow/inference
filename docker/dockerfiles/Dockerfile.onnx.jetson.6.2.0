@@ -43,6 +43,7 @@ RUN apt-get update -y && \
     libatlas-base-dev \
     liblapack-dev \
     gfortran \
+    ffmpeg \
     libhdf5-dev \
     libgflags-dev \
     libgoogle-glog-dev \
@@ -330,10 +331,11 @@ ENV VERSION_CHECK_MODE=once \
     WORKFLOWS_MAX_CONCURRENT_STEPS=4 \
     API_LOGGING_ENABLED=True \
     DISABLE_WORKFLOW_ENDPOINTS=false \
-    ALLOW_INFERENCE_EXP_UNTRUSTED_MODELS=True \
-    USE_INFERENCE_EXP_MODELS=False \
+    ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES=True \
+    USE_INFERENCE_MODELS=False \
     RUNNING_ON_JETSON=True \
-    L4T_VERSION=36.4.0
+    L4T_VERSION=36.4.0 \
+    ENABLE_STREAM_API=True
 
 LABEL org.opencontainers.image.description="Inference Server - Jetson 6.2.0 (PyTorch from source, numpy 2.x)"
 

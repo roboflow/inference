@@ -187,6 +187,7 @@ class InferencePipelineManager(Process):
                 workflow_specification=parsed_payload.processing_configuration.workflow_specification,
                 workspace_name=parsed_payload.processing_configuration.workspace_name,
                 workflow_id=parsed_payload.processing_configuration.workflow_id,
+                workflow_version_id=parsed_payload.processing_configuration.workflow_version_id,
                 api_key=parsed_payload.api_key,
                 image_input_name=parsed_payload.processing_configuration.image_input_name,
                 workflows_parameters=parsed_payload.processing_configuration.workflows_parameters,

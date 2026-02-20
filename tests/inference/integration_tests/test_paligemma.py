@@ -61,7 +61,7 @@ def test_paligemma_lora_inference(server_url: str, clean_loaded_models_fixture) 
             "value": "https://media.roboflow.com/dog.jpeg",
         },
         "prompt": "Describe the image",
-        "model_id": "melee/41",
+        "model_id": "qwen_playground/54",
     }
 
     # when

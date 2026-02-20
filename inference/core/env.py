@@ -6,7 +6,11 @@ from typing import Optional
 from dotenv import load_dotenv
 
 from inference.core.utils.environment import safe_split_value, str2bool
-from inference.core.warnings import InferenceDeprecationWarning, ModelDependencyMissing
+from inference.core.warnings import (
+    InferenceDeprecationWarning,
+    InferenceModelsStackMissing,
+    ModelDependencyMissing,
+)
 
 load_dotenv(os.getcwd() + "/.env")
 
@@ -211,9 +215,12 @@ CORE_MODEL_YOLO_WORLD_ENABLED = str2bool(
 )
 
 # Enable experimental RFDETR backend (inference_models) rollout, default is True
-USE_INFERENCE_EXP_MODELS = str2bool(os.getenv("USE_INFERENCE_EXP_MODELS", "False"))
-ALLOW_INFERENCE_EXP_UNTRUSTED_MODELS = str2bool(
-    os.getenv("ALLOW_INFERENCE_EXP_UNTRUSTED_MODELS", "False")
+USE_INFERENCE_MODELS = str2bool(os.getenv("USE_INFERENCE_MODELS", "False"))
+ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES = str2bool(
+    os.getenv("ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES", "False")
+)
+ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES = str2bool(
+    os.getenv("ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES", "False")
 )
 
 # ID of host device, default is None
@@ -288,6 +295,18 @@ LAMBDA = str2bool(os.getenv("LAMBDA", False))
 
 # Whether is's GCP serverless service
 GCP_SERVERLESS = str2bool(os.getenv("GCP_SERVERLESS", "False"))
+
+# This variable affects extra headers passed to new weights provider created for
+# `inference-models` - only effective when `USE_INFERENCE_MODELS` is True and
+# makes the weights provider to reject request for model weights that are coming to
+# internal services and requires rejection when account exceeds limits
+ENFORCE_CREDITS_VERIFICATION = str2bool(
+    os.getenv("ENFORCE_CREDITS_VERIFICATION", "False")
+)
+
+WORKFLOWS_REMOTE_EXECUTION_TIME_FORWARDING = str2bool(
+    os.getenv("WORKFLOWS_REMOTE_EXECUTION_TIME_FORWARDING", "True")
+)
 
 GET_MODEL_REGISTRY_ENABLED = str2bool(os.getenv("GET_MODEL_REGISTRY_ENABLED", "True"))
 
@@ -595,6 +614,7 @@ INFERENCE_WARNINGS_DISABLED = str2bool(
 
 if INFERENCE_WARNINGS_DISABLED:
     warnings.simplefilter("ignore", InferenceDeprecationWarning)
+    warnings.simplefilter("ignore", InferenceModelsStackMissing)
 
 HUGGINGFACE_TOKEN = os.getenv("HUGGINGFACE_TOKEN")
 DEVICE = os.getenv("DEVICE")
@@ -791,7 +811,7 @@ WEBRTC_DATA_CHANNEL_BUFFER_DRAINING_DELAY = float(
     os.getenv("WEBRTC_DATA_CHANNEL_BUFFER_DRAINING_DELAY", "0.1")
 )
 WEBRTC_DATA_CHANNEL_BUFFER_SIZE_LIMIT = int(
-    os.getenv("WEBRTC_DATA_CHANNEL_BUFFER_SIZE_LIMIT", str(1024 * 1024))  # 1MB
+    os.getenv("WEBRTC_DATA_CHANNEL_BUFFER_SIZE_LIMIT", str(1024 * 1024 * 32))  # 32MB
 )
 
 # Maximum number of frames the server is allowed to be ahead of the last client ACK
@@ -800,12 +820,23 @@ WEBRTC_DATA_CHANNEL_BUFFER_SIZE_LIMIT = int(
 # Example: if ack=1 and window=4, server may produce/send up to frame 5.
 try:
     WEBRTC_DATA_CHANNEL_ACK_WINDOW = int(
-        os.getenv("WEBRTC_DATA_CHANNEL_ACK_WINDOW", "20")
+        os.getenv("WEBRTC_DATA_CHANNEL_ACK_WINDOW", "1")
     )
 except (ValueError, TypeError):
-    WEBRTC_DATA_CHANNEL_ACK_WINDOW = 20
+    WEBRTC_DATA_CHANNEL_ACK_WINDOW = 1
+
 if WEBRTC_DATA_CHANNEL_ACK_WINDOW < 0:
     WEBRTC_DATA_CHANNEL_ACK_WINDOW = 0
+
+WEBRTC_GZIP_PREVIEW_FRAME_COMPRESSION = str2bool(
+    os.getenv("WEBRTC_GZIP_PREVIEW_FRAME_COMPRESSION", "True")
+)
+
+# JPEG quality for WebRTC preview frames
+# (1-100, higher means better quality, but larger payload size and we might time out)
+WEBRTC_PREVIEW_FRAME_JPEG_QUALITY = int(
+    os.getenv("WEBRTC_PREVIEW_FRAME_JPEG_QUALITY", "80")
+)
 
 HTTP_API_SHARED_WORKFLOWS_THREAD_POOL_ENABLED = str2bool(
     os.getenv("HTTP_API_SHARED_WORKFLOWS_THREAD_POOL_ENABLED", "True")

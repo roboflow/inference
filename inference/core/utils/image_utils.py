@@ -268,7 +268,13 @@ def load_image_base64(
     """
     # New routes accept images via json body (str), legacy routes accept bytes which need to be decoded as strings
     if not isinstance(value, str):
-        value = value.decode("utf-8")
+        try:
+            value = value.decode("utf-8")
+        except UnicodeDecodeError:
+            raise InputImageLoadError(
+                message="Could not decode image bytes as base64 string - the payload appears to be raw image bytes, not a base64-encoded string.",
+                public_message="Invalid base64 input: the image payload contains raw bytes instead of a base64-encoded string. Please base64-encode the image before sending.",
+            )
     value = BASE64_DATA_TYPE_PATTERN.sub("", value)
     try:
         value = pybase64.b64decode(value)

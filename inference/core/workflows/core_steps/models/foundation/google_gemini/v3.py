@@ -20,6 +20,7 @@ from inference.core.workflows.execution_engine.entities.base import (
     WorkflowImageData,
 )
 from inference.core.workflows.execution_engine.entities.types import (
+    BOOLEAN_KIND,
     FLOAT_KIND,
     IMAGE_KIND,
     LANGUAGE_MODEL_OUTPUT_KIND,
@@ -49,39 +50,52 @@ MODEL_ALIASES = {
 
 GEMINI_MODELS = [
     {
+        "id": "gemini-3.1-pro-preview",
+        "name": "Gemini 3.1 Pro",
+        "supports_thinking_level": True,
+        "supports_native_code_execution": True,
+    },
+    {
         "id": "gemini-3-pro-preview",
         "name": "Gemini 3 Pro",
         "supports_thinking_level": True,
+        "supports_native_code_execution": True,
     },
     {
         "id": "gemini-3-flash-preview",
         "name": "Gemini 3 Flash",
         "supports_thinking_level": True,
+        "supports_native_code_execution": True,
     },
     {
         "id": "gemini-2.5-pro",
         "name": "Gemini 2.5 Pro",
         "supports_thinking_level": False,
+        "supports_native_code_execution": False,
     },
     {
         "id": "gemini-2.5-flash",
         "name": "Gemini 2.5 Flash",
         "supports_thinking_level": False,
+        "supports_native_code_execution": False,
     },
     {
         "id": "gemini-2.5-flash-lite",
         "name": "Gemini 2.5 Flash-Lite",
         "supports_thinking_level": False,
+        "supports_native_code_execution": False,
     },
     {
         "id": "gemini-2.0-flash",
         "name": "Gemini 2.0 Flash",
         "supports_thinking_level": False,
+        "supports_native_code_execution": False,
     },
     {
         "id": "gemini-2.0-flash-lite",
         "name": "Gemini 2.0 Flash-Lite",
         "supports_thinking_level": False,
+        "supports_native_code_execution": False,
     },
 ]
 
@@ -93,6 +107,10 @@ MODEL_VERSION_METADATA = {
 
 MODELS_SUPPORTING_THINKING_LEVEL = [
     model["id"] for model in GEMINI_MODELS if model["supports_thinking_level"]
+]
+
+MODELS_SUPPORTING_NATIVE_CODE_EXECUTION = [
+    model["id"] for model in GEMINI_MODELS if model["supports_native_code_execution"]
 ]
 
 MODELS_NOT_SUPPORTING_THINKING_LEVEL = [
@@ -296,6 +314,18 @@ class BlockManifest(WorkflowBlockManifest):
         description="Maximum number of tokens the model can generate in it's response. "
         "If not specified, the model will use its default limit.",
     )
+    google_code_execution: Optional[Union[bool, Selector(kind=[BOOLEAN_KIND])]] = Field(
+        default=False,
+        description="Enable native code execution for the Gemini model.",
+        json_schema_extra={
+            "relevant_for": {
+                "model_version": {
+                    "values": MODELS_SUPPORTING_NATIVE_CODE_EXECUTION,
+                    "required": False,
+                },
+            },
+        },
+    )
     max_concurrent_requests: Optional[int] = Field(
         default=None,
         description="Number of concurrent requests that can be executed by block when batch of input images provided. "
@@ -380,6 +410,7 @@ class GoogleGeminiBlockV3(WorkflowBlock):
         max_tokens: Optional[int],
         temperature: Optional[float],
         thinking_level: Optional[str],
+        google_code_execution: Optional[bool],
         max_concurrent_requests: Optional[int],
         api_key: str = "rf_key:account",
     ) -> BlockResult:
@@ -396,6 +427,7 @@ class GoogleGeminiBlockV3(WorkflowBlock):
             max_tokens=max_tokens,
             temperature=temperature,
             thinking_level=thinking_level,
+            google_code_execution=google_code_execution,
             max_concurrent_requests=max_concurrent_requests,
         )
         return [
@@ -415,6 +447,7 @@ def run_gemini_prompting(
     max_tokens: Optional[int],
     temperature: Optional[float],
     thinking_level: Optional[str],
+    google_code_execution: Optional[bool],
     max_concurrent_requests: Optional[int],
 ) -> List[str]:
     if task_type not in PROMPT_BUILDERS:
@@ -435,6 +468,13 @@ def run_gemini_prompting(
             thinking_level=thinking_level,
             max_tokens=max_tokens,
         )
+
+        if (
+            google_code_execution
+            and model_version in MODELS_SUPPORTING_NATIVE_CODE_EXECUTION
+        ):
+            generated_prompt["tools"] = [{"code_execution": {}}]
+
         gemini_prompts.append(generated_prompt)
     return execute_gemini_requests(
         roboflow_api_key=roboflow_api_key,
@@ -566,7 +606,15 @@ def _extract_gemini_response_text(response_data: dict) -> str:
         )
 
     try:
-        return candidate["content"]["parts"][0]["text"]
+        parts = candidate["content"]["parts"]
+        # If code execution is enabled there will be multiple parts (with "executableCode" and "inlineData" fields)
+        for part in parts:
+            if "text" in part:
+                return part["text"]
+
+        # Fallback if no parts are recognized
+        return parts[0]["text"]
+
     except (KeyError, IndexError, TypeError):
         raise ValueError("Unable to parse Gemini API response.")
 
