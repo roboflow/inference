@@ -6,15 +6,15 @@ import numpy as np
 import torch
 
 from inference_models import Detections, ObjectDetectionModel
-from inference_models.configuration import DEFAULT_DEVICE
+from inference_models.configuration import (
+    DEFAULT_DEVICE,
+    INFERENCE_MODELS_ROBOFLOW_INSTANT_DEFAULT_CONFIDENCE,
+    INFERENCE_MODELS_ROBOFLOW_INSTANT_DEFAULT_IOU_THRESHOLD,
+    INFERENCE_MODELS_ROBOFLOW_INSTANT_MAX_DETECTIONS,
+)
 from inference_models.entities import ImageDimensions
 from inference_models.errors import CorruptedModelPackageError
 from inference_models.models.auto_loaders.entities import AnyModel
-from inference_models.models.base.types import (
-    PreprocessedInputs,
-    PreprocessingMetadata,
-    RawPrediction,
-)
 from inference_models.models.common.model_packages import get_model_package_contents
 from inference_models.models.owlv2.entities import (
     ImageEmbeddings,
@@ -56,12 +56,12 @@ class RoboflowInstantHF(ObjectDetectionModel):
         except UnpicklingError as error:
             raise CorruptedModelPackageError(
                 message="Could not deserialize RF Instant model weights. Contact Roboflow to get help.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             ) from error
         if "class_names" not in weights_dict or "train_data_dict" not in weights_dict:
             raise CorruptedModelPackageError(
                 message="Corrupted weights of Roboflow Instant model detected. Contact Roboflow to get help.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
         class_names = weights_dict["class_names"]
         train_data_dict = weights_dict["train_data_dict"]
@@ -75,7 +75,7 @@ class RoboflowInstantHF(ObjectDetectionModel):
         except Exception as error:
             raise CorruptedModelPackageError(
                 message="Could not decode RF Instant model weights. Contact Roboflow to get help.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             ) from error
         return cls(
             feature_extractor=feature_extractor,
@@ -112,14 +112,14 @@ class RoboflowInstantHF(ObjectDetectionModel):
     def forward(
         self,
         pre_processed_images: List[ImageEmbeddings],
-        confidence_threshold: float = 0.99,
-        iou_threshold: float = 0.3,
+        confidence: float = INFERENCE_MODELS_ROBOFLOW_INSTANT_DEFAULT_CONFIDENCE,
+        iou_threshold: float = INFERENCE_MODELS_ROBOFLOW_INSTANT_DEFAULT_IOU_THRESHOLD,
         **kwargs,
     ) -> List[Tuple[torch.Tensor, torch.Tensor, torch.Tensor]]:
         return self._feature_extractor.forward_pass_with_precomputed_embeddings(
             images_embeddings=pre_processed_images,
             class_embeddings=self._reference_examples_embeddings.class_embeddings,
-            confidence_threshold=confidence_threshold,
+            confidence=confidence,
             iou_threshold=iou_threshold,
         )
 
@@ -127,8 +127,8 @@ class RoboflowInstantHF(ObjectDetectionModel):
         self,
         model_results: List[Tuple[torch.Tensor, torch.Tensor, torch.Tensor]],
         pre_processing_meta: List[ImageDimensions],
-        max_detections: int = 300,
-        iou_threshold: float = 0.3,
+        max_detections: int = INFERENCE_MODELS_ROBOFLOW_INSTANT_MAX_DETECTIONS,
+        iou_threshold: float = INFERENCE_MODELS_ROBOFLOW_INSTANT_DEFAULT_IOU_THRESHOLD,
         **kwargs,
     ) -> List[Detections]:
         return (

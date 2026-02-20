@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from threading import Lock
 from typing import Callable, List, Optional, Tuple, Union
 
 import numpy as np
@@ -9,7 +10,11 @@ from doctr.models import detection_predictor, ocr_predictor, recognition_predict
 from inference_models import Detections
 from inference_models.configuration import DEFAULT_DEVICE
 from inference_models.entities import ColorFormat, ImageDimensions
-from inference_models.errors import CorruptedModelPackageError, ModelRuntimeError
+from inference_models.errors import (
+    CorruptedModelPackageError,
+    ModelInputError,
+    ModelRuntimeError,
+)
 from inference_models.models.base.documents_parsing import StructuredOCRModel
 from inference_models.models.common.model_packages import get_model_package_contents
 from inference_models.utils.file_system import read_json
@@ -58,12 +63,12 @@ class DocTR(StructuredOCRModel[List[np.ndarray], ImageDimensions, Document]):
         if config.det_model not in SUPPORTED_DETECTION_MODELS:
             raise CorruptedModelPackageError(
                 message=f"{config.det_model} model denoted in configuration not supported as DocTR detection model.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
         if config.rec_model not in SUPPORTED_RECOGNITION_MODELS:
             raise CorruptedModelPackageError(
                 message=f"{config.rec_model} model denoted in configuration not supported as DocTR recognition model.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
         det_model = detection_predictor(
             arch=config.det_model,
@@ -71,6 +76,7 @@ class DocTR(StructuredOCRModel[List[np.ndarray], ImageDimensions, Document]):
             assume_straight_pages=assume_straight_pages,
             preserve_aspect_ratio=preserve_aspect_ratio,
             batch_size=detection_max_batch_size,
+            pretrained_backbone=False,
         )
         det_model.model.to(device)
         detector_weights = torch.load(
@@ -83,6 +89,7 @@ class DocTR(StructuredOCRModel[List[np.ndarray], ImageDimensions, Document]):
             arch=config.rec_model,
             pretrained=False,
             batch_size=recognition_max_batch_size,
+            pretrained_backbone=False,
         )
         rec_model.model.to(device)
         rec_weights = torch.load(
@@ -104,6 +111,7 @@ class DocTR(StructuredOCRModel[List[np.ndarray], ImageDimensions, Document]):
     ):
         self._model = model
         self._device = device
+        self._lock = Lock()
 
     @property
     def class_names(self) -> List[str]:
@@ -137,13 +145,14 @@ class DocTR(StructuredOCRModel[List[np.ndarray], ImageDimensions, Document]):
                 )
             return result, dimensions
         if not isinstance(images, list):
-            raise ModelRuntimeError(
+            raise ModelInputError(
                 message="Pre-processing supports only np.array or torch.Tensor or list of above.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
             )
         if not len(images):
-            raise ModelRuntimeError(
-                message="Detected empty input to the model", help_url="https://todo"
+            raise ModelInputError(
+                message="Detected empty input to the model",
+                help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
             )
         if isinstance(images[0], np.ndarray):
             input_color_format = input_color_format or "bgr"
@@ -166,9 +175,9 @@ class DocTR(StructuredOCRModel[List[np.ndarray], ImageDimensions, Document]):
                     ImageDimensions(height=np_image.shape[0], width=np_image.shape[1])
                 )
             return result, dimensions
-        raise ModelRuntimeError(
+        raise ModelInputError(
             message=f"Detected unknown input batch element: {type(images[0])}",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
         )
 
     def forward(
@@ -176,7 +185,8 @@ class DocTR(StructuredOCRModel[List[np.ndarray], ImageDimensions, Document]):
         pre_processed_images: List[np.ndarray],
         **kwargs,
     ) -> Document:
-        return self._model(pre_processed_images)
+        with self._lock:
+            return self._model(pre_processed_images)
 
     def post_process(
         self,
@@ -247,6 +257,17 @@ class DocTR(StructuredOCRModel[List[np.ndarray], ImageDimensions, Document]):
                 ],
                 device=self._device,
             )
+            if not detections:
+                empty_detections = Detections(
+                    xyxy=torch.empty((0, 4), dtype=torch.int32, device=self._device),
+                    confidence=torch.empty(
+                        (0,), dtype=torch.float32, device=self._device
+                    ),
+                    class_id=torch.empty((0,), dtype=torch.int32, device=self._device),
+                    bboxes_metadata=[],
+                )
+                all_detections.append(empty_detections)
+                continue
             xyxy = (
                 (
                     torch.tensor([e["xyxy"] for e in detections], device=self._device)
@@ -300,5 +321,5 @@ def parse_model_config(config_path: str) -> DocTRConfig:
             f"{error}. In case that the package is "
             f"hosted on the Roboflow platform - contact support. If you created model package manually, please "
             f"verify its consistency in docs.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
         ) from error

@@ -310,9 +310,19 @@ REGISTERED_MODELS: Dict[
         module_name="inference_models.models.rfdetr.rfdetr_object_detection_pytorch",
         class_name="RFDetrForObjectDetectionTorch",
     ),
-    ("rfdetr", OBJECT_DETECTION_TASK, BackendType.ONNX): LazyClass(
-        module_name="inference_models.models.rfdetr.rfdetr_object_detection_onnx",
-        class_name="RFDetrForObjectDetectionONNX",
+    ("rfdetr", OBJECT_DETECTION_TASK, BackendType.ONNX): RegistryEntry(
+        model_class=LazyClass(
+            module_name="inference_models.models.rfdetr.rfdetr_object_detection_onnx",
+            class_name="RFDetrForObjectDetectionONNX",
+        ),
+        supported_model_features={
+            "resolution",
+            "patch_size",
+            "num_windows",
+            "dec_layers",
+            "num_queries",
+            "num_select",
+        },
     ),
     ("rfdetr", INSTANCE_SEGMENTATION_TASK, BackendType.TORCH): LazyClass(
         module_name="inference_models.models.rfdetr.rfdetr_instance_segmentation_pytorch",
@@ -515,7 +525,7 @@ def resolve_model_class(
         raise ModelImplementationNotFoundError(
             message=f"Did not find implementation for model with architecture: {model_architecture}, "
             f"task type: {task_type} backend: {backend} and model features: {model_features}",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/model-loading/#modelimplementationnotfounderror",
         )
     matched_model = REGISTERED_MODELS[(model_architecture, task_type, backend)]
     if isinstance(matched_model, RegistryEntry):

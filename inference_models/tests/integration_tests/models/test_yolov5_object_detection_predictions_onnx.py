@@ -20,7 +20,13 @@ def test_onnx_package_with_static_batch_size_and_letterbox_numpy(
     )
 
     # when
-    predictions = model(coins_counting_image_numpy)
+    predictions = model(
+        coins_counting_image_numpy,
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert len(predictions) == 1
@@ -82,7 +88,13 @@ def test_onnx_package_with_static_batch_size_and_letterbox_list_of_numpy(
     )
 
     # when
-    predictions = model([coins_counting_image_numpy, coins_counting_image_numpy])
+    predictions = model(
+        [coins_counting_image_numpy, coins_counting_image_numpy],
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert len(predictions) == 2
@@ -183,7 +195,13 @@ def test_onnx_package_with_static_batch_size_and_letterbox_torch(
     )
 
     # when
-    predictions = model(coins_counting_image_torch)
+    predictions = model(
+        coins_counting_image_torch,
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert len(predictions) == 1
@@ -245,7 +263,13 @@ def test_onnx_package_with_static_batch_size_and_letterbox_torch_list(
     )
 
     # when
-    predictions = model([coins_counting_image_torch, coins_counting_image_torch])
+    predictions = model(
+        [coins_counting_image_torch, coins_counting_image_torch],
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert len(predictions) == 2
@@ -347,7 +371,11 @@ def test_onnx_package_with_static_batch_size_and_letterbox_torch_batch(
 
     # when
     predictions = model(
-        torch.stack([coins_counting_image_torch, coins_counting_image_torch], dim=0)
+        torch.stack([coins_counting_image_torch, coins_counting_image_torch], dim=0),
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
     )
 
     # then
@@ -449,7 +477,13 @@ def test_onnx_package_with_dynamic_batch_size_and_letterbox_numpy(
     )
 
     # when
-    predictions = model(coins_counting_image_numpy)
+    predictions = model(
+        coins_counting_image_numpy,
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert len(predictions) == 1
@@ -511,7 +545,13 @@ def test_onnx_package_with_dynamic_batch_size_and_letterbox_list_of_numpy(
     )
 
     # when
-    predictions = model([coins_counting_image_numpy, coins_counting_image_numpy])
+    predictions = model(
+        [coins_counting_image_numpy, coins_counting_image_numpy],
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert len(predictions) == 2
@@ -612,7 +652,13 @@ def test_onnx_package_with_dynamic_batch_size_and_letterbox_torch(
     )
 
     # when
-    predictions = model(coins_counting_image_torch)
+    predictions = model(
+        coins_counting_image_torch,
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert len(predictions) == 1
@@ -674,7 +720,13 @@ def test_onnx_package_with_dynamic_batch_size_and_letterbox_torch_list(
     )
 
     # when
-    predictions = model([coins_counting_image_torch, coins_counting_image_torch])
+    predictions = model(
+        [coins_counting_image_torch, coins_counting_image_torch],
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert len(predictions) == 2
@@ -776,7 +828,11 @@ def test_onnx_package_with_dynamic_batch_size_and_letterbox_torch_batch(
 
     # when
     predictions = model(
-        torch.stack([coins_counting_image_torch, coins_counting_image_torch], dim=0)
+        torch.stack([coins_counting_image_torch, coins_counting_image_torch], dim=0),
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
     )
 
     # then

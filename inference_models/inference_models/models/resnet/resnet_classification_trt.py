@@ -10,7 +10,10 @@ from inference_models import (
     MultiLabelClassificationModel,
     MultiLabelClassificationPrediction,
 )
-from inference_models.configuration import DEFAULT_DEVICE
+from inference_models.configuration import (
+    DEFAULT_DEVICE,
+    INFERENCE_MODELS_RESNET_DEFAULT_CONFIDENCE,
+)
 from inference_models.entities import ColorFormat
 from inference_models.errors import (
     CorruptedModelPackageError,
@@ -44,21 +47,27 @@ try:
     import tensorrt as trt
 except ImportError as import_error:
     raise MissingDependencyError(
-        message=f"Could not import YOLOv8 model with TRT backend - this error means that some additional dependencies "
-        f"are not installed in the environment. If you run the `inference-models` library directly in your Python "
-        f"program, make sure the following extras of the package are installed: `trt10` - installation can only "
-        f"succeed for Linux and Windows machines with Cuda 12 installed. Jetson devices, should have TRT 10.x "
-        f"installed for all builds with Jetpack 6. "
-        f"If you see this error using Roboflow infrastructure, make sure the service you use does support the model. "
-        f"You can also contact Roboflow to get support.",
-        help_url="https://todo",
+        message="Running ResNet model with TRT backend on GPU requires pycuda installation, which is brought with "
+        "`trt-*` extras of `inference-models` library. If you see this error running locally, "
+        "please follow our installation guide: https://inference-models.roboflow.com/getting-started/installation/"
+        " If you see this error using Roboflow infrastructure, make sure the service you use does support the "
+        f"model, You can also contact Roboflow to get support."
+        "Additionally - if AutoModel.from_pretrained(...) "
+        f"automatically selects model package which does not match your environment - that's a serious problem and "
+        f"we will really appreciate letting us know - https://github.com/roboflow/inference/issues",
+        help_url="https://inference-models.roboflow.com/errors/runtime-environment/#missingdependencyerror",
     ) from import_error
 
 try:
     import pycuda.driver as cuda
 except ImportError as import_error:
     raise MissingDependencyError(
-        message="TODO", help_url="https://todo"
+        message="Running model ResNet with TRT backend on GPU requires pycuda installation, which is brought with "
+        "`trt-*` extras of `inference-models` library. If you see this error running locally, "
+        "please follow our installation guide: https://inference-models.roboflow.com/getting-started/installation/"
+        " If you see this error using Roboflow infrastructure, make sure the service you use does support the "
+        f"model, You can also contact Roboflow to get support.",
+        help_url="https://inference-models.roboflow.com/errors/runtime-environment/#missingdependencyerror",
     ) from import_error
 
 
@@ -75,7 +84,7 @@ class ResNetForClassificationTRT(ClassificationModel[torch.Tensor, torch.Tensor]
         if device.type != "cuda":
             raise ModelRuntimeError(
                 message=f"TRT engine only runs on CUDA device - {device} device detected.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
             )
         model_package_content = get_model_package_contents(
             model_package_dir=model_name_or_path,
@@ -97,11 +106,22 @@ class ResNetForClassificationTRT(ClassificationModel[torch.Tensor, torch.Tensor]
                 ResizeMode.CENTER_CROP,
                 ResizeMode.LETTERBOX_REFLECT_EDGES,
             },
+            implicit_resize_mode_substitutions={
+                ResizeMode.FIT_LONGER_EDGE: (
+                    ResizeMode.STRETCH_TO,
+                    None,
+                    "ResNetForClassification model running with TRT backend was trained with "
+                    "`fit-longer-edge` input resize mode. This transform cannot be applied properly for "
+                    "models with input dimensions fixed during weights export. To ensure interoperability, `stretch` "
+                    "resize mode will be used instead. If model was trained on Roboflow platform, "
+                    "we recommend using preprocessing method different that `fit-longer-edge`.",
+                )
+            },
         )
         if inference_config.post_processing.type != "softmax":
             raise CorruptedModelPackageError(
                 message="Expected Softmax to be the post-processing",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
         trt_config = parse_trt_config(
             config_path=model_package_content["trt_config.json"]
@@ -118,12 +138,12 @@ class ResNetForClassificationTRT(ClassificationModel[torch.Tensor, torch.Tensor]
         if len(inputs) != 1:
             raise CorruptedModelPackageError(
                 message=f"Implementation assume single model input, found: {len(inputs)}.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
         if len(outputs) != 1:
             raise CorruptedModelPackageError(
                 message=f"Implementation assume single model output, found: {len(outputs)}.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
         return cls(
             engine=engine,
@@ -225,7 +245,7 @@ class ResNetForMultiLabelClassificationTRT(
         if device.type != "cuda":
             raise ModelRuntimeError(
                 message=f"TRT engine only runs on CUDA device - {device} device detected.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
             )
         model_package_content = get_model_package_contents(
             model_package_dir=model_name_or_path,
@@ -247,11 +267,22 @@ class ResNetForMultiLabelClassificationTRT(
                 ResizeMode.CENTER_CROP,
                 ResizeMode.LETTERBOX_REFLECT_EDGES,
             },
+            implicit_resize_mode_substitutions={
+                ResizeMode.FIT_LONGER_EDGE: (
+                    ResizeMode.STRETCH_TO,
+                    None,
+                    "ResNetForMultiLabelClassification model running with TRT backend was trained with "
+                    "`fit-longer-edge` input resize mode. This transform cannot be applied properly for "
+                    "models with input dimensions fixed during weights export. To ensure interoperability, `letterbox` "
+                    "resize mode with black edges will be used instead. If model was trained on Roboflow platform, "
+                    "we recommend using preprocessing method different that `fit-longer-edge`.",
+                )
+            },
         )
         if inference_config.post_processing.type != "sigmoid":
             raise CorruptedModelPackageError(
                 message="Expected sigmoid to be the post-processing",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
         trt_config = parse_trt_config(
             config_path=model_package_content["trt_config.json"]
@@ -268,12 +299,12 @@ class ResNetForMultiLabelClassificationTRT(
         if len(inputs) != 1:
             raise CorruptedModelPackageError(
                 message=f"Implementation assume single model input, found: {len(inputs)}.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
         if len(outputs) != 1:
             raise CorruptedModelPackageError(
                 message=f"Implementation assume single model output, found: {len(outputs)}.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
         return cls(
             engine=engine,
@@ -348,7 +379,7 @@ class ResNetForMultiLabelClassificationTRT(
     def post_process(
         self,
         model_results: torch.Tensor,
-        confidence: float = 0.5,
+        confidence: float = INFERENCE_MODELS_RESNET_DEFAULT_CONFIDENCE,
         **kwargs,
     ) -> List[MultiLabelClassificationPrediction]:
         if self._inference_config.post_processing.fused:

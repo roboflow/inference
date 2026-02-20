@@ -111,7 +111,9 @@ def test_yolo26n_pose_torchscript_letterbox_numpy(
         device=DEFAULT_DEVICE,
     )
 
-    predictions = model(basketball_image_numpy)
+    predictions = model(
+        basketball_image_numpy, confidence=0.25, key_points_threshold=0.3
+    )
 
     assert torch.allclose(
         predictions[0][0].xy.cpu(),
@@ -149,7 +151,11 @@ def test_yolo26n_pose_torchscript_letterbox_batch_numpy(
         device=DEFAULT_DEVICE,
     )
 
-    predictions = model([basketball_image_numpy, basketball_image_numpy])
+    predictions = model(
+        [basketball_image_numpy, basketball_image_numpy],
+        confidence=0.25,
+        key_points_threshold=0.3,
+    )
 
     expected_kp_xy = torch.tensor(
         [LETTERBOX_EXPECTED_KP_XY_1, LETTERBOX_EXPECTED_KP_XY_2],
@@ -188,7 +194,9 @@ def test_yolo26n_pose_torchscript_letterbox_torch(
         device=DEFAULT_DEVICE,
     )
 
-    predictions = model(basketball_image_torch)
+    predictions = model(
+        basketball_image_torch, confidence=0.25, key_points_threshold=0.3
+    )
 
     assert torch.allclose(
         predictions[0][0].xy.cpu(),
@@ -226,7 +234,9 @@ def test_yolo26n_pose_torchscript_stretch_numpy(
         device=DEFAULT_DEVICE,
     )
 
-    predictions = model(basketball_image_numpy)
+    predictions = model(
+        basketball_image_numpy, confidence=0.25, key_points_threshold=0.3
+    )
 
     assert torch.allclose(
         predictions[0][0].xy.cpu(),
@@ -261,7 +271,11 @@ def test_yolo26n_pose_torchscript_stretch_batch_numpy(
         device=DEFAULT_DEVICE,
     )
 
-    predictions = model([basketball_image_numpy, basketball_image_numpy])
+    predictions = model(
+        [basketball_image_numpy, basketball_image_numpy],
+        confidence=0.25,
+        key_points_threshold=0.3,
+    )
 
     expected_kp_xy = torch.tensor([STRETCH_EXPECTED_KP_XY], dtype=torch.int32)
     expected_kp_conf = torch.tensor([STRETCH_EXPECTED_KP_CONF])
@@ -294,7 +308,9 @@ def test_yolo26n_pose_torchscript_stretch_torch(
         device=DEFAULT_DEVICE,
     )
 
-    predictions = model(basketball_image_torch)
+    predictions = model(
+        basketball_image_torch, confidence=0.25, key_points_threshold=0.3
+    )
 
     assert torch.allclose(
         predictions[0][0].xy.cpu(),

@@ -1,14 +1,12 @@
 import base64
 
 import cv2
-import matplotlib.pyplot as plt
 import numpy as np
 import supervision as sv
 
 from inference.core.entities.requests.inference import ObjectDetectionInferenceRequest
-from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
+from inference.core.env import USE_INFERENCE_MODELS, WORKFLOWS_MAX_CONCURRENT_STEPS
 from inference.core.managers.base import ModelManager
-from inference.core.utils.drawing import create_tiles
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.execution_engine.core import ExecutionEngine
 from tests.workflows.integration_tests.execution.workflows_gallery_collector.decorators import (
@@ -96,52 +94,103 @@ def test_sahi_workflow_with_none_as_filtering_strategy(
     )
 
     # then
-    assert np.allclose(
-        result[0]["predictions"].xyxy,
-        np.array(
-            [
-                [113, 479, 343, 639],
-                [425, 493, 583, 615],
-                [381, 520, 407, 538],
-                [512, 493, 583, 613],
-                [775, 388, 1151, 640],
-                [775, 388, 1151, 640],
-                [1025, 390, 1664, 640],
-                [1536, 506, 1717, 640],
-                [113, 512, 345, 660],
-                [424, 512, 583, 614],
-                [381, 520, 407, 538],
-                [512, 512, 582, 613],
-                [768, 512, 1152, 976],
-                [765, 513, 1152, 980],
-                [1024, 512, 1661, 954],
-                [1537, 512, 1749, 947],
-            ]
-        ),
-        atol=1e-1,
-    ), "Expected boxes for first image to be exactly as measured during test creation"
-    assert np.allclose(
-        result[1]["predictions"].xyxy,
-        np.array(
-            [
-                [180, 273, 244, 383],
-                [271, 266, 328, 383],
-                [552, 259, 598, 365],
-                [113, 269, 145, 347],
-                [416, 258, 457, 365],
-                [521, 257, 555, 360],
-                [387, 264, 414, 342],
-                [158, 267, 183, 349],
-                [324, 256, 345, 320],
-                [341, 261, 362, 338],
-                [247, 251, 262, 284],
-                [239, 251, 249, 282],
-                [552, 260, 598, 366],
-                [523, 257, 557, 362],
-            ]
-        ),
-        atol=1e-1,
-    ), "Expected boxes for second image to be exactly as measured during test creation"
+    if not USE_INFERENCE_MODELS:
+        assert np.allclose(
+            result[0]["predictions"].xyxy,
+            np.array(
+                [
+                    [113, 479, 343, 639],
+                    [425, 493, 583, 615],
+                    [381, 520, 407, 538],
+                    [512, 493, 583, 613],
+                    [775, 388, 1151, 640],
+                    [775, 388, 1151, 640],
+                    [1025, 390, 1664, 640],
+                    [1536, 506, 1717, 640],
+                    [113, 512, 345, 660],
+                    [424, 512, 583, 614],
+                    [381, 520, 407, 538],
+                    [512, 512, 582, 613],
+                    [768, 512, 1152, 976],
+                    [765, 513, 1152, 980],
+                    [1024, 512, 1661, 954],
+                    [1537, 512, 1749, 947],
+                ]
+            ),
+            atol=1e-1,
+        ), "Expected boxes for first image to be exactly as measured during test creation"
+        assert np.allclose(
+            result[1]["predictions"].xyxy,
+            np.array(
+                [
+                    [180, 273, 244, 383],
+                    [271, 266, 328, 383],
+                    [552, 259, 598, 365],
+                    [113, 269, 145, 347],
+                    [416, 258, 457, 365],
+                    [521, 257, 555, 360],
+                    [387, 264, 414, 342],
+                    [158, 267, 183, 349],
+                    [324, 256, 345, 320],
+                    [341, 261, 362, 338],
+                    [247, 251, 262, 284],
+                    [239, 251, 249, 282],
+                    [552, 260, 598, 366],
+                    [523, 257, 557, 362],
+                ]
+            ),
+            atol=1e-1,
+        ), "Expected boxes for second image to be exactly as measured during test creation"
+    else:
+        assert np.allclose(
+            result[0]["predictions"].xyxy,
+            np.array(
+                [
+                    [113, 479, 343, 639],
+                    [425, 493, 583, 615],
+                    [381, 520, 407, 538],
+                    [326, 519, 356, 537],
+                    [512, 493, 583, 613],
+                    [775, 388, 1151, 640],
+                    [775, 388, 1151, 640],
+                    [1025, 390, 1665, 640],
+                    [1536, 506, 1717, 640],
+                    [113, 512, 345, 660],
+                    [424, 512, 583, 614],
+                    [381, 520, 407, 538],
+                    [111, 519, 139, 537],
+                    [325, 519, 356, 536],
+                    [512, 512, 582, 613],
+                    [768, 509, 1152, 976],
+                    [765, 513, 1152, 980],
+                    [1023, 511, 1661, 954],
+                    [1537, 512, 1749, 947],
+                ]
+            ),
+            atol=1e-1,
+        ), "Expected boxes for first image to be exactly as measured during test creation"
+        assert np.allclose(
+            result[1]["predictions"].xyxy,
+            np.array(
+                [
+                    [180, 273, 244, 384],
+                    [271, 267, 328, 384],
+                    [552, 260, 598, 365],
+                    [113, 270, 145, 348],
+                    [416, 259, 457, 365],
+                    [521, 257, 555, 360],
+                    [387, 264, 414, 342],
+                    [158, 268, 183, 350],
+                    [324, 257, 345, 321],
+                    [341, 262, 362, 338],
+                    [247, 251, 262, 285],
+                    [240, 251, 250, 282],
+                    [552, 260, 598, 366],
+                    [523, 257, 557, 362],
+                ]
+            ),
+            atol=1e-1,
+        ), "Expected boxes for second image to be exactly as measured during test creation"
 
 
 SAHI_WORKFLOW_SLICER_V2 = {
@@ -313,45 +362,88 @@ def test_sahi_workflow_with_nms_as_filtering_strategy(
     )
 
     # then
-    assert np.allclose(
-        result[0]["predictions"].xyxy,
-        np.array(
-            [
-                [113, 479, 343, 639],
-                [381, 520, 407, 538],
-                [775, 388, 1151, 640],
-                [775, 388, 1151, 640],
-                [1025, 390, 1664, 640],
-                [1536, 506, 1717, 640],
-                [512, 512, 582, 613],
-                [768, 512, 1152, 976],
-                [765, 513, 1152, 980],
-                [1024, 512, 1661, 954],
-                [1537, 512, 1749, 947],
-            ]
-        ),
-        atol=1e-1,
-    ), "Expected boxes for first image to be exactly as measured during test creation"
-    assert np.allclose(
-        result[1]["predictions"].xyxy,
-        np.array(
-            [
-                [180, 273, 244, 383],
-                [271, 266, 328, 383],
-                [113, 269, 145, 347],
-                [416, 258, 457, 365],
-                [387, 264, 414, 342],
-                [158, 267, 183, 349],
-                [324, 256, 345, 320],
-                [341, 261, 362, 338],
-                [247, 251, 262, 284],
-                [239, 251, 249, 282],
-                [552, 260, 598, 366],
-                [523, 257, 557, 362],
-            ]
-        ),
-        atol=1e-1,
-    ), "Expected boxes for second image to be exactly as measured during test creation"
+    if not USE_INFERENCE_MODELS:
+        assert np.allclose(
+            result[0]["predictions"].xyxy,
+            np.array(
+                [
+                    [113, 479, 343, 639],
+                    [381, 520, 407, 538],
+                    [775, 388, 1151, 640],
+                    [775, 388, 1151, 640],
+                    [1025, 390, 1664, 640],
+                    [1536, 506, 1717, 640],
+                    [512, 512, 582, 613],
+                    [768, 512, 1152, 976],
+                    [765, 513, 1152, 980],
+                    [1024, 512, 1661, 954],
+                    [1537, 512, 1749, 947],
+                ]
+            ),
+            atol=1e-1,
+        ), "Expected boxes for first image to be exactly as measured during test creation"
+        assert np.allclose(
+            result[1]["predictions"].xyxy,
+            np.array(
+                [
+                    [180, 273, 244, 383],
+                    [271, 266, 328, 383],
+                    [113, 269, 145, 347],
+                    [416, 258, 457, 365],
+                    [387, 264, 414, 342],
+                    [158, 267, 183, 349],
+                    [324, 256, 345, 320],
+                    [341, 261, 362, 338],
+                    [247, 251, 262, 284],
+                    [239, 251, 249, 282],
+                    [552, 260, 598, 366],
+                    [523, 257, 557, 362],
+                ]
+            ),
+            atol=1e-1,
+        ), "Expected boxes for second image to be exactly as measured during test creation"
+    else:
+        assert np.allclose(
+            result[0]["predictions"].xyxy,
+            np.array(
+                [
+                    [113, 479, 343, 639],
+                    [381, 520, 407, 538],
+                    [326, 519, 356, 537],
+                    [775, 388, 1151, 640],
+                    [775, 388, 1151, 640],
+                    [1025, 390, 1665, 640],
+                    [1536, 506, 1717, 640],
+                    [111, 519, 139, 537],
+                    [512, 512, 582, 613],
+                    [768, 509, 1152, 976],
+                    [765, 513, 1152, 980],
+                    [1023, 511, 1661, 954],
+                    [1537, 512, 1749, 947],
+                ]
+            ),
+            atol=1e-1,
+        ), "Expected boxes for first image to be exactly as measured during test creation"
+        assert np.allclose(
+            result[1]["predictions"].xyxy,
+            np.array(
+                [
+                    [180, 273, 244, 384],
+                    [271, 267, 328, 384],
+                    [113, 270, 145, 348],
+                    [416, 259, 457, 365],
+                    [387, 264, 414, 342],
+                    [158, 268, 183, 350],
+                    [324, 257, 345, 321],
+                    [341, 262, 362, 338],
+                    [247, 251, 262, 285],
+                    [240, 251, 250, 282],
+                    [552, 260, 598, 366],
+                    [523, 257, 557, 362],
+                ]
+            ),
+            atol=1e-1,
+        ), "Expected boxes for second image to be exactly as measured during test creation"
 
 
 def test_sahi_workflow_with_nmm_as_filtering_strategy(
@@ -387,45 +479,88 @@ def test_sahi_workflow_with_nmm_as_filtering_strategy(
     )
 
     # then
-    assert np.allclose(
-        result[0]["predictions"].xyxy,
-        np.array(
-            [
-                [113, 479, 345, 660],
-                [1025, 390, 1664, 640],
-                [424, 493, 583, 615],
-                [381, 520, 407, 538],
-                [1537, 512, 1749, 947],
-                [1024, 512, 1661, 954],
-                [775, 388, 1151, 640],
-                [768, 512, 1152, 976],
-                [1536, 506, 1717, 640],
-                [775, 388, 1151, 640],
-                [765, 513, 1152, 980],
-            ]
-        ),
-        atol=1e-1,
-    ), "Expected boxes for first image to be exactly as measured during test creation"
-    assert np.allclose(
-        result[1]["predictions"].xyxy,
-        np.array(
-            [
-                [552, 259, 598, 366],
-                [180, 273, 244, 383],
-                [271, 266, 328, 383],
-                [113, 269, 145, 347],
-                [521, 257, 557, 362],
-                [416, 258, 457, 365],
-                [387, 264, 414, 342],
-                [158, 267, 183, 349],
-                [324, 256, 345, 320],
-                [341, 261, 362, 338],
-                [247, 251, 262, 284],
-                [239, 251, 249, 282],
-            ]
-        ),
-        atol=1e-1,
-    ), "Expected boxes for second image to be exactly as measured during test creation"
+    if not USE_INFERENCE_MODELS:
+        assert np.allclose(
+            result[0]["predictions"].xyxy,
+            np.array(
+                [
+                    [113, 479, 345, 660],
+                    [1025, 390, 1664, 640],
+                    [424, 493, 583, 615],
+                    [381, 520, 407, 538],
+                    [1537, 512, 1749, 947],
+                    [1024, 512, 1661, 954],
+                    [775, 388, 1151, 640],
+                    [768, 512, 1152, 976],
+                    [1536, 506, 1717, 640],
+                    [775, 388, 1151, 640],
+                    [765, 513, 1152, 980],
+                ]
+            ),
+            atol=1e-1,
+        ), "Expected boxes for first image to be exactly as measured during test creation"
+        assert np.allclose(
+            result[1]["predictions"].xyxy,
+            np.array(
+                [
+                    [552, 259, 598, 366],
+                    [180, 273, 244, 383],
+                    [271, 266, 328, 383],
+                    [113, 269, 145, 347],
+                    [521, 257, 557, 362],
+                    [416, 258, 457, 365],
+                    [387, 264, 414, 342],
+                    [158, 267, 183, 349],
+                    [324, 256, 345, 320],
+                    [341, 261, 362, 338],
+                    [247, 251, 262, 284],
+                    [239, 251, 249, 282],
+                ]
+            ),
+            atol=1e-1,
+        ), "Expected boxes for second image to be exactly as measured during test creation"
+    else:
+        assert np.allclose(
+            result[0]["predictions"].xyxy,
+            np.array(
+                [
+                    [113, 479, 345, 660],
+                    [1025, 390, 1665, 640],
+                    [424, 493, 583, 615],
+                    [381, 520, 407, 538],
+                    [1537, 512, 1749, 947],
+                    [1023, 511, 1661, 954],
+                    [775, 388, 1151, 640],
+                    [325, 519, 356, 537],
+                    [111, 519, 139, 537],
+                    [768, 509, 1152, 976],
+                    [1536, 506, 1717, 640],
+                    [775, 388, 1151, 640],
+                    [765, 513, 1152, 980],
+                ]
+            ),
+            atol=1e-1,
+        ), "Expected boxes for first image to be exactly as measured during test creation"
+        assert np.allclose(
+            result[1]["predictions"].xyxy,
+            np.array(
+                [
+                    [552, 260, 598, 366],
+                    [180, 273, 244, 384],
+                    [271, 267, 328, 384],
+                    [113, 270, 145, 348],
+                    [521, 257, 557, 362],
+                    [416, 259, 457, 365],
+                    [387, 264, 414, 342],
+                    [158, 268, 183, 350],
+                    [324, 257, 345, 321],
+                    [341, 262, 362, 338],
+                    [247, 251, 262, 285],
+                    [240, 251, 250, 282],
+                ]
+            ),
+            atol=1e-1,
+        ), "Expected boxes for second image to be exactly as measured during test creation"
 
 
 def test_sahi_workflow_with_serialization(
@@ -456,8 +591,20 @@ def test_sahi_workflow_with_serialization(
     # then
     result_1 = sv.Detections.from_inference(result[0]["predictions"])
     result_2 = sv.Detections.from_inference(result[1]["predictions"])
-    assert len(result_1) == 11, "Expected to deserialize 1st image detections properly"
-    assert len(result_2) == 12, "Expected to deserialize 2nd image detections properly"
+    if not USE_INFERENCE_MODELS:
+        assert (
+            len(result_1) == 11
+        ), "Expected to deserialize 1st image detections properly"
+        assert (
+            len(result_2) == 12
+        ), "Expected to deserialize 2nd image detections properly"
+    else:
+        assert (
+            len(result_1) == 13
+        ), "Expected to deserialize 1st image detections properly"
+        assert (
+            len(result_2) == 12
+        ), "Expected to deserialize 2nd image detections properly"
     decoded_image_bytes = base64.b64decode(result[0]["visualisation"]["value"])
     decoded_image = cv2.imdecode(
         np.frombuffer(decoded_image_bytes, np.uint8), cv2.IMREAD_COLOR
@@ -666,25 +813,50 @@ def test_sahi_workflow_for_segmentation_with_nms_as_filtering_strategy(
 
     # then
     assert len(result) == 1, "Single image given, expected single output"
-    assert np.allclose(
-        result[0]["predictions"].xyxy,
-        np.array(
-            [
-                [553, 259, 598, 365],
-                [181, 272, 243, 385],
-                [271, 266, 329, 384],
-                [158, 268, 184, 349],
-                [113, 269, 144, 347],
-                [415, 258, 458, 365],
-                [386, 263, 415, 342],
-                [143, 264, 164, 329],
-                [239, 250, 249, 282],
-                [248, 250, 261, 284],
-                [323, 256, 346, 319],
-                [342, 260, 361, 335],
-                [522, 258, 557, 361],
-                [525, 274, 550, 318],
-            ]
-        ),
-        atol=1e-1,
-    ), "Expected boxes for first image to be exactly as measured during test creation"
+    if not USE_INFERENCE_MODELS:
+        assert np.allclose(
+            result[0]["predictions"].xyxy,
+            np.array(
+                [
+                    [553, 259, 598, 365],
+                    [181, 272, 243, 385],
+                    [271, 266, 329, 384],
+                    [158, 268, 184, 349],
+                    [113, 269, 144, 347],
+                    [415, 258, 458, 365],
+                    [386, 263, 415, 342],
+                    [143, 264, 164, 329],
+                    [239, 250, 249, 282],
+                    [248, 250, 261, 284],
+                    [323, 256, 346, 319],
+                    [342, 260, 361, 335],
+                    [522, 258, 557, 361],
+                    [525, 274, 550, 318],
+                ]
+            ),
+            atol=1e-1,
+        ), "Expected boxes for first image to be exactly as measured during test creation"
+    else:
+        assert np.allclose(
+            result[0]["predictions"].xyxy,
+            np.array(
+                [
+                    [553, 260, 598, 366],
+                    [181, 272, 243, 385],
+                    [271, 267, 329, 385],
+                    [158, 268, 184, 349],
+                    [113, 270, 144, 348],
+                    [415, 259, 458, 365],
+                    [386, 263, 415, 342],
+                    [143, 264, 164, 329],
+                    [239, 250, 249, 283],
+                    [248, 251, 261, 284],
+                    [323, 257, 346, 320],
+                    [342, 261, 361, 335],
+                    [227, 288, 245, 328],
+                    [522, 258, 557, 361],
+                    [525, 274, 550, 318],
+                ]
+            ),
+            atol=1e-1,
+        ), "Expected boxes for first image to be exactly as measured during test creation"

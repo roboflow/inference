@@ -687,7 +687,9 @@ def test_auto_extract_reference_timestamp_from_frame_timestamp() -> None:
     frame_ts = datetime.datetime.fromtimestamp(1726570875.0).astimezone(
         tz=datetime.timezone.utc
     )
-    image_data = create_workflow_image_data(frame_number=1, fps=fps, frame_timestamp=frame_ts)
+    image_data = create_workflow_image_data(
+        frame_number=1, fps=fps, frame_timestamp=frame_ts
+    )
     detections = create_detections([1], ["dog"])
 
     # When - run without providing reference_timestamp
@@ -768,7 +770,9 @@ def test_explicit_reference_timestamp_takes_precedence() -> None:
         tz=datetime.timezone.utc
     )
     explicit_reference = 2000.0  # Different from frame_ts
-    image_data = create_workflow_image_data(frame_number=1, fps=fps, frame_timestamp=frame_ts)
+    image_data = create_workflow_image_data(
+        frame_number=1, fps=fps, frame_timestamp=frame_ts
+    )
     detections = create_detections([1], ["dog"])
 
     # When - run with explicit reference_timestamp
@@ -828,7 +832,9 @@ def test_absolute_timestamps_auto_extracted_with_frame_timestamp() -> None:
     frame_ts = datetime.datetime.fromtimestamp(1726570875.0).astimezone(
         tz=datetime.timezone.utc
     )
-    image_data = create_workflow_image_data(frame_number=1, fps=fps, frame_timestamp=frame_ts)
+    image_data = create_workflow_image_data(
+        frame_number=1, fps=fps, frame_timestamp=frame_ts
+    )
     detections = create_detections([1], ["dog"])
 
     # When - run without reference_timestamp (should auto-extract)
@@ -866,7 +872,9 @@ def test_manifest_accepts_step_output_selector_for_reference_timestamp() -> None
     manifest = BlockManifest.model_validate(manifest_data)
 
     # Then - should accept step output selector
-    assert manifest.reference_timestamp == "$steps.extract_timestamp.reference_timestamp"
+    assert (
+        manifest.reference_timestamp == "$steps.extract_timestamp.reference_timestamp"
+    )
 
 
 def test_manifest_accepts_workflow_parameter_for_reference_timestamp() -> None:
