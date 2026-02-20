@@ -2359,6 +2359,104 @@ def test_get_workflow_specification_when_valid_response_given_on_consecutive_req
     assert len(ephemeral_cache.cache) == 1, "Expected cache content to appear"
 
 
+def test_get_workflow_specification_with_workflow_version_id(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    requests_mock.get(
+        url=wrap_url(f"{API_BASE_URL}/my_workspace/workflows/some_workflow"),
+        json={
+            "workflow": {
+                "owner": "50hbxrck9m8nKykOhCEq",
+                "name": "Thermal",
+                "url": "thermal",
+                "config": '{"specification":{"version":"1.0","inputs":[{"type":"InferenceImage","name":"image"}],"steps":[{"type":"CVModel","name":"step_1","image":"$inputs.image","model_id":"thermal dogs and people/18"}],"outputs":[{"type":"JsonField","name":"a","selector":"$steps.step_1.predictions"}]},"preset":"single-model"}',
+                "id": "Har3FW34j1Rjc4p8IX4B",
+            },
+            "status": "ok",
+        },
+    )
+
+    # when
+    result = get_workflow_specification(
+        api_key="my_api_key",
+        workspace_id="my_workspace",
+        workflow_id="some_workflow",
+        workflow_version_id="1771122946631",
+        use_cache=False,
+    )
+
+    # then
+    assert (
+        "workflow_version=1771122946631" in requests_mock.last_request.query
+    ), "Workflow version must be given in query"
+    assert (
+        "api_key=my_api_key" in requests_mock.last_request.query
+    ), "API key must be given in query"
+    assert result == {
+        "version": "1.0",
+        "inputs": [{"type": "InferenceImage", "name": "image"}],
+        "steps": [
+            {
+                "type": "CVModel",
+                "name": "step_1",
+                "image": "$inputs.image",
+                "model_id": "thermal dogs and people/18",
+            }
+        ],
+        "outputs": [
+            {
+                "type": "JsonField",
+                "name": "a",
+                "selector": "$steps.step_1.predictions",
+            }
+        ],
+        "id": "Har3FW34j1Rjc4p8IX4B",
+    }
+
+
+def test_get_workflow_specification_with_version_id_uses_separate_cache(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    requests_mock.get(
+        url=wrap_url(f"{API_BASE_URL}/my_workspace/workflows/some_workflow"),
+        json={
+            "workflow": {
+                "owner": "50hbxrck9m8nKykOhCEq",
+                "name": "Thermal",
+                "url": "thermal",
+                "config": '{"specification":{"version":"1.0","inputs":[{"type":"InferenceImage","name":"image"}],"steps":[{"type":"CVModel","name":"step_1","image":"$inputs.image","model_id":"thermal dogs and people/18"}],"outputs":[{"type":"JsonField","name":"a","selector":"$steps.step_1.predictions"}]},"preset":"single-model"}',
+                "id": "Har3FW34j1Rjc4p8IX4B",
+            },
+            "status": "ok",
+        },
+    )
+    ephemeral_cache = MemoryCache()
+
+    # when - first call without version
+    get_workflow_specification(
+        api_key="my_api_key",
+        workspace_id="my_workspace",
+        workflow_id="some_workflow",
+        ephemeral_cache=ephemeral_cache,
+    )
+    # second call with version - should NOT hit cache (different key)
+    get_workflow_specification(
+        api_key="my_api_key",
+        workspace_id="my_workspace",
+        workflow_id="some_workflow",
+        workflow_version_id="1771122946631",
+        ephemeral_cache=ephemeral_cache,
+    )
+
+    # then
+    assert (
+        requests_mock.call_count == 2
+    ), "Expected two API calls since versioned and unversioned use separate cache keys"
+    assert len(ephemeral_cache.cache) == 2, "Expected two cache entries"
+
+
 @mock.patch.object(roboflow_api, "ROBOFLOW_API_EXTRA_HEADERS", None)
 def test_build_roboflow_api_headers_when_no_extra_headers() -> None:
     # when
