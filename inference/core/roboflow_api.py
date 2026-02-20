@@ -725,7 +725,7 @@ def get_workflow_specification(
         if api_key is not None:
             params.append(("api_key", api_key))
         if workflow_version_id is not None:
-            params.append(("version", workflow_version_id))
+            params.append(("workflow_version", workflow_version_id))
         api_url = _add_params_to_url(
             url=f"{API_BASE_URL}/{workspace_id}/workflows/{workflow_id}",
             params=params,

@@ -2388,8 +2388,8 @@ def test_get_workflow_specification_with_workflow_version_id(
 
     # then
     assert (
-        "version=1771122946631" in requests_mock.last_request.query
-    ), "Workflow version ID must be given in query"
+        "workflow_version=1771122946631" in requests_mock.last_request.query
+    ), "Workflow version must be given in query"
     assert (
         "api_key=my_api_key" in requests_mock.last_request.query
     ), "API key must be given in query"
