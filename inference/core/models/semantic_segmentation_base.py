@@ -74,7 +74,7 @@ class SemanticSegmentationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceMo
         self,
         predictions: SemanticSegmentationRawPredictions,
         preprocess_return_metadata: PreprocessReturnMetadata,
-        **kwargs
+        **kwargs,
     ) -> List[SemanticSegmentationInferenceResponse]:
         img_dims = preprocess_return_metadata["img_dims"]
         predictions = predictions[0]
