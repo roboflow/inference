@@ -84,7 +84,7 @@ class VITForClassificationTRT(ClassificationModel[torch.Tensor, torch.Tensor]):
         if device.type != "cuda":
             raise ModelRuntimeError(
                 message=f"TRT engine only runs on CUDA device - {device} device detected.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
             )
         model_package_content = get_model_package_contents(
             model_package_dir=model_name_or_path,
@@ -243,7 +243,7 @@ class VITForMultiLabelClassificationTRT(
         if device.type != "cuda":
             raise ModelRuntimeError(
                 message=f"TRT engine only runs on CUDA device - {device} device detected.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
             )
         model_package_content = get_model_package_contents(
             model_package_dir=model_name_or_path,

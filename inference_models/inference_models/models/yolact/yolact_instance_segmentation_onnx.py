@@ -83,7 +83,7 @@ class YOLOACTForInstanceSegmentationOnnx(
                 f"be specified - explicitly in `from_pretrained(...)` method or via env variable "
                 f"`ONNXRUNTIME_EXECUTION_PROVIDERS`. If you run model locally - adjust your setup, otherwise "
                 f"contact the platform support.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/runtime-environment/#environmentconfigurationerror",
             )
         onnx_execution_providers = set_onnx_execution_provider_defaults(
             providers=onnx_execution_providers,
@@ -131,8 +131,9 @@ class YOLOACTForInstanceSegmentationOnnx(
             raise ModelRuntimeError(
                 message="Implementation of YOLOACTForInstanceSegmentationOnnx is adjusted to work correctly with "
                 "onnx models accepting inputs with `batch_size=1`. It can be extended if needed, but we've "
-                "not heard such request so far. If you find that a valueble feature - let us know via "
-                "https://github.com/roboflow/inference/issues"
+                "not heard such request so far. If you find that a valuable feature - let us know via "
+                "https://github.com/roboflow/inference/issues",
+                help_url = "https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
             )
         input_name = session.get_inputs()[0].name
         return cls(

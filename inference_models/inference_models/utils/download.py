@@ -172,7 +172,7 @@ def download_files_to_directory(
             f"invalid value of parameter `name_after` - received value `{name_after}`. "
             f"This is a bug in `inference-models` - submit new issue under "
             f"https://github.com/roboflow/inference/issues/",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/input-validation/#invalidparametererror"
         )
     if DISABLE_INTERACTIVE_PROGRESS_BARS:
         verbose = False
@@ -199,7 +199,7 @@ def download_files_to_directory(
                 f"without MD5 hash sum to verify the download content. The download method was used with "
                 f"`download_files_without_hash=False` - which prevents from downloading such files. If you see "
                 f"this error while using hosted Roboflow serving option - contact us to get support.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/file-download/#untrustedfileerror",
             )
     os.makedirs(target_dir, exist_ok=True)
     progress = Progress(
@@ -257,7 +257,7 @@ def construct_files_path_mapping(
                 "If you see this error using hosted Roboflow solution - contact us to get "
                 "help. Running locally, verify the download code and raise an issue if you see "
                 "a bug: https://github.com/roboflow/inference/issues/",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/file-download/#untrustedfileerror",
             )
         if name_after == "md5_hash":
             target_path = os.path.join(target_dir, content_hash)
@@ -431,12 +431,13 @@ def check_range_download_option(
         response = requests.head(url, timeout=timeout)
     except (OSError, Timeout, requests.exceptions.ConnectionError):
         raise RetryError(
-            message=f"Connectivity error for URL: {url}", help_url="https://todo"
+            message=f"Connectivity error for URL: {url}",
+            help_url="https://inference-models.roboflow.com/errors/file-download/#retryerror"
         )
     if response.status_code in response_codes_to_retry:
         raise RetryError(
             message=f"Remote server returned response code {response.status_code} for URL {url}",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/file-download/#retryerror",
         )
     response.raise_for_status()
     accept_ranges = response.headers.get("accept-ranges", "none")
@@ -467,12 +468,13 @@ def get_content_length(
         response = requests.head(url, timeout=timeout)
     except (OSError, Timeout, requests.exceptions.ConnectionError):
         raise RetryError(
-            message=f"Connectivity error for URL: {url}", help_url="https://todo"
+            message=f"Connectivity error for URL: {url}",
+            help_url="https://inference-models.roboflow.com/errors/file-download/#retryerror"
         )
     if response.status_code in response_codes_to_retry:
         raise RetryError(
             message=f"Remote server returned response code {response.status_code} for URL {url}",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/file-download/#retryerror",
         )
     response.raise_for_status()
     content_length = response.headers.get("content-length")
@@ -555,7 +557,7 @@ def verify_hash_sum_of_local_file(
         raise FileHashSumMissmatch(
             f"Could not confirm the validity of file content for url: {url}. "
             f"Expected MD5: {expected_md5_hash}, calculated hash: {computed_hash.hexdigest()}",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/file-download/#filehashsummissmatch",
         )
 
 
@@ -602,13 +604,13 @@ def download_chunk(
             if response.status_code in response_codes_to_retry:
                 raise RetryError(
                     message=f"File hosting returned {response.status_code}",
-                    help_url="https://todo",
+                    help_url="hhttps://inference-models.roboflow.com/errors/file-download/#retryerror",
                 )
             response.raise_for_status()
             if response.status_code != 206:
                 raise RetryError(
                     message=f"Server does not support range requests (returned {response.status_code} instead of 206)",
-                    help_url="https://todo",
+                    help_url="https://inference-models.roboflow.com/errors/file-download/#retryerror",
                 )
             _handle_stream_download(
                 response=response,
@@ -618,11 +620,11 @@ def download_chunk(
                 file_open_mode="r+b",
                 offset=start,
             )
-    except (ConnectionError, Timeout, requests.exceptions.ConnectionError):
+    except (ConnectionError, Timeout, requests.exceptions.ConnectionError) as error:
         raise RetryError(
             message=f"Connectivity error",
-            help_url="https://todo",
-        )
+            help_url="https://inference-models.roboflow.com/errors/file-download/#retryerror",
+        ) from error
 
 
 @backoff.on_exception(
@@ -653,7 +655,7 @@ def stream_download(
             if response.status_code in response_codes_to_retry:
                 raise RetryError(
                     message=f"File hosting returned {response.status_code}",
-                    help_url="https://todo",
+                    help_url="https://inference-models.roboflow.com/errors/file-download/#retryerror",
                 )
             response.raise_for_status()
             _handle_stream_download(
@@ -664,18 +666,18 @@ def stream_download(
                 content_storage=computed_hash,
                 on_file_created=on_file_created,
             )
-    except (ConnectionError, Timeout, requests.exceptions.ConnectionError):
+    except (ConnectionError, Timeout, requests.exceptions.ConnectionError) as error:
         raise RetryError(
             message=f"Connectivity error",
-            help_url="https://todo",
-        )
+            help_url="https://inference-models.roboflow.com/errors/file-download/#retryerror",
+        ) from error
     if not verify_hash_while_download:
         return None
     if computed_hash.hexdigest() != md5_hash:
         raise FileHashSumMissmatch(
             f"Could not confirm the validity of file content for url: {url}. Expected MD5: {md5_hash}, "
             f"calculated hash: {computed_hash.hexdigest()}",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/file-download/#filehashsummissmatch",
         )
     return None
 

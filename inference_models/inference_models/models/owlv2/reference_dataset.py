@@ -74,7 +74,7 @@ class LazyImageWrapper:
             raise ModelRuntimeError(
                 message="Attempted to use OWLv2 image lazy loading not providing neither image "
                 "location nor image instance - this is invalid input. Contact Roboflow to get help.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
             )
         self._image_in_memory = image_in_memory
         self._image_reference = image_reference
@@ -271,15 +271,15 @@ def _get_from_url(url: str, timeout: int = 5) -> bytes:
             if response.status_code in IDEMPOTENT_API_REQUEST_CODES_TO_RETRY:
                 raise RetryError(
                     message=f"File hosting returned {response.status_code}",
-                    help_url="https://todo",
+                    help_url="https://inference-models.roboflow.com/errors/file-download/#retryerror",
                 )
             response.raise_for_status()
             return response.content
-    except (ConnectionError, Timeout, requests.exceptions.ConnectionError):
+    except (ConnectionError, Timeout, requests.exceptions.ConnectionError) as error:
         raise RetryError(
             message=f"Connectivity error",
-            help_url="https://todo",
-        )
+            help_url="https://inference-models.roboflow.com/errors/file-download/#retryerror",
+        ) from error
 
 
 def compute_image_hash(image: Union[torch.Tensor, np.ndarray]) -> str:

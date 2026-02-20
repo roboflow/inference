@@ -89,7 +89,7 @@ class YOLO26ForInstanceSegmentationTRT(
         if device.type != "cuda":
             raise ModelRuntimeError(
                 message=f"TRT engine only runs on CUDA device - {device} device detected.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
             )
         model_package_content = get_model_package_contents(
             model_package_dir=model_name_or_path,
@@ -138,17 +138,17 @@ class YOLO26ForInstanceSegmentationTRT(
         if len(inputs) != 1:
             raise CorruptedModelPackageError(
                 message=f"Implementation assume single model input, found: {len(inputs)}.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
         if len(outputs) != 2:
             raise CorruptedModelPackageError(
                 message=f"Implementation assume 2 model outputs, found: {len(outputs)}.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
         if "output0" not in outputs or "output1" not in outputs:
             raise CorruptedModelPackageError(
                 message=f"Expected model outputs to be named `output0` and `output1`, but found: {outputs}.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
         return cls(
             engine=engine,

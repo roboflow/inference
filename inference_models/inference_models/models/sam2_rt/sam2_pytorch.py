@@ -113,7 +113,8 @@ class SAM2ForStream:
                 self._predictor.load_state_dict(state_dict)
             if not self._predictor.condition_state:
                 raise ModelRuntimeError(
-                    "Attempt to track with no prior call to prompt; prompt must be called first"
+                    message="Attempt to track with no prior call to prompt; prompt must be called first",
+                    help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
                 )
             object_ids, mask_logits = self._predictor.track(image)
             masks = (mask_logits > 0.0).cpu().numpy()

@@ -525,7 +525,7 @@ def resolve_model_class(
         raise ModelImplementationNotFoundError(
             message=f"Did not find implementation for model with architecture: {model_architecture}, "
             f"task type: {task_type} backend: {backend} and model features: {model_features}",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/model-loading/#modelimplementationnotfounderror",
         )
     matched_model = REGISTERED_MODELS[(model_architecture, task_type, backend)]
     if isinstance(matched_model, RegistryEntry):

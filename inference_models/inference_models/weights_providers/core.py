@@ -84,7 +84,7 @@ def get_model_from_provider(
     if provider not in WEIGHTS_PROVIDERS:
         raise ModelRetrievalError(
             message=f"Requested model to be retrieved using '{provider}' provider which is not implemented.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/model-retrieval/#modelretrievalerror",
         )
     return WEIGHTS_PROVIDERS[provider](model_id, api_key, **kwargs)
 

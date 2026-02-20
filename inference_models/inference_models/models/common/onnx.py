@@ -540,7 +540,7 @@ def auto_cast_session_inputs(
                 message="While performing forward pass through the model, library bug was discovered - "
                 f"required model input named '{ort_input.name}' is missing. Submit "
                 f"issue to help us solving this problem: https://github.com/roboflow/inference/issues",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
             )
         actual_type = inputs[ort_input.name].dtype
         if actual_type == expected_type:
@@ -551,7 +551,7 @@ def auto_cast_session_inputs(
                 f"model requires the input type to be {expected_type}, but the actual input type is {actual_type} - "
                 f"this is a bug in model implementation. Submit issue to help us solving this problem: "
                 f"https://github.com/roboflow/inference/issues",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
             )
         inputs[ort_input.name] = inputs[ort_input.name].to(dtype=expected_type)
     return inputs
@@ -564,7 +564,7 @@ def torch_tensor_type_to_onnx_type(tensor_dtype: torch.dtype) -> Union[np.dtype,
             f"which needs to be passed to onnxruntime session. Conversion of this type is currently not "
             f"supported in inference. At the moment you shall assume your model incompatible with the library. "
             f"To change that state - please submit new issue: https://github.com/roboflow/inference/issues",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
         )
     return TORCH_TYPES_MAPPING[tensor_dtype]
 
@@ -576,7 +576,7 @@ def ort_tensor_type_to_torch_tensor_type(ort_dtype: str) -> torch.dtype:
             f"which needs to be casted into torch.Tensor. Conversion of this type is currently not "
             f"supported in inference. At the moment you shall assume your model incompatible with the library. "
             f"To change that state - please submit new issue: https://github.com/roboflow/inference/issues",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
         )
     return ORT_TYPES_TO_TORCH_TYPES_MAPPING[ort_dtype]
 
@@ -603,12 +603,12 @@ def get_input_device(inputs: Dict[str, torch.Tensor]) -> torch.device:
                 f"is allocated on {input_tensor.device}, whereas rest of the inputs are allocated on {device}. "
                 f"This is a bug in model implementation. To help us fixing that, please submit new issue: "
                 f"https://github.com/roboflow/inference/issues",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
             )
     if device is None:
         raise ModelRuntimeError(
             message="No inputs detected for the model. Raise new issue to help us fixing the problem: "
             "https://github.com/roboflow/inference/issues",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
         )
     return device

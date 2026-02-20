@@ -86,7 +86,7 @@ def negotiate_model_packages(
             f"using Roboflow platform your model may not be ready - if the problem is persistent, "
             f"contact us to get help. If you use weights provider other than Roboflow - this is most likely "
             f"the root cause of the error.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/package-negotiation/#nomodelpackagesavailableerror",
         )
     if requested_model_package_id is not None:
         return [
@@ -166,7 +166,7 @@ def negotiate_model_packages(
             f"several issues, with the most common being missing dependencies or too strict requirements "
             f"stated as parameters of loading function. Below you can find reasons why specific model "
             f"packages were rejected:\n{rejections_summary}\n",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/package-negotiation/#nomodelpackagesavailableerror",
         )
     model_packages = rank_model_packages(
         model_packages=model_packages,
@@ -311,14 +311,14 @@ def select_model_package_by_id(
             message=f"Requested model package ID: {requested_model_package_id} cannot be resolved among "
             f"the model packages announced by weights provider. This may indicate either "
             f"typo on the identifier or a change in set of models packages being announced by provider.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/package-negotiation/#nomodelpackagesavailableerror",
         )
     if len(matching_packages) > 1:
         raise AmbiguousModelPackageResolutionError(
             message=f"Requested model package ID: {requested_model_package_id} resolved to {len(matching_packages)} "
             f"different packages announced by weights provider. That is most likely weights provider "
             f"error, as it is supposed to provide unique identifiers for each model package.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/package-negotiation/#ambiguousmodelpackageresolutionerror",
         )
     verbose_info(
         message=f"Model package matching requested package id: {matching_packages[0].get_summary()}",
@@ -531,7 +531,7 @@ def filter_model_packages_based_on_model_features(
                     message="Detected bug in `inference` - "
                     "`should_model_package_be_filtered_out_based_on_nms_fusion_preferencess()` returned malformed "
                     "result. Please raise the issue: https://github.com/roboflow/inference/issues",
-                    help_url="https://todo",
+                    help_url="https://inference-models.roboflow.com/errors/input-validation/#assumptionerror",
                 )
             discarded_packages.append(
                 DiscardedPackage(package_id=model_package.package_id, reason=reason)
@@ -661,7 +661,7 @@ def model_package_matches_runtime_environment(
         raise ModelPackageNegotiationError(
             message=f"Model package negotiation protocol not implemented for model backend {model_package.backend}. "
             f"This is `inference-models` bug - raise issue: https://github.com/roboflow/inference/issues",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/package-negotiation/#modelpackagenegotiationerror",
         )
     return MODEL_TO_RUNTIME_COMPATIBILITY_MATCHERS[model_package.backend](
         model_package,
@@ -993,7 +993,7 @@ def trt_package_matches_runtime_environment(
         raise ModelPackageNegotiationError(
             message=f"Model package negotiation protocol not implemented for environment specification detected "
             f"in runtime. This is `inference-models` bug - raise issue: https://github.com/roboflow/inference/issues",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/package-negotiation/#modelpackagenegotiationerror",
         )
     if model_environment.trt_version is None:
         verbose_info(
@@ -1228,7 +1228,7 @@ def parse_batch_size(
                 "Batch size request is supposed to be either integer value or tuple specifying (min, max) "
                 f"batch size - but detected tuple of invalid size ({len(requested_batch_size)}) - this is "
                 f"probably typo while specifying requested batch size.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/package-negotiation/#invalidrequestedbatchsizeerror",
             )
         min_batch_size, max_batch_size = requested_batch_size
         if not isinstance(min_batch_size, int) or not isinstance(max_batch_size, int):
@@ -1237,21 +1237,21 @@ def parse_batch_size(
                 "Batch size request is supposed to be either integer value or tuple specifying (min, max) "
                 f"batch size - but detected tuple elements which are not integer values - this is "
                 f"probably typo while specifying requested batch size.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/package-negotiation/#invalidrequestedbatchsizeerror",
             )
         if max_batch_size < min_batch_size:
             raise InvalidRequestedBatchSizeError(
                 message="Could not parse batch size requested from model package negotiation procedure. "
                 "`max_batch_size` is lower than `min_batch_size` - which is invalid value - this is "
                 "probably typo while specifying requested batch size.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/package-negotiation/#invalidrequestedbatchsizeerror",
             )
         if max_batch_size <= 0 or min_batch_size <= 0:
             raise InvalidRequestedBatchSizeError(
                 message="Could not parse batch size requested from model package negotiation procedure. "
                 "`min_batch_size` is <= 0 or `max_batch_size` <= - which is invalid value - this is "
                 "probably typo while specifying requested batch size.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/package-negotiation/#invalidrequestedbatchsizeerror",
             )
         return min_batch_size, max_batch_size
     if not isinstance(requested_batch_size, int):
@@ -1261,14 +1261,14 @@ def parse_batch_size(
             f"batch size - but detected single value which is not integer but has type "
             f"{requested_batch_size.__class__.__name__} - this is "
             f"probably typo while specifying requested batch size.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/package-negotiation/#invalidrequestedbatchsizeerror",
         )
     if requested_batch_size <= 0:
         raise InvalidRequestedBatchSizeError(
             message="Could not parse batch size requested from model package negotiation procedure. "
             "`requested_batch_size` is <= 0 which is invalid value this is "
             f"probably typo while specifying requested batch size.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/package-negotiation/#invalidrequestedbatchsizeerror",
         )
     return requested_batch_size, requested_batch_size
 
@@ -1282,7 +1282,7 @@ def parse_backend_type(value: str) -> BackendType:
             message=f"Requested backend of type '{value}' which is not recognized by `inference-models`. Most likely this "
             f"error is a result of typo while specifying requested backend. Supported backends: "
             f"{supported_backends}.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/package-negotiation/#unknownbackendtypeerror",
         ) from error
 
 
@@ -1307,5 +1307,5 @@ def parse_quantization(value: str) -> Quantization:
             message=f"Requested quantization of type '{value}' which is not recognized by `inference-models`. Most likely this "
             f"error is a result of typo while specifying requested quantization. Supported values: "
             f"{list(Quantization.__members__)}.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/package-negotiation/#unknownquantizationerror",
         ) from error

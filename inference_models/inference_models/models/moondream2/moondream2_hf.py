@@ -44,7 +44,7 @@ class MoonDream2HF:
                 message=f"This model cannot run on Apple device with MPS unit - original implementation contains bug "
                 f"preventing proper allocation of tensors which causes runtime error. Run this model on the "
                 f"machine with Nvidia GPU or x86 CPU.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
             )
         model_package_content = get_model_package_contents(
             model_package_dir=model_name_or_path,

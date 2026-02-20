@@ -150,7 +150,7 @@ class RFDetrForInstanceSegmentationTorch(
             raise InvalidModelInitParameterError(
                 message=f"Model package describes model_type as '{model_type}' which is not supported. "
                 f"Supported model types: {list(CONFIG_FOR_MODEL_TYPE.keys())}.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#invalidmodelinitparametererror",
             )
         model_config = CONFIG_FOR_MODEL_TYPE[model_type](device=device)
         checkpoint_num_classes = weights_dict["class_embed.bias"].shape[0]
@@ -189,7 +189,7 @@ class RFDetrForInstanceSegmentationTorch(
                 f"error, while using `AutoModel.from_pretrained(...)` or thrown from managed Roboflow service, "
                 f"this is a bug - raise the issue: https://github.com/roboflow/inference/issue providing "
                 f"full context.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#missingmodelinitparametererror",
             )
         weights_dict = torch.load(
             checkpoint_path,
@@ -210,7 +210,7 @@ class RFDetrForInstanceSegmentationTorch(
                     message=f"Attempted to load RFDetr model (using torch backend) with `resolution` parameter which "
                     f"is invalid - the model required positive value divisible by 56. Make sure you used "
                     f"proper value, corresponding to the one used to train the model.",
-                    help_url="https://todo",
+                    help_url="https://inference-models.roboflow.com/errors/model-loading/#invalidmodelinitparametererror",
                 )
             model_config.resolution = resolution
         inference_config = InferenceConfig(
@@ -244,7 +244,7 @@ class RFDetrForInstanceSegmentationTorch(
             raise InvalidModelInitParameterError(
                 message=f"Checkpoint pointed to load RFDetr defines {checkpoint_num_classes} output classes, but "
                 f"loaded labels define {len(class_names)} classes - fix the value of `labels` parameter.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#invalidmodelinitparametererror",
             )
         model.load_state_dict(weights_dict)
         model = model.eval().to(device)

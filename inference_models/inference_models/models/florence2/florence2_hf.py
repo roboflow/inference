@@ -94,7 +94,7 @@ class Florence2HF:
         if not os.path.isdir(base_model_path):
             raise ModelRuntimeError(
                 message=f"Provided model path does not exist or is not a directory: {base_model_path}",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
             )
         if not os.path.isfile(os.path.join(base_model_path, "config.json")):
             raise ModelRuntimeError(
@@ -102,7 +102,7 @@ class Florence2HF:
                     "Provided model directory does not look like a valid HF Florence-2 checkpoint (missing config.json). "
                     "If you used the official converter, point to its output directory."
                 ),
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
             )
         if (
             quantization_config is None
@@ -161,7 +161,7 @@ class Florence2HF:
                 raise CorruptedModelPackageError(
                     message="Could not load LoRA weights for the model - found missing checkpoint keys "
                     f"({len(load_result.missing_keys)}): {load_result.missing_keys}",
-                    help_url="https://todo",
+                    help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
                 )
             if quantization_config is None:
                 model.merge_and_unload()

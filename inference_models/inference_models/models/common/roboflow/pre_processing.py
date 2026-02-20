@@ -38,7 +38,7 @@ def pre_process_network_input(
         raise ModelRuntimeError(
             message=f"`inference` currently does not support Roboflow pre-processing for model inputs with "
             f"channels numbers different than 1. Let us know if you need this feature.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
         )
     input_color_mode = None
     if input_color_format is not None:
@@ -77,7 +77,7 @@ def pre_process_network_input(
         raise ModelRuntimeError(
             message="Model input resize type (fit-longer-edge) cannot be applied equally for "
             "all input batch elements arbitrarily - this type of model does not support input batches.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
         )
     if isinstance(images[0], np.ndarray):
         return pre_process_numpy_images_list(
@@ -139,7 +139,7 @@ def pre_process_images_tensor(
             raise ModelRuntimeError(
                 message=f"Handler for dynamic spatial mode of type {type(network_input.dynamic_spatial_size_mode)} "
                 f"is not implemented.",
-                help_url="",
+                help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
             )
     if images.device != target_device:
         images = images.to(target_device)
@@ -159,7 +159,7 @@ def pre_process_images_tensor(
     if network_input.resize_mode not in NUMPY_IMAGES_PREPARATION_HANDLERS:
         raise ModelRuntimeError(
             message=f"Unsupported model input resize mode: {network_input.resize_mode}",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
         )
     return TORCH_IMAGES_PREPARATION_HANDLERS[network_input.resize_mode](
         image,
@@ -196,7 +196,7 @@ def apply_pre_processing_to_torch_image(
         ):
             raise ModelRuntimeError(
                 message=f"Unsupported image contrast adjustment type: {image_pre_processing.contrast.type.value}",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
             )
         image = CONTRAST_ADJUSTMENT_METHODS_FOR_TORCH[
             image_pre_processing.contrast.type
@@ -548,7 +548,7 @@ def pre_process_images_tensor_list(
     if network_input.resize_mode not in TORCH_LIST_IMAGES_PREPARATION_HANDLERS:
         raise ModelRuntimeError(
             message=f"Unsupported model input resize mode: {network_input.resize_mode}",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
         )
     if input_color_mode is None:
         input_color_mode = ColorMode.RGB
@@ -577,7 +577,7 @@ def pre_process_images_tensor_list(
             raise ModelRuntimeError(
                 message=f"Handler for dynamic spatial mode of type {type(network_input.dynamic_spatial_size_mode)} "
                 f"is not implemented.",
-                help_url="",
+                help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
             )
     images, static_crop_offsets, original_sizes = (
         apply_pre_processing_to_list_of_torch_image(
@@ -862,7 +862,7 @@ def pre_process_numpy_image(
             raise ModelRuntimeError(
                 message=f"Handler for dynamic spatial mode of type {type(network_input.dynamic_spatial_size_mode)} "
                 f"is not implemented.",
-                help_url="",
+                help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
             )
     original_size = ImageDimensions(width=image.shape[1], height=image.shape[0])
     image, static_crop_offset = apply_pre_processing_to_numpy_image(
@@ -874,7 +874,7 @@ def pre_process_numpy_image(
     if network_input.resize_mode not in NUMPY_IMAGES_PREPARATION_HANDLERS:
         raise ModelRuntimeError(
             message=f"Unsupported model input resize mode: {network_input.resize_mode}",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
         )
     return NUMPY_IMAGES_PREPARATION_HANDLERS[network_input.resize_mode](
         image,
@@ -921,7 +921,7 @@ def apply_pre_processing_to_numpy_image(
         ):
             raise ModelRuntimeError(
                 message=f"Unsupported image contrast adjustment type: {image_pre_processing.contrast.type.value}",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
             )
         image = CONTRAST_ADJUSTMENT_METHODS_FOR_NUMPY[
             image_pre_processing.contrast.type

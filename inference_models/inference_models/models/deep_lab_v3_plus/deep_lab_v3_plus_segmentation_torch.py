@@ -67,7 +67,7 @@ class DeepLabV3PlusForSemanticSegmentationTorch(
         if inference_config.model_initialization is None:
             raise CorruptedModelPackageError(
                 message="Expected model initialization parameters not provided in inference config.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
         num_classes = inference_config.model_initialization.get("classes")
         in_channels = inference_config.model_initialization.get("in_channels")
@@ -75,17 +75,17 @@ class DeepLabV3PlusForSemanticSegmentationTorch(
         if not isinstance(num_classes, int) or num_classes < 1:
             raise CorruptedModelPackageError(
                 message="Expected model initialization parameter `num_classes` not provided or in invalid format.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
         if not isinstance(in_channels, int) or in_channels not in {1, 3}:
             raise CorruptedModelPackageError(
                 message="Expected model initialization parameter `in_channels` not provided or in invalid format.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
         if not isinstance(encoder_name, str):
             raise CorruptedModelPackageError(
                 message="Expected model initialization parameter `encoder_name` not provided or in invalid format.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
         model = (
             smp.DeepLabV3Plus(

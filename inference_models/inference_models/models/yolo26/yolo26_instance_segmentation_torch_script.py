@@ -78,7 +78,7 @@ class YOLO26ForInstanceSegmentationTorchScript(
         if inference_config.forward_pass.static_batch_size is None:
             raise CorruptedModelPackageError(
                 message="Expected static batch size to be registered in the inference configuration.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
         model = torch.jit.load(
             model_package_content["weights.torchscript"], map_location=device

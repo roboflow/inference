@@ -201,7 +201,7 @@ class AutoModelPipeline:
                 f"default values not registered in the library. If you run locally, please verify your "
                 f"integration - it must specify the models to be used by the pipeline. If you use Roboflow "
                 f"hosted solution, contact us to get help.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#modelpipelineinitializationerror",
             )
         if models_parameters is None:
             models_parameters = default_parameters

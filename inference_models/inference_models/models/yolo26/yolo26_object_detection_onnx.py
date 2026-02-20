@@ -73,7 +73,7 @@ class YOLO26ForObjectDetectionOnnx(
                 f"be specified - explicitly in `from_pretrained(...)` method or via env variable "
                 f"`ONNXRUNTIME_EXECUTION_PROVIDERS`. If you run model locally - adjust your setup, otherwise "
                 f"contact the platform support.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/runtime-environment/#environmentconfigurationerror",
             )
         onnx_execution_providers = set_onnx_execution_provider_defaults(
             providers=onnx_execution_providers,

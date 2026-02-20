@@ -76,7 +76,7 @@ class YOLONasForObjectDetectionOnnx(
                 f"be specified - explicitly in `from_pretrained(...)` method or via env variable "
                 f"`ONNXRUNTIME_EXECUTION_PROVIDERS`. If you run model locally - adjust your setup, otherwise "
                 f"contact the platform support.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/runtime-environment/#environmentconfigurationerror",
             )
         onnx_execution_providers = set_onnx_execution_provider_defaults(
             providers=onnx_execution_providers,
@@ -118,12 +118,12 @@ class YOLONasForObjectDetectionOnnx(
         if inference_config.post_processing.type != "nms":
             raise CorruptedModelPackageError(
                 message="Expected NMS to be the post-processing",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
         if inference_config.post_processing.fused is True:
             raise CorruptedModelPackageError(
                 message="Model implementation does not support fused NMS",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
         session = onnxruntime.InferenceSession(
             path_or_bytes=model_package_content["weights.onnx"],

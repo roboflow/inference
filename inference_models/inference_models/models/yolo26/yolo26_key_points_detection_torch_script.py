@@ -77,7 +77,7 @@ class YOLO26ForKeyPointsDetectionTorchScript(
         if inference_config.forward_pass.static_batch_size is None:
             raise CorruptedModelPackageError(
                 message="Expected static batch size to be registered in the inference configuration.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
         parsed_key_points_metadata, skeletons = parse_key_points_metadata(
             key_points_metadata_path=model_package_content["keypoints_metadata.json"]

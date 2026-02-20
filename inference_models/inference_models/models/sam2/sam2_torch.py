@@ -833,7 +833,7 @@ def serialize_prompt(
             "leading dimension. This assumption just got violated. This is most likely a bug. "
             "You can help us sorting out this problem by submitting an issue: "
             "https://github.com/roboflow/inference/issues",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/input-validation/#assumptionerror",
         )
     broadcast_size = sizes.pop()
     point_coordinates_list = (

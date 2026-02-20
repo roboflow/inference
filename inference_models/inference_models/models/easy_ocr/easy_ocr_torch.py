@@ -76,7 +76,7 @@ class EasyOCRTorch(
                 f"If you attempt to run `inference-models` locally - inspect the contents of local directory to check "
                 f"model package - config file is corrupted. If you run the model on Roboflow platform - "
                 f"contact us.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             ) from error
         return cls(model=model, device=device)
 
@@ -231,5 +231,5 @@ def parse_easy_ocr_config(config_path: str) -> EasyOcrConfig:
             f"If you attempt to run `inference-models` locally - inspect the contents of local directory to check "
             f"model package - config file is corrupted. If you run the model on Roboflow platform - "
             f"contact us.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
         ) from error

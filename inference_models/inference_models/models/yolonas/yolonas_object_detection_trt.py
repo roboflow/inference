@@ -87,7 +87,7 @@ class YOLONasForObjectDetectionTRT(
         if device.type != "cuda":
             raise ModelRuntimeError(
                 message=f"TRT engine only runs on CUDA device - {device} device detected.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
             )
         model_package_content = get_model_package_contents(
             model_package_dir=model_name_or_path,
@@ -124,12 +124,12 @@ class YOLONasForObjectDetectionTRT(
         if inference_config.post_processing.type != "nms":
             raise CorruptedModelPackageError(
                 message="Expected NMS to be the post-processing",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
         if inference_config.post_processing.fused is True:
             raise CorruptedModelPackageError(
                 message="Model implementation does not support fused NMS",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
         trt_config = parse_trt_config(
             config_path=model_package_content["trt_config.json"]
@@ -146,12 +146,12 @@ class YOLONasForObjectDetectionTRT(
         if len(inputs) != 1:
             raise CorruptedModelPackageError(
                 message=f"Implementation assume single model input, found: {len(inputs)}.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
         if len(outputs) != 2:
             raise CorruptedModelPackageError(
                 message=f"Implementation assume 2 model outputs, found: {len(outputs)}.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
         # git rid of outputs order and names verification, as YOLO-NAS clearly produces different outputs
         return cls(

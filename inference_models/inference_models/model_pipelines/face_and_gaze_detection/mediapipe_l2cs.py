@@ -29,7 +29,7 @@ class FaceAndGazeDetectionMPAndL2CS:
                 "and gaze detector. If you run `inference` locally, verify the parameter of pipeline loader "
                 "to make sure that two models parameters' are provided. If you use Roboflow hosted solution, "
                 "contact us to get help.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#modelpipelineinitializationerror",
             )
         face_detector, gaze_detector = models
         if not isinstance(face_detector, MediaPipeFaceDetector):
@@ -37,14 +37,14 @@ class FaceAndGazeDetectionMPAndL2CS:
                 message="Model pipeline `face-and-gaze-detection` requires first model to be `MediaPipeFaceDetector` - "
                 "if you run `inference` locally, make sure that you initialized the pipeline pointing model of "
                 "matching type.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#modelpipelineinitializationerror",
             )
         if not isinstance(gaze_detector, L2CSNetOnnx):
             raise ModelPipelineInitializationError(
                 message="Model pipeline `face-and-gaze-detection` requires second model to be `L2CSNet` - "
                 "if you run `inference` locally, make sure that you initialized the pipeline pointing model of "
                 "matching type.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#modelpipelineinitializationerror",
             )
         return FaceAndGazeDetectionMPAndL2CS.from_pretrained(
             face_detector=face_detector, gaze_detector=gaze_detector, **kwargs

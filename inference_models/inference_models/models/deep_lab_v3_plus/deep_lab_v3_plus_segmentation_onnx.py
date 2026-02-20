@@ -75,7 +75,7 @@ class DeepLabV3PlusForSemanticSegmentationOnnx(
                 f"be specified - explicitly in `from_pretrained(...)` method or via env variable "
                 f"`ONNXRUNTIME_EXECUTION_PROVIDERS`. If you run model locally - adjust your setup, otherwise "
                 f"contact the platform support.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/runtime-environment/#environmentconfigurationerror",
             )
         model_package_content = get_model_package_contents(
             model_package_dir=model_name_or_path,

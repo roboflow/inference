@@ -28,14 +28,15 @@ def load_config(config_path: str) -> PerceptionEncoderConfig:
     except (IOError, json.JSONDecodeError) as e:
         raise CorruptedModelPackageError(
             message=f"Could not load or parse perception encoder model package config file: {config_path}. Details: {e}",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
         ) from e
     try:
         config = PerceptionEncoderConfig.model_validate(config_data)
         return config
     except ValidationError as e:
         raise CorruptedModelPackageError(
-            f"Failed validate perception encoder model package config file: {config_path}. Details: {e}"
+            message=f"Failed validate perception encoder model package config file: {config_path}. Details: {e}",
+            help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
         ) from e
 
 

@@ -56,12 +56,12 @@ class RoboflowInstantHF(ObjectDetectionModel):
         except UnpicklingError as error:
             raise CorruptedModelPackageError(
                 message="Could not deserialize RF Instant model weights. Contact Roboflow to get help.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             ) from error
         if "class_names" not in weights_dict or "train_data_dict" not in weights_dict:
             raise CorruptedModelPackageError(
                 message="Corrupted weights of Roboflow Instant model detected. Contact Roboflow to get help.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
         class_names = weights_dict["class_names"]
         train_data_dict = weights_dict["train_data_dict"]
@@ -75,7 +75,7 @@ class RoboflowInstantHF(ObjectDetectionModel):
         except Exception as error:
             raise CorruptedModelPackageError(
                 message="Could not decode RF Instant model weights. Contact Roboflow to get help.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             ) from error
         return cls(
             feature_extractor=feature_extractor,

@@ -335,7 +335,7 @@ class AutoModel:
             raise NoModelPackagesAvailableError(
                 message=f"Selected model package {package_id} does not exist for model {model_id}. Make sure provided "
                 f"value is valid.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/package-negotiation/#nomodelpackagesavailableerror",
             )
         artefacts_size = None
         if pull_artefacts_size:
@@ -668,7 +668,7 @@ class AutoModel:
                 f"https://docs.roboflow.com/api-reference/authentication "
                 f"and export key to `ROBOFLOW_API_KEY` environment variable. If you use custom weights "
                 f"provider - verify access constraints relevant for the provider.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-retrieval/#unauthorizedmodelaccesserror",
             )
         if auto_resolution_cache is None:
 
@@ -699,7 +699,7 @@ class AutoModel:
                     message="Could not parse `device` parameter value - make sure that it is a valid string "
                     f"representation of torch device. Valid values: 'cpu', 'cuda' or 'cuda:0'. If you see this error "
                     "while using Roboflow infrastructure - contact us to get help. Otherwise - verify your setup.",
-                    help_url="https://todo",
+                    help_url="https://inference-models.roboflow.com/errors/input-validation/#invalidparametererror"
                 ) from error
         model_init_kwargs = {
             "onnx_execution_providers": onnx_execution_providers,
@@ -940,7 +940,7 @@ class AutoModel:
                 "feature was disabled for security reason. In rare cases when you use valid model ID, the "
                 "clash of ID with local path may cause this error - we ask you to report the issue here: "
                 "https://github.com/roboflow/inference/issues.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#directlocalstorageaccesserror",
             )
         return attempt_loading_model_from_local_storage(
             model_dir_or_weights_path=model_id_or_path,
@@ -1122,7 +1122,7 @@ def attempt_loading_matching_model_packages(
         raise NoModelPackagesAvailableError(
             message=f"Cannot load model {model_id} - no matching model package candidates for given model "
             f"running in this environment.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/package-negotiation/#nomodelpackagesavailableerror",
         )
     failed_load_attempts: List[Tuple[str, Exception]] = []
     for model_package in matching_model_packages:
@@ -1197,7 +1197,7 @@ def attempt_loading_matching_model_packages(
         f"likely a bug in `inference-models` and you should raise an issue providing full context of "
         f"the event. https://github.com/roboflow/inference/issues\n\n"
         f"Here is the summary of errors for specific model packages:\n{summary_of_errors}\n\n",
-        help_url="https://todo",
+        help_url="https://inference-models.roboflow.com/errors/model-loading/#modelpackagealternativesexhaustederror",
     )
 
 
@@ -1496,7 +1496,7 @@ def ensure_package_id_is_os_safe(model_id: str, package_id: str) -> None:
             f"raise the issue: https://github.com/roboflow/inference/issues. If you are running `inference` "
             f"outside of the platform, verify that your weights provider keeps the model packages identifiers "
             f"in the expected format.",
-            help_url="https://TODO",
+            help_url="https://inference-models.roboflow.com/errors/model-loading/#insecuremodelidentifiererror",
         )
 
 
@@ -1545,7 +1545,7 @@ def attempt_loading_model_from_local_storage(
             f"this environment. To let inference loading such models, use `allow_local_code_packages=True` "
             f"parameter of `AutoModel.from_pretrained(...)`. If you see this error while using one of Roboflow "
             f"hosted solution - contact us to solve the problem.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/model-loading/#forbiddenlocalcodepackageaccesserror",
         )
     return load_model_from_local_package_with_arbitrary_code(
         model_dir=model_dir_or_weights_path,
@@ -1590,14 +1590,14 @@ def resolve_models_registry_entry(
             message="When loading model directly from checkpoint path, `model_type` parameter must be specified. "
             "Use one of the supported value, for example `rfdetr-nano` in case you refer checkpoint of "
             "RFDetr Nano model.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/model-loading/#missingmodelinitparametererror",
         )
     if model_type not in MODEL_TYPES_TO_LOAD_FROM_CHECKPOINT:
         raise InvalidModelInitParameterError(
             message="When loading model directly from checkpoint path, `model_type` parameter must define "
             "one of the type of model that support loading directly from the checkpoints. "
             f"Models supported in current version: {MODEL_TYPES_TO_LOAD_FROM_CHECKPOINT}",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/model-loading/#invalidmodelinitparametererror",
         )
     # a bit of hard coding here, over time we must maintain
     model_architecture = "rfdetr"
@@ -1611,7 +1611,7 @@ def resolve_models_registry_entry(
             message=f"When loading model directly from checkpoint path, set `model_type` as {model_type} and "
             f"`task_type` as {task_type}, whereas selected model do only support `{OBJECT_DETECTION_TASK}` "
             f"task while loading from checkpoint file.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/model-loading/#invalidmodelinitparametererror",
         )
     if backend_type is None:
         backend_type = BackendType.TORCH
@@ -1620,7 +1620,7 @@ def resolve_models_registry_entry(
             raise InvalidModelInitParameterError(
                 message=f"When loading model directly from checkpoint path, set `backend` parameter to be {backend_type}, "
                 f"whereas it is only supported to pass a single value.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#invalidmodelinitparametererror",
             )
         backend_type = backend_type[0]
     if isinstance(backend_type, str):
@@ -1629,7 +1629,7 @@ def resolve_models_registry_entry(
         raise InvalidModelInitParameterError(
             message=f"When loading model directly from checkpoint path, selected the following backend {backend_type}, "
             f"but the backend supported for model {model_type} is {BackendType.TORCH}",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/model-loading/#invalidmodelinitparametererror",
         )
     return model_architecture, task_type, backend_type
 

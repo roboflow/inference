@@ -341,20 +341,20 @@ def execute_trt_engine(
     if not status:
         raise ModelRuntimeError(
             message="Failed to set TRT model input shape during forward pass from the model.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
         )
     status = context.set_tensor_address(input_name, pre_processed_images.data_ptr())
     if not status:
         raise ModelRuntimeError(
             message="Failed to set input tensor data pointer during forward pass from the model.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
         )
     stream = torch.cuda.Stream(device=device)
     status = context.execute_async_v3(stream_handle=stream.cuda_stream)
     if not status:
         raise ModelRuntimeError(
             message="Failed to complete inference from TRT model",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
         )
     stream.synchronize()
     return results

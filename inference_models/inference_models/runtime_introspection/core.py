@@ -309,7 +309,7 @@ def resolve_jetson_type(jetson_module_name: str) -> str:
             return jetson_device.replace(" ", "-").lower()
     raise JetsonTypeResolutionError(
         message=f"Could not resolve jetson type. Value found in environment: {jetson_module_name}",
-        help_url="https://todo",
+        help_url="https://inference-models.roboflow.com/errors/package-negotiation/#jetsontyperesolutionerror",
     )
 
 
@@ -474,5 +474,5 @@ def ensure_jetson_l4t_declared_for_jetson_hardware(
             "`L4T_VERSION=<your-l4t-version>`. Optionally you may also set `JETSON_MODULE` variable "
             f"to one of the values: {JETSON_DEVICES_TABLE}. If that does not solve your issue - contact "
             f"Roboflow immediately.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/package-negotiation/#runtimeintrospectionerror",
         )
