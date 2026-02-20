@@ -518,7 +518,7 @@ def format_message(
 
 
 def process_media_urls_for_twilio(
-    media_url: Union[str, List[Union[str, WorkflowImageData]], WorkflowImageData]
+    media_url: Union[str, List[Union[str, WorkflowImageData]], WorkflowImageData],
 ) -> Optional[List[str]]:
     """
     Process media URLs for Twilio MMS.
@@ -609,7 +609,7 @@ def _get_mms_placeholder_image_url() -> Optional[str]:
 
 
 def serialize_media_for_api(
-    media_url: Union[str, List[str], WorkflowImageData, None]
+    media_url: Union[str, List[str], WorkflowImageData, None],
 ) -> Tuple[Optional[List[str]], Optional[List[Dict[str, str]]]]:
     """
     Serialize media for API transmission.

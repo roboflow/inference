@@ -5,7 +5,10 @@ import numpy as np
 import torch
 
 from inference_models import Detections, ObjectDetectionModel
-from inference_models.configuration import DEFAULT_DEVICE
+from inference_models.configuration import (
+    DEFAULT_DEVICE,
+    USE_CUDA_GRAPHS_FOR_TRT_BACKEND,
+)
 from inference_models.entities import ColorFormat
 from inference_models.errors import (
     CorruptedModelPackageError,
@@ -35,6 +38,7 @@ from inference_models.models.common.roboflow.pre_processing import (
     pre_process_network_input,
 )
 from inference_models.models.common.trt import (
+    TRTCudaGraphLRUCache,
     get_trt_engine_inputs_and_outputs,
     infer_from_trt_engine,
     load_trt_model,
@@ -72,6 +76,7 @@ class YOLOv8ForObjectDetectionTRT(
         model_name_or_path: str,
         device: torch.device = DEFAULT_DEVICE,
         engine_host_code_allowed: bool = False,
+        cuda_graph_cache_capacity: int = 64,
         **kwargs,
     ) -> "YOLOv8ForObjectDetectionTRT":
         if device.type != "cuda":
@@ -137,6 +142,7 @@ class YOLOv8ForObjectDetectionTRT(
             device=device,
             cuda_context=cuda_context,
             execution_context=execution_context,
+            cuda_graph_cache_capacity=cuda_graph_cache_capacity,
         )
 
     def __init__(
@@ -150,6 +156,7 @@ class YOLOv8ForObjectDetectionTRT(
         device: torch.device,
         cuda_context: cuda.Context,
         execution_context: trt.IExecutionContext,
+        cuda_graph_cache_capacity: int = 16,
     ):
         self._engine = engine
         self._input_name = input_name
@@ -160,6 +167,9 @@ class YOLOv8ForObjectDetectionTRT(
         self._device = device
         self._cuda_context = cuda_context
         self._execution_context = execution_context
+        self._trt_cuda_graph_cache = TRTCudaGraphLRUCache(
+            capacity=cuda_graph_cache_capacity,
+        )
         self._lock = threading.Lock()
 
     @property
@@ -180,17 +190,27 @@ class YOLOv8ForObjectDetectionTRT(
             input_color_format=input_color_format,
         )
 
-    def forward(self, pre_processed_images: torch.Tensor, **kwargs) -> torch.Tensor:
+    def forward(
+        self,
+        pre_processed_images: torch.Tensor,
+        use_cuda_graph: Optional[bool] = None,
+        **kwargs,
+    ) -> torch.Tensor:
+        if use_cuda_graph is None:
+            use_cuda_graph = USE_CUDA_GRAPHS_FOR_TRT_BACKEND
+
+        cache = self._trt_cuda_graph_cache if use_cuda_graph else None
         with self._lock:
             with use_cuda_context(context=self._cuda_context):
                 return infer_from_trt_engine(
                     pre_processed_images=pre_processed_images,
                     trt_config=self._trt_config,
                     engine=self._engine,
-                    context=self._execution_context,
+                    context=self._execution_context if not use_cuda_graph else None,
                     device=self._device,
                     input_name=self._input_name,
                     outputs=self._output_names,
+                    trt_cuda_graph_cache=cache,
                 )[0]
 
     def post_process(
