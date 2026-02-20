@@ -15,6 +15,7 @@ from inference.core.entities.responses.inference import (
     KeypointsDetectionInferenceResponse,
     MultiLabelClassificationInferenceResponse,
     ObjectDetectionInferenceResponse,
+    SemanticSegmentationInferenceResponse,
 )
 from inference.core.env import MODEL_CACHE_DIR
 
@@ -435,6 +436,28 @@ def sam2_small_truck_logits() -> Generator[np.ndarray, None, None]:
 @pytest.fixture(scope="function")
 def sam2_small_truck_mask_from_cached_logits() -> Generator[np.ndarray, None, None]:
     yield np.load(SAM2_TRUCK_MASK_FROM_CACHE)
+
+
+@pytest.fixture(scope="function")
+def deep_lab_v3_plus_seg_model() -> Generator[str, None, None]:
+    model_id = "semantic-seg/13"
+    model_cache_dir = fetch_and_place_model_in_cache(
+        model_id=model_id,
+        model_package_url="https://storage.googleapis.com/roboflow-tests-assets/deep_lab_v3_plus_seg.zip",
+    )
+    yield model_id
+    shutil.rmtree(model_cache_dir)
+
+
+@pytest.fixture(scope="function")
+def deep_lab_v3_plus_seg_reference_prediction() -> SemanticSegmentationInferenceResponse:
+    with open(
+        os.path.join(
+            ASSETS_DIR, "deep_lab_v3_plus_seg_reference_prediction.json"
+        ),
+        "r",
+    ) as f:
+        return SemanticSegmentationInferenceResponse.model_validate(json.load(f))
 
 
 def fetch_and_place_model_in_cache(
