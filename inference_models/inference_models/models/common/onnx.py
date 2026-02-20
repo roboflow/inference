@@ -14,13 +14,13 @@ try:
 except ImportError as import_error:
     raise MissingDependencyError(
         message="Running model with ONNX backend requires onnxruntime installation, which is brought with "
-                "`onnx-*` extras of `inference-models` library. If you see this error running locally, "
-                "please follow our installation guide: https://inference-models.roboflow.com/getting-started/installation/"
-                " If you see this error using Roboflow infrastructure, make sure the service you use does support the "
-                f"model, You can also contact Roboflow to get support."
-                "Additionally - if AutoModel.from_pretrained(...) "
-                f"automatically selects model package which does not match your environment - that's a serious problem and "
-                f"we will really appreciate letting us know - https://github.com/roboflow/inference/issues",
+        "`onnx-*` extras of `inference-models` library. If you see this error running locally, "
+        "please follow our installation guide: https://inference-models.roboflow.com/getting-started/installation/"
+        " If you see this error using Roboflow infrastructure, make sure the service you use does support the "
+        f"model, You can also contact Roboflow to get support."
+        "Additionally - if AutoModel.from_pretrained(...) "
+        f"automatically selects model package which does not match your environment - that's a serious problem and "
+        f"we will really appreciate letting us know - https://github.com/roboflow/inference/issues",
         help_url="https://inference-models.roboflow.com/errors/runtime-environment/#missingdependencyerror",
     ) from import_error
 
@@ -433,13 +433,13 @@ def run_onnx_session_via_iobinding(
     except ImportError as import_error:
         raise MissingDependencyError(
             message="Running model with ONNX backend on GPU requires pycuda installation, which is brought with "
-                    "`onnx-*` extras of `inference-models` library. If you see this error running locally, "
-                    "please follow our installation guide: https://inference-models.roboflow.com/getting-started/installation/"
-                    " If you see this error using Roboflow infrastructure, make sure the service you use does support the "
-                    f"model, You can also contact Roboflow to get support."
-                    "Additionally - if AutoModel.from_pretrained(...) "
-                    f"automatically selects model package which does not match your environment - that's a serious problem and "
-                    f"we will really appreciate letting us know - https://github.com/roboflow/inference/issues",
+            "`onnx-*` extras of `inference-models` library. If you see this error running locally, "
+            "please follow our installation guide: https://inference-models.roboflow.com/getting-started/installation/"
+            " If you see this error using Roboflow infrastructure, make sure the service you use does support the "
+            f"model, You can also contact Roboflow to get support."
+            "Additionally - if AutoModel.from_pretrained(...) "
+            f"automatically selects model package which does not match your environment - that's a serious problem and "
+            f"we will really appreciate letting us know - https://github.com/roboflow/inference/issues",
             help_url="https://inference-models.roboflow.com/errors/runtime-environment/#missingdependencyerror",
         ) from import_error
 

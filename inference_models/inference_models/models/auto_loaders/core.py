@@ -699,7 +699,7 @@ class AutoModel:
                     message="Could not parse `device` parameter value - make sure that it is a valid string "
                     f"representation of torch device. Valid values: 'cpu', 'cuda' or 'cuda:0'. If you see this error "
                     "while using Roboflow infrastructure - contact us to get help. Otherwise - verify your setup.",
-                    help_url="https://inference-models.roboflow.com/errors/input-validation/#invalidparametererror"
+                    help_url="https://inference-models.roboflow.com/errors/input-validation/#invalidparametererror",
                 ) from error
         model_init_kwargs = {
             "onnx_execution_providers": onnx_execution_providers,

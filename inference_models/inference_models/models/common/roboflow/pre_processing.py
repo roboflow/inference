@@ -71,7 +71,7 @@ def pre_process_network_input(
     if not len(images):
         raise ModelInputError(
             message="Detected empty input to the model",
-            help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror"
+            help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
         )
     if network_input.resize_mode is ResizeMode.FIT_LONGER_EDGE:
         raise ModelRuntimeError(
@@ -1300,7 +1300,7 @@ def images_to_pillow(
     if not len(images):
         raise ModelInputError(
             message="Detected empty input to the model",
-            help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror"
+            help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
         )
     if isinstance(images[0], np.ndarray):
         input_color_format = input_color_format or "bgr"

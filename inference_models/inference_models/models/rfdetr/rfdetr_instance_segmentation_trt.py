@@ -72,7 +72,7 @@ except ImportError as import_error:
         "Additionally - if AutoModel.from_pretrained(...) "
         f"automatically selects model package which does not match your environment - that's a serious problem and "
         f"we will really appreciate letting us know - https://github.com/roboflow/inference/issues",
-        help_url="https://inference-models.roboflow.com/errors/runtime-environment/#missingdependencyerror"
+        help_url="https://inference-models.roboflow.com/errors/runtime-environment/#missingdependencyerror",
     ) from import_error
 
 

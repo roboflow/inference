@@ -52,13 +52,13 @@ try:
 except ImportError as import_error:
     raise MissingDependencyError(
         message="Running YOLOv7 model with TRT backend on GPU requires pycuda installation, which is brought with "
-                "`trt-*` extras of `inference-models` library. If you see this error running locally, "
-                "please follow our installation guide: https://inference-models.roboflow.com/getting-started/installation/"
-                " If you see this error using Roboflow infrastructure, make sure the service you use does support the "
-                f"model, You can also contact Roboflow to get support."
-                "Additionally - if AutoModel.from_pretrained(...) "
-                f"automatically selects model package which does not match your environment - that's a serious problem and "
-                f"we will really appreciate letting us know - https://github.com/roboflow/inference/issues",
+        "`trt-*` extras of `inference-models` library. If you see this error running locally, "
+        "please follow our installation guide: https://inference-models.roboflow.com/getting-started/installation/"
+        " If you see this error using Roboflow infrastructure, make sure the service you use does support the "
+        f"model, You can also contact Roboflow to get support."
+        "Additionally - if AutoModel.from_pretrained(...) "
+        f"automatically selects model package which does not match your environment - that's a serious problem and "
+        f"we will really appreciate letting us know - https://github.com/roboflow/inference/issues",
         help_url="https://inference-models.roboflow.com/errors/runtime-environment/#missingdependencyerror",
     ) from import_error
 
@@ -67,11 +67,11 @@ try:
 except ImportError as import_error:
     raise MissingDependencyError(
         message="Running YOLOv7 model with TRT backend on GPU requires pycuda installation, which is brought with "
-                "`trt-*` extras of `inference-models` library. If you see this error running locally, "
-                "please follow our installation guide: https://inference-models.roboflow.com/getting-started/installation/"
-                " If you see this error using Roboflow infrastructure, make sure the service you use does support the "
-                f"model, You can also contact Roboflow to get support.",
-        help_url="https://inference-models.roboflow.com/errors/runtime-environment/#missingdependencyerror"
+        "`trt-*` extras of `inference-models` library. If you see this error running locally, "
+        "please follow our installation guide: https://inference-models.roboflow.com/getting-started/installation/"
+        " If you see this error using Roboflow infrastructure, make sure the service you use does support the "
+        f"model, You can also contact Roboflow to get support.",
+        help_url="https://inference-models.roboflow.com/errors/runtime-environment/#missingdependencyerror",
     ) from import_error
 
 

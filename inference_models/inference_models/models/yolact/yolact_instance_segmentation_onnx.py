@@ -47,13 +47,13 @@ try:
 except ImportError as import_error:
     raise MissingDependencyError(
         message="Running YOLA-CT model with ONNX backend requires pycuda installation, which is brought with "
-                "`onnx-*` extras of `inference-models` library. If you see this error running locally, "
-                "please follow our installation guide: https://inference-models.roboflow.com/getting-started/installation/"
-                " If you see this error using Roboflow infrastructure, make sure the service you use does support the "
-                f"model, You can also contact Roboflow to get support."
-                "Additionally - if AutoModel.from_pretrained(...) "
-                f"automatically selects model package which does not match your environment - that's a serious problem and "
-                f"we will really appreciate letting us know - https://github.com/roboflow/inference/issues",
+        "`onnx-*` extras of `inference-models` library. If you see this error running locally, "
+        "please follow our installation guide: https://inference-models.roboflow.com/getting-started/installation/"
+        " If you see this error using Roboflow infrastructure, make sure the service you use does support the "
+        f"model, You can also contact Roboflow to get support."
+        "Additionally - if AutoModel.from_pretrained(...) "
+        f"automatically selects model package which does not match your environment - that's a serious problem and "
+        f"we will really appreciate letting us know - https://github.com/roboflow/inference/issues",
         help_url="https://inference-models.roboflow.com/errors/runtime-environment/#missingdependencyerror",
     ) from import_error
 
@@ -133,7 +133,7 @@ class YOLOACTForInstanceSegmentationOnnx(
                 "onnx models accepting inputs with `batch_size=1`. It can be extended if needed, but we've "
                 "not heard such request so far. If you find that a valuable feature - let us know via "
                 "https://github.com/roboflow/inference/issues",
-                help_url = "https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
+                help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
             )
         input_name = session.get_inputs()[0].name
         return cls(

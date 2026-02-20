@@ -172,7 +172,7 @@ def download_files_to_directory(
             f"invalid value of parameter `name_after` - received value `{name_after}`. "
             f"This is a bug in `inference-models` - submit new issue under "
             f"https://github.com/roboflow/inference/issues/",
-            help_url="https://inference-models.roboflow.com/errors/input-validation/#invalidparametererror"
+            help_url="https://inference-models.roboflow.com/errors/input-validation/#invalidparametererror",
         )
     if DISABLE_INTERACTIVE_PROGRESS_BARS:
         verbose = False
@@ -432,7 +432,7 @@ def check_range_download_option(
     except (OSError, Timeout, requests.exceptions.ConnectionError):
         raise RetryError(
             message=f"Connectivity error for URL: {url}",
-            help_url="https://inference-models.roboflow.com/errors/file-download/#retryerror"
+            help_url="https://inference-models.roboflow.com/errors/file-download/#retryerror",
         )
     if response.status_code in response_codes_to_retry:
         raise RetryError(
@@ -469,7 +469,7 @@ def get_content_length(
     except (OSError, Timeout, requests.exceptions.ConnectionError):
         raise RetryError(
             message=f"Connectivity error for URL: {url}",
-            help_url="https://inference-models.roboflow.com/errors/file-download/#retryerror"
+            help_url="https://inference-models.roboflow.com/errors/file-download/#retryerror",
         )
     if response.status_code in response_codes_to_retry:
         raise RetryError(

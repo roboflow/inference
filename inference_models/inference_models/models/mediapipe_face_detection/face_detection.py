@@ -117,7 +117,7 @@ class MediaPipeFaceDetector(
         if not len(images):
             raise ModelInputError(
                 message="Detected empty input to the model",
-                help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror"
+                help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
             )
         if isinstance(images[0], np.ndarray):
             input_color_format = input_color_format or "bgr"

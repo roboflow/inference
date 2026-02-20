@@ -91,7 +91,7 @@ def inputs_to_tensor(
         if not images:
             raise ModelInputError(
                 message="Input image list cannot be empty.",
-                help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror"
+                help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
             )
         return [
             input_to_tensor(
@@ -118,7 +118,7 @@ def input_to_tensor(
     if not isinstance(image, (np.ndarray, torch.Tensor)):
         raise ModelInputError(
             message=f"Unsupported input type: {type(image)}. Each element must be one of np.ndarray, or torch.Tensor.",
-            help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror"
+            help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
         )
     is_numpy = isinstance(image, np.ndarray)
     if is_numpy:
@@ -126,7 +126,7 @@ def input_to_tensor(
             raise ModelInputError(
                 message=f"Unsupported input type: detected np.ndarray image of shape {image.shape} which has "
                 f"number of dimensions different than 3. This input is invalid.",
-                help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror"
+                help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
             )
         if image.shape[-1] != 3:
             raise ModelInputError(
