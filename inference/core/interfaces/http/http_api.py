@@ -232,6 +232,7 @@ from inference.core.interfaces.webrtc_worker.entities import (
     WebRTCWorkerRequest,
     WebRTCWorkerResult,
 )
+from inference.core.interfaces.webrtc_worker.utils import refresh_webrtc_session
 from inference.core.managers.base import ModelManager
 from inference.core.managers.metrics import get_container_stats
 from inference.core.managers.prometheus import InferenceInstrumentator
@@ -1598,6 +1599,36 @@ class HttpInterface(BaseInterface):
                     sdp=worker_result.answer.sdp,
                     type=worker_result.answer.type,
                 )
+
+            @app.post(
+                "/webrtc/session/heartbeat",
+                summary="WebRTC session heartbeat",
+                description="Called by Modal workers to keep their session alive in the quota tracking system",
+            )
+            async def webrtc_session_heartbeat(
+                request: Request,
+            ) -> dict:
+                """Receive heartbeat for an active WebRTC session.
+
+                This endpoint is called periodically by Modal workers to indicate
+                that their session is still active. The session will be removed from
+                the quota count if no heartbeat is received within the TTL period.
+                """
+                body = await request.json()
+                workspace_id = body.get("workspace_id")
+                session_id = body.get("session_id")
+
+                if not workspace_id or not session_id:
+                    return {
+                        "status": "error",
+                        "message": "workspace_id and session_id required",
+                    }
+
+                refresh_webrtc_session(
+                    workspace_id=workspace_id,
+                    session_id=session_id,
+                )
+                return {"status": "ok"}
 
         if ENABLE_STREAM_API:
 

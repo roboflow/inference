@@ -791,6 +791,31 @@ WEBRTC_MODAL_PUBLIC_STUN_SERVERS = os.getenv(
 WEBRTC_MODAL_USAGE_QUOTA_ENABLED = str2bool(
     os.getenv("WEBRTC_MODAL_USAGE_QUOTA_ENABLED", "False")
 )
+
+#
+# Workspace stream quota
+#
+# Redis-base rate limiting that disables more than N concurrent
+# connections from a single workspace
+WEBRTC_WORKSPACE_STREAM_QUOTA_ENABLED = str2bool(
+    os.getenv("WEBRTC_WORKSPACE_STREAM_QUOTA_ENABLED", "False")
+)
+WEBRTC_WORKSPACE_STREAM_QUOTA = int(os.getenv("WEBRTC_WORKSPACE_STREAM_QUOTA", "10"))
+# TTL in seconds for active stream entries (auto-expire if no explicit cleanup)
+WEBRTC_WORKSPACE_STREAM_TTL_SECONDS = int(
+    os.getenv("WEBRTC_WORKSPACE_STREAM_TTL_SECONDS", "60")
+)
+# URL for Modal to send session heartbeats to keep session alive
+# Example: "https://serverless.roboflow.com/webrtc/session/heartbeat"
+WEBRTC_SESSION_HEARTBEAT_URL = os.getenv(
+    "WEBRTC_SESSION_HEARTBEAT_URL",
+    None,
+)
+# How often Modal sends session heartbeats (in seconds)
+WEBRTC_SESSION_HEARTBEAT_INTERVAL_SECONDS = int(
+    os.getenv("WEBRTC_SESSION_HEARTBEAT_INTERVAL_SECONDS", "30")
+)
+
 WEBRTC_DATA_CHANNEL_BUFFER_DRAINING_DELAY = float(
     os.getenv("WEBRTC_DATA_CHANNEL_BUFFER_DRAINING_DELAY", "0.1")
 )
