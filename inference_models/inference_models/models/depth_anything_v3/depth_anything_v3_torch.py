@@ -14,6 +14,7 @@
 
 import json
 import warnings
+from threading import Lock
 from typing import Dict, List, Tuple, Union
 
 import numpy as np
@@ -196,6 +197,7 @@ class DepthAnythingV3Torch(
         self._processor = processor
         self._device = device
         self._dtype = dtype
+        self._lock = Lock()
 
     def pre_process(
         self,
@@ -214,7 +216,7 @@ class DepthAnythingV3Torch(
         pre_processed_images: torch.Tensor,
         **kwargs,
     ) -> torch.Tensor:
-        with torch.inference_mode():
+        with self._lock, torch.inference_mode():
             outputs = self._model(pre_processed_images)
             depth_map = outputs["depth"].squeeze(1)
             depth_min = depth_map.min()

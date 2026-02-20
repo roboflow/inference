@@ -64,6 +64,21 @@ from inference.core.workflows.errors import (
     WorkflowExecutionEngineVersionError,
     WorkflowSyntaxError,
 )
+from inference_models.errors import (
+    EnvironmentConfigurationError,
+    FileHashSumMissmatch,
+    InvalidEnvVariable,
+    InvalidParameterError,
+    JetsonTypeResolutionError,
+    MissingDependencyError,
+    ModelInputError,
+    ModelLoadingError,
+    ModelNotFoundError,
+    ModelPackageNegotiationError,
+    ModelRetrievalError,
+    UnauthorizedModelAccessError,
+    UntrustedFileError,
+)
 
 
 def with_route_exceptions(route):
@@ -102,6 +117,15 @@ def with_route_exceptions(route):
                 status_code=400,
                 content={
                     "message": f"Could not load input image. Cause: {error.get_public_error_details()}"
+                },
+            )
+        except ModelInputError as error:
+            logger.exception("%s: %s", type(error).__name__, error)
+            resp = JSONResponse(
+                status_code=400,
+                content={
+                    "message": f"Error with model input. Cause: {error}",
+                    "help_url": error.help_url,
                 },
             )
         except InvalidModelIDError as error:
@@ -182,6 +206,7 @@ def with_route_exceptions(route):
         except (
             RoboflowAPINotAuthorizedError,
             ProcessesManagerAuthorisationError,
+            UnauthorizedModelAccessError,
         ) as error:
             logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
@@ -202,7 +227,7 @@ def with_route_exceptions(route):
                     "to learn how to retrieve one."
                 },
             )
-        except RoboflowAPINotNotFoundError as error:
+        except (RoboflowAPINotNotFoundError, ModelNotFoundError) as error:
             logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
                 status_code=404,
@@ -221,10 +246,24 @@ def with_route_exceptions(route):
                     "inner_error_type": error.inner_error_type,
                 },
             )
+        except ModelPackageNegotiationError as error:
+            logger.exception("%s: %s", type(error).__name__, error)
+            resp = JSONResponse(
+                status_code=500,
+                content={
+                    "message": f"Could not negotiate model package - {error}",
+                    "help_url": error.help_url,
+                },
+            )
         except (
             InvalidEnvironmentVariableError,
             MissingServiceSecretError,
             ServiceConfigurationError,
+            EnvironmentConfigurationError,
+            InvalidEnvVariable,
+            JetsonTypeResolutionError,
+            MissingDependencyError,
+            InvalidParameterError,
         ) as error:
             logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
@@ -245,6 +284,33 @@ def with_route_exceptions(route):
             logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
                 status_code=500, content={"message": "Model package is broken."}
+            )
+        except ModelLoadingError as error:
+            logger.exception("%s: %s", type(error).__name__, error)
+            resp = JSONResponse(
+                status_code=500,
+                content={
+                    "message": f"Model loading failed: {error}",
+                    "help_url": error.help_url,
+                },
+            )
+        except (UntrustedFileError, FileHashSumMissmatch) as error:
+            logger.exception("%s: %s", type(error).__name__, error)
+            resp = JSONResponse(
+                status_code=500,
+                content={
+                    "message": f"Issue with model package file: {error}",
+                    "help_url": error.help_url,
+                },
+            )
+        except ModelRetrievalError as error:
+            logger.exception("%s: %s", type(error).__name__, error)
+            resp = JSONResponse(
+                status_code=500,
+                content={
+                    "message": f"Could not retrieve model {error}",
+                    "help_url": error.help_url,
+                },
             )
         except OnnxProviderNotAvailable as error:
             logger.exception("%s: %s", type(error).__name__, error)
@@ -434,6 +500,15 @@ def with_route_exceptions_async(route):
                     "message": f"Could not load input image. Cause: {error.get_public_error_details()}"
                 },
             )
+        except ModelInputError as error:
+            logger.exception("%s: %s", type(error).__name__, error)
+            resp = JSONResponse(
+                status_code=400,
+                content={
+                    "message": f"Error with model input. Cause: {error}",
+                    "help_url": error.help_url,
+                },
+            )
         except InvalidModelIDError as error:
             logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
@@ -512,6 +587,7 @@ def with_route_exceptions_async(route):
         except (
             RoboflowAPINotAuthorizedError,
             ProcessesManagerAuthorisationError,
+            UnauthorizedModelAccessError,
         ) as error:
             logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
@@ -532,7 +608,7 @@ def with_route_exceptions_async(route):
                     "to learn how to retrieve one."
                 },
             )
-        except RoboflowAPINotNotFoundError as error:
+        except (RoboflowAPINotNotFoundError, ModelNotFoundError) as error:
             logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
                 status_code=404,
@@ -551,10 +627,24 @@ def with_route_exceptions_async(route):
                     "inner_error_type": error.inner_error_type,
                 },
             )
+        except ModelPackageNegotiationError as error:
+            logger.exception("%s: %s", type(error).__name__, error)
+            resp = JSONResponse(
+                status_code=500,
+                content={
+                    "message": f"Could not negotiate model package - {error}",
+                    "help_url": error.help_url,
+                },
+            )
         except (
             InvalidEnvironmentVariableError,
             MissingServiceSecretError,
             ServiceConfigurationError,
+            EnvironmentConfigurationError,
+            InvalidEnvVariable,
+            JetsonTypeResolutionError,
+            MissingDependencyError,
+            InvalidParameterError,
         ) as error:
             logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
@@ -575,6 +665,33 @@ def with_route_exceptions_async(route):
             logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
                 status_code=500, content={"message": "Model package is broken."}
+            )
+        except ModelLoadingError as error:
+            logger.exception("%s: %s", type(error).__name__, error)
+            resp = JSONResponse(
+                status_code=500,
+                content={
+                    "message": f"Model loading failed: {error}",
+                    "help_url": error.help_url,
+                },
+            )
+        except (UntrustedFileError, FileHashSumMissmatch) as error:
+            logger.exception("%s: %s", type(error).__name__, error)
+            resp = JSONResponse(
+                status_code=500,
+                content={
+                    "message": f"Issue with model package file: {error}",
+                    "help_url": error.help_url,
+                },
+            )
+        except ModelRetrievalError as error:
+            logger.exception("%s: %s", type(error).__name__, error)
+            resp = JSONResponse(
+                status_code=500,
+                content={
+                    "message": f"Could not retrieve model {error}",
+                    "help_url": error.help_url,
+                },
             )
         except OnnxProviderNotAvailable as error:
             logger.exception("%s: %s", type(error).__name__, error)

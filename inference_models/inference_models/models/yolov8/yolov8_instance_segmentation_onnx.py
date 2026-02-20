@@ -5,7 +5,13 @@ import numpy as np
 import torch
 
 from inference_models import InstanceDetections, InstanceSegmentationModel
-from inference_models.configuration import DEFAULT_DEVICE
+from inference_models.configuration import (
+    DEFAULT_DEVICE,
+    INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_CLASS_AGNOSTIC_NMS,
+    INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_CONFIDENCE,
+    INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_IOU_THRESHOLD,
+    INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_MAX_DETECTIONS,
+)
 from inference_models.entities import ColorFormat
 from inference_models.errors import (
     CorruptedModelPackageError,
@@ -42,16 +48,15 @@ try:
     import onnxruntime
 except ImportError as import_error:
     raise MissingDependencyError(
-        message=f"Could not import YOLOv8 model with ONNX backend - this error means that some additional dependencies "
-        f"are not installed in the environment. If you run the `inference-models` library directly in your Python "
-        f"program, make sure the following extras of the package are installed: \n"
-        f"\t* `onnx-cpu` - when you wish to use library with CPU support only\n"
-        f"\t* `onnx-cu12` - for running on GPU with Cuda 12 installed\n"
-        f"\t* `onnx-cu118` - for running on GPU with Cuda 11.8 installed\n"
-        f"\t* `onnx-jp6-cu126` - for running on Jetson with Jetpack 6\n"
-        f"If you see this error using Roboflow infrastructure, make sure the service you use does support the model. "
-        f"You can also contact Roboflow to get support.",
-        help_url="https://todo",
+        message="Running YOLOv8 model with ONNX backend requires pycuda installation, which is brought with "
+        "`onnx-*` extras of `inference-models` library. If you see this error running locally, "
+        "please follow our installation guide: https://inference-models.roboflow.com/getting-started/installation/"
+        " If you see this error using Roboflow infrastructure, make sure the service you use does support the "
+        f"model, You can also contact Roboflow to get support."
+        "Additionally - if AutoModel.from_pretrained(...) "
+        f"automatically selects model package which does not match your environment - that's a serious problem and "
+        f"we will really appreciate letting us know - https://github.com/roboflow/inference/issues",
+        help_url="https://inference-models.roboflow.com/errors/runtime-environment/#missingdependencyerror",
     ) from import_error
 
 
@@ -78,7 +83,7 @@ class YOLOv8ForInstanceSegmentationOnnx(
                 f"be specified - explicitly in `from_pretrained(...)` method or via env variable "
                 f"`ONNXRUNTIME_EXECUTION_PROVIDERS`. If you run model locally - adjust your setup, otherwise "
                 f"contact the platform support.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/runtime-environment/#environmentconfigurationerror",
             )
         onnx_execution_providers = set_onnx_execution_provider_defaults(
             providers=onnx_execution_providers,
@@ -105,11 +110,22 @@ class YOLOv8ForInstanceSegmentationOnnx(
                 ResizeMode.CENTER_CROP,
                 ResizeMode.LETTERBOX_REFLECT_EDGES,
             },
+            implicit_resize_mode_substitutions={
+                ResizeMode.FIT_LONGER_EDGE: (
+                    ResizeMode.LETTERBOX,
+                    127,
+                    "YOLOv8 Instance Segmentation model running with ONNX backend was trained with "
+                    "`fit-longer-edge` input resize mode. This transform cannot be applied properly for "
+                    "models with input dimensions fixed during weights export. To ensure interoperability, `letterbox` "
+                    "resize mode with gray edges will be used instead. If model was trained on Roboflow platform, "
+                    "we recommend using preprocessing method different that `fit-longer-edge`.",
+                )
+            },
         )
         if inference_config.post_processing.type != "nms":
             raise CorruptedModelPackageError(
                 message="Expected NMS to be the post-processing",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
         session = onnxruntime.InferenceSession(
             path_or_bytes=model_package_content["weights.onnx"],
@@ -181,24 +197,24 @@ class YOLOv8ForInstanceSegmentationOnnx(
         self,
         model_results: Tuple[torch.Tensor, torch.Tensor],
         pre_processing_meta: List[PreProcessingMetadata],
-        conf_thresh: float = 0.25,
-        iou_thresh: float = 0.45,
-        max_detections: int = 100,
-        class_agnostic: bool = False,
+        confidence: float = INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_CONFIDENCE,
+        iou_threshold: float = INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_IOU_THRESHOLD,
+        max_detections: int = INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_MAX_DETECTIONS,
+        class_agnostic_nms: bool = INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_CLASS_AGNOSTIC_NMS,
         **kwargs,
     ) -> List[InstanceDetections]:
         instances, protos = model_results
         if self._inference_config.post_processing.fused:
             nms_results = post_process_nms_fused_model_output(
-                output=instances, conf_thresh=conf_thresh
+                output=instances, conf_thresh=confidence
             )
         else:
             nms_results = run_nms_for_instance_segmentation(
                 output=instances,
-                conf_thresh=conf_thresh,
-                iou_thresh=iou_thresh,
+                conf_thresh=confidence,
+                iou_thresh=iou_threshold,
                 max_detections=max_detections,
-                class_agnostic=class_agnostic,
+                class_agnostic=class_agnostic_nms,
             )
         final_results = []
         for image_bboxes, image_protos, image_meta in zip(

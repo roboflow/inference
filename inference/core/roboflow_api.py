@@ -33,6 +33,8 @@ from inference.core.entities.types import (
 )
 from inference.core.env import (
     API_BASE_URL,
+    ENFORCE_CREDITS_VERIFICATION,
+    GCP_SERVERLESS,
     INTERNAL_WEIGHTS_URL_SUFFIX,
     MD5_VERIFICATION_ENABLED,
     MODEL_CACHE_DIR,
@@ -73,6 +75,9 @@ from inference.core.utils.requests import (
 )
 from inference.core.utils.url_utils import wrap_url
 from inference.core.version import __version__
+
+ENFORCE_CREDITS_VERIFICATION_HEADER = "x-enforce-credits-verification"
+ENFORCE_INTERNAL_ARTIFACTS_URLS_HEADER = "x-enforce-internal-artefacts-urls"
 
 MODEL_TYPE_DEFAULTS = {
     "object-detection": "yolov5v2s",
@@ -690,6 +695,7 @@ def get_workflow_specification(
     workflow_id: str,
     use_cache: bool = True,
     ephemeral_cache: Optional[BaseCache] = None,
+    workflow_version_id: Optional[str] = None,
 ) -> dict:
     ephemeral_cache = ephemeral_cache or cache
     if use_cache:
@@ -697,6 +703,7 @@ def get_workflow_specification(
             api_key=api_key,
             workspace_id=workspace_id,
             workflow_id=workflow_id,
+            workflow_version_id=workflow_version_id,
             ephemeral_cache=ephemeral_cache,
         )
         if cached_entry:
@@ -722,6 +729,8 @@ def get_workflow_specification(
         params = []
         if api_key is not None:
             params.append(("api_key", api_key))
+        if workflow_version_id is not None:
+            params.append(("workflow_version", workflow_version_id))
         api_url = _add_params_to_url(
             url=f"{API_BASE_URL}/{workspace_id}/workflows/{workflow_id}",
             params=params,
@@ -760,6 +769,7 @@ def get_workflow_specification(
                 api_key=api_key,
                 workspace_id=workspace_id,
                 workflow_id=workflow_id,
+                workflow_version_id=workflow_version_id,
                 specification=specification,
                 ephemeral_cache=ephemeral_cache,
             )
@@ -779,11 +789,13 @@ def _retrieve_workflow_specification_from_ephemeral_cache(
     workspace_id: WorkspaceID,
     workflow_id: str,
     ephemeral_cache: BaseCache,
+    workflow_version_id: Optional[str] = None,
 ) -> Optional[dict]:
     cache_key = _prepare_workflow_response_cache_key(
         api_key=api_key,
         workspace_id=workspace_id,
         workflow_id=workflow_id,
+        workflow_version_id=workflow_version_id,
     )
     return ephemeral_cache.get(key=cache_key)
 
@@ -794,11 +806,13 @@ def _cache_workflow_specification_in_ephemeral_cache(
     workflow_id: str,
     specification: dict,
     ephemeral_cache: BaseCache,
+    workflow_version_id: Optional[str] = None,
 ) -> None:
     cache_key = _prepare_workflow_response_cache_key(
         api_key=api_key,
         workspace_id=workspace_id,
         workflow_id=workflow_id,
+        workflow_version_id=workflow_version_id,
     )
     ephemeral_cache.set(
         key=cache_key,
@@ -811,13 +825,17 @@ def _prepare_workflow_response_cache_key(
     api_key: Optional[str],
     workspace_id: WorkspaceID,
     workflow_id: str,
+    workflow_version_id: Optional[str] = None,
 ) -> str:
     api_key_hash = (
         hashlib.md5(api_key.encode("utf-8")).hexdigest()
         if api_key is not None
         else "None"
     )
-    return f"workflow_definition:{workspace_id}:{workflow_id}:{api_key_hash}"
+    workflow_version_suffix = (
+        f":workflow_version={workflow_version_id}" if workflow_version_id else ""
+    )
+    return f"workflow_definition:{workspace_id}:{workflow_id}{workflow_version_suffix}:{api_key_hash}"
 
 
 @wrap_roboflow_api_errors()
@@ -988,6 +1006,15 @@ def send_inference_results_to_model_monitoring(
         verify=ROBOFLOW_API_VERIFY_SSL,
     )
     api_key_safe_raise_for_status(response=response)
+
+
+def get_extra_weights_provider_headers() -> Optional[Dict[str, str]]:
+    headers = {}
+    if GCP_SERVERLESS:
+        headers[ENFORCE_INTERNAL_ARTIFACTS_URLS_HEADER] = "true"
+    if ENFORCE_CREDITS_VERIFICATION:
+        headers[ENFORCE_CREDITS_VERIFICATION_HEADER] = "true"
+    return build_roboflow_api_headers(explicit_headers=headers)
 
 
 def build_roboflow_api_headers(

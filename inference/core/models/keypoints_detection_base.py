@@ -4,11 +4,9 @@ import numpy as np
 
 from inference.core.entities.responses.inference import (
     InferenceResponseImage,
-    Keypoint,
     KeypointsDetectionInferenceResponse,
     KeypointsPrediction,
 )
-from inference.core.exceptions import ModelArtefactError
 from inference.core.models.object_detection_base import (
     ObjectDetectionBaseOnnxRoboflowInferenceModel,
 )

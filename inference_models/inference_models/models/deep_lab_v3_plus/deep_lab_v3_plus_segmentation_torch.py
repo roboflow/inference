@@ -1,3 +1,4 @@
+from threading import Lock
 from typing import List, Optional, Tuple, Union
 
 import segmentation_models_pytorch as smp
@@ -5,7 +6,10 @@ import torch
 from torchvision.transforms import functional
 
 from inference_models import ColorFormat, SemanticSegmentationModel
-from inference_models.configuration import DEFAULT_DEVICE
+from inference_models.configuration import (
+    DEFAULT_DEVICE,
+    INFERENCE_MODELS_DEEP_LAB_V3_PLUS_DEFAULT_CONFIDENCE,
+)
 from inference_models.errors import CorruptedModelPackageError
 from inference_models.models.base.semantic_segmentation import (
     SemanticSegmentationResult,
@@ -57,12 +61,13 @@ class DeepLabV3PlusForSemanticSegmentationTorch(
                 ResizeMode.LETTERBOX,
                 ResizeMode.CENTER_CROP,
                 ResizeMode.LETTERBOX_REFLECT_EDGES,
+                ResizeMode.FIT_LONGER_EDGE,
             },
         )
         if inference_config.model_initialization is None:
             raise CorruptedModelPackageError(
                 message="Expected model initialization parameters not provided in inference config.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
         num_classes = inference_config.model_initialization.get("classes")
         in_channels = inference_config.model_initialization.get("in_channels")
@@ -70,17 +75,17 @@ class DeepLabV3PlusForSemanticSegmentationTorch(
         if not isinstance(num_classes, int) or num_classes < 1:
             raise CorruptedModelPackageError(
                 message="Expected model initialization parameter `num_classes` not provided or in invalid format.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
         if not isinstance(in_channels, int) or in_channels not in {1, 3}:
             raise CorruptedModelPackageError(
                 message="Expected model initialization parameter `in_channels` not provided or in invalid format.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
         if not isinstance(encoder_name, str):
             raise CorruptedModelPackageError(
                 message="Expected model initialization parameter `encoder_name` not provided or in invalid format.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
         model = (
             smp.DeepLabV3Plus(
@@ -121,6 +126,7 @@ class DeepLabV3PlusForSemanticSegmentationTorch(
         self._class_names = class_names
         self._background_class_id = background_class_id
         self._device = device
+        self._lock = Lock()
 
     @property
     def class_names(self) -> List[str]:
@@ -143,14 +149,14 @@ class DeepLabV3PlusForSemanticSegmentationTorch(
         )
 
     def forward(self, pre_processed_images: torch.Tensor, **kwargs) -> torch.Tensor:
-        with torch.inference_mode():
+        with self._lock, torch.inference_mode():
             return self._model(pre_processed_images)
 
     def post_process(
         self,
         model_results: torch.Tensor,
         pre_processing_meta: List[PreProcessingMetadata],
-        confidence_threshold: float = 0.5,
+        confidence: float = INFERENCE_MODELS_DEEP_LAB_V3_PLUS_DEFAULT_CONFIDENCE,
         **kwargs,
     ) -> List[SemanticSegmentationResult]:
         results = []
@@ -215,7 +221,7 @@ class DeepLabV3PlusForSemanticSegmentationTorch(
                 )
             image_results = torch.nn.functional.softmax(image_results, dim=0)
             image_confidence, image_class_ids = torch.max(image_results, dim=0)
-            below_threshold = image_confidence < confidence_threshold
+            below_threshold = image_confidence < confidence
             image_confidence[below_threshold] = 0.0
             image_class_ids[below_threshold] = self._background_class_id
             if (

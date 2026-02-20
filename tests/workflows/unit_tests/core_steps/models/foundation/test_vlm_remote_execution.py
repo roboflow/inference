@@ -1,4 +1,5 @@
 """Unit tests for VLM blocks remote execution (Florence2, Moondream2, SmolVLM, Qwen)."""
+
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -150,9 +151,7 @@ class TestSmolVLMRemote:
         )
 
         mock_client = MagicMock()
-        mock_client.infer_lmm.return_value = {
-            "response": "This is a test image."
-        }
+        mock_client.infer_lmm.return_value = {"response": "This is a test image."}
         mock_client_cls.return_value = mock_client
 
         block = SmolVLM2BlockV1(
@@ -186,9 +185,7 @@ class TestQwen25VLRemote:
         )
 
         mock_client = MagicMock()
-        mock_client.infer_lmm.return_value = {
-            "response": "This is a test response."
-        }
+        mock_client.infer_lmm.return_value = {"response": "This is a test response."}
         mock_client_cls.return_value = mock_client
 
         block = Qwen25VLBlockV1(
@@ -223,9 +220,7 @@ class TestQwen3VLRemote:
         )
 
         mock_client = MagicMock()
-        mock_client.infer_lmm.return_value = {
-            "response": "This is a test response."
-        }
+        mock_client.infer_lmm.return_value = {"response": "This is a test response."}
         mock_client_cls.return_value = mock_client
 
         block = Qwen3VLBlockV1(

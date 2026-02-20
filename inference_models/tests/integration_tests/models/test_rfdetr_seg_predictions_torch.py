@@ -19,7 +19,7 @@ def test_package_with_stretch_against_numpy_input(
     )
 
     # when
-    predictions = model(snake_image_numpy)
+    predictions = model(snake_image_numpy, confidence=0.5)
 
     # then
     assert len(predictions) == 1
@@ -45,7 +45,7 @@ def test_package_with_stretch_against_numpy_list_input(
     )
 
     # when
-    predictions = model([snake_image_numpy, snake_image_numpy])
+    predictions = model([snake_image_numpy, snake_image_numpy], confidence=0.5)
 
     # then
     assert len(predictions) == 2
@@ -75,7 +75,7 @@ def test_package_with_stretch_against_torch_input(
     )
 
     # when
-    predictions = model(snake_image_torch)
+    predictions = model(snake_image_torch, confidence=0.5)
 
     # then
     assert len(predictions) == 1
@@ -101,7 +101,7 @@ def test_package_with_stretch_against_torch_list_input(
     )
 
     # when
-    predictions = model([snake_image_torch, snake_image_torch])
+    predictions = model([snake_image_torch, snake_image_torch], confidence=0.5)
 
     # then
     assert len(predictions) == 2
@@ -131,7 +131,10 @@ def test_package_with_stretch_against_torch_batch_input(
     )
 
     # when
-    predictions = model(torch.stack([snake_image_torch, snake_image_torch], dim=0))
+    predictions = model(
+        torch.stack([snake_image_torch, snake_image_torch], dim=0),
+        confidence=0.5,
+    )
 
     # then
     assert len(predictions) == 2
@@ -161,7 +164,7 @@ def test_package_with_letterbox_against_numpy_input(
     )
 
     # when
-    predictions = model(snake_image_numpy)
+    predictions = model(snake_image_numpy, confidence=0.5)
 
     # then
     assert len(predictions) == 1
@@ -187,7 +190,7 @@ def test_package_with_letterbox_against_numpy_list_input(
     )
 
     # when
-    predictions = model([snake_image_numpy, snake_image_numpy])
+    predictions = model([snake_image_numpy, snake_image_numpy], confidence=0.5)
 
     # then
     assert len(predictions) == 2
@@ -217,7 +220,7 @@ def test_package_with_letterbox_against_torch_input(
     )
 
     # when
-    predictions = model(snake_image_torch)
+    predictions = model(snake_image_torch, confidence=0.5)
 
     # then
     assert len(predictions) == 1
@@ -243,7 +246,7 @@ def test_package_with_letterbox_against_torch_list_input(
     )
 
     # when
-    predictions = model([snake_image_torch, snake_image_torch])
+    predictions = model([snake_image_torch, snake_image_torch], confidence=0.5)
 
     # then
     assert len(predictions) == 2
@@ -273,7 +276,10 @@ def test_package_with_letterbox_against_torch_batch_input(
     )
 
     # when
-    predictions = model(torch.stack([snake_image_torch, snake_image_torch], dim=0))
+    predictions = model(
+        torch.stack([snake_image_torch, snake_image_torch], dim=0),
+        confidence=0.5,
+    )
 
     # then
     assert len(predictions) == 2
@@ -303,7 +309,7 @@ def test_package_with_center_crop_against_numpy_input(
     )
 
     # when
-    predictions = model(snake_image_numpy)
+    predictions = model(snake_image_numpy, confidence=0.5)
 
     # then
     assert len(predictions) == 1
@@ -329,7 +335,7 @@ def test_package_with_center_crop_against_numpy_list_input(
     )
 
     # when
-    predictions = model([snake_image_numpy, snake_image_numpy])
+    predictions = model([snake_image_numpy, snake_image_numpy], confidence=0.5)
 
     # then
     assert len(predictions) == 2
@@ -359,7 +365,7 @@ def test_package_with_center_crop_against_torch_input(
     )
 
     # when
-    predictions = model(snake_image_torch)
+    predictions = model(snake_image_torch, confidence=0.5)
 
     # then
     assert len(predictions) == 1
@@ -385,7 +391,7 @@ def test_package_with_center_crop_against_torch_list_input(
     )
 
     # when
-    predictions = model([snake_image_torch, snake_image_torch])
+    predictions = model([snake_image_torch, snake_image_torch], confidence=0.5)
 
     # then
     assert len(predictions) == 2
@@ -415,7 +421,9 @@ def test_package_with_center_crop_against_torch_batch_input(
     )
 
     # when
-    predictions = model(torch.stack([snake_image_torch, snake_image_torch], dim=0))
+    predictions = model(
+        torch.stack([snake_image_torch, snake_image_torch], dim=0), confidence=0.5
+    )
 
     # then
     assert len(predictions) == 2
@@ -445,7 +453,7 @@ def test_package_with_static_crop_stretch_against_numpy_input(
     )
 
     # when
-    predictions = model(snake_image_numpy)
+    predictions = model(snake_image_numpy, confidence=0.5)
 
     # then
     assert len(predictions) == 1
@@ -471,7 +479,7 @@ def test_package_with_static_crop_stretch_against_numpy_list_input(
     )
 
     # when
-    predictions = model([snake_image_numpy, snake_image_numpy])
+    predictions = model([snake_image_numpy, snake_image_numpy], confidence=0.5)
 
     # then
     assert len(predictions) == 2
@@ -501,7 +509,7 @@ def test_package_with_static_crop_stretch_against_torch_input(
     )
 
     # when
-    predictions = model(snake_image_torch)
+    predictions = model(snake_image_torch, confidence=0.5)
 
     # then
     assert len(predictions) == 1
@@ -527,7 +535,7 @@ def test_package_with_static_crop_stretch_against_torch_list_input(
     )
 
     # when
-    predictions = model([snake_image_torch, snake_image_torch])
+    predictions = model([snake_image_torch, snake_image_torch], confidence=0.5)
 
     # then
     assert len(predictions) == 2
@@ -557,7 +565,10 @@ def test_package_with_static_crop_stretch_against_torch_batch_input(
     )
 
     # when
-    predictions = model(torch.stack([snake_image_torch, snake_image_torch], dim=0))
+    predictions = model(
+        torch.stack([snake_image_torch, snake_image_torch], dim=0),
+        confidence=0.5,
+    )
 
     # then
     assert len(predictions) == 2
@@ -587,7 +598,7 @@ def test_package_with_static_crop_letterbox_against_numpy_input(
     )
 
     # when
-    predictions = model(snake_image_numpy)
+    predictions = model(snake_image_numpy, confidence=0.5)
 
     # then
     assert len(predictions) == 1
@@ -613,7 +624,7 @@ def test_package_with_static_crop_letterbox_against_numpy_list_input(
     )
 
     # when
-    predictions = model([snake_image_numpy, snake_image_numpy])
+    predictions = model([snake_image_numpy, snake_image_numpy], confidence=0.5)
 
     # then
     assert len(predictions) == 2
@@ -643,7 +654,7 @@ def test_package_with_static_crop_letterbox_against_torch_input(
     )
 
     # when
-    predictions = model(snake_image_torch)
+    predictions = model(snake_image_torch, confidence=0.5)
 
     # then
     assert len(predictions) == 1
@@ -669,7 +680,7 @@ def test_package_with_static_crop_letterbox_against_torch_list_input(
     )
 
     # when
-    predictions = model([snake_image_torch, snake_image_torch])
+    predictions = model([snake_image_torch, snake_image_torch], confidence=0.5)
 
     # then
     assert len(predictions) == 2
@@ -699,7 +710,10 @@ def test_package_with_static_crop_letterbox_against_torch_batch_input(
     )
 
     # when
-    predictions = model(torch.stack([snake_image_torch, snake_image_torch], dim=0))
+    predictions = model(
+        torch.stack([snake_image_torch, snake_image_torch], dim=0),
+        confidence=0.5,
+    )
 
     # then
     assert len(predictions) == 2
@@ -729,7 +743,7 @@ def test_package_with_static_crop_center_crop_against_numpy_input(
     )
 
     # when
-    predictions = model(snake_image_numpy)
+    predictions = model(snake_image_numpy, confidence=0.5)
 
     # then
     assert len(predictions) == 1
@@ -755,7 +769,7 @@ def test_package_with_static_crop_center_crop_against_numpy_input(
     )
 
     # when
-    predictions = model(snake_image_numpy)
+    predictions = model(snake_image_numpy, confidence=0.5)
 
     # then
     assert len(predictions) == 1
@@ -781,7 +795,7 @@ def test_package_with_static_crop_center_crop_against_numpy_list_input(
     )
 
     # when
-    predictions = model([snake_image_numpy, snake_image_numpy])
+    predictions = model([snake_image_numpy, snake_image_numpy], confidence=0.5)
 
     # then
     assert len(predictions) == 2
@@ -811,7 +825,7 @@ def test_package_with_static_crop_center_crop_against_torch_input(
     )
 
     # when
-    predictions = model(snake_image_torch)
+    predictions = model(snake_image_torch, confidence=0.5)
 
     # then
     assert len(predictions) == 1
@@ -837,7 +851,7 @@ def test_package_with_static_crop_center_crop_against_torch_list_input(
     )
 
     # when
-    predictions = model([snake_image_torch, snake_image_torch])
+    predictions = model([snake_image_torch, snake_image_torch], confidence=0.5)
 
     # then
     assert len(predictions) == 2
@@ -867,7 +881,10 @@ def test_package_with_static_crop_center_crop_against_torch_batch_input(
     )
 
     # when
-    predictions = model(torch.stack([snake_image_torch, snake_image_torch], dim=0))
+    predictions = model(
+        torch.stack([snake_image_torch, snake_image_torch], dim=0),
+        confidence=0.5,
+    )
 
     # then
     assert len(predictions) == 2

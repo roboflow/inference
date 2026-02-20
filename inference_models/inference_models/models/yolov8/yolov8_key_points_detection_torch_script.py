@@ -1,3 +1,4 @@
+from threading import Lock
 from typing import List, Optional, Tuple, Union
 
 import numpy as np
@@ -5,7 +6,14 @@ import torch
 import torchvision  # DO NOT REMOVE, THIS IMPORT ENABLES NMS OPERATION
 
 from inference_models import Detections, KeyPoints, KeyPointsDetectionModel
-from inference_models.configuration import DEFAULT_DEVICE
+from inference_models.configuration import (
+    DEFAULT_DEVICE,
+    INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_CLASS_AGNOSTIC_NMS,
+    INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_CONFIDENCE,
+    INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_IOU_THRESHOLD,
+    INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_KEY_POINTS_THRESHOLD,
+    INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_MAX_DETECTIONS,
+)
 from inference_models.entities import ColorFormat
 from inference_models.errors import CorruptedModelPackageError
 from inference_models.models.common.model_packages import get_model_package_contents
@@ -59,16 +67,27 @@ class YOLOv8ForKeyPointsDetectionTorchScript(
                 ResizeMode.CENTER_CROP,
                 ResizeMode.LETTERBOX_REFLECT_EDGES,
             },
+            implicit_resize_mode_substitutions={
+                ResizeMode.FIT_LONGER_EDGE: (
+                    ResizeMode.LETTERBOX,
+                    127,
+                    "YOLOv8 Key Points detection model running with TorchScript backend was trained with "
+                    "`fit-longer-edge` input resize mode. This transform cannot be applied properly for "
+                    "models with input dimensions fixed during weights export. To ensure interoperability, `letterbox` "
+                    "resize mode with gray edges will be used instead. If model was trained on Roboflow platform, "
+                    "we recommend using preprocessing method different that `fit-longer-edge`.",
+                )
+            },
         )
         if inference_config.post_processing.type != "nms":
             raise CorruptedModelPackageError(
                 message="Expected NMS to be the post-processing",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
         if inference_config.forward_pass.static_batch_size is None:
             raise CorruptedModelPackageError(
                 message="Expected static batch size to be registered in the inference configuration.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
         parsed_key_points_metadata, skeletons = parse_key_points_metadata(
             key_points_metadata_path=model_package_content["keypoints_metadata.json"]
@@ -106,6 +125,7 @@ class YOLOv8ForKeyPointsDetectionTorchScript(
         self._key_points_slots_in_prediction = max(
             len(e) for e in parsed_key_points_metadata
         )
+        self._lock = Lock()
 
     @property
     def class_names(self) -> List[str]:
@@ -134,7 +154,7 @@ class YOLOv8ForKeyPointsDetectionTorchScript(
         )
 
     def forward(self, pre_processed_images: torch.Tensor, **kwargs) -> torch.Tensor:
-        with torch.inference_mode():
+        with self._lock, torch.inference_mode():
             if (
                 pre_processed_images.shape[0]
                 == self._inference_config.forward_pass.static_batch_size
@@ -155,26 +175,26 @@ class YOLOv8ForKeyPointsDetectionTorchScript(
         self,
         model_results: torch.Tensor,
         pre_processing_meta: List[PreProcessingMetadata],
-        conf_thresh: float = 0.25,
-        iou_thresh: float = 0.45,
-        max_detections: int = 100,
-        class_agnostic: bool = False,
-        key_points_threshold: float = 0.3,
+        confidence: float = INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_CONFIDENCE,
+        iou_threshold: float = INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_IOU_THRESHOLD,
+        max_detections: int = INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_MAX_DETECTIONS,
+        class_agnostic_nms: bool = INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_CLASS_AGNOSTIC_NMS,
+        key_points_threshold: float = INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_KEY_POINTS_THRESHOLD,
         **kwargs,
     ) -> Tuple[List[KeyPoints], Optional[List[Detections]]]:
         if self._inference_config.post_processing.fused:
             nms_results = post_process_nms_fused_model_output(
-                output=model_results, conf_thresh=conf_thresh
+                output=model_results, conf_thresh=confidence
             )
         else:
             nms_results = run_nms_for_key_points_detection(
                 output=model_results,
                 num_classes=len(self._class_names),
                 key_points_slots_in_prediction=self._key_points_slots_in_prediction,
-                conf_thresh=conf_thresh,
-                iou_thresh=iou_thresh,
+                conf_thresh=confidence,
+                iou_thresh=iou_threshold,
                 max_detections=max_detections,
-                class_agnostic=class_agnostic,
+                class_agnostic=class_agnostic_nms,
             )
         rescaled_results = rescale_key_points_detections(
             detections=nms_results,
@@ -196,7 +216,7 @@ class YOLOv8ForKeyPointsDetectionTorchScript(
                 result.shape[0], self._key_points_slots_in_prediction, 3
             )
             xy = key_points_reshaped[:, :, :2]
-            confidence = key_points_reshaped[:, :, 2]
+            predicted_key_points_confidence = key_points_reshaped[:, :, 2]
             key_points_classes_for_instance_class = (
                 (self._key_points_classes_for_instances[class_id])
                 .unsqueeze(1)
@@ -208,11 +228,15 @@ class YOLOv8ForKeyPointsDetectionTorchScript(
                 .repeat(result.shape[0], 1)
                 < key_points_classes_for_instance_class
             )
-            confidence_mask = confidence < key_points_threshold
+            confidence_mask = predicted_key_points_confidence < key_points_threshold
             mask = instances_class_mask & confidence_mask
             xy[mask] = 0.0
-            confidence[mask] = 0.0
+            predicted_key_points_confidence[mask] = 0.0
             all_key_points.append(
-                KeyPoints(xy=xy.round().int(), class_id=class_id, confidence=confidence)
+                KeyPoints(
+                    xy=xy.round().int(),
+                    class_id=class_id,
+                    confidence=predicted_key_points_confidence,
+                )
             )
         return all_key_points, detections

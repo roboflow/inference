@@ -1,5 +1,19 @@
 # Changelog
 
+## `0.19.0`
+
+First **stable release** of `inference-models` library.
+
+### Added
+- Locks for thread safety of torch models
+
+### Maintenance
+- Established documentation hosting
+- Provided documentation links to error messages
+- Fixed bugs spotted during tests
+
+---
+
 ## `0.18.5` and earlier versions
 
 ### Added

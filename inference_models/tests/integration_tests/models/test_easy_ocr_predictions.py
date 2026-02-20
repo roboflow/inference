@@ -38,7 +38,7 @@ def test_easy_ocr_predictions_for_numpy_image_list(
     model = EasyOCRTorch.from_pretrained(easy_ocr_package, device=DEFAULT_DEVICE)
 
     # when
-    result = model([ocr_test_image_numpy, ocr_test_image_numpy])
+    result = model([ocr_test_image_numpy, ocr_test_image_numpy], confidence=0.3)
 
     # then
     assert result[0][0].startswith("This is a test image for OCR")
@@ -63,7 +63,7 @@ def test_easy_ocr_predictions_for_torch_image(
     model = EasyOCRTorch.from_pretrained(easy_ocr_package, device=DEFAULT_DEVICE)
 
     # when
-    result = model(ocr_test_image_torch)
+    result = model(ocr_test_image_torch, confidence=0.3)
 
     # then
     assert result[0][0].startswith("This is a test image for OCR")
@@ -84,7 +84,9 @@ def test_easy_ocr_predictions_for_torch_batch(
     model = EasyOCRTorch.from_pretrained(easy_ocr_package, device=DEFAULT_DEVICE)
 
     # when
-    result = model(torch.stack([ocr_test_image_torch, ocr_test_image_torch], dim=0))
+    result = model(
+        torch.stack([ocr_test_image_torch, ocr_test_image_torch], dim=0), confidence=0.3
+    )
 
     # then
     assert result[0][0].startswith("This is a test image for OCR")
@@ -109,7 +111,7 @@ def test_easy_ocr_predictions_for_torch_list(
     model = EasyOCRTorch.from_pretrained(easy_ocr_package, device=DEFAULT_DEVICE)
 
     # when
-    result = model([ocr_test_image_torch, ocr_test_image_torch])
+    result = model([ocr_test_image_torch, ocr_test_image_torch], confidence=0.3)
 
     # then
     assert result[0][0].startswith("This is a test image for OCR")
