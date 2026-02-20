@@ -108,7 +108,9 @@ docs = [
   "mike>=2.0.0",
   "mkdocs-jupyter>=0.24.3",
   "mkdocs-git-committers-plugin-2>=2.4.1; python_version >= '3.9' and python_version < '4'",
-  "mkdocs-git-revision-date-localized-plugin>=1.2.4"
+  "mkdocs-git-revision-date-localized-plugin>=1.2.4",
+  "mkdocs-gen-files",
+  "mkdocs-literate-nav"
 ]
 
 [tool.uv.sources]
