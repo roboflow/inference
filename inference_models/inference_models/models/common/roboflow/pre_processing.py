@@ -66,11 +66,12 @@ def pre_process_network_input(
     if not isinstance(images, list):
         raise ModelInputError(
             message="Pre-processing supports only np.array or torch.Tensor or list of above.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
         )
     if not len(images):
         raise ModelInputError(
-            message="Detected empty input to the model", help_url="https://todo"
+            message="Detected empty input to the model",
+            help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror"
         )
     if network_input.resize_mode is ResizeMode.FIT_LONGER_EDGE:
         raise ModelRuntimeError(
@@ -98,7 +99,7 @@ def pre_process_network_input(
         )
     raise ModelInputError(
         message=f"Detected unknown input batch element: {type(images[0])}",
-        help_url="https://todo",
+        help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
     )
 
 
@@ -608,7 +609,7 @@ def apply_pre_processing_to_list_of_torch_image(
         if len(image.shape) != 3:
             raise ModelInputError(
                 message="When providing List[torch.Tensor] as input, model requires tensors to have 3 dimensions.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
             )
         image = image.to(target_device)
         if image.shape[0] != 3 and image.shape[-1] == 3:
@@ -709,7 +710,7 @@ def handle_tensor_list_input_preparation_with_letterbox(
         if len(img.shape) != 4:
             raise ModelInputError(
                 message="When providing List[torch.Tensor] as input, model requires tensors to have 3 dimensions.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
             )
         original_size = original_sizes[i]
         size_after_pre_processing = ImageDimensions(
@@ -773,7 +774,7 @@ def handle_tensor_list_input_preparation_with_center_crop(
         if len(image.shape) != 4:
             raise ModelInputError(
                 message="When providing List[torch.Tensor] as input, model requires tensors to have 3 dimensions.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
             )
         image = image.to(target_device)
         if (
@@ -1243,11 +1244,12 @@ def extract_input_images_dimensions(
     if not isinstance(images, list):
         raise ModelInputError(
             message="Pre-processing supports only np.array or torch.Tensor or list of above.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
         )
     if not len(images):
         raise ModelInputError(
-            message="Detected empty input to the model", help_url="https://todo"
+            message="Detected empty input to the model",
+            help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
         )
     if isinstance(images[0], np.ndarray):
         return [ImageDimensions(height=i.shape[0], width=i.shape[1]) for i in images]
@@ -1260,7 +1262,7 @@ def extract_input_images_dimensions(
         return image_dimensions
     raise ModelInputError(
         message=f"Detected unknown input batch element: {type(images[0])}",
-        help_url="https://todo",
+        help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
     )
 
 
@@ -1293,11 +1295,12 @@ def images_to_pillow(
     if not isinstance(images, list):
         raise ModelInputError(
             message="Pre-processing supports only np.array or torch.Tensor or list of above.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
         )
     if not len(images):
         raise ModelInputError(
-            message="Detected empty input to the model", help_url="https://todo"
+            message="Detected empty input to the model",
+            help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror"
         )
     if isinstance(images[0], np.ndarray):
         input_color_format = input_color_format or "bgr"
@@ -1323,7 +1326,7 @@ def images_to_pillow(
         return result, dimensions
     raise ModelInputError(
         message=f"Detected unknown input batch element: {type(images[0])}",
-        help_url="https://todo",
+        help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
     )
 
 

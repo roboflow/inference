@@ -123,11 +123,12 @@ class EasyOCRTorch(
         if not isinstance(images, list):
             raise ModelInputError(
                 message="Pre-processing supports only np.array or torch.Tensor or list of above.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
             )
         if not len(images):
             raise ModelInputError(
-                message="Detected empty input to the model", help_url="https://todo"
+                message="Detected empty input to the model",
+                help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror"
             )
         if isinstance(images[0], np.ndarray):
             input_color_format = input_color_format or "bgr"
@@ -152,7 +153,7 @@ class EasyOCRTorch(
             return result, dimensions
         raise ModelInputError(
             message=f"Detected unknown input batch element: {type(images[0])}",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
         )
 
     def forward(

@@ -104,19 +104,19 @@ class DinoV3ForClassificationTorch(ClassificationModel[torch.Tensor, torch.Tenso
         if inference_config.model_initialization is None:
             raise CorruptedModelPackageError(
                 message="Expected model initialization parameters not provided in inference config.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
         num_classes = inference_config.model_initialization.get("num_classes")
         model_name = inference_config.model_initialization.get("model_name")
         if not isinstance(num_classes, int):
             raise CorruptedModelPackageError(
                 message="Expected model initialization parameter `num_classes` not provided or in invalid format.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
         if not isinstance(model_name, str):
             raise CorruptedModelPackageError(
                 message="Expected model initialization parameter `model_name` not provided or in invalid format.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
 
         if (
@@ -125,7 +125,7 @@ class DinoV3ForClassificationTorch(ClassificationModel[torch.Tensor, torch.Tenso
         ):
             raise CorruptedModelPackageError(
                 message="Expected Softmax to be the post-processing",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
 
         # Create model and load weights
@@ -246,19 +246,19 @@ class DinoV3ForMultiLabelClassificationTorch(
         if inference_config.model_initialization is None:
             raise CorruptedModelPackageError(
                 message="Expected model initialization parameters not provided in inference config.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
         num_classes = inference_config.model_initialization.get("num_classes")
         model_name = inference_config.model_initialization.get("model_name")
         if not isinstance(num_classes, int):
             raise CorruptedModelPackageError(
                 message="Expected model initialization parameter `num_classes` not provided or in invalid format.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
         if not isinstance(model_name, str):
             raise CorruptedModelPackageError(
                 message="Expected model initialization parameter `model_name` not provided or in invalid format.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
 
         if (
@@ -267,7 +267,7 @@ class DinoV3ForMultiLabelClassificationTorch(
         ):
             raise CorruptedModelPackageError(
                 message="Expected Sigmoid to be the post-processing",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
 
         # Create model and load weights

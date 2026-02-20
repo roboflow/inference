@@ -200,7 +200,7 @@ class RFDetrForInstanceSegmentationTorch(
             raise CorruptedModelPackageError(
                 message=f"Model package describes model_type as '{model_type}' which is not supported. "
                 f"Supported model types: {list(CONFIG_FOR_MODEL_TYPE.keys())}.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
         model_config = CONFIG_FOR_MODEL_TYPE[model_type](device=device)
         divisibility = model_config.num_windows * model_config.patch_size
@@ -357,7 +357,7 @@ class RFDetrForInstanceSegmentationTorch(
                     message=f"Resolution mismatch. Model was optimized for resolution {self._resolution}, "
                     f"but got {tuple(pre_processed_images.shape[2:])}. "
                     "You can explicitly remove the optimized model by calling model.remove_optimized_model().",
-                    help_url="https://todo",
+                    help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
                 )
             if self._optimized_has_been_compiled:
                 if self._optimized_batch_size != pre_processed_images.shape[0]:
@@ -367,7 +367,7 @@ class RFDetrForInstanceSegmentationTorch(
                         "You can explicitly remove the optimized model by calling model.remove_optimized_model(). "
                         "Alternatively, you can recompile the optimized model for a different batch size "
                         "by calling model.optimize_for_inference(batch_size=<new_batch_size>).",
-                        help_url="https://todo",
+                        help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
                     )
         with self._lock, torch.inference_mode():
             if self._inference_model:

@@ -97,18 +97,18 @@ class VITForClassificationHF(ClassificationModel[torch.Tensor, torch.Tensor]):
         if inference_config.model_initialization is None:
             raise CorruptedModelPackageError(
                 message="Expected model initialization parameters not provided in inference config.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
         num_classes = inference_config.model_initialization.get("num_classes")
         if not isinstance(num_classes, int):
             raise CorruptedModelPackageError(
                 message="Expected model initialization parameter `num_classes` not provided or in invalid format.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
         if inference_config.post_processing.type != "softmax":
             raise CorruptedModelPackageError(
                 message="Expected Softmax to be the post-processing",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
         backbone = ViTModel.from_pretrained(os.path.join(model_name_or_path, "vit")).to(
             device
@@ -251,18 +251,18 @@ class VITForMultiLabelClassificationHF(
         if inference_config.model_initialization is None:
             raise CorruptedModelPackageError(
                 message="Expected model initialization parameters not provided in inference config.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
         num_classes = inference_config.model_initialization.get("num_classes")
         if not isinstance(num_classes, int):
             raise CorruptedModelPackageError(
                 message="Expected model initialization parameter `num_classes` not provided or in invalid format.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
         if inference_config.post_processing.type != "sigmoid":
             raise CorruptedModelPackageError(
                 message="Expected sigmoid to be the post-processing",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
         backbone = ViTModel.from_pretrained(os.path.join(model_name_or_path, "vit")).to(
             device

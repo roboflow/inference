@@ -22,7 +22,7 @@ def parse_class_names_file(class_names_path: str) -> List[str]:
             message=f"Could not decode file which is supposed to provide list of model class names. Error: {error}."
             f"If you created model package manually, please verify its consistency in docs. In case that the "
             f"weights are hosted on the Roboflow platform - contact support.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
         ) from error
 
 
@@ -107,7 +107,7 @@ def parse_key_points_metadata(
             f"{error}. In case that the package is "
             f"hosted on the Roboflow platform - contact support. If you created model package manually, please "
             f"verify its consistency in docs.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
         ) from error
 
 
@@ -188,7 +188,7 @@ def parse_trt_config(config_path: str) -> TRTConfig:
             f"{error}. In case that the package is "
             f"hosted on the Roboflow platform - contact support. If you created model package manually, please "
             f"verify its consistency in docs.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
         ) from error
 
 
@@ -344,14 +344,14 @@ def parse_inference_config(
             f"{error}. In case that the package is "
             f"hosted on the Roboflow platform - contact support. If you created model package manually, please "
             f"verify its consistency in docs.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
         ) from error
     try:
         parsed_config = InferenceConfig.model_validate(decoded_config)
     except ValidationError as error:
         raise CorruptedModelPackageError(
             message=f"Could not parse the inference config from the model package.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
         ) from error
     if implicit_resize_mode_substitutions is None:
         implicit_resize_mode_substitutions = {}
@@ -370,6 +370,6 @@ def parse_inference_config(
             f"{parsed_config.network_input.resize_mode} which is not supported by the model implementation. "
             f"Config defines: {parsed_config.network_input.resize_mode.value}, but the allowed values are: "
             f"{allowed_resize_modes_str}.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
         )
     return parsed_config

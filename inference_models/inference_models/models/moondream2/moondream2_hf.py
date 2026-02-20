@@ -237,7 +237,8 @@ def are_images_encoded(
     if isinstance(images, list):
         if not len(images):
             raise ModelInputError(
-                message="Detected empty input to the model", help_url="https://todo"
+                message="Detected empty input to the model",
+                help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
             )
         return isinstance(images[0], EncodedImage)
     return isinstance(images, EncodedImage)

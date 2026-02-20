@@ -15,7 +15,8 @@ try:
     from sam2.sam2_camera_predictor import SAM2CameraPredictor
 except ImportError as import_error:
     raise MissingDependencyError(
-        message=f"Could not import SAM2 model, please consult README for installation instructions.",
+        message=f"Could not import SAM2 model, please contact Roboflow for further instructions.",
+        help_url="https://inference-models.roboflow.com/errors/runtime-environment/#missingdependencyerror",
     ) from import_error
 
 

@@ -172,7 +172,7 @@ def crop_images_to_detections(
     elif isinstance(images, list) and len(images) == 0:
         raise ModelInputError(
             message="Detected empty input to the model",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
         )
     elif isinstance(images, list) and isinstance(images[0], np.ndarray):
         prepared_images = []
@@ -191,7 +191,7 @@ def crop_images_to_detections(
     else:
         raise ModelInputError(
             message=f"Detected unknown input batch element: {type(images)}",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
         )
     crops = []
     crops_images_bounds = []

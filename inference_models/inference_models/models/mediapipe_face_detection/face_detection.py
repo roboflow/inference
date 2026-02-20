@@ -25,8 +25,11 @@ except ImportError as import_error:
         f"dependencies are not installed in the environment. If you run the `inference-models` library directly in your Python "
         f"program, make sure the following extras of the package are installed: `mediapipe`."
         f"If you see this error using Roboflow infrastructure, make sure the service you use does support the model. "
-        f"You can also contact Roboflow to get support.",
-        help_url="https://todo",
+        f"You can also contact Roboflow to get support."
+        "Additionally - if AutoModel.from_pretrained(...) "
+        f"automatically selects model package which does not match your environment - that's a serious problem and "
+        f"we will really appreciate letting us know - https://github.com/roboflow/inference/issues",
+        help_url="https://inference-models.roboflow.com/errors/runtime-environment/#missingdependencyerror",
     ) from import_error
 
 
@@ -109,11 +112,12 @@ class MediaPipeFaceDetector(
         if not isinstance(images, list):
             raise ModelInputError(
                 message="Pre-processing supports only np.array or torch.Tensor or list of above.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
             )
         if not len(images):
             raise ModelInputError(
-                message="Detected empty input to the model", help_url="https://todo"
+                message="Detected empty input to the model",
+                help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror"
             )
         if isinstance(images[0], np.ndarray):
             input_color_format = input_color_format or "bgr"
@@ -148,7 +152,7 @@ class MediaPipeFaceDetector(
             return preprocessed_images, dimensions
         raise ModelInputError(
             message=f"Detected unknown input batch element: {type(images[0])}",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
         )
 
     def forward(

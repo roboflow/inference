@@ -84,11 +84,15 @@ def inputs_to_tensor(
 ) -> Union[torch.Tensor, List[torch.Tensor]]:
     if not isinstance(images, (list, np.ndarray, torch.Tensor)):
         raise ModelInputError(
-            f"Unsupported input type: {type(images)}. Must be one of list, np.ndarray, or torch.Tensor."
+            message=f"Unsupported input type: {type(images)}. Must be one of list, np.ndarray, or torch.Tensor.",
+            help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
         )
     if isinstance(images, list):
         if not images:
-            raise ModelInputError("Input image list cannot be empty.")
+            raise ModelInputError(
+                message="Input image list cannot be empty.",
+                help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror"
+            )
         return [
             input_to_tensor(
                 image=image,
@@ -113,19 +117,22 @@ def input_to_tensor(
 ) -> torch.Tensor:
     if not isinstance(image, (np.ndarray, torch.Tensor)):
         raise ModelInputError(
-            f"Unsupported input type: {type(image)}. Each element must be one of np.ndarray, or torch.Tensor."
+            message=f"Unsupported input type: {type(image)}. Each element must be one of np.ndarray, or torch.Tensor.",
+            help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror"
         )
     is_numpy = isinstance(image, np.ndarray)
     if is_numpy:
         if len(image.shape) != 3:
             raise ModelInputError(
-                f"Unsupported input type: detected np.ndarray image of shape {image.shape} which has "
-                f"number of dimensions different than 3. This input is invalid."
+                message=f"Unsupported input type: detected np.ndarray image of shape {image.shape} which has "
+                f"number of dimensions different than 3. This input is invalid.",
+                help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror"
             )
         if image.shape[-1] != 3:
             raise ModelInputError(
-                f"Unsupported input type: detected np.ndarray image of shape {image.shape} which has "
-                f"incorrect number of color channels (expected: 3)."
+                message="Unsupported input type: detected np.ndarray image of shape {image.shape} which has "
+                f"incorrect number of color channels (expected: 3).",
+                help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
             )
         # HWC -> CHW
         tensor_image = torch.from_numpy(image).to(device).permute(2, 0, 1).unsqueeze(0)
@@ -135,20 +142,23 @@ def input_to_tensor(
         )
         if len(image.shape) == 4 and not batched_tensors_allowed:
             raise ModelInputError(
-                f"Unsupported input type: detected torch.Tensor image of shape {image.shape} which has "
-                f"incorrect number of dimensions ({expected_dimensions_str})."
+                message="Unsupported input type: detected torch.Tensor image of shape {image.shape} which has "
+                f"incorrect number of dimensions ({expected_dimensions_str}).",
+                help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
             )
         if len(image.shape) != 3 and len(image.shape) != 4:
             raise ModelInputError(
-                f"Unsupported input type: detected torch.Tensor image of shape {image.shape} which has "
-                f"incorrect number of dimensions ({expected_dimensions_str})."
+                message=f"Unsupported input type: detected torch.Tensor image of shape {image.shape} which has "
+                f"incorrect number of dimensions ({expected_dimensions_str}).",
+                help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
             )
         if (len(image.shape) == 3 and image.shape[0] != 3) or (
             len(image.shape) == 4 and image.shape[1] != 3
         ):
             raise ModelInputError(
-                f"Unsupported input type: detected torch.Tensor image of shape {image.shape} which has "
-                f"incorrect number of color channels (expected: 3)."
+                message=f"Unsupported input type: detected torch.Tensor image of shape {image.shape} which has "
+                f"incorrect number of color channels (expected: 3).",
+                help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
             )
         if len(image.shape) == 3:
             image = image.unsqueeze(0)

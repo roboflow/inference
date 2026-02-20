@@ -43,16 +43,15 @@ try:
     import onnxruntime
 except ImportError as import_error:
     raise MissingDependencyError(
-        message=f"Could not import DINOv3 model with ONNX backend - this error means that some additional dependencies "
-        f"are not installed in the environment. If you run the `inference-models` library directly in your Python "
-        f"program, make sure the following extras of the package are installed: \n"
-        f"\t* `onnx-cpu` - when you wish to use library with CPU support only\n"
-        f"\t* `onnx-cu12` - for running on GPU with Cuda 12 installed\n"
-        f"\t* `onnx-cu118` - for running on GPU with Cuda 11.8 installed\n"
-        f"\t* `onnx-jp6-cu126` - for running on Jetson with Jetpack 6\n"
-        f"If you see this error using Roboflow infrastructure, make sure the service you use does support the model. "
-        f"You can also contact Roboflow to get support.",
-        help_url="https://todo",
+        message="Running DinoV3 model with ONNX backend requires pycuda installation, which is brought with "
+                "`onnx-*` extras of `inference-models` library. If you see this error running locally, "
+                "please follow our installation guide: https://inference-models.roboflow.com/getting-started/installation/"
+                " If you see this error using Roboflow infrastructure, make sure the service you use does support the "
+                f"model, You can also contact Roboflow to get support."
+                "Additionally - if AutoModel.from_pretrained(...) "
+                f"automatically selects model package which does not match your environment - that's a serious problem and "
+                f"we will really appreciate letting us know - https://github.com/roboflow/inference/issues",
+        help_url="https://inference-models.roboflow.com/errors/runtime-environment/#missingdependencyerror",
     ) from import_error
 
 
@@ -121,7 +120,7 @@ class DinoV3ForClassificationOnnx(ClassificationModel[torch.Tensor, torch.Tensor
         ):
             raise CorruptedModelPackageError(
                 message="Expected Softmax to be the post-processing",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
 
         session = onnxruntime.InferenceSession(
@@ -276,7 +275,7 @@ class DinoV3ForMultiLabelClassificationOnnx(
         ):
             raise CorruptedModelPackageError(
                 message="Expected Sigmoid to be the post-processing",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
 
         session = onnxruntime.InferenceSession(

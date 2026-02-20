@@ -51,22 +51,27 @@ try:
     import tensorrt as trt
 except ImportError as import_error:
     raise MissingDependencyError(
-        message=f"Could not import YOLOv7 model with TRT backend - this error means that some additional dependencies "
-        f"are not installed in the environment. If you run the `inference-models` library directly in your Python "
-        f"program, make sure the following extras of the package are installed: `trt10` - installation can only "
-        f"succeed for Linux and Windows machines with Cuda 12 installed. Jetson devices, should have TRT 10.x "
-        f"installed for all builds with Jetpack 6. "
-        f"If you see this error using Roboflow infrastructure, make sure the service you use does support the model. "
-        f"You can also contact Roboflow to get support.",
-        help_url="https://todo",
+        message="Running YOLOv7 model with TRT backend on GPU requires pycuda installation, which is brought with "
+                "`trt-*` extras of `inference-models` library. If you see this error running locally, "
+                "please follow our installation guide: https://inference-models.roboflow.com/getting-started/installation/"
+                " If you see this error using Roboflow infrastructure, make sure the service you use does support the "
+                f"model, You can also contact Roboflow to get support."
+                "Additionally - if AutoModel.from_pretrained(...) "
+                f"automatically selects model package which does not match your environment - that's a serious problem and "
+                f"we will really appreciate letting us know - https://github.com/roboflow/inference/issues",
+        help_url="https://inference-models.roboflow.com/errors/runtime-environment/#missingdependencyerror",
     ) from import_error
 
 try:
     import pycuda.driver as cuda
 except ImportError as import_error:
     raise MissingDependencyError(
-        message="TODO",
-        help_url="https://todo",
+        message="Running YOLOv7 model with TRT backend on GPU requires pycuda installation, which is brought with "
+                "`trt-*` extras of `inference-models` library. If you see this error running locally, "
+                "please follow our installation guide: https://inference-models.roboflow.com/getting-started/installation/"
+                " If you see this error using Roboflow infrastructure, make sure the service you use does support the "
+                f"model, You can also contact Roboflow to get support.",
+        help_url="https://inference-models.roboflow.com/errors/runtime-environment/#missingdependencyerror"
     ) from import_error
 
 
@@ -136,12 +141,12 @@ class YOLOv7ForInstanceSegmentationTRT(
         if len(inputs) != 1:
             raise CorruptedModelPackageError(
                 message=f"Implementation assume single model input, found: {len(inputs)}.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
         if len(outputs) < 5:
             raise CorruptedModelPackageError(
                 message=f"Implementation assume at least 5 model outputs, found: {len(outputs)}.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
         output_tensors = [outputs[0], outputs[4]]
         return cls(

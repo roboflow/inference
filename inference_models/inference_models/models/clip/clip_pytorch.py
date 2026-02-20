@@ -100,5 +100,6 @@ def build_clip_model(model_weights_file: str, device: torch.device) -> CLIP:
         return model
     except Exception as e:
         raise CorruptedModelPackageError(
-            f"Could not load TorchScript model from {model_weights_file}. Details: {e}"
+            message=f"Could not load TorchScript model from {model_weights_file}. Details: {e}",
+            help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror"
         ) from e

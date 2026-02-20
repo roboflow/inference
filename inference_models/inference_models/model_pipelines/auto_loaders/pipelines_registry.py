@@ -25,7 +25,7 @@ def resolve_pipeline_class(pipline_id: str) -> type:
             f"Registered pipelines: {list(REGISTERED_PIPELINES.keys())}. This error ma be caused by typo "
             f"in the identifier, or pipeline is not registered / not supported in the environment you try to "
             f"run it.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/model-loading/#modelpipelinenotfound",
         )
     return REGISTERED_PIPELINES[pipline_id].resolve()
 

@@ -63,12 +63,12 @@ class DocTR(StructuredOCRModel[List[np.ndarray], ImageDimensions, Document]):
         if config.det_model not in SUPPORTED_DETECTION_MODELS:
             raise CorruptedModelPackageError(
                 message=f"{config.det_model} model denoted in configuration not supported as DocTR detection model.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
         if config.rec_model not in SUPPORTED_RECOGNITION_MODELS:
             raise CorruptedModelPackageError(
                 message=f"{config.rec_model} model denoted in configuration not supported as DocTR recognition model.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
         det_model = detection_predictor(
             arch=config.det_model,
@@ -147,11 +147,12 @@ class DocTR(StructuredOCRModel[List[np.ndarray], ImageDimensions, Document]):
         if not isinstance(images, list):
             raise ModelInputError(
                 message="Pre-processing supports only np.array or torch.Tensor or list of above.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
             )
         if not len(images):
             raise ModelInputError(
-                message="Detected empty input to the model", help_url="https://todo"
+                message="Detected empty input to the model",
+                help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror"
             )
         if isinstance(images[0], np.ndarray):
             input_color_format = input_color_format or "bgr"
@@ -176,7 +177,7 @@ class DocTR(StructuredOCRModel[List[np.ndarray], ImageDimensions, Document]):
             return result, dimensions
         raise ModelInputError(
             message=f"Detected unknown input batch element: {type(images[0])}",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
         )
 
     def forward(
@@ -320,5 +321,5 @@ def parse_model_config(config_path: str) -> DocTRConfig:
             f"{error}. In case that the package is "
             f"hosted on the Roboflow platform - contact support. If you created model package manually, please "
             f"verify its consistency in docs.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
         ) from error

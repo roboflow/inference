@@ -594,7 +594,7 @@ class Florence2HF:
             if len(prompt) != len(image_dimensions):
                 raise ModelInputError(
                     message="Provided prompt as list, but the number of prompt elements does not match number of input images.",
-                    help_url="https://todo",
+                    help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
                 )
         else:
             prompt = [prompt] * len(image_dimensions)
@@ -663,7 +663,8 @@ def region_to_loc_phrase(
     image_dimensions = extract_input_images_dimensions(images=images)
     if not xyxy:
         raise ModelInputError(
-            message="Provided empty region grounding.", help_url="https://todo"
+            message="Provided empty region grounding.",
+            help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
         )
     nested = isinstance(xyxy[0], list)
     if not nested:
@@ -672,7 +673,7 @@ def region_to_loc_phrase(
         raise ModelInputError(
             message="Provided multiple regions - it is expected to provide a single region for each image, but number "
             "of regions does not match number of input images.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
         )
     result = []
     for image_xyxy, single_image_dimensions in zip(xyxy, image_dimensions):

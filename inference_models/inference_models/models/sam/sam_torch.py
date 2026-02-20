@@ -61,7 +61,7 @@ class SAMTorch:
                 message="Cold not decode SAM model version. If you see this error running inference locally, "
                 "verify the contents of model package. If you see the error running on Roboflow platform - "
                 "contact us to get help.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             ) from error
         try:
             sam_model = sam_model_registry[version](
@@ -72,7 +72,7 @@ class SAMTorch:
                 message=f"Cold not decode initialize SAM model - cause: {error} If you see this error running "
                 f"locally - verify installation of inference and contents of model package. If you use "
                 f"Roboflow platform, contact us to get help.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             ) from error
         transform = ResizeLongestSide(sam_model.image_encoder.img_size)
         return cls(
@@ -119,7 +119,7 @@ class SAMTorch:
                 "see this error running on Roboflow Platform - this is due to configuration of the service - contact "
                 "us to get help. If you run inference locally, verify your integration making sure that the model "
                 "interface is used correctly.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
             )
         if image_hashes is None:
             model_input_images, image_hashes, original_image_sizes = (
@@ -144,7 +144,7 @@ class SAMTorch:
                     message="When using SAM model with client-generated `image_hashes`, the number of provided "
                     f"hashes ({len(image_hashes)}) must match the number of provided images "
                     f"({len(locally_computed_image_hashes)}). Please verify your integration",
-                    help_url="https://todo",
+                    help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
                 )
         embeddings_from_cache: Dict[int, SAMImageEmbeddings] = {}
         images_to_compute = []
@@ -308,7 +308,7 @@ class SAMTorch:
                 "neither `images` nor `embeddings` nor `image_hashes` parameter is given. If you run inference locally, "
                 "verify your integration making sure that the model interface is used correctly. Running "
                 "on Roboflow platform - contact us to get help.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
             )
         if images is not None:
             embeddings = self.embed_images(
@@ -330,7 +330,7 @@ class SAMTorch:
                     "without enabling `use_embeddings_cache` or `sam_allow_client_generated_hash_ids` which is not "
                     "allowed. If you run inference locally, verify your integration making sure that the model "
                     "interface is used correctly. Running on Roboflow platform - contact us to get help.",
-                    help_url="https://todo",
+                    help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
                 )
             embeddings = []
             for image_hash in image_hashes:
@@ -342,7 +342,7 @@ class SAMTorch:
                         message=f"Attempted to use SAM model segment_images(...) method providing `image_hashes` "
                         f"for which no embeddings were found in the cache. This may be an effect of cache expiry or "
                         f"invalid integration.",
-                        help_url="https://todo",
+                        help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
                     )
                 embeddings.append(cache_content)
         else:
@@ -371,7 +371,7 @@ class SAMTorch:
                     "but may also be a result of bug or invalid integration. If you run inference locally, "
                     "verify your integration making sure that the model interface is used correctly. Running "
                     "on Roboflow platform - contact us to get help.",
-                    help_url="https://todo",
+                    help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
                 )
             mask_input = [mask.to(self._device) for mask in masks_from_the_cache]
         point_coordinates, point_labels, boxes, mask_input = equalize_batch_size(
@@ -485,7 +485,7 @@ def equalize_batch_size(
                 f"images / embeddings ({embeddings_batch_size}). If you run inference locally, verify your "
                 "integration making sure that the model interface is used correctly. "
                 "Running on Roboflow platform - contact us to get help.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
             )
         point_coordinates = point_coordinates * embeddings_batch_size
     if point_labels is not None and len(point_labels) != embeddings_batch_size:
@@ -496,7 +496,7 @@ def equalize_batch_size(
                 f"images / embeddings ({embeddings_batch_size}). If you run inference locally, verify your "
                 "integration making sure that the model interface is used correctly. "
                 "Running on Roboflow platform - contact us to get help.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
             )
         point_labels = point_labels * embeddings_batch_size
     if boxes is not None and len(boxes) != embeddings_batch_size:
@@ -507,7 +507,7 @@ def equalize_batch_size(
                 f"images / embeddings ({embeddings_batch_size}). If you run inference locally, verify your "
                 "integration making sure that the model interface is used correctly. "
                 "Running on Roboflow platform - contact us to get help.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
             )
         boxes = boxes * embeddings_batch_size
     if mask_input is not None and len(mask_input) != embeddings_batch_size:
@@ -518,7 +518,7 @@ def equalize_batch_size(
                 f"images / embeddings ({embeddings_batch_size}). If you run inference locally, verify your "
                 "integration making sure that the model interface is used correctly. "
                 "Running on Roboflow platform - contact us to get help.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
             )
         mask_input = mask_input * embeddings_batch_size
     prompts_first_dimension_characteristics = set()
@@ -541,7 +541,7 @@ def equalize_batch_size(
             "`boxes` provided, the model expect identical number of elements for each prompt component. "
             "If you run inference locally, verify your integration making sure that the model interface is "
             "used correctly. Running on Roboflow platform - contact us to get help.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
         )
     if mask_input is not None:
         mask_input = [i[None, :, :] if len(i.shape) == 2 else i for i in mask_input]
@@ -550,7 +550,7 @@ def equalize_batch_size(
                 message="When using SAM model with `mask_input`, each mask must be 3D tensor of shape (1, H, W). "
                 "If you run inference locally, verify your integration making sure that the model interface is "
                 "used correctly. Running on Roboflow platform - contact us to get help.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
             )
     if boxes is not None:
         batched_boxes_provided = False
@@ -566,7 +566,7 @@ def equalize_batch_size(
                 "or `mask_input` - and such situation was detected. "
                 "If you run inference locally, verify your integration making sure that the model interface is "
                 "used correctly. Running on Roboflow platform - contact us to get help.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
             )
     return point_coordinates, point_labels, boxes, mask_input
 
@@ -596,7 +596,7 @@ def pre_process_prompts(
             message="When using SAM model, provided `point_coordinates` without `point_labels` which makes invalid "
             "input. If you run inference locally, verify your integration making sure that the model "
             "interface is used correctly. Running on Roboflow platform - contact us to get help.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
         )
     if point_coordinates is not None:
         if point_labels is None:
@@ -604,7 +604,7 @@ def pre_process_prompts(
                 message="When using SAM model, provided `point_coordinates` without `point_labels` which makes invalid "
                 "input. If you run inference locally, verify your integration making sure that the model "
                 "interface is used correctly. Running on Roboflow platform - contact us to get help.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
             )
         point_coordinates = [
             (

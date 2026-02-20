@@ -477,7 +477,7 @@ class OWLv2HF(
                 raise ModelInputError(
                     message="Could not find image embeddings matching bounding boxes query for OWLv2 model. This "
                     "means that most likely, model API was used incorrectly.",
-                    help_url="https://todo",
+                    help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
                 )
             image_embeddings = image_embeddings.to(self._device)
             query_boxes_tensor = torch.tensor(

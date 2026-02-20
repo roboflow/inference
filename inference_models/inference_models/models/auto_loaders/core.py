@@ -795,7 +795,7 @@ class AutoModel:
                         f"it's dependency, but the auto-loader prevents loading dependencies at certain "
                         f"nesting depth to avoid excessive resolution procedure. This is a limitation of "
                         f"current implementation. Provide us the context of your use-case to get help.",
-                        help_url="https://todo",
+                        help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
                     )
                 if model_metadata.model_id != model_id_or_path:
                     model_access_manager.on_model_alias_discovered(
@@ -1011,7 +1011,7 @@ def attempt_loading_model_with_auto_load_cache(
                 f"it's dependency, but the auto-loader prevents loading dependencies at certain "
                 f"nesting depth to avoid excessive resolution procedure. This is a limitation of "
                 f"current implementation. Provide us the context of your use-case to get help.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
         model_dependencies_instances = {}
         dependency_models_params = dependency_models_params or {}
@@ -1235,7 +1235,7 @@ def initialize_model(
                 f"loaders. This problem indicate a violation of model package contract and requires change in "
                 f"model package structure. If you experience this issue using hosted Roboflow solution, contact "
                 f"us to solve the problem.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
     files_specs = [
         (a.file_handle, a.download_url, a.md5_hash)
@@ -1644,7 +1644,7 @@ def parse_model_config(config_path: str) -> InferenceModelConfig:
             f"model you attempt to load. If your intent was to load model from remote backend (not local "
             f"storage) - verify the contents of $PWD. If you see this problem while using one of Roboflow "
             f"hosted solutions - contact us to get help.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
         )
     try:
         raw_config = read_json(path=config_path)
@@ -1654,7 +1654,7 @@ def parse_model_config(config_path: str) -> InferenceModelConfig:
             f"local directory. This error may be caused by corrupted config file. Validate the content of your "
             f"model package and check in documentation the required format of model config file. "
             f"If you see this problem while using one of Roboflow hosted solutions - contact us to get help.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
         ) from error
     if not isinstance(raw_config, dict):
         raise CorruptedModelPackageError(
@@ -1662,7 +1662,7 @@ def parse_model_config(config_path: str) -> InferenceModelConfig:
             f"supposed to be a dictionary, instead decoded object of type: "
             f"{type(raw_config)}. If you see this problem while using one of Roboflow hosted solutions - "
             f"contact us to get help. Otherwise - verify the content of your model config.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
         )
     backend_type = None
     if "backend_type" in raw_config:
@@ -1676,7 +1676,7 @@ def parse_model_config(config_path: str) -> InferenceModelConfig:
                 f"Supported values: {list(t.value for t in BackendType)}. If you see this problem while using "
                 f"one of Roboflow hosted solutions - contact us to get help. Otherwise - verify the content "
                 f"of your model config.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             ) from e
     return InferenceModelConfig(
         model_architecture=raw_config.get("model_architecture"),
@@ -1712,7 +1712,7 @@ def load_model_from_local_package_with_arbitrary_code(
             f"required to load models provided with arbitrary code. If you see this problem while using "
             f"one of Roboflow hosted solutions - contact us to get help. Otherwise - verify the content "
             f"of your model config.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
         )
     model_module_path = os.path.join(model_dir, model_config.model_module)
     if not os.path.isfile(model_module_path):
@@ -1722,7 +1722,7 @@ def load_model_from_local_package_with_arbitrary_code(
             f"{model_module_path}. If you see this problem while using "
             f"one of Roboflow hosted solutions - contact us to get help. Otherwise - verify the content "
             f"of your model config.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
         )
     model_class = load_class_from_path(
         module_path=model_module_path, class_name=model_config.model_class
@@ -1738,7 +1738,7 @@ def load_class_from_path(module_path: str, class_name: str) -> AnyModel:
             f"while using one of Roboflow hosted solutions - contact us to get help. Otherwise - verify your "
             f"model package checking if you can load the module with model implementation within your "
             f"python environment.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
         )
     module_name = os.path.splitext(os.path.basename(module_path))[0]
     spec = importlib.util.spec_from_file_location(module_name, module_path)
@@ -1749,7 +1749,7 @@ def load_class_from_path(module_path: str, class_name: str) -> AnyModel:
             f"one of Roboflow hosted solutions - contact us to get help. Otherwise - verify your "
             f"model package checking if you can load the module with model implementation within your "
             f"python environment.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
         )
     module = importlib.util.module_from_spec(spec)
     loader = spec.loader
@@ -1760,7 +1760,7 @@ def load_class_from_path(module_path: str, class_name: str) -> AnyModel:
             f"one of Roboflow hosted solutions - contact us to get help. Otherwise - verify your "
             f"model package checking if you can load the module with model implementation within your "
             f"python environment.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
         )
     try:
         loader.exec_module(module)
@@ -1771,7 +1771,7 @@ def load_class_from_path(module_path: str, class_name: str) -> AnyModel:
             f"one of Roboflow hosted solutions - contact us to get help. Otherwise - verify your "
             f"model package checking if you can load the module with model implementation within your "
             f"python environment.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
         )
     if not hasattr(module, class_name):
         raise CorruptedModelPackageError(
@@ -1781,6 +1781,6 @@ def load_class_from_path(module_path: str, class_name: str) -> AnyModel:
             f"model package checking if you can load the module with model implementation within your "
             f"python environment. It may also be the case that configuration file of the model points "
             f"to invalid class name.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
         )
     return getattr(module, class_name)

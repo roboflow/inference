@@ -150,18 +150,19 @@ def decode_image_from_url(
     if not allow_url_input:
         raise ModelInputError(
             message="Providing images via URL is not supported in this configuration of `inference-models`.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
         )
     try:
         parsed_url = urllib.parse.urlparse(url)
     except ValueError as error:
         raise ModelInputError(
-            message="Provided image URL is invalid.", help_url="https://todo"
+            message="Provided image URL is invalid.",
+            help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
         ) from error
     if parsed_url.scheme != "https" and not allow_non_https_url:
         raise ModelInputError(
             message="Providing images via non https:// URL is not supported in this configuration of `inference-models`.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
         )
     domain_extraction_result = tldextract.TLDExtract(suffix_list_urls=())(
         parsed_url.netloc
@@ -195,7 +196,7 @@ def decode_image_from_base64(value: str) -> np.ndarray:
         value_prefix = value[:16]
         raise ModelInputError(
             message=f"Could not decode bas64 image fro reference {value_prefix}.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
         ) from error
 
 
@@ -212,7 +213,7 @@ def _ensure_resource_fqdn_allowed(fqdn: str, allow_url_without_fqdn: bool) -> No
     if not fqdn and not allow_url_without_fqdn:
         raise ModelInputError(
             message="Providing images via URL without FQDN is not supported in this configuration of  `inference-models`.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
         )
     return None
 
@@ -239,7 +240,7 @@ def _ensure_location_matches_destination_whitelist(
     if destination not in whitelisted_domains:
         raise ModelInputError(
             message="It is not allowed to reach image URL - prohibited by whitelisted destinations",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
         )
     return None
 
@@ -253,7 +254,7 @@ def _ensure_location_matches_destination_blacklist(
     if destination in blacklisted_domains:
         raise ModelInputError(
             message="It is not allowed to reach image URL - prohibited by blacklisted destinations.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
         )
     return None
 
