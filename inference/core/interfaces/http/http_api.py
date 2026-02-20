@@ -1603,14 +1603,13 @@ class HttpInterface(BaseInterface):
             @app.post(
                 "/webrtc/session/heartbeat",
                 summary="WebRTC session heartbeat",
-                description="Called by Modal workers to keep their session alive in the quota tracking system",
             )
             async def webrtc_session_heartbeat(
                 request: Request,
             ) -> dict:
                 """Receive heartbeat for an active WebRTC session.
 
-                This endpoint is called periodically by Modal workers to indicate
+                This endpoint is called periodically to indicate
                 that their session is still active. The session will be removed from
                 the quota count if no heartbeat is received within the TTL period.
                 """
