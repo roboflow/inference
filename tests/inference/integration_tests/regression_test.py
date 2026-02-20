@@ -172,7 +172,6 @@ def compare_prediction_response(
     response: dict,
     expected_response: dict,
     prediction_type: Literal["object_detection", "instance_segmentation", "classification"] = "object_detection",
-    image_url: Optional[str] = None,
 ):
     # note that these casts do type checking internally via pydantic
     if prediction_type == "object_detection":
@@ -181,7 +180,6 @@ def compare_prediction_response(
             reference_prediction=expected_response,
             box_pixel_tolerance=PIXEL_TOLERANCE,
             box_confidence_tolerance=CONFIDENCE_TOLERANCE,
-            image_url=image_url,
         )
     elif prediction_type == "instance_segmentation":
         # this test for YOLACT used to totally fail on GPU, setting a threshold of .95 passes but seems low
@@ -192,7 +190,6 @@ def compare_prediction_response(
             mask_iou_threshold=0.95,
             box_pixel_tolerance=PIXEL_TOLERANCE,
             box_confidence_tolerance=CONFIDENCE_TOLERANCE,
-            image_url=image_url,
         )
     elif prediction_type == "classification":
         assert_classification_predictions_match(
@@ -265,7 +262,6 @@ def test_detection(test, res_function, clean_loaded_models_fixture):
                 data,
                 test["expected_response"][image_type],
                 prediction_type=test["type"],
-                image_url=test["image_url"],
             )
         print(
             "\u2713"
