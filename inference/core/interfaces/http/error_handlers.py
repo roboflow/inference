@@ -474,7 +474,6 @@ def with_route_exceptions_async(route):
         Callable: The wrapped route.
     """
 
-    @wraps(route)
     async def wrapped_route(*args, **kwargs):
         try:
             return await route(*args, **kwargs)
@@ -839,5 +838,12 @@ def with_route_exceptions_async(route):
             logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(status_code=500, content={"message": "Internal error."})
         return resp
+
+    wrapped_route.__wrapped__ = route
+    wrapped_route.__name__ = route.__name__
+    wrapped_route.__doc__ = route.__doc__
+    wrapped_route.__module__ = route.__module__
+    wrapped_route.__qualname__ = route.__qualname__
+    wrapped_route.__annotations__ = route.__annotations__
 
     return wrapped_route
