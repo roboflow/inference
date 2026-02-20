@@ -304,6 +304,10 @@ ENFORCE_CREDITS_VERIFICATION = str2bool(
     os.getenv("ENFORCE_CREDITS_VERIFICATION", "False")
 )
 
+WORKFLOWS_REMOTE_EXECUTION_TIME_FORWARDING = str2bool(
+    os.getenv("WORKFLOWS_REMOTE_EXECUTION_TIME_FORWARDING", "True")
+)
+
 GET_MODEL_REGISTRY_ENABLED = str2bool(os.getenv("GET_MODEL_REGISTRY_ENABLED", "True"))
 
 # Flag to enable API logging, default is False

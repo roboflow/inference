@@ -19,6 +19,10 @@ from inference.core.workflows.core_steps.common.utils import (
 )
 from inference.core.workflows.errors import RuntimeInputError
 from inference.core.workflows.execution_engine.constants import (
+    AREA_CONVERTED_KEY_IN_INFERENCE_RESPONSE,
+    AREA_CONVERTED_KEY_IN_SV_DETECTIONS,
+    AREA_KEY_IN_INFERENCE_RESPONSE,
+    AREA_KEY_IN_SV_DETECTIONS,
     BOUNDING_RECT_ANGLE_KEY_IN_INFERENCE_RESPONSE,
     BOUNDING_RECT_ANGLE_KEY_IN_SV_DETECTIONS,
     BOUNDING_RECT_HEIGHT_KEY_IN_INFERENCE_RESPONSE,
@@ -298,6 +302,8 @@ def deserialize_detections_kind(
             SMOOTHED_VELOCITY_KEY_IN_SV_DETECTIONS,
         ),
         (VELOCITY_KEY_IN_INFERENCE_RESPONSE, VELOCITY_KEY_IN_SV_DETECTIONS),
+        (AREA_KEY_IN_INFERENCE_RESPONSE, AREA_KEY_IN_SV_DETECTIONS),
+        (AREA_CONVERTED_KEY_IN_INFERENCE_RESPONSE, AREA_CONVERTED_KEY_IN_SV_DETECTIONS),
     ]
     for raw_detection_key, parsed_detection_key in optional_elements_keys:
         parsed_detections = _attach_optional_detection_element(

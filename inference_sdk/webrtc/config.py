@@ -57,3 +57,11 @@ class StreamConfig:
     Must be a valid Modal region. Only applicable when connecting to Roboflow serverless endpoints.
     See: https://modal.com/docs/guide/region-selection#region-options
     """
+
+    processing_timeout: Optional[int] = None
+    """Timeout in seconds for the server-side processing session.
+
+    Controls how long the serverless function or worker process is allowed to run.
+    If not set, the server uses its default (WEBRTC_MODAL_FUNCTION_TIME_LIMIT).
+    Only applicable when connecting to Roboflow serverless endpoints.
+    """

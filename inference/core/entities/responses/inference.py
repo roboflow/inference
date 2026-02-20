@@ -111,6 +111,20 @@ class InstanceSegmentationRLEPrediction(InstanceSegmentationBasePrediction):
     )
 
 
+class SemanticSegmentationPrediction(BaseModel):
+    # match inference-internal/blob/main/deploy/helpers/helpers.py#L107-L128
+    segmentation_mask: str = Field(
+        description="base64-encoded PNG of predicted class label at each pixel"
+    )
+    class_map: Dict[str, str] = Field(
+        description="Map of pixel intensity value to class label"
+    )
+    # added
+    confidence_mask: str = Field(
+        description="base64-encoded PNG of predicted class confidence at each pixel"
+    )
+
+
 class ClassificationPrediction(BaseModel):
     """Classification prediction.
 
@@ -246,6 +260,18 @@ class InstanceSegmentationInferenceResponse(
     predictions: List[InstanceSegmentationPrediction]
 
 
+class SemanticSegmentationInferenceResponse(
+    CvInferenceResponse, WithVisualizationResponse
+):
+    """Semantic Segmentation inference response.
+
+    Attributes:
+        predictions (inference.core.entities.responses.inference.SemanticSegmentationPrediction): Semantic segmentation predictions.
+    """
+
+    predictions: SemanticSegmentationPrediction
+
+
 class ClassificationInferenceResponse(CvInferenceResponse, WithVisualizationResponse):
     """Classification inference response.
 
@@ -337,6 +363,8 @@ def response_from_type(model_type, response_dict):
             return MultiLabelClassificationInferenceResponse(**response_dict)
     elif model_type == "instance-segmentation":
         return InstanceSegmentationInferenceResponse(**response_dict)
+    elif model_type == "semantic-segmentation":
+        return SemanticSegmentationInferenceResponse(**response_dict)
     elif model_type == "object-detection":
         return ObjectDetectionInferenceResponse(**response_dict)
     else:
