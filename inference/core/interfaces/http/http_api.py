@@ -49,6 +49,7 @@ from inference.core.entities.requests.inference import (
     KeypointsDetectionInferenceRequest,
     LMMInferenceRequest,
     ObjectDetectionInferenceRequest,
+    SemanticSegmentationInferenceRequest,
 )
 from inference.core.entities.requests.owlv2 import OwlV2InferenceRequest
 from inference.core.entities.requests.perception_encoder import (
@@ -94,6 +95,7 @@ from inference.core.entities.responses.inference import (
     LMMInferenceResponse,
     MultiLabelClassificationInferenceResponse,
     ObjectDetectionInferenceResponse,
+    SemanticSegmentationInferenceResponse,
     StubResponse,
 )
 from inference.core.entities.responses.notebooks import NotebookStartResponse
@@ -1117,6 +1119,40 @@ class HttpInterface(BaseInterface):
                     InstanceSegmentationInferenceResponse: The response containing the inference results.
                 """
                 logger.debug(f"Reached /infer/instance_segmentation")
+                return process_inference_request(
+                    inference_request,
+                    active_learning_eligible=True,
+                    background_tasks=background_tasks,
+                    countinference=countinference,
+                    service_secret=service_secret,
+                )
+
+            @app.post(
+                "/infer/semantic_segmentation",
+                response_model=Union[
+                    SemanticSegmentationInferenceResponse, StubResponse
+                ],
+                summary="Semantic segmentation infer",
+                description="Run inference with the specified semantic segmentation model",
+            )
+            @with_route_exceptions
+            @usage_collector("request")
+            def infer_semantic_segmentation(
+                inference_request: SemanticSegmentationInferenceRequest,
+                background_tasks: BackgroundTasks,
+                countinference: Optional[bool] = None,
+                service_secret: Optional[str] = None,
+            ):
+                """Run inference with the specified semantic segmentation model.
+
+                Args:
+                    inference_request (SemanticSegmentationInferenceRequest): The request containing the necessary details for semantic segmentation.
+                    background_tasks: (BackgroundTasks) pool of fastapi background tasks
+
+                Returns:
+                    SemanticSegmentationInferenceResponse: The response containing the inference results.
+                """
+                logger.debug(f"Reached /infer/semantic_segmentation")
                 return process_inference_request(
                     inference_request,
                     active_learning_eligible=True,
@@ -3093,6 +3129,7 @@ class HttpInterface(BaseInterface):
                     ObjectDetectionInferenceResponse,
                     ClassificationInferenceResponse,
                     MultiLabelClassificationInferenceResponse,
+                    SemanticSegmentationInferenceResponse,
                     StubResponse,
                     Any,
                 ],
@@ -3107,6 +3144,7 @@ class HttpInterface(BaseInterface):
                     ObjectDetectionInferenceResponse,
                     ClassificationInferenceResponse,
                     MultiLabelClassificationInferenceResponse,
+                    SemanticSegmentationInferenceResponse,
                     StubResponse,
                     Any,
                 ],
@@ -3230,7 +3268,7 @@ class HttpInterface(BaseInterface):
                     # Other parameters described in the function signature...
 
                 Returns:
-                    Union[InstanceSegmentationInferenceResponse, KeypointsDetectionInferenceRequest, ObjectDetectionInferenceResponse, ClassificationInferenceResponse, MultiLabelClassificationInferenceResponse, Any]: The response containing the inference results.
+                    Union[InstanceSegmentationInferenceResponse, KeypointsDetectionInferenceRequest, ObjectDetectionInferenceResponse, ClassificationInferenceResponse, MultiLabelClassificationInferenceResponse, SemanticSegmentationInferenceResponse, Any]: The response containing the inference results.
                 """
                 logger.debug(
                     f"Reached legacy route /:dataset_id/:version_id with {dataset_id}/{version_id}"
@@ -3323,6 +3361,8 @@ class HttpInterface(BaseInterface):
                 elif task_type == "keypoint-detection":
                     inference_request_type = KeypointsDetectionInferenceRequest
                     args = {"keypoint_confidence": keypoint_confidence}
+                elif task_type == "semantic-segmentation":
+                    inference_request_type = SemanticSegmentationInferenceRequest
                 inference_request = inference_request_type(
                     api_key=api_key,
                     model_id=model_id,

@@ -35,6 +35,7 @@ from inference.core.registries.roboflow import get_model_type
 from inference.core.warnings import ModelDependencyMissing
 from inference.models import (
     YOLACT,
+    DeepLabV3PlusSemanticSegmentation,
     DinoV3Classification,
     ResNetClassification,
     RFDETRInstanceSegmentation,
@@ -333,6 +334,7 @@ ROBOFLOW_MODEL_TYPES = {
     ("keypoint-detection", "yolov8m-pose"): YOLOv8KeypointsDetection,
     ("keypoint-detection", "yolov8l-pose"): YOLOv8KeypointsDetection,
     ("keypoint-detection", "yolov8x-pose"): YOLOv8KeypointsDetection,
+    ("semantic-segmentation", "deeplabv3plus"): DeepLabV3PlusSemanticSegmentation,
 }
 
 try:

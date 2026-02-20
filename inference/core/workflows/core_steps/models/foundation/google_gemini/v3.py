@@ -50,6 +50,12 @@ MODEL_ALIASES = {
 
 GEMINI_MODELS = [
     {
+        "id": "gemini-3.1-pro-preview",
+        "name": "Gemini 3.1 Pro",
+        "supports_thinking_level": True,
+        "supports_native_code_execution": True,
+    },
+    {
         "id": "gemini-3-pro-preview",
         "name": "Gemini 3 Pro",
         "supports_thinking_level": True,
