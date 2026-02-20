@@ -129,7 +129,10 @@ class SemanticSegmentationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceMo
         ).squeeze()
 
     def img_to_b64_str(self, img: torch.Tensor) -> str:
-        assert img.dtype == torch.uint8
+        if img.dtype != torch.uint8:
+            raise ValueError(
+                f"img_to_b64_str requires uint8 tensor but got dtype {img.dtype}"
+            )
 
         img = Image.fromarray(img.numpy())
         buffered = io.BytesIO()
