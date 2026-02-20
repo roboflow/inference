@@ -68,8 +68,8 @@ class Watchdog:
                 self._session_id,
             ]
         ):
-            logger.debug(
-                "Skipping heartbeat: url=%s, workspace=%s, session=%s",
+            logger.info(
+                "Skipping session heartbeat: url=%s, workspace=%s, session=%s",
                 bool(self._heartbeat_url),
                 bool(self._workspace_id),
                 bool(self._session_id),
@@ -87,7 +87,11 @@ class Watchdog:
                 timeout=5,
             )
             if response.status_code == 200:
-                logger.debug("Session heartbeat sent")
+                logger.info(
+                    "Session heartbeat sent for workspace=%s session=%s",
+                    self._workspace_id,
+                    self._session_id,
+                )
             else:
                 logger.warning(
                     "Failed to send session heartbeat: %s", response.status_code
