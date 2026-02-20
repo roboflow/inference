@@ -96,6 +96,11 @@ class KeyPointsDetectionModel(
 
     @property
     @abstractmethod
+    def key_points_classes(self) -> List[List[str]]:
+        pass
+
+    @property
+    @abstractmethod
     def skeletons(self) -> List[List[Tuple[int, int]]]:
         pass
 

@@ -313,7 +313,9 @@ def test_format_text_with_parameters_simple() -> None:
     text_parameters_operations = {}
 
     # when
-    result = format_text_with_parameters(text, text_parameters, text_parameters_operations)
+    result = format_text_with_parameters(
+        text, text_parameters, text_parameters_operations
+    )
 
     # then
     assert result == "Count: 5"
@@ -326,7 +328,9 @@ def test_format_text_with_parameters_multiple() -> None:
     text_parameters_operations = {}
 
     # when
-    result = format_text_with_parameters(text, text_parameters, text_parameters_operations)
+    result = format_text_with_parameters(
+        text, text_parameters, text_parameters_operations
+    )
 
     # then
     assert result == "Found 3 objects of class person"
@@ -339,7 +343,9 @@ def test_format_text_with_parameters_missing_parameter() -> None:
     text_parameters_operations = {}
 
     # when
-    result = format_text_with_parameters(text, text_parameters, text_parameters_operations)
+    result = format_text_with_parameters(
+        text, text_parameters, text_parameters_operations
+    )
 
     # then
     # Missing parameters should be left as-is
@@ -353,7 +359,9 @@ def test_format_text_with_parameters_with_operations() -> None:
     text_parameters_operations = {"items": [SequenceLength(type="SequenceLength")]}
 
     # when
-    result = format_text_with_parameters(text, text_parameters, text_parameters_operations)
+    result = format_text_with_parameters(
+        text, text_parameters, text_parameters_operations
+    )
 
     # then
     assert result == "Count: 5"
@@ -366,7 +374,9 @@ def test_format_text_with_no_parameters() -> None:
     text_parameters_operations = {}
 
     # when
-    result = format_text_with_parameters(text, text_parameters, text_parameters_operations)
+    result = format_text_with_parameters(
+        text, text_parameters, text_parameters_operations
+    )
 
     # then
     assert result == "Static text with no parameters"

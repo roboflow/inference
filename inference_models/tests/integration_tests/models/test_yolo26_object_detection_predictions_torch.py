@@ -395,7 +395,9 @@ def test_torchscript_package_stretch_numpy(
         device=DEFAULT_DEVICE,
     )
 
-    predictions = model(sunflowers_image_numpy)
+    predictions = model(
+        sunflowers_image_numpy, confidence=0.25, key_points_threshold=0.3
+    )
 
     assert len(predictions) == 1
 
@@ -423,7 +425,11 @@ def test_torchscript_package_stretch_batch_numpy(
         device=DEFAULT_DEVICE,
     )
 
-    predictions = model([sunflowers_image_numpy, sunflowers_image_numpy])
+    predictions = model(
+        [sunflowers_image_numpy, sunflowers_image_numpy],
+        confidence=0.25,
+        key_points_threshold=0.3,
+    )
 
     expected_confidence = torch.tensor(CPU_STRETCH_NUMPY_CONFIDENCE)
     expected_class_id = torch.ones(35, dtype=torch.int32)
@@ -451,7 +457,9 @@ def test_torchscript_package_stretch_torch(
         device=DEFAULT_DEVICE,
     )
 
-    predictions = model(sunflowers_image_torch)
+    predictions = model(
+        sunflowers_image_torch, confidence=0.25, key_points_threshold=0.3
+    )
 
     assert len(predictions) == 1
 
@@ -484,7 +492,9 @@ def test_torchscript_package_letterbox_numpy(
         device=DEFAULT_DEVICE,
     )
 
-    predictions = model(sunflowers_image_numpy)
+    predictions = model(
+        sunflowers_image_numpy, confidence=0.25, key_points_threshold=0.3
+    )
 
     assert len(predictions) == 1
     assert torch.allclose(
@@ -591,7 +601,11 @@ def test_torchscript_package_letterbox_batch_numpy(
         device=DEFAULT_DEVICE,
     )
 
-    predictions = model([sunflowers_image_numpy, sunflowers_image_numpy])
+    predictions = model(
+        [sunflowers_image_numpy, sunflowers_image_numpy],
+        confidence=0.25,
+        key_points_threshold=0.3,
+    )
 
     expected_confidence = torch.tensor(
         [
@@ -696,7 +710,9 @@ def test_torchscript_package_letterbox_torch(
         device=DEFAULT_DEVICE,
     )
 
-    predictions = model(sunflowers_image_torch)
+    predictions = model(
+        sunflowers_image_torch, confidence=0.25, key_points_threshold=0.3
+    )
 
     assert len(predictions) == 1
 

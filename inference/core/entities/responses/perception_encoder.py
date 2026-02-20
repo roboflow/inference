@@ -33,7 +33,7 @@ class PerceptionEncoderCompareResponse(InferenceResponse):
 
     similarity: Union[List[float], Dict[str, float]]
     time: Optional[float] = Field(
-        None,
+        default=None,
         description="The time in seconds it took to produce the similarity scores including preprocessing",
     )
     parent_id: Optional[str] = Field(

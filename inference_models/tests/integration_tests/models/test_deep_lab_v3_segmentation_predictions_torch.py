@@ -21,7 +21,7 @@ def test_torch_package_with_stretch_numpy(
     )
 
     # when
-    predictions = model(balloons_image_numpy)
+    predictions = model(balloons_image_numpy, confidence=0.5)
 
     # then
     assert sorted(torch.unique(predictions[0].segmentation_map).cpu().tolist()) == [
@@ -54,7 +54,7 @@ def test_torch_package_with_stretch_batch_numpy(
     )
 
     # when
-    predictions = model([balloons_image_numpy, balloons_image_numpy])
+    predictions = model([balloons_image_numpy, balloons_image_numpy], confidence=0.5)
 
     # then
     assert sorted(torch.unique(predictions[0].segmentation_map).cpu().tolist()) == [
@@ -102,7 +102,7 @@ def test_torch_package_with_stretch_torch(
     )
 
     # when
-    predictions = model(balloons_image_torch)
+    predictions = model(balloons_image_torch, confidence=0.5)
 
     # then
     assert sorted(torch.unique(predictions[0].segmentation_map).cpu().tolist()) == [
@@ -136,7 +136,7 @@ def test_torch_package_with_stretch_batch_torch(
 
     # when
     predictions = model(
-        torch.stack([balloons_image_torch, balloons_image_torch], dim=0)
+        torch.stack([balloons_image_torch, balloons_image_torch], dim=0), confidence=0.5
     )
 
     # then
@@ -185,7 +185,7 @@ def test_torch_package_with_stretch_batch_torch_list(
     )
 
     # when
-    predictions = model([balloons_image_torch, balloons_image_torch])
+    predictions = model([balloons_image_torch, balloons_image_torch], confidence=0.5)
 
     # then
     assert sorted(torch.unique(predictions[0].segmentation_map).cpu().tolist()) == [
@@ -233,7 +233,7 @@ def test_torch_package_with_static_crop_letterbox_numpy(
     )
 
     # when
-    predictions = model(balloons_image_numpy)
+    predictions = model(balloons_image_numpy, confidence=0.5)
 
     # then
     assert sorted(torch.unique(predictions[0].segmentation_map).cpu().tolist()) == [
@@ -265,7 +265,7 @@ def test_torch_package_with_static_crop_letterbox_batch_numpy(
         device=DEFAULT_DEVICE,
     )
     # when
-    predictions = model([balloons_image_numpy, balloons_image_numpy])
+    predictions = model([balloons_image_numpy, balloons_image_numpy], confidence=0.5)
 
     # then
     assert sorted(torch.unique(predictions[0].segmentation_map).cpu().tolist()) == [
@@ -313,7 +313,7 @@ def test_torch_package_with_static_crop_letterbox_torch(
     )
 
     # when
-    predictions = model(balloons_image_torch)
+    predictions = model(balloons_image_torch, confidence=0.5)
 
     # then
     assert sorted(torch.unique(predictions[0].segmentation_map).cpu().tolist()) == [
@@ -347,7 +347,7 @@ def test_torch_package_with_static_crop_letterbox_batch_torch(
 
     # when
     predictions = model(
-        torch.stack([balloons_image_torch, balloons_image_torch], dim=0)
+        torch.stack([balloons_image_torch, balloons_image_torch], dim=0), confidence=0.5
     )
 
     # then
@@ -396,7 +396,7 @@ def test_torch_package_with_static_crop_letterbox_batch_torch_list(
     )
 
     # when
-    predictions = model([balloons_image_torch, balloons_image_torch])
+    predictions = model([balloons_image_torch, balloons_image_torch], confidence=0.5)
 
     # then
     assert sorted(torch.unique(predictions[0].segmentation_map).cpu().tolist()) == [
@@ -444,7 +444,7 @@ def test_torch_package_with_static_crop_center_crop_numpy(
     )
 
     # when
-    predictions = model(balloons_image_numpy)
+    predictions = model(balloons_image_numpy, confidence=0.5)
 
     # then
     assert sorted(torch.unique(predictions[0].segmentation_map).cpu().tolist()) == [
@@ -478,7 +478,7 @@ def test_torch_package_with_static_crop_center_crop_batch_numpy(
     )
 
     # when
-    predictions = model([balloons_image_numpy, balloons_image_numpy])
+    predictions = model([balloons_image_numpy, balloons_image_numpy], confidence=0.5)
 
     # then
     assert sorted(torch.unique(predictions[0].segmentation_map).cpu().tolist()) == [
@@ -528,7 +528,7 @@ def test_torch_package_with_static_crop_center_crop_torch(
     )
 
     # when
-    predictions = model(balloons_image_torch)
+    predictions = model(balloons_image_torch, confidence=0.5)
 
     # then
     assert sorted(torch.unique(predictions[0].segmentation_map).cpu().tolist()) == [
@@ -563,7 +563,7 @@ def test_torch_package_with_static_crop_center_crop_batch_torch(
 
     # when
     predictions = model(
-        torch.stack([balloons_image_torch, balloons_image_torch], dim=0)
+        torch.stack([balloons_image_torch, balloons_image_torch], dim=0), confidence=0.5
     )
 
     # then
@@ -614,7 +614,7 @@ def test_torch_package_with_static_crop_center_crop_batch_torch_list(
     )
 
     # when
-    predictions = model([balloons_image_torch, balloons_image_torch])
+    predictions = model([balloons_image_torch, balloons_image_torch], confidence=0.5)
 
     # then
     assert sorted(torch.unique(predictions[0].segmentation_map).cpu().tolist()) == [

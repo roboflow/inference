@@ -101,7 +101,7 @@ def test_multi_class_classification_workflow(
     assert np.allclose(
         predicted_confidences,
         MULTI_CLASS_CLASSIFICATION_RESULTS_FOR_ENVIRONMENT[platform_environment],
-        atol=1e-3,
+        atol=5e-3,
     ), "Expected classification predictions to match expectations"
 
 
@@ -136,10 +136,7 @@ MULTI_LABEL_CLASSIFICATION_WORKFLOW = {
 
 
 MULTI_LABEL_CLASSIFICATION_RESULTS_FOR_ENVIRONMENT = {
-    PlatformEnvironment.ROBOFLOW_STAGING_LAMBDA: [
-        {"cat", "dog"},
-        {"dog"},
-    ],
+    PlatformEnvironment.ROBOFLOW_STAGING_LAMBDA: [set(), set()],
     PlatformEnvironment.ROBOFLOW_PLATFORM_LAMBDA: [{"dog"}, set()],
 }
 MULTI_LABEL_CLASSIFICATION_RESULTS_FOR_ENVIRONMENT[

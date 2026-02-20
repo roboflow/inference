@@ -21,7 +21,13 @@ def test_torchscript_package_with_static_batch_size_and_stretch_numpy(
     )
 
     # when
-    predictions = model(asl_image_numpy)
+    predictions = model(
+        asl_image_numpy,
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert torch.allclose(
@@ -57,7 +63,13 @@ def test_torchscript_package_with_static_batch_size_and_stretch_batch_numpy(
     )
 
     # when
-    predictions = model([asl_image_numpy, asl_image_numpy])
+    predictions = model(
+        [asl_image_numpy, asl_image_numpy],
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert torch.allclose(
@@ -110,7 +122,13 @@ def test_torchscript_package_with_static_batch_size_and_stretch_torch(
     )
 
     # when
-    predictions = model(asl_image_torch)
+    predictions = model(
+        asl_image_torch,
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert torch.allclose(
@@ -146,7 +164,13 @@ def test_torchscript_package_with_static_batch_size_and_stretch_batch_torch(
     )
 
     # when
-    predictions = model(torch.stack([asl_image_torch, asl_image_torch], dim=0))
+    predictions = model(
+        torch.stack([asl_image_torch, asl_image_torch], dim=0),
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert torch.allclose(
@@ -199,7 +223,13 @@ def test_torchscript_package_with_static_batch_size_and_stretch_list_torch(
     )
 
     # when
-    predictions = model([asl_image_torch, asl_image_torch])
+    predictions = model(
+        [asl_image_torch, asl_image_torch],
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert torch.allclose(
@@ -252,7 +282,13 @@ def test_torchscript_package_with_static_batch_size_and_stretch_fused_nms_numpy(
     )
 
     # when
-    predictions = model(asl_image_numpy)
+    predictions = model(
+        asl_image_numpy,
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert torch.allclose(
@@ -288,7 +324,13 @@ def test_torchscript_package_with_static_batch_size_and_stretch_fused_nms_batch_
     )
 
     # when
-    predictions = model([asl_image_numpy, asl_image_numpy])
+    predictions = model(
+        [asl_image_numpy, asl_image_numpy],
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert torch.allclose(
@@ -341,7 +383,13 @@ def test_torchscript_package_with_static_batch_size_and_stretch_fused_nms_torch(
     )
 
     # when
-    predictions = model(asl_image_torch)
+    predictions = model(
+        asl_image_torch,
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert torch.allclose(
@@ -377,7 +425,13 @@ def test_torchscript_package_with_static_batch_size_and_stretch_fused_nms_batch_
     )
 
     # when
-    predictions = model(torch.stack([asl_image_torch, asl_image_torch], dim=0))
+    predictions = model(
+        torch.stack([asl_image_torch, asl_image_torch], dim=0),
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert torch.allclose(
@@ -430,7 +484,13 @@ def test_torchscript_package_with_static_batch_size_and_stretch_fused_nms_list_t
     )
 
     # when
-    predictions = model([asl_image_torch, asl_image_torch])
+    predictions = model(
+        [asl_image_torch, asl_image_torch],
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert torch.allclose(
@@ -483,7 +543,13 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_nump
     )
 
     # when
-    predictions = model(asl_image_numpy)
+    predictions = model(
+        asl_image_numpy,
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert torch.allclose(
@@ -519,7 +585,13 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_batc
     )
 
     # when
-    predictions = model([asl_image_numpy, asl_image_numpy])
+    predictions = model(
+        [asl_image_numpy, asl_image_numpy],
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert torch.allclose(
@@ -572,7 +644,13 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_stretch_torc
     )
 
     # when
-    predictions = model(asl_image_torch)
+    predictions = model(
+        asl_image_torch,
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert torch.allclose(
@@ -608,7 +686,13 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_stretch_batc
     )
 
     # when
-    predictions = model(torch.stack([asl_image_torch, asl_image_torch], dim=0))
+    predictions = model(
+        torch.stack([asl_image_torch, asl_image_torch], dim=0),
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert torch.allclose(
@@ -661,7 +745,13 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_stretch_list
     )
 
     # when
-    predictions = model([asl_image_torch, asl_image_torch])
+    predictions = model(
+        [asl_image_torch, asl_image_torch],
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert torch.allclose(
@@ -714,7 +804,13 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_fuse
     )
 
     # when
-    predictions = model(asl_image_numpy)
+    predictions = model(
+        asl_image_numpy,
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert torch.allclose(
@@ -750,7 +846,13 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_fuse
     )
 
     # when
-    predictions = model([asl_image_numpy, asl_image_numpy])
+    predictions = model(
+        [asl_image_numpy, asl_image_numpy],
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert torch.allclose(
@@ -803,7 +905,13 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_stretch_fuse
     )
 
     # when
-    predictions = model(asl_image_torch)
+    predictions = model(
+        asl_image_torch,
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert torch.allclose(
@@ -839,7 +947,13 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_stretch_fuse
     )
 
     # when
-    predictions = model(torch.stack([asl_image_torch, asl_image_torch], dim=0))
+    predictions = model(
+        torch.stack([asl_image_torch, asl_image_torch], dim=0),
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert torch.allclose(
@@ -892,7 +1006,13 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_stretch_fuse
     )
 
     # when
-    predictions = model([asl_image_torch, asl_image_torch])
+    predictions = model(
+        [asl_image_torch, asl_image_torch],
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert torch.allclose(
@@ -945,7 +1065,13 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_nump
     )
 
     # when
-    predictions = model(asl_image_numpy)
+    predictions = model(
+        asl_image_numpy,
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert torch.allclose(
@@ -981,7 +1107,13 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_batc
     )
 
     # when
-    predictions = model([asl_image_numpy, asl_image_numpy])
+    predictions = model(
+        [asl_image_numpy, asl_image_numpy],
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert torch.allclose(
@@ -1034,7 +1166,13 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_stretch_torc
     )
 
     # when
-    predictions = model(asl_image_torch)
+    predictions = model(
+        asl_image_torch,
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert torch.allclose(
@@ -1070,7 +1208,13 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_stretch_batc
     )
 
     # when
-    predictions = model(torch.stack([asl_image_torch, asl_image_torch], dim=0))
+    predictions = model(
+        torch.stack([asl_image_torch, asl_image_torch], dim=0),
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert torch.allclose(
@@ -1123,7 +1267,13 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_stretch_list
     )
 
     # when
-    predictions = model([asl_image_torch, asl_image_torch])
+    predictions = model(
+        [asl_image_torch, asl_image_torch],
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert torch.allclose(
@@ -1176,7 +1326,13 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_fuse
     )
 
     # when
-    predictions = model(asl_image_numpy)
+    predictions = model(
+        asl_image_numpy,
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert torch.allclose(
@@ -1212,7 +1368,13 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_fuse
     )
 
     # when
-    predictions = model([asl_image_numpy, asl_image_numpy])
+    predictions = model(
+        [asl_image_numpy, asl_image_numpy],
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert torch.allclose(
@@ -1265,7 +1427,13 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_stretch_fuse
     )
 
     # when
-    predictions = model(asl_image_torch)
+    predictions = model(
+        asl_image_torch,
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert torch.allclose(
@@ -1301,7 +1469,13 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_stretch_fuse
     )
 
     # when
-    predictions = model(torch.stack([asl_image_torch, asl_image_torch], dim=0))
+    predictions = model(
+        torch.stack([asl_image_torch, asl_image_torch], dim=0),
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert torch.allclose(
@@ -1354,7 +1528,13 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_stretch_fuse
     )
 
     # when
-    predictions = model([asl_image_torch, asl_image_torch])
+    predictions = model(
+        [asl_image_torch, asl_image_torch],
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert torch.allclose(
@@ -1407,7 +1587,13 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_center_crop_
     )
 
     # when
-    predictions = model(asl_image_numpy)
+    predictions = model(
+        asl_image_numpy,
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert torch.allclose(
@@ -1443,7 +1629,13 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_center_crop_
     )
 
     # when
-    predictions = model([asl_image_numpy, asl_image_numpy])
+    predictions = model(
+        [asl_image_numpy, asl_image_numpy],
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert torch.allclose(
@@ -1496,7 +1688,13 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_center_crop_
     )
 
     # when
-    predictions = model(asl_image_torch)
+    predictions = model(
+        asl_image_torch,
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert torch.allclose(
@@ -1532,7 +1730,13 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_center_crop_
     )
 
     # when
-    predictions = model(torch.stack([asl_image_torch, asl_image_torch], dim=0))
+    predictions = model(
+        torch.stack([asl_image_torch, asl_image_torch], dim=0),
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert torch.allclose(
@@ -1585,7 +1789,13 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_center_crop_
     )
 
     # when
-    predictions = model([asl_image_torch, asl_image_torch])
+    predictions = model(
+        [asl_image_torch, asl_image_torch],
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert torch.allclose(
@@ -1638,7 +1848,13 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_numpy(
     )
 
     # when
-    predictions = model(asl_image_numpy)
+    predictions = model(
+        asl_image_numpy,
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert torch.allclose(
@@ -1674,7 +1890,13 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_batch_numpy(
     )
 
     # when
-    predictions = model([asl_image_numpy, asl_image_numpy])
+    predictions = model(
+        [asl_image_numpy, asl_image_numpy],
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert torch.allclose(
@@ -1727,7 +1949,13 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_torch(
     )
 
     # when
-    predictions = model(asl_image_torch)
+    predictions = model(
+        asl_image_torch,
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert torch.allclose(
@@ -1763,7 +1991,13 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_batch_torch(
     )
 
     # when
-    predictions = model(torch.stack([asl_image_torch, asl_image_torch], dim=0))
+    predictions = model(
+        torch.stack([asl_image_torch, asl_image_torch], dim=0),
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert torch.allclose(
@@ -1816,7 +2050,13 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_list_torch(
     )
 
     # when
-    predictions = model([asl_image_torch, asl_image_torch])
+    predictions = model(
+        [asl_image_torch, asl_image_torch],
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert torch.allclose(
@@ -1869,7 +2109,13 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_letterbox_cr
     )
 
     # when
-    predictions = model(asl_image_numpy)
+    predictions = model(
+        asl_image_numpy,
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert torch.allclose(
@@ -1907,7 +2153,13 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_letterbox_ba
     )
 
     # when
-    predictions = model([asl_image_numpy, asl_image_numpy])
+    predictions = model(
+        [asl_image_numpy, asl_image_numpy],
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert torch.allclose(
@@ -1962,7 +2214,13 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_letterbox_cr
     )
 
     # when
-    predictions = model(asl_image_torch)
+    predictions = model(
+        asl_image_torch,
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert torch.allclose(
@@ -2000,7 +2258,13 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_letterbox_ba
     )
 
     # when
-    predictions = model(torch.stack([asl_image_torch, asl_image_torch], dim=0))
+    predictions = model(
+        torch.stack([asl_image_torch, asl_image_torch], dim=0),
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert torch.allclose(
@@ -2055,7 +2319,13 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_letterbox_li
     )
 
     # when
-    predictions = model([asl_image_torch, asl_image_torch])
+    predictions = model(
+        [asl_image_torch, asl_image_torch],
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert torch.allclose(

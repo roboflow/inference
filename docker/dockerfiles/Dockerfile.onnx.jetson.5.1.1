@@ -1,29 +1,6 @@
-FROM nvcr.io/nvidia/l4t-ml:r35.2.1-py3
-#installs python 3.9
+FROM roboflow/l4t-ml:r35.2.1-py3.12-cu118-trt-10-v0.0.1
 
-ARG DEBIAN_FRONTEND=noninteractive
-ENV LANG en_US.UTF-8 
-
-RUN apt-get update -y && apt-get install -y \
-    python3.9 \
-    python3.9-dev \
-    lshw \
-    git \
-    python3-pip \
-    python3-matplotlib \
-    gfortran \
-    ffmpeg \
-    build-essential \
-    libatlas-base-dev \
-    libsm6 \
-    libxext6 \
-    wget \
-    python3-shapely \
-    gdal-bin \
-    libgdal-dev \
-    rustc \
-    cargo \
-    && rm -rf /var/lib/apt/lists/*
+RUN apt-get update -y && apt-get install -y ffmpeg
 
 COPY requirements/requirements.clip.txt \
     requirements/requirements.http.txt \
@@ -33,21 +10,10 @@ COPY requirements/requirements.clip.txt \
     requirements/requirements.yolo_world.txt \
     requirements/_requirements.txt \
     requirements/requirements.easyocr.txt \
+    requirements/requirements.gpu.txt \
     ./
 
-RUN python3.9 -m pip install --ignore-installed PyYAML && rm -rf ~/.cache/pip
-
-# We needed to take statically compiled library for last known stable build and put it into hosting
-# That was due to faulty builds started 26.06.2024, probably due to release of new version
-# of pybind11, which gets automatically pulled while build of zxing_cpp library making
-# cmake to fail
-RUN wget https://storage.googleapis.com/roboflow-tests-assets/zxing_cpp_library_compiled_for_inference_v0.12.1.tar.gz \
-    && tar -xvzf zxing_cpp_library_compiled_for_inference_v0.12.1.tar.gz \
-    && mv zxing_cpp-2.2.0.dist-info /usr/local/lib/python3.9/dist-packages/zxing_cpp-2.2.0.dist-info \
-    && mv zxingcpp.cpython-39-aarch64-linux-gnu.so /usr/local/lib/python3.9/dist-packages/ \
-    && rm zxing_cpp_library_compiled_for_inference_v0.12.1.tar.gz
-
-RUN python3.9 -m pip install --upgrade pip  && python3.9 -m pip install \
+RUN python -m pip install \
     -r _requirements.txt \
     -r requirements.clip.txt \
     -r requirements.http.txt \
@@ -56,10 +22,11 @@ RUN python3.9 -m pip install --upgrade pip  && python3.9 -m pip install \
     -r requirements.sdk.http.txt \
     -r requirements.yolo_world.txt \
     -r requirements.easyocr.txt \
-    jupyterlab \
-    "setuptools<=75.5.0" \
-    --upgrade \
-    && rm -rf ~/.cache/pip
+    -r requirements.gpu.txt \
+    "pycuda>=2025.0.0,<2026.0.0" \
+    "torch==2.4.1" \
+    "torchvision==0.19.1"
+
 
 WORKDIR /app/
 COPY inference inference
@@ -70,15 +37,8 @@ COPY .release .release
 COPY requirements requirements
 COPY Makefile Makefile
 
-RUN make create_inference_cli_whl PYTHON=python3.9
-RUN python3.9 -m pip install dist/inference_cli*.whl
-
-# BE CAREFUL, WE ENFORCE numpy 1.x for the sake of compatibility with onnxruntime
-RUN python3.9 -m pip uninstall --yes onnxruntime numpy
-RUN wget https://nvidia.box.com/shared/static/67zek28z497hs9aev7xg2c1wngdeyv4h.whl -O onnxruntime_gpu-1.16.0-cp39-cp39-linux_aarch64.whl
-RUN python3.9 -m pip install "numpy<=1.26.4" onnxruntime_gpu-1.16.0-cp39-cp39-linux_aarch64.whl "opencv-python-headless>4,<=4.10.0.84" \
-    && rm -rf ~/.cache/pip \
-    && rm onnxruntime_gpu-1.16.0-cp39-cp39-linux_aarch64.whl
+RUN make create_inference_cli_whl PYTHON=python3.12
+RUN python -m pip install dist/inference_cli*.whl
 
 ENV VERSION_CHECK_MODE=continuous \
     PROJECT=roboflow-platform \
@@ -100,6 +60,10 @@ ENV VERSION_CHECK_MODE=continuous \
     ENABLE_STREAM_API=True \
     STREAM_API_PRELOADED_PROCESSES=2 \
     PYTHONPATH=/app:$PYTHONPATH
-ENV CORE_MODEL_SAM3_ENABLED=False
+ENV CORE_MODEL_SAM3_ENABLED=False \
+    ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES=True \
+    USE_INFERENCE_MODELS=False \
+    RUNNING_ON_JETSON=True \
+    L4T_VERSION=35.2.1
 
 ENTRYPOINT uvicorn gpu_http:app --workers $NUM_WORKERS --host $HOST --port $PORT

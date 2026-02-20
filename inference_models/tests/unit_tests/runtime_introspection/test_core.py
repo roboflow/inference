@@ -28,7 +28,6 @@ from inference_models.runtime_introspection.core import (
     is_running_on_jetson,
     is_torch_available,
     is_trt_python_package_available,
-    is_ultralytics_available,
     resolve_jetson_type,
 )
 
@@ -736,35 +735,6 @@ def test_is_hf_transformers_available_when_trt_can_be_imported() -> None:
             result = is_hf_transformers_available()
     finally:
         is_hf_transformers_available.cache_clear()
-
-    # then
-    assert result is True
-
-
-def test_is_ultralytics_available_when_trt_cannot_be_imported() -> None:
-    # given
-    is_ultralytics_available.cache_clear()
-    try:
-        with mock.patch("builtins.__import__") as mocked_import:
-            mocked_import.side_effect = ImportError()
-            # when
-            result = is_ultralytics_available()
-    finally:
-        is_ultralytics_available.cache_clear()
-
-    # then
-    assert result is False
-
-
-def test_is_ultralytics_available_when_trt_can_be_imported() -> None:
-    # given
-    is_ultralytics_available.cache_clear()
-    try:
-        with mock.patch("builtins.__import__"):
-            # when
-            result = is_ultralytics_available()
-    finally:
-        is_ultralytics_available.cache_clear()
 
     # then
     assert result is True
