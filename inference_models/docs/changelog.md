@@ -1,5 +1,12 @@
 # Changelog
 
+## `0.19.1`
+
+### Fixed
+- Fixed issue with RFDetr model post-processing causing all results to be empty (TRT implementation) 
+
+---
+
 ## `0.19.0`
 
 First **stable release** of `inference-models` library.
