@@ -396,7 +396,6 @@ if modal is not None:
             watchdog = Watchdog(
                 api_key=webrtc_request.api_key,
                 timeout_seconds=WEBRTC_MODAL_WATCHDOG_TIMEMOUT,
-                # Use getattr for backwards compatibility with older Docker images
                 workspace_id=getattr(webrtc_request, "workspace_id", None),
                 session_id=getattr(webrtc_request, "session_id", None),
                 heartbeat_url=WEBRTC_SESSION_HEARTBEAT_URL,
