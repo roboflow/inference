@@ -257,12 +257,6 @@ def register_webrtc_session(workspace_id: str, session_id: str) -> None:
         workspace_id: The workspace identifier
         session_id: Unique identifier for this session
     """
-    logger.info(
-        "[REDIS] register_webrtc_session called: workspace=%s, session=%s, cache_type=%s",
-        workspace_id,
-        session_id,
-        type(cache).__name__,
-    )
     if not isinstance(cache, RedisCache):
         logger.warning(
             "[REDIS] Redis not available (cache is %s), skipping session registration",
@@ -271,18 +265,15 @@ def register_webrtc_session(workspace_id: str, session_id: str) -> None:
         return
 
     key = _get_concurrent_sessions_key(workspace_id)
-    timestamp = time.time()
-    logger.info("[REDIS] Using key=%s, timestamp=%s", key, timestamp)
     try:
-        result = cache.client.zadd(key, {session_id: timestamp})
+        cache.client.zadd(key, {session_id: time.time()})
         logger.info(
-            "[REDIS] Registered session: workspace=%s, session=%s, zadd_result=%s",
+            "Registered session: workspace=%s, session=%s",
             workspace_id,
             session_id,
-            result,
         )
     except Exception as e:
-        logger.error("[REDIS] Failed to register session: %s", e, exc_info=True)
+        logger.error("Failed to register session: %s", e)
 
 
 def refresh_webrtc_session(workspace_id: str, session_id: str) -> None:
@@ -295,7 +286,7 @@ def refresh_webrtc_session(workspace_id: str, session_id: str) -> None:
         workspace_id: The workspace identifier
         session_id: The session identifier to refresh
     """
-    logger.info(
+    logger.debug(
         "[REDIS] refresh_webrtc_session called: workspace=%s, session=%s, cache_type=%s",
         workspace_id,
         session_id,
@@ -336,23 +327,14 @@ def get_concurrent_session_count(workspace_id: str, ttl_seconds: int) -> int:
     Returns:
         Number of concurrent sessions for the workspace
     """
-    logger.info(
-        "[REDIS] get_concurrent_session_count: workspace=%s, ttl=%d, cache_type=%s",
-        workspace_id,
-        ttl_seconds,
-        type(cache).__name__,
-    )
     if not isinstance(cache, RedisCache):
         logger.warning(
-            "[REDIS] Redis not available (cache is %s), cannot count sessions - allowing request",
-            type(cache).__name__,
+            "Redis not available, cannot count concurrent sessions - allowing request"
         )
         return 0
 
     key = _get_concurrent_sessions_key(workspace_id)
-    now = time.time()
-    cutoff = now - ttl_seconds
-    logger.info("[REDIS] key=%s, now=%s, cutoff=%s", key, now, cutoff)
+    cutoff = time.time() - ttl_seconds
 
     try:
         # Step 1: we remove expired entries
@@ -360,14 +342,6 @@ def get_concurrent_session_count(workspace_id: str, ttl_seconds: int) -> int:
         logger.info("[REDIS] Removed %s expired entries from %s", removed, key)
         # Step 2: we return what is still valid
         count = cache.client.zcard(key)
-        # Also log the actual sessions for debugging
-        sessions = cache.client.zrange(key, 0, -1, withscores=True)
-        logger.info(
-            "[REDIS] Active sessions in %s: count=%d, sessions=%s",
-            key,
-            count,
-            sessions,
-        )
         return count
     except Exception as e:
         logger.error(
