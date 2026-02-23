@@ -250,6 +250,9 @@ class Sam3_3D_ObjectsPipelineSingleton:
 
 
 class SegmentAnything3_3D_Objects(RoboflowCoreModel):
+
+    task_type = "segment-anything-3d-objects"
+
     def __init__(
         self,
         *args,
