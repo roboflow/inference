@@ -1659,11 +1659,24 @@ class HttpInterface(BaseInterface):
                 that their session is still active. The session will be removed from
                 the quota count if no heartbeat is received within the TTL period.
                 """
-                body = await request.json()
+                logger.info("[HEARTBEAT] Received heartbeat request")
+                try:
+                    body = await request.json()
+                    logger.info("[HEARTBEAT] Request body: %s", body)
+                except Exception as e:
+                    logger.error("[HEARTBEAT] Failed to parse request body: %s", e)
+                    return {"status": "error", "message": str(e)}
+
                 workspace_id = body.get("workspace_id")
                 session_id = body.get("session_id")
+                logger.info(
+                    "[HEARTBEAT] workspace_id=%s, session_id=%s",
+                    workspace_id,
+                    session_id,
+                )
 
                 if not workspace_id or not session_id:
+                    logger.warning("[HEARTBEAT] Missing workspace_id or session_id")
                     return {
                         "status": "error",
                         "message": "workspace_id and session_id required",
@@ -1673,6 +1686,7 @@ class HttpInterface(BaseInterface):
                     workspace_id=workspace_id,
                     session_id=session_id,
                 )
+                logger.info("[HEARTBEAT] Session refreshed successfully")
                 return {"status": "ok"}
 
         if ENABLE_STREAM_API:
