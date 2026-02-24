@@ -72,7 +72,6 @@ provided in a form of dictionary presented below, if `video_metadata` is intende
 {
     "type": "url",   # there are different types supported, including np arrays and PIL images
     "value": "..."   # value depends on `type`,
-    "image_name": "my_image_name",  # optional - custom name for the image (without extension)
     "video_metadata": {  
         # optional - can be added in context of video processing - introduced in 
         # Execution Engine `v1.2.0` - released in inference `v0.23.0`
