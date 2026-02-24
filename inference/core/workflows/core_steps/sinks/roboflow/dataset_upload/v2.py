@@ -305,9 +305,6 @@ class RoboflowDatasetUploadBlockV2(WorkflowBlock):
         predictions = [None] * len(images) if predictions is None else predictions
         image_names = [None] * len(images) if image_name is None else image_name
         for image, prediction, img_name in zip(images, predictions, image_names):
-            resolved_image_name = img_name or (
-                image.image_name if image.image_name else None
-            )
             error_status, message = maybe_register_datapoint_at_roboflow(
                 image=image,
                 prediction=prediction,
@@ -328,7 +325,7 @@ class RoboflowDatasetUploadBlockV2(WorkflowBlock):
                 background_tasks=self._background_tasks,
                 thread_pool_executor=self._thread_pool_executor,
                 api_key=self._api_key,
-                image_name=resolved_image_name,
+                image_name=img_name,
             )
             result.append({"error_status": error_status, "message": message})
         return result

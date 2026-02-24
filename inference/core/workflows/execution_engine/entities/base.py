@@ -269,7 +269,6 @@ class WorkflowImageData:
         base64_image: Optional[str] = None,
         numpy_image: Optional[np.ndarray] = None,
         video_metadata: Optional[VideoMetadata] = None,
-        image_name: Optional[str] = None,
     ):
         if not base64_image and numpy_image is None and not image_reference:
             raise ValueError("Could not initialise empty `WorkflowImageData`.")
@@ -283,7 +282,6 @@ class WorkflowImageData:
         self._base64_image = base64_image
         self._numpy_image = numpy_image
         self._video_metadata = video_metadata
-        self._image_name = image_name
 
     @classmethod
     def copy_and_replace(
@@ -299,7 +297,6 @@ class WorkflowImageData:
         * base64_image
         * numpy_image
         * video_metadata
-        * image_name
 
         When more than one from ["numpy_image", "base64_image", "image_reference"] args are
         given, they MUST be compliant.
@@ -312,7 +309,6 @@ class WorkflowImageData:
         base64_image = origin_image_data._base64_image
         numpy_image = origin_image_data._numpy_image
         video_metadata = origin_image_data._video_metadata
-        image_name = origin_image_data._image_name
         if any(k in kwargs for k in ["numpy_image", "base64_image", "image_reference"]):
             numpy_image = kwargs.get("numpy_image")
             base64_image = kwargs.get("base64_image")
@@ -327,8 +323,6 @@ class WorkflowImageData:
             workflow_root_ancestor_metadata = kwargs["workflow_root_ancestor_metadata"]
         if "video_metadata" in kwargs:
             video_metadata = kwargs["video_metadata"]
-        if "image_name" in kwargs:
-            image_name = kwargs["image_name"]
         return cls(
             parent_metadata=parent_metadata,
             workflow_root_ancestor_metadata=workflow_root_ancestor_metadata,
@@ -336,7 +330,6 @@ class WorkflowImageData:
             base64_image=base64_image,
             numpy_image=numpy_image,
             video_metadata=video_metadata,
-            image_name=image_name,
         )
 
     @classmethod
@@ -384,12 +377,7 @@ class WorkflowImageData:
             workflow_root_ancestor_metadata=workflow_root_ancestor_metadata,
             numpy_image=cropped_image,
             video_metadata=video_metadata,
-            image_name=origin_image_data._image_name,
         )
-
-    @property
-    def image_name(self) -> Optional[str]:
-        return self._image_name
 
     @property
     def parent_metadata(self) -> ImageParentMetadata:
