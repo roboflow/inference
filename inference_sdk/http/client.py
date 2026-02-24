@@ -1971,6 +1971,7 @@ class InferenceHTTPClient:
         excluded_fields: Optional[List[str]] = None,
         use_cache: bool = True,
         enable_profiling: bool = False,
+        workflow_version_id: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Run inference using a workflow specification.
 
@@ -2013,6 +2014,7 @@ class InferenceHTTPClient:
             legacy_endpoints=True,
             use_cache=use_cache,
             enable_profiling=enable_profiling,
+            workflow_version_id=workflow_version_id,
         )
 
     @wrap_errors
@@ -2026,6 +2028,7 @@ class InferenceHTTPClient:
         excluded_fields: Optional[List[str]] = None,
         use_cache: bool = True,
         enable_profiling: bool = False,
+        workflow_version_id: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Run inference using a workflow specification.
 
@@ -2076,6 +2079,7 @@ class InferenceHTTPClient:
             legacy_endpoints=False,
             use_cache=use_cache,
             enable_profiling=enable_profiling,
+            workflow_version_id=workflow_version_id,
         )
 
     def _run_workflow(
@@ -2089,6 +2093,7 @@ class InferenceHTTPClient:
         legacy_endpoints: bool = False,
         use_cache: bool = True,
         enable_profiling: bool = False,
+        workflow_version_id: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         response = self._execute_workflow_request(
             workspace_name=workspace_name,
@@ -2100,6 +2105,7 @@ class InferenceHTTPClient:
             legacy_endpoints=legacy_endpoints,
             use_cache=use_cache,
             enable_profiling=enable_profiling,
+            workflow_version_id=workflow_version_id,
         )
         response_data = response.json()
         workflow_outputs = response_data["outputs"]
@@ -2125,6 +2131,7 @@ class InferenceHTTPClient:
         legacy_endpoints: bool = False,
         use_cache: bool = True,
         enable_profiling: bool = False,
+        workflow_version_id: Optional[str] = None,
     ) -> Response:
         named_workflow_specified = (workspace_name is not None) and (
             workflow_id is not None
@@ -2165,6 +2172,8 @@ class InferenceHTTPClient:
             else:
                 url = f"{self.__api_url}/workflows/run"
         else:
+            if workflow_version_id is not None:
+                payload["workflow_version_id"] = workflow_version_id
             if legacy_endpoints:
                 url = f"{self.__api_url}/infer/workflows/{workspace_name}/{workflow_id}"
             else:

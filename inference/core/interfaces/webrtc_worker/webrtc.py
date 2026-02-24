@@ -293,6 +293,7 @@ class VideoFrameProcessor:
             video_metadata_input_name=workflow_configuration.video_metadata_input_name,
             model_manager=model_manager,
             _is_preview=is_preview,
+            workflow_version_id=workflow_configuration.workflow_version_id,
         )
 
     def set_track(self, track: MediaStreamTrack, rotation_code: Optional[int] = None):
@@ -591,6 +592,7 @@ class VideoFrameProcessor:
                         api_key=api_key,
                         workspace_id=workflow_configuration.workspace_name,
                         workflow_id=workflow_configuration.workflow_id,
+                        workflow_version_id=workflow_configuration.workflow_version_id,
                     )
                 )
                 workflow_configuration.workspace_name = None
