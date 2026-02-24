@@ -119,11 +119,26 @@ def project_covariance(K: np.ndarray, mu: np.ndarray, Sigma: np.ndarray) -> np.n
     Returns:
         2x2 covariance matrix in image space.
     """
-    x,y,z = mu
+    x, y, z = mu
     fx, fy = K[0,0], K[1,1]
     J = np.array([[fx/z, 0, -fx*x/(z*z)],
                   [0, fy/z, -fy*y/(z*z)]])
     return J @ Sigma @ J.T
+
+
+def covariance_radius(sigma_2d: np.ndarray) -> float:
+    """Compute the splat radius from a 2D covariance matrix.
+
+    Uses 3 standard deviations (3σ) based on the largest eigenvalue.
+
+    Args:
+        sigma_2d: 2x2 covariance matrix in image space.
+
+    Returns:
+        Radius in pixels for the splat bounding box.
+    """
+    eigvals = np.linalg.eigvals(sigma_2d)
+    return 3 * np.sqrt(np.max(np.real(eigvals)))
 
 
 # -------------------------------------------------
@@ -167,15 +182,14 @@ def render_gaussians(
             continue
 
         center = pts_img[idx]
-        Sigma2D = project_covariance(K, mu, covs[idx])
+        sigma_2d = project_covariance(K, mu, covs[idx])
 
         try:
-            invS = np.linalg.inv(Sigma2D)
+            invS = np.linalg.inv(sigma_2d)
         except:
             continue
 
-        eigvals = np.linalg.eigvals(Sigma2D)
-        radius = 3*np.sqrt(np.max(np.real(eigvals)))
+        radius = covariance_radius(sigma_2d)
 
         xmin = int(max(0, center[0]-radius))
         xmax = int(min(W-1, center[0]+radius))
