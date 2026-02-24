@@ -41,6 +41,7 @@ def run_workflow(
     image_path: Path,
     object_prompt: str,
     workflow_path: Path,
+    debug_output_dir: Path | None = None,
 ) -> List[dict]:
     workflow_definition = load_workflow_definition(workflow_path)
     image = cv2.imread(str(image_path))
@@ -71,12 +72,13 @@ def run_workflow(
     )
 
     # object_prompt: YOLO World expects a list of class names (e.g. ["sofa"])
-    result = execution_engine.run(
-        runtime_parameters={
-            "image": [image_rgb],
-            "object_prompt": [object_prompt],
-        },
-    )
+    runtime_params: dict = {
+        "image": [image_rgb],
+        "object_prompt": [object_prompt],
+    }
+    if debug_output_dir is not None:
+        runtime_params["debug_output_dir"] = str(debug_output_dir)
+    result = execution_engine.run(runtime_parameters=runtime_params)
     return result
 
 
@@ -96,7 +98,7 @@ def run_workflow(
     type=click.Path(exists=True, dir_okay=False, path_type=Path),
     default=Path(__file__).resolve().parent / "default.json",
     show_default=True,
-    help="Path to workflow definition JSON.",
+    help="Path to workflow definition JSON. Use default_debug.json to save intermediate step outputs for debugging.",
 )
 @click.option(
     "--output-dir",
@@ -112,10 +114,17 @@ def main(
 ) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    # Pass output_dir as debug_output_dir when using debug workflow (saves step outputs)
+    # Debug workflow persists yolo_world and sam2 outputs to disk even if a later step fails
+    inputs = load_workflow_definition(workflow).get("inputs", [])
+    use_debug = any(
+        inp.get("name") == "debug_output_dir" for inp in inputs
+    )
     result = run_workflow(
         image_path=image,
         object_prompt=prompt,
         workflow_path=workflow,
+        debug_output_dir=output_dir if use_debug else None,
     )
 
     # Result is a list of dicts (one per input image)
