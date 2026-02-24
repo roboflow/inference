@@ -71,7 +71,7 @@ async def start_worker(
                 )
                 raise WorkspaceStreamQuotaError(
                     f"You have reached the maximum of {WEBRTC_WORKSPACE_STREAM_QUOTA} "
-                    f"concurrent streams. Please contact Roboflow to increase your quota."
+                    f"concurrent streams."
                 )
 
             if workspace_id:
