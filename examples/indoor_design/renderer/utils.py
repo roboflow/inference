@@ -3,6 +3,7 @@ from plyfile import PlyData
 import plotly.graph_objects as go
 import click
 from pathlib import Path
+from tqdm import tqdm
 
 
 # -------------------------------------------------
@@ -102,16 +103,10 @@ def project_points(K: np.ndarray, pts_cam: np.ndarray) -> tuple[np.ndarray, np.n
             - pts_img: (N, 2) array of 2D image coordinates (u, v).
             - depth: (N,) array of z/depth values.
     """
-    z = pts_cam[:, 2:3]
-    eps = 1e-6
-    z_safe = np.maximum(z, eps)
-    pts_norm = pts_cam[:, :2] / z_safe
-    pts_img = (K[:2, :2] @ pts_norm.T).T + K[:2, 2]
-    depth = z.squeeze()
-    valid = (depth > eps) & np.isfinite(pts_img).all(axis=1)
-    pts_img = np.where(valid[:, np.newaxis], pts_img, np.nan)
-    depth = np.where(valid, depth, np.inf)
-    return pts_img, depth
+    z = pts_cam[:,2:3]
+    pts_norm = pts_cam[:,:2]/z
+    pts_img = (K[:2,:2] @ pts_norm.T).T + K[:2,2]
+    return pts_img, z.squeeze()
 
 
 def project_covariance(K: np.ndarray, mu: np.ndarray, cov: np.ndarray) -> np.ndarray:
@@ -178,14 +173,18 @@ def render_gaussians(
         (H, W, 3) RGB image array, values clipped to [0, 1].
     """
     pts_img, depth = project_points(K, means)
+
     valid = np.isfinite(depth) & (depth > 1e-6) & np.isfinite(pts_img).all(axis=1)
     valid_indices = np.where(valid)[0]
+
+    print(f"Valid percentage: {len(valid_indices) / len(means)}")
+
     order = valid_indices[np.argsort(depth[valid])[::-1]]
 
     img = np.zeros((H, W, 3))
     T = np.ones((H, W))
 
-    for idx in order:
+    for idx in tqdm(order, desc="Rendering Gaussians"):
         mu = means[idx]
         center = pts_img[idx]
         covariance_matrix = project_covariance(K, mu, covs[idx])
