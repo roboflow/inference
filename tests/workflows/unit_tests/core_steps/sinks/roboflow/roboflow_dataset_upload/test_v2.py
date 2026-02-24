@@ -428,7 +428,7 @@ def test_run_sink_when_data_sampled(
 
 
 @mock.patch.object(v2, "register_datapoint_at_roboflow")
-def test_run_sink_with_image_name_parameter(
+def test_run_sink_with_file_name_parameter(
     register_datapoint_at_roboflow_mock: MagicMock,
 ) -> None:
     # given
@@ -465,7 +465,7 @@ def test_run_sink_with_image_name_parameter(
         fire_and_forget=False,
         labeling_batch_prefix="my_batch",
         labeling_batches_recreation_frequency="never",
-        image_name=Batch(content=["serial_001", "serial_002"], indices=indices),
+        file_name=Batch(content=["serial_001", "serial_002"], indices=indices),
     )
 
     # then
@@ -475,13 +475,13 @@ def test_run_sink_with_image_name_parameter(
     ], "Expected data registered"
     assert register_datapoint_at_roboflow_mock.call_count == 2
 
-    # Verify image_name was passed correctly
+    # Verify file_name was passed correctly
     calls = register_datapoint_at_roboflow_mock.call_args_list
-    assert calls[0].kwargs["image_name"] == "serial_001"
-    assert calls[1].kwargs["image_name"] == "serial_002"
+    assert calls[0].kwargs["file_name"] == "serial_001"
+    assert calls[1].kwargs["file_name"] == "serial_002"
 
 
-def test_manifest_parsing_with_image_name_field() -> None:
+def test_manifest_parsing_with_file_name_field() -> None:
     # given
     raw_manifest = {
         "type": "roboflow_core/roboflow_dataset_upload@v2",
@@ -502,17 +502,17 @@ def test_manifest_parsing_with_image_name_field() -> None:
         "fire_and_forget": False,
         "labeling_batch_prefix": "my_batch",
         "labeling_batches_recreation_frequency": "never",
-        "image_name": "$inputs.filename",
+        "file_name": "$inputs.filename",
     }
 
     # when
     result = BlockManifest.model_validate(raw_manifest)
 
     # then
-    assert result.image_name == "$inputs.filename"
+    assert result.file_name == "$inputs.filename"
 
 
-def test_manifest_parsing_with_static_image_name() -> None:
+def test_manifest_parsing_with_static_file_name() -> None:
     # given
     raw_manifest = {
         "type": "roboflow_core/roboflow_dataset_upload@v2",
@@ -533,11 +533,11 @@ def test_manifest_parsing_with_static_image_name() -> None:
         "fire_and_forget": False,
         "labeling_batch_prefix": "my_batch",
         "labeling_batches_recreation_frequency": "never",
-        "image_name": "my_static_image_name",
+        "file_name": "my_static_file_name",
     }
 
     # when
     result = BlockManifest.model_validate(raw_manifest)
 
     # then
-    assert result.image_name == "my_static_image_name"
+    assert result.file_name == "my_static_file_name"

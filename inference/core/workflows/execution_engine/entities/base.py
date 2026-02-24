@@ -269,6 +269,7 @@ class WorkflowImageData:
         base64_image: Optional[str] = None,
         numpy_image: Optional[np.ndarray] = None,
         video_metadata: Optional[VideoMetadata] = None,
+        file_name: Optional[str] = None,
     ):
         if not base64_image and numpy_image is None and not image_reference:
             raise ValueError("Could not initialise empty `WorkflowImageData`.")
@@ -282,6 +283,7 @@ class WorkflowImageData:
         self._base64_image = base64_image
         self._numpy_image = numpy_image
         self._video_metadata = video_metadata
+        self._file_name = file_name
 
     @classmethod
     def copy_and_replace(
@@ -297,6 +299,7 @@ class WorkflowImageData:
         * base64_image
         * numpy_image
         * video_metadata
+        * file_name
 
         When more than one from ["numpy_image", "base64_image", "image_reference"] args are
         given, they MUST be compliant.
@@ -309,6 +312,8 @@ class WorkflowImageData:
         base64_image = origin_image_data._base64_image
         numpy_image = origin_image_data._numpy_image
         video_metadata = origin_image_data._video_metadata
+        file_name = origin_image_data._file_name
+
         if any(k in kwargs for k in ["numpy_image", "base64_image", "image_reference"]):
             numpy_image = kwargs.get("numpy_image")
             base64_image = kwargs.get("base64_image")
@@ -323,6 +328,9 @@ class WorkflowImageData:
             workflow_root_ancestor_metadata = kwargs["workflow_root_ancestor_metadata"]
         if "video_metadata" in kwargs:
             video_metadata = kwargs["video_metadata"]
+        if "file_name" in kwargs:
+            file_name = kwargs["file_name"]
+
         return cls(
             parent_metadata=parent_metadata,
             workflow_root_ancestor_metadata=workflow_root_ancestor_metadata,
@@ -330,6 +338,7 @@ class WorkflowImageData:
             base64_image=base64_image,
             numpy_image=numpy_image,
             video_metadata=video_metadata,
+            file_name=file_name,
         )
 
     @classmethod
@@ -377,6 +386,7 @@ class WorkflowImageData:
             workflow_root_ancestor_metadata=workflow_root_ancestor_metadata,
             numpy_image=cropped_image,
             video_metadata=video_metadata,
+            file_name=origin_image_data._file_name,
         )
 
     @property
@@ -446,6 +456,10 @@ class WorkflowImageData:
             fps=30,
             comes_from_video_file=None,
         )
+
+    @property
+    def file_name(self) -> Optional[str]:
+        return self._file_name
 
     def to_inference_format(self, numpy_preferred: bool = False) -> Dict[str, Any]:
         if numpy_preferred:

@@ -222,15 +222,15 @@ class BlockManifest(WorkflowBlockManifest):
         description="Frequency at which new labeling batches are automatically created for uploaded images. Options: 'never' (all images go to the same batch), 'daily' (new batch each day), 'weekly' (new batch each week), 'monthly' (new batch each month). Batch timestamps are appended to the labeling_batch_prefix to create unique batch names. Automatically organizing uploads into time-based batches simplifies dataset management and makes it easier to track and review collected data over time.",
         examples=["never", "daily"],
     )
-    image_name: Optional[Union[str, Selector(kind=[STRING_KIND])]] = Field(
+    file_name: Optional[Union[str, Selector(kind=[STRING_KIND])]] = Field(
         default=None,
-        description="Optional custom name for the uploaded image. This is useful when you want to preserve the original filename or use a meaningful identifier (e.g., serial number, timestamp) for the image in the Roboflow dataset. The name should not include file extension. If not provided, a UUID will be generated automatically.",
+        description="Optional custom name for the uploaded image. This is useful when you want to preserve the original filename or use a meaningful identifier (e.g., serial number, timestamp) for the image in the Roboflow dataset. The name should not include file extension. If not provided, the file_name from the image input will be used (if available), otherwise a UUID will be generated automatically.",
         examples=["serial_12345", "camera1_frame_001", "$inputs.filename"],
     )
 
     @classmethod
     def get_parameters_accepting_batches(cls) -> List[str]:
-        return ["images", "predictions", "image_name"]
+        return ["images", "predictions", "file_name"]
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
@@ -284,7 +284,7 @@ class RoboflowDatasetUploadBlockV2(WorkflowBlock):
         fire_and_forget: bool,
         labeling_batch_prefix: str,
         labeling_batches_recreation_frequency: BatchCreationFrequency,
-        image_name: Optional[Batch[Optional[str]]] = None,
+        file_name: Optional[Batch[Optional[str]]] = None,
     ) -> BlockResult:
         if self._api_key is None:
             raise ValueError(
@@ -303,8 +303,12 @@ class RoboflowDatasetUploadBlockV2(WorkflowBlock):
             ]
         result = []
         predictions = [None] * len(images) if predictions is None else predictions
-        image_names = [None] * len(images) if image_name is None else image_name
-        for image, prediction, img_name in zip(images, predictions, image_names):
+        file_names = [None] * len(images) if file_name is None else file_name
+        for image, prediction, f_name in zip(images, predictions, file_names):
+            # priority: explicit file_name parameter if provided, otherwise fall back to image.file_name
+            # and if not we go for the uuid fallback.
+            resolved_file_name = f_name if f_name is not None else image.file_name
+
             error_status, message = maybe_register_datapoint_at_roboflow(
                 image=image,
                 prediction=prediction,
@@ -325,7 +329,7 @@ class RoboflowDatasetUploadBlockV2(WorkflowBlock):
                 background_tasks=self._background_tasks,
                 thread_pool_executor=self._thread_pool_executor,
                 api_key=self._api_key,
-                image_name=img_name,
+                file_name=resolved_file_name,
             )
             result.append({"error_status": error_status, "message": message})
         return result
@@ -351,7 +355,7 @@ def maybe_register_datapoint_at_roboflow(
     background_tasks: Optional[BackgroundTasks],
     thread_pool_executor: Optional[ThreadPoolExecutor],
     api_key: str,
-    image_name: Optional[str] = None,
+    file_name: Optional[str] = None,
 ) -> Tuple[bool, str]:
     normalised_probability = data_percentage / 100
     if random.random() < normalised_probability:
@@ -374,6 +378,6 @@ def maybe_register_datapoint_at_roboflow(
             background_tasks=background_tasks,
             thread_pool_executor=thread_pool_executor,
             api_key=api_key,
-            image_name=image_name,
+            file_name=file_name,
         )
     return False, "Registration skipped due to sampling settings"

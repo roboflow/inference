@@ -1105,7 +1105,7 @@ def test_run_sink_when_registration_should_happen_in_foreground_despite_providin
                 new_labeling_batch_frequency="never",
                 cache=cache,
                 api_key="my_api_key",
-                image_name=None,
+                file_name=None,
             )
         ]
         * 3
@@ -1181,7 +1181,7 @@ def test_run_sink_when_predictions_not_provided(
                 new_labeling_batch_frequency="never",
                 cache=cache,
                 api_key="my_api_key",
-                image_name=None,
+                file_name=None,
             )
         ]
         * 3
@@ -1192,7 +1192,7 @@ def test_run_sink_when_predictions_not_provided(
 @mock.patch.object(v1, "return_strategy_credit")
 @mock.patch.object(v1, "register_datapoint")
 @mock.patch.object(v1, "use_credit_of_matching_strategy")
-def test_execute_registration_with_custom_image_name(
+def test_execute_registration_with_custom_file_name(
     use_credit_of_matching_strategy_mock: MagicMock,
     register_datapoint_mock: MagicMock,
     return_strategy_credit_mock: MagicMock,
@@ -1227,24 +1227,24 @@ def test_execute_registration_with_custom_image_name(
         new_labeling_batch_frequency="never",
         cache=cache,
         api_key=api_key,
-        image_name="custom_serial_number_123",
+        file_name="custom_serial_number_123",
     )
 
     # then
     assert result == (False, "STATUS OK"), "Expected correct status to be marked"
     register_datapoint_mock.assert_called_once()
-    # Verify custom image_name was used as local_image_id
+    # Verify custom file_name was used as local_image_id
     assert (
         register_datapoint_mock.call_args[1]["local_image_id"]
         == "custom_serial_number_123"
-    ), "Expected custom image_name to be used as local_image_id"
+    ), "Expected custom file_name to be used as local_image_id"
     return_strategy_credit_mock.assert_not_called()
 
 
 @mock.patch.object(v1, "return_strategy_credit")
 @mock.patch.object(v1, "register_datapoint")
 @mock.patch.object(v1, "use_credit_of_matching_strategy")
-def test_execute_registration_without_image_name_uses_uuid(
+def test_execute_registration_without_file_name_uses_uuid(
     use_credit_of_matching_strategy_mock: MagicMock,
     register_datapoint_mock: MagicMock,
     return_strategy_credit_mock: MagicMock,
@@ -1279,16 +1279,16 @@ def test_execute_registration_without_image_name_uses_uuid(
         new_labeling_batch_frequency="never",
         cache=cache,
         api_key=api_key,
-        # No image_name provided, should fall back to UUID
+        # No file_name provided, should fall back to UUID
     )
 
     # then
     assert result == (False, "STATUS OK"), "Expected correct status to be marked"
     register_datapoint_mock.assert_called_once()
-    # Verify UUID format is used when no image_name provided
+    # Verify UUID format is used when no file_name provided
     local_image_id = register_datapoint_mock.call_args[1]["local_image_id"]
     # UUID4 has format: xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx (36 chars with hyphens)
     assert (
         len(local_image_id) == 36 and local_image_id.count("-") == 4
-    ), "Expected UUID format to be used when image_name not provided"
+    ), "Expected UUID format to be used when file_name not provided"
     return_strategy_credit_mock.assert_not_called()
