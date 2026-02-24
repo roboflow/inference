@@ -251,7 +251,7 @@ class Sam3_3D_ObjectsPipelineSingleton:
 
 class SegmentAnything3_3D_Objects(RoboflowCoreModel):
 
-    task_type = "segment-anything-3d-objects"
+    task_type = "3d-reconstruction"
 
     def __init__(
         self,
