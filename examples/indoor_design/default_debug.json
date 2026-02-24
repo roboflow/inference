@@ -1,23 +1,106 @@
 {
   "version": "1.0",
   "inputs": [
-    {"type": "WorkflowImage", "name": "image"},
-    {"type": "WorkflowParameter", "name": "object_prompt", "default_value": ["object"]},
-    {"type": "WorkflowParameter", "name": "debug_output_dir", "default_value": "./debug_output"}
+    {
+      "type": "WorkflowImage",
+      "name": "image"
+    },
+    {
+      "type": "WorkflowParameter",
+      "name": "object_prompt",
+      "default_value": ["object"]
+    },
+    {
+      "type": "WorkflowParameter",
+      "name": "debug_output_dir",
+      "default_value": "./debug_output"
+    }
   ],
   "steps": [
-    {"type": "roboflow_core/yolo_world_model@v1", "name": "yolo_world", "images": "$inputs.image", "class_names": "$inputs.object_prompt", "version": "v2-s", "confidence": 0.2},
-    {"type": "roboflow_core/property_definition@v1", "name": "format_yolo", "data": "$steps.yolo_world.predictions", "operations": [{"type": "DetectionsToDictionary"}, {"type": "ConvertDictionaryToJSON"}]},
-    {"type": "roboflow_core/local_file_sink@v1", "name": "save_yolo", "content": "$steps.format_yolo.output", "file_type": "json", "output_mode": "separate_files", "target_directory": "$inputs.debug_output_dir", "file_name_prefix": "step_yolo_world"},
-    {"type": "roboflow_core/segment_anything@v1", "name": "sam2", "images": "$inputs.image", "boxes": "$steps.yolo_world.predictions", "version": "hiera_tiny", "threshold": 0, "multimask_output": true},
-    {"type": "roboflow_core/property_definition@v1", "name": "format_sam2", "data": "$steps.sam2.predictions", "operations": [{"type": "DetectionsToDictionary"}, {"type": "ConvertDictionaryToJSON"}]},
-    {"type": "roboflow_core/local_file_sink@v1", "name": "save_sam2", "content": "$steps.format_sam2.output", "file_type": "json", "output_mode": "separate_files", "target_directory": "$inputs.debug_output_dir", "file_name_prefix": "step_sam2"},
-    {"type": "roboflow_core/segment_anything3_3d_objects@v1", "name": "sam3_3d", "images": "$inputs.image", "mask_input": "$steps.sam2.predictions"}
+    {
+      "type": "roboflow_core/yolo_world_model@v1",
+      "name": "yolo_world",
+      "images": "$inputs.image",
+      "class_names": "$inputs.object_prompt",
+      "version": "v2-s",
+      "confidence": 0.2
+    },
+    {
+      "type": "roboflow_core/property_definition@v1",
+      "name": "format_yolo",
+      "data": "$steps.yolo_world.predictions",
+      "operations": [
+        {"type": "DetectionsToDictionary"},
+        {"type": "ConvertDictionaryToJSON"}
+      ]
+    },
+    {
+      "type": "roboflow_core/local_file_sink@v1",
+      "name": "save_yolo",
+      "content": "$steps.format_yolo.output",
+      "file_type": "json",
+      "output_mode": "separate_files",
+      "target_directory": "$inputs.debug_output_dir",
+      "file_name_prefix": "step_yolo_world"
+    },
+    {
+      "type": "roboflow_core/segment_anything@v1",
+      "name": "sam2",
+      "images": "$inputs.image",
+      "boxes": "$steps.yolo_world.predictions",
+      "version": "hiera_tiny",
+      "threshold": 0,
+      "multimask_output": false
+    },
+    {
+      "type": "roboflow_core/property_definition@v1",
+      "name": "format_sam2",
+      "data": "$steps.sam2.predictions",
+      "operations": [
+        {"type": "DetectionsToDictionary"},
+        {"type": "ConvertDictionaryToJSON"}
+      ]
+    },
+    {
+      "type": "roboflow_core/local_file_sink@v1",
+      "name": "save_sam2",
+      "content": "$steps.format_sam2.output",
+      "file_type": "json",
+      "output_mode": "separate_files",
+      "target_directory": "$inputs.debug_output_dir",
+      "file_name_prefix": "step_sam2"
+    },
+    {
+      "type": "roboflow_core/segment_anything3_3d_objects@v1",
+      "name": "sam3_3d",
+      "images": "$inputs.image",
+      "mask_input": "$steps.sam2.predictions"
+    }
   ],
   "outputs": [
-    {"type": "JsonField", "name": "mesh_glb", "coordinates_system": "own", "selector": "$steps.sam3_3d.mesh_glb"},
-    {"type": "JsonField", "name": "gaussian_ply", "coordinates_system": "own", "selector": "$steps.sam3_3d.gaussian_ply"},
-    {"type": "JsonField", "name": "objects", "coordinates_system": "own", "selector": "$steps.sam3_3d.objects"},
-    {"type": "JsonField", "name": "inference_time", "coordinates_system": "own", "selector": "$steps.sam3_3d.inference_time"}
+    {
+      "type": "JsonField",
+      "name": "mesh_glb",
+      "coordinates_system": "own",
+      "selector": "$steps.sam3_3d.mesh_glb"
+    },
+    {
+      "type": "JsonField",
+      "name": "gaussian_ply",
+      "coordinates_system": "own",
+      "selector": "$steps.sam3_3d.gaussian_ply"
+    },
+    {
+      "type": "JsonField",
+      "name": "objects",
+      "coordinates_system": "own",
+      "selector": "$steps.sam3_3d.objects"
+    },
+    {
+      "type": "JsonField",
+      "name": "inference_time",
+      "coordinates_system": "own",
+      "selector": "$steps.sam3_3d.inference_time"
+    }
   ]
 }

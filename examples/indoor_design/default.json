@@ -27,7 +27,7 @@
       "boxes": "$steps.yolo_world.predictions",
       "version": "hiera_tiny",
       "threshold": 0.0,
-      "multimask_output": true
+      "multimask_output": false
     },
     {
       "type": "roboflow_core/segment_anything3_3d_objects@v1",
