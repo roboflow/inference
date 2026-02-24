@@ -8,7 +8,20 @@ from pathlib import Path
 # -------------------------------------------------
 # Load gaussian splats from PLY
 # -------------------------------------------------
-def load_gaussians_from_ply(path):
+def load_gaussians_from_ply(path: str | Path) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Load 3D Gaussian splat parameters from a PLY file.
+
+    Args:
+        path: Path to the PLY file containing Gaussian splat data.
+
+    Returns:
+        A tuple of (means, scales, rots, opacity, colors):
+            - means: (N, 3) array of 3D positions (x, y, z).
+            - scales: (N, 3) array of scale factors per axis.
+            - rots: (N, 4) array of quaternion rotations (w, x, y, z).
+            - opacity: (N,) array of opacity values.
+            - colors: (N, 3) array of RGB colors (normalized 0–1).
+    """
     ply = PlyData.read(path)
     v = ply["vertex"].data
 
@@ -33,7 +46,15 @@ def load_gaussians_from_ply(path):
 # -------------------------------------------------
 # Quaternion → rotation matrix
 # -------------------------------------------------
-def quat_to_rot(q):
+def quat_to_rot(q: np.ndarray | tuple[float, float, float, float]) -> np.ndarray:
+    """Convert a quaternion (w, x, y, z) to a 3x3 rotation matrix.
+
+    Args:
+        q: Quaternion as (w, x, y, z) array or tuple.
+
+    Returns:
+        A 3x3 rotation matrix.
+    """
     w,x,y,z = q
     return np.array([
         [1-2*(y*y+z*z), 2*(x*y-z*w), 2*(x*z+y*w)],
@@ -45,7 +66,19 @@ def quat_to_rot(q):
 # -------------------------------------------------
 # Build covariance from scale + rotation
 # -------------------------------------------------
-def build_covariances(scales, rots):
+def build_covariances(scales: np.ndarray, rots: np.ndarray) -> np.ndarray:
+    """Build 3D covariance matrices from scale and quaternion rotation.
+
+    Each covariance is computed as R @ diag(s²) @ R.T where R is the rotation
+    matrix from the quaternion and s is the scale vector.
+
+    Args:
+        scales: (N, 3) array of scale factors per Gaussian.
+        rots: (N, 4) array of quaternion rotations per Gaussian.
+
+    Returns:
+        (N, 3, 3) array of 3D covariance matrices.
+    """
     covs = []
     for s, q in zip(scales, rots):
         R = quat_to_rot(q)
@@ -57,14 +90,35 @@ def build_covariances(scales, rots):
 # -------------------------------------------------
 # Projection helpers
 # -------------------------------------------------
-def project_points(K, pts_cam):
+def project_points(K: np.ndarray, pts_cam: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Project 3D points in camera space to 2D image coordinates.
+
+    Args:
+        K: 3x3 camera intrinsic matrix.
+        pts_cam: (N, 3) array of 3D points in camera coordinates (x, y, z).
+
+    Returns:
+        A tuple of (pts_img, depth):
+            - pts_img: (N, 2) array of 2D image coordinates (u, v).
+            - depth: (N,) array of z/depth values.
+    """
     z = pts_cam[:,2:3]
     pts_norm = pts_cam[:,:2]/z
     pts_img = (K[:2,:2] @ pts_norm.T).T + K[:2,2]
     return pts_img, z.squeeze()
 
 
-def project_covariance(K, mu, Sigma):
+def project_covariance(K: np.ndarray, mu: np.ndarray, Sigma: np.ndarray) -> np.ndarray:
+    """Project a 3D covariance matrix to 2D using the Jacobian of the projection.
+
+    Args:
+        K: 3x3 camera intrinsic matrix.
+        mu: 3D point (x, y, z) in camera space.
+        Sigma: 3x3 covariance matrix in 3D.
+
+    Returns:
+        2x2 covariance matrix in image space.
+    """
     x,y,z = mu
     fx, fy = K[0,0], K[1,1]
     J = np.array([[fx/z, 0, -fx*x/(z*z)],
@@ -75,7 +129,32 @@ def project_covariance(K, mu, Sigma):
 # -------------------------------------------------
 # Minimal CPU renderer
 # -------------------------------------------------
-def render_gaussians(means, covs, colors, opacity, K, H, W):
+def render_gaussians(
+    means: np.ndarray,
+    covs: np.ndarray,
+    colors: np.ndarray,
+    opacity: np.ndarray,
+    K: np.ndarray,
+    H: int,
+    W: int,
+) -> np.ndarray:
+    """Render 3D Gaussians to a 2D image using splatting.
+
+    Projects each Gaussian to screen space, computes 2D covariance, and
+    splats with alpha blending in back-to-front order.
+
+    Args:
+        means: (N, 3) array of 3D positions.
+        covs: (N, 3, 3) array of 3D covariance matrices.
+        colors: (N, 3) array of RGB colors (0–1).
+        opacity: (N,) array of opacity values.
+        K: 3x3 camera intrinsic matrix.
+        H: Image height in pixels.
+        W: Image width in pixels.
+
+    Returns:
+        (H, W, 3) RGB image array, values clipped to [0, 1].
+    """
     pts_img, depth = project_points(K, means)
     order = np.argsort(depth)[::-1]
 
@@ -118,7 +197,12 @@ def render_gaussians(means, covs, colors, opacity, K, H, W):
 # -------------------------------------------------
 # Plotly image display
 # -------------------------------------------------
-def show_plotly(img):
+def show_plotly(img: np.ndarray) -> None:
+    """Display an image in a Plotly figure (600x600).
+
+    Args:
+        img: (H, W, 3) image array with values in [0, 1].
+    """
     fig = go.Figure(go.Image(z=(img*255).astype(np.uint8)))
     fig.update_layout(width=600, height=600)
     fig.show()
@@ -147,9 +231,13 @@ def show_plotly(img):
     required=True,
     help="Path to the PLY file to render.",
 )
-def main(file_path: Path) -> None:
+def main(file_path: str | Path) -> None:
+    """Load Gaussian splats from a PLY file and render them.
+
+    Args:
+        file_path: Path to the PLY file containing Gaussian splat data.
+    """
     means, scales, rots, opacity, colors = load_gaussians_from_ply(str(file_path))
-    pass
 
 
 if __name__ == "__main__":
