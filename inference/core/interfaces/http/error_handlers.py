@@ -9,7 +9,6 @@ from inference.core.exceptions import (
     ContentTypeMissing,
     CreditsExceededError,
     InferenceModelNotFound,
-    WorkspaceStreamQuotaError,
     InputImageLoadError,
     InvalidEnvironmentVariableError,
     InvalidMaskDecodeArgument,
@@ -32,6 +31,7 @@ from inference.core.exceptions import (
     ServiceConfigurationError,
     WebRTCConfigurationError,
     WorkspaceLoadError,
+    WorkspaceStreamQuotaError,
 )
 from inference.core.interfaces.stream_manager.api.errors import (
     ProcessesManagerAuthorisationError,
