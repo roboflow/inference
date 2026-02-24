@@ -578,12 +578,11 @@ if modal is not None:
             workspace_id = get_roboflow_workspace(api_key=webrtc_request.api_key)
             webrtc_request.workflow_configuration.workspace_name = workspace_id
         if not webrtc_request.workflow_configuration.workflow_specification:
-            webrtc_request.workflow_configuration.workflow_specification = (
-                get_workflow_specification(
-                    api_key=webrtc_request.api_key,
-                    workspace_id=webrtc_request.workflow_configuration.workspace_name,
-                    workflow_id=webrtc_request.workflow_configuration.workflow_id,
-                )
+            webrtc_request.workflow_configuration.workflow_specification = get_workflow_specification(
+                api_key=webrtc_request.api_key,
+                workspace_id=webrtc_request.workflow_configuration.workspace_name,
+                workflow_id=webrtc_request.workflow_configuration.workflow_id,
+                workflow_version_id=webrtc_request.workflow_configuration.workflow_version_id,
             )
         tags = {"tag": docker_tag}
         if workspace_id:
