@@ -108,13 +108,13 @@ def project_points(K: np.ndarray, pts_cam: np.ndarray) -> tuple[np.ndarray, np.n
     return pts_img, z.squeeze()
 
 
-def project_covariance(K: np.ndarray, mu: np.ndarray, Sigma: np.ndarray) -> np.ndarray:
+def project_covariance(K: np.ndarray, mu: np.ndarray, cov: np.ndarray) -> np.ndarray:
     """Project a 3D covariance matrix to 2D using the Jacobian of the projection.
 
     Args:
         K: 3x3 camera intrinsic matrix.
         mu: 3D point (x, y, z) in camera space.
-        Sigma: 3x3 covariance matrix in 3D.
+        cov: 3x3 covariance matrix in 3D.
 
     Returns:
         2x2 covariance matrix in image space.
@@ -123,21 +123,21 @@ def project_covariance(K: np.ndarray, mu: np.ndarray, Sigma: np.ndarray) -> np.n
     fx, fy = K[0,0], K[1,1]
     J = np.array([[fx/z, 0, -fx*x/(z*z)],
                   [0, fy/z, -fy*y/(z*z)]])
-    return J @ Sigma @ J.T
+    return J @ cov @ J.T
 
 
-def covariance_radius(sigma_2d: np.ndarray) -> float:
+def covariance_radius(covariance_matrix: np.ndarray) -> float:
     """Compute the splat radius from a 2D covariance matrix.
 
     Uses 3 standard deviations (3σ) based on the largest eigenvalue.
 
     Args:
-        sigma_2d: 2x2 covariance matrix in image space.
+        covariance_matrix: 2x2 covariance matrix in image space.
 
     Returns:
         Radius in pixels for the splat bounding box.
     """
-    eigvals = np.linalg.eigvals(sigma_2d)
+    eigvals = np.linalg.eigvals(covariance_matrix)
     return 3 * np.sqrt(np.max(np.real(eigvals)))
 
 
@@ -182,14 +182,14 @@ def render_gaussians(
             continue
 
         center = pts_img[idx]
-        sigma_2d = project_covariance(K, mu, covs[idx])
+        covariance_matrix = project_covariance(K, mu, covs[idx])
 
         try:
-            invS = np.linalg.inv(sigma_2d)
+            inv_cov = np.linalg.inv(covariance_matrix)
         except:
             continue
 
-        radius = covariance_radius(sigma_2d)
+        radius = covariance_radius(covariance_matrix)
 
         xmin = int(max(0, center[0]-radius))
         xmax = int(min(W-1, center[0]+radius))
@@ -199,13 +199,13 @@ def render_gaussians(
         for y in range(ymin, ymax):
             for x in range(xmin, xmax):
                 d = np.array([x-center[0], y-center[1]])
-                w = np.exp(-0.5 * d @ invS @ d)
+                w = np.exp(-0.5 * d @ inv_cov @ d)
 
                 a = opacity[idx]*w
-                img[y,x] += T[y,x]*a*colors[idx]
-                T[y,x] *= (1-a)
+                img[y, x] += T[y, x]*a*colors[idx]
+                T[y, x] *= (1 - a)
 
-    return np.clip(img,0,1)
+    return np.clip(img, 0, 1)
 
 
 # -------------------------------------------------
