@@ -102,10 +102,16 @@ def project_points(K: np.ndarray, pts_cam: np.ndarray) -> tuple[np.ndarray, np.n
             - pts_img: (N, 2) array of 2D image coordinates (u, v).
             - depth: (N,) array of z/depth values.
     """
-    z = pts_cam[:,2:3]
-    pts_norm = pts_cam[:,:2]/z
-    pts_img = (K[:2,:2] @ pts_norm.T).T + K[:2,2]
-    return pts_img, z.squeeze()
+    z = pts_cam[:, 2:3]
+    eps = 1e-6
+    z_safe = np.maximum(z, eps)
+    pts_norm = pts_cam[:, :2] / z_safe
+    pts_img = (K[:2, :2] @ pts_norm.T).T + K[:2, 2]
+    depth = z.squeeze()
+    valid = (depth > eps) & np.isfinite(pts_img).all(axis=1)
+    pts_img = np.where(valid[:, np.newaxis], pts_img, np.nan)
+    depth = np.where(valid, depth, np.inf)
+    return pts_img, depth
 
 
 def project_covariance(K: np.ndarray, mu: np.ndarray, cov: np.ndarray) -> np.ndarray:
@@ -120,9 +126,10 @@ def project_covariance(K: np.ndarray, mu: np.ndarray, cov: np.ndarray) -> np.nda
         2x2 covariance matrix in image space.
     """
     x, y, z = mu
-    fx, fy = K[0,0], K[1,1]
-    J = np.array([[fx/z, 0, -fx*x/(z*z)],
-                  [0, fy/z, -fy*y/(z*z)]])
+    z_safe = max(float(z), 1e-6)
+    fx, fy = K[0, 0], K[1, 1]
+    J = np.array([[fx / z_safe, 0, -fx * x / (z_safe * z_safe)],
+                  [0, fy / z_safe, -fy * y / (z_safe * z_safe)]])
     return J @ cov @ J.T
 
 
@@ -171,16 +178,15 @@ def render_gaussians(
         (H, W, 3) RGB image array, values clipped to [0, 1].
     """
     pts_img, depth = project_points(K, means)
-    order = np.argsort(depth)[::-1]
+    valid = np.isfinite(depth) & (depth > 1e-6) & np.isfinite(pts_img).all(axis=1)
+    valid_indices = np.where(valid)[0]
+    order = valid_indices[np.argsort(depth[valid])[::-1]]
 
-    img = np.zeros((H,W,3))
-    T = np.ones((H,W))
+    img = np.zeros((H, W, 3))
+    T = np.ones((H, W))
 
     for idx in order:
         mu = means[idx]
-        if mu[2] <= 0:
-            continue
-
         center = pts_img[idx]
         covariance_matrix = project_covariance(K, mu, covs[idx])
 
@@ -252,6 +258,14 @@ def main(file_path: str | Path) -> None:
         file_path: Path to the PLY file containing Gaussian splat data.
     """
     means, scales, rots, opacity, colors = load_gaussians_from_ply(str(file_path))
+    covs = build_covariances(scales, rots)
+    H, W = 512, 512
+    fx = fy = 500
+    K = np.array([[fx,0,W/2],
+                  [0,fy,H/2],
+                  [0,0,1]])
+    img = render_gaussians(means, covs, colors, opacity, K, H, W)
+    show_plotly(img)
 
 
 if __name__ == "__main__":
