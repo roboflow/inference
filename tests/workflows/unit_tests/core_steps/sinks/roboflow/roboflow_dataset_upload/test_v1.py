@@ -1105,6 +1105,7 @@ def test_run_sink_when_registration_should_happen_in_foreground_despite_providin
                 new_labeling_batch_frequency="never",
                 cache=cache,
                 api_key="my_api_key",
+                image_name=None,
             )
         ]
         * 3
@@ -1180,6 +1181,7 @@ def test_run_sink_when_predictions_not_provided(
                 new_labeling_batch_frequency="never",
                 cache=cache,
                 api_key="my_api_key",
+                image_name=None,
             )
         ]
         * 3
