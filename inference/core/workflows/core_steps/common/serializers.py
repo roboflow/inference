@@ -26,6 +26,7 @@ from inference.core.workflows.execution_engine.constants import (
     DETECTION_ID_KEY,
     HEIGHT_KEY,
     IMAGE_DIMENSIONS_KEY,
+    IMAGE_NAME_KEY,
     KEYPOINTS_CLASS_ID_KEY_IN_SV_DETECTIONS,
     KEYPOINTS_CLASS_NAME_KEY_IN_SV_DETECTIONS,
     KEYPOINTS_CONFIDENCE_KEY_IN_SV_DETECTIONS,
@@ -299,6 +300,9 @@ def serialise_image(image: WorkflowImageData) -> Dict[str, Any]:
         "value": image.base64_image,
         "video_metadata": image.video_metadata.dict() if image.video_metadata else None,
     }
+
+    if image.image_name is not None:
+        result[IMAGE_NAME_KEY] = image.image_name
 
     parent_metadata = image.parent_metadata
     root_metadata = image.workflow_root_ancestor_metadata

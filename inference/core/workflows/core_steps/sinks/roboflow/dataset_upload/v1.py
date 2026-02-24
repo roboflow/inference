@@ -356,6 +356,7 @@ def register_datapoint_at_roboflow(
     background_tasks: Optional[BackgroundTasks],
     thread_pool_executor: Optional[ThreadPoolExecutor],
     api_key: str,
+    image_name: Optional[str] = None,
 ) -> Tuple[bool, str]:
     registration_task = partial(
         execute_registration,
@@ -374,6 +375,7 @@ def register_datapoint_at_roboflow(
         new_labeling_batch_frequency=new_labeling_batch_frequency,
         cache=cache,
         api_key=api_key,
+        image_name=image_name,
     )
     if fire_and_forget and background_tasks:
         background_tasks.add_task(registration_task)
@@ -400,6 +402,7 @@ def execute_registration(
     new_labeling_batch_frequency: BatchCreationFrequency,
     cache: BaseCache,
     api_key: str,
+    image_name: Optional[str] = None,
 ) -> Tuple[bool, str]:
     matching_strategies_limits = OrderedDict(
         {
@@ -427,7 +430,7 @@ def execute_registration(
         return False, "Registration skipped due to usage quota exceeded"
     credit_to_be_returned = False
     try:
-        local_image_id = str(uuid4())
+        local_image_id = image_name if image_name else str(uuid4())
         encoded_image, scaling_factor = prepare_image_to_registration(
             image=image.numpy_image,
             desired_size=ImageDimensions(

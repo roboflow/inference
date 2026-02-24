@@ -34,6 +34,7 @@ from inference.core.workflows.execution_engine.constants import (
     DETECTED_CODE_KEY,
     DETECTION_ID_KEY,
     IMAGE_DIMENSIONS_KEY,
+    IMAGE_NAME_KEY,
     KEYPOINTS_KEY_IN_INFERENCE_RESPONSE,
     PARENT_COORDINATES_KEY,
     PARENT_DIMENSIONS_KEY,
@@ -101,6 +102,7 @@ def deserialize_image_kind(
         video_metadata = deserialize_video_metadata_kind(
             parameter=parameter, video_metadata=image["video_metadata"]
         )
+    image_name = image.get(IMAGE_NAME_KEY) if is_image_dict else None
     if is_image_dict and isinstance(image.get("value"), np.ndarray):
         image = image["value"]
     if isinstance(image, np.ndarray):
@@ -109,6 +111,7 @@ def deserialize_image_kind(
             workflow_root_ancestor_metadata=workflow_root_ancestor_metadata,
             numpy_image=image,
             video_metadata=video_metadata,
+            image_name=image_name,
         )
     try:
         if is_image_dict:
@@ -135,6 +138,7 @@ def deserialize_image_kind(
                 base64_image=base64_image,
                 image_reference=image_reference,
                 video_metadata=video_metadata,
+                image_name=image_name,
             )
     except Exception as error:
         raise RuntimeInputError(
