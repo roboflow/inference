@@ -1344,6 +1344,7 @@ class HttpInterface(BaseInterface):
                     workspace_id=workspace_name,
                     workflow_id=workflow_id,
                     use_cache=workflow_request.use_cache,
+                    workflow_version_id=workflow_request.workflow_version_id,
                 )
                 return handle_describe_workflows_interface(
                     definition=workflow_specification,
@@ -1400,6 +1401,7 @@ class HttpInterface(BaseInterface):
                         workspace_id=workspace_name,
                         workflow_id=workflow_id,
                         use_cache=workflow_request.use_cache,
+                        workflow_version_id=workflow_request.workflow_version_id,
                     )
                 if not workflow_request.workflow_id:
                     workflow_request.workflow_id = workflow_id
