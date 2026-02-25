@@ -36,7 +36,9 @@ from typing import Dict, Set, Tuple, List, Optional
 import click
 import numpy as np
 
-from examples.plane_detection.visualizations import get_plane_visualization_fig
+from examples.plane_detection.visualizations import (
+    get_plane_visualization_fig,
+)
 
 
 # ----------------------------
@@ -754,7 +756,7 @@ def fast_plane_extraction(
     "--do-refine",
     "-d",
     type=bool,
-    default=True,
+    default=False,
     help="Whether to refine the planes.",
 )
 def main(input_image_path: Path, organized_point_cloud_path: Path, output_path: Path, do_refine: bool):
@@ -769,7 +771,7 @@ def main(input_image_path: Path, organized_point_cloud_path: Path, output_path: 
     label_img, planes = fast_plane_extraction(
         points,
         block_h=10, block_w=10,
-        TMSE=50.0**2,
+        TMSE=5e-6,
         TANG_deg=60.0,
         TNUM=800,
         alpha=0.02,
