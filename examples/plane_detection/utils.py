@@ -157,12 +157,19 @@ def depth_to_organized_point_cloud(
     required=True,
     help="Path to depth map (.npy).",
 )
-def main(image_path: Path, depth_path: Path):
+@click.option(
+    "--output-path",
+    "-o",
+    type=click.Path(dir_okay=False, path_type=Path),
+    required=True,
+    help="Path to save organized point cloud (.npy).",
+)
+def main(image_path: Path, depth_path: Path, output_path: Path):
     depth = np.load(depth_path)
     fx, fy, cx, cy = get_camera_intrinsics_from_exif_in_heic_image(image_path)
     pc = depth_to_organized_point_cloud(depth, fx, fy, cx, cy)
     print(pc.shape)
-    np.save(depth_path.with_suffix(".ply"), pc)
+    np.save(output_path, pc)
 
 
 if __name__ == "__main__":
