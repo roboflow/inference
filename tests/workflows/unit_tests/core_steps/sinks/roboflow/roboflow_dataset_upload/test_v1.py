@@ -1105,6 +1105,7 @@ def test_run_sink_when_registration_should_happen_in_foreground_despite_providin
                 new_labeling_batch_frequency="never",
                 cache=cache,
                 api_key="my_api_key",
+                image_name=None,
             )
         ]
         * 3
@@ -1180,8 +1181,114 @@ def test_run_sink_when_predictions_not_provided(
                 new_labeling_batch_frequency="never",
                 cache=cache,
                 api_key="my_api_key",
+                image_name=None,
             )
         ]
         * 3
     )
     assert len(background_tasks.tasks) == 0, "Async tasks not to be added"
+
+
+@mock.patch.object(v1, "return_strategy_credit")
+@mock.patch.object(v1, "register_datapoint")
+@mock.patch.object(v1, "use_credit_of_matching_strategy")
+def test_execute_registration_with_custom_image_name(
+    use_credit_of_matching_strategy_mock: MagicMock,
+    register_datapoint_mock: MagicMock,
+    return_strategy_credit_mock: MagicMock,
+) -> None:
+    # given
+    api_key = "my_api_key"
+    api_key_hash = hashlib.md5(api_key.encode("utf-8")).hexdigest()
+    expected_cache_key = f"workflows:api_key_to_workspace:{api_key_hash}"
+    cache = MemoryCache()
+    cache.set(key=expected_cache_key, value="my_workspace")
+    use_credit_of_matching_strategy_mock.return_value = "my_strategy"
+    image = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+        numpy_image=np.zeros((128, 256, 3), dtype=np.uint8),
+    )
+    register_datapoint_mock.return_value = "STATUS OK"
+
+    # when
+    result = execute_registration(
+        image=image,
+        prediction=None,
+        target_project="my_project",
+        usage_quota_name="my_quota",
+        persist_predictions=True,
+        minutely_usage_limit=10,
+        hourly_usage_limit=100,
+        daily_usage_limit=1000,
+        max_image_size=(128, 64),
+        compression_level=75,
+        registration_tags=["some"],
+        labeling_batch_prefix="my_batch",
+        new_labeling_batch_frequency="never",
+        cache=cache,
+        api_key=api_key,
+        image_name="custom_serial_number_123",
+    )
+
+    # then
+    assert result == (False, "STATUS OK"), "Expected correct status to be marked"
+    register_datapoint_mock.assert_called_once()
+    # Verify custom image_name was used as local_image_id
+    assert (
+        register_datapoint_mock.call_args[1]["local_image_id"]
+        == "custom_serial_number_123"
+    ), "Expected custom image_name to be used as local_image_id"
+    return_strategy_credit_mock.assert_not_called()
+
+
+@mock.patch.object(v1, "return_strategy_credit")
+@mock.patch.object(v1, "register_datapoint")
+@mock.patch.object(v1, "use_credit_of_matching_strategy")
+def test_execute_registration_without_image_name_uses_uuid(
+    use_credit_of_matching_strategy_mock: MagicMock,
+    register_datapoint_mock: MagicMock,
+    return_strategy_credit_mock: MagicMock,
+) -> None:
+    # given
+    api_key = "my_api_key"
+    api_key_hash = hashlib.md5(api_key.encode("utf-8")).hexdigest()
+    expected_cache_key = f"workflows:api_key_to_workspace:{api_key_hash}"
+    cache = MemoryCache()
+    cache.set(key=expected_cache_key, value="my_workspace")
+    use_credit_of_matching_strategy_mock.return_value = "my_strategy"
+    image = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+        numpy_image=np.zeros((128, 256, 3), dtype=np.uint8),
+    )
+    register_datapoint_mock.return_value = "STATUS OK"
+
+    # when
+    result = execute_registration(
+        image=image,
+        prediction=None,
+        target_project="my_project",
+        usage_quota_name="my_quota",
+        persist_predictions=True,
+        minutely_usage_limit=10,
+        hourly_usage_limit=100,
+        daily_usage_limit=1000,
+        max_image_size=(128, 64),
+        compression_level=75,
+        registration_tags=["some"],
+        labeling_batch_prefix="my_batch",
+        new_labeling_batch_frequency="never",
+        cache=cache,
+        api_key=api_key,
+        # No image_name provided, should fall back to UUID
+    )
+
+    # then
+    assert result == (False, "STATUS OK"), "Expected correct status to be marked"
+    register_datapoint_mock.assert_called_once()
+    # Verify UUID format is used when no image_name provided
+    local_image_id = register_datapoint_mock.call_args[1]["local_image_id"]
+    # UUID4 has format: xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx (36 chars with hyphens)
+    assert (
+        len(local_image_id) == 36 and local_image_id.count("-") == 4
+    ), "Expected UUID format to be used when image_name not provided"
+    return_strategy_credit_mock.assert_not_called()
