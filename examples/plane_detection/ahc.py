@@ -298,7 +298,8 @@ def graph_initialization(
 def ahc_cluster(
     G: Graph,
     TMSE: float,
-    TNUM: int = 800,
+    TNUM: int,
+    TDEG: float,
 ) -> Tuple[List[Node], Dict[int, Tuple[np.ndarray, float]]]:
     """
     Performs AHC on graph G and returns:
@@ -339,7 +340,13 @@ def ahc_cluster(
             if not u.active:
                 continue
             merged_stats = v.stats.merge(u.stats)
-            _, _, mse = merged_stats.pca_plane()
+
+            n_hat_merged, _, mse = merged_stats.pca_plane()
+            if angle_between_normals_deg(v.n_hat, n_hat_merged) > TDEG:
+                continue
+            if angle_between_normals_deg(u.n_hat, n_hat_merged) > TDEG:
+                continue
+
             if mse < best_mse:
                 best_mse = mse
                 ubest_id = uid
@@ -688,6 +695,7 @@ def fast_plane_extraction(
     TMSE: float = 50.0**2,
     TANG_deg: float = 60.0,
     TNUM: int = 800,
+    TDEG: float = 15.0,
     alpha: float = 0.02,
     do_refine: bool = True,
 ) -> Tuple[np.ndarray, Dict[int, Tuple[np.ndarray, float]]]:
@@ -705,7 +713,7 @@ def fast_plane_extraction(
     )
 
     # Step 2
-    coarse_nodes, coarse_planes = ahc_cluster(G, TMSE=TMSE, TNUM=TNUM)
+    coarse_nodes, coarse_planes = ahc_cluster(G, TMSE=TMSE, TNUM=TNUM, TDEG=TDEG)
     if not do_refine:
         label_img = nodes_to_label_image(points, coarse_nodes, block_h, block_w)
         # map segment index -> plane
@@ -774,6 +782,7 @@ def main(input_image_path: Path, organized_point_cloud_path: Path, output_path: 
         TMSE=5e-6,
         TANG_deg=60.0,
         TNUM=800,
+        TDEG=15.0,
         alpha=0.02,
         do_refine=do_refine
     )
