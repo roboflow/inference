@@ -1,15 +1,19 @@
+from re import I
 import numpy as np
 from plyfile import PlyData
 import plotly.graph_objects as go
 import click
 from pathlib import Path
 from tqdm import tqdm
+import torch
 
 
 # -------------------------------------------------
 # Load gaussian splats from PLY
 # -------------------------------------------------
-def load_gaussians_from_ply(path: str | Path) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+def load_gaussians_from_ply(
+    path: str | Path,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """Load 3D Gaussian splat parameters from a PLY file.
 
     Args:
@@ -39,7 +43,7 @@ def load_gaussians_from_ply(path: str | Path) -> tuple[np.ndarray, np.ndarray, n
 
     # DC SH color
     colors = np.vstack([v["f_dc_0"], v["f_dc_1"], v["f_dc_2"]]).T
-    colors = (colors - colors.min())/(colors.max()-colors.min()+1e-8)
+    colors = (colors - colors.min()) / (colors.max() - colors.min() + 1e-8)
 
     return means, scales, rots, opacity, colors
 
@@ -56,12 +60,14 @@ def quat_to_rot(q: np.ndarray | tuple[float, float, float, float]) -> np.ndarray
     Returns:
         A 3x3 rotation matrix.
     """
-    w,x,y,z = q
-    return np.array([
-        [1-2*(y*y+z*z), 2*(x*y-z*w), 2*(x*z+y*w)],
-        [2*(x*y+z*w), 1-2*(x*x+z*z), 2*(y*z-x*w)],
-        [2*(x*z-y*w), 2*(y*z+x*w), 1-2*(x*x+y*y)]
-    ])
+    w, x, y, z = q
+    return np.array(
+        [
+            [1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
+            [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
+            [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)],
+        ]
+    )
 
 
 # -------------------------------------------------
@@ -83,164 +89,100 @@ def build_covariances(scales: np.ndarray, rots: np.ndarray) -> np.ndarray:
     covs = []
     for s, q in zip(scales, rots):
         R = quat_to_rot(q)
-        S = np.diag(s**2)
+        S = np.diag(np.exp(s)**2)
         covs.append(R @ S @ R.T)
     return np.array(covs)
 
-
-# -------------------------------------------------
-# Projection helpers
-# -------------------------------------------------
-def project_points(K: np.ndarray, pts_cam: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    """Project 3D points in camera space to 2D image coordinates.
-
-    Args:
-        K: 3x3 camera intrinsic matrix.
-        pts_cam: (N, 3) array of 3D points in camera coordinates (x, y, z).
-
-    Returns:
-        A tuple of (pts_img, depth):
-            - pts_img: (N, 2) array of 2D image coordinates (u, v).
-            - depth: (N,) array of z/depth values.
-    """
-    z = pts_cam[:,2:3]
-    pts_norm = pts_cam[:,:2]/z
-    pts_img = (K[:2,:2] @ pts_norm.T).T + K[:2,2]
-    return pts_img, z.squeeze()
+import torch
 
 
-def project_covariance(K: np.ndarray, mu: np.ndarray, cov: np.ndarray) -> np.ndarray:
-    """Project a 3D covariance matrix to 2D using the Jacobian of the projection.
-
-    Args:
-        K: 3x3 camera intrinsic matrix.
-        mu: 3D point (x, y, z) in camera space.
-        cov: 3x3 covariance matrix in 3D.
-
-    Returns:
-        2x2 covariance matrix in image space.
-    """
-    x, y, z = mu
-    z_safe = max(float(z), 1e-6)
-    fx, fy = K[0, 0], K[1, 1]
-    J = np.array([[fx / z_safe, 0, -fx * x / (z_safe * z_safe)],
-                  [0, fy / z_safe, -fy * y / (z_safe * z_safe)]])
-    return J @ cov @ J.T
-
-
-def covariance_radius(covariance_matrix: np.ndarray) -> float:
-    """Compute the splat radius from a 2D covariance matrix.
-
-    Uses 3 standard deviations (3σ) based on the largest eigenvalue.
-
-    Args:
-        covariance_matrix: 2x2 covariance matrix in image space.
-
-    Returns:
-        Radius in pixels for the splat bounding box.
-    """
-    eigvals = np.linalg.eigvals(covariance_matrix)
-    return 3 * np.sqrt(np.max(np.real(eigvals)))
-
-
-# -------------------------------------------------
-# Minimal CPU renderer
-# -------------------------------------------------
 def render_gaussians(
-    means: np.ndarray,
-    covs: np.ndarray,
-    colors: np.ndarray,
-    opacity: np.ndarray,
-    K: np.ndarray,
-    H: int,
-    W: int,
-) -> np.ndarray:
-    """Render 3D Gaussians to a 2D image using splatting.
+    means, covs, colors, opacity, K,
+    R_obj, t_obj, scale,
+    R_cam, t_cam,
+    H, W,
+    device="cpu"
+):
+    means = torch.tensor(means, device=device, dtype=torch.float32)
+    covs = torch.tensor(covs, device=device, dtype=torch.float32)
+    colors = torch.tensor(colors, device=device, dtype=torch.float32)
 
-    Projects each Gaussian to screen space, computes 2D covariance, and
-    splats with alpha blending in back-to-front order.
+    opacity = torch.tensor(opacity, device=device, dtype=torch.float32)
+    opacity = torch.sigmoid(opacity)
 
-    Args:
-        means: (N, 3) array of 3D positions.
-        covs: (N, 3, 3) array of 3D covariance matrices.
-        colors: (N, 3) array of RGB colors (0–1).
-        opacity: (N,) array of opacity values.
-        K: 3x3 camera intrinsic matrix.
-        H: Image height in pixels.
-        W: Image width in pixels.
+    K = torch.tensor(K, device=device, dtype=torch.float32)
+    R_obj = torch.tensor(R_obj, device=device, dtype=torch.float32)
+    t_obj = torch.tensor(t_obj, device=device, dtype=torch.float32)
+    R_cam = torch.tensor(R_cam, device=device, dtype=torch.float32)
+    t_cam = torch.tensor(t_cam, device=device, dtype=torch.float32)
 
-    Returns:
-        (H, W, 3) RGB image array, values clipped to [0, 1].
-    """
-    pts_img, depth = project_points(K, means)
+    # -----------------------------
+    # Object → world transform
+    # -----------------------------
+    means_w = (R_obj @ means.T).T * scale + t_obj
+    covs_w = scale**2 * torch.einsum("ij,njk,kl->nil", R_obj, covs, R_obj.T)
 
-    valid = np.isfinite(depth) & (depth > 1e-6) & np.isfinite(pts_img).all(axis=1)
-    valid_indices = np.where(valid)[0]
+    # -----------------------------
+    # World → camera transform
+    # -----------------------------
+    means_cam = (R_cam @ means_w.T).T + t_cam
+    covs_cam = torch.einsum("ij,njk,kl->nil", R_cam, covs_w, R_cam.T)
 
-    print(f"Valid percentage: {len(valid_indices) / len(means)}")
+    # -----------------------------
+    # Projection
+    # -----------------------------
+    z = means_cam[:,2:3]
+    pts_norm = means_cam[:,:2]/z
+    pts_img = (K[:2,:2] @ pts_norm.T).T + K[:2,2]
 
-    order = valid_indices[np.argsort(depth[valid])[::-1]]
+    # grid
+    ys, xs = torch.meshgrid(
+        torch.arange(H, device=device),
+        torch.arange(W, device=device),
+        indexing="ij"
+    )
+    grid = torch.stack([xs, ys], dim=-1).float()
 
-    img = np.zeros((H, W, 3))
-    T = np.ones((H, W))
+    img = torch.zeros(H, W, 3, device=device)
+    T = torch.ones(H, W, device=device)
 
-    for idx in tqdm(order, desc="Rendering Gaussians"):
-        mu = means[idx]
+    order = torch.argsort(means_cam[:,2], descending=True)
+
+    for idx in tqdm(order):
+        mu = means_cam[idx]
+        x,y,z = mu
+        fx, fy = K[0,0], K[1,1]
+
+        J = torch.tensor([[fx/z,0,-fx*x/(z*z)],
+                          [0,fy/z,-fy*y/(z*z)]], device=device)
+
+        Sigma2D = J @ covs_cam[idx] @ J.T
+        invS = torch.linalg.inv(Sigma2D)
+
         center = pts_img[idx]
-        covariance_matrix = project_covariance(K, mu, covs[idx])
 
-        try:
-            inv_cov = np.linalg.inv(covariance_matrix)
-        except:
-            continue
+        d = grid - center
+        d = d.reshape(-1,2)
 
-        radius = covariance_radius(covariance_matrix)
+        w = torch.exp(-0.5*(d @ invS * d).sum(dim=1))
+        w = w.reshape(H,W)
 
-        xmin = int(max(0, center[0]-radius))
-        xmax = int(min(W-1, center[0]+radius))
-        ymin = int(max(0, center[1]-radius))
-        ymax = int(min(H-1, center[1]+radius))
+        a = opacity[idx]*w
+        img += (T.unsqueeze(-1)*a.unsqueeze(-1)*colors[idx])
+        T *= (1-a)
 
-        for y in range(ymin, ymax):
-            for x in range(xmin, xmax):
-                d = np.array([x-center[0], y-center[1]])
-                w = np.exp(-0.5 * d @ inv_cov @ d)
-
-                a = opacity[idx]*w
-                img[y, x] += T[y, x]*a*colors[idx]
-                T[y, x] *= (1 - a)
-
-    return np.clip(img, 0, 1)
+    return img.clamp(0,1).cpu().numpy()
 
 
-# -------------------------------------------------
-# Plotly image display
-# -------------------------------------------------
 def show_plotly(img: np.ndarray) -> None:
     """Display an image in a Plotly figure (600x600).
 
     Args:
         img: (H, W, 3) image array with values in [0, 1].
     """
-    fig = go.Figure(go.Image(z=(img*255).astype(np.uint8)))
+    fig = go.Figure(go.Image(z=(img * 255).astype(np.uint8)))
     fig.update_layout(width=600, height=600)
     fig.show()
-
-
-# -------------------------------------------------
-# Example usage
-# -------------------------------------------------
-# means, scales, rots, opacity, colors = load_gaussians_from_ply("gaussians.ply")
-# covs = build_covariances(scales, rots)
-
-# H, W = 512, 512
-# fx = fy = 500
-# K = np.array([[fx,0,W/2],
-#               [0,fy,H/2],
-#               [0,0,1]])
-
-# img = render_gaussians(means, covs, colors, opacity, K, H, W)
-# show_plotly(img)
 
 
 @click.command()
@@ -258,12 +200,21 @@ def main(file_path: str | Path) -> None:
     """
     means, scales, rots, opacity, colors = load_gaussians_from_ply(str(file_path))
     covs = build_covariances(scales, rots)
+
     H, W = 512, 512
-    fx = fy = 500
-    K = np.array([[fx,0,W/2],
-                  [0,fy,H/2],
-                  [0,0,1]])
-    img = render_gaussians(means, covs, colors, opacity, K, H, W)
+    fx = fy = 250
+
+    K = np.array([[fx, 0, W / 2], [0, fy, H / 2], [0, 0, 1]])
+
+    R_obj = np.eye(3)
+    t_obj = np.zeros(3)
+    scale = 1.0
+
+    R_cam = np.eye(3)
+    d = 2.5 * np.linalg.norm(means, axis=1).max()
+    t_cam = np.array([0,0,d])
+
+    img = render_gaussians(means, covs, colors, opacity, K, R_obj, t_obj, scale, R_cam, t_cam, H, W, device="cpu")
     show_plotly(img)
 
 
