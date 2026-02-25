@@ -315,7 +315,7 @@ class LabelVisualizationBlockV1(ColorableVisualizationBlock):
         elif text == "Area (converted)":
             if AREA_CONVERTED_KEY_IN_SV_DETECTIONS in predictions.data:
                 labels = [
-                    str(round(float(a), 2)) if a is not None else "Area (conv): N/A"
+                    f"Area (conv): {a:.2f}" if a is not None else "Area (conv): N/A"
                     for a in predictions.data[AREA_CONVERTED_KEY_IN_SV_DETECTIONS]
                 ]
             else:
