@@ -9,31 +9,44 @@
       "type": "WorkflowParameter",
       "name": "object_prompt",
       "default_value": ["object"]
+    },
+    {
+      "type": "WorkflowParameter",
+      "name": "output_dir",
+      "default_value": "./output"
     }
   ],
   "steps": [
     {
-      "type": "roboflow_core/yolo_world_model@v1",
-      "name": "yolo_world",
+      "type": "roboflow_core/sam3@v1",
+      "name": "sam3",
       "images": "$inputs.image",
       "class_names": "$inputs.object_prompt",
-      "version": "v2-s",
-      "confidence": 0.2
+      "threshold": 0.5
     },
     {
-      "type": "roboflow_core/segment_anything@v1",
-      "name": "sam2",
-      "images": "$inputs.image",
-      "boxes": "$steps.yolo_world.predictions",
-      "version": "hiera_tiny",
-      "threshold": 0.0,
-      "multimask_output": false
+      "type": "roboflow_core/property_definition@v1",
+      "name": "format_sam3",
+      "data": "$steps.sam3.predictions",
+      "operations": [
+        {"type": "DetectionsToDictionary"},
+        {"type": "ConvertDictionaryToJSON"}
+      ]
+    },
+    {
+      "type": "roboflow_core/local_file_sink@v1",
+      "name": "save_sam3",
+      "content": "$steps.format_sam3.output",
+      "file_type": "json",
+      "output_mode": "separate_files",
+      "target_directory": "$inputs.output_dir",
+      "file_name_prefix": "step_sam3"
     },
     {
       "type": "roboflow_core/segment_anything3_3d_objects@v1",
       "name": "sam3_3d",
       "images": "$inputs.image",
-      "mask_input": "$steps.sam2.predictions"
+      "mask_input": "$steps.sam3.predictions"
     }
   ],
   "outputs": [
