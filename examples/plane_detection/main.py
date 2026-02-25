@@ -125,25 +125,18 @@ def main(
 
     for i, batch_item in enumerate(result):
         print(f"--- Result for image index {i} ---")
-        depth_results = batch_item.get("depth_results")
-        if not depth_results:
-            print("No depth results in output")
-            continue
+        normalized_depth = batch_item.get("normalized_depth")
+        image = batch_item.get("image")
 
-        for j, depth_item in enumerate(depth_results):
-            prefix = f"depth_{i}_{j}" if len(depth_results) > 1 else f"depth_{i}"
-            image_data = depth_item.get("image")
-            normalized_depth = depth_item.get("normalized_depth")
+        if image is not None:
+            image_path = output_dir / f"image_{i}.png"
+            _save_depth_image(image, image_path)
+            print(f"image written: {image_path}")
 
-            if image_data is not None:
-                depth_img_path = output_dir / f"{prefix}.png"
-                _save_depth_image(image_data, depth_img_path)
-                print(f"depth image written: {depth_img_path}")
-
-            if normalized_depth is not None:
-                depth_array_path = output_dir / f"{prefix}.npy"
-                np.save(depth_array_path, np.asarray(normalized_depth))
-                print(f"depth array written: {depth_array_path}")
+        if normalized_depth is not None:
+            normalized_depth_path = output_dir / f"normalized_depth_{i}.npy"
+            np.save(normalized_depth_path, np.asarray(normalized_depth))
+            print(f"normalized depth written: {normalized_depth_path}")
 
 
 if __name__ == "__main__":
