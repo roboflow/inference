@@ -2,3 +2,4 @@
 -r requirements.transformers.txt
 pillow-heif
 piexif
+plotly
