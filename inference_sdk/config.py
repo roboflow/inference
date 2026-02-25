@@ -63,6 +63,12 @@ WORKFLOW_RUN_RETRIES_ENABLED = str2bool(
 )
 EXECUTION_ID_HEADER = os.getenv("EXECUTION_ID_HEADER", "execution_id")
 PROCESSING_TIME_HEADER = os.getenv("PROCESSING_TIME_HEADER", "X-Processing-Time")
+INTERNAL_REMOTE_EXEC_REQ_HEADER = "X-Internal-Remote-Exec-Req"
+ENABLE_INTERNAL_REMOTE_EXEC_HEADER = os.getenv(
+    "ENABLE_INTERNAL_REMOTE_EXEC_HEADER", "False"
+).lower() in ("true", "1")
+
+apply_duration_minimum = contextvars.ContextVar("apply_duration_minimum", default=False)
 
 
 ALL_ROBOFLOW_API_URLS = {

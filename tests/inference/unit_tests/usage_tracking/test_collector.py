@@ -981,3 +981,87 @@ def test_record_usage_with_exception_on_GCP(usage_collector_with_mocked_threads)
         ).get("error")
         == "Exception: test exception"
     )
+
+
+class TestComputeExecutionDuration:
+    def test_no_gcp_serverless_returns_raw(self, usage_collector_with_mocked_threads):
+        with mock.patch("inference.usage_tracking.collector.GCP_SERVERLESS", False):
+            result = usage_collector_with_mocked_threads._compute_execution_duration(
+                0.0, 0.05
+            )
+        assert result == 0.05
+
+    def test_gcp_serverless_applies_floor_by_default(
+        self, usage_collector_with_mocked_threads
+    ):
+        """When GCP_SERVERLESS=True and apply_duration_minimum is None (SDK not installed),
+        the 100ms floor should apply for backwards compatibility."""
+        with mock.patch("inference.usage_tracking.collector.GCP_SERVERLESS", True):
+            with mock.patch(
+                "inference.usage_tracking.collector.apply_duration_minimum", None
+            ):
+                result = (
+                    usage_collector_with_mocked_threads._compute_execution_duration(
+                        0.0, 0.05
+                    )
+                )
+        assert result == 0.1
+
+    def test_gcp_serverless_with_duration_minimum_true_applies_floor(
+        self, usage_collector_with_mocked_threads
+    ):
+        """When GCP_SERVERLESS=True and apply_duration_minimum=True (direct request),
+        the 100ms floor should apply."""
+        import contextvars
+
+        cv = contextvars.ContextVar("test_apply_duration_minimum", default=False)
+        cv.set(True)
+        with mock.patch("inference.usage_tracking.collector.GCP_SERVERLESS", True):
+            with mock.patch(
+                "inference.usage_tracking.collector.apply_duration_minimum", cv
+            ):
+                result = (
+                    usage_collector_with_mocked_threads._compute_execution_duration(
+                        0.0, 0.05
+                    )
+                )
+        assert result == 0.1
+
+    def test_gcp_serverless_with_duration_minimum_false_skips_floor(
+        self, usage_collector_with_mocked_threads
+    ):
+        """When GCP_SERVERLESS=True and apply_duration_minimum=False (remote execution),
+        the 100ms floor should NOT apply."""
+        import contextvars
+
+        cv = contextvars.ContextVar("test_apply_duration_minimum", default=False)
+        cv.set(False)
+        with mock.patch("inference.usage_tracking.collector.GCP_SERVERLESS", True):
+            with mock.patch(
+                "inference.usage_tracking.collector.apply_duration_minimum", cv
+            ):
+                result = (
+                    usage_collector_with_mocked_threads._compute_execution_duration(
+                        0.0, 0.05
+                    )
+                )
+        assert result == 0.05
+
+    def test_gcp_serverless_floor_does_not_reduce_large_values(
+        self, usage_collector_with_mocked_threads
+    ):
+        """When execution takes longer than 100ms, the floor has no effect."""
+        import contextvars
+
+        cv = contextvars.ContextVar("test_apply_duration_minimum", default=False)
+        cv.set(True)
+        with mock.patch("inference.usage_tracking.collector.GCP_SERVERLESS", True):
+            with mock.patch(
+                "inference.usage_tracking.collector.apply_duration_minimum", cv
+            ):
+                result = (
+                    usage_collector_with_mocked_threads._compute_execution_duration(
+                        0.0, 0.25
+                    )
+                )
+        assert result == 0.25
