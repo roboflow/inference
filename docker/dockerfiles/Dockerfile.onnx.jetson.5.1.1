@@ -13,6 +13,8 @@ COPY requirements/requirements.clip.txt \
     requirements/requirements.gpu.txt \
     ./
 
+RUN pip freeze | grep -i opencv > /tmp/cv_pin.txt || true
+
 RUN python -m pip install \
     -r _requirements.txt \
     -r requirements.clip.txt \
@@ -25,7 +27,8 @@ RUN python -m pip install \
     -r requirements.gpu.txt \
     "pycuda>=2025.0.0,<2026.0.0" \
     "torch==2.4.1" \
-    "torchvision==0.19.1"
+    "torchvision==0.19.1" \
+    -c /tmp/cv_pin.txt
 
 
 WORKDIR /app/
