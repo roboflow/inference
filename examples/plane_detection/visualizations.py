@@ -67,3 +67,56 @@ def get_plane_visualization_fig(
     fig.update_xaxes(showticklabels=False, showgrid=False)
     fig.update_yaxes(showticklabels=False, showgrid=False)
     return fig
+
+
+def get_point_cloud_3d_fig(
+    points: np.ndarray,
+    max_points: int = 100_000,
+) -> go.Figure:
+    """Visualize organized point cloud as 3D scatter plot."""
+    H, W, _ = points.shape
+    xyz = points.reshape(-1, 3)
+    valid = np.all(np.isfinite(xyz), axis=1)
+    xyz = xyz[valid]
+
+    if xyz.size == 0:
+        fig = go.Figure()
+        fig.update_layout(title="Point cloud (no valid points)")
+        return fig
+
+    if len(xyz) > max_points:
+        rng = np.random.default_rng(42)
+        idx = rng.choice(len(xyz), size=max_points, replace=False)
+        xyz = xyz[idx]
+
+    x, y, z = xyz[:, 0], xyz[:, 1], xyz[:, 2]
+    fig = go.Figure(
+        data=[
+            go.Scatter3d(
+                x=x,
+                y=y,
+                z=z,
+                mode="markers",
+                marker=dict(
+                    size=1,
+                    color=z,
+                    colorscale="Viridis",
+                    showscale=True,
+                    colorbar=dict(title="z"),
+                ),
+            )
+        ],
+    )
+    fig.update_layout(
+        title="Point cloud",
+        scene=dict(
+            xaxis_title="x",
+            yaxis_title="y",
+            zaxis_title="z",
+            aspectmode="data",
+        ),
+        width=800,
+        height=600,
+        margin=dict(l=0, r=0, t=40, b=0),
+    )
+    return fig
