@@ -25,6 +25,7 @@ Notes:
 
 from __future__ import annotations
 
+from tqdm import tqdm
 import heapq
 import math
 from collections import deque, defaultdict
@@ -214,8 +215,8 @@ def graph_initialization(
 
     # --- initialize nodes (Algorithm 2 lines 3-8) ---
     next_id = 0
-    for bi in range(nBH):
-        for bj in range(nBW):
+    for bi in tqdm(range(nBH), desc="Initializing nodes for rows", total=nBH):
+        for bj in tqdm(range(nBW), desc="Initializing nodes for columns", leave=False, total=nBW):
             r0 = bi * block_h
             c0 = bj * block_w
             r1 = min((bi + 1) * block_h, M)
@@ -314,6 +315,8 @@ def ahc_cluster(
     next_id = max(G.nodes.keys(), default=-1) + 1
 
     while heap:
+        print(f"Heap size: {len(heap)}")
+
         _, vid = heapq.heappop(heap)
         if vid not in G.nodes:
             continue
