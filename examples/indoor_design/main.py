@@ -140,6 +140,24 @@ def main(
 
         print(f"objects (metadata count): {len(objects_meta)}")
 
+        for j, obj in enumerate(objects_meta):
+            obj_mesh_b64 = obj.get("mesh_glb")
+            obj_ply_b64 = obj.get("gaussian_ply")
+            obj_metadata = obj.get("metadata", {})
+
+            if obj_mesh_b64:
+                mesh_path = output_dir / f"mesh_{i}_object_{j}.glb"
+                mesh_path.write_bytes(base64.b64decode(obj_mesh_b64))
+                print(f"  object {j} mesh_glb written: {mesh_path}")
+            if obj_ply_b64:
+                ply_path = output_dir / f"gaussian_{i}_object_{j}.ply"
+                ply_path.write_bytes(base64.b64decode(obj_ply_b64))
+                print(f"  object {j} gaussian_ply written: {ply_path}")
+
+            metadata_path = output_dir / f"metadata_{i}_object_{j}.json"
+            with open(metadata_path, "w") as f:
+                json.dump(obj_metadata, f, indent=2)
+            print(f"  object {j} metadata written: {metadata_path}")
 
         if mesh_b64:
             mesh_path = output_dir / f"mesh_{i}.glb"
