@@ -1,0 +1,2 @@
+# DepthAnything V2 uses Hugging Face Transformers
+-r requirements.transformers.txt

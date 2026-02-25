@@ -1,0 +1,44 @@
+{
+  "version": "1.0",
+  "inputs": [
+    {"type": "WorkflowImage", "name": "image"},
+    {"type": "WorkflowParameter", "name": "output_dir", "default_value": "./output"},
+    {"type": "WorkflowParameter", "name": "metadata", "default_value": {"model": "depth-anything-v2/small"}}
+  ],
+  "steps": [
+    {
+      "type": "roboflow_core/depth_estimation@v1",
+      "name": "depth_estimation",
+      "images": "$inputs.image",
+      "model_version": "depth-anything-v2/small"
+    },
+    {
+      "type": "roboflow_core/expression@v1",
+      "name": "format_metadata",
+      "data": {
+        "metadata": "$inputs.metadata"
+      },
+      "switch": {
+        "type": "CasesDefinition",
+        "cases": [],
+        "default": {
+          "type": "DynamicCaseResult",
+          "parameter_name": "metadata",
+          "operations": [{"type": "ConvertDictionaryToJSON"}]
+        }
+      }
+    },
+    {
+      "type": "roboflow_core/local_file_sink@v1",
+      "name": "save_metadata",
+      "content": "$steps.format_metadata.output",
+      "file_type": "json",
+      "output_mode": "separate_files",
+      "target_directory": "$inputs.output_dir",
+      "file_name_prefix": "depth_metadata"
+    }
+  ],
+  "outputs": [
+    {"type": "JsonField", "name": "depth_results", "coordinates_system": "own", "selector": "$steps.depth_estimation"}
+  ]
+}
