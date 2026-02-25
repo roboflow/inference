@@ -24,6 +24,7 @@ Notes:
 
 from __future__ import annotations
 
+import json
 from tqdm import tqdm
 import heapq
 import math
@@ -312,7 +313,7 @@ def ahc_cluster(
         heapq.heappush(heap, (node.mse, nid))
 
     extracted: List[Node] = []
-    planes: Dict[int, Tuple[np.ndarray, float]] = {}
+    planes: Dict[int, Tuple[np.ndarray, float, int]] = {}
 
     next_id = max(G.nodes.keys(), default=-1) + 1
 
@@ -355,7 +356,7 @@ def ahc_cluster(
         if ubest_id is None or best_stats is None:
             if v.stats.n > TNUM:
                 extracted.append(v)
-                planes[v.id] = (v.n_hat.copy(), float(v.d))
+                planes[v.id] = (v.n_hat.copy(), float(v.d), v.stats.n)
             # remove v
             for uid in list(G.adj.get(vid, [])):
                 G.adj[uid].discard(vid)
@@ -368,7 +369,7 @@ def ahc_cluster(
             # extract if big enough else reject (Algorithm 3 lines 14-17)
             if v.stats.n > TNUM:
                 extracted.append(v)
-                planes[v.id] = (v.n_hat.copy(), float(v.d))
+                planes[v.id] = (v.n_hat.copy(), float(v.d), v.stats.n)
             # remove v from graph
             for uid in list(G.adj.get(vid, [])):
                 G.adj[uid].discard(vid)
@@ -514,9 +515,17 @@ def main(input_image_path: Path, organized_point_cloud_path: Path, output_path: 
         alpha=0.02,
     )
 
-    print("Found planes:", len(planes))
-    for k, (n, d) in planes.items():
-        print(k, "n=", n, "d=", d)
+    planes_data = {
+        str(k): {
+            "n": n.tolist() if hasattr(n, "tolist") else list(n),
+            "d": float(d),
+            "n_points": int(n_points),
+        }
+        for k, (n, d, n_points) in planes.items()
+    }
+    json_path = output_path.parent / (output_path.stem + "_planes.json")
+    with open(json_path, "w") as f:
+        json.dump(planes_data, f, indent=2)
 
     np.save(output_path, label_img)
 
