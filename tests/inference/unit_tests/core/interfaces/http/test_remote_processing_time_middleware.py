@@ -12,6 +12,7 @@ from inference.core.interfaces.http.http_api import (
     GCPServerlessMiddleware,
 )
 from inference_sdk.config import (
+    INTERNAL_REMOTE_EXEC_REQ_VERIFIED_HEADER,
     PROCESSING_TIME_HEADER,
     RemoteProcessingTimeCollector,
     apply_duration_minimum,
@@ -153,6 +154,8 @@ class TestApplyDurationMinimumContextVar:
     def test_direct_request_sets_apply_duration_minimum_true(self) -> None:
         """A request without the internal execution header should set
         apply_duration_minimum=True (floor should apply)."""
+        from inference_sdk.config import INTERNAL_REMOTE_EXEC_REQ_HEADER
+
         app = _create_app(
             [Route("/infer", endpoint=_endpoint_read_duration_minimum)]
         )
@@ -160,6 +163,7 @@ class TestApplyDurationMinimumContextVar:
         response = client.get("/infer")
         assert response.status_code == 200
         assert response.text == "True"
+        assert response.headers[INTERNAL_REMOTE_EXEC_REQ_VERIFIED_HEADER] == "false"
 
     @patch(
         "inference.core.interfaces.http.http_api.ROBOFLOW_INTERNAL_SERVICE_SECRET",
@@ -180,6 +184,7 @@ class TestApplyDurationMinimumContextVar:
         )
         assert response.status_code == 200
         assert response.text == "False"
+        assert response.headers[INTERNAL_REMOTE_EXEC_REQ_VERIFIED_HEADER] == "true"
 
     @patch(
         "inference.core.interfaces.http.http_api.ROBOFLOW_INTERNAL_SERVICE_SECRET",
@@ -200,6 +205,7 @@ class TestApplyDurationMinimumContextVar:
         )
         assert response.status_code == 200
         assert response.text == "True"
+        assert response.headers[INTERNAL_REMOTE_EXEC_REQ_VERIFIED_HEADER] == "false"
 
     @patch(
         "inference.core.interfaces.http.http_api.ROBOFLOW_INTERNAL_SERVICE_SECRET",
@@ -220,3 +226,4 @@ class TestApplyDurationMinimumContextVar:
         )
         assert response.status_code == 200
         assert response.text == "True"
+        assert response.headers[INTERNAL_REMOTE_EXEC_REQ_VERIFIED_HEADER] == "false"

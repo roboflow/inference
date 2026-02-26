@@ -280,6 +280,7 @@ try:
     from inference_sdk.config import (
         EXECUTION_ID_HEADER,
         INTERNAL_REMOTE_EXEC_REQ_HEADER,
+        INTERNAL_REMOTE_EXEC_REQ_VERIFIED_HEADER,
         RemoteProcessingTimeCollector,
         apply_duration_minimum,
         execution_id,
@@ -291,6 +292,7 @@ except ImportError:
     RemoteProcessingTimeCollector = None
     EXECUTION_ID_HEADER = None
     INTERNAL_REMOTE_EXEC_REQ_HEADER = None
+    INTERNAL_REMOTE_EXEC_REQ_VERIFIED_HEADER = None
     apply_duration_minimum = None
 
 
@@ -318,6 +320,7 @@ class GCPServerlessMiddleware(BaseHTTPMiddleware):
             if not execution_id_value:
                 execution_id_value = f"{time.time_ns()}_{uuid4().hex[:4]}"
             execution_id.set(execution_id_value)
+        is_verified_internal = False
         if apply_duration_minimum is not None:
             is_verified_internal = (
                 ROBOFLOW_INTERNAL_SERVICE_SECRET
@@ -345,6 +348,10 @@ class GCPServerlessMiddleware(BaseHTTPMiddleware):
                 response.headers[REMOTE_PROCESSING_TIMES_HEADER] = detail
         if execution_id is not None:
             response.headers[EXECUTION_ID_HEADER] = execution_id_value
+        if INTERNAL_REMOTE_EXEC_REQ_VERIFIED_HEADER is not None:
+            response.headers[INTERNAL_REMOTE_EXEC_REQ_VERIFIED_HEADER] = str(
+                is_verified_internal
+            ).lower()
         return response
 
 
