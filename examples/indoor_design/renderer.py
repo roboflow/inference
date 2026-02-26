@@ -311,7 +311,7 @@ def make_live_progress_callback() -> Callable[[np.ndarray, int, int], None]:
 @click.option(
     "--progress-interval",
     type=float,
-    default=5.0,
+    default=1.0,
     help="Progress interval (in %%) for updating the visualization. Default: 5%%.",
 )
 def main(
