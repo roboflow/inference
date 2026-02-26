@@ -10,8 +10,13 @@ import cv2
 import numpy as np
 
 try:
-    from inference_sdk.config import execution_id, remote_processing_times
+    from inference_sdk.config import (
+        apply_duration_minimum,
+        execution_id,
+        remote_processing_times,
+    )
 except ImportError:
+    apply_duration_minimum = None
     execution_id = None
     remote_processing_times = None
 
@@ -139,6 +144,10 @@ def execute_steps(
         processing_time_collector = remote_processing_times.get()
     else:
         processing_time_collector = None
+    if apply_duration_minimum is not None:
+        duration_minimum_value = apply_duration_minimum.get()
+    else:
+        duration_minimum_value = None
     logger.debug(f"Executing steps: {next_steps}.")
     steps_functions = [
         partial(
@@ -149,6 +158,7 @@ def execute_steps(
             profiler=profiler,
             workflow_execution_id=workflow_execution_id,
             processing_time_collector=processing_time_collector,
+            duration_minimum_value=duration_minimum_value,
             step_error_handler=step_error_handler,
         )
         for step_selector in next_steps
@@ -170,12 +180,15 @@ def safe_execute_step(
     profiler: Optional[WorkflowsProfiler] = None,
     workflow_execution_id: Optional[str] = None,
     processing_time_collector=None,
+    duration_minimum_value=None,
     step_error_handler: Optional[Callable[[str, Exception], None]] = None,
 ) -> None:
     if execution_id is not None:
         execution_id.set(workflow_execution_id)
     if remote_processing_times is not None and processing_time_collector is not None:
         remote_processing_times.set(processing_time_collector)
+    if apply_duration_minimum is not None and duration_minimum_value is not None:
+        apply_duration_minimum.set(duration_minimum_value)
     if profiler is None:
         profiler = NullWorkflowsProfiler.init()
     try:
