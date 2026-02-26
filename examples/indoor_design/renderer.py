@@ -6,6 +6,7 @@ import click
 from pathlib import Path
 from tqdm import tqdm
 import torch
+from PIL import Image
 
 
 # -------------------------------------------------
@@ -192,7 +193,37 @@ def show_plotly(img: np.ndarray) -> None:
     required=True,
     help="Path to the PLY file to render.",
 )
-def main(file_path: str | Path) -> None:
+@click.option(
+    "--image-path",
+    type=click.Path(exists=True),
+    required=True,
+    help="Path to the image to render into.",
+)
+@click.option(
+    "--room-axes-path",
+    type=click.Path(exists=True),
+    required=True,
+    help="Path to the room axes file.",
+)
+@click.option(
+    "--room-length",
+    type=float,
+    required=True,
+    help="Length of the room.",
+)
+@click.option(
+    "--sofa-length",
+    type=float,
+    required=True,
+    help="Length of the sofa.",
+)
+def main(
+    file_path: str | Path,
+    image_path: str | Path,
+    room_axes_path: str | Path,
+    room_length: float,
+    sofa_length: float,
+) -> None:
     """Load Gaussian splats from a PLY file and render them.
 
     Args:
@@ -200,6 +231,8 @@ def main(file_path: str | Path) -> None:
     """
     means, scales, rots, opacity, colors = load_gaussians_from_ply(str(file_path))
     covs = build_covariances(scales, rots)
+
+    image = Image.open(image_path)
 
     H, W = 512, 512
     fx = fy = 250
