@@ -175,6 +175,7 @@ from inference.core.env import (
     ROBOFLOW_INTERNAL_SERVICE_SECRET,
     ROBOFLOW_SERVICE_SECRET,
     SAM3_EXEC_MODE,
+    SAM3_FINE_TUNED_MODELS_ENABLED,
     USE_INFERENCE_MODELS,
     WEBRTC_WORKER_ENABLED,
     WORKFLOWS_MAX_CONCURRENT_STEPS,
@@ -2605,12 +2606,14 @@ class HttpInterface(BaseInterface):
                     countinference: Optional[bool] = None,
                     service_secret: Optional[str] = None,
                 ):
-                    if SAM3_EXEC_MODE == "remote":
+                    if not SAM3_FINE_TUNED_MODELS_ENABLED:
                         if not inference_request.model_id.startswith("sam3/"):
                             raise HTTPException(
                                 status_code=501,
-                                detail="Fine-tuned SAM3 models are not supported in remote execution mode yet. Please use a workflow or self-host the server.",
+                                detail="Fine-tuned SAM3 models are not supported on this deployment. Please use a workflow or self-host the server.",
                             )
+
+                    if SAM3_EXEC_MODE == "remote":
                         endpoint = f"{API_BASE_URL}/inferenceproxy/seg-preview"
 
                         # Construct payload for remote API
