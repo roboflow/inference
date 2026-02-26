@@ -111,6 +111,30 @@ class Sam3ForInteractiveImageSegmentation(RoboflowCoreModel):
         self._state_lock = RLock()
         self.task_type = "unsupervised-segmentation"
 
+    def warmup(self) -> None:
+        """Run a dummy embedding to trigger CUDA kernel JIT compilation."""
+        import logging
+
+        logger = logging.getLogger(__name__)
+        logger.info("SAM3 Interactive warmup: running preflight embedding...")
+        try:
+            dummy_image = np.full((256, 256, 3), 128, dtype=np.uint8)
+
+            with torch.inference_mode():
+                with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+                    with _temporarily_disable_torch_jit_script():
+                        processor = Sam3Processor(self.sam_model)
+                    _ = processor.set_image(
+                        torch.from_numpy(dummy_image).permute(2, 0, 1)
+                    )
+
+            if torch.cuda.is_available():
+                torch.cuda.synchronize()
+
+            logger.info("SAM3 Interactive warmup: completed successfully.")
+        except Exception as e:
+            logger.warning(f"SAM3 Interactive warmup: failed (non-fatal): {e}")
+
     def get_infer_bucket_file_list(self) -> List[str]:
         """Gets the list of files required for inference.
 

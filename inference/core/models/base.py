@@ -100,6 +100,15 @@ class Model(BaseInference):
         """
         pass
 
+    def warmup(self) -> None:
+        """Run a preflight warmup to prime CUDA kernels, JIT caches, etc.
+
+        Models that benefit from warmup (e.g., those using torch.autocast or
+        CUDA kernel JIT compilation) should override this method to run a
+        minimal dummy forward pass.
+        """
+        pass
+
     def infer_from_request(
         self,
         request: InferenceRequest,

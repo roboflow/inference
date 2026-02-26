@@ -170,6 +170,7 @@ from inference.core.env import (
     NOTEBOOK_PASSWORD,
     NOTEBOOK_PORT,
     PRELOAD_MODELS,
+    PRELOAD_WARMUP_MODELS,
     PROFILE,
     ROBOFLOW_INTERNAL_SERVICE_NAME,
     ROBOFLOW_INTERNAL_SERVICE_SECRET,
@@ -1774,12 +1775,18 @@ class HttpInterface(BaseInterface):
 
             def initialize_models(state: ModelInitState):
                 """Perform asynchronous initialization tasks to load models."""
-                # Limit the number of concurrent tasks to prevent resource exhaustion
+
+                def _should_warmup(model_id: str) -> bool:
+                    if PRELOAD_WARMUP_MODELS is None:
+                        return False
+                    if PRELOAD_WARMUP_MODELS == "all":
+                        return True
+                    return model_id in PRELOAD_WARMUP_MODELS
 
                 def load_model(model_id):
-                    logger.debug(f"load_model({model_id}) - starting")
+                    t_start = time.perf_counter()
+                    logger.info(f"Preload: starting model load for '{model_id}'")
                     try:
-                        # TODO: how to add timeout here? Probably best to timeout model loading?
                         model_add(
                             AddModelRequest(
                                 model_id=model_id,
@@ -1787,13 +1794,45 @@ class HttpInterface(BaseInterface):
                                 api_key=API_KEY,
                             )
                         )
-                        logger.info(f"Model {model_id} loaded successfully.")
+                        load_time = time.perf_counter() - t_start
+                        logger.info(
+                            f"Preload: model '{model_id}' loaded successfully in {load_time:.1f}s"
+                        )
                     except Exception as e:
-                        error_msg = f"Error loading model {model_id}: {e}"
+                        load_time = time.perf_counter() - t_start
+                        error_msg = f"Preload: error loading model '{model_id}' after {load_time:.1f}s: {e}"
                         logger.error(error_msg)
                         with state.lock:
                             state.initialization_errors.append((model_id, str(e)))
-                    logger.debug(f"load_model({model_id}) - finished")
+                        return
+
+                    # Pin preloaded models so they are never evicted by the LRU cache
+                    de_aliased = resolve_roboflow_model_alias(
+                        model_id=model_id
+                    )
+                    if hasattr(self.model_manager, "pin_model"):
+                        self.model_manager.pin_model(de_aliased)
+
+                    if _should_warmup(model_id):
+                        t_warmup = time.perf_counter()
+                        logger.info(f"Preload: starting warmup for '{model_id}'")
+                        try:
+                            model = self.model_manager[de_aliased]
+                            if hasattr(model, "warmup") and callable(model.warmup):
+                                model.warmup()
+                                warmup_time = time.perf_counter() - t_warmup
+                                logger.info(
+                                    f"Preload: warmup for '{model_id}' completed in {warmup_time:.1f}s"
+                                )
+                            else:
+                                logger.info(
+                                    f"Preload: model '{model_id}' has no warmup method, skipping"
+                                )
+                        except Exception as e:
+                            warmup_time = time.perf_counter() - t_warmup
+                            logger.warning(
+                                f"Preload: warmup failed for '{model_id}' after {warmup_time:.1f}s (non-fatal): {e}"
+                            )
 
                 if PRELOAD_MODELS:
                     # Create tasks for each model to be loaded
@@ -1807,7 +1846,10 @@ class HttpInterface(BaseInterface):
 
                     for model_id, future in loaded_futures:
                         try:
-                            future.result(timeout=300)
+                            timeout = (
+                                600 if _should_warmup(model_id) else 300
+                            )
+                            future.result(timeout=timeout)
                         except (
                             TimeoutError,
                             CancelledError,
@@ -1816,7 +1858,7 @@ class HttpInterface(BaseInterface):
                             state.initialization_errors.append(
                                 (
                                     model_id,
-                                    "Could not finalise model loading before timeout",
+                                    f"Could not finalise model loading before {timeout}s timeout",
                                 )
                             )
                             future.cancel()
@@ -1841,7 +1883,13 @@ class HttpInterface(BaseInterface):
                 """Readiness endpoint for Kubernetes readiness probe."""
                 with state.lock:
                     if state.is_ready:
-                        return {"status": "ready"}
+                        response = {"status": "ready"}
+                        if state.initialization_errors:
+                            response["warnings"] = [
+                                {"model_id": mid, "error": err}
+                                for mid, err in state.initialization_errors
+                            ]
+                        return response
                     else:
                         return JSONResponse(
                             content={"status": "not ready"}, status_code=503

@@ -416,6 +416,41 @@ class SegmentAnything3(RoboflowCoreModel):
         self.image_size = SAM3_IMAGE_SIZE
         self.task_type = "unsupervised-segmentation"
 
+    def warmup(self) -> None:
+        """Run a dummy forward pass to trigger CUDA kernel JIT compilation."""
+        logger = logging.getLogger(__name__)
+        logger.info("SAM3 warmup: running preflight inference to compile CUDA kernels...")
+        try:
+            dummy_size = 256
+            dummy_image = Image.new("RGB", (dummy_size, dummy_size), color=(128, 128, 128))
+
+            with torch.inference_mode():
+                with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+                    datapoint = Sam3Datapoint(
+                        find_queries=[],
+                        images=[Sam3ImageDP(data=dummy_image, objects=[], size=(dummy_size, dummy_size))],
+                    )
+                    datapoint.find_queries.append(
+                        _build_text_query(coco_id=0, h=dummy_size, w=dummy_size, text="warmup")
+                    )
+
+                    datapoint = self.transform(datapoint)
+                    batch = collate_fn_api(batch=[datapoint], dict_key="dummy")["dummy"]
+                    batch = copy_data_to_device(
+                        batch,
+                        torch.device("cuda" if torch.cuda.is_available() else "cpu"),
+                        non_blocking=True,
+                    )
+
+                    _ = self.model(batch)
+
+            if torch.cuda.is_available():
+                torch.cuda.synchronize()
+
+            logger.info("SAM3 warmup: preflight inference completed successfully.")
+        except Exception as e:
+            logger.warning(f"SAM3 warmup: preflight inference failed (non-fatal): {e}")
+
     def _is_core_sam3_endpoint(self) -> bool:
         return isinstance(self.endpoint, str) and self.endpoint.startswith("sam3/")
 

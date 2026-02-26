@@ -669,6 +669,18 @@ PRELOAD_MODELS = (
     os.getenv("PRELOAD_MODELS").split(",") if os.getenv("PRELOAD_MODELS") else None
 )
 
+# Warmup Models - run a preflight inference after preloading to trigger
+# CUDA kernel compilation, torch.autocast warmup, etc.
+# Set to "all" to warmup all preloaded models, or a comma-separated list of model IDs.
+_raw_warmup = os.getenv("PRELOAD_WARMUP_MODELS")
+if _raw_warmup is not None:
+    if _raw_warmup.strip().lower() == "all":
+        PRELOAD_WARMUP_MODELS = "all"
+    else:
+        PRELOAD_WARMUP_MODELS = [m.strip() for m in _raw_warmup.split(",") if m.strip()]
+else:
+    PRELOAD_WARMUP_MODELS = None
+
 LOAD_ENTERPRISE_BLOCKS = str2bool(os.getenv("LOAD_ENTERPRISE_BLOCKS", "False"))
 TRANSIENT_ROBOFLOW_API_ERRORS = set(
     int(e)
