@@ -63,6 +63,7 @@ def quat_to_rot(q: np.ndarray | tuple[float, float, float, float]) -> np.ndarray
     Returns:
         A 3x3 rotation matrix.
     """
+    q = q / np.linalg.norm(q)
     w, x, y, z = q
     return np.array(
         [
@@ -71,6 +72,25 @@ def quat_to_rot(q: np.ndarray | tuple[float, float, float, float]) -> np.ndarray
             [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)],
         ]
     )
+
+
+def reorthonormalize_rotation_matrix(R: np.ndarray) -> np.ndarray:
+    """Reorthogonalize a rotation matrix.
+
+    Args:
+        R: (3, 3) rotation matrix.
+
+    Returns:
+        (3, 3) reorthogonalized rotation matrix.
+    """
+    U, _, Vt = np.linalg.svd(R)
+    R_orthonormal = U @ Vt
+
+    if np.linalg.det(R_orthonormal) < 0:
+        U[:, -1] *= -1
+        R_orthonormal = U @ Vt
+
+    return R_orthonormal
 
 
 # -------------------------------------------------
