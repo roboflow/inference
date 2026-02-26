@@ -1,4 +1,4 @@
-from re import I
+import json
 import numpy as np
 from plyfile import PlyData
 import plotly.graph_objects as go
@@ -8,6 +8,8 @@ from tqdm import tqdm
 import torch
 from PIL import Image
 
+
+from examples.indoor_design.plane_detection.utils import get_camera_intrinsics_from_exif_in_heic_image
 
 # -------------------------------------------------
 # Load gaussian splats from PLY
@@ -98,24 +100,29 @@ import torch
 
 
 def render_gaussians(
-    means, covs, colors, opacity, K,
-    R_obj, t_obj, scale,
-    R_cam, t_cam,
-    H, W,
+    means: np.ndarray,
+    covs: np.ndarray,
+    colors: np.ndarray,
+    opacity: np.ndarray,
+    K: np.ndarray,
+    R_obj: np.ndarray,
+    t_obj: np.ndarray,
+    scale: float,
+    R_room: np.ndarray,
+    t_corner: np.ndarray,
+    img: np.ndarray,
     device="cpu"
 ):
     means = torch.tensor(means, device=device, dtype=torch.float32)
     covs = torch.tensor(covs, device=device, dtype=torch.float32)
     colors = torch.tensor(colors, device=device, dtype=torch.float32)
-
     opacity = torch.tensor(opacity, device=device, dtype=torch.float32)
     opacity = torch.sigmoid(opacity)
-
     K = torch.tensor(K, device=device, dtype=torch.float32)
     R_obj = torch.tensor(R_obj, device=device, dtype=torch.float32)
     t_obj = torch.tensor(t_obj, device=device, dtype=torch.float32)
-    R_cam = torch.tensor(R_cam, device=device, dtype=torch.float32)
-    t_cam = torch.tensor(t_cam, device=device, dtype=torch.float32)
+    R_room = torch.tensor(R_room, device=device, dtype=torch.float32)
+    t_corner = torch.tensor(t_corner, device=device, dtype=torch.float32)
 
     # -----------------------------
     # Object → world transform
@@ -126,8 +133,8 @@ def render_gaussians(
     # -----------------------------
     # World → camera transform
     # -----------------------------
-    means_cam = (R_cam @ means_w.T).T + t_cam
-    covs_cam = torch.einsum("ij,njk,kl->nil", R_cam, covs_w, R_cam.T)
+    means_cam = (R_room @ means_w.T).T + t_corner
+    covs_cam = torch.einsum("ij,njk,kl->nil", R_room, covs_w, R_room.T)
 
     # -----------------------------
     # Projection
@@ -138,14 +145,13 @@ def render_gaussians(
 
     # grid
     ys, xs = torch.meshgrid(
-        torch.arange(H, device=device),
-        torch.arange(W, device=device),
+        torch.arange(img.shape[0], device=device),
+        torch.arange(img.shape[1], device=device),
         indexing="ij"
     )
     grid = torch.stack([xs, ys], dim=-1).float()
 
-    img = torch.zeros(H, W, 3, device=device)
-    T = torch.ones(H, W, device=device)
+    T = torch.ones(img.shape[0], img.shape[1], device=device)
 
     order = torch.argsort(means_cam[:,2], descending=True)
 
@@ -166,7 +172,7 @@ def render_gaussians(
         d = d.reshape(-1,2)
 
         w = torch.exp(-0.5*(d @ invS * d).sum(dim=1))
-        w = w.reshape(H,W)
+        w = w.reshape(img.shape[0], img.shape[1])
 
         a = opacity[idx]*w
         img += (T.unsqueeze(-1)*a.unsqueeze(-1)*colors[idx])
@@ -188,37 +194,44 @@ def show_plotly(img: np.ndarray) -> None:
 
 @click.command()
 @click.option(
-    "--file-path",
+    "--object-model-file-path",
     type=click.Path(exists=True),
     required=True,
-    help="Path to the PLY file to render.",
+    help="Path to the object PLY file containing Gaussian splat data.",
+)
+@click.option(
+    "--object-metadata-path",
+    type=click.Path(exists=True),
+    required=True,
+    help="Path to the object metadata JSON file.",
 )
 @click.option(
     "--image-path",
     type=click.Path(exists=True),
     required=True,
-    help="Path to the image to render into.",
+    help="Path to the image file to render the object into.",
 )
 @click.option(
     "--room-axes-path",
     type=click.Path(exists=True),
     required=True,
-    help="Path to the room axes file.",
+    help="Path to the room axes JSON file.",
 )
 @click.option(
     "--room-length",
     type=float,
     required=True,
-    help="Length of the room.",
+    help="Length of the room in meters.",
 )
 @click.option(
     "--sofa-length",
     type=float,
     required=True,
-    help="Length of the sofa.",
+    help="Length of the sofa in meters.",
 )
 def main(
-    file_path: str | Path,
+    object_model_file_path: str | Path,
+    object_metadata_path: str | Path,
     image_path: str | Path,
     room_axes_path: str | Path,
     room_length: float,
@@ -227,27 +240,35 @@ def main(
     """Load Gaussian splats from a PLY file and render them.
 
     Args:
-        file_path: Path to the PLY file containing Gaussian splat data.
+        object_model_file_path: Path to the PLY file containing Gaussian splat data.
+        object_metadata_path: Path to the object metadata JSON file.
+        image_path: Path to the image to render into.
+        room_axes_path: Path to the room axes file.
+        room_length: Length of the room.
+        sofa_length: Length of the sofa.
     """
-    means, scales, rots, opacity, colors = load_gaussians_from_ply(str(file_path))
+    with open(object_metadata_path, "r") as f:
+        metadata = json.load(f)
+
+    R_obj = np.array(metadata["rotation"])
+    t_obj = np.array(metadata["translation"])
+    scale = metadata["scale"]
+
+    means, scales, rots, opacity, colors = load_gaussians_from_ply(str(object_model_file_path))
+
+    fx, fy, cx, cy = get_camera_intrinsics_from_exif_in_heic_image(str(image_path))
+    img = np.array(Image.open(image_path))
+
+    K = np.array([[fx, 0, cx], [0, fy, cy], [0, 0, 1]])
+
+    with open(room_axes_path, "r") as f:
+        room_axes = json.load(f)
+
+    R_room = np.array(room_axes["R_room"])
+    t_corner = np.array(room_axes["t_corner"])
+
     covs = build_covariances(scales, rots)
-
-    image = Image.open(image_path)
-
-    H, W = 512, 512
-    fx = fy = 250
-
-    K = np.array([[fx, 0, W / 2], [0, fy, H / 2], [0, 0, 1]])
-
-    R_obj = np.eye(3)
-    t_obj = np.zeros(3)
-    scale = 1.0
-
-    R_cam = np.eye(3)
-    d = 2.5 * np.linalg.norm(means, axis=1).max()
-    t_cam = np.array([0,0,d])
-
-    img = render_gaussians(means, covs, colors, opacity, K, R_obj, t_obj, scale, R_cam, t_cam, H, W, device="cpu")
+    img = render_gaussians(means, covs, colors, opacity, K, R_obj, t_obj, scale, R_room, t_corner, img, device="cpu")
     show_plotly(img)
 
 
