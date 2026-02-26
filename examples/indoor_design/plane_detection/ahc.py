@@ -36,7 +36,7 @@ from typing import Dict, Set, Tuple, List, Optional
 import click
 import numpy as np
 
-from examples.plane_detection.visualizations import (
+from examples.indoor_design.plane_detection.visualizations import (
     get_plane_visualization_fig,
 )
 

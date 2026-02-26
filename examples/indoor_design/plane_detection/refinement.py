@@ -11,7 +11,7 @@ from typing import Dict, List, Set, Tuple
 
 import numpy as np
 
-from examples.plane_detection.ahc import (
+from examples.indoor_design.plane_detection.ahc import (
     Graph,
     Node,
     Stats3D,

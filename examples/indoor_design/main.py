@@ -96,7 +96,7 @@ def run_workflow(
 @click.option(
     "--workflow",
     type=click.Path(exists=True, dir_okay=False, path_type=Path),
-    default=Path(__file__).resolve().parent / "default.json",
+    default=Path(__file__).resolve().parent / "workflows" / "default.json",
     show_default=True,
     help="Path to workflow definition JSON. Use default_debug.json to save intermediate step outputs for debugging.",
 )
