@@ -6,6 +6,7 @@ RUN apt-get update -y && apt-get install -y \
     git \
     unzip \
     libbz2-dev \
+    libssl-dev \
     libsqlite3-dev \
     zlib1g-dev \
     liblzma-dev \
@@ -159,6 +160,7 @@ RUN apt-get update -y && apt-get install -y \
     git \
     unzip \
     libbz2-dev \
+    libssl-dev \
     libsqlite3-dev \
     zlib1g-dev \
     liblzma-dev \
