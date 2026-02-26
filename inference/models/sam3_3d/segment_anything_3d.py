@@ -360,7 +360,7 @@ class SegmentAnything3_3D_Objects(RoboflowCoreModel):
     ) -> Sam3_3D_Objects_Response:
         with self._state_lock:
             t1 = perf_counter()
-            raw_result = self.create_3d(**request.dict())
+            raw_result = self.create_3d(**request.model_dump())
             inference_time = perf_counter() - t1
             return convert_3d_objects_result_to_api_response(
                 raw_result=raw_result,
@@ -371,6 +371,12 @@ class SegmentAnything3_3D_Objects(RoboflowCoreModel):
         self,
         image: Optional[InferenceRequestImage],
         mask_input: Optional[Any] = None,
+        *,
+        output_meshes: bool = True,
+        output_scene: bool = True,
+        with_mesh_postprocess: bool = True,
+        with_texture_baking: bool = True,
+        use_distillations: bool = False,
         **kwargs,
     ):
         """
@@ -404,24 +410,46 @@ class SegmentAnything3_3D_Objects(RoboflowCoreModel):
             else:
                 masks = [convert_mask_to_binary(m, image_shape) for m in mask_input]
 
+            # NOTE: mesh depends on gaussian, so we always decode gaussian
+            decode_formats = ["gaussian"]
+            if output_meshes:
+                decode_formats.append("mesh")
+
             outputs = []
             for mask in masks:
-                result = self.pipeline.run(image=image_np, mask=mask)
+                result = self.pipeline.run(
+                    image=image_np,
+                    mask=mask,
+                    decode_formats=decode_formats,
+                    with_mesh_postprocess=with_mesh_postprocess,
+                    with_texture_baking=with_texture_baking,
+                    use_stage1_distillation=use_distillations,
+                    use_stage2_distillation=use_distillations,
+                )
                 outputs.append(result)
 
             if len(outputs) == 1:
                 result = outputs[0]
-                scene_gs = ready_gaussian_for_video_rendering(result["gs"])
+                scene_gs = (
+                    ready_gaussian_for_video_rendering(result["gs"])
+                    if output_scene
+                    else None
+                )
+                glb = result["glb"] if output_meshes else None
                 return {
                     "gs": scene_gs,
-                    "glb": result["glb"],
+                    "glb": glb,
                     "objects": outputs,
                 }
             else:
-                scene_gs = make_scene(*outputs)
-                scene_gs = ready_gaussian_for_video_rendering(scene_gs)
-                scene_gs = apply_gaussian_view_correction(scene_gs)
-                scene_glb = make_scene_glb(*outputs)
+                if output_scene:
+                    scene_gs = make_scene(*outputs)
+                    scene_gs = ready_gaussian_for_video_rendering(scene_gs)
+                    scene_gs = apply_gaussian_view_correction(scene_gs)
+                    scene_glb = make_scene_glb(*outputs) if output_meshes else None
+                else:
+                    scene_gs = None
+                    scene_glb = None
                 return {
                     "gs": scene_gs,
                     "glb": scene_glb,
