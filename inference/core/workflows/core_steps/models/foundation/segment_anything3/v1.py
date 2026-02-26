@@ -24,7 +24,6 @@ from inference.core.env import (
     SAM3_EXEC_MODE,
     WORKFLOWS_REMOTE_API_TARGET,
 )
-from inference_sdk import InferenceHTTPClient
 from inference.core.managers.base import ModelManager
 from inference.core.roboflow_api import build_roboflow_api_headers
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
@@ -58,6 +57,7 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
+from inference_sdk import InferenceHTTPClient
 
 DETECTIONS_CLASS_NAME_FIELD = "class_name"
 DETECTION_ID_FIELD = "detection_id"
