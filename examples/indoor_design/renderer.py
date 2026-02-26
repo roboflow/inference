@@ -6,7 +6,7 @@ import click
 from pathlib import Path
 from tqdm import tqdm
 import torch
-from PIL import Image
+from pillow_heif import open_heif
 
 
 from examples.indoor_design.plane_detection.utils import get_camera_intrinsics_from_exif_in_heic_image
@@ -96,8 +96,6 @@ def build_covariances(scales: np.ndarray, rots: np.ndarray) -> np.ndarray:
         covs.append(R @ S @ R.T)
     return np.array(covs)
 
-import torch
-
 
 def render_gaussians(
     means: np.ndarray,
@@ -106,7 +104,6 @@ def render_gaussians(
     opacity: np.ndarray,
     K: np.ndarray,
     R_obj: np.ndarray,
-    t_obj: np.ndarray,
     scale: float,
     sofa_offset: np.ndarray,
     R_room: np.ndarray,
@@ -121,10 +118,11 @@ def render_gaussians(
     opacity = torch.sigmoid(opacity)
     K = torch.tensor(K, device=device, dtype=torch.float32)
     R_obj = torch.tensor(R_obj, device=device, dtype=torch.float32)
-    t_obj = torch.tensor(t_obj, device=device, dtype=torch.float32)
     R_room = torch.tensor(R_room, device=device, dtype=torch.float32)
     t_corner = torch.tensor(t_corner, device=device, dtype=torch.float32)
     sofa_offset = torch.tensor(sofa_offset, device=device, dtype=torch.float32)
+    scale = torch.tensor(scale, device=device, dtype=torch.float32)
+    img = torch.tensor(img, device=device, dtype=torch.float32) / 255.0
 
     # -----------------------------
     # Object → room transform (canonical object pose + manual placement)
@@ -252,13 +250,12 @@ def main(
     with open(object_metadata_path, "r") as f:
         metadata = json.load(f)
 
-    R_obj = np.array(metadata["rotation"])
-    t_obj = np.array(metadata["translation"])
+    R_obj = quat_to_rot(np.array(metadata["rotation"]))
 
     # -------------------------------------------------
     # Scale normalization: match sofa size to room size
     # -------------------------------------------------
-    sofa_scale_meta = metadata["scale"]
+    sofa_scale_meta = np.array(metadata["scale"])
 
     # Assume the sofa reconstruction length corresponds to `sofa_length`
     # We scale it so that it matches real-world dimensions relative to the room
@@ -267,7 +264,7 @@ def main(
     means, scales, rots, opacity, colors = load_gaussians_from_ply(str(object_model_file_path))
 
     fx, fy, cx, cy = get_camera_intrinsics_from_exif_in_heic_image(str(image_path))
-    img = np.array(Image.open(image_path))
+    img = np.array(open_heif(image_path).to_pillow())
 
     K = np.array([[fx, 0, cx], [0, fy, cy], [0, 0, 1]])
 
@@ -280,7 +277,7 @@ def main(
     sofa_offset = np.array([0.2, 0.0, 0.05])  # Sofa against left wall, 0.2m from corner
 
     covs = build_covariances(scales, rots)
-    img = render_gaussians(means, covs, colors, opacity, K, R_obj, t_obj, scale, sofa_offset, R_room, t_corner, img, device="cpu")
+    img = render_gaussians(means, covs, colors, opacity, K, R_obj, scale, sofa_offset, R_room, t_corner, img, device="cpu")
     show_plotly(img)
 
 
