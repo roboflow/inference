@@ -281,7 +281,10 @@ from inference.core.version import __version__
 try:
     from inference_sdk.config import (
         EXECUTION_ID_HEADER,
+        INTERNAL_REMOTE_EXEC_REQ_HEADER,
+        INTERNAL_REMOTE_EXEC_REQ_VERIFIED_HEADER,
         RemoteProcessingTimeCollector,
+        apply_duration_minimum,
         execution_id,
         remote_processing_times,
     )
@@ -290,6 +293,9 @@ except ImportError:
     remote_processing_times = None
     RemoteProcessingTimeCollector = None
     EXECUTION_ID_HEADER = None
+    INTERNAL_REMOTE_EXEC_REQ_HEADER = None
+    INTERNAL_REMOTE_EXEC_REQ_VERIFIED_HEADER = None
+    apply_duration_minimum = None
 
 
 def get_content_type(request: Request) -> str:
@@ -316,6 +322,15 @@ class GCPServerlessMiddleware(BaseHTTPMiddleware):
             if not execution_id_value:
                 execution_id_value = f"{time.time_ns()}_{uuid4().hex[:4]}"
             execution_id.set(execution_id_value)
+        is_verified_internal = False
+        if apply_duration_minimum is not None:
+            is_verified_internal = bool(
+                ROBOFLOW_INTERNAL_SERVICE_SECRET
+                and INTERNAL_REMOTE_EXEC_REQ_HEADER
+                and request.headers.get(INTERNAL_REMOTE_EXEC_REQ_HEADER)
+                == ROBOFLOW_INTERNAL_SERVICE_SECRET
+            )
+            apply_duration_minimum.set(not is_verified_internal)
         collector = None
         if (
             WORKFLOWS_REMOTE_EXECUTION_TIME_FORWARDING
@@ -335,6 +350,10 @@ class GCPServerlessMiddleware(BaseHTTPMiddleware):
                 response.headers[REMOTE_PROCESSING_TIMES_HEADER] = detail
         if execution_id is not None:
             response.headers[EXECUTION_ID_HEADER] = execution_id_value
+        if INTERNAL_REMOTE_EXEC_REQ_VERIFIED_HEADER is not None:
+            response.headers[INTERNAL_REMOTE_EXEC_REQ_VERIFIED_HEADER] = str(
+                is_verified_internal
+            ).lower()
         return response
 
 
