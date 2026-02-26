@@ -322,7 +322,7 @@ class GCPServerlessMiddleware(BaseHTTPMiddleware):
             execution_id.set(execution_id_value)
         is_verified_internal = False
         if apply_duration_minimum is not None:
-            is_verified_internal = (
+            is_verified_internal = bool(
                 ROBOFLOW_INTERNAL_SERVICE_SECRET
                 and INTERNAL_REMOTE_EXEC_REQ_HEADER
                 and request.headers.get(INTERNAL_REMOTE_EXEC_REQ_HEADER)
