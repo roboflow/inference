@@ -17,10 +17,14 @@ from inference.core.entities.responses.inference import (
 from inference.core.entities.responses.sam3 import Sam3SegmentationPrediction
 from inference.core.env import (
     API_BASE_URL,
+    HOSTED_CORE_MODEL_URL,
+    LOCAL_INFERENCE_API_URL,
     ROBOFLOW_INTERNAL_SERVICE_NAME,
     ROBOFLOW_INTERNAL_SERVICE_SECRET,
     SAM3_EXEC_MODE,
+    WORKFLOWS_REMOTE_API_TARGET,
 )
+from inference_sdk import InferenceHTTPClient
 from inference.core.managers.base import ModelManager
 from inference.core.roboflow_api import build_roboflow_api_headers
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
@@ -223,20 +227,18 @@ class SegmentAnything3BlockV2(WorkflowBlock):
         else:
             raise ValueError(f"Invalid class names type: {type(class_names)}")
 
-        exec_mode = self._step_execution_mode
-        if SAM3_EXEC_MODE == "local":
-            exec_mode = self._step_execution_mode
-        elif SAM3_EXEC_MODE == "remote":
-            exec_mode = (
-                StepExecutionMode.REMOTE
-            )  # if SAM3_EXEC_MODE == "remote" then force remote execution mode only
-        else:
-            raise ValueError(
-                f"Invalid SAM3 execution mode in ENVIRONMENT var SAM3_EXEC_MODE (local or remote): {SAM3_EXEC_MODE}"
+        if SAM3_EXEC_MODE == "remote":
+            logger.debug("Running SAM3 v2 via inference proxy (SAM3_EXEC_MODE=remote)")
+            return self.run_via_request(
+                images=images,
+                class_names=class_names,
+                confidence=confidence,
+                per_class_confidence=per_class_confidence,
+                apply_nms=apply_nms,
+                nms_iou_threshold=nms_iou_threshold,
             )
-
-        if exec_mode is StepExecutionMode.LOCAL:
-            logger.debug(f"Running SAM3 locally")
+        elif self._step_execution_mode is StepExecutionMode.LOCAL:
+            logger.debug("Running SAM3 v2 locally")
             return self.run_locally(
                 images=images,
                 model_id=model_id,
@@ -246,10 +248,11 @@ class SegmentAnything3BlockV2(WorkflowBlock):
                 apply_nms=apply_nms,
                 nms_iou_threshold=nms_iou_threshold,
             )
-        elif exec_mode is StepExecutionMode.REMOTE:
-            logger.debug(f"Running SAM3 remotely")
-            return self.run_via_request(
+        elif self._step_execution_mode is StepExecutionMode.REMOTE:
+            logger.debug("Running SAM3 v2 remotely via SDK")
+            return self.run_remotely(
                 images=images,
+                model_id=model_id,
                 class_names=class_names,
                 confidence=confidence,
                 per_class_confidence=per_class_confidence,
@@ -322,6 +325,88 @@ class SegmentAnything3BlockV2(WorkflowBlock):
                 class_name = class_names[idx] if idx < len(class_names) else None
                 class_pred = convert_sam3_segmentation_response_to_inference_instances_seg_response(
                     sam3_segmentation_predictions=prompt_result.predictions,
+                    image=single_image,
+                    prompt_class_ids=prompt_class_ids,
+                    prompt_class_names=prompt_class_names,
+                    prompt_detection_ids=prompt_detection_ids,
+                    confidence=confidence,
+                    text_prompt=class_name,
+                    specific_class_id=idx,
+                )
+                class_predictions.extend(class_pred.predictions)
+
+            image_width = single_image.numpy_image.shape[1]
+            image_height = single_image.numpy_image.shape[0]
+            final_inference_prediction = InstanceSegmentationInferenceResponse(
+                predictions=class_predictions,
+                image=InferenceResponseImage(width=image_width, height=image_height),
+            )
+            predictions.append(final_inference_prediction)
+
+        predictions = [
+            e.model_dump(by_alias=True, exclude_none=True) for e in predictions
+        ]
+        return self._post_process_result(
+            images=images,
+            predictions=predictions,
+        )
+
+    def run_remotely(
+        self,
+        images: Batch[WorkflowImageData],
+        model_id: str,
+        class_names: Optional[List[str]],
+        confidence: float,
+        per_class_confidence: Optional[List[float]] = None,
+        apply_nms: bool = True,
+        nms_iou_threshold: float = 0.9,
+    ) -> BlockResult:
+        predictions = []
+        if class_names is None:
+            class_names = []
+        if len(class_names) == 0:
+            class_names.append(None)
+
+        api_url = (
+            LOCAL_INFERENCE_API_URL
+            if WORKFLOWS_REMOTE_API_TARGET != "hosted"
+            else HOSTED_CORE_MODEL_URL
+        )
+        client = InferenceHTTPClient(
+            api_url=api_url,
+            api_key=self._api_key,
+        )
+        if WORKFLOWS_REMOTE_API_TARGET == "hosted":
+            client.select_api_v0()
+
+        for single_image in images:
+            prompt_class_ids: List[Optional[int]] = []
+            prompt_class_names: List[Optional[str]] = []
+            prompt_detection_ids: List[Optional[str]] = []
+
+            http_prompts: List[dict] = []
+            for idx, class_name in enumerate(class_names):
+                prompt_data = {"type": "text", "text": class_name}
+                if per_class_confidence is not None:
+                    prompt_data["output_prob_thresh"] = per_class_confidence[idx]
+                http_prompts.append(prompt_data)
+
+            resp_json = client.sam3_concept_segment(
+                inference_input=single_image.base64_image,
+                prompts=http_prompts,
+                model_id=model_id,
+                output_prob_thresh=confidence,
+                nms_iou_threshold=nms_iou_threshold if apply_nms else None,
+            )
+
+            class_predictions: List[InstanceSegmentationPrediction] = []
+            for prompt_result in resp_json.get("prompt_results", []):
+                idx = prompt_result.get("prompt_index", 0)
+                class_name = class_names[idx] if idx < len(class_names) else None
+                raw_predictions = prompt_result.get("predictions", [])
+                adapted_predictions = [SimpleNamespace(**p) for p in raw_predictions]
+                class_pred = convert_sam3_segmentation_response_to_inference_instances_seg_response(
+                    sam3_segmentation_predictions=adapted_predictions,  # type: ignore[arg-type]
                     image=single_image,
                     prompt_class_ids=prompt_class_ids,
                     prompt_class_names=prompt_class_names,

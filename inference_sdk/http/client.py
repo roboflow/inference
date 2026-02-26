@@ -1957,6 +1957,197 @@ class InferenceHTTPClient:
         )
         return responses[0]
 
+    @wrap_errors
+    def sam3_concept_segment(
+        self,
+        inference_input: Union[ImagesReference, List[ImagesReference]],
+        prompts: List[dict],
+        model_id: str = "sam3/sam3_final",
+        output_prob_thresh: float = 0.5,
+        nms_iou_threshold: Optional[float] = None,
+        format: str = "polygon",
+    ) -> Union[dict, List[dict]]:
+        """Run SAM3 promptable concept segmentation (PCS) on input image(s).
+
+        Performs zero-shot instance segmentation using text or visual prompts.
+
+        Args:
+            inference_input: Input image(s) for segmentation.
+            prompts: List of prompt dicts, each with keys like "type", "text",
+                "output_prob_thresh", "boxes", "box_labels".
+            model_id: SAM3 model to use. Defaults to "sam3/sam3_final".
+            output_prob_thresh: Global confidence threshold. Defaults to 0.5.
+            nms_iou_threshold: IoU threshold for cross-prompt NMS. None disables NMS.
+            format: Output mask format, "polygon" or "rle". Defaults to "polygon".
+
+        Returns:
+            Segmentation results with prompt_results containing predictions.
+        """
+        extra_payload = {
+            "model_id": model_id,
+            "prompts": prompts,
+            "output_prob_thresh": output_prob_thresh,
+            "format": format,
+        }
+        if nms_iou_threshold is not None:
+            extra_payload["nms_iou_threshold"] = nms_iou_threshold
+        return self._post_images(
+            inference_input=inference_input,
+            endpoint="/sam3/concept_segment",
+            extra_payload=extra_payload,
+        )
+
+    @wrap_errors_async
+    async def sam3_concept_segment_async(
+        self,
+        inference_input: Union[ImagesReference, List[ImagesReference]],
+        prompts: List[dict],
+        model_id: str = "sam3/sam3_final",
+        output_prob_thresh: float = 0.5,
+        nms_iou_threshold: Optional[float] = None,
+        format: str = "polygon",
+    ) -> Union[dict, List[dict]]:
+        """Run SAM3 promptable concept segmentation (PCS) asynchronously.
+
+        Args:
+            inference_input: Input image(s) for segmentation.
+            prompts: List of prompt dicts.
+            model_id: SAM3 model to use. Defaults to "sam3/sam3_final".
+            output_prob_thresh: Global confidence threshold. Defaults to 0.5.
+            nms_iou_threshold: IoU threshold for cross-prompt NMS. None disables NMS.
+            format: Output mask format, "polygon" or "rle". Defaults to "polygon".
+
+        Returns:
+            Segmentation results with prompt_results containing predictions.
+        """
+        extra_payload = {
+            "model_id": model_id,
+            "prompts": prompts,
+            "output_prob_thresh": output_prob_thresh,
+            "format": format,
+        }
+        if nms_iou_threshold is not None:
+            extra_payload["nms_iou_threshold"] = nms_iou_threshold
+        return await self._post_images_async(
+            inference_input=inference_input,
+            endpoint="/sam3/concept_segment",
+            extra_payload=extra_payload,
+        )
+
+    @wrap_errors
+    def sam3_visual_segment(
+        self,
+        inference_input: Union[ImagesReference, List[ImagesReference]],
+        prompts: Optional[List[dict]] = None,
+        multimask_output: bool = True,
+        mask_input_format: str = "json",
+    ) -> Union[dict, List[dict]]:
+        """Run SAM3 promptable visual segmentation (PVS) on input image(s).
+
+        Performs instance segmentation using point or box prompts.
+
+        Args:
+            inference_input: Input image(s) for segmentation.
+            prompts: List of prompt dicts with "box" and/or "points" keys.
+                Defaults to None (automatic segmentation).
+            multimask_output: Whether to output multiple masks per prompt.
+                Defaults to True.
+            mask_input_format: Format for mask output. Defaults to "json".
+
+        Returns:
+            Segmentation results containing predictions with masks.
+        """
+        extra_payload = {
+            "multimask_output": multimask_output,
+            "format": mask_input_format,
+        }
+        if prompts is not None:
+            extra_payload["prompts"] = {"prompts": prompts}
+        return self._post_images(
+            inference_input=inference_input,
+            endpoint="/sam3/visual_segment",
+            extra_payload=extra_payload,
+        )
+
+    @wrap_errors_async
+    async def sam3_visual_segment_async(
+        self,
+        inference_input: Union[ImagesReference, List[ImagesReference]],
+        prompts: Optional[List[dict]] = None,
+        multimask_output: bool = True,
+        mask_input_format: str = "json",
+    ) -> Union[dict, List[dict]]:
+        """Run SAM3 promptable visual segmentation (PVS) asynchronously.
+
+        Args:
+            inference_input: Input image(s) for segmentation.
+            prompts: List of prompt dicts. Defaults to None.
+            multimask_output: Whether to output multiple masks. Defaults to True.
+            mask_input_format: Format for mask output. Defaults to "json".
+
+        Returns:
+            Segmentation results containing predictions with masks.
+        """
+        extra_payload = {
+            "multimask_output": multimask_output,
+            "format": mask_input_format,
+        }
+        if prompts is not None:
+            extra_payload["prompts"] = {"prompts": prompts}
+        return await self._post_images_async(
+            inference_input=inference_input,
+            endpoint="/sam3/visual_segment",
+            extra_payload=extra_payload,
+        )
+
+    @wrap_errors
+    def sam3_embed_image(
+        self,
+        inference_input: Union[ImagesReference, List[ImagesReference]],
+        image_id: Optional[str] = None,
+    ) -> Union[dict, List[dict]]:
+        """Generate SAM3 image embeddings.
+
+        Args:
+            inference_input: Input image(s) to embed.
+            image_id: Optional cache ID for embeddings. Defaults to None.
+
+        Returns:
+            Embedding results with image_id and processing time.
+        """
+        extra_payload = {}
+        if image_id is not None:
+            extra_payload["image_id"] = image_id
+        return self._post_images(
+            inference_input=inference_input,
+            endpoint="/sam3/embed_image",
+            extra_payload=extra_payload if extra_payload else None,
+        )
+
+    @wrap_errors_async
+    async def sam3_embed_image_async(
+        self,
+        inference_input: Union[ImagesReference, List[ImagesReference]],
+        image_id: Optional[str] = None,
+    ) -> Union[dict, List[dict]]:
+        """Generate SAM3 image embeddings asynchronously.
+
+        Args:
+            inference_input: Input image(s) to embed.
+            image_id: Optional cache ID for embeddings. Defaults to None.
+
+        Returns:
+            Embedding results with image_id and processing time.
+        """
+        extra_payload = {}
+        if image_id is not None:
+            extra_payload["image_id"] = image_id
+        return await self._post_images_async(
+            inference_input=inference_input,
+            endpoint="/sam3/embed_image",
+            extra_payload=extra_payload if extra_payload else None,
+        )
+
     @deprecated(
         reason="Please use run_workflow(...) method. This method will be removed end of Q2 2024"
     )

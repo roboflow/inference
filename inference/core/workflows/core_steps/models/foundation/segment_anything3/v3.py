@@ -17,10 +17,14 @@ from inference.core.entities.responses.inference import (
 )
 from inference.core.env import (
     API_BASE_URL,
+    HOSTED_CORE_MODEL_URL,
+    LOCAL_INFERENCE_API_URL,
     ROBOFLOW_INTERNAL_SERVICE_NAME,
     ROBOFLOW_INTERNAL_SERVICE_SECRET,
     SAM3_EXEC_MODE,
+    WORKFLOWS_REMOTE_API_TARGET,
 )
+from inference_sdk import InferenceHTTPClient
 from inference.core.managers.base import ModelManager
 from inference.core.roboflow_api import build_roboflow_api_headers
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
@@ -242,17 +246,18 @@ class SegmentAnything3BlockV3(WorkflowBlock):
         else:
             raise ValueError(f"Invalid class names type: {type(class_names)}")
 
-        exec_mode = self._step_execution_mode
-        if SAM3_EXEC_MODE == "local":
-            exec_mode = self._step_execution_mode
-        elif SAM3_EXEC_MODE == "remote":
-            exec_mode = StepExecutionMode.REMOTE
-        else:
-            raise ValueError(
-                f"Invalid SAM3 execution mode in ENVIRONMENT var SAM3_EXEC_MODE (local or remote): {SAM3_EXEC_MODE}"
+        if SAM3_EXEC_MODE == "remote":
+            logger.debug("Running SAM3 v3 via inference proxy (SAM3_EXEC_MODE=remote)")
+            return self.run_via_request(
+                images=images,
+                class_names=class_names,
+                confidence=confidence,
+                per_class_confidence=per_class_confidence,
+                apply_nms=apply_nms,
+                nms_iou_threshold=nms_iou_threshold,
+                output_format=output_format,
             )
-
-        if exec_mode is StepExecutionMode.LOCAL:
+        elif self._step_execution_mode is StepExecutionMode.LOCAL:
             logger.debug(f"Running SAM3 v3 locally with output_format={output_format}")
             return self.run_locally(
                 images=images,
@@ -264,10 +269,11 @@ class SegmentAnything3BlockV3(WorkflowBlock):
                 nms_iou_threshold=nms_iou_threshold,
                 output_format=output_format,
             )
-        elif exec_mode is StepExecutionMode.REMOTE:
-            logger.debug(f"Running SAM3 v3 remotely with output_format={output_format}")
-            return self.run_via_request(
+        elif self._step_execution_mode is StepExecutionMode.REMOTE:
+            logger.debug("Running SAM3 v3 remotely via SDK")
+            return self.run_remotely(
                 images=images,
+                model_id=model_id,
                 class_names=class_names,
                 confidence=confidence,
                 per_class_confidence=per_class_confidence,
@@ -353,6 +359,92 @@ class SegmentAnything3BlockV3(WorkflowBlock):
                     confidence=confidence,
                     image_height=image_height,
                     image_width=image_width,
+                )
+                detections = sv.Detections.from_inference(inference_response)
+                detections[DETECTION_ID_KEY] = np.array(
+                    [p.detection_id for p in inference_response.predictions]
+                )
+                detections[PARENT_ID_KEY] = np.array([""] * len(detections))
+                detections[IMAGE_DIMENSIONS_KEY] = np.array(
+                    [[image_height, image_width]] * len(detections)
+                )
+
+            all_detections.append(detections)
+
+        return self._post_process_result(
+            images=images,
+            predictions=all_detections,
+            output_format=output_format,
+        )
+
+    def run_remotely(
+        self,
+        images: Batch[WorkflowImageData],
+        model_id: str,
+        class_names: Optional[List[str]],
+        confidence: float,
+        per_class_confidence: Optional[List[float]] = None,
+        apply_nms: bool = True,
+        nms_iou_threshold: float = 0.9,
+        output_format: Literal["rle", "polygons"] = "rle",
+    ) -> BlockResult:
+        if class_names is None:
+            class_names = []
+        if len(class_names) == 0:
+            class_names.append(None)
+
+        api_url = (
+            LOCAL_INFERENCE_API_URL
+            if WORKFLOWS_REMOTE_API_TARGET != "hosted"
+            else HOSTED_CORE_MODEL_URL
+        )
+        client = InferenceHTTPClient(
+            api_url=api_url,
+            api_key=self._api_key,
+        )
+        if WORKFLOWS_REMOTE_API_TARGET == "hosted":
+            client.select_api_v0()
+
+        model_format = "rle" if output_format == "rle" else "polygon"
+
+        all_detections = []
+        for single_image in images:
+            http_prompts: List[dict] = []
+            for idx, class_name in enumerate(class_names):
+                prompt_data = {"type": "text", "text": class_name}
+                if per_class_confidence is not None:
+                    prompt_data["output_prob_thresh"] = per_class_confidence[idx]
+                http_prompts.append(prompt_data)
+
+            resp_json = client.sam3_concept_segment(
+                inference_input=single_image.base64_image,
+                prompts=http_prompts,
+                model_id=model_id,
+                output_prob_thresh=confidence,
+                nms_iou_threshold=nms_iou_threshold if apply_nms else None,
+                format=model_format,
+            )
+
+            image_width = single_image.numpy_image.shape[1]
+            image_height = single_image.numpy_image.shape[0]
+
+            if output_format == "rle":
+                detections = self._convert_rle_json_response_to_sv_detections(
+                    resp_json=resp_json,
+                    class_names=class_names,
+                    confidence=confidence,
+                    image_height=image_height,
+                    image_width=image_width,
+                )
+            else:
+                inference_response = (
+                    self._convert_polygon_json_response_to_inference_format(
+                        resp_json=resp_json,
+                        class_names=class_names,
+                        confidence=confidence,
+                        image_height=image_height,
+                        image_width=image_width,
+                    )
                 )
                 detections = sv.Detections.from_inference(inference_response)
                 detections[DETECTION_ID_KEY] = np.array(
