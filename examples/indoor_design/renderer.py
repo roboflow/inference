@@ -8,6 +8,9 @@ from tqdm import tqdm
 import torch
 from pillow_heif import open_heif
 from PIL import Image
+from collections.abc import Callable
+
+import matplotlib.pyplot as plt
 
 from examples.indoor_design.plane_detection.utils import get_camera_intrinsics_from_exif_in_heic_image
 
@@ -130,6 +133,8 @@ def render_gaussians(
     t_corner: np.ndarray,
     img: np.ndarray,
     device: str,
+    on_progress: Callable[[np.ndarray, int, int], None] | None = None,
+    progress_interval_pct: float = 5.0,
 ):
     means = torch.tensor(means, device=device, dtype=torch.float32)
     covs = torch.tensor(covs, device=device, dtype=torch.float32)
@@ -174,14 +179,18 @@ def render_gaussians(
     T = torch.ones(img.shape[0], img.shape[1], device=device)
 
     order = torch.argsort(means_cam[:,2], descending=True)
+    n_total = len(order)
+    last_reported_pct = -1.0
 
-    for idx in tqdm(order):
+    for step, idx in enumerate(tqdm(order)):
         mu = means_cam[idx]
-        x,y,z = mu
-        fx, fy = K[0,0], K[1,1]
+        x, y, z = mu
+        fx, fy = K[0, 0], K[1, 1]
 
-        J = torch.tensor([[fx/z,0,-fx*x/(z*z)],
-                          [0,fy/z,-fy*y/(z*z)]], device=device)
+        J = torch.tensor(
+            [[fx / z, 0, -fx * x / (z * z)], [0, fy / z, -fy * y / (z * z)]],
+            device=device,
+        )
 
         Sigma2D = J @ covs_cam[idx] @ J.T
         invS = torch.linalg.inv(Sigma2D)
@@ -189,16 +198,23 @@ def render_gaussians(
         center = pts_img[idx]
 
         d = grid - center
-        d = d.reshape(-1,2)
+        d = d.reshape(-1, 2)
 
-        w = torch.exp(-0.5*(d @ invS * d).sum(dim=1))
+        w = torch.exp(-0.5 * (d @ invS * d).sum(dim=1))
         w = w.reshape(img.shape[0], img.shape[1])
 
-        a = opacity[idx]*w
-        img += (T.unsqueeze(-1)*a.unsqueeze(-1)*colors[idx])
-        T *= (1-a)
+        a = opacity[idx] * w
+        img += T.unsqueeze(-1) * a.unsqueeze(-1) * colors[idx]
+        T *= 1 - a
 
-    return img.clamp(0,1).cpu().numpy()
+        if on_progress is not None:
+            pct = 100 * (step + 1) / n_total
+            if pct - last_reported_pct >= progress_interval_pct or step == n_total - 1:
+                last_reported_pct = pct
+                snapshot = img.clamp(0, 1).cpu().numpy()
+                on_progress(snapshot, step + 1, n_total)
+
+    return img.clamp(0, 1).cpu().numpy()
 
 
 def show_plotly(img: np.ndarray) -> None:
@@ -210,6 +226,31 @@ def show_plotly(img: np.ndarray) -> None:
     fig = go.Figure(go.Image(z=(img * 255).astype(np.uint8)))
     fig.update_layout(width=600, height=600)
     fig.show()
+
+
+def make_live_progress_callback() -> Callable[[np.ndarray, int, int], None]:
+    """Create a callback that updates a live matplotlib window on each invocation."""
+
+    fig = None
+    im = None
+    ax = None
+
+    def on_progress(snapshot: np.ndarray, step: int, total: int) -> None:
+        nonlocal fig, im, ax
+        if fig is None:
+            plt.ion()
+            fig, ax = plt.subplots(figsize=(6, 6))
+            im = ax.imshow(snapshot)
+            ax.axis("off")
+            fig.canvas.manager.set_window_title("Render progress")
+            plt.show(block=False)
+        im.set_data(snapshot)
+        ax.set_title(f"Rendering: {step}/{total} ({100 * step / total:.0f}%)")
+        fig.canvas.draw()
+        fig.canvas.flush_events()
+        plt.pause(0.01)
+
+    return on_progress
 
 
 @click.command()
@@ -261,6 +302,18 @@ def show_plotly(img: np.ndarray) -> None:
     required=True,
     help="Path to the output image file.",
 )
+@click.option(
+    "--visualize-progress",
+    is_flag=True,
+    default=False,
+    help="Show live visualization of how the image builds.",
+)
+@click.option(
+    "--progress-interval",
+    type=float,
+    default=5.0,
+    help="Progress interval (in %%) for updating the visualization. Default: 5%%.",
+)
 def main(
     object_model_file_path: str | Path,
     object_metadata_path: str | Path,
@@ -270,6 +323,8 @@ def main(
     sofa_length: float,
     device: str,
     output_image_path: str | Path,
+    visualize_progress: bool,
+    progress_interval: float,
 ) -> None:
     """Load Gaussian splats from a PLY file and render them.
 
@@ -303,13 +358,14 @@ def main(
     # -------------------------------------------------
     # Optional downscale for faster debugging
     # -------------------------------------------------
-    resize_factor = 0.25  # TODO: change or expose as CLI arg
+    resize_factor = 0.1  # TODO: change or expose as CLI arg
 
     if resize_factor != 1.0:
         new_h = int(img.height * resize_factor)
         new_w = int(img.width * resize_factor)
 
         img = np.array(img.resize((new_w, new_h)))
+        img = np.zeros_like(img)
 
         # scale intrinsics accordingly
         fx *= resize_factor
@@ -328,9 +384,18 @@ def main(
     sofa_offset = np.array([0.2, 0.0, 0.05])  # Sofa against left wall, 0.2m from corner
 
     covs = build_covariances(scales, rots)
-    img = render_gaussians(means, covs, colors, opacity, K, R_obj, scale, sofa_offset, R_room, t_corner, img, device)
-    
-    Image.fromarray((img * 255).astype(np.uint8)).save(output_image_path) 
+
+    on_progress_cb = make_live_progress_callback() if visualize_progress else None
+    img = render_gaussians(
+        means, covs, colors, opacity, K, R_obj, scale, sofa_offset, R_room, t_corner,
+        img, device, on_progress=on_progress_cb, progress_interval_pct=progress_interval,
+    )
+
+    Image.fromarray((img * 255).astype(np.uint8)).save(output_image_path)
+
+    if visualize_progress:
+        plt.ioff()
+        plt.show() 
 
 
 if __name__ == "__main__":
