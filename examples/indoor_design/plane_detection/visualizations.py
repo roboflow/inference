@@ -25,6 +25,7 @@ def get_plane_visualization_fig(
     input_image_path: Path,
     label_img: np.ndarray,
     opacity: float = 0.5,
+    planes_data: dict[str, dict] | None = None,
 ) -> go.Figure:
     """Visualize input image with label overlay using plotly."""
     img = cv2.imread(str(input_image_path))
@@ -56,13 +57,42 @@ def get_plane_visualization_fig(
 
     overlay_uint8 = (np.clip(overlay, 0, 1) * 255).astype(np.uint8)
 
+    def _legend_name(lbl: int) -> str:
+        if planes_data is None:
+            return f"Plane {lbl}"
+        plane_info = planes_data.get(str(lbl), planes_data.get(int(lbl)))
+        if plane_info is None:
+            return f"Plane {lbl}"
+        n, d, n_pts = plane_info["n"], plane_info["d"], plane_info["n_points"]
+        return (
+            f"Plane {lbl}<br>"
+            f"n: [{n[0]:.3f}, {n[1]:.3f}, {n[2]:.3f}]<br>"
+            f"d: {d:.4f}<br>"
+            f"n_points: {n_pts}"
+        )
+
     fig = make_subplots(rows=1, cols=2, subplot_titles=("Input image", "Plane overlay"))
     fig.add_trace(go.Image(z=img_rgb), row=1, col=1)
     fig.add_trace(go.Image(z=overlay_uint8), row=1, col=2)
+    for i, lbl in enumerate(unique_labels):
+        color_rgb = f"rgb({colors[i][0]},{colors[i][1]},{colors[i][2]})"
+        fig.add_trace(
+            go.Scatter(
+                x=[None],
+                y=[None],
+                mode="markers",
+                marker=dict(size=10, color=color_rgb),
+                name=_legend_name(lbl),
+                showlegend=True,
+            ),
+            row=1,
+            col=1,
+        )
     fig.update_layout(
         width=1200,
         height=600,
-        margin=dict(l=10, r=10, t=40, b=10),
+        margin=dict(l=10, r=220, t=40, b=10),
+        legend=dict(yanchor="top", y=1, xanchor="left", x=1.02),
     )
     fig.update_xaxes(showticklabels=False, showgrid=False)
     fig.update_yaxes(showticklabels=False, showgrid=False)
@@ -74,10 +104,8 @@ def get_point_cloud_3d_fig(
     max_points: int = 100_000,
 ) -> go.Figure:
     """Visualize organized point cloud as 3D scatter plot."""
-    H, W, _ = points.shape
-    xyz = points.reshape(-1, 3)
-    valid = np.all(np.isfinite(xyz), axis=1)
-    xyz = xyz[valid]
+    valid = np.all(np.isfinite(points), axis=1)
+    xyz = points[valid]
 
     if xyz.size == 0:
         fig = go.Figure()
