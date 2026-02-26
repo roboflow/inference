@@ -1,2 +1,3 @@
 plyfile
 plotly
+scikit-learn
