@@ -419,19 +419,31 @@ class SegmentAnything3(RoboflowCoreModel):
     def warmup(self) -> None:
         """Run a dummy forward pass to trigger CUDA kernel JIT compilation."""
         logger = logging.getLogger(__name__)
-        logger.info("SAM3 warmup: running preflight inference to compile CUDA kernels...")
+        logger.info(
+            "SAM3 warmup: running preflight inference to compile CUDA kernels..."
+        )
         try:
             dummy_size = 256
-            dummy_image = Image.new("RGB", (dummy_size, dummy_size), color=(128, 128, 128))
+            dummy_image = Image.new(
+                "RGB", (dummy_size, dummy_size), color=(128, 128, 128)
+            )
 
             with torch.inference_mode():
                 with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
                     datapoint = Sam3Datapoint(
                         find_queries=[],
-                        images=[Sam3ImageDP(data=dummy_image, objects=[], size=(dummy_size, dummy_size))],
+                        images=[
+                            Sam3ImageDP(
+                                data=dummy_image,
+                                objects=[],
+                                size=(dummy_size, dummy_size),
+                            )
+                        ],
                     )
                     datapoint.find_queries.append(
-                        _build_text_query(coco_id=0, h=dummy_size, w=dummy_size, text="warmup")
+                        _build_text_query(
+                            coco_id=0, h=dummy_size, w=dummy_size, text="warmup"
+                        )
                     )
 
                     datapoint = self.transform(datapoint)

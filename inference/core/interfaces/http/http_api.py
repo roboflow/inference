@@ -1807,9 +1807,7 @@ class HttpInterface(BaseInterface):
                         return
 
                     # Pin preloaded models so they are never evicted by the LRU cache
-                    de_aliased = resolve_roboflow_model_alias(
-                        model_id=model_id
-                    )
+                    de_aliased = resolve_roboflow_model_alias(model_id=model_id)
                     if hasattr(self.model_manager, "pin_model"):
                         self.model_manager.pin_model(de_aliased)
 
@@ -1846,9 +1844,7 @@ class HttpInterface(BaseInterface):
 
                     for model_id, future in loaded_futures:
                         try:
-                            timeout = (
-                                600 if _should_warmup(model_id) else 300
-                            )
+                            timeout = 600 if _should_warmup(model_id) else 300
                             future.result(timeout=timeout)
                         except (
                             TimeoutError,
