@@ -25,6 +25,9 @@ from inference.core.exceptions import (
 )
 from inference.core.interfaces.camera.entities import VideoFrame
 from inference.core.interfaces.camera.exceptions import StreamOperationNotAllowedError
+from inference.core.interfaces.camera.test_pattern_producer import (
+    resolve_test_pattern_reference,
+)
 from inference.core.interfaces.http.orjson_utils import (
     serialise_single_workflow_result_element,
 )
@@ -182,8 +185,13 @@ class InferencePipelineManager(Process):
                 queue_size=parsed_payload.sink_configuration.results_buffer_size,
             )
             self._buffer_sink = buffer_sink
+            video_ref = parsed_payload.video_configuration.video_reference
+            if isinstance(video_ref, list):
+                video_ref = [resolve_test_pattern_reference(r) for r in video_ref]
+            else:
+                video_ref = resolve_test_pattern_reference(video_ref)
             self._inference_pipeline = InferencePipeline.init_with_workflow(
-                video_reference=parsed_payload.video_configuration.video_reference,
+                video_reference=video_ref,
                 workflow_specification=parsed_payload.processing_configuration.workflow_specification,
                 workspace_name=parsed_payload.processing_configuration.workspace_name,
                 workflow_id=parsed_payload.processing_configuration.workflow_id,
