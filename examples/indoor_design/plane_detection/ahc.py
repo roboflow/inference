@@ -342,10 +342,6 @@ def ahc_cluster(
             merged_stats = v.stats.merge(u.stats)
 
             n_hat_merged, _, mse = merged_stats.pca_plane()
-            if angle_between_normals_deg(v.n_hat, n_hat_merged) > TDEG:
-                continue
-            if angle_between_normals_deg(u.n_hat, n_hat_merged) > TDEG:
-                continue
 
             if mse < best_mse:
                 best_mse = mse
@@ -508,7 +504,7 @@ def main(input_image_path: Path, organized_point_cloud_path: Path, output_path: 
     label_img, planes = fast_plane_extraction(
         points,
         block_h=10, block_w=10,
-        TMSE=5e-6,
+        TMSE=1e-2,
         TANG_deg=60.0,
         TNUM=800,
         TDEG=15.0,
@@ -530,8 +526,10 @@ def main(input_image_path: Path, organized_point_cloud_path: Path, output_path: 
     np.save(output_path, label_img)
 
     # Visualize input image with label overlay
-    fig = get_plane_visualization_fig(input_image_path, label_img, opacity=0.5)
-    fig.show()
+    fig = get_plane_visualization_fig(
+        input_image_path, label_img, opacity=0.5, planes_data=planes_data
+    )
+    fig.write_html("test.html", include_plotlyjs="cdn")
 
 
 if __name__ == "__main__":
