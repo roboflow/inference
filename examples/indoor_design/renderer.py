@@ -109,7 +109,7 @@ def render_gaussians(
     R_room: np.ndarray,
     t_corner: np.ndarray,
     img: np.ndarray,
-    device="cpu"
+    device: str,
 ):
     means = torch.tensor(means, device=device, dtype=torch.float32)
     covs = torch.tensor(covs, device=device, dtype=torch.float32)
@@ -229,6 +229,12 @@ def show_plotly(img: np.ndarray) -> None:
     required=True,
     help="Length of the sofa in meters.",
 )
+@click.option(
+    "--device",
+    type=str,
+    default="cpu",
+    help="Device to use for rendering.",
+)
 def main(
     object_model_file_path: str | Path,
     object_metadata_path: str | Path,
@@ -236,6 +242,7 @@ def main(
     room_axes_path: str | Path,
     room_length: float,
     sofa_length: float,
+    device: str,
 ) -> None:
     """Load Gaussian splats from a PLY file and render them.
 
@@ -264,7 +271,24 @@ def main(
     means, scales, rots, opacity, colors = load_gaussians_from_ply(str(object_model_file_path))
 
     fx, fy, cx, cy = get_camera_intrinsics_from_exif_in_heic_image(str(image_path))
-    img = np.array(open_heif(image_path).to_pillow())
+    img = open_heif(image_path).to_pillow()
+
+    # -------------------------------------------------
+    # Optional downscale for faster debugging
+    # -------------------------------------------------
+    resize_factor = 0.25  # TODO: change or expose as CLI arg
+
+    if resize_factor != 1.0:
+        new_h = int(img.height * resize_factor)
+        new_w = int(img.width * resize_factor)
+
+        img = np.array(img.resize((new_w, new_h)))
+
+        # scale intrinsics accordingly
+        fx *= resize_factor
+        fy *= resize_factor
+        cx *= resize_factor
+        cy *= resize_factor
 
     K = np.array([[fx, 0, cx], [0, fy, cy], [0, 0, 1]])
 
@@ -277,7 +301,7 @@ def main(
     sofa_offset = np.array([0.2, 0.0, 0.05])  # Sofa against left wall, 0.2m from corner
 
     covs = build_covariances(scales, rots)
-    img = render_gaussians(means, covs, colors, opacity, K, R_obj, scale, sofa_offset, R_room, t_corner, img, device="cpu")
+    img = render_gaussians(means, covs, colors, opacity, K, R_obj, scale, sofa_offset, R_room, t_corner, img, device)
     show_plotly(img)
 
 
