@@ -1858,6 +1858,12 @@ class InferenceHTTPClient:
         inference_input: ImagesReference,
         mask_input: Any,
         model_id: str = "sam3-3d-objects",
+        *,
+        output_meshes: bool = True,
+        output_scene: bool = True,
+        with_mesh_postprocess: bool = True,
+        with_texture_baking: bool = True,
+        use_distillations: bool = False,
     ) -> dict:
         """Generate 3D meshes and Gaussian splatting from a 2D image with mask prompts.
 
@@ -1873,14 +1879,21 @@ class InferenceHTTPClient:
                 - RLE dictionary
                 - List of any of the above for multiple masks
             model_id (str, optional): The SAM3 3D model to use. Defaults to "sam3-3d-objects".
+            output_meshes (bool, optional): SAM3 3D always outputs object gaussians, and can
+                optionally output object meshes if output_meshes is True. Defaults to True.
+            output_scene (bool, optional): Output the combined scene reconstruction in
+                addition to individual object reconstructions. Defaults to True.
+            with_mesh_postprocess (bool, optional): Enable mesh postprocessing. Defaults to True.
+            with_texture_baking (bool, optional): Enable texture baking for meshes. Defaults to True.
+            use_distillations (bool, optional): Use the distilled versions of the model components.
 
         Returns:
             dict: Response containing base64-encoded 3D outputs:
-                - mesh_glb: Scene mesh in GLB format (base64 encoded)
+                - mesh_glb: Scene mesh in GLB format (base64 encoded) if output_meshes=True, otherwise None.
                 - gaussian_ply: Combined Gaussian splatting in PLY format (base64 encoded)
                 - objects: List of individual objects, each containing:
-                    - mesh_glb: Object mesh (base64)
-                    - gaussian_ply: Object Gaussian (base64)
+                    - mesh_glb: Object mesh (base64) if output_scene=True and output_meshes=True, otherwise None.
+                    - gaussian_ply: Object Gaussian (base64) if output_scene=True, otherwise None.
                     - metadata: {"rotation": [...], "translation": [...], "scale": [...]}
                 - time: Inference time in seconds
 
@@ -1894,6 +1907,11 @@ class InferenceHTTPClient:
         payload = self.__initialise_payload()
         payload["model_id"] = model_id
         payload["mask_input"] = mask_input
+        payload["output_meshes"] = output_meshes
+        payload["output_scene"] = output_scene
+        payload["with_mesh_postprocess"] = with_mesh_postprocess
+        payload["with_texture_baking"] = with_texture_baking
+        payload["use_distillations"] = use_distillations
 
         url = self.__wrap_url_with_api_key(f"{self.__api_url}/sam3_3d/infer")
         requests_data = prepare_requests_data(
@@ -1918,6 +1936,12 @@ class InferenceHTTPClient:
         inference_input: ImagesReference,
         mask_input: Any,
         model_id: str = "sam3-3d-objects",
+        *,
+        output_meshes: bool = True,
+        output_scene: bool = True,
+        with_mesh_postprocess: bool = True,
+        with_texture_baking: bool = True,
+        use_distillations: bool = False,
     ) -> dict:
         """Generate 3D meshes and Gaussian splatting from a 2D image asynchronously.
 
@@ -1925,9 +1949,23 @@ class InferenceHTTPClient:
             inference_input (ImagesReference): Input image for 3D generation.
             mask_input (Any): Mask input in any supported format.
             model_id (str, optional): The SAM3 3D model to use. Defaults to "sam3-3d-objects".
+            output_meshes (bool, optional): SAM3 3D always outputs object gaussians, and can
+                optionally output object meshes if output_meshes is True. Defaults to True.
+            output_scene (bool, optional): Output the combined scene reconstruction in
+                addition to individual object reconstructions. Defaults to True.
+            with_mesh_postprocess (bool, optional): Enable mesh postprocessing. Defaults to True.
+            with_texture_baking (bool, optional): Enable texture baking for meshes. Defaults to True.
+            use_distillations (bool, optional): Use the distilled versions of the model components.
 
         Returns:
-            dict: Response containing base64-encoded 3D outputs.
+            dict: Response containing base64-encoded 3D outputs:
+                - mesh_glb: Scene mesh in GLB format (base64 encoded) if output_meshes=True, otherwise None.
+                - gaussian_ply: Combined Gaussian splatting in PLY format (base64 encoded)
+                - objects: List of individual objects, each containing:
+                    - mesh_glb: Object mesh (base64) if output_scene=True and output_meshes=True, otherwise None.
+                    - gaussian_ply: Object Gaussian (base64) if output_scene=True, otherwise None.
+                    - metadata: {"rotation": [...], "translation": [...], "scale": [...]}
+                - time: Inference time in seconds
 
         Raises:
             HTTPCallErrorError: If there is an error in the HTTP call.
@@ -1939,6 +1977,11 @@ class InferenceHTTPClient:
         payload = self.__initialise_payload()
         payload["model_id"] = model_id
         payload["mask_input"] = mask_input
+        payload["output_meshes"] = output_meshes
+        payload["output_scene"] = output_scene
+        payload["with_mesh_postprocess"] = with_mesh_postprocess
+        payload["with_texture_baking"] = with_texture_baking
+        payload["use_distillations"] = use_distillations
 
         url = self.__wrap_url_with_api_key(f"{self.__api_url}/sam3_3d/infer")
         requests_data = prepare_requests_data(
