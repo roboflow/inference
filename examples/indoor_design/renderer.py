@@ -7,7 +7,7 @@ from pathlib import Path
 from tqdm import tqdm
 import torch
 from pillow_heif import open_heif
-
+from PIL import Image
 
 from examples.indoor_design.plane_detection.utils import get_camera_intrinsics_from_exif_in_heic_image
 
@@ -235,6 +235,12 @@ def show_plotly(img: np.ndarray) -> None:
     default="cpu",
     help="Device to use for rendering.",
 )
+@click.option(
+    "--output-image-path",
+    type=click.Path(),
+    required=True,
+    help="Path to the output image file.",
+)
 def main(
     object_model_file_path: str | Path,
     object_metadata_path: str | Path,
@@ -243,6 +249,7 @@ def main(
     room_length: float,
     sofa_length: float,
     device: str,
+    output_image_path: str | Path,
 ) -> None:
     """Load Gaussian splats from a PLY file and render them.
 
@@ -302,7 +309,8 @@ def main(
 
     covs = build_covariances(scales, rots)
     img = render_gaussians(means, covs, colors, opacity, K, R_obj, scale, sofa_offset, R_room, t_corner, img, device)
-    show_plotly(img)
+    
+    Image.fromarray((img * 255).astype(np.uint8)).save(output_image_path) 
 
 
 if __name__ == "__main__":
