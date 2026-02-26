@@ -108,6 +108,7 @@ def render_gaussians(
     R_obj: np.ndarray,
     t_obj: np.ndarray,
     scale: float,
+    sofa_offset: np.ndarray,
     R_room: np.ndarray,
     t_corner: np.ndarray,
     img: np.ndarray,
@@ -123,18 +124,19 @@ def render_gaussians(
     t_obj = torch.tensor(t_obj, device=device, dtype=torch.float32)
     R_room = torch.tensor(R_room, device=device, dtype=torch.float32)
     t_corner = torch.tensor(t_corner, device=device, dtype=torch.float32)
+    sofa_offset = torch.tensor(sofa_offset, device=device, dtype=torch.float32)
 
     # -----------------------------
-    # Object → world transform
+    # Object → room transform (canonical object pose + manual placement)
     # -----------------------------
-    means_w = (R_obj @ means.T).T * scale + t_obj
-    covs_w = scale**2 * torch.einsum("ij,njk,kl->nil", R_obj, covs, R_obj.T)
+    means_room = (R_obj @ means.T).T * scale + sofa_offset
+    covs_room = scale**2 * torch.einsum("ij,njk,kl->nil", R_obj, covs, R_obj.T)
 
     # -----------------------------
-    # World → camera transform
+    # Room → camera transform
     # -----------------------------
-    means_cam = (R_room @ means_w.T).T + t_corner
-    covs_cam = torch.einsum("ij,njk,kl->nil", R_room, covs_w, R_room.T)
+    means_cam = (R_room @ means_room.T).T + t_corner
+    covs_cam = torch.einsum("ij,njk,kl->nil", R_room, covs_room, R_room.T)
 
     # -----------------------------
     # Projection
@@ -252,7 +254,15 @@ def main(
 
     R_obj = np.array(metadata["rotation"])
     t_obj = np.array(metadata["translation"])
-    scale = metadata["scale"]
+
+    # -------------------------------------------------
+    # Scale normalization: match sofa size to room size
+    # -------------------------------------------------
+    sofa_scale_meta = metadata["scale"]
+
+    # Assume the sofa reconstruction length corresponds to `sofa_length`
+    # We scale it so that it matches real-world dimensions relative to the room
+    scale = sofa_scale_meta * (sofa_length / room_length)
 
     means, scales, rots, opacity, colors = load_gaussians_from_ply(str(object_model_file_path))
 
@@ -267,8 +277,10 @@ def main(
     R_room = np.array(room_axes["R_room"])
     t_corner = np.array(room_axes["t_corner"])
 
+    sofa_offset = np.array([0.2, 0.0, 0.05])  # Sofa against left wall, 0.2m from corner
+
     covs = build_covariances(scales, rots)
-    img = render_gaussians(means, covs, colors, opacity, K, R_obj, t_obj, scale, R_room, t_corner, img, device="cpu")
+    img = render_gaussians(means, covs, colors, opacity, K, R_obj, t_obj, scale, sofa_offset, R_room, t_corner, img, device="cpu")
     show_plotly(img)
 
 
