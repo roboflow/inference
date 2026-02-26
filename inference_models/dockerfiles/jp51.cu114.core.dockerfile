@@ -6,10 +6,12 @@ RUN apt-get update -y && apt-get install -y \
     git \
     unzip \
     libbz2-dev \
-    libssl-dev \
     libsqlite3-dev \
     zlib1g-dev \
-    liblzma-dev
+    liblzma-dev \
+    libavcodec-dev \
+    libavformat-dev \
+    libswscale-dev
 
 RUN mkdir -p /build/python-3.12
 WORKDIR /build/python-3.12
@@ -157,10 +159,12 @@ RUN apt-get update -y && apt-get install -y \
     git \
     unzip \
     libbz2-dev \
-    libssl-dev \
     libsqlite3-dev \
     zlib1g-dev \
-    liblzma-dev
+    liblzma-dev \
+    libavcodec-dev \
+    libavformat-dev \
+    libswscale-dev
 
 RUN apt remove -y 'libnvinfer*' 'libnvonnxparsers*' 'libnvparsers*' 'libnvinfer-plugin*' 'python3-libnvinfer*' 'tensorrt*' 'uff-converter*' 'graphsurgeon*'
 
