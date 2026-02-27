@@ -80,7 +80,6 @@ class Watchdog:
             response = requests.post(
                 self._heartbeat_url,
                 json={
-                    "workspace_id": self._workspace_id,
                     "session_id": self._session_id,
                     "api_key": self._api_key,
                 },

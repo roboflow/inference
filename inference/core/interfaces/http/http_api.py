@@ -1684,39 +1684,23 @@ class HttpInterface(BaseInterface):
                 Requires api_key for authentication.
                 """
                 body = await request.json()
-                workspace_id = body.get("workspace_id")
                 session_id = body.get("session_id")
                 api_key = body.get("api_key")
 
-                if not workspace_id or not session_id:
+                if not session_id:
                     return {
                         "status": "error",
-                        "message": "workspace_id and session_id required",
+                        "message": "session_id required",
                     }
-
-                if not api_key:
+                elif not api_key:
                     return {
                         "status": "error",
                         "message": "api_key required",
                     }
 
                 try:
-                    caller_workspace = await get_roboflow_workspace_async(
-                        api_key=api_key
-                    )
-
+                    workspace_id = await get_roboflow_workspace_async(api_key=api_key)
                 except (RoboflowAPINotAuthorizedError, WorkspaceLoadError):
-                    return {
-                        "status": "error",
-                        "message": "unauthorized",
-                    }
-
-                if caller_workspace != workspace_id:
-                    logger.warning(
-                        "Heartbeat workspace mismatch: requested=%s, api_key_workspace=%s",
-                        workspace_id,
-                        caller_workspace,
-                    )
                     return {
                         "status": "error",
                         "message": "unauthorized",
