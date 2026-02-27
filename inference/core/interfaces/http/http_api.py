@@ -29,7 +29,22 @@ from starlette.datastructures import UploadFile
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from inference.core import logger
-from inference.core.constants import PROCESSING_TIME_HEADER
+from inference.core.constants import (
+    MODEL_COLD_START_HEADER,
+    MODEL_ID_HEADER,
+    MODEL_LOAD_DETAILS_HEADER,
+    MODEL_LOAD_TIME_HEADER,
+    PROCESSING_TIME_HEADER,
+    WORKFLOW_ID_HEADER,
+    WORKSPACE_ID_HEADER,
+)
+from inference.core.managers.model_load_collector import (
+    ModelLoadCollector,
+    RequestModelIds,
+    model_load_info,
+    request_model_ids,
+    request_workflow_id,
+)
 from inference.core.devices.utils import GLOBAL_INFERENCE_SERVER_ID
 from inference.core.entities.requests.clip import (
     ClipCompareRequest,
@@ -445,6 +460,12 @@ class HttpInterface(BaseInterface):
                     PROCESSING_TIME_HEADER,
                     REMOTE_PROCESSING_TIME_HEADER,
                     REMOTE_PROCESSING_TIMES_HEADER,
+                    MODEL_COLD_START_HEADER,
+                    MODEL_LOAD_TIME_HEADER,
+                    MODEL_LOAD_DETAILS_HEADER,
+                    MODEL_ID_HEADER,
+                    WORKFLOW_ID_HEADER,
+                    WORKSPACE_ID_HEADER,
                 ],
             )
 
@@ -587,16 +608,26 @@ class HttpInterface(BaseInterface):
                 if api_key is None:
                     return _unauthorized_response("Unauthorized api_key")
 
-                if cached_api_keys.get(api_key, 0) < time.time():
+                cache_entry = cached_api_keys.get(api_key)
+                workspace_id = None
+                if cache_entry and cache_entry[0] >= time.time():
+                    workspace_id = cache_entry[1]
+                else:
                     try:
-                        await get_roboflow_workspace_async(api_key=api_key)
+                        workspace_id = await get_roboflow_workspace_async(
+                            api_key=api_key
+                        )
                         cached_api_keys[api_key] = (
-                            time.time() + 3600
+                            time.time() + 3600,
+                            workspace_id,
                         )  # expired after 1 hour
                     except (RoboflowAPINotAuthorizedError, WorkspaceLoadError):
                         return _unauthorized_response("Unauthorized api_key")
 
-                return await call_next(request)
+                response = await call_next(request)
+                if workspace_id:
+                    response.headers[WORKSPACE_ID_HEADER] = workspace_id
+                return response
 
         if DEDICATED_DEPLOYMENT_WORKSPACE_URL:
 
@@ -650,26 +681,33 @@ class HttpInterface(BaseInterface):
                 if api_key is None:
                     return _unauthorized_response("Unauthorized api_key")
 
-                if cached_api_keys.get(api_key, 0) < time.time():
+                cache_entry = cached_api_keys.get(api_key)
+                workspace_id = None
+                if cache_entry and cache_entry[0] >= time.time():
+                    workspace_id = cache_entry[1]
+                else:
                     try:
-                        # TODO: make this request async!
                         if api_key is None:
-                            workspace_url = None
+                            workspace_id = None
                         else:
-                            workspace_url = await get_roboflow_workspace_async(
+                            workspace_id = await get_roboflow_workspace_async(
                                 api_key=api_key
                             )
 
-                        if workspace_url != DEDICATED_DEPLOYMENT_WORKSPACE_URL:
+                        if workspace_id != DEDICATED_DEPLOYMENT_WORKSPACE_URL:
                             return _unauthorized_response("Unauthorized api_key")
 
                         cached_api_keys[api_key] = (
-                            time.time() + 3600
+                            time.time() + 3600,
+                            workspace_id,
                         )  # expired after 1 hour
                     except (RoboflowAPINotAuthorizedError, WorkspaceLoadError):
                         return _unauthorized_response("Unauthorized api_key")
 
-                return await call_next(request)
+                response = await call_next(request)
+                if workspace_id:
+                    response.headers[WORKSPACE_ID_HEADER] = workspace_id
+                return response
 
         @app.middleware("http")
         async def add_inference_engine_headers(request: Request, call_next):
@@ -678,6 +716,29 @@ class HttpInterface(BaseInterface):
                 "inference-models" if USE_INFERENCE_MODELS else "old-inference"
             )
             response.headers["x-inference-engine"] = inference_engine
+            return response
+
+        @app.middleware("http")
+        async def track_model_load(request: Request, call_next):
+            load_collector = ModelLoadCollector()
+            model_load_info.set(load_collector)
+            ids_collector = RequestModelIds()
+            request_model_ids.set(ids_collector)
+            response = await call_next(request)
+            if load_collector.has_data():
+                total, detail = load_collector.summarize()
+                response.headers[MODEL_COLD_START_HEADER] = "true"
+                response.headers[MODEL_LOAD_TIME_HEADER] = str(total)
+                if detail is not None:
+                    response.headers[MODEL_LOAD_DETAILS_HEADER] = detail
+            else:
+                response.headers[MODEL_COLD_START_HEADER] = "false"
+            model_ids = ids_collector.get_ids()
+            if model_ids:
+                response.headers[MODEL_ID_HEADER] = ",".join(sorted(model_ids))
+            wf_id = request_workflow_id.get(None)
+            if wf_id:
+                response.headers[WORKFLOW_ID_HEADER] = wf_id
             return response
 
         self.app = app
@@ -735,6 +796,8 @@ class HttpInterface(BaseInterface):
             background_tasks: Optional[BackgroundTasks],
             profiler: WorkflowsProfiler,
         ) -> WorkflowInferenceResponse:
+            if workflow_request.workflow_id:
+                request_workflow_id.set(workflow_request.workflow_id)
 
             workflow_init_parameters = {
                 "workflows_core.model_manager": model_manager,
