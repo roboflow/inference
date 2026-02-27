@@ -331,7 +331,7 @@ def inference_models_speed(
         Optional[str],
         typer.Option(
             "--model_package_id",
-            "-o",
+            "-mpi",
             help="Selected model package ID (leave blank to run auto-negotiation)",
         ),
     ] = None,
