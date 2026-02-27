@@ -12,8 +12,10 @@ from inference.core.interfaces.http.http_api import (
     GCPServerlessMiddleware,
 )
 from inference_sdk.config import (
+    INTERNAL_REMOTE_EXEC_REQ_VERIFIED_HEADER,
     PROCESSING_TIME_HEADER,
     RemoteProcessingTimeCollector,
+    apply_duration_minimum,
     remote_processing_times,
 )
 
@@ -136,3 +138,92 @@ class TestGCPServerlessMiddlewareWithForwardingDisabled:
         assert REMOTE_PROCESSING_TIMES_HEADER not in response.headers
         # Wall-clock time still present
         assert PROCESSING_TIME_HEADER in response.headers
+
+
+def _endpoint_read_duration_minimum(request):
+    """Returns the current value of apply_duration_minimum."""
+    value = apply_duration_minimum.get()
+    return PlainTextResponse(str(value))
+
+
+@patch(
+    "inference.core.interfaces.http.http_api.WORKFLOWS_REMOTE_EXECUTION_TIME_FORWARDING",
+    True,
+)
+class TestApplyDurationMinimumContextVar:
+    def test_direct_request_sets_apply_duration_minimum_true(self) -> None:
+        """A request without the internal execution header should set
+        apply_duration_minimum=True (floor should apply)."""
+        from inference_sdk.config import INTERNAL_REMOTE_EXEC_REQ_HEADER
+
+        app = _create_app(
+            [Route("/infer", endpoint=_endpoint_read_duration_minimum)]
+        )
+        client = TestClient(app)
+        response = client.get("/infer")
+        assert response.status_code == 200
+        assert response.text == "True"
+        assert response.headers[INTERNAL_REMOTE_EXEC_REQ_VERIFIED_HEADER] == "false"
+
+    @patch(
+        "inference.core.interfaces.http.http_api.ROBOFLOW_INTERNAL_SERVICE_SECRET",
+        "test-secret-123",
+    )
+    def test_verified_internal_request_sets_apply_duration_minimum_false(self) -> None:
+        """A request with a valid internal execution header should set
+        apply_duration_minimum=False (floor should NOT apply)."""
+        from inference_sdk.config import INTERNAL_REMOTE_EXEC_REQ_HEADER
+
+        app = _create_app(
+            [Route("/infer", endpoint=_endpoint_read_duration_minimum)]
+        )
+        client = TestClient(app)
+        response = client.get(
+            "/infer",
+            headers={INTERNAL_REMOTE_EXEC_REQ_HEADER: "test-secret-123"},
+        )
+        assert response.status_code == 200
+        assert response.text == "False"
+        assert response.headers[INTERNAL_REMOTE_EXEC_REQ_VERIFIED_HEADER] == "true"
+
+    @patch(
+        "inference.core.interfaces.http.http_api.ROBOFLOW_INTERNAL_SERVICE_SECRET",
+        "test-secret-123",
+    )
+    def test_wrong_secret_sets_apply_duration_minimum_true(self) -> None:
+        """A request with an invalid secret should still set
+        apply_duration_minimum=True (floor should apply)."""
+        from inference_sdk.config import INTERNAL_REMOTE_EXEC_REQ_HEADER
+
+        app = _create_app(
+            [Route("/infer", endpoint=_endpoint_read_duration_minimum)]
+        )
+        client = TestClient(app)
+        response = client.get(
+            "/infer",
+            headers={INTERNAL_REMOTE_EXEC_REQ_HEADER: "wrong-secret"},
+        )
+        assert response.status_code == 200
+        assert response.text == "True"
+        assert response.headers[INTERNAL_REMOTE_EXEC_REQ_VERIFIED_HEADER] == "false"
+
+    @patch(
+        "inference.core.interfaces.http.http_api.ROBOFLOW_INTERNAL_SERVICE_SECRET",
+        None,
+    )
+    def test_no_secret_configured_sets_apply_duration_minimum_true(self) -> None:
+        """When ROBOFLOW_INTERNAL_SERVICE_SECRET is not configured,
+        apply_duration_minimum should be True regardless of header."""
+        from inference_sdk.config import INTERNAL_REMOTE_EXEC_REQ_HEADER
+
+        app = _create_app(
+            [Route("/infer", endpoint=_endpoint_read_duration_minimum)]
+        )
+        client = TestClient(app)
+        response = client.get(
+            "/infer",
+            headers={INTERNAL_REMOTE_EXEC_REQ_HEADER: "some-value"},
+        )
+        assert response.status_code == 200
+        assert response.text == "True"
+        assert response.headers[INTERNAL_REMOTE_EXEC_REQ_VERIFIED_HEADER] == "false"

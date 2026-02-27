@@ -10,6 +10,7 @@ import backoff
 import requests
 from filelock import FileLock
 from requests import Response, Timeout
+from requests.exceptions import ChunkedEncodingError
 from rich.progress import (
     BarColumn,
     DownloadColumn,
@@ -584,7 +585,7 @@ def generate_chunks_boundaries(
     backoff.constant,
     exception=RetryError,
     max_tries=API_CALLS_MAX_TRIES,
-    interval=1,
+    interval=10,
 )
 def download_chunk(
     url: str,
@@ -620,7 +621,13 @@ def download_chunk(
                 file_open_mode="r+b",
                 offset=start,
             )
-    except (ConnectionError, Timeout, requests.exceptions.ConnectionError) as error:
+    except (
+        ConnectionError,
+        Timeout,
+        requests.exceptions.ConnectionError,
+        ChunkedEncodingError,
+    ) as error:
+        LOGGER.warning(f"Download chunk failed ({type(error).__name__}: {error}), retrying in 10s...")
         raise RetryError(
             message=f"Connectivity error",
             help_url="https://inference-models.roboflow.com/errors/file-download/#retryerror",
@@ -631,7 +638,7 @@ def download_chunk(
     backoff.constant,
     exception=RetryError,
     max_tries=API_CALLS_MAX_TRIES,
-    interval=1,
+    interval=10,
 )
 def stream_download(
     url: str,
@@ -666,7 +673,13 @@ def stream_download(
                 content_storage=computed_hash,
                 on_file_created=on_file_created,
             )
-    except (ConnectionError, Timeout, requests.exceptions.ConnectionError) as error:
+    except (
+        ConnectionError,
+        Timeout,
+        requests.exceptions.ConnectionError,
+        ChunkedEncodingError,
+    ) as error:
+        LOGGER.warning(f"Download failed ({type(error).__name__}: {error}), retrying in 10s...")
         raise RetryError(
             message=f"Connectivity error",
             help_url="https://inference-models.roboflow.com/errors/file-download/#retryerror",
