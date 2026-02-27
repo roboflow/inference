@@ -15,6 +15,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     FLOAT_ZERO_TO_ONE_KIND,
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
     RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
+    SEMANTIC_SEGMENTATION_PREDICTION_KIND,
     FloatZeroToOne,
     Selector,
 )
@@ -90,9 +91,10 @@ class MaskManifest(ColorableVisualizationManifest):
         kind=[
             INSTANCE_SEGMENTATION_PREDICTION_KIND,
             RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
+            SEMANTIC_SEGMENTATION_PREDICTION_KIND,
         ]
     ) = Field(  # type: ignore
-        description="Instance segmentation predictions containing masks for detected objects. The block uses segmentation masks to create colored fills that precisely follow object boundaries. Requires instance segmentation model outputs with mask data.",
+        description="Predictions containing segmentation masks. Accepts instance segmentation predictions (sv.Detections with per-object masks), RLE-encoded instance segmentation predictions, or semantic segmentation predictions (dict with base64-encoded PNG mask).",
         examples=["$steps.instance_segmentation_model.predictions"],
     )
 
