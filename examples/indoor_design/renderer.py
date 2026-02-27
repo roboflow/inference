@@ -76,9 +76,9 @@ def load_gaussians_from_ply(
 
 
 def get_bbox_and_shift_to_corner(
-    means: np.ndarray,
+    means: torch.Tensor,
     corner: str = "min",
-) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """Compute 3D axis-aligned bounding box and shift points so origin is at a corner.
 
     Args:
@@ -92,8 +92,8 @@ def get_bbox_and_shift_to_corner(
             - bbox_min: (3,) min coordinates (x, y, z) of the original bbox.
             - bbox_max: (3,) max coordinates (x, y, z) of the original bbox.
     """
-    bbox_min = np.array([means[:, 0].min(), means[:, 1].min(), means[:, 2].min()])
-    bbox_max = np.array([means[:, 0].max(), means[:, 1].max(), means[:, 2].max()])
+    bbox_min = torch.tensor([means[:, 0].max(), means[:, 1].min(), means[:, 2].min()], device=means.device, dtype=means.dtype)
+    bbox_max = torch.tensor([means[:, 0].max(), means[:, 1].max(), means[:, 2].max()], device=means.device, dtype=means.dtype)
 
     origin = bbox_min if corner == "min" else bbox_max
     means_shifted = means - origin
@@ -204,6 +204,7 @@ def render_gaussians(
     scale: float,
     R_room: np.ndarray,
     t_corner: np.ndarray,
+    offset: np.ndarray,
     img: np.ndarray,
     device: str,
     on_progress: Callable[[np.ndarray, int, int], None] | None = None,
@@ -221,6 +222,7 @@ def render_gaussians(
     colors = torch.tensor(colors, device=device, dtype=torch.float32)
     opacity = torch.tensor(opacity, device=device, dtype=torch.float32)
     opacity = torch.sigmoid(opacity)
+    offset = torch.tensor(offset, device=device, dtype=torch.float32)
     K = torch.tensor(K, device=device, dtype=torch.float32)
     R_obj = torch.tensor(R_obj, device=device, dtype=torch.float32)
     R_room = torch.tensor(R_room, device=device, dtype=torch.float32)
@@ -240,10 +242,12 @@ def render_gaussians(
     means_room = (R_obj @ means.T).T * scale
     covs_room = scale**2 * torch.einsum("ij,njk,kl->nil", R_obj, covs, R_obj.T)
 
+    means_room, _, _ = get_bbox_and_shift_to_corner(means_room, corner="min")
+
     # -----------------------------
     # Room → camera transform
     # -----------------------------
-    means_cam = (R_room @ means_room.T).T + t_corner
+    means_cam = (R_room @ means_room.T).T + t_corner + offset
     covs_cam = torch.einsum("ij,njk,kl->nil", R_room, covs_room, R_room.T)
 
     # -----------------------------
@@ -414,19 +418,11 @@ def main(
         image_path: Path to the image to render into.
         room_axes_path: Path to the room axes file.
     """
-    # 180° roll (Z-axis)
-    R_eye = np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]])
-    # R_roll = np.array([[-1, 0, 0], [0, -1, 0], [0, 0, 1]])
-    R_pitch = np.array([[1, 0, 0], [0, 0, -1], [0, 1, 0]])
-    R_yaw = np.array([[0, 1, 0], [-1, 0, 0], [0, 0, 1]])
-    R_obj = R_eye
-    R_obj = R_obj @ R_yaw @ R_pitch
+    R_obj = np.array([[-1, 0, 0], [0, 1, 0], [0, 0, 1]])
+    offset = np.array([0, 0, 0])
     scale = 0.05
 
-    means, scales, rots, opacity, colors = load_gaussians_from_ply(str(object_model_file_path), subsample=0.2)
-
-    # Shift object so its coordinate frame starts at the bbox corner (min_x, min_y, min_z)
-    means, _, _ = get_bbox_and_shift_to_corner(means, corner="min")
+    means, scales, rots, opacity, colors = load_gaussians_from_ply(str(object_model_file_path), subsample=0.4)
 
     fx, fy, cx, cy = get_camera_intrinsics_from_exif_in_heic_image(str(image_path))
     img = open_heif(image_path).to_pillow()
@@ -434,7 +430,7 @@ def main(
     # -------------------------------------------------
     # Optional downscale for faster debugging
     # -------------------------------------------------
-    resize_factor = 0.1  # TODO: change or expose as CLI arg
+    resize_factor = 0.5  # TODO: change or expose as CLI arg
 
     if resize_factor != 1.0:
         new_h = int(img.height * resize_factor)
@@ -460,7 +456,7 @@ def main(
 
     on_progress_cb = make_live_progress_callback() if visualize_progress else None
     img = render_gaussians(
-        means, covs, colors, opacity, K, R_obj, scale, R_room, t_corner,
+        means, covs, colors, opacity, K, R_obj, scale, R_room, t_corner, offset,
         img, device, on_progress=on_progress_cb, progress_interval_pct=progress_interval,
         blend_sigma=blend_sigma,
     )
