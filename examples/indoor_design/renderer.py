@@ -13,17 +13,23 @@ from collections.abc import Callable
 import matplotlib.pyplot as plt
 
 from examples.indoor_design.plane_detection.utils import get_camera_intrinsics_from_exif_in_heic_image
+from examples.indoor_design.plane_detection.visualizations import get_point_cloud_3d_fig
+
+C0 = 0.28209479177387814
 
 # -------------------------------------------------
 # Load gaussian splats from PLY
 # -------------------------------------------------
 def load_gaussians_from_ply(
     path: str | Path,
+    subsample: float | int | None = None,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """Load 3D Gaussian splat parameters from a PLY file.
 
     Args:
         path: Path to the PLY file containing Gaussian splat data.
+        subsample: If set, randomly subsample points. Use a float in (0, 1] for
+            fraction to keep (e.g. 0.5 = half), or an int >= 1 for max number of points.
 
     Returns:
         A tuple of (means, scales, rots, opacity, colors):
@@ -48,10 +54,51 @@ def load_gaussians_from_ply(
     rots = np.vstack([v["rot_0"], v["rot_1"], v["rot_2"], v["rot_3"]]).T
 
     # DC SH color
-    colors = np.vstack([v["f_dc_0"], v["f_dc_1"], v["f_dc_2"]]).T
-    colors = (colors - colors.min()) / (colors.max() - colors.min() + 1e-8)
+    harmonics = np.vstack([v["f_dc_2"], v["f_dc_1"], v["f_dc_0"]]).T
+    colors = 0.5 + harmonics * C0
+    colors = np.clip(colors, 0, 1)
+
+    if subsample is not None:
+        n = len(means)
+        if isinstance(subsample, float):
+            keep = max(1, int(n * subsample))
+        else:
+            keep = min(n, subsample)
+        rng = np.random.default_rng()
+        idx = rng.choice(n, size=keep, replace=False)
+        means = means[idx]
+        scales = scales[idx]
+        rots = rots[idx]
+        opacity = opacity[idx]
+        colors = colors[idx]
 
     return means, scales, rots, opacity, colors
+
+
+def get_bbox_and_shift_to_corner(
+    means: np.ndarray,
+    corner: str = "min",
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Compute 3D axis-aligned bounding box and shift points so origin is at a corner.
+
+    Args:
+        means: (N, 3) array of 3D positions.
+        corner: Which corner to use as origin. "min" = (min_x, min_y, min_z),
+            "max" = (max_x, max_y, max_z). Default "min" (bottom-left-front).
+
+    Returns:
+        Tuple of (means_shifted, bbox_min, bbox_max):
+            - means_shifted: Points translated so the chosen corner is at origin.
+            - bbox_min: (3,) min coordinates (x, y, z) of the original bbox.
+            - bbox_max: (3,) max coordinates (x, y, z) of the original bbox.
+    """
+    bbox_min = np.array([means[:, 0].min(), means[:, 1].min(), means[:, 2].min()])
+    bbox_max = np.array([means[:, 0].max(), means[:, 1].max(), means[:, 2].max()])
+
+    origin = bbox_min if corner == "min" else bbox_max
+    means_shifted = means - origin
+
+    return means_shifted, bbox_min, bbox_max
 
 
 # -------------------------------------------------
@@ -120,6 +167,33 @@ def build_covariances(scales: np.ndarray, rots: np.ndarray) -> np.ndarray:
     return np.array(covs)
 
 
+def _gaussian_blur_2d(
+    x: torch.Tensor, sigma: float, kernel_size: int | None = None
+) -> torch.Tensor:
+    """Apply 2D Gaussian blur to a tensor of shape (H, W) or (H, W, C)."""
+    if kernel_size is None:
+        kernel_size = max(3, int(2 * sigma * 4 + 1) | 1)
+    pad = kernel_size // 2
+
+    # Build 2D Gaussian kernel
+    coords = torch.arange(kernel_size, device=x.device, dtype=x.dtype) - pad
+    g = torch.exp(-(coords**2) / (2 * sigma**2))
+    kernel_1d = g / g.sum()
+    kernel_2d = kernel_1d.unsqueeze(1) * kernel_1d.unsqueeze(0)  # (k, k)
+
+    if x.dim() == 2:
+        x = x.unsqueeze(0).unsqueeze(0)
+        kernel_2d = kernel_2d.unsqueeze(0).unsqueeze(0)
+        out = torch.nn.functional.conv2d(x, kernel_2d, padding=pad)
+        return out.squeeze(0).squeeze(0)
+    else:
+        # (H, W, C) -> (1, C, H, W)
+        x = x.permute(2, 0, 1).unsqueeze(0)
+        kernel_2d = kernel_2d.unsqueeze(0).unsqueeze(0).expand(x.shape[1], 1, -1, -1)
+        out = torch.nn.functional.conv2d(x, kernel_2d, padding=pad, groups=x.shape[1])
+        return out.squeeze(0).permute(1, 2, 0)
+
+
 def render_gaussians(
     means: np.ndarray,
     covs: np.ndarray,
@@ -128,14 +202,20 @@ def render_gaussians(
     K: np.ndarray,
     R_obj: np.ndarray,
     scale: float,
-    sofa_offset: np.ndarray,
     R_room: np.ndarray,
     t_corner: np.ndarray,
     img: np.ndarray,
     device: str,
     on_progress: Callable[[np.ndarray, int, int], None] | None = None,
     progress_interval_pct: float = 5.0,
+    blend_sigma: float = 2.0,
 ):
+    """Render gaussians on an empty canvas and composite over the input image.
+
+    The object is rendered on a zeros plane, then composited so it occludes the
+    input image. A small Gaussian blur is applied to the alpha mask at the edges
+    for smooth blending.
+    """
     means = torch.tensor(means, device=device, dtype=torch.float32)
     covs = torch.tensor(covs, device=device, dtype=torch.float32)
     colors = torch.tensor(colors, device=device, dtype=torch.float32)
@@ -145,14 +225,19 @@ def render_gaussians(
     R_obj = torch.tensor(R_obj, device=device, dtype=torch.float32)
     R_room = torch.tensor(R_room, device=device, dtype=torch.float32)
     t_corner = torch.tensor(t_corner, device=device, dtype=torch.float32)
-    sofa_offset = torch.tensor(sofa_offset, device=device, dtype=torch.float32)
     scale = torch.tensor(scale, device=device, dtype=torch.float32)
-    img = torch.tensor(img, device=device, dtype=torch.float32) / 255.0
+
+    height, width, _ = img.shape
+    img_orig = torch.tensor(img, device=device, dtype=torch.float32) / 255.0
+
+    # Render on empty (zeros) canvas
+    rendered = torch.zeros(height, width, 3, device=device, dtype=torch.float32)
+    T = torch.ones(height, width, device=device)
 
     # -----------------------------
     # Object → room transform (canonical object pose + manual placement)
     # -----------------------------
-    means_room = (R_obj @ means.T).T * scale + sofa_offset
+    means_room = (R_obj @ means.T).T * scale
     covs_room = scale**2 * torch.einsum("ij,njk,kl->nil", R_obj, covs, R_obj.T)
 
     # -----------------------------
@@ -164,21 +249,19 @@ def render_gaussians(
     # -----------------------------
     # Projection
     # -----------------------------
-    z = means_cam[:,2:3]
-    pts_norm = means_cam[:,:2]/z
-    pts_img = (K[:2,:2] @ pts_norm.T).T + K[:2,2]
+    z = means_cam[:, 2:3]
+    pts_norm = means_cam[:, :2] / z
+    pts_img = (K[:2, :2] @ pts_norm.T).T + K[:2, 2]
 
     # grid
     ys, xs = torch.meshgrid(
-        torch.arange(img.shape[0], device=device),
-        torch.arange(img.shape[1], device=device),
-        indexing="ij"
+        torch.arange(height, device=device),
+        torch.arange(width, device=device),
+        indexing="ij",
     )
-    grid = torch.stack([xs, ys], dim=-1).float()
+    grid = torch.stack([xs, ys], dim=-1).float().to(device)
 
-    T = torch.ones(img.shape[0], img.shape[1], device=device)
-
-    order = torch.argsort(means_cam[:,2], descending=True)
+    order = torch.argsort(means_cam[:, 2], descending=True)
     n_total = len(order)
     last_reported_pct = -1.0
 
@@ -201,20 +284,32 @@ def render_gaussians(
         d = d.reshape(-1, 2)
 
         w = torch.exp(-0.5 * (d @ invS * d).sum(dim=1))
-        w = w.reshape(img.shape[0], img.shape[1])
+        w = w.reshape(height, width)
 
         a = opacity[idx] * w
-        img += T.unsqueeze(-1) * a.unsqueeze(-1) * colors[idx]
+        rendered += T.unsqueeze(-1) * a.unsqueeze(-1) * colors[idx]
         T *= 1 - a
 
         if on_progress is not None:
             pct = 100 * (step + 1) / n_total
             if pct - last_reported_pct >= progress_interval_pct or step == n_total - 1:
                 last_reported_pct = pct
-                snapshot = img.clamp(0, 1).cpu().numpy()
+                alpha = 1 - T
+                composite = img_orig * T.unsqueeze(-1) + rendered * alpha.unsqueeze(-1)
+                snapshot = composite.clamp(0, 1).cpu().numpy()
                 on_progress(snapshot, step + 1, n_total)
 
-    return img.clamp(0, 1).cpu().numpy()
+    # Alpha mask: where the object was rendered (1 = occluding, 0 = transparent)
+    alpha = 1 - T
+
+    # Smooth alpha edges for blending
+    if blend_sigma > 0:
+        alpha = _gaussian_blur_2d(alpha, sigma=blend_sigma).clamp(0, 1)
+
+    # Composite: rendered occludes input image
+    final = img_orig * (1 - alpha).unsqueeze(-1) + rendered.clamp(0, 1) * alpha.unsqueeze(-1)
+
+    return final.clamp(0, 1).cpu().numpy()
 
 
 def show_plotly(img: np.ndarray) -> None:
@@ -261,12 +356,6 @@ def make_live_progress_callback() -> Callable[[np.ndarray, int, int], None]:
     help="Path to the object PLY file containing Gaussian splat data.",
 )
 @click.option(
-    "--object-metadata-path",
-    type=click.Path(exists=True),
-    required=True,
-    help="Path to the object metadata JSON file.",
-)
-@click.option(
     "--image-path",
     type=click.Path(exists=True),
     required=True,
@@ -277,18 +366,6 @@ def make_live_progress_callback() -> Callable[[np.ndarray, int, int], None]:
     type=click.Path(exists=True),
     required=True,
     help="Path to the room axes JSON file.",
-)
-@click.option(
-    "--room-length",
-    type=float,
-    required=True,
-    help="Length of the room in meters.",
-)
-@click.option(
-    "--sofa-length",
-    type=float,
-    required=True,
-    help="Length of the sofa in meters.",
 )
 @click.option(
     "--device",
@@ -314,43 +391,42 @@ def make_live_progress_callback() -> Callable[[np.ndarray, int, int], None]:
     default=1.0,
     help="Progress interval (in %%) for updating the visualization. Default: 5%%.",
 )
+@click.option(
+    "--blend-sigma",
+    type=float,
+    default=2.0,
+    help="Gaussian sigma for smoothing alpha edges when blending rendered object with image. Default: 2.0.",
+)
 def main(
     object_model_file_path: str | Path,
-    object_metadata_path: str | Path,
     image_path: str | Path,
     room_axes_path: str | Path,
-    room_length: float,
-    sofa_length: float,
     device: str,
     output_image_path: str | Path,
     visualize_progress: bool,
     progress_interval: float,
+    blend_sigma: float,
 ) -> None:
     """Load Gaussian splats from a PLY file and render them.
 
     Args:
         object_model_file_path: Path to the PLY file containing Gaussian splat data.
-        object_metadata_path: Path to the object metadata JSON file.
         image_path: Path to the image to render into.
         room_axes_path: Path to the room axes file.
-        room_length: Length of the room.
-        sofa_length: Length of the sofa.
     """
-    with open(object_metadata_path, "r") as f:
-        metadata = json.load(f)
+    # 180° roll (Z-axis)
+    R_eye = np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]])
+    # R_roll = np.array([[-1, 0, 0], [0, -1, 0], [0, 0, 1]])
+    R_pitch = np.array([[1, 0, 0], [0, 0, -1], [0, 1, 0]])
+    R_yaw = np.array([[0, 1, 0], [-1, 0, 0], [0, 0, 1]])
+    R_obj = R_eye
+    R_obj = R_obj @ R_yaw @ R_pitch
+    scale = 0.05
 
-    R_obj = quat_to_rot(np.array(metadata["rotation"]))
+    means, scales, rots, opacity, colors = load_gaussians_from_ply(str(object_model_file_path), subsample=0.2)
 
-    # -------------------------------------------------
-    # Scale normalization: match sofa size to room size
-    # -------------------------------------------------
-    sofa_scale_meta = np.array(metadata["scale"])
-
-    # Assume the sofa reconstruction length corresponds to `sofa_length`
-    # We scale it so that it matches real-world dimensions relative to the room
-    scale = sofa_scale_meta * (sofa_length / room_length)
-
-    means, scales, rots, opacity, colors = load_gaussians_from_ply(str(object_model_file_path))
+    # Shift object so its coordinate frame starts at the bbox corner (min_x, min_y, min_z)
+    means, _, _ = get_bbox_and_shift_to_corner(means, corner="min")
 
     fx, fy, cx, cy = get_camera_intrinsics_from_exif_in_heic_image(str(image_path))
     img = open_heif(image_path).to_pillow()
@@ -365,7 +441,6 @@ def main(
         new_w = int(img.width * resize_factor)
 
         img = np.array(img.resize((new_w, new_h)))
-        img = np.zeros_like(img)
 
         # scale intrinsics accordingly
         fx *= resize_factor
@@ -381,14 +456,13 @@ def main(
     R_room = np.array(room_axes["R_room"])
     t_corner = np.array(room_axes["t_corner"])
 
-    sofa_offset = np.array([0.2, 0.0, 0.05])  # Sofa against left wall, 0.2m from corner
-
     covs = build_covariances(scales, rots)
 
     on_progress_cb = make_live_progress_callback() if visualize_progress else None
     img = render_gaussians(
-        means, covs, colors, opacity, K, R_obj, scale, sofa_offset, R_room, t_corner,
+        means, covs, colors, opacity, K, R_obj, scale, R_room, t_corner,
         img, device, on_progress=on_progress_cb, progress_interval_pct=progress_interval,
+        blend_sigma=blend_sigma,
     )
 
     Image.fromarray((img * 255).astype(np.uint8)).save(output_image_path)
