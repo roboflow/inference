@@ -5,7 +5,6 @@ from pathlib import Path
 import click
 import numpy as np
 import torch
-from PIL import Image
 from pillow_heif import open_heif
 from transformers import AutoModelForDepthEstimation, DepthAnythingConfig, AutoImageProcessor
 
@@ -13,7 +12,10 @@ from examples.indoor_design.plane_detection.utils import (
     get_camera_intrinsics_from_exif_in_heic_image,
     inverse_depth_to_organized_point_cloud,
 )
-from examples.indoor_design.plane_detection.visualizations import get_point_cloud_3d_fig
+from examples.indoor_design.plane_detection.visualizations import (
+    get_inverse_depth_heatmap_fig,
+    get_point_cloud_3d_fig,
+)
 
 
 @click.command()
@@ -47,11 +49,8 @@ def main(image_path: Path, output_dir: Path):
     inverse_depth = post_processed_output[0]["predicted_depth"]
     inverse_depth = inverse_depth.detach().cpu().numpy()
 
-    normalized_inverse_depth = (inverse_depth - inverse_depth.min()) / (inverse_depth.max() - inverse_depth.min())
-    normalized_inverse_depth = normalized_inverse_depth * 255
-    normalized_inverse_depth = Image.fromarray(normalized_inverse_depth.astype("uint8"))
-
-    normalized_inverse_depth.save(output_dir / "normalized_depth.png")
+    fig_depth = get_inverse_depth_heatmap_fig(inverse_depth)
+    fig_depth.write_html(output_dir / "inverse_depth_heatmap.html", include_plotlyjs="cdn")
 
     fx, fy, cx, cy = get_camera_intrinsics_from_exif_in_heic_image(image_path)
 
