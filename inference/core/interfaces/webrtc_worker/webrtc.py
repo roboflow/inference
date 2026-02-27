@@ -976,9 +976,7 @@ async def init_rtc_peer_connection_with_loop(
                 exception_type=WorkflowSyntaxError.__name__,
                 error_message=str(error),
                 error_context=str(error.context),
-                inner_error=(
-                    str(error.inner_error) if error.inner_error is not None else None
-                ),
+                inner_error=str(error.inner_error),
             )
         )
         return
@@ -988,18 +986,6 @@ async def init_rtc_peer_connection_with_loop(
         send_answer(
             WebRTCWorkerResult(
                 exception_type=WorkflowError.__name__,
-                error_message=str(error),
-                error_context=str(error.context),
-                inner_error=(
-                    str(error.inner_error) if error.inner_error is not None else None
-                ),
-            )
-        )
-        return
-    except Exception as error:
-        send_answer(
-            WebRTCWorkerResult(
-                exception_type=error.__class__.__name__,
                 error_message=str(error),
             )
         )

@@ -248,7 +248,7 @@ from inference.core.roboflow_api import (
 from inference.core.utils.container import is_docker_socket_mounted
 from inference.core.utils.notebooks import start_notebook
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
-from inference.core.workflows.errors import WorkflowError, WorkflowSyntaxError
+from inference.core.workflows.errors import WorkflowSyntaxError
 from inference.core.workflows.execution_engine.core import (
     ExecutionEngine,
     get_available_versions,
