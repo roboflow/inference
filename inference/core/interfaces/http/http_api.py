@@ -248,7 +248,7 @@ from inference.core.roboflow_api import (
 from inference.core.utils.container import is_docker_socket_mounted
 from inference.core.utils.notebooks import start_notebook
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
-from inference.core.workflows.errors import WorkflowSyntaxError
+from inference.core.workflows.errors import WorkflowError, WorkflowSyntaxError
 from inference.core.workflows.execution_engine.core import (
     ExecutionEngine,
     get_available_versions,
@@ -1638,13 +1638,12 @@ class HttpInterface(BaseInterface):
                         raise WorkflowSyntaxError(
                             public_message=worker_result.error_message,
                             context=worker_result.error_context,
-                            inner_error=None,
+                            inner_error=worker_result.inner_error,
                         )
                     if worker_result.exception_type == "WorkflowError":
                         raise WorkflowError(
                             public_message=worker_result.error_message,
                             context=worker_result.error_context,
-                            inner_error=None,
                         )
                     expected_exceptions = {
                         "Exception": Exception,
