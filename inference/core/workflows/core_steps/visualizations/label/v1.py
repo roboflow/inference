@@ -11,6 +11,10 @@ from inference.core.workflows.core_steps.visualizations.common.base_colorable im
     ColorableVisualizationManifest,
 )
 from inference.core.workflows.core_steps.visualizations.common.utils import str_to_color
+from inference.core.workflows.execution_engine.constants import (
+    AREA_CONVERTED_KEY_IN_SV_DETECTIONS,
+    AREA_KEY_IN_SV_DETECTIONS,
+)
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
 from inference.core.workflows.execution_engine.entities.types import (
     FLOAT_KIND,
@@ -97,13 +101,15 @@ class LabelManifest(ColorableVisualizationManifest):
             "Index",
             "Dimensions",
             "Area",
+            "Area (mask)",
+            "Area (converted)",
             "Tracker Id",
             "Time In Zone",
         ],
         Selector(kind=[STRING_KIND]),
     ] = Field(  # type: ignore
         default="Class",
-        description="Content to display in text labels. Options: 'Class' (class name), 'Confidence' (confidence score), 'Class and Confidence' (both), 'Tracker Id' (tracking ID for tracked objects), 'Time In Zone' (time spent in zone), 'Dimensions' (center coordinates and width x height), 'Area' (object area in pixels), or 'Index' (detection index).",
+        description="Content to display in text labels. Options: 'Class' (class name), 'Confidence' (confidence score), 'Class and Confidence' (both), 'Tracker Id' (tracking ID for tracked objects), 'Time In Zone' (time spent in zone), 'Dimensions' (center coordinates and width x height), 'Area' (bounding box area in pixels), 'Area (mask)' (mask area in pixels from Mask Area Measurement block), 'Area (converted)' (mask area in converted units from Mask Area Measurement block), or 'Index' (detection index).",
         examples=["LABEL", "$inputs.text"],
         json_schema_extra={
             "always_visible": True,
@@ -298,6 +304,22 @@ class LabelVisualizationBlockV1(ColorableVisualizationBlock):
                 labels.append(f"{int(cx)}, {int(cy)} {int(w)}x{int(h)}")
         elif text == "Area":
             labels = [str(int(area)) for area in predictions.area]
+        elif text == "Area (mask)":
+            if AREA_KEY_IN_SV_DETECTIONS in predictions.data:
+                labels = [
+                    f"Area (mask): {a:.2f}" if a is not None else "Area (mask): N/A"
+                    for a in predictions.data[AREA_KEY_IN_SV_DETECTIONS]
+                ]
+            else:
+                labels = ["Area (mask): N/A"] * len(predictions)
+        elif text == "Area (converted)":
+            if AREA_CONVERTED_KEY_IN_SV_DETECTIONS in predictions.data:
+                labels = [
+                    f"Area (conv): {a:.2f}" if a is not None else "Area (conv): N/A"
+                    for a in predictions.data[AREA_CONVERTED_KEY_IN_SV_DETECTIONS]
+                ]
+            else:
+                labels = ["Area (conv): N/A"] * len(predictions)
         else:
             try:
                 labels = [str(d) if d else "" for d in predictions[text]]

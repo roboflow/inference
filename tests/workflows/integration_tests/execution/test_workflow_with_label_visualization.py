@@ -63,6 +63,8 @@ VISUALIZATION_WORKFLOW = {
         "Index",
         "Dimensions",
         "Area",
+        "Area (mask)",
+        "Area (converted)",
         "Time In Zone",
     ],
 )
