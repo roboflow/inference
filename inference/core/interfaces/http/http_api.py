@@ -131,7 +131,6 @@ from inference.core.entities.responses.workflows import (
 from inference.core.env import (
     ALLOW_ORIGINS,
     API_BASE_URL,
-    API_KEY,
     API_LOGGING_ENABLED,
     BUILDER_ORIGIN,
     CONFIDENCE_LOWER_BOUND_OOM_PREVENTION,
@@ -169,6 +168,8 @@ from inference.core.env import (
     NOTEBOOK_ENABLED,
     NOTEBOOK_PASSWORD,
     NOTEBOOK_PORT,
+    PINNED_MODELS,
+    PRELOAD_API_KEY,
     PRELOAD_MODELS,
     PROFILE,
     ROBOFLOW_INTERNAL_SERVICE_NAME,
@@ -1781,9 +1782,9 @@ class HttpInterface(BaseInterface):
 
         # Enable preloading models at startup
         if (
-            (PRELOAD_MODELS or DEDICATED_DEPLOYMENT_WORKSPACE_URL)
-            and API_KEY
-            and not (LAMBDA or GCP_SERVERLESS)
+            (PRELOAD_MODELS or PINNED_MODELS or DEDICATED_DEPLOYMENT_WORKSPACE_URL)
+            and PRELOAD_API_KEY
+            and (PINNED_MODELS or not (LAMBDA or GCP_SERVERLESS))
         ):
 
             class ModelInitState:
@@ -1798,32 +1799,38 @@ class HttpInterface(BaseInterface):
 
             def initialize_models(state: ModelInitState):
                 """Perform asynchronous initialization tasks to load models."""
-                # Limit the number of concurrent tasks to prevent resource exhaustion
 
                 def load_model(model_id):
-                    logger.debug(f"load_model({model_id}) - starting")
+                    t_start = time.perf_counter()
+                    de_aliased = resolve_roboflow_model_alias(model_id=model_id)
+                    logger.info(f"Preload: starting model load for '{model_id}' (resolved: '{de_aliased}')")
                     try:
-                        # TODO: how to add timeout here? Probably best to timeout model loading?
-                        model_add(
-                            AddModelRequest(
-                                model_id=model_id,
-                                model_type=None,
-                                api_key=API_KEY,
-                            )
+                        self.model_manager.add_model(
+                            de_aliased,
+                            PRELOAD_API_KEY,
                         )
-                        logger.info(f"Model {model_id} loaded successfully.")
+                        load_time = time.perf_counter() - t_start
+                        logger.info(
+                            f"Preload: model '{model_id}' loaded successfully in {load_time:.1f}s"
+                        )
                     except Exception as e:
-                        error_msg = f"Error loading model {model_id}: {e}"
+                        load_time = time.perf_counter() - t_start
+                        error_msg = f"Preload: error loading model '{model_id}' after {load_time:.1f}s: {e}"
                         logger.error(error_msg)
                         with state.lock:
                             state.initialization_errors.append((model_id, str(e)))
-                    logger.debug(f"load_model({model_id}) - finished")
+                        return
 
-                if PRELOAD_MODELS:
+                    # Pin if this model is in PINNED_MODELS
+                    if PINNED_MODELS and model_id in PINNED_MODELS and hasattr(self.model_manager, "pin_model"):
+                        self.model_manager.pin_model(de_aliased)
+
+                all_models = list(dict.fromkeys((PRELOAD_MODELS or []) + (PINNED_MODELS or [])))
+                if all_models:
                     # Create tasks for each model to be loaded
                     model_loading_executor = ThreadPoolExecutor(max_workers=2)
                     loaded_futures: List[Tuple[str, Future]] = []
-                    for model_id in PRELOAD_MODELS:
+                    for model_id in all_models:
                         future = model_loading_executor.submit(
                             load_model, model_id=model_id
                         )
