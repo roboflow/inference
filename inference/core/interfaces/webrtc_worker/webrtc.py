@@ -990,6 +990,14 @@ async def init_rtc_peer_connection_with_loop(
             )
         )
         return
+    except Exception as error:
+        send_answer(
+            WebRTCWorkerResult(
+                exception_type=error.__class__.__name__,
+                error_message=str(error),
+            )
+        )
+        return
 
     if webrtc_request.webrtc_config is not None:
         ice_servers = []
