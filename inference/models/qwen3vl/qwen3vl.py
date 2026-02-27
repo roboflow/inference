@@ -13,19 +13,6 @@ from transformers import (
 from transformers.utils import is_flash_attn_2_available
 
 from inference.core.cache.model_artifacts import get_cache_dir, get_cache_file_path
-
-
-def _is_flash_attn_usable() -> bool:
-    """Check if flash attention 2 is both installed and supported by the GPU."""
-    if not is_flash_attn_2_available():
-        return False
-    try:
-        if not torch.cuda.is_available():
-            return False
-        major, _ = torch.cuda.get_device_capability()
-        return major >= 8
-    except Exception:
-        return False
 from inference.core.env import DEVICE, HUGGINGFACE_TOKEN, MODEL_CACHE_DIR
 from inference.core.roboflow_api import get_roboflow_base_lora, stream_url_to_cache
 from inference.models.transformers import LoRATransformerModel, TransformerModel
@@ -96,7 +83,7 @@ class Qwen3VL(TransformerModel):
 
         attn_implementation = (
             "flash_attention_2"
-            if (_is_flash_attn_usable() and DEVICE and "cuda" in DEVICE)
+            if (is_flash_attn_2_available() and DEVICE and "cuda" in DEVICE)
             else "eager"
         )
 
@@ -279,7 +266,7 @@ class LoRAQwen3VL(LoRATransformerModel):
 
         attn_implementation = (
             "flash_attention_2"
-            if (_is_flash_attn_usable() and DEVICE and "cuda" in DEVICE)
+            if (is_flash_attn_2_available() and DEVICE and "cuda" in DEVICE)
             else "eager"
         )
 
