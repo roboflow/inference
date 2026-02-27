@@ -46,7 +46,7 @@ httpx~=0.28.1
 pylogix==1.0.5
 pymodbus>=3.6.9,<=3.8.3
 backoff~=2.2.0
-filelock>=3.12.0,<=3.17.0
+filelock>=3.12.0,<=3.24.3
 onvif-zeep-async==2.0.0 # versions > 2.0.0 will not work with Python 3.9 despite docs
 simple-pid~=2.0.1
 qrcode~=8.0.0
