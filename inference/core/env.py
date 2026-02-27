@@ -669,6 +669,10 @@ PRELOAD_MODELS = (
     os.getenv("PRELOAD_MODELS").split(",") if os.getenv("PRELOAD_MODELS") else None
 )
 
+# Force preloading even on serverless environments (LAMBDA, GCP_SERVERLESS) where
+# it is normally disabled.  Set to "true" to override.
+FORCE_PRELOAD = str2bool(os.getenv("FORCE_PRELOAD", "False"))
+
 # API key used exclusively for model preloading. Use this instead of API_KEY on
 # user-facing deployments where setting API_KEY globally would affect per-request
 # auth, billing attribution, and model-access fallback behaviour.

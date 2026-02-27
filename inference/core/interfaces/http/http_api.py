@@ -156,6 +156,7 @@ from inference.core.env import (
     ENABLE_DASHBOARD,
     ENABLE_STREAM_API,
     ENABLE_WORKFLOWS_PROFILING,
+    FORCE_PRELOAD,
     GCP_SERVERLESS,
     GET_MODEL_REGISTRY_ENABLED,
     HTTP_API_SHARED_WORKFLOWS_THREAD_POOL_ENABLED,
@@ -1779,7 +1780,7 @@ class HttpInterface(BaseInterface):
         if (
             (PRELOAD_MODELS or DEDICATED_DEPLOYMENT_WORKSPACE_URL)
             and PRELOAD_API_KEY
-            and not (LAMBDA or GCP_SERVERLESS)
+            and (FORCE_PRELOAD or not (LAMBDA or GCP_SERVERLESS))
         ):
 
             class ModelInitState:
