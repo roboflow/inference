@@ -276,7 +276,7 @@ def register_webrtc_session(workspace_id: str, session_id: str) -> None:
         logger.error("Failed to register session: %s", e)
 
 
-def refresh_webrtc_session(workspace_id: str, session_id: str) -> None:
+def refresh_webrtc_session(workspace_id: str, session_id: str) -> bool:
     """Refresh the timestamp for a concurrent WebRTC session.
 
     Should be called periodically to keep the session marked as active.
@@ -285,6 +285,9 @@ def refresh_webrtc_session(workspace_id: str, session_id: str) -> None:
     Args:
         workspace_id: The workspace identifier
         session_id: The session identifier to refresh
+
+    Returns:
+        True if session was refreshed (existed), False otherwise
     """
     logger.debug(
         "[REDIS] refresh_webrtc_session called: workspace=%s, session=%s, cache_type=%s",
@@ -297,22 +300,32 @@ def refresh_webrtc_session(workspace_id: str, session_id: str) -> None:
             "[REDIS] Redis not available (cache is %s), cannot refresh session",
             type(cache).__name__,
         )
-        return
+        return False
 
     key = _get_concurrent_sessions_key(workspace_id)
     timestamp = time.time()
     try:
-        result = cache.client.zadd(key, {session_id: timestamp})
+        # Only refresh sessions that already exist: we want to avoid attacks
+        # where an attacker injects arbitrary session IDs via an authenticated
+        # heartbeat endpoint
+        if cache.client.zscore(key, session_id) is None:
+            logger.warning(
+                "[REDIS] Session not found: workspace=%s, session=%s",
+                workspace_id,
+                session_id,
+            )
+            return False
+
+        cache.client.zadd(key, {session_id: timestamp})
         logger.info(
-            "[REDIS] Refreshed session: workspace=%s, session=%s, key=%s, timestamp=%s, result=%s",
+            "[REDIS] Refreshed session: workspace=%s, session=%s",
             workspace_id,
             session_id,
-            key,
-            timestamp,
-            result,
         )
+        return True
     except Exception as e:
         logger.error("[REDIS] Failed to refresh session: %s", e, exc_info=True)
+        return False
 
 
 def get_concurrent_session_count(workspace_id: str, ttl_seconds: int) -> int:

@@ -1680,10 +1680,13 @@ class HttpInterface(BaseInterface):
                 This endpoint is called periodically to indicate
                 that their session is still active. The session will be removed from
                 the quota count if no heartbeat is received within the TTL period.
+
+                Requires api_key for authentication.
                 """
                 body = await request.json()
                 workspace_id = body.get("workspace_id")
                 session_id = body.get("session_id")
+                api_key = body.get("api_key")
 
                 if not workspace_id or not session_id:
                     return {
@@ -1691,10 +1694,43 @@ class HttpInterface(BaseInterface):
                         "message": "workspace_id and session_id required",
                     }
 
-                refresh_webrtc_session(
+                if not api_key:
+                    return {
+                        "status": "error",
+                        "message": "api_key required",
+                    }
+
+                try:
+                    caller_workspace = await get_roboflow_workspace_async(
+                        api_key=api_key
+                    )
+
+                except (RoboflowAPINotAuthorizedError, WorkspaceLoadError):
+                    return {
+                        "status": "error",
+                        "message": "unauthorized",
+                    }
+
+                if caller_workspace != workspace_id:
+                    logger.warning(
+                        "Heartbeat workspace mismatch: requested=%s, api_key_workspace=%s",
+                        workspace_id,
+                        caller_workspace,
+                    )
+                    return {
+                        "status": "error",
+                        "message": "unauthorized",
+                    }
+
+                session_refreshed = refresh_webrtc_session(
                     workspace_id=workspace_id,
                     session_id=session_id,
                 )
+                if not session_refreshed:
+                    return {
+                        "status": "error",
+                        "message": "session not found",
+                    }
                 return {"status": "ok"}
 
         if ENABLE_STREAM_API:
