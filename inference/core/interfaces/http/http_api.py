@@ -1638,13 +1638,13 @@ class HttpInterface(BaseInterface):
                         raise WorkflowSyntaxError(
                             public_message=worker_result.error_message,
                             context=worker_result.error_context,
-                            inner_error=worker_result.inner_error,
+                            inner_error=None,
                         )
                     if worker_result.exception_type == "WorkflowError":
                         raise WorkflowError(
                             public_message=worker_result.error_message,
                             context=worker_result.error_context,
-                            inner_error=worker_result.inner_error,
+                            inner_error=None,
                         )
                     expected_exceptions = {
                         "Exception": Exception,
