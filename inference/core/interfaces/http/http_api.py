@@ -36,6 +36,7 @@ from inference.core.constants import (
     MODEL_LOAD_TIME_HEADER,
     PROCESSING_TIME_HEADER,
     WORKFLOW_ID_HEADER,
+    WORKSPACE_ID_HEADER,
 )
 from inference.core.managers.model_load_collector import (
     ModelLoadCollector,
@@ -464,6 +465,7 @@ class HttpInterface(BaseInterface):
                     MODEL_LOAD_DETAILS_HEADER,
                     MODEL_ID_HEADER,
                     WORKFLOW_ID_HEADER,
+                    WORKSPACE_ID_HEADER,
                 ],
             )
 
@@ -606,16 +608,26 @@ class HttpInterface(BaseInterface):
                 if api_key is None:
                     return _unauthorized_response("Unauthorized api_key")
 
-                if cached_api_keys.get(api_key, 0) < time.time():
+                cache_entry = cached_api_keys.get(api_key)
+                workspace_id = None
+                if cache_entry and cache_entry[0] >= time.time():
+                    workspace_id = cache_entry[1]
+                else:
                     try:
-                        await get_roboflow_workspace_async(api_key=api_key)
+                        workspace_id = await get_roboflow_workspace_async(
+                            api_key=api_key
+                        )
                         cached_api_keys[api_key] = (
-                            time.time() + 3600
+                            time.time() + 3600,
+                            workspace_id,
                         )  # expired after 1 hour
                     except (RoboflowAPINotAuthorizedError, WorkspaceLoadError):
                         return _unauthorized_response("Unauthorized api_key")
 
-                return await call_next(request)
+                response = await call_next(request)
+                if workspace_id:
+                    response.headers[WORKSPACE_ID_HEADER] = workspace_id
+                return response
 
         if DEDICATED_DEPLOYMENT_WORKSPACE_URL:
 
@@ -669,26 +681,33 @@ class HttpInterface(BaseInterface):
                 if api_key is None:
                     return _unauthorized_response("Unauthorized api_key")
 
-                if cached_api_keys.get(api_key, 0) < time.time():
+                cache_entry = cached_api_keys.get(api_key)
+                workspace_id = None
+                if cache_entry and cache_entry[0] >= time.time():
+                    workspace_id = cache_entry[1]
+                else:
                     try:
-                        # TODO: make this request async!
                         if api_key is None:
-                            workspace_url = None
+                            workspace_id = None
                         else:
-                            workspace_url = await get_roboflow_workspace_async(
+                            workspace_id = await get_roboflow_workspace_async(
                                 api_key=api_key
                             )
 
-                        if workspace_url != DEDICATED_DEPLOYMENT_WORKSPACE_URL:
+                        if workspace_id != DEDICATED_DEPLOYMENT_WORKSPACE_URL:
                             return _unauthorized_response("Unauthorized api_key")
 
                         cached_api_keys[api_key] = (
-                            time.time() + 3600
+                            time.time() + 3600,
+                            workspace_id,
                         )  # expired after 1 hour
                     except (RoboflowAPINotAuthorizedError, WorkspaceLoadError):
                         return _unauthorized_response("Unauthorized api_key")
 
-                return await call_next(request)
+                response = await call_next(request)
+                if workspace_id:
+                    response.headers[WORKSPACE_ID_HEADER] = workspace_id
+                return response
 
         @app.middleware("http")
         async def add_inference_engine_headers(request: Request, call_next):
