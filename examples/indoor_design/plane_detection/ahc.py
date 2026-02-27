@@ -25,6 +25,7 @@ Notes:
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from tqdm import tqdm
 import heapq
 import math
@@ -486,13 +487,14 @@ def fast_plane_extraction(
     help="Path to organized point cloud (.npy).",
 )
 @click.option(
-    "--output-path",
-    "-o",
-    type=click.Path(dir_okay=False, path_type=Path),
+    "--output-dir",
+    type=click.Path(exists=False),
     required=True,
-    help="Path to save organized point cloud (.npy).",
-)
-def main(input_image_path: Path, organized_point_cloud_path: Path, output_path: Path):
+    default=Path(f"../data/plane_detection_{datetime.now().strftime('%Y%m%d_%H%M%S')}"))
+def main(input_image_path: Path, organized_point_cloud_path: Path, output_dir: Path):
+    
+    output_dir.mkdir(parents=True, exist_ok=True)
+
     points = np.load(organized_point_cloud_path)
 
     if points.shape[2] != 3:
@@ -504,7 +506,7 @@ def main(input_image_path: Path, organized_point_cloud_path: Path, output_path: 
     label_img, planes = fast_plane_extraction(
         points,
         block_h=10, block_w=10,
-        TMSE=1e-2,
+        TMSE=5e-6,
         TANG_deg=60.0,
         TNUM=800,
         TDEG=15.0,
@@ -519,17 +521,15 @@ def main(input_image_path: Path, organized_point_cloud_path: Path, output_path: 
         }
         for k, (n, d, n_points) in planes.items()
     }
-    json_path = output_path.parent / (output_path.stem + "_planes.json")
+    json_path = output_dir / "planes.json"
     with open(json_path, "w") as f:
         json.dump(planes_data, f, indent=2)
-
-    np.save(output_path, label_img)
 
     # Visualize input image with label overlay
     fig = get_plane_visualization_fig(
         input_image_path, label_img, opacity=0.5, planes_data=planes_data
     )
-    fig.write_html("test.html", include_plotlyjs="cdn")
+    fig.write_html(output_dir / "plane_visualization.html", include_plotlyjs="cdn")
 
 
 if __name__ == "__main__":
