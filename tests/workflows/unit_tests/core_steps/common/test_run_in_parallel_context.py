@@ -1,3 +1,5 @@
+from asgi_correlation_id import correlation_id
+
 from inference_sdk.config import (
     RemoteProcessingTimeCollector,
     execution_id,
@@ -166,3 +168,23 @@ def test_run_in_parallel_propagates_request_model_ids() -> None:
     # then
     assert all(results)
     assert ids.get_ids() == {"m1", "m2", "m3"}
+
+
+def test_run_in_parallel_propagates_correlation_id() -> None:
+    # given
+    token = correlation_id.set("test-corr-id")
+
+    def task_that_reads_corr_id():
+        return correlation_id.get()
+
+    try:
+        # when
+        results = run_in_parallel(
+            tasks=[task_that_reads_corr_id, task_that_reads_corr_id],
+            max_workers=2,
+        )
+    finally:
+        correlation_id.set(None)
+
+    # then
+    assert results == ["test-corr-id", "test-corr-id"]
