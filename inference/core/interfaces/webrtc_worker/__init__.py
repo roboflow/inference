@@ -57,8 +57,11 @@ async def start_worker(
 
         workspace_id = None
         session_id = str(uuid.uuid4())
+        workspace_id = get_roboflow_workspace(api_key=webrtc_request.api_key)
+        webrtc_request.workspace_id = workspace_id
+        webrtc_request.session_id = session_id
+
         if WEBRTC_WORKSPACE_STREAM_QUOTA_ENABLED:
-            workspace_id = get_roboflow_workspace(api_key=webrtc_request.api_key)
             if workspace_id and is_over_workspace_session_quota(
                 workspace_id=workspace_id,
                 quota=WEBRTC_WORKSPACE_STREAM_QUOTA,
@@ -79,14 +82,12 @@ async def start_worker(
                     workspace_id=workspace_id,
                     session_id=session_id,
                 )
-                # we need to pass to modal how to identifier workspace/ session id.
-                webrtc_request.workspace_id = workspace_id
-                webrtc_request.session_id = session_id
-                logger.info(
-                    "Started WebRTC session %s for workspace %s",
-                    session_id,
-                    workspace_id,
-                )
+
+        logger.info(
+            "Started WebRTC session %s for workspace %s",
+            session_id,
+            workspace_id,
+        )
 
         loop = asyncio.get_event_loop()
         result = await loop.run_in_executor(
