@@ -1,5 +1,10 @@
-from typing import List, Literal, Optional, Type, Union
+import base64
+from typing import Dict, List, Literal, Optional, Type, Union
+from uuid import uuid4
 
+import cv2
+import numpy as np
+import supervision as sv
 from pydantic import ConfigDict
 
 from inference.core.entities.requests.inference import (
@@ -14,7 +19,10 @@ from inference.core.env import (
 )
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
-from inference.core.workflows.execution_engine.constants import INFERENCE_ID_KEY
+from inference.core.workflows.execution_engine.constants import (
+    DETECTION_ID_KEY,
+    INFERENCE_ID_KEY,
+)
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     OutputDefinition,
@@ -191,8 +199,70 @@ class RoboflowSemanticSegmentationModelBlockV1(WorkflowBlock):
         return [
             {
                 INFERENCE_ID_KEY: prediction.get(INFERENCE_ID_KEY),
-                "predictions": prediction.get("predictions"),
+                "predictions": self._convert_to_sv_detections(
+                    prediction.get("predictions") or {}
+                ),
                 "model_id": model_id,
             }
             for prediction in predictions
         ]
+
+    @staticmethod
+    def _convert_to_sv_detections(predictions_dict: Dict) -> sv.Detections:
+        seg_mask_b64 = predictions_dict.get("segmentation_mask", "")
+        conf_mask_b64 = predictions_dict.get("confidence_mask", "")
+        class_map: Dict[str, str] = predictions_dict.get("class_map", {})
+
+        mask_bytes = base64.b64decode(seg_mask_b64)
+        nparr = np.frombuffer(mask_bytes, np.uint8)
+        mask_array = cv2.imdecode(nparr, cv2.IMREAD_GRAYSCALE)
+
+        if mask_array is None:
+            return sv.Detections.empty()
+
+        unique_class_ids = [cid for cid in np.unique(mask_array).tolist() if cid != 0]
+        if not unique_class_ids:
+            return sv.Detections.empty()
+
+        conf_array = None
+        if conf_mask_b64:
+            conf_bytes = base64.b64decode(conf_mask_b64)
+            conf_nparr = np.frombuffer(conf_bytes, np.uint8)
+            conf_array = cv2.imdecode(conf_nparr, cv2.IMREAD_GRAYSCALE)
+
+        xyxy_list, masks_list, class_id_list, class_name_list, confidence_list = (
+            [],
+            [],
+            [],
+            [],
+            [],
+        )
+        for class_id in unique_class_ids:
+            binary_mask = mask_array == class_id
+            rows = np.where(np.any(binary_mask, axis=1))[0]
+            cols = np.where(np.any(binary_mask, axis=0))[0]
+            xyxy_list.append([cols[0], rows[0], cols[-1], rows[-1]])
+            masks_list.append(binary_mask)
+            class_id_list.append(class_id)
+            class_name_list.append(class_map.get(str(class_id), str(class_id)))
+            if conf_array is not None:
+                confidence_list.append(float(conf_array[binary_mask].mean()) / 255.0)
+            else:
+                confidence_list.append(1.0)
+
+        detection_ids = np.array([str(uuid4()) for _ in class_id_list])
+        result = sv.Detections(
+            xyxy=np.array(xyxy_list, dtype=np.float64),
+            mask=np.array(masks_list, dtype=bool),
+            class_id=np.array(class_id_list),
+            confidence=np.array(confidence_list, dtype=np.float32),
+            data={
+                "class_name": np.array(class_name_list),
+                DETECTION_ID_KEY: detection_ids,
+            },
+        )
+
+        if conf_array is not None:
+            result["confidence_mask"] = conf_array
+
+        return result
