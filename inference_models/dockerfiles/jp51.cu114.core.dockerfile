@@ -187,8 +187,7 @@ RUN rm /etc/alternatives/cuda /etc/alternatives/cuda-11
 RUN ln -s /usr/local/cuda-11.8 /etc/alternatives/cuda
 RUN ln -s /usr/local/cuda-11.8 /etc/alternatives/cuda-11
 RUN rm -rf /usr/local/cuda-11.4
-RUN echo "/usr/local/cuda-11.8/lib64" > /etc/ld.so.conf.d/cuda-11-8.conf && ldconfig
-ENV LD_LIBRARY_PATH="/usr/local/cuda-11.8/lib64:/opt/gcc-11/lib64:${LD_LIBRARY_PATH}"
+ENV LD_LIBRARY_PATH="/opt/gcc-11/lib64:$$LD_LIBRARY_PATH"
 
 
 RUN update-alternatives --install /usr/bin/python python /usr/local/bin/python3.12 1
