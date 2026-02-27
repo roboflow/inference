@@ -1620,6 +1620,12 @@ class HttpInterface(BaseInterface):
                             context=worker_result.error_context,
                             inner_error=worker_result.inner_error,
                         )
+                    if worker_result.exception_type == "WorkflowError":
+                        raise WorkflowError(
+                            public_message=worker_result.error_message,
+                            context=worker_result.error_context,
+                            inner_error=worker_result.inner_error,
+                        )
                     expected_exceptions = {
                         "Exception": Exception,
                         "KeyError": KeyError,
@@ -1629,7 +1635,6 @@ class HttpInterface(BaseInterface):
                         "RoboflowAPINotNotFoundError": RoboflowAPINotNotFoundError,
                         "ValidationError": ValidationError,
                         "WebRTCConfigurationError": WebRTCConfigurationError,
-                        "WorkflowError": WorkflowError,
                     }
                     exc = expected_exceptions.get(
                         worker_result.exception_type, Exception
