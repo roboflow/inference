@@ -1,5 +1,11 @@
 # Changelog
 
+## `0.19.2`
+
+### Fixed
+- Changed the default ranking for model packages in `AutoLoader` - ONNX to be preferred over Torch. 
+
+
 ## `0.19.1`
 
 ### Fixed
