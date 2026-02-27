@@ -750,6 +750,58 @@ RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND = Kind(
 )
 
 
+SEMANTIC_SEGMENTATION_PREDICTION_KIND_DOCS = """
+This kind represents a single semantic segmentation prediction, providing a per-pixel
+class label and confidence score for the entire image (not individual object instances).
+
+Example:
+```
+{
+    "image": {"width": 640, "height": 480},
+    "predictions": {
+        "segmentation_mask": "<base64-encoded PNG>",
+        "confidence_mask": "<base64-encoded PNG>",
+        "class_map": {"0": "background", "1": "person", "2": "car"}
+    },
+    "inference_id": "8a1b2c3d-...",
+    "time": 0.043
+}
+```
+
+**Fields in the `predictions` dict:**
+
+* `segmentation_mask` - base64-encoded single-channel PNG where each pixel value is the integer
+  class ID predicted for that pixel (as defined in `class_map`)
+
+* `confidence_mask` - base64-encoded single-channel PNG where each pixel value represents the
+  model confidence (0-255 range, where 255 = 100% confidence) for the predicted class at that pixel
+
+* `class_map` - dict mapping pixel intensity string (e.g. `"0"`, `"1"`) to class label string
+  (e.g. `"background"`, `"person"`)
+
+**SERIALISATION:**
+
+Execution Engine behind API will pass through the prediction dict as-is. Decode
+`segmentation_mask` and `confidence_mask` using standard base64 + PNG libraries, e.g.:
+
+```python
+import base64, numpy as np
+from PIL import Image
+import io
+
+mask_bytes = base64.b64decode(prediction["segmentation_mask"])
+mask_array = np.array(Image.open(io.BytesIO(mask_bytes)))
+```
+"""
+SEMANTIC_SEGMENTATION_PREDICTION_KIND = Kind(
+    name="semantic_segmentation_prediction",
+    description="Prediction with per-pixel class label and confidence for semantic segmentation",
+    docs=SEMANTIC_SEGMENTATION_PREDICTION_KIND_DOCS,
+    serialised_data_type="dict",
+    internal_data_type="dict",
+)
+
+
 KEYPOINT_DETECTION_PREDICTION_KIND_DOCS = """
 This kind represents single keypoints prediction in form of 
 [`sv.Detections(...)`](https://supervision.roboflow.com/latest/detection/core/) object.
