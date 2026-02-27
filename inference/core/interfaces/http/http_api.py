@@ -29,7 +29,21 @@ from starlette.datastructures import UploadFile
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from inference.core import logger
-from inference.core.constants import PROCESSING_TIME_HEADER
+from inference.core.constants import (
+    MODEL_COLD_START_HEADER,
+    MODEL_ID_HEADER,
+    MODEL_LOAD_DETAILS_HEADER,
+    MODEL_LOAD_TIME_HEADER,
+    PROCESSING_TIME_HEADER,
+    WORKFLOW_ID_HEADER,
+)
+from inference.core.managers.model_load_collector import (
+    ModelLoadCollector,
+    RequestModelIds,
+    model_load_info,
+    request_model_ids,
+    request_workflow_id,
+)
 from inference.core.devices.utils import GLOBAL_INFERENCE_SERVER_ID
 from inference.core.entities.requests.clip import (
     ClipCompareRequest,
@@ -445,6 +459,11 @@ class HttpInterface(BaseInterface):
                     PROCESSING_TIME_HEADER,
                     REMOTE_PROCESSING_TIME_HEADER,
                     REMOTE_PROCESSING_TIMES_HEADER,
+                    MODEL_COLD_START_HEADER,
+                    MODEL_LOAD_TIME_HEADER,
+                    MODEL_LOAD_DETAILS_HEADER,
+                    MODEL_ID_HEADER,
+                    WORKFLOW_ID_HEADER,
                 ],
             )
 
@@ -680,6 +699,29 @@ class HttpInterface(BaseInterface):
             response.headers["x-inference-engine"] = inference_engine
             return response
 
+        @app.middleware("http")
+        async def track_model_load(request: Request, call_next):
+            load_collector = ModelLoadCollector()
+            model_load_info.set(load_collector)
+            ids_collector = RequestModelIds()
+            request_model_ids.set(ids_collector)
+            response = await call_next(request)
+            if load_collector.has_data():
+                total, detail = load_collector.summarize()
+                response.headers[MODEL_COLD_START_HEADER] = "true"
+                response.headers[MODEL_LOAD_TIME_HEADER] = str(total)
+                if detail is not None:
+                    response.headers[MODEL_LOAD_DETAILS_HEADER] = detail
+            else:
+                response.headers[MODEL_COLD_START_HEADER] = "false"
+            model_ids = ids_collector.get_ids()
+            if model_ids:
+                response.headers[MODEL_ID_HEADER] = ",".join(sorted(model_ids))
+            wf_id = request_workflow_id.get(None)
+            if wf_id:
+                response.headers[WORKFLOW_ID_HEADER] = wf_id
+            return response
+
         self.app = app
         self.model_manager = model_manager
         self.stream_manager_client: Optional[StreamManagerClient] = None
@@ -735,6 +777,8 @@ class HttpInterface(BaseInterface):
             background_tasks: Optional[BackgroundTasks],
             profiler: WorkflowsProfiler,
         ) -> WorkflowInferenceResponse:
+            if workflow_request.workflow_id:
+                request_workflow_id.set(workflow_request.workflow_id)
 
             workflow_init_parameters = {
                 "workflows_core.model_manager": model_manager,

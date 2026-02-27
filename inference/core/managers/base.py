@@ -27,6 +27,10 @@ from inference.core.exceptions import (
     RoboflowAPINotAuthorizedError,
 )
 from inference.core.logger import logger
+from inference.core.managers.model_load_collector import (
+    model_load_info,
+    request_model_ids,
+)
 from inference.core.managers.entities import ModelDescription
 from inference.core.managers.pingback import PingbackInfo
 from inference.core.models.base import Model, PreprocessReturnMetadata
@@ -87,6 +91,9 @@ class ModelManager:
             f"ModelManager - Adding model with model_id={model_id}, model_id_alias={model_id_alias}"
         )
         resolved_identifier = model_id if model_id_alias is None else model_id_alias
+        ids_collector = request_model_ids.get(None)
+        if ids_collector is not None:
+            ids_collector.add(resolved_identifier)
         model_lock = self._get_lock_for_a_model(model_id=resolved_identifier)
         with acquire_with_timeout(lock=model_lock) as acquired:
             if not acquired:
@@ -101,6 +108,7 @@ class ModelManager:
                 return
             try:
                 logger.debug("ModelManager - model initialisation...")
+                t_load_start = time.perf_counter()
                 model_class = self.model_registry.get_model(
                     resolved_identifier,
                     api_key,
@@ -136,8 +144,16 @@ class ModelManager:
                             )
                         )
 
-                logger.debug("ModelManager - model successfully loaded.")
+                load_time = time.perf_counter() - t_load_start
+                logger.debug(
+                    f"ModelManager - model successfully loaded in {load_time:.2f}s."
+                )
                 self._models[resolved_identifier] = model
+                collector = model_load_info.get(None)
+                if collector is not None:
+                    collector.record(
+                        model_id=resolved_identifier, load_time=load_time
+                    )
             except Exception as error:
                 self._dispose_model_lock(model_id=resolved_identifier)
                 raise error

@@ -471,10 +471,18 @@ def run_in_parallel(tasks: List[Callable[[], T]], max_workers: int = 1) -> List[
 def _propagate_inference_context(
     tasks: List[Callable[[], T]],
 ) -> List[Callable[[], T]]:
-    """Wrap each task so that inference_sdk context vars are propagated into
-    worker threads.  Returns the tasks unchanged when inference_sdk is not
-    installed or no context is active.
+    """Wrap each task so that inference_sdk context vars and server-side
+    context vars are propagated into worker threads.  Returns the tasks
+    unchanged when no context is active.
     """
+    from inference.core.managers.model_load_collector import (
+        model_load_info,
+        request_model_ids,
+    )
+
+    load_collector = model_load_info.get(None)
+    ids_collector = request_model_ids.get(None)
+
     try:
         from inference_sdk.config import (
             apply_duration_minimum,
@@ -483,7 +491,7 @@ def _propagate_inference_context(
         )
 
         exec_id = execution_id.get() if execution_id is not None else None
-        collector = (
+        rpt_collector = (
             remote_processing_times.get()
             if remote_processing_times is not None
             else None
@@ -492,9 +500,17 @@ def _propagate_inference_context(
             apply_duration_minimum.get() if apply_duration_minimum is not None else None
         )
     except ImportError:
-        return tasks
+        exec_id = None
+        rpt_collector = None
+        duration_min = None
 
-    if exec_id is None and collector is None and duration_min is None:
+    if (
+        exec_id is None
+        and rpt_collector is None
+        and duration_min is None
+        and load_collector is None
+        and ids_collector is None
+    ):
         return tasks
 
     def _wrap(fun: Callable[[], T]) -> Callable[[], T]:
@@ -503,14 +519,18 @@ def _propagate_inference_context(
                 from inference_sdk.config import execution_id
 
                 execution_id.set(exec_id)
-            if collector is not None:
+            if rpt_collector is not None:
                 from inference_sdk.config import remote_processing_times
 
-                remote_processing_times.set(collector)
+                remote_processing_times.set(rpt_collector)
             if duration_min is not None:
                 from inference_sdk.config import apply_duration_minimum
 
                 apply_duration_minimum.set(duration_min)
+            if load_collector is not None:
+                model_load_info.set(load_collector)
+            if ids_collector is not None:
+                request_model_ids.set(ids_collector)
             return fun()
 
         return _with_context

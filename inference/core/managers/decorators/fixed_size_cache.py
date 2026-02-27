@@ -18,6 +18,7 @@ from inference.core.exceptions import (
     RoboflowAPINotAuthorizedError,
 )
 from inference.core.managers.base import Model, ModelManager, acquire_with_timeout
+from inference.core.managers.model_load_collector import request_model_ids
 from inference.core.managers.decorators.base import ModelManagerDecorator
 from inference.core.managers.entities import ModelDescription
 from inference.core.registries.roboflow import (
@@ -80,6 +81,9 @@ class WithFixedSizeCache(ModelManagerDecorator):
         queue_id = self._resolve_queue_id(
             model_id=model_id, model_id_alias=model_id_alias
         )
+        ids_collector = request_model_ids.get(None)
+        if ids_collector is not None:
+            ids_collector.add(queue_id)
         if queue_id in self:
             logger.debug(
                 f"Detected {queue_id} in WithFixedSizeCache models queue -> marking as most recently used."
