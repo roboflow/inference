@@ -13,9 +13,9 @@ RUN apt-get update -y && apt-get install -y \
     python3-matplotlib \
     gfortran \
     ffmpeg \
-    libavcodec-dev \
-    libavformat-dev \
-    libswscale-dev \
+    libavcodec58 \
+    libavformat58 \
+    libswscale5 \
     build-essential \
     libatlas-base-dev \
     libsm6 \
