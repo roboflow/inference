@@ -1,0 +1,1623 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Scalable, on-device computer vision deployment.">
+      
+      
+        <meta name="author" content="Roboflow">
+      
+      
+        <link rel="canonical" href="https://inference.roboflow.com/">
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.6.4+insiders-4.53.15">
+    
+    
+      
+        <title>Roboflow Inference</title>
+      
+    
+    
+      <link rel="stylesheet" href="assets/stylesheets/main.f15084e1.min.css">
+      
+        
+        <link rel="stylesheet" href="assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Inter:300,300i,400,400i,700,700i%7Cui-monospace:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Inter";--md-code-font:"ui-monospace"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="assets/_mkdocstrings.css">
+    
+      <link rel="stylesheet" href="styles/cookbooks.css">
+    
+      <link rel="stylesheet" href="styles.css">
+    
+    <script>__md_scope=new URL(".",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+  
+
+
+  
+  
+
+<script id="__analytics">function __md_analytics(){function e(){dataLayer.push(arguments)}window.dataLayer=window.dataLayer||[],e("js",new Date),e("config","G-T0CED2YY8K"),document.addEventListener("DOMContentLoaded",(function(){document.forms.search&&document.forms.search.query.addEventListener("blur",(function(){this.value&&e("event","search",{search_term:this.value})}));document$.subscribe((function(){var t=document.forms.feedback;if(void 0!==t)for(var a of t.querySelectorAll("[type=submit]"))a.addEventListener("click",(function(a){a.preventDefault();var n=document.location.pathname,d=this.getAttribute("data-md-value");e("event","feedback",{page:n,data:d}),t.firstElementChild.disabled=!0;var r=t.querySelector(".md-feedback__note [data-md-value='"+d+"']");r&&(r.hidden=!1)})),t.hidden=!1})),location$.subscribe((function(t){e("config","G-T0CED2YY8K",{page_path:t.pathname})}))}));var t=document.createElement("script");t.async=!0,t.src="https://www.googletagmanager.com/gtag/js?id=G-T0CED2YY8K",document.getElementById("__analytics").insertAdjacentElement("afterEnd",t)}</script>
+  
+    <script>"undefined"!=typeof __md_analytics&&__md_analytics()</script>
+  
+
+    
+    
+  
+  
+    <link href="https://cdn.jsdelivr.net/npm/swiper/swiper-bundle.min.css" rel="stylesheet">
+    <link href="static/styles.css" rel="stylesheet">
+    <script type="module" src="static/dist/home.js"></script>
+  
+
+  
+<meta property="og:type" content="website" />
+<meta property="og:title" content="Roboflow Inference" />
+<meta property="og:description" content="Scalable, on-device computer vision deployment." />
+<meta property="og:image" content="https://inference.roboflow.com/assets/images/social/index.png" />
+<meta property="og:image:type" content="image/png" />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
+<meta property="og:url" content="https://inference.roboflow.com/" />
+<meta property="twitter:card" content="summary_large_image" />
+<meta property="twitter:title" content="Roboflow Inference" />
+<meta property="twitter:description" content="Scalable, on-device computer vision deployment." />
+<meta property="twitter:image" content="https://inference.roboflow.com/assets/images/social/index.png" />
+</head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow md-header--lifted" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="." title="Roboflow Inference" class="md-header__button md-logo" aria-label="Roboflow Inference" data-md-component="logo">
+      
+  <img src="roboflow-logomark-white.svg" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Roboflow Inference
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Home
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="indigo"  aria-hidden="true"  type="radio" name="__palette" id="__palette_0">
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      <label class="md-header__button md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+      </label>
+      <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/roboflow/inference" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.7.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8M97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    roboflow/inference
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+    
+      
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="start/overview/" class="md-tabs__link">
+          
+  
+    
+  
+  Start
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="quickstart/run_a_model/" class="md-tabs__link">
+          
+  
+    
+  
+  Models
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="workflows/about/" class="md-tabs__link">
+          
+  
+    
+  
+  Workflows
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="quickstart/roboflow_ecosystem/" class="md-tabs__link">
+          
+  
+    
+  
+  Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="workflows/gallery/basic_workflows/" class="md-tabs__link">
+          
+  
+    
+  
+  Examples
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+    
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+  
+        
+      
+  
+    <section class="section pb-6 pt-24">
+    <div class="container">
+        <div class="flex flex-col items-center gap-4">
+            <h1
+                class="~text-3xl/5xl font-semibold text-center text-gray-900 max-w-[800px] text-pretty leading-tight"
+            >
+                Inference handles the core tasks of computer vision applications
+            </h1>
+            <div
+                class="text-xl text-center text-gray-500 max-w-[800px] text-pretty"
+            >
+                Integrate cutting-edge models, efficiently process video
+                streams, optimize CPU/GPU resources, and manage dependencies.
+            </div>
+            <div class="flex flex-row flex-wrap items-center gap-2 mt-4">
+                <a href="/start/getting-started/" class="btn">Get Started</a>
+                <a
+                    href="https://github.com/roboflow/inference"
+                    class="btn-outline"
+                >
+                    <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        width="16"
+                        height="16"
+                        viewBox="0 0 16 16"
+                        fill="none"
+                    >
+                        <path
+                            d="M5.43437 12.4187C5.43437 12.4812 5.3625 12.5312 5.27187 12.5312C5.16875 12.5406 5.09688 12.4906 5.09688 12.4187C5.09688 12.3562 5.16875 12.3062 5.25938 12.3062C5.35313 12.2969 5.43437 12.3469 5.43437 12.4187ZM4.4625 12.2781C4.44063 12.3406 4.50313 12.4125 4.59688 12.4312C4.67813 12.4625 4.77187 12.4312 4.79063 12.3687C4.80938 12.3062 4.75 12.2344 4.65625 12.2063C4.575 12.1844 4.48438 12.2156 4.4625 12.2781ZM5.84375 12.225C5.75313 12.2469 5.69062 12.3063 5.7 12.3781C5.70937 12.4406 5.79063 12.4813 5.88438 12.4594C5.975 12.4375 6.0375 12.3781 6.02812 12.3156C6.01875 12.2563 5.93437 12.2156 5.84375 12.225ZM7.9 0.25C3.56563 0.25 0.25 3.54063 0.25 7.875C0.25 11.3406 2.43125 14.3063 5.54688 15.35C5.94688 15.4219 6.0875 15.175 6.0875 14.9719C6.0875 14.7781 6.07812 13.7094 6.07812 13.0531C6.07812 13.0531 3.89062 13.5219 3.43125 12.1219C3.43125 12.1219 3.075 11.2125 2.5625 10.9781C2.5625 10.9781 1.84687 10.4875 2.6125 10.4969C2.6125 10.4969 3.39062 10.5594 3.81875 11.3031C4.50312 12.5094 5.65 12.1625 6.09688 11.9563C6.16875 11.4563 6.37188 11.1094 6.59688 10.9031C4.85 10.7094 3.0875 10.4562 3.0875 7.45C3.0875 6.59062 3.325 6.15938 3.825 5.60938C3.74375 5.40625 3.47813 4.56875 3.90625 3.4875C4.55937 3.28437 6.0625 4.33125 6.0625 4.33125C6.6875 4.15625 7.35938 4.06563 8.025 4.06563C8.69063 4.06563 9.3625 4.15625 9.9875 4.33125C9.9875 4.33125 11.4906 3.28125 12.1438 3.4875C12.5719 4.57188 12.3063 5.40625 12.225 5.60938C12.725 6.1625 13.0312 6.59375 13.0312 7.45C13.0312 10.4656 11.1906 10.7063 9.44375 10.9031C9.73125 11.15 9.975 11.6187 9.975 12.3531C9.975 13.4062 9.96562 14.7094 9.96562 14.9656C9.96562 15.1687 10.1094 15.4156 10.5063 15.3438C13.6313 14.3062 15.75 11.3406 15.75 7.875C15.75 3.54063 12.2344 0.25 7.9 0.25ZM3.2875 11.0281C3.24687 11.0594 3.25625 11.1313 3.30938 11.1906C3.35938 11.2406 3.43125 11.2625 3.47187 11.2219C3.5125 11.1906 3.50312 11.1187 3.45 11.0594C3.4 11.0094 3.32812 10.9875 3.2875 11.0281ZM2.95 10.775C2.92813 10.8156 2.95937 10.8656 3.02187 10.8969C3.07187 10.9281 3.13438 10.9187 3.15625 10.875C3.17812 10.8344 3.14687 10.7844 3.08437 10.7531C3.02187 10.7344 2.97187 10.7437 2.95 10.775ZM3.9625 11.8875C3.9125 11.9281 3.93125 12.0219 4.00312 12.0813C4.075 12.1531 4.16562 12.1625 4.20625 12.1125C4.24688 12.0719 4.22813 11.9781 4.16563 11.9187C4.09688 11.8469 4.00313 11.8375 3.9625 11.8875ZM3.60625 11.4281C3.55625 11.4594 3.55625 11.5406 3.60625 11.6125C3.65625 11.6844 3.74062 11.7156 3.78125 11.6844C3.83125 11.6438 3.83125 11.5625 3.78125 11.4906C3.7375 11.4188 3.65625 11.3875 3.60625 11.4281Z"
+                            fill="currentColor"
+                        />
+                    </svg>
+                    <span>GitHub</span></a
+                >
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Workflows -->
+<section class="section">
+    <div class="container">
+        <div class="flex flex-col items-center gap-1">
+            <h2 class="section-title">Workflows</h2>
+            <div class="section-description">
+                Build complex inference pipelines with a visual workflow editor
+            </div>
+        </div>
+
+        <div class="grid grid-cols-12 gap-4 mt-12">
+            <div class="card col-span-12 lg:col-span-8">
+                <div class="pt-8 px-8 md:absolute max-w-[60ch]">
+                    <h3 class="card-title">Model Chaining</h3>
+                    <div class="card-description">
+                        Combine multiple models in one pipeline.
+                    </div>
+                </div>
+                <div class="">
+                    <div class="m-8 aspect-[715/319]">
+                        <canvas
+                            class="w-full h-full"
+                            width="715"
+                            height="319"
+                            id="rive-model-chaining"
+                        ></canvas>
+                    </div>
+                </div>
+            </div>
+            <div
+                class="card col-span-12 lg:col-span-4 flex flex-wrap md:justify-between lg:flex-col lg:justify-normal"
+            >
+                <div class="pt-8 px-8 max-w-[60ch]">
+                    <h3 class="card-title">Access Foundation Models</h3>
+                    <div class="card-description">
+                        Leverage state-of-the-art models like Florence-2, CLIP,
+                        and SAM2 for diverse applications.
+                    </div>
+                </div>
+                <div class="px-8">
+                    <div
+                        id="tile-grid"
+                        class="grid grid-cols-4 grid-rows-3 gap-4 translate-y-8 max-w-fit"
+                    >
+                        <div class="tile opacity-0">
+                            <img
+                                src="./assets/img/tile-open-ai.svg"
+                                alt="open-ai"
+                            />
+                        </div>
+                        <div class="tile opacity-0">
+                            <img
+                                src="./assets/img/tile-microsoft.svg"
+                                alt="microsoft"
+                            />
+                        </div>
+                        <div class="tile opacity-0">
+                            <img
+                                src="./assets/img/tile-blank.svg"
+                                alt="tile-blank"
+                            />
+                        </div>
+                        <div class="tile opacity-0">
+                            <img src="./assets/img/tile-meta.svg" alt="meta" />
+                        </div>
+                        <div class="tile opacity-0">
+                            <img
+                                src="./assets/img/tile-blank.svg"
+                                alt="tile-blank"
+                            />
+                        </div>
+                        <div class="tile opacity-0">
+                            <img
+                                src="./assets/img/tile-anthropic.svg"
+                                alt="anthropic"
+                            />
+                        </div>
+                        <div class="tile opacity-0">
+                            <img
+                                src="./assets/img/tile-google.svg"
+                                alt="google"
+                            />
+                        </div>
+                        <div class="tile opacity-0">
+                            <img src="./assets/img/tile-s.svg" alt="s" />
+                        </div>
+                        <div class="tile opacity-0">
+                            <img
+                                src="./assets/img/tile-blank.svg"
+                                alt="tile-blank"
+                            />
+                        </div>
+                        <div class="tile opacity-0">
+                            <img
+                                src="./assets/img/tile-blank.svg"
+                                alt="tile-blank"
+                            />
+                        </div>
+                        <div class="tile opacity-0">
+                            <img
+                                src="./assets/img/tile-blank.svg"
+                                alt="tile-blank"
+                            />
+                        </div>
+                        <div class="tile opacity-0">
+                            <img
+                                src="./assets/img/tile-blank.svg"
+                                alt="tile-blank"
+                            />
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div
+                class="card col-span-12 lg:col-span-6 flex flex-wrap lg:flex-col gap-8"
+            >
+                <div class="pt-8 px-8 max-w-[60ch]">
+                    <h3 class="card-title">Extend with Custom Code</h3>
+                    <div class="card-description">
+                        Customize workflows and features by integrating your own
+                        code and models.
+                    </div>
+                </div>
+                <div
+                    class="flex justify-end md:pt-8 lg:w-full lg:p-0 flex-grow"
+                >
+                    <div class="lg:ml-8 aspect-[548/230]">
+                        <canvas
+                            style="width: 100%; height: 100%"
+                            width="548"
+                            height="230"
+                            id="rive-extend-custom-code"
+                        ></canvas>
+                    </div>
+                </div>
+            </div>
+            <div class="card col-span-12 lg:col-span-6">
+                <div class="p-8 max-w-[60ch]">
+                    <h3 class="card-title">100+ pre-built blocks</h3>
+                    <div class="card-description">
+                        Open source models, LLMs, core logic, and external
+                        applications.
+                    </div>
+                </div>
+                <div class="mb-8 aspect-[593/200]">
+                    <canvas
+                        style="width: 100%; height: 100%"
+                        width="593"
+                        height="200"
+                        id="rive-block-ticker"
+                    ></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Capabilities -->
+<section class="section">
+    <div class="container">
+        <div class="flex flex-col items-center gap-1">
+            <h2 class="section-title">Capabilities</h2>
+            <div class="section-description">
+                Deploy using a fully managed infrastructure with an API endpoint
+                or on-device, internet connection optional, without the headache
+                of environment management
+            </div>
+        </div>
+
+        <div class="grid grid-cols-12 gap-4 mt-12">
+            <div
+                class="card col-span-12 md:col-span-8 flex flex-col justify-between"
+            >
+                <div class="p-8 max-w-[60ch] mx-auto">
+                    <h3 class="card-title text-center">Deploy Anywhere</h3>
+                    <div class="card-description text-center">
+                        Run fine-tuned models in the cloud or on your hardware
+                        for full control and data security.
+                    </div>
+                </div>
+                <div
+                    id="deployments"
+                    class="flex flex-row gap-4 pb-8 px-8 justify-center items-center flex-grow"
+                >
+                    <img
+                        class="card-deployment w-full min-w-0 max-w-[180px] h-auto opacity-0"
+                        src="./assets/img/card-diagram-managed-deployment.svg"
+                        alt="card managed deployment"
+                    />
+                    <img
+                        class="card-deployment w-full min-w-0 max-w-[180px] h-auto opacity-0"
+                        src="./assets/img/card-diagram-self-hosted.svg"
+                        alt="card self-hosted deploymnet"
+                    />
+                    <img
+                        class="card-deployment w-full min-w-0 max-w-[180px] h-auto opacity-0"
+                        src="./assets/img/card-diagram-edge.svg"
+                        alt="card edge deploymnet"
+                    />
+                </div>
+            </div>
+            <div class="card col-span-12 md:col-span-4">
+                <div
+                    class="p-8 absolute left-0 top-0 max-w-[60ch] lg:right-[20%]"
+                >
+                    <h3 class="card-title">Integrate APIs</h3>
+                    <div class="card-description">
+                        Seamlessly connect with external systems to automate and
+                        enhance your workflows.
+                    </div>
+                </div>
+                <img
+                    class="w-1/2 ml-auto md:w-full h-auto"
+                    src="./assets/img/img-3rd-partyblocks-skew.svg"
+                    alt="3rd party workflow blocks"
+                />
+            </div>
+            <div
+                class="card col-span-12 md:col-span-4 flex flex-col justify-between"
+            >
+                <div class="p-8 max-w-[60ch]">
+                    <h3 class="card-title">Managed Compute</h3>
+                    <div class="card-description">
+                        Deploy models seamlessly with managed infrastructure.
+                    </div>
+                </div>
+                <div
+                    class="flex flex-grow pl-8 sm:pl-[30%]md:pl-8 items-end justify-end"
+                >
+                    <img
+                        class="w-full h-auto"
+                        src="./assets/img/img-dedicated-depoyments2.svg"
+                        alt="dedicated deployments table"
+                    />
+                </div>
+            </div>
+            <div
+                class="card col-span-12 md:col-span-8 flex flex-col justify-between flex-grow"
+            >
+                <div class="p-8 max-w-[60ch]">
+                    <h3 class="card-title">Manage Streams</h3>
+                    <div class="card-description">
+                        Easily configure and monitor multiple devices in one
+                        interface.
+                    </div>
+                </div>
+                <div class="px-8 flex justify-center flex-grow items-end">
+                    <img
+                        src="./assets/img/img-manage-streams.webp"
+                        alt="manage streams table"
+                    />
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Applications -->
+<section class="section">
+    <div class="container">
+        <div class="flex flex-col items-center gap-1">
+            <h2 class="section-title">Applications</h2>
+            <div class="section-description">
+                Build real-world applications with tracking, notifications,
+                automations, and pre-built logic.
+            </div>
+        </div>
+
+        <div class="grid grid-cols-12 gap-4 mt-12">
+            <div
+                class="card col-span-12 lg:col-span-6 flex flex-col justify-between"
+            >
+                <div class="p-8 max-w-[60ch] absolute top-0 left-0">
+                    <h3 class="card-title text-white">Track and Visualize</h3>
+                    <div class="card-description text-white">
+                        Monitor object movements, generate visual reports, and
+                        analyze real-time data across streams.
+                    </div>
+                </div>
+                <img
+                    class="w-full h-auto"
+                    src="./assets/img/img-car-tracking.avif"
+                    alt="cars with bounding boxes"
+                />
+            </div>
+            <div class="card col-span-12 lg:col-span-6">
+                <div class="p-8 max-w-[60ch]">
+                    <h3 class="card-title">Combine ML & CV</h3>
+                    <div class="card-description">
+                        Integrate machine learning with computer vision
+                        techniques like template matching and barcode reading.
+                    </div>
+                </div>
+                <div
+                    class="aspect-[580/205] w-full flex items-end justify-end flex-grow mt-auto"
+                >
+                    <canvas
+                        style="width: 100%; height: 100%"
+                        width="580"
+                        height="205"
+                        id="rive-ml-cl-barcode"
+                    ></canvas>
+                </div>
+            </div>
+            <div class="card col-span-12 lg:col-span-6">
+                <div class="p-8 max-w-[60ch]">
+                    <h3 class="card-title">Event Notifications</h3>
+                    <div class="card-description">
+                        Get real-time alerts when specific events occur.
+                    </div>
+                </div>
+                <div
+                    id="notifications"
+                    class="pb-8 px-8 w-full flex flex-col items-center justify-center flex-grow gap-4"
+                >
+                    <img
+                        class="notification opacity-0"
+                        src="./assets/img/notification-pager-duty-error.svg"
+                        alt="pager duty error notification"
+                    />
+                    <img
+                        class="notification opacity-0"
+                        src="./assets/img/notification-ghost.svg"
+                        alt="ghost notification"
+                    />
+                </div>
+            </div>
+            <div class="card col-span-12 lg:col-span-6">
+                <div class="p-8 max-w-[60ch] absolute top-0 left-0">
+                    <h3 class="card-title text-white">Measure Objects</h3>
+                    <div class="card-description text-white">
+                        Accurately calculate dimensions, distances, and object
+                        counts for precision tasks.
+                    </div>
+                </div>
+                <img
+                    class="w-full h-auto"
+                    src="./assets/img/img-dimensions-check.avif"
+                    alt="factory conveyor belt with a segmented wood sheet withdimensions"
+                />
+            </div>
+        </div>
+    </div>
+</section>
+
+<section class="section bg-gray-50 text-base">
+    <div class="container">
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-12">
+            <div class="flex flex-col gap-4 justify-center">
+                <div class="flex flex-col gap-1">
+                    <h2 class="~text-2xl/3xl font-medium text-gray-900">
+                        Workflow Examples
+                    </h2>
+                    <div class="text-gray-500">
+                        See how developers are building workflows with model
+                        chaining pipelines, visual language models, OCR, and
+                        custom business logic.
+                    </div>
+                </div>
+                <div class="">
+                    <a href="/workflows/gallery/">Explore workflow gallery</a>
+                </div>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <a
+                    href="/workflows/gallery/workflows_with_multiple_models/"
+                    class="link-card"
+                >
+                    <div
+                        class="flex w-8 h-8 bg-violet-100 justify-center items-center rounded-sm"
+                    >
+                        <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            width="20"
+                            height="20"
+                            viewBox="0 0 20 20"
+                            fill="none"
+                        >
+                            <path
+                                d="M17 4V8H6.5H5.5H3V4H17ZM6.5 9H17H18V8V4V3H17H3H2V4V8V9H3H5.5V14V14.5H6H9V16V17H10H17H18V16V12V11H17H10H9V12V13.5H6.5V9ZM17 12V16H10V12H17Z"
+                                fill="#1F2937"
+                            />
+                        </svg>
+                    </div>
+                    <div class="flex flex-col gap-1">
+                        <div class="link-card-title">Multi-Model Pipelines</div>
+                        <div class="link-card-description">
+                            Combine multiple models for complex vision tasks.
+                        </div>
+                    </div>
+                </a>
+                <a
+                    href="/workflows/gallery/workflows_with_visual_language_models/"
+                    class="link-card"
+                >
+                    <div
+                        class="flex w-8 h-8 bg-violet-100 justify-center items-center rounded-sm"
+                    >
+                        <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            width="20"
+                            height="20"
+                            viewBox="0 0 20 20"
+                            fill="none"
+                        >
+                            <path
+                                d="M1.0002 2.2937L0.293945 2.99995L0.64707 3.35308L3.29395 5.99995H1.5002H1.0002V6.99995H1.5002H4.5002H5.0002V6.49995V3.49995V2.99995H4.0002V3.49995V5.2937L1.35332 2.64683L1.0002 2.2937ZM18.6471 2.64683L16.0002 5.2937V3.49995V2.99995H15.0002V3.49995V6.49995V6.99995H15.5002H18.5002H19.0002V5.99995H18.5002H16.7064L19.3533 3.35308L19.7064 2.99995L19.0002 2.2937L18.6471 2.64683ZM19.7064 17L19.3533 16.6468L16.7064 14H18.5002H19.0002V13H18.5002H15.5002H15.0002V13.5V16.5V17H16.0002V16.5V14.7062L18.6471 17.3531L19.0002 17.7062L19.7064 17ZM0.293945 17L1.0002 17.7062L1.35332 17.3531L4.0002 14.7062V16.5V17H5.0002V16.5V13.5V13H4.5002H1.5002H1.0002V14H1.5002H3.29395L0.64707 16.6468L0.293945 17ZM10.0002 8.49995C10.398 8.49995 10.7796 8.65799 11.0609 8.93929C11.3422 9.2206 11.5002 9.60213 11.5002 9.99995C11.5002 10.3978 11.3422 10.7793 11.0609 11.0606C10.7796 11.3419 10.398 11.5 10.0002 11.5C9.60237 11.5 9.22084 11.3419 8.93954 11.0606C8.65823 10.7793 8.5002 10.3978 8.5002 9.99995C8.5002 9.60213 8.65823 9.2206 8.93954 8.93929C9.22084 8.65799 9.60237 8.49995 10.0002 8.49995ZM10.0002 12.5C10.6632 12.5 11.2991 12.2366 11.768 11.7677C12.2368 11.2989 12.5002 10.663 12.5002 9.99995C12.5002 9.33691 12.2368 8.70103 11.768 8.23218C11.2991 7.76334 10.6632 7.49995 10.0002 7.49995C9.33715 7.49995 8.70127 7.76334 8.23243 8.23218C7.76359 8.70103 7.5002 9.33691 7.5002 9.99995C7.5002 10.663 7.76359 11.2989 8.23243 11.7677C8.70127 12.2366 9.33715 12.5 10.0002 12.5ZM6.67832 12.0812C5.9502 11.4062 5.41895 10.6156 5.10332 9.99995C5.41895 9.38745 5.9502 8.59683 6.67832 7.9187C7.5627 7.09995 8.6752 6.49995 10.0002 6.49995C11.3252 6.49995 12.4377 7.09995 13.3221 7.9187C14.0502 8.5937 14.5814 9.38433 14.8971 9.99995C14.5814 10.6125 14.0502 11.4031 13.3221 12.0812C12.4377 12.9 11.3252 13.5 10.0002 13.5C8.6752 13.5 7.5627 12.9 6.67832 12.0812ZM10.0002 14.5C13.3002 14.5 15.3752 11.5 16.0002 9.99995C15.3752 8.49995 13.3002 5.49995 10.0002 5.49995C6.7002 5.49995 4.6252 8.49995 4.0002 9.99995C4.6252 11.5 6.7002 14.5 10.0002 14.5Z"
+                                fill="#1F2937"
+                            />
+                        </svg>
+                    </div>
+                    <div class="flex flex-col gap-1">
+                        <div class="link-card-title">
+                            Visual Language Models
+                        </div>
+                        <div class="link-card-description">
+                            Integrate image understanding with language
+                            processing.
+                        </div>
+                    </div>
+                </a>
+                <a
+                    href="/workflows/gallery/workflows_for_ocr/"
+                    class="link-card"
+                >
+                    <div
+                        class="flex w-8 h-8 bg-violet-100 justify-center items-center rounded-sm"
+                    >
+                        <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            width="20"
+                            height="20"
+                            viewBox="0 0 20 20"
+                            fill="none"
+                        >
+                            <path
+                                d="M15 17H5V3H10V7.5V8H10.5H15V17ZM11 3.16562L14.8344 7H11V3.16562ZM11.25 2H5H4V3V17V18H5H15H16V17V6.75L11.25 2ZM9.5 10C10.0304 10 10.5391 10.2107 10.9142 10.5858C11.2893 10.9609 11.5 11.4696 11.5 12C11.5 12.5304 11.2893 13.0391 10.9142 13.4142C10.5391 13.7893 10.0304 14 9.5 14C8.96957 14 8.46086 13.7893 8.08579 13.4142C7.71071 13.0391 7.5 12.5304 7.5 12C7.5 11.4696 7.71071 10.9609 8.08579 10.5858C8.46086 10.2107 8.96957 10 9.5 10ZM9.5 15C10.1469 15 10.7469 14.7969 11.2344 14.4469L12.6438 15.8562L13 16.2125L13.7063 15.5063L13.3531 15.1531L11.9437 13.7437C12.2937 13.25 12.5 12.65 12.5 12C12.5 10.3438 11.1562 9 9.5 9C7.84375 9 6.5 10.3438 6.5 12C6.5 13.6562 7.84375 15 9.5 15Z"
+                                fill="#1F2937"
+                            />
+                        </svg>
+                    </div>
+                    <div class="flex flex-col gap-1">
+                        <div class="link-card-title">OCR Workflows</div>
+                        <div class="link-card-description">
+                            Automate text extraction and processing from images.
+                        </div>
+                    </div>
+                </a>
+                <a
+                    href="/workflows/gallery/workflows_with_business_logic/"
+                    class="link-card"
+                >
+                    <div
+                        class="flex w-8 h-8 bg-violet-100 justify-center items-center rounded-sm"
+                    >
+                        <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            width="20"
+                            height="20"
+                            viewBox="0 0 20 20"
+                            fill="none"
+                        >
+                            <path
+                                d="M8.09414 5.375C7.68164 5.54375 7.29727 5.76875 6.94727 6.0375L6.53164 6.35625L6.03164 6.19688L4.40664 5.67812L3.46602 7.31875L4.72539 8.46562L5.11289 8.81875L5.04414 9.3375C5.01602 9.55312 5.00039 9.775 5.00039 10C5.00039 10.225 5.01602 10.4469 5.04414 10.6625L5.11289 11.1812L4.72539 11.5344L3.46602 12.6812L4.40977 14.3188L6.03477 13.8L6.53477 13.6406L6.95039 13.9594C7.30039 14.2281 7.68477 14.4531 8.09727 14.6219L8.58164 14.8219L8.69414 15.3344L9.05664 17H10.9473L11.3129 15.3344L11.4254 14.8219L11.9066 14.625C12.3191 14.4563 12.7035 14.2312 13.0535 13.9625L13.4691 13.6438L13.9691 13.8031L15.5941 14.3219L16.5379 12.6844L15.2785 11.5375L14.891 11.1844L14.9598 10.6656C14.9879 10.45 15.0035 10.2281 15.0035 10.0031C15.0035 9.77813 14.9879 9.55625 14.9598 9.34062L14.891 8.82188L15.2785 8.46875L16.5379 7.32188L15.5941 5.68438L13.9691 6.20312L13.4691 6.3625L13.0535 6.04375C12.7035 5.775 12.3191 5.55 11.9066 5.38125L11.4223 5.18125L11.3098 4.66875L10.9441 3H9.05352L8.69102 4.66563L8.57852 5.17812L8.09414 5.375ZM8.25039 2H11.7504L12.2879 4.45C12.7816 4.65313 13.2441 4.92188 13.6629 5.24375L16.0535 4.48125L17.8035 7.5125L15.9473 9.20312C15.9816 9.4625 16.0004 9.72812 16.0004 9.99687C16.0004 10.2656 15.9816 10.5312 15.9473 10.7906L17.8035 12.4812L16.0535 15.5125L13.6629 14.75C13.2441 15.0719 12.7816 15.3406 12.2879 15.5437L11.7504 18H8.25039L7.71289 15.55C7.21914 15.3469 6.75664 15.0781 6.33789 14.7563L3.94727 15.5156L2.19727 12.4844L4.05352 10.7937C4.01914 10.5344 4.00039 10.2688 4.00039 10C4.00039 9.73125 4.01914 9.46563 4.05352 9.20625L2.19727 7.51562L3.94727 4.48438L6.33789 5.24688C6.75664 4.925 7.21914 4.65625 7.71289 4.45312L8.25039 2ZM10.9941 7.08125L9.99414 13.0813L9.91289 13.575L8.92539 13.4094L9.00664 12.9156L10.0066 6.91563L10.0879 6.42188L11.0754 6.5875L10.9941 7.08125ZM7.85352 9.10313L6.95664 10L7.85352 10.8969L8.20664 11.25L7.50039 11.9563L7.14727 11.6031L5.89727 10.3531L5.54414 10L5.89727 9.64687L7.14727 8.39687L7.50039 8.04375L8.20664 8.75L7.85352 9.10313ZM12.8535 8.39687L14.1035 9.64687L14.4566 10L14.1035 10.3531L12.8535 11.6031L12.5004 11.9563L11.7941 11.25L12.1473 10.8969L13.0441 10L12.1473 9.10313L11.7941 8.75L12.5004 8.04375L12.8535 8.39687Z"
+                                fill="#1F2937"
+                            />
+                        </svg>
+                    </div>
+                    <div class="flex flex-col gap-1">
+                        <div class="link-card-title">Custom Business Logic</div>
+                        <div class="link-card-description">
+                            Tailor workflows to match your business-specific
+                            rules.
+                        </div>
+                    </div>
+                </a>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section class="section">
+    <div class="container">
+        <div class="flex flex-col items-center gap-1">
+            <h2 class="section-title">Video Tutorials</h2>
+            <div class="section-description">
+                Follow step-by-step video tutorials to build real-world
+                applications.
+            </div>
+        </div>
+
+        <!-- Slider main container -->
+        <div class="swiper mt-12">
+            <!-- Additional required wrapper -->
+            <div class="swiper-wrapper mb-12">
+                <!-- Slides -->
+                <div class="swiper-slide">
+                    <div class="card-horizontal">
+                        <div class="card-horizontal-image-container">
+                            <img
+                                class="card-horizontal-image"
+                                src="./assets/img/img-video-traffic-monitor.avif"
+                                alt="traffic with bounding boxes around the cars"
+                            />
+                        </div>
+                        <div class="card-horizontal-content">
+                            <div class="card-horizontal-content-text-container">
+                                <div class="card-horizontal-eyebrow">Tutorial</div>
+                                <div class="card-horizontal-title">
+                                    Intro to Workflows
+                                </div>
+                                <div class="card-horizontal-description">
+                                    Learn to build and deploy Workflows for use
+                                    cases like vehicle detection, filtering,
+                                    visualization, and dwell time calculation on
+                                    live video.
+                                </div>
+                            </div>
+                            <div>
+                                <a
+                                    href="https://youtu.be/r3Ke7ZEh2Qo"
+                                    target="_blank"
+                                    class="btn-sm"
+                                    >Watch Now</a
+                                >
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="swiper-slide">
+                    <div class="card-horizontal">
+                        <div class="card-horizontal-image-container">
+                            <img
+                                class="card-horizontal-image"
+                                src="./assets/img/img-checkout-cost-calculator.avif"
+                                alt="car with a bounding box around the license plate"
+                            />
+                        </div>
+                        <div class="card-horizontal-content">
+                            <div class="card-horizontal-content-text-container">
+                                <div class="card-horizontal-eyebrow">Tutorial</div>
+                                <div class="card-horizontal-title">
+                                    Build an AI-Powered Self-Serve Checkout
+                                </div>
+                                <div class="card-horizontal-description">
+                                    Make a computer vision app that identifies
+                                    different pieces of hardware, calculates the
+                                    total cost, and records the results to a
+                                    database.
+                                </div>
+                            </div>
+                            <div>
+                                <a
+                                    href="https://www.youtube.com/watch?v=aPxlImNxj5A"
+                                    target="_blank"
+                                    class="btn-sm"
+                                    >Watch Now</a
+                                >
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="swiper-slide">
+                    <div class="card-horizontal">
+                        <div class="card-horizontal-image-container">
+                            <img
+                                class="card-horizontal-image"
+                                src="./assets/img/img-video-smart-parking.avif"
+                                alt="car with a bounding box around the license plate"
+                            />
+                        </div>
+                        <div class="card-horizontal-content">
+                            <div class="card-horizontal-content-text-container">
+                                <div class="card-horizontal-eyebrow">Tutorial</div>
+                                <div class="card-horizontal-title">
+                                    Build a Smart Parking System
+                                </div>
+                                <div class="card-horizontal-description">
+                                    Build a smart parking lot management system
+                                    using Roboflow Workflows!
+                                </div>
+                            </div>
+                            <div>
+                                <a
+                                    href="https://youtu.be/tZa-QgFn7jg"
+                                    target="_blank"
+                                    class="btn-sm"
+                                    >Watch Now</a
+                                >
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <!-- If we need pagination -->
+            <div class="swiper-pagination"></div>
+        </div>
+    </div>
+</section>
+
+<section class="section bg-gray-100">
+    <div class="container">
+        <div class="flex flex-col items-center gap-1">
+            <h2 class="section-title">Start Building with Inference</h2>
+            <div class="section-description">
+                Everything you need to start running models, exploring
+                capabilities, and building intelligent workflows.
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mt-12">
+            <a href="/start/overview/" class="link-card">
+                <div
+                    class="flex w-8 h-8 bg-violet-100 justify-center items-center rounded-sm"
+                >
+                    <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        width="20"
+                        height="20"
+                        viewBox="0 0 20 20"
+                        fill="none"
+                    >
+                        <path
+                            d="M8.85293 11.1467C8.54043 10.8342 8.18418 10.5811 7.79668 10.3936C8.80605 6.30298 10.6436 4.45298 12.3936 3.6311C13.9654 2.8936 15.6217 2.91235 16.8654 3.13423C17.0842 4.37798 17.1061 6.03423 16.3686 7.6061C15.5467 9.35298 13.6967 11.1936 9.60605 12.203C9.41855 11.8155 9.16543 11.4561 8.85293 11.1467ZM9.9998 13.9155C9.9998 13.6592 9.9748 13.4061 9.9248 13.1561C11.1061 12.8592 12.1248 12.4905 12.9998 12.0717V14.9436L9.9998 16.4436V13.9155ZM13.9998 15.2499V11.5311C18.4842 8.80923 18.2623 4.5061 17.7092 2.29048C15.4936 1.73735 11.1904 1.51548 8.47168 5.99985H4.7498H4.44043L4.30293 6.27485L2.30293 10.2749L1.94043 10.9999H2.7498H6.08418C6.85605 10.9999 7.5998 11.3061 8.14355 11.853C8.6873 12.3999 8.99668 13.1405 8.99668 13.9124L8.9998 17.2499V18.0592L9.7248 17.6967L13.7248 15.6967L13.9998 15.5592V15.2499ZM6.84355 10.0749C6.59668 10.0249 6.34043 9.99985 6.08418 9.99985H3.55605L5.05605 6.99985H7.92793C7.50605 7.87485 7.14043 8.89048 6.84355 10.0749ZM6.49355 15.9811C5.9748 16.4999 4.98105 16.7967 3.90918 16.9249C3.58418 16.9624 3.2748 16.9842 3.00605 16.9936C3.01543 16.7249 3.0373 16.4155 3.0748 16.0905C3.20293 15.0186 3.4998 14.0217 4.01855 13.5061C4.70293 12.8217 5.8123 12.8217 6.49668 13.5061C7.18105 14.1905 7.18105 15.2999 6.49668 15.9842L6.49355 15.9811ZM7.20293 16.6874C8.27793 15.6124 8.27793 13.8717 7.20293 12.7967C6.12793 11.7217 4.3873 11.7217 3.3123 12.7967C1.76543 14.3436 2.01543 17.9842 2.01543 17.9842C2.01543 17.9842 5.65605 18.2342 7.20293 16.6874ZM14.2498 6.49985C14.2498 6.69876 14.1708 6.88953 14.0301 7.03018C13.8895 7.17083 13.6987 7.24985 13.4998 7.24985C13.3009 7.24985 13.1101 7.17083 12.9695 7.03018C12.8288 6.88953 12.7498 6.69876 12.7498 6.49985C12.7498 6.30094 12.8288 6.11017 12.9695 5.96952C13.1101 5.82887 13.3009 5.74985 13.4998 5.74985C13.6987 5.74985 13.8895 5.82887 14.0301 5.96952C14.1708 6.11017 14.2498 6.30094 14.2498 6.49985ZM13.4998 4.74985C13.27 4.74985 13.0424 4.79512 12.8301 4.88306C12.6178 4.97101 12.4249 5.09991 12.2624 5.26242C12.0999 5.42492 11.971 5.61784 11.883 5.83016C11.7951 6.04248 11.7498 6.27004 11.7498 6.49985C11.7498 6.72966 11.7951 6.95723 11.883 7.16955C11.971 7.38187 12.0999 7.57479 12.2624 7.73729C12.4249 7.89979 12.6178 8.0287 12.8301 8.11664C13.0424 8.20459 13.27 8.24985 13.4998 8.24985C13.7296 8.24985 13.9572 8.20459 14.1695 8.11664C14.3818 8.0287 14.5747 7.89979 14.7372 7.73729C14.8997 7.57479 15.0286 7.38187 15.1166 7.16955C15.2045 6.95723 15.2498 6.72966 15.2498 6.49985C15.2498 6.27004 15.2045 6.04248 15.1166 5.83016C15.0286 5.61784 14.8997 5.42492 14.7372 5.26242C14.5747 5.09991 14.3818 4.97101 14.1695 4.88306C13.9572 4.79512 13.7296 4.74985 13.4998 4.74985Z"
+                            fill="#1F2937"
+                        />
+                    </svg>
+                </div>
+                <div class="flex flex-col gap-1">
+                    <div class="link-card-title">Get Setup</div>
+                    <div class="link-card-description">
+                        Locally or with managed compute.
+                    </div>
+                </div>
+            </a>
+            <a href="/workflows/about/" class="link-card">
+                <div
+                    class="flex w-8 h-8 bg-violet-100 justify-center items-center rounded-sm"
+                >
+                    <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        width="20"
+                        height="20"
+                        viewBox="0 0 20 20"
+                        fill="none"
+                    >
+                        <path
+                            d="M11.9406 10.8594L11.3813 10.7063L10.9688 11.1156L5.5 16.5844L3.41562 14.5L8.88438 9.03125L9.29375 8.62187L9.14062 8.0625C9.05 7.725 9 7.37188 9 7.00313C9 4.79375 10.7906 3.00312 13 3.00312C13.3344 3.00312 13.6594 3.04375 13.9688 3.12188L12.2937 4.79375L12 5.08437V5.5V7V8H13H14.5H14.9156L15.2094 7.70625L16.8813 6.03125C16.9594 6.34062 17 6.66563 17 7C17 9.20937 15.2094 11 13 11C12.6313 11 12.2781 10.95 11.9406 10.8594ZM5.5 18L6.20625 17.2937L11.675 11.825C12.0969 11.9406 12.5406 12.0031 12.9969 12.0031C15.7594 12.0031 17.9969 9.76562 17.9969 7.00313C17.9969 6.38125 17.8844 5.7875 17.675 5.2375C17.55 4.90625 17.3906 4.59063 17.2 4.29688L16.4781 5.02187L14.5 7H14H13V6V5.5L14.9781 3.52188L15.7063 2.79375C15.4125 2.60312 15.0969 2.44375 14.7656 2.31875C14.2156 2.1125 13.6219 2 13 2C10.2375 2 8 4.2375 8 7C8 7.45937 8.0625 7.90313 8.17812 8.32188L2.70938 13.7906L2 14.5L2.70625 15.2063L4.79063 17.2906L5.5 18ZM5.75 14.9563L6.45625 14.25L5.75 13.5437L5.04375 14.25L5.75 14.9563Z"
+                            fill="#1F2937"
+                        />
+                    </svg>
+                </div>
+                <div class="flex flex-col gap-1">
+                    <div class="link-card-title">Build with Workflows</div>
+                    <div class="link-card-description">
+                        Create automation pipelines and visual agents.
+                    </div>
+                </div>
+            </a>
+            <a href="/workflows/gallery/" class="link-card">
+                <div
+                    class="flex w-8 h-8 bg-violet-100 justify-center items-center rounded-sm"
+                >
+                    <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        width="20"
+                        height="20"
+                        viewBox="0 0 20 20"
+                        fill="none"
+                    >
+                        <path
+                            d="M14 8.5C14 7.77773 13.8577 7.06253 13.5813 6.39524C13.3049 5.72795 12.8998 5.12163 12.3891 4.61091C11.8784 4.10019 11.272 3.69506 10.6048 3.41866C9.93747 3.14226 9.22227 3 8.5 3C7.77773 3 7.06253 3.14226 6.39524 3.41866C5.72795 3.69506 5.12163 4.10019 4.61091 4.61091C4.10019 5.12163 3.69506 5.72795 3.41866 6.39524C3.14226 7.06253 3 7.77773 3 8.5C3 9.22227 3.14226 9.93747 3.41866 10.6048C3.69506 11.272 4.10019 11.8784 4.61091 12.3891C5.12163 12.8998 5.72795 13.3049 6.39524 13.5813C7.06253 13.8577 7.77773 14 8.5 14C9.22227 14 9.93747 13.8577 10.6048 13.5813C11.272 13.3049 11.8784 12.8998 12.3891 12.3891C12.8998 11.8784 13.3049 11.272 13.5813 10.6048C13.8577 9.93747 14 9.22227 14 8.5ZM12.7281 13.4375C11.5938 14.4125 10.1156 15 8.5 15C4.90937 15 2 12.0906 2 8.5C2 4.90937 4.90937 2 8.5 2C12.0906 2 15 4.90937 15 8.5C15 10.1156 14.4125 11.5938 13.4375 12.7281L17.9531 17.2469L17.2469 17.9531L12.7281 13.4375Z"
+                            fill="#1F2937"
+                        />
+                    </svg>
+                </div>
+                <div class="flex flex-col gap-1">
+                    <div class="link-card-title">See Examples </div>
+                    <div class="link-card-description">
+                        Get inspired by the possibilities.
+                    </div>
+                </div>
+            </a>
+        </div>
+    </div>
+</section>
+    <style>
+      main.md-main {
+        height: 0;
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+      }
+    </style>
+  
+
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="." title="Roboflow Inference" class="md-nav__button md-logo" aria-label="Roboflow Inference" data-md-component="logo">
+      
+  <img src="roboflow-logomark-white.svg" alt="logo">
+
+    </a>
+    Roboflow Inference
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/roboflow/inference" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.7.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8M97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    roboflow/inference
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+      
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+    <a href="start/overview/" class="md-nav__link">
+      
+  
+  <span class="md-ellipsis">
+    
+  
+    Start
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+      
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+    <a href="quickstart/run_a_model/" class="md-nav__link">
+      
+  
+  <span class="md-ellipsis">
+    
+  
+    Models
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+      
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+    <a href="workflows/about/" class="md-nav__link">
+      
+  
+  <span class="md-ellipsis">
+    
+  
+    Workflows
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+      
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+    <a href="quickstart/roboflow_ecosystem/" class="md-nav__link">
+      
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+      
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+    <a href="workflows/gallery/basic_workflows/" class="md-nav__link">
+      
+  
+  <span class="md-ellipsis">
+    
+  
+    Examples
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+  
+  
+
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+    <div class="md-copyright__highlight">
+      Roboflow 2025. All rights reserved.
+    </div>
+  
+  
+</div>
+      
+        <div class="md-social">
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://github.com/roboflow" target="_blank" rel="noopener" title="github.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.7.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8M97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+    </a>
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://www.youtube.com/roboflow" target="_blank" rel="noopener" title="www.youtube.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.7.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M549.655 124.083c-6.281-23.65-24.787-42.276-48.284-48.597C458.781 64 288 64 288 64S117.22 64 74.629 75.486c-23.497 6.322-42.003 24.947-48.284 48.597-11.412 42.867-11.412 132.305-11.412 132.305s0 89.438 11.412 132.305c6.281 23.65 24.787 41.5 48.284 47.821C117.22 448 288 448 288 448s170.78 0 213.371-11.486c23.497-6.321 42.003-24.171 48.284-47.821 11.412-42.867 11.412-132.305 11.412-132.305s0-89.438-11.412-132.305m-317.51 213.508V175.185l142.739 81.205z"/></svg>
+    </a>
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://www.linkedin.com/company/roboflow-ai/mycompany/" target="_blank" rel="noopener" title="www.linkedin.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.7.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M416 32H31.9C14.3 32 0 46.5 0 64.3v383.4C0 465.5 14.3 480 31.9 480H416c17.6 0 32-14.5 32-32.3V64.3c0-17.8-14.4-32.3-32-32.3M135.4 416H69V202.2h66.5V416zm-33.2-243c-21.3 0-38.5-17.3-38.5-38.5S80.9 96 102.2 96c21.2 0 38.5 17.3 38.5 38.5 0 21.3-17.2 38.5-38.5 38.5m282.1 243h-66.4V312c0-24.8-.5-56.7-34.5-56.7-34.6 0-39.9 27-39.9 54.9V416h-66.4V202.2h63.7v29.2h.9c8.9-16.8 30.6-34.5 62.9-34.5 67.2 0 79.7 44.3 79.7 101.9z"/></svg>
+    </a>
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://twitter.com/roboflow" target="_blank" rel="noopener" title="twitter.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.7.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M459.37 151.716c.325 4.548.325 9.097.325 13.645 0 138.72-105.583 298.558-298.558 298.558-59.452 0-114.68-17.219-161.137-47.106 8.447.974 16.568 1.299 25.34 1.299 49.055 0 94.213-16.568 130.274-44.832-46.132-.975-84.792-31.188-98.112-72.772 6.498.974 12.995 1.624 19.818 1.624 9.421 0 18.843-1.3 27.614-3.573-48.081-9.747-84.143-51.98-84.143-102.985v-1.299c13.969 7.797 30.214 12.67 47.431 13.319-28.264-18.843-46.781-51.005-46.781-87.391 0-19.492 5.197-37.36 14.294-52.954 51.655 63.675 129.3 105.258 216.365 109.807-1.624-7.797-2.599-15.918-2.599-24.04 0-57.828 46.782-104.934 104.934-104.934 30.213 0 57.502 12.67 76.67 33.137 23.715-4.548 46.456-13.32 66.599-25.34-7.798 24.366-24.366 44.833-46.132 57.827 21.117-2.273 41.584-8.122 60.426-16.243-14.292 20.791-32.161 39.308-52.628 54.253"/></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+      <div class="md-progress" data-md-component="progress" role="progressbar"></div>
+    
+    
+    <script id="__config" type="application/json">{"base": ".", "features": ["announce.dismiss", "content.action.edit", "content.code.copy", "content.tabs.link", "navigation.footer", "navigation.indexes", "navigation.instant", "navigation.instant.prefetch", "navigation.instant.preview", "navigation.instant.progress", "navigation.prune", "navigation.tabs", "navigation.tabs.sticky", "navigation.top", "navigation.tracking", "optimize", "search.share", "search.suggest", "toc.follow"], "search": "assets/javascripts/workers/search.c7c1ca2c.min.js", "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": 1.0}}</script>
+    
+    
+      <script src="assets/javascripts/bundle.5a789024.min.js"></script>
+      
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.8/purify.min.js"></script>
+      
+        <script src="javascript/init_kapa_widget.js"></script>
+      
+        <script src="javascript/cookbooks.js"></script>
+      
+        <script src="javascript/workflows.js"></script>
+      
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+      
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js"></script>
+      
+        <script src="https://unpkg.com/@rive-app/canvas"></script>
+      
+        <script src="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.js"></script>
+      
+        <script src="assets/home.js"></script>
+      
+        <script src="js/segment.js"></script>
+      
+    
+  </body>
+</html>

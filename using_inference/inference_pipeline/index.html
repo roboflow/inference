@@ -1,0 +1,2674 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Scalable, on-device computer vision deployment.">
+      
+      
+        <meta name="author" content="Roboflow">
+      
+      
+        <link rel="canonical" href="https://inference.roboflow.com/using_inference/inference_pipeline/">
+      
+      
+        <link rel="prev" href="../../quickstart/roboflow_ecosystem/">
+      
+      
+        <link rel="next" href="../../inference_helpers/inference_sdk/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.6.4+insiders-4.53.15">
+    
+    
+      
+        <title>InferencePipeline - Roboflow Inference</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.f15084e1.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Inter:300,300i,400,400i,700,700i%7Cui-monospace:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Inter";--md-code-font:"ui-monospace"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/_mkdocstrings.css">
+    
+      <link rel="stylesheet" href="../../styles/cookbooks.css">
+    
+      <link rel="stylesheet" href="../../styles.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+  
+
+
+  
+  
+
+<script id="__analytics">function __md_analytics(){function e(){dataLayer.push(arguments)}window.dataLayer=window.dataLayer||[],e("js",new Date),e("config","G-T0CED2YY8K"),document.addEventListener("DOMContentLoaded",(function(){document.forms.search&&document.forms.search.query.addEventListener("blur",(function(){this.value&&e("event","search",{search_term:this.value})}));document$.subscribe((function(){var t=document.forms.feedback;if(void 0!==t)for(var a of t.querySelectorAll("[type=submit]"))a.addEventListener("click",(function(a){a.preventDefault();var n=document.location.pathname,d=this.getAttribute("data-md-value");e("event","feedback",{page:n,data:d}),t.firstElementChild.disabled=!0;var r=t.querySelector(".md-feedback__note [data-md-value='"+d+"']");r&&(r.hidden=!1)})),t.hidden=!1})),location$.subscribe((function(t){e("config","G-T0CED2YY8K",{page_path:t.pathname})}))}));var t=document.createElement("script");t.async=!0,t.src="https://www.googletagmanager.com/gtag/js?id=G-T0CED2YY8K",document.getElementById("__analytics").insertAdjacentElement("afterEnd",t)}</script>
+  
+    <script>"undefined"!=typeof __md_analytics&&__md_analytics()</script>
+  
+
+    
+    
+  
+  
+
+  
+<meta property="og:type" content="website" />
+<meta property="og:title" content="InferencePipeline - Roboflow Inference" />
+<meta property="og:description" content="Scalable, on-device computer vision deployment." />
+<meta property="og:image" content="https://inference.roboflow.com/assets/images/social/using_inference/inference_pipeline.png" />
+<meta property="og:image:type" content="image/png" />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
+<meta property="og:url" content="https://inference.roboflow.com/using_inference/inference_pipeline/" />
+<meta property="twitter:card" content="summary_large_image" />
+<meta property="twitter:title" content="InferencePipeline - Roboflow Inference" />
+<meta property="twitter:description" content="Scalable, on-device computer vision deployment." />
+<meta property="twitter:image" content="https://inference.roboflow.com/assets/images/social/using_inference/inference_pipeline.png" />
+</head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#quickstart" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow md-header--lifted" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Roboflow Inference" class="md-header__button md-logo" aria-label="Roboflow Inference" data-md-component="logo">
+      
+  <img src="../../roboflow-logomark-white.svg" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Roboflow Inference
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              InferencePipeline
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="indigo"  aria-hidden="true"  type="radio" name="__palette" id="__palette_0">
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      <label class="md-header__button md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+      </label>
+      <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/roboflow/inference" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.7.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8M97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    roboflow/inference
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+    
+      
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../start/overview/" class="md-tabs__link">
+          
+  
+    
+  
+  Start
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../quickstart/run_a_model/" class="md-tabs__link">
+          
+  
+    
+  
+  Models
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../workflows/about/" class="md-tabs__link">
+          
+  
+    
+  
+  Workflows
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../../quickstart/roboflow_ecosystem/" class="md-tabs__link">
+          
+  
+    
+  
+  Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../workflows/gallery/basic_workflows/" class="md-tabs__link">
+          
+  
+    
+  
+  Examples
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+    
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+  
+        
+      
+  
+
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Roboflow Inference" class="md-nav__button md-logo" aria-label="Roboflow Inference" data-md-component="logo">
+      
+  <img src="../../roboflow-logomark-white.svg" alt="logo">
+
+    </a>
+    Roboflow Inference
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/roboflow/inference" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.7.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8M97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    roboflow/inference
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+      
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+    <a href="../../start/overview/" class="md-nav__link">
+      
+  
+  <span class="md-ellipsis">
+    
+  
+    Start
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+      
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+    <a href="../../quickstart/run_a_model/" class="md-nav__link">
+      
+  
+  <span class="md-ellipsis">
+    
+  
+    Models
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+      
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+    <a href="../../workflows/about/" class="md-nav__link">
+      
+  
+  <span class="md-ellipsis">
+    
+  
+    Workflows
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+      
+        
+        
+      
+      
+    
+    
+      
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../quickstart/roboflow_ecosystem/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    
+  
+    Roboflow Ecosystem
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  <span class="md-ellipsis">
+    
+  
+    InferencePipeline
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  <span class="md-ellipsis">
+    
+  
+    InferencePipeline
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#quickstart" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Quickstart
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-is-video-reference" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What is video reference?
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#how-the-inferencepipeline-works" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How the InferencePipeline works?
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#how-to-provide-a-custom-inference-logic-to-inferencepipeline" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How to provide a custom inference logic to InferencePipeline
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#inferencepipeline-and-roboflow-workflows" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        InferencePipeline and Roboflow workflows
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sinks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sinks
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Sinks">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#before-v0918" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Before v0.9.18
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#after-v0918" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        After v0.9.18
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#usage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Usage
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#custom-sinks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Custom Sinks
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Custom Sinks">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#why-there-is-optional-in-listoptionaldict-and-listoptionalvideoframe" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why there is Optional in List[Optional[dict]] and List[Optional[VideoFrame]]?
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#other-pipeline-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Other Pipeline Configuration
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#performance" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Performance
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Performance">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#macbook-m2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MacBook M2
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#jetson-orin-nano" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Jetson Orin Nano
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tesla-t4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tesla T4
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#migrating-from-inferencestream-to-inferencepipeline" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Migrating from inference.Stream to InferencePipeline
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Migrating from inference.Stream to InferencePipeline">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#new-features-in-inferencepipeline" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        New Features in InferencePipeline
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="New Features in InferencePipeline">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#stability" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Stability
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#granularity-of-control" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Granularity of control
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#observability" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Observability
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#migrate-from-inferencestream-to-inferencepipeline" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Migrate from inference.Stream to InferencePipeline
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#migrate-to-changes-introduced-in-v0918" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Migrate to changes introduced in v0.9.18
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+      
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+    <a href="../../inference_helpers/inference_sdk/" class="md-nav__link">
+      
+  
+  <span class="md-ellipsis">
+    
+  
+    Python SDK
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+      
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+    <a href="../../inference_helpers/inference_cli/" class="md-nav__link">
+      
+  
+  <span class="md-ellipsis">
+    
+  
+    Command Line Interface
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+    
+    
+      
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+    <a href="../../api/" class="md-nav__link">
+      
+  
+  <span class="md-ellipsis">
+    
+  
+    HTTP API
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+      
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+    <a href="../../reference/inference/" class="md-nav__link">
+      
+  
+  <span class="md-ellipsis">
+    
+  
+    inference Python Package
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+      
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+    <a href="../../enterprise/parallel_processing/" class="md-nav__link">
+      
+  
+  <span class="md-ellipsis">
+    
+  
+    Enterprise Features
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+      
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+    <a href="../../quickstart/docker/" class="md-nav__link">
+      
+  
+  <span class="md-ellipsis">
+    
+  
+    Server Configuration
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../offline_weights_download/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    
+  
+    Model Weights Download
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    
+  
+    Contribute to Inference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="https://github.com/roboflow/inference/releases" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+      
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+    <a href="../../workflows/gallery/basic_workflows/" class="md-nav__link">
+      
+  
+  <span class="md-ellipsis">
+    
+  
+    Examples
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#quickstart" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Quickstart
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-is-video-reference" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What is video reference?
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#how-the-inferencepipeline-works" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How the InferencePipeline works?
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#how-to-provide-a-custom-inference-logic-to-inferencepipeline" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How to provide a custom inference logic to InferencePipeline
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#inferencepipeline-and-roboflow-workflows" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        InferencePipeline and Roboflow workflows
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sinks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sinks
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Sinks">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#before-v0918" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Before v0.9.18
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#after-v0918" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        After v0.9.18
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#usage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Usage
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#custom-sinks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Custom Sinks
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Custom Sinks">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#why-there-is-optional-in-listoptionaldict-and-listoptionalvideoframe" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why there is Optional in List[Optional[dict]] and List[Optional[VideoFrame]]?
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#other-pipeline-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Other Pipeline Configuration
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#performance" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Performance
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Performance">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#macbook-m2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MacBook M2
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#jetson-orin-nano" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Jetson Orin Nano
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tesla-t4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tesla T4
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#migrating-from-inferencestream-to-inferencepipeline" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Migrating from inference.Stream to InferencePipeline
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Migrating from inference.Stream to InferencePipeline">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#new-features-in-inferencepipeline" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        New Features in InferencePipeline
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="New Features in InferencePipeline">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#stability" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Stability
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#granularity-of-control" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Granularity of control
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#observability" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Observability
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#migrate-from-inferencestream-to-inferencepipeline" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Migrate from inference.Stream to InferencePipeline
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#migrate-to-changes-introduced-in-v0918" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Migrate to changes introduced in v0.9.18
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+  
+    
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+    <a href="https://github.com/roboflow/inference/tree/main/docs/using_inference/inference_pipeline.md" title="Edit this page" class="md-content__button md-icon">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
+    </a>
+  
+  
+
+
+  <h1>InferencePipeline</h1>
+
+<p>The Inference Pipeline interface is made for streaming and is likely the best route to go for real time use cases. 
+It is an asynchronous interface that can consume many different video sources including local devices (like webcams), 
+RTSP video streams, video files, etc. With this interface, you define the source of a video stream and sinks.</p>
+<p>Now, since version <code>v0.9.18</code> <code>InferencePipeline</code> supports multiple sources of video at the same time! </p>
+<h2 id="quickstart">Quickstart<a class="headerlink" href="#quickstart" title="Permanent link">&para;</a></h2>
+<p>First, install Inference:</p>
+<div class="admonition info">
+<p class="admonition-title">Info</p>
+<p>Prior to installation, you may want to configure a <a href="https://docs.python.org/3/tutorial/venv.html">python virtual environment</a> to isolate dependencies of inference.</p>
+</div>
+<p>To install Inference via pip:</p>
+<div class="highlight"><pre><span></span><code>pip<span class="w"> </span>install<span class="w"> </span>inference
+</code></pre></div>
+<p>If you have an NVIDIA GPU, you can accelerate your inference with:</p>
+<div class="highlight"><pre><span></span><code>pip<span class="w"> </span>install<span class="w"> </span>inference-gpu
+</code></pre></div>
+<p>Next, create an Inference Pipeline:</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># import the InferencePipeline interface</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">inference</span><span class="w"> </span><span class="kn">import</span> <span class="n">InferencePipeline</span>
+<span class="c1"># import a built-in sink called render_boxes (sinks are the logic that happens after inference)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">inference.core.interfaces.stream.sinks</span><span class="w"> </span><span class="kn">import</span> <span class="n">render_boxes</span>
+
+<span class="n">api_key</span> <span class="o">=</span> <span class="s2">&quot;YOUR_ROBOFLOW_API_KEY&quot;</span>
+
+<span class="c1"># create an inference pipeline object</span>
+<span class="n">pipeline</span> <span class="o">=</span> <span class="n">InferencePipeline</span><span class="o">.</span><span class="n">init</span><span class="p">(</span>
+    <span class="n">model_id</span><span class="o">=</span><span class="s2">&quot;yolov8x-1280&quot;</span><span class="p">,</span> <span class="c1"># set the model id to a yolov8x model with in put size 1280</span>
+    <span class="n">video_reference</span><span class="o">=</span><span class="s2">&quot;https://storage.googleapis.com/com-roboflow-marketing/inference/people-walking.mp4&quot;</span><span class="p">,</span> <span class="c1"># set the video reference (source of video), it can be a link/path to a video file, an RTSP stream url, or an integer representing a device id (usually 0 for built in webcams)</span>
+    <span class="n">on_prediction</span><span class="o">=</span><span class="n">render_boxes</span><span class="p">,</span> <span class="c1"># tell the pipeline object what to do with each set of inference by passing a function</span>
+    <span class="n">api_key</span><span class="o">=</span><span class="n">api_key</span><span class="p">,</span> <span class="c1"># provide your roboflow api key for loading models from the roboflow api</span>
+<span class="p">)</span>
+<span class="c1"># start the pipeline</span>
+<span class="n">pipeline</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+<span class="c1"># wait for the pipeline to finish</span>
+<span class="n">pipeline</span><span class="o">.</span><span class="n">join</span><span class="p">()</span>
+</code></pre></div>
+<p>Let's break down the example line by line:</p>
+<p><strong><code>pipeline = InferencePipeline.init(...)</code></strong></p>
+<p>Here, we are calling a class method of InferencePipeline.</p>
+<p><strong><code>model_id="yolov8x-1280"</code></strong></p>
+<p>We set the model ID to a YOLOv8x model pre-trained on COCO with input resolution <code>1280x1280</code>.</p>
+<p><strong><code>video_reference="https://storage.googleapis.com/com-roboflow-marketing/inference/people-walking.mp4"</code></strong></p>
+<p>We set the video reference to a URL. Later we will show the various values that can be used as a video reference.</p>
+<p><strong><code>on_prediction=render_boxes</code></strong></p>
+<p>The <code>on_prediction</code> argument defines our sink (or a list of sinks).</p>
+<p><strong><code>pipeline.start(); pipeline.join()</code></strong></p>
+<p>Here, we start and join the thread that processes the video stream.</p>
+<h2 id="what-is-video-reference">What is video reference?<a class="headerlink" href="#what-is-video-reference" title="Permanent link">&para;</a></h2>
+<p>Inference Pipelines can consume many different types of video streams.</p>
+<ul>
+<li>Device Id (integer): Providing an integer instructs a pipeline to stream video from a local device, like a webcam. Typically, built in webcams show up as device <code>0</code>.</li>
+<li>Video File (string): Providing the path to a video file will result in the pipeline reading every frame from the file, running inference with the specified model, then running the <code>on_prediction</code> method with each set of resulting predictions.</li>
+<li>Video URL (string): Providing the path to a video URL is equivalent to providing a video file path and voids needing to first download the video.</li>
+<li>RTSP URL (string): Providing an RTSP URL will result in the pipeline streaming frames from an RTSP stream as fast as possible, then running the <code>on_prediction</code> callback on the latest available frame.</li>
+<li>Since version <code>0.9.18</code> - list of elements that may be any of values described above.</li>
+</ul>
+<h2 id="how-the-inferencepipeline-works">How the <code>InferencePipeline</code> works?<a class="headerlink" href="#how-the-inferencepipeline-works" title="Permanent link">&para;</a></h2>
+<p><img alt="inference pipeline diagram" src="https://media.roboflow.com/inference/inference-pipeline-diagram.jpg" /></p>
+<p><code>InferencePipeline</code> spins a video source consumer thread for each provided video reference. Frames from videos are
+grabbed by video multiplexer that awaits <code>batch_collection_timeout</code> (if source will not provide frame, smaller batch 
+will be passed to <code>on_video_frame(...)</code>, but missing frames and predictions will be filled with <code>None</code> before passing
+to <code>on_prediction(...)</code>). <code>on_prediction(...)</code> may work in <code>SEQUENTIAL</code> mode (only one element at once), or <code>BATCH</code> 
+mode - all batch elements at a time and that can be controlled by <code>sink_mode</code> parameter.</p>
+<p>For static video files, <code>InferencePipeline</code> processes all frames by default, for streams - it is possible to drop
+frames from the buffers - in favour of always processing the most recent data (when model inference is slow, more
+frames can be accumulated in buffer - stream processing drop older frames and only processes the most recent one).</p>
+<p>To enhance stability, in case of streams processing - video sources will be automatically re-connected once 
+connectivity is lost during processing. That is meant to prevent failures in production environment when the pipeline
+can run long hours and need to gracefully handle sources downtimes.</p>
+<h2 id="how-to-provide-a-custom-inference-logic-to-inferencepipeline">How to provide a custom inference logic to <code>InferencePipeline</code><a class="headerlink" href="#how-to-provide-a-custom-inference-logic-to-inferencepipeline" title="Permanent link">&para;</a></h2>
+<p>As of <code>inference&gt;=0.9.16</code>, Inference Pipelines support running custom inference logic. This means, instead of passing 
+a model ID, you can pass a custom callable. This callable should accept and <code>VideoFrame</code> return a dictionary with 
+results from the processing (as <code>on_video_frame</code> handler). It can be model predictions or results of any other processing you wish to execute.
+It is <strong>important to note</strong> that the sink being used (<code>on_prediction</code> handler you use) - must be adjusted to the
+specific format of <code>on_video_frame(...)</code> response. This way, you can shape video processing in a way you want.</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># This is example, reference implementation - you need to adjust the code to your purposes</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">json</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">inference.core.interfaces.camera.entities</span><span class="w"> </span><span class="kn">import</span> <span class="n">VideoFrame</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">inference</span><span class="w"> </span><span class="kn">import</span> <span class="n">InferencePipeline</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">List</span>
+
+<span class="n">TARGET_DIR</span> <span class="o">=</span> <span class="s2">&quot;./my_predictions&quot;</span>
+
+<span class="k">class</span><span class="w"> </span><span class="nc">MyModel</span><span class="p">:</span>
+
+  <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">weights_path</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">_model</span> <span class="o">=</span> <span class="n">your_model_loader</span><span class="p">(</span><span class="n">weights_path</span><span class="p">)</span>
+
+  <span class="c1"># before v0.9.18  </span>
+  <span class="k">def</span><span class="w"> </span><span class="nf">infer</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">video_frame</span><span class="p">:</span> <span class="n">VideoFrame</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
+    <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_model</span><span class="p">(</span><span class="n">video_frame</span><span class="o">.</span><span class="n">image</span><span class="p">)</span>
+
+  <span class="c1"># after v0.9.18  </span>
+  <span class="k">def</span><span class="w"> </span><span class="nf">infer</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">video_frames</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">VideoFrame</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">Any</span><span class="p">]:</span> 
+    <span class="c1"># result must be returned as list of elements representing model prediction for single frame</span>
+    <span class="c1"># with order unchanged.</span>
+    <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_model</span><span class="p">([</span><span class="n">v</span><span class="o">.</span><span class="n">image</span> <span class="k">for</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">video_frames</span><span class="p">])</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">save_prediction</span><span class="p">(</span><span class="n">prediction</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span> <span class="n">video_frame</span><span class="p">:</span> <span class="n">VideoFrame</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+  <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">TARGET_DIR</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">video_frame</span><span class="o">.</span><span class="n">frame_id</span><span class="si">}</span><span class="s2">.json&quot;</span><span class="p">))</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+    <span class="n">json</span><span class="o">.</span><span class="n">dump</span><span class="p">(</span><span class="n">prediction</span><span class="p">,</span> <span class="n">f</span><span class="p">)</span>
+
+<span class="n">my_model</span> <span class="o">=</span> <span class="n">MyModel</span><span class="p">(</span><span class="s2">&quot;./my_model.pt&quot;</span><span class="p">)</span>
+
+<span class="n">pipeline</span> <span class="o">=</span> <span class="n">InferencePipeline</span><span class="o">.</span><span class="n">init_with_custom_logic</span><span class="p">(</span>
+  <span class="n">video_reference</span><span class="o">=</span><span class="s2">&quot;./my_video.mp4&quot;</span><span class="p">,</span>
+  <span class="n">on_video_frame</span><span class="o">=</span><span class="n">my_model</span><span class="o">.</span><span class="n">infer</span><span class="p">,</span>
+  <span class="n">on_prediction</span><span class="o">=</span><span class="n">save_prediction</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="c1"># start the pipeline</span>
+<span class="n">pipeline</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+<span class="c1"># wait for the pipeline to finish</span>
+<span class="n">pipeline</span><span class="o">.</span><span class="n">join</span><span class="p">()</span>
+</code></pre></div>
+<h2 id="inferencepipeline-and-roboflow-workflows"><code>InferencePipeline</code> and Roboflow <code>workflows</code><a class="headerlink" href="#inferencepipeline-and-roboflow-workflows" title="Permanent link">&para;</a></h2>
+<div class="admonition info">
+<p class="admonition-title">Info</p>
+<p>This is feature preview. Please refer to <a href="https://github.com/roboflow/inference/tree/main/inference/enterprise/workflows">workflows docs</a>.</p>
+<p>Feature preview do not support multiple videos input!</p>
+</div>
+<p>We are working to make <code>workflows</code> compatible with <code>InferencePipeline</code>. Since version <code>0.9.16</code> we introduce 
+an initializer to be used with workflow definitions. Here is the example:</p>
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">inference</span><span class="w"> </span><span class="kn">import</span> <span class="n">InferencePipeline</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">inference.core.interfaces.camera.entities</span><span class="w"> </span><span class="kn">import</span> <span class="n">VideoFrame</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">inference.core.interfaces.stream.sinks</span><span class="w"> </span><span class="kn">import</span> <span class="n">render_boxes</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">workflows_sink</span><span class="p">(</span>
+    <span class="n">predictions</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span>
+    <span class="n">video_frame</span><span class="p">:</span> <span class="n">VideoFrame</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="n">render_boxes</span><span class="p">(</span>
+        <span class="n">predictions</span><span class="p">[</span><span class="s2">&quot;predictions&quot;</span><span class="p">][</span><span class="mi">0</span><span class="p">],</span>
+        <span class="n">video_frame</span><span class="p">,</span>
+        <span class="n">display_statistics</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+    <span class="p">)</span>
+
+
+<span class="c1"># here you may find very basic definition of workflow - with a single object detection model.</span>
+<span class="c1"># Please visit workflows docs: https://github.com/roboflow/inference/tree/main/inference/enterprise/workflows to</span>
+<span class="c1"># find more examples.</span>
+<span class="n">workflow_specification</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">&quot;specification&quot;</span><span class="p">:</span> <span class="p">{</span>
+        <span class="s2">&quot;version&quot;</span><span class="p">:</span> <span class="s2">&quot;1.0&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;inputs&quot;</span><span class="p">:</span> <span class="p">[</span>
+            <span class="p">{</span><span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;InferenceImage&quot;</span><span class="p">,</span> <span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;image&quot;</span><span class="p">},</span>
+        <span class="p">],</span>
+        <span class="s2">&quot;steps&quot;</span><span class="p">:</span> <span class="p">[</span>
+            <span class="p">{</span>
+                <span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;ObjectDetectionModel&quot;</span><span class="p">,</span>
+                <span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;step_1&quot;</span><span class="p">,</span>
+                <span class="s2">&quot;image&quot;</span><span class="p">:</span> <span class="s2">&quot;$inputs.image&quot;</span><span class="p">,</span>
+                <span class="s2">&quot;model_id&quot;</span><span class="p">:</span> <span class="s2">&quot;yolov8n-640&quot;</span><span class="p">,</span>
+                <span class="s2">&quot;confidence&quot;</span><span class="p">:</span> <span class="mf">0.5</span><span class="p">,</span>
+            <span class="p">}</span>
+        <span class="p">],</span>
+        <span class="s2">&quot;outputs&quot;</span><span class="p">:</span> <span class="p">[</span>
+            <span class="p">{</span><span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;JsonField&quot;</span><span class="p">,</span> <span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;predictions&quot;</span><span class="p">,</span> <span class="s2">&quot;selector&quot;</span><span class="p">:</span> <span class="s2">&quot;$steps.step_1.*&quot;</span><span class="p">},</span>
+        <span class="p">],</span>
+    <span class="p">}</span>
+<span class="p">}</span>
+<span class="n">pipeline</span> <span class="o">=</span> <span class="n">InferencePipeline</span><span class="o">.</span><span class="n">init_with_workflow</span><span class="p">(</span>
+    <span class="n">video_reference</span><span class="o">=</span><span class="s2">&quot;./my_video.mp4&quot;</span><span class="p">,</span>
+    <span class="n">workflow_specification</span><span class="o">=</span><span class="n">workflow_specification</span><span class="p">,</span>
+    <span class="n">on_prediction</span><span class="o">=</span><span class="n">workflows_sink</span><span class="p">,</span>
+    <span class="n">image_input_name</span><span class="o">=</span><span class="s2">&quot;image&quot;</span><span class="p">,</span>  <span class="c1"># adjust according to name of WorkflowImage input you define</span>
+    <span class="n">video_metadata_input_name</span><span class="o">=</span><span class="s2">&quot;video_metadata&quot;</span> <span class="c1"># AVAILABLE from v0.17.0! adjust according to name of WorkflowVideoMetadata input you define</span>
+<span class="p">)</span>
+
+<span class="c1"># start the pipeline</span>
+<span class="n">pipeline</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+<span class="c1"># wait for the pipeline to finish</span>
+<span class="n">pipeline</span><span class="o">.</span><span class="n">join</span><span class="p">()</span>
+</code></pre></div>
+<p>Additionally, since <code>v0.9.21</code>, you can initialise <code>InferencePipeline</code> with <code>workflow</code> registered
+in Roboflow App - providing your <code>workspace_name</code> and <code>workflow_id</code>:</p>
+<div class="highlight"><pre><span></span><code><span class="n">pipeline</span> <span class="o">=</span> <span class="n">InferencePipeline</span><span class="o">.</span><span class="n">init_with_workflow</span><span class="p">(</span>
+    <span class="n">video_reference</span><span class="o">=</span><span class="s2">&quot;./my_video.mp4&quot;</span><span class="p">,</span>
+    <span class="n">workspace_name</span><span class="o">=</span><span class="s2">&quot;&lt;your_workspace&gt;&quot;</span><span class="p">,</span>
+    <span class="n">workflow_id</span><span class="o">=</span><span class="s2">&quot;&lt;your_workflow_id_to_be_found_in_workflow_url&gt;&quot;</span><span class="p">,</span>
+    <span class="n">on_prediction</span><span class="o">=</span><span class="n">workflows_sink</span><span class="p">,</span>
+<span class="p">)</span>
+</code></pre></div>
+<div class="admonition tip">
+<p class="admonition-title">Workflows profiling</p>
+<p>Since <code>inference v0.22.0</code>, you may profile your Workflow execution inside <code>InferencePipeline</code> when 
+you export environmental variable <code>ENABLE_WORKFLOWS_PROFILING=True</code>. Additionally, you can tune the 
+number of frames you keep in profiler buffer via another environmental variable <code>WORKFLOWS_PROFILER_BUFFER_SIZE</code>.
+<code>init_with_workflow(...)</code> was also given a new parameter <code>profiling_directory</code> which can be adjusted to 
+dictate where to save the trace. </p>
+</div>
+<h2 id="sinks">Sinks<a class="headerlink" href="#sinks" title="Permanent link">&para;</a></h2>
+<p>Sinks define what an Inference Pipeline should do with each prediction. A sink is a function with signature:</p>
+<h3 id="before-v0918">Before <code>v0.9.18</code><a class="headerlink" href="#before-v0918" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">inference.core.interfaces.camera.entities</span><span class="w"> </span><span class="kn">import</span> <span class="n">VideoFrame</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">on_prediction</span><span class="p">(</span>
+    <span class="n">predictions</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span>
+    <span class="n">video_frame</span><span class="p">:</span> <span class="n">VideoFrame</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="k">pass</span>
+</code></pre></div>
+<p>The arguments are:</p>
+<ul>
+<li><code>predictions</code>: A dictionary that is the response object resulting from a call to a model's <code>infer(...)</code> method.</li>
+<li><code>video_frame</code>: A <a href="../../../reference/inference/core/interfaces/camera/entities#inference.core.interfaces.camera.entities.VideoFrame">VideoFrame object</a> containing metadata and pixel data from the video frame.</li>
+</ul>
+<h3 id="after-v0918">After <code>v0.9.18</code><a class="headerlink" href="#after-v0918" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Union</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">inference.core.interfaces.camera.entities</span><span class="w"> </span><span class="kn">import</span> <span class="n">VideoFrame</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">on_prediction</span><span class="p">(</span>
+    <span class="n">predictions</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="nb">dict</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="n">Optional</span><span class="p">[</span><span class="nb">dict</span><span class="p">]]],</span>
+    <span class="n">video_frame</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">VideoFrame</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="n">Optional</span><span class="p">[</span><span class="n">VideoFrame</span><span class="p">]]],</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="k">for</span> <span class="n">prediction</span><span class="p">,</span> <span class="n">frame</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">predictions</span><span class="p">,</span> <span class="n">video_frame</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">prediction</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="c1"># EMPTY FRAME</span>
+            <span class="k">continue</span>
+        <span class="c1"># SOME PROCESSING</span>
+</code></pre></div>
+<p>See more info in <strong>Custom Sink</strong> section on how to create sink.</p>
+<h3 id="usage">Usage<a class="headerlink" href="#usage" title="Permanent link">&para;</a></h3>
+<p>You can also make <code>on_prediction</code> accepting other parameters that configure its behaviour, but those needs to be 
+latched in function closure before injection into <code>InferencePipeline</code> init methods.</p>
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">functools</span><span class="w"> </span><span class="kn">import</span> <span class="n">partial</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">inference.core.interfaces.camera.entities</span><span class="w"> </span><span class="kn">import</span> <span class="n">VideoFrame</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">inference</span><span class="w"> </span><span class="kn">import</span> <span class="n">InferencePipeline</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">on_prediction</span><span class="p">(</span>
+    <span class="n">predictions</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span>
+    <span class="n">video_frame</span><span class="p">:</span> <span class="n">VideoFrame</span><span class="p">,</span>
+    <span class="n">my_parameter</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="c1"># you need to implement your logic here, with `my_parameter` used</span>
+    <span class="k">pass</span>
+
+<span class="n">pipeline</span> <span class="o">=</span> <span class="n">InferencePipeline</span><span class="o">.</span><span class="n">init</span><span class="p">(</span>
+  <span class="n">video_reference</span><span class="o">=</span><span class="s2">&quot;./my_video.mp4&quot;</span><span class="p">,</span>
+  <span class="n">model_id</span><span class="o">=</span><span class="s2">&quot;yolov8n-640&quot;</span><span class="p">,</span>
+  <span class="n">on_prediction</span><span class="o">=</span><span class="n">partial</span><span class="p">(</span><span class="n">on_prediction</span><span class="p">,</span> <span class="n">my_parameter</span><span class="o">=</span><span class="mi">42</span><span class="p">),</span>
+<span class="p">)</span>
+</code></pre></div>
+<h3 id="custom-sinks">Custom Sinks<a class="headerlink" href="#custom-sinks" title="Permanent link">&para;</a></h3>
+<p>To create a custom sink, define a new function with the appropriate signature.</p>
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Union</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Any</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">inference.core.interfaces.camera.entities</span><span class="w"> </span><span class="kn">import</span> <span class="n">VideoFrame</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">on_prediction</span><span class="p">(</span>
+    <span class="n">predictions</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">Any</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="n">Optional</span><span class="p">[</span><span class="nb">dict</span><span class="p">]]],</span>
+    <span class="n">video_frame</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">VideoFrame</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="n">Optional</span><span class="p">[</span><span class="n">VideoFrame</span><span class="p">]]],</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="nb">issubclass</span><span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="n">predictions</span><span class="p">),</span> <span class="nb">list</span><span class="p">):</span>
+      <span class="c1"># this is required to support both sequential and batch processing with single code</span>
+      <span class="c1"># if you use only one mode - you may create function that handles with only one type</span>
+      <span class="c1"># of input</span>
+      <span class="n">predictions</span> <span class="o">=</span> <span class="p">[</span><span class="n">predictions</span><span class="p">]</span>
+      <span class="n">video_frame</span> <span class="o">=</span> <span class="p">[</span><span class="n">video_frame</span><span class="p">]</span>
+    <span class="k">for</span> <span class="n">prediction</span><span class="p">,</span> <span class="n">frame</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">predictions</span><span class="p">,</span> <span class="n">video_frame</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">prediction</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="c1"># EMPTY FRAME</span>
+            <span class="k">continue</span>
+        <span class="c1"># SOME PROCESSING</span>
+</code></pre></div>
+<p>In <code>v0.9.18</code> we introduced <code>InferencePipeline</code> parameter called <code>sink_mode</code> - here is how it works.
+With <code>SinkMode.SEQUENTIAL</code> - each frame and prediction triggers separate call for sink, in case of <code>SinkMode.BATCH</code> - 
+list of frames and predictions will be provided to sink, always aligned in the order of video sources - with None 
+values in the place of vide_frames / predictions that were skipped due to <code>batch_collection_timeout</code>. 
+<code>SinkMode.ADAPTIVE</code> is a middle ground (and default mode) - all old sources will work in that mode against a single 
+video input, as the pipeline will behave as if running in <code>SinkMode.SEQUENTIAL</code>. To handle multiple videos - 
+sink needs to accept <code>predictions: List[Optional[dict]]</code> and <code>video_frame: List[Optional[VideoFrame]]</code>. It is also 
+possible to process multiple videos using old sinks - but then <code>SinkMode.SEQUENTIAL</code> is to be used, causing
+sink to be called on each prediction element.</p>
+<h4 id="why-there-is-optional-in-listoptionaldict-and-listoptionalvideoframe">Why there is <code>Optional</code> in  <code>List[Optional[dict]]</code> and <code>List[Optional[VideoFrame]]</code>?<a class="headerlink" href="#why-there-is-optional-in-listoptionaldict-and-listoptionalvideoframe" title="Permanent link">&para;</a></h4>
+<p>It may happen that it is not possible to collect video frames from all the video sources (for instance when one of the 
+source disconnected and re-connection is attempted). <code>predictions</code> and <code>video_frame</code> are ordered matching the order of
+<code>video_reference</code> list of <code>InferencePipeline</code> and <code>None</code> elements will appear in position of missing frames. We
+provide this information to sink, as some sinks may require all predictions and video frames from the batch to
+be provided (even if missing) - for example: <code>render_boxes(...)</code> sink needs that information to maintain the position
+of frames in tiles mosaic.</p>
+<div class="admonition info">
+<p class="admonition-title">Info</p>
+<p>See our <a href="./#custom-sinks">tutorial on creating a custom Inference Pipeline sink!</a></p>
+</div>
+<p><strong>prediction</strong></p>
+<p>Predictions are provided to the sink as a dictionary containing keys:</p>
+<ul>
+<li><code>predictions</code>: predictions - either for single frame or batch of frames. Content depends on which model runs behind 
+<code>InferencePipeline</code> - for Roboflow models - it will come as dict or list of dicts. The schema of elements is given 
+below.</li>
+</ul>
+<p>Depending on the model output, predictions look differently. You must adjust sink to the prediction format.
+For instance, Roboflow object-detection prediction contains the following keys:</p>
+<ul>
+<li><code>x</code>: The center x coordinate of the predicted bounding box in pixels</li>
+<li><code>y</code>: The center y coordinate of the predicted bounding box in pixels</li>
+<li><code>width</code>: The width of the predicted bounding box in pixels</li>
+<li><code>height</code>: The height of the predicted bounding box in pixels</li>
+<li><code>confidence</code>: The confidence value of the prediction (between 0 and 1)</li>
+<li><code>class</code>: The predicted class name</li>
+<li><code>class_id</code>: The predicted class ID</li>
+</ul>
+<h2 id="other-pipeline-configuration">Other Pipeline Configuration<a class="headerlink" href="#other-pipeline-configuration" title="Permanent link">&para;</a></h2>
+<p>Inference Pipelines are highly configurable. Configurations include:</p>
+<ul>
+<li><code>max_fps</code>: Used to set the maximum rate of frame processing.</li>
+<li><code>confidence</code>: Confidence threshold used for inference.</li>
+<li><code>iou_threshold</code>: IoU threshold used for inference.</li>
+<li><code>video_source_properties</code>: Optional dictionary of properties to configure the video source, corresponding to cv2 VideoCapture properties cv2.CAP_PROP_*. See the <a href="https://docs.opencv.org/4.x/d4/d15/group__videoio__flags__base.html#gaeb8dd9c89c10a5c63c139bf7c4f5704d">OpenCV Documentation</a> for a list of all possible properties.</li>
+</ul>
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">inference</span><span class="w"> </span><span class="kn">import</span> <span class="n">InferencePipeline</span>
+<span class="n">pipeline</span> <span class="o">=</span> <span class="n">InferencePipeline</span><span class="o">.</span><span class="n">init</span><span class="p">(</span>
+    <span class="o">...</span><span class="p">,</span>
+    <span class="n">max_fps</span><span class="o">=</span><span class="mi">10</span><span class="p">,</span>
+    <span class="n">confidence</span><span class="o">=</span><span class="mf">0.75</span><span class="p">,</span>
+    <span class="n">iou_threshold</span><span class="o">=</span><span class="mf">0.4</span><span class="p">,</span>
+    <span class="n">video_source_properties</span><span class="o">=</span><span class="p">{</span>
+        <span class="s2">&quot;frame_width&quot;</span><span class="p">:</span> <span class="mf">1920.0</span><span class="p">,</span>
+        <span class="s2">&quot;frame_height&quot;</span><span class="p">:</span> <span class="mf">1080.0</span><span class="p">,</span>
+        <span class="s2">&quot;fps&quot;</span><span class="p">:</span> <span class="mf">30.0</span><span class="p">,</span>
+    <span class="p">},</span>
+<span class="p">)</span>
+</code></pre></div>
+<p>See the reference docs for the <a href="../../../reference/inference/core/interfaces/stream/inference_pipeline#inference.core.interfaces.stream.inference_pipeline.InferencePipeline">full list of Inference Pipeline parameters</a>.</p>
+<div class="admonition warning">
+<p class="admonition-title">Breaking change planned at the <strong>end of Q4 2024</strong></p>
+<p>We've discovered that the behaviour of <code>max_fps</code> parameter is not in line with <code>inference</code> clients expectations
+regarding processing of video files. Current implementation for vides waits before processing the next 
+video frame, instead droping the frames to <em>modulate</em> video FPS. </p>
+<p>We have added a way to change this suboptimal behaviour in release <code>v0.26.0</code> - new behaviour of 
+<code>InferencePipeline</code> can be enabled setting environmental variable flag 
+<code>ENABLE_FRAME_DROP_ON_VIDEO_FILE_RATE_LIMITING=True</code>. </p>
+<p>Please note that the new behaviour will be the default one end of Q4 2024!</p>
+</div>
+<h2 id="performance">Performance<a class="headerlink" href="#performance" title="Permanent link">&para;</a></h2>
+<p>We tested the performance of Inference on a variety of hardware devices.</p>
+<p>Below are the results of our benchmarking tests for Inference.</p>
+<h3 id="macbook-m2">MacBook M2<a class="headerlink" href="#macbook-m2" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Test</th>
+<th style="text-align: center;">FPS</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>yolov8-n</td>
+<td style="text-align: center;">~26</td>
+</tr>
+<tr>
+<td>yolov8-s</td>
+<td style="text-align: center;">~12</td>
+</tr>
+<tr>
+<td>yolov8-m</td>
+<td style="text-align: center;">~5</td>
+</tr>
+</tbody>
+</table>
+<p>Tested against the same 1080p 60fps RTSP stream emitted by localhost.</p>
+<h3 id="jetson-orin-nano">Jetson Orin Nano<a class="headerlink" href="#jetson-orin-nano" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Test</th>
+<th style="text-align: center;">FPS</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>yolov8-n</td>
+<td style="text-align: center;">~25</td>
+</tr>
+<tr>
+<td>yolov8-s</td>
+<td style="text-align: center;">~18</td>
+</tr>
+<tr>
+<td>yolov8-m</td>
+<td style="text-align: center;">~8</td>
+</tr>
+</tbody>
+</table>
+<p>With old version reaching at max 6-7 fps. This test was executed against 4K@60fps stream, which is not possible to
+be decoded in native pace due to resource constrains. New implementation proved to run without stability issues
+for few hours straight.</p>
+<h3 id="tesla-t4">Tesla T4<a class="headerlink" href="#tesla-t4" title="Permanent link">&para;</a></h3>
+<p>GPU workstation with Tesla T4 was able to run 4 concurrent HD streams at 15FPS utilising ~80% GPU - reaching
+over 60FPS throughput per GPU (against <code>yolov8-n</code>).</p>
+<h2 id="migrating-from-inferencestream-to-inferencepipeline">Migrating from <code>inference.Stream</code> to <code>InferencePipeline</code><a class="headerlink" href="#migrating-from-inferencestream-to-inferencepipeline" title="Permanent link">&para;</a></h2>
+<p>Inference is deprecating support for <code>inference.Stream</code>, our video stream inference interface. <code>inference.Stream</code> is being replaced with <code>InferencePipeline</code>, which has feature parity and achieves better performance. There are also new, more advanced features available in <code>InferencePipeline</code>.</p>
+<h3 id="new-features-in-inferencepipeline">New Features in <code>InferencePipeline</code><a class="headerlink" href="#new-features-in-inferencepipeline" title="Permanent link">&para;</a></h3>
+<h4 id="stability">Stability<a class="headerlink" href="#stability" title="Permanent link">&para;</a></h4>
+<p>New implementation allows <code>InferencePipeline</code> to re-connect to a video source, eliminating the need to create
+additional logic to run inference against streams for long hours in fault-tolerant mode.</p>
+<h4 id="granularity-of-control">Granularity of control<a class="headerlink" href="#granularity-of-control" title="Permanent link">&para;</a></h4>
+<p>New implementation let you decide how to handle video sources - and provided automatic selection of mode.
+Your videos will be processed frame-by-frame with each frame being passed to model, and streams will be
+processed in a way to provide continuous, up-to-date predictions on the most fresh frames - and the system
+will automatically adjust to performance of the hardware to ensure best experience.</p>
+<h4 id="observability">Observability<a class="headerlink" href="#observability" title="Permanent link">&para;</a></h4>
+<p>New implementation allows to create reports about InferencePipeline state in runtime - providing an easy way to
+build monitoring on top of it.</p>
+<h3 id="migrate-from-inferencestream-to-inferencepipeline">Migrate from <code>inference.Stream</code> to <code>InferencePipeline</code><a class="headerlink" href="#migrate-from-inferencestream-to-inferencepipeline" title="Permanent link">&para;</a></h3>
+<p>Let's assume you used <code>inference.Stream(...)</code> with your custom handlers:</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">on_prediction</span><span class="p">(</span><span class="n">predictions</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span> <span class="n">image</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="k">pass</span>
+</code></pre></div>
+<p>Now, the structure of handlers has changed into:</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">on_prediction</span><span class="p">(</span><span class="n">predictions</span><span class="p">,</span> <span class="n">video_frame</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="k">pass</span>
+</code></pre></div>
+<p>With predictions being still dict (passed as second parameter) in the same, standard Roboflow format,
+but <code>video_frame</code> is a dataclass with the following property:</p>
+<ul>
+<li><code>image</code>: which is video frame (<code>np.ndarray</code>)</li>
+<li><code>frame_id</code>: int value representing the place of the frame in stream order</li>
+<li><code>frame_timestamp</code>: time of frame grabbing - the exact moment when frame appeared in the file/stream
+  on the receiver side (<code>datetime.datetime</code>)</li>
+</ul>
+<p>Additionally, it eliminates the need of grabbing <code>.frame_id</code> from <code>inference.Stream()</code>.</p>
+<p><code>InferencePipeline</code> exposes interface to manage its state (possibly from different thread) - including
+functions like <code>.start()</code>, <code>.pause()</code>, <code>.terminate()</code>.</p>
+<h3 id="migrate-to-changes-introduced-in-v0918">Migrate to changes introduced in <code>v0.9.18</code><a class="headerlink" href="#migrate-to-changes-introduced-in-v0918" title="Permanent link">&para;</a></h3>
+<p>List of changes:
+1. <code>VideoFrame</code> got new parameter: <code>source_id</code> - indicating which video source yielded the frame
+2. <code>on_prediction</code> callable signature changed:
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Callable</span><span class="p">,</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Union</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">inference.core.interfaces.camera.entities</span><span class="w"> </span><span class="kn">import</span> <span class="n">VideoFrame</span>
+<span class="c1"># OLD</span>
+<span class="n">SinkHandler</span> <span class="o">=</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">Any</span><span class="p">,</span> <span class="n">VideoFrame</span><span class="p">],</span> <span class="kc">None</span><span class="p">]</span>
+
+<span class="c1"># NEW</span>
+<span class="n">SinkHandler</span> <span class="o">=</span> <span class="n">Optional</span><span class="p">[</span>
+    <span class="n">Union</span><span class="p">[</span>
+        <span class="n">Callable</span><span class="p">[[</span><span class="n">Any</span><span class="p">,</span> <span class="n">VideoFrame</span><span class="p">],</span> <span class="kc">None</span><span class="p">],</span>
+        <span class="n">Callable</span><span class="p">[[</span><span class="n">List</span><span class="p">[</span><span class="n">Optional</span><span class="p">[</span><span class="n">Any</span><span class="p">]],</span> <span class="n">List</span><span class="p">[</span><span class="n">Optional</span><span class="p">[</span><span class="n">VideoFrame</span><span class="p">]]],</span> <span class="kc">None</span><span class="p">],</span>
+    <span class="p">]</span>
+<span class="p">]</span>
+</code></pre></div>
+this change is non-breaking, as there is new parameter of <code>InferencePipeline.init*()</code> functions - <code>sink_mode</code> with default 
+value on <code>ADAPTIVE</code> - which forces single video frame and prediction to be provided for sink invocation if one video 
+only is specified. Old sinks were adjusted to work in dual mode - for instance in the demo you see <code>render_boxes(...)</code> 
+displaying image tiles.</p>
+<p>Example:
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Union</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">json</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">inference.core.interfaces.camera.entities</span><span class="w"> </span><span class="kn">import</span> <span class="n">VideoFrame</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">save_prediction</span><span class="p">(</span><span class="n">predictions</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span> <span class="n">file_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+  <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">file_name</span><span class="p">,</span> <span class="s2">&quot;w&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+    <span class="n">json</span><span class="o">.</span><span class="n">dump</span><span class="p">(</span><span class="n">predictions</span><span class="p">,</span> <span class="n">f</span><span class="p">)</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">on_prediction_old</span><span class="p">(</span><span class="n">predictions</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span> <span class="n">video_frame</span><span class="p">:</span> <span class="n">VideoFrame</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+  <span class="n">save_prediction</span><span class="p">(</span>
+    <span class="n">predictions</span><span class="o">=</span><span class="n">predictions</span><span class="p">,</span>
+    <span class="n">file_name</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;frame_</span><span class="si">{</span><span class="n">video_frame</span><span class="o">.</span><span class="n">frame_id</span><span class="si">}</span><span class="s2">.json&quot;</span>
+  <span class="p">)</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">on_prediction_new</span><span class="p">(</span>
+    <span class="n">predictions</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="nb">dict</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="n">Optional</span><span class="p">[</span><span class="nb">dict</span><span class="p">]]],</span>
+    <span class="n">video_frame</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">VideoFrame</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="n">Optional</span><span class="p">[</span><span class="n">VideoFrame</span><span class="p">]]],</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="k">for</span> <span class="n">prediction</span><span class="p">,</span> <span class="n">frame</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">predictions</span><span class="p">,</span> <span class="n">video_frame</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">prediction</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="c1"># EMPTY FRAME</span>
+            <span class="k">continue</span>
+        <span class="n">save_prediction</span><span class="p">(</span>
+        <span class="n">predictions</span><span class="o">=</span><span class="n">prediction</span><span class="p">,</span>
+        <span class="n">file_name</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;source_</span><span class="si">{</span><span class="n">frame</span><span class="o">.</span><span class="n">source_id</span><span class="si">}</span><span class="s2">_frame_</span><span class="si">{</span><span class="n">frame</span><span class="o">.</span><span class="n">frame_id</span><span class="si">}</span><span class="s2">.json&quot;</span>
+      <span class="p">)</span>
+</code></pre></div></p>
+<ol>
+<li><code>on_video_frame</code> callable used in InferencePipeline.init_with_custom_logic(...)<code>changed:
+Previously:</code>InferenceHandler = Callable[[VideoFrame], Any]<code>Now:</code>InferenceHandler = Callable[List<a href="../listvideoframe" title="List[VideoFrame">VideoFrame</a>, List[Any]]`</li>
+</ol>
+<p>Example:
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">inference.core.interfaces.camera.entities</span><span class="w"> </span><span class="kn">import</span> <span class="n">VideoFrame</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">List</span>
+
+<span class="n">MY_MODEL</span> <span class="o">=</span> <span class="o">...</span>
+
+<span class="c1"># before v0.9.18  </span>
+<span class="k">def</span><span class="w"> </span><span class="nf">on_video_frame_old</span><span class="p">(</span><span class="n">video_frame</span><span class="p">:</span> <span class="n">VideoFrame</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
+  <span class="k">return</span> <span class="n">MY_MODEL</span><span class="p">(</span><span class="n">video_frame</span><span class="o">.</span><span class="n">image</span><span class="p">)</span>
+
+<span class="c1"># after v0.9.18  </span>
+<span class="k">def</span><span class="w"> </span><span class="nf">on_video_frame_new</span><span class="p">(</span><span class="n">video_frames</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">VideoFrame</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">Any</span><span class="p">]:</span> 
+  <span class="c1"># result must be returned as list of elements representing model prediction for single frame</span>
+  <span class="c1"># with order unchanged.</span>
+  <span class="k">return</span> <span class="n">MY_MODEL</span><span class="p">([</span><span class="n">v</span><span class="o">.</span><span class="n">image</span> <span class="k">for</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">video_frames</span><span class="p">])</span>
+</code></pre></div></p>
+<ol>
+<li>The interface for <code>PipelineWatchdog</code> changed - and there is also a side effect change in form of pipeline state report 
+that is emitted being changed.</li>
+</ol>
+<p>Old watchdog:
+<div class="highlight"><pre><span></span><code><span class="k">class</span><span class="w"> </span><span class="nc">PipelineWatchDog</span><span class="p">(</span><span class="n">ABC</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">pass</span>
+
+    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">register_video_source</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">video_source</span><span class="p">:</span> <span class="n">VideoSource</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">pass</span>
+
+    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">on_status_update</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">status_update</span><span class="p">:</span> <span class="n">StatusUpdate</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">pass</span>
+
+    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">on_model_inference_started</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">frame_timestamp</span><span class="p">:</span> <span class="n">datetime</span><span class="p">,</span> <span class="n">frame_id</span><span class="p">:</span> <span class="nb">int</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">pass</span>
+
+    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">on_model_prediction_ready</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">frame_timestamp</span><span class="p">:</span> <span class="n">datetime</span><span class="p">,</span> <span class="n">frame_id</span><span class="p">:</span> <span class="nb">int</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">pass</span>
+
+    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_report</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">PipelineStateReport</span><span class="p">]:</span>
+        <span class="k">pass</span>
+</code></pre></div></p>
+<p>New watchdog:
+<div class="highlight"><pre><span></span><code><span class="k">class</span><span class="w"> </span><span class="nc">PipelineWatchDog</span><span class="p">(</span><span class="n">ABC</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">pass</span>
+
+    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">register_video_sources</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">video_sources</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">VideoSource</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">pass</span>
+
+    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">on_status_update</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">status_update</span><span class="p">:</span> <span class="n">StatusUpdate</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">pass</span>
+
+    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">on_model_inference_started</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">frames</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">VideoFrame</span><span class="p">],</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">pass</span>
+
+    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">on_model_prediction_ready</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">frames</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">VideoFrame</span><span class="p">],</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">pass</span>
+
+    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_report</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">PipelineStateReport</span><span class="p">]:</span>
+        <span class="k">pass</span>
+</code></pre></div></p>
+<p>Old report:
+<div class="highlight"><pre><span></span><code><span class="nd">@dataclass</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">PipelineStateReport</span><span class="p">:</span>
+    <span class="n">video_source_status_updates</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">StatusUpdate</span><span class="p">]</span>
+    <span class="n">latency_report</span><span class="p">:</span> <span class="n">LatencyMonitorReport</span>
+    <span class="n">inference_throughput</span><span class="p">:</span> <span class="nb">float</span>
+    <span class="n">source_metadata</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">SourceMetadata</span><span class="p">]</span>
+</code></pre></div></p>
+<p>New report:
+<div class="highlight"><pre><span></span><code><span class="nd">@dataclass</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">PipelineStateReport</span><span class="p">:</span>
+    <span class="n">video_source_status_updates</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">StatusUpdate</span><span class="p">]</span>
+    <span class="n">latency_reports</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">LatencyMonitorReport</span><span class="p">]</span>  <span class="c1"># now - one report for each source</span>
+    <span class="n">inference_throughput</span><span class="p">:</span> <span class="nb">float</span>
+    <span class="n">sources_metadata</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">SourceMetadata</span><span class="p">]</span> <span class="c1"># now - one metadata for each source</span>
+</code></pre></div></p>
+<p>If there was custom watchdog created on your end - reimplementation should be easy, as all the data passed to methods
+previously for single video source / frame are now provided for all sources / frames.</p>
+
+
+
+
+
+
+
+
+
+  
+
+
+
+
+                
+              </article>
+            </div>
+          
+  
+
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../../quickstart/roboflow_ecosystem/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Roboflow Ecosystem">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Roboflow Ecosystem
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../../inference_helpers/inference_sdk/" class="md-footer__link md-footer__link--next" aria-label="Next: Inference Client">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Inference Client
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+    <div class="md-copyright__highlight">
+      Roboflow 2025. All rights reserved.
+    </div>
+  
+  
+</div>
+      
+        <div class="md-social">
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://github.com/roboflow" target="_blank" rel="noopener" title="github.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.7.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8M97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+    </a>
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://www.youtube.com/roboflow" target="_blank" rel="noopener" title="www.youtube.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.7.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M549.655 124.083c-6.281-23.65-24.787-42.276-48.284-48.597C458.781 64 288 64 288 64S117.22 64 74.629 75.486c-23.497 6.322-42.003 24.947-48.284 48.597-11.412 42.867-11.412 132.305-11.412 132.305s0 89.438 11.412 132.305c6.281 23.65 24.787 41.5 48.284 47.821C117.22 448 288 448 288 448s170.78 0 213.371-11.486c23.497-6.321 42.003-24.171 48.284-47.821 11.412-42.867 11.412-132.305 11.412-132.305s0-89.438-11.412-132.305m-317.51 213.508V175.185l142.739 81.205z"/></svg>
+    </a>
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://www.linkedin.com/company/roboflow-ai/mycompany/" target="_blank" rel="noopener" title="www.linkedin.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.7.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M416 32H31.9C14.3 32 0 46.5 0 64.3v383.4C0 465.5 14.3 480 31.9 480H416c17.6 0 32-14.5 32-32.3V64.3c0-17.8-14.4-32.3-32-32.3M135.4 416H69V202.2h66.5V416zm-33.2-243c-21.3 0-38.5-17.3-38.5-38.5S80.9 96 102.2 96c21.2 0 38.5 17.3 38.5 38.5 0 21.3-17.2 38.5-38.5 38.5m282.1 243h-66.4V312c0-24.8-.5-56.7-34.5-56.7-34.6 0-39.9 27-39.9 54.9V416h-66.4V202.2h63.7v29.2h.9c8.9-16.8 30.6-34.5 62.9-34.5 67.2 0 79.7 44.3 79.7 101.9z"/></svg>
+    </a>
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://twitter.com/roboflow" target="_blank" rel="noopener" title="twitter.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.7.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M459.37 151.716c.325 4.548.325 9.097.325 13.645 0 138.72-105.583 298.558-298.558 298.558-59.452 0-114.68-17.219-161.137-47.106 8.447.974 16.568 1.299 25.34 1.299 49.055 0 94.213-16.568 130.274-44.832-46.132-.975-84.792-31.188-98.112-72.772 6.498.974 12.995 1.624 19.818 1.624 9.421 0 18.843-1.3 27.614-3.573-48.081-9.747-84.143-51.98-84.143-102.985v-1.299c13.969 7.797 30.214 12.67 47.431 13.319-28.264-18.843-46.781-51.005-46.781-87.391 0-19.492 5.197-37.36 14.294-52.954 51.655 63.675 129.3 105.258 216.365 109.807-1.624-7.797-2.599-15.918-2.599-24.04 0-57.828 46.782-104.934 104.934-104.934 30.213 0 57.502 12.67 76.67 33.137 23.715-4.548 46.456-13.32 66.599-25.34-7.798 24.366-24.366 44.833-46.132 57.827 21.117-2.273 41.584-8.122 60.426-16.243-14.292 20.791-32.161 39.308-52.628 54.253"/></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+      <div class="md-progress" data-md-component="progress" role="progressbar"></div>
+    
+    
+    <script id="__config" type="application/json">{"base": "../..", "features": ["announce.dismiss", "content.action.edit", "content.code.copy", "content.tabs.link", "navigation.footer", "navigation.indexes", "navigation.instant", "navigation.instant.prefetch", "navigation.instant.preview", "navigation.instant.progress", "navigation.prune", "navigation.tabs", "navigation.tabs.sticky", "navigation.top", "navigation.tracking", "optimize", "search.share", "search.suggest", "toc.follow"], "search": "../../assets/javascripts/workers/search.c7c1ca2c.min.js", "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": 1.0}}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.5a789024.min.js"></script>
+      
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.8/purify.min.js"></script>
+      
+        <script src="../../javascript/init_kapa_widget.js"></script>
+      
+        <script src="../../javascript/cookbooks.js"></script>
+      
+        <script src="../../javascript/workflows.js"></script>
+      
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+      
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js"></script>
+      
+        <script src="https://unpkg.com/@rive-app/canvas"></script>
+      
+        <script src="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.js"></script>
+      
+        <script src="../../assets/home.js"></script>
+      
+        <script src="../../js/segment.js"></script>
+      
+    
+  </body>
+</html>

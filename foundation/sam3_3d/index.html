@@ -1,0 +1,1201 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Scalable, on-device computer vision deployment.">
+      
+      
+        <meta name="author" content="Roboflow">
+      
+      
+        <link rel="canonical" href="https://inference.roboflow.com/foundation/sam3_3d/">
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.6.4+insiders-4.53.15">
+    
+    
+      
+        <title>SAM3-3D Model - Roboflow Inference</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.f15084e1.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Inter:300,300i,400,400i,700,700i%7Cui-monospace:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Inter";--md-code-font:"ui-monospace"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/_mkdocstrings.css">
+    
+      <link rel="stylesheet" href="../../styles/cookbooks.css">
+    
+      <link rel="stylesheet" href="../../styles.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+  
+
+
+  
+  
+
+<script id="__analytics">function __md_analytics(){function e(){dataLayer.push(arguments)}window.dataLayer=window.dataLayer||[],e("js",new Date),e("config","G-T0CED2YY8K"),document.addEventListener("DOMContentLoaded",(function(){document.forms.search&&document.forms.search.query.addEventListener("blur",(function(){this.value&&e("event","search",{search_term:this.value})}));document$.subscribe((function(){var t=document.forms.feedback;if(void 0!==t)for(var a of t.querySelectorAll("[type=submit]"))a.addEventListener("click",(function(a){a.preventDefault();var n=document.location.pathname,d=this.getAttribute("data-md-value");e("event","feedback",{page:n,data:d}),t.firstElementChild.disabled=!0;var r=t.querySelector(".md-feedback__note [data-md-value='"+d+"']");r&&(r.hidden=!1)})),t.hidden=!1})),location$.subscribe((function(t){e("config","G-T0CED2YY8K",{page_path:t.pathname})}))}));var t=document.createElement("script");t.async=!0,t.src="https://www.googletagmanager.com/gtag/js?id=G-T0CED2YY8K",document.getElementById("__analytics").insertAdjacentElement("afterEnd",t)}</script>
+  
+    <script>"undefined"!=typeof __md_analytics&&__md_analytics()</script>
+  
+
+    
+    
+  
+  
+
+  
+<meta property="og:type" content="website" />
+<meta property="og:title" content="SAM3-3D Model - Roboflow Inference" />
+<meta property="og:description" content="Scalable, on-device computer vision deployment." />
+<meta property="og:image" content="https://inference.roboflow.com/assets/images/social/foundation/sam3_3d.png" />
+<meta property="og:image:type" content="image/png" />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
+<meta property="og:url" content="https://inference.roboflow.com/foundation/sam3_3d/" />
+<meta property="twitter:card" content="summary_large_image" />
+<meta property="twitter:title" content="SAM3-3D Model - Roboflow Inference" />
+<meta property="twitter:description" content="Scalable, on-device computer vision deployment." />
+<meta property="twitter:image" content="https://inference.roboflow.com/assets/images/social/foundation/sam3_3d.png" />
+</head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#sam3-3d-model" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow md-header--lifted" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Roboflow Inference" class="md-header__button md-logo" aria-label="Roboflow Inference" data-md-component="logo">
+      
+  <img src="../../roboflow-logomark-white.svg" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Roboflow Inference
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              SAM3-3D Model
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="indigo"  aria-hidden="true"  type="radio" name="__palette" id="__palette_0">
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      <label class="md-header__button md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+      </label>
+      <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/roboflow/inference" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.7.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8M97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    roboflow/inference
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+    
+      
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../start/overview/" class="md-tabs__link">
+          
+  
+    
+  
+  Start
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../quickstart/run_a_model/" class="md-tabs__link">
+          
+  
+    
+  
+  Models
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../workflows/about/" class="md-tabs__link">
+          
+  
+    
+  
+  Workflows
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../quickstart/roboflow_ecosystem/" class="md-tabs__link">
+          
+  
+    
+  
+  Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../workflows/gallery/basic_workflows/" class="md-tabs__link">
+          
+  
+    
+  
+  Examples
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+    
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+  
+        
+      
+  
+
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Roboflow Inference" class="md-nav__button md-logo" aria-label="Roboflow Inference" data-md-component="logo">
+      
+  <img src="../../roboflow-logomark-white.svg" alt="logo">
+
+    </a>
+    Roboflow Inference
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/roboflow/inference" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.7.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8M97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    roboflow/inference
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+      
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+    <a href="../../start/overview/" class="md-nav__link">
+      
+  
+  <span class="md-ellipsis">
+    
+  
+    Start
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+      
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+    <a href="../../quickstart/run_a_model/" class="md-nav__link">
+      
+  
+  <span class="md-ellipsis">
+    
+  
+    Models
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+      
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+    <a href="../../workflows/about/" class="md-nav__link">
+      
+  
+  <span class="md-ellipsis">
+    
+  
+    Workflows
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+      
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+    <a href="../../quickstart/roboflow_ecosystem/" class="md-nav__link">
+      
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+      
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+    <a href="../../workflows/gallery/basic_workflows/" class="md-nav__link">
+      
+  
+  <span class="md-ellipsis">
+    
+  
+    Examples
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#execution-modes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Execution Modes
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#disclaimer-in-order-to-run-this-model-you-will-need-a-32gb-vram-gpu-machine" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        DISCLAIMER: In order to run this model you will need a 32GB+ VRAM GPU machine.
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#installation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Installation
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#docker" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Docker
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#input" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Input
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#output" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Output
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#keep-in-mind-to-set-osenvironsam3_3d_objects_enabled-true-otherwise-the-model-wont-be-available-and-if-available-set-sparse_attn_backend-and-attn_backend-to-flash_attn-to-speed-the-pipeline-up" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Keep in mind to set 'os.environ["SAM3_3D_OBJECTS_ENABLED"] = "true"' otherwise the model won't be available. And if available, set "SPARSE_ATTN_BACKEND" and "ATTN_BACKEND" to "flash_attn" to speed the pipeline up.
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#example" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+  
+    
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+    <a href="https://github.com/roboflow/inference/tree/main/docs/foundation/sam3_3d.md" title="Edit this page" class="md-content__button md-icon">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
+    </a>
+  
+  
+
+
+<h1 id="sam3-3d-model">SAM3-3D Model<a class="headerlink" href="#sam3-3d-model" title="Permanent link">&para;</a></h1>
+<p>3D object generation model that converts 2D images with masks into 3D assets (meshes and Gaussian splats).</p>
+<p>This model is currently in Beta state! The model is only available if "SAM3_3D_OBJECTS_ENABLED" flag is on. The model can currently be ran using inference package, and also be used in Roboflow Workflows as a part of local inference server.</p>
+<h2 id="execution-modes">Execution Modes<a class="headerlink" href="#execution-modes" title="Permanent link">&para;</a></h2>
+<p>SAM3-3D supports both local and remote execution modes when used in workflows:</p>
+<ul>
+<li><strong>Local execution</strong>: The model runs directly on your inference server (32GB+ VRAM GPU strongly recommended)</li>
+<li><strong>Remote execution</strong>: The model can be invoked via HTTP API on a remote inference server using the <code>sam3_3d_infer()</code> client method or the <code>/sam3_3d/infer</code> endpoint</li>
+</ul>
+<h2 id="disclaimer-in-order-to-run-this-model-you-will-need-a-32gb-vram-gpu-machine">DISCLAIMER: In order to run this model you will need a 32GB+ VRAM GPU machine.<a class="headerlink" href="#disclaimer-in-order-to-run-this-model-you-will-need-a-32gb-vram-gpu-machine" title="Permanent link">&para;</a></h2>
+<h2 id="installation">Installation<a class="headerlink" href="#installation" title="Permanent link">&para;</a></h2>
+<p><div class="highlight"><pre><span></span><code>pip<span class="w"> </span>install<span class="w"> </span>--no-cache-dir<span class="w"> </span>--no-build-isolation<span class="w"> </span>-r<span class="w"> </span>requirements/requirements.sam3_3d.txt
+</code></pre></div>
+We recommend using python 3.10</p>
+<h2 id="docker">Docker<a class="headerlink" href="#docker" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code>docker build -t roboflow/roboflow-inference-server-gpu:dev -f docker/dockerfiles/Dockerfile.onnx.gpu.3d .
+</code></pre></div>
+<p>and then</p>
+<div class="highlight"><pre><span></span><code>docker run --gpus all -p 9001:9001 -v ./inference:/app/inference roboflow/roboflow-inference-server-gpu:dev
+</code></pre></div>
+<h2 id="input">Input<a class="headerlink" href="#input" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>image</strong>: RGB image (PIL Image, numpy array, or inference request format)</li>
+<li><strong>mask_input</strong>: Mask(s) defining object regions. Supports multiple formats:</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>Format</th>
+<th>Single</th>
+<th>Multiple</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Binary mask</td>
+<td><code>np.ndarray</code> (H, W)</td>
+<td><code>np.ndarray</code> (N, H, W) or <code>List[np.ndarray]</code></td>
+</tr>
+<tr>
+<td>Polygon (COCO flat)</td>
+<td><code>[x1, y1, x2, y2, ...]</code></td>
+<td><code>[[x1, y1, ...], [x1, y1, ...]]</code></td>
+</tr>
+<tr>
+<td>Polygon (points)</td>
+<td><code>[[x1, y1], [x2, y2], ...]</code></td>
+<td>N/A</td>
+</tr>
+<tr>
+<td>RLE</td>
+<td><code>{"counts": "...", "size": [H, W]}</code></td>
+<td><code>[{"counts": ...}, ...]</code></td>
+</tr>
+<tr>
+<td>sv.Detections</td>
+<td>From SAM2 or other segmentation models</td>
+<td>Extracts all masks</td>
+</tr>
+</tbody>
+</table>
+<h2 id="output">Output<a class="headerlink" href="#output" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>mesh_glb</strong>: Combined 3D scene mesh (GLB binary)</li>
+<li><strong>gaussian_ply</strong>: Combined Gaussian splatting (PLY binary)</li>
+<li><strong>objects</strong>: List of individual objects:</li>
+<li><code>mesh_glb</code>: Object mesh (GLB binary)</li>
+<li><code>gaussian_ply</code>: Object Gaussian splat (PLY binary)</li>
+<li><code>metadata</code>: <code>{rotation, translation, scale}</code></li>
+<li><strong>time</strong>: Inference time in seconds</li>
+</ul>
+<h2 id="keep-in-mind-to-set-osenvironsam3_3d_objects_enabled-true-otherwise-the-model-wont-be-available-and-if-available-set-sparse_attn_backend-and-attn_backend-to-flash_attn-to-speed-the-pipeline-up">Keep in mind to set 'os.environ["SAM3_3D_OBJECTS_ENABLED"] = "true"' otherwise the model won't be available. And if available, set "SPARSE_ATTN_BACKEND" and "ATTN_BACKEND" to "flash_attn" to speed the pipeline up.<a class="headerlink" href="#keep-in-mind-to-set-osenvironsam3_3d_objects_enabled-true-otherwise-the-model-wont-be-available-and-if-available-set-sparse_attn_backend-and-attn_backend-to-flash_attn-to-speed-the-pipeline-up" title="Permanent link">&para;</a></h2>
+<h2 id="example">Example<a class="headerlink" href="#example" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="p">[</span><span class="s2">&quot;SAM3_3D_OBJECTS_ENABLED&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;true&quot;</span>
+<span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="p">[</span><span class="s2">&quot;SPARSE_ATTN_BACKEND&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;flash_attn&quot;</span>
+<span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="p">[</span><span class="s2">&quot;ATTN_BACKEND&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;flash_attn&quot;</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">inference.models.sam3_3d.segment_anything_3d</span><span class="w"> </span><span class="kn">import</span> <span class="n">SegmentAnything3_3D_Objects</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">inference.core.entities.requests.sam3_3d</span><span class="w"> </span><span class="kn">import</span> <span class="n">Sam3_3D_Objects_InferenceRequest</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">inference.core.entities.responses.sam3_3d</span><span class="w"> </span><span class="kn">import</span> <span class="n">Sam3_3D_Objects_Response</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">inference</span><span class="w"> </span><span class="kn">import</span> <span class="n">get_model</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">json</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">load_coco_masks</span><span class="p">(</span><span class="n">annotations_path</span><span class="p">,</span> <span class="n">image_id</span><span class="p">):</span>
+    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">annotations_path</span><span class="p">,</span> <span class="s1">&#39;r&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+        <span class="n">coco_data</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">f</span><span class="p">)</span>
+
+    <span class="n">annotations</span> <span class="o">=</span> <span class="p">[</span>
+        <span class="n">ann</span> <span class="k">for</span> <span class="n">ann</span> <span class="ow">in</span> <span class="n">coco_data</span><span class="p">[</span><span class="s1">&#39;annotations&#39;</span><span class="p">]</span>
+        <span class="k">if</span> <span class="n">ann</span><span class="p">[</span><span class="s1">&#39;image_id&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="n">image_id</span>
+    <span class="p">]</span>
+
+    <span class="n">segmentations</span> <span class="o">=</span> <span class="p">[</span><span class="n">ann</span><span class="p">[</span><span class="s1">&#39;segmentation&#39;</span><span class="p">]</span> <span class="k">for</span> <span class="n">ann</span> <span class="ow">in</span> <span class="n">annotations</span><span class="p">]</span>
+
+    <span class="k">return</span> <span class="n">segmentations</span>
+
+<span class="n">image_path</span> <span class="o">=</span> <span class="s2">&quot;demo-data/train/IMG_6860_jpeg.rf.9fceef9265cef07f0cd4b339527a6756.jpg&quot;</span>
+<span class="n">annotations_path</span> <span class="o">=</span> <span class="s2">&quot;demo-data/train/_annotations.coco.json&quot;</span>
+<span class="n">image_id</span> <span class="o">=</span> <span class="mi">0</span>
+
+<span class="n">mask_polygon</span> <span class="o">=</span> <span class="n">load_coco_masks</span><span class="p">(</span><span class="n">annotations_path</span><span class="p">,</span> <span class="n">image_id</span><span class="p">)</span>
+
+<span class="n">image</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;file&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;value&quot;</span><span class="p">:</span> <span class="n">image_path</span>
+<span class="p">}</span>
+
+<span class="n">model</span> <span class="o">=</span> <span class="n">get_model</span><span class="p">(</span><span class="s2">&quot;sam3-3d-objects&quot;</span><span class="p">,</span> <span class="n">api_key</span><span class="o">=</span><span class="s2">&quot;your api key here&quot;</span><span class="p">)</span>
+
+<span class="n">request</span> <span class="o">=</span> <span class="n">Sam3_3D_Objects_InferenceRequest</span><span class="p">(</span>
+    <span class="n">image</span><span class="o">=</span><span class="n">image</span><span class="p">,</span>
+    <span class="n">mask_input</span><span class="o">=</span><span class="n">mask_polygon</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Running SAM3_3D inference...&quot;</span><span class="p">)</span>
+<span class="n">response</span><span class="p">:</span> <span class="n">Sam3_3D_Objects_Response</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">infer_from_request</span><span class="p">(</span><span class="n">request</span><span class="p">)</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">SAM3_3D inference completed in </span><span class="si">{</span><span class="n">response</span><span class="o">.</span><span class="n">time</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2"> seconds!&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;=&quot;</span> <span class="o">*</span> <span class="mi">80</span><span class="p">)</span>
+
+<span class="c1"># 1. Scene Mesh (GLB)</span>
+<span class="k">if</span> <span class="n">response</span><span class="o">.</span><span class="n">mesh_glb</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">[Output 1/3] Scene Mesh (GLB format)&quot;</span><span class="p">)</span>
+    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="s2">&quot;out_mesh.glb&quot;</span><span class="p">,</span> <span class="s2">&quot;wb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+        <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">response</span><span class="o">.</span><span class="n">mesh_glb</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  Saved mesh to out_mesh.glb (</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">response</span><span class="o">.</span><span class="n">mesh_glb</span><span class="p">)</span><span class="si">:</span><span class="s2">,</span><span class="si">}</span><span class="s2"> bytes)&quot;</span><span class="p">)</span>
+<span class="k">else</span><span class="p">:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">[Output 1/3] No mesh output&quot;</span><span class="p">)</span>
+
+<span class="c1"># 2. Combined Gaussian splatting</span>
+<span class="k">if</span> <span class="n">response</span><span class="o">.</span><span class="n">gaussian_ply</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">[Output 2/3] Combined Gaussian splatting (PLY format)&quot;</span><span class="p">)</span>
+    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="s2">&quot;out_gaussian.ply&quot;</span><span class="p">,</span> <span class="s2">&quot;wb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+        <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">response</span><span class="o">.</span><span class="n">gaussian_ply</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  Saved gaussian to out_gaussian.ply (</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">response</span><span class="o">.</span><span class="n">gaussian_ply</span><span class="p">)</span><span class="si">:</span><span class="s2">,</span><span class="si">}</span><span class="s2"> bytes)&quot;</span><span class="p">)</span>
+<span class="k">else</span><span class="p">:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">[Output 2/3] No combined gaussian output&quot;</span><span class="p">)</span>
+
+<span class="c1"># 3. Individual objects</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">[Output 3/3] Individual objects (</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">response</span><span class="o">.</span><span class="n">objects</span><span class="p">)</span><span class="si">}</span><span class="s2"> objects)&quot;</span><span class="p">)</span>
+<span class="n">objects_metadata</span> <span class="o">=</span> <span class="p">[]</span>
+<span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">obj</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">response</span><span class="o">.</span><span class="n">objects</span><span class="p">):</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">  Object </span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2">:&quot;</span><span class="p">)</span>
+
+    <span class="c1"># Save individual mesh</span>
+    <span class="k">if</span> <span class="n">obj</span><span class="o">.</span><span class="n">mesh_glb</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">filename</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;out_object_</span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2">_mesh.glb&quot;</span>
+        <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">filename</span><span class="p">,</span> <span class="s2">&quot;wb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+            <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">obj</span><span class="o">.</span><span class="n">mesh_glb</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;    Saved mesh to </span><span class="si">{</span><span class="n">filename</span><span class="si">}</span><span class="s2"> (</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">obj</span><span class="o">.</span><span class="n">mesh_glb</span><span class="p">)</span><span class="si">:</span><span class="s2">,</span><span class="si">}</span><span class="s2"> bytes)&quot;</span><span class="p">)</span>
+
+    <span class="c1"># Save individual gaussian</span>
+    <span class="k">if</span> <span class="n">obj</span><span class="o">.</span><span class="n">gaussian_ply</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">filename</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;out_object_</span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2">_gaussian.ply&quot;</span>
+        <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">filename</span><span class="p">,</span> <span class="s2">&quot;wb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+            <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">obj</span><span class="o">.</span><span class="n">gaussian_ply</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;    Saved gaussian to </span><span class="si">{</span><span class="n">filename</span><span class="si">}</span><span class="s2"> (</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">obj</span><span class="o">.</span><span class="n">gaussian_ply</span><span class="p">)</span><span class="si">:</span><span class="s2">,</span><span class="si">}</span><span class="s2"> bytes)&quot;</span><span class="p">)</span>
+
+    <span class="c1"># Collect metadata</span>
+    <span class="n">obj_metadata</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">&quot;object_index&quot;</span><span class="p">:</span> <span class="n">i</span><span class="p">,</span>
+        <span class="s2">&quot;rotation&quot;</span><span class="p">:</span> <span class="n">obj</span><span class="o">.</span><span class="n">metadata</span><span class="o">.</span><span class="n">rotation</span><span class="p">,</span>
+        <span class="s2">&quot;translation&quot;</span><span class="p">:</span> <span class="n">obj</span><span class="o">.</span><span class="n">metadata</span><span class="o">.</span><span class="n">translation</span><span class="p">,</span>
+        <span class="s2">&quot;scale&quot;</span><span class="p">:</span> <span class="n">obj</span><span class="o">.</span><span class="n">metadata</span><span class="o">.</span><span class="n">scale</span><span class="p">,</span>
+    <span class="p">}</span>
+    <span class="n">objects_metadata</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">obj_metadata</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;    Metadata: rotation=</span><span class="si">{</span><span class="n">obj</span><span class="o">.</span><span class="n">metadata</span><span class="o">.</span><span class="n">rotation</span><span class="w"> </span><span class="ow">is</span><span class="w"> </span><span class="ow">not</span><span class="w"> </span><span class="kc">None</span><span class="si">}</span><span class="s2">, translation=</span><span class="si">{</span><span class="n">obj</span><span class="o">.</span><span class="n">metadata</span><span class="o">.</span><span class="n">translation</span><span class="w"> </span><span class="ow">is</span><span class="w"> </span><span class="ow">not</span><span class="w"> </span><span class="kc">None</span><span class="si">}</span><span class="s2">, scale=</span><span class="si">{</span><span class="n">obj</span><span class="o">.</span><span class="n">metadata</span><span class="o">.</span><span class="n">scale</span><span class="w"> </span><span class="ow">is</span><span class="w"> </span><span class="ow">not</span><span class="w"> </span><span class="kc">None</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+<span class="c1"># Save all metadata to file</span>
+<span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="s2">&quot;out_metadata.json&quot;</span><span class="p">,</span> <span class="s2">&quot;w&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+    <span class="n">json</span><span class="o">.</span><span class="n">dump</span><span class="p">({</span><span class="s2">&quot;objects&quot;</span><span class="p">:</span> <span class="n">objects_metadata</span><span class="p">},</span> <span class="n">f</span><span class="p">,</span> <span class="n">indent</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">  Saved all metadata to out_metadata.json&quot;</span><span class="p">)</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span> <span class="o">+</span> <span class="s2">&quot;=&quot;</span> <span class="o">*</span> <span class="mi">80</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;All outputs saved successfully!&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;=&quot;</span> <span class="o">*</span> <span class="mi">80</span><span class="p">)</span>
+</code></pre></div>
+
+
+
+
+
+
+
+
+
+  
+
+
+
+
+                
+              </article>
+            </div>
+          
+  
+
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+    <div class="md-copyright__highlight">
+      Roboflow 2025. All rights reserved.
+    </div>
+  
+  
+</div>
+      
+        <div class="md-social">
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://github.com/roboflow" target="_blank" rel="noopener" title="github.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.7.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8M97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+    </a>
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://www.youtube.com/roboflow" target="_blank" rel="noopener" title="www.youtube.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.7.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M549.655 124.083c-6.281-23.65-24.787-42.276-48.284-48.597C458.781 64 288 64 288 64S117.22 64 74.629 75.486c-23.497 6.322-42.003 24.947-48.284 48.597-11.412 42.867-11.412 132.305-11.412 132.305s0 89.438 11.412 132.305c6.281 23.65 24.787 41.5 48.284 47.821C117.22 448 288 448 288 448s170.78 0 213.371-11.486c23.497-6.321 42.003-24.171 48.284-47.821 11.412-42.867 11.412-132.305 11.412-132.305s0-89.438-11.412-132.305m-317.51 213.508V175.185l142.739 81.205z"/></svg>
+    </a>
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://www.linkedin.com/company/roboflow-ai/mycompany/" target="_blank" rel="noopener" title="www.linkedin.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.7.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M416 32H31.9C14.3 32 0 46.5 0 64.3v383.4C0 465.5 14.3 480 31.9 480H416c17.6 0 32-14.5 32-32.3V64.3c0-17.8-14.4-32.3-32-32.3M135.4 416H69V202.2h66.5V416zm-33.2-243c-21.3 0-38.5-17.3-38.5-38.5S80.9 96 102.2 96c21.2 0 38.5 17.3 38.5 38.5 0 21.3-17.2 38.5-38.5 38.5m282.1 243h-66.4V312c0-24.8-.5-56.7-34.5-56.7-34.6 0-39.9 27-39.9 54.9V416h-66.4V202.2h63.7v29.2h.9c8.9-16.8 30.6-34.5 62.9-34.5 67.2 0 79.7 44.3 79.7 101.9z"/></svg>
+    </a>
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://twitter.com/roboflow" target="_blank" rel="noopener" title="twitter.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.7.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M459.37 151.716c.325 4.548.325 9.097.325 13.645 0 138.72-105.583 298.558-298.558 298.558-59.452 0-114.68-17.219-161.137-47.106 8.447.974 16.568 1.299 25.34 1.299 49.055 0 94.213-16.568 130.274-44.832-46.132-.975-84.792-31.188-98.112-72.772 6.498.974 12.995 1.624 19.818 1.624 9.421 0 18.843-1.3 27.614-3.573-48.081-9.747-84.143-51.98-84.143-102.985v-1.299c13.969 7.797 30.214 12.67 47.431 13.319-28.264-18.843-46.781-51.005-46.781-87.391 0-19.492 5.197-37.36 14.294-52.954 51.655 63.675 129.3 105.258 216.365 109.807-1.624-7.797-2.599-15.918-2.599-24.04 0-57.828 46.782-104.934 104.934-104.934 30.213 0 57.502 12.67 76.67 33.137 23.715-4.548 46.456-13.32 66.599-25.34-7.798 24.366-24.366 44.833-46.132 57.827 21.117-2.273 41.584-8.122 60.426-16.243-14.292 20.791-32.161 39.308-52.628 54.253"/></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+      <div class="md-progress" data-md-component="progress" role="progressbar"></div>
+    
+    
+    <script id="__config" type="application/json">{"base": "../..", "features": ["announce.dismiss", "content.action.edit", "content.code.copy", "content.tabs.link", "navigation.footer", "navigation.indexes", "navigation.instant", "navigation.instant.prefetch", "navigation.instant.preview", "navigation.instant.progress", "navigation.prune", "navigation.tabs", "navigation.tabs.sticky", "navigation.top", "navigation.tracking", "optimize", "search.share", "search.suggest", "toc.follow"], "search": "../../assets/javascripts/workers/search.c7c1ca2c.min.js", "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": 1.0}}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.5a789024.min.js"></script>
+      
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.8/purify.min.js"></script>
+      
+        <script src="../../javascript/init_kapa_widget.js"></script>
+      
+        <script src="../../javascript/cookbooks.js"></script>
+      
+        <script src="../../javascript/workflows.js"></script>
+      
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+      
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js"></script>
+      
+        <script src="https://unpkg.com/@rive-app/canvas"></script>
+      
+        <script src="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.js"></script>
+      
+        <script src="../../assets/home.js"></script>
+      
+        <script src="../../js/segment.js"></script>
+      
+    
+  </body>
+</html>

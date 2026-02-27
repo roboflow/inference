@@ -1,0 +1,872 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "Roboflow Batch Processing API",
+    "description": "API for managing batch processing jobs in Roboflow",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "{baseUrl}/batch-processing/v1/external",
+      "variables": {
+        "baseUrl": {
+          "default": "https://api.roboflow.com",
+          "description": "The Roboflow API base URL"
+        }
+      }
+    }
+  ],
+  "paths": {
+    "/{workspace}/jobs": {
+      "get": {
+        "summary": "List batch jobs",
+        "description": "Retrieve a paginated list of batch jobs for a workspace",
+        "operationId": "listBatchJobs",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/workspaceParam"
+          },
+          {
+            "$ref": "#/components/parameters/apiKeyParam"
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "description": "Number of results to return per page",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "nextPageToken",
+            "in": "query",
+            "description": "Token for pagination to get the next page of results",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of batch jobs",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListBatchJobsResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/ClientError"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/{workspace}/jobs/{jobId}": {
+      "get": {
+        "summary": "Get batch job metadata",
+        "description": "Retrieve metadata for a specific batch job",
+        "operationId": "getBatchJobMetadata",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/workspaceParam"
+          },
+          {
+            "$ref": "#/components/parameters/jobIdParam"
+          },
+          {
+            "$ref": "#/components/parameters/apiKeyParam"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Job metadata",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetJobMetadataResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Create batch job",
+        "description": "Create a new batch processing job",
+        "operationId": "createBatchJob",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/workspaceParam"
+          },
+          {
+            "$ref": "#/components/parameters/jobIdParam"
+          },
+          {
+            "$ref": "#/components/parameters/apiKeyParam"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkflowProcessingJobV1"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Job created successfully"
+          }
+        }
+      }
+    },
+    "/{workspace}/jobs/{jobId}/stages": {
+      "get": {
+        "summary": "List job stages",
+        "description": "Retrieve all stages for a specific batch job",
+        "operationId": "listJobStages",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/workspaceParam"
+          },
+          {
+            "$ref": "#/components/parameters/jobIdParam"
+          },
+          {
+            "$ref": "#/components/parameters/apiKeyParam"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of job stages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListJobStagesResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/{workspace}/jobs/{jobId}/stages/{stageId}/tasks": {
+      "get": {
+        "summary": "List job stage tasks",
+        "description": "Retrieve tasks for a specific stage of a batch job",
+        "operationId": "listJobStageTasks",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/workspaceParam"
+          },
+          {
+            "$ref": "#/components/parameters/jobIdParam"
+          },
+          {
+            "name": "stageId",
+            "in": "path",
+            "description": "The ID of the job stage",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/apiKeyParam"
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "description": "Number of results to return per page",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "nextPageToken",
+            "in": "query",
+            "description": "Token for pagination to get the next page of results",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of job stage tasks",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListJobStageTasksResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/{workspace}/jobs/{jobId}/abort": {
+      "post": {
+        "summary": "Abort job",
+        "description": "Abort a running batch job",
+        "operationId": "abortJob",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/workspaceParam"
+          },
+          {
+            "$ref": "#/components/parameters/jobIdParam"
+          },
+          {
+            "$ref": "#/components/parameters/apiKeyParam"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Job abort request submitted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/{workspace}/jobs/{jobId}/restart": {
+      "post": {
+        "summary": "Restart job",
+        "description": "Restart a previously run batch job",
+        "operationId": "restartJob",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/workspaceParam"
+          },
+          {
+            "$ref": "#/components/parameters/jobIdParam"
+          },
+          {
+            "$ref": "#/components/parameters/apiKeyParam"
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "parameters-override-v1"
+                    ]
+                  },
+                  "computeConfiguration": {
+                    "type": "object",
+                    "properties": {
+                      "type": {
+                        "type": "string",
+                        "enum": [
+                          "compute-configuration-v2"
+                        ]
+                      },
+                      "machineType": {
+                        "type": "string",
+                        "enum": [
+                          "cpu",
+                          "gpu"
+                        ]
+                      },
+                      "workersPerMachine": {
+                        "type": "integer"
+                      }
+                    }
+                  },
+                  "maxParallelTasks": {
+                    "type": "integer"
+                  },
+                  "processingTimeoutSeconds": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "type"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Job restart request submitted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/{workspace}/jobs/{jobId}/logs": {
+      "get": {
+        "summary": "Get job logs",
+        "description": "Retrieve logs for a specific batch job",
+        "operationId": "getJobLogs",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/workspaceParam"
+          },
+          {
+            "$ref": "#/components/parameters/jobIdParam"
+          },
+          {
+            "$ref": "#/components/parameters/apiKeyParam"
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "description": "Number of logs to return per page",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "severity",
+            "in": "query",
+            "description": "Filter logs by severity level",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "info",
+                "error",
+                "warning"
+              ]
+            }
+          },
+          {
+            "name": "nextPageToken",
+            "in": "query",
+            "description": "Token for pagination to get the next page of logs",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Job logs",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobLogsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "parameters": {
+      "workspaceParam": {
+        "name": "workspace",
+        "in": "path",
+        "description": "The ID of the workspace",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      "jobIdParam": {
+        "name": "jobId",
+        "in": "path",
+        "description": "The ID of the batch job",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      "apiKeyParam": {
+        "name": "api_key",
+        "in": "query",
+        "description": "The API key for authentication",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      }
+    },
+    "responses": {
+      "ClientError": {
+        "description": "Client error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "error": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "ServerError": {
+        "description": "Server error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "error": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "JobMetadata": {
+        "type": "object",
+        "properties": {
+          "jobId": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "jobDefinition": {
+            "type": "object"
+          },
+          "currentStage": {
+            "type": "string",
+            "nullable": true
+          },
+          "plannedStages": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true
+          },
+          "error": {
+            "type": "boolean",
+            "default": false
+          },
+          "isTerminal": {
+            "type": "boolean",
+            "default": false
+          },
+          "lastNotification": {
+            "oneOf": [
+              {
+                "type": "object"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "lastUpdate": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "restartParametersOverride": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "default": []
+          }
+        },
+        "required": [
+          "jobId",
+          "name",
+          "jobDefinition",
+          "createdAt",
+          "lastUpdate"
+        ]
+      },
+      "ListBatchJobsResponse": {
+        "type": "object",
+        "properties": {
+          "jobs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/JobMetadata"
+            }
+          },
+          "nextPageToken": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "jobs"
+        ]
+      },
+      "GetJobMetadataResponse": {
+        "type": "object",
+        "properties": {
+          "job": {
+            "$ref": "#/components/schemas/JobMetadata"
+          }
+        },
+        "required": [
+          "job"
+        ]
+      },
+      "JobStageDetails": {
+        "type": "object",
+        "properties": {
+          "processingStageId": {
+            "type": "string"
+          },
+          "processingStageName": {
+            "type": "string"
+          },
+          "tasksNumber": {
+            "type": "integer"
+          },
+          "outputBatches": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "startTimestamp": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "notification": {
+            "oneOf": [
+              {
+                "type": "object"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "statusType": {
+            "type": "string"
+          },
+          "lastEventTimestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "processingStageId",
+          "processingStageName",
+          "tasksNumber",
+          "outputBatches",
+          "startTimestamp",
+          "notification",
+          "statusType",
+          "lastEventTimestamp"
+        ]
+      },
+      "ListJobStagesResponse": {
+        "type": "object",
+        "properties": {
+          "stages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/JobStageDetails"
+            }
+          }
+        },
+        "required": [
+          "stages"
+        ]
+      },
+      "TaskStatus": {
+        "type": "object",
+        "properties": {
+          "taskId": {
+            "type": "string"
+          },
+          "notification": {
+            "oneOf": [
+              {
+                "type": "object"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "statusType": {
+            "type": "string"
+          },
+          "progress": {
+            "type": "number",
+            "nullable": true
+          },
+          "eventTimestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "taskId",
+          "notification",
+          "statusType",
+          "eventTimestamp"
+        ]
+      },
+      "ListJobStageTasksResponse": {
+        "type": "object",
+        "properties": {
+          "tasks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TaskStatus"
+            }
+          },
+          "nextPageToken": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "tasks"
+        ]
+      },
+      "ComputeConfigurationV2": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "compute-configuration-v2"
+            ]
+          },
+          "machineType": {
+            "type": "string",
+            "enum": [
+              "cpu",
+              "gpu"
+            ]
+          },
+          "workersPerMachine": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "StagingBatchInputV1": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "staging-batch-input-v1"
+            ]
+          },
+          "batchId": {
+            "type": "string"
+          },
+          "partName": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "type",
+          "batchId"
+        ]
+      },
+      "WorkflowsProcessingSpecificationV1": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "workflows-processing-specification-v1"
+            ]
+          },
+          "workspace": {
+            "type": "string"
+          },
+          "workflowId": {
+            "type": "string"
+          },
+          "workflowParameters": {
+            "type": "object",
+            "nullable": true
+          },
+          "imageInputName": {
+            "type": "string",
+            "nullable": true
+          },
+          "persistImagesOutputs": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "imagesOutputsToBePersisted": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true
+          },
+          "aggregationFormat": {
+            "type": "string",
+            "enum": [
+              "csv",
+              "jsonl"
+            ],
+            "nullable": true
+          },
+          "maxVideoFPS": {
+            "oneOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "nullable": true
+          }
+        },
+        "required": [
+          "type",
+          "workspace",
+          "workflowId"
+        ]
+      },
+      "WorkflowProcessingJobV1": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "simple-image-processing-v1",
+              "simple-video-processing-v1"
+            ]
+          },
+          "jobInput": {
+            "$ref": "#/components/schemas/StagingBatchInputV1"
+          },
+          "computeConfiguration": {
+            "$ref": "#/components/schemas/ComputeConfigurationV2"
+          },
+          "processingTimeoutSeconds": {
+            "type": "integer",
+            "nullable": true
+          },
+          "maxParallelTasks": {
+            "type": "integer",
+            "nullable": true
+          },
+          "processingSpecification": {
+            "$ref": "#/components/schemas/WorkflowsProcessingSpecificationV1"
+          },
+          "notificationsURL": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "type",
+          "jobInput",
+          "computeConfiguration",
+          "processingSpecification"
+        ]
+      },
+      "JobLog": {
+        "type": "object",
+        "properties": {
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "processingStageId": {
+            "type": "string",
+            "nullable": true
+          },
+          "taskId": {
+            "type": "string",
+            "nullable": true
+          },
+          "severity": {
+            "type": "string",
+            "enum": [
+              "info",
+              "error",
+              "warning"
+            ]
+          },
+          "reportingModule": {
+            "type": "string"
+          },
+          "logType": {
+            "type": "string"
+          },
+          "payload": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "createdAt",
+          "severity",
+          "reportingModule",
+          "logType",
+          "payload"
+        ]
+      },
+      "JobLogsResponse": {
+        "type": "object",
+        "properties": {
+          "logs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/JobLog"
+            }
+          },
+          "nextPageToken": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "logs"
+        ]
+      }
+    }
+  }
+}

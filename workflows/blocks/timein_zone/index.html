@@ -1,0 +1,3809 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Scalable, on-device computer vision deployment.">
+      
+      
+        <meta name="author" content="Roboflow">
+      
+      
+        <link rel="canonical" href="https://inference.roboflow.com/workflows/blocks/timein_zone/">
+      
+      
+        <link rel="prev" href="../byte_tracker/">
+      
+      
+        <link rel="next" href="../ptz_tracking%28onvif%29/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../../favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.6.4+insiders-4.53.15">
+    
+    
+      
+        <title>Time in Zone - Roboflow Inference</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../../assets/stylesheets/main.f15084e1.min.css">
+      
+        
+        <link rel="stylesheet" href="../../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Inter:300,300i,400,400i,700,700i%7Cui-monospace:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Inter";--md-code-font:"ui-monospace"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../../assets/_mkdocstrings.css">
+    
+      <link rel="stylesheet" href="../../../styles/cookbooks.css">
+    
+      <link rel="stylesheet" href="../../../styles.css">
+    
+    <script>__md_scope=new URL("../../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+  
+
+
+  
+  
+
+<script id="__analytics">function __md_analytics(){function e(){dataLayer.push(arguments)}window.dataLayer=window.dataLayer||[],e("js",new Date),e("config","G-T0CED2YY8K"),document.addEventListener("DOMContentLoaded",(function(){document.forms.search&&document.forms.search.query.addEventListener("blur",(function(){this.value&&e("event","search",{search_term:this.value})}));document$.subscribe((function(){var t=document.forms.feedback;if(void 0!==t)for(var a of t.querySelectorAll("[type=submit]"))a.addEventListener("click",(function(a){a.preventDefault();var n=document.location.pathname,d=this.getAttribute("data-md-value");e("event","feedback",{page:n,data:d}),t.firstElementChild.disabled=!0;var r=t.querySelector(".md-feedback__note [data-md-value='"+d+"']");r&&(r.hidden=!1)})),t.hidden=!1})),location$.subscribe((function(t){e("config","G-T0CED2YY8K",{page_path:t.pathname})}))}));var t=document.createElement("script");t.async=!0,t.src="https://www.googletagmanager.com/gtag/js?id=G-T0CED2YY8K",document.getElementById("__analytics").insertAdjacentElement("afterEnd",t)}</script>
+  
+    <script>"undefined"!=typeof __md_analytics&&__md_analytics()</script>
+  
+
+    
+    
+  
+  
+
+  
+<meta property="og:type" content="website" />
+<meta property="og:title" content="Time in Zone - Roboflow Inference" />
+<meta property="og:description" content="Scalable, on-device computer vision deployment." />
+<meta property="og:image" content="https://inference.roboflow.com/assets/images/social/workflows/blocks/timein_zone.png" />
+<meta property="og:image:type" content="image/png" />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
+<meta property="og:url" content="https://inference.roboflow.com/workflows/blocks/timein_zone/" />
+<meta property="twitter:card" content="summary_large_image" />
+<meta property="twitter:title" content="Time in Zone - Roboflow Inference" />
+<meta property="twitter:description" content="Scalable, on-device computer vision deployment." />
+<meta property="twitter:image" content="https://inference.roboflow.com/assets/images/social/workflows/blocks/timein_zone.png" />
+</head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#time-in-zone" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow md-header--lifted" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../../.." title="Roboflow Inference" class="md-header__button md-logo" aria-label="Roboflow Inference" data-md-component="logo">
+      
+  <img src="../../../roboflow-logomark-white.svg" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Roboflow Inference
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Time in Zone
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="indigo"  aria-hidden="true"  type="radio" name="__palette" id="__palette_0">
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      <label class="md-header__button md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+      </label>
+      <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/roboflow/inference" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.7.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8M97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    roboflow/inference
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+    
+      
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../start/overview/" class="md-tabs__link">
+          
+  
+    
+  
+  Start
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../quickstart/run_a_model/" class="md-tabs__link">
+          
+  
+    
+  
+  Models
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../../about/" class="md-tabs__link">
+          
+  
+    
+  
+  Workflows
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../quickstart/roboflow_ecosystem/" class="md-tabs__link">
+          
+  
+    
+  
+  Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../gallery/basic_workflows/" class="md-tabs__link">
+          
+  
+    
+  
+  Examples
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+    
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+  
+        
+      
+  
+
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../../.." title="Roboflow Inference" class="md-nav__button md-logo" aria-label="Roboflow Inference" data-md-component="logo">
+      
+  <img src="../../../roboflow-logomark-white.svg" alt="logo">
+
+    </a>
+    Roboflow Inference
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/roboflow/inference" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.7.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8M97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    roboflow/inference
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+      
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+    <a href="../../../start/overview/" class="md-nav__link">
+      
+  
+  <span class="md-ellipsis">
+    
+  
+    Start
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+      
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+    <a href="../../../quickstart/run_a_model/" class="md-nav__link">
+      
+  
+  <span class="md-ellipsis">
+    
+  
+    Models
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+      
+        
+        
+      
+      
+    
+    
+      
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  <span class="md-ellipsis">
+    
+  
+    Workflows
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Workflows
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../about/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    
+  
+    About Workflows
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+      
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+    <a href="../../understanding/" class="md-nav__link">
+      
+  
+  <span class="md-ellipsis">
+    
+  
+    User Guide
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+      
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+    <a href="../../gallery/" class="md-nav__link">
+      
+  
+  <span class="md-ellipsis">
+    
+  
+    Examples
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+      
+      
+    
+    
+      
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_4" checked>
+        
+          
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../" class="md-nav__link ">
+              
+  
+  <span class="md-ellipsis">
+    
+  
+    Block Gallery
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_3_4" id="__nav_3_4_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_4_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_3_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Block Gallery
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+      
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+    <a href="../object_detection_model/" class="md-nav__link">
+      
+  
+  <span class="md-ellipsis">
+    
+  
+    Models
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+      
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+    <a href="../bounding_box_visualization/" class="md-nav__link">
+      
+  
+  <span class="md-ellipsis">
+    
+  
+    Visualizations
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+      
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+    <a href="../continue_if/" class="md-nav__link">
+      
+  
+  <span class="md-ellipsis">
+    
+  
+    Logic and Branching
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+      
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+    <a href="../roboflow_dataset_upload/" class="md-nav__link">
+      
+  
+  <span class="md-ellipsis">
+    
+  
+    Data Storage
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+      
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+    <a href="../email_notification/" class="md-nav__link">
+      
+  
+  <span class="md-ellipsis">
+    
+  
+    Notifications
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+      
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+    <a href="../dynamic_crop/" class="md-nav__link">
+      
+  
+  <span class="md-ellipsis">
+    
+  
+    Transformations
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+      
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+    <a href="../image_preprocessing/" class="md-nav__link">
+      
+  
+  <span class="md-ellipsis">
+    
+  
+    Classical Computer Vision
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+      
+      
+    
+    
+      
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_4_9" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_3_4_9" id="__nav_3_4_9_label" tabindex="0">
+            
+  
+  <span class="md-ellipsis">
+    
+  
+    Video
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_3_4_9_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_3_4_9">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Video
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../byte_tracker/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    
+  
+    Byte Tracker
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  <span class="md-ellipsis">
+    
+  
+    Time in Zone
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  <span class="md-ellipsis">
+    
+  
+    Time in Zone
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#v3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v3
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#how-this-block-works" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How This Block Works
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#common-use-cases" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Common Use Cases
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#connecting-to-other-blocks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Connecting to Other Blocks
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#version-differences" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Version Differences
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#requirements" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Requirements
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Requirements">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#type-identifier" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Type identifier
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#properties" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Properties
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#available-connections" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Available Connections
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#input-and-output-bindings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Input and Output Bindings
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v2
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#how-this-block-works_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How This Block Works
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#common-use-cases_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Common Use Cases
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#connecting-to-other-blocks_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Connecting to Other Blocks
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#version-differences_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Version Differences
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#requirements_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Requirements
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Requirements">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#type-identifier_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Type identifier
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#properties_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Properties
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#available-connections_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Available Connections
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#input-and-output-bindings_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Input and Output Bindings
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#how-this-block-works_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How This Block Works
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#common-use-cases_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Common Use Cases
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#connecting-to-other-blocks_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Connecting to Other Blocks
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#requirements_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Requirements
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Requirements">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#type-identifier_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Type identifier
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#properties_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Properties
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#available-connections_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Available Connections
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#input-and-output-bindings_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Input and Output Bindings
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ptz_tracking%28onvif%29/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    
+  
+    PTZ Tracking (ONVIF)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../line_counter/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    
+  
+    Line Counter
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../velocity/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    
+  
+    Velocity
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../path_deviation/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    
+  
+    Path Deviation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../detections_stabilizer/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    
+  
+    Detections Stabilizer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../motion_detection/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    
+  
+    Motion Detection
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../background_subtraction/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    
+  
+    Background Subtraction
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../buffer/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    
+  
+    Buffer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../identify_outliers/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    
+  
+    Identify Outliers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../identify_changes/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    
+  
+    Identify Changes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+      
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+    <a href="../property_definition/" class="md-nav__link">
+      
+  
+  <span class="md-ellipsis">
+    
+  
+    Advanced
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+      
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+    <a href="../../batch_processing/about/" class="md-nav__link">
+      
+  
+  <span class="md-ellipsis">
+    
+  
+    Batch Processing
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+      
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+    <a href="../../definitions/" class="md-nav__link">
+      
+  
+  <span class="md-ellipsis">
+    
+  
+    Developer Guide
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+      
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+    <a href="../../../quickstart/roboflow_ecosystem/" class="md-nav__link">
+      
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+      
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+    <a href="../../gallery/basic_workflows/" class="md-nav__link">
+      
+  
+  <span class="md-ellipsis">
+    
+  
+    Examples
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#v3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v3
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#how-this-block-works" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How This Block Works
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#common-use-cases" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Common Use Cases
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#connecting-to-other-blocks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Connecting to Other Blocks
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#version-differences" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Version Differences
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#requirements" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Requirements
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Requirements">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#type-identifier" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Type identifier
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#properties" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Properties
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#available-connections" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Available Connections
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#input-and-output-bindings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Input and Output Bindings
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v2
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#how-this-block-works_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How This Block Works
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#common-use-cases_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Common Use Cases
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#connecting-to-other-blocks_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Connecting to Other Blocks
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#version-differences_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Version Differences
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#requirements_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Requirements
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Requirements">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#type-identifier_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Type identifier
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#properties_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Properties
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#available-connections_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Available Connections
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#input-and-output-bindings_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Input and Output Bindings
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#how-this-block-works_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How This Block Works
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#common-use-cases_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Common Use Cases
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#connecting-to-other-blocks_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Connecting to Other Blocks
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#requirements_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Requirements
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Requirements">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#type-identifier_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Type identifier
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#properties_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Properties
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#available-connections_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Available Connections
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#input-and-output-bindings_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Input and Output Bindings
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+  
+    
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+    <a href="https://github.com/roboflow/inference/tree/main/docs/workflows/blocks/timein_zone.md" title="Edit this page" class="md-content__button md-icon">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
+    </a>
+  
+  
+
+
+<h1 id="time-in-zone">Time in Zone<a class="headerlink" href="#time-in-zone" title="Permanent link">&para;</a></h1>
+<h2 id="v3">v3<a class="headerlink" href="#v3" title="Permanent link">&para;</a></h2>
+<details>
+<summary>Class: <code>TimeInZoneBlockV3</code>  <em>(there are multiple versions of this block)</em></summary>
+<p>Source:
+<a target="_blank" href="https://github.com/roboflow/inference/blob/main/inference/core/workflows/core_steps/analytics/time_in_zone/v3.py">inference.core.workflows.core_steps.analytics.time_in_zone.v3.TimeInZoneBlockV3</a></p>
+<p><strong>Warning: This block has multiple versions. Please refer to the specific version for details.</strong>
+You can learn more about how versions work here: <a href="../../versioning/">Versioning</a></p>
+</details>
+<p>Calculate and track the time spent by tracked objects within one or more defined polygon zones, measure duration of object presence in specific areas (supporting multiple zones where objects are considered 'in zone' if present in any zone), filter detections based on zone membership, reset time tracking when objects leave zones, and enable zone-based analytics, dwell time analysis, and presence monitoring workflows.</p>
+<h2 id="how-this-block-works">How This Block Works<a class="headerlink" href="#how-this-block-works" title="Permanent link">&para;</a></h2>
+<p>This block measures how long each tracked object has been inside one or more defined polygon zones by tracking entry and exit times for each unique track ID. The block supports multiple zones, treating objects as 'in zone' if they are present in any of the defined zones. The block:</p>
+<ol>
+<li>Receives tracked detection predictions with track IDs, an image with embedded video metadata, and polygon zone definition(s) (single zone or list of zones)</li>
+<li>Extracts video metadata from the image:</li>
+<li>Accesses video_metadata from the WorkflowImageData object</li>
+<li>Extracts fps, frame_number, frame_timestamp, video_identifier, and video source information</li>
+<li>Uses video_identifier to maintain separate tracking state for different videos</li>
+<li>Validates that detections have track IDs (tracker_id must be present):</li>
+<li>Requires detections to come from a tracking block (e.g., Byte Tracker)</li>
+<li>Each object must have a unique tracker_id that persists across frames</li>
+<li>Raises an error if tracker_id is missing</li>
+<li>Normalizes zone input to a list of polygons:</li>
+<li>Accepts a single polygon zone or a list of polygon zones</li>
+<li>Automatically wraps single polygons in a list for consistent processing</li>
+<li>Validates nesting depth and coordinate format for all zones</li>
+<li>Enables flexible zone input formats (single zone or multiple zones)</li>
+<li>Initializes or retrieves polygon zones for the video:</li>
+<li>Creates a list of PolygonZone objects from zone coordinates for each unique zone combination</li>
+<li>Validates zone coordinates (each zone must be a list of at least 3 points, each with 2 coordinates)</li>
+<li>Stores zone configurations in an OrderedDict with zone cache (max 100 zone combinations)</li>
+<li>Uses zone key combining video_identifier and zone coordinates for cache lookup</li>
+<li>Implements FIFO eviction when cache exceeds 100 zone combinations</li>
+<li>Configures triggering anchor point (e.g., CENTER, BOTTOM_CENTER) for zone detection</li>
+<li>Initializes or retrieves time tracking state for the video:</li>
+<li>Maintains a dictionary tracking when each track_id entered any zone</li>
+<li>Stores entry timestamps per video using video_identifier</li>
+<li>Maintains separate tracking state for each video</li>
+<li>Calculates current timestamp for time measurement:</li>
+<li>For video files: Calculates timestamp as frame_number / fps</li>
+<li>For streamed video: Uses frame_timestamp from metadata</li>
+<li>Provides accurate time measurement for duration calculation</li>
+<li>Checks which detections are in any zone:</li>
+<li>Tests each detection against all polygon zones using polygon zone triggers</li>
+<li>Creates a matrix of zone membership (zones x detections)</li>
+<li>Uses logical OR operation: objects are considered 'in zone' if they're in ANY of the zones</li>
+<li>The triggering_anchor determines which point on the bounding box is checked (CENTER, BOTTOM_CENTER, etc.)</li>
+<li>Returns boolean for each detection indicating zone membership in any zone</li>
+<li>Updates time tracking for each tracked object:</li>
+<li><strong>For objects entering any zone</strong>: Records entry timestamp if not already tracked</li>
+<li><strong>For objects in any zone</strong>: Calculates time spent as current_timestamp - entry_timestamp</li>
+<li><strong>For objects leaving all zones</strong>: <ul>
+<li>If reset_out_of_zone_detections is True: Removes entry timestamp (resets to 0)</li>
+<li>If reset_out_of_zone_detections is False: Keeps entry timestamp (continues tracking)</li>
+</ul>
+</li>
+<li>Handles out-of-zone detections:<ul>
+<li><strong>If remove_out_of_zone_detections is True</strong>: Filters out detections outside all zones from output</li>
+<li><strong>If remove_out_of_zone_detections is False</strong>: Includes out-of-zone detections with time = 0</li>
+</ul>
+</li>
+<li>Adds time_in_zone information to each detection:<ul>
+<li>Attaches time_in_zone value (in seconds) to each detection as metadata</li>
+<li>Objects in any zone: Time represents duration spent in any zone</li>
+<li>Objects outside all zones: Time is 0 (if not reset) or undefined (if removed)</li>
+</ul>
+</li>
+<li>Returns detections with time_in_zone information:<ul>
+<li>Outputs tracked detections enhanced with time_in_zone metadata</li>
+<li>Filtered or unfiltered based on remove_out_of_zone_detections setting</li>
+<li>Maintains all original detection properties plus time tracking information</li>
+</ul>
+</li>
+</ol>
+<p>The block maintains persistent tracking state across frames, allowing accurate cumulative time measurement for objects that remain in any zone over multiple frames. Time is measured from when an object first enters any zone (based on its track_id) until the current frame, providing real-time duration tracking. When multiple zones are provided, objects are considered 'in zone' if their anchor point is inside any of the zones, allowing tracking across multiple areas as a single combined zone. The zone cache efficiently manages multiple zone configurations per video using FIFO eviction to limit memory usage. The triggering anchor determines which part of the bounding box is used for zone detection, enabling different zone entry/exit behaviors based on object position.</p>
+<h2 id="common-use-cases">Common Use Cases<a class="headerlink" href="#common-use-cases" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>Multi-Zone Dwell Time Analysis</strong>: Measure how long objects remain in any of multiple areas for behavior analysis (e.g., measure customer time in any store section, track time spent in multiple parking areas, analyze time in overlapping zones), enabling multi-zone dwell time analytics workflows</li>
+<li><strong>Zone-Based Monitoring</strong>: Monitor object presence across multiple defined areas for security and safety (e.g., detect loitering in any restricted area, monitor time in multiple danger zones, track presence across secure zones), enabling multi-zone monitoring workflows</li>
+<li><strong>Retail Analytics</strong>: Track customer time across multiple store sections for retail insights (e.g., measure time in any product aisle, analyze shopping patterns across departments, track engagement in multiple zones), enabling multi-zone retail analytics workflows</li>
+<li><strong>Occupancy Management</strong>: Measure time objects spend in any of multiple spaces for space utilization (e.g., track vehicle parking duration in multiple lots, measure table occupancy across zones, analyze space usage in multiple areas), enabling multi-zone occupancy management workflows</li>
+<li><strong>Safety Compliance</strong>: Monitor time violations across multiple restricted or time-limited zones (e.g., detect extended stays in any hazardous area, monitor time limit violations across zones, track safety compliance in multiple areas), enabling multi-zone safety monitoring workflows</li>
+<li><strong>Traffic Analysis</strong>: Measure time vehicles spend in any of multiple traffic zones or intersections (e.g., track time at multiple intersections, measure queue waiting time across zones, analyze traffic flow in multiple areas), enabling multi-zone traffic analytics workflows</li>
+</ul>
+<h2 id="connecting-to-other-blocks">Connecting to Other Blocks<a class="headerlink" href="#connecting-to-other-blocks" title="Permanent link">&para;</a></h2>
+<p>This block receives an image with embedded video metadata, tracked detections, and zone coordinates (single or multiple zones), and produces timed_detections with time_in_zone metadata:</p>
+<ul>
+<li><strong>After Byte Tracker blocks</strong> to measure time for tracked objects across multiple zones (e.g., track time in multiple zones for tracked objects, measure dwell time with consistent IDs across areas, analyze tracked object presence in multiple zones), enabling tracking-to-time workflows</li>
+<li><strong>After zone definition blocks</strong> to apply time tracking to multiple defined areas (e.g., measure time across multiple polygon zones, track duration in custom multi-zone configurations, analyze zone-based presence across areas), enabling zone-to-time workflows</li>
+<li><strong>Before logic blocks</strong> like Continue If to make decisions based on time in any zone (e.g., continue if time exceeds threshold in any zone, filter based on dwell time across zones, trigger actions on time violations in multiple areas), enabling time-based decision workflows</li>
+<li><strong>Before analysis blocks</strong> to analyze time-based metrics across multiple zones (e.g., analyze dwell time patterns across zones, process time-in-zone data for multiple areas, work with duration metrics across zones), enabling time analysis workflows</li>
+<li><strong>Before notification blocks</strong> to alert on time violations or thresholds in any zone (e.g., alert on extended stays in any zone, notify on time limit violations across areas, trigger time-based alerts for multiple zones), enabling time-based notification workflows</li>
+<li><strong>Before data storage blocks</strong> to record time metrics across multiple zones (e.g., store dwell time data for multiple areas, log time-in-zone metrics across zones, record duration measurements for multiple zones), enabling time metrics logging workflows</li>
+</ul>
+<h2 id="version-differences">Version Differences<a class="headerlink" href="#version-differences" title="Permanent link">&para;</a></h2>
+<p><strong>Enhanced from v2:</strong></p>
+<ul>
+<li><strong>Multiple Zone Support</strong>: Supports tracking time across multiple polygon zones simultaneously, where objects are considered 'in zone' if they're present in any of the defined zones, enabling multi-zone time tracking and analysis</li>
+<li><strong>Flexible Zone Input</strong>: Accepts either a single polygon zone or a list of polygon zones, automatically normalizing the input to handle both formats seamlessly</li>
+<li><strong>Zone Cache Management</strong>: Implements a zone cache with FIFO eviction (max 100 zone combinations) to efficiently manage multiple zone configurations per video while limiting memory usage</li>
+<li><strong>Combined Zone Logic</strong>: Uses logical OR operation across all zones, allowing tracking across multiple areas as a unified zone system for comprehensive presence monitoring</li>
+<li><strong>Enhanced Zone Key System</strong>: Uses combined zone keys (video_identifier + zone coordinates) for cache lookup, enabling efficient storage and retrieval of zone configurations</li>
+</ul>
+<h2 id="requirements">Requirements<a class="headerlink" href="#requirements" title="Permanent link">&para;</a></h2>
+<p>This block requires tracked detections with tracker_id information (detections must come from a tracking block like Byte Tracker). The zone can be a single polygon or a list of polygons, where each polygon must be defined as a list of at least 3 points, with each point being a list or tuple of exactly 2 coordinates (x, y). The image's video_metadata should include frame rate (fps) for video files or frame timestamps for streamed video to calculate accurate time measurements. The block maintains persistent tracking state across frames for each video, so it should be used in video workflows where frames are processed sequentially. For accurate time measurement, detections should be provided consistently across frames with valid track IDs. When multiple zones are provided, objects are considered 'in zone' if they're present in any of the zones.</p>
+<h3 id="type-identifier">Type identifier<a class="headerlink" href="#type-identifier" title="Permanent link">&para;</a></h3>
+<p>Use the following identifier in step <code>"type"</code> field: <code>roboflow_core/time_in_zone@v3</code>to add the block as
+as step in your workflow.</p>
+<h3 id="properties">Properties<a class="headerlink" href="#properties" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;"><strong>Name</strong></th>
+<th style="text-align: left;"><strong>Type</strong></th>
+<th style="text-align: left;"><strong>Description</strong></th>
+<th style="text-align: left;">Refs</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><code>name</code></td>
+<td style="text-align: left;"><code>str</code></td>
+<td style="text-align: left;">Enter a unique identifier for this step..</td>
+<td style="text-align: left;">❌</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>zone</code></td>
+<td style="text-align: left;"><code>List[Any]</code></td>
+<td style="text-align: left;">Polygon zone coordinates defining one or more areas for time measurement. Can be a single polygon zone or a list of polygon zones. Each zone must be a list of at least 3 points, where each point is a list or tuple of exactly 2 coordinates [x, y] or (x, y). Coordinates should be in pixel space matching the image dimensions. Example for single zone: [(100, 100), (100, 200), (300, 200), (300, 100)]. Example for multiple zones: [[(100, 100), (100, 200), (300, 200), (300, 100)], [(400, 400), (400, 500), (600, 500), (600, 400)]]. Objects are considered 'in zone' if their triggering_anchor point is inside ANY of the provided zones. Zone coordinates are validated and PolygonZone objects are created for each zone. Zone configurations are cached (max 100 combinations) with FIFO eviction..</td>
+<td style="text-align: left;">✅</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>triggering_anchor</code></td>
+<td style="text-align: left;"><code>str</code></td>
+<td style="text-align: left;">Point on the detection bounding box that must be inside the zone to consider the object 'in zone'. Options include: 'CENTER' (default, center of bounding box), 'BOTTOM_CENTER' (bottom center point), 'TOP_CENTER' (top center point), 'CENTER_LEFT' (center left point), 'CENTER_RIGHT' (center right point), and other Position enum values. The triggering anchor determines which part of the object's bounding box is checked against the zone polygon(s). When multiple zones are provided, the object is considered 'in zone' if its anchor point is inside ANY of the zones. Use CENTER for standard zone detection, BOTTOM_CENTER for ground-level zones (e.g., tracking feet/vehicle base), or other anchors based on detection needs. Default is 'CENTER'..</td>
+<td style="text-align: left;">✅</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>remove_out_of_zone_detections</code></td>
+<td style="text-align: left;"><code>bool</code></td>
+<td style="text-align: left;">If True (default), detections found outside all zones are filtered out and not included in the output. Only detections inside at least one zone are returned. If False, all detections are included in the output, with time_in_zone = 0 for objects outside all zones. Use True to focus analysis only on objects in any zone, or False to maintain all detections with zone status. When multiple zones are provided, objects are considered 'in zone' if present in any zone. Default is True for cleaner output focused on zone activity..</td>
+<td style="text-align: left;">✅</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>reset_out_of_zone_detections</code></td>
+<td style="text-align: left;"><code>bool</code></td>
+<td style="text-align: left;">If True (default), when a tracked object leaves all zones, its time tracking is reset (entry timestamp is cleared). When the object re-enters any zone, time tracking starts from 0 again. If False, time tracking continues even after leaving all zones, and re-entry maintains cumulative time. Use True to measure current continuous time in any zone (resets on exit from all zones), or False to measure cumulative time across multiple entries. When multiple zones are provided, time is reset only when the object leaves all zones. Default is True for measuring continuous presence duration..</td>
+<td style="text-align: left;">✅</td>
+</tr>
+</tbody>
+</table>
+<p>The <strong>Refs</strong> column marks possibility to parametrise the property with dynamic values available 
+in <code>workflow</code> runtime. See <em>Bindings</em> for more info.</p>
+<h3 id="available-connections">Available Connections<a class="headerlink" href="#available-connections" title="Permanent link">&para;</a></h3>
+<details class="tip">
+<summary>Compatible Blocks</summary>
+<p>Check what blocks you can connect to <code>Time in Zone</code> in version <code>v3</code>.</p>
+<ul>
+<li>inputs: <a href="../detections_consensus/"><code>Detections Consensus</code></a>, <a href="../size_measurement/"><code>Size Measurement</code></a>, <a href="../slack_notification/"><code>Slack Notification</code></a>, <a href="../vlm_as_classifier/"><code>VLM As Classifier</code></a>, <a href="../florence2_model/"><code>Florence-2 Model</code></a>, <a href="../open_ai/"><code>OpenAI</code></a>, <a href="../bounding_rectangle/"><code>Bounding Rectangle</code></a>, <a href="../sam3/"><code>SAM 3</code></a>, <a href="../clip_comparison/"><code>Clip Comparison</code></a>, <a href="../byte_tracker/"><code>Byte Tracker</code></a>, <a href="../detections_transformation/"><code>Detections Transformation</code></a>, <a href="../local_file_sink/"><code>Local File Sink</code></a>, <a href="../seg_preview/"><code>Seg Preview</code></a>, <a href="../json_parser/"><code>JSON Parser</code></a>, <a href="../detection_offset/"><code>Detection Offset</code></a>, <a href="../perspective_correction/"><code>Perspective Correction</code></a>, <a href="../roboflow_dataset_upload/"><code>Roboflow Dataset Upload</code></a>, <a href="../open_ai/"><code>OpenAI</code></a>, <a href="../detections_filter/"><code>Detections Filter</code></a>, <a href="../model_monitoring_inference_aggregator/"><code>Model Monitoring Inference Aggregator</code></a>, <a href="../instance_segmentation_model/"><code>Instance Segmentation Model</code></a>, <a href="../object_detection_model/"><code>Object Detection Model</code></a>, <a href="../dimension_collapse/"><code>Dimension Collapse</code></a>, <a href="../email_notification/"><code>Email Notification</code></a>, <a href="../ocr_model/"><code>OCR Model</code></a>, <a href="../cog_vlm/"><code>CogVLM</code></a>, <a href="../vlm_as_detector/"><code>VLM As Detector</code></a>, <a href="../object_detection_model/"><code>Object Detection Model</code></a>, <a href="../google_vision_ocr/"><code>Google Vision OCR</code></a>, <a href="../sam3/"><code>SAM 3</code></a>, <a href="../stitch_ocr_detections/"><code>Stitch OCR Detections</code></a>, <a href="../twilio_smsmms_notification/"><code>Twilio SMS/MMS Notification</code></a>, <a href="../stitch_ocr_detections/"><code>Stitch OCR Detections</code></a>, <a href="../vlm_as_detector/"><code>VLM As Detector</code></a>, <a href="./"><code>Time in Zone</code></a>, <a href="../moondream2/"><code>Moondream2</code></a>, <a href="../path_deviation/"><code>Path Deviation</code></a>, <a href="../clip_comparison/"><code>Clip Comparison</code></a>, <a href="../anthropic_claude/"><code>Anthropic Claude</code></a>, <a href="../anthropic_claude/"><code>Anthropic Claude</code></a>, <a href="../motion_detection/"><code>Motion Detection</code></a>, <a href="../line_counter/"><code>Line Counter</code></a>, <a href="../detection_event_log/"><code>Detection Event Log</code></a>, <a href="../instance_segmentation_model/"><code>Instance Segmentation Model</code></a>, <a href="../sift_comparison/"><code>SIFT Comparison</code></a>, <a href="../detections_list_roll_up/"><code>Detections List Roll-Up</code></a>, <a href="../detections_combine/"><code>Detections Combine</code></a>, <a href="../sam3/"><code>SAM 3</code></a>, <a href="./"><code>Time in Zone</code></a>, <a href="../open_ai/"><code>OpenAI</code></a>, <a href="../csv_formatter/"><code>CSV Formatter</code></a>, <a href="../detections_stabilizer/"><code>Detections Stabilizer</code></a>, <a href="../detections_stitch/"><code>Detections Stitch</code></a>, <a href="../email_notification/"><code>Email Notification</code></a>, <a href="./"><code>Time in Zone</code></a>, <a href="../detections_classes_replacement/"><code>Detections Classes Replacement</code></a>, <a href="../segment_anything2_model/"><code>Segment Anything 2 Model</code></a>, <a href="../google_gemini/"><code>Google Gemini</code></a>, <a href="../velocity/"><code>Velocity</code></a>, <a href="../anthropic_claude/"><code>Anthropic Claude</code></a>, <a href="../google_gemini/"><code>Google Gemini</code></a>, <a href="../lmm_for_classification/"><code>LMM For Classification</code></a>, <a href="../single_label_classification_model/"><code>Single-Label Classification Model</code></a>, <a href="../dynamic_zone/"><code>Dynamic Zone</code></a>, <a href="../template_matching/"><code>Template Matching</code></a>, <a href="../google_gemini/"><code>Google Gemini</code></a>, <a href="../open_ai/"><code>OpenAI</code></a>, <a href="../webhook_sink/"><code>Webhook Sink</code></a>, <a href="../twilio_sms_notification/"><code>Twilio SMS Notification</code></a>, <a href="../lmm/"><code>LMM</code></a>, <a href="../byte_tracker/"><code>Byte Tracker</code></a>, <a href="../multi_label_classification_model/"><code>Multi-Label Classification Model</code></a>, <a href="../camera_focus/"><code>Camera Focus</code></a>, <a href="../roboflow_dataset_upload/"><code>Roboflow Dataset Upload</code></a>, <a href="../easy_ocr/"><code>EasyOCR</code></a>, <a href="../sift_comparison/"><code>SIFT Comparison</code></a>, <a href="../yolo_world_model/"><code>YOLO-World Model</code></a>, <a href="../vlm_as_classifier/"><code>VLM As Classifier</code></a>, <a href="../overlap_filter/"><code>Overlap Filter</code></a>, <a href="../buffer/"><code>Buffer</code></a>, <a href="../florence2_model/"><code>Florence-2 Model</code></a>, <a href="../identify_outliers/"><code>Identify Outliers</code></a>, <a href="../identify_changes/"><code>Identify Changes</code></a>, <a href="../llama3.2_vision/"><code>Llama 3.2 Vision</code></a>, <a href="../roboflow_custom_metadata/"><code>Roboflow Custom Metadata</code></a>, <a href="../../ptz_tracking%28onvif"><code>PTZ Tracking (ONVIF)</code></a>.md), <a href="../byte_tracker/"><code>Byte Tracker</code></a>, <a href="../dynamic_crop/"><code>Dynamic Crop</code></a>, <a href="../detections_merge/"><code>Detections Merge</code></a>, <a href="../mask_area_measurement/"><code>Mask Area Measurement</code></a>, <a href="../keypoint_detection_model/"><code>Keypoint Detection Model</code></a>, <a href="../path_deviation/"><code>Path Deviation</code></a></li>
+<li>outputs: <a href="../trace_visualization/"><code>Trace Visualization</code></a>, <a href="../detections_consensus/"><code>Detections Consensus</code></a>, <a href="../mask_visualization/"><code>Mask Visualization</code></a>, <a href="../detections_stabilizer/"><code>Detections Stabilizer</code></a>, <a href="../circle_visualization/"><code>Circle Visualization</code></a>, <a href="../background_color_visualization/"><code>Background Color Visualization</code></a>, <a href="../size_measurement/"><code>Size Measurement</code></a>, <a href="../detections_stitch/"><code>Detections Stitch</code></a>, <a href="../color_visualization/"><code>Color Visualization</code></a>, <a href="../florence2_model/"><code>Florence-2 Model</code></a>, <a href="./"><code>Time in Zone</code></a>, <a href="../stability_ai_inpainting/"><code>Stability AI Inpainting</code></a>, <a href="../detections_classes_replacement/"><code>Detections Classes Replacement</code></a>, <a href="../segment_anything2_model/"><code>Segment Anything 2 Model</code></a>, <a href="../corner_visualization/"><code>Corner Visualization</code></a>, <a href="../bounding_rectangle/"><code>Bounding Rectangle</code></a>, <a href="../velocity/"><code>Velocity</code></a>, <a href="../byte_tracker/"><code>Byte Tracker</code></a>, <a href="../detections_transformation/"><code>Detections Transformation</code></a>, <a href="../dynamic_zone/"><code>Dynamic Zone</code></a>, <a href="../detection_offset/"><code>Detection Offset</code></a>, <a href="../roboflow_dataset_upload/"><code>Roboflow Dataset Upload</code></a>, <a href="../perspective_correction/"><code>Perspective Correction</code></a>, <a href="../detections_filter/"><code>Detections Filter</code></a>, <a href="../model_monitoring_inference_aggregator/"><code>Model Monitoring Inference Aggregator</code></a>, <a href="../pixelate_visualization/"><code>Pixelate Visualization</code></a>, <a href="../polygon_visualization/"><code>Polygon Visualization</code></a>, <a href="../ellipse_visualization/"><code>Ellipse Visualization</code></a>, <a href="../label_visualization/"><code>Label Visualization</code></a>, <a href="../byte_tracker/"><code>Byte Tracker</code></a>, <a href="../camera_focus/"><code>Camera Focus</code></a>, <a href="../model_comparison_visualization/"><code>Model Comparison Visualization</code></a>, <a href="../bounding_box_visualization/"><code>Bounding Box Visualization</code></a>, <a href="../polygon_visualization/"><code>Polygon Visualization</code></a>, <a href="../crop_visualization/"><code>Crop Visualization</code></a>, <a href="../stitch_ocr_detections/"><code>Stitch OCR Detections</code></a>, <a href="../roboflow_dataset_upload/"><code>Roboflow Dataset Upload</code></a>, <a href="../stitch_ocr_detections/"><code>Stitch OCR Detections</code></a>, <a href="./"><code>Time in Zone</code></a>, <a href="../distance_measurement/"><code>Distance Measurement</code></a>, <a href="../detections_merge/"><code>Detections Merge</code></a>, <a href="../path_deviation/"><code>Path Deviation</code></a>, <a href="../halo_visualization/"><code>Halo Visualization</code></a>, <a href="../overlap_filter/"><code>Overlap Filter</code></a>, <a href="../line_counter/"><code>Line Counter</code></a>, <a href="../florence2_model/"><code>Florence-2 Model</code></a>, <a href="../halo_visualization/"><code>Halo Visualization</code></a>, <a href="../icon_visualization/"><code>Icon Visualization</code></a>, <a href="../triangle_visualization/"><code>Triangle Visualization</code></a>, <a href="../line_counter/"><code>Line Counter</code></a>, <a href="../detection_event_log/"><code>Detection Event Log</code></a>, <a href="../dot_visualization/"><code>Dot Visualization</code></a>, <a href="../heatmap_visualization/"><code>Heatmap Visualization</code></a>, <a href="../roboflow_custom_metadata/"><code>Roboflow Custom Metadata</code></a>, <a href="../blur_visualization/"><code>Blur Visualization</code></a>, <a href="../detections_list_roll_up/"><code>Detections List Roll-Up</code></a>, <a href="../../ptz_tracking%28onvif"><code>PTZ Tracking (ONVIF)</code></a>.md), <a href="../detections_combine/"><code>Detections Combine</code></a>, <a href="../byte_tracker/"><code>Byte Tracker</code></a>, <a href="../dynamic_crop/"><code>Dynamic Crop</code></a>, <a href="./"><code>Time in Zone</code></a>, <a href="../mask_area_measurement/"><code>Mask Area Measurement</code></a>, <a href="../path_deviation/"><code>Path Deviation</code></a></li>
+</ul>
+</details>
+<h3 id="input-and-output-bindings">Input and Output Bindings<a class="headerlink" href="#input-and-output-bindings" title="Permanent link">&para;</a></h3>
+<p>The available connections depend on its binding kinds. Check what binding kinds 
+<code>Time in Zone</code> in version <code>v3</code>  has.</p>
+<details class="tip" open="open">
+<summary>Bindings</summary>
+<ul>
+<li>
+<p>input</p>
+<ul>
+<li><code>image</code> (<em><a href="../../kinds/image/"><code>image</code></a></em>): Input image for the current video frame containing embedded video metadata (fps, frame_number, frame_timestamp, video_identifier, video source) required for time calculation and state management. The block extracts video_metadata from the WorkflowImageData object. The fps and frame_number are used for video files to calculate timestamps (timestamp = frame_number / fps). For streamed video, frame_timestamp is used directly. The video_identifier is used to maintain separate tracking state and zone configurations for different videos. Used for zone visualization and reference. The image dimensions are used to validate zone coordinates. This version supports multiple zones per video with efficient zone cache management..</li>
+<li><code>detections</code> (<em>Union[<a href="../../kinds/object_detection_prediction/"><code>object_detection_prediction</code></a>, <a href="../../kinds/instance_segmentation_prediction/"><code>instance_segmentation_prediction</code></a>]</em>): Tracked detection predictions (object detection or instance segmentation) with tracker_id information. Detections must come from a tracking block (e.g., Byte Tracker) that has assigned unique tracker_id values that persist across frames. Each detection must have a tracker_id to enable time tracking. The block calculates time_in_zone for each tracked object based on when its track_id first entered any of the zones. Objects are considered 'in zone' if their anchor point is inside any of the provided zones. The output will include the same detections enhanced with time_in_zone metadata (duration in seconds). If remove_out_of_zone_detections is True, only detections inside any zone are included in the output..</li>
+<li><code>zone</code> (<em><a href="../../kinds/list_of_values/"><code>list_of_values</code></a></em>): Polygon zone coordinates defining one or more areas for time measurement. Can be a single polygon zone or a list of polygon zones. Each zone must be a list of at least 3 points, where each point is a list or tuple of exactly 2 coordinates [x, y] or (x, y). Coordinates should be in pixel space matching the image dimensions. Example for single zone: [(100, 100), (100, 200), (300, 200), (300, 100)]. Example for multiple zones: [[(100, 100), (100, 200), (300, 200), (300, 100)], [(400, 400), (400, 500), (600, 500), (600, 400)]]. Objects are considered 'in zone' if their triggering_anchor point is inside ANY of the provided zones. Zone coordinates are validated and PolygonZone objects are created for each zone. Zone configurations are cached (max 100 combinations) with FIFO eviction..</li>
+<li><code>triggering_anchor</code> (<em><a href="../../kinds/string/"><code>string</code></a></em>): Point on the detection bounding box that must be inside the zone to consider the object 'in zone'. Options include: 'CENTER' (default, center of bounding box), 'BOTTOM_CENTER' (bottom center point), 'TOP_CENTER' (top center point), 'CENTER_LEFT' (center left point), 'CENTER_RIGHT' (center right point), and other Position enum values. The triggering anchor determines which part of the object's bounding box is checked against the zone polygon(s). When multiple zones are provided, the object is considered 'in zone' if its anchor point is inside ANY of the zones. Use CENTER for standard zone detection, BOTTOM_CENTER for ground-level zones (e.g., tracking feet/vehicle base), or other anchors based on detection needs. Default is 'CENTER'..</li>
+<li><code>remove_out_of_zone_detections</code> (<em><a href="../../kinds/boolean/"><code>boolean</code></a></em>): If True (default), detections found outside all zones are filtered out and not included in the output. Only detections inside at least one zone are returned. If False, all detections are included in the output, with time_in_zone = 0 for objects outside all zones. Use True to focus analysis only on objects in any zone, or False to maintain all detections with zone status. When multiple zones are provided, objects are considered 'in zone' if present in any zone. Default is True for cleaner output focused on zone activity..</li>
+<li><code>reset_out_of_zone_detections</code> (<em><a href="../../kinds/boolean/"><code>boolean</code></a></em>): If True (default), when a tracked object leaves all zones, its time tracking is reset (entry timestamp is cleared). When the object re-enters any zone, time tracking starts from 0 again. If False, time tracking continues even after leaving all zones, and re-entry maintains cumulative time. Use True to measure current continuous time in any zone (resets on exit from all zones), or False to measure cumulative time across multiple entries. When multiple zones are provided, time is reset only when the object leaves all zones. Default is True for measuring continuous presence duration..</li>
+</ul>
+</li>
+<li>
+<p>output</p>
+<ul>
+<li><code>timed_detections</code> (<em>Union[<a href="../../kinds/object_detection_prediction/"><code>object_detection_prediction</code></a>, <a href="../../kinds/instance_segmentation_prediction/"><code>instance_segmentation_prediction</code></a>]</em>): Prediction with detected bounding boxes in form of sv.Detections(...) object if <code>object_detection_prediction</code> or Prediction with detected bounding boxes and segmentation masks in form of sv.Detections(...) object if <code>instance_segmentation_prediction</code>.</li>
+</ul>
+</li>
+</ul>
+</details>
+<details class="tip">
+<summary>Example JSON definition of step <code>Time in Zone</code> in version <code>v3</code></summary>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;&lt;your_step_name_here&gt;&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;roboflow_core/time_in_zone@v3&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;image&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;$inputs.image&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;detections&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;$steps.object_detection_model.predictions&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;zone&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">        </span><span class="p">[</span>
+<span class="w">            </span><span class="mi">100</span><span class="p">,</span>
+<span class="w">            </span><span class="mi">100</span>
+<span class="w">        </span><span class="p">],</span>
+<span class="w">        </span><span class="p">[</span>
+<span class="w">            </span><span class="mi">100</span><span class="p">,</span>
+<span class="w">            </span><span class="mi">200</span>
+<span class="w">        </span><span class="p">],</span>
+<span class="w">        </span><span class="p">[</span>
+<span class="w">            </span><span class="mi">300</span><span class="p">,</span>
+<span class="w">            </span><span class="mi">200</span>
+<span class="w">        </span><span class="p">],</span>
+<span class="w">        </span><span class="p">[</span>
+<span class="w">            </span><span class="mi">300</span><span class="p">,</span>
+<span class="w">            </span><span class="mi">100</span>
+<span class="w">        </span><span class="p">]</span>
+<span class="w">    </span><span class="p">],</span>
+<span class="w">    </span><span class="nt">&quot;triggering_anchor&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;CENTER&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;remove_out_of_zone_detections&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;reset_out_of_zone_detections&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span>
+<span class="p">}</span>
+</code></pre></div>
+</details>
+<style>
+/* hide edit button for generated pages */
+article > a.md-content__button.md-icon:first-child {
+    display: none;
+}
+</style>
+
+<pre><code>
+</code></pre>
+<h2 id="v2">v2<a class="headerlink" href="#v2" title="Permanent link">&para;</a></h2>
+<details>
+<summary>Class: <code>TimeInZoneBlockV2</code>  <em>(there are multiple versions of this block)</em></summary>
+<p>Source:
+<a target="_blank" href="https://github.com/roboflow/inference/blob/main/inference/core/workflows/core_steps/analytics/time_in_zone/v2.py">inference.core.workflows.core_steps.analytics.time_in_zone.v2.TimeInZoneBlockV2</a></p>
+<p><strong>Warning: This block has multiple versions. Please refer to the specific version for details.</strong>
+You can learn more about how versions work here: <a href="../../versioning/">Versioning</a></p>
+</details>
+<p>Calculate and track the time spent by tracked objects within a defined polygon zone, measure duration of object presence in specific areas, filter detections based on zone membership, reset time tracking when objects leave zones, and enable zone-based analytics, dwell time analysis, and presence monitoring workflows.</p>
+<h2 id="how-this-block-works_1">How This Block Works<a class="headerlink" href="#how-this-block-works_1" title="Permanent link">&para;</a></h2>
+<p>This block measures how long each tracked object has been inside a defined polygon zone by tracking entry and exit times for each unique track ID. The block:</p>
+<ol>
+<li>Receives tracked detection predictions with track IDs, an image with embedded video metadata, and a polygon zone definition</li>
+<li>Extracts video metadata from the image:</li>
+<li>Accesses video_metadata from the WorkflowImageData object</li>
+<li>Extracts fps, frame_number, frame_timestamp, video_identifier, and video source information</li>
+<li>Uses video_identifier to maintain separate tracking state for different videos</li>
+<li>Validates that detections have track IDs (tracker_id must be present):</li>
+<li>Requires detections to come from a tracking block (e.g., Byte Tracker)</li>
+<li>Each object must have a unique tracker_id that persists across frames</li>
+<li>Raises an error if tracker_id is missing</li>
+<li>Initializes or retrieves a polygon zone for the video:</li>
+<li>Creates a PolygonZone object from zone coordinates for each unique video</li>
+<li>Validates zone coordinates (must be a list of at least 3 points, each with 2 coordinates)</li>
+<li>Stores zone configuration per video using video_identifier</li>
+<li>Configures triggering anchor point (e.g., CENTER, BOTTOM_CENTER) for zone detection</li>
+<li>Initializes or retrieves time tracking state for the video:</li>
+<li>Maintains a dictionary tracking when each track_id entered the zone</li>
+<li>Stores entry timestamps per video using video_identifier</li>
+<li>Maintains separate tracking state for each video</li>
+<li>Calculates current timestamp for time measurement:</li>
+<li>For video files: Calculates timestamp as frame_number / fps</li>
+<li>For streamed video: Uses frame_timestamp from metadata</li>
+<li>Provides accurate time measurement for duration calculation</li>
+<li>Checks which detections are in the zone:</li>
+<li>Uses polygon zone trigger to test if each detection's anchor point is inside the zone</li>
+<li>The triggering_anchor determines which point on the bounding box is checked (CENTER, BOTTOM_CENTER, etc.)</li>
+<li>Returns boolean for each detection indicating zone membership</li>
+<li>Updates time tracking for each tracked object:</li>
+<li><strong>For objects entering the zone</strong>: Records entry timestamp if not already tracked</li>
+<li><strong>For objects in the zone</strong>: Calculates time spent as current_timestamp - entry_timestamp</li>
+<li><strong>For objects leaving the zone</strong>: <ul>
+<li>If reset_out_of_zone_detections is True: Removes entry timestamp (resets to 0)</li>
+<li>If reset_out_of_zone_detections is False: Keeps entry timestamp (continues tracking)</li>
+</ul>
+</li>
+<li>Handles out-of-zone detections:</li>
+<li><strong>If remove_out_of_zone_detections is True</strong>: Filters out detections outside the zone from output</li>
+<li><strong>If remove_out_of_zone_detections is False</strong>: Includes out-of-zone detections with time = 0</li>
+<li>Adds time_in_zone information to each detection:<ul>
+<li>Attaches time_in_zone value (in seconds) to each detection as metadata</li>
+<li>Objects in zone: Time represents duration spent in zone</li>
+<li>Objects outside zone: Time is 0 (if not reset) or undefined (if removed)</li>
+</ul>
+</li>
+<li>Returns detections with time_in_zone information:<ul>
+<li>Outputs tracked detections enhanced with time_in_zone metadata</li>
+<li>Filtered or unfiltered based on remove_out_of_zone_detections setting</li>
+<li>Maintains all original detection properties plus time tracking information</li>
+</ul>
+</li>
+</ol>
+<p>The block maintains persistent tracking state across frames, allowing accurate cumulative time measurement for objects that remain in the zone over multiple frames. Time is measured from when an object first enters the zone (based on its track_id) until the current frame, providing real-time duration tracking. The zone is defined as a polygon with multiple points, allowing flexible area definitions. The triggering anchor determines which part of the bounding box is used for zone detection, enabling different zone entry/exit behaviors based on object position.</p>
+<h2 id="common-use-cases_1">Common Use Cases<a class="headerlink" href="#common-use-cases_1" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>Dwell Time Analysis</strong>: Measure how long objects remain in specific areas for behavior analysis (e.g., measure customer dwell time in store sections, track time spent in parking spaces, analyze time in waiting areas), enabling dwell time analytics workflows</li>
+<li><strong>Zone-Based Monitoring</strong>: Monitor object presence in defined areas for security and safety (e.g., detect loitering in restricted areas, monitor time in danger zones, track presence in secure zones), enabling zone monitoring workflows</li>
+<li><strong>Retail Analytics</strong>: Track customer time in different store sections for retail insights (e.g., measure time in product aisles, analyze shopping patterns, track department engagement), enabling retail analytics workflows</li>
+<li><strong>Occupancy Management</strong>: Measure time objects spend in spaces for space utilization (e.g., track vehicle parking duration, measure table occupancy time, analyze space usage patterns), enabling occupancy management workflows</li>
+<li><strong>Safety Compliance</strong>: Monitor time violations in restricted or time-limited zones (e.g., detect extended stays in hazardous areas, monitor time limit violations, track safety compliance), enabling safety monitoring workflows</li>
+<li><strong>Traffic Analysis</strong>: Measure time vehicles spend in traffic zones or intersections (e.g., track time at intersections, measure queue waiting time, analyze traffic flow patterns), enabling traffic analytics workflows</li>
+</ul>
+<h2 id="connecting-to-other-blocks_1">Connecting to Other Blocks<a class="headerlink" href="#connecting-to-other-blocks_1" title="Permanent link">&para;</a></h2>
+<p>This block receives an image with embedded video metadata, tracked detections, and zone coordinates, and produces timed_detections with time_in_zone metadata:</p>
+<ul>
+<li><strong>After Byte Tracker blocks</strong> to measure time for tracked objects (e.g., track time in zones for tracked objects, measure dwell time with consistent IDs, analyze tracked object presence), enabling tracking-to-time workflows</li>
+<li><strong>After zone definition blocks</strong> to apply time tracking to defined areas (e.g., measure time in polygon zones, track duration in custom zones, analyze zone-based presence), enabling zone-to-time workflows</li>
+<li><strong>Before logic blocks</strong> like Continue If to make decisions based on time in zone (e.g., continue if time exceeds threshold, filter based on dwell time, trigger actions on time violations), enabling time-based decision workflows</li>
+<li><strong>Before analysis blocks</strong> to analyze time-based metrics (e.g., analyze dwell time patterns, process time-in-zone data, work with duration metrics), enabling time analysis workflows</li>
+<li><strong>Before notification blocks</strong> to alert on time violations or thresholds (e.g., alert on extended stays, notify on time limit violations, trigger time-based alerts), enabling time-based notification workflows</li>
+<li><strong>Before data storage blocks</strong> to record time metrics (e.g., store dwell time data, log time-in-zone metrics, record duration measurements), enabling time metrics logging workflows</li>
+</ul>
+<h2 id="version-differences_1">Version Differences<a class="headerlink" href="#version-differences_1" title="Permanent link">&para;</a></h2>
+<p><strong>Enhanced from v1:</strong></p>
+<ul>
+<li><strong>Simplified Input</strong>: Uses <code>image</code> input that contains embedded video metadata instead of requiring a separate <code>metadata</code> field, simplifying workflow connections and reducing input complexity</li>
+<li><strong>Improved Integration</strong>: Better integration with image-based workflows since video metadata is accessed directly from the image object rather than requiring separate metadata input</li>
+<li><strong>Streamlined Workflow</strong>: Reduces the number of inputs needed, making it easier to connect in workflows where image and metadata come from the same source</li>
+</ul>
+<h2 id="requirements_1">Requirements<a class="headerlink" href="#requirements_1" title="Permanent link">&para;</a></h2>
+<p>This block requires tracked detections with tracker_id information (detections must come from a tracking block like Byte Tracker). The zone must be defined as a list of at least 3 points, where each point is a list or tuple of exactly 2 coordinates (x, y). The image's video_metadata should include frame rate (fps) for video files or frame timestamps for streamed video to calculate accurate time measurements. The block maintains persistent tracking state across frames for each video, so it should be used in video workflows where frames are processed sequentially. For accurate time measurement, detections should be provided consistently across frames with valid track IDs.</p>
+<h3 id="type-identifier_1">Type identifier<a class="headerlink" href="#type-identifier_1" title="Permanent link">&para;</a></h3>
+<p>Use the following identifier in step <code>"type"</code> field: <code>roboflow_core/time_in_zone@v2</code>to add the block as
+as step in your workflow.</p>
+<h3 id="properties_1">Properties<a class="headerlink" href="#properties_1" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;"><strong>Name</strong></th>
+<th style="text-align: left;"><strong>Type</strong></th>
+<th style="text-align: left;"><strong>Description</strong></th>
+<th style="text-align: left;">Refs</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><code>name</code></td>
+<td style="text-align: left;"><code>str</code></td>
+<td style="text-align: left;">Enter a unique identifier for this step..</td>
+<td style="text-align: left;">❌</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>zone</code></td>
+<td style="text-align: left;"><code>List[Any]</code></td>
+<td style="text-align: left;">Polygon zone coordinates defining the area for time measurement. Must be a list of at least 3 points, where each point is a list or tuple of exactly 2 coordinates [x, y] or (x, y). Coordinates should be in pixel space matching the image dimensions. Example: [(100, 100), (100, 200), (300, 200), (300, 100)] for a quadrilateral zone. The zone defines the polygon area where time tracking occurs. Objects are considered 'in zone' when their triggering_anchor point is inside this polygon. Zone coordinates are validated and a PolygonZone object is created for each video..</td>
+<td style="text-align: left;">✅</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>triggering_anchor</code></td>
+<td style="text-align: left;"><code>str</code></td>
+<td style="text-align: left;">Point on the detection bounding box that must be inside the zone to consider the object 'in zone'. Options include: 'CENTER' (default, center of bounding box), 'BOTTOM_CENTER' (bottom center point), 'TOP_CENTER' (top center point), 'CENTER_LEFT' (center left point), 'CENTER_RIGHT' (center right point), and other Position enum values. The triggering anchor determines which part of the object's bounding box is checked against the zone polygon. Use CENTER for standard zone detection, BOTTOM_CENTER for ground-level zones (e.g., tracking feet/vehicle base), or other anchors based on detection needs. Default is 'CENTER'..</td>
+<td style="text-align: left;">✅</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>remove_out_of_zone_detections</code></td>
+<td style="text-align: left;"><code>bool</code></td>
+<td style="text-align: left;">If True (default), detections found outside the zone are filtered out and not included in the output. Only detections inside the zone are returned. If False, all detections are included in the output, with time_in_zone = 0 for objects outside the zone. Use True to focus analysis only on objects in the zone, or False to maintain all detections with zone status. Default is True for cleaner output focused on zone activity..</td>
+<td style="text-align: left;">✅</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>reset_out_of_zone_detections</code></td>
+<td style="text-align: left;"><code>bool</code></td>
+<td style="text-align: left;">If True (default), when a tracked object leaves the zone, its time tracking is reset (entry timestamp is cleared). When the object re-enters the zone, time tracking starts from 0 again. If False, time tracking continues even after leaving the zone, and re-entry maintains cumulative time. Use True to measure current continuous time in zone (resets on exit), or False to measure cumulative time across multiple entries. Default is True for measuring continuous presence duration..</td>
+<td style="text-align: left;">✅</td>
+</tr>
+</tbody>
+</table>
+<p>The <strong>Refs</strong> column marks possibility to parametrise the property with dynamic values available 
+in <code>workflow</code> runtime. See <em>Bindings</em> for more info.</p>
+<h3 id="available-connections_1">Available Connections<a class="headerlink" href="#available-connections_1" title="Permanent link">&para;</a></h3>
+<details class="tip">
+<summary>Compatible Blocks</summary>
+<p>Check what blocks you can connect to <code>Time in Zone</code> in version <code>v2</code>.</p>
+<ul>
+<li>inputs: <a href="../detections_consensus/"><code>Detections Consensus</code></a>, <a href="../size_measurement/"><code>Size Measurement</code></a>, <a href="../slack_notification/"><code>Slack Notification</code></a>, <a href="../vlm_as_classifier/"><code>VLM As Classifier</code></a>, <a href="../florence2_model/"><code>Florence-2 Model</code></a>, <a href="../open_ai/"><code>OpenAI</code></a>, <a href="../bounding_rectangle/"><code>Bounding Rectangle</code></a>, <a href="../sam3/"><code>SAM 3</code></a>, <a href="../clip_comparison/"><code>Clip Comparison</code></a>, <a href="../byte_tracker/"><code>Byte Tracker</code></a>, <a href="../detections_transformation/"><code>Detections Transformation</code></a>, <a href="../local_file_sink/"><code>Local File Sink</code></a>, <a href="../seg_preview/"><code>Seg Preview</code></a>, <a href="../json_parser/"><code>JSON Parser</code></a>, <a href="../detection_offset/"><code>Detection Offset</code></a>, <a href="../perspective_correction/"><code>Perspective Correction</code></a>, <a href="../roboflow_dataset_upload/"><code>Roboflow Dataset Upload</code></a>, <a href="../open_ai/"><code>OpenAI</code></a>, <a href="../detections_filter/"><code>Detections Filter</code></a>, <a href="../model_monitoring_inference_aggregator/"><code>Model Monitoring Inference Aggregator</code></a>, <a href="../instance_segmentation_model/"><code>Instance Segmentation Model</code></a>, <a href="../object_detection_model/"><code>Object Detection Model</code></a>, <a href="../dimension_collapse/"><code>Dimension Collapse</code></a>, <a href="../email_notification/"><code>Email Notification</code></a>, <a href="../ocr_model/"><code>OCR Model</code></a>, <a href="../cog_vlm/"><code>CogVLM</code></a>, <a href="../vlm_as_detector/"><code>VLM As Detector</code></a>, <a href="../object_detection_model/"><code>Object Detection Model</code></a>, <a href="../google_vision_ocr/"><code>Google Vision OCR</code></a>, <a href="../sam3/"><code>SAM 3</code></a>, <a href="../stitch_ocr_detections/"><code>Stitch OCR Detections</code></a>, <a href="../twilio_smsmms_notification/"><code>Twilio SMS/MMS Notification</code></a>, <a href="../stitch_ocr_detections/"><code>Stitch OCR Detections</code></a>, <a href="../vlm_as_detector/"><code>VLM As Detector</code></a>, <a href="./"><code>Time in Zone</code></a>, <a href="../moondream2/"><code>Moondream2</code></a>, <a href="../path_deviation/"><code>Path Deviation</code></a>, <a href="../clip_comparison/"><code>Clip Comparison</code></a>, <a href="../anthropic_claude/"><code>Anthropic Claude</code></a>, <a href="../anthropic_claude/"><code>Anthropic Claude</code></a>, <a href="../motion_detection/"><code>Motion Detection</code></a>, <a href="../line_counter/"><code>Line Counter</code></a>, <a href="../detection_event_log/"><code>Detection Event Log</code></a>, <a href="../instance_segmentation_model/"><code>Instance Segmentation Model</code></a>, <a href="../sift_comparison/"><code>SIFT Comparison</code></a>, <a href="../detections_list_roll_up/"><code>Detections List Roll-Up</code></a>, <a href="../detections_combine/"><code>Detections Combine</code></a>, <a href="../sam3/"><code>SAM 3</code></a>, <a href="./"><code>Time in Zone</code></a>, <a href="../open_ai/"><code>OpenAI</code></a>, <a href="../csv_formatter/"><code>CSV Formatter</code></a>, <a href="../detections_stabilizer/"><code>Detections Stabilizer</code></a>, <a href="../detections_stitch/"><code>Detections Stitch</code></a>, <a href="../email_notification/"><code>Email Notification</code></a>, <a href="./"><code>Time in Zone</code></a>, <a href="../detections_classes_replacement/"><code>Detections Classes Replacement</code></a>, <a href="../segment_anything2_model/"><code>Segment Anything 2 Model</code></a>, <a href="../google_gemini/"><code>Google Gemini</code></a>, <a href="../velocity/"><code>Velocity</code></a>, <a href="../anthropic_claude/"><code>Anthropic Claude</code></a>, <a href="../google_gemini/"><code>Google Gemini</code></a>, <a href="../lmm_for_classification/"><code>LMM For Classification</code></a>, <a href="../single_label_classification_model/"><code>Single-Label Classification Model</code></a>, <a href="../dynamic_zone/"><code>Dynamic Zone</code></a>, <a href="../template_matching/"><code>Template Matching</code></a>, <a href="../google_gemini/"><code>Google Gemini</code></a>, <a href="../open_ai/"><code>OpenAI</code></a>, <a href="../webhook_sink/"><code>Webhook Sink</code></a>, <a href="../twilio_sms_notification/"><code>Twilio SMS Notification</code></a>, <a href="../lmm/"><code>LMM</code></a>, <a href="../byte_tracker/"><code>Byte Tracker</code></a>, <a href="../multi_label_classification_model/"><code>Multi-Label Classification Model</code></a>, <a href="../camera_focus/"><code>Camera Focus</code></a>, <a href="../roboflow_dataset_upload/"><code>Roboflow Dataset Upload</code></a>, <a href="../easy_ocr/"><code>EasyOCR</code></a>, <a href="../sift_comparison/"><code>SIFT Comparison</code></a>, <a href="../yolo_world_model/"><code>YOLO-World Model</code></a>, <a href="../vlm_as_classifier/"><code>VLM As Classifier</code></a>, <a href="../overlap_filter/"><code>Overlap Filter</code></a>, <a href="../buffer/"><code>Buffer</code></a>, <a href="../florence2_model/"><code>Florence-2 Model</code></a>, <a href="../identify_outliers/"><code>Identify Outliers</code></a>, <a href="../identify_changes/"><code>Identify Changes</code></a>, <a href="../llama3.2_vision/"><code>Llama 3.2 Vision</code></a>, <a href="../roboflow_custom_metadata/"><code>Roboflow Custom Metadata</code></a>, <a href="../../ptz_tracking%28onvif"><code>PTZ Tracking (ONVIF)</code></a>.md), <a href="../byte_tracker/"><code>Byte Tracker</code></a>, <a href="../dynamic_crop/"><code>Dynamic Crop</code></a>, <a href="../detections_merge/"><code>Detections Merge</code></a>, <a href="../mask_area_measurement/"><code>Mask Area Measurement</code></a>, <a href="../keypoint_detection_model/"><code>Keypoint Detection Model</code></a>, <a href="../path_deviation/"><code>Path Deviation</code></a></li>
+<li>outputs: <a href="../trace_visualization/"><code>Trace Visualization</code></a>, <a href="../detections_consensus/"><code>Detections Consensus</code></a>, <a href="../mask_visualization/"><code>Mask Visualization</code></a>, <a href="../detections_stabilizer/"><code>Detections Stabilizer</code></a>, <a href="../circle_visualization/"><code>Circle Visualization</code></a>, <a href="../background_color_visualization/"><code>Background Color Visualization</code></a>, <a href="../size_measurement/"><code>Size Measurement</code></a>, <a href="../detections_stitch/"><code>Detections Stitch</code></a>, <a href="../color_visualization/"><code>Color Visualization</code></a>, <a href="../florence2_model/"><code>Florence-2 Model</code></a>, <a href="./"><code>Time in Zone</code></a>, <a href="../stability_ai_inpainting/"><code>Stability AI Inpainting</code></a>, <a href="../detections_classes_replacement/"><code>Detections Classes Replacement</code></a>, <a href="../segment_anything2_model/"><code>Segment Anything 2 Model</code></a>, <a href="../corner_visualization/"><code>Corner Visualization</code></a>, <a href="../bounding_rectangle/"><code>Bounding Rectangle</code></a>, <a href="../velocity/"><code>Velocity</code></a>, <a href="../byte_tracker/"><code>Byte Tracker</code></a>, <a href="../detections_transformation/"><code>Detections Transformation</code></a>, <a href="../dynamic_zone/"><code>Dynamic Zone</code></a>, <a href="../detection_offset/"><code>Detection Offset</code></a>, <a href="../roboflow_dataset_upload/"><code>Roboflow Dataset Upload</code></a>, <a href="../perspective_correction/"><code>Perspective Correction</code></a>, <a href="../detections_filter/"><code>Detections Filter</code></a>, <a href="../model_monitoring_inference_aggregator/"><code>Model Monitoring Inference Aggregator</code></a>, <a href="../pixelate_visualization/"><code>Pixelate Visualization</code></a>, <a href="../polygon_visualization/"><code>Polygon Visualization</code></a>, <a href="../ellipse_visualization/"><code>Ellipse Visualization</code></a>, <a href="../label_visualization/"><code>Label Visualization</code></a>, <a href="../byte_tracker/"><code>Byte Tracker</code></a>, <a href="../camera_focus/"><code>Camera Focus</code></a>, <a href="../model_comparison_visualization/"><code>Model Comparison Visualization</code></a>, <a href="../bounding_box_visualization/"><code>Bounding Box Visualization</code></a>, <a href="../polygon_visualization/"><code>Polygon Visualization</code></a>, <a href="../crop_visualization/"><code>Crop Visualization</code></a>, <a href="../stitch_ocr_detections/"><code>Stitch OCR Detections</code></a>, <a href="../roboflow_dataset_upload/"><code>Roboflow Dataset Upload</code></a>, <a href="../stitch_ocr_detections/"><code>Stitch OCR Detections</code></a>, <a href="./"><code>Time in Zone</code></a>, <a href="../distance_measurement/"><code>Distance Measurement</code></a>, <a href="../detections_merge/"><code>Detections Merge</code></a>, <a href="../path_deviation/"><code>Path Deviation</code></a>, <a href="../halo_visualization/"><code>Halo Visualization</code></a>, <a href="../overlap_filter/"><code>Overlap Filter</code></a>, <a href="../line_counter/"><code>Line Counter</code></a>, <a href="../florence2_model/"><code>Florence-2 Model</code></a>, <a href="../halo_visualization/"><code>Halo Visualization</code></a>, <a href="../icon_visualization/"><code>Icon Visualization</code></a>, <a href="../triangle_visualization/"><code>Triangle Visualization</code></a>, <a href="../line_counter/"><code>Line Counter</code></a>, <a href="../detection_event_log/"><code>Detection Event Log</code></a>, <a href="../dot_visualization/"><code>Dot Visualization</code></a>, <a href="../heatmap_visualization/"><code>Heatmap Visualization</code></a>, <a href="../roboflow_custom_metadata/"><code>Roboflow Custom Metadata</code></a>, <a href="../blur_visualization/"><code>Blur Visualization</code></a>, <a href="../detections_list_roll_up/"><code>Detections List Roll-Up</code></a>, <a href="../../ptz_tracking%28onvif"><code>PTZ Tracking (ONVIF)</code></a>.md), <a href="../detections_combine/"><code>Detections Combine</code></a>, <a href="../byte_tracker/"><code>Byte Tracker</code></a>, <a href="../dynamic_crop/"><code>Dynamic Crop</code></a>, <a href="./"><code>Time in Zone</code></a>, <a href="../mask_area_measurement/"><code>Mask Area Measurement</code></a>, <a href="../path_deviation/"><code>Path Deviation</code></a></li>
+</ul>
+</details>
+<h3 id="input-and-output-bindings_1">Input and Output Bindings<a class="headerlink" href="#input-and-output-bindings_1" title="Permanent link">&para;</a></h3>
+<p>The available connections depend on its binding kinds. Check what binding kinds 
+<code>Time in Zone</code> in version <code>v2</code>  has.</p>
+<details class="tip" open="open">
+<summary>Bindings</summary>
+<ul>
+<li>
+<p>input</p>
+<ul>
+<li><code>image</code> (<em><a href="../../kinds/image/"><code>image</code></a></em>): Input image for the current video frame containing embedded video metadata (fps, frame_number, frame_timestamp, video_identifier, video source) required for time calculation and state management. The block extracts video_metadata from the WorkflowImageData object. The fps and frame_number are used for video files to calculate timestamps (timestamp = frame_number / fps). For streamed video, frame_timestamp is used directly. The video_identifier is used to maintain separate tracking state and zone configurations for different videos. Used for zone visualization and reference. The image dimensions are used to validate zone coordinates. This version simplifies input by embedding metadata in the image object rather than requiring a separate metadata field..</li>
+<li><code>detections</code> (<em>Union[<a href="../../kinds/object_detection_prediction/"><code>object_detection_prediction</code></a>, <a href="../../kinds/instance_segmentation_prediction/"><code>instance_segmentation_prediction</code></a>]</em>): Tracked detection predictions (object detection or instance segmentation) with tracker_id information. Detections must come from a tracking block (e.g., Byte Tracker) that has assigned unique tracker_id values that persist across frames. Each detection must have a tracker_id to enable time tracking. The block calculates time_in_zone for each tracked object based on when its track_id first entered the zone. The output will include the same detections enhanced with time_in_zone metadata (duration in seconds). If remove_out_of_zone_detections is True, only detections inside the zone are included in the output..</li>
+<li><code>zone</code> (<em><a href="../../kinds/list_of_values/"><code>list_of_values</code></a></em>): Polygon zone coordinates defining the area for time measurement. Must be a list of at least 3 points, where each point is a list or tuple of exactly 2 coordinates [x, y] or (x, y). Coordinates should be in pixel space matching the image dimensions. Example: [(100, 100), (100, 200), (300, 200), (300, 100)] for a quadrilateral zone. The zone defines the polygon area where time tracking occurs. Objects are considered 'in zone' when their triggering_anchor point is inside this polygon. Zone coordinates are validated and a PolygonZone object is created for each video..</li>
+<li><code>triggering_anchor</code> (<em><a href="../../kinds/string/"><code>string</code></a></em>): Point on the detection bounding box that must be inside the zone to consider the object 'in zone'. Options include: 'CENTER' (default, center of bounding box), 'BOTTOM_CENTER' (bottom center point), 'TOP_CENTER' (top center point), 'CENTER_LEFT' (center left point), 'CENTER_RIGHT' (center right point), and other Position enum values. The triggering anchor determines which part of the object's bounding box is checked against the zone polygon. Use CENTER for standard zone detection, BOTTOM_CENTER for ground-level zones (e.g., tracking feet/vehicle base), or other anchors based on detection needs. Default is 'CENTER'..</li>
+<li><code>remove_out_of_zone_detections</code> (<em><a href="../../kinds/boolean/"><code>boolean</code></a></em>): If True (default), detections found outside the zone are filtered out and not included in the output. Only detections inside the zone are returned. If False, all detections are included in the output, with time_in_zone = 0 for objects outside the zone. Use True to focus analysis only on objects in the zone, or False to maintain all detections with zone status. Default is True for cleaner output focused on zone activity..</li>
+<li><code>reset_out_of_zone_detections</code> (<em><a href="../../kinds/boolean/"><code>boolean</code></a></em>): If True (default), when a tracked object leaves the zone, its time tracking is reset (entry timestamp is cleared). When the object re-enters the zone, time tracking starts from 0 again. If False, time tracking continues even after leaving the zone, and re-entry maintains cumulative time. Use True to measure current continuous time in zone (resets on exit), or False to measure cumulative time across multiple entries. Default is True for measuring continuous presence duration..</li>
+</ul>
+</li>
+<li>
+<p>output</p>
+<ul>
+<li><code>timed_detections</code> (<em>Union[<a href="../../kinds/object_detection_prediction/"><code>object_detection_prediction</code></a>, <a href="../../kinds/instance_segmentation_prediction/"><code>instance_segmentation_prediction</code></a>]</em>): Prediction with detected bounding boxes in form of sv.Detections(...) object if <code>object_detection_prediction</code> or Prediction with detected bounding boxes and segmentation masks in form of sv.Detections(...) object if <code>instance_segmentation_prediction</code>.</li>
+</ul>
+</li>
+</ul>
+</details>
+<details class="tip">
+<summary>Example JSON definition of step <code>Time in Zone</code> in version <code>v2</code></summary>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;&lt;your_step_name_here&gt;&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;roboflow_core/time_in_zone@v2&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;image&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;$inputs.image&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;detections&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;$steps.object_detection_model.predictions&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;zone&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">        </span><span class="p">[</span>
+<span class="w">            </span><span class="mi">100</span><span class="p">,</span>
+<span class="w">            </span><span class="mi">100</span>
+<span class="w">        </span><span class="p">],</span>
+<span class="w">        </span><span class="p">[</span>
+<span class="w">            </span><span class="mi">100</span><span class="p">,</span>
+<span class="w">            </span><span class="mi">200</span>
+<span class="w">        </span><span class="p">],</span>
+<span class="w">        </span><span class="p">[</span>
+<span class="w">            </span><span class="mi">300</span><span class="p">,</span>
+<span class="w">            </span><span class="mi">200</span>
+<span class="w">        </span><span class="p">],</span>
+<span class="w">        </span><span class="p">[</span>
+<span class="w">            </span><span class="mi">300</span><span class="p">,</span>
+<span class="w">            </span><span class="mi">100</span>
+<span class="w">        </span><span class="p">]</span>
+<span class="w">    </span><span class="p">],</span>
+<span class="w">    </span><span class="nt">&quot;triggering_anchor&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;CENTER&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;remove_out_of_zone_detections&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;reset_out_of_zone_detections&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span>
+<span class="p">}</span>
+</code></pre></div>
+</details>
+<style>
+/* hide edit button for generated pages */
+article > a.md-content__button.md-icon:first-child {
+    display: none;
+}
+</style>
+
+<pre><code>
+</code></pre>
+<h2 id="v1">v1<a class="headerlink" href="#v1" title="Permanent link">&para;</a></h2>
+<details>
+<summary>Class: <code>TimeInZoneBlockV1</code>  <em>(there are multiple versions of this block)</em></summary>
+<p>Source:
+<a target="_blank" href="https://github.com/roboflow/inference/blob/main/inference/core/workflows/core_steps/analytics/time_in_zone/v1.py">inference.core.workflows.core_steps.analytics.time_in_zone.v1.TimeInZoneBlockV1</a></p>
+<p><strong>Warning: This block has multiple versions. Please refer to the specific version for details.</strong>
+You can learn more about how versions work here: <a href="../../versioning/">Versioning</a></p>
+</details>
+<p>Calculate and track the time spent by tracked objects within a defined polygon zone, measure duration of object presence in specific areas, filter detections based on zone membership, reset time tracking when objects leave zones, and enable zone-based analytics, dwell time analysis, and presence monitoring workflows.</p>
+<h2 id="how-this-block-works_2">How This Block Works<a class="headerlink" href="#how-this-block-works_2" title="Permanent link">&para;</a></h2>
+<p>This block measures how long each tracked object has been inside a defined polygon zone by tracking entry and exit times for each unique track ID. The block:</p>
+<ol>
+<li>Receives tracked detection predictions with track IDs, an image, video metadata, and a polygon zone definition</li>
+<li>Validates that detections have track IDs (tracker_id must be present):</li>
+<li>Requires detections to come from a tracking block (e.g., Byte Tracker)</li>
+<li>Each object must have a unique tracker_id that persists across frames</li>
+<li>Raises an error if tracker_id is missing</li>
+<li>Initializes or retrieves a polygon zone for the video:</li>
+<li>Creates a PolygonZone object from zone coordinates for each unique video</li>
+<li>Validates zone coordinates (must be a list of at least 3 points, each with 2 coordinates)</li>
+<li>Stores zone configuration per video using video_identifier</li>
+<li>Configures triggering anchor point (e.g., CENTER, BOTTOM_CENTER) for zone detection</li>
+<li>Initializes or retrieves time tracking state for the video:</li>
+<li>Maintains a dictionary tracking when each track_id entered the zone</li>
+<li>Stores entry timestamps per video using video_identifier</li>
+<li>Maintains separate tracking state for each video</li>
+<li>Calculates current timestamp for time measurement:</li>
+<li>For video files: Calculates timestamp as frame_number / fps</li>
+<li>For streamed video: Uses frame_timestamp from metadata</li>
+<li>Provides accurate time measurement for duration calculation</li>
+<li>Checks which detections are in the zone:</li>
+<li>Uses polygon zone trigger to test if each detection's anchor point is inside the zone</li>
+<li>The triggering_anchor determines which point on the bounding box is checked (CENTER, BOTTOM_CENTER, etc.)</li>
+<li>Returns boolean for each detection indicating zone membership</li>
+<li>Updates time tracking for each tracked object:</li>
+<li><strong>For objects entering the zone</strong>: Records entry timestamp if not already tracked</li>
+<li><strong>For objects in the zone</strong>: Calculates time spent as current_timestamp - entry_timestamp</li>
+<li><strong>For objects leaving the zone</strong>: <ul>
+<li>If reset_out_of_zone_detections is True: Removes entry timestamp (resets to 0)</li>
+<li>If reset_out_of_zone_detections is False: Keeps entry timestamp (continues tracking)</li>
+</ul>
+</li>
+<li>Handles out-of-zone detections:</li>
+<li><strong>If remove_out_of_zone_detections is True</strong>: Filters out detections outside the zone from output</li>
+<li><strong>If remove_out_of_zone_detections is False</strong>: Includes out-of-zone detections with time = 0</li>
+<li>Adds time_in_zone information to each detection:</li>
+<li>Attaches time_in_zone value (in seconds) to each detection as metadata</li>
+<li>Objects in zone: Time represents duration spent in zone</li>
+<li>Objects outside zone: Time is 0 (if not reset) or undefined (if removed)</li>
+<li>Returns detections with time_in_zone information:<ul>
+<li>Outputs tracked detections enhanced with time_in_zone metadata</li>
+<li>Filtered or unfiltered based on remove_out_of_zone_detections setting</li>
+<li>Maintains all original detection properties plus time tracking information</li>
+</ul>
+</li>
+</ol>
+<p>The block maintains persistent tracking state across frames, allowing accurate cumulative time measurement for objects that remain in the zone over multiple frames. Time is measured from when an object first enters the zone (based on its track_id) until the current frame, providing real-time duration tracking. The zone is defined as a polygon with multiple points, allowing flexible area definitions. The triggering anchor determines which part of the bounding box is used for zone detection, enabling different zone entry/exit behaviors based on object position.</p>
+<h2 id="common-use-cases_2">Common Use Cases<a class="headerlink" href="#common-use-cases_2" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>Dwell Time Analysis</strong>: Measure how long objects remain in specific areas for behavior analysis (e.g., measure customer dwell time in store sections, track time spent in parking spaces, analyze time in waiting areas), enabling dwell time analytics workflows</li>
+<li><strong>Zone-Based Monitoring</strong>: Monitor object presence in defined areas for security and safety (e.g., detect loitering in restricted areas, monitor time in danger zones, track presence in secure zones), enabling zone monitoring workflows</li>
+<li><strong>Retail Analytics</strong>: Track customer time in different store sections for retail insights (e.g., measure time in product aisles, analyze shopping patterns, track department engagement), enabling retail analytics workflows</li>
+<li><strong>Occupancy Management</strong>: Measure time objects spend in spaces for space utilization (e.g., track vehicle parking duration, measure table occupancy time, analyze space usage patterns), enabling occupancy management workflows</li>
+<li><strong>Safety Compliance</strong>: Monitor time violations in restricted or time-limited zones (e.g., detect extended stays in hazardous areas, monitor time limit violations, track safety compliance), enabling safety monitoring workflows</li>
+<li><strong>Traffic Analysis</strong>: Measure time vehicles spend in traffic zones or intersections (e.g., track time at intersections, measure queue waiting time, analyze traffic flow patterns), enabling traffic analytics workflows</li>
+</ul>
+<h2 id="connecting-to-other-blocks_2">Connecting to Other Blocks<a class="headerlink" href="#connecting-to-other-blocks_2" title="Permanent link">&para;</a></h2>
+<p>This block receives tracked detections, image, video metadata, and zone coordinates, and produces timed_detections with time_in_zone metadata:</p>
+<ul>
+<li><strong>After Byte Tracker blocks</strong> to measure time for tracked objects (e.g., track time in zones for tracked objects, measure dwell time with consistent IDs, analyze tracked object presence), enabling tracking-to-time workflows</li>
+<li><strong>After zone definition blocks</strong> to apply time tracking to defined areas (e.g., measure time in polygon zones, track duration in custom zones, analyze zone-based presence), enabling zone-to-time workflows</li>
+<li><strong>Before logic blocks</strong> like Continue If to make decisions based on time in zone (e.g., continue if time exceeds threshold, filter based on dwell time, trigger actions on time violations), enabling time-based decision workflows</li>
+<li><strong>Before analysis blocks</strong> to analyze time-based metrics (e.g., analyze dwell time patterns, process time-in-zone data, work with duration metrics), enabling time analysis workflows</li>
+<li><strong>Before notification blocks</strong> to alert on time violations or thresholds (e.g., alert on extended stays, notify on time limit violations, trigger time-based alerts), enabling time-based notification workflows</li>
+<li><strong>Before data storage blocks</strong> to record time metrics (e.g., store dwell time data, log time-in-zone metrics, record duration measurements), enabling time metrics logging workflows</li>
+</ul>
+<h2 id="requirements_2">Requirements<a class="headerlink" href="#requirements_2" title="Permanent link">&para;</a></h2>
+<p>This block requires tracked detections with tracker_id information (detections must come from a tracking block like Byte Tracker). The zone must be defined as a list of at least 3 points, where each point is a list or tuple of exactly 2 coordinates (x, y). The block requires video metadata with frame rate (fps) for video files or frame timestamps for streamed video to calculate accurate time measurements. The block maintains persistent tracking state across frames for each video, so it should be used in video workflows where frames are processed sequentially. For accurate time measurement, detections should be provided consistently across frames with valid track IDs.</p>
+<h3 id="type-identifier_2">Type identifier<a class="headerlink" href="#type-identifier_2" title="Permanent link">&para;</a></h3>
+<p>Use the following identifier in step <code>"type"</code> field: <code>roboflow_core/time_in_zone@v1</code>to add the block as
+as step in your workflow.</p>
+<h3 id="properties_2">Properties<a class="headerlink" href="#properties_2" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;"><strong>Name</strong></th>
+<th style="text-align: left;"><strong>Type</strong></th>
+<th style="text-align: left;"><strong>Description</strong></th>
+<th style="text-align: left;">Refs</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><code>name</code></td>
+<td style="text-align: left;"><code>str</code></td>
+<td style="text-align: left;">Enter a unique identifier for this step..</td>
+<td style="text-align: left;">❌</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>zone</code></td>
+<td style="text-align: left;"><code>List[Any]</code></td>
+<td style="text-align: left;">Polygon zone coordinates defining the area for time measurement. Must be a list of at least 3 points, where each point is a list or tuple of exactly 2 coordinates [x, y] or (x, y). Coordinates should be in pixel space matching the image dimensions. Example: [[x1, y1], [x2, y2], [x3, y3], [x4, y4]] for a quadrilateral zone. The zone defines the polygon area where time tracking occurs. Objects are considered 'in zone' when their triggering_anchor point is inside this polygon. Zone coordinates are validated and a PolygonZone object is created for each video..</td>
+<td style="text-align: left;">✅</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>triggering_anchor</code></td>
+<td style="text-align: left;"><code>str</code></td>
+<td style="text-align: left;">Point on the detection bounding box that must be inside the zone to consider the object 'in zone'. Options include: 'CENTER' (default, center of bounding box), 'BOTTOM_CENTER' (bottom center point), 'TOP_CENTER' (top center point), 'CENTER_LEFT' (center left point), 'CENTER_RIGHT' (center right point), and other Position enum values. The triggering anchor determines which part of the object's bounding box is checked against the zone polygon. Use CENTER for standard zone detection, BOTTOM_CENTER for ground-level zones (e.g., tracking feet/vehicle base), or other anchors based on detection needs. Default is 'CENTER'..</td>
+<td style="text-align: left;">✅</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>remove_out_of_zone_detections</code></td>
+<td style="text-align: left;"><code>bool</code></td>
+<td style="text-align: left;">If True (default), detections found outside the zone are filtered out and not included in the output. Only detections inside the zone are returned. If False, all detections are included in the output, with time_in_zone = 0 for objects outside the zone. Use True to focus analysis only on objects in the zone, or False to maintain all detections with zone status. Default is True for cleaner output focused on zone activity..</td>
+<td style="text-align: left;">✅</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>reset_out_of_zone_detections</code></td>
+<td style="text-align: left;"><code>bool</code></td>
+<td style="text-align: left;">If True (default), when a tracked object leaves the zone, its time tracking is reset (entry timestamp is cleared). When the object re-enters the zone, time tracking starts from 0 again. If False, time tracking continues even after leaving the zone, and re-entry maintains cumulative time. Use True to measure current continuous time in zone (resets on exit), or False to measure cumulative time across multiple entries. Default is True for measuring continuous presence duration..</td>
+<td style="text-align: left;">✅</td>
+</tr>
+</tbody>
+</table>
+<p>The <strong>Refs</strong> column marks possibility to parametrise the property with dynamic values available 
+in <code>workflow</code> runtime. See <em>Bindings</em> for more info.</p>
+<h3 id="available-connections_2">Available Connections<a class="headerlink" href="#available-connections_2" title="Permanent link">&para;</a></h3>
+<details class="tip">
+<summary>Compatible Blocks</summary>
+<p>Check what blocks you can connect to <code>Time in Zone</code> in version <code>v1</code>.</p>
+<ul>
+<li>inputs: <a href="../trace_visualization/"><code>Trace Visualization</code></a>, <a href="../detections_consensus/"><code>Detections Consensus</code></a>, <a href="../background_color_visualization/"><code>Background Color Visualization</code></a>, <a href="../vlm_as_classifier/"><code>VLM As Classifier</code></a>, <a href="../florence2_model/"><code>Florence-2 Model</code></a>, <a href="../reference_path_visualization/"><code>Reference Path Visualization</code></a>, <a href="../corner_visualization/"><code>Corner Visualization</code></a>, <a href="../bounding_rectangle/"><code>Bounding Rectangle</code></a>, <a href="../sam3/"><code>SAM 3</code></a>, <a href="../seg_preview/"><code>Seg Preview</code></a>, <a href="../perspective_correction/"><code>Perspective Correction</code></a>, <a href="../detection_offset/"><code>Detection Offset</code></a>, <a href="../roboflow_dataset_upload/"><code>Roboflow Dataset Upload</code></a>, <a href="../open_ai/"><code>OpenAI</code></a>, <a href="../model_monitoring_inference_aggregator/"><code>Model Monitoring Inference Aggregator</code></a>, <a href="../image_threshold/"><code>Image Threshold</code></a>, <a href="../pixelate_visualization/"><code>Pixelate Visualization</code></a>, <a href="../object_detection_model/"><code>Object Detection Model</code></a>, <a href="../dimension_collapse/"><code>Dimension Collapse</code></a>, <a href="../email_notification/"><code>Email Notification</code></a>, <a href="../label_visualization/"><code>Label Visualization</code></a>, <a href="../image_slicer/"><code>Image Slicer</code></a>, <a href="../object_detection_model/"><code>Object Detection Model</code></a>, <a href="../bounding_box_visualization/"><code>Bounding Box Visualization</code></a>, <a href="../google_vision_ocr/"><code>Google Vision OCR</code></a>, <a href="../crop_visualization/"><code>Crop Visualization</code></a>, <a href="../vlm_as_detector/"><code>VLM As Detector</code></a>, <a href="./"><code>Time in Zone</code></a>, <a href="../image_blur/"><code>Image Blur</code></a>, <a href="../path_deviation/"><code>Path Deviation</code></a>, <a href="../clip_comparison/"><code>Clip Comparison</code></a>, <a href="../anthropic_claude/"><code>Anthropic Claude</code></a>, <a href="../sift/"><code>SIFT</code></a>, <a href="../triangle_visualization/"><code>Triangle Visualization</code></a>, <a href="../detection_event_log/"><code>Detection Event Log</code></a>, <a href="../instance_segmentation_model/"><code>Instance Segmentation Model</code></a>, <a href="../stitch_images/"><code>Stitch Images</code></a>, <a href="../sift_comparison/"><code>SIFT Comparison</code></a>, <a href="../heatmap_visualization/"><code>Heatmap Visualization</code></a>, <a href="../sam3/"><code>SAM 3</code></a>, <a href="./"><code>Time in Zone</code></a>, <a href="../mask_visualization/"><code>Mask Visualization</code></a>, <a href="../detections_stitch/"><code>Detections Stitch</code></a>, <a href="../email_notification/"><code>Email Notification</code></a>, <a href="../stability_ai_outpainting/"><code>Stability AI Outpainting</code></a>, <a href="./"><code>Time in Zone</code></a>, <a href="../google_gemini/"><code>Google Gemini</code></a>, <a href="../segment_anything2_model/"><code>Segment Anything 2 Model</code></a>, <a href="../lmm_for_classification/"><code>LMM For Classification</code></a>, <a href="../velocity/"><code>Velocity</code></a>, <a href="../anthropic_claude/"><code>Anthropic Claude</code></a>, <a href="../google_gemini/"><code>Google Gemini</code></a>, <a href="../dynamic_zone/"><code>Dynamic Zone</code></a>, <a href="../template_matching/"><code>Template Matching</code></a>, <a href="../google_gemini/"><code>Google Gemini</code></a>, <a href="../twilio_sms_notification/"><code>Twilio SMS Notification</code></a>, <a href="../byte_tracker/"><code>Byte Tracker</code></a>, <a href="../roboflow_dataset_upload/"><code>Roboflow Dataset Upload</code></a>, <a href="../stability_ai_image_generation/"><code>Stability AI Image Generation</code></a>, <a href="../sift_comparison/"><code>SIFT Comparison</code></a>, <a href="../polygon_zone_visualization/"><code>Polygon Zone Visualization</code></a>, <a href="../yolo_world_model/"><code>YOLO-World Model</code></a>, <a href="../depth_estimation/"><code>Depth Estimation</code></a>, <a href="../dot_visualization/"><code>Dot Visualization</code></a>, <a href="../llama3.2_vision/"><code>Llama 3.2 Vision</code></a>, <a href="../../ptz_tracking%28onvif"><code>PTZ Tracking (ONVIF)</code></a>.md), <a href="../dynamic_crop/"><code>Dynamic Crop</code></a>, <a href="../detections_merge/"><code>Detections Merge</code></a>, <a href="../contrast_equalization/"><code>Contrast Equalization</code></a>, <a href="../circle_visualization/"><code>Circle Visualization</code></a>, <a href="../size_measurement/"><code>Size Measurement</code></a>, <a href="../slack_notification/"><code>Slack Notification</code></a>, <a href="../color_visualization/"><code>Color Visualization</code></a>, <a href="../image_slicer/"><code>Image Slicer</code></a>, <a href="../stability_ai_inpainting/"><code>Stability AI Inpainting</code></a>, <a href="../open_ai/"><code>OpenAI</code></a>, <a href="../clip_comparison/"><code>Clip Comparison</code></a>, <a href="../byte_tracker/"><code>Byte Tracker</code></a>, <a href="../detections_transformation/"><code>Detections Transformation</code></a>, <a href="../local_file_sink/"><code>Local File Sink</code></a>, <a href="../json_parser/"><code>JSON Parser</code></a>, <a href="../relative_static_crop/"><code>Relative Static Crop</code></a>, <a href="../detections_filter/"><code>Detections Filter</code></a>, <a href="../instance_segmentation_model/"><code>Instance Segmentation Model</code></a>, <a href="../polygon_visualization/"><code>Polygon Visualization</code></a>, <a href="../ellipse_visualization/"><code>Ellipse Visualization</code></a>, <a href="../ocr_model/"><code>OCR Model</code></a>, <a href="../cog_vlm/"><code>CogVLM</code></a>, <a href="../vlm_as_detector/"><code>VLM As Detector</code></a>, <a href="../sam3/"><code>SAM 3</code></a>, <a href="../stitch_ocr_detections/"><code>Stitch OCR Detections</code></a>, <a href="../twilio_smsmms_notification/"><code>Twilio SMS/MMS Notification</code></a>, <a href="../stitch_ocr_detections/"><code>Stitch OCR Detections</code></a>, <a href="../moondream2/"><code>Moondream2</code></a>, <a href="../halo_visualization/"><code>Halo Visualization</code></a>, <a href="../icon_visualization/"><code>Icon Visualization</code></a>, <a href="../anthropic_claude/"><code>Anthropic Claude</code></a>, <a href="../image_contours/"><code>Image Contours</code></a>, <a href="../morphological_transformation/"><code>Morphological Transformation</code></a>, <a href="../motion_detection/"><code>Motion Detection</code></a>, <a href="../line_counter/"><code>Line Counter</code></a>, <a href="../blur_visualization/"><code>Blur Visualization</code></a>, <a href="../detections_list_roll_up/"><code>Detections List Roll-Up</code></a>, <a href="../detections_combine/"><code>Detections Combine</code></a>, <a href="../open_ai/"><code>OpenAI</code></a>, <a href="../polygon_visualization/"><code>Polygon Visualization</code></a>, <a href="../csv_formatter/"><code>CSV Formatter</code></a>, <a href="../detections_stabilizer/"><code>Detections Stabilizer</code></a>, <a href="../camera_calibration/"><code>Camera Calibration</code></a>, <a href="../detections_classes_replacement/"><code>Detections Classes Replacement</code></a>, <a href="../single_label_classification_model/"><code>Single-Label Classification Model</code></a>, <a href="../line_counter_visualization/"><code>Line Counter Visualization</code></a>, <a href="../camera_focus/"><code>Camera Focus</code></a>, <a href="../open_ai/"><code>OpenAI</code></a>, <a href="../webhook_sink/"><code>Webhook Sink</code></a>, <a href="../image_convert_grayscale/"><code>Image Convert Grayscale</code></a>, <a href="../lmm/"><code>LMM</code></a>, <a href="../multi_label_classification_model/"><code>Multi-Label Classification Model</code></a>, <a href="../camera_focus/"><code>Camera Focus</code></a>, <a href="../classification_label_visualization/"><code>Classification Label Visualization</code></a>, <a href="../model_comparison_visualization/"><code>Model Comparison Visualization</code></a>, <a href="../easy_ocr/"><code>EasyOCR</code></a>, <a href="../image_preprocessing/"><code>Image Preprocessing</code></a>, <a href="../vlm_as_classifier/"><code>VLM As Classifier</code></a>, <a href="../grid_visualization/"><code>Grid Visualization</code></a>, <a href="../background_subtraction/"><code>Background Subtraction</code></a>, <a href="../halo_visualization/"><code>Halo Visualization</code></a>, <a href="../overlap_filter/"><code>Overlap Filter</code></a>, <a href="../keypoint_visualization/"><code>Keypoint Visualization</code></a>, <a href="../qr_code_generator/"><code>QR Code Generator</code></a>, <a href="../buffer/"><code>Buffer</code></a>, <a href="../florence2_model/"><code>Florence-2 Model</code></a>, <a href="../identify_outliers/"><code>Identify Outliers</code></a>, <a href="../text_display/"><code>Text Display</code></a>, <a href="../identify_changes/"><code>Identify Changes</code></a>, <a href="../roboflow_custom_metadata/"><code>Roboflow Custom Metadata</code></a>, <a href="../byte_tracker/"><code>Byte Tracker</code></a>, <a href="../mask_area_measurement/"><code>Mask Area Measurement</code></a>, <a href="../keypoint_detection_model/"><code>Keypoint Detection Model</code></a>, <a href="../path_deviation/"><code>Path Deviation</code></a>, <a href="../absolute_static_crop/"><code>Absolute Static Crop</code></a></li>
+<li>outputs: <a href="../trace_visualization/"><code>Trace Visualization</code></a>, <a href="../detections_consensus/"><code>Detections Consensus</code></a>, <a href="../mask_visualization/"><code>Mask Visualization</code></a>, <a href="../detections_stabilizer/"><code>Detections Stabilizer</code></a>, <a href="../circle_visualization/"><code>Circle Visualization</code></a>, <a href="../background_color_visualization/"><code>Background Color Visualization</code></a>, <a href="../size_measurement/"><code>Size Measurement</code></a>, <a href="../detections_stitch/"><code>Detections Stitch</code></a>, <a href="../color_visualization/"><code>Color Visualization</code></a>, <a href="../florence2_model/"><code>Florence-2 Model</code></a>, <a href="./"><code>Time in Zone</code></a>, <a href="../stability_ai_inpainting/"><code>Stability AI Inpainting</code></a>, <a href="../detections_classes_replacement/"><code>Detections Classes Replacement</code></a>, <a href="../segment_anything2_model/"><code>Segment Anything 2 Model</code></a>, <a href="../corner_visualization/"><code>Corner Visualization</code></a>, <a href="../bounding_rectangle/"><code>Bounding Rectangle</code></a>, <a href="../velocity/"><code>Velocity</code></a>, <a href="../byte_tracker/"><code>Byte Tracker</code></a>, <a href="../detections_transformation/"><code>Detections Transformation</code></a>, <a href="../dynamic_zone/"><code>Dynamic Zone</code></a>, <a href="../detection_offset/"><code>Detection Offset</code></a>, <a href="../roboflow_dataset_upload/"><code>Roboflow Dataset Upload</code></a>, <a href="../perspective_correction/"><code>Perspective Correction</code></a>, <a href="../detections_filter/"><code>Detections Filter</code></a>, <a href="../model_monitoring_inference_aggregator/"><code>Model Monitoring Inference Aggregator</code></a>, <a href="../pixelate_visualization/"><code>Pixelate Visualization</code></a>, <a href="../polygon_visualization/"><code>Polygon Visualization</code></a>, <a href="../ellipse_visualization/"><code>Ellipse Visualization</code></a>, <a href="../label_visualization/"><code>Label Visualization</code></a>, <a href="../byte_tracker/"><code>Byte Tracker</code></a>, <a href="../camera_focus/"><code>Camera Focus</code></a>, <a href="../model_comparison_visualization/"><code>Model Comparison Visualization</code></a>, <a href="../bounding_box_visualization/"><code>Bounding Box Visualization</code></a>, <a href="../polygon_visualization/"><code>Polygon Visualization</code></a>, <a href="../crop_visualization/"><code>Crop Visualization</code></a>, <a href="../stitch_ocr_detections/"><code>Stitch OCR Detections</code></a>, <a href="../roboflow_dataset_upload/"><code>Roboflow Dataset Upload</code></a>, <a href="../stitch_ocr_detections/"><code>Stitch OCR Detections</code></a>, <a href="./"><code>Time in Zone</code></a>, <a href="../distance_measurement/"><code>Distance Measurement</code></a>, <a href="../detections_merge/"><code>Detections Merge</code></a>, <a href="../path_deviation/"><code>Path Deviation</code></a>, <a href="../halo_visualization/"><code>Halo Visualization</code></a>, <a href="../overlap_filter/"><code>Overlap Filter</code></a>, <a href="../line_counter/"><code>Line Counter</code></a>, <a href="../florence2_model/"><code>Florence-2 Model</code></a>, <a href="../halo_visualization/"><code>Halo Visualization</code></a>, <a href="../icon_visualization/"><code>Icon Visualization</code></a>, <a href="../triangle_visualization/"><code>Triangle Visualization</code></a>, <a href="../line_counter/"><code>Line Counter</code></a>, <a href="../detection_event_log/"><code>Detection Event Log</code></a>, <a href="../dot_visualization/"><code>Dot Visualization</code></a>, <a href="../heatmap_visualization/"><code>Heatmap Visualization</code></a>, <a href="../roboflow_custom_metadata/"><code>Roboflow Custom Metadata</code></a>, <a href="../blur_visualization/"><code>Blur Visualization</code></a>, <a href="../detections_list_roll_up/"><code>Detections List Roll-Up</code></a>, <a href="../../ptz_tracking%28onvif"><code>PTZ Tracking (ONVIF)</code></a>.md), <a href="../detections_combine/"><code>Detections Combine</code></a>, <a href="../byte_tracker/"><code>Byte Tracker</code></a>, <a href="../dynamic_crop/"><code>Dynamic Crop</code></a>, <a href="./"><code>Time in Zone</code></a>, <a href="../mask_area_measurement/"><code>Mask Area Measurement</code></a>, <a href="../path_deviation/"><code>Path Deviation</code></a></li>
+</ul>
+</details>
+<h3 id="input-and-output-bindings_2">Input and Output Bindings<a class="headerlink" href="#input-and-output-bindings_2" title="Permanent link">&para;</a></h3>
+<p>The available connections depend on its binding kinds. Check what binding kinds 
+<code>Time in Zone</code> in version <code>v1</code>  has.</p>
+<details class="tip" open="open">
+<summary>Bindings</summary>
+<ul>
+<li>
+<p>input</p>
+<ul>
+<li><code>image</code> (<em><a href="../../kinds/image/"><code>image</code></a></em>): Input image for the current video frame. Used for zone visualization and reference. The block uses the image dimensions to validate zone coordinates. The image metadata may be used for time calculation if frame timestamps are needed..</li>
+<li><code>metadata</code> (<em><a href="../../kinds/video_metadata/"><code>video_metadata</code></a></em>): Video metadata containing frame rate (fps), frame number, frame timestamp, video identifier, and video source information required for time calculation and state management. The fps and frame_number are used for video files to calculate timestamps (timestamp = frame_number / fps). For streamed video, frame_timestamp is used directly. The video_identifier is used to maintain separate tracking state and zone configurations for different videos. The metadata must include valid fps for video files or frame_timestamp for streams to enable accurate time measurement..</li>
+<li><code>detections</code> (<em>Union[<a href="../../kinds/object_detection_prediction/"><code>object_detection_prediction</code></a>, <a href="../../kinds/instance_segmentation_prediction/"><code>instance_segmentation_prediction</code></a>]</em>): Tracked detection predictions (object detection or instance segmentation) with tracker_id information. Detections must come from a tracking block (e.g., Byte Tracker) that has assigned unique tracker_id values that persist across frames. Each detection must have a tracker_id to enable time tracking. The block calculates time_in_zone for each tracked object based on when its track_id first entered the zone. The output will include the same detections enhanced with time_in_zone metadata (duration in seconds). If remove_out_of_zone_detections is True, only detections inside the zone are included in the output..</li>
+<li><code>zone</code> (<em><a href="../../kinds/list_of_values/"><code>list_of_values</code></a></em>): Polygon zone coordinates defining the area for time measurement. Must be a list of at least 3 points, where each point is a list or tuple of exactly 2 coordinates [x, y] or (x, y). Coordinates should be in pixel space matching the image dimensions. Example: [[x1, y1], [x2, y2], [x3, y3], [x4, y4]] for a quadrilateral zone. The zone defines the polygon area where time tracking occurs. Objects are considered 'in zone' when their triggering_anchor point is inside this polygon. Zone coordinates are validated and a PolygonZone object is created for each video..</li>
+<li><code>triggering_anchor</code> (<em><a href="../../kinds/string/"><code>string</code></a></em>): Point on the detection bounding box that must be inside the zone to consider the object 'in zone'. Options include: 'CENTER' (default, center of bounding box), 'BOTTOM_CENTER' (bottom center point), 'TOP_CENTER' (top center point), 'CENTER_LEFT' (center left point), 'CENTER_RIGHT' (center right point), and other Position enum values. The triggering anchor determines which part of the object's bounding box is checked against the zone polygon. Use CENTER for standard zone detection, BOTTOM_CENTER for ground-level zones (e.g., tracking feet/vehicle base), or other anchors based on detection needs. Default is 'CENTER'..</li>
+<li><code>remove_out_of_zone_detections</code> (<em><a href="../../kinds/boolean/"><code>boolean</code></a></em>): If True (default), detections found outside the zone are filtered out and not included in the output. Only detections inside the zone are returned. If False, all detections are included in the output, with time_in_zone = 0 for objects outside the zone. Use True to focus analysis only on objects in the zone, or False to maintain all detections with zone status. Default is True for cleaner output focused on zone activity..</li>
+<li><code>reset_out_of_zone_detections</code> (<em><a href="../../kinds/boolean/"><code>boolean</code></a></em>): If True (default), when a tracked object leaves the zone, its time tracking is reset (entry timestamp is cleared). When the object re-enters the zone, time tracking starts from 0 again. If False, time tracking continues even after leaving the zone, and re-entry maintains cumulative time. Use True to measure current continuous time in zone (resets on exit), or False to measure cumulative time across multiple entries. Default is True for measuring continuous presence duration..</li>
+</ul>
+</li>
+<li>
+<p>output</p>
+<ul>
+<li><code>timed_detections</code> (<em>Union[<a href="../../kinds/object_detection_prediction/"><code>object_detection_prediction</code></a>, <a href="../../kinds/instance_segmentation_prediction/"><code>instance_segmentation_prediction</code></a>]</em>): Prediction with detected bounding boxes in form of sv.Detections(...) object if <code>object_detection_prediction</code> or Prediction with detected bounding boxes and segmentation masks in form of sv.Detections(...) object if <code>instance_segmentation_prediction</code>.</li>
+</ul>
+</li>
+</ul>
+</details>
+<details class="tip">
+<summary>Example JSON definition of step <code>Time in Zone</code> in version <code>v1</code></summary>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;&lt;your_step_name_here&gt;&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;roboflow_core/time_in_zone@v1&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;image&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;$inputs.image&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;metadata&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;&lt;block_does_not_provide_example&gt;&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;detections&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;$steps.object_detection_model.predictions&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;zone&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;$inputs.zones&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;triggering_anchor&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;CENTER&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;remove_out_of_zone_detections&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;reset_out_of_zone_detections&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span>
+<span class="p">}</span>
+</code></pre></div>
+</details>
+<style>
+/* hide edit button for generated pages */
+article > a.md-content__button.md-icon:first-child {
+    display: none;
+}
+</style>
+
+<pre><code>
+</code></pre>
+
+
+
+
+
+
+
+
+
+  
+
+
+
+
+                
+              </article>
+            </div>
+          
+  
+
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../byte_tracker/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Byte Tracker">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Byte Tracker
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../ptz_tracking%28onvif%29/" class="md-footer__link md-footer__link--next" aria-label="Next: PTZ Tracking (ONVIF)">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                PTZ Tracking (ONVIF)
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+    <div class="md-copyright__highlight">
+      Roboflow 2025. All rights reserved.
+    </div>
+  
+  
+</div>
+      
+        <div class="md-social">
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://github.com/roboflow" target="_blank" rel="noopener" title="github.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.7.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8M97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+    </a>
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://www.youtube.com/roboflow" target="_blank" rel="noopener" title="www.youtube.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.7.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M549.655 124.083c-6.281-23.65-24.787-42.276-48.284-48.597C458.781 64 288 64 288 64S117.22 64 74.629 75.486c-23.497 6.322-42.003 24.947-48.284 48.597-11.412 42.867-11.412 132.305-11.412 132.305s0 89.438 11.412 132.305c6.281 23.65 24.787 41.5 48.284 47.821C117.22 448 288 448 288 448s170.78 0 213.371-11.486c23.497-6.321 42.003-24.171 48.284-47.821 11.412-42.867 11.412-132.305 11.412-132.305s0-89.438-11.412-132.305m-317.51 213.508V175.185l142.739 81.205z"/></svg>
+    </a>
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://www.linkedin.com/company/roboflow-ai/mycompany/" target="_blank" rel="noopener" title="www.linkedin.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.7.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M416 32H31.9C14.3 32 0 46.5 0 64.3v383.4C0 465.5 14.3 480 31.9 480H416c17.6 0 32-14.5 32-32.3V64.3c0-17.8-14.4-32.3-32-32.3M135.4 416H69V202.2h66.5V416zm-33.2-243c-21.3 0-38.5-17.3-38.5-38.5S80.9 96 102.2 96c21.2 0 38.5 17.3 38.5 38.5 0 21.3-17.2 38.5-38.5 38.5m282.1 243h-66.4V312c0-24.8-.5-56.7-34.5-56.7-34.6 0-39.9 27-39.9 54.9V416h-66.4V202.2h63.7v29.2h.9c8.9-16.8 30.6-34.5 62.9-34.5 67.2 0 79.7 44.3 79.7 101.9z"/></svg>
+    </a>
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://twitter.com/roboflow" target="_blank" rel="noopener" title="twitter.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.7.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M459.37 151.716c.325 4.548.325 9.097.325 13.645 0 138.72-105.583 298.558-298.558 298.558-59.452 0-114.68-17.219-161.137-47.106 8.447.974 16.568 1.299 25.34 1.299 49.055 0 94.213-16.568 130.274-44.832-46.132-.975-84.792-31.188-98.112-72.772 6.498.974 12.995 1.624 19.818 1.624 9.421 0 18.843-1.3 27.614-3.573-48.081-9.747-84.143-51.98-84.143-102.985v-1.299c13.969 7.797 30.214 12.67 47.431 13.319-28.264-18.843-46.781-51.005-46.781-87.391 0-19.492 5.197-37.36 14.294-52.954 51.655 63.675 129.3 105.258 216.365 109.807-1.624-7.797-2.599-15.918-2.599-24.04 0-57.828 46.782-104.934 104.934-104.934 30.213 0 57.502 12.67 76.67 33.137 23.715-4.548 46.456-13.32 66.599-25.34-7.798 24.366-24.366 44.833-46.132 57.827 21.117-2.273 41.584-8.122 60.426-16.243-14.292 20.791-32.161 39.308-52.628 54.253"/></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+      <div class="md-progress" data-md-component="progress" role="progressbar"></div>
+    
+    
+    <script id="__config" type="application/json">{"base": "../../..", "features": ["announce.dismiss", "content.action.edit", "content.code.copy", "content.tabs.link", "navigation.footer", "navigation.indexes", "navigation.instant", "navigation.instant.prefetch", "navigation.instant.preview", "navigation.instant.progress", "navigation.prune", "navigation.tabs", "navigation.tabs.sticky", "navigation.top", "navigation.tracking", "optimize", "search.share", "search.suggest", "toc.follow"], "search": "../../../assets/javascripts/workers/search.c7c1ca2c.min.js", "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": 1.0}}</script>
+    
+    
+      <script src="../../../assets/javascripts/bundle.5a789024.min.js"></script>
+      
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.8/purify.min.js"></script>
+      
+        <script src="../../../javascript/init_kapa_widget.js"></script>
+      
+        <script src="../../../javascript/cookbooks.js"></script>
+      
+        <script src="../../../javascript/workflows.js"></script>
+      
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+      
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js"></script>
+      
+        <script src="https://unpkg.com/@rive-app/canvas"></script>
+      
+        <script src="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.js"></script>
+      
+        <script src="../../../assets/home.js"></script>
+      
+        <script src="../../../js/segment.js"></script>
+      
+    
+  </body>
+</html>
