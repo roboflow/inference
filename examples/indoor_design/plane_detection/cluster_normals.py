@@ -1,4 +1,5 @@
 import json
+from datetime import datetime
 from pathlib import Path
 
 import click
@@ -119,14 +120,20 @@ def visualize_image_with_circle(image_path: Path, u: float, v: float, radius: fl
         yaxis=dict(autorange="reversed"),
         margin=dict(l=0, r=0, t=20, b=0),
     )
-    fig.show()
+    return fig
 
 
 @click.command()
 @click.option("--planes-path", type=click.Path(exists=True), required=True)
-@click.option("--output-path", required=True)
 @click.option("--image-path", type=click.Path(exists=True), required=True)
-def main(planes_path: Path, output_path: Path, image_path: Path):
+@click.option(
+    "--output-dir",
+    type=click.Path(exists=False),
+    required=True,
+    default=Path(f"../data/cluster_normals_{datetime.now().strftime('%Y%m%d_%H%M%S')}"))
+def main(planes_path: Path, image_path: Path, output_dir: Path):
+    output_dir.mkdir(parents=True, exist_ok=True)
+
     with open(planes_path, "r") as f:
         planes = json.load(f)
 
@@ -141,8 +148,6 @@ def main(planes_path: Path, output_path: Path, image_path: Path):
     forward_plane = dominant_plane_for_axis(z_axis, planes)
     lateral_plane = dominant_plane_for_axis(x_axis, planes)
 
-    print(f"Plane ids for axes: floor={floor_plane[0]}, forward={forward_plane[0]}, lateral={lateral_plane[0]}")
-
     corner = solve_corner_intersection(floor_plane[1], floor_plane[2], forward_plane[1], forward_plane[2], lateral_plane[1], lateral_plane[2])
 
     if np.linalg.det(np.stack([x_axis, y_axis, z_axis], axis=1)) < 0:
@@ -154,10 +159,16 @@ def main(planes_path: Path, output_path: Path, image_path: Path):
     fx, fy, cx, cy = get_camera_intrinsics_from_exif_in_heic_image(str(image_path))
     u, v = project_point_in_camera_coordinates(corner, fx, fy, cx, cy)
 
-    visualize_image_with_circle(image_path, u, v)
+    fig = visualize_image_with_circle(image_path, u, v)
+    fig.write_html(output_dir / "image_with_corner.html", include_plotlyjs="cdn")
 
-    with open(output_path, "w") as f:
+    with open(output_dir / "room_parameters.json", "w") as f:
         json.dump({
+            "plane_ids": {
+                "floor": floor_plane[0],
+                "forward": forward_plane[0],
+                "lateral": lateral_plane[0]
+            },
             "R_room": R_room.tolist(),
             "t_corner": t_corner.tolist()
         }, f)
