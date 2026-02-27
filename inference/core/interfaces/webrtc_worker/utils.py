@@ -267,6 +267,7 @@ def register_webrtc_session(workspace_id: str, session_id: str) -> None:
     key = _get_concurrent_sessions_key(workspace_id)
     try:
         cache.client.zadd(key, {session_id: time.time()})
+        cache.client.expire(key, 600)  # TTL 600 seconds, extended on each heartbeat
         logger.info(
             "Registered session: workspace=%s, session=%s",
             workspace_id,
@@ -347,6 +348,7 @@ def refresh_webrtc_session(workspace_id: str, session_id: str) -> bool:
             return False
 
         cache.client.zadd(key, {session_id: timestamp})
+        cache.client.expire(key, 600)  # Extend TTL on each heartbeat
         logger.info(
             "[REDIS] Refreshed session: workspace=%s, session=%s",
             workspace_id,
