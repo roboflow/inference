@@ -148,3 +148,26 @@ def get_point_cloud_3d_fig(
         margin=dict(l=0, r=0, t=40, b=0),
     )
     return fig
+
+
+def get_inverse_depth_heatmap_fig(inverse_depth: np.ndarray) -> go.Figure:
+    """Visualize inverse depth as a Plotly heatmap."""
+    fig = go.Figure(
+        data=[
+            go.Heatmap(
+                z=inverse_depth,
+                colorscale="Viridis",
+                colorbar=dict(title="Inverse depth"),
+            )
+        ],
+    )
+    fig.update_layout(
+        title="Inverse depth heatmap",
+        xaxis_title="x",
+        yaxis_title="y",
+        width=800,
+        height=600,
+        margin=dict(l=60, r=60, t=40, b=40),
+    )
+    fig.update_yaxes(autorange="reversed")
+    return fig
