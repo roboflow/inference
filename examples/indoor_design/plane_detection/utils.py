@@ -1,6 +1,3 @@
-from pathlib import Path
-
-import click
 import numpy as np
 import piexif
 from pillow_heif import open_heif
@@ -95,22 +92,16 @@ def get_camera_intrinsics_from_exif_in_heic_image(image_path: str) -> tuple[floa
         f_px = focal_length_from_physical(f_mm, float(W))
 
     fx = f_px
-    fy = f_px  # assume square pixels
+    fy = f_px
 
-    # Principal point: SubjectArea is often (x, y, w, h) where (x, y) is the focus point.
-    subject_area = exif.get(piexif.ExifIFD.SubjectArea)
-    if isinstance(subject_area, (tuple, list)) and len(subject_area) >= 2:
-        cx = float(subject_area[0])
-        cy = float(subject_area[1])
-    else:
-        cx = float(W) / 2.0
-        cy = float(H) / 2.0
+    cx = float(W) / 2.0
+    cy = float(H) / 2.0
 
     return fx, fy, cx, cy
 
 
-def depth_to_organized_point_cloud(
-    depth: np.ndarray,
+def inverse_depth_to_organized_point_cloud(
+    inverse_depth: np.ndarray,
     fx: float,
     fy: float,
     cx: float,
@@ -121,7 +112,7 @@ def depth_to_organized_point_cloud(
     Uses pinhole camera model: X = (u - cx) * Z / fx, Y = (v - cy) * Z / fy.
 
     Args:
-        depth: Depth map of shape (H, W), values in same units as desired output.
+        inverse_depth: Inverse depth map of shape (H, W), values in same units as desired output.
         fx: Focal length in x (pixels).
         fy: Focal length in y (pixels).
         cx: Principal point x (pixels).
@@ -130,47 +121,13 @@ def depth_to_organized_point_cloud(
     Returns:
         Point cloud of shape (H, W, 3) with (X, Y, Z) in camera frame.
     """
-    H, W = depth.shape
+    H, W = inverse_depth.shape
 
     u, v = np.meshgrid(np.arange(W), np.arange(H))
 
-    Z = depth
+    Z = (1 / inverse_depth + 1e-6)
     X = (u - cx) * Z / fx
     Y = (v - cy) * Z / fy
 
     pc = np.stack((X, Y, Z), axis=-1)  # (H, W, 3)
     return pc
-
-
-@click.command()
-@click.option(
-    "--image-path",
-    "-i",
-    type=click.Path(exists=True, dir_okay=False, path_type=Path),
-    required=True,
-    help="Path to HEIC image with EXIF metadata.",
-)
-@click.option(
-    "--depth-path",
-    "-d",
-    type=click.Path(exists=True, dir_okay=False, path_type=Path),
-    required=True,
-    help="Path to depth map (.npy).",
-)
-@click.option(
-    "--output-path",
-    "-o",
-    type=click.Path(dir_okay=False, path_type=Path),
-    required=True,
-    help="Path to save organized point cloud (.npy).",
-)
-def main(image_path: Path, depth_path: Path, output_path: Path):
-    depth = np.load(depth_path)
-    fx, fy, cx, cy = get_camera_intrinsics_from_exif_in_heic_image(image_path)
-    pc = depth_to_organized_point_cloud(depth, fx, fy, cx, cy)
-    print(pc.shape)
-    np.save(output_path, pc)
-
-
-if __name__ == "__main__":
-    main()
