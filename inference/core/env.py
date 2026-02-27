@@ -669,6 +669,12 @@ PRELOAD_MODELS = (
     os.getenv("PRELOAD_MODELS").split(",") if os.getenv("PRELOAD_MODELS") else None
 )
 
+# API key used exclusively for model preloading. Use this instead of API_KEY on
+# user-facing deployments where setting API_KEY globally would affect per-request
+# auth, billing attribution, and model-access fallback behaviour.
+# Falls back to API_KEY if not set.
+PRELOAD_API_KEY = os.getenv("PRELOAD_API_KEY") or API_KEY
+
 # Warmup Models - run a preflight inference after preloading to trigger
 # CUDA kernel compilation, torch.autocast warmup, etc.
 # Set to "all" to warmup all preloaded models, or a comma-separated list of model IDs.

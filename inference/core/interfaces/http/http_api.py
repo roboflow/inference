@@ -131,7 +131,6 @@ from inference.core.entities.responses.workflows import (
 from inference.core.env import (
     ALLOW_ORIGINS,
     API_BASE_URL,
-    API_KEY,
     API_LOGGING_ENABLED,
     BUILDER_ORIGIN,
     CONFIDENCE_LOWER_BOUND_OOM_PREVENTION,
@@ -169,6 +168,7 @@ from inference.core.env import (
     NOTEBOOK_ENABLED,
     NOTEBOOK_PASSWORD,
     NOTEBOOK_PORT,
+    PRELOAD_API_KEY,
     PRELOAD_MODELS,
     PRELOAD_WARMUP_MODELS,
     PROFILE,
@@ -1778,7 +1778,7 @@ class HttpInterface(BaseInterface):
         # Enable preloading models at startup
         if (
             (PRELOAD_MODELS or DEDICATED_DEPLOYMENT_WORKSPACE_URL)
-            and API_KEY
+            and PRELOAD_API_KEY
             and not (LAMBDA or GCP_SERVERLESS)
         ):
 
@@ -1810,7 +1810,7 @@ class HttpInterface(BaseInterface):
                             AddModelRequest(
                                 model_id=model_id,
                                 model_type=None,
-                                api_key=API_KEY,
+                                api_key=PRELOAD_API_KEY,
                             )
                         )
                         load_time = time.perf_counter() - t_start
