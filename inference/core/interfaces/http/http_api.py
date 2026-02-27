@@ -1726,7 +1726,7 @@ class HttpInterface(BaseInterface):
                 return {"status": "ok"}
 
             @app.post(
-                "/webrtc/session/end",
+                "/webrtc/session/heartbeat/end",
                 summary="End WebRTC session",
             )
             async def webrtc_session_end(

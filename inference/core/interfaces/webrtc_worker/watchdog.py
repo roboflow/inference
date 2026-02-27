@@ -105,7 +105,7 @@ class Watchdog:
         if not all([self._heartbeat_url, self._session_id]):
             return
 
-        url = self._heartbeat_url + "/stop"
+        url = self._heartbeat_url + "/end"
         try:
             response = requests.post(
                 url,
