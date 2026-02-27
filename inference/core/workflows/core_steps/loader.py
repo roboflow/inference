@@ -328,6 +328,9 @@ from inference.core.workflows.core_steps.models.roboflow.object_detection.v1 imp
 from inference.core.workflows.core_steps.models.roboflow.object_detection.v2 import (
     RoboflowObjectDetectionModelBlockV2,
 )
+from inference.core.workflows.core_steps.models.roboflow.semantic_segmentation.v1 import (
+    RoboflowSemanticSegmentationModelBlockV1,
+)
 from inference.core.workflows.core_steps.models.third_party.barcode_detection.v1 import (
     BarcodeDetectorBlockV1,
 )
@@ -558,6 +561,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     ROBOFLOW_MODEL_ID_KIND,
     ROBOFLOW_PROJECT_KIND,
     SECRET_KIND,
+    SEMANTIC_SEGMENTATION_PREDICTION_KIND,
     SERIALISED_PAYLOADS_KIND,
     STRING_KIND,
     TIMESTAMP_KIND,
@@ -587,6 +591,7 @@ KINDS_SERIALIZERS = {
     INSTANCE_SEGMENTATION_PREDICTION_KIND.name: serialise_sv_detections,
     RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND.name: serialise_rle_sv_detections,
     KEYPOINT_DETECTION_PREDICTION_KIND.name: serialise_sv_detections,
+    SEMANTIC_SEGMENTATION_PREDICTION_KIND.name: serialize_wildcard_kind,
     QR_CODE_DETECTION_KIND.name: serialise_sv_detections,
     BAR_CODE_DETECTION_KIND.name: serialise_sv_detections,
     SECRET_KIND.name: serialize_secret,
@@ -615,6 +620,7 @@ KINDS_DESERIALIZERS = {
     TOP_CLASS_KIND.name: deserialize_string_kind,
     FLOAT_KIND.name: deserialize_float_kind,
     DICTIONARY_KIND.name: deserialize_dictionary_kind,
+    SEMANTIC_SEGMENTATION_PREDICTION_KIND.name: deserialize_dictionary_kind,
     CLASSIFICATION_PREDICTION_KIND.name: deserialize_classification_prediction_kind,
     POINT_KIND.name: deserialize_point_kind,
     ZONE_KIND.name: deserialize_zone_kind,
@@ -819,6 +825,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         WebhookSinkBlockV1,
         VelocityBlockV1,
         RoboflowInstanceSegmentationModelBlockV2,
+        RoboflowSemanticSegmentationModelBlockV1,
         RoboflowKeypointDetectionModelBlockV2,
         RoboflowClassificationModelBlockV2,
         RoboflowMultiLabelClassificationModelBlockV2,
@@ -880,6 +887,7 @@ def load_kinds() -> List[Kind]:
         OBJECT_DETECTION_PREDICTION_KIND,
         INSTANCE_SEGMENTATION_PREDICTION_KIND,
         KEYPOINT_DETECTION_PREDICTION_KIND,
+        SEMANTIC_SEGMENTATION_PREDICTION_KIND,
         RGB_COLOR_KIND,
         IMAGE_KEYPOINTS_KIND,
         CONTOURS_KIND,
