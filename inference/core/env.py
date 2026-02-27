@@ -173,6 +173,13 @@ if SAM3_EXEC_MODE not in ["local", "remote"]:
     raise ValueError(
         f"Invalid SAM3 execution mode in ENVIRONMENT var SAM3_EXEC_MODE (local or remote): {SAM3_EXEC_MODE}"
     )
+# Whether fine-tuned SAM3 models (non-sam3/ prefix) are allowed.
+# Defaults to False when SAM3_EXEC_MODE=remote (backward compat with existing proxy deployments),
+# True otherwise (self-hosted users can use fine-tuned models).
+_sam3_fine_tuned_default = "False" if SAM3_EXEC_MODE == "remote" else "True"
+SAM3_FINE_TUNED_MODELS_ENABLED = str2bool(
+    os.getenv("SAM3_FINE_TUNED_MODELS_ENABLED", _sam3_fine_tuned_default)
+)
 
 # Flag to enable GAZE core model, default is True
 CORE_MODEL_GAZE_ENABLED = str2bool(os.getenv("CORE_MODEL_GAZE_ENABLED", True))
