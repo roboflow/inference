@@ -677,6 +677,19 @@ PRELOAD_MODELS = (
     os.getenv("PRELOAD_MODELS").split(",") if os.getenv("PRELOAD_MODELS") else None
 )
 
+# API key used exclusively for model preloading. Use this instead of API_KEY on
+# user-facing deployments where setting API_KEY globally would affect per-request
+# auth, billing attribution, and model-access fallback behaviour.
+# Falls back to API_KEY if not set.
+PRELOAD_API_KEY = os.getenv("PRELOAD_API_KEY") or API_KEY
+
+# Models that must always be loaded at startup and never evicted from cache.
+# Unlike PRELOAD_MODELS, this bypasses the LAMBDA/GCP_SERVERLESS gate.
+# Comma-separated list of model IDs.
+PINNED_MODELS = (
+    os.getenv("PINNED_MODELS").split(",") if os.getenv("PINNED_MODELS") else None
+)
+
 LOAD_ENTERPRISE_BLOCKS = str2bool(os.getenv("LOAD_ENTERPRISE_BLOCKS", "False"))
 TRANSIENT_ROBOFLOW_API_ERRORS = set(
     int(e)
