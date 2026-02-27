@@ -476,7 +476,11 @@ def _propagate_inference_context(
     installed or no context is active.
     """
     try:
-        from inference_sdk.config import execution_id, remote_processing_times
+        from inference_sdk.config import (
+            apply_duration_minimum,
+            execution_id,
+            remote_processing_times,
+        )
 
         exec_id = execution_id.get() if execution_id is not None else None
         collector = (
@@ -484,10 +488,13 @@ def _propagate_inference_context(
             if remote_processing_times is not None
             else None
         )
+        duration_min = (
+            apply_duration_minimum.get() if apply_duration_minimum is not None else None
+        )
     except ImportError:
         return tasks
 
-    if exec_id is None and collector is None:
+    if exec_id is None and collector is None and duration_min is None:
         return tasks
 
     def _wrap(fun: Callable[[], T]) -> Callable[[], T]:
@@ -500,6 +507,10 @@ def _propagate_inference_context(
                 from inference_sdk.config import remote_processing_times
 
                 remote_processing_times.set(collector)
+            if duration_min is not None:
+                from inference_sdk.config import apply_duration_minimum
+
+                apply_duration_minimum.set(duration_min)
             return fun()
 
         return _with_context
