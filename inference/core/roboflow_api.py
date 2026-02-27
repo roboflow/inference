@@ -46,6 +46,7 @@ from inference.core.env import (
     ROBOFLOW_API_REQUEST_TIMEOUT,
     ROBOFLOW_API_VERIFY_SSL,
     ROBOFLOW_SERVICE_SECRET,
+    SINGLE_TENANT_WORKFLOW_CACHE,
     TRANSIENT_ROBOFLOW_API_ERRORS,
     TRANSIENT_ROBOFLOW_API_ERRORS_RETRIES,
     TRANSIENT_ROBOFLOW_API_ERRORS_RETRY_INTERVAL,
@@ -612,21 +613,32 @@ def get_roboflow_labeling_jobs(
 
 
 def get_workflow_cache_file(
-    workspace_id: WorkspaceID, workflow_id: str, api_key: Optional[str]
+    workspace_id: WorkspaceID,
+    workflow_id: str,
+    api_key: Optional[str],
+    workflow_version_id: Optional[str] = None,
 ) -> str:
     sanitized_workspace_id = sanitize_path_segment(workspace_id)
     sanitized_workflow_id = sanitize_path_segment(workflow_id)
-    api_key_hash = (
-        hashlib.md5(api_key.encode("utf-8")).hexdigest()
-        if api_key is not None
-        else "None"
-    )
+    if SINGLE_TENANT_WORKFLOW_CACHE:
+        version_suffix = (
+            f"_v{sanitize_path_segment(workflow_version_id)}"
+            if workflow_version_id
+            else ""
+        )
+        filename = f"{sanitized_workflow_id}{version_suffix}.json"
+    else:
+        cache_seed = f"{workspace_id}:{api_key or ''}"
+        cache_fingerprint = hashlib.sha256(
+            cache_seed.encode("utf-8"), usedforsecurity=False
+        ).hexdigest()
+        filename = f"{sanitized_workflow_id}_{cache_fingerprint}.json"
     prefix = os.path.abspath(os.path.join(MODEL_CACHE_DIR, "workflow"))
     result = os.path.abspath(
         os.path.join(
             prefix,
             sanitized_workspace_id,
-            f"{sanitized_workflow_id}_{api_key_hash}.json",
+            filename,
         )
     )
     if not result.startswith(prefix):
@@ -637,12 +649,17 @@ def get_workflow_cache_file(
 
 
 def cache_workflow_response(
-    workspace_id: WorkspaceID, workflow_id: str, api_key: Optional[str], response: dict
+    workspace_id: WorkspaceID,
+    workflow_id: str,
+    api_key: Optional[str],
+    response: dict,
+    workflow_version_id: Optional[str] = None,
 ):
     workflow_cache_file = get_workflow_cache_file(
         workspace_id=workspace_id,
         workflow_id=workflow_id,
         api_key=api_key,
+        workflow_version_id=workflow_version_id,
     )
     workflow_cache_dir = os.path.dirname(workflow_cache_file)
     if not os.path.exists(workflow_cache_dir):
@@ -655,11 +672,13 @@ def delete_cached_workflow_response_if_exists(
     workspace_id: WorkspaceID,
     workflow_id: str,
     api_key: Optional[str],
+    workflow_version_id: Optional[str] = None,
 ) -> None:
     workflow_cache_file = get_workflow_cache_file(
         workspace_id=workspace_id,
         workflow_id=workflow_id,
         api_key=api_key,
+        workflow_version_id=workflow_version_id,
     )
     if os.path.exists(workflow_cache_file):
         os.remove(workflow_cache_file)
@@ -669,11 +688,13 @@ def load_cached_workflow_response(
     workspace_id: WorkspaceID,
     workflow_id: str,
     api_key: Optional[str],
+    workflow_version_id: Optional[str] = None,
 ) -> Optional[dict]:
     workflow_cache_file = get_workflow_cache_file(
         workspace_id=workspace_id,
         workflow_id=workflow_id,
         api_key=api_key,
+        workflow_version_id=workflow_version_id,
     )
     if not os.path.exists(workflow_cache_file):
         return None
@@ -685,6 +706,7 @@ def load_cached_workflow_response(
             workspace_id=workspace_id,
             workflow_id=workflow_id,
             api_key=api_key,
+            workflow_version_id=workflow_version_id,
         )
 
 
@@ -743,6 +765,7 @@ def get_workflow_specification(
                     workflow_id=workflow_id,
                     api_key=api_key,
                     response=response,
+                    workflow_version_id=workflow_version_id,
                 )
         except (requests.exceptions.ConnectionError, ConnectionError) as error:
             if not USE_FILE_CACHE_FOR_WORKFLOWS_DEFINITIONS:
@@ -751,6 +774,7 @@ def get_workflow_specification(
                 workspace_id=workspace_id,
                 workflow_id=workflow_id,
                 api_key=api_key,
+                workflow_version_id=workflow_version_id,
             )
             if response is None:
                 raise error
@@ -827,15 +851,18 @@ def _prepare_workflow_response_cache_key(
     workflow_id: str,
     workflow_version_id: Optional[str] = None,
 ) -> str:
-    api_key_hash = (
-        hashlib.md5(api_key.encode("utf-8")).hexdigest()
-        if api_key is not None
-        else "None"
-    )
     workflow_version_suffix = (
         f":workflow_version={workflow_version_id}" if workflow_version_id else ""
     )
-    return f"workflow_definition:{workspace_id}:{workflow_id}{workflow_version_suffix}:{api_key_hash}"
+    if SINGLE_TENANT_WORKFLOW_CACHE:
+        return (
+            f"workflow_definition:{workspace_id}:{workflow_id}{workflow_version_suffix}"
+        )
+    cache_seed = f"{workspace_id}:{api_key or ''}"
+    cache_fingerprint = hashlib.sha256(
+        cache_seed.encode("utf-8"), usedforsecurity=False
+    ).hexdigest()
+    return f"workflow_definition:{workspace_id}:{workflow_id}{workflow_version_suffix}:{cache_fingerprint}"
 
 
 @wrap_roboflow_api_errors()
