@@ -101,6 +101,11 @@ class Watchdog:
 
     def _watchdog_thread(self):
         logger.info("Watchdog thread started")
+
+        # Send first heartbeat immediately to prevent session expiry if we have a cold start
+        self._send_session_heartbeat()
+        self._last_session_heartbeat_ts = datetime.datetime.now()
+
         while not self._stopping:
             if not self.is_alive():
                 logger.error(
