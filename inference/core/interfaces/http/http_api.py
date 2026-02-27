@@ -1805,14 +1805,12 @@ class HttpInterface(BaseInterface):
 
                 def load_model(model_id):
                     t_start = time.perf_counter()
-                    logger.info(f"Preload: starting model load for '{model_id}'")
+                    de_aliased = resolve_roboflow_model_alias(model_id=model_id)
+                    logger.info(f"Preload: starting model load for '{model_id}' (resolved: '{de_aliased}')")
                     try:
-                        model_add(
-                            AddModelRequest(
-                                model_id=model_id,
-                                model_type=None,
-                                api_key=PRELOAD_API_KEY,
-                            )
+                        self.model_manager.add_model(
+                            de_aliased,
+                            PRELOAD_API_KEY,
                         )
                         load_time = time.perf_counter() - t_start
                         logger.info(
@@ -1827,7 +1825,6 @@ class HttpInterface(BaseInterface):
                         return
 
                     # Pin preloaded models so they are never evicted by the LRU cache
-                    de_aliased = resolve_roboflow_model_alias(model_id=model_id)
                     if hasattr(self.model_manager, "pin_model"):
                         self.model_manager.pin_model(de_aliased)
 
