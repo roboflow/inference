@@ -276,6 +276,36 @@ def register_webrtc_session(workspace_id: str, session_id: str) -> None:
         logger.error("Failed to register session: %s", e)
 
 
+def deregister_webrtc_session(workspace_id: str, session_id: str) -> None:
+    """Remove a WebRTC session from the concurrent sessions set.
+
+    Should be called when a session ends to immediately free the quota slot,
+    rather than waiting for TTL expiry.
+
+    Args:
+        workspace_id: The workspace identifier
+        session_id: The session identifier to remove
+    """
+    if not isinstance(cache, RedisCache):
+        logger.warning(
+            "[REDIS] Redis not available (cache is %s), skipping session deregistration",
+            type(cache).__name__,
+        )
+        return
+
+    key = _get_concurrent_sessions_key(workspace_id)
+    try:
+        result = cache.client.zrem(key, session_id)
+        logger.info(
+            "Deregistered session: workspace=%s, session=%s, removed=%s",
+            workspace_id,
+            session_id,
+            result,
+        )
+    except Exception as e:
+        logger.error("Failed to deregister session: %s", e)
+
+
 def refresh_webrtc_session(workspace_id: str, session_id: str) -> bool:
     """Refresh the timestamp for a concurrent WebRTC session.
 

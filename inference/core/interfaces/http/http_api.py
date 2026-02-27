@@ -236,7 +236,10 @@ from inference.core.interfaces.webrtc_worker.entities import (
     WebRTCWorkerRequest,
     WebRTCWorkerResult,
 )
-from inference.core.interfaces.webrtc_worker.utils import refresh_webrtc_session
+from inference.core.interfaces.webrtc_worker.utils import (
+    deregister_webrtc_session,
+    refresh_webrtc_session,
+)
 from inference.core.managers.base import ModelManager
 from inference.core.managers.metrics import get_container_stats
 from inference.core.managers.prometheus import InferenceInstrumentator
@@ -1715,6 +1718,46 @@ class HttpInterface(BaseInterface):
                         "status": "error",
                         "message": "session not found",
                     }
+                return {"status": "ok"}
+
+            @app.post(
+                "/webrtc/session/end",
+                summary="End WebRTC session",
+            )
+            async def webrtc_session_end(
+                request: Request,
+            ) -> dict:
+                """End a WebRTC session and immediately free the quota slot.
+
+                Requires api_key for authentication.
+                """
+                body = await request.json()
+                session_id = body.get("session_id")
+                api_key = body.get("api_key")
+
+                if not session_id:
+                    return {
+                        "status": "error",
+                        "message": "session_id required",
+                    }
+                elif not api_key:
+                    return {
+                        "status": "error",
+                        "message": "api_key required",
+                    }
+
+                try:
+                    workspace_id = await get_roboflow_workspace_async(api_key=api_key)
+                except (RoboflowAPINotAuthorizedError, WorkspaceLoadError):
+                    return {
+                        "status": "error",
+                        "message": "unauthorized",
+                    }
+
+                deregister_webrtc_session(
+                    workspace_id=workspace_id,
+                    session_id=session_id,
+                )
                 return {"status": "ok"}
 
         if ENABLE_STREAM_API:

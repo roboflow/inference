@@ -54,6 +54,7 @@ class Watchdog:
         self._stopping = True
         if self._thread.is_alive():
             self._thread.join()
+        self._send_session_heartbeat_stop()
 
     def _send_session_heartbeat(self):
         """Send heartbeat to keep the session alive in the quota system.
@@ -98,6 +99,33 @@ class Watchdog:
                 )
         except Exception as e:
             logger.warning("Error sending session heartbeat: %s", e)
+
+    def _send_session_heartbeat_stop(self):
+        """Send session end to immediately free the quota slot."""
+        if not all([self._heartbeat_url, self._session_id]):
+            return
+
+        url = self._heartbeat_url + "/stop"
+        try:
+            response = requests.post(
+                url,
+                json={
+                    "session_id": self._session_id,
+                    "api_key": self._api_key,
+                },
+                headers={"Content-Type": "application/json"},
+                timeout=5,
+            )
+            if response.status_code == 200:
+                logger.info(
+                    "Session ended for workspace=%s session=%s",
+                    self._workspace_id,
+                    self._session_id,
+                )
+            else:
+                logger.warning("Failed to send session end: %s", response.status_code)
+        except Exception as e:
+            logger.warning("Error sending session end: %s", e)
 
     def _watchdog_thread(self):
         logger.info("Watchdog thread started")
