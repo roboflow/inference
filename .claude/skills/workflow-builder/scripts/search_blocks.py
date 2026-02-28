@@ -8,46 +8,7 @@ import os
 
 sys.path.insert(0, os.path.dirname(__file__))
 from setup import get_api_key, get_api_url
-
-try:
-    import requests
-except ImportError:
-    import urllib.request
-    import urllib.error
-
-    class _Requests:
-        class Response:
-            def __init__(self, urllib_response):
-                self.status_code = urllib_response.getcode()
-                self._data = urllib_response.read()
-            def json(self):
-                return json.loads(self._data)
-            def raise_for_status(self):
-                if self.status_code >= 400:
-                    raise Exception(f"HTTP {self.status_code}: {self._data[:200]}")
-
-        def post(self, url, json=None, **kwargs):
-            data = __import__("json").dumps(json).encode() if json else None
-            req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
-            try:
-                resp = urllib.request.urlopen(req, timeout=30)
-                return self.Response(resp)
-            except urllib.error.HTTPError as e:
-                r = self.Response(e)
-                r.status_code = e.code
-                return r
-
-    requests = _Requests()
-
-
-def fetch_blocks(api_url, api_key):
-    url = f"{api_url}/workflows/blocks/describe"
-    payload = {}
-    if api_key:
-        payload["api_key"] = api_key
-    resp = requests.post(url, json=payload)
-    resp.raise_for_status()
-    return resp.json()
+from http_utils import fetch_blocks_describe
 
 
 def search_blocks(blocks, query):
@@ -69,7 +30,6 @@ def search_blocks(blocks, query):
         else:
             search_keywords = str(search_keywords).lower()
 
-        # Score based on where the match is found
         for word in query_words:
             if word in name:
                 score += 10
@@ -82,7 +42,6 @@ def search_blocks(blocks, query):
             if word in fqn:
                 score += 1
 
-        # Exact phrase match bonuses
         if query_lower in name:
             score += 20
         if query_lower in identifier:
@@ -100,7 +59,7 @@ def search_blocks(blocks, query):
 def main():
     parser = argparse.ArgumentParser(description="Search workflow blocks by keyword")
     parser.add_argument("query", help="Search query (e.g., 'object detection', 'visualization', 'ocr')")
-    parser.add_argument("--limit", type=int, default=15, help="Maximum results to show (default: 15)")
+    parser.add_argument("--limit", type=int, default=15, help="Maximum results (default: 15)")
     parser.add_argument("--api-url", help="Override inference server URL")
     parser.add_argument("--api-key", help="Override API key")
     args = parser.parse_args()
@@ -109,9 +68,9 @@ def main():
     api_key = args.api_key or get_api_key()
 
     try:
-        data = fetch_blocks(api_url, api_key)
+        data = fetch_blocks_describe(api_url, api_key)
     except Exception as e:
-        print(f"Error fetching blocks: {e}", file=sys.stderr)
+        print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
 
     blocks = data.get("blocks", [])
