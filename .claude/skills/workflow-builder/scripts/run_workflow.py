@@ -1,191 +1,98 @@
 #!/usr/bin/env python3
 """Run a workflow against an image and display results.
 
-Uses the inference_sdk InferenceHTTPClient for image encoding, request building,
-retries, and output decoding. Falls back to the CLI's image extraction utilities
-for saving visualization outputs to disk.
+Uses only Python standard library + optional 'requests'. Image handling and
+output processing patterns are adapted from the inference SDK/CLI but
+reimplemented without those dependencies.
 """
 
 import argparse
+import base64
 import json
 import os
+import re
 import sys
 import tempfile
 
 sys.path.insert(0, os.path.dirname(__file__))
 from setup import get_api_key, get_api_url
+from http_utils import post_json
 
-try:
-    import cv2
-    import numpy as np
-    from inference_sdk import InferenceHTTPClient
-    from inference_cli.lib.workflows.common import (
-        extract_images_from_result,
-        deduct_images,
-    )
-    SDK_AVAILABLE = True
-except ImportError:
-    SDK_AVAILABLE = False
+BASE64_DATA_URI_PATTERN = re.compile(r"^data:image/[a-z]+;base64,")
 
 
-def run_with_sdk(api_url, api_key, spec, image_arg, image_name, parameters, raw):
-    """Run workflow using the inference SDK client."""
-    client = InferenceHTTPClient(api_url=api_url, api_key=api_key)
+def prepare_image_input(image_arg):
+    """Convert an image file path, URL, or base64 string to API input format.
 
-    images = {image_name: image_arg}
-
-    try:
-        outputs = client.run_workflow(
-            specification=spec,
-            images=images,
-            parameters=parameters,
-        )
-    except Exception as e:
-        print(f"WORKFLOW EXECUTION FAILED:\n  {e}", file=sys.stderr)
-        sys.exit(1)
-
-    if not outputs:
-        print("Workflow returned no outputs.")
-        return
-
-    if raw:
-        cleaned = [deduct_images(result=o) for o in outputs]
-        print(json.dumps(cleaned, indent=2, default=str))
-        return
-
-    print(f"Workflow executed successfully. {len(outputs)} result(s):\n")
-
-    for i, output_dict in enumerate(outputs):
-        if len(outputs) > 1:
-            print(f"--- Result {i + 1} ---")
-
-        # Extract and save any image outputs to temp files
-        image_outputs = extract_images_from_result(result=output_dict)
-        saved_images = {}
-        if image_outputs:
-            tmp_dir = tempfile.mkdtemp(prefix="workflow_output_")
-            for image_key, image_array in image_outputs:
-                safe_key = image_key.replace("/", "_")
-                path = os.path.join(tmp_dir, f"{safe_key}.jpg")
-                cv2.imwrite(path, image_array)
-                saved_images[image_key] = path
-
-        # Display results with images replaced by file paths
-        cleaned = deduct_images(result=output_dict)
-        for key, value in cleaned.items():
-            # Check if this key had an image extracted
-            if key in saved_images:
-                print(f"  {key}: [Image saved to: {saved_images[key]}]")
-            elif value == "<deducted_image>":
-                # Image was in a nested position — find matching saved paths
-                matching = {k: v for k, v in saved_images.items() if k.startswith(key)}
-                if matching:
-                    for img_key, img_path in matching.items():
-                        print(f"  {img_key}: [Image saved to: {img_path}]")
-                else:
-                    print(f"  {key}: <image data>")
-            elif isinstance(value, (dict, list)):
-                print(f"  {key}:")
-                formatted = json.dumps(value, indent=4, default=str)
-                for line in formatted.split("\n"):
-                    print(f"    {line}")
-            else:
-                print(f"  {key}: {value}")
-
-        if len(outputs) > 1:
-            print()
-
-
-def run_with_http(api_url, api_key, spec, image_arg, image_name, parameters, raw):
-    """Fallback: run workflow using raw HTTP when SDK is not available."""
-    import base64
-    try:
-        import requests
-    except ImportError:
-        import urllib.request
-        import urllib.error
-
-        class _Requests:
-            class Response:
-                def __init__(self, urllib_response):
-                    self.status_code = urllib_response.getcode()
-                    self._data = urllib_response.read()
-                def json(self):
-                    return json.loads(self._data)
-                @property
-                def text(self):
-                    return self._data.decode("utf-8", errors="replace")
-
-            def post(self, url, json=None, **kwargs):
-                data = __import__("json").dumps(json).encode() if json else None
-                req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
-                try:
-                    resp = urllib.request.urlopen(req, timeout=120)
-                    return self.Response(resp)
-                except urllib.error.HTTPError as e:
-                    r = self.Response(e)
-                    r.status_code = e.code
-                    return r
-
-        requests = _Requests()
-
-    # Prepare image input
-    if image_arg.startswith("http://") or image_arg.startswith("https://"):
-        image_input = {"type": "url", "value": image_arg}
+    Mirrors inference_sdk's load_static_inference_input / inject_nested_batches.
+    """
+    if image_arg.startswith(("http://", "https://")):
+        return {"type": "url", "value": image_arg}
     elif os.path.isfile(image_arg):
         with open(image_arg, "rb") as f:
-            image_input = {"type": "base64", "value": base64.b64encode(f.read()).decode("utf-8")}
+            return {"type": "base64", "value": base64.b64encode(f.read()).decode("ascii")}
     else:
-        image_input = {"type": "base64", "value": image_arg}
+        # Assume raw base64
+        return {"type": "base64", "value": image_arg}
 
-    inputs = {image_name: image_input}
-    inputs.update(parameters)
 
-    payload = {"specification": spec, "inputs": inputs}
-    if api_key:
-        payload["api_key"] = api_key
+def is_workflow_image(value):
+    """Check if a value is a workflow image dict (base64-encoded).
 
-    resp = requests.post(f"{api_url}/workflows/run", json=payload)
-    if resp.status_code != 200:
-        try:
-            err = resp.json()
-            msg = err.get("message", err.get("detail", err.get("error", str(err))))
-        except Exception:
-            msg = resp.text
-        print(f"WORKFLOW EXECUTION FAILED:\n  {msg}", file=sys.stderr)
-        sys.exit(1)
+    Mirrors inference_sdk.http.utils.post_processing.is_workflow_image.
+    """
+    return isinstance(value, dict) and value.get("type") == "base64" and "value" in value
 
-    result = resp.json()
-    outputs = result.get("outputs", [])
-    if not outputs:
-        print("Workflow returned no outputs.")
-        return
 
-    if raw:
-        print(json.dumps(outputs, indent=2, default=str))
-        return
+def save_base64_image(b64_data, name):
+    """Decode base64 image data, save to a temp file, return the path."""
+    cleaned = BASE64_DATA_URI_PATTERN.sub("", b64_data)
+    try:
+        img_bytes = base64.b64decode(cleaned)
+    except Exception:
+        return None
+    ext = ".jpg" if img_bytes[:2] == b"\xff\xd8" else ".png"
+    tmp_dir = tempfile.mkdtemp(prefix="workflow_output_")
+    path = os.path.join(tmp_dir, f"{name}{ext}")
+    with open(path, "wb") as f:
+        f.write(img_bytes)
+    return path
 
-    print(f"Workflow executed successfully. {len(outputs)} result(s):\n")
-    for i, output_dict in enumerate(outputs):
-        if len(outputs) > 1:
-            print(f"--- Result {i + 1} ---")
-        for key, value in output_dict.items():
-            if isinstance(value, dict) and value.get("type") == "base64" and "value" in value:
-                img_bytes = base64.b64decode(value["value"])
-                tmp_dir = tempfile.mkdtemp(prefix="workflow_output_")
-                ext = ".jpg" if img_bytes[:2] == b'\xff\xd8' else ".png"
-                path = os.path.join(tmp_dir, f"{key}{ext}")
-                with open(path, "wb") as f:
-                    f.write(img_bytes)
-                print(f"  {key}: [Image saved to: {path}]")
-            elif isinstance(value, (dict, list)):
-                print(f"  {key}:")
-                for line in json.dumps(value, indent=4, default=str).split("\n"):
-                    print(f"    {line}")
-            else:
-                print(f"  {key}: {value}")
-        if len(outputs) > 1:
-            print()
+
+def extract_and_save_images(result, key_prefix=""):
+    """Walk a result dict/list, save any embedded images to temp files.
+
+    Returns dict mapping key paths to saved file paths.
+    Mirrors inference_cli.lib.workflows.common.extract_images_from_result.
+    """
+    saved = {}
+    if is_workflow_image(result):
+        path = save_base64_image(result["value"], key_prefix.replace("/", "_") or "image")
+        if path:
+            saved[key_prefix] = path
+    elif isinstance(result, dict):
+        for key, value in result.items():
+            child_key = f"{key_prefix}/{key}".lstrip("/")
+            saved.update(extract_and_save_images(value, child_key))
+    elif isinstance(result, list):
+        for idx, element in enumerate(result):
+            child_key = f"{key_prefix}/{idx}".lstrip("/")
+            saved.update(extract_and_save_images(element, child_key))
+    return saved
+
+
+def strip_images(result):
+    """Replace image data in a result with a placeholder string.
+
+    Mirrors inference_cli.lib.workflows.common.deduct_images.
+    """
+    if is_workflow_image(result):
+        return "<image>"
+    elif isinstance(result, dict):
+        return {k: strip_images(v) for k, v in result.items()}
+    elif isinstance(result, list):
+        return [strip_images(e) for e in result]
+    return result
 
 
 def main():
@@ -217,21 +124,67 @@ def main():
         print(f"Error: '{args.workflow}' is not a valid file or JSON.", file=sys.stderr)
         sys.exit(1)
 
-    # Parse extra parameters
-    parameters = {}
+    # Build inputs dict
+    inputs = {args.image_name: prepare_image_input(args.image)}
     for param in args.param:
         if "=" not in param:
             print(f"Error: parameter '{param}' must be key=value.", file=sys.stderr)
             sys.exit(1)
         key, value = param.split("=", 1)
         try:
-            parameters[key] = json.loads(value)
+            inputs[key] = json.loads(value)
         except (json.JSONDecodeError, ValueError):
-            parameters[key] = value
+            inputs[key] = value
 
-    # Use SDK if available, otherwise fall back to raw HTTP
-    runner = run_with_sdk if SDK_AVAILABLE else run_with_http
-    runner(api_url, api_key, spec, args.image, args.image_name, parameters, args.raw)
+    # Execute
+    payload = {"specification": spec, "inputs": inputs}
+    if api_key:
+        payload["api_key"] = api_key
+
+    status, result = post_json(f"{api_url}/workflows/run", json_payload=payload, timeout=120)
+
+    if status != 200:
+        msg = result.get("message", result.get("detail", result.get("error", f"HTTP {status}")))
+        print(f"WORKFLOW EXECUTION FAILED:\n  {msg}", file=sys.stderr)
+        sys.exit(1)
+
+    outputs = result.get("outputs", [])
+    if not outputs:
+        print("Workflow returned no outputs.")
+        return
+
+    if args.raw:
+        print(json.dumps([strip_images(o) for o in outputs], indent=2, default=str))
+        return
+
+    print(f"Workflow executed successfully. {len(outputs)} result(s):\n")
+
+    for i, output_dict in enumerate(outputs):
+        if len(outputs) > 1:
+            print(f"--- Result {i + 1} ---")
+
+        # Extract and save any images
+        saved_images = extract_and_save_images(output_dict)
+
+        # Display results
+        cleaned = strip_images(output_dict)
+        for key, value in cleaned.items():
+            # Check for saved images at this key
+            matching_paths = {k: v for k, v in saved_images.items()
+                             if k == key or k.startswith(key + "/")}
+            if matching_paths:
+                for img_key, img_path in matching_paths.items():
+                    label = key if img_key == key else img_key
+                    print(f"  {label}: [Image saved to: {img_path}]")
+            elif isinstance(value, (dict, list)):
+                print(f"  {key}:")
+                for line in json.dumps(value, indent=4, default=str).split("\n"):
+                    print(f"    {line}")
+            else:
+                print(f"  {key}: {value}")
+
+        if len(outputs) > 1:
+            print()
 
 
 if __name__ == "__main__":
