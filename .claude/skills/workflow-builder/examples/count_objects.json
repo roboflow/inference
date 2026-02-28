@@ -1,0 +1,38 @@
+{
+  "version": "1.0",
+  "inputs": [
+    {"type": "WorkflowImage", "name": "image"},
+    {"type": "WorkflowParameter", "name": "model_id", "default_value": "yolov8n-640"},
+    {"type": "WorkflowParameter", "name": "confidence", "default_value": 0.4}
+  ],
+  "steps": [
+    {
+      "type": "roboflow_core/roboflow_object_detection_model@v2",
+      "name": "detection",
+      "images": "$inputs.image",
+      "model_id": "$inputs.model_id",
+      "confidence": "$inputs.confidence"
+    },
+    {
+      "type": "roboflow_core/property_definition@v1",
+      "name": "count",
+      "data": "$steps.detection.predictions",
+      "operations": [
+        {"type": "SequenceLength"}
+      ]
+    },
+    {
+      "type": "roboflow_core/property_definition@v1",
+      "name": "class_names",
+      "data": "$steps.detection.predictions",
+      "operations": [
+        {"type": "DetectionsPropertyExtract", "property_name": "class_name"}
+      ]
+    }
+  ],
+  "outputs": [
+    {"type": "JsonField", "name": "predictions", "selector": "$steps.detection.predictions"},
+    {"type": "JsonField", "name": "total_count", "selector": "$steps.count.output"},
+    {"type": "JsonField", "name": "detected_classes", "selector": "$steps.class_names.output"}
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "version": "1.0",
+  "inputs": [
+    {"type": "WorkflowImage", "name": "image"}
+  ],
+  "steps": [
+    {
+      "type": "roboflow_core/ocr_model@v2",
+      "name": "ocr",
+      "image": "$inputs.image"
+    }
+  ],
+  "outputs": [
+    {"type": "JsonField", "name": "text", "selector": "$steps.ocr.result"}
+  ]
+}

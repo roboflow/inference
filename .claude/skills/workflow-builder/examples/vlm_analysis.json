@@ -1,0 +1,21 @@
+{
+  "version": "1.0",
+  "inputs": [
+    {"type": "WorkflowImage", "name": "image"},
+    {"type": "WorkflowParameter", "name": "prompt", "default_value": "Describe what you see in this image in detail."}
+  ],
+  "steps": [
+    {
+      "type": "roboflow_core/anthropic_claude@v3",
+      "name": "claude",
+      "images": "$inputs.image",
+      "task_type": "visual-question-answering",
+      "prompt": "$inputs.prompt",
+      "api_key": "rf_key:account",
+      "model_version": "claude-sonnet-4-5"
+    }
+  ],
+  "outputs": [
+    {"type": "JsonField", "name": "answer", "selector": "$steps.claude.output"}
+  ]
+}

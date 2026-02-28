@@ -1,0 +1,34 @@
+{
+  "version": "1.0",
+  "inputs": [
+    {"type": "WorkflowImage", "name": "image"},
+    {"type": "WorkflowParameter", "name": "detection_model_id", "default_value": "yolov8n-640"},
+    {"type": "WorkflowParameter", "name": "classification_model_id"},
+    {"type": "WorkflowParameter", "name": "class_filter", "default_value": null}
+  ],
+  "steps": [
+    {
+      "type": "roboflow_core/roboflow_object_detection_model@v2",
+      "name": "detection",
+      "images": "$inputs.image",
+      "model_id": "$inputs.detection_model_id",
+      "class_filter": "$inputs.class_filter"
+    },
+    {
+      "type": "roboflow_core/dynamic_crop@v1",
+      "name": "cropping",
+      "images": "$inputs.image",
+      "predictions": "$steps.detection.predictions"
+    },
+    {
+      "type": "roboflow_core/roboflow_classification_model@v2",
+      "name": "classification",
+      "images": "$steps.cropping.crops",
+      "model_id": "$inputs.classification_model_id"
+    }
+  ],
+  "outputs": [
+    {"type": "JsonField", "name": "detections", "selector": "$steps.detection.predictions"},
+    {"type": "JsonField", "name": "classifications", "selector": "$steps.classification.predictions"}
+  ]
+}
