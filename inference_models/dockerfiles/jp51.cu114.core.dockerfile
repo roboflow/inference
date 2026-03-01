@@ -9,7 +9,10 @@ RUN apt-get update -y && apt-get install -y \
     libssl-dev \
     libsqlite3-dev \
     zlib1g-dev \
-    liblzma-dev
+    liblzma-dev \
+    libavcodec-dev \
+    libavformat-dev \
+    libswscale-dev
 
 RUN mkdir -p /build/python-3.12
 WORKDIR /build/python-3.12
@@ -146,6 +149,7 @@ RUN git clone https://github.com/pytorch/vision.git
 WORKDIR /build/torchvision/vision
 RUN git checkout v0.19.1
 RUN git submodule sync && git submodule update --init --recursive
+RUN python3.12 -m pip install "setuptools<81"
 RUN CC=/root/GCC-11/bin/gcc CXX=/root/GCC-11/bin/g++ FORCE_CUDA=1 PATH=/build/cmake/build/bin:$PATH BUILD_VERSION=0.19.1 TORCH_CUDA_ARCH_LIST="8.7" CUDA_HOME=/usr/local/cuda-11.8 CMAKE_POLICY_VERSION_MINIMUM=3.5 python3.12 setup.py bdist_wheel
 RUN python3.12 -m pip install dist/torchvision-*.whl
 RUN cp dist/torchvision-*.whl /build/out/wheels/
@@ -160,7 +164,10 @@ RUN apt-get update -y && apt-get install -y \
     libssl-dev \
     libsqlite3-dev \
     zlib1g-dev \
-    liblzma-dev
+    liblzma-dev \
+    libavcodec-dev \
+    libavformat-dev \
+    libswscale-dev
 
 RUN apt remove -y 'libnvinfer*' 'libnvonnxparsers*' 'libnvparsers*' 'libnvinfer-plugin*' 'python3-libnvinfer*' 'tensorrt*' 'uff-converter*' 'graphsurgeon*'
 

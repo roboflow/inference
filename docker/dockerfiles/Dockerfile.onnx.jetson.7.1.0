@@ -282,6 +282,7 @@ RUN apt-get install -y --no-install-recommends \
     libavcodec60 \
     libavformat60 \
     libswscale7 \
+    ffmpeg \
     libatlas3-base \
     libgl1 \
     libglib2.0-0 \
