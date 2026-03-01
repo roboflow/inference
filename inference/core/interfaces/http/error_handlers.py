@@ -31,6 +31,7 @@ from inference.core.exceptions import (
     ServiceConfigurationError,
     WebRTCConfigurationError,
     WorkspaceLoadError,
+    WorkspaceStreamQuotaError,
 )
 from inference.core.interfaces.stream_manager.api.errors import (
     ProcessesManagerAuthorisationError,
@@ -444,6 +445,15 @@ def with_route_exceptions(route):
                     "error_type": "CreditsExceededError",
                 },
             )
+        except WorkspaceStreamQuotaError as error:
+            logger.error("%s: %s", type(error).__name__, error)
+            resp = JSONResponse(
+                status_code=429,
+                content={
+                    "message": str(error),
+                    "error_type": "WorkspaceStreamQuotaError",
+                },
+            )
         except Exception as error:
             logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(status_code=500, content={"message": "Internal error."})
@@ -814,6 +824,15 @@ def with_route_exceptions_async(route):
                 content={
                     "message": "Not enough credits to perform this request.",
                     "error_type": "CreditsExceededError",
+                },
+            )
+        except WorkspaceStreamQuotaError as error:
+            logger.error("%s: %s", type(error).__name__, error)
+            resp = JSONResponse(
+                status_code=429,
+                content={
+                    "message": str(error),
+                    "error_type": "WorkspaceStreamQuotaError",
                 },
             )
         except Exception as error:

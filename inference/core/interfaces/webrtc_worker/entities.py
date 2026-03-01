@@ -49,6 +49,9 @@ class WebRTCWorkerRequest(BaseModel):
     # must be valid region: https://modal.com/docs/guide/region-selection#region-options
     requested_region: Optional[str] = None
 
+    workspace_id: Optional[str] = None
+    session_id: Optional[str] = None
+
 
 class WebRTCVideoMetadata(BaseModel):
     frame_id: int

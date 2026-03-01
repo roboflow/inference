@@ -50,6 +50,8 @@ from inference.core.env import (
     WEBRTC_MODAL_TOKEN_SECRET,
     WEBRTC_MODAL_USAGE_QUOTA_ENABLED,
     WEBRTC_MODAL_WATCHDOG_TIMEMOUT,
+    WEBRTC_SESSION_HEARTBEAT_INTERVAL_SECONDS,
+    WEBRTC_SESSION_HEARTBEAT_URL,
     WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE,
 )
 from inference.core.exceptions import (
@@ -209,6 +211,12 @@ if modal is not None:
             "WEBRTC_MODAL_WATCHDOG_TIMEMOUT": str(WEBRTC_MODAL_WATCHDOG_TIMEMOUT),
             "WEBRTC_GZIP_PREVIEW_FRAME_COMPRESSION": str(
                 WEBRTC_GZIP_PREVIEW_FRAME_COMPRESSION
+            ),
+            "WEBRTC_SESSION_HEARTBEAT_URL": (
+                WEBRTC_SESSION_HEARTBEAT_URL if WEBRTC_SESSION_HEARTBEAT_URL else ""
+            ),
+            "WEBRTC_SESSION_HEARTBEAT_INTERVAL_SECONDS": str(
+                WEBRTC_SESSION_HEARTBEAT_INTERVAL_SECONDS
             ),
         },
         "volumes": {MODEL_CACHE_DIR: rfcache_volume},
@@ -388,6 +396,9 @@ if modal is not None:
             watchdog = Watchdog(
                 api_key=webrtc_request.api_key,
                 timeout_seconds=WEBRTC_MODAL_WATCHDOG_TIMEMOUT,
+                workspace_id=getattr(webrtc_request, "workspace_id", None),
+                session_id=getattr(webrtc_request, "session_id", None),
+                heartbeat_url=WEBRTC_SESSION_HEARTBEAT_URL,
             )
 
             try:
