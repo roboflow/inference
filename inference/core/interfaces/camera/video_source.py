@@ -188,6 +188,12 @@ def _consumes_camera_on_jetson(video: Union[str, int]) -> bool:
     return video.startswith("/dev/video")
 
 
+def _is_test_pattern_reference(video: Union[str, int]) -> bool:
+    return isinstance(video, str) and video.strip().startswith(
+        "TestPatternStreamProducer"
+    )
+
+
 class VideoSource:
     @classmethod
     def init(
@@ -605,6 +611,12 @@ class VideoSource:
         self._change_state(target_state=StreamState.INITIALISING)
         if callable(self._stream_reference):
             self._video = self._stream_reference()
+        elif _is_test_pattern_reference(self._stream_reference):
+            from inference.core.interfaces.camera.test_pattern_producer import (
+                TestPatternStreamProducer,
+            )
+
+            self._video = TestPatternStreamProducer()
         else:
             self._video = CV2VideoFrameProducer(self._stream_reference)
         if not self._video.isOpened():
