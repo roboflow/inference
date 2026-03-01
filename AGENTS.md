@@ -87,3 +87,35 @@ The repository follows PEP 8 and uses Black (88 characters), isort and flake8.
 - PR descriptions should explain what changed and why, list test commands run,
   and follow the templates in `.github`.
 - Update documentation when applicable.
+
+## Cursor Cloud specific instructions
+
+### Running the server natively (without Docker)
+
+The `docker/` directory name conflicts with the installed `docker` Python package,
+so `uvicorn docker.config.cpu_http:app` will fail with a `ModuleNotFoundError`.
+Work around this by copying the config file to a temp location and using `--app-dir`:
+
+```bash
+cp docker/config/cpu_http.py /tmp/cpu_http.py
+PYTHONPATH=/workspace uvicorn --app-dir /tmp cpu_http:app --host 0.0.0.0 --port 9001
+```
+
+The server starts on port 9001 by default. CLIP and other core models load on first
+request without needing `ROBOFLOW_API_KEY`. Models requiring Roboflow-hosted weights
+(e.g. custom YOLOv8 models) need the `ROBOFLOW_API_KEY` environment variable.
+
+### Linting, testing, building
+
+See the **Testing**, **Code Style**, and **Build & Running** sections above.
+All commands (`make check_code_quality`, `make style`, `pytest`) work directly
+with `PATH=$HOME/.local/bin:$PATH` after `pip install -e .`.
+
+### Gotchas
+
+- System packages `libopencv-dev`, `libgdal-dev`, `libvips-dev`, and `cmake` must
+  be installed for native extension compilation (opencv, pyvips, etc.).
+- `uvicorn` is pinned to `<=0.22.0` in test requirements but `<=0.34.0` in http
+  requirements; the installed version may vary. Both work for local dev.
+- The second (exit-zero) `flake8` pass in `make check_code_quality` prints warnings
+  but does not fail the build; only the first pass (syntax errors) is blocking.
