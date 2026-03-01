@@ -12,6 +12,10 @@ from inference.core.workflows.core_steps.common.query_language.entities.operatio
 from inference.core.workflows.core_steps.formatters.property_definition.v1 import (
     PropertyDefinitionBlockV1,
 )
+from inference.core.workflows.execution_engine.constants import (
+    AREA_CONVERTED_KEY_IN_SV_DETECTIONS,
+    AREA_KEY_IN_SV_DETECTIONS,
+)
 
 
 def test_property_extraction_block() -> None:
@@ -171,3 +175,61 @@ def test_property_extraction_block_with_bottom_right() -> None:
 
     # then
     assert result == {"output": [[30, 40], [50, 60]]}
+
+
+def test_property_extraction_block_with_area_px() -> None:
+    # given
+    detections = sv.Detections(
+        xyxy=np.array([[10, 20, 30, 40], [30, 40, 50, 60]], dtype=np.int32),
+        class_id=np.array([0, 1], dtype=np.int32),
+        confidence=np.array([0.6, 0.4], dtype=np.float32),
+        data={AREA_KEY_IN_SV_DETECTIONS: np.array([400.0, 1000.0], dtype=np.float32)},
+    )
+    operations = OperationsChain.model_validate(
+        {
+            "operations": [
+                {
+                    "type": "DetectionsPropertyExtract",
+                    "property_name": AREA_KEY_IN_SV_DETECTIONS,
+                }
+            ]
+        }
+    ).operations
+    step = PropertyDefinitionBlockV1()
+
+    # when
+    result = step.run(data=detections, operations=operations)
+
+    # then
+    assert result == {"output": [400.0, 1000.0]}
+
+
+def test_property_extraction_block_with_area_converted() -> None:
+    # given
+    detections = sv.Detections(
+        xyxy=np.array([[10, 20, 30, 40], [30, 40, 50, 60]], dtype=np.int32),
+        class_id=np.array([0, 1], dtype=np.int32),
+        confidence=np.array([0.6, 0.4], dtype=np.float32),
+        data={
+            AREA_CONVERTED_KEY_IN_SV_DETECTIONS: np.array(
+                [4.0, 10.0], dtype=np.float32
+            )
+        },
+    )
+    operations = OperationsChain.model_validate(
+        {
+            "operations": [
+                {
+                    "type": "DetectionsPropertyExtract",
+                    "property_name": AREA_CONVERTED_KEY_IN_SV_DETECTIONS,
+                }
+            ]
+        }
+    ).operations
+    step = PropertyDefinitionBlockV1()
+
+    # when
+    result = step.run(data=detections, operations=operations)
+
+    # then
+    assert result == {"output": [4.0, 10.0]}
