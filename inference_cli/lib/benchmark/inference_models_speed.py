@@ -147,7 +147,7 @@ def run_benchmark(
                     base64_str = base64.b64encode(jpeg_bytes).decode("utf-8")
                     vlm_payload.append({"type": "base64", "value": base64_str})
                 
-                payload = vlm_payload
+                payload = vlm_payload[0] if len(vlm_payload) == 1 else vlm_payload
 
                 first_token = True
                 ttft_duration = 0.0
