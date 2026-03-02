@@ -179,6 +179,8 @@ def run_python_package_speed_benchmark(
     api_key: Optional[str] = None,
     model_configuration: Optional[str] = None,
     output_location: Optional[str] = None,
+    prompt: Optional[str] = None,
+    stream: bool = False,
 ) -> None:
     ensure_inference_is_installed()
 
@@ -206,6 +208,8 @@ def run_python_package_speed_benchmark(
         batch_size=batch_size,
         api_key=api_key,
         model_configuration=model_configuration,
+        prompt=prompt,
+        stream=stream,
     )
     benchmark_results = results_collector.get_statistics()
     statistics_display_thread.join()
@@ -222,6 +226,8 @@ def run_python_package_speed_benchmark(
         "benchmark_inferences": benchmark_inferences,
         "batch_size": batch_size,
         "model_configuration": model_configuration,
+        "prompt": prompt,
+        "stream": stream,
     }
     dump_benchmark_results(
         output_location=output_location,
@@ -242,6 +248,8 @@ def run_inference_models_benchmark(
     model_package_id: Optional[str] = None,
     turn_images_to_tensors: bool = True,
     allow_untrusted_packages: bool = True,
+    prompt: Optional[str] = None,
+    stream: bool = False,
 ) -> None:
     ensure_inference_models_is_installed()
 
@@ -272,6 +280,8 @@ def run_inference_models_benchmark(
         model_package_id=model_package_id,
         turn_images_to_tensors=turn_images_to_tensors,
         allow_untrusted_packages=allow_untrusted_packages,
+        prompt=prompt,
+        stream=stream,
     )
     benchmark_results = results_collector.get_statistics()
     statistics_display_thread.join()
@@ -288,6 +298,8 @@ def run_inference_models_benchmark(
         "benchmark_inferences": benchmark_inferences,
         "batch_size": batch_size,
         "model_configuration": model_configuration,
+        "prompt": prompt,
+        "stream": stream,
     }
     dump_benchmark_results(
         output_location=output_location,

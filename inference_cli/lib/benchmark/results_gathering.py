@@ -29,9 +29,12 @@ class InferenceStatistics:
     error_rate: float
     error_status_codes: Dict[str, int]
     avg_remote_execution_time: Optional[float]
+    average_ttft_ms: Optional[float]
+    average_tpot_ms: Optional[float]
+    average_tokens_per_second: Optional[float]
 
     def to_string(self) -> str:
-        return STATISTICS_FORMAT.format(
+        s = STATISTICS_FORMAT.format(
             average_inference_latency_ms=self.average_inference_latency_ms,
             average_execution_time_per_image_ms=self.average_execution_time_per_image_ms
             or "N/A",
@@ -43,6 +46,9 @@ class InferenceStatistics:
             error_status_codes=self.error_status_codes,
             avg_remote_execution_time=self.avg_remote_execution_time or "N/A",
         )
+        if self.average_tokens_per_second is not None:
+            s += f" | vlm_ttft: {self.average_ttft_ms}ms | vlm_tpot: {self.average_tpot_ms}ms | tokens/s: {self.average_tokens_per_second}"
+        return s
 
 
 class ResultsCollector:
@@ -52,6 +58,7 @@ class ResultsCollector:
         self._inference_details: List[
             Tuple[datetime, int, float, Optional[float], Optional[float]]
         ] = []
+        self._vlm_details: List[Tuple[datetime, int, float, int]] = []
         self._benchmark_end: Optional[datetime] = None
         self._errors: List[Tuple[datetime, int, str]] = []
 
@@ -76,6 +83,9 @@ class ResultsCollector:
             )
         )
 
+    def register_vlm_generation(self, batch_size: int, ttft: float, tokens_generated: int) -> None:
+        self._vlm_details.append((datetime.now(), batch_size, ttft, tokens_generated))
+
     def register_error(self, batch_size: int, status_code: str) -> None:
         self._errors.append((datetime.now(), batch_size, status_code))
 
@@ -97,9 +107,11 @@ class ResultsCollector:
         stats = copy(
             self._inference_details
         )  # to have it stable in multi-threading env
+        vlm_stats = copy(self._vlm_details)
         errors = copy(self._errors)
         if window is not None:
             stats = stats[-window:]
+            vlm_stats = vlm_stats[-window:]
         latencies = [s[2] for s in stats]
         execution_times = [s[3] for s in stats if s[3] is not None]
         remote_execution_times = [s[4] for s in stats if s[4] is not None]
@@ -147,6 +159,25 @@ class ResultsCollector:
         duration = (end_time - start).total_seconds()
         requests_per_second = round(inferences_made / duration, 1)
         images_per_second = round(images_processed / duration, 1)
+
+        average_ttft_ms = None
+        average_tpot_ms = None
+        average_tokens_per_second = None
+
+        if len(vlm_stats) > 0:
+            ttfts = [s[2] for s in vlm_stats]
+            total_tokens = sum(s[3] for s in vlm_stats)
+
+            average_ttft_ms = round(np.average(ttfts) * 1000, 1)
+            
+            total_time_excluding_ttft = sum([s[2] for s in stats]) - sum(ttfts)
+            tokens_after_first = total_tokens - len(vlm_stats)
+            if tokens_after_first > 0 and total_time_excluding_ttft > 0:
+                average_tpot_ms = round((total_time_excluding_ttft / tokens_after_first) * 1000, 1)
+            
+            if duration > 0:
+                average_tokens_per_second = round(total_tokens / duration, 1)
+
         return InferenceStatistics(
             inferences_made=inferences_made,
             images_processed=images_processed,
@@ -166,4 +197,7 @@ class ResultsCollector:
                 f"{exc}: {count}" for exc, count in error_status_codes.items()
             ),
             avg_remote_execution_time=avg_remote_execution_time,
+            average_ttft_ms=average_ttft_ms,
+            average_tpot_ms=average_tpot_ms,
+            average_tokens_per_second=average_tokens_per_second,
         )

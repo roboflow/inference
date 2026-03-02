@@ -25,6 +25,8 @@ def run_inference_models_benchmark(
     model_package_id: Optional[str] = None,
     turn_images_to_tensors: bool = True,
     allow_untrusted_packages: bool = True,
+    prompt: Optional[str] = None,
+    stream: bool = False,
 ) -> None:
     inference_configuration = {}
     if model_configuration is not None:
@@ -32,11 +34,14 @@ def run_inference_models_benchmark(
     print(
         f"Inference will be executed with the following parameters: {inference_configuration}"
     )
-    AutoModel.describe_model(model_id=model_id, api_key=api_key)
-    if model_package_id:
-        AutoModel.describe_model_package(
-            model_id=model_id, package_id=model_package_id, api_key=api_key
-        )
+    try:
+        AutoModel.describe_model(model_id=model_id, api_key=api_key)
+        if model_package_id:
+            AutoModel.describe_model_package(
+                model_id=model_id, package_id=model_package_id, api_key=api_key
+            )
+    except Exception as e:
+        print(f"Could not fetch model profile from Roboflow API: {e}")
     if turn_images_to_tensors:
         images = [
             torch.from_numpy(np.ascontiguousarray(image[:, :, ::-1]))
@@ -56,6 +61,8 @@ def run_inference_models_benchmark(
         inference_configuration=inference_configuration,
         image=images[0],
         warm_up_inferences=warm_up_inferences,
+        prompt=prompt,
+        stream=stream,
     )
     run_benchmark(
         model=model,
@@ -64,6 +71,8 @@ def run_inference_models_benchmark(
         results_collector=results_collector,
         benchmark_inferences=benchmark_inferences,
         batch_size=batch_size,
+        prompt=prompt,
+        stream=stream,
     )
 
 
@@ -72,11 +81,27 @@ def run_model_warm_up(
     inference_configuration: Dict[str, Any],
     image: Union[np.ndarray, torch.Tensor],
     warm_up_inferences: int,
+    prompt: Optional[str] = None,
+    stream: bool = False,
 ) -> None:
+    if prompt is not None or stream:
+        print("Skipping warm-up for VLM...")
+        return
+        
+    import copy
+    kwargs = copy.deepcopy(inference_configuration)
+    if prompt is not None:
+        kwargs["prompt"] = prompt
+    if stream:
+        kwargs["stream"] = stream
     for _ in tqdm(
         range(warm_up_inferences), desc="Warming up model...", total=warm_up_inferences
     ):
-        _ = model(image, **inference_configuration)
+        result = model(image, **kwargs)
+        if stream and hasattr(result, "__iter__") and not isinstance(result, dict) and not isinstance(result, list):
+            for _ in result:
+                pass
+
 
 
 def run_benchmark(
@@ -86,16 +111,64 @@ def run_benchmark(
     results_collector: ResultsCollector,
     benchmark_inferences: int,
     batch_size: int,
+    prompt: Optional[str] = None,
+    stream: bool = False,
 ) -> None:
+    import copy
     while len(images) < batch_size:
         images = images + images
     results_collector.start_benchmark()
+    kwargs = copy.deepcopy(inference_configuration)
+    if prompt is not None:
+        kwargs["prompt"] = prompt
+    if stream:
+        kwargs["stream"] = stream
+        
     try:
         for _ in range(benchmark_inferences):
             random.shuffle(images)
             payload = images[:batch_size]
             start = time.time()
-            _ = model(payload, **inference_configuration)
+            if stream and prompt:
+                first_token = True
+                ttft_duration = 0.0
+                tokens_generated = 0
+                
+                if stream:
+                    print(f"\n[Prompt]: {prompt}\n[Output]: ", end="", flush=True)
+
+                generator = model(payload, **kwargs)
+                full_output = []
+                for token in generator:
+                    if first_token:
+                        ttft_duration = time.time() - start
+                        first_token = False
+                    
+                    tokens_generated += 1
+                    if stream:
+                        content = token
+                        # some generators yield strings, some yield objects with `text` or `content` attribute
+                        if hasattr(token, "text"):
+                            content = token.text
+                        elif hasattr(token, "content"):
+                            content = token.content
+                        elif isinstance(token, dict) and "text" in token:
+                            content = token["text"]
+                        
+                        full_output.append(content)
+                        print(content, end="", flush=True)
+                
+                with open("benchmark_vlm_output.txt", "a") as f:
+                    f.write(f"--- Prompt: {prompt} ---\n{''.join(full_output)}\n\n")
+
+                duration = time.time() - start
+                results_collector.register_vlm_generation(
+                    batch_size=batch_size, ttft=ttft_duration, tokens_generated=tokens_generated
+                )
+                if stream:
+                    print("\n" + "-"*40)
+            else:
+                _ = model(payload, **kwargs)
             duration = time.time() - start
             results_collector.register_inference_duration(
                 batch_size=batch_size, duration=duration

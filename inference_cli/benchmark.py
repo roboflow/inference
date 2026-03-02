@@ -250,6 +250,18 @@ def python_package_speed(
             help="Location where to save the result (path to file or directory)",
         ),
     ] = None,
+    prompt: Annotated[
+        Optional[str],
+        typer.Option(
+            "--prompt", "-p", help="Text prompt for Vision Language Models (VLMs)"
+        ),
+    ] = None,
+    stream: Annotated[
+        bool,
+        typer.Option(
+            "--stream", "-s", help="Enable to stream output from Text Generation models"
+        ),
+    ] = False,
 ):
     try:
         run_python_package_speed_benchmark(
@@ -261,6 +273,8 @@ def python_package_speed(
             api_key=api_key,
             model_configuration=model_configuration,
             output_location=output_location,
+            prompt=prompt,
+            stream=stream,
         )
     except KeyboardInterrupt:
         print("Benchmark interrupted.")
@@ -351,6 +365,18 @@ def inference_models_speed(
             "allowed to be loaded.",
         ),
     ] = True,
+    prompt: Annotated[
+        Optional[str],
+        typer.Option(
+            "--prompt", "-p", help="Text prompt for Vision Language Models (VLMs)"
+        ),
+    ] = None,
+    stream: Annotated[
+        bool,
+        typer.Option(
+            "--stream", "-s", help="Enable to stream output from Text Generation models"
+        ),
+    ] = False,
 ):
     try:
         run_inference_models_benchmark(
@@ -365,6 +391,8 @@ def inference_models_speed(
             model_package_id=model_package_id,
             turn_images_to_tensors=turn_images_to_tensors,
             allow_untrusted_packages=allow_untrusted_packages,
+            prompt=prompt,
+            stream=stream,
         )
     except KeyboardInterrupt:
         print("Benchmark interrupted.")
