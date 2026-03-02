@@ -116,6 +116,17 @@ class PlanDetails(SQLiteWrapper):
             api_keys_plans[api_key_hash] = cached_api_key_plan
         return api_keys_plans
 
+    def _get_default_plan(self, api_key_hash: str = "") -> Dict[str, Union[str, bool]]:
+        return {
+            self._ts_col_name: self._ts_default,
+            self._api_key_hash_col_name: api_key_hash,
+            self._is_enterprise_col_name: self._is_enterprise_default,
+            self._is_pro_col_name: self._is_pro_default,
+            self._is_trial_col_name: self._is_trial_default,
+            self._is_billed_col_name: self._is_billed_default,
+            self._over_quota_col_name: self._over_quota_default,
+        }
+
     def refresh_api_key_plan_cache(
         self, api_key: APIKey, sqlite_connection: Optional[sqlite3.Connection] = None
     ) -> Dict[str, Union[str, bool]]:
@@ -129,15 +140,7 @@ class PlanDetails(SQLiteWrapper):
         if api_key_hash in self.api_keys_plans:
             api_key_plan = self.api_keys_plans[api_key_hash]
         else:
-            api_key_plan = {
-                self._ts_col_name: self._ts_default,
-                self._api_key_hash_col_name: api_key_hash,
-                self._is_enterprise_col_name: self._is_enterprise_default,
-                self._is_pro_col_name: self._is_pro_default,
-                self._is_trial_col_name: self._is_trial_default,
-                self._is_billed_col_name: self._is_billed_default,
-                self._over_quota_col_name: self._over_quota_default,
-            }
+            api_key_plan = self._get_default_plan(api_key_hash)
 
         try:
             response = requests.get(
@@ -209,15 +212,7 @@ class PlanDetails(SQLiteWrapper):
         date_time_now: Optional[datetime.datetime] = None,
     ) -> Dict[str, Union[str, bool]]:
         if not api_key:
-            return {
-                self._ts_col_name: self._ts_default,
-                self._api_key_hash_col_name: "",
-                self._is_enterprise_col_name: self._is_enterprise_default,
-                self._is_pro_col_name: self._is_pro_default,
-                self._is_trial_col_name: self._is_trial_default,
-                self._is_billed_col_name: self._is_billed_default,
-                self._over_quota_col_name: self._over_quota_default,
-            }
+            return self._get_default_plan()
 
         if date_time_now is None:
             date_time_now = datetime.datetime.now(tz=datetime.timezone.utc)
