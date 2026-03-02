@@ -6,6 +6,7 @@ from inference.core.env import (
     WEBRTC_MODAL_TOKEN_ID,
     WEBRTC_MODAL_TOKEN_SECRET,
     WEBRTC_MODAL_USAGE_QUOTA_ENABLED,
+    WEBRTC_SESSION_HEARTBEAT_URL,
     WEBRTC_WORKSPACE_STREAM_QUOTA,
     WEBRTC_WORKSPACE_STREAM_QUOTA_ENABLED,
     WEBRTC_WORKSPACE_STREAM_TTL_SECONDS,
@@ -19,7 +20,7 @@ from inference.core.interfaces.webrtc_worker.entities import (
     WebRTCWorkerResult,
 )
 from inference.core.logger import logger
-from inference.core.roboflow_api import get_roboflow_workspace
+from inference.core.roboflow_api import get_roboflow_workspace_async
 
 
 async def start_worker(
@@ -56,10 +57,14 @@ async def start_worker(
                 raise CreditsExceededError("API key over quota")
 
         workspace_id = None
-        session_id = str(uuid.uuid4())
-        workspace_id = get_roboflow_workspace(api_key=webrtc_request.api_key)
-        webrtc_request.workspace_id = workspace_id
-        webrtc_request.session_id = session_id
+        session_id = None
+        if WEBRTC_WORKSPACE_STREAM_QUOTA_ENABLED or WEBRTC_SESSION_HEARTBEAT_URL:
+            session_id = str(uuid.uuid4())
+            workspace_id = await get_roboflow_workspace_async(
+                api_key=webrtc_request.api_key
+            )
+            webrtc_request.workspace_id = workspace_id
+            webrtc_request.session_id = session_id
 
         if WEBRTC_WORKSPACE_STREAM_QUOTA_ENABLED:
             if workspace_id and is_over_workspace_session_quota(
@@ -77,7 +82,7 @@ async def start_worker(
                     f"concurrent streams."
                 )
 
-            if workspace_id:
+            if workspace_id and session_id:
                 register_webrtc_session(
                     workspace_id=workspace_id,
                     session_id=session_id,
