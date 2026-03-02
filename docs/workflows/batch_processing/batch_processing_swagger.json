@@ -117,7 +117,10 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/WorkflowProcessingJobV1"
+                "oneOf": [
+                  {"$ref": "#/components/schemas/WorkflowProcessingJobV1"},
+                  {"$ref": "#/components/schemas/TRTCompilationJobV1"}
+                ]
               }
             }
           }
@@ -769,6 +772,50 @@
           "workflowId"
         ]
       },
+      "TRTCompilationDevice": {
+        "type": "string",
+        "enum": [
+          "nvidia-l4",
+          "nvidia-t4"
+        ]
+      },
+      "TRTCompilationJobV1": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "type",
+          "modelId"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "TRT_COMPILATION_V1"
+            ]
+          },
+          "modelId": {
+            "type": "string",
+            "pattern": "MODEL_ID_PATTERN"
+          },
+          "compilationDevices": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TRTCompilationDevice"
+            },
+            "minItems": 1,
+            "default": [
+              "nvidia-t4",
+              "nvidia-l4"
+            ]
+          },
+          "notificationsURL": {
+            "type": "string",
+            "nullable": true,
+            "default": null
+          }
+        }
+
+      },
       "WorkflowProcessingJobV1": {
         "type": "object",
         "properties": {
@@ -798,6 +845,14 @@
           },
           "notificationsURL": {
             "type": "string",
+            "nullable": true
+          },
+          "inferenceBackend": {
+            "type": "string",
+            "enum": [
+              "inference-models",
+              "old-inference"
+            ],
             "nullable": true
           }
         },
