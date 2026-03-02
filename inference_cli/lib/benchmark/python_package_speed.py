@@ -118,6 +118,18 @@ def run_benchmark(
             payload = images[:batch_size]
             start = time.time()
             if stream and prompt:
+                # VLMs do not support raw Numpy array ingest directly through standard pipeline decorators
+                import base64
+                from inference.core.utils.image_utils import encode_image_to_jpeg_bytes
+                
+                vlm_payload = []
+                for img in payload:
+                    jpeg_bytes = encode_image_to_jpeg_bytes(img)
+                    base64_str = base64.b64encode(jpeg_bytes).decode("utf-8")
+                    vlm_payload.append({"type": "base64", "value": base64_str})
+                
+                payload = vlm_payload
+
                 first_token = True
                 ttft_duration = 0.0
                 tokens_generated = 0
