@@ -165,9 +165,9 @@ RUN apt-get update -y && apt-get install -y \
     libsqlite3-dev \
     zlib1g-dev \
     liblzma-dev \
-    libavcodec-dev \
-    libavformat-dev \
-    libswscale-dev
+    libavcodec58 \
+    libavformat58 \
+    libswscale5
 
 RUN apt remove -y 'libnvinfer*' 'libnvonnxparsers*' 'libnvparsers*' 'libnvinfer-plugin*' 'python3-libnvinfer*' 'tensorrt*' 'uff-converter*' 'graphsurgeon*'
 
