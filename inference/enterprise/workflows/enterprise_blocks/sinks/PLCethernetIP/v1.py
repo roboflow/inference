@@ -79,7 +79,9 @@ class PLCBlockManifest(WorkflowBlockManifest):
     )
 
     tags_to_read: Union[
-        List[str], WorkflowParameterSelector(kind=[LIST_OF_VALUES_KIND])
+        List[str],
+        Selector(kind=[LIST_OF_VALUES_KIND]),
+        WorkflowParameterSelector(kind=[LIST_OF_VALUES_KIND]),
     ] = Field(
         default=[],
         description="List of PLC tag names to read. Applicable if mode='read' or mode='read_and_write'.",
