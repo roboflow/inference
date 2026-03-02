@@ -1,6 +1,8 @@
 from contextlib import contextmanager
 from typing import Any, Optional
 
+from redis.exceptions import LockNotOwnedError
+
 from inference.core import logger
 
 
@@ -103,9 +105,9 @@ class BaseCache:
             logger.debug(f"Releasing lock at cache key: {key}")
             try:
                 l.release()
-            except Exception as e:
-                # Lock may have expired before release (TTL elapsed)
-                logger.warning(f"Failed to release lock at cache key {key}: {e}")
+            except LockNotOwnedError:
+                # Lock TTL expired before release - this is expected in some cases
+                logger.warning(f"Lock at cache key {key} expired before release")
 
     def set_numpy(self, key: str, value: Any, expire: float = None):
         """
