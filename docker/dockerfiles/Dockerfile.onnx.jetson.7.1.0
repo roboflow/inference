@@ -7,7 +7,7 @@ ARG CMAKE_VERSION=4.2.0
 ARG PYTORCH_VERSION=2.10.0
 ARG TORCHVISION_VERSION=0.25.0
 ARG OPENCV_VERSION=4.10.0
-ARG ONNXRUNTIME_VERSION=1.21.0
+ARG ONNXRUNTIME_VERSION=1.24.2
 ENV LANG=en_US.UTF-8
 
 WORKDIR /build
@@ -132,15 +132,14 @@ RUN for i in 1 2 3; do \
     python3 -m pip install --break-system-packages dist/torchvision-*.whl
 
 # Build ONNX Runtime GPU from source with CUDA 13 and TensorRT 10.13 support
-# Using main branch (TOT) which has CUDA 13 fixes (PR #26153) and TensorRT 10.13 support
+# Pinned to v1.24.2 release tag (includes CUDA 13 fix PR #26153 and TensorRT 10.13 support)
 # No prebuilt ARM64 CUDA 13 packages available - must build from source
+# Parallel jobs limited to 8 to prevent OOM during flash attention CUDA kernel compilation
 WORKDIR /build/onnxruntime
-RUN git clone --recursive https://github.com/microsoft/onnxruntime.git && \
+RUN git clone --recursive --branch v${ONNXRUNTIME_VERSION} https://github.com/microsoft/onnxruntime.git && \
     cd onnxruntime && \
-    git submodule sync && \
-    git submodule update --init --recursive && \
     python3 -m pip install --break-system-packages -r requirements-dev.txt && \
-    ./build.sh --config Release --update --build --parallel \
+    ./build.sh --config Release --update --build --parallel 8 \
         --build_wheel \
         --allow_running_as_root \
         --compile_no_warning_as_error \
