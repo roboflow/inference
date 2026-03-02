@@ -102,6 +102,7 @@ def run_benchmark(
     prompt: Optional[str] = None,
     stream: bool = False,
 ) -> None:
+    import copy
     while len(images) < batch_size:
         images = images + images
     results_collector.start_benchmark()
