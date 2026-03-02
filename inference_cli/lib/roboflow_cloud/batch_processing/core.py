@@ -18,9 +18,10 @@ from inference_cli.lib.roboflow_cloud.batch_processing.api_operations import (
 from inference_cli.lib.roboflow_cloud.batch_processing.entities import (
     AggregationFormat,
     CompilationDevice,
+    InferenceBackend,
     LogSeverity,
     MachineSize,
-    MachineType, InferenceBackend,
+    MachineType,
 )
 from inference_cli.lib.roboflow_cloud.common import ensure_api_key_is_set
 

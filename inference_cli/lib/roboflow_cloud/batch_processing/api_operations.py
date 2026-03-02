@@ -22,6 +22,7 @@ from inference_cli.lib.roboflow_cloud.batch_processing.entities import (
     CompilationDevice,
     ComputeConfigurationV2,
     GetJobMetadataResponse,
+    InferenceBackend,
     JobLog,
     JobLogsResponse,
     JobMetadata,
@@ -35,7 +36,7 @@ from inference_cli.lib.roboflow_cloud.batch_processing.entities import (
     TaskStatus,
     TRTCompilationJobV1,
     WorkflowProcessingJobV1,
-    WorkflowsProcessingSpecificationV1, InferenceBackend,
+    WorkflowsProcessingSpecificationV1,
 )
 from inference_cli.lib.roboflow_cloud.common import (
     get_workspace,
