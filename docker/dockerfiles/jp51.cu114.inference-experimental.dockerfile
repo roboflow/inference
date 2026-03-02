@@ -1,4 +1,4 @@
-FROM roboflow/l4t-ml:r35.2.1-py3.12-cu118-trt-10-v0.0.1
+FROM roboflow/l4t-ml:r35.2.1-py3.12-cu118-trt-10-v0.0.2
 
 COPY requirements/requirements.clip.txt \
     requirements/requirements.http.txt \
