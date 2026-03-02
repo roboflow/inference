@@ -185,7 +185,8 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
 
         elif self.resize_method == "Fit (black edges) in":
             resized = letterbox_image(
-                preprocessed_image, intermediate_size or (self.img_size_w, self.img_size_h)
+                preprocessed_image,
+                intermediate_size or (self.img_size_w, self.img_size_h),
             )
         elif self.resize_method == "Fit (white edges) in":
             resized = letterbox_image(
@@ -749,7 +750,10 @@ class RFDETRInstanceSegmentation(
 
                 if self.resize_method != "Stretch to":
                     if self._needs_nonsquare_preproc:
-                        input_h, input_w = self._preproc_resize_h, self._preproc_resize_w
+                        input_h, input_w = (
+                            self._preproc_resize_h,
+                            self._preproc_resize_w,
+                        )
                     else:
                         input_h, input_w = self.img_size_h, self.img_size_w
                     mask_h, mask_w = mask.shape[0], mask.shape[1]
