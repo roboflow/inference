@@ -395,10 +395,11 @@ class RFDetrForObjectDetectionTorch(
             for out_box_tensor, image_metadata in zip(
                 model_results["pred_boxes"], pre_processing_meta
             ):
+                unpad_ref = image_metadata.nonsquare_intermediate_size or image_metadata.inference_size
                 box_center_offsets = torch.as_tensor(  # bboxes in format cxcywh now, so only cx, cy to be pushed
                     [
-                        image_metadata.pad_left / image_metadata.inference_size.width,
-                        image_metadata.pad_top / image_metadata.inference_size.height,
+                        image_metadata.pad_left / unpad_ref.width,
+                        image_metadata.pad_top / unpad_ref.height,
                         0.0,
                         0.0,
                     ],
@@ -407,10 +408,10 @@ class RFDetrForObjectDetectionTorch(
                 )
                 ox_padding = (
                     image_metadata.pad_left + image_metadata.pad_right
-                ) / image_metadata.inference_size.width
+                ) / unpad_ref.width
                 oy_padding = (
                     image_metadata.pad_top + image_metadata.pad_bottom
-                ) / image_metadata.inference_size.height
+                ) / unpad_ref.height
                 box_wh_offsets = torch.as_tensor(  # bboxes in format cxcywh now, so only cx, cy to be pushed
                     [
                         1.0 - ox_padding,

@@ -236,12 +236,13 @@ class RFDetrForObjectDetectionONNX(
             xy_min = cxcy - 0.5 * wh
             xy_max = cxcy + 0.5 * wh
             selected_boxes_xyxy_pct = torch.cat([xy_min, xy_max], dim=-1)
+            denorm_size = image_meta.nonsquare_intermediate_size or image_meta.inference_size
             inference_size_hwhw = torch.tensor(
                 [
-                    image_meta.inference_size.height,
-                    image_meta.inference_size.width,
-                    image_meta.inference_size.height,
-                    image_meta.inference_size.width,
+                    denorm_size.height,
+                    denorm_size.width,
+                    denorm_size.height,
+                    denorm_size.width,
                 ],
                 device=self._device,
             )
