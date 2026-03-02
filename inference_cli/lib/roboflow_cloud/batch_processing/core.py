@@ -20,7 +20,7 @@ from inference_cli.lib.roboflow_cloud.batch_processing.entities import (
     CompilationDevice,
     LogSeverity,
     MachineSize,
-    MachineType,
+    MachineType, InferenceBackend,
 )
 from inference_cli.lib.roboflow_cloud.common import ensure_api_key_is_set
 
@@ -222,6 +222,10 @@ def process_images_with_workflow(
             help="URL of the Webhook to be used for job state notifications.",
         ),
     ] = None,
+    inference_backend: Annotated[
+        Optional[InferenceBackend],
+        typer.Option("--inference-backend", "-ib", help="Inference backend to use"),
+    ] = None,
 ) -> None:
     if api_key is None:
         api_key = ROBOFLOW_API_KEY
@@ -251,6 +255,7 @@ def process_images_with_workflow(
             job_id=job_id,
             notifications_url=notifications_url,
             api_key=api_key,
+            inference_backend=inference_backend,
         )
         print(f"Triggered job with ID: {job_id}")
     except KeyboardInterrupt:
@@ -382,6 +387,10 @@ def process_videos_with_workflow(
             help="URL of the Webhook to be used for job state notifications.",
         ),
     ] = None,
+    inference_backend: Annotated[
+        Optional[InferenceBackend],
+        typer.Option("--inference-backend", "-ib", help="Inference backend to use"),
+    ] = None,
 ) -> None:
     if api_key is None:
         api_key = ROBOFLOW_API_KEY
@@ -412,6 +421,7 @@ def process_videos_with_workflow(
             job_id=job_id,
             notifications_url=notifications_url,
             api_key=api_key,
+            inference_backend=inference_backend,
         )
         print(f"Triggered job with ID: {job_id}")
     except KeyboardInterrupt:

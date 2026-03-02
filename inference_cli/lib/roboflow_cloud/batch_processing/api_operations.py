@@ -35,7 +35,7 @@ from inference_cli.lib.roboflow_cloud.batch_processing.entities import (
     TaskStatus,
     TRTCompilationJobV1,
     WorkflowProcessingJobV1,
-    WorkflowsProcessingSpecificationV1,
+    WorkflowsProcessingSpecificationV1, InferenceBackend,
 )
 from inference_cli.lib.roboflow_cloud.common import (
     get_workspace,
@@ -398,6 +398,7 @@ def trigger_job_with_workflows_images_processing(
     job_id: Optional[str],
     notifications_url: Optional[str],
     api_key: str,
+    inference_backend: Optional[InferenceBackend] = None,
 ) -> str:
     workspace = get_workspace(api_key=api_key)
     compute_configuration = ComputeConfigurationV2(
@@ -430,6 +431,7 @@ def trigger_job_with_workflows_images_processing(
         max_parallel_tasks=max_parallel_tasks,
         processing_specification=processing_specification,
         notifications_url=notifications_url,
+        inference_backend=inference_backend,
     )
     create_batch_job(
         workspace=workspace,
@@ -457,6 +459,7 @@ def trigger_job_with_workflows_videos_processing(
     job_id: Optional[str],
     notifications_url: Optional[str],
     api_key: str,
+    inference_backend: Optional[InferenceBackend] = None,
 ) -> str:
     workspace = get_workspace(api_key=api_key)
     compute_configuration = ComputeConfigurationV2(
@@ -490,6 +493,7 @@ def trigger_job_with_workflows_videos_processing(
         max_parallel_tasks=max_parallel_tasks,
         processing_specification=processing_specification,
         notifications_url=notifications_url,
+        inference_backend=inference_backend,
     )
     create_batch_job(
         workspace=workspace,
