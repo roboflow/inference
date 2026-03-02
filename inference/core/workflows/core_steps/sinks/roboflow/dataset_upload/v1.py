@@ -22,7 +22,7 @@ from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from functools import partial
-from typing import List, Literal, Optional, Tuple, Type, Union
+from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
 from uuid import uuid4
 
 import supervision as sv
@@ -365,6 +365,7 @@ def register_datapoint_at_roboflow(
     thread_pool_executor: Optional[ThreadPoolExecutor],
     api_key: str,
     image_name: Optional[str] = None,
+    metadata: Optional[Dict[str, Any]] = None,
 ) -> Tuple[bool, str]:
     registration_task = partial(
         execute_registration,
@@ -384,6 +385,7 @@ def register_datapoint_at_roboflow(
         cache=cache,
         api_key=api_key,
         image_name=image_name,
+        metadata=metadata,
     )
     if fire_and_forget and background_tasks:
         background_tasks.add_task(registration_task)
@@ -411,6 +413,7 @@ def execute_registration(
     cache: BaseCache,
     api_key: str,
     image_name: Optional[str] = None,
+    metadata: Optional[Dict[str, Any]] = None,
 ) -> Tuple[bool, str]:
     matching_strategies_limits = OrderedDict(
         {
@@ -462,6 +465,7 @@ def execute_registration(
             api_key=api_key,
             batch_name=batch_name,
             tags=registration_tags,
+            metadata=metadata,
         )
         if status == DUPLICATED_STATUS:
             credit_to_be_returned = True
@@ -540,6 +544,7 @@ def register_datapoint(
     api_key: str,
     batch_name: str,
     tags: List[str],
+    metadata: Optional[Dict[str, Any]] = None,
 ) -> str:
     inference_id = None
     if isinstance(prediction, dict):
@@ -559,6 +564,7 @@ def register_datapoint(
         batch_name=batch_name,
         tags=tags,
         inference_id=inference_id,
+        metadata=metadata,
     )
     if roboflow_image_id is None:
         return DUPLICATED_STATUS
@@ -585,6 +591,7 @@ def safe_register_image_at_roboflow(
     batch_name: str,
     tags: List[str],
     inference_id: Optional[str],
+    metadata: Optional[Dict[str, Any]] = None,
 ) -> Optional[str]:
     registration_response = register_image_at_roboflow(
         api_key=api_key,
@@ -594,6 +601,7 @@ def safe_register_image_at_roboflow(
         batch_name=batch_name,
         tags=tags,
         inference_id=inference_id,
+        metadata=metadata,
     )
     image_duplicated = registration_response.get("duplicate", False)
     if image_duplicated:
