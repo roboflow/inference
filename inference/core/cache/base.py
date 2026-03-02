@@ -101,7 +101,11 @@ class BaseCache:
             yield l
         finally:
             logger.debug(f"Releasing lock at cache key: {key}")
-            l.release()
+            try:
+                l.release()
+            except Exception as e:
+                # Lock may have expired before release (TTL elapsed)
+                logger.warning(f"Failed to release lock at cache key {key}: {e}")
 
     def set_numpy(self, key: str, value: Any, expire: float = None):
         """
