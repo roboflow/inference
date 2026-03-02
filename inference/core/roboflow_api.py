@@ -518,18 +518,17 @@ def register_image_at_roboflow(
     ]
     if inference_id is not None:
         params.append(("inference_id", inference_id))
-    if metadata is not None:
-        params.append(("metadata", json.dumps(metadata)))
     tags = tags if tags is not None else []
     for tag in tags:
         params.append(("tag", tag))
     wrapped_url = wrap_url(_add_params_to_url(url=url, params=params))
-    m = MultipartEncoder(
-        fields={
-            "name": f"{local_image_id}.jpg",
-            "file": ("imageToUpload", image_bytes, "image/jpeg"),
-        }
-    )
+    fields = {
+        "name": f"{local_image_id}.jpg",
+        "file": ("imageToUpload", image_bytes, "image/jpeg"),
+    }
+    if metadata is not None:
+        fields["metadata"] = json.dumps(metadata)
+    m = MultipartEncoder(fields=fields)
     headers = build_roboflow_api_headers(
         explicit_headers={"Content-Type": m.content_type},
     )

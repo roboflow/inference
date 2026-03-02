@@ -593,7 +593,7 @@ def test_run_sink_with_metadata_parameter(
     ], "Expected data registered"
     assert register_datapoint_at_roboflow_mock.call_count == 2
 
-    # Verify metadata was passed correctly
+    # Verify per-image metadata was passed correctly
     calls = register_datapoint_at_roboflow_mock.call_args_list
     assert calls[0].kwargs["metadata"] == metadata_1
     assert calls[1].kwargs["metadata"] == metadata_2
