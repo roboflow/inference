@@ -167,7 +167,8 @@ RUN apt-get update -y && apt-get install -y \
     liblzma-dev \
     libavcodec58 \
     libavformat58 \
-    libswscale5
+    libswscale5 \
+    ffmpeg
 
 RUN apt remove -y 'libnvinfer*' 'libnvonnxparsers*' 'libnvparsers*' 'libnvinfer-plugin*' 'python3-libnvinfer*' 'tensorrt*' 'uff-converter*' 'graphsurgeon*'
 
