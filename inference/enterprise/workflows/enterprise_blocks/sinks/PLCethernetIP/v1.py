@@ -11,6 +11,7 @@ from inference.core.workflows.execution_engine.entities.base import (
     WorkflowImageData,
 )
 from inference.core.workflows.execution_engine.entities.types import (
+    DICTIONARY_KIND,
     LIST_OF_VALUES_KIND,
     STRING_KIND,
     Selector,
@@ -87,7 +88,8 @@ class PLCBlockManifest(WorkflowBlockManifest):
 
     tags_to_write: Union[
         Dict[str, Union[int, float, str]],
-        WorkflowParameterSelector(kind=[LIST_OF_VALUES_KIND]),
+        Selector(kind=[DICTIONARY_KIND]),
+        WorkflowParameterSelector(kind=[DICTIONARY_KIND]),
     ] = Field(
         default={},
         description="Dictionary of tags and the values to write. Applicable if mode='write' or mode='read_and_write'.",
