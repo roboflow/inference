@@ -134,9 +134,9 @@ class DispatchModelManager(ModelManager):
             response.time = perf_counter() - t
             responses.append(response)
 
-        if list_mode:
-            return responses
-        return responses[0]
+        if not list_mode and isinstance(responses, list) and len(responses) > 0:
+            return responses[0]
+        return responses
 
     def add_model(
         self,

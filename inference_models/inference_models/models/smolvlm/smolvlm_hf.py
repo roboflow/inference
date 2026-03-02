@@ -164,7 +164,7 @@ class SmolVLMHF:
         do_sample: bool = INFERENCE_MODELS_SMOL_VLM_DEFAULT_DO_SAMPLE,
         skip_special_tokens: bool = INFERENCE_MODELS_SMOL_VLM_DEFAULT_SKIP_SPECIAL_TOKENS,
         **kwargs,
-    ) -> List[str]:
+    ) -> Union[List[str], Any]:
         prompt = prompt or "Describe what's in this image."
         inputs = self.pre_process_generation(
             images=images,
@@ -172,15 +172,39 @@ class SmolVLMHF:
             images_to_single_prompt=images_to_single_prompt,
             input_color_format=input_color_format,
         )
-        generated_ids = self.generate(
-            inputs=inputs,
-            max_new_tokens=max_new_tokens,
-            do_sample=do_sample,
+        stream = kwargs.get("stream", False)
+        if not stream:
+            generated_ids = self.generate(
+                inputs=inputs,
+                max_new_tokens=max_new_tokens,
+                do_sample=do_sample,
+            )
+            return self.post_process_generation(
+                generated_ids=generated_ids,
+                skip_special_tokens=skip_special_tokens,
+            )
+
+        from transformers import TextIteratorStreamer
+        from threading import Thread
+
+        streamer = TextIteratorStreamer(
+            self._processor.tokenizer if hasattr(self._processor, "tokenizer") else self._processor,
+            skip_prompt=True,
+            skip_special_tokens=skip_special_tokens
         )
-        return self.post_process_generation(
-            generated_ids=generated_ids,
-            skip_special_tokens=skip_special_tokens,
-        )
+
+        def generate_with_stream():
+            self.generate(
+                inputs=inputs,
+                max_new_tokens=max_new_tokens,
+                do_sample=do_sample,
+                streamer=streamer,
+            )
+
+        thread = Thread(target=generate_with_stream)
+        thread.start()
+
+        return streamer
 
     def pre_process_generation(
         self,
@@ -265,14 +289,14 @@ class SmolVLMHF:
         do_sample: bool = INFERENCE_MODELS_SMOL_VLM_DEFAULT_DO_SAMPLE,
         **kwargs,
     ) -> torch.Tensor:
-        with self._lock:
-            generation = self._model.generate(
-                **inputs,
-                do_sample=do_sample,
-                max_new_tokens=max_new_tokens,
-                pad_token_id=self._processor.tokenizer.pad_token_id,
-                eos_token_id=self._processor.tokenizer.eos_token_id,
-            )
+        generation = self._model.generate(
+            **inputs,
+            do_sample=do_sample,
+            max_new_tokens=max_new_tokens,
+            pad_token_id=self._processor.tokenizer.pad_token_id,
+            eos_token_id=self._processor.tokenizer.eos_token_id,
+            **kwargs,
+        )
         input_len = inputs["input_ids"].shape[-1]
         return generation[:, input_len:]
 

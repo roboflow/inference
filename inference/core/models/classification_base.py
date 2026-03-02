@@ -290,7 +290,7 @@ class ClassificationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
             for response in responses:
                 response.visualization = self.draw_predictions(request, response)
 
-        if not isinstance(request.image, list):
+        if not isinstance(request.image, list) and isinstance(responses, list) and len(responses) > 0:
             responses = responses[0]
 
         return responses

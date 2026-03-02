@@ -167,13 +167,23 @@ class ResultsCollector:
         if len(vlm_stats) > 0:
             ttfts = [s[2] for s in vlm_stats]
             total_tokens = sum(s[3] for s in vlm_stats)
-
             average_ttft_ms = round(np.average(ttfts) * 1000, 1)
             
-            total_time_excluding_ttft = sum([s[2] for s in stats]) - sum(ttfts)
-            tokens_after_first = total_tokens - len(vlm_stats)
-            if tokens_after_first > 0 and total_time_excluding_ttft > 0:
-                average_tpot_ms = round((total_time_excluding_ttft / tokens_after_first) * 1000, 1)
+            # Find matching inference durations to calculate TPOT
+            # stats is a list of (timestamp, batch_size, duration, execution_time, remote_execution_time)
+            # vlm_stats is a list of (timestamp, batch_size, ttft, tokens_generated)
+            # We assume they are appended in order.
+            tpots = []
+            for i in range(min(len(stats), len(vlm_stats))):
+                inf_duration = stats[i][2]
+                ttft = vlm_stats[i][2]
+                tokens = vlm_stats[i][3]
+                if tokens > 1 and inf_duration > ttft:
+                    tpot = (inf_duration - ttft) / (tokens - 1)
+                    tpots.append(tpot)
+            
+            if tpots:
+                average_tpot_ms = round(np.average(tpots) * 1000, 1)
             
             if duration > 0:
                 average_tokens_per_second = round(total_tokens / duration, 1)

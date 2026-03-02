@@ -1,4 +1,5 @@
 import random
+import os
 import time
 from typing import Any, Dict, List, Optional, Union
 
@@ -28,6 +29,7 @@ def run_inference_models_benchmark(
     prompt: Optional[str] = None,
     stream: bool = False,
 ) -> None:
+    os.environ["ALLOW_REPORTING"] = "False"
     inference_configuration = {}
     if model_configuration is not None:
         inference_configuration = read_yaml_file(file_path=model_configuration)
@@ -42,7 +44,8 @@ def run_inference_models_benchmark(
             )
     except Exception as e:
         print(f"Could not fetch model profile from Roboflow API: {e}")
-    if turn_images_to_tensors:
+    is_vlm = prompt is not None or stream
+    if turn_images_to_tensors and not is_vlm:
         images = [
             torch.from_numpy(np.ascontiguousarray(image[:, :, ::-1]))
             .permute(2, 0, 1)
@@ -56,14 +59,15 @@ def run_inference_models_benchmark(
         allow_untrusted_packages=allow_untrusted_packages,
         device=DEFAULT_DEVICE,
     )
-    run_model_warm_up(
-        model=model,
-        inference_configuration=inference_configuration,
-        image=images[0],
-        warm_up_inferences=warm_up_inferences,
-        prompt=prompt,
-        stream=stream,
-    )
+    if not is_vlm:
+        run_model_warm_up(
+            model=model,
+            inference_configuration=inference_configuration,
+            image=images[0],
+            warm_up_inferences=warm_up_inferences,
+            prompt=prompt,
+            stream=stream,
+        )
     run_benchmark(
         model=model,
         inference_configuration=inference_configuration,
@@ -130,25 +134,6 @@ def run_benchmark(
             payload = images[:batch_size]
             start = time.time()
             if stream and prompt:
-                # VLMs do not support raw Numpy array ingest directly through standard pipeline decorators
-                import base64
-                from inference.core.utils.image_utils import encode_image_to_jpeg_bytes
-                
-                vlm_payload = []
-                for img in payload:
-                    # Depending on initialization in this specific script images could be torch tensors
-                    import numpy as np
-                    if hasattr(img, "cpu"):
-                        img = img.cpu().numpy()
-                        if img.ndim == 3 and img.shape[0] in [1, 3]:
-                            img = np.transpose(img, (1, 2, 0)) # CHW to HWC
-                    
-                    jpeg_bytes = encode_image_to_jpeg_bytes(img)
-                    base64_str = base64.b64encode(jpeg_bytes).decode("utf-8")
-                    vlm_payload.append({"type": "base64", "value": base64_str})
-                
-                payload = vlm_payload[0] if len(vlm_payload) == 1 else vlm_payload
-
                 first_token = True
                 ttft_duration = 0.0
                 tokens_generated = 0
@@ -156,15 +141,30 @@ def run_benchmark(
                 if stream:
                     print(f"\n[Prompt]: {prompt}\n[Output]: ", end="", flush=True)
 
-                generator = model(payload, **kwargs)
-                full_output = []
-                for token in generator:
-                    if first_token:
-                        ttft_duration = time.time() - start
-                        first_token = False
-                    
-                    tokens_generated += 1
+                if hasattr(model, "prompt"):
+                    # Inference Models API wrappers (SmolVLMHF, etc)
+                    start_prompt = time.time()
+                    result = model.prompt(images=payload, **kwargs)
                     if stream:
+                        generator = result
+                    else:
+                        responses = result
+                        full_output = [responses[0]] if isinstance(responses, list) and len(responses) > 0 else []
+                        duration = time.time() - start
+                        ttft_duration = duration # No streaming, so TTFT = total duration
+                        tokens_generated = len(full_output[0].split()) if len(full_output) > 0 else 1
+                        generator = [] # dummy for skipped loop
+                else:
+                    # Core API wrappers
+                    generator = model.infer(payload, **kwargs)
+                
+                if stream:
+                    full_output = []
+                    for token in generator:
+                        if first_token:
+                            ttft_duration = time.time() - start
+                            first_token = False
+                        
                         content = token
                         # some generators yield strings, some yield objects with `text` or `content` attribute
                         if hasattr(token, "text"):
@@ -175,22 +175,31 @@ def run_benchmark(
                             content = token["text"]
                         
                         full_output.append(content)
+                        # We will count tokens at the end for better accuracy if chunks are combined
                         print(content, end="", flush=True)
-                
+                    
+                    duration = time.time() - start
+                    # Estimate tokens from word count if it looks like we got combined chunks
+                    # Roughly 1 word = 1.3 tokens is a common heuristic, but for simplicity 
+                    # we will just use word count which is better than '1'
+                    tokens_generated = len("".join(full_output).split())
+
                 with open("benchmark_vlm_output.txt", "a") as f:
                     f.write(f"--- Prompt: {prompt} ---\n{''.join(full_output)}\n\n")
 
-                duration = time.time() - start
                 results_collector.register_vlm_generation(
                     batch_size=batch_size, ttft=ttft_duration, tokens_generated=tokens_generated
+                )
+                results_collector.register_inference_duration(
+                    batch_size=batch_size, duration=duration
                 )
                 if stream:
                     print("\n" + "-"*40)
             else:
                 _ = model(payload, **kwargs)
-            duration = time.time() - start
-            results_collector.register_inference_duration(
-                batch_size=batch_size, duration=duration
-            )
+                duration = time.time() - start
+                results_collector.register_inference_duration(
+                    batch_size=batch_size, duration=duration
+                )
     finally:
         results_collector.stop_benchmark()

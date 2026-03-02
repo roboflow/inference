@@ -127,7 +127,12 @@ class TransformerModel(RoboflowInferenceModel):
         preprocess_return_metadata: PreprocessReturnMetadata,
         **kwargs,
     ) -> LMMInferenceResponse:
-        text = predictions[0]
+        text = predictions
+        if isinstance(predictions, (list, tuple)) and len(predictions) > 0:
+            text = predictions[0]
+        if not isinstance(text, str):
+            # If it's a generator, we bypass validation
+            return text
         image_dims = preprocess_return_metadata["image_dims"]
         response = LMMInferenceResponse(
             response=text,

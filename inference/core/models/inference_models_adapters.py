@@ -667,7 +667,7 @@ class InferenceModelsClassificationAdapter(Model):
                     request, response, self.class_names
                 )
 
-        if not isinstance(request.image, list):
+        if not isinstance(request.image, list) and isinstance(responses, list) and len(responses) > 0:
             responses = responses[0]
 
         return responses

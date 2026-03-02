@@ -363,3 +363,8 @@ def display_benchmark_statistics(
             continue
         print(statistics.to_string())
         time.sleep(sleep_time)
+    
+    # Print the final statistics once the benchmark is declared finished
+    final_statistics = results_collector.get_statistics()
+    if final_statistics is not None:
+        print(final_statistics.to_string())

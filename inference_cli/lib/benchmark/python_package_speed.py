@@ -1,4 +1,5 @@
 import random
+import os
 import time
 from typing import Any, Dict, List, Optional
 
@@ -24,6 +25,7 @@ def run_python_package_speed_benchmark(
     prompt: Optional[str] = None,
     stream: bool = False,
 ) -> None:
+    os.environ["ALLOW_REPORTING"] = "False"
     inference_configuration = {}
     if model_configuration is not None:
         inference_configuration = read_yaml_file(file_path=model_configuration)
@@ -144,26 +146,32 @@ def run_benchmark(
                         ttft_duration = time.time() - start
                         first_token = False
                     
-                    tokens_generated += 1
+                    content = token
+                    # some generators yield strings, some yield objects with `text` or `content` attribute
+                    if hasattr(token, "text"):
+                        content = token.text
+                    elif hasattr(token, "content"):
+                        content = token.content
+                    elif isinstance(token, dict) and "text" in token:
+                        content = token["text"]
+                    
+                    full_output.append(content)
                     if stream:
-                        content = token
-                        # some generators yield strings, some yield objects with `text` or `content` attribute
-                        if hasattr(token, "text"):
-                            content = token.text
-                        elif hasattr(token, "content"):
-                            content = token.content
-                        elif isinstance(token, dict) and "text" in token:
-                            content = token["text"]
-                        
-                        full_output.append(content)
                         print(content, end="", flush=True)
                 
+                duration = time.time() - start
+                # Estimate tokens from word count if it looks like we got combined chunks
+                # Roughly 1 word = 1.3 tokens is a common heuristic, but for simplicity 
+                # we will just use word count which is better than '1'
+                tokens_generated = len("".join(full_output).split())
                 with open("benchmark_vlm_output.txt", "a") as f:
                     f.write(f"--- Prompt: {prompt} ---\n{''.join(full_output)}\n\n")
 
-                duration = time.time() - start
                 results_collector.register_vlm_generation(
                     batch_size=batch_size, ttft=ttft_duration, tokens_generated=tokens_generated
+                )
+                results_collector.register_inference_duration(
+                    batch_size=batch_size, duration=duration
                 )
                 if stream:
                     print("\n" + "-"*40)
@@ -171,8 +179,8 @@ def run_benchmark(
                 for _ in model.infer(payload, **kwargs):
                     pass
                 duration = time.time() - start
-            results_collector.register_inference_duration(
-                batch_size=batch_size, duration=duration
-            )
+                results_collector.register_inference_duration(
+                    batch_size=batch_size, duration=duration
+                )
     finally:
         results_collector.stop_benchmark()

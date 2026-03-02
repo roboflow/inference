@@ -28,7 +28,15 @@ class SmolVLM(TransformerModel):
             kwargs["model_id"] = self.endpoint
         super().__init__(*args, **kwargs)
 
-    def predict(self, image_in: Image.Image, prompt="", history=None, **kwargs):
+    def predict(
+        self,
+        image_in: Image.Image,
+        prompt="",
+        history=None,
+        stream=False,
+        stream_callback=None,
+        **kwargs,
+    ):
         prompt = prompt or "Describe what's in this image."
         messages = [
             {
@@ -48,14 +56,37 @@ class SmolVLM(TransformerModel):
             return_tensors="pt",
         ).to(self.model.device, dtype=torch.bfloat16)
 
-        generated_ids = self.model.generate(
-            **inputs, do_sample=False, max_new_tokens=64
+        if not stream:
+            generated_ids = self.model.generate(
+                **inputs, do_sample=False, max_new_tokens=64
+            )
+            generated_texts = self.processor.batch_decode(
+                generated_ids,
+                skip_special_tokens=True,
+            )
+            return generated_texts
+
+        from transformers import TextIteratorStreamer
+
+        streamer = TextIteratorStreamer(
+            self.processor, skip_prompt=True, skip_special_tokens=True
         )
-        generated_texts = self.processor.batch_decode(
-            generated_ids,
-            skip_special_tokens=True,
-        )
-        return generated_texts
+
+        def generate_with_stream():
+            self.model.generate(**inputs, streamer=streamer, max_new_tokens=64)
+
+        from threading import Thread
+
+        thread = Thread(target=generate_with_stream)
+        thread.start()
+
+        def stream_generator():
+            for new_text in streamer:
+                if stream_callback:
+                    stream_callback(new_text)
+                yield new_text
+
+        return stream_generator()
 
 
 class LoRASmolVLM(LoRATransformerModel):
@@ -145,7 +176,14 @@ class LoRASmolVLM(LoRATransformerModel):
                 os.path.join(MODEL_CACHE_DIR, "lora-bases/smolvlm2/main")
             )
 
-    def predict(self, image_in: Image.Image, prompt="", **kwargs):
+    def predict(
+        self,
+        image_in: Image.Image,
+        prompt="",
+        stream=False,
+        stream_callback=None,
+        **kwargs,
+    ):
         prompt = prompt or "Describe what's in this image."
         conversation = [
             {
@@ -172,26 +210,59 @@ class LoRASmolVLM(LoRATransformerModel):
                 if v.dtype != torch.int64 and v.dtype != torch.int32:
                     model_inputs[k] = v.to(self.model.device, dtype=self.dtype)
 
-        input_len = model_inputs["input_ids"].shape[-1]
+        if not stream:
+            with torch.inference_mode():
+                generation = self.model.generate(
+                    **model_inputs,
+                    max_new_tokens=1024,
+                    do_sample=False,
+                    pad_token_id=self.processor.tokenizer.pad_token_id,
+                    eos_token_id=self.processor.tokenizer.eos_token_id,
+                )
+            input_len = model_inputs["input_ids"].shape[-1]
+            if self.generation_includes_input:
+                generation = generation[:, input_len:]
 
-        with torch.inference_mode():
-            generation = self.model.generate(
-                **model_inputs,
-                max_new_tokens=1024,
-                do_sample=False,
-                pad_token_id=self.processor.tokenizer.pad_token_id,
-                eos_token_id=self.processor.tokenizer.eos_token_id,
+            decoded = self.processor.decode(
+                generation[0],
+                skip_special_tokens=self.skip_special_tokens,
             )
-        if self.generation_includes_input:
-            generation = generation[:, input_len:]
 
-        decoded = self.processor.decode(
-            generation[0],
-            skip_special_tokens=self.skip_special_tokens,
+            parts = decoded.split("Assistant: ")
+            if len(parts) > 1:
+                decoded = parts[-1].strip()
+
+            return (decoded,)
+
+        from transformers import TextIteratorStreamer
+
+        streamer = TextIteratorStreamer(
+            self.processor, skip_prompt=True, skip_special_tokens=True
         )
 
-        parts = decoded.split("Assistant: ")
-        if len(parts) > 1:
-            decoded = parts[-1].strip()
+        def generate_with_stream():
+            with torch.inference_mode():
+                self.model.generate(
+                    **model_inputs,
+                    streamer=streamer,
+                    max_new_tokens=1024,
+                    do_sample=False,
+                    pad_token_id=self.processor.tokenizer.pad_token_id,
+                    eos_token_id=self.processor.tokenizer.eos_token_id,
+                )
 
-        return (decoded,)
+        from threading import Thread
+
+        thread = Thread(target=generate_with_stream)
+        thread.start()
+
+        def stream_generator():
+            for new_text in streamer:
+                # The model output format for LoRASmolVLM often includes "Assistant: "
+                # But when streaming, we want to skip it if it's there.
+                # However, for simplicity and to match the existing post-processing:
+                if stream_callback:
+                    stream_callback(new_text)
+                yield new_text
+
+        return stream_generator()
