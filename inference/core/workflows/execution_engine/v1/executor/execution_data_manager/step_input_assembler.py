@@ -389,10 +389,6 @@ def prepare_parameters(
                 step_requests_batch_input=step_requests_batch_input,
             )
             compound_inputs.add(parameter_name)
-            if isinstance(result[parameter_name], dict):
-                result[parameter_name] = _transpose_dict_of_batches_if_needed(
-                    result[parameter_name],
-                )
         else:
             (
                 result[parameter_name],
@@ -442,33 +438,6 @@ def prepare_parameters(
         indices=indices,
         parameters=result,
     )
-
-
-def _transpose_dict_of_batches_if_needed(
-    value: Dict[str, Any],
-) -> Union[Dict[str, Any], Batch]:
-    """Transpose a dict-of-Batches into a Batch-of-dicts.
-
-    Compound dict inputs are resolved as {"key1": Batch([...]), "key2": Batch([...])}.
-    Batch-mode blocks expect Batch[Dict] instead. This function detects dicts containing
-    Batch values and transposes them so each batch element is a complete dict.
-    If no Batch values are present, returns the dict unchanged.
-    """
-    batch_entries = {k: v for k, v in value.items() if isinstance(v, Batch)}
-    if not batch_entries:
-        return value
-    non_batch_entries = {k: v for k, v in value.items() if not isinstance(v, Batch)}
-    first_batch = next(iter(batch_entries.values()))
-    indices = first_batch.indices
-    length = len(first_batch)
-    content = []
-    for i in range(length):
-        entry = {}
-        for k, batch_val in batch_entries.items():
-            entry[k] = batch_val[i]
-        entry.update(non_batch_entries)
-        content.append(entry)
-    return Batch(content=content, indices=indices)
 
 
 def get_compound_parameter_value(

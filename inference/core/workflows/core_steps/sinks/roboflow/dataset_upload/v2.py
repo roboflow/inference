@@ -290,7 +290,7 @@ class RoboflowDatasetUploadBlockV2(WorkflowBlock):
         labeling_batch_prefix: str,
         labeling_batches_recreation_frequency: BatchCreationFrequency,
         image_name: Optional[Batch[Optional[str]]] = None,
-        metadata: Optional[Batch[Optional[Dict[str, Any]]]] = None,
+        metadata: Optional[Dict[str, Any]] = None,
     ) -> BlockResult:
         if self._api_key is None:
             raise ValueError(
@@ -310,9 +310,7 @@ class RoboflowDatasetUploadBlockV2(WorkflowBlock):
         result = []
         predictions = [None] * len(images) if predictions is None else predictions
         image_names = [None] * len(images) if image_name is None else image_name
-        metadata_values = (
-            [None] * len(images) if metadata is None else [m or None for m in metadata]
-        )
+        metadata_values = _transpose_metadata_batches(metadata, len(images))
         for image, prediction, img_name, meta in zip(
             images, predictions, image_names, metadata_values
         ):
@@ -341,6 +339,31 @@ class RoboflowDatasetUploadBlockV2(WorkflowBlock):
             )
             result.append({"error_status": error_status, "message": message})
         return result
+
+
+def _transpose_metadata_batches(
+    metadata: Optional[Dict[str, Any]],
+    batch_size: int,
+) -> List[Optional[Dict[str, Any]]]:
+    """Transpose a metadata dict that may contain Batch values into per-image dicts.
+
+    Compound dict inputs are resolved as {"key1": Batch([...]), "key2": "static"}.
+    This converts them into a list of dicts, one per batch element.
+    If no Batch values are present, the dict is repeated for each element.
+    """
+    if not metadata:
+        return [None] * batch_size
+    batch_entries = {k: v for k, v in metadata.items() if isinstance(v, Batch)}
+    non_batch_entries = {k: v for k, v in metadata.items() if not isinstance(v, Batch)}
+    if not batch_entries:
+        return [dict(metadata) for _ in range(batch_size)]
+    result = []
+    for i in range(batch_size):
+        entry = dict(non_batch_entries)
+        for k, batch_val in batch_entries.items():
+            entry[k] = batch_val[i]
+        result.append(entry)
+    return result
 
 
 def maybe_register_datapoint_at_roboflow(
