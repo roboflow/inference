@@ -352,12 +352,10 @@ def _transpose_metadata_batches(
     - Batch[Dict]: engine already wrapped it, unwrap directly
     - Dict with possible Batch values inside: transpose into per-element dicts
     """
-    if metadata is None:
+    if not metadata:
         return [None] * batch_size
     if isinstance(metadata, Batch):
         return [m or None for m in metadata]
-    if not metadata:
-        return [None] * batch_size
     batch_entries = {k: v for k, v in metadata.items() if isinstance(v, Batch)}
     non_batch_entries = {k: v for k, v in metadata.items() if not isinstance(v, Batch)}
     if not batch_entries:
