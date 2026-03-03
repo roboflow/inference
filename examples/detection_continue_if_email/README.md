@@ -6,19 +6,20 @@ This example runs the workflow: **image → object detection → continue_if →
 - **ContinueIf**: condition “at least one bounding box” (e.g. `len(predictions) >= 1`).
 - **Email**: if the condition passes, the email notification step runs (e.g. “Found detections for this image”).
 
+Workflow definitions live as JSON files in **`workflows/`**. The script loads a workflow by name and always runs it through **ExecutionEngine.init** (then **run**). The problematic workflow raises **ControlFlowDefinitionError** during init, so you can debug that path interactively.
+
+## Workflow files
+
+| File | Description |
+|------|-------------|
+| **workflow_with_workaround.json** | Email has `message_parameters.predictions` referencing detection so input lineage matches control-flow lineage; compiles and runs. |
+| **workflow_problematic.json** | Email has no data input from detection; **ControlFlowDefinitionError** during ExecutionEngine.init. |
+
 ## The “problematic” case and workaround
 
-If the email step has **no** input that references the detection step (e.g. only static `subject`, `message`, `receiver_email`), the workflow compiler raises **`ControlFlowDefinitionError`**: the control-flow step (ContinueIf) is based on detection’s lineage, but the email step would have empty input lineage, so the compiler rejects it.
+If the email step has **no** input that references the detection step (e.g. only static `subject`, `message`, `receiver_email`), the workflow compiler raises **`ControlFlowDefinitionError`** during init: the control-flow step (ContinueIf) is based on detection’s lineage, but the email step would have empty input lineage.
 
-**Workaround:** Give the email step at least one input that carries the same lineage as the control flow, e.g.:
-
-```json
-"message_parameters": {
-  "predictions": "$steps.detection.predictions"
-}
-```
-
-The example uses this workaround so the workflow compiles and runs. You can still use the message body to describe whether detections were found (e.g. via `{{ $parameters.predictions }}` in the message template).
+**Workaround:** In the workflow JSON, give the email step e.g. `"message_parameters": { "predictions": "$steps.detection.predictions" }` so the compiler sees matching lineage.
 
 ## Requirements
 
@@ -33,20 +34,22 @@ From the repo root:
 ```bash
 export ROBOFLOW_API_KEY="your-api-key"
 
-# Run with default image (small placeholder) or pass a path/URL
+# Run the workaround workflow (default)
 python examples/detection_continue_if_email/run_workflow.py
 
-# Optional: use your own image
-python examples/detection_continue_if_email/run_workflow.py --image path/to/image.jpg
+# Run a specific workflow by name (filename without .json)
+python examples/detection_continue_if_email/run_workflow.py --workflow workflow_with_workaround
+python examples/detection_continue_if_email/run_workflow.py --workflow workflow_problematic
 
-# Optional: demonstrate the compilation error (no email workaround)
-python examples/detection_continue_if_email/run_workflow.py --demonstrate-error
+# Optional: use your own image
+python examples/detection_continue_if_email/run_workflow.py --workflow workflow_with_workaround --image path/to/image.jpg
 ```
+
+Both workflows go through **ExecutionEngine.init**; the problematic one will raise **ControlFlowDefinitionError** there so you can debug interactively.
 
 ## Email configuration
 
-- The script uses **Roboflow Managed API Key** for email by default (no SMTP setup).
-- Set **receiver_email** in the workflow or script to an address you control if you want to receive the notification.
+- Workflow JSON uses **Roboflow Managed API Key** for email by default. Edit **receiver_email** in the JSON if you want to receive the notification.
 - If you don’t set a valid receiver or API key, the email step may log an error but the workflow still runs; detection and ContinueIf are unaffected.
 
 ## Output
