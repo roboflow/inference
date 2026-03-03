@@ -47,6 +47,13 @@ python examples/detection_continue_if_email/run_workflow.py --workflow workflow_
 
 Both workflows go through **ExecutionEngine.init**; the problematic one will raise **ControlFlowDefinitionError** there so you can debug interactively.
 
+## Email: dry-run vs actually sending
+
+The workflows expose a **`dry_run`** input (default `true`) wired to the email step’s **`disable_sink`**. When `dry_run` is true, the email step still runs and produces output (e.g. `error_status`, `message`) but **does not send** any email.
+
+- **Default:** `dry_run: true` → output only, no mail sent.
+- **To send:** run with `--send-email` (passes `dry_run: false`), or override `dry_run` in your own runtime parameters.
+
 ## Email configuration
 
 - Workflow JSON uses **Roboflow Managed API Key** for email by default. Edit **receiver_email** in the JSON if you want to receive the notification.

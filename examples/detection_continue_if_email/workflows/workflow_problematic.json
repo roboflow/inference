@@ -1,7 +1,8 @@
 {
   "version": "1.0",
   "inputs": [
-    {"type": "WorkflowImage", "name": "image"}
+    {"type": "WorkflowImage", "name": "image"},
+    {"type": "WorkflowParameter", "name": "dry_run", "default_value": true}
   ],
   "steps": [
     {
@@ -40,7 +41,8 @@
       "name": "email_notification",
       "subject": "Workflow: detections found",
       "receiver_email": "noreply@example.com",
-      "message": "At least one detection found for this image."
+      "message": "At least one detection found for this image.",
+      "disable_sink": "$inputs.dry_run"
     }
   ],
   "outputs": [
