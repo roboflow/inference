@@ -627,7 +627,9 @@ def download_chunk(
         requests.exceptions.ConnectionError,
         ChunkedEncodingError,
     ) as error:
-        LOGGER.warning(f"Download chunk failed ({type(error).__name__}: {error}), retrying in 10s...")
+        LOGGER.warning(
+            f"Download chunk failed ({type(error).__name__}: {error}), retrying in 10s..."
+        )
         raise RetryError(
             message=f"Connectivity error",
             help_url="https://inference-models.roboflow.com/errors/file-download/#retryerror",
@@ -679,7 +681,9 @@ def stream_download(
         requests.exceptions.ConnectionError,
         ChunkedEncodingError,
     ) as error:
-        LOGGER.warning(f"Download failed ({type(error).__name__}: {error}), retrying in 10s...")
+        LOGGER.warning(
+            f"Download failed ({type(error).__name__}: {error}), retrying in 10s..."
+        )
         raise RetryError(
             message=f"Connectivity error",
             help_url="https://inference-models.roboflow.com/errors/file-download/#retryerror",
