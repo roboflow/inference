@@ -68,7 +68,11 @@ def load_image(path_or_url: str | None) -> np.ndarray:
     raise FileNotFoundError(f"Image not found: {path_or_url}")
 
 
-def run(workflow_name: str, runtime_image: np.ndarray) -> None:
+def run(
+    workflow_name: str,
+    runtime_image: np.ndarray,
+    send_email: bool = False,
+) -> None:
     workflow_definition = load_workflow(workflow_name)
     init_params = {
         "workflows_core.model_manager": make_model_manager(),
@@ -82,8 +86,15 @@ def run(workflow_name: str, runtime_image: np.ndarray) -> None:
         max_concurrent_steps=4,
     )
 
+    # dry_run=True: email step runs and returns output but does not send (disable_sink)
+    runtime_parameters = {
+        "image": runtime_image,
+        "dry_run": not send_email,
+    }
     print(f"Running workflow: {workflow_name} (image → detection → continue_if → email_notification)")
-    result = engine.run(runtime_parameters={"image": runtime_image})
+    if not send_email:
+        print("Email step in dry-run mode (output only, no mail sent). Use --send-email to send.")
+    result = engine.run(runtime_parameters=runtime_parameters)
 
     print("\nWorkflow output:")
     for i, out in enumerate(result):
@@ -111,13 +122,22 @@ def main() -> None:
         default=None,
         help="Path or URL to input image. If omitted, a small placeholder image is used.",
     )
+    parser.add_argument(
+        "--send-email",
+        action="store_true",
+        help="Actually send the email. By default dry_run is true (email step runs but does not send).",
+    )
     args = parser.parse_args()
 
     if not os.environ.get("ROBOFLOW_API_KEY"):
         print("Warning: ROBOFLOW_API_KEY not set. Detection may fail.", file=sys.stderr)
 
     image = load_image(args.image)
-    run(workflow_name=args.workflow, runtime_image=image)
+    run(
+        workflow_name=args.workflow,
+        runtime_image=image,
+        send_email=args.send_email,
+    )
 
 
 if __name__ == "__main__":
