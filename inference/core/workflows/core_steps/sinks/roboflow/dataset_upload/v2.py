@@ -290,7 +290,7 @@ class RoboflowDatasetUploadBlockV2(WorkflowBlock):
         labeling_batch_prefix: str,
         labeling_batches_recreation_frequency: BatchCreationFrequency,
         image_name: Optional[Batch[Optional[str]]] = None,
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: Optional[Union[Dict[str, Any], Batch]] = None,
     ) -> BlockResult:
         if self._api_key is None:
             raise ValueError(
@@ -342,15 +342,20 @@ class RoboflowDatasetUploadBlockV2(WorkflowBlock):
 
 
 def _transpose_metadata_batches(
-    metadata: Optional[Dict[str, Any]],
+    metadata: Optional[Union[Dict[str, Any], Batch]],
     batch_size: int,
 ) -> List[Optional[Dict[str, Any]]]:
-    """Transpose a metadata dict that may contain Batch values into per-image dicts.
+    """Transpose metadata into a per-image list of dicts.
 
-    Compound dict inputs are resolved as {"key1": Batch([...]), "key2": "static"}.
-    This converts them into a list of dicts, one per batch element.
-    If no Batch values are present, the dict is repeated for each element.
+    Handles three cases:
+    - None / empty: returns [None] * batch_size
+    - Batch[Dict]: engine already wrapped it, unwrap directly
+    - Dict with possible Batch values inside: transpose into per-element dicts
     """
+    if metadata is None:
+        return [None] * batch_size
+    if isinstance(metadata, Batch):
+        return [m or None for m in metadata]
     if not metadata:
         return [None] * batch_size
     batch_entries = {k: v for k, v in metadata.items() if isinstance(v, Batch)}
