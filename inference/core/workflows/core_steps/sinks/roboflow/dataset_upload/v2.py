@@ -310,8 +310,12 @@ class RoboflowDatasetUploadBlockV2(WorkflowBlock):
         result = []
         predictions = [None] * len(images) if predictions is None else predictions
         image_names = [None] * len(images) if image_name is None else image_name
-        metadata_values = [None] * len(images) if metadata is None else [m or None for m in metadata]
-        for image, prediction, img_name, meta in zip(images, predictions, image_names, metadata_values):
+        metadata_values = (
+            [None] * len(images) if metadata is None else [m or None for m in metadata]
+        )
+        for image, prediction, img_name, meta in zip(
+            images, predictions, image_names, metadata_values
+        ):
             error_status, message = maybe_register_datapoint_at_roboflow(
                 image=image,
                 prediction=prediction,
