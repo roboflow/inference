@@ -7,12 +7,12 @@ Both workflows hit ExecutionEngine.init (the problematic one will raise
 ControlFlowDefinitionError during init). Use --workflow to select which file to run.
 """
 
-import argparse
 import json
 import os
 import sys
 from pathlib import Path
 
+import click
 import numpy as np
 
 # Add repo root so we can import inference
@@ -106,37 +106,33 @@ def run(
     print("Done.")
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Run detection → continue_if → email_notification workflow."
-    )
-    parser.add_argument(
-        "--workflow",
-        type=str,
-        default="workflow_with_workaround",
-        help="Workflow name (filename without .json in workflows/). Default: workflow_with_workaround.",
-    )
-    parser.add_argument(
-        "--image",
-        type=str,
-        default=None,
-        help="Path or URL to input image. If omitted, a small placeholder image is used.",
-    )
-    parser.add_argument(
-        "--send-email",
-        action="store_true",
-        help="Actually send the email. By default dry_run is true (email step runs but does not send).",
-    )
-    args = parser.parse_args()
-
+@click.command()
+@click.option(
+    "--workflow",
+    default="workflow_with_workaround",
+    show_default=True,
+    help="Workflow name (filename without .json in workflows/).",
+)
+@click.option(
+    "--image",
+    default=None,
+    help="Path or URL to input image. If omitted, a small placeholder image is used.",
+)
+@click.option(
+    "--send-email",
+    is_flag=True,
+    help="Actually send the email. By default dry_run is true (email step runs but does not send).",
+)
+def main(workflow: str, image: str | None, send_email: bool) -> None:
+    """Run detection → continue_if → email_notification workflow."""
     if not os.environ.get("ROBOFLOW_API_KEY"):
-        print("Warning: ROBOFLOW_API_KEY not set. Detection may fail.", file=sys.stderr)
+        click.echo("Warning: ROBOFLOW_API_KEY not set. Detection may fail.", err=True)
 
-    image = load_image(args.image)
+    runtime_image = load_image(image)
     run(
-        workflow_name=args.workflow,
-        runtime_image=image,
-        send_email=args.send_email,
+        workflow_name=workflow,
+        runtime_image=runtime_image,
+        send_email=send_email,
     )
 
 
