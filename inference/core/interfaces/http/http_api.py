@@ -762,16 +762,14 @@ class HttpInterface(BaseInterface):
                     "path": request.url.path,
                     "status_code": response.status_code,
                 }
-                try:
-                    from asgi_correlation_id import correlation_id
 
-                    req_id = correlation_id.get()
-                    if req_id:
-                        log_fields["request_id"] = req_id
-                except Exception:
-                    pass
-
+                # Read request_id and execution_id from response headers
+                # instead of ContextVars — @app.middleware("http") uses
+                # BaseHTTPMiddleware which runs the inner chain in a
+                # separate asyncio task, so ContextVars set by inner
+                # middlewares are not visible here.
                 header_fields = {
+                    "request_id": CORRELATION_ID_HEADER,
                     "processing_time": PROCESSING_TIME_HEADER,
                     "model_cold_start": MODEL_COLD_START_HEADER,
                     "model_load_time": MODEL_LOAD_TIME_HEADER,
@@ -779,6 +777,8 @@ class HttpInterface(BaseInterface):
                     "workflow_id": WORKFLOW_ID_HEADER,
                     "workspace_id": WORKSPACE_ID_HEADER,
                 }
+                if EXECUTION_ID_HEADER is not None:
+                    header_fields["execution_id"] = EXECUTION_ID_HEADER
                 for field_name, header_name in header_fields.items():
                     value = response.headers.get(header_name)
                     if value is not None:
