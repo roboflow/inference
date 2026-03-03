@@ -286,6 +286,10 @@ REGISTERED_MODELS: Dict[
         module_name="inference_models.models.qwen3vl.qwen3vl_hf",
         class_name="Qwen3VLHF",
     ),
+    ("qwen3_5", VLM_TASK, BackendType.HF): LazyClass(
+        module_name="inference_models.models.qwen3_5.qwen3_5_hf",
+        class_name="Qwen35HF",
+    ),
     ("florence-2", VLM_TASK, BackendType.HF): LazyClass(
         module_name="inference_models.models.florence2.florence2_hf",
         class_name="Florence2HF",
