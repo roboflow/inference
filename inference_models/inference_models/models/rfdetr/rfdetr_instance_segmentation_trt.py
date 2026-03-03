@@ -6,7 +6,6 @@ import torch
 
 from inference_models import InstanceDetections, InstanceSegmentationModel
 from inference_models.configuration import (
-    (
     DEFAULT_DEVICE,
     INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE,
     USE_CUDA_GRAPHS_FOR_TRT_BACKEND,

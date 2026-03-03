@@ -6,7 +6,6 @@ import torch
 
 from inference_models import Detections, ObjectDetectionModel
 from inference_models.configuration import (
-    (
     DEFAULT_DEVICE,
     INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_CLASS_AGNOSTIC_NMS,
     INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_CONFIDENCE,
