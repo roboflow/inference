@@ -1,8 +1,11 @@
 """Pytest configuration for introspection tests."""
+
 import pytest
 
-from inference.core.workflows.execution_engine.introspection import blocks_loader
-from inference.core.workflows.execution_engine.introspection import schema_parser
+from inference.core.workflows.execution_engine.introspection import (
+    blocks_loader,
+    schema_parser,
+)
 from inference.core.workflows.execution_engine.v1.compiler import syntactic_parser
 
 

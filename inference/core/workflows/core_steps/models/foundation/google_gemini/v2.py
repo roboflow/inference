@@ -47,6 +47,11 @@ MODEL_ALIASES = {
 
 GEMINI_MODELS = [
     {
+        "id": "gemini-3.1-pro-preview",
+        "name": "Gemini 3.1 Pro",
+        "supports_thinking_level": True,
+    },
+    {
         "id": "gemini-3-pro-preview",
         "name": "Gemini 3 Pro",
         "supports_thinking_level": True,

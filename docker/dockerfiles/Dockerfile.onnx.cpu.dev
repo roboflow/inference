@@ -8,6 +8,7 @@ RUN apt update -y && apt install -y \
     uvicorn \
     python3-pip \
     git \
+    ffmpeg \
     libgdal-dev \
     libvips-dev \
     cmake \

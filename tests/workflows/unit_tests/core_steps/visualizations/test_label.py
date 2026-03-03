@@ -7,6 +7,10 @@ from inference.core.workflows.core_steps.visualizations.label.v1 import (
     LabelManifest,
     LabelVisualizationBlockV1,
 )
+from inference.core.workflows.execution_engine.constants import (
+    AREA_CONVERTED_KEY_IN_SV_DETECTIONS,
+    AREA_KEY_IN_SV_DETECTIONS,
+)
 from inference.core.workflows.execution_engine.entities.base import (
     ImageParentMetadata,
     WorkflowImageData,
@@ -115,3 +119,155 @@ def test_label_visualization_block() -> None:
     assert not np.array_equal(
         output.get("image").numpy_image, np.zeros((1000, 1000, 3), dtype=np.uint8)
     )
+
+
+def test_label_visualization_block_with_area_px() -> None:
+    # given
+    block = LabelVisualizationBlockV1()
+
+    output = block.run(
+        image=WorkflowImageData(
+            parent_metadata=ImageParentMetadata(parent_id="some"),
+            numpy_image=np.zeros((1000, 1000, 3), dtype=np.uint8),
+        ),
+        predictions=sv.Detections(
+            xyxy=np.array(
+                [[0, 0, 20, 20], [80, 80, 120, 120]],
+                dtype=np.float64,
+            ),
+            class_id=np.array([1, 1]),
+            data={AREA_KEY_IN_SV_DETECTIONS: np.array([150.5, 300.75])},
+        ),
+        copy_image=True,
+        color_palette="DEFAULT",
+        palette_size=10,
+        custom_colors=None,
+        color_axis="CLASS",
+        text="Area (mask)",
+        text_position="TOP_LEFT",
+        text_color="WHITE",
+        text_scale=1.0,
+        text_thickness=1,
+        text_padding=10,
+        border_radius=0,
+    )
+
+    assert output is not None
+    assert "image" in output
+    assert hasattr(output.get("image"), "numpy_image")
+    assert output.get("image").numpy_image.shape == (1000, 1000, 3)
+    assert not np.array_equal(
+        output.get("image").numpy_image, np.zeros((1000, 1000, 3), dtype=np.uint8)
+    )
+
+
+def test_label_visualization_block_with_area_px_missing_data() -> None:
+    # given
+    block = LabelVisualizationBlockV1()
+
+    output = block.run(
+        image=WorkflowImageData(
+            parent_metadata=ImageParentMetadata(parent_id="some"),
+            numpy_image=np.zeros((1000, 1000, 3), dtype=np.uint8),
+        ),
+        predictions=sv.Detections(
+            xyxy=np.array(
+                [[0, 0, 20, 20], [80, 80, 120, 120]],
+                dtype=np.float64,
+            ),
+            class_id=np.array([1, 1]),
+        ),
+        copy_image=True,
+        color_palette="DEFAULT",
+        palette_size=10,
+        custom_colors=None,
+        color_axis="CLASS",
+        text="Area (mask)",
+        text_position="TOP_LEFT",
+        text_color="WHITE",
+        text_scale=1.0,
+        text_thickness=1,
+        text_padding=10,
+        border_radius=0,
+    )
+
+    assert output is not None
+    assert "image" in output
+    assert hasattr(output.get("image"), "numpy_image")
+    assert output.get("image").numpy_image.shape == (1000, 1000, 3)
+
+
+def test_label_visualization_block_with_area_converted() -> None:
+    # given
+    block = LabelVisualizationBlockV1()
+
+    output = block.run(
+        image=WorkflowImageData(
+            parent_metadata=ImageParentMetadata(parent_id="some"),
+            numpy_image=np.zeros((1000, 1000, 3), dtype=np.uint8),
+        ),
+        predictions=sv.Detections(
+            xyxy=np.array(
+                [[0, 0, 20, 20], [80, 80, 120, 120]],
+                dtype=np.float64,
+            ),
+            class_id=np.array([1, 1]),
+            data={AREA_CONVERTED_KEY_IN_SV_DETECTIONS: np.array([12.34, 56.78])},
+        ),
+        copy_image=True,
+        color_palette="DEFAULT",
+        palette_size=10,
+        custom_colors=None,
+        color_axis="CLASS",
+        text="Area (converted)",
+        text_position="TOP_LEFT",
+        text_color="WHITE",
+        text_scale=1.0,
+        text_thickness=1,
+        text_padding=10,
+        border_radius=0,
+    )
+
+    assert output is not None
+    assert "image" in output
+    assert hasattr(output.get("image"), "numpy_image")
+    assert output.get("image").numpy_image.shape == (1000, 1000, 3)
+    assert not np.array_equal(
+        output.get("image").numpy_image, np.zeros((1000, 1000, 3), dtype=np.uint8)
+    )
+
+
+def test_label_visualization_block_with_area_converted_missing_data() -> None:
+    # given
+    block = LabelVisualizationBlockV1()
+
+    output = block.run(
+        image=WorkflowImageData(
+            parent_metadata=ImageParentMetadata(parent_id="some"),
+            numpy_image=np.zeros((1000, 1000, 3), dtype=np.uint8),
+        ),
+        predictions=sv.Detections(
+            xyxy=np.array(
+                [[0, 0, 20, 20], [80, 80, 120, 120]],
+                dtype=np.float64,
+            ),
+            class_id=np.array([1, 1]),
+        ),
+        copy_image=True,
+        color_palette="DEFAULT",
+        palette_size=10,
+        custom_colors=None,
+        color_axis="CLASS",
+        text="Area (converted)",
+        text_position="TOP_LEFT",
+        text_color="WHITE",
+        text_scale=1.0,
+        text_thickness=1,
+        text_padding=10,
+        border_radius=0,
+    )
+
+    assert output is not None
+    assert "image" in output
+    assert hasattr(output.get("image"), "numpy_image")
+    assert output.get("image").numpy_image.shape == (1000, 1000, 3)

@@ -43,6 +43,7 @@ def process_image_with_workflow_using_inference_package(
     workflow_specification: Optional[dict] = None,
     workspace_name: Optional[str] = None,
     workflow_id: Optional[str] = None,
+    workflow_version_id: Optional[str] = None,
     workflow_parameters: Optional[Dict[str, Any]] = None,
     image_input_name: str = "image",
     api_key: Optional[str] = None,
@@ -65,6 +66,7 @@ def process_image_with_workflow_using_inference_package(
                 workflow_specification=workflow_specification,
                 workspace_name=workspace_name,
                 workflow_id=workflow_id,
+                workflow_version_id=workflow_version_id,
                 api_key=api_key,
             )
             result = _run_workflow_for_single_image_with_inference(
@@ -97,6 +99,7 @@ def process_image_directory_with_workflow_using_inference_package(
     workflow_specification: Optional[dict] = None,
     workspace_name: Optional[str] = None,
     workflow_id: Optional[str] = None,
+    workflow_version_id: Optional[str] = None,
     workflow_parameters: Optional[Dict[str, Any]] = None,
     image_input_name: str = "image",
     api_key: Optional[str] = None,
@@ -127,6 +130,7 @@ def process_image_directory_with_workflow_using_inference_package(
             workflow_specification=workflow_specification,
             workspace_name=workspace_name,
             workflow_id=workflow_id,
+            workflow_version_id=workflow_version_id,
             workflow_parameters=workflow_parameters,
             image_input_name=image_input_name,
             api_key=api_key,
@@ -167,6 +171,7 @@ def _process_images_within_directory(
     workflow_specification: Dict[str, Any],
     workspace_name: Optional[str],
     workflow_id: Optional[str],
+    workflow_version_id: Optional[str],
     workflow_parameters: Optional[Dict[str, Any]],
     image_input_name: str,
     api_key: Optional[str],
@@ -180,6 +185,7 @@ def _process_images_within_directory(
         workflow_specification=workflow_specification,
         workspace_name=workspace_name,
         workflow_id=workflow_id,
+        workflow_version_id=workflow_version_id,
         api_key=api_key,
     )
     model_manager = _prepare_model_manager()
@@ -323,6 +329,7 @@ def _get_workflow_specification(
     workflow_specification: Optional[dict] = None,
     workspace_name: Optional[str] = None,
     workflow_id: Optional[str] = None,
+    workflow_version_id: Optional[str] = None,
     api_key: Optional[str] = None,
 ) -> Dict[str, Any]:
     if workflow_specification is not None:
@@ -339,6 +346,7 @@ def _get_workflow_specification(
         api_key=api_key,
         workspace_id=workspace_name,
         workflow_id=workflow_id,
+        workflow_version_id=workflow_version_id,
         use_cache=False,
     )
 

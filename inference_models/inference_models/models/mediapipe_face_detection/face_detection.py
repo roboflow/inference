@@ -5,8 +5,15 @@ import numpy as np
 import torch
 
 from inference_models import Detections, KeyPoints, KeyPointsDetectionModel
+from inference_models.configuration import (
+    INFERENCE_MODELS_MEDIAPIPE_FACE_DETECTOR_DEFAULT_CONFIDENCE,
+)
 from inference_models.entities import ColorFormat, ImageDimensions
-from inference_models.errors import MissingDependencyError, ModelRuntimeError
+from inference_models.errors import (
+    MissingDependencyError,
+    ModelInputError,
+    ModelRuntimeError,
+)
 from inference_models.models.common.model_packages import get_model_package_contents
 
 try:
@@ -18,8 +25,11 @@ except ImportError as import_error:
         f"dependencies are not installed in the environment. If you run the `inference-models` library directly in your Python "
         f"program, make sure the following extras of the package are installed: `mediapipe`."
         f"If you see this error using Roboflow infrastructure, make sure the service you use does support the model. "
-        f"You can also contact Roboflow to get support.",
-        help_url="https://todo",
+        f"You can also contact Roboflow to get support."
+        "Additionally - if AutoModel.from_pretrained(...) "
+        f"automatically selects model package which does not match your environment - that's a serious problem and "
+        f"we will really appreciate letting us know - https://github.com/roboflow/inference/issues",
+        help_url="https://inference-models.roboflow.com/errors/runtime-environment/#missingdependencyerror",
     ) from import_error
 
 
@@ -100,13 +110,14 @@ class MediaPipeFaceDetector(
                 )
             return preprocessed_images, dimensions
         if not isinstance(images, list):
-            raise ModelRuntimeError(
+            raise ModelInputError(
                 message="Pre-processing supports only np.array or torch.Tensor or list of above.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
             )
         if not len(images):
-            raise ModelRuntimeError(
-                message="Detected empty input to the model", help_url="https://todo"
+            raise ModelInputError(
+                message="Detected empty input to the model",
+                help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
             )
         if isinstance(images[0], np.ndarray):
             input_color_format = input_color_format or "bgr"
@@ -139,9 +150,9 @@ class MediaPipeFaceDetector(
                     ImageDimensions(height=np_image.shape[0], width=np_image.shape[1])
                 )
             return preprocessed_images, dimensions
-        raise ModelRuntimeError(
+        raise ModelInputError(
             message=f"Detected unknown input batch element: {type(images[0])}",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
         )
 
     def forward(
@@ -158,7 +169,7 @@ class MediaPipeFaceDetector(
         self,
         model_results: List[List[Detection]],
         pre_processing_meta: List[ImageDimensions],
-        conf_thresh: float = 0.25,
+        confidence: float = INFERENCE_MODELS_MEDIAPIPE_FACE_DETECTOR_DEFAULT_CONFIDENCE,
         **kwargs,
     ) -> Tuple[List[KeyPoints], List[Detections]]:
         final_key_points, final_detections = [], []
@@ -166,7 +177,12 @@ class MediaPipeFaceDetector(
             detections_xyxy, detections_class_id, detections_confidence = [], [], []
             key_points_xy, key_points_class_id, key_points_confidence = [], [], []
             for detection in image_results:
-                if detection.categories[0].score < conf_thresh:
+                if detection.categories[0].score < confidence:
+                    continue
+                if (
+                    detection.bounding_box.width <= 0
+                    or detection.bounding_box.height <= 0
+                ):
                     continue
                 xyxy = (
                     detection.bounding_box.origin_x,

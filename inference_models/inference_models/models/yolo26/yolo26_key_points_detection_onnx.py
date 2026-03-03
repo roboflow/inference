@@ -5,7 +5,11 @@ import numpy as np
 import torch
 
 from inference_models import Detections, KeyPoints, KeyPointsDetectionModel
-from inference_models.configuration import DEFAULT_DEVICE
+from inference_models.configuration import (
+    DEFAULT_DEVICE,
+    INFERENCE_MODELS_YOLO26_DEFAULT_CONFIDENCE,
+    INFERENCE_MODELS_YOLO26_DEFAULT_KEY_POINTS_THRESHOLD,
+)
 from inference_models.entities import ColorFormat
 from inference_models.errors import (
     EnvironmentConfigurationError,
@@ -39,16 +43,15 @@ try:
     import onnxruntime
 except ImportError as import_error:
     raise MissingDependencyError(
-        message=f"Could not import YOLO26 model with ONNX backend - this error means that some additional dependencies "
-        f"are not installed in the environment. If you run the `inference-models` library directly in your Python "
-        f"program, make sure the following extras of the package are installed: \n"
-        f"\t* `onnx-cpu` - when you wish to use library with CPU support only\n"
-        f"\t* `onnx-cu12` - for running on GPU with Cuda 12 installed\n"
-        f"\t* `onnx-cu118` - for running on GPU with Cuda 11.8 installed\n"
-        f"\t* `onnx-jp6-cu126` - for running on Jetson with Jetpack 6\n"
-        f"If you see this error using Roboflow infrastructure, make sure the service you use does support the model. "
-        f"You can also contact Roboflow to get support.",
-        help_url="https://todo",
+        message="Running YOLO26 model with ONNX backend requires pycuda installation, which is brought with "
+        "`onnx-*` extras of `inference-models` library. If you see this error running locally, "
+        "please follow our installation guide: https://inference-models.roboflow.com/getting-started/installation/"
+        " If you see this error using Roboflow infrastructure, make sure the service you use does support the "
+        f"model, You can also contact Roboflow to get support."
+        "Additionally - if AutoModel.from_pretrained(...) "
+        f"automatically selects model package which does not match your environment - that's a serious problem and "
+        f"we will really appreciate letting us know - https://github.com/roboflow/inference/issues",
+        help_url="https://inference-models.roboflow.com/errors/runtime-environment/#missingdependencyerror",
     ) from import_error
 
 
@@ -73,7 +76,7 @@ class YOLO26ForKeyPointsDetectionOnnx(
                 f"be specified - explicitly in `from_pretrained(...)` method or via env variable "
                 f"`ONNXRUNTIME_EXECUTION_PROVIDERS`. If you run model locally - adjust your setup, otherwise "
                 f"contact the platform support.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/runtime-environment/#environmentconfigurationerror",
             )
         onnx_execution_providers = set_onnx_execution_provider_defaults(
             providers=onnx_execution_providers,
@@ -100,6 +103,17 @@ class YOLO26ForKeyPointsDetectionOnnx(
                 ResizeMode.LETTERBOX,
                 ResizeMode.CENTER_CROP,
                 ResizeMode.LETTERBOX_REFLECT_EDGES,
+            },
+            implicit_resize_mode_substitutions={
+                ResizeMode.FIT_LONGER_EDGE: (
+                    ResizeMode.LETTERBOX,
+                    127,
+                    "YOLO26 KeyPoints detection model running with ONNX backend was trained with "
+                    "`fit-longer-edge` input resize mode. This transform cannot be applied properly for "
+                    "models with input dimensions fixed during weights export. To ensure interoperability, `letterbox` "
+                    "resize mode with gray edges will be used instead. If model was trained on Roboflow platform, "
+                    "we recommend using preprocessing method different that `fit-longer-edge`.",
+                )
             },
         )
         parsed_key_points_metadata, skeletons = parse_key_points_metadata(
@@ -192,12 +206,12 @@ class YOLO26ForKeyPointsDetectionOnnx(
         self,
         model_results: torch.Tensor,
         pre_processing_meta: List[PreProcessingMetadata],
-        conf_thresh: float = 0.25,
-        key_points_threshold: float = 0.3,
+        confidence: float = INFERENCE_MODELS_YOLO26_DEFAULT_CONFIDENCE,
+        key_points_threshold: float = INFERENCE_MODELS_YOLO26_DEFAULT_KEY_POINTS_THRESHOLD,
         **kwargs,
     ) -> Tuple[List[KeyPoints], Optional[List[Detections]]]:
         filtered_results = post_process_nms_fused_model_output(
-            output=model_results, conf_thresh=conf_thresh
+            output=model_results, conf_thresh=confidence
         )
         rescaled_results = rescale_key_points_detections(
             detections=filtered_results,
@@ -219,7 +233,7 @@ class YOLO26ForKeyPointsDetectionOnnx(
                 result.shape[0], self._key_points_slots_in_prediction, 3
             )
             xy = key_points_reshaped[:, :, :2]
-            confidence = key_points_reshaped[:, :, 2]
+            kp_confidence = key_points_reshaped[:, :, 2]
             key_points_classes_for_instance_class = (
                 (self._key_points_classes_for_instances[class_id])
                 .unsqueeze(1)
@@ -232,11 +246,13 @@ class YOLO26ForKeyPointsDetectionOnnx(
                 < key_points_classes_for_instance_class
             )
 
-            confidence_mask = confidence < key_points_threshold
+            confidence_mask = kp_confidence < key_points_threshold
             mask = instances_class_mask & confidence_mask
             xy[mask] = 0.0
-            confidence[mask] = 0.0
+            kp_confidence[mask] = 0.0
             all_key_points.append(
-                KeyPoints(xy=xy.round().int(), class_id=class_id, confidence=confidence)
+                KeyPoints(
+                    xy=xy.round().int(), class_id=class_id, confidence=kp_confidence
+                )
             )
         return all_key_points, detections

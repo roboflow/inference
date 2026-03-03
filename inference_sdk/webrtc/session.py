@@ -922,6 +922,9 @@ class WebRTCSession:
         if self._config.requested_region is not None:
             payload["requested_region"] = self._config.requested_region
 
+        if self._config.processing_timeout is not None:
+            payload["processing_timeout"] = self._config.processing_timeout
+
         # Merge source-specific parameters
         # (rtsp_url for RTSP, declared_fps for webcam, stream_output/data_output overrides for VideoFile)
         payload.update(self._source.get_initialization_params(self._config))

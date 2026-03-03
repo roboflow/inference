@@ -63,7 +63,7 @@ class PolygonManifest(ColorableVisualizationManifest):
     model_config = ConfigDict(
         json_schema_extra={
             "name": "Polygon Visualization",
-            "version": "v1",
+            "version": "v2",
             "short_description": SHORT_DESCRIPTION,
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",

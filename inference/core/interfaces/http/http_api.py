@@ -49,6 +49,7 @@ from inference.core.entities.requests.inference import (
     KeypointsDetectionInferenceRequest,
     LMMInferenceRequest,
     ObjectDetectionInferenceRequest,
+    SemanticSegmentationInferenceRequest,
 )
 from inference.core.entities.requests.owlv2 import OwlV2InferenceRequest
 from inference.core.entities.requests.perception_encoder import (
@@ -94,6 +95,7 @@ from inference.core.entities.responses.inference import (
     LMMInferenceResponse,
     MultiLabelClassificationInferenceResponse,
     ObjectDetectionInferenceResponse,
+    SemanticSegmentationInferenceResponse,
     StubResponse,
 )
 from inference.core.entities.responses.notebooks import NotebookStartResponse
@@ -129,7 +131,6 @@ from inference.core.entities.responses.workflows import (
 from inference.core.env import (
     ALLOW_ORIGINS,
     API_BASE_URL,
-    API_KEY,
     API_LOGGING_ENABLED,
     BUILDER_ORIGIN,
     CONFIDENCE_LOWER_BOUND_OOM_PREVENTION,
@@ -167,15 +168,20 @@ from inference.core.env import (
     NOTEBOOK_ENABLED,
     NOTEBOOK_PASSWORD,
     NOTEBOOK_PORT,
+    PINNED_MODELS,
+    PRELOAD_API_KEY,
     PRELOAD_MODELS,
     PROFILE,
     ROBOFLOW_INTERNAL_SERVICE_NAME,
     ROBOFLOW_INTERNAL_SERVICE_SECRET,
     ROBOFLOW_SERVICE_SECRET,
     SAM3_EXEC_MODE,
+    SAM3_FINE_TUNED_MODELS_ENABLED,
+    USE_INFERENCE_MODELS,
     WEBRTC_WORKER_ENABLED,
     WORKFLOWS_MAX_CONCURRENT_STEPS,
     WORKFLOWS_PROFILER_BUFFER_SIZE,
+    WORKFLOWS_REMOTE_EXECUTION_TIME_FORWARDING,
     WORKFLOWS_STEP_EXECUTION_MODE,
 )
 from inference.core.exceptions import (
@@ -243,7 +249,7 @@ from inference.core.roboflow_api import (
 from inference.core.utils.container import is_docker_socket_mounted
 from inference.core.utils.notebooks import start_notebook
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
-from inference.core.workflows.errors import WorkflowSyntaxError
+from inference.core.workflows.errors import WorkflowError, WorkflowSyntaxError
 from inference.core.workflows.execution_engine.core import (
     ExecutionEngine,
     get_available_versions,
@@ -273,10 +279,23 @@ from inference.core.roboflow_api import ModelEndpointType
 from inference.core.version import __version__
 
 try:
-    from inference_sdk.config import EXECUTION_ID_HEADER, execution_id
+    from inference_sdk.config import (
+        EXECUTION_ID_HEADER,
+        INTERNAL_REMOTE_EXEC_REQ_HEADER,
+        INTERNAL_REMOTE_EXEC_REQ_VERIFIED_HEADER,
+        RemoteProcessingTimeCollector,
+        apply_duration_minimum,
+        execution_id,
+        remote_processing_times,
+    )
 except ImportError:
     execution_id = None
+    remote_processing_times = None
+    RemoteProcessingTimeCollector = None
     EXECUTION_ID_HEADER = None
+    INTERNAL_REMOTE_EXEC_REQ_HEADER = None
+    INTERNAL_REMOTE_EXEC_REQ_VERIFIED_HEADER = None
+    apply_duration_minimum = None
 
 
 def get_content_type(request: Request) -> str:
@@ -292,6 +311,10 @@ class LambdaMiddleware(BaseHTTPMiddleware):
         return response
 
 
+REMOTE_PROCESSING_TIME_HEADER = "X-Remote-Processing-Time"
+REMOTE_PROCESSING_TIMES_HEADER = "X-Remote-Processing-Times"
+
+
 class GCPServerlessMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
         if execution_id is not None:
@@ -299,12 +322,38 @@ class GCPServerlessMiddleware(BaseHTTPMiddleware):
             if not execution_id_value:
                 execution_id_value = f"{time.time_ns()}_{uuid4().hex[:4]}"
             execution_id.set(execution_id_value)
+        is_verified_internal = False
+        if apply_duration_minimum is not None:
+            is_verified_internal = bool(
+                ROBOFLOW_INTERNAL_SERVICE_SECRET
+                and INTERNAL_REMOTE_EXEC_REQ_HEADER
+                and request.headers.get(INTERNAL_REMOTE_EXEC_REQ_HEADER)
+                == ROBOFLOW_INTERNAL_SERVICE_SECRET
+            )
+            apply_duration_minimum.set(not is_verified_internal)
+        collector = None
+        if (
+            WORKFLOWS_REMOTE_EXECUTION_TIME_FORWARDING
+            and remote_processing_times is not None
+            and RemoteProcessingTimeCollector is not None
+        ):
+            collector = RemoteProcessingTimeCollector()
+            remote_processing_times.set(collector)
         t1 = time.time()
         response = await call_next(request)
         t2 = time.time()
         response.headers[PROCESSING_TIME_HEADER] = str(t2 - t1)
+        if collector is not None and collector.has_data():
+            total, detail = collector.summarize()
+            response.headers[REMOTE_PROCESSING_TIME_HEADER] = str(total)
+            if detail is not None:
+                response.headers[REMOTE_PROCESSING_TIMES_HEADER] = detail
         if execution_id is not None:
             response.headers[EXECUTION_ID_HEADER] = execution_id_value
+        if INTERNAL_REMOTE_EXEC_REQ_VERIFIED_HEADER is not None:
+            response.headers[INTERNAL_REMOTE_EXEC_REQ_VERIFIED_HEADER] = str(
+                is_verified_internal
+            ).lower()
         return response
 
 
@@ -392,7 +441,11 @@ class HttpInterface(BaseInterface):
                 allow_credentials=True,
                 allow_methods=["*"],
                 allow_headers=["*"],
-                expose_headers=[PROCESSING_TIME_HEADER],
+                expose_headers=[
+                    PROCESSING_TIME_HEADER,
+                    REMOTE_PROCESSING_TIME_HEADER,
+                    REMOTE_PROCESSING_TIMES_HEADER,
+                ],
             )
 
         # Optionally add middleware for profiling the FastAPI server and underlying inference API code
@@ -617,6 +670,15 @@ class HttpInterface(BaseInterface):
                         return _unauthorized_response("Unauthorized api_key")
 
                 return await call_next(request)
+
+        @app.middleware("http")
+        async def add_inference_engine_headers(request: Request, call_next):
+            response = await call_next(request)
+            inference_engine = (
+                "inference-models" if USE_INFERENCE_MODELS else "old-inference"
+            )
+            response.headers["x-inference-engine"] = inference_engine
+            return response
 
         self.app = app
         self.model_manager = model_manager
@@ -1097,6 +1159,40 @@ class HttpInterface(BaseInterface):
                 )
 
             @app.post(
+                "/infer/semantic_segmentation",
+                response_model=Union[
+                    SemanticSegmentationInferenceResponse, StubResponse
+                ],
+                summary="Semantic segmentation infer",
+                description="Run inference with the specified semantic segmentation model",
+            )
+            @with_route_exceptions
+            @usage_collector("request")
+            def infer_semantic_segmentation(
+                inference_request: SemanticSegmentationInferenceRequest,
+                background_tasks: BackgroundTasks,
+                countinference: Optional[bool] = None,
+                service_secret: Optional[str] = None,
+            ):
+                """Run inference with the specified semantic segmentation model.
+
+                Args:
+                    inference_request (SemanticSegmentationInferenceRequest): The request containing the necessary details for semantic segmentation.
+                    background_tasks: (BackgroundTasks) pool of fastapi background tasks
+
+                Returns:
+                    SemanticSegmentationInferenceResponse: The response containing the inference results.
+                """
+                logger.debug(f"Reached /infer/semantic_segmentation")
+                return process_inference_request(
+                    inference_request,
+                    active_learning_eligible=True,
+                    background_tasks=background_tasks,
+                    countinference=countinference,
+                    service_secret=service_secret,
+                )
+
+            @app.post(
                 "/infer/classification",
                 response_model=Union[
                     ClassificationInferenceResponse,
@@ -1269,6 +1365,7 @@ class HttpInterface(BaseInterface):
                     workspace_id=workspace_name,
                     workflow_id=workflow_id,
                     use_cache=workflow_request.use_cache,
+                    workflow_version_id=workflow_request.workflow_version_id,
                 )
                 return handle_describe_workflows_interface(
                     definition=workflow_specification,
@@ -1325,6 +1422,7 @@ class HttpInterface(BaseInterface):
                         workspace_id=workspace_name,
                         workflow_id=workflow_id,
                         use_cache=workflow_request.use_cache,
+                        workflow_version_id=workflow_request.workflow_version_id,
                     )
                 if not workflow_request.workflow_id:
                     workflow_request.workflow_id = workflow_id
@@ -1543,6 +1641,11 @@ class HttpInterface(BaseInterface):
                             context=worker_result.error_context,
                             inner_error=worker_result.inner_error,
                         )
+                    if worker_result.exception_type == "WorkflowError":
+                        raise WorkflowError(
+                            public_message=worker_result.error_message,
+                            context=worker_result.error_context,
+                        )
                     expected_exceptions = {
                         "Exception": Exception,
                         "KeyError": KeyError,
@@ -1679,9 +1782,9 @@ class HttpInterface(BaseInterface):
 
         # Enable preloading models at startup
         if (
-            (PRELOAD_MODELS or DEDICATED_DEPLOYMENT_WORKSPACE_URL)
-            and API_KEY
-            and not (LAMBDA or GCP_SERVERLESS)
+            (PRELOAD_MODELS or PINNED_MODELS or DEDICATED_DEPLOYMENT_WORKSPACE_URL)
+            and PRELOAD_API_KEY
+            and (PINNED_MODELS or not (LAMBDA or GCP_SERVERLESS))
         ):
 
             class ModelInitState:
@@ -1696,32 +1799,46 @@ class HttpInterface(BaseInterface):
 
             def initialize_models(state: ModelInitState):
                 """Perform asynchronous initialization tasks to load models."""
-                # Limit the number of concurrent tasks to prevent resource exhaustion
 
                 def load_model(model_id):
-                    logger.debug(f"load_model({model_id}) - starting")
+                    t_start = time.perf_counter()
+                    de_aliased = resolve_roboflow_model_alias(model_id=model_id)
+                    logger.info(
+                        f"Preload: starting model load for '{model_id}' (resolved: '{de_aliased}')"
+                    )
                     try:
-                        # TODO: how to add timeout here? Probably best to timeout model loading?
-                        model_add(
-                            AddModelRequest(
-                                model_id=model_id,
-                                model_type=None,
-                                api_key=API_KEY,
-                            )
+                        self.model_manager.add_model(
+                            de_aliased,
+                            PRELOAD_API_KEY,
                         )
-                        logger.info(f"Model {model_id} loaded successfully.")
+                        load_time = time.perf_counter() - t_start
+                        logger.info(
+                            f"Preload: model '{model_id}' loaded successfully in {load_time:.1f}s"
+                        )
                     except Exception as e:
-                        error_msg = f"Error loading model {model_id}: {e}"
+                        load_time = time.perf_counter() - t_start
+                        error_msg = f"Preload: error loading model '{model_id}' after {load_time:.1f}s: {e}"
                         logger.error(error_msg)
                         with state.lock:
                             state.initialization_errors.append((model_id, str(e)))
-                    logger.debug(f"load_model({model_id}) - finished")
+                        return
 
-                if PRELOAD_MODELS:
+                    # Pin if this model is in PINNED_MODELS
+                    if (
+                        PINNED_MODELS
+                        and model_id in PINNED_MODELS
+                        and hasattr(self.model_manager, "pin_model")
+                    ):
+                        self.model_manager.pin_model(de_aliased)
+
+                all_models = list(
+                    dict.fromkeys((PRELOAD_MODELS or []) + (PINNED_MODELS or []))
+                )
+                if all_models:
                     # Create tasks for each model to be loaded
                     model_loading_executor = ThreadPoolExecutor(max_workers=2)
                     loaded_futures: List[Tuple[str, Future]] = []
-                    for model_id in PRELOAD_MODELS:
+                    for model_id in all_models:
                         future = model_loading_executor.submit(
                             load_model, model_id=model_id
                         )
@@ -2489,45 +2606,6 @@ class HttpInterface(BaseInterface):
                     )
                     return model_response
 
-                @app.post(
-                    "/sam3/visual_segment",
-                    response_model=Sam2SegmentationResponse,
-                    summary="SAM3 PVS (promptable visual segmentation)",
-                    description="Run the SAM3 PVS (promptable visual segmentation) to generate segmentations for image data.",
-                )
-                @with_route_exceptions
-                @usage_collector("request")
-                def sam3_visual_segment(
-                    inference_request: Sam2SegmentationRequest,
-                    request: Request,
-                    api_key: Optional[str] = Query(
-                        None,
-                        description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
-                    ),
-                    countinference: Optional[bool] = None,
-                    service_secret: Optional[str] = None,
-                ):
-                    logger.debug(f"Reached /sam3/visual_segment")
-
-                    if SAM3_EXEC_MODE == "remote":
-                        raise HTTPException(
-                            status_code=501,
-                            detail="SAM3 visual segmentation is not supported in remote execution mode.",
-                        )
-
-                    self.model_manager.add_model(
-                        "sam3/sam3_interactive",
-                        api_key=api_key,
-                        endpoint_type=ModelEndpointType.CORE_MODEL,
-                        countinference=countinference,
-                        service_secret=service_secret,
-                    )
-
-                    model_response = self.model_manager.infer_from_request_sync(
-                        "sam3/sam3_interactive", inference_request
-                    )
-                    return model_response
-
             if CORE_MODEL_SAM3_ENABLED:
 
                 @app.post(
@@ -2548,12 +2626,14 @@ class HttpInterface(BaseInterface):
                     countinference: Optional[bool] = None,
                     service_secret: Optional[str] = None,
                 ):
-                    if SAM3_EXEC_MODE == "remote":
+                    if not SAM3_FINE_TUNED_MODELS_ENABLED:
                         if not inference_request.model_id.startswith("sam3/"):
                             raise HTTPException(
                                 status_code=501,
-                                detail="Fine-tuned SAM3 models are not supported in remote execution mode yet. Please use a workflow or self-host the server.",
+                                detail="Fine-tuned SAM3 models are not supported on this deployment. Please use a workflow or self-host the server.",
                             )
+
+                    if SAM3_EXEC_MODE == "remote":
                         endpoint = f"{API_BASE_URL}/inferenceproxy/seg-preview"
 
                         # Construct payload for remote API
@@ -2666,6 +2746,94 @@ class HttpInterface(BaseInterface):
                             content=model_response,
                             headers={"Content-Type": "application/octet-stream"},
                         )
+                    return model_response
+
+                @app.post(
+                    "/sam3/visual_segment",
+                    response_model=Sam2SegmentationResponse,
+                    summary="SAM3 PVS (promptable visual segmentation)",
+                    description="Run the SAM3 PVS (promptable visual segmentation) to generate segmentations for image data.",
+                )
+                @with_route_exceptions
+                @usage_collector("request")
+                def sam3_visual_segment(
+                    inference_request: Sam2SegmentationRequest,
+                    request: Request,
+                    api_key: Optional[str] = Query(
+                        None,
+                        description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
+                    ),
+                    countinference: Optional[bool] = None,
+                    service_secret: Optional[str] = None,
+                ):
+                    logger.debug(f"Reached /sam3/visual_segment")
+
+                    if SAM3_EXEC_MODE == "remote":
+                        endpoint = f"{API_BASE_URL}/inferenceproxy/sam3-pvs"
+
+                        http_image = {
+                            "type": inference_request.image.type,
+                            "value": inference_request.image.value,
+                        }
+
+                        prompts_data = (
+                            inference_request.prompts.dict(exclude_none=True)
+                            if inference_request.prompts
+                            else None
+                        )
+
+                        payload = {
+                            "image": http_image,
+                            "prompts": prompts_data,
+                            "multimask_output": inference_request.multimask_output,
+                        }
+
+                        try:
+                            headers = {"Content-Type": "application/json"}
+                            if ROBOFLOW_INTERNAL_SERVICE_NAME:
+                                headers["X-Roboflow-Internal-Service-Name"] = (
+                                    ROBOFLOW_INTERNAL_SERVICE_NAME
+                                )
+                            if ROBOFLOW_INTERNAL_SERVICE_SECRET:
+                                headers["X-Roboflow-Internal-Service-Secret"] = (
+                                    ROBOFLOW_INTERNAL_SERVICE_SECRET
+                                )
+
+                            headers = build_roboflow_api_headers(
+                                explicit_headers=headers
+                            )
+
+                            response = requests.post(
+                                f"{endpoint}?api_key={api_key}",
+                                json=payload,
+                                headers=headers,
+                                timeout=60,
+                            )
+                            response.raise_for_status()
+                            resp_json = response.json()
+
+                            return Sam2SegmentationResponse(**resp_json)
+
+                        except Exception as e:
+                            logger.error(
+                                f"SAM3 visual_segment remote request failed: {e}"
+                            )
+                            raise HTTPException(
+                                status_code=500,
+                                detail=f"SAM3 visual_segment remote request failed: {str(e)}",
+                            )
+
+                    self.model_manager.add_model(
+                        "sam3/sam3_interactive",
+                        api_key=api_key,
+                        endpoint_type=ModelEndpointType.CORE_MODEL,
+                        countinference=countinference,
+                        service_secret=service_secret,
+                    )
+
+                    model_response = self.model_manager.infer_from_request_sync(
+                        "sam3/sam3_interactive", inference_request
+                    )
                     return model_response
 
             if CORE_MODEL_SAM3_ENABLED and not GCP_SERVERLESS:
@@ -3015,6 +3183,7 @@ class HttpInterface(BaseInterface):
                     ObjectDetectionInferenceResponse,
                     ClassificationInferenceResponse,
                     MultiLabelClassificationInferenceResponse,
+                    SemanticSegmentationInferenceResponse,
                     StubResponse,
                     Any,
                 ],
@@ -3029,6 +3198,7 @@ class HttpInterface(BaseInterface):
                     ObjectDetectionInferenceResponse,
                     ClassificationInferenceResponse,
                     MultiLabelClassificationInferenceResponse,
+                    SemanticSegmentationInferenceResponse,
                     StubResponse,
                     Any,
                 ],
@@ -3152,7 +3322,7 @@ class HttpInterface(BaseInterface):
                     # Other parameters described in the function signature...
 
                 Returns:
-                    Union[InstanceSegmentationInferenceResponse, KeypointsDetectionInferenceRequest, ObjectDetectionInferenceResponse, ClassificationInferenceResponse, MultiLabelClassificationInferenceResponse, Any]: The response containing the inference results.
+                    Union[InstanceSegmentationInferenceResponse, KeypointsDetectionInferenceRequest, ObjectDetectionInferenceResponse, ClassificationInferenceResponse, MultiLabelClassificationInferenceResponse, SemanticSegmentationInferenceResponse, Any]: The response containing the inference results.
                 """
                 logger.debug(
                     f"Reached legacy route /:dataset_id/:version_id with {dataset_id}/{version_id}"
@@ -3245,6 +3415,8 @@ class HttpInterface(BaseInterface):
                 elif task_type == "keypoint-detection":
                     inference_request_type = KeypointsDetectionInferenceRequest
                     args = {"keypoint_confidence": keypoint_confidence}
+                elif task_type == "semantic-segmentation":
+                    inference_request_type = SemanticSegmentationInferenceRequest
                 inference_request = inference_request_type(
                     api_key=api_key,
                     model_id=model_id,

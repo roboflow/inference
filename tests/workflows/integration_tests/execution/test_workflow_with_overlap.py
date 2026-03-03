@@ -1,6 +1,6 @@
 import numpy as np
 
-from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
+from inference.core.env import USE_INFERENCE_MODELS, WORKFLOWS_MAX_CONCURRENT_STEPS
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.execution_engine.core import ExecutionEngine
@@ -89,18 +89,35 @@ def test_workflow_with_overlap_all(
 
     assert len(result) == 1, "One set of images provided, so one output expected"
 
-    # if overlap_type is "Any Overlap", both the apples and orange will overlap the banana
-    any_redictions = result[0]["any_predictions"]
-    assert len(any_redictions.class_id) == 4
-    class_names = any_redictions.data["class_name"]
-    assert "banana" not in class_names
-    assert "apple" in class_names
-    assert "orange" in class_names
+    if not USE_INFERENCE_MODELS:
+        # if overlap_type is "Any Overlap", both the apples and orange will overlap the banana
+        any_redictions = result[0]["any_predictions"]
+        assert len(any_redictions.class_id) == 4
+        class_names = any_redictions.data["class_name"]
+        assert "banana" not in class_names
+        assert "apple" in class_names
+        assert "orange" in class_names
 
-    # if overlap_type is "Center Overlap" only the orange will overlap the banana
-    any_redictions = result[0]["center_predictions"]
-    assert len(any_redictions.class_id) == 1
-    class_names = any_redictions.data["class_name"]
-    assert "banana" not in class_names
-    assert "apple" not in class_names
-    assert "orange" in class_names
+        # if overlap_type is "Center Overlap" only the orange will overlap the banana
+        any_redictions = result[0]["center_predictions"]
+        assert len(any_redictions.class_id) == 1
+        class_names = any_redictions.data["class_name"]
+        assert "banana" not in class_names
+        assert "apple" not in class_names
+        assert "orange" in class_names
+    else:
+        # if overlap_type is "Any Overlap", both the apples and orange will overlap the banana
+        any_redictions = result[0]["any_predictions"]
+        assert len(any_redictions.class_id) == 5
+        class_names = any_redictions.data["class_name"]
+        assert "banana" not in class_names
+        assert "apple" in class_names
+        assert "orange" in class_names
+
+        # if overlap_type is "Center Overlap" only the orange will overlap the apple and orange
+        any_redictions = result[0]["center_predictions"]
+        assert len(any_redictions.class_id) == 2
+        class_names = any_redictions.data["class_name"]
+        assert "banana" not in class_names
+        assert "apple" in class_names
+        assert "orange" in class_names

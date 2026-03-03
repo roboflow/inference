@@ -1,6 +1,7 @@
 import json
 import os
 import re
+from threading import Lock
 from typing import List, Literal, Optional, Tuple, Union
 
 import cv2
@@ -16,9 +17,18 @@ from transformers import (
 )
 
 from inference_models import Detections, InstanceDetections
-from inference_models.configuration import DEFAULT_DEVICE
+from inference_models.configuration import (
+    DEFAULT_DEVICE,
+    INFERENCE_MODELS_FLORENCE2_DEFAULT_DO_SAMPLE,
+    INFERENCE_MODELS_FLORENCE2_DEFAULT_MAX_NEW_TOKENS,
+    INFERENCE_MODELS_FLORENCE2_DEFAULT_NUM_BEAMS,
+)
 from inference_models.entities import ColorFormat, ImageDimensions
-from inference_models.errors import CorruptedModelPackageError, ModelRuntimeError
+from inference_models.errors import (
+    CorruptedModelPackageError,
+    ModelInputError,
+    ModelRuntimeError,
+)
 from inference_models.models.common.roboflow.model_packages import (
     InferenceConfig,
     PreProcessingMetadata,
@@ -69,6 +79,7 @@ class Florence2HF:
                     ResizeMode.LETTERBOX,
                     ResizeMode.CENTER_CROP,
                     ResizeMode.LETTERBOX_REFLECT_EDGES,
+                    ResizeMode.FIT_LONGER_EDGE,
                 },
             )
 
@@ -83,7 +94,7 @@ class Florence2HF:
         if not os.path.isdir(base_model_path):
             raise ModelRuntimeError(
                 message=f"Provided model path does not exist or is not a directory: {base_model_path}",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
             )
         if not os.path.isfile(os.path.join(base_model_path, "config.json")):
             raise ModelRuntimeError(
@@ -91,7 +102,7 @@ class Florence2HF:
                     "Provided model directory does not look like a valid HF Florence-2 checkpoint (missing config.json). "
                     "If you used the official converter, point to its output directory."
                 ),
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
             )
         if (
             quantization_config is None
@@ -150,7 +161,7 @@ class Florence2HF:
                 raise CorruptedModelPackageError(
                     message="Could not load LoRA weights for the model - found missing checkpoint keys "
                     f"({len(load_result.missing_keys)}): {load_result.missing_keys}",
-                    help_url="https://todo",
+                    help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
                 )
             if quantization_config is None:
                 model.merge_and_unload()
@@ -186,6 +197,7 @@ class Florence2HF:
         self._inference_config = inference_config
         self._device = device
         self._torch_dtype = torch_dtype
+        self._lock = Lock()
 
     def classify_image_region(
         self,
@@ -197,8 +209,8 @@ class Florence2HF:
             np.ndarray,
         ],
         max_new_tokens: int = 4096,
-        num_beams: int = 3,
-        do_sample: bool = False,
+        num_beams: int = INFERENCE_MODELS_FLORENCE2_DEFAULT_NUM_BEAMS,
+        do_sample: bool = INFERENCE_MODELS_FLORENCE2_DEFAULT_DO_SAMPLE,
         input_color_format: Optional[ColorFormat] = None,
     ) -> List[str]:
         loc_phrases = region_to_loc_phrase(images=images, xyxy=xyxy)
@@ -225,8 +237,8 @@ class Florence2HF:
             np.ndarray,
         ],
         max_new_tokens: int = 4096,
-        num_beams: int = 3,
-        do_sample: bool = False,
+        num_beams: int = INFERENCE_MODELS_FLORENCE2_DEFAULT_NUM_BEAMS,
+        do_sample: bool = INFERENCE_MODELS_FLORENCE2_DEFAULT_DO_SAMPLE,
         input_color_format: Optional[ColorFormat] = None,
     ) -> List[str]:
         loc_phrases = region_to_loc_phrase(images=images, xyxy=xyxy)
@@ -253,8 +265,8 @@ class Florence2HF:
             np.ndarray,
         ],
         max_new_tokens: int = 4096,
-        num_beams: int = 3,
-        do_sample: bool = False,
+        num_beams: int = INFERENCE_MODELS_FLORENCE2_DEFAULT_NUM_BEAMS,
+        do_sample: bool = INFERENCE_MODELS_FLORENCE2_DEFAULT_DO_SAMPLE,
         input_color_format: Optional[ColorFormat] = None,
     ) -> List[str]:
         loc_phrases = region_to_loc_phrase(images=images, xyxy=xyxy)
@@ -281,8 +293,8 @@ class Florence2HF:
             np.ndarray,
         ],
         max_new_tokens: int = 4096,
-        num_beams: int = 3,
-        do_sample: bool = False,
+        num_beams: int = INFERENCE_MODELS_FLORENCE2_DEFAULT_NUM_BEAMS,
+        do_sample: bool = INFERENCE_MODELS_FLORENCE2_DEFAULT_DO_SAMPLE,
         input_color_format: Optional[ColorFormat] = None,
     ) -> List[InstanceDetections]:
         loc_phrases = region_to_loc_phrase(images=images, xyxy=xyxy)
@@ -321,8 +333,8 @@ class Florence2HF:
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         phrase: str,
         max_new_tokens: int = 4096,
-        num_beams: int = 3,
-        do_sample: bool = False,
+        num_beams: int = INFERENCE_MODELS_FLORENCE2_DEFAULT_NUM_BEAMS,
+        do_sample: bool = INFERENCE_MODELS_FLORENCE2_DEFAULT_DO_SAMPLE,
         input_color_format: Optional[ColorFormat] = None,
     ) -> List[InstanceDetections]:
         prompt = f"<REFERRING_EXPRESSION_SEGMENTATION>{phrase}"
@@ -361,8 +373,8 @@ class Florence2HF:
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         phrase: str,
         max_new_tokens: int = 4096,
-        num_beams: int = 3,
-        do_sample: bool = False,
+        num_beams: int = INFERENCE_MODELS_FLORENCE2_DEFAULT_NUM_BEAMS,
+        do_sample: bool = INFERENCE_MODELS_FLORENCE2_DEFAULT_DO_SAMPLE,
         input_color_format: Optional[ColorFormat] = None,
     ) -> List[Detections]:
         prompt = f"<CAPTION_TO_PHRASE_GROUNDING>{phrase}"
@@ -398,8 +410,8 @@ class Florence2HF:
         labels_mode: Literal["classes", "captions", "rois"] = "classes",
         classes: Optional[List[str]] = None,
         max_new_tokens: int = 4096,
-        num_beams: int = 3,
-        do_sample: bool = False,
+        num_beams: int = INFERENCE_MODELS_FLORENCE2_DEFAULT_NUM_BEAMS,
+        do_sample: bool = INFERENCE_MODELS_FLORENCE2_DEFAULT_DO_SAMPLE,
         input_color_format: Optional[ColorFormat] = None,
     ) -> List[Detections]:
         if classes:
@@ -440,9 +452,9 @@ class Florence2HF:
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         granularity: Literal["normal", "detailed", "very_detailed"] = "normal",
-        max_new_tokens: int = 4096,
-        num_beams: int = 3,
-        do_sample: bool = False,
+        max_new_tokens: int = INFERENCE_MODELS_FLORENCE2_DEFAULT_MAX_NEW_TOKENS,
+        num_beams: int = INFERENCE_MODELS_FLORENCE2_DEFAULT_NUM_BEAMS,
+        do_sample: bool = INFERENCE_MODELS_FLORENCE2_DEFAULT_DO_SAMPLE,
         input_color_format: Optional[ColorFormat] = None,
     ) -> List[str]:
         task = GRANULARITY_2TASK[granularity]
@@ -460,9 +472,9 @@ class Florence2HF:
     def parse_document(
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
-        max_new_tokens: int = 4096,
-        num_beams: int = 3,
-        do_sample: bool = False,
+        max_new_tokens: int = INFERENCE_MODELS_FLORENCE2_DEFAULT_MAX_NEW_TOKENS,
+        num_beams: int = INFERENCE_MODELS_FLORENCE2_DEFAULT_NUM_BEAMS,
+        do_sample: bool = INFERENCE_MODELS_FLORENCE2_DEFAULT_DO_SAMPLE,
         input_color_format: Optional[ColorFormat] = None,
     ) -> List[Detections]:
         task = "<OCR_WITH_REGION>"
@@ -492,9 +504,9 @@ class Florence2HF:
     def ocr_image(
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
-        max_new_tokens: int = 4096,
-        num_beams: int = 3,
-        do_sample: bool = False,
+        max_new_tokens: int = INFERENCE_MODELS_FLORENCE2_DEFAULT_MAX_NEW_TOKENS,
+        num_beams: int = INFERENCE_MODELS_FLORENCE2_DEFAULT_NUM_BEAMS,
+        do_sample: bool = INFERENCE_MODELS_FLORENCE2_DEFAULT_DO_SAMPLE,
         input_color_format: Optional[ColorFormat] = None,
     ) -> List[str]:
         task = "<OCR>"
@@ -513,9 +525,9 @@ class Florence2HF:
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         prompt: Union[str, List[str]],
-        max_new_tokens: int = 4096,
-        num_beams: int = 3,
-        do_sample: bool = False,
+        max_new_tokens: int = INFERENCE_MODELS_FLORENCE2_DEFAULT_MAX_NEW_TOKENS,
+        num_beams: int = INFERENCE_MODELS_FLORENCE2_DEFAULT_NUM_BEAMS,
+        do_sample: bool = INFERENCE_MODELS_FLORENCE2_DEFAULT_DO_SAMPLE,
         skip_special_tokens: bool = False,
         task: Optional[str] = None,
         input_color_format: Optional[ColorFormat] = None,
@@ -580,9 +592,9 @@ class Florence2HF:
 
         if isinstance(prompt, list):
             if len(prompt) != len(image_dimensions):
-                raise ModelRuntimeError(
+                raise ModelInputError(
                     message="Provided prompt as list, but the number of prompt elements does not match number of input images.",
-                    help_url="https://todo",
+                    help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
                 )
         else:
             prompt = [prompt] * len(image_dimensions)
@@ -595,19 +607,19 @@ class Florence2HF:
     def generate(
         self,
         inputs: dict,
-        max_new_tokens: int = 4096,
-        num_beams: int = 3,
-        do_sample: bool = False,
+        max_new_tokens: int = INFERENCE_MODELS_FLORENCE2_DEFAULT_MAX_NEW_TOKENS,
+        num_beams: int = INFERENCE_MODELS_FLORENCE2_DEFAULT_NUM_BEAMS,
+        do_sample: bool = INFERENCE_MODELS_FLORENCE2_DEFAULT_DO_SAMPLE,
         **kwargs,
     ) -> torch.Tensor:
-        return self._model.generate(
-            input_ids=inputs["input_ids"],
-            pixel_values=inputs["pixel_values"],
-            max_new_tokens=max_new_tokens,
-            num_beams=num_beams,
-            do_sample=do_sample,
-            **kwargs,
-        )
+        with self._lock:
+            return self._model.generate(
+                input_ids=inputs["input_ids"],
+                pixel_values=inputs["pixel_values"],
+                max_new_tokens=max_new_tokens,
+                num_beams=num_beams,
+                do_sample=do_sample,
+            )
 
     def post_process_generation(
         self,
@@ -650,17 +662,18 @@ def region_to_loc_phrase(
         xyxy = xyxy.tolist()
     image_dimensions = extract_input_images_dimensions(images=images)
     if not xyxy:
-        raise ModelRuntimeError(
-            message="Provided empty region grounding.", help_url="https://todo"
+        raise ModelInputError(
+            message="Provided empty region grounding.",
+            help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
         )
     nested = isinstance(xyxy[0], list)
     if not nested:
         xyxy = [xyxy] * len(image_dimensions)
     if len(xyxy) != len(image_dimensions):
-        raise ModelRuntimeError(
+        raise ModelInputError(
             message="Provided multiple regions - it is expected to provide a single region for each image, but number "
             "of regions does not match number of input images.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
         )
     result = []
     for image_xyxy, single_image_dimensions in zip(xyxy, image_dimensions):

@@ -5,6 +5,8 @@ import re
 import tempfile
 from typing import List, Optional, Union
 
+_pattern = re.compile(r"[^A-Za-z0-9_-]")
+
 
 class AtomicPath:
     """Context manager for atomic file writes.
@@ -170,4 +172,4 @@ def ensure_write_is_allowed(path: str, allow_override: bool) -> None:
 
 def sanitize_path_segment(path_segment: str) -> str:
     # Keep only letters, numbers, underscores and dashes
-    return re.sub(r"[^A-Za-z0-9_-]", "_", path_segment)
+    return _pattern.sub("_", path_segment)

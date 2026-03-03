@@ -23,7 +23,7 @@ def test_torchscript_package_stretch_numpy(
         device=DEFAULT_DEVICE,
     )
 
-    predictions = model(snake_image_numpy)
+    predictions = model(snake_image_numpy, confidence=0.25)
 
     xyxy = predictions[0].xyxy.cpu().tolist()[0]
     mask_region_sum = (
@@ -67,7 +67,7 @@ def test_torchscript_package_stretch_batch_numpy(
         device=DEFAULT_DEVICE,
     )
 
-    predictions = model([snake_image_numpy, snake_image_numpy])
+    predictions = model([snake_image_numpy, snake_image_numpy], confidence=0.25)
 
     xyxy_0 = predictions[0].xyxy.cpu().tolist()[0]
     xyxy_1 = predictions[1].xyxy.cpu().tolist()[0]
@@ -133,7 +133,7 @@ def test_torchscript_package_stretch_torch(
         device=DEFAULT_DEVICE,
     )
 
-    predictions = model(snake_image_torch)
+    predictions = model(snake_image_torch, confidence=0.25)
 
     xyxy = predictions[0].xyxy.cpu().tolist()[0]
     mask_region_sum = (
@@ -177,7 +177,7 @@ def test_torchscript_package_letterbox_numpy(
         device=DEFAULT_DEVICE,
     )
 
-    predictions = model(snake_image_numpy)
+    predictions = model(snake_image_numpy, confidence=0.25)
 
     xyxy = predictions[0].xyxy.cpu().tolist()[0]
     mask_region_sum = (
@@ -221,7 +221,7 @@ def test_torchscript_package_letterbox_batch_numpy(
         device=DEFAULT_DEVICE,
     )
 
-    predictions = model([snake_image_numpy, snake_image_numpy])
+    predictions = model([snake_image_numpy, snake_image_numpy], confidence=0.25)
 
     xyxy_0 = predictions[0].xyxy.cpu().tolist()[0]
     xyxy_1 = predictions[1].xyxy.cpu().tolist()[0]
@@ -287,7 +287,7 @@ def test_torchscript_package_letterbox_torch(
         device=DEFAULT_DEVICE,
     )
 
-    predictions = model(snake_image_torch)
+    predictions = model(snake_image_torch, confidence=0.25)
 
     xyxy = predictions[0].xyxy.cpu().tolist()[0]
     mask_region_sum = (

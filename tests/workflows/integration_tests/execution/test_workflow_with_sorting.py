@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 import supervision as sv
 
-from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
+from inference.core.env import USE_INFERENCE_MODELS, WORKFLOWS_MAX_CONCURRENT_STEPS
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.query_language.entities.enums import (
@@ -345,11 +345,18 @@ def test_sorting_workflow_for_size_descending(
     assert isinstance(result, list), "Expected result to be list"
     assert len(result) == 1, "Single image provided - single output expected"
     detections: sv.Detections = result[0]["result"]["predictions"]
-    assert np.allclose(
-        detections.box_area,
-        np.array([7040, 6669, 4876, 4387, 3502, 2496]),
-        atol=1,
-    ), "Expected alignment of boxes size to be as requested"
+    if not USE_INFERENCE_MODELS:
+        assert np.allclose(
+            detections.box_area,
+            np.array([7040, 6669, 4876, 4387, 3502, 2496]),
+            atol=1,
+        ), "Expected alignment of boxes size to be as requested"
+    else:
+        assert np.allclose(
+            detections.box_area,
+            np.array([7104, 6669, 4830, 4346, 3502, 2496]),
+            atol=1,
+        ), "Expected alignment of boxes size to be as requested"
 
 
 def test_sorting_workflow_for_center_x_descending(

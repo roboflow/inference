@@ -36,6 +36,10 @@ class PredefinedWorkflowInferenceRequest(WorkflowInferenceRequest):
         description="Controls usage of cache for workflow definitions. Set this to False when you frequently modify "
         "definition saved in Roboflow app and want to fetch the newest version for the request.",
     )
+    workflow_version_id: Optional[str] = Field(
+        default=None,
+        description="Specific version of the workflow to fetch. If not provided, the latest version is used.",
+    )
 
 
 class WorkflowSpecificationInferenceRequest(WorkflowInferenceRequest):
@@ -74,6 +78,10 @@ class PredefinedWorkflowDescribeInterfaceRequest(DescribeInterfaceRequest):
         description="Controls usage of cache for workflow definitions. Set this to False when you frequently modify "
         "definition saved in Roboflow app and want to fetch the newest version for the request. "
         "Only applies for Workflows definitions saved on Roboflow platform.",
+    )
+    workflow_version_id: Optional[str] = Field(
+        default=None,
+        description="Specific version of the workflow to fetch. If not provided, the latest version is used.",
     )
 
 

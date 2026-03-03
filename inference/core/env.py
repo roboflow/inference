@@ -6,7 +6,11 @@ from typing import Optional
 from dotenv import load_dotenv
 
 from inference.core.utils.environment import safe_split_value, str2bool
-from inference.core.warnings import InferenceDeprecationWarning, ModelDependencyMissing
+from inference.core.warnings import (
+    InferenceDeprecationWarning,
+    InferenceModelsStackMissing,
+    ModelDependencyMissing,
+)
 
 load_dotenv(os.getcwd() + "/.env")
 
@@ -169,6 +173,13 @@ if SAM3_EXEC_MODE not in ["local", "remote"]:
     raise ValueError(
         f"Invalid SAM3 execution mode in ENVIRONMENT var SAM3_EXEC_MODE (local or remote): {SAM3_EXEC_MODE}"
     )
+# Whether fine-tuned SAM3 models (non-sam3/ prefix) are allowed.
+# Defaults to False when SAM3_EXEC_MODE=remote (backward compat with existing proxy deployments),
+# True otherwise (self-hosted users can use fine-tuned models).
+_sam3_fine_tuned_default = "False" if SAM3_EXEC_MODE == "remote" else "True"
+SAM3_FINE_TUNED_MODELS_ENABLED = str2bool(
+    os.getenv("SAM3_FINE_TUNED_MODELS_ENABLED", _sam3_fine_tuned_default)
+)
 
 # Flag to enable GAZE core model, default is True
 CORE_MODEL_GAZE_ENABLED = str2bool(os.getenv("CORE_MODEL_GAZE_ENABLED", True))
@@ -211,9 +222,12 @@ CORE_MODEL_YOLO_WORLD_ENABLED = str2bool(
 )
 
 # Enable experimental RFDETR backend (inference_models) rollout, default is True
-USE_INFERENCE_EXP_MODELS = str2bool(os.getenv("USE_INFERENCE_EXP_MODELS", "False"))
-ALLOW_INFERENCE_EXP_UNTRUSTED_MODELS = str2bool(
-    os.getenv("ALLOW_INFERENCE_EXP_UNTRUSTED_MODELS", "False")
+USE_INFERENCE_MODELS = str2bool(os.getenv("USE_INFERENCE_MODELS", "False"))
+ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES = str2bool(
+    os.getenv("ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES", "False")
+)
+ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES = str2bool(
+    os.getenv("ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES", "False")
 )
 
 # ID of host device, default is None
@@ -288,6 +302,18 @@ LAMBDA = str2bool(os.getenv("LAMBDA", False))
 
 # Whether is's GCP serverless service
 GCP_SERVERLESS = str2bool(os.getenv("GCP_SERVERLESS", "False"))
+
+# This variable affects extra headers passed to new weights provider created for
+# `inference-models` - only effective when `USE_INFERENCE_MODELS` is True and
+# makes the weights provider to reject request for model weights that are coming to
+# internal services and requires rejection when account exceeds limits
+ENFORCE_CREDITS_VERIFICATION = str2bool(
+    os.getenv("ENFORCE_CREDITS_VERIFICATION", "False")
+)
+
+WORKFLOWS_REMOTE_EXECUTION_TIME_FORWARDING = str2bool(
+    os.getenv("WORKFLOWS_REMOTE_EXECUTION_TIME_FORWARDING", "True")
+)
 
 GET_MODEL_REGISTRY_ENABLED = str2bool(os.getenv("GET_MODEL_REGISTRY_ENABLED", "True"))
 
@@ -595,6 +621,7 @@ INFERENCE_WARNINGS_DISABLED = str2bool(
 
 if INFERENCE_WARNINGS_DISABLED:
     warnings.simplefilter("ignore", InferenceDeprecationWarning)
+    warnings.simplefilter("ignore", InferenceModelsStackMissing)
 
 HUGGINGFACE_TOKEN = os.getenv("HUGGINGFACE_TOKEN")
 DEVICE = os.getenv("DEVICE")
@@ -618,6 +645,9 @@ WORKFLOWS_DEFINITION_CACHE_EXPIRY = int(
 USE_FILE_CACHE_FOR_WORKFLOWS_DEFINITIONS = str2bool(
     os.getenv("USE_FILE_CACHE_FOR_WORKFLOWS_DEFINITIONS", "True")
 )
+SINGLE_TENANT_WORKFLOW_CACHE = str2bool(
+    os.getenv("SINGLE_TENANT_WORKFLOW_CACHE", "False")
+)
 ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE = str2bool(
     os.getenv("ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE", "True")
 )
@@ -637,6 +667,19 @@ ROBOFLOW_INTERNAL_SERVICE_NAME = os.getenv("ROBOFLOW_INTERNAL_SERVICE_NAME")
 # Preload Models
 PRELOAD_MODELS = (
     os.getenv("PRELOAD_MODELS").split(",") if os.getenv("PRELOAD_MODELS") else None
+)
+
+# API key used exclusively for model preloading. Use this instead of API_KEY on
+# user-facing deployments where setting API_KEY globally would affect per-request
+# auth, billing attribution, and model-access fallback behaviour.
+# Falls back to API_KEY if not set.
+PRELOAD_API_KEY = os.getenv("PRELOAD_API_KEY") or API_KEY
+
+# Models that must always be loaded at startup and never evicted from cache.
+# Unlike PRELOAD_MODELS, this bypasses the LAMBDA/GCP_SERVERLESS gate.
+# Comma-separated list of model IDs.
+PINNED_MODELS = (
+    os.getenv("PINNED_MODELS").split(",") if os.getenv("PINNED_MODELS") else None
 )
 
 LOAD_ENTERPRISE_BLOCKS = str2bool(os.getenv("LOAD_ENTERPRISE_BLOCKS", "False"))
@@ -809,7 +852,7 @@ if WEBRTC_DATA_CHANNEL_ACK_WINDOW < 0:
     WEBRTC_DATA_CHANNEL_ACK_WINDOW = 0
 
 WEBRTC_GZIP_PREVIEW_FRAME_COMPRESSION = str2bool(
-    os.getenv("WEBRTC_GZIP_PREVIEW_FRAME_COMPRESSION", "False")
+    os.getenv("WEBRTC_GZIP_PREVIEW_FRAME_COMPRESSION", "True")
 )
 
 # JPEG quality for WebRTC preview frames

@@ -72,6 +72,9 @@ from inference.core.workflows.core_steps.classical_cv.image_blur.v1 import (
 from inference.core.workflows.core_steps.classical_cv.image_preprocessing.v1 import (
     ImagePreprocessingBlockV1,
 )
+from inference.core.workflows.core_steps.classical_cv.mask_area_measurement.v1 import (
+    MaskAreaMeasurementBlockV1,
+)
 from inference.core.workflows.core_steps.classical_cv.morphological_transformation.v1 import (
     MorphologicalTransformationBlockV1,
 )
@@ -477,6 +480,9 @@ from inference.core.workflows.core_steps.visualizations.halo.v1 import (
 from inference.core.workflows.core_steps.visualizations.halo.v2 import (
     HaloVisualizationBlockV2,
 )
+from inference.core.workflows.core_steps.visualizations.heatmap.v1 import (
+    HeatmapVisualizationBlockV1,
+)
 from inference.core.workflows.core_steps.visualizations.icon.v1 import (
     IconVisualizationBlockV1,
 )
@@ -740,6 +746,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         ImageContoursDetectionBlockV1,
         ImagePreprocessingBlockV1,
         ImageSlicerBlockV1,
+        HeatmapVisualizationBlockV1,
         ImageThresholdBlockV1,
         MotionDetectionBlockV1,
         BackgroundSubtractionBlockV1,
@@ -836,6 +843,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         EasyOCRBlockV1,
         QRCodeGeneratorBlockV1,
         DetectionsCombineBlockV1,
+        MaskAreaMeasurementBlockV1,
     ]
     if SAM3_3D_OBJECTS_ENABLED:
         blocks.append(SegmentAnything3_3D_ObjectsBlockV1)

@@ -1,0 +1,90 @@
+from typing import Any, List
+
+import torch
+
+from inference.core.entities.responses import (
+    InferenceResponseImage,
+    LMMInferenceResponse,
+)
+from inference.core.env import (
+    ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES,
+    ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES,
+    API_KEY,
+    DEVICE,
+)
+from inference.core.models.types import PreprocessReturnMetadata
+from inference.core.roboflow_api import get_extra_weights_provider_headers
+from inference.core.utils.image_utils import load_image_bgr
+from inference_models import AutoModel
+from inference_models.models.smolvlm.smolvlm_hf import SmolVLMHF
+
+if DEVICE is None:
+    DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
+from inference.core.models.base import Model
+
+
+class InferenceModelsSmolVLMAdapter(Model):
+
+    def __init__(self, model_id: str, api_key: str = None, **kwargs):
+        super().__init__()
+
+        self.metrics = {"num_inferences": 0, "avg_inference_time": 0.0}
+
+        self.api_key = api_key if api_key else API_KEY
+
+        self.task_type = "lmm"
+
+        extra_weights_provider_headers = get_extra_weights_provider_headers()
+        self._model: SmolVLMHF = AutoModel.from_pretrained(
+            model_id_or_path=model_id,
+            api_key=self.api_key,
+            allow_untrusted_packages=ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES,
+            allow_direct_local_storage_loading=ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES,
+            weights_provider_extra_headers=extra_weights_provider_headers,
+            **kwargs,
+        )
+
+    def map_inference_kwargs(self, kwargs: dict) -> dict:
+        return kwargs
+
+    def preprocess(self, image: Any, prompt: str = "", **kwargs):
+        is_batch = isinstance(image, list)
+        if is_batch:
+            raise ValueError("This model does not support batched-inference.")
+        np_image = load_image_bgr(
+            image,
+            disable_preproc_auto_orient=kwargs.get(
+                "disable_preproc_auto_orient", False
+            ),
+        )
+        input_shape = PreprocessReturnMetadata({"image_dims": np_image.shape[:2][::-1]})
+        mapped_kwargs = self.map_inference_kwargs(kwargs)
+        return (
+            self._model.pre_process_generation(np_image, prompt, **mapped_kwargs),
+            input_shape,
+        )
+
+    def predict(self, inputs, **kwargs) -> torch.Tensor:
+        mapped_kwargs = self.map_inference_kwargs(kwargs)
+        return self._model.generate(inputs, **mapped_kwargs)
+
+    def postprocess(
+        self,
+        predictions: torch.Tensor,
+        preprocess_return_metadata: PreprocessReturnMetadata,
+        skip_special_tokens: bool = True,
+        **kwargs,
+    ) -> List[LMMInferenceResponse]:
+        mapped_kwargs = self.map_inference_kwargs(kwargs)
+        result = self._model.post_process_generation(
+            predictions, skip_special_tokens=skip_special_tokens, **mapped_kwargs
+        )[0]
+        return [
+            LMMInferenceResponse(
+                response=result,
+                image=InferenceResponseImage(
+                    width=preprocess_return_metadata["image_dims"][0],
+                    height=preprocess_return_metadata["image_dims"][1],
+                ),
+            )
+        ]

@@ -21,7 +21,13 @@ def test_torchscript_package_with_static_batch_size_and_letterbox_batch_numpy(
     )
 
     # when
-    predictions = model([coins_counting_image_numpy, coins_counting_image_numpy])
+    predictions = model(
+        [coins_counting_image_numpy, coins_counting_image_numpy],
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert torch.allclose(
@@ -108,7 +114,13 @@ def test_torchscript_package_with_static_batch_size_and_letterbox_torch(
     )
 
     # when
-    predictions = model(coins_counting_image_torch)
+    predictions = model(
+        coins_counting_image_torch,
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert torch.allclose(
@@ -169,7 +181,11 @@ def test_torchscript_package_with_static_batch_size_and_letterbox_batch_torch(
 
     # when
     predictions = model(
-        torch.stack([coins_counting_image_torch, coins_counting_image_torch], dim=0)
+        torch.stack([coins_counting_image_torch, coins_counting_image_torch], dim=0),
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
     )
 
     # then
@@ -257,7 +273,13 @@ def test_torchscript_package_with_static_batch_size_and_letterbox_batch_torch_li
     )
 
     # when
-    predictions = model([coins_counting_image_torch, coins_counting_image_torch])
+    predictions = model(
+        [coins_counting_image_torch, coins_counting_image_torch],
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert torch.allclose(
@@ -343,7 +365,13 @@ def test_torch_script_package_with_static_batch_size_and_letterbox__fused_nms_nu
     )
 
     # when
-    predictions = model(coins_counting_image_numpy)
+    predictions = model(
+        coins_counting_image_numpy,
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert torch.allclose(
@@ -403,7 +431,13 @@ def test_torchscript_package_with_static_batch_size_and_letterbox_fused_nms_batc
     )
 
     # when
-    predictions = model([coins_counting_image_numpy, coins_counting_image_numpy])
+    predictions = model(
+        [coins_counting_image_numpy, coins_counting_image_numpy],
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert torch.allclose(
@@ -490,7 +524,13 @@ def test_torchscript_package_with_static_batch_size_and_letterbox_fused_nms_torc
     )
 
     # when
-    predictions = model(coins_counting_image_torch)
+    predictions = model(
+        coins_counting_image_torch,
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert torch.allclose(
@@ -551,7 +591,11 @@ def test_torchscript_package_with_static_batch_size_and_letterbox_fused_nms_batc
 
     # when
     predictions = model(
-        torch.stack([coins_counting_image_torch, coins_counting_image_torch], dim=0)
+        torch.stack([coins_counting_image_torch, coins_counting_image_torch], dim=0),
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
     )
 
     # then
@@ -639,7 +683,13 @@ def test_torchscript_package_with_static_batch_size_and_letterbox_fused_nms_batc
     )
 
     # when
-    predictions = model([coins_counting_image_torch, coins_counting_image_torch])
+    predictions = model(
+        [coins_counting_image_torch, coins_counting_image_torch],
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert torch.allclose(
@@ -725,7 +775,13 @@ def test_torch_script_package_with_static_batch_size_and_letterbox_numpy(
     )
 
     # when
-    predictions = model(coins_counting_image_numpy)
+    predictions = model(
+        coins_counting_image_numpy,
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert torch.allclose(
@@ -785,7 +841,13 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_nump
     )
 
     # when
-    predictions = model(coins_counting_image_numpy)
+    predictions = model(
+        coins_counting_image_numpy,
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert torch.allclose(
@@ -845,7 +907,13 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_torc
     )
 
     # when
-    predictions = model(coins_counting_image_torch)
+    predictions = model(
+        coins_counting_image_torch,
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert torch.allclose(
@@ -905,7 +973,13 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_batc
     )
 
     # when
-    predictions = model([coins_counting_image_numpy, coins_counting_image_numpy])
+    predictions = model(
+        [coins_counting_image_numpy, coins_counting_image_numpy],
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert torch.allclose(
@@ -992,7 +1066,13 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_torc
     )
 
     # when
-    predictions = model(coins_counting_image_torch)
+    predictions = model(
+        coins_counting_image_torch,
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert torch.allclose(
@@ -1053,7 +1133,11 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_batc
 
     # when
     predictions = model(
-        torch.stack([coins_counting_image_torch, coins_counting_image_torch], dim=0)
+        torch.stack([coins_counting_image_torch, coins_counting_image_torch], dim=0),
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
     )
 
     # then
@@ -1141,7 +1225,13 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_torc
     )
 
     # when
-    predictions = model([coins_counting_image_torch, coins_counting_image_torch])
+    predictions = model(
+        [coins_counting_image_torch, coins_counting_image_torch],
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert torch.allclose(
@@ -1227,7 +1317,13 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_nms_
     )
 
     # when
-    predictions = model(coins_counting_image_numpy)
+    predictions = model(
+        coins_counting_image_numpy,
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert torch.allclose(
@@ -1287,7 +1383,13 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_nms_
     )
 
     # when
-    predictions = model([coins_counting_image_numpy, coins_counting_image_numpy])
+    predictions = model(
+        [coins_counting_image_numpy, coins_counting_image_numpy],
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert torch.allclose(
@@ -1374,7 +1476,13 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_nms_
     )
 
     # when
-    predictions = model(coins_counting_image_torch)
+    predictions = model(
+        coins_counting_image_torch,
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert torch.allclose(
@@ -1435,7 +1543,11 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_nms_
 
     # when
     predictions = model(
-        torch.stack([coins_counting_image_torch, coins_counting_image_torch], dim=0)
+        torch.stack([coins_counting_image_torch, coins_counting_image_torch], dim=0),
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
     )
 
     # then
@@ -1523,7 +1635,13 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_nms_
     )
 
     # when
-    predictions = model([coins_counting_image_torch, coins_counting_image_torch])
+    predictions = model(
+        [coins_counting_image_torch, coins_counting_image_torch],
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert torch.allclose(
@@ -1610,7 +1728,13 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_numpy(
     )
 
     # when
-    predictions = model(coins_counting_image_numpy)
+    predictions = model(
+        coins_counting_image_numpy,
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert torch.allclose(
@@ -1651,7 +1775,13 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_torch(
     )
 
     # when
-    predictions = model(coins_counting_image_torch)
+    predictions = model(
+        coins_counting_image_torch,
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert torch.allclose(
@@ -1692,7 +1822,13 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_batch_numpy(
     )
 
     # when
-    predictions = model([coins_counting_image_numpy, coins_counting_image_numpy])
+    predictions = model(
+        [coins_counting_image_numpy, coins_counting_image_numpy],
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert torch.allclose(
@@ -1747,7 +1883,13 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_torch(
     )
 
     # when
-    predictions = model(coins_counting_image_torch)
+    predictions = model(
+        coins_counting_image_torch,
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert torch.allclose(
@@ -1789,7 +1931,11 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_batch_torch(
 
     # when
     predictions = model(
-        torch.stack([coins_counting_image_torch, coins_counting_image_torch], dim=0)
+        torch.stack([coins_counting_image_torch, coins_counting_image_torch], dim=0),
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
     )
 
     # then
@@ -1845,7 +1991,13 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_torch_list(
     )
 
     # when
-    predictions = model([coins_counting_image_torch, coins_counting_image_torch])
+    predictions = model(
+        [coins_counting_image_torch, coins_counting_image_torch],
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert torch.allclose(
@@ -1900,7 +2052,13 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_nms_fused_nu
     )
 
     # when
-    predictions = model(coins_counting_image_numpy)
+    predictions = model(
+        coins_counting_image_numpy,
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert torch.allclose(
@@ -1942,7 +2100,13 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_nms_fused_to
     )
 
     # when
-    predictions = model(coins_counting_image_torch)
+    predictions = model(
+        coins_counting_image_torch,
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert torch.allclose(
@@ -1984,7 +2148,13 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_nms_fused_ba
     )
 
     # when
-    predictions = model([coins_counting_image_numpy, coins_counting_image_numpy])
+    predictions = model(
+        [coins_counting_image_numpy, coins_counting_image_numpy],
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert torch.allclose(
@@ -2040,7 +2210,13 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_nms_fused_to
     )
 
     # when
-    predictions = model(coins_counting_image_torch)
+    predictions = model(
+        coins_counting_image_torch,
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert torch.allclose(
@@ -2083,7 +2259,11 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_nms_fused_ba
 
     # when
     predictions = model(
-        torch.stack([coins_counting_image_torch, coins_counting_image_torch], dim=0)
+        torch.stack([coins_counting_image_torch, coins_counting_image_torch], dim=0),
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
     )
 
     # then
@@ -2140,7 +2320,13 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_nms_fused_to
     )
 
     # when
-    predictions = model([coins_counting_image_torch, coins_counting_image_torch])
+    predictions = model(
+        [coins_counting_image_torch, coins_counting_image_torch],
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert torch.allclose(

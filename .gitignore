@@ -209,3 +209,6 @@ inference_models/tests/integration_tests/models/assets/
 inference_models/tests/e2e_platform_tests/assets/
 
 inference_testing
+
+# rerun.io recordings
+*.rrd

@@ -75,7 +75,7 @@ def get_model_package_contents(
                 f"of connectivity may be a good first step. If you prepared the model package manually - examine the "
                 f"correctness of the setup. If you run on managed serving - contact support if the issue is "
                 f"not ephemeral.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
         result[element] = element_path
     return result

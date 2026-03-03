@@ -19,6 +19,7 @@ from inference.core.env import (
     MODEL_LOCK_ACQUIRE_TIMEOUT,
     MODELS_CACHE_AUTH_ENABLED,
     ROBOFLOW_SERVER_UUID,
+    USE_INFERENCE_MODELS,
 )
 from inference.core.exceptions import (
     InferenceModelNotFound,
@@ -449,6 +450,7 @@ class ModelManager:
                 self._models[model_id].clear_cache(delete_from_disk=delete_from_disk)
                 del self._models[model_id]
                 self._dispose_model_lock(model_id=model_id)
+                try_releasing_cuda_memory()
         except InferenceModelNotFound:
             logger.warning(
                 f"Attempted to remove model with id {model_id}, but it is not loaded. Skipping..."
@@ -557,3 +559,18 @@ def acquire_with_timeout(
     finally:
         if acquired:
             lock.release()
+
+
+def try_releasing_cuda_memory() -> None:
+    if not USE_INFERENCE_MODELS:
+        # For now, we only want to have purge CUDA memory when USE_INFERENCE_MODELS is True
+        return None
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+    except ImportError:
+        pass
+    except Exception as error:
+        logger.warning(f"Attempted to purge CUDA memory but failed with error: {error}")

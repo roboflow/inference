@@ -489,6 +489,7 @@ class InferencePipeline:
         decoding_buffer_size: int = DEFAULT_BUFFER_SIZE,
         model_manager: Optional[ModelManager] = None,
         _is_preview: bool = False,
+        workflow_version_id: Optional[str] = None,
     ) -> "InferencePipeline":
         """
         This class creates the abstraction for making inferences from given workflow against video stream.
@@ -624,6 +625,7 @@ class InferencePipeline:
                         api_key=api_key,
                         workspace_id=workspace_name,
                         workflow_id=workflow_id,
+                        workflow_version_id=workflow_version_id,
                         use_cache=use_workflow_definition_cache,
                     )
             model_registry = RoboflowModelRegistry(ROBOFLOW_MODEL_TYPES)

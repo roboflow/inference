@@ -40,8 +40,9 @@ from inference.core.roboflow_api import build_roboflow_api_headers
 from inference.core.version import __version__ as inference_version
 
 try:
-    from inference_sdk.config import execution_id
+    from inference_sdk.config import apply_duration_minimum, execution_id
 except ImportError:
+    apply_duration_minimum = None
     execution_id = None
 
 from .config import TelemetrySettings, get_telemetry_settings
@@ -695,6 +696,20 @@ class UsageCollector:
             "roboflow_internal_secret": roboflow_internal_secret,
         }
 
+    @staticmethod
+    def _compute_execution_duration(t1: float, t2: float) -> float:
+        raw = t2 - t1
+        if not GCP_SERVERLESS:
+            return raw
+        if apply_duration_minimum is not None:
+            try:
+                if apply_duration_minimum.get():
+                    return max(raw, 0.1)
+                return raw
+            except LookupError:
+                pass
+        return max(raw, 0.1)
+
     def __call__(
         self, category: Literal["model", "workflows", "request"]
     ) -> Callable[P, T]:
@@ -714,10 +729,7 @@ class UsageCollector:
                     t1 = time.time()
                     res = func(*args, **kwargs)
                     t2 = time.time()
-                    if GCP_SERVERLESS is True:
-                        execution_duration = max(t2 - t1, 0.1)
-                    else:
-                        execution_duration = t2 - t1
+                    execution_duration = self._compute_execution_duration(t1, t2)
                     self.record_usage(
                         **self._extract_usage_params_from_func_kwargs(
                             usage_fps=usage_fps,
@@ -736,10 +748,7 @@ class UsageCollector:
                     )
                 except Exception as exc:
                     t2 = time.time()
-                    if GCP_SERVERLESS is True:
-                        execution_duration = max(t2 - t1, 0.1)
-                    else:
-                        execution_duration = t2 - t1
+                    execution_duration = self._compute_execution_duration(t1, t2)
                     exc_type = type(exc).__name__
                     if hasattr(exc, "inner_error_type"):
                         exc_type = exc.inner_error_type
@@ -778,10 +787,7 @@ class UsageCollector:
                     t1 = time.time()
                     res = await func(*args, **kwargs)
                     t2 = time.time()
-                    if GCP_SERVERLESS is True:
-                        execution_duration = max(t2 - t1, 0.1)
-                    else:
-                        execution_duration = t2 - t1
+                    execution_duration = self._compute_execution_duration(t1, t2)
                     await self.async_record_usage(
                         **self._extract_usage_params_from_func_kwargs(
                             usage_fps=usage_fps,
@@ -800,10 +806,7 @@ class UsageCollector:
                     )
                 except Exception as exc:
                     t2 = time.time()
-                    if GCP_SERVERLESS is True:
-                        execution_duration = max(t2 - t1, 0.1)
-                    else:
-                        execution_duration = t2 - t1
+                    execution_duration = self._compute_execution_duration(t1, t2)
                     exc_type = type(exc).__name__
                     if hasattr(exc, "inner_error_type"):
                         exc_type = exc.inner_error_type

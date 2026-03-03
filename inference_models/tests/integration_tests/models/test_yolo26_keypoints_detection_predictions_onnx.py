@@ -9,7 +9,9 @@ CONF_TOLERANCE = 0.01
 
 IS_GPU = str(DEFAULT_DEVICE).startswith("cuda")
 ONNX_EXECUTION_PROVIDERS = (
-    ["CUDAExecutionProvider", "CPUExecutionProvider"] if IS_GPU else ["CPUExecutionProvider"]
+    ["CUDAExecutionProvider", "CPUExecutionProvider"]
+    if IS_GPU
+    else ["CPUExecutionProvider"]
 )
 
 LETTERBOX_EXPECTED_KP_XY_1 = [
@@ -247,7 +249,9 @@ def test_yolo26n_pose_onnx_static_letterbox_numpy(
         onnx_execution_providers=ONNX_EXECUTION_PROVIDERS,
     )
 
-    predictions = model(basketball_image_numpy)
+    predictions = model(
+        basketball_image_numpy, confidence=0.25, key_points_threshold=0.3
+    )
 
     assert torch.allclose(
         predictions[0][0].xy.cpu(),
@@ -289,7 +293,11 @@ def test_yolo26n_pose_onnx_static_letterbox_batch_numpy(
         onnx_execution_providers=ONNX_EXECUTION_PROVIDERS,
     )
 
-    predictions = model([basketball_image_numpy, basketball_image_numpy])
+    predictions = model(
+        [basketball_image_numpy, basketball_image_numpy],
+        confidence=0.25,
+        key_points_threshold=0.3,
+    )
 
     expected_kp_xy = torch.tensor(
         [LETTERBOX_EXPECTED_KP_XY_1, LETTERBOX_EXPECTED_KP_XY_2],
@@ -332,7 +340,9 @@ def test_yolo26n_pose_onnx_static_letterbox_torch(
         onnx_execution_providers=ONNX_EXECUTION_PROVIDERS,
     )
 
-    predictions = model(basketball_image_torch)
+    predictions = model(
+        basketball_image_torch, confidence=0.25, key_points_threshold=0.3
+    )
 
     assert torch.allclose(
         predictions[0][0].xy.cpu(),
@@ -374,7 +384,9 @@ def test_yolo26n_pose_onnx_dynamic_letterbox_numpy(
         onnx_execution_providers=ONNX_EXECUTION_PROVIDERS,
     )
 
-    predictions = model(basketball_image_numpy)
+    predictions = model(
+        basketball_image_numpy, confidence=0.25, key_points_threshold=0.3
+    )
 
     assert torch.allclose(
         predictions[0][0].xy.cpu(),
@@ -416,7 +428,11 @@ def test_yolo26n_pose_onnx_dynamic_letterbox_batch_numpy(
         onnx_execution_providers=ONNX_EXECUTION_PROVIDERS,
     )
 
-    predictions = model([basketball_image_numpy, basketball_image_numpy])
+    predictions = model(
+        [basketball_image_numpy, basketball_image_numpy],
+        confidence=0.25,
+        key_points_threshold=0.3,
+    )
 
     expected_kp_xy = torch.tensor(
         [LETTERBOX_EXPECTED_KP_XY_1, LETTERBOX_EXPECTED_KP_XY_2],
@@ -459,7 +475,9 @@ def test_yolo26n_pose_onnx_dynamic_letterbox_torch(
         onnx_execution_providers=ONNX_EXECUTION_PROVIDERS,
     )
 
-    predictions = model(basketball_image_torch)
+    predictions = model(
+        basketball_image_torch, confidence=0.25, key_points_threshold=0.3
+    )
 
     assert torch.allclose(
         predictions[0][0].xy.cpu(),
@@ -501,7 +519,9 @@ def test_yolo26n_pose_onnx_static_stretch_numpy(
         onnx_execution_providers=ONNX_EXECUTION_PROVIDERS,
     )
 
-    predictions = model(basketball_image_numpy)
+    predictions = model(
+        basketball_image_numpy, confidence=0.25, key_points_threshold=0.3
+    )
 
     assert torch.allclose(
         predictions[0][0].xy.cpu(),
@@ -540,7 +560,11 @@ def test_yolo26n_pose_onnx_static_stretch_batch_numpy(
         onnx_execution_providers=ONNX_EXECUTION_PROVIDERS,
     )
 
-    predictions = model([basketball_image_numpy, basketball_image_numpy])
+    predictions = model(
+        [basketball_image_numpy, basketball_image_numpy],
+        confidence=0.25,
+        key_points_threshold=0.3,
+    )
 
     expected_kp_xy = torch.tensor([STRETCH_EXPECTED_KP_XY], dtype=torch.int32)
     expected_kp_conf = torch.tensor([STRETCH_EXPECTED_KP_CONF])
@@ -577,7 +601,9 @@ def test_yolo26n_pose_onnx_static_stretch_torch(
         onnx_execution_providers=ONNX_EXECUTION_PROVIDERS,
     )
 
-    predictions = model(basketball_image_torch)
+    predictions = model(
+        basketball_image_torch, confidence=0.25, key_points_threshold=0.3
+    )
 
     assert torch.allclose(
         predictions[0][0].xy.cpu(),
@@ -616,7 +642,9 @@ def test_yolo26n_pose_onnx_dynamic_stretch_numpy(
         onnx_execution_providers=ONNX_EXECUTION_PROVIDERS,
     )
 
-    predictions = model(basketball_image_numpy)
+    predictions = model(
+        basketball_image_numpy, confidence=0.25, key_points_threshold=0.3
+    )
 
     assert torch.allclose(
         predictions[0][0].xy.cpu(),
@@ -655,7 +683,11 @@ def test_yolo26n_pose_onnx_dynamic_stretch_batch_numpy(
         onnx_execution_providers=ONNX_EXECUTION_PROVIDERS,
     )
 
-    predictions = model([basketball_image_numpy, basketball_image_numpy])
+    predictions = model(
+        [basketball_image_numpy, basketball_image_numpy],
+        confidence=0.25,
+        key_points_threshold=0.3,
+    )
 
     expected_kp_xy = torch.tensor([STRETCH_EXPECTED_KP_XY], dtype=torch.int32)
     expected_kp_conf = torch.tensor([STRETCH_EXPECTED_KP_CONF])
@@ -692,7 +724,9 @@ def test_yolo26n_pose_onnx_dynamic_stretch_torch(
         onnx_execution_providers=ONNX_EXECUTION_PROVIDERS,
     )
 
-    predictions = model(basketball_image_torch)
+    predictions = model(
+        basketball_image_torch, confidence=0.25, key_points_threshold=0.3
+    )
 
     assert torch.allclose(
         predictions[0][0].xy.cpu(),

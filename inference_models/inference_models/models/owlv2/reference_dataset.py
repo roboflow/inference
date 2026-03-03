@@ -74,7 +74,7 @@ class LazyImageWrapper:
             raise ModelRuntimeError(
                 message="Attempted to use OWLv2 image lazy loading not providing neither image "
                 "location nor image instance - this is invalid input. Contact Roboflow to get help.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
             )
         self._image_in_memory = image_in_memory
         self._image_reference = image_reference
@@ -150,18 +150,19 @@ def decode_image_from_url(
     if not allow_url_input:
         raise ModelInputError(
             message="Providing images via URL is not supported in this configuration of `inference-models`.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
         )
     try:
         parsed_url = urllib.parse.urlparse(url)
     except ValueError as error:
         raise ModelInputError(
-            message="Provided image URL is invalid.", help_url="https://todo"
+            message="Provided image URL is invalid.",
+            help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
         ) from error
     if parsed_url.scheme != "https" and not allow_non_https_url:
         raise ModelInputError(
             message="Providing images via non https:// URL is not supported in this configuration of `inference-models`.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
         )
     domain_extraction_result = tldextract.TLDExtract(suffix_list_urls=())(
         parsed_url.netloc
@@ -195,7 +196,7 @@ def decode_image_from_base64(value: str) -> np.ndarray:
         value_prefix = value[:16]
         raise ModelInputError(
             message=f"Could not decode bas64 image fro reference {value_prefix}.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
         ) from error
 
 
@@ -212,7 +213,7 @@ def _ensure_resource_fqdn_allowed(fqdn: str, allow_url_without_fqdn: bool) -> No
     if not fqdn and not allow_url_without_fqdn:
         raise ModelInputError(
             message="Providing images via URL without FQDN is not supported in this configuration of  `inference-models`.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
         )
     return None
 
@@ -239,7 +240,7 @@ def _ensure_location_matches_destination_whitelist(
     if destination not in whitelisted_domains:
         raise ModelInputError(
             message="It is not allowed to reach image URL - prohibited by whitelisted destinations",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
         )
     return None
 
@@ -253,7 +254,7 @@ def _ensure_location_matches_destination_blacklist(
     if destination in blacklisted_domains:
         raise ModelInputError(
             message="It is not allowed to reach image URL - prohibited by blacklisted destinations.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
         )
     return None
 
@@ -270,15 +271,15 @@ def _get_from_url(url: str, timeout: int = 5) -> bytes:
             if response.status_code in IDEMPOTENT_API_REQUEST_CODES_TO_RETRY:
                 raise RetryError(
                     message=f"File hosting returned {response.status_code}",
-                    help_url="https://todo",
+                    help_url="https://inference-models.roboflow.com/errors/file-download/#retryerror",
                 )
             response.raise_for_status()
             return response.content
-    except (ConnectionError, Timeout, requests.exceptions.ConnectionError):
+    except (ConnectionError, Timeout, requests.exceptions.ConnectionError) as error:
         raise RetryError(
             message=f"Connectivity error",
-            help_url="https://todo",
-        )
+            help_url="https://inference-models.roboflow.com/errors/file-download/#retryerror",
+        ) from error
 
 
 def compute_image_hash(image: Union[torch.Tensor, np.ndarray]) -> str:
@@ -288,4 +289,6 @@ def compute_image_hash(image: Union[torch.Tensor, np.ndarray]) -> str:
 
 
 def hash_function(value: Union[str, bytes]) -> str:
+    if isinstance(value, str):
+        value = value.encode("utf-8")
     return hashlib.sha1(value).hexdigest()

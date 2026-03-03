@@ -224,6 +224,14 @@ class InstanceSegmentationInferenceRequest(ObjectDetectionInferenceRequest):
     )
 
 
+class SemanticSegmentationInferenceRequest(CVInferenceRequest):
+    """Semantic Segmentation inference request."""
+
+    def __init__(self, **kwargs):
+        kwargs["model_type"] = "semantic-segmentation"
+        super().__init__(**kwargs)
+
+
 class ClassificationInferenceRequest(CVInferenceRequest):
     """Classification inference request.
 
@@ -281,6 +289,8 @@ def request_from_type(model_type, request_dict):
         request = InstanceSegmentationInferenceRequest(**request_dict)
     elif model_type == "object-detection":
         request = ObjectDetectionInferenceRequest(**request_dict)
+    elif model_type == "semantic-segmentation":
+        request = SemanticSegmentationInferenceRequest(**request_dict)
     else:
         raise ValueError(f"Unknown task type {model_type}")
     request.id = request_dict.get("id", request.id)

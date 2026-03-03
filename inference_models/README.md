@@ -9,22 +9,16 @@ be fast, reliable, and user-friendly. It offers:
 - **Behavior-Based Interfaces**: Models with similar behavior share consistent APIs; custom models can define their own
 - **Full Roboflow Platform Support:** Run any model trained on [Roboflow](https://roboflow.com)
 
-> [!NOTE]
-> **Roadmap for `inference-models`**
->
-> We are still making changes to the API and adding new features. API should be fairly stable already, but
-> it is advised to pin to specific version if you are using it in production and review [our roadmap](https://roboflow.github.io/inference/inference_models/roadmap/).
+Visit our [documentation](https://inference-models.roboflow.com/) for more information.
 
 # 🛣️ Roadmap
 
-We're actively working toward stabilizing `inference-models` and integrating it into the main `inference` package. The plan is to:
+With release `0.19.0`, we have reached the first stable release of `inference-models` and fully integrated 
+the package to `inference` - our main inference package, making it selectable backend for running predictions 
+from models.
 
-1. **Stabilize the API** - Finalize the core interfaces and ensure backward compatibility
-2. **Integrate with `inference`** - Make `inference-models` available as a selectable backend in the `inference` package
-3. **Production deployment** - Enable users to choose between the classic inference backend and the new `inference-models` backend
-4. **Gradual migration** - Provide a smooth transition path for existing users
-
-We're sharing this preview to gather valuable community feedback that will help us shape the final release. Your input is crucial in making this the best inference experience possible!
+We are still making changes to add new features and models. API should be fairly stable already, but 
+the problems may still occur. If you encounter any issues, please [report them]((https://github.com/roboflow/inference/issues)).
 
 # 💻 Installation
 
@@ -35,7 +29,7 @@ uv pip install inference-models
 pip install inference-models
 ```
 
-`inference-models` can be installed with CUDA and TensorRT support - see [Installation Guide](https://roboflow.github.io/inference/inference_models/getting-started/installation/) for more options.
+`inference-models` can be installed with CUDA and TensorRT support - see [Installation Guide](https://inference-models.roboflow.com/getting-started/installation/) for more options.
 
 # 🏃‍➡️ Usage
 
@@ -95,12 +89,11 @@ annotated = annotator.annotate(image, predictions[0].to_supervision())
 - **YOLO**
 - and many more
 
-For detailed model documentation, see [Supported Models](https://roboflow.github.io/inference/inference_models/models/).
+For detailed model documentation, see [Supported Models](https://inference-models.roboflow.com/models/).
 
 # 🔧 Run your local models
 
 Load your own model implementations from a local directory - models with architectures **not** in the main `inference-models` package. This is especially valuable for **production deployment** of custom models.
-Find more information in [Load Models from Local Packages](https://roboflow.github.io/inference/inference_models/how-to/local-packages/).
 
 ```python
 from inference_models import AutoModel
@@ -111,13 +104,13 @@ model = AutoModel.from_pretrained(
 )
 ```
 
-See [Load Models from Local Packages](https://roboflow.github.io/inference/inference_models/how-to/local-packages/) for complete details on creating custom model packages.
+See [Load Models from Local Packages](https://inference-models.roboflow.com/how-to/local-packages/) for complete details on creating custom model packages.
 
 # 📄 License
 
-The `inference-models` package is licensed under Apache 2.0. Individual models may have different licenses - see the [Supported Models](https://roboflow.github.io/inference/inference_models/models/) for details.
+The `inference-models` package is licensed under Apache 2.0. Individual models may have different licenses - see the [Supported Models](https://inference-models.roboflow.com/models/) for details.
 
 ---
 
-Ready to get started? Head to the [Quick Overview](https://roboflow.github.io/inference/inference_models/getting-started/overview/) →
+Ready to get started? Head to the [Quick Overview](https://inference-models.roboflow.com/getting-started/overview/) →
 
