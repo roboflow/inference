@@ -4,6 +4,6 @@ opencv-python>=4.8.1.78,<=4.10.0.84
 pillow>=11.0,<12.0
 supervision>=0.26
 numpy>=2.0.0,<2.4.0
-aiohttp>=3.13.3
+aiohttp~=3.13.3
 backoff~=2.2.0
 py-cpuinfo~=9.0.0
