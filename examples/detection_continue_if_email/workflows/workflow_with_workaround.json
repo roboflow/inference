@@ -1,7 +1,8 @@
 {
   "version": "1.0",
   "inputs": [
-    {"type": "WorkflowImage", "name": "image"}
+    {"type": "WorkflowImage", "name": "image"},
+    {"type": "WorkflowParameter", "name": "dry_run", "default_value": true}
   ],
   "steps": [
     {
@@ -43,7 +44,8 @@
       "message": "At least one detection found for this image. (message_parameters.predictions links lineage so the workflow compiles.)",
       "message_parameters": {
         "predictions": "$steps.detection.predictions"
-      }
+      },
+      "disable_sink": "$inputs.dry_run"
     }
   ],
   "outputs": [
