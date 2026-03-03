@@ -27,11 +27,11 @@ from inference.core.exceptions import (
     RoboflowAPINotAuthorizedError,
 )
 from inference.core.logger import logger
+from inference.core.managers.entities import ModelDescription
 from inference.core.managers.model_load_collector import (
     model_load_info,
     request_model_ids,
 )
-from inference.core.managers.entities import ModelDescription
 from inference.core.managers.pingback import PingbackInfo
 from inference.core.models.base import Model, PreprocessReturnMetadata
 from inference.core.registries.base import ModelRegistry
@@ -151,9 +151,7 @@ class ModelManager:
                 self._models[resolved_identifier] = model
                 collector = model_load_info.get(None)
                 if collector is not None:
-                    collector.record(
-                        model_id=resolved_identifier, load_time=load_time
-                    )
+                    collector.record(model_id=resolved_identifier, load_time=load_time)
             except Exception as error:
                 self._dispose_model_lock(model_id=resolved_identifier)
                 raise error

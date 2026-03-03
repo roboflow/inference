@@ -259,6 +259,7 @@ RUN apt-get update -y && \
     libavcodec58 \
     libavformat58 \
     libswscale5 \
+    ffmpeg \
     libatlas3-base \
     && rm -rf /var/lib/apt/lists/*
 

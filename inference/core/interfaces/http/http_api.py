@@ -38,13 +38,6 @@ from inference.core.constants import (
     WORKFLOW_ID_HEADER,
     WORKSPACE_ID_HEADER,
 )
-from inference.core.managers.model_load_collector import (
-    ModelLoadCollector,
-    RequestModelIds,
-    model_load_info,
-    request_model_ids,
-    request_workflow_id,
-)
 from inference.core.devices.utils import GLOBAL_INFERENCE_SERVER_ID
 from inference.core.entities.requests.clip import (
     ClipCompareRequest,
@@ -254,6 +247,13 @@ from inference.core.interfaces.webrtc_worker.entities import (
 )
 from inference.core.managers.base import ModelManager
 from inference.core.managers.metrics import get_container_stats
+from inference.core.managers.model_load_collector import (
+    ModelLoadCollector,
+    RequestModelIds,
+    model_load_info,
+    request_model_ids,
+    request_workflow_id,
+)
 from inference.core.managers.prometheus import InferenceInstrumentator
 from inference.core.roboflow_api import (
     build_roboflow_api_headers,
