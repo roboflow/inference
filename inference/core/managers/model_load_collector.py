@@ -66,6 +66,6 @@ request_model_ids: contextvars.ContextVar[Optional[RequestModelIds]] = (
     contextvars.ContextVar("request_model_ids", default=None)
 )
 
-request_workflow_id: contextvars.ContextVar[Optional[str]] = (
-    contextvars.ContextVar("request_workflow_id", default=None)
+request_workflow_id: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
+    "request_workflow_id", default=None
 )

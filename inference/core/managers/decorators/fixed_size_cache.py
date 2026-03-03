@@ -18,9 +18,9 @@ from inference.core.exceptions import (
     RoboflowAPINotAuthorizedError,
 )
 from inference.core.managers.base import Model, ModelManager, acquire_with_timeout
-from inference.core.managers.model_load_collector import request_model_ids
 from inference.core.managers.decorators.base import ModelManagerDecorator
 from inference.core.managers.entities import ModelDescription
+from inference.core.managers.model_load_collector import request_model_ids
 from inference.core.registries.roboflow import (
     ModelEndpointType,
     _check_if_api_key_has_access_to_model,
