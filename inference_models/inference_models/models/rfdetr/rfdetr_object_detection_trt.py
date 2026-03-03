@@ -32,7 +32,7 @@ from inference_models.models.common.roboflow.model_packages import (
 from inference_models.models.common.roboflow.post_processing import (
     rescale_image_detections,
 )
-from inference_models.models.common.roboflow.pre_processing import (
+from inference_models.models.rfdetr.pre_processing import (
     pre_process_network_input,
 )
 from inference_models.models.common.trt import (
