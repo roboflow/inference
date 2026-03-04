@@ -1,5 +1,6 @@
 import base64
 import concurrent
+import logging
 import os
 import re
 from concurrent.futures import CancelledError, Future, ThreadPoolExecutor
@@ -466,7 +467,12 @@ class HttpInterface(BaseInterface):
                     MODEL_ID_HEADER,
                     WORKFLOW_ID_HEADER,
                     WORKSPACE_ID_HEADER,
-                ],
+                ]
+                + (
+                    [EXECUTION_ID_HEADER]
+                    if EXECUTION_ID_HEADER is not None
+                    else []
+                ),
             )
 
         # Optionally add middleware for profiling the FastAPI server and underlying inference API code
@@ -488,6 +494,11 @@ class HttpInterface(BaseInterface):
                 validator=lambda a: True,
                 transformer=lambda a: a,
             )
+            # Suppress uvicorn's default access log to avoid duplicate
+            # unstructured entries — we replace it with a structured
+            # access log middleware (see structured_access_log below).
+            logging.getLogger("uvicorn.access").handlers = []
+            logging.getLogger("uvicorn.access").propagate = False
         else:
             app.add_middleware(asgi_correlation_id.CorrelationIdMiddleware)
 
@@ -740,6 +751,41 @@ class HttpInterface(BaseInterface):
             if wf_id:
                 response.headers[WORKFLOW_ID_HEADER] = wf_id
             return response
+
+        if API_LOGGING_ENABLED:
+
+            @app.middleware("http")
+            async def structured_access_log(request: Request, call_next):
+                response = await call_next(request)
+                log_fields = {
+                    "method": request.method,
+                    "path": request.url.path,
+                    "status_code": response.status_code,
+                }
+
+                # Read request_id and execution_id from response headers
+                # instead of ContextVars — @app.middleware("http") uses
+                # BaseHTTPMiddleware which runs the inner chain in a
+                # separate asyncio task, so ContextVars set by inner
+                # middlewares are not visible here.
+                header_fields = {
+                    "request_id": CORRELATION_ID_HEADER,
+                    "processing_time": PROCESSING_TIME_HEADER,
+                    "model_cold_start": MODEL_COLD_START_HEADER,
+                    "model_load_time": MODEL_LOAD_TIME_HEADER,
+                    "model_id": MODEL_ID_HEADER,
+                    "workflow_id": WORKFLOW_ID_HEADER,
+                    "workspace_id": WORKSPACE_ID_HEADER,
+                }
+                if EXECUTION_ID_HEADER is not None:
+                    header_fields["execution_id"] = EXECUTION_ID_HEADER
+                for field_name, header_name in header_fields.items():
+                    value = response.headers.get(header_name)
+                    if value is not None:
+                        log_fields[field_name] = value
+
+                logger.info("access", **log_fields)
+                return response
 
         self.app = app
         self.model_manager = model_manager

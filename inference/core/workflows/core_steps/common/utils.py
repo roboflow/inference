@@ -484,6 +484,13 @@ def _propagate_inference_context(
     ids_collector = request_model_ids.get(None)
 
     try:
+        from asgi_correlation_id import correlation_id as _cid_ctx
+
+        corr_id = _cid_ctx.get()
+    except Exception:
+        corr_id = None
+
+    try:
         from inference_sdk.config import (
             apply_duration_minimum,
             execution_id,
@@ -510,11 +517,16 @@ def _propagate_inference_context(
         and duration_min is None
         and load_collector is None
         and ids_collector is None
+        and corr_id is None
     ):
         return tasks
 
     def _wrap(fun: Callable[[], T]) -> Callable[[], T]:
         def _with_context() -> T:
+            if corr_id is not None:
+                from asgi_correlation_id import correlation_id as _cid_ctx
+
+                _cid_ctx.set(corr_id)
             if exec_id is not None:
                 from inference_sdk.config import execution_id
 
