@@ -1859,6 +1859,14 @@ class HttpInterface(BaseInterface):
                                 )
                             )
                             future.cancel()
+                        except Exception as e:
+                            logger.error(
+                                f"Preload: unexpected error for model '{model_id}': {e}"
+                            )
+                            with state.lock:
+                                state.initialization_errors.append(
+                                    (model_id, str(e))
+                                )
 
                 # Update the readiness state in a thread-safe manner
                 with state.lock:

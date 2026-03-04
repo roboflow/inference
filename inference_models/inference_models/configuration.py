@@ -58,6 +58,9 @@ DISABLE_VERBOSE_LOGGER = get_boolean_from_env(
 AUTO_LOADER_CACHE_EXPIRATION_MINUTES = get_integer_from_env(
     variable_name="AUTO_LOADER_CACHE_EXPIRATION_MINUTES", default=1440
 )
+VERIFY_CACHED_BLOBS_BEFORE_LOAD = get_boolean_from_env(
+    variable_name="VERIFY_CACHED_BLOBS_BEFORE_LOAD", default=False
+)
 ALLOW_URL_INPUT = get_boolean_from_env(variable_name="ALLOW_URL_INPUT", default=True)
 ALLOW_NON_HTTPS_URL_INPUT = get_boolean_from_env(
     variable_name="ALLOW_NON_HTTPS_URL_INPUT", default=False

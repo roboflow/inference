@@ -66,7 +66,7 @@ class AutoModelPipeline:
         api_key: Optional[str] = None,
         max_package_loading_attempts: Optional[int] = None,
         verbose: bool = False,
-        model_download_file_lock_acquire_timeout: int = 10,
+        model_download_file_lock_acquire_timeout: int = 120,
         allow_untrusted_packages: bool = False,
         trt_engine_host_code_allowed: bool = True,
         allow_local_code_packages: bool = True,
