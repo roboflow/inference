@@ -38,6 +38,16 @@ class WithFixedSizeCache(ModelManagerDecorator):
         self.max_size = max_size
         self._key_queue = deque(self.model_manager.keys())
         self._queue_lock = Lock()
+        self._pinned_models: set = set()
+
+    def pin_model(self, model_id: str) -> None:
+        """Mark a model as pinned so it won't be evicted by the LRU cache.
+
+        Pinned models (typically preloaded models) are protected from eviction
+        when the cache is full or under memory pressure.
+        """
+        self._pinned_models.add(model_id)
+        logger.debug(f"Model '{model_id}' pinned — will not be evicted from cache.")
 
     def add_model(
         self,
@@ -89,7 +99,9 @@ class WithFixedSizeCache(ModelManagerDecorator):
                 len(self) >= self.max_size
                 or (MEMORY_FREE_THRESHOLD and self.memory_pressure_detected())
             ):
-                # To prevent flapping around the threshold, remove 3 models to make some space.
+                # To prevent flapping around the threshold, remove up to 3 models to make some space.
+                evicted_count = 0
+                skipped_pinned = []
                 for _ in range(3):
                     if not self._key_queue:
                         logger.error(
@@ -101,10 +113,23 @@ class WithFixedSizeCache(ModelManagerDecorator):
                         )
                         break
                     to_remove_model_id = self._key_queue.popleft()
+                    if to_remove_model_id in self._pinned_models:
+                        skipped_pinned.append(to_remove_model_id)
+                        continue
                     super().remove(
                         to_remove_model_id, delete_from_disk=DISK_CACHE_CLEANUP
                     )  # LRU model overflow cleanup may or maynot need the weights removed from disk
                     logger.debug(f"Model {to_remove_model_id} successfully unloaded.")
+                    evicted_count += 1
+                # Put pinned models back at the front of the queue
+                for mid in reversed(skipped_pinned):
+                    self._key_queue.appendleft(mid)
+                if evicted_count == 0:
+                    logger.warning(
+                        "Cannot free model cache space — all remaining models are pinned (preloaded). "
+                        "Proceeding with cache exceeding max_size."
+                    )
+                    break
                 gc.collect()
             logger.debug(f"Marking new model {queue_id} as most recently used.")
             self._key_queue.append(queue_id)
