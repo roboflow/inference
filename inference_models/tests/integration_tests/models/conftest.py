@@ -164,6 +164,9 @@ YOLO26N_object_detection_sunflowers_LETTERBOX_ONNX_STATIC_URL = "https://storage
 YOLO26N_object_detection_sunflowers_LETTERBOX_ONNX_DYNAMIC_URL = "https://storage.googleapis.com/roboflow-tests-assets/yolo26n-packages/yolo26n-object-detection-sunflowers-letterbox-onnx-dynamic.zip"
 YOLO26N_object_detection_sunflowers_LETTERBOX_TORCH_SCRIPT_URL = "https://storage.googleapis.com/roboflow-tests-assets/yolo26n-packages/yolo26n-object-detection-sunflowers-letterbox-torch-script.zip"
 
+YOLOLITE_N_OD_ONNX_DYNAMIC_BS_LETTERBOX_URL = "https://storage.googleapis.com/roboflow-tests-assets/yololite-packages/yololite-n-od-onnx-dynamic-bs-letterbox.zip"
+YOLOLITE_N_OD_ONNX_STATIC_BS_LETTERBOX_URL = "https://storage.googleapis.com/roboflow-tests-assets/yololite-packages/yololite-n-od-onnx-static-bs-letterbox.zip"
+
 DEPTH_ANYTHING_V2_SMALL_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/depth-anything-v2.zip"
 DEPTH_ANYTHING_V3_SMALL_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/depth-anything-v3-small.zip"
 DEPTH_ANYTHING_V3_BASE_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/depth-anything-v3-base.zip"
@@ -1435,4 +1438,20 @@ def yolo26n_object_detection_sunflowers_letterbox_torch_script_package() -> str:
     return download_model_package(
         model_package_zip_url=YOLO26N_object_detection_sunflowers_LETTERBOX_TORCH_SCRIPT_URL,
         package_name="yolo26n-object-detection-sunflowers-letterbox-torch-script",
+    )
+
+
+@pytest.fixture(scope="module")
+def yololite_n_od_onnx_dynamic_bs_letterbox_package() -> str:
+    return download_model_package(
+        model_package_zip_url=YOLOLITE_N_OD_ONNX_DYNAMIC_BS_LETTERBOX_URL,
+        package_name="yololite-n-od-onnx-dynamic-bs-letterbox",
+    )
+
+
+@pytest.fixture(scope="module")
+def yololite_n_od_onnx_static_bs_letterbox_package() -> str:
+    return download_model_package(
+        model_package_zip_url=YOLOLITE_N_OD_ONNX_STATIC_BS_LETTERBOX_URL,
+        package_name="yololite-n-od-onnx-static-bs-letterbox",
     )
