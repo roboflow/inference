@@ -75,7 +75,7 @@ def test_rank_model_packages_when_backends_should_be_prioritised_correctly() -> 
             package_artefacts=[],
         ),
         ModelPackageMetadata(
-            package_id="my-package-id-2",
+            package_id="my-package-id-4",
             backend=BackendType.ONNX,
             quantization=Quantization.FP32,
             package_artefacts=[],
@@ -87,7 +87,7 @@ def test_rank_model_packages_when_backends_should_be_prioritised_correctly() -> 
             package_artefacts=[],
         ),
         ModelPackageMetadata(
-            package_id="my-package-id-4",
+            package_id="my-package-id-2",
             backend=BackendType.HF,
             quantization=Quantization.FP32,
             package_artefacts=[],

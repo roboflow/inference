@@ -172,11 +172,18 @@ def select_best_backend(
 ```
 
 **Default Preference Order**:
-1. TensorRT (if GPU available)
-2. PyTorch
-3. ONNX
+
+1. TensorRT (only for relevant GPUs)
+
+2. ONNX
+
+3. PyTorch
+
 4. Hugging Face
+
 5. MediaPipe
+
+6. others
 
 ### 5. Model Base Classes
 
