@@ -13,14 +13,14 @@ YOLOLite for object detection features:
 
 ## Model Variants
 
-**GPU-optimized (YOLOLite):**
+**GPU-optimized:**
 
 | Variant | Backbone |
 |---------|----------|
-| `yololite_n` | EfficientNet-Lite0 |
-| `yololite_s` | EfficientNet-Lite1 |
-| `yololite_m` | EfficientNet-Lite2 |
-| `yololite_l` | EfficientNet-Lite3 |
+| `yololite_n` | EfficientNetV2-B0 |
+| `yololite_s` | EfficientNetV2-B1 |
+| `yololite_m` | EfficientNetV2-B2 |
+| `yololite_l` | ConvNeXtV2-Tiny |
 | `yololite_xl` | EfficientNetV2-S |
 
 **Edge/CPU-optimized:**
@@ -31,6 +31,7 @@ YOLOLite for object detection features:
 | `edge_s` | MobileNetV4-Small |
 | `edge_m` | MobileNetV4-Small |
 | `edge_l` | MobileNetV4-Small |
+| `edge_xl` | HGNetV2-B0 |
 
 ## Supported Backends
 
@@ -43,9 +44,10 @@ YOLOLite for object detection features:
 | Feature | Supported |
 |---------|-----------|
 | **Training** | ✅ Train custom models on Roboflow |
-| **Upload Weights** | ✅ Upload pre-trained weights |
+| **Upload Weights** | -- Not yet supported |
 | **Serverless API (v2)** | ✅ [Deploy via hosted API](https://docs.roboflow.com/deploy/serverless-hosted-api-v2) |
 | **Workflows** | ✅ Use in [Workflows](https://docs.roboflow.com/workflows) via Object Detection block |
+| **Edge Deployment (Jetson)** | -- Not yet supported |
 | **Self-Hosting** | ✅ Deploy with `inference-models` |
 
 **Custom model ID format:** `project-url/version` (e.g., `my-project-abc123/2`)
