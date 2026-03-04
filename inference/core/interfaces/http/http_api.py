@@ -1699,20 +1699,20 @@ class HttpInterface(BaseInterface):
                         api_key=request.api_key
                     )
                 except (RoboflowAPINotAuthorizedError, WorkspaceLoadError):
-                    return {
-                        "status": "error",
-                        "message": "unauthorized",
-                    }
+                    raise HTTPException(
+                        status_code=401,
+                        detail={"status": "error", "message": "unauthorized"},
+                    )
 
                 session_refreshed = refresh_webrtc_session(
                     workspace_id=workspace_id,
                     session_id=request.session_id,
                 )
                 if not session_refreshed:
-                    return {
-                        "status": "error",
-                        "message": "session not found",
-                    }
+                    raise HTTPException(
+                        status_code=404,
+                        detail={"status": "error", "message": "session not found"},
+                    )
                 return {"status": "ok"}
 
             @app.post(
@@ -1732,10 +1732,10 @@ class HttpInterface(BaseInterface):
                         api_key=request.api_key
                     )
                 except (RoboflowAPINotAuthorizedError, WorkspaceLoadError):
-                    return {
-                        "status": "error",
-                        "message": "unauthorized",
-                    }
+                    raise HTTPException(
+                        status_code=401,
+                        detail={"status": "error", "message": "unauthorized"},
+                    )
 
                 deregister_webrtc_session(
                     workspace_id=workspace_id,
