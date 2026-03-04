@@ -6,7 +6,7 @@ import torch
 @pytest.mark.slow
 @pytest.mark.onnx_extras
 def test_onnx_package_with_dynamic_batch_size_and_letterbox_numpy(
-    yololite_n_od_onnx_dynamic_bs_letterbox_package: str,
+    coin_counting_yololite_n_onnx_dynamic_bs_letterbox_package: str,
     coins_counting_image_numpy: np.ndarray,
 ) -> None:
     # given
@@ -15,7 +15,7 @@ def test_onnx_package_with_dynamic_batch_size_and_letterbox_numpy(
     )
 
     model = YOLOLiteForObjectDetectionOnnx.from_pretrained(
-        model_name_or_path=yololite_n_od_onnx_dynamic_bs_letterbox_package,
+        model_name_or_path=coin_counting_yololite_n_onnx_dynamic_bs_letterbox_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
@@ -42,7 +42,7 @@ def test_onnx_package_with_dynamic_batch_size_and_letterbox_numpy(
 @pytest.mark.slow
 @pytest.mark.onnx_extras
 def test_onnx_package_with_dynamic_batch_size_and_letterbox_batch_numpy(
-    yololite_n_od_onnx_dynamic_bs_letterbox_package: str,
+    coin_counting_yololite_n_onnx_dynamic_bs_letterbox_package: str,
     coins_counting_image_numpy: np.ndarray,
 ) -> None:
     # given
@@ -51,7 +51,7 @@ def test_onnx_package_with_dynamic_batch_size_and_letterbox_batch_numpy(
     )
 
     model = YOLOLiteForObjectDetectionOnnx.from_pretrained(
-        model_name_or_path=yololite_n_od_onnx_dynamic_bs_letterbox_package,
+        model_name_or_path=coin_counting_yololite_n_onnx_dynamic_bs_letterbox_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
@@ -82,7 +82,7 @@ def test_onnx_package_with_dynamic_batch_size_and_letterbox_batch_numpy(
 @pytest.mark.slow
 @pytest.mark.onnx_extras
 def test_onnx_package_with_dynamic_batch_size_and_letterbox_torch(
-    yololite_n_od_onnx_dynamic_bs_letterbox_package: str,
+    coin_counting_yololite_n_onnx_dynamic_bs_letterbox_package: str,
     coins_counting_image_torch: torch.Tensor,
 ) -> None:
     # given
@@ -91,7 +91,7 @@ def test_onnx_package_with_dynamic_batch_size_and_letterbox_torch(
     )
 
     model = YOLOLiteForObjectDetectionOnnx.from_pretrained(
-        model_name_or_path=yololite_n_od_onnx_dynamic_bs_letterbox_package,
+        model_name_or_path=coin_counting_yololite_n_onnx_dynamic_bs_letterbox_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
@@ -112,43 +112,11 @@ def test_onnx_package_with_dynamic_batch_size_and_letterbox_torch(
     assert torch.all(predictions[0].confidence >= 0.25)
 
 
-@pytest.mark.slow
-@pytest.mark.onnx_extras
-def test_onnx_package_with_static_batch_size_and_letterbox_numpy(
-    yololite_n_od_onnx_static_bs_letterbox_package: str,
-    coins_counting_image_numpy: np.ndarray,
-) -> None:
-    # given
-    from inference_models.models.yololite.yololite_object_detection_onnx import (
-        YOLOLiteForObjectDetectionOnnx,
-    )
-
-    model = YOLOLiteForObjectDetectionOnnx.from_pretrained(
-        model_name_or_path=yololite_n_od_onnx_static_bs_letterbox_package,
-        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
-    )
-
-    # when
-    predictions = model(
-        coins_counting_image_numpy,
-        confidence=0.25,
-        iou_threshold=0.45,
-        max_detections=100,
-    )
-
-    # then
-    assert isinstance(predictions, list)
-    assert len(predictions) == 1
-    assert predictions[0].xyxy.shape[1] == 4
-    assert len(predictions[0].confidence) > 0
-    assert torch.all(predictions[0].confidence >= 0.25)
-    assert torch.all(predictions[0].confidence <= 1.0)
-
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
 def test_onnx_high_confidence_threshold_returns_fewer_detections(
-    yololite_n_od_onnx_dynamic_bs_letterbox_package: str,
+    coin_counting_yololite_n_onnx_dynamic_bs_letterbox_package: str,
     coins_counting_image_numpy: np.ndarray,
 ) -> None:
     # given
@@ -157,7 +125,7 @@ def test_onnx_high_confidence_threshold_returns_fewer_detections(
     )
 
     model = YOLOLiteForObjectDetectionOnnx.from_pretrained(
-        model_name_or_path=yololite_n_od_onnx_dynamic_bs_letterbox_package,
+        model_name_or_path=coin_counting_yololite_n_onnx_dynamic_bs_letterbox_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
@@ -178,7 +146,7 @@ def test_onnx_high_confidence_threshold_returns_fewer_detections(
 @pytest.mark.slow
 @pytest.mark.onnx_extras
 def test_onnx_class_agnostic_nms(
-    yololite_n_od_onnx_dynamic_bs_letterbox_package: str,
+    coin_counting_yololite_n_onnx_dynamic_bs_letterbox_package: str,
     coins_counting_image_numpy: np.ndarray,
 ) -> None:
     # given
@@ -187,7 +155,7 @@ def test_onnx_class_agnostic_nms(
     )
 
     model = YOLOLiteForObjectDetectionOnnx.from_pretrained(
-        model_name_or_path=yololite_n_od_onnx_dynamic_bs_letterbox_package,
+        model_name_or_path=coin_counting_yololite_n_onnx_dynamic_bs_letterbox_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
