@@ -55,7 +55,6 @@ async def start_worker(
                 logger.error("API key over quota")
                 raise CreditsExceededError("API key over quota")
 
-        workspace_id = None
         session_id = str(uuid.uuid4())
         workspace_id = get_roboflow_workspace(api_key=webrtc_request.api_key)
         webrtc_request.workspace_id = workspace_id
