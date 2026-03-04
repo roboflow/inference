@@ -42,6 +42,7 @@ async def start_worker(
                 spawn_rtc_peer_connection_modal,
             )
             from inference.core.interfaces.webrtc_worker.utils import (
+                get_total_concurrent_sessions,
                 is_over_quota,
                 is_over_workspace_session_quota,
                 register_webrtc_session,
@@ -80,6 +81,14 @@ async def start_worker(
                 register_webrtc_session(
                     workspace_id=workspace_id,
                     session_id=session_id,
+                )
+
+                total_sessions = get_total_concurrent_sessions(
+                    ttl_seconds=WEBRTC_WORKSPACE_STREAM_TTL_SECONDS
+                )
+                logger.info(
+                    "Total concurrent WebRTC sessions: %d",
+                    total_sessions,
                 )
 
         logger.info(

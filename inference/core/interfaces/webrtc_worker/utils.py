@@ -418,6 +418,37 @@ def is_over_workspace_session_quota(
     return count >= quota
 
 
+def get_total_concurrent_sessions(ttl_seconds: int) -> int:
+    """Get total concurrent WebRTC sessions across all workspaces.
+
+    Args:
+        ttl_seconds: TTL in seconds - entries older than this are considered expired
+
+    Returns:
+        Total number of active sessions
+    """
+    if not isinstance(cache, RedisCache):
+        logger.warning(
+            "[REDIS] Redis not available, cannot count total concurrent sessions"
+        )
+        return 0
+
+    pattern = "webrtc:concurrent_sessions:*"
+    cutoff = time.time() - ttl_seconds
+    total = 0
+
+    try:
+        for key in cache.client.scan_iter(match=pattern):
+            cache.client.zremrangebyscore(key, "-inf", cutoff)
+            total += cache.client.zcard(key)
+        return total
+    except Exception as e:
+        logger.error(
+            "[REDIS] Failed to get total concurrent sessions: %s", e, exc_info=True
+        )
+        return 0
+
+
 def get_video_fps(filepath: str) -> Optional[float]:
     """Detect video FPS from container metadata.
 
