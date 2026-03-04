@@ -576,7 +576,6 @@ class Dinov2WithRegistersSelfAttention(nn.Module):
     def forward(
         self,
         hidden_states,
-        head_mask: Optional[torch.Tensor] = None,
         output_attentions: bool = False,
     ) -> Union[Tuple[torch.Tensor, torch.Tensor], Tuple[torch.Tensor]]:
         mixed_query_layer = self.query(hidden_states)
@@ -596,10 +595,6 @@ class Dinov2WithRegistersSelfAttention(nn.Module):
         # This is actually dropping out entire tokens to attend to, which might
         # seem a bit unusual, but is taken from the original Transformer paper.
         attention_probs = self.dropout(attention_probs)
-
-        # Mask heads if we want to
-        if head_mask is not None:
-            attention_probs = attention_probs * head_mask
 
         context_layer = torch.matmul(attention_probs, value_layer)
 
@@ -622,18 +617,15 @@ class Dinov2WithRegistersSdpaSelfAttention(Dinov2WithRegistersSelfAttention):
     def forward(
         self,
         hidden_states,
-        head_mask: Optional[torch.Tensor] = None,
         output_attentions: bool = False,
     ) -> Union[Tuple[torch.Tensor, torch.Tensor], Tuple[torch.Tensor]]:
         if output_attentions:
-            # TODO: Improve this warning with e.g. `model.config.attn_implementation = "manual"` once this is implemented.
             logger.warning_once(
                 "Dinov2WithRegistersModel is using Dinov2WithRegistersSdpaSelfAttention, but `torch.nn.functional.scaled_dot_product_attention` does not support `output_attentions=True`. Falling back to the manual attention implementation, "
                 'but specifying the manual implementation will be required from Transformers version v5.0.0 onwards. This warning can be removed using the argument `attn_implementation="eager"` when loading the model.'
             )
             return super().forward(
                 hidden_states=hidden_states,
-                head_mask=head_mask,
                 output_attentions=output_attentions,
             )
 
@@ -647,8 +639,7 @@ class Dinov2WithRegistersSdpaSelfAttention(Dinov2WithRegistersSelfAttention):
             query_layer,
             key_layer,
             value_layer,
-            head_mask,
-            self.attention_probs_dropout_prob if self.training else 0.0,
+            dropout_p=self.attention_probs_dropout_prob if self.training else 0.0,
             is_causal=False,
             scale=None,
         )
@@ -715,10 +706,9 @@ class Dinov2WithRegistersAttention(nn.Module):
     def forward(
         self,
         hidden_states: torch.Tensor,
-        head_mask: Optional[torch.Tensor] = None,
         output_attentions: bool = False,
     ) -> Union[Tuple[torch.Tensor, torch.Tensor], Tuple[torch.Tensor]]:
-        self_outputs = self.attention(hidden_states, head_mask, output_attentions)
+        self_outputs = self.attention(hidden_states, output_attentions)
 
         attention_output = self.output(self_outputs[0], hidden_states)
 
@@ -857,11 +847,9 @@ class WindowedDinov2WithRegistersLayer(nn.Module):
     def forward(
         self,
         hidden_states: torch.Tensor,
-        head_mask: Optional[torch.Tensor] = None,
         output_attentions: bool = False,
         run_full_attention: bool = False,
     ) -> Union[Tuple[torch.Tensor, torch.Tensor], Tuple[torch.Tensor]]:
-        assert head_mask is None, "head_mask is not supported for windowed attention"
         assert (
             not output_attentions
         ), "output_attentions is not supported for windowed attention"
@@ -878,7 +866,6 @@ class WindowedDinov2WithRegistersLayer(nn.Module):
             self.norm1(
                 hidden_states
             ),  # in Dinov2WithRegisters, layernorm is applied before self-attention
-            head_mask,
             output_attentions=output_attentions,
         )
         attention_output = self_attention_outputs[0]
@@ -928,7 +915,6 @@ class WindowedDinov2WithRegistersEncoder(nn.Module):
     def forward(
         self,
         hidden_states: torch.Tensor,
-        head_mask: Optional[torch.Tensor] = None,
         output_attentions: bool = False,
         output_hidden_states: bool = False,
         return_dict: bool = True,
@@ -946,20 +932,16 @@ class WindowedDinov2WithRegistersEncoder(nn.Module):
 
             run_full_attention = i not in self.config.window_block_indexes
 
-            layer_head_mask = head_mask[i] if head_mask is not None else None
-
             if self.gradient_checkpointing and self.training:
                 layer_outputs = self._gradient_checkpointing_func(
                     layer_module.__call__,
                     hidden_states,
-                    layer_head_mask,
                     output_attentions,
                     run_full_attention,
                 )
             else:
                 layer_outputs = layer_module(
                     hidden_states,
-                    layer_head_mask,
                     output_attentions,
                     run_full_attention,
                 )
@@ -1051,12 +1033,6 @@ DINOV2_WITH_REGISTERS_BASE_INPUTS_DOCSTRING = r"""
             Boolean masked positions. Indicates which patches are masked (1) and which aren't (0). Only relevant for
             pre-training.
 
-        head_mask (`torch.FloatTensor` of shape `(num_heads,)` or `(num_layers, num_heads)`, *optional*):
-            Mask to nullify selected heads of the self-attention modules. Mask values selected in `[0, 1]`:
-
-            - 1 indicates the head is **not masked**,
-            - 0 indicates the head is **masked**.
-
         output_attentions (`bool`, *optional*):
             Whether or not to return the attentions tensors of all attention layers. See `attentions` under returned
             tensors for more detail.
@@ -1108,7 +1084,6 @@ class WindowedDinov2WithRegistersModel(WindowedDinov2WithRegistersPreTrainedMode
         self,
         pixel_values: Optional[torch.Tensor] = None,
         bool_masked_pos: Optional[torch.Tensor] = None,
-        head_mask: Optional[torch.Tensor] = None,
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
@@ -1130,20 +1105,12 @@ class WindowedDinov2WithRegistersModel(WindowedDinov2WithRegistersPreTrainedMode
         if pixel_values is None:
             raise ValueError("You have to specify pixel_values")
 
-        # Prepare head mask if needed
-        # 1.0 in head_mask indicate we keep the head
-        # attention_probs has shape bsz x n_heads x N x N
-        # input head_mask has shape [num_heads] or [num_hidden_layers x num_heads]
-        # and head_mask is converted to shape [num_hidden_layers x batch x num_heads x seq_length x seq_length]
-        head_mask = self.get_head_mask(head_mask, self.config.num_hidden_layers)
-
         embedding_output = self.embeddings(
             pixel_values, bool_masked_pos=bool_masked_pos
         )
 
         encoder_outputs = self.encoder(
             embedding_output,
-            head_mask=head_mask,
             output_attentions=output_attentions,
             output_hidden_states=output_hidden_states,
             return_dict=return_dict,
@@ -1173,12 +1140,6 @@ DINOV2_WITH_REGISTERS_INPUTS_DOCSTRING = r"""
         pixel_values (`torch.FloatTensor` of shape `(batch_size, num_channels, height, width)`):
             Pixel values. Pixel values can be obtained using [`AutoImageProcessor`]. See
             [`BitImageProcessor.preprocess`] for details.
-
-        head_mask (`torch.FloatTensor` of shape `(num_heads,)` or `(num_layers, num_heads)`, *optional*):
-            Mask to nullify selected heads of the self-attention modules. Mask values selected in `[0, 1]`:
-
-            - 1 indicates the head is **not masked**,
-            - 0 indicates the head is **masked**.
 
         output_attentions (`bool`, *optional*):
             Whether or not to return the attentions tensors of all attention layers. See `attentions` under returned
@@ -1227,7 +1188,6 @@ class WindowedDinov2WithRegistersForImageClassification(
     def forward(
         self,
         pixel_values: Optional[torch.Tensor] = None,
-        head_mask: Optional[torch.Tensor] = None,
         labels: Optional[torch.Tensor] = None,
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
@@ -1245,7 +1205,6 @@ class WindowedDinov2WithRegistersForImageClassification(
 
         outputs = self.dinov2_with_registers(
             pixel_values,
-            head_mask=head_mask,
             output_attentions=output_attentions,
             output_hidden_states=output_hidden_states,
             return_dict=return_dict,
@@ -1310,7 +1269,8 @@ class WindowedDinov2WithRegistersBackbone(
 ):
     def __init__(self, config: WindowedDinov2WithRegistersConfig):
         super().__init__(config)
-        super()._init_backbone(config)
+        # _init_backbone was renamed to _init_transformers_backbone in transformers 5.x
+        super()._init_transformers_backbone()
         self.num_features = [
             config.hidden_size for _ in range(config.num_hidden_layers + 1)
         ]
