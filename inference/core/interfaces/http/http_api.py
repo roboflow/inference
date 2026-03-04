@@ -1681,6 +1681,7 @@ class HttpInterface(BaseInterface):
                 "/webrtc/session/heartbeat",
                 summary="WebRTC session heartbeat",
             )
+            @with_route_exceptions_async
             async def webrtc_session_heartbeat(
                 request: Request,
             ) -> dict:
@@ -1730,6 +1731,7 @@ class HttpInterface(BaseInterface):
                 "/webrtc/session/heartbeat/end",
                 summary="End WebRTC session",
             )
+            @with_route_exceptions_async
             async def webrtc_session_end(
                 request: Request,
             ) -> dict:
