@@ -14,7 +14,6 @@ from inference_models.configuration import (
 )
 from inference_models.entities import ColorFormat
 from inference_models.errors import (
-    CorruptedModelPackageError,
     EnvironmentConfigurationError,
     MissingDependencyError,
 )
@@ -118,11 +117,6 @@ class YOLOLiteForObjectDetectionOnnx(
                 )
             },
         )
-        if inference_config.post_processing.type != "nms":
-            raise CorruptedModelPackageError(
-                message="Expected NMS to be the post-processing",
-                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
-            )
         session = onnxruntime.InferenceSession(
             path_or_bytes=model_package_content["weights.onnx"],
             providers=onnx_execution_providers,
