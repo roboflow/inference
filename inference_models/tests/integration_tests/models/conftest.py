@@ -411,12 +411,14 @@ def coin_counting_rfdetr_nano_torch_static_crop_center_crop_package() -> str:
         package_name="coin-counting-rfdetr-nano-torch-static-crop-center-crop",
     )
 
+@pytest.fixture(scope="module")
 def coin_counting_rfdetr_nano_onnx_static_bs_nonsquare_letterbox_package() -> str:
     return download_model_package(
         model_package_zip_url=COIN_COUNTING_RFDETR_NANO_ONNX_STATIC_BS_NONSQUARE_LETTERBOX_URL,
         package_name="coin-counting-rfdetr-nano-onnx-static-bs-nonsquare-letterbox",
     )
 
+@pytest.fixture(scope="module")
 def coin_counting_rfdetr_nano_torch_static_bs_nonsquare_letterbox_package() -> str:
     return download_model_package(
         model_package_zip_url=COIN_COUNTING_RFDETR_NANO_TORCH_STATIC_BS_NONSQUARE_LETTERBOX_URL,
