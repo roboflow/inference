@@ -1625,7 +1625,6 @@ class HttpInterface(BaseInterface):
         # Enable preloading models at startup
         if (
             (PRELOAD_MODELS or DEDICATED_DEPLOYMENT_WORKSPACE_URL)
-            and API_KEY
             and not (LAMBDA or GCP_SERVERLESS)
         ):
 
@@ -1662,7 +1661,7 @@ class HttpInterface(BaseInterface):
                             state.initialization_errors.append((model_id, str(e)))
                     logger.debug(f"load_model({model_id}) - finished")
 
-                if PRELOAD_MODELS:
+                if PRELOAD_MODELS and API_KEY:
                     # Create tasks for each model to be loaded
                     model_loading_executor = ThreadPoolExecutor(max_workers=2)
                     loaded_futures: List[Tuple[str, Future]] = []
