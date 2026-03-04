@@ -1,5 +1,11 @@
 .PHONY: style check_code_quality
 
+serve:
+	SKIP_CODEGEN=1 venv/bin/python -m zensical serve
+
+serve-full:
+	venv/bin/python -m zensical serve
+
 PYTHON=python
 export PYTHONPATH = .
 check_dirs := inference inference_sdk

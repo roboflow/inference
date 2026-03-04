@@ -4,10 +4,10 @@
   "description": "Roboflow Inference Documentation Theme",
   "scripts": {
     "dev:css": "tailwindcss -i ./docs/assets/tailwind.css -o ../docs/static/styles.css --watch",
-    "dev:js": "esbuild assets/home.js --bundle --outfile=../docs/static/dist/home.js --format=esm --watch",
+    "dev:js": "esbuild ../theme/assets/home.js --bundle --outfile=../docs/static/dist/home.js --format=esm --watch",
     "dev": "concurrently \"npm run dev:css\" \"npm run dev:js\"",
-    "build:css": "tailwindcss -i ./assets/tailwind.css -o ../docs/static/styles.css --minify",
-    "build:js": "esbuild assets/home.js --bundle --outfile=../docs/static/dist/home.js --format=esm --minify",
+    "build:css": "tailwindcss -i ../theme/assets/tailwind.css -o ../docs/static/styles.css --minify",
+    "build:js": "esbuild ../theme/assets/home.js --bundle --outfile=../docs/static/dist/home.js --format=esm --minify",
     "build": "npm run build:css && npm run build:js"
   },
   "devDependencies": {
