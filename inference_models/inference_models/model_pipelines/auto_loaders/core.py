@@ -3,6 +3,7 @@ from typing import Dict, List, Optional, Tuple, Union
 from rich.console import Console
 from rich.tree import Tree
 
+from inference_models.configuration import MODEL_DOWNLOAD_FILE_LOCK_ACQUIRE_TIMEOUT
 from inference_models.errors import ModelPipelineInitializationError
 from inference_models.logger import verbose_info
 from inference_models.model_pipelines.auto_loaders.pipelines_registry import (
@@ -66,7 +67,7 @@ class AutoModelPipeline:
         api_key: Optional[str] = None,
         max_package_loading_attempts: Optional[int] = None,
         verbose: bool = False,
-        model_download_file_lock_acquire_timeout: int = 120,
+        model_download_file_lock_acquire_timeout: int = MODEL_DOWNLOAD_FILE_LOCK_ACQUIRE_TIMEOUT,
         allow_untrusted_packages: bool = False,
         trt_engine_host_code_allowed: bool = True,
         allow_local_code_packages: bool = True,

@@ -24,6 +24,7 @@ from inference_models.configuration import (
     API_CALLS_TIMEOUT,
     DISABLE_INTERACTIVE_PROGRESS_BARS,
     IDEMPOTENT_API_REQUEST_CODES_TO_RETRY,
+    MODEL_DOWNLOAD_FILE_LOCK_ACQUIRE_TIMEOUT,
 )
 from inference_models.errors import (
     FileHashSumMissmatch,
@@ -65,7 +66,7 @@ def download_files_to_directory(
     request_timeout: Optional[int] = None,
     max_parallel_downloads: int = 8,
     max_threads_per_download: int = 8,
-    file_lock_acquire_timeout: int = 120,
+    file_lock_acquire_timeout: int = MODEL_DOWNLOAD_FILE_LOCK_ACQUIRE_TIMEOUT,
     verify_hash_while_download: bool = True,
     download_files_without_hash: bool = False,
     name_after: Literal["file_handle", "md5_hash"] = "file_handle",
