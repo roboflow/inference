@@ -148,7 +148,7 @@ Defines how images are prepared for the neural network:
 }
 ```
 
-**`dataset_version_resize_dimensions`** *(optional)* - The non-square resize dimensions applied to images by the Roboflow dataset version before training. When present and non-square (while `training_input_size` is square), preprocessing performs a two-step resize: first letterbox/center-crop to these dimensions, then bilinear-interpolate to the square `training_input_size`. This reproduces the resize behavior used during training on the Roboflow Platform. Ignored when `resize_mode` is `"stretch"`.
+**`dataset_version_resize_dimensions`** *(optional)* - The non-square resize dimensions applied to images by the Roboflow dataset version before training. When present and non-square (while `training_input_size` is square), preprocessing performs a two-step resize: first letterbox/center-crop to these dimensions, then bilinear-interpolate to the square `training_input_size`. This is used to reproduce the resize behavior used during training RF-DETR models on the Roboflow Platform. Ignored when `resize_mode` is `"stretch"`.
 ```json
 {
   "height": 480,
