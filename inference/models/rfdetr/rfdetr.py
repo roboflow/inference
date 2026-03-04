@@ -371,9 +371,13 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
 
             cxcy = selected_boxes[:, :2]
             wh = selected_boxes[:, 2:]
-            xy_min = cxcy - 0.5 * wh
-            xy_max = cxcy + 0.5 * wh
-            boxes_xyxy = np.concatenate([xy_min, xy_max], axis=1)
+
+            # Pre-allocate boxes_xyxy to avoid intermediate allocations
+            num_boxes = len(selected_boxes)
+            boxes_xyxy = np.empty((num_boxes, 4), dtype=np.float32)
+            half_wh = wh * 0.5
+            boxes_xyxy[:, :2] = cxcy - half_wh
+            boxes_xyxy[:, 2:] = cxcy + half_wh
 
             if self.resize_method == "Stretch to":
                 scale_fct = np.array([orig_w, orig_h, orig_w, orig_h], dtype=np.float32)
@@ -402,21 +406,19 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
 
                 boxes_xyxy = boxes_input / scale
 
-            np.clip(
-                boxes_xyxy,
-                [0, 0, 0, 0],
-                [orig_w, orig_h, orig_w, orig_h],
-                out=boxes_xyxy,
-            )
+            # Optimize clipping with direct bounds checking
+            boxes_xyxy[:, 0] = np.maximum(boxes_xyxy[:, 0], 0)
+            boxes_xyxy[:, 1] = np.maximum(boxes_xyxy[:, 1], 0)
+            boxes_xyxy[:, 2] = np.minimum(boxes_xyxy[:, 2], orig_w)
+            boxes_xyxy[:, 3] = np.minimum(boxes_xyxy[:, 3], orig_h)
 
-            batch_predictions = np.column_stack(
-                (
-                    boxes_xyxy,
-                    topk_scores,
-                    np.zeros((len(topk_scores), 1), dtype=np.float32),
-                    topk_labels,
-                )
-            )
+            # Pre-allocate batch_predictions array instead of using column_stack
+            batch_predictions = np.empty((num_boxes, 7), dtype=np.float32)
+            batch_predictions[:, :4] = boxes_xyxy
+            batch_predictions[:, 4] = topk_scores
+            batch_predictions[:, 5] = 0
+            batch_predictions[:, 6] = topk_labels
+
             batch_predictions = batch_predictions[
                 batch_predictions[:, 6] < len(self.class_names)
             ]
