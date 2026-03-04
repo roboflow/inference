@@ -1005,6 +1005,47 @@ def test_onnx_package_with_static_crop_and_center_crop_batch_torch(
     )
 
 
+_NONSQUARE_LETTERBOX_ONNX_EXPECTED_CONFIDENCE_NUMPY = torch.tensor([
+    0.9049550294876099,
+    0.899626612663269,
+    0.8745410442352295,
+    0.8741258382797241,
+    0.8696562647819519,
+    0.8625761270523071,
+    0.8569862246513367,
+    0.8495969772338867,
+    0.8333320617675781,
+])
+_NONSQUARE_LETTERBOX_ONNX_EXPECTED_CONFIDENCE_TORCH = torch.tensor([
+    0.905476987361908,
+    0.8992284536361694,
+    0.8746137022972107,
+    0.8734182715415955,
+    0.8694590926170349,
+    0.862565279006958,
+    0.8569447994232178,
+    0.8493640422821045,
+    0.832780659198761,
+])
+_NONSQUARE_LETTERBOX_ONNX_EXPECTED_CLASS_ID = torch.tensor(
+    [0, 2, 0, 0, 0, 0, 2, 0, 2], dtype=torch.int32
+)
+_NONSQUARE_LETTERBOX_ONNX_EXPECTED_XYXY = torch.tensor(
+    [
+        [1464, 2300, 1636, 2479],
+        [1706, 2574, 1898, 2769],
+        [1501, 1881, 1722, 2104],
+        [1178, 2627, 1368, 2854],
+        [1089, 2357, 1254, 2529],
+        [930, 1844, 1101, 2014],
+        [1739, 2296, 1920, 2480],
+        [2688, 809, 2850, 977],
+        [1256, 2064, 1425, 2238],
+    ],
+    dtype=torch.int32,
+)
+
+
 @pytest.mark.slow
 @pytest.mark.onnx_extras
 def test_onnx_package_with_nonsquare_letterbox_numpy(
@@ -1025,9 +1066,17 @@ def test_onnx_package_with_nonsquare_letterbox_numpy(
     predictions = model(coins_counting_image_numpy, confidence=0.5)
 
     # then
-    print("confidence:", predictions[0].confidence.cpu().tolist())
-    print("class_id:", predictions[0].class_id.cpu().tolist())
-    print("xyxy:", predictions[0].xyxy.cpu().tolist())
+    assert torch.allclose(
+        predictions[0].confidence.cpu(),
+        _NONSQUARE_LETTERBOX_ONNX_EXPECTED_CONFIDENCE_NUMPY,
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0].class_id.cpu(), _NONSQUARE_LETTERBOX_ONNX_EXPECTED_CLASS_ID
+    )
+    assert torch.allclose(
+        predictions[0].xyxy.cpu(), _NONSQUARE_LETTERBOX_ONNX_EXPECTED_XYXY, atol=2
+    )
 
 
 @pytest.mark.slow
@@ -1052,12 +1101,18 @@ def test_onnx_package_with_nonsquare_letterbox_numpy_batch(
     )
 
     # then
-    print("confidence[0]:", predictions[0].confidence.cpu().tolist())
-    print("confidence[1]:", predictions[1].confidence.cpu().tolist())
-    print("class_id[0]:", predictions[0].class_id.cpu().tolist())
-    print("class_id[1]:", predictions[1].class_id.cpu().tolist())
-    print("xyxy[0]:", predictions[0].xyxy.cpu().tolist())
-    print("xyxy[1]:", predictions[1].xyxy.cpu().tolist())
+    for pred in predictions:
+        assert torch.allclose(
+            pred.confidence.cpu(),
+            _NONSQUARE_LETTERBOX_ONNX_EXPECTED_CONFIDENCE_NUMPY,
+            atol=0.01,
+        )
+        assert torch.allclose(
+            pred.class_id.cpu(), _NONSQUARE_LETTERBOX_ONNX_EXPECTED_CLASS_ID
+        )
+        assert torch.allclose(
+            pred.xyxy.cpu(), _NONSQUARE_LETTERBOX_ONNX_EXPECTED_XYXY, atol=2
+        )
 
 
 @pytest.mark.slow
@@ -1081,9 +1136,17 @@ def test_onnx_package_with_nonsquare_letterbox_torch(
     predictions = model(coins_counting_image_torch, confidence=0.5)
 
     # then
-    print("confidence:", predictions[0].confidence.cpu().tolist())
-    print("class_id:", predictions[0].class_id.cpu().tolist())
-    print("xyxy:", predictions[0].xyxy.cpu().tolist())
+    assert torch.allclose(
+        predictions[0].confidence.cpu(),
+        _NONSQUARE_LETTERBOX_ONNX_EXPECTED_CONFIDENCE_TORCH,
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0].class_id.cpu(), _NONSQUARE_LETTERBOX_ONNX_EXPECTED_CLASS_ID
+    )
+    assert torch.allclose(
+        predictions[0].xyxy.cpu(), _NONSQUARE_LETTERBOX_ONNX_EXPECTED_XYXY, atol=2
+    )
 
 
 @pytest.mark.slow
@@ -1109,12 +1172,18 @@ def test_onnx_package_with_nonsquare_letterbox_torch_batch(
     )
 
     # then
-    print("confidence[0]:", predictions[0].confidence.cpu().tolist())
-    print("confidence[1]:", predictions[1].confidence.cpu().tolist())
-    print("class_id[0]:", predictions[0].class_id.cpu().tolist())
-    print("class_id[1]:", predictions[1].class_id.cpu().tolist())
-    print("xyxy[0]:", predictions[0].xyxy.cpu().tolist())
-    print("xyxy[1]:", predictions[1].xyxy.cpu().tolist())
+    for pred in predictions:
+        assert torch.allclose(
+            pred.confidence.cpu(),
+            _NONSQUARE_LETTERBOX_ONNX_EXPECTED_CONFIDENCE_TORCH,
+            atol=0.01,
+        )
+        assert torch.allclose(
+            pred.class_id.cpu(), _NONSQUARE_LETTERBOX_ONNX_EXPECTED_CLASS_ID
+        )
+        assert torch.allclose(
+            pred.xyxy.cpu(), _NONSQUARE_LETTERBOX_ONNX_EXPECTED_XYXY, atol=2
+        )
 
 
 @pytest.mark.slow
@@ -1140,9 +1209,15 @@ def test_onnx_package_with_nonsquare_letterbox_torch_list(
     )
 
     # then
-    print("confidence[0]:", predictions[0].confidence.cpu().tolist())
-    print("confidence[1]:", predictions[1].confidence.cpu().tolist())
-    print("class_id[0]:", predictions[0].class_id.cpu().tolist())
-    print("class_id[1]:", predictions[1].class_id.cpu().tolist())
-    print("xyxy[0]:", predictions[0].xyxy.cpu().tolist())
-    print("xyxy[1]:", predictions[1].xyxy.cpu().tolist())
+    for pred in predictions:
+        assert torch.allclose(
+            pred.confidence.cpu(),
+            _NONSQUARE_LETTERBOX_ONNX_EXPECTED_CONFIDENCE_TORCH,
+            atol=0.01,
+        )
+        assert torch.allclose(
+            pred.class_id.cpu(), _NONSQUARE_LETTERBOX_ONNX_EXPECTED_CLASS_ID
+        )
+        assert torch.allclose(
+            pred.xyxy.cpu(), _NONSQUARE_LETTERBOX_ONNX_EXPECTED_XYXY, atol=2
+        )

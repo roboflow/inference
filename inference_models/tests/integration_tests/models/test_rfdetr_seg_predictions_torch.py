@@ -898,6 +898,12 @@ def test_package_with_static_crop_center_crop_against_torch_batch_input(
     assert 80000 <= np.sum(predictions[1].mask.cpu().numpy()) <= 81000
 
 
+_NONSQUARE_LETTERBOX_SEG_TORCH_EXPECTED_XYXY_NUMPY = np.array([[125, 312, 1265, 528]])
+_NONSQUARE_LETTERBOX_SEG_TORCH_EXPECTED_XYXY_TORCH = np.array([[126, 312, 1266, 531]])
+_NONSQUARE_LETTERBOX_SEG_TORCH_EXPECTED_MASK_SUM_NUMPY = 209499
+_NONSQUARE_LETTERBOX_SEG_TORCH_EXPECTED_MASK_SUM_TORCH = 209656
+
+
 @pytest.mark.slow
 @pytest.mark.torch_models
 def test_package_with_nonsquare_letterbox_against_numpy_input(
@@ -917,9 +923,17 @@ def test_package_with_nonsquare_letterbox_against_numpy_input(
     predictions = model(snake_image_numpy, confidence=0.5)
 
     # then
-    print("len(predictions):", len(predictions))
-    print("xyxy:", predictions[0].xyxy.cpu().numpy().tolist())
-    print("mask_sum:", np.sum(predictions[0].mask.cpu().numpy()))
+    assert len(predictions) == 1
+    assert np.allclose(
+        predictions[0].xyxy.cpu().numpy(),
+        _NONSQUARE_LETTERBOX_SEG_TORCH_EXPECTED_XYXY_NUMPY,
+        atol=2,
+    )
+    assert (
+        _NONSQUARE_LETTERBOX_SEG_TORCH_EXPECTED_MASK_SUM_NUMPY - 500
+        <= np.sum(predictions[0].mask.cpu().numpy())
+        <= _NONSQUARE_LETTERBOX_SEG_TORCH_EXPECTED_MASK_SUM_NUMPY + 500
+    )
 
 
 @pytest.mark.slow
@@ -941,11 +955,18 @@ def test_package_with_nonsquare_letterbox_against_numpy_list_input(
     predictions = model([snake_image_numpy, snake_image_numpy], confidence=0.5)
 
     # then
-    print("len(predictions):", len(predictions))
-    print("xyxy[0]:", predictions[0].xyxy.cpu().numpy().tolist())
-    print("mask_sum[0]:", np.sum(predictions[0].mask.cpu().numpy()))
-    print("xyxy[1]:", predictions[1].xyxy.cpu().numpy().tolist())
-    print("mask_sum[1]:", np.sum(predictions[1].mask.cpu().numpy()))
+    assert len(predictions) == 2
+    for pred in predictions:
+        assert np.allclose(
+            pred.xyxy.cpu().numpy(),
+            _NONSQUARE_LETTERBOX_SEG_TORCH_EXPECTED_XYXY_NUMPY,
+            atol=2,
+        )
+        assert (
+            _NONSQUARE_LETTERBOX_SEG_TORCH_EXPECTED_MASK_SUM_NUMPY - 500
+            <= np.sum(pred.mask.cpu().numpy())
+            <= _NONSQUARE_LETTERBOX_SEG_TORCH_EXPECTED_MASK_SUM_NUMPY + 500
+        )
 
 
 @pytest.mark.slow
@@ -967,9 +988,17 @@ def test_package_with_nonsquare_letterbox_against_torch_input(
     predictions = model(snake_image_torch, confidence=0.5)
 
     # then
-    print("len(predictions):", len(predictions))
-    print("xyxy:", predictions[0].xyxy.cpu().numpy().tolist())
-    print("mask_sum:", np.sum(predictions[0].mask.cpu().numpy()))
+    assert len(predictions) == 1
+    assert np.allclose(
+        predictions[0].xyxy.cpu().numpy(),
+        _NONSQUARE_LETTERBOX_SEG_TORCH_EXPECTED_XYXY_TORCH,
+        atol=2,
+    )
+    assert (
+        _NONSQUARE_LETTERBOX_SEG_TORCH_EXPECTED_MASK_SUM_TORCH - 500
+        <= np.sum(predictions[0].mask.cpu().numpy())
+        <= _NONSQUARE_LETTERBOX_SEG_TORCH_EXPECTED_MASK_SUM_TORCH + 500
+    )
 
 
 @pytest.mark.slow
@@ -991,11 +1020,18 @@ def test_package_with_nonsquare_letterbox_against_torch_list_input(
     predictions = model([snake_image_torch, snake_image_torch], confidence=0.5)
 
     # then
-    print("len(predictions):", len(predictions))
-    print("xyxy[0]:", predictions[0].xyxy.cpu().numpy().tolist())
-    print("mask_sum[0]:", np.sum(predictions[0].mask.cpu().numpy()))
-    print("xyxy[1]:", predictions[1].xyxy.cpu().numpy().tolist())
-    print("mask_sum[1]:", np.sum(predictions[1].mask.cpu().numpy()))
+    assert len(predictions) == 2
+    for pred in predictions:
+        assert np.allclose(
+            pred.xyxy.cpu().numpy(),
+            _NONSQUARE_LETTERBOX_SEG_TORCH_EXPECTED_XYXY_TORCH,
+            atol=2,
+        )
+        assert (
+            _NONSQUARE_LETTERBOX_SEG_TORCH_EXPECTED_MASK_SUM_TORCH - 500
+            <= np.sum(pred.mask.cpu().numpy())
+            <= _NONSQUARE_LETTERBOX_SEG_TORCH_EXPECTED_MASK_SUM_TORCH + 500
+        )
 
 
 @pytest.mark.slow
@@ -1020,8 +1056,15 @@ def test_package_with_nonsquare_letterbox_against_torch_batch_input(
     )
 
     # then
-    print("len(predictions):", len(predictions))
-    print("xyxy[0]:", predictions[0].xyxy.cpu().numpy().tolist())
-    print("mask_sum[0]:", np.sum(predictions[0].mask.cpu().numpy()))
-    print("xyxy[1]:", predictions[1].xyxy.cpu().numpy().tolist())
-    print("mask_sum[1]:", np.sum(predictions[1].mask.cpu().numpy()))
+    assert len(predictions) == 2
+    for pred in predictions:
+        assert np.allclose(
+            pred.xyxy.cpu().numpy(),
+            _NONSQUARE_LETTERBOX_SEG_TORCH_EXPECTED_XYXY_TORCH,
+            atol=2,
+        )
+        assert (
+            _NONSQUARE_LETTERBOX_SEG_TORCH_EXPECTED_MASK_SUM_TORCH - 500
+            <= np.sum(pred.mask.cpu().numpy())
+            <= _NONSQUARE_LETTERBOX_SEG_TORCH_EXPECTED_MASK_SUM_TORCH + 500
+        )
