@@ -293,7 +293,7 @@ def infer_from_trt_engine_with_batch_size_boundaries(
         if reminder > 0:
             batch = torch.cat(
                 (
-                    pre_processed_images,
+                    batch,
                     torch.zeros(
                         (reminder,) + batch.shape[1:],
                         dtype=pre_processed_images.dtype,
@@ -350,6 +350,7 @@ def execute_trt_engine(
             help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
         )
     stream = torch.cuda.Stream(device=device)
+    stream.wait_stream(torch.cuda.current_stream(device))
     status = context.execute_async_v3(stream_handle=stream.cuda_stream)
     if not status:
         raise ModelRuntimeError(
