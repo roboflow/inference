@@ -73,6 +73,7 @@ def post_process_instance_segmentation_results(
             top_classes = classes_re_mapping.class_mapping[top_classes[remapping_mask]]
             selected_boxes = selected_boxes[remapping_mask]
             confidence = confidence[remapping_mask]
+            selected_masks = selected_masks[remapping_mask]
         cxcy = selected_boxes[:, :2]
         wh = selected_boxes[:, 2:]
         xy_min = cxcy - 0.5 * wh
