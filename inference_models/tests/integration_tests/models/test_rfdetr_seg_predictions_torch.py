@@ -896,3 +896,132 @@ def test_package_with_static_crop_center_crop_against_torch_batch_input(
         predictions[1].xyxy.cpu().numpy(), np.array([[427, 331, 852, 552]]), atol=1
     )
     assert 80000 <= np.sum(predictions[1].mask.cpu().numpy()) <= 81000
+
+
+@pytest.mark.slow
+@pytest.mark.torch_models
+def test_package_with_nonsquare_letterbox_against_numpy_input(
+    snake_image_numpy: np.ndarray,
+    snakes_rfdetr_seg_torch_static_bs_nonsquare_letterbox_package: str,
+) -> None:
+    # given
+    from inference_models.models.rfdetr.rfdetr_instance_segmentation_pytorch import (
+        RFDetrForInstanceSegmentationTorch,
+    )
+
+    model = RFDetrForInstanceSegmentationTorch.from_pretrained(
+        model_name_or_path=snakes_rfdetr_seg_torch_static_bs_nonsquare_letterbox_package,
+    )
+
+    # when
+    predictions = model(snake_image_numpy, confidence=0.5)
+
+    # then
+    print("len(predictions):", len(predictions))
+    print("xyxy:", predictions[0].xyxy.cpu().numpy().tolist())
+    print("mask_sum:", np.sum(predictions[0].mask.cpu().numpy()))
+
+
+@pytest.mark.slow
+@pytest.mark.torch_models
+def test_package_with_nonsquare_letterbox_against_numpy_list_input(
+    snake_image_numpy: np.ndarray,
+    snakes_rfdetr_seg_torch_static_bs_nonsquare_letterbox_package: str,
+) -> None:
+    # given
+    from inference_models.models.rfdetr.rfdetr_instance_segmentation_pytorch import (
+        RFDetrForInstanceSegmentationTorch,
+    )
+
+    model = RFDetrForInstanceSegmentationTorch.from_pretrained(
+        model_name_or_path=snakes_rfdetr_seg_torch_static_bs_nonsquare_letterbox_package,
+    )
+
+    # when
+    predictions = model([snake_image_numpy, snake_image_numpy], confidence=0.5)
+
+    # then
+    print("len(predictions):", len(predictions))
+    print("xyxy[0]:", predictions[0].xyxy.cpu().numpy().tolist())
+    print("mask_sum[0]:", np.sum(predictions[0].mask.cpu().numpy()))
+    print("xyxy[1]:", predictions[1].xyxy.cpu().numpy().tolist())
+    print("mask_sum[1]:", np.sum(predictions[1].mask.cpu().numpy()))
+
+
+@pytest.mark.slow
+@pytest.mark.torch_models
+def test_package_with_nonsquare_letterbox_against_torch_input(
+    snake_image_torch: torch.Tensor,
+    snakes_rfdetr_seg_torch_static_bs_nonsquare_letterbox_package: str,
+) -> None:
+    # given
+    from inference_models.models.rfdetr.rfdetr_instance_segmentation_pytorch import (
+        RFDetrForInstanceSegmentationTorch,
+    )
+
+    model = RFDetrForInstanceSegmentationTorch.from_pretrained(
+        model_name_or_path=snakes_rfdetr_seg_torch_static_bs_nonsquare_letterbox_package,
+    )
+
+    # when
+    predictions = model(snake_image_torch, confidence=0.5)
+
+    # then
+    print("len(predictions):", len(predictions))
+    print("xyxy:", predictions[0].xyxy.cpu().numpy().tolist())
+    print("mask_sum:", np.sum(predictions[0].mask.cpu().numpy()))
+
+
+@pytest.mark.slow
+@pytest.mark.torch_models
+def test_package_with_nonsquare_letterbox_against_torch_list_input(
+    snake_image_torch: torch.Tensor,
+    snakes_rfdetr_seg_torch_static_bs_nonsquare_letterbox_package: str,
+) -> None:
+    # given
+    from inference_models.models.rfdetr.rfdetr_instance_segmentation_pytorch import (
+        RFDetrForInstanceSegmentationTorch,
+    )
+
+    model = RFDetrForInstanceSegmentationTorch.from_pretrained(
+        model_name_or_path=snakes_rfdetr_seg_torch_static_bs_nonsquare_letterbox_package,
+    )
+
+    # when
+    predictions = model([snake_image_torch, snake_image_torch], confidence=0.5)
+
+    # then
+    print("len(predictions):", len(predictions))
+    print("xyxy[0]:", predictions[0].xyxy.cpu().numpy().tolist())
+    print("mask_sum[0]:", np.sum(predictions[0].mask.cpu().numpy()))
+    print("xyxy[1]:", predictions[1].xyxy.cpu().numpy().tolist())
+    print("mask_sum[1]:", np.sum(predictions[1].mask.cpu().numpy()))
+
+
+@pytest.mark.slow
+@pytest.mark.torch_models
+def test_package_with_nonsquare_letterbox_against_torch_batch_input(
+    snake_image_torch: torch.Tensor,
+    snakes_rfdetr_seg_torch_static_bs_nonsquare_letterbox_package: str,
+) -> None:
+    # given
+    from inference_models.models.rfdetr.rfdetr_instance_segmentation_pytorch import (
+        RFDetrForInstanceSegmentationTorch,
+    )
+
+    model = RFDetrForInstanceSegmentationTorch.from_pretrained(
+        model_name_or_path=snakes_rfdetr_seg_torch_static_bs_nonsquare_letterbox_package,
+    )
+
+    # when
+    predictions = model(
+        torch.stack([snake_image_torch, snake_image_torch], dim=0),
+        confidence=0.5,
+    )
+
+    # then
+    print("len(predictions):", len(predictions))
+    print("xyxy[0]:", predictions[0].xyxy.cpu().numpy().tolist())
+    print("mask_sum[0]:", np.sum(predictions[0].mask.cpu().numpy()))
+    print("xyxy[1]:", predictions[1].xyxy.cpu().numpy().tolist())
+    print("mask_sum[1]:", np.sum(predictions[1].mask.cpu().numpy()))

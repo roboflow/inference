@@ -33,6 +33,9 @@ COIN_COUNTING_RFDETR_NANO_ONNX_CENTER_CROP_URL = "https://storage.googleapis.com
 COIN_COUNTING_RFDETR_NANO_TORCH_CENTER_CROP_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-nano-torch-center-crop-640.zip"
 COIN_COUNTING_RFDETR_NANO_ONNX_STATIC_CROP_CENTER_CROP_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-nano-onnx-static-crop-center-crop-640.zip"
 COIN_COUNTING_RFDETR_NANO_TORCH_STATIC_CROP_CENTER_CROP_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-nano-torch-static-crop-center-crop-640.zip"
+COIN_COUNTING_RFDETR_NANO_ONNX_STATIC_BS_NONSQUARE_LETTERBOX_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-nano-onnx-static-bs-nonsquare-letterbox.zip"
+COIN_COUNTING_RFDETR_NANO_TORCH_STATIC_BS_NONSQUARE_LETTERBOX_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-nano-torch-static-bs-nonsquare-letterbox.zip"
+
 OG_RFDETR_WEIGHTS_URL = "https://storage.googleapis.com/rfdetr/rf-detr-base-coco.pth"
 
 COIN_COUNTING_YOLOV8N_ONNX_DYNAMIC_BS_LETTERBOX_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov8n-onnx-dynamic-bs-letterbox.zip"
@@ -139,6 +142,8 @@ SNAKES_RFDETR_SEG_TORCH_STATIC_CROP_LETTERBOX_URL = "https://storage.googleapis.
 SNAKES_RFDETR_SEG_ONNX_STATIC_BS_STATIC_CROP_LETTERBOX_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-seg-onnx-static-bs-static-crop-letterbox.zip"
 SNAKES_RFDETR_SEG_TORCH_STATIC_CROP_CENTER_CROP_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-seg-torch-static-crop-center-crop.zip"
 SNAKES_RFDETR_SEG_ONNX_STATIC_BS_STATIC_CROP_CENTER_CROP_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-seg-onnx-static-bs-static-crop-center-crop.zip"
+SNAKES_RFDETR_SEG_ONNX_STATIC_BS_NONSQUARE_LETTERBOX_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-seg-onnx-static-bs-nonsquare-letterbox.zip"
+SNAKES_RFDETR_SEG_TORCH_STATIC_BS_NONSQUARE_LETTERBOX_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-seg-torch-static-bs-nonsquare-letterbox.zip"
 
 DINOV3_CLASSIFICATION_ONNX_STATIC_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/dinov3-classification-onnx.zip"
 DINOV3_MULTI_LABEL_ONNX_STATIC_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/dinov3-multi-label-onnx.zip"
@@ -406,6 +411,17 @@ def coin_counting_rfdetr_nano_torch_static_crop_center_crop_package() -> str:
         package_name="coin-counting-rfdetr-nano-torch-static-crop-center-crop",
     )
 
+def coin_counting_rfdetr_nano_onnx_static_bs_nonsquare_letterbox_package() -> str:
+    return download_model_package(
+        model_package_zip_url=COIN_COUNTING_RFDETR_NANO_ONNX_STATIC_BS_NONSQUARE_LETTERBOX_URL,
+        package_name="coin-counting-rfdetr-nano-onnx-static-bs-nonsquare-letterbox",
+    )
+
+def coin_counting_rfdetr_nano_torch_static_bs_nonsquare_letterbox_package() -> str:
+    return download_model_package(
+        model_package_zip_url=COIN_COUNTING_RFDETR_NANO_TORCH_STATIC_BS_NONSQUARE_LETTERBOX_URL,
+        package_name="coin-counting-rfdetr-nano-torch-static-bs-nonsquare-letterbox",
+    )
 
 @pytest.fixture(scope="module")
 def og_rfdetr_base_weights() -> str:
@@ -1168,6 +1184,20 @@ def snakes_rfdetr_seg_onnx_static_bs_static_crop_center_crop_package() -> str:
         package_name="snakes-rfdetr-seg-onnx-static-bs-static-crop-center-crop",
     )
 
+
+@pytest.fixture(scope="module")
+def snakes_rfdetr_seg_onnx_static_bs_nonsquare_letterbox_package() -> str:
+    return download_model_package(
+        model_package_zip_url=SNAKES_RFDETR_SEG_ONNX_STATIC_BS_NONSQUARE_LETTERBOX_URL,
+        package_name="snakes-rfdetr-seg-onnx-static-bs-nonsquare-letterbox",
+    )
+
+@pytest.fixture(scope="module")
+def snakes_rfdetr_seg_torch_static_bs_nonsquare_letterbox_package() -> str:
+    return download_model_package(
+        model_package_zip_url=SNAKES_RFDETR_SEG_TORCH_STATIC_BS_NONSQUARE_LETTERBOX_URL,
+        package_name="snakes-rfdetr-seg-torch-static-bs-nonsquare-letterbox",
+    )
 
 @pytest.fixture(scope="module")
 def depth_anything_v2_small_package() -> str:

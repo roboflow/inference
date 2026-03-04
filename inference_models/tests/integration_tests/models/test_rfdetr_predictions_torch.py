@@ -1182,3 +1182,118 @@ def test_torch_package_with_static_crop_and_center_crop_batch_torch(
         expected_xyxy.cpu(),
         atol=2,
     )
+
+
+@pytest.mark.slow
+@pytest.mark.torch_models
+def test_torch_package_with_nonsquare_letterbox_numpy(
+    coin_counting_rfdetr_nano_torch_static_bs_nonsquare_letterbox_package: str,
+    coins_counting_image_numpy: np.ndarray,
+) -> None:
+    # given
+    model = RFDetrForObjectDetectionTorch.from_pretrained(
+        model_name_or_path=coin_counting_rfdetr_nano_torch_static_bs_nonsquare_letterbox_package,
+    )
+
+    # when
+    predictions = model(coins_counting_image_numpy, confidence=0.5)
+
+    # then
+    print("confidence:", predictions[0].confidence.cpu().tolist())
+    print("class_id:", predictions[0].class_id.cpu().tolist())
+    print("xyxy:", predictions[0].xyxy.cpu().tolist())
+
+
+@pytest.mark.slow
+@pytest.mark.torch_models
+def test_torch_package_with_nonsquare_letterbox_numpy_batch(
+    coin_counting_rfdetr_nano_torch_static_bs_nonsquare_letterbox_package: str,
+    coins_counting_image_numpy: np.ndarray,
+) -> None:
+    # given
+    model = RFDetrForObjectDetectionTorch.from_pretrained(
+        model_name_or_path=coin_counting_rfdetr_nano_torch_static_bs_nonsquare_letterbox_package,
+    )
+
+    # when
+    predictions = model(
+        [coins_counting_image_numpy, coins_counting_image_numpy], confidence=0.5
+    )
+
+    # then
+    print("confidence[0]:", predictions[0].confidence.cpu().tolist())
+    print("confidence[1]:", predictions[1].confidence.cpu().tolist())
+    print("class_id[0]:", predictions[0].class_id.cpu().tolist())
+    print("class_id[1]:", predictions[1].class_id.cpu().tolist())
+    print("xyxy[0]:", predictions[0].xyxy.cpu().tolist())
+    print("xyxy[1]:", predictions[1].xyxy.cpu().tolist())
+
+
+@pytest.mark.slow
+@pytest.mark.torch_models
+def test_torch_package_with_nonsquare_letterbox_torch(
+    coin_counting_rfdetr_nano_torch_static_bs_nonsquare_letterbox_package: str,
+    coins_counting_image_torch: torch.Tensor,
+) -> None:
+    # given
+    model = RFDetrForObjectDetectionTorch.from_pretrained(
+        model_name_or_path=coin_counting_rfdetr_nano_torch_static_bs_nonsquare_letterbox_package,
+    )
+
+    # when
+    predictions = model(coins_counting_image_torch, confidence=0.5)
+
+    # then
+    print("confidence:", predictions[0].confidence.cpu().tolist())
+    print("class_id:", predictions[0].class_id.cpu().tolist())
+    print("xyxy:", predictions[0].xyxy.cpu().tolist())
+
+
+@pytest.mark.slow
+@pytest.mark.torch_models
+def test_torch_package_with_nonsquare_letterbox_torch_batch(
+    coin_counting_rfdetr_nano_torch_static_bs_nonsquare_letterbox_package: str,
+    coins_counting_image_torch: torch.Tensor,
+) -> None:
+    # given
+    model = RFDetrForObjectDetectionTorch.from_pretrained(
+        model_name_or_path=coin_counting_rfdetr_nano_torch_static_bs_nonsquare_letterbox_package,
+    )
+
+    # when
+    predictions = model(
+        torch.stack([coins_counting_image_torch] * 2, dim=0), confidence=0.5
+    )
+
+    # then
+    print("confidence[0]:", predictions[0].confidence.cpu().tolist())
+    print("confidence[1]:", predictions[1].confidence.cpu().tolist())
+    print("class_id[0]:", predictions[0].class_id.cpu().tolist())
+    print("class_id[1]:", predictions[1].class_id.cpu().tolist())
+    print("xyxy[0]:", predictions[0].xyxy.cpu().tolist())
+    print("xyxy[1]:", predictions[1].xyxy.cpu().tolist())
+
+
+@pytest.mark.slow
+@pytest.mark.torch_models
+def test_torch_package_with_nonsquare_letterbox_torch_list(
+    coin_counting_rfdetr_nano_torch_static_bs_nonsquare_letterbox_package: str,
+    coins_counting_image_torch: torch.Tensor,
+) -> None:
+    # given
+    model = RFDetrForObjectDetectionTorch.from_pretrained(
+        model_name_or_path=coin_counting_rfdetr_nano_torch_static_bs_nonsquare_letterbox_package,
+    )
+
+    # when
+    predictions = model(
+        [coins_counting_image_torch, coins_counting_image_torch], confidence=0.5
+    )
+
+    # then
+    print("confidence[0]:", predictions[0].confidence.cpu().tolist())
+    print("confidence[1]:", predictions[1].confidence.cpu().tolist())
+    print("class_id[0]:", predictions[0].class_id.cpu().tolist())
+    print("class_id[1]:", predictions[1].class_id.cpu().tolist())
+    print("xyxy[0]:", predictions[0].xyxy.cpu().tolist())
+    print("xyxy[1]:", predictions[1].xyxy.cpu().tolist())
