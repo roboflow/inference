@@ -468,11 +468,7 @@ class HttpInterface(BaseInterface):
                     WORKFLOW_ID_HEADER,
                     WORKSPACE_ID_HEADER,
                 ]
-                + (
-                    [EXECUTION_ID_HEADER]
-                    if EXECUTION_ID_HEADER is not None
-                    else []
-                ),
+                + ([EXECUTION_ID_HEADER] if EXECUTION_ID_HEADER is not None else []),
             )
 
         # Optionally add middleware for profiling the FastAPI server and underlying inference API code
