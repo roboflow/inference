@@ -234,6 +234,7 @@ from inference.core.interfaces.stream_manager.manager_app.entities import (
 )
 from inference.core.interfaces.webrtc_worker import start_worker
 from inference.core.interfaces.webrtc_worker.entities import (
+    WebRTCSessionHeartbeatRequest,
     WebRTCWorkerRequest,
     WebRTCWorkerResult,
 )
@@ -1683,7 +1684,7 @@ class HttpInterface(BaseInterface):
             )
             @with_route_exceptions_async
             async def webrtc_session_heartbeat(
-                request: Request,
+                request: WebRTCSessionHeartbeatRequest,
             ) -> dict:
                 """Receive heartbeat for an active WebRTC session.
 
@@ -1693,23 +1694,10 @@ class HttpInterface(BaseInterface):
 
                 Requires api_key for authentication.
                 """
-                body = await request.json()
-                session_id = body.get("session_id")
-                api_key = body.get("api_key")
-
-                if not session_id:
-                    return {
-                        "status": "error",
-                        "message": "session_id required",
-                    }
-                elif not api_key:
-                    return {
-                        "status": "error",
-                        "message": "api_key required",
-                    }
-
                 try:
-                    workspace_id = await get_roboflow_workspace_async(api_key=api_key)
+                    workspace_id = await get_roboflow_workspace_async(
+                        api_key=request.api_key
+                    )
                 except (RoboflowAPINotAuthorizedError, WorkspaceLoadError):
                     return {
                         "status": "error",
@@ -1718,7 +1706,7 @@ class HttpInterface(BaseInterface):
 
                 session_refreshed = refresh_webrtc_session(
                     workspace_id=workspace_id,
-                    session_id=session_id,
+                    session_id=request.session_id,
                 )
                 if not session_refreshed:
                     return {
@@ -1733,29 +1721,16 @@ class HttpInterface(BaseInterface):
             )
             @with_route_exceptions_async
             async def webrtc_session_end(
-                request: Request,
+                request: WebRTCSessionHeartbeatRequest,
             ) -> dict:
                 """End a WebRTC session and immediately free the quota slot.
 
                 Requires api_key for authentication.
                 """
-                body = await request.json()
-                session_id = body.get("session_id")
-                api_key = body.get("api_key")
-
-                if not session_id:
-                    return {
-                        "status": "error",
-                        "message": "session_id required",
-                    }
-                elif not api_key:
-                    return {
-                        "status": "error",
-                        "message": "api_key required",
-                    }
-
                 try:
-                    workspace_id = await get_roboflow_workspace_async(api_key=api_key)
+                    workspace_id = await get_roboflow_workspace_async(
+                        api_key=request.api_key
+                    )
                 except (RoboflowAPINotAuthorizedError, WorkspaceLoadError):
                     return {
                         "status": "error",
@@ -1764,7 +1739,7 @@ class HttpInterface(BaseInterface):
 
                 deregister_webrtc_session(
                     workspace_id=workspace_id,
-                    session_id=session_id,
+                    session_id=request.session_id,
                 )
                 return {"status": "ok"}
 

@@ -89,6 +89,13 @@ class WebRTCWorkerResult(BaseModel):
     inner_error: Optional[str] = None
 
 
+class WebRTCSessionHeartbeatRequest(BaseModel):
+    """Request body for WebRTC session heartbeat and end endpoints."""
+
+    session_id: str
+    api_key: str
+
+
 class StreamOutputMode(str, Enum):
     AUTO_DETECT = "auto_detect"  # None -> auto-detect first image
     NO_VIDEO = "no_video"  # [] -> no video track
