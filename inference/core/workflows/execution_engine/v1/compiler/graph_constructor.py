@@ -1359,6 +1359,11 @@ def verify_compatibility_of_input_data_lineage_with_control_flow_lineage(
             already_spotted_input_lineages.add(lineage_id)
             batch_oriented_control_flow_lineages.append(lineage)
         lineage_id2control_flow_steps[lineage_id].append(flow_control_steps_selector)
+    # If the step has no batch-oriented inputs, it can be gated by any control flow;
+    # there is no batch dimension to be incompatible with (the step runs or not based on the gate).
+    if not inputs_lineage:
+        return
+
     all_input_lineage_prefixes = get_all_batch_lineage_prefixes(lineages=inputs_lineage)
     all_input_lineage_prefixes_hashes = {
         identify_lineage(lineage=lineage) for lineage in all_input_lineage_prefixes

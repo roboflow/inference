@@ -45,7 +45,7 @@ def construct_non_simd_step_input(
     runtime_parameters: Dict[str, Any],
     execution_cache: ExecutionCache,
     branching_manager: BranchingManager,
-) -> Optional[Dict[str, Any]]:
+) -> Optional[Union[Dict[str, Any], Tuple[Dict[str, Any], List[DynamicBatchIndex]]]]:
     if step_node.batch_oriented_parameters:
         raise ExecutionEngineRuntimeError(
             public_message=f"Attempted to get non-SIMD input for SIMD step: {step_node.name}."
@@ -55,6 +55,7 @@ def construct_non_simd_step_input(
             context="workflow_execution | step_input_assembling",
         )
     masks = set()
+    passing_batch_indices: Optional[List[DynamicBatchIndex]] = None
     for execution_branch in step_node.execution_branches_impacting_inputs:
         if not branching_manager.is_execution_branch_registered(
             execution_branch=execution_branch
@@ -64,14 +65,19 @@ def construct_non_simd_step_input(
         if branching_manager.is_execution_branch_batch_oriented(
             execution_branch=execution_branch
         ):
-            raise ExecutionEngineRuntimeError(
-                public_message=f"For step: {step_node.name}, detected batch-oriented condition statements "
-                f"impacting non-SIMD step, which should be prevented by Workflows Compiler. "
-                f"This is most likely a bug. Contact Roboflow team through github issues "
-                f"(https://github.com/roboflow/inference/issues) providing full context of"
-                f"the problem - including workflow definition you use.",
-                context="workflow_execution | step_input_assembling",
-            )
+            # Non-SIMD step gated by batch-oriented control flow: run once per batch index
+            # that passed (e.g. one email per image with detections), same as SIMD behavior.
+            batch_mask = branching_manager.get_mask(execution_branch=execution_branch)
+            if not batch_mask:
+                masks.add(False)
+            else:
+                masks.add(True)
+                if passing_batch_indices is None:
+                    passing_batch_indices = list(batch_mask)
+                else:
+                    passing_batch_indices = [
+                        i for i in passing_batch_indices if i in batch_mask
+                    ]
         else:
             mask = branching_manager.get_mask(execution_branch=execution_branch)
             masks.add(mask)
@@ -106,6 +112,8 @@ def construct_non_simd_step_input(
         and not step_node.step_manifest.accepts_empty_values()
     ):
         return None
+    if passing_batch_indices is not None:
+        return (result, sorted(passing_batch_indices))
     return result
 
 
