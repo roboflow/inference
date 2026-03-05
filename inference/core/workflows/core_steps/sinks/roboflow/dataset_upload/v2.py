@@ -310,7 +310,7 @@ class RoboflowDatasetUploadBlockV2(WorkflowBlock):
         result = []
         predictions = [None] * len(images) if predictions is None else predictions
         image_names = [None] * len(images) if image_name is None else image_name
-        metadata_values = _transpose_metadata_batches(metadata, len(images))
+        metadata_values = _expand_metadata_to_records(metadata, len(images))
         for image, prediction, img_name, meta in zip(
             images, predictions, image_names, metadata_values
         ):
@@ -341,7 +341,7 @@ class RoboflowDatasetUploadBlockV2(WorkflowBlock):
         return result
 
 
-def _transpose_metadata_batches(
+def _expand_metadata_to_records(
     metadata: Optional[Union[Dict[str, Any], Batch]],
     batch_size: int,
 ) -> List[Optional[Dict[str, Any]]]:
