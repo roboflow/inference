@@ -1,9 +1,20 @@
 # Changelog
 
+## `0.19.3`
+
+### Fixed
+- Post-processing for RF-DETR segmentation model - missing remapping for class ids regarding masks.
+
+## `0.19.2`
+
+### Fixed
+- Changed the default ranking for model packages in `AutoLoader` - ONNX to be preferred over Torch. 
+
+
 ## `0.19.1`
 
 ### Fixed
-- Fixed issue with RFDetr model post-processing causing all results to be empty (TRT implementation) 
+- Fixed issue with RF-DETR model post-processing causing all results to be empty (TRT implementation) 
 
 ---
 
