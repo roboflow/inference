@@ -1,6 +1,6 @@
 # Inference
 
-Inference is the computer vision deployment hub by [Roboflow](https://roboflow.com).
+Inference is an open-source computer vision deployment hub by [Roboflow](https://roboflow.com).
 It handles model serving, video stream management, pre/post-processing, and
 GPU/CPU optimization so you can focus on building your application.
 
@@ -8,9 +8,9 @@ GPU/CPU optimization so you can focus on building your application.
 
 Read more about the Inference architecture [here](../../understand/architecture). Quick links:
 
-<p style="text-align: center; font-size: 1.2em;"><a href="../../inference_helpers/inference_sdk">inference_sdk</a> · <a href="../../inference_helpers/inference_cli">inference_cli</a> · <a href="../../understand/architecture#inference-as-a-microservice">inference server</a> · <a href="../../understand/architecture">inference</a></p>
-<img src="../../public/assets/img/img-inference-diagram-v1.png" alt="Inference Architecture" />
+<p style="text-align: center; font-size: 1.2em;"><a href="../../inference_helpers/inference_sdk">inference_sdk</a> · <a href="../../inference_helpers/inference_cli">inference_cli</a> · <a href="../../quickstart/docker">Inference server</a> · <a href="../../using_inference/about">inference</a></p>
 
+![Inference Architecture](../../images/img-inference-diagram-v1.png)
 
 ## Features
 

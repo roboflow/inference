@@ -1,10 +1,19 @@
-The Inference Pipeline interface is made for streaming and is likely the best route to go for real time use cases. 
-It is an asynchronous interface that can consume many different video sources including local devices (like webcams), 
+The Inference Pipeline interface is made for streaming and is likely the best route to go for real time use cases.
+It is an asynchronous interface that can consume many different video sources including local devices (like webcams),
 RTSP video streams, video files, etc. With this interface, you define the source of a video stream and sinks.
 
 ## Quickstart
 
-First, install Inference:
+To use fine-tuned models with Inference, you will need a Roboflow API key. If you don't already have a Roboflow account, <a href="https://app.roboflow.com" target="_blank">sign up for a free Roboflow account</a>. Then, retrieve your API key from the Roboflow dashboard. Run the following command to set your API key in your coding environment:
+
+```
+export ROBOFLOW_API_KEY=<your api key>
+
+```
+
+[Learn more about using Roboflow API keys in Inference](../quickstart/configure_api_key.md)
+
+Then, install Inference:
 
 --8<-- "include/install.md"
 
@@ -242,7 +251,84 @@ pipeline = InferencePipeline.init(
 )
 ```
 
-### Custom Sinks
+### Custom Sink Tutorial
+
+Let's walk through building a custom sink step by step. First, a simple sink that prints the frame ID:
+
+```python
+from inference import InferencePipeline
+# import VideoFrame for type hinting
+from inference.core.interfaces.camera.entities import VideoFrame
+
+# define sink function
+def my_custom_sink(predictions: dict, video_frame: VideoFrame):
+    # print the frame ID of the video_frame object
+    print(f"Frame ID: {video_frame.frame_id}")
+
+pipeline = InferencePipeline.init(
+    model_id="yolov8x-1280",
+    video_reference="https://storage.googleapis.com/com-roboflow-marketing/inference/people-walking.mp4",
+    on_prediction=my_custom_sink,
+)
+
+pipeline.start()
+pipeline.join()
+```
+
+The output should look something like:
+
+```bash
+Frame ID: 1
+Frame ID: 2
+Frame ID: 3
+```
+
+Now let's do something more useful and use our custom sink to visualize predictions with [Supervision](https://supervision.roboflow.com):
+
+```python
+from inference import InferencePipeline
+from inference.core.interfaces.camera.entities import VideoFrame
+
+# import opencv to display our annotated images
+import cv2
+# import supervision to help visualize our predictions
+import supervision as sv
+
+# create a bounding box annotator and label annotator to use in our custom sink
+label_annotator = sv.LabelAnnotator()
+box_annotator = sv.BoxAnnotator()
+
+def my_custom_sink(predictions: dict, video_frame: VideoFrame):
+    # get the text labels for each prediction
+    labels = [p["class"] for p in predictions["predictions"]]
+    # load our predictions into the Supervision Detections api
+    detections = sv.Detections.from_inference(predictions)
+    # annotate the frame using our supervision annotator, the video_frame, the predictions (as supervision Detections), and the prediction labels
+    image = label_annotator.annotate(
+        scene=video_frame.image.copy(), detections=detections, labels=labels
+    )
+    image = box_annotator.annotate(image, detections=detections)
+    # display the annotated image
+    cv2.imshow("Predictions", image)
+    cv2.waitKey(1)
+
+pipeline = InferencePipeline.init(
+    model_id="yolov8x-1280",
+    video_reference="https://storage.googleapis.com/com-roboflow-marketing/inference/people-walking.mp4",
+    on_prediction=my_custom_sink,
+)
+
+pipeline.start()
+pipeline.join()
+```
+
+You should see something like this on your screen:
+
+<video width="100%" autoplay loop muted>
+  <source src="https://storage.googleapis.com/com-roboflow-marketing/inference/people-walking-annotated.mp4" type="video/mp4">
+</video>
+
+### Custom Sinks (Advanced)
 
 To create a custom sink, define a new function with the appropriate signature.
 
@@ -287,7 +373,7 @@ of frames in tiles mosaic.
 
 !!! Info
 
-    See our [tutorial on creating a custom Inference Pipeline sink!](#custom-sinks)
+    See our [tutorial on creating a custom Inference Pipeline sink!](#custom-sink-tutorial)
 
 **prediction**
 
@@ -307,6 +393,30 @@ For instance, Roboflow object-detection prediction contains the following keys:
 - `confidence`: The confidence value of the prediction (between 0 and 1)
 - `class`: The predicted class name
 - `class_id`: The predicted class ID
+
+### Built-in Sinks
+
+Inference has [several sinks built in](../../reference/inference/core/interfaces/stream/sinks/) that are ready to use.
+
+#### `render_boxes(...)`
+
+The [render boxes sink](../../reference/inference/core/interfaces/stream/sinks/#inference.core.interfaces.stream.sinks.render_boxes) visualizes predictions and overlays them on a stream. It uses Supervision annotators to render the predictions and display the annotated frame.
+It only works for Roboflow models that yield detection-based output (`object-detection`, `instance-segmentation`, `keypoint-detection`), yet not all details of predictions may be
+displayed by default (like detected key-points).
+
+#### `UDPSink(...)`
+
+The [UDP sink](../../reference/inference/core/interfaces/stream/sinks/#inference.core.interfaces.stream.sinks.UDPSink) broadcasts predictions over a UDP port. This port can be listened to by client code for further processing.
+It uses Python-default json serialisation - so predictions must be serializable, otherwise an error will be thrown.
+
+#### `multi_sink(...)`
+
+The [Multi-Sink](../../reference/inference/core/interfaces/stream/sinks/#inference.core.interfaces.stream.sinks.multi_sink) combines multiple sinks so that multiple actions can happen on a single inference result.
+
+#### `VideoFileSink(...)`
+
+The [Video File Sink](../../reference/inference/core/interfaces/stream/sinks/#inference.core.interfaces.stream.sinks.VideoFileSink) visualizes predictions, similar to the `render_boxes(...)` sink, however, instead of displaying the annotated frames, it saves them to a video file.
+All constraints related to `render_boxes(...)` apply.
 
 ## Model Weights Download
 

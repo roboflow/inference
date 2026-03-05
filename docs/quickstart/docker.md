@@ -1,22 +1,28 @@
-## Setup
+# About Inference Server
 
-Before you begin, ensure that you have [Docker installed](https://www.docker.com/get-started) on your machine. 
+The Inference Server is a standalone microservice that wraps the [Inference](../start/overview.md) Python package and exposes it over an HTTP API.
 
-Docker provides a containerized environment, allowing the Roboflow Inference Server to run in a consistent and isolated manner, regardless of the host system.
+## Deployment Options
 
-## Set up a Docker Inference Server
+You can self-host Inference Server, or use our hosted APIs:
 
-Another easy way to run the Roboflow Inference Server with Docker is via the command line.
+- [Serverless API](https://docs.roboflow.com/deploy/serverless-hosted-api-v2) — hosted by Roboflow, scales to zero, pay per inference.
+- [Dedicated Deployments](https://docs.roboflow.com/deploy/dedicated-deployments) — hosted by Roboflow, single-tenant VMs with optional GPU.
+- [Self-Hosted](../install/index.md) — run on your own edge hardware (Raspberry Pi, NVIDIA GPU, NVIDIA Jetson...) with Docker
+- [Deploy in Your Own Cloud](../install/cloud.md) — run on your own cloud infrastructure (AWS, GCP, Azure) with Docker
 
-[Install the CLI](../inference_helpers/inference_cli.md) and use it to start the Inference Server:
+You can interact with an Inference Server using [Inference SDK](../inference_helpers/inference_sdk.md).
+
+## Running with Dockers
+
+Before you begin, ensure that you have [Docker installed](https://www.docker.com/get-started) on your machine. The easiest way to start the Inference Server is with the [Inference CLI](../inference_helpers/inference_cli.md):
 
 ```bash
 pip install inference-cli && inference server start
 ```
 
-This will pull the appropriate Docker image for your machine and start the Inference Server on port 9001. You can then send requests to the server to get predictions from your model, as described in [Quickstart Guide](../quickstart/run_model_on_image.md).
-
-Once you have your inference server running, you can check its status with the following command:
+This pulls the appropriate Docker image for your machine (with pre-installed dependencies) and starts the Inference Server on port 9001.
+Check server status:
 
 ```bash
 inference server status
@@ -24,7 +30,7 @@ inference server status
 
 ## Manually Set Up a Docker Container
 
-`inference server start` will do `docker run` commands under the hood with recommended security settings, caching, and platform-specific options.
+`inference server start` runs `docker run` under the hood with recommended security settings, caching, and platform-specific options.
 
 If you want to manually start the inference server container, refer to **Manually Starting the Container** section in your platform's install guide:
 

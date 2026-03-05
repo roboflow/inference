@@ -79,15 +79,11 @@ nav:
           - Detect Small Objects: guides/detect-small-objects.md
           # - Count Things in Video: guides/count-things.md
 
-      - Next Steps: start/next.md
       - More Resources: resources.md
 
   - Models:
-      # - models.md
+      # - models.md # Was once the landing page for inference
       - Run a Model: quickstart/run_a_model.md
-      - From Local Weights: models/from_local_weights.md
-      - Predict on an Image Over HTTP: quickstart/run_model_on_image.md
-      - Predict on a Video, Webcam or RTSP Stream: quickstart/run_model_on_rtsp_webcam.md
       - 'Fine-Tuned Models':
           - quickstart/explore_models.md
           - RF-DETR: fine-tuned/rfdetr.md
@@ -138,8 +134,8 @@ nav:
       - Batch Processing:
           - User Guide: workflows/batch_processing/about.md
           - Integration: workflows/batch_processing/integration.md
-          - API Reference: workflows/batch_processing/api_reference.md
           - Debugging: workflows/batch_processing/known_issues.md
+          - API Reference: workflows/batch_processing/api_reference.md
       - Developer Guide:
         - Workflows Definitions: workflows/definitions.md
         - Workflow Execution: workflows/workflow_execution.md
@@ -153,25 +149,25 @@ nav:
         - Testing: workflows/testing.md
         - Schema API: workflows/schema_api.md
         - Changelog: workflows/execution_engine_changelog.md
+      - Benchmarks: workflows/benchmarks.md
   - Reference:
       - Inference SDK:
-          - inference_helpers/inference_sdk.md
+          - About: inference_helpers/inference_sdk.md
+          - Configuration: inference_helpers/inference_sdk/configuration.md
+          - Core Models: inference_helpers/inference_sdk/core_models.md
+          - Model Management: inference_helpers/inference_sdk/model_management.md
+          - Workflows: inference_helpers/inference_sdk/workflows.md
           - Reference: reference/inference_sdk/
       - Inference CLI:
-          - About CLI: inference_helpers/inference_cli.md
+          - About: inference_helpers/inference_cli.md
           - Control The Server: inference_helpers/cli_commands/server.md
           - Run Workflows: inference_helpers/cli_commands/workflows.md
           - Benchmark Inference: inference_helpers/cli_commands/benchmark.md
           - Make Predictions: inference_helpers/cli_commands/infer.md
           - Deploy To Cloud: inference_helpers/cli_commands/cloud.md
-          - Reference: inference_helpers/cli_commands/reference.md
-      - Inference Python Package:
-        - InferencePipeline: using_inference/inference_pipeline.md
-        - Model Weights Download: using_inference/offline_weights_download.md
-        - Benchmarks: using_inference/benchmarks.md
-        - Reference: reference/inference/
+          - Reference: reference/inference_cli/
       - Inference Server:
-          - Running With Docker: quickstart/docker.md
+          - About: quickstart/docker.md
           - Docker Configuration Options: quickstart/docker_configuration_options.md
           - Environmental variables: server_configuration/environmental_variables.md
           - Security of input formats: server_configuration/accepted_input_formats.md
@@ -181,8 +177,14 @@ nav:
               - Parallel HTTP API: enterprise/parallel_processing.md
               - Stream Management API: enterprise/stream_management_api.md
           - OpenAPI Spec: api.md
-      - Contribute to Inference: contributing.md
-      - Changelog: https://github.com/roboflow/inference/releases
+      - Inference Python Package:
+        - About: using_inference/about.md
+        - InferencePipeline: using_inference/inference_pipeline.md
+        - Model Weights Download: using_inference/offline_weights_download.md
+        - Benchmarks: using_inference/benchmarks.md
+        - Reference: reference/inference/
+      - Contribute »: https://github.com/roboflow/inference/blob/main/CONTRIBUTING.md
+      - Changelog »: https://github.com/roboflow/inference/releases
 
 theme:
   name: 'material'
@@ -223,6 +225,14 @@ plugins:
       handlers:
         python:
           paths: [.]
+          options:
+            show_root_heading: true
+            show_bases: true
+            group_by_category: true
+            show_category_heading: true
+            docstring_style: google
+            show_symbol_type_heading: true
+            separate_signature: true
   - search
   - mkdocs-jupyter
   - social
@@ -232,7 +242,7 @@ plugins:
         - docs/scripts/gen_ref_pages.py
   - literate-nav:
       nav_file: SUMMARY.md
-      implicit_index: True
+      implicit_index: False
   - macros:
       include_dir: docs/include
       module_name: docs/scripts/macros

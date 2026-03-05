@@ -1,3 +1,5 @@
+# Inference CLI
+
 <div align="center">
     <img
     width="100%"
@@ -5,19 +7,13 @@
     />
 </div>
 
-## Roboflow Inference CLI
-
 Roboflow Inference CLI is command-line interface for `inference` ecosystem, providing an easy way to:
 
-* run and manage [`inference` server](./cli_commands/server.md) locally
-
-* process data with [Workflows](../workflows/about.md)
-
-* [benchmark](./cli_commands/benchmark.md) `inference` performance 
-
-* make [predictions](./cli_commands/infer.md) from your models
-
-* deploy `inference` server in [cloud](./cli_commands/cloud.md)
+- run and manage [`inference` server](./cli_commands/server.md) locally
+- process data with [Workflows](../workflows/about.md)
+- [benchmark](./cli_commands/benchmark.md) `inference` performance 
+- make [predictions](./cli_commands/infer.md) from your models
+- deploy `inference` server in [cloud](./cli_commands/cloud.md)
 
 ### Installation
 

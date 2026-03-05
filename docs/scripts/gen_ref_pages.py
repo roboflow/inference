@@ -15,6 +15,80 @@ SKIP_MODULES = [
 # Keys are (package, section_path) tuples where section_path uses "/" separators.
 # A section_path of "" means the top-level modules in that package.
 SECTION_DESCRIPTIONS = {
+    # ── inference ──
+    ("inference", ""): (
+        "inference",
+        "Top-level inference package: version info, configuration, and convenience imports.",
+    ),
+    ("inference", "core"): (
+        "core",
+        "Core framework internals: environment config, data entities, and shared utilities.",
+    ),
+    ("inference", "core/active_learning"): (
+        "core/active_learning",
+        "Active learning loop: sampling strategies, data collection middleware, and configuration.",
+    ),
+    ("inference", "core/cache"): (
+        "core/cache",
+        "Caching backends (in-memory, Redis) used for model artefacts and inference results.",
+    ),
+    ("inference", "core/devices"): (
+        "core/devices",
+        "Hardware device detection and selection helpers.",
+    ),
+    ("inference", "core/entities"): (
+        "core/entities",
+        "Shared data classes and request/response entities.",
+    ),
+    ("inference", "core/interfaces"): (
+        "core/interfaces",
+        "High-level inference interfaces: camera, HTTP, and stream processing.",
+    ),
+    ("inference", "core/managers"): (
+        "core/managers",
+        "Model lifecycle managers: loading, unloading, registry, and resolution.",
+    ),
+    ("inference", "core/models"): (
+        "core/models",
+        "Base model classes and common prediction logic shared across model types.",
+    ),
+    ("inference", "core/registries"): (
+        "core/registries",
+        "Model and block registries for dynamic lookup and plugin discovery.",
+    ),
+    ("inference", "core/utils"): (
+        "core/utils",
+        "General-purpose utilities: image encoding, file I/O, hashing, URL handling, and more.",
+    ),
+    ("inference", "core/workflows"): (
+        "core/workflows",
+        "Workflow execution engine entry points and helpers.",
+    ),
+    ("inference", "enterprise"): (
+        "enterprise",
+        "Enterprise-only features: device management and licensing.",
+    ),
+    ("inference", "enterprise/parallel"): (
+        "enterprise/parallel",
+        "Parallel HTTP inference via Celery workers for high-throughput deployments.",
+    ),
+    ("inference", "enterprise/stream_management"): (
+        "enterprise/stream_management",
+        "Stream Management API for controlling long-running video inference pipelines.",
+    ),
+    ("inference", "enterprise/workflows"): (
+        "enterprise/workflows",
+        "Enterprise workflow extensions and enterprise-only blocks.",
+    ),
+    ("inference", "models"): (
+        "models",
+        "Model implementations. Each sub-package wraps a specific architecture.",
+    ),
+    ("inference", "usage_tracking"): (
+        "usage_tracking",
+        "Anonymous usage and telemetry reporting.",
+    ),
+    # ── inference_sdk ──
     ("inference_sdk", ""): (
         "inference_sdk",
         "Top-level SDK configuration: API URLs, timeouts, environment variable loading, and remote execution settings.",
@@ -35,6 +109,7 @@ SECTION_DESCRIPTIONS = {
         "webrtc",
         "WebRTC streaming client for real-time video inference over peer connections. Supports webcam, RTSP, MJPEG, and video file sources with configurable output routing.",
     ),
+    # ── inference_cli ──
     ("inference_cli", ""): (
         "inference_cli",
         "CLI entry points for server management, inference, benchmarking, cloud deployment, and workflow execution.",
@@ -89,25 +164,23 @@ def has_docstring(node: Union[ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDe
 
 def _section_key(parts, package):
     """Get the section path for a module's parts (everything between package and module name)."""
-    # parts = ["inference_sdk", "http", "utils", "encoding"]
-    # section = "http/utils"
     if len(parts) <= 2:
         return ""
     return "/".join(parts[1:-1])
 
 
-def _build_structured_index(package, collected_modules):
-    """Build a structured index page with section headers and descriptions."""
+def _build_single_page_index(package, collected_modules):
+    """Build a single-page API reference with inline ::: directives for every module."""
     lines = []
     lines.append(f"# `{package}` API Reference\n\n")
 
     # Group modules by section
     sections = {}
-    for parts, doc_path in collected_modules:
+    for parts, identifier in collected_modules:
         section = _section_key(parts, package)
         if section not in sections:
             sections[section] = []
-        sections[section].append((parts, doc_path))
+        sections[section].append((parts, identifier))
 
     for section_path, modules in sections.items():
         desc_key = (package, section_path)
@@ -122,17 +195,14 @@ def _build_structured_index(package, collected_modules):
             if section_path:
                 lines.append(f"## `{section_path}`\n\n")
 
-        for parts, doc_path in modules:
-            module_name = parts[-1]
-            lines.append(f"- [`{module_name}`]({doc_path})\n")
-        lines.append("\n")
+        for parts, identifier in modules:
+            lines.append(f"::: {identifier}\n\n")
 
     return "".join(lines)
 
 
 if not os.environ.get("SKIP_CODEGEN"):
     for package in ["inference", "inference_sdk", "inference_cli"]:
-        nav = mkdocs_gen_files.Nav()
         src = Path(__file__).parent.parent.parent / package
 
         collected_modules = []
@@ -141,32 +211,14 @@ if not os.environ.get("SKIP_CODEGEN"):
             if not module_has_docstrings(path=path.as_posix()):
                 continue
             module_path = path.relative_to(src.parent).with_suffix("")
-            doc_path = path.relative_to(src.parent).with_suffix(".md")
-            full_doc_path = Path("reference", doc_path)
 
             parts = list(module_path.parts)
             identifier = ".".join(parts)
             if parts[-1] == "__main__" or parts[-1] == "__init__" or identifier in SKIP_MODULES:
                 continue
 
-            nav[parts] = f"/reference/{module_path.as_posix()}.md"
-            collected_modules.append((parts, f"/reference/{module_path.as_posix()}.md"))
+            collected_modules.append((parts, identifier))
 
-            with mkdocs_gen_files.open(full_doc_path, "w") as fd:
-                fd.write(f"::: {identifier}")
-
-            edit_path = f"https://github.com/roboflow/inference/tree/main/{module_path.as_posix()}.py"
-            mkdocs_gen_files.set_edit_path(full_doc_path, edit_path)
-
-        # Write literate-nav SUMMARY for sidebar navigation
-        with mkdocs_gen_files.open(f"reference/{package}/SUMMARY.md", "w") as nav_file:
-            generator = nav.build_literate_nav()
-            lines = list(generator)
-            nav_file.writelines(lines)
-
-        # Write a structured index page for SDK and CLI packages
-        if package in ("inference_sdk", "inference_cli"):
-            with mkdocs_gen_files.open(f"reference/{package}/index.md", "w") as index_file:
-                index_file.write(_build_structured_index(package, collected_modules))
-
-
+        # Write single-page index with all ::: directives
+        with mkdocs_gen_files.open(f"reference/{package}/index.md", "w") as index_file:
+            index_file.write(_build_single_page_index(package, collected_modules))

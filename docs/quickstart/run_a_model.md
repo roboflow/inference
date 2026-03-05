@@ -1,88 +1,129 @@
-Let's run a computer vision model with Inference. The quickest way to get started with Inference is to simply load a model, and then call the model's `infer(...)` method.
+Let's run a computer vision model with Inference. There are two ways to do this: the [inference Python package](../using_inference/about.md) which loads and runs models directly in your process, or the [inference-sdk](../inference_helpers/inference_sdk.md) which sends requests to an Inference Server over HTTP.
 
-## Install Inference
+## Install
 
-First, we need to install Inference:
+=== "inference (native)"
 
---8<-- "include/install.md"
+    ```
+    pip install inference 
+    ```
+    Or, if you have NVIDIA GPU, you can install `inference-gpu` package instead:
+    ```
+    pip install inference-gpu
+    ```
 
-To help us visualize our results in the example below, we will install Supervision:
+=== "inference-sdk (HTTP client)"
+
+    ```
+    pip install inference-sdk
+    ```
+
+    This will install lightweight HTTP client that sends requests to Inference Server.
+
+## Load a Model and Run Inference
+
+=== "inference (native)"
+
+    ```python
+    from inference import get_model
+
+    image = "https://media.roboflow.com/inference/people-walking.jpg"
+    model = get_model(model_id="yolov8n-640")
+    results = model.infer(image)
+    ```
+
+    `get_model()` downloads model weights and runs inference locally. See the [`inference` package docs](../using_inference/about.md) for more details.
+
+=== "inference-sdk (HTTP client)"
+
+    ```python
+    from inference_sdk import InferenceHTTPClient
+
+    image = "https://media.roboflow.com/inference/people-walking.jpg"
+    client = InferenceHTTPClient(
+        api_url="https://serverless.roboflow.com",  # or "http://localhost:9001" for self-hosted
+        api_key="ROBOFLOW_API_KEY",
+    )
+    results = client.infer(image, model_id="yolov8n-640")
+    ```
+
+    `InferenceHTTPClient` sends requests to an Inference Server (Roboflow-hosted or [self-hosted](../inference_helpers/inference_cli.md)). See the [`inference-sdk` docs](../inference_helpers/inference_sdk.md) for more details.
+
+When you run inference on an image, the same augmentations you applied when you generated a version in Roboflow will be applied at inference time. This helps improve model performance.
+
+## Model IDs
+
+The `model_id` parameter can be:
+
+- A [pre-trained model](../quickstart/aliases.md) alias (e.g. `yolov8n-640`, `rfdetr-base`)
+- Your own [fine-tuned model](../quickstart/explore_models.md) from Roboflow (e.g. `my-project/1`)
+- A [Universe model](../quickstart/load_from_universe.md) (e.g. [soccer-players-xy9vk/2](https://universe.roboflow.com/soccer-players/soccer-players-xy9vk/model/2))
+
+Fine-tuned models and Universe models require an [API key](https://app.roboflow.com/settings/api).
+
+## Visualize Results
+
+To visualize results, also install [Supervision](https://supervision.roboflow.com):
 
 ```
 pip install supervision
 ```
 
-Create a new Python file called `app.py` and add the following code:
+=== "inference (native)"
 
-## Load a Model and Run Inference
+    ```python
+    from io import BytesIO
 
-```python
-# import a utility function for loading Roboflow models
-from inference import get_model
+    import requests
+    import supervision as sv
+    from inference import get_model
+    from PIL import Image
 
-# define the image url to use for inference
-image = "https://media.roboflow.com/inference/people-walking.jpg"
+    image = Image.open(
+        BytesIO(requests.get("https://media.roboflow.com/inference/people-walking.jpg").content)
+    )
 
-# load a pre-trained yolov8n model
-model = get_model(model_id="yolov8n-640")
+    model = get_model(model_id="yolov8m-640")
+    results = model.infer(image)[0]
 
-# run inference on our chosen image, image can be a url, a numpy array, a PIL image, etc.
-results = model.infer(image)
-```
+    detections = sv.Detections.from_inference(results)
 
-In the code above, we loaded a model and then we used that model's `infer(...)` method to run an image through it.
+    annotated_image = sv.BoxAnnotator().annotate(scene=image, detections=detections)
+    annotated_image = sv.LabelAnnotator().annotate(scene=annotated_image, detections=detections)
 
-!!! tip
+    sv.plot_image(annotated_image)
+    ```
 
-    When you run inference on an image, the same augmentations you applied when you generated a version in Roboflow will be applied at inference time. This helps improve model performance.
+=== "inference-sdk (HTTP client)"
 
-## Visualize Results
+    ```python
+    from io import BytesIO
 
-Running inference is fun but it's not much to look at. Let's add some code to visualize our results.
+    import requests
+    import supervision as sv
+    from inference_sdk import InferenceHTTPClient
+    from PIL import Image
 
-```python
-from io import BytesIO
+    image = Image.open(
+        BytesIO(requests.get("https://media.roboflow.com/inference/people-walking.jpg").content)
+    )
 
-import requests
-import supervision as sv
-from inference import get_model
-from PIL import Image
-from PIL.ImageFile import ImageFile
+    client = InferenceHTTPClient(
+        api_url="https://serverless.roboflow.com",
+        api_key="ROBOFLOW_API_KEY",
+    )
+    results = client.infer(image, model_id="yolov8m-640")
 
+    detections = sv.Detections.from_inference(results)
 
-def load_image_from_url(url: str) -> ImageFile:
-    response = requests.get(url)
-    response.raise_for_status()  # check if the request was successful
-    image = Image.open(BytesIO(response.content))
-    return image
+    annotated_image = sv.BoxAnnotator().annotate(scene=image, detections=detections)
+    annotated_image = sv.LabelAnnotator().annotate(scene=annotated_image, detections=detections)
 
-
-# load the image from an url
-image = load_image_from_url("https://media.roboflow.com/inference/people-walking.jpg")
-
-# load a pre-trained yolov8n model
-model = get_model(model_id="yolov8n-640")
-
-# run inference on our chosen image, image can be a url, a numpy array, a PIL image, etc.
-results = model.infer(image)[0]
-
-# load the results into the supervision Detections api
-detections = sv.Detections.from_inference(results)
-
-# create supervision annotators
-bounding_box_annotator = sv.BoxAnnotator()
-label_annotator = sv.LabelAnnotator()
-
-# annotate the image with our inference results
-annotated_image = bounding_box_annotator.annotate(scene=image, detections=detections)
-annotated_image = label_annotator.annotate(scene=annotated_image, detections=detections)
-
-# display the image
-sv.plot_image(annotated_image)
-```
+    sv.plot_image(annotated_image)
+    ```
 
 ![People Walking Annotated](https://storage.googleapis.com/com-roboflow-marketing/inference/people-walking-annotated.jpg)
 
-## Summary
+## Next Steps
 
-Huzzah! We used Inference to load a computer vision model, run inference on an image, then visualize the results! But this is just the start. There are many different ways to use Inference and how you use it is likely to depend on your specific use case and deployment environment. [Learn more about how to use inference here](../quickstart/inference_101.md).
+There are many different ways to use Inference depending on your use case and deployment environment. [Learn more about how to use inference here](../quickstart/inference_101.md).
