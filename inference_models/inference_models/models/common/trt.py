@@ -126,26 +126,6 @@ def get_trt_engine_inputs_and_outputs(
     return inputs, outputs
 
 
-def attach_sync_event(
-    tensor: torch.Tensor,
-    stream: torch.cuda.Stream,
-) -> torch.Tensor:
-    inference_models_sync_event = stream.record_event()
-    tensor._inference_models_sync_event = inference_models_sync_event
-    return tensor
-
-
-def wait_for_sync_event(
-    tensor: torch.Tensor,
-    stream: torch.cuda.Stream,
-) -> None:
-    event = getattr(tensor, "_inference_models_sync_event", None)
-    if event is not None:
-        stream.wait_event(event)
-        del tensor._inference_models_sync_event
-    return None
-
-
 def infer_from_trt_engine(
     pre_processed_images: torch.Tensor,
     trt_config: TRTConfig,
@@ -155,7 +135,6 @@ def infer_from_trt_engine(
     input_name: str,
     outputs: List[str],
     stream: Optional[torch.cuda.Stream] = None,
-    synchronize_outputs: bool = False,
 ) -> List[torch.Tensor]:
     """Run inference using a TensorRT engine.
 
@@ -181,8 +160,6 @@ def infer_from_trt_engine(
         outputs: List of output tensor names to retrieve from the engine.
 
         stream: CUDA stream to use for inference.
-
-        synchronize_outputs: Flag to decide if cuda stream synchronization should be called at the end
 
     Returns:
         List of output tensors from the TensorRT engine, in the order specified
@@ -255,7 +232,6 @@ def infer_from_trt_engine(
     if stream is None:
         stream = torch.cuda.current_stream(device)
     with torch.cuda.stream(stream):
-        wait_for_sync_event(tensor=pre_processed_images, stream=stream)
         pre_processed_images.record_stream(stream)
         results = _infer_from_trt_engine(
             pre_processed_images=pre_processed_images,
@@ -266,12 +242,8 @@ def infer_from_trt_engine(
             input_name=input_name,
             outputs=outputs,
         )
-        if synchronize_outputs:
-            stream.synchronize()
-        else:
-            for result in results:
-                attach_sync_event(tensor=result, stream=stream)
-        return results
+    stream.synchronize()
+    return results
 
 
 def _infer_from_trt_engine(

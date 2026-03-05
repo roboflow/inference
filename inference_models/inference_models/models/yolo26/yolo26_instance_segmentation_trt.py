@@ -40,11 +40,9 @@ from inference_models.models.common.roboflow.pre_processing import (
     pre_process_network_input,
 )
 from inference_models.models.common.trt import (
-    attach_sync_event,
     get_trt_engine_inputs_and_outputs,
     infer_from_trt_engine,
     load_trt_model,
-    wait_for_sync_event,
 )
 
 try:
@@ -187,6 +185,7 @@ class YOLO26ForInstanceSegmentationTRT(
         self._cuda_context = cuda_context
         self._execution_context = execution_context
         self._session_thread_lock = Lock()
+        self._inference_stream = torch.cuda.Stream(device=self._device)
         self._thread_local_storage = threading.local()
 
     @property
@@ -197,7 +196,6 @@ class YOLO26ForInstanceSegmentationTRT(
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         input_color_format: Optional[ColorFormat] = None,
-        synchronize_outputs: bool = False,
         **kwargs,
     ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
         with torch.cuda.stream(self._pre_process_stream):
@@ -208,21 +206,12 @@ class YOLO26ForInstanceSegmentationTRT(
                 target_device=self._device,
                 input_color_format=input_color_format,
             )
-        if synchronize_outputs:
-            self._pre_process_stream.synchronize()
-            return pre_processed_images, pre_processing_meta
-        return (
-            attach_sync_event(
-                tensor=pre_processed_images,
-                stream=self._pre_process_stream,
-            ),
-            pre_processing_meta,
-        )
+        self._pre_process_stream.synchronize()
+        return pre_processed_images, pre_processing_meta
 
     def forward(
         self,
         pre_processed_images: torch.Tensor,
-        synchronize_outputs: bool = False,
         **kwargs,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         with self._session_thread_lock:
@@ -236,7 +225,6 @@ class YOLO26ForInstanceSegmentationTRT(
                     input_name=self._input_name,
                     outputs=self._output_names,
                     stream=self._inference_stream,
-                    synchronize_outputs=synchronize_outputs,
                 )
                 return instances, protos
 
@@ -249,9 +237,6 @@ class YOLO26ForInstanceSegmentationTRT(
     ) -> List[InstanceDetections]:
         with torch.cuda.stream(self._post_process_stream):
             for result_element in model_results:
-                wait_for_sync_event(
-                    tensor=result_element, stream=self._post_process_stream
-                )
                 result_element.record_stream(self._post_process_stream)
             instances, protos = model_results
             filtered_results = post_process_nms_fused_model_output(
@@ -303,14 +288,6 @@ class YOLO26ForInstanceSegmentationTRT(
                 device=self._device
             )
         return self._thread_local_storage.pre_process_stream
-
-    @property
-    def _inference_stream(self) -> torch.cuda.Stream:
-        if not hasattr(self._thread_local_storage, "inference_stream"):
-            self._thread_local_storage.inference_stream = torch.cuda.Stream(
-                device=self._device
-            )
-        return self._thread_local_storage.inference_stream
 
     @property
     def _post_process_stream(self) -> torch.cuda.Stream:

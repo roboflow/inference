@@ -1446,7 +1446,3 @@ def yolo26n_object_detection_sunflowers_letterbox_torch_script_package() -> str:
         model_package_zip_url=YOLO26N_object_detection_sunflowers_LETTERBOX_TORCH_SCRIPT_URL,
         package_name="yolo26n-object-detection-sunflowers-letterbox-torch-script",
     )
-
-
-
-

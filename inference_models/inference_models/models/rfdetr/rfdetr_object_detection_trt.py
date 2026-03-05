@@ -36,11 +36,9 @@ from inference_models.models.common.roboflow.pre_processing import (
     pre_process_network_input,
 )
 from inference_models.models.common.trt import (
-    attach_sync_event,
     get_trt_engine_inputs_and_outputs,
     infer_from_trt_engine,
     load_trt_model,
-    wait_for_sync_event,
 )
 from inference_models.models.rfdetr.class_remapping import (
     ClassesReMapping,
@@ -199,6 +197,7 @@ class RFDetrForObjectDetectionTRT(
         self._execution_context = execution_context
         self._trt_config = trt_config
         self._lock = threading.Lock()
+        self._inference_stream = torch.cuda.Stream(device=self._device)
         self._thread_local_storage = threading.local()
 
     @property
@@ -209,7 +208,6 @@ class RFDetrForObjectDetectionTRT(
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         input_color_format: Optional[ColorFormat] = None,
-        synchronize_outputs: bool = False,
         **kwargs,
     ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
         with torch.cuda.stream(self._pre_process_stream):
@@ -220,21 +218,12 @@ class RFDetrForObjectDetectionTRT(
                 target_device=self._device,
                 input_color_format=input_color_format,
             )
-        if synchronize_outputs:
-            self._pre_process_stream.synchronize()
-            return pre_processed_images, pre_processing_meta
-        return (
-            attach_sync_event(
-                tensor=pre_processed_images,
-                stream=self._pre_process_stream,
-            ),
-            pre_processing_meta,
-        )
+        self._pre_process_stream.synchronize()
+        return pre_processed_images, pre_processing_meta
 
     def forward(
         self,
         pre_processed_images: torch.Tensor,
-        synchronize_outputs: bool = False,
         **kwargs,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         with self._lock:
@@ -248,7 +237,6 @@ class RFDetrForObjectDetectionTRT(
                     input_name=self._input_name,
                     outputs=self._output_names,
                     stream=self._inference_stream,
-                    synchronize_outputs=synchronize_outputs,
                 )
                 return detections, labels
 
@@ -261,9 +249,6 @@ class RFDetrForObjectDetectionTRT(
     ) -> List[Detections]:
         with torch.cuda.stream(self._post_process_stream):
             for result_element in model_results:
-                wait_for_sync_event(
-                    tensor=result_element, stream=self._post_process_stream
-                )
                 result_element.record_stream(self._post_process_stream)
             bboxes, logits = model_results
             logits_sigmoid = torch.nn.functional.sigmoid(logits)
@@ -325,14 +310,6 @@ class RFDetrForObjectDetectionTRT(
                 device=self._device
             )
         return self._thread_local_storage.pre_process_stream
-
-    @property
-    def _inference_stream(self) -> torch.cuda.Stream:
-        if not hasattr(self._thread_local_storage, "inference_stream"):
-            self._thread_local_storage.inference_stream = torch.cuda.Stream(
-                device=self._device
-            )
-        return self._thread_local_storage.inference_stream
 
     @property
     def _post_process_stream(self) -> torch.cuda.Stream:

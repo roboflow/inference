@@ -79,14 +79,6 @@ OPTIONAL_IMPORTS: Dict[str, LazyFunction] = {
         module_name="inference_models.models.common.trt",
         function_name="load_trt_model",
     ),
-    "attach_sync_event": LazyFunction(
-        module_name="inference_models.models.common.trt",
-        function_name="attach_sync_event",
-    ),
-    "wait_for_sync_event": LazyFunction(
-        module_name="inference_models.models.common.trt",
-        function_name="wait_for_sync_event",
-    ),
 }
 
 
