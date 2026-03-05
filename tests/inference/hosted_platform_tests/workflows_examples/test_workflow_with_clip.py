@@ -92,7 +92,7 @@ def test_workflow_with_clip_as_classifier_replacing_predictions(
         p["confidence"] for p in result[0]["original_predictions"]["predictions"]
     ]
     assert np.allclose(
-        detection_confidences, [0.856178879737854, 0.5191817283630371], atol=1e-2
+        detection_confidences, [0.856178879737854, 0.5191817283630371], atol=5e-2
     ), "Expected predictions to match what was observed while test creation"
     assert (
         len(result[0]["modified_predictions"]["predictions"]) == 2

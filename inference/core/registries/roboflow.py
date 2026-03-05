@@ -163,10 +163,6 @@ def get_model_type(
 
     model_id = resolve_roboflow_model_alias(model_id=model_id)
     dataset_id, version_id = get_model_id_chunks(model_id=model_id)
-    print(
-        f"Resolved model_id: {model_id}, dataset_id: {dataset_id}, version_id: {version_id}"
-    )
-
     # first check if the model id as a whole is in the GENERIC_MODELS dictionary
     if model_id in GENERIC_MODELS:
         logger.debug(f"Loading generic model: {model_id}.")
@@ -239,6 +235,7 @@ def get_model_type(
         # some very old model versions do not have modelType reported - and API respond in a generic way -
         # then we shall attempt using default model for given task type
         model_type = MODEL_TYPE_DEFAULTS.get(project_task_type)
+
     if model_type is None or project_task_type is None:
         raise ModelArtefactError("Error loading model artifacts from Roboflow API.")
     save_model_metadata_in_cache(

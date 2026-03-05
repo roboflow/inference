@@ -43,6 +43,7 @@ nav:
           - YOLOv10: models/yolov10-object-detection.md
           - YOLOv11: models/yolov11-object-detection.md
           - YOLOv12: models/yolov12-object-detection.md
+          - YOLO26: models/yolo26-object-detection.md
           - YOLO-NAS: models/yolonas-object-detection.md
           - Roboflow Instant: models/roboflow-instant-object-detection.md
       - Instance Segmentation:
@@ -51,6 +52,7 @@ nav:
           - YOLOv7: models/yolov7-instance-segmentation.md
           - YOLOv8: models/yolov8-instance-segmentation.md
           - YOLOv11: models/yolov11-instance-segmentation.md
+          - YOLO26: models/yolo26-instance-segmentation.md
           - YOLACT: models/yolact-instance-segmentation.md
       - Classification:
           - YOLOv8: models/yolov8-classification.md
@@ -65,6 +67,7 @@ nav:
       - Keypoint Detection:
           - YOLOv8: models/yolov8-keypoint-detection.md
           - YOLOv11: models/yolov11-keypoint-detection.md
+          - YOLO26: models/yolo26-keypoint-detection.md
           - MediaPipe Face Detection: models/mediapipe-face.md
       - Interactive Segmentation:
           - SAM: models/sam-interactive-segmentation.md
@@ -94,6 +97,7 @@ nav:
       - Understand Core Concepts: how-to/understand-core-concepts.md
       - Choose the Right Backend: how-to/choose-backend.md
       - Work with Model Predictions: how-to/work-with-predictions.md
+      - Understand Prediction Parameters: how-to/prediction-parameters.md
       - Debug Model Loading Issues: how-to/debug-model-loading.md
       - Configure Environment Variables: how-to/environment-variables.md
       - Load Models Locally: how-to/local-packages.md

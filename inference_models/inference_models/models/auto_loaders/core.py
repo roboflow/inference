@@ -8,7 +8,6 @@ from functools import partial
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union
 
 import torch
-from argon2 import PasswordHasher
 from filelock import FileLock
 from rich.console import Console
 from rich.text import Text
@@ -22,7 +21,6 @@ from inference_models.errors import (
     InvalidModelInitParameterError,
     InvalidParameterError,
     MissingModelInitParameterError,
-    ModelLoadingError,
     ModelPackageAlternativesExhaustedError,
     NoModelPackagesAvailableError,
     UnauthorizedModelAccessError,
@@ -115,6 +113,8 @@ class AutoModel:
         weights_provider: str = "roboflow",
         api_key: Optional[str] = None,
         pull_artefacts_size: bool = False,
+        weights_provider_extra_query_params: Optional[List[Tuple[str, str]]] = None,
+        weights_provider_extra_headers: Optional[Dict[str, str]] = None,
     ) -> None:
         """Display comprehensive metadata and available packages for a model.
 
@@ -152,6 +152,12 @@ class AutoModel:
                 each model package. This requires making network requests to check
                 file sizes, so it's slower. Default: False.
 
+            weights_provider_extra_query_params: Extra query parameters to pass to the weights' provider. Advanced
+                usage only.
+
+            weights_provider_extra_headers: Extra headers to pass to the weights' provider. Advanced
+                usage only.
+
         Returns:
             None. Prints formatted tables to the console showing:
                 1. Model overview table with architecture, task type, and dependencies
@@ -188,6 +194,8 @@ class AutoModel:
             provider=weights_provider,
             model_id=model_id,
             api_key=api_key,
+            weights_provider_extra_query_params=weights_provider_extra_query_params,
+            weights_provider_extra_headers=weights_provider_extra_headers,
         )
         model_packages_size = None
         if pull_artefacts_size:
@@ -233,6 +241,8 @@ class AutoModel:
         weights_provider: str = "roboflow",
         api_key: Optional[str] = None,
         pull_artefacts_size: bool = True,
+        weights_provider_extra_query_params: Optional[List[Tuple[str, str]]] = None,
+        weights_provider_extra_headers: Optional[Dict[str, str]] = None,
     ) -> None:
         """Display detailed information about a specific model package.
 
@@ -273,6 +283,12 @@ class AutoModel:
                 artifact in the package. This requires making network requests to check
                 file sizes, so it's slower. Default: True.
 
+            weights_provider_extra_query_params: Extra query parameters to pass to the weights' provider. Advanced
+                usage only.
+
+            weights_provider_extra_headers: Extra headers to pass to the weights' provider. Advanced
+                usage only.
+
         Returns:
             None. Prints a formatted table to the console showing package details.
 
@@ -308,6 +324,8 @@ class AutoModel:
             provider=weights_provider,
             model_id=model_id,
             api_key=api_key,
+            weights_provider_extra_query_params=weights_provider_extra_query_params,
+            weights_provider_extra_headers=weights_provider_extra_headers,
         )
         selected_package = None
         for package in model_metadata.model_packages:
@@ -317,7 +335,7 @@ class AutoModel:
             raise NoModelPackagesAvailableError(
                 message=f"Selected model package {package_id} does not exist for model {model_id}. Make sure provided "
                 f"value is valid.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/package-negotiation/#nomodelpackagesavailableerror",
             )
         artefacts_size = None
         if pull_artefacts_size:
@@ -430,6 +448,8 @@ class AutoModel:
         dependency_models_params: Optional[dict] = None,
         point_model_directory: Optional[Callable[[str], None]] = None,
         forwarded_kwargs: Optional[List[str]] = None,
+        weights_provider_extra_query_params: Optional[List[Tuple[str, str]]] = None,
+        weights_provider_extra_headers: Optional[Dict[str, str]] = None,
         **kwargs,
     ) -> AnyModel:
         """Load and initialize a computer vision model with automatic backend selection.
@@ -557,6 +577,12 @@ class AutoModel:
             forwarded_kwargs: List of kwargs to forward to dependency models. Advanced
                 usage only.
 
+            weights_provider_extra_query_params: Extra query parameters to pass to the weights' provider. Advanced
+                usage only.
+
+            weights_provider_extra_headers: Extra headers to pass to the weights' provider. Advanced
+                usage only.
+
             **kwargs: Additional model-specific parameters passed to the model's
                 `from_pretrained()` method. Varies by model type.
 
@@ -642,7 +668,7 @@ class AutoModel:
                 f"https://docs.roboflow.com/api-reference/authentication "
                 f"and export key to `ROBOFLOW_API_KEY` environment variable. If you use custom weights "
                 f"provider - verify access constraints relevant for the provider.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-retrieval/#unauthorizedmodelaccesserror",
             )
         if auto_resolution_cache is None:
 
@@ -673,7 +699,7 @@ class AutoModel:
                     message="Could not parse `device` parameter value - make sure that it is a valid string "
                     f"representation of torch device. Valid values: 'cpu', 'cuda' or 'cuda:0'. If you see this error "
                     "while using Roboflow infrastructure - contact us to get help. Otherwise - verify your setup.",
-                    help_url="https://todo",
+                    help_url="https://inference-models.roboflow.com/errors/input-validation/#invalidparametererror",
                 ) from error
         model_init_kwargs = {
             "onnx_execution_providers": onnx_execution_providers,
@@ -686,19 +712,15 @@ class AutoModel:
             # QUESTION: is it enough to assume presence of local dir as the intent to load
             # model from disc drive? What if we have clash of model id / model alias with
             # contents of someone's local drive - shall we then try to load from both sources?
-            # that still may end up with ambiguous behaviour - probably the solution would be
+            # that still may end up with ambiguous behavior - probably the solution would be
             # to require prefix like file://... to denote the intent of loading model from local
             # drive?
-            if api_key is not None:
-                password_hashed = PasswordHasher()
-                api_key_hash = password_hashed.hash(api_key)
-            else:
-                api_key_hash = api_key
+            runtime_x_ray = x_ray_runtime_environment()
             auto_negotiation_hash = hash_dict_content(
                 content={
                     "provider": weights_provider,
                     "model_id": model_id_or_path,
-                    "api_key": api_key_hash,
+                    "api_key": api_key,
                     "requested_model_package_id": model_package_id,
                     "requested_backends": backend,
                     "requested_batch_size": batch_size,
@@ -708,6 +730,11 @@ class AutoModel:
                     "allow_untrusted_packages": allow_untrusted_packages,
                     "trt_engine_host_code_allowed": trt_engine_host_code_allowed,
                     "nms_fusion_preferences": nms_fusion_preferences,
+                    "weights_provider_extra_query_params": weights_provider_extra_query_params,
+                    "weights_provider_extra_headers": weights_provider_extra_headers,
+                    "runtime_x_ray": str(
+                        runtime_x_ray
+                    ),  # x-ray to serve as environment setup digest
                 }
             )
             model_from_access_manager = model_access_manager.retrieve_model_instance(
@@ -746,6 +773,8 @@ class AutoModel:
                 download_files_without_hash=download_files_without_hash,
                 allow_direct_local_storage_loading=allow_direct_local_storage_loading,
                 dependency_models_params=dependency_models_params,
+                weights_provider_extra_query_params=weights_provider_extra_query_params,
+                weights_provider_extra_headers=weights_provider_extra_headers,
             )
             if model_from_cache:
                 return model_from_cache
@@ -754,6 +783,8 @@ class AutoModel:
                     provider=weights_provider,
                     model_id=model_id_or_path,
                     api_key=api_key,
+                    weights_provider_extra_query_params=weights_provider_extra_query_params,
+                    weights_provider_extra_headers=weights_provider_extra_headers,
                 )
                 if (
                     model_metadata.model_dependencies
@@ -764,7 +795,7 @@ class AutoModel:
                         f"it's dependency, but the auto-loader prevents loading dependencies at certain "
                         f"nesting depth to avoid excessive resolution procedure. This is a limitation of "
                         f"current implementation. Provide us the context of your use-case to get help.",
-                        help_url="https://todo",
+                        help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
                     )
                 if model_metadata.model_id != model_id_or_path:
                     model_access_manager.on_model_alias_discovered(
@@ -871,6 +902,8 @@ class AutoModel:
                     allow_loading_dependency_models=False,
                     dependency_models_params=None,
                     point_model_directory=model_directory_pointer,
+                    weights_provider_extra_query_params=weights_provider_extra_query_params,
+                    weights_provider_extra_headers=weights_provider_extra_headers,
                     **resolved_model_parameters.kwargs,
                 )
                 model_dependencies_instances[model_dependency.name] = (
@@ -907,7 +940,7 @@ class AutoModel:
                 "feature was disabled for security reason. In rare cases when you use valid model ID, the "
                 "clash of ID with local path may cause this error - we ask you to report the issue here: "
                 "https://github.com/roboflow/inference/issues.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#directlocalstorageaccesserror",
             )
         return attempt_loading_model_from_local_storage(
             model_dir_or_weights_path=model_id_or_path,
@@ -940,6 +973,8 @@ def attempt_loading_model_with_auto_load_cache(
     download_files_without_hash: bool = False,
     allow_direct_local_storage_loading: bool = True,
     dependency_models_params: Optional[dict] = None,
+    weights_provider_extra_query_params: Optional[List[Tuple[str, str]]] = None,
+    weights_provider_extra_headers: Optional[Dict[str, str]] = None,
 ) -> Optional[AnyModel]:
     if not use_auto_resolution_cache:
         return None
@@ -976,7 +1011,7 @@ def attempt_loading_model_with_auto_load_cache(
                 f"it's dependency, but the auto-loader prevents loading dependencies at certain "
                 f"nesting depth to avoid excessive resolution procedure. This is a limitation of "
                 f"current implementation. Provide us the context of your use-case to get help.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
         model_dependencies_instances = {}
         dependency_models_params = dependency_models_params or {}
@@ -1023,6 +1058,8 @@ def attempt_loading_model_with_auto_load_cache(
                 task_type=resolved_model_parameters.task_type,
                 allow_loading_dependency_models=False,
                 dependency_models_params=None,
+                weights_provider_extra_query_params=weights_provider_extra_query_params,
+                weights_provider_extra_headers=weights_provider_extra_headers,
                 **resolved_model_parameters.kwargs,
             )
             model_dependencies_instances[model_dependency.name] = dependency_instance
@@ -1085,7 +1122,7 @@ def attempt_loading_matching_model_packages(
         raise NoModelPackagesAvailableError(
             message=f"Cannot load model {model_id} - no matching model package candidates for given model "
             f"running in this environment.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/package-negotiation/#nomodelpackagesavailableerror",
         )
     failed_load_attempts: List[Tuple[str, Exception]] = []
     for model_package in matching_model_packages:
@@ -1160,7 +1197,7 @@ def attempt_loading_matching_model_packages(
         f"likely a bug in `inference-models` and you should raise an issue providing full context of "
         f"the event. https://github.com/roboflow/inference/issues\n\n"
         f"Here is the summary of errors for specific model packages:\n{summary_of_errors}\n\n",
-        help_url="https://todo",
+        help_url="https://inference-models.roboflow.com/errors/model-loading/#modelpackagealternativesexhaustederror",
     )
 
 
@@ -1198,7 +1235,7 @@ def initialize_model(
                 f"loaders. This problem indicate a violation of model package contract and requires change in "
                 f"model package structure. If you experience this issue using hosted Roboflow solution, contact "
                 f"us to solve the problem.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
     files_specs = [
         (a.file_handle, a.download_url, a.md5_hash)
@@ -1459,7 +1496,7 @@ def ensure_package_id_is_os_safe(model_id: str, package_id: str) -> None:
             f"raise the issue: https://github.com/roboflow/inference/issues. If you are running `inference` "
             f"outside of the platform, verify that your weights provider keeps the model packages identifiers "
             f"in the expected format.",
-            help_url="https://TODO",
+            help_url="https://inference-models.roboflow.com/errors/model-loading/#insecuremodelidentifiererror",
         )
 
 
@@ -1508,7 +1545,7 @@ def attempt_loading_model_from_local_storage(
             f"this environment. To let inference loading such models, use `allow_local_code_packages=True` "
             f"parameter of `AutoModel.from_pretrained(...)`. If you see this error while using one of Roboflow "
             f"hosted solution - contact us to solve the problem.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/model-loading/#forbiddenlocalcodepackageaccesserror",
         )
     return load_model_from_local_package_with_arbitrary_code(
         model_dir=model_dir_or_weights_path,
@@ -1553,14 +1590,14 @@ def resolve_models_registry_entry(
             message="When loading model directly from checkpoint path, `model_type` parameter must be specified. "
             "Use one of the supported value, for example `rfdetr-nano` in case you refer checkpoint of "
             "RFDetr Nano model.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/model-loading/#missingmodelinitparametererror",
         )
     if model_type not in MODEL_TYPES_TO_LOAD_FROM_CHECKPOINT:
         raise InvalidModelInitParameterError(
             message="When loading model directly from checkpoint path, `model_type` parameter must define "
             "one of the type of model that support loading directly from the checkpoints. "
             f"Models supported in current version: {MODEL_TYPES_TO_LOAD_FROM_CHECKPOINT}",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/model-loading/#invalidmodelinitparametererror",
         )
     # a bit of hard coding here, over time we must maintain
     model_architecture = "rfdetr"
@@ -1574,7 +1611,7 @@ def resolve_models_registry_entry(
             message=f"When loading model directly from checkpoint path, set `model_type` as {model_type} and "
             f"`task_type` as {task_type}, whereas selected model do only support `{OBJECT_DETECTION_TASK}` "
             f"task while loading from checkpoint file.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/model-loading/#invalidmodelinitparametererror",
         )
     if backend_type is None:
         backend_type = BackendType.TORCH
@@ -1583,7 +1620,7 @@ def resolve_models_registry_entry(
             raise InvalidModelInitParameterError(
                 message=f"When loading model directly from checkpoint path, set `backend` parameter to be {backend_type}, "
                 f"whereas it is only supported to pass a single value.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#invalidmodelinitparametererror",
             )
         backend_type = backend_type[0]
     if isinstance(backend_type, str):
@@ -1592,7 +1629,7 @@ def resolve_models_registry_entry(
         raise InvalidModelInitParameterError(
             message=f"When loading model directly from checkpoint path, selected the following backend {backend_type}, "
             f"but the backend supported for model {model_type} is {BackendType.TORCH}",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/model-loading/#invalidmodelinitparametererror",
         )
     return model_architecture, task_type, backend_type
 
@@ -1607,7 +1644,7 @@ def parse_model_config(config_path: str) -> InferenceModelConfig:
             f"model you attempt to load. If your intent was to load model from remote backend (not local "
             f"storage) - verify the contents of $PWD. If you see this problem while using one of Roboflow "
             f"hosted solutions - contact us to get help.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
         )
     try:
         raw_config = read_json(path=config_path)
@@ -1617,7 +1654,7 @@ def parse_model_config(config_path: str) -> InferenceModelConfig:
             f"local directory. This error may be caused by corrupted config file. Validate the content of your "
             f"model package and check in documentation the required format of model config file. "
             f"If you see this problem while using one of Roboflow hosted solutions - contact us to get help.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
         ) from error
     if not isinstance(raw_config, dict):
         raise CorruptedModelPackageError(
@@ -1625,7 +1662,7 @@ def parse_model_config(config_path: str) -> InferenceModelConfig:
             f"supposed to be a dictionary, instead decoded object of type: "
             f"{type(raw_config)}. If you see this problem while using one of Roboflow hosted solutions - "
             f"contact us to get help. Otherwise - verify the content of your model config.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
         )
     backend_type = None
     if "backend_type" in raw_config:
@@ -1639,7 +1676,7 @@ def parse_model_config(config_path: str) -> InferenceModelConfig:
                 f"Supported values: {list(t.value for t in BackendType)}. If you see this problem while using "
                 f"one of Roboflow hosted solutions - contact us to get help. Otherwise - verify the content "
                 f"of your model config.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             ) from e
     return InferenceModelConfig(
         model_architecture=raw_config.get("model_architecture"),
@@ -1675,7 +1712,7 @@ def load_model_from_local_package_with_arbitrary_code(
             f"required to load models provided with arbitrary code. If you see this problem while using "
             f"one of Roboflow hosted solutions - contact us to get help. Otherwise - verify the content "
             f"of your model config.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
         )
     model_module_path = os.path.join(model_dir, model_config.model_module)
     if not os.path.isfile(model_module_path):
@@ -1685,7 +1722,7 @@ def load_model_from_local_package_with_arbitrary_code(
             f"{model_module_path}. If you see this problem while using "
             f"one of Roboflow hosted solutions - contact us to get help. Otherwise - verify the content "
             f"of your model config.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
         )
     model_class = load_class_from_path(
         module_path=model_module_path, class_name=model_config.model_class
@@ -1701,7 +1738,7 @@ def load_class_from_path(module_path: str, class_name: str) -> AnyModel:
             f"while using one of Roboflow hosted solutions - contact us to get help. Otherwise - verify your "
             f"model package checking if you can load the module with model implementation within your "
             f"python environment.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
         )
     module_name = os.path.splitext(os.path.basename(module_path))[0]
     spec = importlib.util.spec_from_file_location(module_name, module_path)
@@ -1712,7 +1749,7 @@ def load_class_from_path(module_path: str, class_name: str) -> AnyModel:
             f"one of Roboflow hosted solutions - contact us to get help. Otherwise - verify your "
             f"model package checking if you can load the module with model implementation within your "
             f"python environment.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
         )
     module = importlib.util.module_from_spec(spec)
     loader = spec.loader
@@ -1723,7 +1760,7 @@ def load_class_from_path(module_path: str, class_name: str) -> AnyModel:
             f"one of Roboflow hosted solutions - contact us to get help. Otherwise - verify your "
             f"model package checking if you can load the module with model implementation within your "
             f"python environment.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
         )
     try:
         loader.exec_module(module)
@@ -1734,7 +1771,7 @@ def load_class_from_path(module_path: str, class_name: str) -> AnyModel:
             f"one of Roboflow hosted solutions - contact us to get help. Otherwise - verify your "
             f"model package checking if you can load the module with model implementation within your "
             f"python environment.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
         )
     if not hasattr(module, class_name):
         raise CorruptedModelPackageError(
@@ -1744,6 +1781,6 @@ def load_class_from_path(module_path: str, class_name: str) -> AnyModel:
             f"model package checking if you can load the module with model implementation within your "
             f"python environment. It may also be the case that configuration file of the model points "
             f"to invalid class name.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
         )
     return getattr(module, class_name)

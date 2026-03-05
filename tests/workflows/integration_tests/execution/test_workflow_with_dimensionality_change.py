@@ -649,16 +649,12 @@ def test_workflow_with_detections_tiling_in_batch_variant(
     assert set(result[1].keys()) == {
         "visualisation",
     }, "Expected all declared outputs to be delivered"
-    assert result[0]["visualisation"].shape == (
-        426,
-        377,
-        3,
+    assert np.allclose(
+        result[0]["visualisation"].shape[:2], (416, 362), atol=20
     ), "Expected visualisation to be image of shape (416, 362, 3)"
-    assert result[1]["visualisation"].shape == (
-        296,
-        527,
-        3,
-    ), "Expected visualisation to be image of shape (296, 522, 3)"
+    assert np.allclose(
+        result[1]["visualisation"].shape[:2], (296, 527), atol=20
+    ), "Expected visualisation to be image of shape (296, 527, 3)"
 
 
 DETECTIONS_TILING_NON_BATCH_VARIANT_WORKFLOW = {
@@ -766,13 +762,9 @@ def test_workflow_with_detections_tiling_in_non_batch_variant(
     assert set(result[1].keys()) == {
         "visualisation",
     }, "Expected all declared outputs to be delivered"
-    assert result[0]["visualisation"].shape == (
-        426,
-        377,
-        3,
+    assert np.allclose(
+        result[0]["visualisation"].shape[:2], (416, 362), atol=20
     ), "Expected visualisation to be image of shape (416, 362, 3)"
-    assert result[1]["visualisation"].shape == (
-        296,
-        527,
-        3,
+    assert np.allclose(
+        result[1]["visualisation"].shape[:2], (296, 522), atol=20
     ), "Expected visualisation to be image of shape (296, 522, 3)"

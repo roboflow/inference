@@ -2,6 +2,13 @@
 
 You can detect the direction in which someone is looking using the L2CS-Net model.
 
+## Execution Modes
+
+L2CS-Net gaze detection supports both local and remote execution modes when used in workflows:
+
+- **Local execution**: The model runs directly on your inference server
+- **Remote execution**: The model can be invoked via HTTP API on a remote inference server using `detect_gazes()` client method
+
 ## How to Use L2CS-Net
 
 To use L2CS-Net with Inference, you will need a Roboflow API key. If you don't already have a Roboflow account, <a href="https://app.roboflow.com" target="_blank">sign up for a free Roboflow account</a>. Then, retrieve your API key from the Roboflow dashboard. Run the following command to set your API key in your coding environment:

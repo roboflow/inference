@@ -407,9 +407,7 @@ class Sam3ForInteractiveImageSegmentation(RoboflowCoreModel):
         weights_map = ort.get("weights")
         if isinstance(weights_map, dict) and len(weights_map) > 0:
             for filename, url in weights_map.items():
-                resp = get_from_url(
-                    url, json_response=False, verify_content_length=True
-                )
+                resp = get_from_url(url, json_response=False)
                 save_bytes_in_cache(
                     content=resp.content,
                     file=str(filename),

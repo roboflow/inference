@@ -10,7 +10,7 @@ from skimage import exposure
 from torchvision.transforms import Grayscale, functional
 
 from inference_models.entities import ColorFormat, ImageDimensions
-from inference_models.errors import ModelRuntimeError
+from inference_models.errors import ModelInputError, ModelRuntimeError
 from inference_models.logger import LOGGER
 from inference_models.models.common.roboflow.model_packages import (
     AnySizePadding,
@@ -38,7 +38,7 @@ def pre_process_network_input(
         raise ModelRuntimeError(
             message=f"`inference` currently does not support Roboflow pre-processing for model inputs with "
             f"channels numbers different than 1. Let us know if you need this feature.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
         )
     input_color_mode = None
     if input_color_format is not None:
@@ -64,19 +64,20 @@ def pre_process_network_input(
             image_size_wh=image_size_wh,
         )
     if not isinstance(images, list):
-        raise ModelRuntimeError(
+        raise ModelInputError(
             message="Pre-processing supports only np.array or torch.Tensor or list of above.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
         )
     if not len(images):
-        raise ModelRuntimeError(
-            message="Detected empty input to the model", help_url="https://todo"
+        raise ModelInputError(
+            message="Detected empty input to the model",
+            help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
         )
     if network_input.resize_mode is ResizeMode.FIT_LONGER_EDGE:
         raise ModelRuntimeError(
             message="Model input resize type (fit-longer-edge) cannot be applied equally for "
             "all input batch elements arbitrarily - this type of model does not support input batches.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
         )
     if isinstance(images[0], np.ndarray):
         return pre_process_numpy_images_list(
@@ -96,9 +97,9 @@ def pre_process_network_input(
             target_device=target_device,
             image_size_wh=image_size_wh,
         )
-    raise ModelRuntimeError(
+    raise ModelInputError(
         message=f"Detected unknown input batch element: {type(images[0])}",
-        help_url="https://todo",
+        help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
     )
 
 
@@ -138,7 +139,7 @@ def pre_process_images_tensor(
             raise ModelRuntimeError(
                 message=f"Handler for dynamic spatial mode of type {type(network_input.dynamic_spatial_size_mode)} "
                 f"is not implemented.",
-                help_url="",
+                help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
             )
     if images.device != target_device:
         images = images.to(target_device)
@@ -158,7 +159,7 @@ def pre_process_images_tensor(
     if network_input.resize_mode not in NUMPY_IMAGES_PREPARATION_HANDLERS:
         raise ModelRuntimeError(
             message=f"Unsupported model input resize mode: {network_input.resize_mode}",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
         )
     return TORCH_IMAGES_PREPARATION_HANDLERS[network_input.resize_mode](
         image,
@@ -195,7 +196,7 @@ def apply_pre_processing_to_torch_image(
         ):
             raise ModelRuntimeError(
                 message=f"Unsupported image contrast adjustment type: {image_pre_processing.contrast.type.value}",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
             )
         image = CONTRAST_ADJUSTMENT_METHODS_FOR_TORCH[
             image_pre_processing.contrast.type
@@ -547,7 +548,7 @@ def pre_process_images_tensor_list(
     if network_input.resize_mode not in TORCH_LIST_IMAGES_PREPARATION_HANDLERS:
         raise ModelRuntimeError(
             message=f"Unsupported model input resize mode: {network_input.resize_mode}",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
         )
     if input_color_mode is None:
         input_color_mode = ColorMode.RGB
@@ -576,7 +577,7 @@ def pre_process_images_tensor_list(
             raise ModelRuntimeError(
                 message=f"Handler for dynamic spatial mode of type {type(network_input.dynamic_spatial_size_mode)} "
                 f"is not implemented.",
-                help_url="",
+                help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
             )
     images, static_crop_offsets, original_sizes = (
         apply_pre_processing_to_list_of_torch_image(
@@ -606,9 +607,9 @@ def apply_pre_processing_to_list_of_torch_image(
     result_images, result_offsets, original_sizes = [], [], []
     for image in images:
         if len(image.shape) != 3:
-            raise ModelRuntimeError(
+            raise ModelInputError(
                 message="When providing List[torch.Tensor] as input, model requires tensors to have 3 dimensions.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
             )
         image = image.to(target_device)
         if image.shape[0] != 3 and image.shape[-1] == 3:
@@ -707,9 +708,9 @@ def handle_tensor_list_input_preparation_with_letterbox(
     for i in range(num_images):
         img = images[i]
         if len(img.shape) != 4:
-            raise ModelRuntimeError(
+            raise ModelInputError(
                 message="When providing List[torch.Tensor] as input, model requires tensors to have 3 dimensions.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
             )
         original_size = original_sizes[i]
         size_after_pre_processing = ImageDimensions(
@@ -771,10 +772,9 @@ def handle_tensor_list_input_preparation_with_center_crop(
         images, static_crop_offsets, original_sizes
     ):
         if len(image.shape) != 4:
-            # TODO!
-            raise ModelRuntimeError(
+            raise ModelInputError(
                 message="When providing List[torch.Tensor] as input, model requires tensors to have 3 dimensions.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
             )
         image = image.to(target_device)
         if (
@@ -862,7 +862,7 @@ def pre_process_numpy_image(
             raise ModelRuntimeError(
                 message=f"Handler for dynamic spatial mode of type {type(network_input.dynamic_spatial_size_mode)} "
                 f"is not implemented.",
-                help_url="",
+                help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
             )
     original_size = ImageDimensions(width=image.shape[1], height=image.shape[0])
     image, static_crop_offset = apply_pre_processing_to_numpy_image(
@@ -874,7 +874,7 @@ def pre_process_numpy_image(
     if network_input.resize_mode not in NUMPY_IMAGES_PREPARATION_HANDLERS:
         raise ModelRuntimeError(
             message=f"Unsupported model input resize mode: {network_input.resize_mode}",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
         )
     return NUMPY_IMAGES_PREPARATION_HANDLERS[network_input.resize_mode](
         image,
@@ -921,7 +921,7 @@ def apply_pre_processing_to_numpy_image(
         ):
             raise ModelRuntimeError(
                 message=f"Unsupported image contrast adjustment type: {image_pre_processing.contrast.type.value}",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
             )
         image = CONTRAST_ADJUSTMENT_METHODS_FOR_NUMPY[
             image_pre_processing.contrast.type
@@ -1242,13 +1242,14 @@ def extract_input_images_dimensions(
             )
         return image_dimensions
     if not isinstance(images, list):
-        raise ModelRuntimeError(
+        raise ModelInputError(
             message="Pre-processing supports only np.array or torch.Tensor or list of above.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
         )
     if not len(images):
-        raise ModelRuntimeError(
-            message="Detected empty input to the model", help_url="https://todo"
+        raise ModelInputError(
+            message="Detected empty input to the model",
+            help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
         )
     if isinstance(images[0], np.ndarray):
         return [ImageDimensions(height=i.shape[0], width=i.shape[1]) for i in images]
@@ -1259,9 +1260,9 @@ def extract_input_images_dimensions(
                 ImageDimensions(height=image.shape[1], width=image.shape[2])
             )
         return image_dimensions
-    raise ModelRuntimeError(
+    raise ModelInputError(
         message=f"Detected unknown input batch element: {type(images[0])}",
-        help_url="https://todo",
+        help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
     )
 
 
@@ -1292,13 +1293,14 @@ def images_to_pillow(
             )
         return result, dimensions
     if not isinstance(images, list):
-        raise ModelRuntimeError(
+        raise ModelInputError(
             message="Pre-processing supports only np.array or torch.Tensor or list of above.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
         )
     if not len(images):
-        raise ModelRuntimeError(
-            message="Detected empty input to the model", help_url="https://todo"
+        raise ModelInputError(
+            message="Detected empty input to the model",
+            help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
         )
     if isinstance(images[0], np.ndarray):
         input_color_format = input_color_format or "bgr"
@@ -1322,9 +1324,9 @@ def images_to_pillow(
                 ImageDimensions(height=np_image.shape[0], width=np_image.shape[1])
             )
         return result, dimensions
-    raise ModelRuntimeError(
+    raise ModelInputError(
         message=f"Detected unknown input batch element: {type(images[0])}",
-        help_url="https://todo",
+        help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
     )
 
 

@@ -36,6 +36,20 @@ def add_correlation(
     return event_dict
 
 
+def add_execution_id(
+    logger: logging.Logger, method_name: str, event_dict: Dict[str, Any]
+) -> Dict[str, Any]:
+    try:
+        from inference_sdk.config import execution_id
+
+        exec_id = execution_id.get() if execution_id is not None else None
+        if exec_id:
+            event_dict["execution_id"] = exec_id
+    except ImportError:
+        pass
+    return event_dict
+
+
 def add_gcp_severity(
     logger: logging.Logger, method_name: str, event_dict: Dict[str, Any]
 ) -> Dict[str, Any]:
@@ -44,6 +58,7 @@ def add_gcp_severity(
         "info": "INFO",
         "warning": "WARNING",
         "error": "ERROR",
+        "exception": "ERROR",  # exception logs at ERROR level
         "critical": "CRITICAL",
     }
     event_dict["severity"] = level_to_severity.get(method_name, "DEFAULT")
@@ -113,7 +128,9 @@ if API_LOGGING_ENABLED:
 
     processors = [
         add_correlation,
+        add_execution_id,
         structlog.stdlib.filter_by_level,
+        structlog.stdlib.PositionalArgumentsFormatter(),
         structlog.processors.TimeStamper(fmt="%Y-%m-%d %H:%M.%S"),
         structlog.processors.StackInfoRenderer(),
         structlog_exception_formatter,

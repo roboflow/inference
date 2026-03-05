@@ -38,7 +38,7 @@ def parse_model_type(config_path: str) -> str:
             f"{error}. In case that the package is "
             f"hosted on the Roboflow platform - contact support. If you created model package manually, please "
             f"verify its consistency in docs.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
         ) from error
 
 
@@ -73,6 +73,7 @@ def post_process_instance_segmentation_results(
             top_classes = classes_re_mapping.class_mapping[top_classes[remapping_mask]]
             selected_boxes = selected_boxes[remapping_mask]
             confidence = confidence[remapping_mask]
+            selected_masks = selected_masks[remapping_mask]
         cxcy = selected_boxes[:, :2]
         wh = selected_boxes[:, 2:]
         xy_min = cxcy - 0.5 * wh

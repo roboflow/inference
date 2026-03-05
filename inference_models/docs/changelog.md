@@ -1,5 +1,37 @@
 # Changelog
 
+## `0.19.3`
+
+### Fixed
+- Post-processing for RF-DETR segmentation model - missing remapping for class ids regarding masks.
+
+## `0.19.2`
+
+### Fixed
+- Changed the default ranking for model packages in `AutoLoader` - ONNX to be preferred over Torch. 
+
+
+## `0.19.1`
+
+### Fixed
+- Fixed issue with RF-DETR model post-processing causing all results to be empty (TRT implementation) 
+
+---
+
+## `0.19.0`
+
+First **stable release** of `inference-models` library.
+
+### Added
+- Locks for thread safety of torch models
+
+### Maintenance
+- Established documentation hosting
+- Provided documentation links to error messages
+- Fixed bugs spotted during tests
+
+---
+
 ## `0.18.5` and earlier versions
 
 ### Added

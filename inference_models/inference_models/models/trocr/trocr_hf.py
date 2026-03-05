@@ -1,3 +1,4 @@
+from threading import Lock
 from typing import List, Union
 
 import numpy as np
@@ -36,6 +37,7 @@ class TROcrHF(TextOnlyOCRModel[torch.Tensor, torch.Tensor]):
         self._processor = processor
         self._model = model
         self._device = device
+        self._lock = Lock()
 
     def pre_process(
         self,
@@ -46,8 +48,9 @@ class TROcrHF(TextOnlyOCRModel[torch.Tensor, torch.Tensor]):
         return inputs["pixel_values"].to(self._device)
 
     def forward(self, pre_processed_images: torch.Tensor, **kwargs) -> torch.Tensor:
-        with torch.inference_mode():
+        with self._lock, torch.inference_mode():
             return self._model.generate(pre_processed_images)
 
     def post_process(self, model_results: torch.Tensor, **kwargs) -> List[str]:
-        return self._processor.batch_decode(model_results, skip_special_tokens=True)
+        decoded = self._processor.batch_decode(model_results, skip_special_tokens=True)
+        return decoded

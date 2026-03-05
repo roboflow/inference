@@ -14,22 +14,28 @@ try:
     import tensorrt as trt
 except ImportError as import_error:
     raise MissingDependencyError(
-        message=f"Could not TRT tools required to run models with TRT backend - this error means that some additional "
-        f"dependencies are not installed in the environment. If you run the `inference-models` library directly in your "
-        f"Python program, make sure the following extras of the package are installed: `trt10` - installation can only "
-        f"succeed for Linux and Windows machines with Cuda 12 installed. Jetson devices, should have TRT 10.x "
-        f"installed for all builds with Jetpack 6. "
-        f"If you see this error using Roboflow infrastructure, make sure the service you use does support the model. "
-        f"You can also contact Roboflow to get support.",
-        help_url="https://todo",
+        message=f"Running model with TRT backend on GPU requires trt which is not installed in the environment. "
+        f"If you see this error running locally, "
+        "please follow our installation guide: https://inference-models.roboflow.com/getting-started/installation/"
+        " If you see this error using Roboflow infrastructure, make sure the service you use does support the "
+        f"model, You can also contact Roboflow to get support. "
+        "Additionally - if AutoModel.from_pretrained(...) "
+        f"automatically selects model package which does not match your environment - that's a serious problem and "
+        f"we will really appreciate letting us know - https://github.com/roboflow/inference/issues",
+        help_url="https://inference-models.roboflow.com/errors/runtime-environment/#missingdependencyerror",
     ) from import_error
+
 
 try:
     import pycuda.driver as cuda
 except ImportError as import_error:
     raise MissingDependencyError(
-        message="TODO",
-        help_url="https://todo",
+        message="Running model with TRT backend on GPU requires pycuda installation, which is brought with "
+        "`trt-*` extras of `inference-models` library. If you see this error running locally, "
+        "please follow our installation guide: https://inference-models.roboflow.com/getting-started/installation/"
+        " If you see this error using Roboflow infrastructure, make sure the service you use does support the "
+        f"model, You can also contact Roboflow to get support.",
+        help_url="https://inference-models.roboflow.com/errors/runtime-environment/#missingdependencyerror",
     ) from import_error
 
 
@@ -335,20 +341,20 @@ def execute_trt_engine(
     if not status:
         raise ModelRuntimeError(
             message="Failed to set TRT model input shape during forward pass from the model.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
         )
     status = context.set_tensor_address(input_name, pre_processed_images.data_ptr())
     if not status:
         raise ModelRuntimeError(
             message="Failed to set input tensor data pointer during forward pass from the model.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
         )
     stream = torch.cuda.Stream(device=device)
     status = context.execute_async_v3(stream_handle=stream.cuda_stream)
     if not status:
         raise ModelRuntimeError(
             message="Failed to complete inference from TRT model",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
         )
     stream.synchronize()
     return results
@@ -461,7 +467,7 @@ def load_trt_model(
                     "You can help us solving this problem describing the issue: "
                     "https://github.com/roboflow/inference/issues\nBelow you can find debug information provided "
                     f"by TRT runtime, which may be helpful:\n{logger_traces_str}",
-                    help_url="https://todo",
+                    help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
                 )
             return engine
     except OSError as error:
@@ -471,5 +477,5 @@ def load_trt_model(
             "initialized the model manually, running the code locally - make sure that provided "
             "path is correct. Otherwise, contact Roboflow to solve the problem: "
             "https://github.com/roboflow/inference/issues",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
         ) from error

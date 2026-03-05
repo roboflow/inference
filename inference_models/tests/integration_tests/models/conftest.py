@@ -64,6 +64,8 @@ COIN_COUNTING_YOLACT_ONNX_STATIC_BS_LETTERBOX_URL = "https://storage.googleapis.
 COIN_COUNTING_YOLACT_ONNX_STATIC_BS_STATIC_CROP_STRETCH_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolact-static-bs-static-crop-stretch-onnx.zip"
 COIN_COUNTING_YOLACT_ONNX_STATIC_BS_STRETCH_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolact-static-bs-stretch-onnx.zip"
 
+COIN_COUNTING_YOLOLITE_N_ONNX_DYNAMIC_BS_LETTERBOX_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/coin-counting-yololite-n-onnx-dynamic-bs-letterbox.zip"
+
 ASL_YOLOV8N_SEG_ONNX_DYNAMIC_BS_STRETCH_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov8n-seg-onnx-dynamic-bs-stretch.zip"
 ASL_YOLOV8N_SEG_ONNX_DYNAMIC_BS_STRETCH_FUSED_NMS_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov8n-seg-onnx-dynamic-bs-stretch-fused-nms.zip"
 ASL_YOLOV8N_SEG_ONNX_STATIC_BS_STRETCH_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov8n-seg-onnx-static-bs-stretch.zip"
@@ -144,6 +146,25 @@ DINOV3_CLASSIFICATION_ONNX_STATIC_URL = "https://storage.googleapis.com/roboflow
 DINOV3_MULTI_LABEL_ONNX_STATIC_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/dinov3-multi-label-onnx.zip"
 DINOV3_CLASSIFICATION_TORCH_STATIC_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/dinov3-classification-torch.zip"
 DINOV3_MULTI_LABEL_TORCH_STATIC_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/dinov3-multi-label-torch.zip"
+
+YOLO26N_SEG_SNAKES_STRETCH_ONNX_STATIC_URL = "https://storage.googleapis.com/roboflow-tests-assets/yolo26n-packages/yolo26n-seg-snakes-stretch-onnx-static.zip"
+YOLO26N_SEG_SNAKES_STRETCH_ONNX_DYNAMIC_URL = "https://storage.googleapis.com/roboflow-tests-assets/yolo26n-packages/yolo26n-seg-snakes-stretch-onnx-dynamic.zip"
+YOLO26N_SEG_SNAKES_STRETCH_TORCH_SCRIPT_URL = "https://storage.googleapis.com/roboflow-tests-assets/yolo26n-packages/yolo26n-seg-snakes-stretch-torch-script.zip"
+YOLO26N_SEG_SNAKES_LETTERBOX_ONNX_STATIC_URL = "https://storage.googleapis.com/roboflow-tests-assets/yolo26n-packages/yolo26n-seg-snakes-letterbox-onnx-static.zip"
+YOLO26N_SEG_SNAKES_LETTERBOX_ONNX_DYNAMIC_URL = "https://storage.googleapis.com/roboflow-tests-assets/yolo26n-packages/yolo26n-seg-snakes-letterbox-onnx-dynamic.zip"
+YOLO26N_SEG_SNAKES_LETTERBOX_TORCH_SCRIPT_URL = "https://storage.googleapis.com/roboflow-tests-assets/yolo26n-packages/yolo26n-seg-snakes-letterbox-torch-script.zip"
+YOLO26N_POSE_BASKETBALL_LETTERBOX_ONNX_STATIC_URL = "https://storage.googleapis.com/roboflow-tests-assets/yolo26n-packages/yolo26n-pose-basketball-letterbox-onnx-static.zip"
+YOLO26N_POSE_BASKETBALL_LETTERBOX_ONNX_DYNAMIC_URL = "https://storage.googleapis.com/roboflow-tests-assets/yolo26n-packages/yolo26n-pose-basketball-letterbox-onnx-dynamic.zip"
+YOLO26N_POSE_BASKETBALL_LETTERBOX_TORCH_SCRIPT_URL = "https://storage.googleapis.com/roboflow-tests-assets/yolo26n-packages/yolo26n-pose-basketball-letterbox-torch-script.zip"
+YOLO26N_POSE_BASKETBALL_STRETCH_ONNX_STATIC_URL = "https://storage.googleapis.com/roboflow-tests-assets/yolo26n-packages/yolo26n-pose-basketball-stretch-onnx-static.zip"
+YOLO26N_POSE_BASKETBALL_STRETCH_ONNX_DYNAMIC_URL = "https://storage.googleapis.com/roboflow-tests-assets/yolo26n-packages/yolo26n-pose-basketball-stretch-onnx-dynamic.zip"
+YOLO26N_POSE_BASKETBALL_STRETCH_TORCH_SCRIPT_URL = "https://storage.googleapis.com/roboflow-tests-assets/yolo26n-packages/yolo26n-pose-basketball-stretch-torch-script.zip"
+YOLO26N_object_detection_sunflowers_STRETCH_ONNX_STATIC_URL = "https://storage.googleapis.com/roboflow-tests-assets/yolo26n-packages/yolo26n-object-detection-sunflowers-stretch-onnx-static.zip"
+YOLO26N_object_detection_sunflowers_STRETCH_ONNX_DYNAMIC_URL = "https://storage.googleapis.com/roboflow-tests-assets/yolo26n-packages/yolo26n-object-detection-sunflowers-stretch-onnx-dynamic.zip"
+YOLO26N_object_detection_sunflowers_STRETCH_TORCH_SCRIPT_URL = "https://storage.googleapis.com/roboflow-tests-assets/yolo26n-packages/yolo26n-object-detection-sunflowers-stretch-torch-script.zip"
+YOLO26N_object_detection_sunflowers_LETTERBOX_ONNX_STATIC_URL = "https://storage.googleapis.com/roboflow-tests-assets/yolo26n-packages/yolo26n-object-detection-sunflowers-letterbox-onnx-static.zip"
+YOLO26N_object_detection_sunflowers_LETTERBOX_ONNX_DYNAMIC_URL = "https://storage.googleapis.com/roboflow-tests-assets/yolo26n-packages/yolo26n-object-detection-sunflowers-letterbox-onnx-dynamic.zip"
+YOLO26N_object_detection_sunflowers_LETTERBOX_TORCH_SCRIPT_URL = "https://storage.googleapis.com/roboflow-tests-assets/yolo26n-packages/yolo26n-object-detection-sunflowers-letterbox-torch-script.zip"
 
 DEPTH_ANYTHING_V2_SMALL_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/depth-anything-v2.zip"
 DEPTH_ANYTHING_V3_SMALL_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/depth-anything-v3-small.zip"
@@ -571,6 +592,14 @@ def coin_counting_yolo_nas_onnx_static_bs_center_crop_package() -> str:
     return download_model_package(
         model_package_zip_url=COIN_COUNTING_YOLO_NAS_ONNX_STATIC_BS_CENTER_CROP_URL,
         package_name="coin-counting-yolo-nas-static-bs-center-crop",
+    )
+
+
+@pytest.fixture(scope="module")
+def coin_counting_yololite_n_onnx_dynamic_bs_letterbox_package() -> str:
+    return download_model_package(
+        model_package_zip_url=COIN_COUNTING_YOLOLITE_N_ONNX_DYNAMIC_BS_LETTERBOX_URL,
+        package_name="coin-counting-yololite-n-onnx-dynamic-bs-letterbox",
     )
 
 
@@ -1273,3 +1302,151 @@ def sam2_package() -> str:
         model_package_zip_url=SAM2_PACKAGE_URL,
         package_name="sam2",
     )
+
+
+@pytest.fixture(scope="module")
+def yolo26n_seg_snakes_stretch_onnx_static_package() -> str:
+    return download_model_package(
+        model_package_zip_url=YOLO26N_SEG_SNAKES_STRETCH_ONNX_STATIC_URL,
+        package_name="yolo26n-seg-snakes-stretch-onnx-static",
+    )
+
+
+@pytest.fixture(scope="module")
+def yolo26n_seg_snakes_stretch_onnx_dynamic_package() -> str:
+    return download_model_package(
+        model_package_zip_url=YOLO26N_SEG_SNAKES_STRETCH_ONNX_DYNAMIC_URL,
+        package_name="yolo26n-seg-snakes-stretch-onnx-dynamic",
+    )
+
+
+@pytest.fixture(scope="module")
+def yolo26n_seg_snakes_stretch_torch_script_package() -> str:
+    return download_model_package(
+        model_package_zip_url=YOLO26N_SEG_SNAKES_STRETCH_TORCH_SCRIPT_URL,
+        package_name="yolo26n-seg-snakes-stretch-torch-script",
+    )
+
+
+@pytest.fixture(scope="module")
+def yolo26n_seg_snakes_letterbox_onnx_static_package() -> str:
+    return download_model_package(
+        model_package_zip_url=YOLO26N_SEG_SNAKES_LETTERBOX_ONNX_STATIC_URL,
+        package_name="yolo26n-seg-snakes-letterbox-onnx-static",
+    )
+
+
+@pytest.fixture(scope="module")
+def yolo26n_seg_snakes_letterbox_onnx_dynamic_package() -> str:
+    return download_model_package(
+        model_package_zip_url=YOLO26N_SEG_SNAKES_LETTERBOX_ONNX_DYNAMIC_URL,
+        package_name="yolo26n-seg-snakes-letterbox-onnx-dynamic",
+    )
+
+
+@pytest.fixture(scope="module")
+def yolo26n_seg_snakes_letterbox_torch_script_package() -> str:
+    return download_model_package(
+        model_package_zip_url=YOLO26N_SEG_SNAKES_LETTERBOX_TORCH_SCRIPT_URL,
+        package_name="yolo26n-seg-snakes-letterbox-torch-script",
+    )
+
+
+@pytest.fixture(scope="module")
+def yolo26n_pose_basketball_letterbox_onnx_static_package() -> str:
+    return download_model_package(
+        model_package_zip_url=YOLO26N_POSE_BASKETBALL_LETTERBOX_ONNX_STATIC_URL,
+        package_name="yolo26n-pose-basketball-letterbox-onnx-static",
+    )
+
+
+@pytest.fixture(scope="module")
+def yolo26n_pose_basketball_letterbox_onnx_dynamic_package() -> str:
+    return download_model_package(
+        model_package_zip_url=YOLO26N_POSE_BASKETBALL_LETTERBOX_ONNX_DYNAMIC_URL,
+        package_name="yolo26n-pose-basketball-letterbox-onnx-dynamic",
+    )
+
+
+@pytest.fixture(scope="module")
+def yolo26n_pose_basketball_letterbox_torch_script_package() -> str:
+    return download_model_package(
+        model_package_zip_url=YOLO26N_POSE_BASKETBALL_LETTERBOX_TORCH_SCRIPT_URL,
+        package_name="yolo26n-pose-basketball-letterbox-torch-script",
+    )
+
+
+@pytest.fixture(scope="module")
+def yolo26n_pose_basketball_stretch_onnx_static_package() -> str:
+    return download_model_package(
+        model_package_zip_url=YOLO26N_POSE_BASKETBALL_STRETCH_ONNX_STATIC_URL,
+        package_name="yolo26n-pose-basketball-stretch-onnx-static",
+    )
+
+
+@pytest.fixture(scope="module")
+def yolo26n_pose_basketball_stretch_onnx_dynamic_package() -> str:
+    return download_model_package(
+        model_package_zip_url=YOLO26N_POSE_BASKETBALL_STRETCH_ONNX_DYNAMIC_URL,
+        package_name="yolo26n-pose-basketball-stretch-onnx-dynamic",
+    )
+
+
+@pytest.fixture(scope="module")
+def yolo26n_pose_basketball_stretch_torch_script_package() -> str:
+    return download_model_package(
+        model_package_zip_url=YOLO26N_POSE_BASKETBALL_STRETCH_TORCH_SCRIPT_URL,
+        package_name="yolo26n-pose-basketball-stretch-torch-script",
+    )
+
+
+@pytest.fixture(scope="module")
+def yolo26n_object_detection_sunflowers_stretch_onnx_static_package() -> str:
+    return download_model_package(
+        model_package_zip_url=YOLO26N_object_detection_sunflowers_STRETCH_ONNX_STATIC_URL,
+        package_name="yolo26n-object-detection-sunflowers-stretch-onnx-static",
+    )
+
+
+@pytest.fixture(scope="module")
+def yolo26n_object_detection_sunflowers_stretch_onnx_dynamic_package() -> str:
+    return download_model_package(
+        model_package_zip_url=YOLO26N_object_detection_sunflowers_STRETCH_ONNX_DYNAMIC_URL,
+        package_name="yolo26n-object-detection-sunflowers-stretch-onnx-dynamic",
+    )
+
+
+@pytest.fixture(scope="module")
+def yolo26n_object_detection_sunflowers_stretch_torch_script_package() -> str:
+    return download_model_package(
+        model_package_zip_url=YOLO26N_object_detection_sunflowers_STRETCH_TORCH_SCRIPT_URL,
+        package_name="yolo26n-object-detection-sunflowers-stretch-torch-script",
+    )
+
+
+@pytest.fixture(scope="module")
+def yolo26n_object_detection_sunflowers_letterbox_onnx_static_package() -> str:
+    return download_model_package(
+        model_package_zip_url=YOLO26N_object_detection_sunflowers_LETTERBOX_ONNX_STATIC_URL,
+        package_name="yolo26n-object-detection-sunflowers-letterbox-onnx-static",
+    )
+
+
+@pytest.fixture(scope="module")
+def yolo26n_object_detection_sunflowers_letterbox_onnx_dynamic_package() -> str:
+    return download_model_package(
+        model_package_zip_url=YOLO26N_object_detection_sunflowers_LETTERBOX_ONNX_DYNAMIC_URL,
+        package_name="yolo26n-object-detection-sunflowers-letterbox-onnx-dynamic",
+    )
+
+
+@pytest.fixture(scope="module")
+def yolo26n_object_detection_sunflowers_letterbox_torch_script_package() -> str:
+    return download_model_package(
+        model_package_zip_url=YOLO26N_object_detection_sunflowers_LETTERBOX_TORCH_SCRIPT_URL,
+        package_name="yolo26n-object-detection-sunflowers-letterbox-torch-script",
+    )
+
+
+
+

@@ -7,6 +7,10 @@ import supervision as sv
 
 from inference.core import logger
 from inference.core.workflows.execution_engine.constants import (
+    AREA_CONVERTED_KEY_IN_INFERENCE_RESPONSE,
+    AREA_CONVERTED_KEY_IN_SV_DETECTIONS,
+    AREA_KEY_IN_INFERENCE_RESPONSE,
+    AREA_KEY_IN_SV_DETECTIONS,
     BOUNDING_RECT_ANGLE_KEY_IN_INFERENCE_RESPONSE,
     BOUNDING_RECT_ANGLE_KEY_IN_SV_DETECTIONS,
     BOUNDING_RECT_HEIGHT_KEY_IN_INFERENCE_RESPONSE,
@@ -213,6 +217,14 @@ def serialise_sv_detections(detections: sv.Detections) -> dict:
             detection_dict[SMOOTHED_SPEED_KEY_IN_INFERENCE_RESPONSE] = data[
                 SMOOTHED_SPEED_KEY_IN_SV_DETECTIONS
             ].astype(float)
+        if AREA_KEY_IN_SV_DETECTIONS in data:
+            detection_dict[AREA_KEY_IN_INFERENCE_RESPONSE] = float(
+                data[AREA_KEY_IN_SV_DETECTIONS]
+            )
+        if AREA_CONVERTED_KEY_IN_SV_DETECTIONS in data:
+            detection_dict[AREA_CONVERTED_KEY_IN_INFERENCE_RESPONSE] = float(
+                data[AREA_CONVERTED_KEY_IN_SV_DETECTIONS]
+            )
         serialized_detections.append(detection_dict)
     image_metadata = {
         "width": None,

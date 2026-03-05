@@ -20,7 +20,14 @@ def test_yolov8n_pose_onnx_static_center_crop_package_numpy(
     )
 
     # when
-    predictions = model(people_walking_image_numpy)
+    predictions = model(
+        people_walking_image_numpy,
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+        key_points_threshold=0.3,
+    )
 
     # then
     assert torch.allclose(
@@ -149,7 +156,14 @@ def test_yolov8n_pose_onnx_static_center_crop_package_batch_numpy(
     )
 
     # when
-    predictions = model([people_walking_image_numpy, people_walking_image_numpy])
+    predictions = model(
+        [people_walking_image_numpy, people_walking_image_numpy],
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+        key_points_threshold=0.3,
+    )
 
     # then
     expected_kp_xy = torch.tensor(
@@ -305,7 +319,14 @@ def test_yolov8n_pose_onnx_static_center_crop_package_torch(
     )
 
     # when
-    predictions = model(people_walking_image_torch)
+    predictions = model(
+        people_walking_image_torch,
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+        key_points_threshold=0.3,
+    )
 
     # then
     assert torch.allclose(
@@ -435,7 +456,12 @@ def test_yolov8n_pose_onnx_static_center_crop_package_batch_torch(
 
     # when
     predictions = model(
-        torch.stack([people_walking_image_torch, people_walking_image_torch], dim=0)
+        torch.stack([people_walking_image_torch, people_walking_image_torch], dim=0),
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+        key_points_threshold=0.3,
     )
 
     # then
@@ -591,7 +617,14 @@ def test_yolov8n_pose_onnx_static_center_crop_package_list_torch(
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
-    predictions = model([people_walking_image_torch, people_walking_image_torch])
+    predictions = model(
+        [people_walking_image_torch, people_walking_image_torch],
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+        key_points_threshold=0.3,
+    )
 
     # then
     expected_xy = torch.tensor(
@@ -747,7 +780,14 @@ def test_yolov8n_pose_onnx_static_static_crop_center_crop_package_numpy(
     )
 
     # when
-    predictions = model(people_walking_image_numpy)
+    predictions = model(
+        people_walking_image_numpy,
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+        key_points_threshold=0.3,
+    )
 
     # then
     assert torch.allclose(
@@ -873,7 +913,14 @@ def test_yolov8n_pose_onnx_static_static_crop_center_crop_package_batch_numpy(
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
-    predictions = model([people_walking_image_numpy, people_walking_image_numpy])
+    predictions = model(
+        [people_walking_image_numpy, people_walking_image_numpy],
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+        key_points_threshold=0.3,
+    )
 
     # then
     expected_kp_xy = torch.tensor(
@@ -1024,7 +1071,14 @@ def test_yolov8n_pose_onnx_static_static_crop_center_crop_package_torch(
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
-    predictions = model(people_walking_image_torch)
+    predictions = model(
+        people_walking_image_torch,
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+        key_points_threshold=0.3,
+    )
 
     # then
     assert torch.allclose(
@@ -1151,7 +1205,12 @@ def test_yolov8n_pose_onnx_static_static_crop_center_crop_package_batch_torch(
     )
 
     predictions = model(
-        torch.stack([people_walking_image_torch, people_walking_image_torch], dim=0)
+        torch.stack([people_walking_image_torch, people_walking_image_torch], dim=0),
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+        key_points_threshold=0.3,
     )
 
     # then
@@ -1303,7 +1362,14 @@ def test_yolov8n_pose_onnx_static_static_crop_center_crop_package_list_torch(
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
-    predictions = model([people_walking_image_torch, people_walking_image_torch])
+    predictions = model(
+        [people_walking_image_torch, people_walking_image_torch],
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+        key_points_threshold=0.3,
+    )
 
     # then
     expected_kp_xy = torch.tensor(
@@ -1454,7 +1520,14 @@ def test_yolov8n_pose_onnx_static_static_crop_letterbox_package_numpy(
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
-    predictions = model(people_walking_image_numpy)
+    predictions = model(
+        people_walking_image_numpy,
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+        key_points_threshold=0.3,
+    )
 
     # then
     assert torch.allclose(
@@ -1582,7 +1655,14 @@ def test_yolov8n_pose_onnx_static_static_crop_letterbox_package_batch_numpy(
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
-    predictions = model([people_walking_image_numpy, people_walking_image_numpy])
+    predictions = model(
+        [people_walking_image_numpy, people_walking_image_numpy],
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+        key_points_threshold=0.3,
+    )
 
     # then
     expected_kp_xy = torch.tensor(
@@ -1734,7 +1814,14 @@ def test_yolov8n_pose_onnx_static_static_crop_letterbox_package_torch(
     )
 
     # when
-    predictions = model(people_walking_image_torch)
+    predictions = model(
+        people_walking_image_torch,
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+        key_points_threshold=0.3,
+    )
 
     # then
     assert torch.allclose(
@@ -1864,7 +1951,12 @@ def test_yolov8n_pose_onnx_static_static_crop_letterbox_package_batch_torch(
     )
 
     predictions = model(
-        torch.stack([people_walking_image_torch, people_walking_image_torch], dim=0)
+        torch.stack([people_walking_image_torch, people_walking_image_torch], dim=0),
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+        key_points_threshold=0.3,
     )
 
     # then
@@ -2016,7 +2108,14 @@ def test_yolov8n_pose_onnx_static_static_crop_letterbox_package_list_torch(
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
-    predictions = model([people_walking_image_torch, people_walking_image_torch])
+    predictions = model(
+        [people_walking_image_torch, people_walking_image_torch],
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+        key_points_threshold=0.3,
+    )
 
     # then
     expected_kp_xy = torch.tensor(
@@ -2167,7 +2266,14 @@ def test_yolov8n_pose_onnx_static_static_crop_stretch_package_numpy(
     )
 
     # when
-    predictions = model(people_walking_image_numpy)
+    predictions = model(
+        people_walking_image_numpy,
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+        key_points_threshold=0.3,
+    )
 
     # then
     assert torch.allclose(
@@ -2296,7 +2402,14 @@ def test_yolov8n_pose_onnx_static_static_crop_stretch_package_batch_numpy(
     )
 
     # when
-    predictions = model([people_walking_image_numpy, people_walking_image_numpy])
+    predictions = model(
+        [people_walking_image_numpy, people_walking_image_numpy],
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+        key_points_threshold=0.3,
+    )
 
     # then
     expected_kp_xy = torch.tensor(
@@ -2452,7 +2565,14 @@ def test_yolov8n_pose_onnx_static_static_crop_stretch_package_torch(
     )
 
     # when
-    predictions = model(people_walking_image_torch)
+    predictions = model(
+        people_walking_image_torch,
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+        key_points_threshold=0.3,
+    )
 
     # then
     assert torch.allclose(
@@ -2581,7 +2701,12 @@ def test_yolov8n_pose_onnx_static_static_crop_stretch_package_batch_torch(
     )
 
     predictions = model(
-        torch.stack([people_walking_image_torch, people_walking_image_torch], dim=0)
+        torch.stack([people_walking_image_torch, people_walking_image_torch], dim=0),
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+        key_points_threshold=0.3,
     )
 
     # then
@@ -2737,7 +2862,14 @@ def test_yolov8n_pose_onnx_static_static_crop_stretch_package_list_torch(
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
-    predictions = model([people_walking_image_torch, people_walking_image_torch])
+    predictions = model(
+        [people_walking_image_torch, people_walking_image_torch],
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+        key_points_threshold=0.3,
+    )
 
     # then
     expected_kp_xy = torch.tensor(
@@ -2892,7 +3024,14 @@ def test_yolov8n_pose_onnx_dynamic_center_crop_package_numpy(
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
-    predictions = model(people_walking_image_numpy)
+    predictions = model(
+        people_walking_image_numpy,
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+        key_points_threshold=0.3,
+    )
 
     # then
     assert torch.allclose(
@@ -3021,7 +3160,15 @@ def test_yolov8n_pose_onnx_dynamic_center_crop_package_numpy_custom_size(
     )
 
     # when
-    predictions = model(people_walking_image_numpy, image_size=(300, 300))
+    predictions = model(
+        people_walking_image_numpy,
+        image_size=(300, 300),
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+        key_points_threshold=0.3,
+    )
 
     # then
     assert torch.allclose(
@@ -3150,7 +3297,14 @@ def test_yolov8n_pose_onnx_dynamic_center_crop_package_batch_numpy(
     )
 
     # when
-    predictions = model([people_walking_image_numpy, people_walking_image_numpy])
+    predictions = model(
+        [people_walking_image_numpy, people_walking_image_numpy],
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+        key_points_threshold=0.3,
+    )
 
     # then
     expected_kp_xy = torch.tensor(
@@ -3305,7 +3459,14 @@ def test_yolov8n_pose_onnx_dynamic_center_crop_package_torch(
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
-    predictions = model(people_walking_image_torch)
+    predictions = model(
+        people_walking_image_torch,
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+        key_points_threshold=0.3,
+    )
 
     # then
     assert torch.allclose(
@@ -3434,7 +3595,12 @@ def test_yolov8n_pose_onnx_dynamic_center_crop_package_batch_torch(
     )
 
     predictions = model(
-        torch.stack([people_walking_image_torch, people_walking_image_torch], dim=0)
+        torch.stack([people_walking_image_torch, people_walking_image_torch], dim=0),
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+        key_points_threshold=0.3,
     )
 
     # then
@@ -3590,7 +3756,14 @@ def test_yolov8n_pose_onnx_dynamic_center_crop_package_list_torch(
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
-    predictions = model([people_walking_image_torch, people_walking_image_torch])
+    predictions = model(
+        [people_walking_image_torch, people_walking_image_torch],
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+        key_points_threshold=0.3,
+    )
 
     # then
     expected_xy = torch.tensor(
@@ -3746,7 +3919,14 @@ def test_yolov8n_pose_onnx_dynamic_static_crop_center_crop_package_numpy(
     )
 
     # when
-    predictions = model(people_walking_image_numpy)
+    predictions = model(
+        people_walking_image_numpy,
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+        key_points_threshold=0.3,
+    )
 
     # then
     assert torch.allclose(
@@ -3873,7 +4053,15 @@ def test_yolov8n_pose_onnx_dynamic_static_crop_center_crop_package_numpy_custom_
     )
 
     # when
-    predictions = model(people_walking_image_numpy, image_size=(300, 300))
+    predictions = model(
+        people_walking_image_numpy,
+        image_size=(300, 300),
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+        key_points_threshold=0.3,
+    )
 
     # then
     assert torch.allclose(
@@ -3961,7 +4149,14 @@ def test_yolov8n_pose_onnx_dynamic_static_crop_center_crop_package_batch_numpy(
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
-    predictions = model([people_walking_image_numpy, people_walking_image_numpy])
+    predictions = model(
+        [people_walking_image_numpy, people_walking_image_numpy],
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+        key_points_threshold=0.3,
+    )
 
     # then
     expected_kp_xy = torch.tensor(
@@ -4112,7 +4307,14 @@ def test_yolov8n_pose_onnx_dynamic_static_crop_center_crop_package_torch(
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
-    predictions = model(people_walking_image_torch)
+    predictions = model(
+        people_walking_image_torch,
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+        key_points_threshold=0.3,
+    )
 
     # then
     assert torch.allclose(
@@ -4239,7 +4441,12 @@ def test_yolov8n_pose_onnx_dynamic_static_crop_center_crop_package_batch_torch(
     )
 
     predictions = model(
-        torch.stack([people_walking_image_torch, people_walking_image_torch], dim=0)
+        torch.stack([people_walking_image_torch, people_walking_image_torch], dim=0),
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+        key_points_threshold=0.3,
     )
 
     # then
@@ -4391,7 +4598,14 @@ def test_yolov8n_pose_onnx_dynamic_static_crop_center_crop_package_list_torch(
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
-    predictions = model([people_walking_image_torch, people_walking_image_torch])
+    predictions = model(
+        [people_walking_image_torch, people_walking_image_torch],
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+        key_points_threshold=0.3,
+    )
 
     # then
     expected_kp_xy = torch.tensor(
@@ -4542,7 +4756,14 @@ def test_yolov8n_pose_onnx_dynamic_static_crop_letterbox_package_numpy(
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
-    predictions = model(people_walking_image_numpy)
+    predictions = model(
+        people_walking_image_numpy,
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+        key_points_threshold=0.3,
+    )
 
     # then
     assert torch.allclose(
@@ -4670,7 +4891,14 @@ def test_yolov8n_pose_onnx_dynamic_static_crop_letterbox_package_batch_numpy(
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
-    predictions = model([people_walking_image_numpy, people_walking_image_numpy])
+    predictions = model(
+        [people_walking_image_numpy, people_walking_image_numpy],
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+        key_points_threshold=0.3,
+    )
 
     # then
     expected_kp_xy = torch.tensor(
@@ -4821,7 +5049,14 @@ def test_yolov8n_pose_onnx_dynamic_static_crop_letterbox_package_torch(
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
-    predictions = model(people_walking_image_torch)
+    predictions = model(
+        people_walking_image_torch,
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+        key_points_threshold=0.3,
+    )
 
     # then
     assert torch.allclose(
@@ -4951,7 +5186,12 @@ def test_yolov8n_pose_onnx_dynamic_static_crop_letterbox_package_batch_torch(
     )
 
     predictions = model(
-        torch.stack([people_walking_image_torch, people_walking_image_torch], dim=0)
+        torch.stack([people_walking_image_torch, people_walking_image_torch], dim=0),
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+        key_points_threshold=0.3,
     )
 
     # then
@@ -5103,7 +5343,14 @@ def test_yolov8n_pose_onnx_dynamic_static_crop_letterbox_package_list_torch(
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
-    predictions = model([people_walking_image_torch, people_walking_image_torch])
+    predictions = model(
+        [people_walking_image_torch, people_walking_image_torch],
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+        key_points_threshold=0.3,
+    )
 
     # then
     expected_kp_xy = torch.tensor(
@@ -5254,7 +5501,14 @@ def test_yolov8n_pose_onnx_dynamic_static_crop_stretch_package_numpy(
     )
 
     # when
-    predictions = model(people_walking_image_numpy)
+    predictions = model(
+        people_walking_image_numpy,
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+        key_points_threshold=0.3,
+    )
 
     # then
     assert torch.allclose(
@@ -5383,7 +5637,14 @@ def test_yolov8n_pose_onnx_dynamic_static_crop_stretch_package_batch_numpy(
     )
 
     # when
-    predictions = model([people_walking_image_numpy, people_walking_image_numpy])
+    predictions = model(
+        [people_walking_image_numpy, people_walking_image_numpy],
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+        key_points_threshold=0.3,
+    )
 
     # then
     expected_kp_xy = torch.tensor(
@@ -5539,7 +5800,14 @@ def test_yolov8n_pose_onnx_dynamic_static_crop_stretch_package_torch(
     )
 
     # when
-    predictions = model(people_walking_image_torch)
+    predictions = model(
+        people_walking_image_torch,
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+        key_points_threshold=0.3,
+    )
 
     # then
     assert torch.allclose(
@@ -5668,7 +5936,12 @@ def test_yolov8n_pose_onnx_dynamic_static_crop_stretch_package_batch_torch(
     )
 
     predictions = model(
-        torch.stack([people_walking_image_torch, people_walking_image_torch], dim=0)
+        torch.stack([people_walking_image_torch, people_walking_image_torch], dim=0),
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+        key_points_threshold=0.3,
     )
 
     # then
@@ -5824,7 +6097,14 @@ def test_yolov8n_pose_onnx_dynamic_static_crop_stretch_package_list_torch(
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
-    predictions = model([people_walking_image_torch, people_walking_image_torch])
+    predictions = model(
+        [people_walking_image_torch, people_walking_image_torch],
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+        key_points_threshold=0.3,
+    )
 
     # then
     expected_kp_xy = torch.tensor(
@@ -5979,7 +6259,14 @@ def test_yolov8n_pose_onnx_dynamic_nms_fused_center_crop_package_numpy(
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
-    predictions = model(people_walking_image_numpy)
+    predictions = model(
+        people_walking_image_numpy,
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+        key_points_threshold=0.3,
+    )
 
     # then
     assert torch.allclose(
@@ -6108,7 +6395,15 @@ def test_yolov8n_pose_onnx_dynamic_nms_fused_center_crop_package_numpy_custom_si
     )
 
     # when
-    predictions = model(people_walking_image_numpy, image_size=(300, 300))
+    predictions = model(
+        people_walking_image_numpy,
+        image_size=(300, 300),
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+        key_points_threshold=0.3,
+    )
 
     # then
     assert torch.allclose(
@@ -6237,7 +6532,14 @@ def test_yolov8n_pose_onnx_dynamic_nms_fused_center_crop_package_batch_numpy(
     )
 
     # when
-    predictions = model([people_walking_image_numpy, people_walking_image_numpy])
+    predictions = model(
+        [people_walking_image_numpy, people_walking_image_numpy],
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+        key_points_threshold=0.3,
+    )
 
     # then
     expected_kp_xy = torch.tensor(
@@ -6392,7 +6694,14 @@ def test_yolov8n_pose_onnx_dynamic_nms_fused_center_crop_package_torch(
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
-    predictions = model(people_walking_image_torch)
+    predictions = model(
+        people_walking_image_torch,
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+        key_points_threshold=0.3,
+    )
 
     # then
     assert torch.allclose(
@@ -6522,7 +6831,12 @@ def test_yolov8n_pose_onnx_dynamic_nms_fused_center_crop_package_batch_torch(
 
     # when
     predictions = model(
-        torch.stack([people_walking_image_torch, people_walking_image_torch], dim=0)
+        torch.stack([people_walking_image_torch, people_walking_image_torch], dim=0),
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+        key_points_threshold=0.3,
     )
 
     # then
@@ -6678,7 +6992,14 @@ def test_yolov8n_pose_onnx_dynamic_nms_fused_center_crop_package_list_torch(
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
-    predictions = model([people_walking_image_torch, people_walking_image_torch])
+    predictions = model(
+        [people_walking_image_torch, people_walking_image_torch],
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+        key_points_threshold=0.3,
+    )
 
     # then
     expected_xy = torch.tensor(
@@ -6834,7 +7155,14 @@ def test_yolov8n_pose_onnx_dynamic_nms_fused_static_crop_center_crop_package_num
     )
 
     # when
-    predictions = model(people_walking_image_numpy)
+    predictions = model(
+        people_walking_image_numpy,
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+        key_points_threshold=0.3,
+    )
 
     # then
     assert torch.allclose(
@@ -6960,7 +7288,14 @@ def test_yolov8n_pose_onnx_dynamic_nms_fused_static_crop_center_crop_package_bat
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
-    predictions = model([people_walking_image_numpy, people_walking_image_numpy])
+    predictions = model(
+        [people_walking_image_numpy, people_walking_image_numpy],
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+        key_points_threshold=0.3,
+    )
 
     # then
     expected_kp_xy = torch.tensor(
@@ -7111,7 +7446,14 @@ def test_yolov8n_pose_onnx_dynamic_nms_fused_static_crop_center_crop_package_tor
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
-    predictions = model(people_walking_image_torch)
+    predictions = model(
+        people_walking_image_torch,
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+        key_points_threshold=0.3,
+    )
 
     # then
     assert torch.allclose(
@@ -7238,7 +7580,12 @@ def test_yolov8n_pose_onnx_dynamic_nms_fused_static_crop_center_crop_package_bat
     )
 
     predictions = model(
-        torch.stack([people_walking_image_torch, people_walking_image_torch], dim=0)
+        torch.stack([people_walking_image_torch, people_walking_image_torch], dim=0),
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+        key_points_threshold=0.3,
     )
 
     # then
@@ -7390,7 +7737,14 @@ def test_yolov8n_pose_onnx_dynamic_nms_fused_static_crop_center_crop_package_lis
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
-    predictions = model([people_walking_image_torch, people_walking_image_torch])
+    predictions = model(
+        [people_walking_image_torch, people_walking_image_torch],
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+        key_points_threshold=0.3,
+    )
 
     # then
     expected_kp_xy = torch.tensor(

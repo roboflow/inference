@@ -6,6 +6,11 @@ import supervision as sv
 from pydantic import ConfigDict, Field, model_validator
 
 from inference.core.entities.requests.inference import LMMInferenceRequest
+from inference.core.env import (
+    HOSTED_CORE_MODEL_URL,
+    LOCAL_INFERENCE_API_URL,
+    WORKFLOWS_REMOTE_API_TARGET,
+)
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.vlms import VLM_TASKS_METADATA
@@ -31,6 +36,7 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
+from inference_sdk import InferenceHTTPClient
 
 T = TypeVar("T")
 K = TypeVar("K")
@@ -356,13 +362,106 @@ class Florence2BlockV1(WorkflowBlock):
                 grounding_selection_mode=grounding_selection_mode,
             )
         elif self._step_execution_mode is StepExecutionMode.REMOTE:
-            raise NotImplementedError(
-                "Remote execution is not supported for florence2. Run a local or dedicated inference server to use this block (GPU recommended)."
+            return self.run_remotely(
+                images=images,
+                task_type=task_type,
+                model_version=model_version,
+                prompt=prompt,
+                classes=classes,
+                grounding_detection=grounding_detection,
+                grounding_selection_mode=grounding_selection_mode,
             )
         else:
             raise ValueError(
                 f"Unknown step execution mode: {self._step_execution_mode}"
             )
+
+    def run_remotely(
+        self,
+        images: Batch[WorkflowImageData],
+        model_version: str,
+        task_type: TaskType,
+        prompt: Optional[str],
+        classes: Optional[List[str]],
+        grounding_detection: Optional[
+            Union[Batch[sv.Detections], List[int], List[float]]
+        ],
+        grounding_selection_mode: GroundingSelectionMode,
+    ) -> BlockResult:
+        api_url = (
+            LOCAL_INFERENCE_API_URL
+            if WORKFLOWS_REMOTE_API_TARGET != "hosted"
+            else HOSTED_CORE_MODEL_URL
+        )
+        client = InferenceHTTPClient(
+            api_url=api_url,
+            api_key=self._api_key,
+        )
+        if WORKFLOWS_REMOTE_API_TARGET == "hosted":
+            client.select_api_v0()
+
+        requires_detection_grounding = task_type in TASKS_REQUIRING_DETECTION_GROUNDING
+        is_not_florence_task = task_type == "custom"
+        florence_task = TASK_TYPE_TO_FLORENCE_TASK[task_type]
+
+        prompts = [prompt] * len(images)
+        if classes is not None:
+            prompts = ["<and>".join(classes)] * len(images)
+        else:
+            classes = []
+        if grounding_detection is not None:
+            prompts = prepare_detection_grounding_prompts(
+                images=images,
+                grounding_detection=grounding_detection,
+                grounding_selection_mode=grounding_selection_mode,
+            )
+
+        predictions = []
+        for image, single_prompt in zip(images, prompts):
+            if single_prompt is None and requires_detection_grounding:
+                # no grounding bbox found - empty result returned
+                predictions.append(
+                    {"raw_output": None, "parsed_output": None, "classes": None}
+                )
+                continue
+
+            if is_not_florence_task:
+                final_prompt = single_prompt or ""
+            else:
+                final_prompt = florence_task + (single_prompt or "")
+
+            result = client.infer_lmm(
+                inference_input=image.base64_image,
+                model_id=model_version,
+                prompt=final_prompt,
+                model_id_in_path=True,
+            )
+
+            # Parse response
+            response = result.get("response", {})
+            if is_not_florence_task:
+                if isinstance(response, dict) and len(response) > 0:
+                    prediction_data = response[list(response.keys())[0]]
+                else:
+                    prediction_data = response
+            else:
+                prediction_data = response.get(florence_task, response)
+
+            extracted_classes = classes
+            if florence_task in TASKS_TO_EXTRACT_LABELS_AS_CLASSES:
+                if isinstance(prediction_data, dict):
+                    extracted_classes = prediction_data.get("labels", [])
+
+            predictions.append(
+                {
+                    "raw_output": json.dumps(prediction_data),
+                    "parsed_output": (
+                        prediction_data if isinstance(prediction_data, dict) else None
+                    ),
+                    "classes": extracted_classes,
+                }
+            )
+        return predictions
 
     def run_locally(
         self,

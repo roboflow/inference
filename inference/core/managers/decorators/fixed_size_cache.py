@@ -11,6 +11,7 @@ from inference.core.env import (
     HOT_MODELS_QUEUE_LOCK_ACQUIRE_TIMEOUT,
     MEMORY_FREE_THRESHOLD,
     MODELS_CACHE_AUTH_ENABLED,
+    USE_INFERENCE_MODELS,
 )
 from inference.core.exceptions import (
     ModelManagerLockAcquisitionError,
@@ -19,6 +20,7 @@ from inference.core.exceptions import (
 from inference.core.managers.base import Model, ModelManager, acquire_with_timeout
 from inference.core.managers.decorators.base import ModelManagerDecorator
 from inference.core.managers.entities import ModelDescription
+from inference.core.managers.model_load_collector import request_model_ids
 from inference.core.registries.roboflow import (
     ModelEndpointType,
     _check_if_api_key_has_access_to_model,
@@ -37,6 +39,16 @@ class WithFixedSizeCache(ModelManagerDecorator):
         self.max_size = max_size
         self._key_queue = deque(self.model_manager.keys())
         self._queue_lock = Lock()
+        self._pinned_models: set = set()
+
+    def pin_model(self, model_id: str) -> None:
+        """Mark a model as pinned so it won't be evicted by the LRU cache.
+
+        Pinned models (typically preloaded models) are protected from eviction
+        when the cache is full or under memory pressure.
+        """
+        self._pinned_models.add(model_id)
+        logger.debug(f"Model '{model_id}' pinned — will not be evicted from cache.")
 
     def add_model(
         self,
@@ -69,6 +81,9 @@ class WithFixedSizeCache(ModelManagerDecorator):
         queue_id = self._resolve_queue_id(
             model_id=model_id, model_id_alias=model_id_alias
         )
+        ids_collector = request_model_ids.get(None)
+        if ids_collector is not None:
+            ids_collector.add(queue_id)
         if queue_id in self:
             logger.debug(
                 f"Detected {queue_id} in WithFixedSizeCache models queue -> marking as most recently used."
@@ -88,7 +103,9 @@ class WithFixedSizeCache(ModelManagerDecorator):
                 len(self) >= self.max_size
                 or (MEMORY_FREE_THRESHOLD and self.memory_pressure_detected())
             ):
-                # To prevent flapping around the threshold, remove 3 models to make some space.
+                # To prevent flapping around the threshold, remove up to 3 models to make some space.
+                evicted_count = 0
+                skipped_pinned = []
                 for _ in range(3):
                     if not self._key_queue:
                         logger.error(
@@ -100,10 +117,23 @@ class WithFixedSizeCache(ModelManagerDecorator):
                         )
                         break
                     to_remove_model_id = self._key_queue.popleft()
+                    if to_remove_model_id in self._pinned_models:
+                        skipped_pinned.append(to_remove_model_id)
+                        continue
                     super().remove(
                         to_remove_model_id, delete_from_disk=DISK_CACHE_CLEANUP
                     )  # LRU model overflow cleanup may or maynot need the weights removed from disk
                     logger.debug(f"Model {to_remove_model_id} successfully unloaded.")
+                    evicted_count += 1
+                # Put pinned models back at the front of the queue
+                for mid in reversed(skipped_pinned):
+                    self._key_queue.appendleft(mid)
+                if evicted_count == 0:
+                    logger.warning(
+                        "Cannot free model cache space — all remaining models are pinned (preloaded). "
+                        "Proceeding with cache exceeding max_size."
+                    )
+                    break
                 gc.collect()
             logger.debug(f"Marking new model {queue_id} as most recently used.")
             self._key_queue.append(queue_id)
@@ -241,6 +271,15 @@ class WithFixedSizeCache(ModelManagerDecorator):
                 return_boolean = (
                     float(free_memory / total_memory) < MEMORY_FREE_THRESHOLD
                 )
+                if return_boolean and USE_INFERENCE_MODELS:
+                    # we only enable this under condition that USE_INFERENCE_MODELS is True
+                    # and we are about to remove a model
+                    # just to make sure we are not flapping around the threshold for no reason
+                    torch.cuda.empty_cache()
+                    free_memory, total_memory = torch.cuda.mem_get_info()
+                    return_boolean = (
+                        float(free_memory / total_memory) < MEMORY_FREE_THRESHOLD
+                    )
                 logger.debug(
                     f"Free memory: {free_memory}, Total memory: {total_memory}, threshold: {MEMORY_FREE_THRESHOLD}, return_boolean: {return_boolean}"
                 )

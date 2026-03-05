@@ -5,12 +5,23 @@ on:
   push:
     branches: [ main ]
   workflow_dispatch:
-
+    inputs:
+      use-inference-models:
+        description: "USE_INFERENCE_MODELS value (or all)"
+        type: choice
+        default: all
+        options:
+          - all
+          - "true"
+          - "false"
 jobs:
   build:
     if: ${{ !github.event.act }}
     runs-on:
       group: group8core
+    strategy:
+      matrix:
+        use-inference-models: ${{ fromJSON((github.event.inputs.use-inference-models || 'all') == 'all'&& '["true","false"]'|| format('["{0}"]', github.event.inputs.use-inference-models)) }}
     timeout-minutes: 60
 
     steps:
@@ -39,8 +50,8 @@ jobs:
           docker push roboflow/roboflow-inference-server-cpu:test
       - name: 🔋 Start Test Docker
         run: |
-          PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-cpu make start_test_docker_cpu
+          USE_INFERENCE_MODELS=${{ matrix.use-inference-models }} PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-cpu make start_test_docker_cpu
       - name: 🧪 Integration Tests of inference server [x86 CPU]
         run: |
-          PORT=9101 SKIP_LMM_TEST=True API_KEY=${{ secrets.API_KEY }} asl_instance_segmentation_API_KEY=${{ secrets.ASL_INSTANCE_SEGMENTATION_API_KEY }} asl_poly_instance_seg_API_KEY=${{ secrets.ASL_POLY_INSTANCE_SEG_API_KEY }} bccd_favz3_API_KEY=${{ secrets.BCCD_FAVZ3_API_KEY }} bccd_i4nym_API_KEY=${{ secrets.BCCD_I4NYM_API_KEY }} cats_and_dogs_smnpl_API_KEY=${{ secrets.CATS_AND_DOGS_SMNPL_API_KEY }} coins_xaz9i_API_KEY=${{ secrets.COINS_XAZ9I_API_KEY }} melee_API_KEY=${{ secrets.MELEE_API_KEY }} yolonas_test_API_KEY=${{ secrets.YOLONAS_TEST_API_KEY }} python -m pytest tests/inference/integration_tests
+          USE_INFERENCE_MODELS=${{ matrix.use-inference-models }} PORT=9101 SKIP_LMM_TEST=True API_KEY=${{ secrets.API_KEY }} asl_instance_segmentation_API_KEY=${{ secrets.ASL_INSTANCE_SEGMENTATION_API_KEY }} asl_poly_instance_seg_API_KEY=${{ secrets.ASL_POLY_INSTANCE_SEG_API_KEY }} bccd_favz3_API_KEY=${{ secrets.BCCD_FAVZ3_API_KEY }} bccd_i4nym_API_KEY=${{ secrets.BCCD_I4NYM_API_KEY }} cats_and_dogs_smnpl_API_KEY=${{ secrets.CATS_AND_DOGS_SMNPL_API_KEY }} coins_xaz9i_API_KEY=${{ secrets.COINS_XAZ9I_API_KEY }} melee_API_KEY=${{ secrets.MELEE_API_KEY }} yolonas_test_API_KEY=${{ secrets.YOLONAS_TEST_API_KEY }} python -m pytest tests/inference/integration_tests
           make stop_test_docker

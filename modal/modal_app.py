@@ -9,6 +9,7 @@ as a dependency for the main inference package.
 from typing import Any, Dict
 import base64
 import hashlib
+import os
 
 import modal
 
@@ -16,15 +17,21 @@ import modal
 app = modal.App("webexec")
 
 
+INFERENCE_VERSION = os.getenv("INFERENCE_VERSION")
+
+
 def get_inference_image():
     """Get the Modal Image for inference."""
-    try:
-        from inference.core.version import __version__
+    if INFERENCE_VERSION:
+        inference_version = f"inference=={INFERENCE_VERSION}"
+    else:
+        try:
+            from inference.core.version import __version__
 
-        inference_version = f"inference=={__version__}"
-    except ImportError:
-        # If we can't import inference (e.g., during deployment), use latest
-        inference_version = "inference"
+            inference_version = f"inference=={__version__}"
+        except ImportError:
+            # If we can't import inference (e.g., during deployment), use latest
+            inference_version = "inference"
 
     # Use the pre-built shared image or create on-the-fly
     image = (

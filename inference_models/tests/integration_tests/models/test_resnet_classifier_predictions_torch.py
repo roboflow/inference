@@ -22,7 +22,7 @@ def test_multi_label_torch_package_numpy(
     )
 
     # when
-    predictions = model(flowers_image_numpy)
+    predictions = model(flowers_image_numpy, confidence=0.5)
 
     # then
     assert torch.allclose(
@@ -49,7 +49,7 @@ def test_multi_label_torch_package_numpy_custom_image_size(
     )
 
     # when
-    predictions = model(flowers_image_numpy, image_size=(100, 100))
+    predictions = model(flowers_image_numpy, image_size=(100, 100), confidence=0.5)
 
     # then
     assert torch.allclose(
@@ -76,7 +76,7 @@ def test_multi_label_torch_package_batch_numpy(
     )
 
     # when
-    predictions = model([flowers_image_numpy, flowers_image_numpy])
+    predictions = model([flowers_image_numpy, flowers_image_numpy], confidence=0.5)
 
     # then
     assert torch.allclose(
@@ -112,7 +112,7 @@ def test_multi_label_torch_package_torch(
     )
 
     # when
-    predictions = model(flowers_image_torch)
+    predictions = model(flowers_image_torch, confidence=0.5)
 
     # then
     assert torch.allclose(
@@ -139,7 +139,10 @@ def test_multi_label_torch_package_batch_torch(
     )
 
     # when
-    predictions = model(torch.stack([flowers_image_torch, flowers_image_torch], dim=0))
+    predictions = model(
+        torch.stack([flowers_image_torch, flowers_image_torch], dim=0),
+        confidence=0.5,
+    )
 
     # then
     assert torch.allclose(
@@ -175,7 +178,7 @@ def test_multi_label_torch_package_batch_torch_list(
     )
 
     # when
-    predictions = model([flowers_image_torch, flowers_image_torch])
+    predictions = model([flowers_image_torch, flowers_image_torch], confidence=0.5)
 
     # then
     assert torch.allclose(
@@ -211,7 +214,7 @@ def test_multi_class_torch_package_numpy(
     )
 
     # when
-    predictions = model(bike_image_numpy)
+    predictions = model(bike_image_numpy, confidence=0.5)
 
     # then
     assert torch.allclose(
@@ -238,7 +241,7 @@ def test_multi_class_torch_package_numpy_custom_image_size(
     )
 
     # when
-    predictions = model(bike_image_numpy, image_size=(100, 100))
+    predictions = model(bike_image_numpy, image_size=(100, 100), confidence=0.5)
 
     # then
     assert torch.allclose(
@@ -265,7 +268,7 @@ def test_multi_class_torch_package_batch_numpy(
     )
 
     # when
-    predictions = model([bike_image_numpy, bike_image_numpy])
+    predictions = model([bike_image_numpy, bike_image_numpy], confidence=0.5)
 
     # then
     assert torch.allclose(
@@ -292,7 +295,7 @@ def test_multi_class_torch_package_torch(
     )
 
     # when
-    predictions = model(bike_image_torch)
+    predictions = model(bike_image_torch, confidence=0.5)
 
     # then
     assert torch.allclose(
@@ -319,7 +322,9 @@ def test_multi_class_torch_package_batch_torch(
     )
 
     # when
-    predictions = model(torch.stack([bike_image_torch, bike_image_torch], dim=0))
+    predictions = model(
+        torch.stack([bike_image_torch, bike_image_torch], dim=0), confidence=0.5
+    )
 
     # then
     assert torch.allclose(
@@ -346,7 +351,7 @@ def test_multi_class_torch_package_batch_torch_list(
     )
 
     # when
-    predictions = model([bike_image_torch, bike_image_torch])
+    predictions = model([bike_image_torch, bike_image_torch], confidence=0.5)
 
     # then
     assert torch.allclose(

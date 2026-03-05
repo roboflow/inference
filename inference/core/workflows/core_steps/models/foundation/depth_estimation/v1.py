@@ -1,8 +1,14 @@
 from typing import List, Literal, Optional, Type, Union
 
+import numpy as np
 from pydantic import ConfigDict, Field
 
 from inference.core.entities.requests.inference import DepthEstimationRequest
+from inference.core.env import (
+    HOSTED_CORE_MODEL_URL,
+    LOCAL_INFERENCE_API_URL,
+    WORKFLOWS_REMOTE_API_TARGET,
+)
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.execution_engine.entities.base import (
@@ -24,6 +30,7 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
+from inference_sdk import InferenceHTTPClient
 
 
 class BlockManifest(WorkflowBlockManifest):
@@ -138,13 +145,56 @@ class DepthEstimationBlockV1(WorkflowBlock):
                 model_version=model_version,
             )
         elif self._step_execution_mode == StepExecutionMode.REMOTE:
-            raise NotImplementedError(
-                "Remote execution is not supported for Depth Estimation. Please use a local or dedicated inference server."
+            return self.run_remotely(
+                images=images,
+                model_version=model_version,
             )
         else:
             raise ValueError(
                 f"Unknown step execution mode: {self._step_execution_mode}"
             )
+
+    def run_remotely(
+        self,
+        images: Batch[WorkflowImageData],
+        model_version: str = "depth-anything-v3/small",
+    ) -> BlockResult:
+        api_url = (
+            LOCAL_INFERENCE_API_URL
+            if WORKFLOWS_REMOTE_API_TARGET != "hosted"
+            else HOSTED_CORE_MODEL_URL
+        )
+        client = InferenceHTTPClient(
+            api_url=api_url,
+            api_key=self._api_key,
+        )
+        if WORKFLOWS_REMOTE_API_TARGET == "hosted":
+            client.select_api_v0()
+
+        predictions = []
+        for single_image in images:
+            result = client.depth_estimation(
+                inference_input=single_image.base64_image,
+                model_id=model_version,
+            )
+            # Convert the result back to the expected format
+            # Remote returns: {"normalized_depth": [...], "image": hex_string}
+            image_output = WorkflowImageData.copy_and_replace(
+                origin_image_data=single_image,
+                base64_image=result.get("image", ""),
+            )
+
+            normalized_depth = np.array(result.get("normalized_depth", []))
+
+            # Return in the same format as local execution expects
+            predictions.append(
+                {
+                    "image": image_output,
+                    "normalized_depth": normalized_depth,
+                }
+            )
+
+        return predictions
 
     def run_locally(
         self,

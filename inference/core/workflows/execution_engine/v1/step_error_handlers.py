@@ -7,6 +7,7 @@ from inference.core.exceptions import (
     RoboflowAPINotNotFoundError,
 )
 from inference.core.workflows.errors import ClientCausedStepExecutionError
+from inference_models.errors import ModelNotFoundError, UnauthorizedModelAccessError
 from inference_sdk.http.errors import HTTPCallErrorError
 
 
@@ -33,7 +34,7 @@ def extended_roboflow_errors_handler(step_name: str, error: Exception) -> None:
             context="workflow_execution | step_execution",
             inner_error=error,
         ) from error
-    if isinstance(error, RoboflowAPINotAuthorizedError):
+    if isinstance(error, (RoboflowAPINotAuthorizedError, UnauthorizedModelAccessError)):
         raise ClientCausedStepExecutionError(
             block_id=step_name,
             status_code=401,
@@ -51,7 +52,7 @@ def extended_roboflow_errors_handler(step_name: str, error: Exception) -> None:
             context="workflow_execution | step_execution",
             inner_error=error,
         ) from error
-    if isinstance(error, RoboflowAPINotNotFoundError):
+    if isinstance(error, (RoboflowAPINotNotFoundError, ModelNotFoundError)):
         raise ClientCausedStepExecutionError(
             block_id=step_name,
             status_code=404,

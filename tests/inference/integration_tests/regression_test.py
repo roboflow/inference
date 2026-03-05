@@ -5,7 +5,7 @@ import time
 from copy import deepcopy
 from io import BytesIO
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Optional
 
 import pytest
 import requests
@@ -199,7 +199,8 @@ def compare_prediction_response(
         )
 
 
-with open(os.path.join(Path(__file__).resolve().parent, "tests.json"), "r") as f:
+TESTS_FILE = "tests.json" if os.getenv("USE_INFERENCE_MODELS", "false").lower() != "true" else "tests_inference_models.json"
+with open(os.path.join(Path(__file__).resolve().parent, TESTS_FILE), "r") as f:
     TESTS = json.load(f)
 
 INFER_RESPONSE_FUNCTIONS = [

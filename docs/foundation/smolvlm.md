@@ -4,6 +4,13 @@ You can use SmolVLM2 for a range of multimodal tasks, including VQA, document OC
 
 You can deploy SmolVLM2 with Inference.
 
+### Execution Modes
+
+SmolVLM2 supports both local and remote execution modes when used in workflows:
+
+- **Local execution**: The model runs directly on your inference server (GPU recommended)
+- **Remote execution**: The model can be invoked via HTTP API on a remote inference server using the `infer_lmm()` client method
+
 ### Installation
 
 To install inference with the extra dependencies necessary to run SmolVLM2, run

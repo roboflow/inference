@@ -3,22 +3,25 @@ from typing import Any, Dict, List, Optional, Union
 import numpy as np
 import torch
 
-from inference_models.errors import MissingDependencyError, ModelRuntimeError
+from inference_models.errors import (
+    MissingDependencyError,
+    ModelInputError,
+    ModelRuntimeError,
+)
 
 try:
     import onnxruntime
 except ImportError as import_error:
     raise MissingDependencyError(
-        message=f"Could not import onnx tools required to run models with ONNX backend - this error means that some additional "
-        f"dependencies are not installed in the environment. If you run the `inference-models` library directly in your "
-        f"Python program, make sure the following extras of the package are installed: \n"
-        f"\t* `onnx-cpu` - when you wish to use library with CPU support only\n"
-        f"\t* `onnx-cu12` - for running on GPU with Cuda 12 installed\n"
-        f"\t* `onnx-cu118` - for running on GPU with Cuda 11.8 installed\n"
-        f"\t* `onnx-jp6-cu126` - for running on Jetson with Jetpack 6\n"
-        f"If you see this error using Roboflow infrastructure, make sure the service you use does support the model. "
-        f"You can also contact Roboflow to get support.",
-        help_url="https://todo",
+        message="Running model with ONNX backend requires onnxruntime installation, which is brought with "
+        "`onnx-*` extras of `inference-models` library. If you see this error running locally, "
+        "please follow our installation guide: https://inference-models.roboflow.com/getting-started/installation/"
+        " If you see this error using Roboflow infrastructure, make sure the service you use does support the "
+        f"model, You can also contact Roboflow to get support."
+        "Additionally - if AutoModel.from_pretrained(...) "
+        f"automatically selects model package which does not match your environment - that's a serious problem and "
+        f"we will really appreciate letting us know - https://github.com/roboflow/inference/issues",
+        help_url="https://inference-models.roboflow.com/errors/runtime-environment/#missingdependencyerror",
     ) from import_error
 
 
@@ -270,12 +273,12 @@ def run_onnx_session_with_batch_size_limit(
     for input_tensor in inputs.values():
         input_batch_sizes.add(input_tensor.shape[0])
     if len(input_batch_sizes) != 1:
-        raise ModelRuntimeError(
+        raise ModelInputError(
             message="When running forward pass through ONNX model detected inputs with different batch sizes. "
             "This is the error with the model you run. If the model was trained or exported "
             "on Roboflow platform - contact us to get help. Otherwise, verify your model package or "
             "implementation of the model class.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
         )
     input_batch_size = input_batch_sizes.pop()
     if min_batch_size is None and input_batch_size <= max_batch_size:
@@ -429,8 +432,17 @@ def run_onnx_session_via_iobinding(
         from inference_models.models.common.cuda import use_primary_cuda_context
     except ImportError as import_error:
         raise MissingDependencyError(
-            message="TODO", help_url="https://todo"
+            message="Running model with ONNX backend on GPU requires pycuda installation, which is brought with "
+            "`onnx-*` extras of `inference-models` library. If you see this error running locally, "
+            "please follow our installation guide: https://inference-models.roboflow.com/getting-started/installation/"
+            " If you see this error using Roboflow infrastructure, make sure the service you use does support the "
+            f"model, You can also contact Roboflow to get support."
+            "Additionally - if AutoModel.from_pretrained(...) "
+            f"automatically selects model package which does not match your environment - that's a serious problem and "
+            f"we will really appreciate letting us know - https://github.com/roboflow/inference/issues",
+            help_url="https://inference-models.roboflow.com/errors/runtime-environment/#missingdependencyerror",
         ) from import_error
+
     cuda.init()
     cuda_device = cuda.Device(device.index or 0)
     with use_primary_cuda_context(cuda_device=cuda_device):
@@ -528,7 +540,7 @@ def auto_cast_session_inputs(
                 message="While performing forward pass through the model, library bug was discovered - "
                 f"required model input named '{ort_input.name}' is missing. Submit "
                 f"issue to help us solving this problem: https://github.com/roboflow/inference/issues",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
             )
         actual_type = inputs[ort_input.name].dtype
         if actual_type == expected_type:
@@ -539,7 +551,7 @@ def auto_cast_session_inputs(
                 f"model requires the input type to be {expected_type}, but the actual input type is {actual_type} - "
                 f"this is a bug in model implementation. Submit issue to help us solving this problem: "
                 f"https://github.com/roboflow/inference/issues",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
             )
         inputs[ort_input.name] = inputs[ort_input.name].to(dtype=expected_type)
     return inputs
@@ -552,7 +564,7 @@ def torch_tensor_type_to_onnx_type(tensor_dtype: torch.dtype) -> Union[np.dtype,
             f"which needs to be passed to onnxruntime session. Conversion of this type is currently not "
             f"supported in inference. At the moment you shall assume your model incompatible with the library. "
             f"To change that state - please submit new issue: https://github.com/roboflow/inference/issues",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
         )
     return TORCH_TYPES_MAPPING[tensor_dtype]
 
@@ -564,7 +576,7 @@ def ort_tensor_type_to_torch_tensor_type(ort_dtype: str) -> torch.dtype:
             f"which needs to be casted into torch.Tensor. Conversion of this type is currently not "
             f"supported in inference. At the moment you shall assume your model incompatible with the library. "
             f"To change that state - please submit new issue: https://github.com/roboflow/inference/issues",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
         )
     return ORT_TYPES_TO_TORCH_TYPES_MAPPING[ort_dtype]
 
@@ -591,12 +603,12 @@ def get_input_device(inputs: Dict[str, torch.Tensor]) -> torch.device:
                 f"is allocated on {input_tensor.device}, whereas rest of the inputs are allocated on {device}. "
                 f"This is a bug in model implementation. To help us fixing that, please submit new issue: "
                 f"https://github.com/roboflow/inference/issues",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
             )
     if device is None:
         raise ModelRuntimeError(
             message="No inputs detected for the model. Raise new issue to help us fixing the problem: "
             "https://github.com/roboflow/inference/issues",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
         )
     return device

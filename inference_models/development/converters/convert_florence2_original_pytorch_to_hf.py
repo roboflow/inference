@@ -16,7 +16,6 @@ import argparse
 from collections import OrderedDict
 
 import torch
-
 from transformers import (
     AddedToken,
     AutoConfig,

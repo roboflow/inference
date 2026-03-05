@@ -18,6 +18,15 @@ You can use Inference for all the Florence-2 tasks above.
 
 The text in the parentheses are the task prompts you will need to use each task.
 
+### Execution Modes
+
+Florence-2 supports both local and remote execution modes when used in workflows:
+
+- **Local execution**: The model runs directly on your inference server (GPU recommended)
+- **Remote execution**: The model can be invoked via HTTP API on a remote inference server
+
+When using Florence-2 in a workflow, you can specify the execution mode to control where inference happens.
+
 ### How to Use Florence-2
 
 ??? Note "Install `inference`"

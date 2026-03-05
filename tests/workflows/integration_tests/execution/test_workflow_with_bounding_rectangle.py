@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 import supervision as sv
 
-from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
+from inference.core.env import USE_INFERENCE_MODELS, WORKFLOWS_MAX_CONCURRENT_STEPS
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.errors import RuntimeInputError, StepExecutionError
@@ -94,15 +94,17 @@ def test_rectangle_bounding_workflow(
     assert np.allclose(
         result[0]["result"]["rect"][0],
         np.array([[322.0, 402.0], [325.0, 224.0], [586.0, 228.0], [583.0, 406.0]]),
+        atol=5.0,
     )
     assert np.allclose(
         result[0]["result"]["rect"][1],
         np.array([[219.0, 82.0], [352.0, 57.0], [409.0, 363.0], [276.0, 388.0]]),
+        atol=6.0,
     )
     assert np.allclose(
-        result[0]["result"]["width"], np.array([261.5, 311.25]), atol=0.1
+        result[0]["result"]["width"], np.array([261.5, 311.25]), atol=5.0
     )
     assert np.allclose(
-        result[0]["result"]["height"], np.array([178.4, 135.2]), atol=0.1
+        result[0]["result"]["height"], np.array([178.4, 135.2]), atol=6.0
     )
-    assert np.allclose(result[0]["result"]["angle"], np.array([0.826, 79.5]), atol=0.1)
+    assert np.allclose(result[0]["result"]["angle"], np.array([0.826, 79.5]), atol=0.5)

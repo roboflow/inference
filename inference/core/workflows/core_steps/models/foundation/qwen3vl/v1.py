@@ -5,6 +5,11 @@ import supervision as sv
 from pydantic import ConfigDict, Field
 
 from inference.core.entities.requests.inference import LMMInferenceRequest
+from inference.core.env import (
+    HOSTED_CORE_MODEL_URL,
+    LOCAL_INFERENCE_API_URL,
+    WORKFLOWS_REMOTE_API_TARGET,
+)
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.execution_engine.entities.base import (
@@ -26,6 +31,7 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
+from inference_sdk import InferenceHTTPClient
 
 
 ##########################################################################
@@ -136,13 +142,55 @@ class Qwen3VLBlockV1(WorkflowBlock):
                 system_prompt=system_prompt,
             )
         elif self._step_execution_mode == StepExecutionMode.REMOTE:
-            raise NotImplementedError(
-                "Remote execution is not supported for Qwen3-VL. Please use a local or dedicated inference server."
+            return self.run_remotely(
+                images=images,
+                model_version=model_version,
+                prompt=prompt,
+                system_prompt=system_prompt,
             )
         else:
             raise ValueError(
                 f"Unknown step execution mode: {self._step_execution_mode}"
             )
+
+    def run_remotely(
+        self,
+        images: Batch[WorkflowImageData],
+        model_version: str,
+        prompt: Optional[str],
+        system_prompt: Optional[str],
+    ) -> BlockResult:
+        api_url = (
+            LOCAL_INFERENCE_API_URL
+            if WORKFLOWS_REMOTE_API_TARGET != "hosted"
+            else HOSTED_CORE_MODEL_URL
+        )
+        client = InferenceHTTPClient(
+            api_url=api_url,
+            api_key=self._api_key,
+        )
+        if WORKFLOWS_REMOTE_API_TARGET == "hosted":
+            client.select_api_v0()
+
+        prompt = prompt or "Describe what's in this image."
+        system_prompt = (
+            system_prompt
+            or "You are a Qwen3-VL model that can answer questions about any image."
+        )
+        combined_prompt = prompt + "<system_prompt>" + system_prompt
+
+        predictions = []
+        for image in images:
+            result = client.infer_lmm(
+                inference_input=image.base64_image,
+                model_id=model_version,
+                prompt=combined_prompt,
+                model_id_in_path=True,
+            )
+            response_text = result.get("response", result)
+            predictions.append({"parsed_output": response_text})
+
+        return predictions
 
     def run_locally(
         self,

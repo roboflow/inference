@@ -1,0 +1,7 @@
+numpy
+Pillow
+torch
+pytorch3d
+supervision[assets]
+rerun-sdk[notebook]
+-e ../../../inference  # install inference-development for now

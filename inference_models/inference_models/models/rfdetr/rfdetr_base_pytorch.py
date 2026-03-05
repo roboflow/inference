@@ -66,16 +66,21 @@ class RFDETRBaseConfig(ModelConfig):
     positional_encoding_size: int = 37
 
 
-class RFDETRLargeConfig(RFDETRBaseConfig):
-    encoder: Literal["dinov2_windowed_small", "dinov2_windowed_base"] = (
-        "dinov2_windowed_base"
-    )
-    hidden_dim: int = 384
-    sa_nheads: int = 12
-    ca_nheads: int = 24
-    dec_n_points: int = 4
-    projector_scale: List[Literal["P3", "P4", "P5"]] = ["P3", "P5"]
-    pretrain_weights: Optional[str] = "rf-detr-large.pth"
+class RFDETRLargeConfig(ModelConfig):
+    encoder: Literal["dinov2_windowed_small"] = "dinov2_windowed_small"
+    hidden_dim: int = 256
+    dec_layers: int = 4
+    sa_nheads: int = 8
+    ca_nheads: int = 16
+    dec_n_points: int = 2
+    num_windows: int = 2
+    patch_size: int = 16
+    projector_scale: List[Literal["P4",]] = ["P4"]
+    out_feature_indexes: List[int] = [3, 6, 9, 12]
+    num_classes: int = 90
+    positional_encoding_size: int = 704 // 16
+    pretrain_weights: Optional[str] = "rf-detr-large-2026.pth"
+    resolution: int = 704
 
 
 class RFDETRNanoConfig(RFDETRBaseConfig):
@@ -108,6 +113,42 @@ class RFDETRMediumConfig(RFDETRBaseConfig):
     pretrain_weights: Optional[str] = "rf-detr-medium.pth"
 
 
+class RFDETRXLargeConfig(ModelConfig):
+    encoder: Literal["dinov2_windowed_base"] = "dinov2_windowed_base"
+    hidden_dim: int = 512
+    dec_layers: int = 5
+    sa_nheads: int = 16
+    ca_nheads: int = 32
+    dec_n_points: int = 4
+    num_windows: int = 1
+    patch_size: int = 20
+    projector_scale: List[Literal["P4",]] = ["P4"]
+    out_feature_indexes: List[int] = [3, 6, 9, 12]
+    num_classes: int = 365
+    positional_encoding_size: int = 700 // 20
+    resolution: int = 700
+    pretrain_weights: str = "rf-detr-xlarge.pth"
+    license: str = "PML-1.0"
+
+
+class RFDETR2XLargeConfig(ModelConfig):
+    encoder: Literal["dinov2_windowed_base"] = "dinov2_windowed_base"
+    hidden_dim: int = 512
+    dec_layers: int = 5
+    sa_nheads: int = 16
+    ca_nheads: int = 32
+    dec_n_points: int = 4
+    num_windows: int = 2
+    patch_size: int = 20
+    projector_scale: List[Literal["P4",]] = ["P4"]
+    out_feature_indexes: List[int] = [3, 6, 9, 12]
+    num_classes: int = 365
+    positional_encoding_size: int = 880 // 20
+    resolution: int = 880
+    pretrain_weights: str = "rf-detr-xxlarge.pth"
+    license: str = "PML-1.0"
+
+
 class RFDETRSegPreviewConfig(RFDETRBaseConfig):
     segmentation_head: bool = True
     out_feature_indexes: List[int] = [3, 6, 9, 12]
@@ -119,6 +160,90 @@ class RFDETRSegPreviewConfig(RFDETRBaseConfig):
     num_queries: int = 200
     num_select: int = 200
     pretrain_weights: Optional[str] = "rf-detr-seg-preview.pt"
+    num_classes: int = 90
+
+
+class RFDETRSegNanoConfig(RFDETRBaseConfig):
+    segmentation_head: bool = True
+    out_feature_indexes: List[int] = [3, 6, 9, 12]
+    num_windows: int = 1
+    dec_layers: int = 4
+    patch_size: int = 12
+    resolution: int = 312
+    positional_encoding_size: int = 312 // 12
+    num_queries: int = 100
+    num_select: int = 100
+    pretrain_weights: Optional[str] = "rf-detr-seg-nano.pt"
+    num_classes: int = 90
+
+
+class RFDETRSegSmallConfig(RFDETRBaseConfig):
+    segmentation_head: bool = True
+    out_feature_indexes: List[int] = [3, 6, 9, 12]
+    num_windows: int = 2
+    dec_layers: int = 4
+    patch_size: int = 12
+    resolution: int = 384
+    positional_encoding_size: int = 384 // 12
+    num_queries: int = 100
+    num_select: int = 100
+    pretrain_weights: Optional[str] = "rf-detr-seg-small.pt"
+    num_classes: int = 90
+
+
+class RFDETRSegMediumConfig(RFDETRBaseConfig):
+    segmentation_head: bool = True
+    out_feature_indexes: List[int] = [3, 6, 9, 12]
+    num_windows: int = 2
+    dec_layers: int = 5
+    patch_size: int = 12
+    resolution: int = 432
+    positional_encoding_size: int = 432 // 12
+    num_queries: int = 200
+    num_select: int = 200
+    pretrain_weights: Optional[str] = "rf-detr-seg-medium.pt"
+    num_classes: int = 90
+
+
+class RFDETRSegLargeConfig(RFDETRBaseConfig):
+    segmentation_head: bool = True
+    out_feature_indexes: List[int] = [3, 6, 9, 12]
+    num_windows: int = 2
+    dec_layers: int = 5
+    patch_size: int = 12
+    resolution: int = 504
+    positional_encoding_size: int = 504 // 12
+    num_queries: int = 200
+    num_select: int = 200
+    pretrain_weights: Optional[str] = "rf-detr-seg-large.pt"
+    num_classes: int = 90
+
+
+class RFDETRSegXLargeConfig(RFDETRBaseConfig):
+    segmentation_head: bool = True
+    out_feature_indexes: List[int] = [3, 6, 9, 12]
+    num_windows: int = 2
+    dec_layers: int = 6
+    patch_size: int = 12
+    resolution: int = 624
+    positional_encoding_size: int = 624 // 12
+    num_queries: int = 300
+    num_select: int = 300
+    pretrain_weights: Optional[str] = "rf-detr-seg-xlarge.pt"
+    num_classes: int = 90
+
+
+class RFDETRSeg2XLargeConfig(RFDETRBaseConfig):
+    segmentation_head: bool = True
+    out_feature_indexes: List[int] = [3, 6, 9, 12]
+    num_windows: int = 2
+    dec_layers: int = 6
+    patch_size: int = 12
+    resolution: int = 768
+    positional_encoding_size: int = 768 // 12
+    num_queries: int = 300
+    num_select: int = 300
+    pretrain_weights: Optional[str] = "rf-detr-seg-xxlarge.pt"
     num_classes: int = 90
 
 
