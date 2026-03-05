@@ -107,6 +107,15 @@ def main(
         "image": image_input,
         "dry_run": not send_email,
     }
+    input_names = {inp.get("name") for inp in workflow_definition.get("inputs", [])}
+    if "image_names" in input_names:
+        if image_paths_for_display is not None:
+            image_names_input = [p.name for p in image_paths_for_display]
+        else:
+            image_names_input = (
+                [Path(image_path).name] if image_path else ["image"]
+            )
+        runtime_parameters["image_names"] = image_names_input
     print(
         f"Running workflow: {workflow_name} "
         f"(image → detection → continue_if → email_notification)"
