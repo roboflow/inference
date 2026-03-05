@@ -3,8 +3,7 @@
 Run the workflow: image → detection → continue_if → email_notification.
 
 Workflows are loaded from JSON files in the workflows/ directory by name.
-Both workflows hit ExecutionEngine.init (the problematic one will raise
-ControlFlowDefinitionError during init). Use --workflow to select which file to run.
+Supports single image (--image-path) or batch of images (--image-dir).
 """
 
 import json
@@ -13,7 +12,6 @@ import sys
 from pathlib import Path
 
 import click
-import numpy as np
 
 # Add repo root so we can import inference
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -31,6 +29,7 @@ from inference.models.utils import ROBOFLOW_MODEL_TYPES
 
 
 WORKFLOWS_DIR = Path(__file__).resolve().parent / "workflows"
+IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 
 
 def load_workflow(name: str) -> dict:
@@ -45,29 +44,47 @@ def load_workflow(name: str) -> dict:
         return json.load(f)
 
 
-@click.command()
-@click.option(
-    "--workflow-name",
-    default="workflow_with_workaround",
-    show_default=True,
-    help="Workflow name (filename without .json in workflows/).",
-)
-@click.option(
-    "--image-path",
-    default=None,
-    help="Path or URL to input image. If omitted, a small placeholder image is used.",
-)
-@click.option(
-    "--send-email",
-    is_flag=True,
-    help="Actually send the email. By default dry_run is true (email step runs but does not send).",
-)
-def main(workflow_name: str, image_path: str | None, send_email: bool) -> None:
+def collect_image_paths_from_dir(image_dir: Path) -> list[Path]:
+    """Return sorted list of image file paths in the given directory."""
+    paths = [
+        p for p in image_dir.iterdir()
+        if p.is_file() and p.suffix.lower() in IMAGE_EXTENSIONS
+    ]
+    return sorted(paths, key=lambda p: p.name)
+
+
+def main(
+    workflow_name: str,
+    image_path: str | None,
+    image_dir: str | None,
+    send_email: bool,
+) -> None:
     """Run detection → continue_if → email_notification workflow."""
     if not os.environ.get("ROBOFLOW_API_KEY"):
         click.echo("Warning: ROBOFLOW_API_KEY not set. Detection may fail.", err=True)
 
-    runtime_image, _ = load_image(image_path)
+    image_paths_for_display = None
+    if image_dir is not None:
+        dir_path = Path(image_dir).expanduser().resolve()
+        if not dir_path.is_dir():
+            raise click.BadParameter(f"Not a directory: {dir_path}", param_hint="--image-dir")
+        image_paths = collect_image_paths_from_dir(dir_path)
+        if not image_paths:
+            raise click.BadParameter(f"No image files found in {dir_path}", param_hint="--image-dir")
+        # Pass paths as list; execution engine will load each (batch mode)
+        image_input = [str(p) for p in image_paths]
+        image_paths_for_display = image_paths
+        batch_size = len(image_input)
+        click.echo(f"Batch mode: {batch_size} images from {dir_path}")
+    else:
+        if image_path is None:
+            raise click.UsageError(
+                "Provide either --image-path (single image) or --image-dir (batch of images)."
+            )
+        runtime_image, _ = load_image(image_path)
+        image_input = runtime_image
+        batch_size = 1
+
     workflow_definition = load_workflow(workflow_name)
 
     model_registry = RoboflowModelRegistry(ROBOFLOW_MODEL_TYPES)
@@ -86,21 +103,69 @@ def main(workflow_name: str, image_path: str | None, send_email: bool) -> None:
         max_concurrent_steps=4,
     )
 
-    # dry_run=True: email step runs and returns output but does not send (disable_sink)
     runtime_parameters = {
-        "image": runtime_image,
+        "image": image_input,
         "dry_run": not send_email,
     }
-    print(f"Running workflow: {workflow_name} (image → detection → continue_if → email_notification)")
+    print(
+        f"Running workflow: {workflow_name} "
+        f"(image → detection → continue_if → email_notification)"
+    )
+    if batch_size > 1:
+        print(f"Batch: {batch_size} images.")
     if not send_email:
         print("Email step in dry-run mode (output only, no mail sent). Use --send-email to send.")
     result = engine.run(runtime_parameters=runtime_parameters)
 
     print("\nWorkflow output:")
     for i, out in enumerate(result):
-        print('-' * 100)
-        print(out['detections'].xyxy)
+        print("-" * 100)
+        label = f"batch index {i}"
+        if image_paths_for_display is not None and i < len(image_paths_for_display):
+            label = f"{image_paths_for_display[i].name} ({label})"
+        detections = out["detections"]
+        if hasattr(detections, "xyxy"):
+            n = len(detections.xyxy) if detections.xyxy is not None else 0
+            print(f"  [{label}] {n} detection(s); xyxy: {detections.xyxy}")
+        else:
+            print(f"  [{label}] {detections}")
+
+
+@click.command()
+@click.option(
+    "--workflow-name",
+    default="workflow_with_workaround",
+    show_default=True,
+    help="Workflow name (filename without .json in workflows/).",
+)
+@click.option(
+    "--image-path",
+    default=None,
+    help="Path or URL to a single input image (use --image-dir for batch).",
+)
+@click.option(
+    "--image-dir",
+    default=None,
+    help="Path to directory of images; run workflow on all images in the directory (batch mode).",
+)
+@click.option(
+    "--send-email",
+    is_flag=True,
+    help="Actually send the email. By default dry_run is true (email step runs but does not send).",
+)
+def run(
+    workflow_name: str,
+    image_path: str | None,
+    image_dir: str | None,
+    send_email: bool,
+) -> None:
+    main(
+        workflow_name=workflow_name,
+        image_path=image_path,
+        image_dir=image_dir,
+        send_email=send_email,
+    )
 
 
 if __name__ == "__main__":
-    main()
+    run()
