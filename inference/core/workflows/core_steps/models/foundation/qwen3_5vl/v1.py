@@ -74,9 +74,9 @@ class BlockManifest(WorkflowBlockManifest):
         examples=["What is in this image?"],
     )
     model_version: Union[Selector(kind=[ROBOFLOW_MODEL_ID_KIND]), str] = Field(
-        default="qwen3_5-2b-peft",
+        default="qwen3_5-0.8b",
         description="The Qwen3.5-VL model to be used for inference.",
-        examples=["qwen3_5-2b-peft", "qwen3_5-0.8b-peft"],
+        examples=["qwen3_5-0.8b", "qwen3_5-2b"],
     )
 
     system_prompt: Optional[str] = Field(
