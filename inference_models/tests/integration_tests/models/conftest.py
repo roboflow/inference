@@ -64,6 +64,8 @@ COIN_COUNTING_YOLACT_ONNX_STATIC_BS_LETTERBOX_URL = "https://storage.googleapis.
 COIN_COUNTING_YOLACT_ONNX_STATIC_BS_STATIC_CROP_STRETCH_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolact-static-bs-static-crop-stretch-onnx.zip"
 COIN_COUNTING_YOLACT_ONNX_STATIC_BS_STRETCH_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolact-static-bs-stretch-onnx.zip"
 
+COIN_COUNTING_YOLOLITE_N_ONNX_DYNAMIC_BS_LETTERBOX_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/coin-counting-yololite-n-onnx-dynamic-bs-letterbox.zip"
+
 ASL_YOLOV8N_SEG_ONNX_DYNAMIC_BS_STRETCH_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov8n-seg-onnx-dynamic-bs-stretch.zip"
 ASL_YOLOV8N_SEG_ONNX_DYNAMIC_BS_STRETCH_FUSED_NMS_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov8n-seg-onnx-dynamic-bs-stretch-fused-nms.zip"
 ASL_YOLOV8N_SEG_ONNX_STATIC_BS_STRETCH_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov8n-seg-onnx-static-bs-stretch.zip"
@@ -590,6 +592,14 @@ def coin_counting_yolo_nas_onnx_static_bs_center_crop_package() -> str:
     return download_model_package(
         model_package_zip_url=COIN_COUNTING_YOLO_NAS_ONNX_STATIC_BS_CENTER_CROP_URL,
         package_name="coin-counting-yolo-nas-static-bs-center-crop",
+    )
+
+
+@pytest.fixture(scope="module")
+def coin_counting_yololite_n_onnx_dynamic_bs_letterbox_package() -> str:
+    return download_model_package(
+        model_package_zip_url=COIN_COUNTING_YOLOLITE_N_ONNX_DYNAMIC_BS_LETTERBOX_URL,
+        package_name="coin-counting-yololite-n-onnx-dynamic-bs-letterbox",
     )
 
 
@@ -1436,3 +1446,7 @@ def yolo26n_object_detection_sunflowers_letterbox_torch_script_package() -> str:
         model_package_zip_url=YOLO26N_object_detection_sunflowers_LETTERBOX_TORCH_SCRIPT_URL,
         package_name="yolo26n-object-detection-sunflowers-letterbox-torch-script",
     )
+
+
+
+
