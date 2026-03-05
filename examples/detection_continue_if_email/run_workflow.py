@@ -126,18 +126,14 @@ def main(
         print("Email step in dry-run mode (output only, no mail sent). Use --send-email to send.")
     result = engine.run(runtime_parameters=runtime_parameters)
 
-    print("\nWorkflow output:")
+    print("\nWorkflow output (email subject / output):")
     for i, out in enumerate(result):
         print("-" * 100)
         label = f"batch index {i}"
         if image_paths_for_display is not None and i < len(image_paths_for_display):
             label = f"{image_paths_for_display[i].name} ({label})"
-        detections = out["detections"]
-        if hasattr(detections, "xyxy"):
-            n = len(detections.xyxy) if detections.xyxy is not None else 0
-            print(f"  [{label}] {n} detection(s); xyxy: {detections.xyxy}")
-        else:
-            print(f"  [{label}] {detections}")
+        for key, value in out.items():
+            print(f"  [{label}] {key}: {value}")
 
 
 @click.command()
