@@ -1,3 +1,4 @@
+import threading
 from threading import Lock
 from typing import List, Optional, Tuple, Union
 
@@ -37,9 +38,11 @@ from inference_models.models.common.roboflow.pre_processing import (
     pre_process_network_input,
 )
 from inference_models.models.common.trt import (
+    attach_sync_event,
     get_trt_engine_inputs_and_outputs,
     infer_from_trt_engine,
     load_trt_model,
+    wait_for_sync_event,
 )
 
 try:
@@ -84,7 +87,7 @@ class YOLOv10ForObjectDetectionTRT(
     ) -> "YOLOv10ForObjectDetectionTRT":
         if device.type != "cuda":
             raise ModelRuntimeError(
-                message="TRT engine only runs on CUDA device - {device} device detected.",
+                message=f"TRT engine only runs on CUDA device - {device} device detected.",
                 help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
             )
         model_package_content = get_model_package_contents(
@@ -175,6 +178,7 @@ class YOLOv10ForObjectDetectionTRT(
         self._cuda_context = cuda_context
         self._execution_context = execution_context
         self._session_thread_lock = Lock()
+        self._thread_local_storage = threading.local()
 
     @property
     def class_names(self) -> List[str]:
@@ -184,17 +188,34 @@ class YOLOv10ForObjectDetectionTRT(
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         input_color_format: Optional[ColorFormat] = None,
+        synchronize_outputs: bool = False,
         **kwargs,
     ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
-        return pre_process_network_input(
-            images=images,
-            image_pre_processing=self._inference_config.image_pre_processing,
-            network_input=self._inference_config.network_input,
-            target_device=self._device,
-            input_color_format=input_color_format,
+        with torch.cuda.stream(self._pre_process_stream):
+            pre_processed_images, pre_processing_meta = pre_process_network_input(
+                images=images,
+                image_pre_processing=self._inference_config.image_pre_processing,
+                network_input=self._inference_config.network_input,
+                target_device=self._device,
+                input_color_format=input_color_format,
+            )
+        if synchronize_outputs:
+            self._pre_process_stream.synchronize()
+            return pre_processed_images, pre_processing_meta
+        return (
+            attach_sync_event(
+                tensor=pre_processed_images,
+                stream=self._pre_process_stream,
+            ),
+            pre_processing_meta,
         )
 
-    def forward(self, pre_processed_images: torch.Tensor, **kwargs) -> torch.Tensor:
+    def forward(
+        self,
+        pre_processed_images: torch.Tensor,
+        synchronize_outputs: bool = False,
+        **kwargs,
+    ) -> torch.Tensor:
         with self._session_thread_lock:
             with use_cuda_context(context=self._cuda_context):
                 return infer_from_trt_engine(
@@ -205,6 +226,8 @@ class YOLOv10ForObjectDetectionTRT(
                     device=self._device,
                     input_name=self._input_name,
                     outputs=self._output_names,
+                    stream=self._inference_stream,
+                    synchronize_outputs=synchronize_outputs,
                 )[0]
 
     def post_process(
@@ -215,19 +238,47 @@ class YOLOv10ForObjectDetectionTRT(
         max_detections: int = INFERENCE_MODELS_YOLOV10_DEFAULT_MAX_DETECTIONS,
         **kwargs,
     ) -> List[Detections]:
-        results = []
-        for image_result, metadata in zip(model_results, pre_processing_meta):
-            mask = image_result[:, 4] > confidence
-            filtered = image_result[mask][:max_detections]
-            rescaled = rescale_image_detections(
-                image_detections=filtered,
-                image_metadata=metadata,
-            )
-            results.append(
-                Detections(
-                    xyxy=rescaled[:, :4].round().int(),
-                    class_id=rescaled[:, 5].int(),
-                    confidence=rescaled[:, 4],
+        with torch.cuda.stream(self._post_process_stream):
+            wait_for_sync_event(tensor=model_results, stream=self._post_process_stream)
+            model_results.record_stream(self._post_process_stream)
+            results = []
+            for image_result, metadata in zip(model_results, pre_processing_meta):
+                mask = image_result[:, 4] > confidence
+                filtered = image_result[mask][:max_detections]
+                rescaled = rescale_image_detections(
+                    image_detections=filtered,
+                    image_metadata=metadata,
                 )
-            )
+                results.append(
+                    Detections(
+                        xyxy=rescaled[:, :4].round().int(),
+                        class_id=rescaled[:, 5].int(),
+                        confidence=rescaled[:, 4],
+                    )
+                )
+        self._post_process_stream.synchronize()
         return results
+
+    @property
+    def _pre_process_stream(self) -> torch.cuda.Stream:
+        if not hasattr(self._thread_local_storage, "pre_process_stream"):
+            self._thread_local_storage.pre_process_stream = torch.cuda.Stream(
+                device=self._device
+            )
+        return self._thread_local_storage.pre_process_stream
+
+    @property
+    def _inference_stream(self) -> torch.cuda.Stream:
+        if not hasattr(self._thread_local_storage, "inference_stream"):
+            self._thread_local_storage.inference_stream = torch.cuda.Stream(
+                device=self._device
+            )
+        return self._thread_local_storage.inference_stream
+
+    @property
+    def _post_process_stream(self) -> torch.cuda.Stream:
+        if not hasattr(self._thread_local_storage, "post_process_stream"):
+            self._thread_local_storage.post_process_stream = torch.cuda.Stream(
+                device=self._device
+            )
+        return self._thread_local_storage.post_process_stream

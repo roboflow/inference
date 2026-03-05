@@ -37,9 +37,11 @@ from inference_models.models.common.roboflow.pre_processing import (
     pre_process_network_input,
 )
 from inference_models.models.common.trt import (
+    attach_sync_event,
     get_trt_engine_inputs_and_outputs,
     infer_from_trt_engine,
     load_trt_model,
+    wait_for_sync_event,
 )
 
 try:
@@ -175,6 +177,7 @@ class YOLO26ForObjectDetectionTRT(
         self._cuda_context = cuda_context
         self._execution_context = execution_context
         self._lock = threading.Lock()
+        self._thread_local_storage = threading.local()
 
     @property
     def class_names(self) -> List[str]:
@@ -184,17 +187,34 @@ class YOLO26ForObjectDetectionTRT(
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         input_color_format: Optional[ColorFormat] = None,
+        synchronize_outputs: bool = False,
         **kwargs,
     ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
-        return pre_process_network_input(
-            images=images,
-            image_pre_processing=self._inference_config.image_pre_processing,
-            network_input=self._inference_config.network_input,
-            target_device=self._device,
-            input_color_format=input_color_format,
+        with torch.cuda.stream(self._pre_process_stream):
+            pre_processed_images, pre_processing_meta = pre_process_network_input(
+                images=images,
+                image_pre_processing=self._inference_config.image_pre_processing,
+                network_input=self._inference_config.network_input,
+                target_device=self._device,
+                input_color_format=input_color_format,
+            )
+        if synchronize_outputs:
+            self._pre_process_stream.synchronize()
+            return pre_processed_images, pre_processing_meta
+        return (
+            attach_sync_event(
+                tensor=pre_processed_images,
+                stream=self._pre_process_stream,
+            ),
+            pre_processing_meta,
         )
 
-    def forward(self, pre_processed_images: torch.Tensor, **kwargs) -> torch.Tensor:
+    def forward(
+        self,
+        pre_processed_images: torch.Tensor,
+        synchronize_outputs: bool = False,
+        **kwargs,
+    ) -> torch.Tensor:
         with self._lock:
             with use_cuda_context(context=self._cuda_context):
                 return infer_from_trt_engine(
@@ -205,6 +225,8 @@ class YOLO26ForObjectDetectionTRT(
                     device=self._device,
                     input_name=self._input_name,
                     outputs=self._output_names,
+                    stream=self._inference_stream,
+                    synchronize_outputs=synchronize_outputs,
                 )[0]
 
     def post_process(
@@ -214,20 +236,48 @@ class YOLO26ForObjectDetectionTRT(
         confidence: float = INFERENCE_MODELS_YOLO26_DEFAULT_CONFIDENCE,
         **kwargs,
     ) -> List[Detections]:
-        filtered_results = post_process_nms_fused_model_output(
-            output=model_results, conf_thresh=confidence
-        )
-        rescaled_results = rescale_detections(
-            detections=filtered_results,
-            images_metadata=pre_processing_meta,
-        )
-        results = []
-        for result in rescaled_results:
-            results.append(
-                Detections(
-                    xyxy=result[:, :4].round().int(),
-                    class_id=result[:, 5].int(),
-                    confidence=result[:, 4],
-                )
+        with torch.cuda.stream(self._post_process_stream):
+            wait_for_sync_event(tensor=model_results, stream=self._post_process_stream)
+            model_results.record_stream(self._post_process_stream)
+            filtered_results = post_process_nms_fused_model_output(
+                output=model_results, conf_thresh=confidence
             )
+            rescaled_results = rescale_detections(
+                detections=filtered_results,
+                images_metadata=pre_processing_meta,
+            )
+            results = []
+            for result in rescaled_results:
+                results.append(
+                    Detections(
+                        xyxy=result[:, :4].round().int(),
+                        class_id=result[:, 5].int(),
+                        confidence=result[:, 4],
+                    )
+                )
+        self._post_process_stream.synchronize()
         return results
+
+    @property
+    def _pre_process_stream(self) -> torch.cuda.Stream:
+        if not hasattr(self._thread_local_storage, "pre_process_stream"):
+            self._thread_local_storage.pre_process_stream = torch.cuda.Stream(
+                device=self._device
+            )
+        return self._thread_local_storage.pre_process_stream
+
+    @property
+    def _inference_stream(self) -> torch.cuda.Stream:
+        if not hasattr(self._thread_local_storage, "inference_stream"):
+            self._thread_local_storage.inference_stream = torch.cuda.Stream(
+                device=self._device
+            )
+        return self._thread_local_storage.inference_stream
+
+    @property
+    def _post_process_stream(self) -> torch.cuda.Stream:
+        if not hasattr(self._thread_local_storage, "post_process_stream"):
+            self._thread_local_storage.post_process_stream = torch.cuda.Stream(
+                device=self._device
+            )
+        return self._thread_local_storage.post_process_stream

@@ -1,3 +1,4 @@
+import threading
 from threading import Lock
 from typing import List, Optional, Union
 
@@ -38,9 +39,11 @@ from inference_models.models.common.roboflow.pre_processing import (
     pre_process_network_input,
 )
 from inference_models.models.common.trt import (
+    attach_sync_event,
     get_trt_engine_inputs_and_outputs,
     infer_from_trt_engine,
     load_trt_model,
+    wait_for_sync_event,
 )
 
 try:
@@ -179,6 +182,7 @@ class VITForClassificationTRT(ClassificationModel[torch.Tensor, torch.Tensor]):
         self._cuda_context = cuda_context
         self._execution_context = execution_context
         self._lock = Lock()
+        self._thread_local_storage = threading.local()
 
     @property
     def class_names(self) -> List[str]:
@@ -188,18 +192,30 @@ class VITForClassificationTRT(ClassificationModel[torch.Tensor, torch.Tensor]):
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         input_color_format: Optional[ColorFormat] = None,
+        synchronize_outputs: bool = False,
         **kwargs,
     ) -> torch.Tensor:
-        return pre_process_network_input(
-            images=images,
-            image_pre_processing=self._inference_config.image_pre_processing,
-            network_input=self._inference_config.network_input,
-            target_device=self._device,
-            input_color_format=input_color_format,
-        )[0]
+        with torch.cuda.stream(self._pre_process_stream):
+            pre_processed_images = pre_process_network_input(
+                images=images,
+                image_pre_processing=self._inference_config.image_pre_processing,
+                network_input=self._inference_config.network_input,
+                target_device=self._device,
+                input_color_format=input_color_format,
+            )[0]
+        if synchronize_outputs:
+            self._pre_process_stream.synchronize()
+            return pre_processed_images
+        return attach_sync_event(
+            tensor=pre_processed_images,
+            stream=self._pre_process_stream,
+        )
 
     def forward(
-        self, pre_processed_images: PreprocessedInputs, **kwargs
+        self,
+        pre_processed_images: PreprocessedInputs,
+        synchronize_outputs: bool = False,
+        **kwargs,
     ) -> torch.Tensor:
         with self._lock:
             with use_cuda_context(context=self._cuda_context):
@@ -211,6 +227,8 @@ class VITForClassificationTRT(ClassificationModel[torch.Tensor, torch.Tensor]):
                     device=self._device,
                     input_name=self._input_name,
                     outputs=self._output_names,
+                    stream=self._inference_stream,
+                    synchronize_outputs=synchronize_outputs,
                 )[0]
 
     def post_process(
@@ -218,14 +236,43 @@ class VITForClassificationTRT(ClassificationModel[torch.Tensor, torch.Tensor]):
         model_results: torch.Tensor,
         **kwargs,
     ) -> ClassificationPrediction:
-        if self._inference_config.post_processing.fused:
-            confidence = model_results
-        else:
-            confidence = torch.nn.functional.softmax(model_results, dim=-1)
-        return ClassificationPrediction(
-            class_id=confidence.argmax(dim=-1),
-            confidence=confidence,
-        )
+        with torch.cuda.stream(self._post_process_stream):
+            wait_for_sync_event(tensor=model_results, stream=self._post_process_stream)
+            model_results.record_stream(self._post_process_stream)
+            if self._inference_config.post_processing.fused:
+                confidence = model_results
+            else:
+                confidence = torch.nn.functional.softmax(model_results, dim=-1)
+            results = ClassificationPrediction(
+                class_id=confidence.argmax(dim=-1),
+                confidence=confidence,
+            )
+        self._post_process_stream.synchronize()
+        return results
+
+    @property
+    def _pre_process_stream(self) -> torch.cuda.Stream:
+        if not hasattr(self._thread_local_storage, "pre_process_stream"):
+            self._thread_local_storage.pre_process_stream = torch.cuda.Stream(
+                device=self._device
+            )
+        return self._thread_local_storage.pre_process_stream
+
+    @property
+    def _inference_stream(self) -> torch.cuda.Stream:
+        if not hasattr(self._thread_local_storage, "inference_stream"):
+            self._thread_local_storage.inference_stream = torch.cuda.Stream(
+                device=self._device
+            )
+        return self._thread_local_storage.inference_stream
+
+    @property
+    def _post_process_stream(self) -> torch.cuda.Stream:
+        if not hasattr(self._thread_local_storage, "post_process_stream"):
+            self._thread_local_storage.post_process_stream = torch.cuda.Stream(
+                device=self._device
+            )
+        return self._thread_local_storage.post_process_stream
 
 
 class VITForMultiLabelClassificationTRT(
@@ -338,6 +385,7 @@ class VITForMultiLabelClassificationTRT(
         self._cuda_context = cuda_context
         self._execution_context = execution_context
         self._lock = Lock()
+        self._thread_local_storage = threading.local()
 
     @property
     def class_names(self) -> List[str]:
@@ -347,18 +395,30 @@ class VITForMultiLabelClassificationTRT(
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         input_color_format: Optional[ColorFormat] = None,
+        synchronize_outputs: bool = False,
         **kwargs,
     ) -> torch.Tensor:
-        return pre_process_network_input(
-            images=images,
-            image_pre_processing=self._inference_config.image_pre_processing,
-            network_input=self._inference_config.network_input,
-            target_device=self._device,
-            input_color_format=input_color_format,
-        )[0]
+        with torch.cuda.stream(self._pre_process_stream):
+            pre_processed_images = pre_process_network_input(
+                images=images,
+                image_pre_processing=self._inference_config.image_pre_processing,
+                network_input=self._inference_config.network_input,
+                target_device=self._device,
+                input_color_format=input_color_format,
+            )[0]
+        if synchronize_outputs:
+            self._pre_process_stream.synchronize()
+            return pre_processed_images
+        return attach_sync_event(
+            tensor=pre_processed_images,
+            stream=self._pre_process_stream,
+        )
 
     def forward(
-        self, pre_processed_images: PreprocessedInputs, **kwargs
+        self,
+        pre_processed_images: PreprocessedInputs,
+        synchronize_outputs: bool = False,
+        **kwargs,
     ) -> torch.Tensor:
         with self._lock:
             with use_cuda_context(context=self._cuda_context):
@@ -370,6 +430,8 @@ class VITForMultiLabelClassificationTRT(
                     device=self._device,
                     input_name=self._input_name,
                     outputs=self._output_names,
+                    stream=self._inference_stream,
+                    synchronize_outputs=synchronize_outputs,
                 )[0]
 
     def post_process(
@@ -378,19 +440,47 @@ class VITForMultiLabelClassificationTRT(
         confidence: float = INFERENCE_MODELS_VIT_CLASSIFIER_DEFAULT_CONFIDENCE,
         **kwargs,
     ) -> List[MultiLabelClassificationPrediction]:
-        if self._inference_config.post_processing.fused:
-            model_results = model_results
-        else:
-            model_results = torch.nn.functional.sigmoid(model_results)
-        results = []
-        for batch_element_confidence in model_results:
-            predicted_classes = torch.argwhere(
-                batch_element_confidence >= confidence
-            ).squeeze(dim=-1)
-            results.append(
-                MultiLabelClassificationPrediction(
-                    class_ids=predicted_classes,
-                    confidence=batch_element_confidence,
+        with torch.cuda.stream(self._post_process_stream):
+            wait_for_sync_event(tensor=model_results, stream=self._post_process_stream)
+            model_results.record_stream(self._post_process_stream)
+            if self._inference_config.post_processing.fused:
+                model_results = model_results
+            else:
+                model_results = torch.nn.functional.sigmoid(model_results)
+            results = []
+            for batch_element_confidence in model_results:
+                predicted_classes = torch.argwhere(
+                    batch_element_confidence >= confidence
+                ).squeeze(dim=-1)
+                results.append(
+                    MultiLabelClassificationPrediction(
+                        class_ids=predicted_classes,
+                        confidence=batch_element_confidence,
+                    )
                 )
-            )
+        self._post_process_stream.synchronize()
         return results
+
+    @property
+    def _pre_process_stream(self) -> torch.cuda.Stream:
+        if not hasattr(self._thread_local_storage, "pre_process_stream"):
+            self._thread_local_storage.pre_process_stream = torch.cuda.Stream(
+                device=self._device
+            )
+        return self._thread_local_storage.pre_process_stream
+
+    @property
+    def _inference_stream(self) -> torch.cuda.Stream:
+        if not hasattr(self._thread_local_storage, "inference_stream"):
+            self._thread_local_storage.inference_stream = torch.cuda.Stream(
+                device=self._device
+            )
+        return self._thread_local_storage.inference_stream
+
+    @property
+    def _post_process_stream(self) -> torch.cuda.Stream:
+        if not hasattr(self._thread_local_storage, "post_process_stream"):
+            self._thread_local_storage.post_process_stream = torch.cuda.Stream(
+                device=self._device
+            )
+        return self._thread_local_storage.post_process_stream
