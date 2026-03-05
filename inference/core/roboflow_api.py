@@ -1035,12 +1035,21 @@ def send_inference_results_to_model_monitoring(
     api_key_safe_raise_for_status(response=response)
 
 
-def get_extra_weights_provider_headers() -> Optional[Dict[str, str]]:
+def get_extra_weights_provider_headers(
+    countinference: Optional[bool] = None,
+    service_secret: Optional[str] = None,
+) -> Optional[Dict[str, str]]:
     headers = {}
     if GCP_SERVERLESS:
         headers[ENFORCE_INTERNAL_ARTIFACTS_URLS_HEADER] = "true"
     if ENFORCE_CREDITS_VERIFICATION:
-        headers[ENFORCE_CREDITS_VERIFICATION_HEADER] = "true"
+        skip = (
+            countinference is False
+            and service_secret is not None
+            and service_secret == ROBOFLOW_SERVICE_SECRET
+        )
+        if not skip:
+            headers[ENFORCE_CREDITS_VERIFICATION_HEADER] = "true"
     return build_roboflow_api_headers(explicit_headers=headers)
 
 
