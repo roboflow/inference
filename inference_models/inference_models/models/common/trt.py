@@ -1,4 +1,4 @@
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 import torch
 
@@ -52,9 +52,9 @@ class InferenceTRTLogger(trt.ILogger):
         severity_str = str(severity)
         if severity_str == str(trt.Logger.VERBOSE):
             log_function = LOGGER.debug
-        elif severity_str is str(trt.Logger.INFO):
+        elif severity_str == str(trt.Logger.INFO):
             log_function = LOGGER.info
-        elif severity_str is str(trt.Logger.WARNING):
+        elif severity_str == str(trt.Logger.WARNING):
             log_function = LOGGER.warning
         else:
             log_function = LOGGER.error
@@ -126,6 +126,26 @@ def get_trt_engine_inputs_and_outputs(
     return inputs, outputs
 
 
+def attach_sync_event(
+    tensor: torch.Tensor,
+    stream: torch.cuda.Stream,
+) -> torch.Tensor:
+    inference_models_sync_event = stream.record_event()
+    tensor._inference_models_sync_event = inference_models_sync_event
+    return tensor
+
+
+def wait_for_sync_event(
+    tensor: torch.Tensor,
+    stream: torch.cuda.Stream,
+) -> None:
+    event = getattr(tensor, "_inference_models_sync_event", None)
+    if event is not None:
+        stream.wait_event(event)
+        del tensor._inference_models_sync_event
+    return None
+
+
 def infer_from_trt_engine(
     pre_processed_images: torch.Tensor,
     trt_config: TRTConfig,
@@ -134,6 +154,8 @@ def infer_from_trt_engine(
     device: torch.device,
     input_name: str,
     outputs: List[str],
+    stream: Optional[torch.cuda.Stream] = None,
+    synchronize_outputs: bool = False,
 ) -> List[torch.Tensor]:
     """Run inference using a TensorRT engine.
 
@@ -157,6 +179,10 @@ def infer_from_trt_engine(
         input_name: Name of the input tensor in the TensorRT engine.
 
         outputs: List of output tensor names to retrieve from the engine.
+
+        stream: CUDA stream to use for inference.
+
+        synchronize_outputs: Flag to decide if cuda stream synchronization should be called at the end
 
     Returns:
         List of output tensors from the TensorRT engine, in the order specified
@@ -226,8 +252,39 @@ def infer_from_trt_engine(
         - `load_trt_model()`: Load TensorRT engine from file
         - `get_trt_engine_inputs_and_outputs()`: Get engine tensor names
     """
+    if stream is None:
+        stream = torch.cuda.current_stream(device)
+    with torch.cuda.stream(stream):
+        wait_for_sync_event(tensor=pre_processed_images, stream=stream)
+        pre_processed_images.record_stream(stream)
+        results = _infer_from_trt_engine(
+            pre_processed_images=pre_processed_images,
+            trt_config=trt_config,
+            engine=engine,
+            context=context,
+            device=device,
+            input_name=input_name,
+            outputs=outputs,
+        )
+        if synchronize_outputs:
+            stream.synchronize()
+        else:
+            for result in results:
+                attach_sync_event(tensor=result, stream=stream)
+        return results
+
+
+def _infer_from_trt_engine(
+    pre_processed_images: torch.Tensor,
+    trt_config: TRTConfig,
+    engine: trt.ICudaEngine,
+    context: trt.IExecutionContext,
+    device: torch.device,
+    input_name: str,
+    outputs: List[str],
+) -> List[torch.Tensor]:
     if trt_config.static_batch_size is not None:
-        return infer_from_trt_engine_with_batch_size_boundaries(
+        return _infer_from_trt_engine_with_batch_size_boundaries(
             pre_processed_images=pre_processed_images,
             engine=engine,
             context=context,
@@ -237,7 +294,7 @@ def infer_from_trt_engine(
             min_batch_size=trt_config.static_batch_size,
             max_batch_size=trt_config.static_batch_size,
         )
-    return infer_from_trt_engine_with_batch_size_boundaries(
+    return _infer_from_trt_engine_with_batch_size_boundaries(
         pre_processed_images=pre_processed_images,
         engine=engine,
         context=context,
@@ -249,7 +306,7 @@ def infer_from_trt_engine(
     )
 
 
-def infer_from_trt_engine_with_batch_size_boundaries(
+def _infer_from_trt_engine_with_batch_size_boundaries(
     pre_processed_images: torch.Tensor,
     engine: trt.ICudaEngine,
     context: trt.IExecutionContext,
@@ -273,7 +330,7 @@ def infer_from_trt_engine_with_batch_size_boundaries(
                 ),
                 dim=0,
             )
-        results = execute_trt_engine(
+        results = _execute_trt_engine(
             pre_processed_images=pre_processed_images,
             engine=engine,
             context=context,
@@ -302,7 +359,7 @@ def infer_from_trt_engine_with_batch_size_boundaries(
                 ),
                 dim=0,
             )
-        results = execute_trt_engine(
+        results = _execute_trt_engine(
             pre_processed_images=batch,
             engine=engine,
             context=context,
@@ -317,7 +374,7 @@ def infer_from_trt_engine_with_batch_size_boundaries(
     return [torch.cat(e, dim=0).contiguous() for e in all_results]
 
 
-def execute_trt_engine(
+def _execute_trt_engine(
     pre_processed_images: torch.Tensor,
     engine: trt.ICudaEngine,
     context: trt.IExecutionContext,
@@ -329,7 +386,7 @@ def execute_trt_engine(
     results = []
     for output in outputs:
         output_tensor_shape = engine.get_tensor_shape(output)
-        output_tensor_type = trt_dtype_to_torch(engine.get_tensor_dtype(output))
+        output_tensor_type = _trt_dtype_to_torch(engine.get_tensor_dtype(output))
         result = torch.empty(
             (batch_size,) + output_tensor_shape[1:],
             dtype=output_tensor_type,
@@ -349,19 +406,17 @@ def execute_trt_engine(
             message="Failed to set input tensor data pointer during forward pass from the model.",
             help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
         )
-    stream = torch.cuda.Stream(device=device)
-    stream.wait_stream(torch.cuda.current_stream(device))
+    stream = torch.cuda.current_stream(device)
     status = context.execute_async_v3(stream_handle=stream.cuda_stream)
     if not status:
         raise ModelRuntimeError(
             message="Failed to complete inference from TRT model",
             help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
         )
-    stream.synchronize()
     return results
 
 
-def trt_dtype_to_torch(trt_dtype):
+def _trt_dtype_to_torch(trt_dtype):
     return {
         trt.DataType.FLOAT: torch.float32,
         trt.DataType.HALF: torch.float16,
