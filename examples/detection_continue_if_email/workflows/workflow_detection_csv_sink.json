@@ -1,0 +1,69 @@
+{
+  "version": "1.0",
+  "inputs": [
+    {"type": "WorkflowImage", "name": "image"},
+    {"type": "WorkflowParameter", "name": "dry_run"},
+    {"type": "WorkflowParameter", "name": "output_directory", "default_value": "detection_logs"}
+  ],
+  "steps": [
+    {
+      "type": "RoboflowObjectDetectionModel",
+      "name": "detection",
+      "image": "$inputs.image",
+      "model_id": "yolov8n-640",
+      "class_filter": ["person"]
+    },
+    {
+      "type": "ContinueIf",
+      "name": "continue_if",
+      "condition_statement": {
+        "type": "StatementGroup",
+        "statements": [
+          {
+            "type": "BinaryStatement",
+            "left_operand": {
+              "type": "DynamicOperand",
+              "operand_name": "prediction",
+              "operations": [{"type": "SequenceLength"}]
+            },
+            "comparator": {"type": "(Number) >="},
+            "right_operand": {
+              "type": "StaticOperand",
+              "value": 1
+            }
+          }
+        ]
+      },
+      "evaluation_parameters": {"prediction": "$steps.detection.predictions"},
+      "next_steps": ["$steps.csv_formatter", "$steps.local_file_sink"]
+    },
+    {
+      "type": "roboflow_core/csv_formatter@v1",
+      "name": "csv_formatter",
+      "columns_data": {
+        "num_detections": "$steps.detection.predictions",
+        "has_detections": "$steps.detection.predictions"
+      },
+      "columns_operations": {
+        "num_detections": [{"type": "SequenceLength"}],
+        "has_detections": [{"type": "SequenceLength"}, {"type": "ToBoolean"}]
+      }
+    },
+    {
+      "type": "roboflow_core/local_file_sink@v1",
+      "name": "local_file_sink",
+      "content": "$steps.csv_formatter.csv_content",
+      "file_type": "csv",
+      "output_mode": "separate_files",
+      "target_directory": "$inputs.output_directory",
+      "file_name_prefix": "detection_log"
+    }
+  ],
+  "outputs": [
+    {
+      "type": "JsonField",
+      "name": "save_message",
+      "selector": "$steps.local_file_sink.message"
+    }
+  ]
+}
