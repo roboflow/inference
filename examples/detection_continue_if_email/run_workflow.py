@@ -67,7 +67,7 @@ def main(workflow_name: str, image_path: str | None, send_email: bool) -> None:
     if not os.environ.get("ROBOFLOW_API_KEY"):
         click.echo("Warning: ROBOFLOW_API_KEY not set. Detection may fail.", err=True)
 
-    runtime_image = load_image(image_path)
+    runtime_image, _ = load_image(image_path)
     workflow_definition = load_workflow(workflow_name)
 
     model_registry = RoboflowModelRegistry(ROBOFLOW_MODEL_TYPES)
@@ -98,12 +98,8 @@ def main(workflow_name: str, image_path: str | None, send_email: bool) -> None:
 
     print("\nWorkflow output:")
     for i, out in enumerate(result):
-        print(f"  Output[{i}]: keys = {list(out.keys())}")
-        if "detections" in out:
-            preds = out["detections"]
-            n = len(preds) if isinstance(preds, list) else 0
-            print(f"    detections: {n} prediction(s)")
-    print("Done.")
+        print('-' * 100)
+        print(out['detections'].xyxy)
 
 
 if __name__ == "__main__":

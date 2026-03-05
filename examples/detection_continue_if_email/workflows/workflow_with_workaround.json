@@ -2,7 +2,7 @@
   "version": "1.0",
   "inputs": [
     {"type": "WorkflowImage", "name": "image"},
-    {"type": "WorkflowParameter", "name": "dry_run", "default_value": true}
+    {"type": "WorkflowParameter", "name": "dry_run"}
   ],
   "steps": [
     {
