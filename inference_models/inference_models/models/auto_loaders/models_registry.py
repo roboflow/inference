@@ -429,6 +429,7 @@ REGISTERED_MODELS: Dict[
         model_class=LazyClass(
             module_name="inference_models.models.doctr.doctr_torch", class_name="DocTR"
         ),
+        supported_model_features={"doctr_vocab_127"},
         required_model_features={"doctr_vocab_127"},
     ),
     ("easy-ocr", STRUCTURED_OCR_TASK, BackendType.TORCH): LazyClass(
