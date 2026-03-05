@@ -85,6 +85,11 @@ ALLOW_LOCAL_STORAGE_ACCESS_FOR_REFERENCE_DATA = os.getenv(
     "ALLOW_LOCAL_STORAGE_ACCESS_FOR_REFERENCE_DATA"
 )
 
+USE_CUDA_GRAPHS_FOR_TRT_BACKEND = get_boolean_from_env(
+    variable_name="USE_CUDA_GRAPHS_FOR_TRT_BACKEND",
+    default=False,
+)
+
 # General model parameters defaults
 
 INFERENCE_MODELS_DEFAULT_CONFIDENCE = get_float_from_env(
