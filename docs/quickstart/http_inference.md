@@ -20,7 +20,7 @@ The Inference Server runs in Docker. Before we begin, make sure you have install
 
 Once you have Docker installed, you are ready to download Roboflow Inference. The command you need to run depends on what device you are using.
 
-{% include 'install.md' %}
+--8<-- "include/install.md"
 
 Start the server using `inference server start`. After you have installed the Inference Server, the Docker container will start running the server at `localhost:9001`.
 

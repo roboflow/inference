@@ -4,7 +4,7 @@ Let's run a computer vision model with Inference. The quickest way to get starte
 
 First, we need to install Inference:
 
-{% include 'install.md' %}
+--8<-- "include/install.md"
 
 To help us visualize our results in the example below, we will install Supervision:
 

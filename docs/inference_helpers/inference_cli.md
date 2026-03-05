@@ -22,13 +22,10 @@ Roboflow Inference CLI is command-line interface for `inference` ecosystem, prov
 ### Installation
 
 ```bash
-pip install roboflow-cli
+pip install inference-cli
 ```
 
-!!! Tip "`inference-cli` is part of `inference`"
-
-    If you have installed `inference` Python package, the CLI extensions is already included.
-
+Note that if you have installed `inference` Python package, the CLI extensions is already included.
 
 ## Supported Devices
 
@@ -36,6 +33,6 @@ Roboflow Inference CLI currently supports the following device targets:
 
 - x86 CPU
 - ARM64 CPU
-- NVIDIA GPU
+- NVIDIA GPU (including Jetson)
 
 For Jetson specific inference server images, check out the <a href="https://pypi.org/project/inference/" target="_blank">Roboflow Inference</a> package, or pull the images directly following instructions in the official [Roboflow Inference documentation](../quickstart/docker.md#step-1-pull-from-docker-hub).

@@ -26,6 +26,7 @@ body[data-md-color-scheme] .md-header {
   background: linear-gradient(to bottom left, #F3EEFF, #FFFFFF) !important;
   background-attachment: fixed !important;
   box-shadow: none;
+  border-bottom: 1px solid #E7E4F0;
 }
 
 /* MkDocs adds a specific URL path or we can use the home grid */
@@ -105,6 +106,7 @@ body[data-md-color-scheme] .md-header {
   background: linear-gradient(to bottom left, #F3EEFF, #FFFFFF) !important;
   background-attachment: fixed !important;
   box-shadow: none;
+  border-bottom: 1px solid #E7E4F0;
 }
 
 .md-header__title,
@@ -121,9 +123,14 @@ body[data-md-color-scheme] .md-header {
   background: transparent !important;
 }
 
+.md-footer-meta {
+  background-color: rgba(243, 241, 254, 1) !important;
+}
+
 .md-tabs {
   background: transparent;
   line-height: normal;
+  padding-bottom: 2px;
 }
 
 .md-tabs__item {

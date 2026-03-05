@@ -15,7 +15,7 @@ export ROBOFLOW_API_KEY=<your api key>
 
 Then, install Inference:
 
-{% include 'install.md' %}
+--8<-- "include/install.md"
 
 ## Inference on Video
 
@@ -43,7 +43,7 @@ Predictions are annotated using the `render_boxes` helper function. You can spec
 
 Replace `rock-paper-scissors-sxsw/11` with the model ID associated with the model you want to run.
 
-{% include 'model_id.md' %}
+--8<-- "include/model_id.md"
 
 Then, run the Python script:
 

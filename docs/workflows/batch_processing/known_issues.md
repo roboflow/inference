@@ -1,4 +1,4 @@
-# Known issues with Roboflow Batch Processing
+# Debugging Roboflow Batch Processing
 
 This page lists known issues, limitations, and workarounds for the Roboflow Batch Processing feature. 
 Our team actively monitors and maintains Batch Processing to ensure performance, reliability, and scalability. However, 
