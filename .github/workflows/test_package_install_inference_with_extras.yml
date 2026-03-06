@@ -22,14 +22,14 @@ jobs:
     timeout-minutes: 35
     strategy:
       matrix:
-        python-version: ["3.10", "3.11", "3.12"]
+        python-version: ["3.9", "3.10", "3.11", "3.12"]
     steps:
       - name: 🛎️ Checkout
         uses: actions/checkout@v4
-      - name: 🐍 Set up Python 3.10 to create wheels
+      - name: 🐍 Set up Python 3.9 to create wheels
         uses: actions/setup-python@v2
         with:
-          python-version: "3.10"
+          python-version: "3.9"
       - name: 🚧 Install GDAL OS library
         run: sudo apt-get update && sudo apt-get install libgdal-dev
       - name: 🛞 Create Wheels

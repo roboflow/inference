@@ -38,7 +38,7 @@ Then, use the CLI to start the container.
 !!! Note
     If the `pip install` command fails, you may need to
     [install Python](https://www.python.org/downloads/release/python-3128/#:~:text=Windows%20installer%20(64%2Dbit))
-    first. Once you have Python version 3.12, 3.11, or 3.10 on your machine, retry the command.
+    first. Once you have Python version 3.12, 3.11, 3.10, or 3.9 on your machine, retry the command.
 
 ## Manually Starting the Container
 
