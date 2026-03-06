@@ -594,6 +594,31 @@ class EmailNotificationBlockV2(WorkflowBlock):
         }
 
 
+def apply_operations_to_message_parameters(
+    message_parameters: Dict[str, Any],
+    message_parameters_operations: Dict[str, List[AllOperationsType]],
+) -> Dict[str, Any]:
+    parameters_values = {}
+    for parameter_name in message_parameters:
+        parameter_value = message_parameters[parameter_name]
+
+        if isinstance(parameter_value, WorkflowImageData):
+            parameters_values[parameter_name] = parameter_value
+            continue
+
+        operations = message_parameters_operations.get(parameter_name)
+        if not operations:
+            parameters_values[parameter_name] = parameter_value
+            continue
+
+        operations_chain = build_operations_chain(operations=operations)
+        parameters_values[parameter_name] = operations_chain(
+            parameter_value, global_parameters={}
+        )
+
+    return parameters_values
+
+
 def format_email_message(
     message: str,
     message_parameters: Dict[str, Any],
@@ -604,17 +629,12 @@ def format_email_message(
     parameters_to_get_values = {
         p[1] for p in matching_parameters if p[1] in message_parameters
     }
-    parameters_values = {}
-    for parameter_name in parameters_to_get_values:
-        parameter_value = message_parameters[parameter_name]
-        operations = message_parameters_operations.get(parameter_name)
-        if not operations:
-            parameters_values[parameter_name] = parameter_value
-            continue
-        operations_chain = build_operations_chain(operations=operations)
-        parameters_values[parameter_name] = operations_chain(
-            parameter_value, global_parameters={}
-        )
+
+    parameters_values = apply_operations_to_message_parameters(
+        message_parameters=message_parameters,
+        message_parameters_operations=message_parameters_operations,
+    )
+
     parameter_to_placeholders = defaultdict(list)
     for placeholder, parameter_name in matching_parameters:
         if parameter_name not in parameters_to_get_values:
@@ -709,7 +729,7 @@ def serialize_image_data(value: Any) -> Any:
     return value
 
 
-def serialize_message_parameters(message_parameters: Dict[str, Any]) -> Dict[str, Any]:
+def serialize_image_data_parameters(message_parameters: Dict[str, Any]) -> Dict[str, Any]:
     """
     Convert any WorkflowImageData objects in message_parameters to base64 strings
     so they can be serialized to JSON for the API call.
@@ -791,14 +811,17 @@ def send_email_via_roboflow_proxy(
 
     try:
         # Serialize any WorkflowImageData objects to base64 strings
-        serialized_parameters = serialize_message_parameters(message_parameters)
+        message_parameters = apply_operations_to_message_parameters(
+            message_parameters=message_parameters,
+            message_parameters_operations=message_parameters_operations,
+        )
+        serialized_parameters = serialize_image_data_parameters(message_parameters)
 
         payload = {
             "receiver_email": receiver_email,
             "subject": subject,
             "message": message,
             "message_parameters": serialized_parameters,
-            "message_parameters_operations": message_parameters_operations,
         }
 
         if cc_receiver_email:
