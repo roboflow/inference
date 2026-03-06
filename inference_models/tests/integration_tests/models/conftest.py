@@ -196,6 +196,9 @@ ASL_TRT_PACKAGE_YOLOV8_SEG_URL = "https://storage.googleapis.com/roboflow-tests-
 YOLOV8N_POSE_TRT_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov8n-pose-trt-t4-package.zip"
 YOLO26N_POSE_TRT_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov26n-pose-trt-t4-package.zip"
 
+RESNET_SINGLE_LABEL_CLS_TRT_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/resnet-single-label-cls-trt-t4-package.zip"
+RESNET_MULTI_LABEL_CLS_TRT_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/resnet-multi-label-cls-trt-t4-package.zip"
+
 
 @pytest.fixture(scope="module")
 def original_clip_download_dir() -> str:
@@ -1528,4 +1531,20 @@ def yolo26_pose_trt_package() -> str:
     return download_model_package(
         model_package_zip_url=YOLO26N_POSE_TRT_PACKAGE_URL,
         package_name="yolo26-pose-trt",
+    )
+
+
+@pytest.fixture(scope="module")
+def resnet_single_label_cls_trt_package() -> str:
+    return download_model_package(
+        model_package_zip_url=RESNET_SINGLE_LABEL_CLS_TRT_PACKAGE_URL,
+        package_name="resnet-single-label-cls-trt",
+    )
+
+
+@pytest.fixture(scope="module")
+def resnet_multi_label_cls_trt_package() -> str:
+    return download_model_package(
+        model_package_zip_url=RESNET_MULTI_LABEL_CLS_TRT_PACKAGE_URL,
+        package_name="resnet-multi-label-cls-trt",
     )
