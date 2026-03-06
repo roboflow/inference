@@ -15,7 +15,8 @@ def test_trt_package_numpy(
     )
 
     model = YOLOv8ForObjectDetectionTRT.from_pretrained(
-        model_name_or_path=yolov8_coin_counting_trt_package
+        model_name_or_path=yolov8_coin_counting_trt_package,
+        engine_host_code_allowed=True,
     )
 
     # when
@@ -78,7 +79,8 @@ def test_trt_package_batch_numpy(
     )
 
     model = YOLOv8ForObjectDetectionTRT.from_pretrained(
-        model_name_or_path=yolov8_coin_counting_trt_package
+        model_name_or_path=yolov8_coin_counting_trt_package,
+        engine_host_code_allowed=True,
     )
 
     # when
@@ -183,7 +185,8 @@ def test_trt_package_torch(
     )
 
     model = YOLOv8ForObjectDetectionTRT.from_pretrained(
-        model_name_or_path=yolov8_coin_counting_trt_package
+        model_name_or_path=yolov8_coin_counting_trt_package,
+        engine_host_code_allowed=True,
     )
 
     # when
@@ -246,7 +249,8 @@ def test_trt_package_torch_list(
     )
 
     model = YOLOv8ForObjectDetectionTRT.from_pretrained(
-        model_name_or_path=yolov8_coin_counting_trt_package
+        model_name_or_path=yolov8_coin_counting_trt_package,
+        engine_host_code_allowed=True,
     )
 
     # when
@@ -351,7 +355,8 @@ def test_trt_package_torch_batch(
     )
 
     model = YOLOv8ForObjectDetectionTRT.from_pretrained(
-        model_name_or_path=yolov8_coin_counting_trt_package
+        model_name_or_path=yolov8_coin_counting_trt_package,
+        engine_host_code_allowed=True,
     )
 
     # when

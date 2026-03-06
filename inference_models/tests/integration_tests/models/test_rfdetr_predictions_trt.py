@@ -10,12 +10,13 @@ def test_trt_package_numpy(
     coins_counting_image_numpy: np.ndarray,
 ) -> None:
     # given
-    from inference_models.models.yolov8.yolov8_object_detection_trt import (
-        YOLOv8ForObjectDetectionTRT,
+    from inference_models.models.rfdetr.rfdetr_object_detection_trt import (
+        RFDetrForObjectDetectionTRT,
     )
 
-    model = YOLOv8ForObjectDetectionTRT.from_pretrained(
-        model_name_or_path=rfdetr_coin_counting_trt_package
+    model = RFDetrForObjectDetectionTRT.from_pretrained(
+        model_name_or_path=rfdetr_coin_counting_trt_package,
+        engine_host_code_allowed=True,
     )
 
     # when
@@ -75,12 +76,13 @@ def test_trt_package_batch_numpy(
     coins_counting_image_numpy: np.ndarray,
 ) -> None:
     # given
-    from inference_models.models.yolov8.yolov8_object_detection_trt import (
-        YOLOv8ForObjectDetectionTRT,
+    from inference_models.models.rfdetr.rfdetr_object_detection_trt import (
+        RFDetrForObjectDetectionTRT,
     )
 
-    model = YOLOv8ForObjectDetectionTRT.from_pretrained(
-        model_name_or_path=rfdetr_coin_counting_trt_package
+    model = RFDetrForObjectDetectionTRT.from_pretrained(
+        model_name_or_path=rfdetr_coin_counting_trt_package,
+        engine_host_code_allowed=True,
     )
 
     # when
@@ -184,12 +186,13 @@ def test_trt_package_torch(
     coins_counting_image_torch: torch.Tensor,
 ) -> None:
     # given
-    from inference_models.models.yolov8.yolov8_object_detection_trt import (
-        YOLOv8ForObjectDetectionTRT,
+    from inference_models.models.rfdetr.rfdetr_object_detection_trt import (
+        RFDetrForObjectDetectionTRT,
     )
 
-    model = YOLOv8ForObjectDetectionTRT.from_pretrained(
-        model_name_or_path=rfdetr_coin_counting_trt_package
+    model = RFDetrForObjectDetectionTRT.from_pretrained(
+        model_name_or_path=rfdetr_coin_counting_trt_package,
+        engine_host_code_allowed=True,
     )
 
     # when
@@ -249,12 +252,13 @@ def test_trt_package_torch_list(
     coins_counting_image_torch: torch.Tensor,
 ) -> None:
     # given
-    from inference_models.models.yolov8.yolov8_object_detection_trt import (
-        YOLOv8ForObjectDetectionTRT,
+    from inference_models.models.rfdetr.rfdetr_object_detection_trt import (
+        RFDetrForObjectDetectionTRT,
     )
 
-    model = YOLOv8ForObjectDetectionTRT.from_pretrained(
-        model_name_or_path=rfdetr_coin_counting_trt_package
+    model = RFDetrForObjectDetectionTRT.from_pretrained(
+        model_name_or_path=rfdetr_coin_counting_trt_package,
+        engine_host_code_allowed=True,
     )
 
     # when
@@ -358,12 +362,13 @@ def test_trt_package_torch_batch(
     coins_counting_image_torch: torch.Tensor,
 ) -> None:
     # given
-    from inference_models.models.yolov8.yolov8_object_detection_trt import (
-        YOLOv8ForObjectDetectionTRT,
+    from inference_models.models.rfdetr.rfdetr_object_detection_trt import (
+        RFDetrForObjectDetectionTRT,
     )
 
-    model = YOLOv8ForObjectDetectionTRT.from_pretrained(
-        model_name_or_path=rfdetr_coin_counting_trt_package
+    model = RFDetrForObjectDetectionTRT.from_pretrained(
+        model_name_or_path=rfdetr_coin_counting_trt_package,
+        engine_host_code_allowed=True,
     )
 
     # when
