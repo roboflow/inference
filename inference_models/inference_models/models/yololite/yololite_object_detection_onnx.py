@@ -57,9 +57,7 @@ except ImportError as import_error:
 
 
 class YOLOLiteForObjectDetectionOnnx(
-    ObjectDetectionModel[
-        torch.Tensor, PreProcessingMetadata, Tuple[torch.Tensor, ...]
-    ]
+    ObjectDetectionModel[torch.Tensor, PreProcessingMetadata, Tuple[torch.Tensor, ...]]
 ):
 
     @classmethod
