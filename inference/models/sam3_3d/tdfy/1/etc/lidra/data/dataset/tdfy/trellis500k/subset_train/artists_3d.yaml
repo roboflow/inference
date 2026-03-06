@@ -1,0 +1,13 @@
+defaults:
+  - base
+
+path: "${cluster.path.datasets}/artists_3d/trellis_preprocess_train"
+metadata_fname: "metadata.csv"
+pose_loader: 
+  _target_: lidra.data.dataset.tdfy.trellis.pose_loader.dummy_R3_identity_pose
+  _partial_: true
+metadata_filter:
+  _target_: lidra.data.dataset.tdfy.metadata_filter.custom_metadata_filter
+  filter_funcs:
+    - _target_: lidra.data.dataset.tdfy.metadata_filter.data_query_filter
+      query: "num_voxels>0"

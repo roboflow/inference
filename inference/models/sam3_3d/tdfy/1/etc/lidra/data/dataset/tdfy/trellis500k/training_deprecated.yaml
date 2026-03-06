@@ -1,0 +1,4 @@
+defaults:
+  - base_deprecated
+split: train
+subsets: ["ABO", "ObjaverseXL_sketchfab", "ObjaverseXL_github", "HSSD"]

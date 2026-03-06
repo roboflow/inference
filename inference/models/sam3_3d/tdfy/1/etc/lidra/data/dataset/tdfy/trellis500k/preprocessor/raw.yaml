@@ -1,0 +1,17 @@
+_target_: lidra.data.dataset.tdfy.trellis.dataset.PreProcessor
+
+# Enable pointmap normalization
+normalize_pointmap: false 
+
+img_transform:
+  _target_: torchvision.transforms.Compose
+  transforms: []
+mask_transform:
+  _target_: torchvision.transforms.Compose
+  transforms: []
+pointmap_transform:
+  _target_: torchvision.transforms.Compose
+  transforms: []
+
+img_mask_joint_transform: []
+img_mask_pointmap_joint_transform: []

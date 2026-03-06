@@ -1,0 +1,17 @@
+defaults:
+  - base
+
+path: "${cluster.path.datasets}/trellis500k/variantF_v2_redo"
+pose_loader: 
+  _target_: lidra.data.dataset.tdfy.trellis.pose_loader.load_trellis_pose
+  _partial_: true
+metadata_fname: metadata.csv
+metadata_filter: 
+  _target_: lidra.data.dataset.tdfy.metadata_filter.custom_metadata_filter
+  filter_funcs:
+    - _target_: lidra.data.dataset.tdfy.metadata_filter.data_query_filter
+      query: "num_voxels>0 and cond_rendered"
+    - _target_: lidra.data.dataset.tdfy.metadata_filter.data_query_filter
+      query: "num_voxels>0 and cond_rendered"
+    - _target_: lidra.data.dataset.tdfy.metadata_filter.data_query_filter
+      query: "source=='ObjaverseXL_sketchfab' or source=='ObjaverseXL_github' or source=='ABO' or source=='GSO' or source=='HSSD'"

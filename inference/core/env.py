@@ -320,6 +320,10 @@ GET_MODEL_REGISTRY_ENABLED = str2bool(os.getenv("GET_MODEL_REGISTRY_ENABLED", "T
 # Flag to enable API logging, default is False
 API_LOGGING_ENABLED = str2bool(os.getenv("API_LOGGING_ENABLED", "False"))
 
+# Flag to enable structured access logging (JSON access logs replacing uvicorn's
+# default access log). Requires API_LOGGING_ENABLED=True. Default is False.
+STRUCTURED_API_LOGGING = str2bool(os.getenv("STRUCTURED_API_LOGGING", "False"))
+
 # Header where correlaction ID for logging is stored
 CORRELATION_ID_HEADER = os.getenv("CORRELATION_ID_HEADER", "X-Request-ID")
 
@@ -332,7 +336,7 @@ LEGACY_ROUTE_ENABLED = str2bool(os.getenv("LEGACY_ROUTE_ENABLED", True))
 # License server, default is None
 LICENSE_SERVER = os.getenv("LICENSE_SERVER", None)
 
-# Log level, default is "INFO"
+# Log level, default is "WARNING"
 LOG_LEVEL = os.getenv("LOG_LEVEL", "WARNING")
 
 # Maximum number of active models, default is 8

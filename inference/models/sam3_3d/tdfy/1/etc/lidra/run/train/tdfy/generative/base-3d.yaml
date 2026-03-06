@@ -1,0 +1,45 @@
+# @package _global_
+defaults:
+  - base
+  # generator
+  - /model/backbone@tdfy.reverse_fn: dit/x-large
+
+  # autoencoder
+  - /model/backbone@tdfy.autoencoder: vae/pretrained
+
+  # encoder
+  - /model/backbone@module.encoder: frozen
+
+  # dataset
+  - override /data/module@loop.dataloaders: tdfy/objaverse
+
+  - _self_
+
+batch_size: 8
+
+module:
+  batch_encoder_input_mapping: [[1, 0]] # target-xyz
+  batch_conditions_mapping: [[0, 1]] # rgb-image
+  batch_decoder_input_mapping: ${rv.locate:lidra.data.utils.empty_mapping}
+  validation_dump_type: tensor
+
+  encoder:
+    backbone:
+      _target_: lidra.config.utils.get_attr
+      data: ${tdfy.autoencoder}
+      key: encoder
+
+loop:
+  limit_val_batches: 10
+
+tdfy:
+  collator: ${rv.locate:lidra.data.dataset.tdfy.collator.collate_fn}
+##< enable following when using DiT backbone
+  reverse_fn:
+    input_size: ${tdfy.autoencoder.model.latent_dim}
+    cond_image_size: 512
+    learn_sigma: false
+    input_type: "tokens+linear"
+    condition_type: dino # dino (=conditional), none (=unconditional)
+    n_tokens: ${tdfy.autoencoder.model.M}
+##>

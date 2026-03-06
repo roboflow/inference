@@ -1,0 +1,61 @@
+# @package _global_
+defaults:
+  - base
+
+  # generator
+  - /model/backbone@tdfy.reverse_fn: trellis_dit/image_large
+  - override /model/backbone/dit/embedder@tdfy.reverse_fn.condition_embedder: image_mask_dino_dino
+
+  - override /model/module/tdfy@module: generative-features-only
+  - override /model/backbone/generator@module.generator.backbone: flow_matching_cfg
+
+  # dataset
+  - override /data/module@loop.dataloaders: tdfy/kubric-anything
+
+  - _self_
+
+batch_size: 6
+
+
+module:
+  batch_conditions_mapping: ["image", "mask"]
+  generator:
+    backbone:
+      reverse_fn:
+        backbone: ${tdfy.reverse_fn}
+
+    # scheduler:
+    #   _target_: lidra.model.module.tdfy.scheduler.MCCScheduler
+    #   _partial_: true
+    #   warmup_epochs: 10
+    #   max_epochs: ${loop.max_epochs}
+    #   min_factor: 1e-3
+    #   max_factor: 1.0
+
+    # # https://lightning.ai/docs/pytorch/stable/api/lightning.pytorch.core.LightningModule.html#lightning.pytorch.core.LightningModule.configure_optimizers
+    # scheduler_kwargs:
+    #   interval: epoch
+    #   frequency: 1
+    #   name: "train/learning_rate"
+loop:
+  max_epochs: 200
+  deterministic: false
+  precision: bf16-true
+  # dataloaders:
+  #   validation: null
+  callbacks:
+    model_checkpoint2:
+      _target_: lightning.pytorch.callbacks.ModelCheckpoint
+      save_on_train_epoch_end: true
+      every_n_epochs: 25
+      save_top_k: -1
+
+tdfy:
+  collator:
+    _target_: lidra.data.collator.auto_collate
+  reverse_fn:
+    resolution: 16
+    patch_size: 1
+    # condition_embedder: 
+    #   dino_model: "dinov2_vitl14_reg"
+    #   input_size: 518

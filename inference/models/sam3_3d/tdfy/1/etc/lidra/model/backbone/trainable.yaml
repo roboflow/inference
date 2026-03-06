@@ -1,0 +1,3 @@
+_target_: lidra.model.module.base.TrainableBackbone
+backbone: ???
+optimizer: ???

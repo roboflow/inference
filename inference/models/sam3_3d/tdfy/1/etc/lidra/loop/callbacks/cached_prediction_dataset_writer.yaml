@@ -1,0 +1,4 @@
+_target_: lidra.callback.cached_prediction_dataset_writer.CachedPredictionDatasetWriter
+output_dir: ${hydra:runtime.output_dir}/cached_predictions
+write_interval: batch
+# pickle_module: dill  # Commented out - testing without dill

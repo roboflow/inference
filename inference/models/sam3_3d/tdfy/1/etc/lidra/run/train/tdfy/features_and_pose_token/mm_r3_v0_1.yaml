@@ -1,0 +1,40 @@
+# @package _global_
+defaults:
+  - base
+
+  # generator
+  - /model/backbone@tdfy.reverse_fn: trellis_dit/pretrained_base
+  - /model/backbone@tdfy.reverse_fn.model: trellis_dit/mm_image_large
+  - override /model/backbone/dit/embedder@tdfy.reverse_fn.model.condition_embedder: imagex2_maskx2_dino_dino_moge
+
+  # dataset
+  - override /data/module@loop.dataloaders: tdfy/trellisR3_thru_25_04_01
+
+
+  - _self_
+
+lr: 1e-5
+
+loop:
+  max_epochs: 200
+  check_val_every_n_epoch: 25
+  dataloaders:
+    training:
+      dataset:
+        datasets:
+          R3_25_04_01:
+            preprocessor: ${tdfy.train_preprocessor}
+          R3_25_03_01:
+            preprocessor: ${tdfy.train_preprocessor}
+    validation:
+      dataset:
+        latent_loader_dataset:
+          preprocessor: ${tdfy.val_preprocessor}
+
+
+tdfy:
+  pose_weight: 0.01
+  reverse_fn:
+    checkpoint_path: /checkpoint/3dfy/haotang/lidra/logs/tagged/_submit/v1-pretraining-shape-quaternion-fo-only-noema/lightning/version_0/checkpoints/epoch=199-step=250400-v1.ckpt
+    device: "cpu"
+    strict: false

@@ -1,0 +1,56 @@
+# @package _global_
+defaults:
+  - ../midtraining/v2_mot_shape_6drotation_normalized_layout_rgb_only.yaml
+  - /data/dataset/tdfy/trellis500k/subset_train@loop.dataloaders.training.dataset.datasets.r3_sa3_April: r3_sa3_April
+  - /data/dataset/tdfy/trellis500k/subset_train@loop.dataloaders.training.dataset.datasets.r3_25_April: r3_25_April
+  - /data/dataset/tdfy/trellis500k/subset_train@loop.dataloaders.training.dataset.datasets.r3_25_March_morphing: r3_25_March_morphing
+  - /data/dataset/tdfy/trellis500k/subset_train@loop.dataloaders.training.dataset.datasets.r3_25_morphing: r3_25_morphing
+  - override /data/dataset/tdfy/trellis500k@loop.dataloaders.training.dataset: training_empty
+
+lr: 1e-5
+loop:
+  max_epochs: 100
+  dataloaders:
+    validation: null
+    training:
+      dataset:
+        # _target_: torch.utils.data.dataset.ConcatDataset
+        datasets:
+          # _target_: lidra.config.utils.make_list_from_kwargs
+          r3_sa3_April:
+            pose_loader: ${tdfy.pose_loader}
+            pointmap_loader: ${tdfy.pointmap_loader}
+            preprocessor: ${tdfy.preprocessor}
+          r3_25_April:
+            pose_loader: ${tdfy.pose_loader}
+            pointmap_loader: ${tdfy.pointmap_loader}
+            preprocessor: ${tdfy.preprocessor}
+          r3_25_March_morphing:
+            pose_loader: ${tdfy.pose_loader}
+            pointmap_loader: ${tdfy.pointmap_loader}
+            preprocessor: ${tdfy.preprocessor}
+          r3_25_morphing:
+            pose_loader: ${tdfy.pose_loader}
+            pointmap_loader: ${tdfy.pointmap_loader}
+            preprocessor: ${tdfy.preprocessor}
+
+tdfy:
+  pose_weight: 0.1
+  return_pointmap: false  # RGB-only model, no pointmaps needed
+  reverse_fn_pretrained:
+    # checkpoint_path: /checkpoint/3dfy/haotang/lidra/logs/tagged/_submit/v2-mot-shape-6drotation-normalized-layout-midtrain/lightning/version_0/checkpoints/last.ckpt
+    checkpoint_path: /checkpoint/3dfy/ssax/lidra/logs/tagged/_submit/v2_mot_shape_6drotation_layout_rgbonly_eitrv1/lightning/version_0/checkpoints/epoch=99-step=75600-v1.ckpt
+    strict: false
+    device: "cpu"
+    model:
+      use_fp16: false
+      force_zeros_cond: True
+  reverse_fn: ${tdfy.reverse_fn_pretrained}
+  pose_loader:
+    _target_: lidra.data.dataset.tdfy.trellis.pose_loader.R3.load_pose
+    _partial_: True
+  pointmap_loader:
+    _target_: lidra.data.dataset.tdfy.trellis.pose_loader.R3.load_pointmap
+    _partial_: True
+    pointcloud_directory: "/checkpoint/3dfy/shared/r3_data/pointmaps/moge"
+

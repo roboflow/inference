@@ -1,0 +1,8 @@
+_target_: lidra.model.backbone.unet.diffusion.UNet
+in_channels: 3
+hid_channels: 128
+out_channels: 3
+ch_multipliers: [1, 2, 2, 2]
+num_res_blocks: 2
+apply_attn: [false, true, false, [1, 2, 2, 2]]
+drop_rate: 0.1

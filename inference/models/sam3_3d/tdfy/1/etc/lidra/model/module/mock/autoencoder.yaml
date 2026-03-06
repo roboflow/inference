@@ -1,0 +1,3 @@
+_target_: lidra.model.module.mock.autoencoder.AutoEncoder
+encoder: ???
+decoder: ???

@@ -1,0 +1,50 @@
+defaults:
+  - /model/backbone/dit/embedder@condition_embedder: dino
+  - /model/backbone/latent@latent_mapping.shape: shape
+  - /model/backbone/latent@latent_mapping.quaternion: quaternion
+  - /model/backbone/latent@latent_mapping.translation: translation
+  - /model/backbone/latent@latent_mapping.scale: scale
+  - /model/backbone/latent@latent_mapping.translation_scale: scalar
+
+_target_: lidra.model.backbone.trellis.models.mm_sparse_structure_flow.SparseStructureFlowTdfyWrapper
+resolution: 16
+in_channels: 8
+out_channels: 8
+model_channels: 1024
+patch_size: 1
+num_blocks: 24
+num_heads: 16
+mlp_ratio: 4
+use_checkpoint: false
+
+# num_io_res_blocks: 2
+# io_block_channels: [128]
+pe_mode: ape
+qk_rms_norm: true
+
+cond_channels: 1024
+
+latent_mapping:
+  shape:
+    in_channels: ${...in_channels}
+    model_channels: ${...model_channels}
+    pos_embedder:
+      model_channels: ${....model_channels}
+      resolution: ${....resolution}
+      patch_size: ${....patch_size}
+  quaternion:
+    model_channels: ${...model_channels}
+    pos_embedder:
+      model_channels: ${....model_channels}
+  translation: 
+    model_channels: ${...model_channels}
+    pos_embedder:
+      model_channels: ${....model_channels}
+  scale:
+    model_channels: ${...model_channels}
+    pos_embedder:
+      model_channels: ${....model_channels}
+  translation_scale:
+    model_channels: ${...model_channels}
+    pos_embedder:
+      model_channels: ${....model_channels}

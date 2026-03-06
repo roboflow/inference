@@ -1,0 +1,23 @@
+# @package _global_
+defaults:
+  - /run/inference/tdfy/prediction_writer/from_config
+  - /data/module@loop.dataloaders: tdfy/objaversev1-2024
+  - /model/backbone@overwrites.module.generator.backbone: generator/flow_matching_cfg_inference
+
+loop:
+  precision: bf16
+
+# overwrite to use other inference arguments than flow_matching_cfg_inference
+# overwrites:
+#   module:
+#     generator:
+#       backbone:
+#         inference_steps: 25
+#         rescale_t: 3
+#         reverse_fn:
+#           strength: 5
+#           interval: [0, 500]
+
+# You can also specify a checkpoint here
+# logs:    
+#   checkpoint: "/checkpoint/3dfy/weiyaowang/lidra/logs/tagged/_submit/fm-force_zeros_cond-trellis500k-rPad.2_colorAug-16x8/lightning/version_0/checkpoints/epoch=174-step=109375-v1.ckpt"

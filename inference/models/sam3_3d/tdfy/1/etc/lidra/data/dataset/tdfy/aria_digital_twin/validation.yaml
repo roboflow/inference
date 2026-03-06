@@ -1,0 +1,18 @@
+defaults:
+  - /data/dataset/tdfy/trellis500k/preprocessor@latent_loader_dataset.preprocessor: val_keep_bg_w_ptmp
+
+_target_: lidra.data.dataset.tdfy.aria_digital_twin.anything_dataset.AnythingDataset
+
+dataset:
+  _target_: lidra.data.dataset.tdfy.aria_digital_twin.dataset.ADTDataset
+  path: "${cluster.path.datasets}/aria_digital_twin"
+  use_synth_img: false
+  reload_cache: false
+
+# Optional latent loader configuration
+latent_loader_dataset:
+  _target_: lidra.data.dataset.tdfy.trellis.dataset.PerSubsetDataset
+  latent_dir: ss_latents/trellis-ss-vae-trial1-lambda1e-3-8x8
+  path: "${cluster.path.datasets}/aria_digital_twin"
+  split: "val"
+  return_pointmap: true

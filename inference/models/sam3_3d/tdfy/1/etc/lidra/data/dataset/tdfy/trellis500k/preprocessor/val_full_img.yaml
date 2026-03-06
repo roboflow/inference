@@ -1,0 +1,17 @@
+_target_: lidra.data.dataset.tdfy.trellis.dataset.PreProcessor
+img_transform:
+  _target_: torchvision.transforms.Compose
+  transforms:
+    - _target_: lidra.data.dataset.tdfy.img_processing.pad_to_square_centered
+      _partial_: true
+    - _target_: torchvision.transforms.Resize
+      size: 518
+mask_transform:
+  _target_: torchvision.transforms.Compose
+  transforms:
+    - _target_: lidra.data.dataset.tdfy.img_processing.pad_to_square_centered
+      _partial_: true
+    - _target_: torchvision.transforms.Resize
+      size: 518
+      interpolation: 0 # nearest
+img_mask_joint_transform: []

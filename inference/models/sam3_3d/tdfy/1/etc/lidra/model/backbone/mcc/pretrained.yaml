@@ -1,0 +1,6 @@
+defaults:
+  - /model/backbone/mcc@model: base
+
+_target_: lidra.model.io.load_model_from_checkpoint
+checkpoint_path: ${cluster.path.models}/mcc/vit_base_IN1K.pth
+strict: false

@@ -156,9 +156,9 @@ RUN git clone --recursive --branch v${ONNXRUNTIME_VERSION} https://github.com/mi
     python3 -m pip install --break-system-packages build/Linux/Release/dist/onnxruntime_gpu*.whl
 
 # Install flash-attn package (requires CUDA-enabled PyTorch already installed)
-# Limit MAX_JOBS to prevent timeout during CUDA kernel compilation
+# Limit MAX_JOBS to 1 to prevent resource starvation that kills the Depot gRPC connection
 # Using 2.8.3 - removed legacy features (rotary, xentropy, fused_softmax, ft_attention) for faster builds
-RUN export MAX_JOBS=4 && \
+RUN export MAX_JOBS=1 && \
     python3 -m pip install --break-system-packages --no-build-isolation flash-attn==2.8.3
 
 # Copy requirements files (done after compilation to improve cache efficiency)

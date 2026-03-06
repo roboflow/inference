@@ -1,0 +1,10 @@
+defaults:
+  - base
+
+path: "${cluster.path.datasets}/trellis500k/ObjaverseXL_github_all"
+metadata_filter:
+  _target_: lidra.data.dataset.tdfy.metadata_filter.custom_metadata_filter
+  filter_funcs:
+    - _target_: lidra.data.dataset.tdfy.metadata_filter.data_query_filter
+      query: "num_voxels>200 and cond_rendered and `ss_latent_trellis-ss-vae-trial1-lambda1e-3-8x8`"
+latent_dir: ss_latents/trellis-ss-vae-trial1-lambda1e-3-8x8

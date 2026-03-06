@@ -1,0 +1,3 @@
+defaults:
+  - /data/module/dict/validation@_here_
+  - /data/dataset/tdfy/scannetpp@validation.dataset: scannetpp_val

@@ -1,0 +1,18 @@
+# @package _global_
+defaults:
+  # - ../midtraining/v2_mot_shape_6drotation_normalized_layout_ptmap_dropout.yaml
+  - v2_mot_6drotation_normalized_layout_ptmap_Feb-April.yaml
+  - override /model/backbone/dit/embedder@tdfy.reverse_fn_pretrained.model.condition_embedder: image_dino_mask_pointmap_embedder_fuser_dropout
+  - _self_
+
+tdfy:
+  pointmap_embedder:
+    dropout_prob: 0.1
+    force_dropout_always: false
+  reverse_fn_pretrained:
+    checkpoint_path: /checkpoint/3dfy/ssax/lidra/logs/tagged/_submit/v2_mot_shape_6drotation_normalized_layout_ptmap-normalized-dropout-eitrv1/lightning/version_0/checkpoints/epoch=124-step=94500-v1.ckpt
+    strict: false
+    device: "cpu"
+    model:
+      use_fp16: false
+      force_zeros_cond: True

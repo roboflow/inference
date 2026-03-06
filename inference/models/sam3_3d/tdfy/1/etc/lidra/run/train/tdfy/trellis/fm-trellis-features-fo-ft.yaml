@@ -1,0 +1,30 @@
+# @package _global_
+defaults:
+  - fm-trellis-features-trellis500k-tricks
+  
+  - /model/backbone@tdfy.reverse_fn_pretrained: trellis_dit/image_large_featured_latents_pretrained
+
+  # dataset
+  - override /data/dataset/tdfy/trellis500k@loop.dataloaders.training.dataset: training_fo_v1_features
+  - _self_
+
+loop:
+  max_epochs: 40
+  callbacks:
+    model_checkpoint2:
+      every_n_epochs: 10
+
+tdfy:
+  reverse_fn_pretrained:
+    checkpoint_path: /checkpoint/3dfy/weiyaowang/lidra/a100_models/fm-features-trellis500k-tricksNoEMA-16x8/last.ckpt
+    strict: false
+    device: "cpu"
+    model:
+      use_fp16: True
+      force_zeros_cond: True
+      condition_embedder: 
+        dino_model: "dinov2_vitl14_reg"
+        input_size: 518
+        normalize_images: True
+        prenorm_features: True
+  reverse_fn: ${tdfy.reverse_fn_pretrained}

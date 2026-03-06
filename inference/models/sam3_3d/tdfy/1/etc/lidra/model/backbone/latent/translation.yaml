@@ -1,0 +1,7 @@
+_target_: lidra.model.backbone.trellis.models.mm_latent.Latent
+in_channels: 3
+model_channels: ???
+pos_embedder:
+  _target_: lidra.model.backbone.trellis.models.mm_latent.LearntPositionEmbedder
+  model_channels: ???
+  token_len: 1

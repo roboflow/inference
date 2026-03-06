@@ -26,7 +26,7 @@
     "eslint": "latest",
     "eslint-config-next": "latest",
     "postcss": "latest",
-    "react-syntax-highlighter": "^15.5.0",
+    "react-syntax-highlighter": "^16.1.1",
     "sass": "^1.68.0",
     "tailwindcss": "latest",
     "typescript": "latest"

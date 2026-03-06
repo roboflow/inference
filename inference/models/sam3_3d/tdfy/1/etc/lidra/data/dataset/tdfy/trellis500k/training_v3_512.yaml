@@ -1,0 +1,6 @@
+defaults:
+  - training_v3
+  - override /data/dataset/tdfy/trellis500k/preprocessor@datasets.ABO.preprocessor: train_default_512
+  - override /data/dataset/tdfy/trellis500k/preprocessor@datasets.HSSD.preprocessor: train_default_512
+  - override /data/dataset/tdfy/trellis500k/preprocessor@datasets.ObjaverseXL_github.preprocessor: train_default_512
+  - override /data/dataset/tdfy/trellis500k/preprocessor@datasets.ObjaverseXL_sketchfab_all.preprocessor: train_default_512

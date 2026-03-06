@@ -80,4 +80,6 @@ Simply download the latest DMS disk image from the latest release on Github.
 
     Your server is now running at [`localhost:9001`](http://localhost:9001) with MPS acceleration.
 
---8<-- "install/using-your-new-server.md"
+## Using Your New Server
+
+See [Using Your New Server](index.md#using-your-new-server) for next steps.

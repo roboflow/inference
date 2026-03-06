@@ -1,0 +1,35 @@
+defaults:
+  - /model/backbone/dit/embedder@condition_embedder: dino
+  - /model/backbone/latent@latent_mapping.shape: shape
+  - /model/backbone/latent@latent_mapping.6drotation_normalized: 6drotation_normalized
+
+_target_: lidra.model.backbone.trellis.models.mm_sparse_structure_flow.SparseStructureFlowTdfyWrapper
+# _target_: lidra.model.backbone.trellis.models.sparse_structure_flow.SparseStructureFlowTdfyWrapper
+resolution: 16
+in_channels: 8
+out_channels: 8
+model_channels: 1024
+patch_size: 1
+num_blocks: 24
+num_heads: 16
+mlp_ratio: 4
+
+# num_io_res_blocks: 2
+# io_block_channels: [128]
+pe_mode: ape
+qk_rms_norm: true
+
+cond_channels: 1024
+
+latent_mapping:
+  shape:
+    in_channels: ${...in_channels}
+    model_channels: ${...model_channels}
+    pos_embedder:
+      model_channels: ${....model_channels}
+      resolution: ${....resolution}
+      patch_size: ${....patch_size}
+  6drotation_normalized:
+    model_channels: ${...model_channels}
+    pos_embedder:
+      model_channels: ${....model_channels}

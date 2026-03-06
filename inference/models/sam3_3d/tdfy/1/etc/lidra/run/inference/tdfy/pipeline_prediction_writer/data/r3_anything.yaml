@@ -1,0 +1,5 @@
+# Data configuration for r3_anything dataset
+
+defaults:
+  - /data/module@_here_: tdfy/r3_anything  # Use r3_anything dataloader
+  - override /data/dataset/tdfy/trellis500k/preprocessor@validation.dataset.latent_loader_dataset.preprocessor: raw  # Override the preprocessor

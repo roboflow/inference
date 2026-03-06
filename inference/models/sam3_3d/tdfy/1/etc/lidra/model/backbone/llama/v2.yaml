@@ -1,0 +1,4 @@
+defaults:
+  - /model/backbone/huggingface@_here_: automodel-for-causal-lm
+pretrained_model_name_or_path: ??? 
+attn_implementation: sdpa # eager (=regular), flash_attention_2, sdpa

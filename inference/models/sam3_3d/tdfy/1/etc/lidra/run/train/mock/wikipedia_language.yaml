@@ -1,0 +1,35 @@
+# @package _global_
+defaults:
+  ## base setup
+  - /run/train: base
+
+  ## loop setup
+  - /loop: mock
+  
+  # dataset setup
+  - /data/module@loop.dataloaders: wikipedia/english-tokenized
+
+  ## training module setup
+  - /model/module@module: mock/language
+
+  # module setup
+  - /model/backbone@backbone: gpt/neo-125m
+  - /model/backbone@tokenizer: gpt/neo-tokenizer
+  - /optimizer@module.model.optimizer: sgd
+
+  - _self_
+
+module:
+  model:
+    _target_: lidra.model.module.base.TrainableBackbone
+    backbone: ${rv.partial:${backbone}}
+
+loop:
+  dataloaders:
+    training:
+      batch_size: 32
+      collate_fn:
+        _target_: transformers.data.data_collator.DataCollatorWithPadding
+        tokenizer: ${tokenizer}
+      dataset:
+        tokenizer: ${tokenizer}

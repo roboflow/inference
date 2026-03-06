@@ -1,0 +1,56 @@
+# @package _global_
+defaults:
+  - fm-trellis-features-trellis500k-tricks
+  - override /data/dataset/tdfy/trellis500k@loop.dataloaders.training.dataset: training_features_v3
+# batch_size: 4
+
+loop:
+  # checkpoint: /fsx-3dfy-v2/weiyaowang/3dfy/lidra/logs/tagged/_submit/fm-features-trellis500k-tricksAll-16x8/lightning/version_0/checkpoints/last.ckpt
+  max_epochs: 800
+  precision: null
+  dataloaders:
+    validation: null
+    training:
+      dataset:
+        datasets:
+          ShutterStock:
+            metadata_filter:
+              filter_funcs: ${tdfy.filter_funcs_stk3d}
+          ObjaverseXL_sketchfab_all:
+            metadata_filter:
+              filter_funcs: ${tdfy.filter_funcs_stk3d}
+          ABO:
+            latent_dir: ${tdfy.latent_dir}
+            metadata_filter:
+              filter_funcs: ${tdfy.filter_funcs}
+          HSSD:
+            latent_dir: ${tdfy.latent_dir}
+            metadata_filter:
+              filter_funcs: ${tdfy.filter_funcs}
+          ObjaverseXL_github:
+            latent_dir: ${tdfy.latent_dir}
+            metadata_filter:
+              filter_funcs: ${tdfy.filter_funcs}
+
+module:
+  generator:
+    backbone:
+      training_time_sampler_fn:
+        _target_: lidra.model.backbone.generator.flow_matching.model.lognorm_sampler
+        _partial_: true
+        mean: -1.0
+        std: 1.0 
+
+tdfy:
+  latent_dir: "latents/inhouseSLATVAE_gsplat_epoch=249-step=462000-v1"
+  filter_funcs: 
+    - _target_: lidra.data.dataset.tdfy.metadata_filter.data_query_filter
+      # Can change to below to have higher # of voxels with slower training speed
+      query: "num_voxels<35000 and num_voxels>0 and cond_rendered and `latent_inhouseSLATVAE_gsplat_epoch=249-step=462000-v1`"
+
+  filter_funcs_stk3d: 
+    - _target_: lidra.data.dataset.tdfy.metadata_filter.data_query_filter
+      query: "num_voxels<35000 and num_voxels>0 and cond_rendered and aesthetic_avg>4.5 and `latent_inhouseSLATVAE_gsplat_epoch=249-step=462000-v1`"
+
+
+      

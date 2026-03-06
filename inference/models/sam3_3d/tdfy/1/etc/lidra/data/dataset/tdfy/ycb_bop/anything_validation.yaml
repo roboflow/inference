@@ -1,0 +1,13 @@
+defaults:
+  - /data/dataset/tdfy/trellis500k/preprocessor@latent_loader_dataset.preprocessor: raw 
+
+_target_: lidra.data.dataset.tdfy.ycb_bop.anything_dataset.AnythingDataset
+eval_id_json: "${cluster.path.datasets}/trellis500k/YCBVideo/eval_random3.json"
+latent_loader_dataset:
+  _target_: lidra.data.dataset.tdfy.trellis.dataset.PerSubsetDataset
+  path: "${cluster.path.datasets}/trellis500k/YCBVideo"
+  split: "val"
+  return_pointmap: true
+  pose_loader:
+    _target_: lidra.data.dataset.tdfy.trellis.pose_loader.load_trellis_pose_w_scale
+    _partial_: true

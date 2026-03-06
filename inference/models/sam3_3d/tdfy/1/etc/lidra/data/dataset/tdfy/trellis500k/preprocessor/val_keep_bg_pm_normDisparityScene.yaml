@@ -1,0 +1,44 @@
+_target_: lidra.data.dataset.tdfy.trellis.dataset.PreProcessor
+
+# Enable pointmap normalization
+normalize_pointmap: true
+pointmap_normalizer:
+  _target_: lidra.data.dataset.tdfy.img_and_mask_transforms.NormalizedDisparitySpaceSSI
+  clip_beyond_scale: 5.0
+  use_scene_scale: true
+
+
+img_transform:
+  _target_: torchvision.transforms.Compose
+  transforms:
+    - _target_: lidra.data.dataset.tdfy.img_processing.pad_to_square_centered
+      _partial_: true
+    - _target_: torchvision.transforms.Resize
+      size: 518
+mask_transform:
+  _target_: torchvision.transforms.Compose
+  transforms:
+    - _target_: lidra.data.dataset.tdfy.img_processing.pad_to_square_centered
+      _partial_: true
+    - _target_: torchvision.transforms.Resize
+      size: 518
+      interpolation: 0 # nearest
+pointmap_transform:
+  _target_: torchvision.transforms.Compose
+  transforms:
+    - _target_: lidra.data.dataset.tdfy.img_processing.pad_to_square_centered
+      _partial_: true
+    - _target_: torchvision.transforms.Resize
+      size: 518
+      interpolation: 0 # nearest
+
+img_mask_joint_transform: []
+img_mask_pointmap_joint_transform: 
+  # First resize all inputs to the same size (RGB image size)
+  - _target_: lidra.data.dataset.tdfy.img_and_mask_transforms.resize_all_to_same_size
+    _partial_: true
+  # Then apply cropping
+  - _target_: lidra.data.dataset.tdfy.img_and_mask_transforms.crop_around_mask_with_padding
+    _partial_: true
+    box_size_factor: 1.2
+    padding_factor: 0.0

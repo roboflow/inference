@@ -1,0 +1,3 @@
+defaults:
+  - /data/module/dict/training@_here_
+  - /data/dataset/tdfy/trellis500k_overfit@training.dataset: training

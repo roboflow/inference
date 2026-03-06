@@ -1,0 +1,7 @@
+_target_: lidra.callback.tdfy.compute_metrics.TdfySingleTrialMetricsCallback
+output_dir: ${hydra:runtime.output_dir}/metrics_tdfy
+evaluation_fn:
+  _target_: lidra.callback.tdfy.compute_metrics.TdfySingleTrialMetricsCallback.em_structure_evaluation_fn
+  occupancy_volume_resolution: null
+  _partial_: true
+metrics_fstem: metrics

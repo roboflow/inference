@@ -1,0 +1,4 @@
+_target_: lidra.data.dataset.tdfy.folder.anything_inference.AnythingInferenceFolderDataset
+base_dir: ???
+metadata_csv_path: ???
+image_mask_processor: ???

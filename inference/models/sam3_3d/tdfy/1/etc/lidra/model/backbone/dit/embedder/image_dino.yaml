@@ -1,0 +1,5 @@
+_target_: lidra.model.backbone.dit.embedder.dino.Dino
+dino_model: "dinov2_vitl14_reg"
+input_size: 518
+normalize_images: True
+prenorm_features: False

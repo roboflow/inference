@@ -1,0 +1,48 @@
+# @package _global_
+defaults:
+  - fm-trellis-features-trellis500k
+
+# batch_size: 4
+
+loop:
+  max_epochs: 200
+  precision: null
+  detect_anomaly: False
+  callbacks:
+    gradient_scaler:
+      _target_: lidra.callback.tdfy.gradual_grad_scale.GradualGradScaleCallback
+      initial_scale: 30.0
+      scale_growth: 0.001
+    gradient_clipping:
+      _target_: lidra.callback.tdfy.adaptive_gradient_clipping.AdaptiveGradientClipCallback
+      max_clip_val: 1.0
+      clip_percentile: 95.0
+      buffer_size: 1000
+    memory_manager:
+      _target_: lidra.callback.tdfy.memory_manager.MemoryManagerCallback
+      get_size_func: 
+        _target_: lidra.callback.tdfy.memory_manager.get_input_size_slat_flow
+        _partial_: true
+      mem_based_func:
+        _target_: lidra.callback.tdfy.memory_manager.set_grad_ckpt_slat
+        _partial_: true
+        slat_path: _base_models.generator.reverse_fn.backbone
+      update_every: 500
+
+module:
+  batch_preprocessing_fn:
+    deterministic_sampling: True
+  generator:
+    backbone:
+      training_time_sampler_fn:
+        _target_: lidra.model.backbone.generator.flow_matching.model.lognorm_sampler
+        _partial_: true
+        mean: 1.0
+        std: 1.0 
+
+tdfy:
+  reverse_fn:
+    use_fp16: True
+    condition_embedder: 
+      normalize_images: True
+      prenorm_features: True

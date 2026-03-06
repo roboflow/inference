@@ -1,0 +1,4 @@
+defaults:
+  - base
+shuffle: true
+drop_last: true

@@ -1,0 +1,9 @@
+_target_: lidra.model.backbone.trellis.models.sparse_structure_vae.SparseStructureDecoderTdfyWrapper
+out_channels: 1
+latent_channels: 8
+num_res_blocks: 2
+num_res_blocks_middle: 2
+channels: [512, 128, 32]
+use_fp16: false
+pretrained_ckpt_path: ${cluster.path.weights}/tdfy/TRELLIS-image-large/ckpts/ss_dec_conv3d_16l8_fp16.safetensors
+reshape_input_to_cube: false

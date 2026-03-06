@@ -1,0 +1,23 @@
+# @package _global_
+defaults:
+  - mm_eitr
+  - override /data/dataset/tdfy/trellis500k/preprocessor@tdfy.train_preprocessor: train_keep_bg_w_ptmp
+  - override /data/dataset/tdfy/trellis500k/preprocessor@tdfy.val_preprocessor: val_keep_bg_w_ptmp
+  - override /model/backbone/dit/embedder@tdfy.reverse_fn.model.condition_embedder: image_dino_moge_mask_pointmap
+
+module:
+  batch_conditions_mapping:
+    # Full image
+    rgb_image: rgb_image
+    rgb_image_mask: rgb_image_mask
+    rgb_pointmap: rgb_pointmap
+
+    # Cropped image
+    image: image
+    mask: mask
+    pointmap: pointmap
+
+
+tdfy:
+  reverse_fn:
+    checkpoint_path: /checkpoint/3dfy/haotang/lidra/logs/tagged/_submit/v1-tricks-moge-midtraining-bf16/lightning/version_0/checkpoints/epoch=24-step=129875-v1.ckpt

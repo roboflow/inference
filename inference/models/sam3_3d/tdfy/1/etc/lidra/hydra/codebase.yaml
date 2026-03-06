@@ -1,0 +1,15 @@
+# TODO(Pierre) : test and clean
+
+defaults:
+  - base
+  # - /hydra/hydra_logging@_here_: disabled
+  # - /hydra/job_logging@_here_: disabled
+
+job:
+  chdir: false
+run:
+  dir: "."
+sweep:
+  dir: "."
+output_subdir: null
+# version: 1.2

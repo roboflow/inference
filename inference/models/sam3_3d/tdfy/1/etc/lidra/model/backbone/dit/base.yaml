@@ -1,0 +1,4 @@
+_target_: lidra.model.backbone.dit.model.create_dit_backbone
+input_type: image
+condition_type: none
+learn_sigma: false

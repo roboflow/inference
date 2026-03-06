@@ -1,0 +1,20 @@
+# @package _global_
+defaults:
+  - fm-trellis-trellis500k
+
+  - override /model/backbone/dit/embedder@tdfy.reverse_fn.condition_embedder: image_mask_dino_dino
+
+
+module:
+  batch_conditions_mapping: ["image", "mask"]
+
+loop:
+  max_epochs: 200
+  deterministic: false
+  precision: bf16-true
+  dataloaders:
+    training:
+      dataset:
+        pad: ResizeShortestSide
+        subsets: ["ABO", "ObjaverseXL_sketchfab", "ObjaverseXL_github"]
+        resnet_normalization: false

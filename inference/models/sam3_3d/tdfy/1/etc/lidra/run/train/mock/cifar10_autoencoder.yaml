@@ -1,0 +1,28 @@
+# @package _global_
+defaults:
+  ## base setup
+  - /run/train@: base
+
+  ## loop setup
+  - /loop: mock
+  # dataset setup
+  - /data/module@loop.dataloaders: cifar10
+
+  ## training module setup
+  - /model/module/mock@module: autoencoder
+
+  # module setup
+  - /model/backbone/mock@module.encoder.backbone: encoder
+  - /optimizer@module.encoder.optimizer: sgd
+
+  - /model/backbone/mock@module.decoder.backbone: decoder
+  - /optimizer@module.decoder.optimizer: sgd
+
+  - _self_
+
+module:
+  encoder:
+    _target_: lidra.model.module.base.TrainableBackbone
+  decoder:
+    _target_: lidra.model.module.base.TrainableBackbone
+  regularization_lambda: 0.01

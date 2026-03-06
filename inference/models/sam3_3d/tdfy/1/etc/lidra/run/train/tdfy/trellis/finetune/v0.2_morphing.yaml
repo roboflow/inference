@@ -1,0 +1,29 @@
+# @package _global_
+defaults:
+  - ../midtraining/cropped-cropped-mask-midtraining
+  
+  - /data/dataset/tdfy/trellis500k/subset_train@loop.dataloaders.training.dataset.datasets.r3_25_morphing: r3_25_morphing
+  - override /data/dataset/tdfy/trellis500k@loop.dataloaders.training.dataset: training_empty
+
+loop:
+  max_epochs: 100
+  dataloaders:
+    training:
+      dataset:
+        # _target_: torch.utils.data.dataset.ConcatDataset
+        datasets:
+          # _target_: lidra.config.utils.make_list_from_kwargs
+          r3_25_morphing:
+            preprocessor: ${tdfy.preprocessor}
+            metadata_fname: "metadata_clean.csv"
+            metadata_filter: 
+              _target_: lidra.data.dataset.tdfy.metadata_filter.custom_metadata_filter
+              filter_funcs:
+                - _target_: lidra.data.dataset.tdfy.metadata_filter.unique_mesh_filter
+                  col_name: "sha256_prior_morphing"
+                - _target_: lidra.data.dataset.tdfy.metadata_filter.data_query_filter
+                  query: "mesh_source=='trellis' or mesh_source=='shutterstock'"
+
+tdfy:
+  reverse_fn:
+    checkpoint_path: /checkpoint/3dfy/weiyaowang/lidra/logs/tagged/_submit/fm-force_zeros_cond-trellis500k-rPad.2_colorAug-16x8/lightning/version_0/checkpoints/last.ckpt

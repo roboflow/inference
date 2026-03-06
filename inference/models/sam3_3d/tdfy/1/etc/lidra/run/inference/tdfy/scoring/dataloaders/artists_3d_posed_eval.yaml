@@ -1,0 +1,9 @@
+defaults:
+  - /data/module@_here_: tdfy/artists_3d_posed_v2
+  - _self_
+
+validation:
+  dataset:
+    latent_loader_dataset:
+      preprocessor: ${logs.config.tdfy.val_preprocessor}
+

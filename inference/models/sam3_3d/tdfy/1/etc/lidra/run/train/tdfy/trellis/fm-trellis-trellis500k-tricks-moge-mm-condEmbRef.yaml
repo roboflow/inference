@@ -1,0 +1,14 @@
+# @package _global_
+defaults:
+  - fm-trellis-trellis500k-tricks-moge-mm
+  - /model/backbone/dit/embedder@module.condition_embedder.backbone: image_dino_moge
+  - /optimizer@module.condition_embedder.optimizer: adam
+  - _self_
+
+module:
+  condition_embedder:
+    _target_: lidra.model.module.base.TrainableBackbone
+
+tdfy:
+  reverse_fn:
+    condition_embedder: null

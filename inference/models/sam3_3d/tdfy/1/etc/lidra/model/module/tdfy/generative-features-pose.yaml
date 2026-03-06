@@ -1,0 +1,3 @@
+_target_: lidra.model.module.tdfy.generative.FeaturesAndPose
+generator: ???
+batch_conditions_mapping: ???

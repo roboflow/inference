@@ -1,0 +1,17 @@
+defaults:
+  - base
+
+name: aws-h100
+
+path:
+  base: /checkpoint/3dfy/${oc.env:USER}/lidra
+  datasets: /checkpoint/3dfy/shared/datasets
+  weights: /checkpoint/3dfy/shared/weights/
+
+slurm:
+  constraint: null
+  account: 3dfy
+  partition: learn
+  qos: 3dfy_high
+  timeout: 10000
+  mem_per_gpu: 224G

@@ -1,0 +1,16 @@
+# @package _global_
+defaults:
+  - fm-trellis-trellis500k-tricks-moge
+  - override /model/backbone@tdfy.reverse_fn: trellis_dit/mm_image_large_shape_only
+  - override /model/module/tdfy@module: generative-featuresAndPoseToken
+  - _self_
+
+
+module:
+  keep_preds: ["shape"]
+  generator:
+    backbone:
+      loss_weights:
+        # help optree broadcase, it does not broadcast DictConfig
+        _target_: lidra.config.utils.make_dict
+        shape: 1.0

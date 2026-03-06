@@ -1,0 +1,3 @@
+defaults:
+  - /data/module/dict/training@_here_
+  - /data/dataset/wikipedia@training.dataset: english

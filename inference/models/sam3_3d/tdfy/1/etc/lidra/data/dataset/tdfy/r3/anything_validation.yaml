@@ -1,0 +1,30 @@
+defaults:
+  - /data/dataset/tdfy/trellis500k/preprocessor@latent_loader_dataset.preprocessor: val_default
+
+
+_target_: lidra.data.dataset.tdfy.r3.anything_dataset.AnythingDataset
+
+dataset:
+  _target_: lidra.data.dataset.tdfy.r3.dataset.R3Dataset
+  data_dir: "${cluster.path.datasets}/trellis500k/r3_goldenset_25_morphing_scaleonly"
+
+# Latent loader configuration
+latent_loader_dataset:
+  _target_: lidra.data.dataset.tdfy.trellis.dataset.PerSubsetDataset
+  path: "${cluster.path.datasets}/trellis500k/r3_goldenset_25_morphing_scaleonly"
+  split: "val"
+  latent_dir: "ss_latents/trellis-ss-vae-trial1-lambda1e-3-8x8"
+  metadata_fname: "metadata_clean.csv"
+  pose_loader: 
+    _target_: lidra.data.dataset.tdfy.trellis.pose_loader.R3.load_pose
+    _partial_: true
+  pointmap_loader:
+    _target_: lidra.data.dataset.tdfy.trellis.pose_loader.R3.load_pointmap
+    _partial_: True
+    pointcloud_directory: "/checkpoint/3dfy/shared/r3_data/pointmaps/moge"
+  return_pointmap: true
+  metadata_filter: 
+    _target_: lidra.data.dataset.tdfy.metadata_filter.custom_metadata_filter
+    filter_funcs:
+      - _target_: lidra.data.dataset.tdfy.metadata_filter.data_query_filter
+        query: "pose==True"

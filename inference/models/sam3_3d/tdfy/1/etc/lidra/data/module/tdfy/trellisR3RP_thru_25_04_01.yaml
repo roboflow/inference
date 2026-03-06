@@ -1,0 +1,9 @@
+defaults:
+  - /data/module/dict/training@_here_
+  - /data/module/dict/validation@_here_
+  - /data/dataset/tdfy/trellis500k@training.dataset: training_empty
+  - /data/dataset/tdfy/trellis500k/subset_train@training.dataset.datasets.R3_25_03_01: r3_25_03_01
+  - /data/dataset/tdfy/trellis500k/subset_train@training.dataset.datasets.R3_25_04_01: r3_25_04_01
+  - /data/dataset/tdfy/trellis500k/subset_train@training.dataset.datasets.RP_a_25_03_01: rp_a_25_03_01
+  - /data/dataset/tdfy/trellis500k/subset_train@training.dataset.datasets.RP_a_25_04_01: rp_a_25_04_01
+  - /data/dataset/tdfy/r3@validation.dataset: anything_validation

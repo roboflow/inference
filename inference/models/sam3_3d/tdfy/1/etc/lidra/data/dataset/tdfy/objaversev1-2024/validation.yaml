@@ -1,0 +1,21 @@
+
+defaults:
+  - /data/dataset/tdfy/trellis500k/preprocessor@latent_loader_dataset.preprocessor: val_default
+
+
+_target_: lidra.data.dataset.tdfy.objaverseV1_2024.anything_dataset.AnythingDataset
+
+dataset:
+  _target_: lidra.data.dataset.tdfy.objaverseV1_2024.dataset.ObjaverseV1_2024Dataset
+  data_dir: "${cluster.path.datasets}/trellis500k/ObjaverseV1_all"
+
+
+# Optional latent loader configuration
+latent_loader_dataset:
+  _target_: lidra.data.dataset.tdfy.trellis.dataset.PerSubsetDataset
+  path: "${cluster.path.datasets}/trellis500k/ObjaverseV1_all"
+  split: "val"
+  metadata_fname: metadata_eval.csv
+  pose_loader: 
+    _target_: lidra.data.dataset.tdfy.trellis.pose_loader.load_pose_objaversev1old
+    _partial_: true

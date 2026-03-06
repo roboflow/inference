@@ -1,0 +1,4 @@
+defaults:
+  - base
+
+path: "${cluster.path.datasets}/trellis500k/ObjaverseXL_sketchfab"

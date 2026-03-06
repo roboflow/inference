@@ -1,0 +1,24 @@
+# @package _global_
+
+cluster_path: /checkpoint/3dfy/
+trellis_ckpts_dir: /checkpoint/3dfy/shared/weights/tdfy/TRELLIS-image-large/ckpts
+config_dir: ${cluster_path}/haotang/dev/lidra/etc/lidra/
+lidra_ckpt_dir: ${cluster_path}/weiyaowang/lidra 
+
+cluster:
+  path:
+    weights: /checkpoint/3dfy/shared/weights/
+
+inference_pipeline:
+  _target_: lidra.pipeline.inference_pipeline_stage2_only.InferenceStage2OnlyPipeline
+  slat_decoder_gs_config_path: ${config_dir}/model/backbone/trellis_vae/slat_decoder_gs.yaml
+  slat_decoder_gs_ckpt_path: ${trellis_ckpts_dir}/slat_dec_gs_swin8_B_64l8gs32_fp16.safetensors
+  slat_decoder_mesh_config_path: ${config_dir}/model/backbone/trellis_vae/slat_decoder_mesh.yaml
+  slat_decoder_mesh_ckpt_path: ${trellis_ckpts_dir}/slat_dec_mesh_swin8_B_64l8m256c_fp16.safetensors
+  
+  slat_generator_config_path: ${lidra_ckpt_dir}/logs/tagged/_submit/fm-trellisDiT-features-ObjV1-ABO-ObjGithub-nvoxels15k-dinov2_vitl14_reg-518-16x8/config.yaml
+  slat_generator_ckpt_path: ${trellis_ckpts_dir}/slat_flow_img_dit_L_64l8p2_fp16.safetensors
+
+  dtype: float16
+  version: 3dfy_mitl_s2Pretrain
+  decode_formats: ["gaussian", "mesh"]

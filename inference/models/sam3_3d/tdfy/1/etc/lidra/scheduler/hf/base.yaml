@@ -1,0 +1,4 @@
+_target_: lidra.config.utils.Partial
+path: transformers.get_scheduler
+num_warmup_steps: 10000 
+num_training_steps: 100000

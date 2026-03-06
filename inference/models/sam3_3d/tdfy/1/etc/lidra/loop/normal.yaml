@@ -1,0 +1,40 @@
+defaults:
+  - base
+
+deterministic: false 
+max_epochs: 100
+# limit_train_batches: 1000
+# limit_val_batches: 1000
+# precision: 16-true
+# enable_progress_bar: false
+
+callbacks:
+  garbage_collection:
+    _target_: lidra.callback.garbage_collection.GarbageCollection
+    frequency: 1000
+    collect_on_epoch_end: true
+    collect_cuda: true
+
+  learning_rate_monitor:
+    _target_: lightning.pytorch.callbacks.LearningRateMonitor
+    logging_interval: null
+    log_momentum: false
+    log_weight_decay: false
+  # device_monitor:
+  #   _target_: lightning.pytorch.callbacks.DeviceStatsMonitor
+  # https://lightning.ai/docs/pytorch/stable/api/lightning.pytorch.callbacks.ModelCheckpoint.html#modelcheckpoint
+  model_checkpoint:
+    _target_: lightning.pytorch.callbacks.ModelCheckpoint
+    save_on_train_epoch_end: true
+    save_last: link
+    every_n_epochs: 1
+    # every_n_train_steps: 1000
+  # # https://lightning.ai/docs/pytorch/stable/common/early_stopping.html
+  # - _target_: lightning.pytorch.callbacks.EarlyStopping
+  #   monitor: loss
+  #   mode: min
+  #   min_delta: 0.00
+  #   patience: 3
+  # # https://lightning.ai/docs/pytorch/stable/api/lightning.pytorch.callbacks.RichProgressBar.html#lightning.pytorch.callbacks.RichProgressBar
+  # - _target_: lightning.pytorch.callbacks.RichProgressBar
+  #   refresh_rate: 10

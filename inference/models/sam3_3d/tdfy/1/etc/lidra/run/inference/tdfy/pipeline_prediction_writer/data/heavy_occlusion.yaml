@@ -1,0 +1,61 @@
+# Data configuration for redteam_simple dataset (subset of specific examples)
+# Note: When used in full inference pipeline, you can override with:
+defaults:
+  - /data/dataset/tdfy/folder@validation.dataset: heavy_occlusion
+  - /data/dataset/tdfy/trellis500k/preprocessor@validation.dataset.preprocessor: to_tensor
+
+validation:
+  _target_: torch.utils.data.DataLoader
+  dataset:
+    # _target_: lidra.data.dataset.tdfy.folder.dataset.FolderDataset
+    
+    # # Directories - using absolute paths
+    # image_dir: "${cluster.path.datasets}/heavy_occlusion_eval_20250730/fullcontext_imgs"
+    # mask_dir: "${cluster.path.datasets}/heavy_occlusion_eval_20250730/mask_imgs"
+    # pointmap_dir: null  # No pointmaps for this dataset
+    
+    # # No pointmap loader needed for this dataset
+    # pointmap_loader: null
+    
+    # # File matcher - use MultiInstanceMaskMatcher for subdirectory structure
+    # file_matcher:
+    #   _target_: lidra.data.dataset.tdfy.folder.dataset.MultiInstanceMaskMatcher
+    
+    # # Use pre-computed metadata CSV with just the specific examples
+    # # metadata_csv: "${cluster.path.datasets}/redteam_structured/metadata_simple_sorted.csv"
+    # # metadata_csv: "${cluster.path.datasets}/redteam_structured/metadata_simple_v2.csv"
+    
+    # # Don't return pointmap since we don't have them
+    # return_pointmap: false
+    
+    # # Auto-match fallback (not needed when using metadata_csv)
+    # auto_match: false
+    
+    # # No additional filtering needed - metadata already filtered
+    # metadata_filter: null
+    
+    # Preprocessor - using to_tensor to convert PIL to tensors
+    # Matches /data/dataset/tdfy/trellis500k/preprocessor/to_tensor.yaml
+    preprocessor:
+      _target_: lidra.data.dataset.tdfy.trellis.dataset.PreProcessor
+      normalize_pointmap: false
+      img_transform:
+        _target_: torchvision.transforms.Compose
+        transforms:
+          - _target_: torchvision.transforms.ToTensor
+      mask_transform:
+        _target_: torchvision.transforms.Compose
+        transforms:
+          - _target_: torchvision.transforms.ToTensor
+      pointmap_transform:
+        _target_: torchvision.transforms.Compose
+        transforms: []
+      img_mask_joint_transform: []
+      img_mask_pointmap_joint_transform: []
+  
+  # DataLoader settings
+  batch_size: 1
+  num_workers: 0  # Set to 0 for testing, normally would be ${compute.n_cpus_per_gpu}
+  persistent_workers: false
+  pin_memory: true
+  shuffle: false

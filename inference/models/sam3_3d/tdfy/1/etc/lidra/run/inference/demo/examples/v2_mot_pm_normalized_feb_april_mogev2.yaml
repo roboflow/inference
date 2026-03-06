@@ -1,0 +1,88 @@
+# @package _global_
+
+cluster_path: /checkpoint/3dfy/
+trellis_ckpts_dir: /checkpoint/3dfy/shared/weights/tdfy/TRELLIS-image-large/ckpts
+config_dir: ${cluster_path}/haotang/dev/lidra/etc/lidra/
+lidra_ckpt_dir: ${cluster_path}/weiyaowang/lidra 
+
+cluster:
+  path:
+    weights: /checkpoint/3dfy/shared/weights/
+
+inference_pipeline:
+  # _target_: lidra.pipeline.inference_pipeline.InferencePipeline
+  _target_: lidra.pipeline.inference_pipeline_pointmap.InferencePipelinePointMap
+  ss_generator_config_path: /checkpoint/3dfy/haotang/lidra/logs/tagged/_submit/v0-tricks-moge-mm-ft-artist-3D-0725/config.yaml
+  ss_generator_ckpt_path: /checkpoint/3dfy/haotang/lidra/logs/tagged/_submit/v0-tricks-moge-mm-ft-artist-3D-0725/lightning/version_0/checkpoints/last.ckpt
+  ss_decoder_config_path: ${config_dir}/model/backbone/trellis_vae/ss_decoder.yaml
+  ss_decoder_ckpt_path: ${trellis_ckpts_dir}/ss_dec_conv3d_16l8_fp16.safetensors
+  
+  slat_decoder_gs_config_path: ${config_dir}/model/backbone/trellis_vae/slat_decoder_gs.yaml
+  slat_decoder_gs_ckpt_path: ${trellis_ckpts_dir}/slat_dec_gs_swin8_B_64l8gs32_fp16.safetensors
+  slat_decoder_mesh_config_path: ${config_dir}/model/backbone/trellis_vae/slat_decoder_mesh.yaml
+  slat_decoder_mesh_ckpt_path: ${trellis_ckpts_dir}/slat_dec_mesh_swin8_B_64l8m256c_fp16.safetensors
+
+  layout_model_config_path: /checkpoint/3dfy/ssax/lidra/logs/tagged/_submit/v2-mot-layout-ptmap-eitrpw0_1-lr1e-5-pw0_1-fixcrop-Feb-April/config.yaml
+  layout_model_ckpt_path: /checkpoint/3dfy/ssax/lidra/logs/tagged/_submit/v2-mot-layout-ptmap-eitrpw0_1-lr1e-5-pw0_1-fixcrop-Feb-April/lightning/version_0/checkpoints/epoch=74-step=22500-v1.ckpt
+  use_layout_result: true
+  force_shape_in_layout: true
+
+  depth_model:
+    _target_: lidra.pipeline.depth_models.moge.MoGe
+    model:
+      _target_: moge.model.v2.MoGeModel.from_pretrained
+      pretrained_model_name_or_path: Ruicheng/moge-2-vitl
+    device: cuda
+
+  layout_condition_input_mapping: []
+  layout_preprocessor:
+    _target_: lidra.data.dataset.tdfy.trellis.dataset.PreProcessor
+    normalize_pointmap: true    
+    img_mask_joint_transform: []
+    # - _partial_: true
+    #   _target_: lidra.data.dataset.tdfy.img_and_mask_transforms.crop_around_mask_with_padding
+    #   box_size_factor: 1.2
+    #   padding_factor: 0.0
+    img_mask_pointmap_joint_transform: 
+      - _target_: lidra.data.dataset.tdfy.img_and_mask_transforms.resize_all_to_same_size
+        _partial_: true      
+      - _partial_: true
+        _target_: lidra.data.dataset.tdfy.img_and_mask_transforms.crop_around_mask_with_padding
+        box_size_factor: 1.2
+        padding_factor: 0.0
+    img_transform:
+      _target_: torchvision.transforms.Compose
+      transforms:
+      - _partial_: true
+        _target_: lidra.data.dataset.tdfy.img_processing.pad_to_square_centered
+      - _target_: torchvision.transforms.Resize
+        size: 518
+    mask_transform:
+      _target_: torchvision.transforms.Compose
+      transforms:
+      - _partial_: true
+        _target_: lidra.data.dataset.tdfy.img_processing.pad_to_square_centered
+      - _target_: torchvision.transforms.Resize
+        interpolation: 0
+        size: 518
+    pointmap_transform:
+      _target_: torchvision.transforms.Compose
+      transforms:
+      - _partial_: true
+        _target_: lidra.data.dataset.tdfy.img_processing.pad_to_square_centered
+      - _target_: torchvision.transforms.Resize
+        interpolation: 0
+        size: 518
+
+  pad_size: 1.0
+  dtype: float16
+  version: 3dfy_v4
+
+  ss_condition_input_mapping: []  
+
+  pose_decoder_name: ScaleShiftInvariant
+  decode_formats: ["gaussian", "mesh"]
+
+  use_pretrained_slat: false
+  slat_generator_config_path: /checkpoint/3dfy/weiyaowang/lidra/logs/tagged/_submit/fm-trellis-features-foFix-ft-8x8/config.yaml
+  slat_generator_ckpt_path: /checkpoint/3dfy/weiyaowang/lidra/logs/tagged/_submit/fm-trellis-features-foFix-ft-8x8/lightning/version_0/checkpoints/last.ckpt

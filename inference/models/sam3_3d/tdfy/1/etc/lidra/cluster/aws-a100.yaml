@@ -1,0 +1,16 @@
+defaults:
+  - base
+
+name: aws-a100
+
+path:
+  base: /fsx-3dfy-v2/${oc.env:USER}/3dfy/lidra
+  datasets: /fsx-3dfy-v2/shared/datasets/
+  weights: /fsx-3dfy-v2/shared/weights/
+
+slurm:
+  constraint: null
+  account: 3dfy
+  partition: learn
+  qos: 3dfy_high
+  timeout: 10000

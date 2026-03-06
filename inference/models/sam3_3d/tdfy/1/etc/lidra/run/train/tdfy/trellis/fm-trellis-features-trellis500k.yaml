@@ -1,0 +1,63 @@
+# @package _global_
+defaults:
+  - base
+
+  # generator
+  - /model/backbone@tdfy.reverse_fn: trellis_dit/image_large_featured_latents
+
+  - override /model/module/tdfy@module: generative-trellisDino-features-only
+  - override /model/backbone/generator@module.generator.backbone: flow_matching_cfg
+
+  # dataset
+  - override /data/module@loop.dataloaders: tdfy/trellis500k
+  - override /data/dataset/tdfy/trellis500k@loop.dataloaders.training.dataset: training_features
+
+  - _self_
+
+batch_size: 4
+
+
+module:
+  batch_conditions_mapping: ["image", "coords"] # rgb-image
+  generator:
+    backbone:
+      reverse_fn:
+        backbone: ${tdfy.reverse_fn}
+        unconditional_handling: "add_flag"
+    # scheduler:
+    #   _target_: lidra.model.module.tdfy.scheduler.MCCScheduler
+    #   _partial_: true
+    #   warmup_epochs: 10
+    #   max_epochs: ${loop.max_epochs}
+    #   min_factor: 1e-3
+    #   max_factor: 1.0
+
+    # # https://lightning.ai/docs/pytorch/stable/api/lightning.pytorch.core.LightningModule.html#lightning.pytorch.core.LightningModule.configure_optimizers
+    # scheduler_kwargs:
+    #   interval: epoch
+    #   frequency: 1
+    #   name: "train/learning_rate"
+
+loop:
+  max_epochs: 200
+  precision: bf16
+  dataloaders:
+    validation: null
+  callbacks:
+    model_checkpoint2:
+      _target_: lightning.pytorch.callbacks.ModelCheckpoint
+      save_on_train_epoch_end: true
+      every_n_epochs: 25
+      save_top_k: -1
+
+  # limit_train_batches: 500
+
+tdfy:
+  collator:
+    _target_: lidra.data.collator.auto_collate
+  reverse_fn:
+    condition_embedder: 
+      dino_model: "dinov2_vitl14_reg"
+      input_size: 518
+      normalize_images: True
+    force_zeros_cond: True

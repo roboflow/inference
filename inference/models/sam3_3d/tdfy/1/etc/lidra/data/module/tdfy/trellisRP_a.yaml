@@ -1,0 +1,6 @@
+defaults:
+  - /data/module/dict/training@_here_
+  - /data/module/dict/validation@_here_
+  - /data/dataset/tdfy/trellis500k@training.dataset: training_empty
+  - /data/dataset/tdfy/trellis500k/subset_train@training.dataset.datasets.RP_A: rp_a_25_morphing_pose
+  - /data/dataset/tdfy/r3@validation.dataset: anything_validation

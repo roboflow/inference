@@ -1,0 +1,13 @@
+defaults:
+  - base
+
+name: fair
+
+path:
+  base: /checkpoint/${oc.env:USER}/lidra
+
+slurm:
+  constraint: volta32gb
+  partition: 3dfy # "learnaccel" or "3dfy"
+  qos: null
+  timeout: 20000 # 20k = 14 days (3dfy), 4.3k = 3 days (learnaccel)

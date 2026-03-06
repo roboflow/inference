@@ -1,0 +1,2 @@
+_target_: lidra.config.utils.make_string # yaml format doesn't allow string at the root of the file, this is a workaround
+value: "auto"

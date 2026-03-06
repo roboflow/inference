@@ -1,0 +1,4 @@
+_target_: lidra.model.module.tdfy.passthrough.Passthrough
+backbone: ???
+batch_input_mapping: ???
+batch_preprocessing_fn: ???

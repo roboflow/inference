@@ -1,0 +1,22 @@
+_target_: lidra.data.dataset.tdfy.trellis.dataset.PreProcessor
+img_transform:
+  _target_: torchvision.transforms.Compose
+  transforms:
+    - _target_: lidra.data.dataset.tdfy.img_processing.pad_to_square_centered
+      _partial_: true
+    - _target_: torchvision.transforms.Resize
+      size: 518
+      interpolation: 3 # BICUBIC; ideally Lanczos but no tensor support
+mask_transform:
+  _target_: torchvision.transforms.Compose
+  transforms:
+    - _target_: lidra.data.dataset.tdfy.img_processing.pad_to_square_centered
+      _partial_: true
+    - _target_: torchvision.transforms.Resize
+      size: 518
+      interpolation: 0 # nearest
+img_mask_joint_transform:
+  - _target_: lidra.data.dataset.tdfy.img_and_mask_transforms.crop_around_mask_with_padding
+    _partial_: true
+    box_size_factor: 1.0
+    padding_factor: 0.1

@@ -1,0 +1,9 @@
+defaults: 
+  - /model/backbone/trellis_dit@model: mm_image_large_shape_quaternion
+
+_target_: lidra.model.io.load_model_from_checkpoint
+checkpoint_path: ???
+strict: True
+state_dict_fn: 
+  _target_: lidra.model.io.remove_prefix_state_dict_fn
+  prefix: "_base_models.generator.reverse_fn.backbone." 

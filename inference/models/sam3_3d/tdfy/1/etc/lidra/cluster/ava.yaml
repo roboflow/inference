@@ -1,0 +1,13 @@
+defaults:
+  - base
+
+name: ava
+
+path:
+  base: /checkpoint/ego-howto/${oc.env:USER}/lidra
+
+slurm:
+  constraint: null
+  partition: null
+  qos: eht_ava
+  timeout: 10000 # 10k = 7 days

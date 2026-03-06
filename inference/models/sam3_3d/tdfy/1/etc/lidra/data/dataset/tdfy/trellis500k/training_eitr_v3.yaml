@@ -1,0 +1,12 @@
+defaults:
+  - subset_train@datasets.elephant_trellis500k: elephant_2M
+  - subset_train@datasets.elephant_sketchfab_extended: elephant_sketchfaball
+  - subset_train@datasets.elephant_shutterstock_tranche1: elephant_shutterstock
+  - subset_train@datasets.elephant_ego: elephant_ego
+  - subset_train@datasets.elephant_food: elephant_food
+  - subset_train@datasets.elephant_food_table: elephant_food_table
+  - subset_train@datasets.elephant_shutterstock_tranche2: elephant_shutterstock_left
+  
+_target_: torch.utils.data.dataset.ConcatDataset
+datasets:
+  _target_: lidra.config.utils.make_list_from_kwargs

@@ -168,6 +168,7 @@ def get_aligned_output_features_output_indices(
     verify_out_features_out_indices(out_features=output_features, out_indices=output_indices, stage_names=stage_names)
     return output_features, output_indices
 
+
 logger = logging.get_logger(__name__)
 
 # Base docstring
