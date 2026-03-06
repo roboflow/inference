@@ -1,32 +1,50 @@
 {% extends "base.html" %}
 
+{% set is_home = not page.url %}
+
 {% block tabs %}
-  {{ super() }}
-  {% if page.is_homepage or (page.meta and page.meta.template == "home.html") %}
-    {% include 'home.html' %}
-    <style>
-      main.md-main {
-        height: 0;
-        margin: 0;
-        padding: 0;
-        overflow: hidden;
-      }
-    </style>
-  {% endif %}
+{{ super() }}
+{% if is_home %}
+{% include 'home.html' %}
+<style>
+  main.md-main {
+    height: 0;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+  }
+</style>
+<script>
+  // Guard against SPA-style fallback: if we're rendering the home page
+  // but the URL isn't actually the site root, show 404 inline.
+  (function () {
+    var path = window.location.pathname.replace(/\/+$/, "") || "";
+    if (path !== "" && path !== "/index.html") {
+      document.currentScript.parentElement.innerHTML =
+        '<div style="text-align:center;padding:4rem 1rem;font-family:system-ui,sans-serif;">' +
+        '<img src="/images/404-img.svg" alt="" style="max-width:260px;margin:0 auto 2rem;" />' +
+        '<h1 style="font-size:2rem;margin-bottom:1rem;">Page Not Found</h1>' +
+        '<p style="font-size:1rem">The page you requested was not found.</p>' +
+        '<p style="font-size:1rem"><a href="/">Go back to the documentation home</a>.</p>' +
+        '</div>';
+    }
+  })();
+</script>
+{% endif %}
 {% endblock %}
 
 {% block container %}
-  {% if page.is_homepage or (page.meta and page.meta.template == "home.html") %}
-  {% else %}
-    {{ super() }}
-  {% endif %}
+{% if is_home %}
+{% else %}
+{{ super() }}
+{% endif %}
 {% endblock %}
 
 {% block extrahead %}
-  {{ super() }}
-  {% if page.is_homepage or (page.meta and page.meta.template == "home.html") %}
-    <link href="{{ 'https://cdn.jsdelivr.net/npm/swiper/swiper-bundle.min.css'|url }}" rel="stylesheet">
-    <link href="{{ 'static/styles.css'|url }}" rel="stylesheet">
-    <script type="module" src="{{ 'static/dist/home.js'|url }}"></script>
-  {% endif %}
+{{ super() }}
+{% if is_home %}
+<link href="{{ 'https://cdn.jsdelivr.net/npm/swiper/swiper-bundle.min.css'|url }}" rel="stylesheet">
+<link href="{{ 'static/styles.css'|url }}" rel="stylesheet">
+<script type="module" src="{{ 'static/dist/home.js'|url }}"></script>
+{% endif %}
 {% endblock %}
