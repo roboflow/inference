@@ -10,7 +10,7 @@ and pricing models.
 
 ### Serverless Hosted API
 
-The [Serverless Hosted API](https://docs.roboflow.com/deploy/hosted-api) supports running Workflows on
+The [Serverless Hosted API](https://docs.roboflow.com/deploy/serverless-hosted-api-v2) supports running Workflows on
 pre-trained & fine-tuned models, chaining models, basic logic, visualizations, and
 external integrations.
 

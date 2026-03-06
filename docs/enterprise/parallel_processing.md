@@ -1,6 +1,6 @@
 # Parallel Inference
 
-!!! note
+!!! warning "Enterprise Feature"
 
     This feature is only available for Roboflow Enterprise users. <a href="https://roboflow.com/sales" target="_blank">Contact our sales team</a> to learn more about Roboflow Enterprise.
 
