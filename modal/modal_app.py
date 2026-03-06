@@ -67,11 +67,11 @@ class Executor:
 
     # Parameterize by workspace_id
     workspace_id: str = modal.parameter()
-    
+
     # Store state for each unique code block within this container
     # Key is the hash of the code, value is the namespace dict for that code
     _code_namespaces: Dict[str, dict] = {}
-    
+
     # Shared globals dict that all custom python blocks can access
     _shared_globals: Dict[str, Any] = {}
 
@@ -123,15 +123,15 @@ class Executor:
 
         # Get the hash of this code to identify it uniquely
         code_hash = self._get_code_hash(code_str, imports)
-        
+
         # Check if we already have a namespace for this code
         if code_hash not in self._code_namespaces:
             # Create a new namespace for this code block
             self._code_namespaces[code_hash] = {
                 "__name__": "__main__",
-                "globals": self._shared_globals  # Inject the shared globals dict
+                "globals": self._shared_globals,  # Inject the shared globals dict
             }
-            
+
             # Execute imports and code in the namespace to initialize it
             import_code = "\n".join(imports) if imports else ""
             full_imports = f"""
@@ -155,7 +155,7 @@ from datetime import datetime
             try:
                 # Execute imports in this namespace
                 exec(full_imports, self._code_namespaces[code_hash])
-                
+
                 # Execute the user code to define functions in this namespace
                 exec(code_str, self._code_namespaces[code_hash])
             except Exception as e:
@@ -166,7 +166,7 @@ from datetime import datetime
                     "error": f"Code initialization failed: {str(e)}",
                     "error_type": type(e).__name__,
                 }
-        
+
         # Get the namespace for this code
         namespace = self._code_namespaces[code_hash]
 
@@ -341,41 +341,61 @@ from datetime import datetime
 
             # Check if function expects a 'self' parameter
             import inspect
+            import sys
+            from io import StringIO
 
             sig = inspect.signature(user_function)
             params = list(sig.parameters.keys())
 
-            # If function expects 'self' as first param, create a simple object to pass
-            if params and params[0] == "self":
-                # Create a simple object to pass as self
-                class BlockSelf:
-                    pass
+            # Capture stdout/stderr during execution; and later we
+            # restore previous state.
+            old_stdout, old_stderr = sys.stdout, sys.stderr
+            sys.stdout, sys.stderr = StringIO(), StringIO()
 
-                block_self = BlockSelf()
-                # Execute with self parameter
-                result = user_function(block_self, **inputs)
-            else:
-                # Execute without self parameter
-                result = user_function(**inputs)
+            try:
+                # If function expects 'self' as first param, create a simple object to pass
+                if params and params[0] == "self":
 
-            json_result = serialize_for_modal_remote_execution(result)
+                    class BlockSelf:
+                        pass
 
-            # Return the serialized result with success flag
-            return {"success": True, "result": json_result}
+                    block_self = BlockSelf()
+                    result = user_function(block_self, **inputs)
+                else:
+                    result = user_function(**inputs)
+
+                json_result = serialize_for_modal_remote_execution(result)
+
+                # Return the serialized result with success flag
+                return {"success": True, "result": json_result}
+            except Exception as e:
+                # On error, capture stdout/stderr and return error details
+                stdout_output = sys.stdout.getvalue()
+                stderr_output = sys.stderr.getvalue()
+
+                result = {
+                    "success": False,
+                    "error": str(e),
+                    "error_type": type(e).__name__,
+                    "stdout": stdout_output or None,
+                    "stderr": stderr_output or None,
+                }
+
+                # Get the line number and function name from evaluated code
+                tb = traceback.extract_tb(e.__traceback__)
+                if tb:
+                    frame = tb[-1]
+                    result["line_number"] = frame.lineno
+                    result["function_name"] = frame.name
+
+                return result
+            finally:
+                sys.stdout, sys.stderr = old_stdout, old_stderr
 
         except Exception as e:
-            # On error, return error details
-            result = {
+            # Outer exception handler for non-execution errors (deserialization, etc.)
+            return {
                 "success": False,
                 "error": str(e),
                 "error_type": type(e).__name__,
             }
-
-            # Get the line number and function name from evaluated code
-            tb = traceback.extract_tb(e.__traceback__)
-            if tb:
-                frame = tb[-1]
-                result["line_number"] = frame.lineno
-                result["function_name"] = frame.name
-
-            return result

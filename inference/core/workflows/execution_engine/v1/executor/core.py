@@ -225,6 +225,8 @@ def safe_execute_step(
             traceback=error_traceback,
             error_line=getattr(error, "error_line", None),
             code_snippet=getattr(error, "code_snippet", None),
+            stdout=getattr(error, "stdout", None),
+            stderr=getattr(error, "stderr", None),
         )
         raise StepExecutionError(
             block_id=step_name,

@@ -1,6 +1,8 @@
+import sys
 import traceback
 import types
-from typing import List, Optional, Type
+from io import StringIO
+from typing import Any, Dict, List, Optional, Type
 
 from inference.core.env import (
     ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS,
@@ -47,14 +49,20 @@ class PythonBlockError(Exception):
     def __init__(
         self,
         message: str,
+        block_type_name: Optional[str] = None,
         error_line: Optional[int] = None,
         code_snippet: Optional[str] = None,
         traceback_str: Optional[str] = None,
+        stdout: Optional[str] = None,
+        stderr: Optional[str] = None,
     ):
         super().__init__(message)
+        self.block_type_name = block_type_name
         self.error_line = error_line
         self.code_snippet = code_snippet
         self.traceback = traceback_str
+        self.stdout = stdout
+        self.stderr = stderr
 
 
 def _extract_code_snippet(
@@ -73,6 +81,31 @@ def _extract_code_snippet(
         for i in range(start, end)
     ]
     return "\n" + "\n".join(snippet_lines)
+
+
+def _build_traceback_string(
+    code: Optional[str],
+    line_number: int,
+    function_name: str,
+    error_type: str,
+    error_msg: str,
+) -> str:
+    """Build a traceback string from structured error data."""
+    code_lines = (code or "").splitlines()
+    code_line = (
+        code_lines[line_number - 1].strip()
+        if 0 < line_number <= len(code_lines)
+        else ""
+    )
+
+    lines = [
+        "Traceback (most recent call last):",
+        f'  File "Python Block", line {line_number}, in {function_name}',
+    ]
+    if code_line:
+        lines.append(f"    {code_line}")
+    lines.append(f"{error_type}: {error_msg}")
+    return "\n".join(lines)
 
 
 def _create_clean_traceback(
@@ -102,12 +135,19 @@ def _create_clean_traceback(
 
 
 def _create_python_block_error(
-    error: Exception, python_code: PythonCode
+    error: Exception,
+    python_code: PythonCode,
+    stdout: Optional[str] = None,
+    stderr: Optional[str] = None,
 ) -> PythonBlockError:
     """Create a PythonBlockError with structured code context."""
     tb = traceback.extract_tb(error.__traceback__)
     if not tb:
-        return PythonBlockError(f"{error.__class__.__name__}: {error}")
+        return PythonBlockError(
+            f"{error.__class__.__name__}: {error}",
+            stdout=stdout,
+            stderr=stderr,
+        )
 
     import_lines = len(_get_python_code_imports(python_code).splitlines())
     frame = tb[-1]
@@ -122,6 +162,8 @@ def _create_python_block_error(
         error_line=line_number,
         code_snippet=code_snippet.lstrip("\n") if code_snippet else None,
         traceback_str=clean_traceback,
+        stdout=stdout,
+        stderr=stderr,
     )
 
 
@@ -133,6 +175,7 @@ def assembly_custom_python_block(
     api_key: Optional[str] = None,
     skip_class_eval: Optional[bool] = False,
 ) -> Type[WorkflowBlock]:
+
     code_module = create_dynamic_module(
         block_type_name=block_type_name,
         python_code=python_code,
@@ -140,6 +183,7 @@ def assembly_custom_python_block(
         api_key=api_key,
         skip_class_eval=skip_class_eval,
     )
+
     if not hasattr(code_module, python_code.run_function_name):
         raise DynamicBlockError(
             public_message=f"Cannot find function: {python_code.run_function_name} in declared code for "
@@ -181,10 +225,21 @@ def assembly_custom_python_block(
                     "`ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS=True`",
                     context="workflow_execution | step_execution | dynamic_step",
                 )
+            old_stdout, old_stderr = sys.stdout, sys.stderr
+            sys.stdout, sys.stderr = StringIO(), StringIO()
             try:
                 return run_function(self, *args, **kwargs)
             except Exception as error:
-                raise _create_python_block_error(error, python_code) from error
+                stdout_output = sys.stdout.getvalue()
+                stderr_output = sys.stderr.getvalue()
+                raise _create_python_block_error(
+                    error,
+                    python_code,
+                    stdout=stdout_output or None,
+                    stderr=stderr_output or None,
+                ) from error
+            finally:
+                sys.stdout, sys.stderr = old_stdout, old_stderr
 
     if python_code.init_function_code is not None and not hasattr(
         code_module, python_code.init_function_name
@@ -287,9 +342,17 @@ def create_dynamic_module(
             exec(code, dynamic_module.__dict__)
             return dynamic_module
         except Exception as error:
-            raise DynamicBlockError(
-                public_message=f"Error of type `{error.__class__.__name__}` encountered while attempting to "
-                f"create Python module with code for block: {block_type_name}. Error message: {error}. Full code:\n{code}",
-                context="workflow_compilation | dynamic_block_compilation | dynamic_module_creation",
-                inner_error=error,
+            error_line = getattr(error, "lineno", None)
+            code_snippet = None
+            if error_line and python_code.run_function_code:
+                snippet = _extract_code_snippet(
+                    python_code.run_function_code, error_line
+                )
+                code_snippet = snippet.lstrip("\n") if snippet else None
+
+            raise PythonBlockError(
+                message=f"{error.__class__.__name__}: {error}",
+                block_type_name=block_type_name,
+                error_line=error_line,
+                code_snippet=code_snippet,
             ) from error

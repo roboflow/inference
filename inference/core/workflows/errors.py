@@ -7,6 +7,8 @@ class BlockTraceback(BaseModel):
     traceback: Optional[str] = None
     error_line: Optional[int] = None
     code_snippet: Optional[str] = None
+    stdout: Optional[str] = None
+    stderr: Optional[str] = None
 
 
 class WorkflowBlockError(BaseModel):
