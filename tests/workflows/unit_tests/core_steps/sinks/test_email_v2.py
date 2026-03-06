@@ -16,7 +16,7 @@ from inference.core.workflows.core_steps.sinks.email_notification.v2 import (
     format_email_message,
     send_email_via_roboflow_proxy,
     serialize_image_data,
-    serialize_message_parameters,
+    serialize_image_data,
 )
 from inference.core.workflows.execution_engine.entities.base import (
     ImageParentMetadata,
@@ -684,7 +684,7 @@ def test_v2_serialize_image_data_with_list() -> None:
     assert result[2] == "/9j/second"
 
 
-def test_v2_serialize_message_parameters() -> None:
+def test_v2_serialize_image_data() -> None:
     # given
     parent_metadata = ImageParentMetadata(parent_id="test")
     image_data = WorkflowImageData(
@@ -698,7 +698,7 @@ def test_v2_serialize_message_parameters() -> None:
     }
 
     # when
-    result = serialize_message_parameters(message_parameters)
+    result = serialize_image_data(message_parameters)
 
     # then
     assert result["image"] == "/9j/image_content"
@@ -706,7 +706,7 @@ def test_v2_serialize_message_parameters() -> None:
     assert result["text"] == "detection"
 
 
-def test_v2_serialize_message_parameters_with_nested_structures() -> None:
+def test_v2_serialize_image_data_with_nested_structures() -> None:
     # given
     parent_metadata = ImageParentMetadata(parent_id="test")
     image_data = WorkflowImageData(
@@ -722,7 +722,7 @@ def test_v2_serialize_message_parameters_with_nested_structures() -> None:
     }
 
     # when
-    result = serialize_message_parameters(message_parameters)
+    result = serialize_image_data(message_parameters)
 
     # then
     assert result["data"]["image"] == "/9j/nested"
