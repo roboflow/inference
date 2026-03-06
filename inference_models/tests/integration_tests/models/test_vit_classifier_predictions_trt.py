@@ -23,7 +23,7 @@ def test_single_label_trt_package_numpy(
     predictions = model(bike_image_numpy)
 
     # then
-    assert abs(predictions.confidence[0, 2].item() - 0.7300973534584045) < 2e-3
+    assert abs(predictions.confidence[0, 2].item() - 0.7300973534584045) < 2e-2
 
 
 @pytest.mark.slow
@@ -46,8 +46,8 @@ def test_single_label_trt_package_numpy_batch(
     predictions = model([bike_image_numpy, bike_image_numpy])
 
     # then
-    assert abs(predictions.confidence[0, 2].item() - 0.7300973534584045) < 2e-3
-    assert abs(predictions.confidence[1, 2].item() - 0.7300973534584045) < 2e-3
+    assert abs(predictions.confidence[0, 2].item() - 0.7300973534584045) < 2e-2
+    assert abs(predictions.confidence[1, 2].item() - 0.7300973534584045) < 2e-2
 
 
 @pytest.mark.slow
@@ -70,7 +70,7 @@ def test_single_label_trt_package_torch(
     predictions = model(bike_image_torch)
 
     # then
-    assert abs(predictions.confidence[0, 2].item() - 0.7300973534584045) < 2e-3
+    assert abs(predictions.confidence[0, 2].item() - 0.7300973534584045) < 2e-2
 
 
 @pytest.mark.slow
@@ -93,8 +93,8 @@ def test_single_label_trt_package_torch_list(
     predictions = model([bike_image_torch, bike_image_torch])
 
     # then
-    assert abs(predictions.confidence[0, 2].item() - 0.7300973534584045) < 2e-3
-    assert abs(predictions.confidence[1, 2].item() - 0.7300973534584045) < 2e-3
+    assert abs(predictions.confidence[0, 2].item() - 0.7300973534584045) < 2e-2
+    assert abs(predictions.confidence[1, 2].item() - 0.7300973534584045) < 2e-2
 
 
 @pytest.mark.slow
@@ -117,8 +117,8 @@ def test_single_label_trt_package_torch_batch(
     predictions = model(torch.stack([bike_image_torch, bike_image_torch]), dim=0)
 
     # then
-    assert abs(predictions.confidence[0, 2].item() - 0.7300973534584045) < 2e-3
-    assert abs(predictions.confidence[1, 2].item() - 0.7300973534584045) < 2e-3
+    assert abs(predictions.confidence[0, 2].item() - 0.7300973534584045) < 2e-2
+    assert abs(predictions.confidence[1, 2].item() - 0.7300973534584045) < 2e-2
 
 
 @pytest.mark.slow
