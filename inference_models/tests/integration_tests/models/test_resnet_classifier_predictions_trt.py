@@ -16,6 +16,7 @@ def test_single_label_trt_package_numpy(
 
     model = ResNetForClassificationTRT.from_pretrained(
         model_name_or_path=resnet_single_label_cls_trt_package,
+        engine_host_code_allowed=True,
     )
 
     # when
@@ -38,6 +39,7 @@ def test_single_label_trt_package_numpy_batch(
 
     model = ResNetForClassificationTRT.from_pretrained(
         model_name_or_path=resnet_single_label_cls_trt_package,
+        engine_host_code_allowed=True,
     )
 
     # when
@@ -61,6 +63,7 @@ def test_single_label_trt_package_torch(
 
     model = ResNetForClassificationTRT.from_pretrained(
         model_name_or_path=resnet_single_label_cls_trt_package,
+        engine_host_code_allowed=True,
     )
 
     # when
@@ -83,6 +86,7 @@ def test_single_label_trt_package_torch_list(
 
     model = ResNetForClassificationTRT.from_pretrained(
         model_name_or_path=resnet_single_label_cls_trt_package,
+        engine_host_code_allowed=True,
     )
 
     # when
@@ -106,6 +110,7 @@ def test_single_label_trt_package_torch_batch(
 
     model = ResNetForClassificationTRT.from_pretrained(
         model_name_or_path=resnet_single_label_cls_trt_package,
+        engine_host_code_allowed=True,
     )
 
     # when
@@ -129,6 +134,7 @@ def test_multi_label_trt_package_numpy(
 
     model = ResNetForMultiLabelClassificationTRT.from_pretrained(
         model_name_or_path=resnet_multi_label_cls_trt_package,
+        engine_host_code_allowed=True,
     )
 
     # when
@@ -151,6 +157,7 @@ def test_multi_label_trt_package_numpy_batch(
 
     model = ResNetForMultiLabelClassificationTRT.from_pretrained(
         model_name_or_path=resnet_multi_label_cls_trt_package,
+        engine_host_code_allowed=True,
     )
 
     # when
@@ -174,6 +181,7 @@ def test_multi_label_trt_package_torch(
 
     model = ResNetForMultiLabelClassificationTRT.from_pretrained(
         model_name_or_path=resnet_multi_label_cls_trt_package,
+        engine_host_code_allowed=True,
     )
 
     # when
@@ -196,6 +204,7 @@ def test_multi_label_trt_package_torch_list(
 
     model = ResNetForMultiLabelClassificationTRT.from_pretrained(
         model_name_or_path=resnet_multi_label_cls_trt_package,
+        engine_host_code_allowed=True,
     )
 
     # when
@@ -219,6 +228,7 @@ def test_multi_label_trt_package_torch_batch(
 
     model = ResNetForMultiLabelClassificationTRT.from_pretrained(
         model_name_or_path=resnet_multi_label_cls_trt_package,
+        engine_host_code_allowed=True,
     )
 
     # when

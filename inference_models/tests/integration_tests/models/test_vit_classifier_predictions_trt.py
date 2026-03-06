@@ -83,6 +83,7 @@ def test_single_label_trt_package_torch_list(
 
     model = VITForClassificationTRT.from_pretrained(
         model_name_or_path=vit_single_label_cls_trt_package,
+        engine_host_code_allowed=True,
     )
 
     # when
@@ -129,6 +130,7 @@ def test_multi_label_trt_package_numpy(
 
     model = VITForMultiLabelClassificationTRT.from_pretrained(
         model_name_or_path=resnet_multi_label_cls_trt_package,
+        engine_host_code_allowed=True,
     )
 
     # when
@@ -151,6 +153,7 @@ def test_multi_label_trt_package_numpy_batch(
 
     model = VITForMultiLabelClassificationTRT.from_pretrained(
         model_name_or_path=resnet_multi_label_cls_trt_package,
+        engine_host_code_allowed=True,
     )
 
     # when
@@ -174,6 +177,7 @@ def test_multi_label_trt_package_torch(
 
     model = VITForMultiLabelClassificationTRT.from_pretrained(
         model_name_or_path=resnet_multi_label_cls_trt_package,
+        engine_host_code_allowed=True,
     )
 
     # when
@@ -196,6 +200,7 @@ def test_multi_label_trt_package_torch_list(
 
     model = VITForMultiLabelClassificationTRT.from_pretrained(
         model_name_or_path=resnet_multi_label_cls_trt_package,
+        engine_host_code_allowed=True,
     )
 
     # when
@@ -219,6 +224,7 @@ def test_multi_label_trt_package_torch_batch(
 
     model = VITForMultiLabelClassificationTRT.from_pretrained(
         model_name_or_path=resnet_multi_label_cls_trt_package,
+        engine_host_code_allowed=True,
     )
 
     # when
