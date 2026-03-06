@@ -76,7 +76,7 @@ jobs:
         run: |
           python -m uv build
       - name: 🚀 Publish to PyPI
-        if: ${{ github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && github.event.inputs.publish == 'true') }}
+        if: ${{ (github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && github.event.inputs.publish == 'true')) && steps.version.outputs.skip_publish != 'true' }}
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: inference_models/dist/
