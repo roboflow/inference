@@ -191,6 +191,7 @@ COIN_COUNTING_TRT_PACKAGE_YOLO_26_URL = "https://storage.googleapis.com/roboflow
 
 ASL_TRT_PACKAGE_RFDETR_SEG_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rf-detr-seg-asl-trt-t4-package.zip"
 ASL_TRT_PACKAGE_YOLO26_SEG_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolo26-seg-asl-trt-t4-package.zip"
+ASL_TRT_PACKAGE_YOLOV8_SEG_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov8-seg-asl-trt-t4-package.zip"
 
 
 @pytest.fixture(scope="module")
@@ -1500,4 +1501,12 @@ def yolo26_object_detections_coin_counting_trt_package() -> str:
     return download_model_package(
         model_package_zip_url=COIN_COUNTING_TRT_PACKAGE_YOLO_26_URL,
         package_name="coin-counting-yolo26-trt",
+    )
+
+
+@pytest.fixture(scope="module")
+def yolov8_seg_asl_trt_package() -> str:
+    return download_model_package(
+        model_package_zip_url=ASL_TRT_PACKAGE_YOLOV8_SEG_URL,
+        package_name="asl-yolov8-seg-trt",
     )
