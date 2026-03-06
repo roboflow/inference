@@ -842,6 +842,7 @@ class HttpInterface(BaseInterface):
             workflow_specification: dict,
             background_tasks: Optional[BackgroundTasks],
             profiler: WorkflowsProfiler,
+            workflow_call_chain: Optional[str] = None,
         ) -> WorkflowInferenceResponse:
             if workflow_request.workflow_id:
                 request_workflow_id.set(workflow_request.workflow_id)
@@ -850,6 +851,7 @@ class HttpInterface(BaseInterface):
                 "workflows_core.model_manager": model_manager,
                 "workflows_core.api_key": workflow_request.api_key,
                 "workflows_core.background_tasks": background_tasks,
+                "workflows_core.workflow_call_chain": workflow_call_chain,
             }
             execution_engine = ExecutionEngine.init(
                 workflow_definition=workflow_specification,
@@ -1515,6 +1517,7 @@ class HttpInterface(BaseInterface):
                 workflow_id: str,
                 workflow_request: PredefinedWorkflowInferenceRequest,
                 background_tasks: BackgroundTasks,
+                request: Request,
             ) -> WorkflowInferenceResponse:
                 # TODO: get rid of async: https://github.com/roboflow/inference/issues/569
                 if ENABLE_WORKFLOWS_PROFILING and workflow_request.enable_profiling:
@@ -1541,6 +1544,9 @@ class HttpInterface(BaseInterface):
                         "Internal workflow ID missing in specification for '%s'",
                         workflow_id,
                     )
+                workflow_call_chain = request.headers.get(
+                    "X-Roboflow-Workflow-Call-Chain"
+                )
                 return process_workflow_inference_request(
                     workflow_request=workflow_request,
                     workflow_specification=workflow_specification,
@@ -1548,6 +1554,7 @@ class HttpInterface(BaseInterface):
                         background_tasks if not (LAMBDA or GCP_SERVERLESS) else None
                     ),
                     profiler=profiler,
+                    workflow_call_chain=workflow_call_chain,
                 )
 
             @app.post(
@@ -1568,6 +1575,7 @@ class HttpInterface(BaseInterface):
             def infer_from_workflow(
                 workflow_request: WorkflowSpecificationInferenceRequest,
                 background_tasks: BackgroundTasks,
+                request: Request,
             ) -> WorkflowInferenceResponse:
                 # TODO: get rid of async: https://github.com/roboflow/inference/issues/569
                 if ENABLE_WORKFLOWS_PROFILING and workflow_request.enable_profiling:
@@ -1576,6 +1584,9 @@ class HttpInterface(BaseInterface):
                     )
                 else:
                     profiler = NullWorkflowsProfiler.init()
+                workflow_call_chain = request.headers.get(
+                    "X-Roboflow-Workflow-Call-Chain"
+                )
                 return process_workflow_inference_request(
                     workflow_request=workflow_request,
                     workflow_specification=workflow_request.specification,
@@ -1583,6 +1594,7 @@ class HttpInterface(BaseInterface):
                         background_tasks if not (LAMBDA or GCP_SERVERLESS) else None
                     ),
                     profiler=profiler,
+                    workflow_call_chain=workflow_call_chain,
                 )
 
             @app.get(
@@ -1712,6 +1724,7 @@ class HttpInterface(BaseInterface):
                     "workflows_core.api_key": api_key,
                     "workflows_core.background_tasks": None,
                     "workflows_core.step_execution_mode": step_execution_mode,
+                    "workflows_core.workflow_call_chain": None,
                 }
                 _ = ExecutionEngine.init(
                     workflow_definition=specification,

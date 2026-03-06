@@ -51,6 +51,9 @@ from inference.core.workflows.core_steps.classical_cv.camera_focus.v1 import (
 from inference.core.workflows.core_steps.classical_cv.camera_focus.v2 import (
     CameraFocusBlockV2,
 )
+from inference.core.workflows.core_steps.composition.workflow_caller.v1 import (
+    WorkflowCallerBlockV1,
+)
 from inference.core.workflows.core_steps.classical_cv.contours.v1 import (
     ImageContoursDetectionBlockV1,
 )
@@ -578,6 +581,7 @@ REGISTERED_INITIALIZERS = {
     "allow_access_to_file_system": ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE,
     "allowed_write_directory": WORKFLOW_BLOCKS_WRITE_DIRECTORY,
     "allow_access_to_environmental_variables": ALLOW_WORKFLOW_BLOCKS_ACCESSING_ENVIRONMENTAL_VARIABLES,
+    "workflow_call_chain": None,
 }
 
 KINDS_SERIALIZERS = {
@@ -844,6 +848,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         QRCodeGeneratorBlockV1,
         DetectionsCombineBlockV1,
         MaskAreaMeasurementBlockV1,
+        WorkflowCallerBlockV1,
     ]
     if SAM3_3D_OBJECTS_ENABLED:
         blocks.append(SegmentAnything3_3D_ObjectsBlockV1)

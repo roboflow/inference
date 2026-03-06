@@ -647,6 +647,9 @@ class InferencePipeline:
             workflow_init_parameters["workflows_core.thread_pool_executor"] = (
                 thread_pool_executor
             )
+            workflow_init_parameters.setdefault(
+                "workflows_core.workflow_call_chain", None
+            )
             execution_engine = ExecutionEngine.init(
                 workflow_definition=workflow_specification,
                 init_parameters=workflow_init_parameters,
