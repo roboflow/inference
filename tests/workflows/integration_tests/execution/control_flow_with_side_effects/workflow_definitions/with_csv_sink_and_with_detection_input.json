@@ -41,12 +41,10 @@
       "type": "roboflow_core/csv_formatter@v1",
       "name": "csv_formatter",
       "columns_data": {
-        "num_detections": "$steps.detection.predictions",
-        "has_detections": "$steps.detection.predictions"
+        "num_detections": "$steps.detection.predictions"
       },
       "columns_operations": {
-        "num_detections": [{"type": "SequenceLength"}],
-        "has_detections": [{"type": "SequenceLength"}, {"type": "ToBoolean"}]
+        "num_detections": [{"type": "SequenceLength"}]
       }
     },
     {
