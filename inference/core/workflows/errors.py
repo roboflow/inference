@@ -3,12 +3,19 @@ from typing import List, Optional
 from pydantic import BaseModel, Field
 
 
+class BlockTraceback(BaseModel):
+    traceback: Optional[str] = None
+    error_line: Optional[int] = None
+    code_snippet: Optional[str] = None
+
+
 class WorkflowBlockError(BaseModel):
     block_id: Optional[str] = None
     block_type: Optional[str] = None
     block_details: Optional[str] = None
     property_name: Optional[str] = None
     property_details: Optional[str] = None
+    block_traceback: Optional[BlockTraceback] = None
 
 
 class WorkflowError(Exception):
@@ -165,12 +172,14 @@ class StepExecutionError(WorkflowExecutionEngineError):
         self,
         block_id: str,
         block_type: str,
+        block_traceback: Optional[BlockTraceback] = None,
         *args,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
         self.block_id = block_id
         self.block_type = block_type
+        self.block_traceback = block_traceback
 
 
 class ClientCausedStepExecutionError(WorkflowExecutionEngineError):

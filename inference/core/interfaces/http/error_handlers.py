@@ -394,6 +394,7 @@ def with_route_exceptions(route):
                     WorkflowBlockError(
                         block_id=error.block_id,
                         block_type=error.block_type,
+                        block_traceback=error.block_traceback,
                     ),
                 ],
             )
@@ -766,6 +767,7 @@ def with_route_exceptions_async(route):
                     WorkflowBlockError(
                         block_id=error.block_id,
                         block_type=error.block_type,
+                        block_traceback=error.block_traceback,
                     ),
                 ],
             )

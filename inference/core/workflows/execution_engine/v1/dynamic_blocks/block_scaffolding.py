@@ -41,6 +41,90 @@ IMPORTS_LINES = [
 _LOCAL_SHARED_GLOBALS = {}
 
 
+class PythonBlockError(Exception):
+    """Exception for Python block errors with structured code context."""
+
+    def __init__(
+        self,
+        message: str,
+        error_line: Optional[int] = None,
+        code_snippet: Optional[str] = None,
+        traceback_str: Optional[str] = None,
+    ):
+        super().__init__(message)
+        self.error_line = error_line
+        self.code_snippet = code_snippet
+        self.traceback = traceback_str
+
+
+def _extract_code_snippet(
+    code: Optional[str], error_line: int, context: int = 10
+) -> str:
+    """Extract a code snippet around the error line with markers."""
+    if not code:
+        return ""
+
+    lines = code.splitlines()
+    error_idx = error_line - 1
+    start = max(0, error_idx - context)
+    end = min(len(lines), error_idx + context + 1)
+    snippet_lines = [
+        f"{'>>>' if i == error_idx else '   '} {i + 1}: {lines[i]}"
+        for i in range(start, end)
+    ]
+    return "\n" + "\n".join(snippet_lines)
+
+
+def _create_clean_traceback(
+    error: Exception, python_code: PythonCode, import_lines: int
+) -> str:
+    """Create a clean traceback showing only user code with adjusted line numbers."""
+    tb = traceback.extract_tb(error.__traceback__)
+    code_lines = (python_code.run_function_code or "").splitlines()
+
+    lines = ["Traceback (most recent call last):"]
+    for frame in tb:
+        if frame.filename == "<string>":
+            adjusted_line = frame.lineno - import_lines
+            code_line = (
+                code_lines[adjusted_line - 1]
+                if 0 < adjusted_line <= len(code_lines)
+                else ""
+            )
+            lines.append(
+                f'  File "Python Block", line {adjusted_line}, in {frame.name}'
+            )
+            if code_line:
+                lines.append(f"    {code_line.strip()}")
+
+    lines.append(f"{error.__class__.__name__}: {error}")
+    return "\n".join(lines)
+
+
+def _create_python_block_error(
+    error: Exception, python_code: PythonCode
+) -> PythonBlockError:
+    """Create a PythonBlockError with structured code context."""
+    tb = traceback.extract_tb(error.__traceback__)
+    if not tb:
+        return PythonBlockError(f"{error.__class__.__name__}: {error}")
+
+    import_lines = len(_get_python_code_imports(python_code).splitlines())
+    frame = tb[-1]
+    line_number = frame.lineno - import_lines
+
+    code_snippet = _extract_code_snippet(python_code.run_function_code, line_number)
+    message = f"Error in line {line_number}, in {frame.name}: {error.__class__.__name__}: {error}"
+    clean_traceback = _create_clean_traceback(error, python_code, import_lines)
+
+    return PythonBlockError(
+        message=message,
+        error_line=line_number,
+        code_snippet=code_snippet.lstrip("\n") if code_snippet else None,
+        traceback_str=clean_traceback,
+    )
+
+
 def assembly_custom_python_block(
     block_type_name: str,
     unique_identifier: str,
@@ -100,17 +184,7 @@ def assembly_custom_python_block(
             try:
                 return run_function(self, *args, **kwargs)
             except Exception as error:
-                tb = traceback.extract_tb(error.__traceback__)
-                if tb:
-                    frame = tb[-1]
-                    line_number = frame.lineno - len(
-                        _get_python_code_imports(python_code).splitlines()
-                    )
-                    function_name = frame.name
-                    message = f"Error in line {line_number}, in {function_name}: {error.__class__.__name__}: {error}"
-                else:
-                    message = f"{error.__class__.__name__}: {error}"
-                raise Exception(message) from error
+                raise _create_python_block_error(error, python_code) from error
 
     if python_code.init_function_code is not None and not hasattr(
         code_module, python_code.init_function_name
