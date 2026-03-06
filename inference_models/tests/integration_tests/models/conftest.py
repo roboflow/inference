@@ -199,6 +199,11 @@ YOLO26N_POSE_TRT_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-as
 RESNET_SINGLE_LABEL_CLS_TRT_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/resnet-single-label-cls-trt-t4-package.zip"
 RESNET_MULTI_LABEL_CLS_TRT_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/resnet-multi-label-cls-trt-t4-package.zip"
 
+VIT_SINGLE_LABEL_CLS_TRT_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/vit-single-label-cls-trt-t4-package.zip"
+VIT_MULTI_LABEL_CLS_TRT_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/vit-multi-label-cls-trt-t4-package.zip"
+
+YOLOV10_TRT_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov10-trt-t4-package.zip"
+
 
 @pytest.fixture(scope="module")
 def original_clip_download_dir() -> str:
@@ -1547,4 +1552,28 @@ def resnet_multi_label_cls_trt_package() -> str:
     return download_model_package(
         model_package_zip_url=RESNET_MULTI_LABEL_CLS_TRT_PACKAGE_URL,
         package_name="resnet-multi-label-cls-trt",
+    )
+
+
+@pytest.fixture(scope="module")
+def vit_single_label_cls_trt_package() -> str:
+    return download_model_package(
+        model_package_zip_url=VIT_SINGLE_LABEL_CLS_TRT_PACKAGE_URL,
+        package_name="vit-single-label-cls-trt",
+    )
+
+
+@pytest.fixture(scope="module")
+def vit_multi_label_cls_trt_package() -> str:
+    return download_model_package(
+        model_package_zip_url=VIT_MULTI_LABEL_CLS_TRT_PACKAGE_URL,
+        package_name="vit-multi-label-cls-trt",
+    )
+
+
+@pytest.fixture(scope="module")
+def yolov10_object_detection_trt_package() -> str:
+    return download_model_package(
+        model_package_zip_url=YOLOV10_TRT_PACKAGE_URL,
+        package_name="yolov10-object-detection-trt",
     )
