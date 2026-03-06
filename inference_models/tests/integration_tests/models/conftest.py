@@ -184,6 +184,7 @@ SAM_PACKAGE_URL = (
 SAM2_PACKAGE_URL = (
     "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/sam2.zip"
 )
+COIN_COUNTING_TRT_PACKAGE_YOLO_V8_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov8-coin-counting-trt-t4-package.zip"
 
 
 @pytest.fixture(scope="module")
@@ -1445,4 +1446,12 @@ def yolo26n_object_detection_sunflowers_letterbox_torch_script_package() -> str:
     return download_model_package(
         model_package_zip_url=YOLO26N_object_detection_sunflowers_LETTERBOX_TORCH_SCRIPT_URL,
         package_name="yolo26n-object-detection-sunflowers-letterbox-torch-script",
+    )
+
+
+@pytest.fixture(scope="module")
+def yolov8_coin_counting_trt_package() -> str:
+    return download_model_package(
+        model_package_zip_url=COIN_COUNTING_TRT_PACKAGE_YOLO_V8_URL,
+        package_name="coin-counting-yolov8-trt",
     )
