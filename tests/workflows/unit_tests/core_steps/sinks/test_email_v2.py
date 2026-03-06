@@ -7,9 +7,12 @@ import numpy as np
 import pytest
 
 from inference.core.workflows.core_steps.common.query_language.entities.enums import (
+    ImageProperty,
     NumberCastingMode,
 )
 from inference.core.workflows.core_steps.common.query_language.entities.operations import (
+    ConvertImageToBase64,
+    ExtractImageProperty,
     LookupTable,
     NumberRound,
     StringToLowerCase,
@@ -266,6 +269,44 @@ def test_apply_operations_to_message_parameters_preserves_workflow_image_data() 
     )
     assert result["image"] is image_data
     assert result["label"] == "PHOTO"
+
+
+def test_apply_operations_to_message_parameters_workflow_image_data_with_operations() -> None:
+    """WorkflowImageData can be transformed by image operations (e.g. ConvertImageToBase64, ExtractImageProperty)."""
+    parent_metadata = ImageParentMetadata(parent_id="test")
+    image_data = WorkflowImageData(
+        parent_metadata=parent_metadata,
+        base64_image="/9j/base64_content",
+    )
+    # Create a small numpy image for ExtractImageProperty (width/height)
+    numpy_image = np.zeros((100, 200, 3), dtype=np.uint8)
+    image_with_numpy = WorkflowImageData(
+        parent_metadata=parent_metadata,
+        numpy_image=numpy_image,
+    )
+
+    # ConvertImageToBase64 returns the base64 string
+    result1 = apply_operations_to_message_parameters(
+        message_parameters={"img": image_data},
+        message_parameters_operations={
+            "img": [ConvertImageToBase64(type="ConvertImageToBase64")],
+        },
+    )
+    assert result1["img"] == "/9j/base64_content"
+
+    # ExtractImageProperty returns e.g. width as int
+    result2 = apply_operations_to_message_parameters(
+        message_parameters={"img": image_with_numpy},
+        message_parameters_operations={
+            "img": [
+                ExtractImageProperty(
+                    type="ExtractImageProperty",
+                    property_name=ImageProperty.WIDTH,
+                )
+            ],
+        },
+    )
+    assert result2["img"] == 200
 
 
 def test_apply_operations_to_message_parameters_number_round() -> None:

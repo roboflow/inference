@@ -602,10 +602,6 @@ def apply_operations_to_message_parameters(
     for parameter_name in message_parameters:
         parameter_value = message_parameters[parameter_name]
 
-        if isinstance(parameter_value, WorkflowImageData):
-            parameters_values[parameter_name] = parameter_value
-            continue
-
         operations = message_parameters_operations.get(parameter_name)
         if not operations:
             parameters_values[parameter_name] = parameter_value
