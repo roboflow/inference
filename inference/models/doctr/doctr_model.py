@@ -69,14 +69,14 @@ class DocTR(RoboflowCoreModel):
             f"{MODEL_CACHE_DIR}/doctr/models/{self.det_model.version_id}.pt"
         )
         shutil.copyfile(
-            f"{MODEL_CACHE_DIR}/doctr_det/{self.det_model.version_id}/model.pt",
+            f"{MODEL_CACHE_DIR}/doctr_det/{self.det_model.version_id}/model_v2.pt",
             detector_weights_path,
         )
         recognizer_weights_path = (
             f"{MODEL_CACHE_DIR}/doctr/models/{self.rec_model.version_id}.pt"
         )
         shutil.copyfile(
-            f"{MODEL_CACHE_DIR}/doctr_rec/{self.rec_model.version_id}/model.pt",
+            f"{MODEL_CACHE_DIR}/doctr_rec/{self.rec_model.version_id}/model_v2.pt",
             recognizer_weights_path,
         )
 
@@ -213,7 +213,7 @@ class DocTR(RoboflowCoreModel):
         Returns:
             list: A list of required files for inference, e.g., ["model.pt"].
         """
-        return ["model.pt"]
+        return ["model_v2.pt"]
 
 
 class DocTRRec(RoboflowCoreModel):
@@ -237,7 +237,7 @@ class DocTRRec(RoboflowCoreModel):
         Returns:
             list: A list of required files for inference, e.g., ["model.pt"].
         """
-        return ["model.pt"]
+        return ["model_v2.pt"]
 
 
 class DocTRDet(RoboflowCoreModel):
@@ -269,4 +269,4 @@ class DocTRDet(RoboflowCoreModel):
         Returns:
             list: A list of required files for inference, e.g., ["model.pt"].
         """
-        return ["model.pt"]
+        return ["model_v2.pt"]
