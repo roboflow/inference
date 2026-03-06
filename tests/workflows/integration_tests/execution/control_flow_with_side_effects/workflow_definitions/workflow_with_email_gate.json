@@ -1,0 +1,88 @@
+{
+  "version": "1.0",
+  "inputs": [
+    {"type": "WorkflowImage", "name": "image"},
+    {"type": "WorkflowBatchInput", "name": "image_names", "dimensionality": 1},
+    {"type": "WorkflowParameter", "name": "dry_run"},
+    {"type": "WorkflowParameter", "name": "enable_email", "default_value": true}
+  ],
+  "steps": [
+    {
+      "type": "RoboflowObjectDetectionModel",
+      "name": "detection",
+      "image": "$inputs.image",
+      "model_id": "yolov8n-640",
+      "class_filter": ["person"]
+    },
+    {
+      "type": "ContinueIf",
+      "name": "continue_if_email_enabled",
+      "condition_statement": {
+        "type": "StatementGroup",
+        "statements": [
+          {
+            "type": "UnaryStatement",
+            "operand": {
+              "type": "DynamicOperand",
+              "operand_name": "left"
+            },
+            "operator": {
+              "type": "(Boolean) is True"
+            }
+          }
+        ]
+      },
+      "evaluation_parameters": {
+        "left": "$inputs.enable_email"
+      },
+      "next_steps": ["$steps.continue_if"]
+    },
+    {
+      "type": "ContinueIf",
+      "name": "continue_if",
+      "condition_statement": {
+        "type": "StatementGroup",
+        "statements": [
+          {
+            "type": "BinaryStatement",
+            "left_operand": {
+              "type": "DynamicOperand",
+              "operand_name": "prediction",
+              "operations": [{"type": "SequenceLength"}]
+            },
+            "comparator": {"type": "(Number) >="},
+            "right_operand": {
+              "type": "StaticOperand",
+              "value": 1
+            }
+          }
+        ]
+      },
+      "evaluation_parameters": {"prediction": "$steps.detection.predictions"},
+      "next_steps": ["$steps.email_notification"]
+    },
+    {
+      "type": "roboflow_core/email_notification@v2",
+      "name": "email_notification",
+      "subject": "Detection alert: {{ $parameters.image_name }}",
+      "receiver_email": "noreply@example.com",
+      "message": "Image: {{ $parameters.image_name }}\nFound {{ $parameters.num_detections }} detection(s) for this image.",
+      "message_parameters": {
+        "predictions": "$steps.detection.predictions",
+        "num_detections": "$steps.detection.predictions",
+        "image_name": "$inputs.image_names"
+      },
+      "message_parameters_operations": {
+        "num_detections": [{"type": "SequenceLength"}]
+      },
+      "disable_sink": "$inputs.dry_run"
+    }
+  ],
+  "outputs": [
+    {
+      "type": "JsonField",
+      "name": "email_message",
+      "selector": "$steps.email_notification.message"
+    }
+  ]
+}
