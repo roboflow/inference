@@ -54,6 +54,7 @@ from inference.core.workflows.errors import (
     ExecutionGraphStructureError,
     InvalidReferenceTargetError,
     NotSupportedExecutionEngineError,
+    PythonBlockError,
     ReferenceTypeError,
     RuntimeInputError,
     StepExecutionError,
@@ -63,9 +64,6 @@ from inference.core.workflows.errors import (
     WorkflowError,
     WorkflowExecutionEngineVersionError,
     WorkflowSyntaxError,
-)
-from inference.core.workflows.execution_engine.v1.dynamic_blocks.block_scaffolding import (
-    PythonBlockError,
 )
 from inference_models.errors import (
     EnvironmentConfigurationError,
@@ -82,6 +80,61 @@ from inference_models.errors import (
     UnauthorizedModelAccessError,
     UntrustedFileError,
 )
+
+
+def _build_python_block_error_response(
+    error: PythonBlockError,
+) -> "WorkflowErrorResponse":
+    """Build a WorkflowErrorResponse for PythonBlockError (compilation errors)."""
+    from inference.core.entities.responses.workflows import WorkflowErrorResponse
+
+    return WorkflowErrorResponse(
+        message="Python code compilation failed. See block details below.",
+        error_type=error.__class__.__name__,
+        context="workflow_compilation | python_code",
+        inner_error_type=error.__class__.__name__,
+        inner_error_message=str(error),
+        blocks_errors=[
+            WorkflowBlockError(
+                block_id=error.block_type_name or "Python Block",
+                block_type=error.block_type_name,
+                property_name="Python code",
+                property_details=str(error),
+                block_traceback=(
+                    BlockTraceback(
+                        error_line=error.error_line,
+                        code_snippet=error.code_snippet,
+                    )
+                    if error.error_line
+                    else None
+                ),
+            ),
+        ],
+    )
+
+
+def _build_step_execution_error_response(
+    error: StepExecutionError,
+) -> "WorkflowErrorResponse":
+    """Build a WorkflowErrorResponse for StepExecutionError (runtime errors)."""
+    from inference.core.entities.responses.workflows import WorkflowErrorResponse
+
+    return WorkflowErrorResponse(
+        message=str(error.public_message),
+        error_type=error.__class__.__name__,
+        context=str(error.context),
+        inner_error_type=str(error.inner_error_type),
+        inner_error_message=str(error.inner_error),
+        blocks_errors=[
+            WorkflowBlockError(
+                block_id=error.block_id,
+                block_type=error.block_type,
+                property_name="Python code",
+                property_details=str(error.inner_error),
+                block_traceback=error.block_traceback,
+            ),
+        ],
+    )
 
 
 def with_route_exceptions(route):
@@ -173,29 +226,7 @@ def with_route_exceptions(route):
             resp = JSONResponse(status_code=400, content=content.model_dump())
         except PythonBlockError as error:
             logger.exception("%s: %s", type(error).__name__, error)
-            content = WorkflowErrorResponse(
-                message="Python code compilation failed. See block details below.",
-                error_type=error.__class__.__name__,
-                context="workflow_compilation | python_code",
-                inner_error_type=error.__class__.__name__,
-                inner_error_message=str(error),
-                blocks_errors=[
-                    WorkflowBlockError(
-                        block_id=error.block_type_name or "Python Block",
-                        block_type=error.block_type_name,
-                        property_name="Python code",
-                        property_details=str(error),
-                        block_traceback=(
-                            BlockTraceback(
-                                error_line=error.error_line,
-                                code_snippet=error.code_snippet,
-                            )
-                            if error.error_line
-                            else None
-                        ),
-                    ),
-                ],
-            )
+            content = _build_python_block_error_response(error)
             resp = JSONResponse(status_code=400, content=content.model_dump())
         except (
             WorkflowDefinitionError,
@@ -414,22 +445,7 @@ def with_route_exceptions(route):
             )
         except StepExecutionError as error:
             logger.exception("%s: %s", type(error).__name__, error)
-            content = WorkflowErrorResponse(
-                message=str(error.public_message),
-                error_type=error.__class__.__name__,
-                context=str(error.context),
-                inner_error_type=str(error.inner_error_type),
-                inner_error_message=str(error.inner_error),
-                blocks_errors=[
-                    WorkflowBlockError(
-                        block_id=error.block_id,
-                        block_type=error.block_type,
-                        property_name="Python code",
-                        property_details=str(error.inner_error),
-                        block_traceback=error.block_traceback,
-                    ),
-                ],
-            )
+            content = _build_step_execution_error_response(error)
             resp = JSONResponse(
                 status_code=500,
                 content=content.model_dump(),
@@ -574,29 +590,7 @@ def with_route_exceptions_async(route):
             resp = JSONResponse(status_code=400, content=content.model_dump())
         except PythonBlockError as error:
             logger.exception("%s: %s", type(error).__name__, error)
-            content = WorkflowErrorResponse(
-                message="Python code compilation failed. See block details below.",
-                error_type=error.__class__.__name__,
-                context="workflow_compilation | python_code",
-                inner_error_type=error.__class__.__name__,
-                inner_error_message=str(error),
-                blocks_errors=[
-                    WorkflowBlockError(
-                        block_id=error.block_type_name or "Python Block",
-                        block_type=error.block_type_name,
-                        property_name="Python code",
-                        property_details=str(error),
-                        block_traceback=(
-                            BlockTraceback(
-                                error_line=error.error_line,
-                                code_snippet=error.code_snippet,
-                            )
-                            if error.error_line
-                            else None
-                        ),
-                    ),
-                ],
-            )
+            content = _build_python_block_error_response(error)
             resp = JSONResponse(status_code=400, content=content.model_dump())
         except (
             WorkflowDefinitionError,
@@ -815,22 +809,7 @@ def with_route_exceptions_async(route):
             )
         except StepExecutionError as error:
             logger.exception("%s: %s", type(error).__name__, error)
-            content = WorkflowErrorResponse(
-                message=str(error.public_message),
-                error_type=error.__class__.__name__,
-                context=str(error.context),
-                inner_error_type=str(error.inner_error_type),
-                inner_error_message=str(error.inner_error),
-                blocks_errors=[
-                    WorkflowBlockError(
-                        block_id=error.block_id,
-                        block_type=error.block_type,
-                        property_name="PythonBlock",
-                        property_details=str(error.inner_error),
-                        block_traceback=error.block_traceback,
-                    ),
-                ],
-            )
+            content = _build_step_execution_error_response(error)
             resp = JSONResponse(
                 status_code=500,
                 content=content.model_dump(),

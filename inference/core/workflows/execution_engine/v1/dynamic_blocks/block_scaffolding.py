@@ -1,6 +1,7 @@
 import sys
 import traceback
 import types
+from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
 from typing import Any, Dict, List, Optional, Type
 
@@ -13,6 +14,7 @@ from inference.core.exceptions import WorkspaceLoadError
 from inference.core.roboflow_api import get_roboflow_workspace
 from inference.core.workflows.errors import (
     DynamicBlockError,
+    PythonBlockError,
     WorkflowEnvironmentConfigurationError,
 )
 from inference.core.workflows.execution_engine.v1.dynamic_blocks.entities import (
@@ -43,29 +45,7 @@ IMPORTS_LINES = [
 _LOCAL_SHARED_GLOBALS = {}
 
 
-class PythonBlockError(Exception):
-    """Exception for Python block errors with structured code context."""
-
-    def __init__(
-        self,
-        message: str,
-        block_type_name: Optional[str] = None,
-        error_line: Optional[int] = None,
-        code_snippet: Optional[str] = None,
-        traceback_str: Optional[str] = None,
-        stdout: Optional[str] = None,
-        stderr: Optional[str] = None,
-    ):
-        super().__init__(message)
-        self.block_type_name = block_type_name
-        self.error_line = error_line
-        self.code_snippet = code_snippet
-        self.traceback = traceback_str
-        self.stdout = stdout
-        self.stderr = stderr
-
-
-def _extract_code_snippet(
+def extract_code_snippet(
     code: Optional[str], error_line: int, context: int = 10
 ) -> str:
     """Extract a code snippet around the error line with markers."""
@@ -83,7 +63,7 @@ def _extract_code_snippet(
     return "\n" + "\n".join(snippet_lines)
 
 
-def _build_traceback_string(
+def build_traceback_string(
     code: Optional[str],
     line_number: int,
     function_name: str,
@@ -153,7 +133,7 @@ def _create_python_block_error(
     frame = tb[-1]
     line_number = frame.lineno - import_lines
 
-    code_snippet = _extract_code_snippet(python_code.run_function_code, line_number)
+    code_snippet = extract_code_snippet(python_code.run_function_code, line_number)
     message = f"Error in line {line_number}, in {frame.name}: {error.__class__.__name__}: {error}"
     clean_traceback = _create_clean_traceback(error, python_code, import_lines)
 
@@ -225,21 +205,17 @@ def assembly_custom_python_block(
                     "`ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS=True`",
                     context="workflow_execution | step_execution | dynamic_step",
                 )
-            old_stdout, old_stderr = sys.stdout, sys.stderr
-            sys.stdout, sys.stderr = StringIO(), StringIO()
+            stdout_buf, stderr_buf = StringIO(), StringIO()
             try:
-                return run_function(self, *args, **kwargs)
+                with redirect_stdout(stdout_buf), redirect_stderr(stderr_buf):
+                    return run_function(self, *args, **kwargs)
             except Exception as error:
-                stdout_output = sys.stdout.getvalue()
-                stderr_output = sys.stderr.getvalue()
                 raise _create_python_block_error(
                     error,
                     python_code,
-                    stdout=stdout_output or None,
-                    stderr=stderr_output or None,
+                    stdout=stdout_buf.getvalue() or None,
+                    stderr=stderr_buf.getvalue() or None,
                 ) from error
-            finally:
-                sys.stdout, sys.stderr = old_stdout, old_stderr
 
     if python_code.init_function_code is not None and not hasattr(
         code_module, python_code.init_function_name
@@ -345,7 +321,7 @@ def create_dynamic_module(
             error_line = getattr(error, "lineno", None)
             code_snippet = None
             if error_line and python_code.run_function_code:
-                snippet = _extract_code_snippet(
+                snippet = extract_code_snippet(
                     python_code.run_function_code, error_line
                 )
                 code_snippet = snippet.lstrip("\n") if snippet else None

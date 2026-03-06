@@ -24,11 +24,9 @@ from inference.core import logger
 from inference.core.env import INFERENCE_DEBUG_OUTPUT_DIR
 from inference.core.workflows.errors import (
     BlockTraceback,
+    PythonBlockError,
     StepExecutionError,
     WorkflowError,
-)
-from inference.core.workflows.execution_engine.v1.dynamic_blocks.block_scaffolding import (
-    PythonBlockError,
 )
 from inference.core.workflows.execution_engine.profiling.core import (
     NullWorkflowsProfiler,

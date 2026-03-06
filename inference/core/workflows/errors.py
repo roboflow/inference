@@ -11,6 +11,28 @@ class BlockTraceback(BaseModel):
     stderr: Optional[str] = None
 
 
+class PythonBlockError(Exception):
+    """Exception for Python block errors with structured code context."""
+
+    def __init__(
+        self,
+        message: str,
+        block_type_name: Optional[str] = None,
+        error_line: Optional[int] = None,
+        code_snippet: Optional[str] = None,
+        traceback_str: Optional[str] = None,
+        stdout: Optional[str] = None,
+        stderr: Optional[str] = None,
+    ):
+        super().__init__(message)
+        self.block_type_name = block_type_name
+        self.error_line = error_line
+        self.code_snippet = code_snippet
+        self.traceback = traceback_str
+        self.stdout = stdout
+        self.stderr = stderr
+
+
 class WorkflowBlockError(BaseModel):
     block_id: Optional[str] = None
     block_type: Optional[str] = None

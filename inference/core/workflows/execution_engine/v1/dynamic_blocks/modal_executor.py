@@ -20,11 +20,10 @@ from inference.core.env import (
     MODAL_WORKSPACE_NAME,
 )
 from inference.core.logger import logger
-from inference.core.workflows.errors import DynamicBlockError
+from inference.core.workflows.errors import DynamicBlockError, PythonBlockError
 from inference.core.workflows.execution_engine.v1.dynamic_blocks.block_scaffolding import (
-    PythonBlockError,
-    _build_traceback_string,
-    _extract_code_snippet,
+    build_traceback_string,
+    extract_code_snippet,
 )
 from inference.core.workflows.execution_engine.v1.dynamic_blocks.entities import (
     PythonCode,
@@ -335,9 +334,9 @@ class ModalExecutor:
                 code_snippet = None
                 traceback_str = None
                 if line_number and code:
-                    snippet = _extract_code_snippet(code, line_number)
+                    snippet = extract_code_snippet(code, line_number)
                     code_snippet = snippet.lstrip("\n") if snippet else None
-                    traceback_str = _build_traceback_string(
+                    traceback_str = build_traceback_string(
                         code, line_number, function_name, error_type, error_msg
                     )
 

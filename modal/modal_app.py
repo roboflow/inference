@@ -341,28 +341,25 @@ from datetime import datetime
 
             # Check if function expects a 'self' parameter
             import inspect
-            import sys
+            from contextlib import redirect_stderr, redirect_stdout
             from io import StringIO
 
             sig = inspect.signature(user_function)
             params = list(sig.parameters.keys())
 
-            # Capture stdout/stderr during execution; and later we
-            # restore previous state.
-            old_stdout, old_stderr = sys.stdout, sys.stderr
-            sys.stdout, sys.stderr = StringIO(), StringIO()
-
+            stdout_buf, stderr_buf = StringIO(), StringIO()
             try:
-                # If function expects 'self' as first param, create a simple object to pass
-                if params and params[0] == "self":
+                with redirect_stdout(stdout_buf), redirect_stderr(stderr_buf):
+                    # If function expects 'self' as first param, create a simple object to pass
+                    if params and params[0] == "self":
 
-                    class BlockSelf:
-                        pass
+                        class BlockSelf:
+                            pass
 
-                    block_self = BlockSelf()
-                    result = user_function(block_self, **inputs)
-                else:
-                    result = user_function(**inputs)
+                        block_self = BlockSelf()
+                        result = user_function(block_self, **inputs)
+                    else:
+                        result = user_function(**inputs)
 
                 json_result = serialize_for_modal_remote_execution(result)
 
@@ -370,15 +367,12 @@ from datetime import datetime
                 return {"success": True, "result": json_result}
             except Exception as e:
                 # On error, capture stdout/stderr and return error details
-                stdout_output = sys.stdout.getvalue()
-                stderr_output = sys.stderr.getvalue()
-
                 result = {
                     "success": False,
                     "error": str(e),
                     "error_type": type(e).__name__,
-                    "stdout": stdout_output or None,
-                    "stderr": stderr_output or None,
+                    "stdout": stdout_buf.getvalue() or None,
+                    "stderr": stderr_buf.getvalue() or None,
                 }
 
                 # Get the line number and function name from evaluated code
@@ -389,8 +383,6 @@ from datetime import datetime
                     result["function_name"] = frame.name
 
                 return result
-            finally:
-                sys.stdout, sys.stderr = old_stdout, old_stderr
 
         except Exception as e:
             # Outer exception handler for non-execution errors (deserialization, etc.)

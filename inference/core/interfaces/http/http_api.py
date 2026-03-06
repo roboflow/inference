@@ -1745,14 +1745,13 @@ class HttpInterface(BaseInterface):
                 )
                 if worker_result.exception_type is not None:
                     if worker_result.exception_type == "WorkflowSyntaxError":
-
-                        # TODO: refactor this... we need somehow to
-                        # create a custom exception class with the
-                        # original type name... and pass it as parameter.
-
+                        # Reconstruct exception from serialized worker result.
+                        # We dynamically create an exception class to preserve
+                        # the original type name (e.g., "ValidationError") for
+                        # the inner_error_type property, since exceptions can't
+                        # be pickled across the worker process boundary.
                         inner_error = None
                         if worker_result.inner_error and worker_result.inner_error_type:
-                            # inner_error needs to be an exception.
                             inner_error = type(
                                 worker_result.inner_error_type,
                                 (Exception,),
