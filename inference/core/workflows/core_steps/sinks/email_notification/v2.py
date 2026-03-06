@@ -598,6 +598,24 @@ def apply_operations_to_message_parameters(
     message_parameters: Dict[str, Any],
     message_parameters_operations: Dict[str, List[AllOperationsType]],
 ) -> Dict[str, Any]:
+    """
+    Apply per-parameter operation chains to message parameter values.
+
+    For each parameter in message_parameters, if operations are defined in
+    message_parameters_operations for that parameter name, the operations are
+    applied in order (e.g. ToString, StringToUpperCase, LookupTable).
+    Parameters with no operations are returned unchanged.
+
+    Supports all value types, including WorkflowImageData: image operations
+    such as ExtractImageProperty, ConvertImageToBase64, and ConvertImageToJPEG
+    can be used to transform image parameters before they are serialized or
+    interpolated into the message.
+
+    Returns:
+        A dict with the same keys as message_parameters and values that are
+        either the original value (no operations) or the result of the
+        operations chain.
+    """
     parameters_values = {}
     for parameter_name in message_parameters:
         parameter_value = message_parameters[parameter_name]
