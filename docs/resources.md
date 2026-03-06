@@ -43,3 +43,10 @@ hide:
     [:fontawesome-brands-youtube: Go to Channel](https://bit.ly/rf-yt-sub){:target="_blank"}
 
 </div>
+
+## Tutorials
+
+You may also want to check out one of our [Video Tutorials](https://bit.ly/rf-yt-sub) showing the
+end to end creation of a computer vision project with Inference:
+
+--8<-- "video-tutorials.md"

@@ -1885,22 +1885,22 @@ class HttpInterface(BaseInterface):
                     excluded_fields=request.excluded_fields,
                 )
 
+        class ModelInitState:
+            """Class to track model initialization state."""
+
+            def __init__(self):
+                self.is_ready = False
+                self.lock = Lock()  # For thread-safe updates
+                self.initialization_errors = []  # Track errors per model
+
+        model_init_state = ModelInitState()
+
+        should_preload = PRELOAD_MODELS or PINNED_MODELS
+        if not should_preload:
+            model_init_state.is_ready = True
+
         # Enable preloading models at startup
-        if (
-            (PRELOAD_MODELS or PINNED_MODELS or DEDICATED_DEPLOYMENT_WORKSPACE_URL)
-            and PRELOAD_API_KEY
-            and (PINNED_MODELS or not (LAMBDA or GCP_SERVERLESS))
-        ):
-
-            class ModelInitState:
-                """Class to track model initialization state."""
-
-                def __init__(self):
-                    self.is_ready = False
-                    self.lock = Lock()  # For thread-safe updates
-                    self.initialization_errors = []  # Track errors per model
-
-            model_init_state = ModelInitState()
+        if should_preload:
 
             def initialize_models(state: ModelInitState):
                 """Perform asynchronous initialization tasks to load models."""
@@ -1984,23 +1984,24 @@ class HttpInterface(BaseInterface):
                 startup_thread.start()
                 logger.info("Model initialization started in the background.")
 
-            @app.get("/readiness", status_code=200)
-            def readiness(
-                state: ModelInitState = Depends(lambda: model_init_state),
-            ):
-                """Readiness endpoint for Kubernetes readiness probe."""
-                with state.lock:
-                    if state.is_ready:
-                        return {"status": "ready"}
-                    else:
-                        return JSONResponse(
-                            content={"status": "not ready"}, status_code=503
-                        )
+        # Attach health/readiness endpoints
+        @app.get("/readiness", status_code=200)
+        def readiness(
+            state: ModelInitState = Depends(lambda: model_init_state),
+        ):
+            """Readiness endpoint for Kubernetes readiness probe."""
+            with state.lock:
+                if state.is_ready:
+                    return {"status": "ready"}
+                else:
+                    return JSONResponse(
+                        content={"status": "not ready"}, status_code=503
+                    )
 
-            @app.get("/healthz", status_code=200)
-            def healthz():
-                """Health endpoint for Kubernetes liveness probe."""
-                return {"status": "healthy"}
+        @app.get("/healthz", status_code=200)
+        def healthz():
+            """Health endpoint for Kubernetes liveness probe."""
+            return {"status": "healthy"}
 
         if CORE_MODELS_ENABLED:
             if CORE_MODEL_CLIP_ENABLED:

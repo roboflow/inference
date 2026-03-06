@@ -118,8 +118,14 @@ jobs:
         run: python -m development.docs.validate_docs_jinja2
         working-directory: ./inference_repo
 
+      - name: Build docs
+        run: zensical build --clean
+        working-directory: ./inference_repo
+
       - name: Deploy docs
         # Only deploy if release event OR if deploy input was set to true
         if: ${{ github.event_name == 'release' || github.event.inputs.deploy == 'true' }}
-        run: mkdocs gh-deploy --force --verbose
+        run: |
+          pip install ghp-import
+          ghp-import -n -p -f site
         working-directory: ./inference_repo

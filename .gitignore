@@ -37,7 +37,6 @@ node_modules/
 
 
 # Build directories
-theme/node_modules/
 theme/assets/dist/
 theme/assets/styles.css
 docs/static/

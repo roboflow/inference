@@ -196,7 +196,7 @@ class DeepLabV3PlusForSemanticSegmentationTorch(
                     :,
                     padded_mask_offset_top : image_results.shape[1]
                     - padded_mask_offset_bottom,
-                    padded_mask_offset_left : image_results.shape[1]
+                    padded_mask_offset_left : image_results.shape[2]
                     - padded_mask_offset_right,
                 ]
             else:

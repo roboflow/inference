@@ -1,5 +1,10 @@
 # Changelog
 
+## `0.19.4`
+### Fixed
+
+- CUDA stream synchronization issues in TRT models.
+
 ## `0.19.3`
 
 ### Fixed
