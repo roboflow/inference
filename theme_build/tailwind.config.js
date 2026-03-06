@@ -4,11 +4,10 @@ import fluid, { extract } from "fluid-tailwind";
 export default {
   content: {
     files: [
-      "./home.html",
-      "./main.html",
-      "./assets/**/*.{js,html,css}",
-      "!./assets/dist/**",
-      "!./node_modules/**"
+      "../theme/home.html",
+      "../theme/main.html",
+      "../theme/assets/**/*.{js,html,css}",
+      "!../theme/assets/dist/**",
     ],
     extract,
   },

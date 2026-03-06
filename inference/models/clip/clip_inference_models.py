@@ -58,7 +58,10 @@ class InferenceModelsClipAdapter(Model):
 
         self.api_key = api_key if api_key else API_KEY
         self.task_type = "embedding"
-        weights_provider_extra_headers = get_extra_weights_provider_headers()
+        weights_provider_extra_headers = get_extra_weights_provider_headers(
+            countinference=kwargs.get("countinference"),
+            service_secret=kwargs.get("service_secret"),
+        )
         self._model: Union[ClipOnnx, ClipTorch] = AutoModel.from_pretrained(
             model_id_or_path=model_id,
             api_key=self.api_key,

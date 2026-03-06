@@ -112,7 +112,6 @@ def test_onnx_package_with_dynamic_batch_size_and_letterbox_torch(
     assert torch.all(predictions[0].confidence >= 0.25)
 
 
-
 @pytest.mark.slow
 @pytest.mark.onnx_extras
 def test_onnx_high_confidence_threshold_returns_fewer_detections(

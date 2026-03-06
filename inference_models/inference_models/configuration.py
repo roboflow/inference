@@ -58,6 +58,9 @@ DISABLE_VERBOSE_LOGGER = get_boolean_from_env(
 AUTO_LOADER_CACHE_EXPIRATION_MINUTES = get_integer_from_env(
     variable_name="AUTO_LOADER_CACHE_EXPIRATION_MINUTES", default=1440
 )
+FILE_LOCK_ACQUIRE_TIMEOUT = get_integer_from_env(
+    variable_name="INFERENCE_MODELS_FILE_LOCK_ACQUIRE_TIMEOUT", default=20
+)
 ALLOW_URL_INPUT = get_boolean_from_env(variable_name="ALLOW_URL_INPUT", default=True)
 ALLOW_NON_HTTPS_URL_INPUT = get_boolean_from_env(
     variable_name="ALLOW_NON_HTTPS_URL_INPUT", default=False
