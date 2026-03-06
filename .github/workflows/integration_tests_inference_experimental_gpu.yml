@@ -82,6 +82,8 @@ jobs:
 
           sudo cp /var/cache/apt/archives/*.deb ~/apt-cache/ 2>/dev/null || true
           sudo chown -R $(whoami):$(whoami) ~/apt-cache
+      - name: Display GPU
+        run: python -c "import torch; print(torch.cuda.get_device_name(0))"
       - name: 📦 Install base dependencies as well as `${{ matrix.extras.install }}` dependencies
         if: ${{ (github.event.inputs.extras == '' || github.event.inputs.extras == matrix.extras.marker) && (github.event.inputs.python_version == '' || github.event.inputs.python_version == matrix.python-version) }}
         working-directory: inference_models
