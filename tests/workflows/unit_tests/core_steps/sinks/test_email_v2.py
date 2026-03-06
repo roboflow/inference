@@ -22,9 +22,9 @@ from inference.core.workflows.core_steps.common.query_language.entities.operatio
 )
 from inference.core.workflows.core_steps.sinks.email_notification import v2
 from inference.core.workflows.core_steps.sinks.email_notification.v2 import (
-    apply_operations_to_message_parameters,
     BlockManifest,
     EmailNotificationBlockV2,
+    apply_operations_to_message_parameters,
     format_email_message,
     send_email_via_roboflow_proxy,
     serialize_image_data,
@@ -271,7 +271,9 @@ def test_apply_operations_to_message_parameters_preserves_workflow_image_data() 
     assert result["label"] == "PHOTO"
 
 
-def test_apply_operations_to_message_parameters_workflow_image_data_with_operations() -> None:
+def test_apply_operations_to_message_parameters_workflow_image_data_with_operations() -> (
+    None
+):
     """WorkflowImageData can be transformed by image operations (e.g. ConvertImageToBase64, ExtractImageProperty)."""
     parent_metadata = ImageParentMetadata(parent_id="test")
     image_data = WorkflowImageData(

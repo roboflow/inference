@@ -743,7 +743,9 @@ def serialize_image_data(value: Any) -> Any:
     return value
 
 
-def serialize_image_data_parameters(message_parameters: Dict[str, Any]) -> Dict[str, Any]:
+def serialize_image_data_parameters(
+    message_parameters: Dict[str, Any]
+) -> Dict[str, Any]:
     """
     Convert any WorkflowImageData objects in message_parameters to base64 strings
     so they can be serialized to JSON for the API call.
@@ -829,7 +831,9 @@ def send_email_via_roboflow_proxy(
             message_parameters_operations=message_parameters_operations,
         )
         # Serialize any WorkflowImageData objects to base64 strings for JSON transmission
-        serialized_parameters = serialize_image_data_parameters(message_parameters_after_operations)
+        serialized_parameters = serialize_image_data_parameters(
+            message_parameters_after_operations
+        )
 
         payload = {
             "receiver_email": receiver_email,
