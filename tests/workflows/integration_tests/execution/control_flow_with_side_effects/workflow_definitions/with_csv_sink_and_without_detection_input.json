@@ -3,7 +3,6 @@
   "inputs": [
     {"type": "WorkflowImage", "name": "image"},
     {"type": "WorkflowBatchInput", "name": "image_names", "dimensionality": 1},
-    {"type": "WorkflowParameter", "name": "dry_run"},
     {"type": "WorkflowParameter", "name": "output_directory", "default_value": "detection_logs"}
   ],
   "steps": [
