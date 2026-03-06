@@ -62,7 +62,10 @@ class InferenceModelsSAMAdapter(Model):
             size_limit=SAM_MAX_EMBEDDING_CACHE_SIZE,
             send_to_cpu=True,
         )
-        extra_weights_provider_headers = get_extra_weights_provider_headers()
+        extra_weights_provider_headers = get_extra_weights_provider_headers(
+            countinference=kwargs.get("countinference"),
+            service_secret=kwargs.get("service_secret"),
+        )
 
         self._model: SAMTorch = AutoModel.from_pretrained(
             model_id_or_path=model_id,

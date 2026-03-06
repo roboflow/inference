@@ -100,7 +100,10 @@ class InferenceModelsSAM2Adapter(Model):
             size_limit=low_res_logits_cache_size,
             send_to_cpu=True,
         )
-        extra_weights_provider_headers = get_extra_weights_provider_headers()
+        extra_weights_provider_headers = get_extra_weights_provider_headers(
+            countinference=kwargs.get("countinference"),
+            service_secret=kwargs.get("service_secret"),
+        )
         self._model: SAM2Torch = AutoModel.from_pretrained(
             model_id_or_path=model_id,
             api_key=self.api_key,
