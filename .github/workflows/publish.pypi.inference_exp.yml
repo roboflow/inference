@@ -43,21 +43,34 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install uv
       - name: 🏷️ Modify version for pre-release
+        id: version
         if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.pre_release == 'true' }}
         working-directory: inference_models
         run: |
           CURRENT_VERSION=$(grep -m 1 '^version = ' pyproject.toml | sed 's/version = "\(.*\)"/\1/')
           echo "Current version: $CURRENT_VERSION"
 
-          if [[ $CURRENT_VERSION =~ (a|b|rc)[0-9]+$ ]]; then
-            echo "Version already has pre-release suffix, keeping as is"
+          if [[ $CURRENT_VERSION =~ ^(.+)rc([0-9]+)$ ]]; then
+            # Has valid rc suffix - increment it
+            BASE_VERSION="${BASH_REMATCH[1]}"
+            RC_NUM="${BASH_REMATCH[2]}"
+            NEW_RC=$((RC_NUM + 1))
+            NEW_VERSION="${BASE_VERSION}rc${NEW_RC}"
+            echo "Incrementing RC: $CURRENT_VERSION -> $NEW_VERSION"
+          elif [[ $CURRENT_VERSION =~ rc ]]; then
+            # Has rc but not followed by valid number
+            echo "::error::Invalid RC suffix in version '$CURRENT_VERSION'. Expected format: X.Y.ZrcN where N is a number."
+            echo "skip_publish=true" >> $GITHUB_OUTPUT
+            exit 0
           else
-            TIMESTAMP=$(date +%Y%m%d%H%M%S)
-            NEW_VERSION="${CURRENT_VERSION}rc${TIMESTAMP}"
-            echo "New pre-release version: $NEW_VERSION"
-            sed -i.bak "s/^version = \"${CURRENT_VERSION}\"/version = \"${NEW_VERSION}\"/" pyproject.toml
-            rm pyproject.toml.bak
+            # No rc suffix - add rc1
+            NEW_VERSION="${CURRENT_VERSION}rc1"
+            echo "Adding RC suffix: $CURRENT_VERSION -> $NEW_VERSION"
           fi
+
+          sed -i.bak "s/^version = \"${CURRENT_VERSION}\"/version = \"${NEW_VERSION}\"/" pyproject.toml
+          rm pyproject.toml.bak
+          echo "New pre-release version: $NEW_VERSION"
       - name: 🔨 Build package
         working-directory: inference_models
         run: |
