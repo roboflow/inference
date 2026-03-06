@@ -14,8 +14,8 @@ from rich.text import Text
 
 from inference_models.configuration import (
     DEFAULT_DEVICE,
-    INFERENCE_HOME,
     FILE_LOCK_ACQUIRE_TIMEOUT,
+    INFERENCE_HOME,
 )
 from inference_models.errors import (
     CorruptedModelPackageError,
@@ -1225,10 +1225,14 @@ def initialize_model(
     on_symlink_deleted: Optional[Callable[[str], None]] = None,
     use_auto_resolution_cache: bool = True,
 ) -> Tuple[AnyModel, str]:
+    model_features = None
+    if model_package.model_features:
+        model_features = set(model_package.model_features.keys())
     model_class = resolve_model_class(
         model_architecture=model_architecture,
         task_type=task_type,
         backend=model_package.backend,
+        model_features=model_features,
     )
     for artefact in model_package.package_artefacts:
         if artefact.file_handle == MODEL_CONFIG_FILE_NAME:

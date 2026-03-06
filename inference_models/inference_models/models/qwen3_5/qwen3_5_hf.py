@@ -1,5 +1,5 @@
-import json
 import os
+import re
 from threading import Lock
 from typing import List, Optional, Tuple, Union
 
@@ -9,14 +9,13 @@ from peft import PeftModel
 from transformers import (
     AutoProcessor,
     BitsAndBytesConfig,
-    Qwen3VLForConditionalGeneration,
+    Qwen3_5ForConditionalGeneration,
 )
-from transformers.utils import is_flash_attn_2_available
 
 from inference_models.configuration import (
     DEFAULT_DEVICE,
-    INFERENCE_MODELS_QWEN3_VL_DEFAULT_DO_SAMPLE,
-    INFERENCE_MODELS_QWEN3_VL_DEFAULT_MAX_NEW_TOKENS,
+    INFERENCE_MODELS_QWEN3_5_DEFAULT_DO_SAMPLE,
+    INFERENCE_MODELS_QWEN3_5_DEFAULT_MAX_NEW_TOKENS,
 )
 from inference_models.entities import ColorFormat
 from inference_models.models.common.roboflow.model_packages import (
@@ -24,34 +23,10 @@ from inference_models.models.common.roboflow.model_packages import (
     ResizeMode,
     parse_inference_config,
 )
+from inference_models.models.qwen3vl.qwen3vl_hf import _get_qwen3vl_attn_implementation
 
 
-def _get_qwen3vl_attn_implementation(device: torch.device) -> str:
-    """Use flash_attention_2 if available, otherwise eager.
-
-    SDPA has dtype mismatch issues with some transformers versions.
-    """
-    if is_flash_attn_2_available() and device and "cuda" in str(device):
-        # Verify flash_attn can actually be imported (not just installed)
-        try:
-            import flash_attn  # noqa: F401
-
-            if _is_model_running_against_ampere_plus_aarch(device=device):
-                return "flash_attention_2"
-            return "eager"
-        except ImportError:
-            pass
-    return "eager"
-
-
-def _is_model_running_against_ampere_plus_aarch(device: torch.device) -> bool:
-    if device.type != "cuda":
-        return False
-    major, _ = torch.cuda.get_device_capability(device=device)
-    return major >= 8
-
-
-class Qwen3VLHF:
+class Qwen35HF:
     default_dtype = torch.bfloat16
 
     @classmethod
@@ -64,7 +39,7 @@ class Qwen3VLHF:
         quantization_config: Optional[BitsAndBytesConfig] = None,
         disable_quantization: bool = False,
         **kwargs,
-    ) -> "Qwen3VLHF":
+    ) -> "Qwen35HF":
         adapter_config_path = os.path.join(model_name_or_path, "adapter_config.json")
         inference_config_path = os.path.join(
             model_name_or_path, "inference_config.json"
@@ -82,14 +57,12 @@ class Qwen3VLHF:
                 },
             )
 
-        dtype = cls.default_dtype
-
         attn_implementation = _get_qwen3vl_attn_implementation(device)
 
         if os.path.exists(adapter_config_path):
             # Has adapter - load base model then apply LoRA
             base_model_path = os.path.join(model_name_or_path, "base")
-            base_model = Qwen3VLForConditionalGeneration.from_pretrained(
+            base_model = Qwen3_5ForConditionalGeneration.from_pretrained(
                 base_model_path,
                 device_map=device,
                 trust_remote_code=trust_remote_code,
@@ -101,12 +74,12 @@ class Qwen3VLHF:
             model = (
                 PeftModel.from_pretrained(base_model, model_name_or_path)
                 .eval()
-                .to(dtype)
+                .to(cls.default_dtype)
             )
             model = model.merge_and_unload()
         else:
             # No adapter - just load base model, eval, convert to dtype
-            base_model = Qwen3VLForConditionalGeneration.from_pretrained(
+            base_model = Qwen3_5ForConditionalGeneration.from_pretrained(
                 model_name_or_path,
                 device_map=device,
                 trust_remote_code=trust_remote_code,
@@ -114,14 +87,14 @@ class Qwen3VLHF:
                 quantization_config=quantization_config,
                 attn_implementation=attn_implementation,
             )
-            model = base_model.eval().to(dtype)
+            model = base_model.eval().to(cls.default_dtype)
 
         # Load processor with chat_template if available
-        # Check both root and base/ directory for chat_template.json
-        chat_template_path = os.path.join(model_name_or_path, "chat_template.json")
+        # Check both root and base/ directory for chat_template.jinja
+        chat_template_path = os.path.join(model_name_or_path, "chat_template.jinja")
         if not os.path.exists(chat_template_path):
             chat_template_path = os.path.join(
-                model_name_or_path, "base", "chat_template.json"
+                model_name_or_path, "base", "chat_template.jinja"
             )
 
         # Use base/ for processor when adapter exists - preprocessor configs differ
@@ -132,7 +105,7 @@ class Qwen3VLHF:
 
         if os.path.exists(chat_template_path):
             with open(chat_template_path, "r") as f:
-                chat_template = json.load(f)["chat_template"]
+                chat_template = f.read()
             processor = AutoProcessor.from_pretrained(
                 processor_path,
                 trust_remote_code=trust_remote_code,
@@ -159,7 +132,7 @@ class Qwen3VLHF:
 
     def __init__(
         self,
-        model: Qwen3VLForConditionalGeneration,
+        model: Qwen3_5ForConditionalGeneration,
         processor: AutoProcessor,
         inference_config: Optional[InferenceConfig],
         device: torch.device,
@@ -169,7 +142,7 @@ class Qwen3VLHF:
         self._inference_config = inference_config
         self._device = device
         self.default_system_prompt = (
-            "You are a Qwen3-VL a helpful assistant for any visual task."
+            "You are a Qwen3.5 model that can answer questions about any image."
         )
         self._lock = Lock()
 
@@ -217,7 +190,7 @@ class Qwen3VLHF:
                 prompt = split_prompt[0] or "Describe what's in this image."
                 system_prompt = split_prompt[1] or self.default_system_prompt
 
-        # Construct conversation following original implementation structure
+        # Construct conversation following qwen3vl inference pattern
         # Pass the actual image in the conversation for proper vision token handling
         conversation = [
             {
@@ -233,15 +206,13 @@ class Qwen3VLHF:
             },
         ]
 
-        # Apply chat template with add_generation_prompt to signal assistant should respond
-        text_input = self._processor.apply_chat_template(
-            conversation, tokenize=False, add_generation_prompt=True
-        )
-
-        # Process inputs - pass the image directly, processor handles PIL/tensor conversion
-        model_inputs = self._processor(
-            text=text_input,
-            images=images,
+        # Use the new Qwen3.5 processor pattern - apply_chat_template handles
+        # both text templating AND image processing internally
+        model_inputs = self._processor.apply_chat_template(
+            [conversation],
+            tokenize=True,
+            add_generation_prompt=True,
+            return_dict=True,
             return_tensors="pt",
             padding=True,
         )
@@ -258,8 +229,8 @@ class Qwen3VLHF:
     def generate(
         self,
         inputs: dict,
-        max_new_tokens: int = INFERENCE_MODELS_QWEN3_VL_DEFAULT_MAX_NEW_TOKENS,
-        do_sample: bool = INFERENCE_MODELS_QWEN3_VL_DEFAULT_DO_SAMPLE,
+        max_new_tokens: int = INFERENCE_MODELS_QWEN3_5_DEFAULT_MAX_NEW_TOKENS,
+        do_sample: bool = INFERENCE_MODELS_QWEN3_5_DEFAULT_DO_SAMPLE,
         **kwargs,
     ) -> torch.Tensor:
         input_len = inputs["input_ids"].shape[-1]
@@ -289,9 +260,11 @@ class Qwen3VLHF:
             skip_special_tokens=skip_special_tokens,
         )
 
-        # Apply the same post-processing as original implementation
+        # Apply post-processing - clean up think tags and other artifacts
         result = []
         for text in decoded:
+            # Remove <think>...</think> blocks (Qwen3.5 reasoning format)
+            text = re.sub(r"<think>.*?</think>\s*", "", text, flags=re.DOTALL)
             text = text.replace("assistant\n", "")
             text = text.replace(" addCriterion\n", "")
             result.append(text.strip())
