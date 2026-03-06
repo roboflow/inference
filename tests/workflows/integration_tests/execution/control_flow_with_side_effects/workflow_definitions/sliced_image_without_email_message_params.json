@@ -51,9 +51,6 @@
       "subject": "Workflow: detections found in slice",
       "receiver_email": "noreply@example.com",
       "message": "Detection(s) found in this slice.",
-      "message_parameters": {
-        "predictions": "$steps.detection.predictions"
-      },
       "disable_sink": "$inputs.dry_run"
     }
   ],

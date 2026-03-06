@@ -36,7 +36,7 @@
         ]
       },
       "evaluation_parameters": {"prediction": "$steps.detection.predictions"},
-      "next_steps": ["$steps.csv_formatter", "$steps.local_file_sink"]
+      "next_steps": ["$steps.csv_formatter"]
     },
     {
       "type": "roboflow_core/csv_formatter@v1",
