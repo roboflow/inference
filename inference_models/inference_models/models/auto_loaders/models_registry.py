@@ -400,10 +400,6 @@ REGISTERED_MODELS: Dict[
         module_name="inference_models.models.yolact.yolact_instance_segmentation_onnx",
         class_name="YOLOACTForInstanceSegmentationOnnx",
     ),
-    ("yolact", INSTANCE_SEGMENTATION_TASK, BackendType.TRT): LazyClass(
-        module_name="inference_models.models.yolact.yolact_instance_segmentation_trt",
-        class_name="YOLOACTForInstanceSegmentationTRT",
-    ),
     ("depth-anything-v2", DEPTH_ESTIMATION_TASK, BackendType.HF): LazyClass(
         module_name="inference_models.models.depth_anything_v2.depth_anything_v2_hf",
         class_name="DepthAnythingV2HF",
