@@ -154,6 +154,8 @@ class RoboflowAPINotAuthorizedError(RoboflowAPIUnsuccessfulRequestError):
 class RoboflowAPIForbiddenError(RoboflowAPIUnsuccessfulRequestError):
     pass
 
+class RoboflowAPIUsagePausedError(RoboflowAPIUnsuccessfulRequestError):
+    pass
 
 class RoboflowAPINotNotFoundError(RoboflowAPIUnsuccessfulRequestError):
     pass

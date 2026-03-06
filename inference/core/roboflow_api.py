@@ -68,6 +68,7 @@ from inference.core.exceptions import (
     RoboflowAPITimeoutError,
     RoboflowAPIUnsuccessfulRequestError,
     WorkspaceLoadError,
+    RoboflowAPIUsagePausedError
 )
 from inference.core.utils.file_system import sanitize_path_segment
 from inference.core.utils.requests import (
@@ -119,6 +120,11 @@ DEFAULT_ERROR_HANDLERS = {
     ),
     404: lambda e: raise_from_lambda(
         e, RoboflowAPINotNotFoundError, NOT_FOUND_ERROR_MESSAGE
+    ),
+    423: lambda e: raise_from_lambda(
+        e, 
+        RoboflowAPIUsagePausedError, 
+        "Roboflow API usage is paused. Please contact your workspace administrator to re-enable api keys."
     ),
 }
 
