@@ -810,12 +810,12 @@ def send_email_via_roboflow_proxy(
     }
 
     try:
-        # Serialize any WorkflowImageData objects to base64 strings
-        message_parameters = apply_operations_to_message_parameters(
+        message_parameters_after_operations = apply_operations_to_message_parameters(
             message_parameters=message_parameters,
             message_parameters_operations=message_parameters_operations,
         )
-        serialized_parameters = serialize_image_data_parameters(message_parameters)
+        # Serialize any WorkflowImageData objects to base64 strings for JSON transmission
+        serialized_parameters = serialize_image_data_parameters(message_parameters_after_operations)
 
         payload = {
             "receiver_email": receiver_email,
