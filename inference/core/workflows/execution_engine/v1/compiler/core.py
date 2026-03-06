@@ -41,6 +41,9 @@ from inference.core.workflows.execution_engine.v1.compiler.utils import (
 from inference.core.workflows.execution_engine.v1.compiler.validator import (
     validate_workflow_specification,
 )
+from inference.core.workflows.core_steps.composition.workflow_caller.v1 import (
+    validate_workflow_caller_no_circular_references,
+)
 from inference.core.workflows.execution_engine.v1.debugger.core import (
     dump_execution_graph,
 )
@@ -155,6 +158,10 @@ def compile_workflow_graph(
     validate_workflow_specification(
         workflow_definition=parsed_workflow_definition,
         profiler=profiler,
+    )
+    validate_workflow_caller_no_circular_references(
+        steps=parsed_workflow_definition.steps,
+        api_key=init_parameters.get("workflows_core.api_key"),
     )
     execution_graph = prepare_execution_graph(
         workflow_definition=parsed_workflow_definition,
