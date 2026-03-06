@@ -42,9 +42,6 @@
       "subject": "Workflow: detections found",
       "receiver_email": "noreply@example.com",
       "message": "Detection(s) found for this image.",
-      "message_parameters": {
-        "predictions": "$steps.detection.predictions"
-      },
       "disable_sink": "$inputs.dry_run"
     }
   ],

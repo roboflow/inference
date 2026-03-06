@@ -52,7 +52,6 @@
       "receiver_email": "noreply@example.com",
       "message": "Found {{ $parameters.num_detections }} detection(s) in this slice.",
       "message_parameters": {
-        "predictions": "$steps.detection.predictions",
         "num_detections": "$steps.detection.predictions"
       },
       "message_parameters_operations": {

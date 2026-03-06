@@ -44,7 +44,6 @@
       "receiver_email": "noreply@example.com",
       "message": "Image: {{ $parameters.image_name }}\nFound {{ $parameters.num_detections }} detection(s) for this image.",
       "message_parameters": {
-        "predictions": "$steps.detection.predictions",
         "num_detections": "$steps.detection.predictions",
         "image_name": "$inputs.image_names"
       },

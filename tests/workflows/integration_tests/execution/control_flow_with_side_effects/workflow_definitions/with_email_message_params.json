@@ -41,9 +41,8 @@
       "name": "email_notification",
       "subject": "Workflow: detections found",
       "receiver_email": "noreply@example.com",
-      "message": "Found {{ $parameters.num_detections }} detection(s) for this image. (message_parameters.predictions links lineage so the workflow compiles.)",
+      "message": "Found {{ $parameters.num_detections }} detection(s) for this image.",
       "message_parameters": {
-        "predictions": "$steps.detection.predictions",
         "num_detections": "$steps.detection.predictions"
       },
       "message_parameters_operations": {

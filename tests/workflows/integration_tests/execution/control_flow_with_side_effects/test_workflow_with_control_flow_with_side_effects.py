@@ -157,7 +157,7 @@ def _batch_4_images():
             ("1 detection", "img3.jpg"),
         ),
         (
-            "without_image_names_and_with_email_message_params",
+            "with_image_names_and_without_email_message_params",
             ("img1.jpg", "detection"),
             ("img3.jpg", "detection"),
         ),
