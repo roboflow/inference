@@ -193,6 +193,8 @@ ASL_TRT_PACKAGE_RFDETR_SEG_URL = "https://storage.googleapis.com/roboflow-tests-
 ASL_TRT_PACKAGE_YOLO26_SEG_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolo26-seg-asl-trt-t4-package.zip"
 ASL_TRT_PACKAGE_YOLOV8_SEG_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov8-seg-asl-trt-t4-package.zip"
 
+YOLOV8N_POSE_TRT_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov8n-pose-trt-t4-package.zip"
+
 
 @pytest.fixture(scope="module")
 def original_clip_download_dir() -> str:
@@ -1509,4 +1511,12 @@ def yolov8_seg_asl_trt_package() -> str:
     return download_model_package(
         model_package_zip_url=ASL_TRT_PACKAGE_YOLOV8_SEG_URL,
         package_name="asl-yolov8-seg-trt",
+    )
+
+
+@pytest.fixture(scope="module")
+def yolov8_pose_trt_package() -> str:
+    return download_model_package(
+        model_package_zip_url=YOLOV8N_POSE_TRT_PACKAGE_URL,
+        package_name="yolov8-pose-trt",
     )
