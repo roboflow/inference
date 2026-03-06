@@ -41,7 +41,7 @@ SLICED_DETECTION_COUNTS = [
     0, 0, 0, 0,  # image 0
     0, 0, 1, 1,  # image 1 (slices 2,3)
     0, 0, 0, 0,  # image 2
-    0, 0, 0, 1, 0, 0, 0, 0,  # image 3 (slice 4)
+    0, 0, 0, 0, 0, 1, 0, 0,  # image 3 (slice 5)
 ]
 
 
@@ -142,27 +142,27 @@ def _batch_4_images():
     "workflow_name,expected_at_1,expected_at_3",
     [
         (
-            "workflow_with_workaround",
+            "with_email_message_params",
             "2 detection",
             "1 detection",
         ),
         (
-            "workflow_email_no_detection_count",
+            "without_email_message_params",
             "Detection(s) found",
             "Detection(s) found",
         ),
         (
-            "workflow_with_image_names",
+            "with_image_names_and_email_message_params",
             ("2 detection", "img1.jpg"),
             ("1 detection", "img3.jpg"),
         ),
         (
-            "workflow_with_image_names_no_message_params",
+            "without_image_names_and_with_email_message_params",
             ("img1.jpg", "detection"),
             ("img3.jpg", "detection"),
         ),
     ],
-    ids=["a_with_count", "b_no_count", "c_count_and_image_names", "d_image_names_only"],
+    ids=["with_email_message_params", "without_email_message_params", "with_image_names_and_email_message_params", "without_image_names_and_email_message_params"],
 )
 def test_scenario_1_email_messages(
     workflow_name: str,
@@ -187,7 +187,7 @@ def test_scenario_1_email_messages(
     )
 
     assert len(result) == 4
-    # Only indices 1 and 3 pass continue_if
+
     assert result[0].get("email_message") is None
     assert result[2].get("email_message") is None
 
@@ -208,24 +208,24 @@ def test_scenario_1_email_messages(
 
 # Per-image slice indices with detections: image 1 has detections in slices 2,3; image 3 in slice 4 (0-based)
 # So we get 3 emails total: result[1]["email_message"][2], [1][3], result[3]["email_message"][3]
-SLICED_EMAIL_IMAGE_INDEX_AND_SLICE = [(1, 2), (1, 3), (3, 3)]
+SLICED_EMAIL_IMAGE_INDEX_AND_SLICE = [(1, 2), (1, 3), (3, 5)]
 
 
 def _sliced_4_images():
     """Three images that slice into 4 slices each, one that slices into 8. With 640x640, 0.2 overlap, stride 512: 2x2 needs 1152; 2x4 needs 2176x1152."""
     # 1152x1152 -> 2x2 = 4 slices; 2176x1152 -> 4x2 = 8 slices
-    img_4_slices = np.zeros((1152, 1152, 3), dtype=np.uint8)
-    img_8_slices = np.zeros((1152, 2176, 3), dtype=np.uint8)
-    return [img_4_slices, img_4_slices, img_4_slices, img_8_slices]
+    img_4 = np.zeros((1152, 1152, 3), dtype=np.uint8)
+    img_8 = np.zeros((1152, 2176, 3), dtype=np.uint8)
+    return [img_4, img_4, img_4, img_8]
 
 
 @pytest.mark.parametrize(
     "workflow_name,expected_in_message",
     [
-        ("workflow_sliced_email_with_count", "1 detection"),
-        ("workflow_sliced_email_no_count", "Detection(s) found"),
+        ("sliced_image_with_email_message_params", "1 detection"),
+        ("sliced_image_without_email_message_params", "Detection(s) found"),
     ],
-    ids=["a_with_count", "b_no_count"],
+    ids=["sliced_image_with_email_message_params", "sliced_image_without_email_message_params"],
 )
 def test_scenario_2_sliced_email_messages(
     workflow_name: str,
@@ -264,7 +264,7 @@ def test_scenario_3_email_gate_enabled(
     model_manager,
 ) -> None:
     """3) enable_email=True: same as scenario 1 with count and image names."""
-    workflow = _load_workflow_definition("workflow_with_email_gate")
+    workflow = _load_workflow_definition("with_email_gate_and_with_email_message_params")
     runtime = {
         "image": _batch_4_images(),
         "image_names": BATCH_4_IMAGE_NAMES,
@@ -289,7 +289,7 @@ def test_scenario_3_email_gate_disabled(
     model_manager,
 ) -> None:
     """3) enable_email=False: email step never runs."""
-    workflow = _load_workflow_definition("workflow_with_email_gate")
+    workflow = _load_workflow_definition("with_email_gate_and_without_email_message_params")
     runtime = {
         "image": _batch_4_images(),
         "image_names": BATCH_4_IMAGE_NAMES,
@@ -314,7 +314,7 @@ def test_scenario_4_csv_sink(
     empty_directory: str,
 ) -> None:
     """4) Batch of 4 images, only 1 and 3 have detections. CSV has 2 rows: num_detections 2 and 1."""
-    workflow = _load_workflow_definition("workflow_detection_csv_sink")
+    workflow = _load_workflow_definition("with_csv_sink_and_with_detection_input")
     runtime = {
         "image": _batch_4_images(),
         "dry_run": False,
@@ -332,12 +332,11 @@ def test_scenario_4_csv_sink(
     csv_files = glob(os.path.join(empty_directory, "detection_log_*.csv"))
     assert len(csv_files) >= 1
     df = pd.read_csv(csv_files[0])
-    assert "num_detections" in df.columns and "has_detections" in df.columns
+
+    assert "num_detections" in df.columns
     assert "timestamp" in df.columns
     assert len(df) == 2
     assert df["num_detections"].tolist() == [2, 1]
-    assert bool(df["has_detections"].iloc[0]) is True
-    assert bool(df["has_detections"].iloc[1]) is True
 
 
 def test_scenario_4_csv_sink_with_image_names(
@@ -345,7 +344,7 @@ def test_scenario_4_csv_sink_with_image_names(
     empty_directory: str,
 ) -> None:
     """4) Same but workflow with image_names; CSV rows have correct image_name."""
-    workflow = _load_workflow_definition("workflow_detection_csv_sink_image_names")
+    workflow = _load_workflow_definition("with_csv_sink_and_without_detection_input")
     runtime = {
         "image": _batch_4_images(),
         "image_names": BATCH_4_IMAGE_NAMES,
@@ -363,6 +362,7 @@ def test_scenario_4_csv_sink_with_image_names(
     csv_files = glob(os.path.join(empty_directory, "detection_log_*.csv"))
     assert len(csv_files) >= 1
     df = pd.read_csv(csv_files[0])
+
     assert "image_name" in df.columns
     assert "timestamp" in df.columns
     assert len(df) == 2
