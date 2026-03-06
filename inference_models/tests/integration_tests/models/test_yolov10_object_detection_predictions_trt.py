@@ -105,7 +105,7 @@ def test_trt_package_batch_numpy(
 @pytest.mark.trt_extras
 def test_trt_package_torch(
     yolov10_object_detection_trt_package: str,
-    coins_counting_image_torch: torch.Tensor,
+    dog_image_torch: torch.Tensor,
 ) -> None:
     # given
     from inference_models.models.yolov10.yolov10_object_detection_trt import (
@@ -118,7 +118,7 @@ def test_trt_package_torch(
     )
 
     # when
-    predictions = model(coins_counting_image_torch)
+    predictions = model(dog_image_torch)
 
     # then
     assert torch.allclose(
@@ -145,7 +145,7 @@ def test_trt_package_torch(
 @pytest.mark.trt_extras
 def test_trt_package_torch_list(
     yolov10_object_detection_trt_package: str,
-    coins_counting_image_torch: torch.Tensor,
+    dog_image_torch: torch.Tensor,
 ) -> None:
     # given
     from inference_models.models.yolov10.yolov10_object_detection_trt import (
@@ -158,7 +158,7 @@ def test_trt_package_torch_list(
     )
 
     # when
-    predictions = model([coins_counting_image_torch, coins_counting_image_torch])
+    predictions = model([dog_image_torch, dog_image_torch])
 
     # then
     assert torch.allclose(
@@ -203,7 +203,7 @@ def test_trt_package_torch_list(
 @pytest.mark.trt_extras
 def test_trt_package_torch_batch(
     yolov10_object_detection_trt_package: str,
-    coins_counting_image_torch: torch.Tensor,
+    dog_image_torch: torch.Tensor,
 ) -> None:
     # given
     from inference_models.models.yolov10.yolov10_object_detection_trt import (
@@ -216,9 +216,7 @@ def test_trt_package_torch_batch(
     )
 
     # when
-    predictions = model(
-        torch.stack([coins_counting_image_torch, coins_counting_image_torch], dim=0)
-    )
+    predictions = model(torch.stack([dog_image_torch, dog_image_torch], dim=0))
 
     # then
     assert torch.allclose(

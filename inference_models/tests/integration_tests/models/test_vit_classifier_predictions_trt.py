@@ -16,6 +16,7 @@ def test_single_label_trt_package_numpy(
 
     model = VITForClassificationTRT.from_pretrained(
         model_name_or_path=vit_single_label_cls_trt_package,
+        engine_host_code_allowed=True,
     )
 
     # when
@@ -38,6 +39,7 @@ def test_single_label_trt_package_numpy_batch(
 
     model = VITForClassificationTRT.from_pretrained(
         model_name_or_path=vit_single_label_cls_trt_package,
+        engine_host_code_allowed=True,
     )
 
     # when
@@ -61,6 +63,7 @@ def test_single_label_trt_package_torch(
 
     model = VITForClassificationTRT.from_pretrained(
         model_name_or_path=vit_single_label_cls_trt_package,
+        engine_host_code_allowed=True,
     )
 
     # when
@@ -107,6 +110,7 @@ def test_single_label_trt_package_torch_batch(
 
     model = VITForClassificationTRT.from_pretrained(
         model_name_or_path=vit_single_label_cls_trt_package,
+        engine_host_code_allowed=True,
     )
 
     # when
@@ -120,7 +124,7 @@ def test_single_label_trt_package_torch_batch(
 @pytest.mark.slow
 @pytest.mark.trt_extras
 def test_multi_label_trt_package_numpy(
-    resnet_multi_label_cls_trt_package: str,
+    vit_multi_label_cls_trt_package: str,
     dog_image_numpy: np.ndarray,
 ) -> None:
     # given
@@ -129,7 +133,7 @@ def test_multi_label_trt_package_numpy(
     )
 
     model = VITForMultiLabelClassificationTRT.from_pretrained(
-        model_name_or_path=resnet_multi_label_cls_trt_package,
+        model_name_or_path=vit_multi_label_cls_trt_package,
         engine_host_code_allowed=True,
     )
 
@@ -143,7 +147,7 @@ def test_multi_label_trt_package_numpy(
 @pytest.mark.slow
 @pytest.mark.trt_extras
 def test_multi_label_trt_package_numpy_batch(
-    resnet_multi_label_cls_trt_package: str,
+    vit_multi_label_cls_trt_package: str,
     dog_image_numpy: np.ndarray,
 ) -> None:
     # given
@@ -152,7 +156,7 @@ def test_multi_label_trt_package_numpy_batch(
     )
 
     model = VITForMultiLabelClassificationTRT.from_pretrained(
-        model_name_or_path=resnet_multi_label_cls_trt_package,
+        model_name_or_path=vit_multi_label_cls_trt_package,
         engine_host_code_allowed=True,
     )
 
@@ -167,7 +171,7 @@ def test_multi_label_trt_package_numpy_batch(
 @pytest.mark.slow
 @pytest.mark.trt_extras
 def test_multi_label_trt_package_torch(
-    resnet_multi_label_cls_trt_package: str,
+    vit_multi_label_cls_trt_package: str,
     dog_image_torch: torch.Tensor,
 ) -> None:
     # given
@@ -176,7 +180,7 @@ def test_multi_label_trt_package_torch(
     )
 
     model = VITForMultiLabelClassificationTRT.from_pretrained(
-        model_name_or_path=resnet_multi_label_cls_trt_package,
+        model_name_or_path=vit_multi_label_cls_trt_package,
         engine_host_code_allowed=True,
     )
 
@@ -190,7 +194,7 @@ def test_multi_label_trt_package_torch(
 @pytest.mark.slow
 @pytest.mark.trt_extras
 def test_multi_label_trt_package_torch_list(
-    resnet_multi_label_cls_trt_package: str,
+    vit_multi_label_cls_trt_package: str,
     dog_image_torch: torch.Tensor,
 ) -> None:
     # given
@@ -199,7 +203,7 @@ def test_multi_label_trt_package_torch_list(
     )
 
     model = VITForMultiLabelClassificationTRT.from_pretrained(
-        model_name_or_path=resnet_multi_label_cls_trt_package,
+        model_name_or_path=vit_multi_label_cls_trt_package,
         engine_host_code_allowed=True,
     )
 
@@ -214,7 +218,7 @@ def test_multi_label_trt_package_torch_list(
 @pytest.mark.slow
 @pytest.mark.trt_extras
 def test_multi_label_trt_package_torch_batch(
-    resnet_multi_label_cls_trt_package: str,
+    vit_multi_label_cls_trt_package: str,
     dog_image_torch: torch.Tensor,
 ) -> None:
     # given
@@ -223,7 +227,7 @@ def test_multi_label_trt_package_torch_batch(
     )
 
     model = VITForMultiLabelClassificationTRT.from_pretrained(
-        model_name_or_path=resnet_multi_label_cls_trt_package,
+        model_name_or_path=vit_multi_label_cls_trt_package,
         engine_host_code_allowed=True,
     )
 
