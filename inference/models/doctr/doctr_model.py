@@ -69,14 +69,14 @@ class DocTR(RoboflowCoreModel):
             f"{MODEL_CACHE_DIR}/doctr/models/{self.det_model.version_id}.pt"
         )
         shutil.copyfile(
-            f"{MODEL_CACHE_DIR}/doctr_det/{self.det_model.version_id}/model_v2.pt",
+            f"{MODEL_CACHE_DIR}/doctr_det/{self.det_model.version_id}/model.pt",
             detector_weights_path,
         )
         recognizer_weights_path = (
             f"{MODEL_CACHE_DIR}/doctr/models/{self.rec_model.version_id}.pt"
         )
         shutil.copyfile(
-            f"{MODEL_CACHE_DIR}/doctr_rec/{self.rec_model.version_id}/model_v2.pt",
+            f"{MODEL_CACHE_DIR}/doctr_rec/{self.rec_model.version_id}/model.pt",
             recognizer_weights_path,
         )
 
@@ -213,11 +213,11 @@ class DocTR(RoboflowCoreModel):
         Returns:
             list: A list of required files for inference, e.g., ["model.pt"].
         """
-        return ["model_v2.pt"]
+        return ["model.pt"]
 
 
 class DocTRRec(RoboflowCoreModel):
-    def __init__(self, *args, model_id: str = "doctr_rec/crnn_vgg16_bn", **kwargs):
+    def __init__(self, *args, model_id: str = "doctr_rec/crnn_vgg16_bn_v2", **kwargs):
         """Initializes the DocTR model.
 
         Args:
@@ -237,7 +237,7 @@ class DocTRRec(RoboflowCoreModel):
         Returns:
             list: A list of required files for inference, e.g., ["model.pt"].
         """
-        return ["model_v2.pt"]
+        return ["model.pt"]
 
 
 class DocTRDet(RoboflowCoreModel):
@@ -248,7 +248,7 @@ class DocTRDet(RoboflowCoreModel):
         ort_session: ONNX runtime inference session.
     """
 
-    def __init__(self, *args, model_id: str = "doctr_det/db_resnet50", **kwargs):
+    def __init__(self, *args, model_id: str = "doctr_det/db_resnet50_v2", **kwargs):
         """Initializes the DocTR model.
 
         Args:
@@ -269,4 +269,4 @@ class DocTRDet(RoboflowCoreModel):
         Returns:
             list: A list of required files for inference, e.g., ["model.pt"].
         """
-        return ["model_v2.pt"]
+        return ["model.pt"]
