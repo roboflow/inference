@@ -14,8 +14,8 @@ from rich.text import Text
 
 from inference_models.configuration import (
     DEFAULT_DEVICE,
-    INFERENCE_HOME,
     FILE_LOCK_ACQUIRE_TIMEOUT,
+    INFERENCE_HOME,
 )
 from inference_models.errors import (
     CorruptedModelPackageError,

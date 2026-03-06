@@ -29,13 +29,11 @@ from inference_models.models.common.roboflow.model_packages import (
 from inference_models.models.common.roboflow.post_processing import (
     rescale_image_detections,
 )
-from inference_models.models.rfdetr.pre_processing import (
-    pre_process_network_input,
-)
 from inference_models.models.rfdetr.class_remapping import (
     ClassesReMapping,
     prepare_class_remapping,
 )
+from inference_models.models.rfdetr.pre_processing import pre_process_network_input
 from inference_models.utils.onnx_introspection import (
     get_selected_onnx_execution_providers,
 )
@@ -236,7 +234,9 @@ class RFDetrForObjectDetectionONNX(
             xy_min = cxcy - 0.5 * wh
             xy_max = cxcy + 0.5 * wh
             selected_boxes_xyxy_pct = torch.cat([xy_min, xy_max], dim=-1)
-            denorm_size = image_meta.nonsquare_intermediate_size or image_meta.inference_size
+            denorm_size = (
+                image_meta.nonsquare_intermediate_size or image_meta.inference_size
+            )
             inference_size_whwh = torch.tensor(
                 [
                     denorm_size.width,

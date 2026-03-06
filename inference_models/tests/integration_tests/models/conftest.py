@@ -450,6 +450,7 @@ def coin_counting_rfdetr_nano_torch_static_crop_center_crop_package() -> str:
         package_name="coin-counting-rfdetr-nano-torch-static-crop-center-crop",
     )
 
+
 @pytest.fixture(scope="module")
 def coin_counting_rfdetr_nano_onnx_static_bs_nonsquare_letterbox_package() -> str:
     return download_model_package(
@@ -457,12 +458,14 @@ def coin_counting_rfdetr_nano_onnx_static_bs_nonsquare_letterbox_package() -> st
         package_name="coin-counting-rfdetr-nano-onnx-static-bs-nonsquare-letterbox",
     )
 
+
 @pytest.fixture(scope="module")
 def coin_counting_rfdetr_nano_torch_static_bs_nonsquare_letterbox_package() -> str:
     return download_model_package(
         model_package_zip_url=COIN_COUNTING_RFDETR_NANO_TORCH_STATIC_BS_NONSQUARE_LETTERBOX_URL,
         package_name="coin-counting-rfdetr-nano-torch-static-bs-nonsquare-letterbox",
     )
+
 
 @pytest.fixture(scope="module")
 def og_rfdetr_base_weights() -> str:
@@ -1241,12 +1244,14 @@ def snakes_rfdetr_seg_onnx_static_bs_nonsquare_letterbox_package() -> str:
         package_name="snakes-rfdetr-seg-onnx-static-bs-nonsquare-letterbox",
     )
 
+
 @pytest.fixture(scope="module")
 def snakes_rfdetr_seg_torch_static_bs_nonsquare_letterbox_package() -> str:
     return download_model_package(
         model_package_zip_url=SNAKES_RFDETR_SEG_TORCH_STATIC_BS_NONSQUARE_LETTERBOX_URL,
         package_name="snakes-rfdetr-seg-torch-static-bs-nonsquare-letterbox",
     )
+
 
 @pytest.fixture(scope="module")
 def depth_anything_v2_small_package() -> str:

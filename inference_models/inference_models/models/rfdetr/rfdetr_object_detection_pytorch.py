@@ -32,9 +32,6 @@ from inference_models.models.common.roboflow.model_packages import (
     parse_class_names_file,
     parse_inference_config,
 )
-from inference_models.models.rfdetr.pre_processing import (
-    pre_process_network_input,
-)
 from inference_models.models.rfdetr.class_remapping import (
     ClassesReMapping,
     prepare_class_remapping,
@@ -42,6 +39,7 @@ from inference_models.models.rfdetr.class_remapping import (
 from inference_models.models.rfdetr.common import parse_model_type
 from inference_models.models.rfdetr.default_labels import resolve_labels
 from inference_models.models.rfdetr.post_processor import PostProcess
+from inference_models.models.rfdetr.pre_processing import pre_process_network_input
 from inference_models.models.rfdetr.rfdetr_base_pytorch import (
     LWDETR,
     RFDETR2XLargeConfig,
@@ -395,7 +393,10 @@ class RFDetrForObjectDetectionTorch(
             for out_box_tensor, image_metadata in zip(
                 model_results["pred_boxes"], pre_processing_meta
             ):
-                unpad_ref = image_metadata.nonsquare_intermediate_size or image_metadata.inference_size
+                unpad_ref = (
+                    image_metadata.nonsquare_intermediate_size
+                    or image_metadata.inference_size
+                )
                 box_center_offsets = torch.as_tensor(  # bboxes in format cxcywh now, so only cx, cy to be pushed
                     [
                         image_metadata.pad_left / unpad_ref.width,

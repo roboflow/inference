@@ -12,14 +12,13 @@ from inference_models.models.common.roboflow.model_packages import (
     StaticCropOffset,
     TrainingInputSize,
 )
+from inference_models.models.common.roboflow.pre_processing import (
+    pre_process_network_input as base_pre_process_network_input,
+)
 from inference_models.models.rfdetr.pre_processing import (
     _needs_nonsquare_two_step_resize,
     pre_process_network_input,
 )
-from inference_models.models.common.roboflow.pre_processing import (
-    pre_process_network_input as base_pre_process_network_input,
-)
-
 
 # ---------------------------------------------------------------------------
 # _needs_nonsquare_two_step_resize
