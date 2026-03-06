@@ -6,16 +6,24 @@ from unittest.mock import MagicMock
 import numpy as np
 import pytest
 
+from inference.core.workflows.core_steps.common.query_language.entities.enums import (
+    NumberCastingMode,
+)
 from inference.core.workflows.core_steps.common.query_language.entities.operations import (
+    LookupTable,
+    NumberRound,
+    StringToLowerCase,
     StringToUpperCase,
+    ToNumber,
+    ToString,
 )
 from inference.core.workflows.core_steps.sinks.email_notification import v2
 from inference.core.workflows.core_steps.sinks.email_notification.v2 import (
+    apply_operations_to_message_parameters,
     BlockManifest,
     EmailNotificationBlockV2,
     format_email_message,
     send_email_via_roboflow_proxy,
-    serialize_image_data,
     serialize_image_data,
 )
 from inference.core.workflows.execution_engine.entities.base import (
@@ -146,6 +154,146 @@ def test_v2_format_email_message_with_operation() -> None:
     assert result == "This is example param: {SOME} - and this is also param: `SOME`"
 
 
+def test_apply_operations_to_message_parameters_empty_operations() -> None:
+    """When no operations are defined, parameters are returned unchanged."""
+    message_parameters = {"a": "hello", "b": 42, "c": [1, 2, 3]}
+    result = apply_operations_to_message_parameters(
+        message_parameters=message_parameters,
+        message_parameters_operations={},
+    )
+    assert result == message_parameters
+
+
+def test_apply_operations_to_message_parameters_parameter_without_operations() -> None:
+    """Parameters not listed in message_parameters_operations are passed through unchanged."""
+    message_parameters = {"with_ops": "hello", "no_ops": "unchanged"}
+    result = apply_operations_to_message_parameters(
+        message_parameters=message_parameters,
+        message_parameters_operations={
+            "with_ops": [StringToUpperCase(type="StringToUpperCase")],
+        },
+    )
+    assert result["with_ops"] == "HELLO"
+    assert result["no_ops"] == "unchanged"
+
+
+def test_apply_operations_to_message_parameters_single_operation_string_upper() -> None:
+    """StringToUpperCase converts string parameter to uppercase."""
+    message_parameters = {"param": "hello world"}
+    result = apply_operations_to_message_parameters(
+        message_parameters=message_parameters,
+        message_parameters_operations={
+            "param": [StringToUpperCase(type="StringToUpperCase")],
+        },
+    )
+    assert result["param"] == "HELLO WORLD"
+
+
+def test_apply_operations_to_message_parameters_single_operation_string_lower() -> None:
+    """StringToLowerCase converts string parameter to lowercase."""
+    message_parameters = {"param": "HELLO WORLD"}
+    result = apply_operations_to_message_parameters(
+        message_parameters=message_parameters,
+        message_parameters_operations={
+            "param": [StringToLowerCase(type="StringToLowerCase")],
+        },
+    )
+    assert result["param"] == "hello world"
+
+
+def test_apply_operations_to_message_parameters_lookup_table() -> None:
+    """LookupTable maps values according to lookup_table."""
+    message_parameters = {"status": "pending"}
+    result = apply_operations_to_message_parameters(
+        message_parameters=message_parameters,
+        message_parameters_operations={
+            "status": [
+                LookupTable(
+                    type="LookupTable",
+                    lookup_table={"pending": "Waiting", "done": "Completed"},
+                )
+            ],
+        },
+    )
+    assert result["status"] == "Waiting"
+
+
+def test_apply_operations_to_message_parameters_to_string() -> None:
+    """ToString stringifies numeric and other values."""
+    message_parameters = {"count": 42, "ratio": 0.5}
+    result = apply_operations_to_message_parameters(
+        message_parameters=message_parameters,
+        message_parameters_operations={
+            "count": [ToString(type="ToString")],
+            "ratio": [ToString(type="ToString")],
+        },
+    )
+    assert result["count"] == "42"
+    assert result["ratio"] == "0.5"
+
+
+def test_apply_operations_to_message_parameters_chain() -> None:
+    """Multiple operations are applied in order (e.g. ToString then StringToUpperCase)."""
+    message_parameters = {"num": 42}
+    result = apply_operations_to_message_parameters(
+        message_parameters=message_parameters,
+        message_parameters_operations={
+            "num": [
+                ToString(type="ToString"),
+                StringToUpperCase(type="StringToUpperCase"),
+            ],
+        },
+    )
+    assert result["num"] == "42"
+
+
+def test_apply_operations_to_message_parameters_preserves_workflow_image_data() -> None:
+    """WorkflowImageData parameters are not passed through operations chain."""
+    parent_metadata = ImageParentMetadata(parent_id="test")
+    image_data = WorkflowImageData(
+        parent_metadata=parent_metadata,
+        base64_image="/9j/image_content",
+    )
+    message_parameters = {
+        "image": image_data,
+        "label": "Photo",
+    }
+    result = apply_operations_to_message_parameters(
+        message_parameters=message_parameters,
+        message_parameters_operations={
+            "label": [StringToUpperCase(type="StringToUpperCase")],
+        },
+    )
+    assert result["image"] is image_data
+    assert result["label"] == "PHOTO"
+
+
+def test_apply_operations_to_message_parameters_number_round() -> None:
+    """NumberRound rounds numeric values."""
+    message_parameters = {"value": 3.14159}
+    result = apply_operations_to_message_parameters(
+        message_parameters=message_parameters,
+        message_parameters_operations={
+            "value": [NumberRound(type="NumberRound", decimal_digits=2)],
+        },
+    )
+    assert result["value"] == 3.14
+
+
+def test_apply_operations_to_message_parameters_to_number() -> None:
+    """ToNumber converts string to int or float."""
+    message_parameters = {"count": "42", "ratio": "0.5"}
+    result = apply_operations_to_message_parameters(
+        message_parameters=message_parameters,
+        message_parameters_operations={
+            "count": [ToNumber(type="ToNumber", cast_to=NumberCastingMode.INT)],
+            "ratio": [ToNumber(type="ToNumber", cast_to=NumberCastingMode.FLOAT)],
+        },
+    )
+    assert result["count"] == 42
+    assert result["ratio"] == 0.5
+
+
 @mock.patch.object(v2, "post_to_roboflow_api")
 def test_v2_send_email_via_roboflow_proxy_success(
     post_to_roboflow_api_mock: MagicMock,
@@ -177,6 +325,32 @@ def test_v2_send_email_via_roboflow_proxy_success(
     assert payload["subject"] == "Test Subject"
     assert payload["message"] == "Test message with {{ $parameters.var }}"
     assert payload["message_parameters"] == {"var": "value"}
+
+
+@mock.patch.object(v2, "post_to_roboflow_api")
+def test_v2_send_email_via_roboflow_proxy_applies_message_parameters_operations(
+    post_to_roboflow_api_mock: MagicMock,
+) -> None:
+    """When message_parameters_operations are provided, transformed values are sent in payload."""
+    post_to_roboflow_api_mock.return_value = {"status": "success"}
+
+    result = send_email_via_roboflow_proxy(
+        roboflow_api_key="test_api_key",
+        receiver_email=["receiver@gmail.com"],
+        cc_receiver_email=None,
+        bcc_receiver_email=None,
+        subject="Test",
+        message="Value: {{ $parameters.var }}",
+        message_parameters={"var": "lowercase"},
+        message_parameters_operations={
+            "var": [StringToUpperCase(type="StringToUpperCase")],
+        },
+        attachments={},
+    )
+
+    assert result == (False, "Notification sent successfully via Roboflow proxy")
+    payload = post_to_roboflow_api_mock.call_args[1]["payload"]
+    assert payload["message_parameters"]["var"] == "LOWERCASE"
 
 
 @mock.patch.object(v2, "post_to_roboflow_api")
