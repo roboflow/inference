@@ -197,6 +197,8 @@ class RFDetrForObjectDetectionTRT(
         self._execution_context = execution_context
         self._trt_config = trt_config
         self._lock = threading.Lock()
+        self._inference_stream = torch.cuda.Stream(device=self._device)
+        self._thread_local_storage = threading.local()
 
     @property
     def class_names(self) -> List[str]:
@@ -208,16 +210,21 @@ class RFDetrForObjectDetectionTRT(
         input_color_format: Optional[ColorFormat] = None,
         **kwargs,
     ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
-        return pre_process_network_input(
-            images=images,
-            image_pre_processing=self._inference_config.image_pre_processing,
-            network_input=self._inference_config.network_input,
-            target_device=self._device,
-            input_color_format=input_color_format,
-        )
+        with torch.cuda.stream(self._pre_process_stream):
+            pre_processed_images, pre_processing_meta = pre_process_network_input(
+                images=images,
+                image_pre_processing=self._inference_config.image_pre_processing,
+                network_input=self._inference_config.network_input,
+                target_device=self._device,
+                input_color_format=input_color_format,
+            )
+        self._pre_process_stream.synchronize()
+        return pre_processed_images, pre_processing_meta
 
     def forward(
-        self, pre_processed_images: torch.Tensor, **kwargs
+        self,
+        pre_processed_images: torch.Tensor,
+        **kwargs,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         with self._lock:
             with use_cuda_context(context=self._cuda_context):
@@ -229,6 +236,7 @@ class RFDetrForObjectDetectionTRT(
                     device=self._device,
                     input_name=self._input_name,
                     outputs=self._output_names,
+                    stream=self._inference_stream,
                 )
                 return detections, labels
 
@@ -239,54 +247,74 @@ class RFDetrForObjectDetectionTRT(
         confidence: float = INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE,
         **kwargs,
     ) -> List[Detections]:
-        bboxes, logits = model_results
-        logits_sigmoid = torch.nn.functional.sigmoid(logits)
-        results = []
-        for image_bboxes, image_logits, image_meta in zip(
-            bboxes, logits_sigmoid, pre_processing_meta
-        ):
-            predicted_confidence, top_classes = image_logits.max(dim=1)
-            confidence_mask = predicted_confidence > confidence
-            predicted_confidence = predicted_confidence[confidence_mask]
-            top_classes = top_classes[confidence_mask]
-            selected_boxes = image_bboxes[confidence_mask]
-            predicted_confidence, sorted_indices = torch.sort(
-                predicted_confidence, descending=True
-            )
-            top_classes = top_classes[sorted_indices]
-            selected_boxes = selected_boxes[sorted_indices]
-            if self._classes_re_mapping is not None:
-                remapping_mask = torch.isin(
-                    top_classes, self._classes_re_mapping.remaining_class_ids
+        with torch.cuda.stream(self._post_process_stream):
+            for result_element in model_results:
+                result_element.record_stream(self._post_process_stream)
+            bboxes, logits = model_results
+            logits_sigmoid = torch.nn.functional.sigmoid(logits)
+            results = []
+            for image_bboxes, image_logits, image_meta in zip(
+                bboxes, logits_sigmoid, pre_processing_meta
+            ):
+                predicted_confidence, top_classes = image_logits.max(dim=1)
+                confidence_mask = predicted_confidence > confidence
+                predicted_confidence = predicted_confidence[confidence_mask]
+                top_classes = top_classes[confidence_mask]
+                selected_boxes = image_bboxes[confidence_mask]
+                predicted_confidence, sorted_indices = torch.sort(
+                    predicted_confidence, descending=True
                 )
-                top_classes = self._classes_re_mapping.class_mapping[
-                    top_classes[remapping_mask]
-                ]
-                selected_boxes = selected_boxes[remapping_mask]
-                predicted_confidence = predicted_confidence[remapping_mask]
-            cxcy = selected_boxes[:, :2]
-            wh = selected_boxes[:, 2:]
-            xy_min = cxcy - 0.5 * wh
-            xy_max = cxcy + 0.5 * wh
-            selected_boxes_xyxy_pct = torch.cat([xy_min, xy_max], dim=-1)
-            inference_size_hwhw = torch.tensor(
-                [
-                    image_meta.inference_size.height,
-                    image_meta.inference_size.width,
-                    image_meta.inference_size.height,
-                    image_meta.inference_size.width,
-                ],
-                device=self._device,
-            )
-            selected_boxes_xyxy = selected_boxes_xyxy_pct * inference_size_hwhw
-            selected_boxes_xyxy = rescale_image_detections(
-                image_detections=selected_boxes_xyxy,
-                image_metadata=image_meta,
-            )
-            detections = Detections(
-                xyxy=selected_boxes_xyxy.round().int(),
-                confidence=predicted_confidence,
-                class_id=top_classes.int(),
-            )
-            results.append(detections)
+                top_classes = top_classes[sorted_indices]
+                selected_boxes = selected_boxes[sorted_indices]
+                if self._classes_re_mapping is not None:
+                    remapping_mask = torch.isin(
+                        top_classes, self._classes_re_mapping.remaining_class_ids
+                    )
+                    top_classes = self._classes_re_mapping.class_mapping[
+                        top_classes[remapping_mask]
+                    ]
+                    selected_boxes = selected_boxes[remapping_mask]
+                    predicted_confidence = predicted_confidence[remapping_mask]
+                cxcy = selected_boxes[:, :2]
+                wh = selected_boxes[:, 2:]
+                xy_min = cxcy - 0.5 * wh
+                xy_max = cxcy + 0.5 * wh
+                selected_boxes_xyxy_pct = torch.cat([xy_min, xy_max], dim=-1)
+                inference_size_hwhw = torch.tensor(
+                    [
+                        image_meta.inference_size.height,
+                        image_meta.inference_size.width,
+                        image_meta.inference_size.height,
+                        image_meta.inference_size.width,
+                    ],
+                    device=self._device,
+                )
+                selected_boxes_xyxy = selected_boxes_xyxy_pct * inference_size_hwhw
+                selected_boxes_xyxy = rescale_image_detections(
+                    image_detections=selected_boxes_xyxy,
+                    image_metadata=image_meta,
+                )
+                detections = Detections(
+                    xyxy=selected_boxes_xyxy.round().int(),
+                    confidence=predicted_confidence,
+                    class_id=top_classes.int(),
+                )
+                results.append(detections)
+        self._post_process_stream.synchronize()
         return results
+
+    @property
+    def _pre_process_stream(self) -> torch.cuda.Stream:
+        if not hasattr(self._thread_local_storage, "pre_process_stream"):
+            self._thread_local_storage.pre_process_stream = torch.cuda.Stream(
+                device=self._device
+            )
+        return self._thread_local_storage.pre_process_stream
+
+    @property
+    def _post_process_stream(self) -> torch.cuda.Stream:
+        if not hasattr(self._thread_local_storage, "post_process_stream"):
+            self._thread_local_storage.post_process_stream = torch.cuda.Stream(
+                device=self._device
+            )
+        return self._thread_local_storage.post_process_stream
