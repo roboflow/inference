@@ -24,6 +24,7 @@ from inference_models.configuration import (
     API_CALLS_TIMEOUT,
     DISABLE_INTERACTIVE_PROGRESS_BARS,
     IDEMPOTENT_API_REQUEST_CODES_TO_RETRY,
+    FILE_LOCK_ACQUIRE_TIMEOUT,
 )
 from inference_models.errors import (
     FileHashSumMissmatch,
@@ -65,7 +66,7 @@ def download_files_to_directory(
     request_timeout: Optional[int] = None,
     max_parallel_downloads: int = 8,
     max_threads_per_download: int = 8,
-    file_lock_acquire_timeout: int = 10,
+    file_lock_acquire_timeout: int = FILE_LOCK_ACQUIRE_TIMEOUT,
     verify_hash_while_download: bool = True,
     download_files_without_hash: bool = False,
     name_after: Literal["file_handle", "md5_hash"] = "file_handle",
@@ -302,6 +303,12 @@ def safe_download_file(
     )
     try:
         with FileLock(lock_path, timeout=file_lock_acquire_timeout):
+            if os.path.isfile(target_file_path):
+                LOGGER.debug(
+                    f"File {target_file_path} already exists after acquiring lock, "
+                    f"skipping download."
+                )
+                return
             safe_execute_download(
                 download_url=download_url,
                 tmp_download_file=tmp_download_file,
@@ -402,7 +409,7 @@ def safe_execute_download(
             on_hash_calculation_started=on_hash_calculation_started,
             on_hash_chunk_calculated=on_hash_chunk_calculated,
         )
-    os.rename(tmp_download_file, target_file_path)
+    os.replace(tmp_download_file, target_file_path)
     if on_file_renamed:
         on_file_renamed(tmp_download_file, target_file_path)
 
@@ -627,7 +634,9 @@ def download_chunk(
         requests.exceptions.ConnectionError,
         ChunkedEncodingError,
     ) as error:
-        LOGGER.warning(f"Download chunk failed ({type(error).__name__}: {error}), retrying in 10s...")
+        LOGGER.warning(
+            f"Download chunk failed ({type(error).__name__}: {error}), retrying in 10s..."
+        )
         raise RetryError(
             message=f"Connectivity error",
             help_url="https://inference-models.roboflow.com/errors/file-download/#retryerror",
@@ -679,7 +688,9 @@ def stream_download(
         requests.exceptions.ConnectionError,
         ChunkedEncodingError,
     ) as error:
-        LOGGER.warning(f"Download failed ({type(error).__name__}: {error}), retrying in 10s...")
+        LOGGER.warning(
+            f"Download failed ({type(error).__name__}: {error}), retrying in 10s..."
+        )
         raise RetryError(
             message=f"Connectivity error",
             help_url="https://inference-models.roboflow.com/errors/file-download/#retryerror",
