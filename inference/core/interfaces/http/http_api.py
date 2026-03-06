@@ -186,6 +186,7 @@ from inference.core.env import (
     ROBOFLOW_SERVICE_SECRET,
     SAM3_EXEC_MODE,
     SAM3_FINE_TUNED_MODELS_ENABLED,
+    STRUCTURED_API_LOGGING,
     USE_INFERENCE_MODELS,
     WEBRTC_WORKER_ENABLED,
     WORKFLOWS_MAX_CONCURRENT_STEPS,
@@ -490,11 +491,12 @@ class HttpInterface(BaseInterface):
                 validator=lambda a: True,
                 transformer=lambda a: a,
             )
-            # Suppress uvicorn's default access log to avoid duplicate
-            # unstructured entries — we replace it with a structured
-            # access log middleware (see structured_access_log below).
-            logging.getLogger("uvicorn.access").handlers = []
-            logging.getLogger("uvicorn.access").propagate = False
+            if STRUCTURED_API_LOGGING:
+                # Suppress uvicorn's default access log to avoid duplicate
+                # unstructured entries — we replace it with a structured
+                # access log middleware (see structured_access_log below).
+                logging.getLogger("uvicorn.access").handlers = []
+                logging.getLogger("uvicorn.access").propagate = False
         else:
             app.add_middleware(asgi_correlation_id.CorrelationIdMiddleware)
 
@@ -748,7 +750,7 @@ class HttpInterface(BaseInterface):
                 response.headers[WORKFLOW_ID_HEADER] = wf_id
             return response
 
-        if API_LOGGING_ENABLED:
+        if API_LOGGING_ENABLED and STRUCTURED_API_LOGGING:
 
             @app.middleware("http")
             async def structured_access_log(request: Request, call_next):
@@ -780,7 +782,10 @@ class HttpInterface(BaseInterface):
                     if value is not None:
                         log_fields[field_name] = value
 
-                logger.info("access", **log_fields)
+                logger.info(
+                    f"{request.method} {request.url.path} {response.status_code}",
+                    **log_fields,
+                )
                 return response
 
         self.app = app
@@ -1898,22 +1903,22 @@ class HttpInterface(BaseInterface):
                     excluded_fields=request.excluded_fields,
                 )
 
+        class ModelInitState:
+            """Class to track model initialization state."""
+
+            def __init__(self):
+                self.is_ready = False
+                self.lock = Lock()  # For thread-safe updates
+                self.initialization_errors = []  # Track errors per model
+
+        model_init_state = ModelInitState()
+
+        should_preload = PRELOAD_MODELS or PINNED_MODELS
+        if not should_preload:
+            model_init_state.is_ready = True
+
         # Enable preloading models at startup
-        if (
-            (PRELOAD_MODELS or PINNED_MODELS or DEDICATED_DEPLOYMENT_WORKSPACE_URL)
-            and PRELOAD_API_KEY
-            and (PINNED_MODELS or not (LAMBDA or GCP_SERVERLESS))
-        ):
-
-            class ModelInitState:
-                """Class to track model initialization state."""
-
-                def __init__(self):
-                    self.is_ready = False
-                    self.lock = Lock()  # For thread-safe updates
-                    self.initialization_errors = []  # Track errors per model
-
-            model_init_state = ModelInitState()
+        if should_preload:
 
             def initialize_models(state: ModelInitState):
                 """Perform asynchronous initialization tasks to load models."""
@@ -1977,6 +1982,12 @@ class HttpInterface(BaseInterface):
                                 )
                             )
                             future.cancel()
+                        except Exception as e:
+                            logger.error(
+                                f"Preload: unexpected error for model '{model_id}': {e}"
+                            )
+                            with state.lock:
+                                state.initialization_errors.append((model_id, str(e)))
 
                 # Update the readiness state in a thread-safe manner
                 with state.lock:
@@ -1991,23 +2002,24 @@ class HttpInterface(BaseInterface):
                 startup_thread.start()
                 logger.info("Model initialization started in the background.")
 
-            @app.get("/readiness", status_code=200)
-            def readiness(
-                state: ModelInitState = Depends(lambda: model_init_state),
-            ):
-                """Readiness endpoint for Kubernetes readiness probe."""
-                with state.lock:
-                    if state.is_ready:
-                        return {"status": "ready"}
-                    else:
-                        return JSONResponse(
-                            content={"status": "not ready"}, status_code=503
-                        )
+        # Attach health/readiness endpoints
+        @app.get("/readiness", status_code=200)
+        def readiness(
+            state: ModelInitState = Depends(lambda: model_init_state),
+        ):
+            """Readiness endpoint for Kubernetes readiness probe."""
+            with state.lock:
+                if state.is_ready:
+                    return {"status": "ready"}
+                else:
+                    return JSONResponse(
+                        content={"status": "not ready"}, status_code=503
+                    )
 
-            @app.get("/healthz", status_code=200)
-            def healthz():
-                """Health endpoint for Kubernetes liveness probe."""
-                return {"status": "healthy"}
+        @app.get("/healthz", status_code=200)
+        def healthz():
+            """Health endpoint for Kubernetes liveness probe."""
+            return {"status": "healthy"}
 
         if CORE_MODELS_ENABLED:
             if CORE_MODEL_CLIP_ENABLED:

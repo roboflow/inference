@@ -880,3 +880,21 @@ if USE_INFERENCE_MODELS:
                 f"falling back to regular `inference` stack - error: {e}",
                 category=InferenceModelsStackMissing,
             )
+
+    # YOLOLite is inference_models-only (no legacy implementation),
+    # so we add entries directly rather than swapping existing ones.
+    for variant in [
+        "yololite-n",
+        "yololite-s",
+        "yololite-m",
+        "yololite-l",
+        "yololite-xl",
+        "yololite-edge-n",
+        "yololite-edge-s",
+        "yololite-edge-m",
+        "yololite-edge-l",
+        "yololite-edge-xl",
+    ]:
+        ROBOFLOW_MODEL_TYPES[("object-detection", variant)] = (
+            InferenceModelsObjectDetectionAdapter
+        )

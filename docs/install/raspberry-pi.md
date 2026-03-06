@@ -68,6 +68,8 @@ services:
         - NET_BIND_SERVICE
 ```
 
---8<-- "install/using-your-new-server.md"
+## Using Your New Server
+
+See [Using Your New Server](index.md#using-your-new-server) for next steps.
 
 --8<-- "docs/install/enterprise-considerations.md"
