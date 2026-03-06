@@ -158,6 +158,11 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
                 preprocessed_image[:, :, 2] - self.preprocess_means[2]
             ) / self.preprocess_stds[2]
 
+        if self._needs_nonsquare_preproc:
+            intermediate_size = (self._preproc_resize_w, self._preproc_resize_h)
+        else:
+            intermediate_size = None
+
         if self.resize_method == "Stretch to":
             if isinstance(preprocessed_image, np.ndarray):
                 preprocessed_image = preprocessed_image.astype(np.float32)
@@ -180,20 +185,40 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
 
         elif self.resize_method == "Fit (black edges) in":
             resized = letterbox_image(
-                preprocessed_image, (self.img_size_w, self.img_size_h)
+                preprocessed_image,
+                intermediate_size or (self.img_size_w, self.img_size_h),
             )
         elif self.resize_method == "Fit (white edges) in":
             resized = letterbox_image(
                 preprocessed_image,
-                (self.img_size_w, self.img_size_h),
+                intermediate_size or (self.img_size_w, self.img_size_h),
                 color=(255, 255, 255),
             )
         elif self.resize_method == "Fit (grey edges) in":
             resized = letterbox_image(
                 preprocessed_image,
-                (self.img_size_w, self.img_size_h),
+                intermediate_size or (self.img_size_w, self.img_size_h),
                 color=(114, 114, 114),
             )
+
+        if intermediate_size is not None:
+            if isinstance(resized, np.ndarray):
+                resized = cv2.resize(
+                    resized.astype(np.float32),
+                    (self.img_size_w, self.img_size_h),
+                )
+            elif USE_PYTORCH_FOR_PREPROCESSING:
+                resized = torch.nn.functional.interpolate(
+                    resized,
+                    size=(self.img_size_h, self.img_size_w),
+                    mode="bilinear",
+                )
+            else:
+                raise ValueError(
+                    f"Received an image of unknown type, {type(resized)}; "
+                    "This is most likely a bug. Contact Roboflow team through github issues "
+                    "(https://github.com/roboflow/inference/issues) providing full context of the problem"
+                )
 
         if is_bgr:
             if isinstance(resized, np.ndarray):
@@ -354,7 +379,10 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
                 scale_fct = np.array([orig_w, orig_h, orig_w, orig_h], dtype=np.float32)
                 boxes_xyxy *= scale_fct
             else:
-                input_h, input_w = self.img_size_h, self.img_size_w
+                if self._needs_nonsquare_preproc:
+                    input_h, input_w = self._preproc_resize_h, self._preproc_resize_w
+                else:
+                    input_h, input_w = self.img_size_h, self.img_size_w
 
                 scale = min(input_w / orig_w, input_h / orig_h)
                 scaled_w = int(orig_w * scale)
@@ -533,6 +561,26 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
                     f"Model {self.endpoint} is loaded with dynamic batching disabled"
                 )
 
+        self._needs_nonsquare_preproc = False
+        if self.preproc.get("resize"):
+            preproc_w = int(self.preproc["resize"].get("width", self.img_size_w))
+            preproc_h = int(self.preproc["resize"].get("height", self.img_size_h))
+            self._needs_nonsquare_preproc = (
+                self.resize_method != "Stretch to"
+                and preproc_w != preproc_h
+                and self.img_size_h == self.img_size_w
+            )
+            if self._needs_nonsquare_preproc:
+                self._preproc_resize_w = preproc_w
+                self._preproc_resize_h = preproc_h
+                logger.debug(
+                    "Non-square preprocessing detected: resize to %dx%d then stretch to %dx%d",
+                    preproc_w,
+                    preproc_h,
+                    self.img_size_w,
+                    self.img_size_h,
+                )
+
         if ROBOFLOW_BACKGROUND_CLASS in self.class_names:
             self.is_one_indexed = True
             self.background_class_index = self.class_names.index(
@@ -644,7 +692,10 @@ class RFDETRInstanceSegmentation(
                 scale_fct = np.array([orig_w, orig_h, orig_w, orig_h], dtype=np.float32)
                 boxes_xyxy *= scale_fct
             else:
-                input_h, input_w = self.img_size_h, self.img_size_w
+                if self._needs_nonsquare_preproc:
+                    input_h, input_w = self._preproc_resize_h, self._preproc_resize_w
+                else:
+                    input_h, input_w = self.img_size_h, self.img_size_w
 
                 scale = min(input_w / orig_w, input_h / orig_h)
                 scaled_w = int(orig_w * scale)
@@ -697,13 +748,14 @@ class RFDETRInstanceSegmentation(
                         continue
                 mask = selected_masks[i]
 
-                # For letterbox resizing, the mask is in the padded input
-                # coordinate space. Crop out the padding so the mask only
-                # contains actual image content before any resizing.
-
-                # All resize modes except "Stretch to" are some form of letterboxing
                 if self.resize_method != "Stretch to":
-                    input_h, input_w = self.img_size_h, self.img_size_w
+                    if self._needs_nonsquare_preproc:
+                        input_h, input_w = (
+                            self._preproc_resize_h,
+                            self._preproc_resize_w,
+                        )
+                    else:
+                        input_h, input_w = self.img_size_h, self.img_size_w
                     mask_h, mask_w = mask.shape[0], mask.shape[1]
 
                     letterbox_scale = min(input_w / orig_w, input_h / orig_h)

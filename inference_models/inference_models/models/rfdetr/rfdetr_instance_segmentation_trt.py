@@ -29,9 +29,6 @@ from inference_models.models.common.roboflow.model_packages import (
     parse_inference_config,
     parse_trt_config,
 )
-from inference_models.models.common.roboflow.pre_processing import (
-    pre_process_network_input,
-)
 from inference_models.models.common.trt import (
     get_trt_engine_inputs_and_outputs,
     infer_from_trt_engine,
@@ -44,6 +41,7 @@ from inference_models.models.rfdetr.class_remapping import (
 from inference_models.models.rfdetr.common import (
     post_process_instance_segmentation_results,
 )
+from inference_models.models.rfdetr.pre_processing import pre_process_network_input
 
 try:
     import tensorrt as trt

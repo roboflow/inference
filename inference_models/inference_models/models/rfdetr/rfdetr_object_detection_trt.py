@@ -32,9 +32,6 @@ from inference_models.models.common.roboflow.model_packages import (
 from inference_models.models.common.roboflow.post_processing import (
     rescale_image_detections,
 )
-from inference_models.models.common.roboflow.pre_processing import (
-    pre_process_network_input,
-)
 from inference_models.models.common.trt import (
     get_trt_engine_inputs_and_outputs,
     infer_from_trt_engine,
@@ -44,6 +41,7 @@ from inference_models.models.rfdetr.class_remapping import (
     ClassesReMapping,
     prepare_class_remapping,
 )
+from inference_models.models.rfdetr.pre_processing import pre_process_network_input
 
 try:
     import tensorrt as trt
@@ -280,16 +278,19 @@ class RFDetrForObjectDetectionTRT(
                 xy_min = cxcy - 0.5 * wh
                 xy_max = cxcy + 0.5 * wh
                 selected_boxes_xyxy_pct = torch.cat([xy_min, xy_max], dim=-1)
-                inference_size_hwhw = torch.tensor(
+                denorm_size = (
+                    image_meta.nonsquare_intermediate_size or image_meta.inference_size
+                )
+                inference_size_whwh = torch.tensor(
                     [
-                        image_meta.inference_size.height,
-                        image_meta.inference_size.width,
-                        image_meta.inference_size.height,
-                        image_meta.inference_size.width,
+                        denorm_size.width,
+                        denorm_size.height,
+                        denorm_size.width,
+                        denorm_size.height,
                     ],
                     device=self._device,
                 )
-                selected_boxes_xyxy = selected_boxes_xyxy_pct * inference_size_hwhw
+                selected_boxes_xyxy = selected_boxes_xyxy_pct * inference_size_whwh
                 selected_boxes_xyxy = rescale_image_detections(
                     image_detections=selected_boxes_xyxy,
                     image_metadata=image_meta,

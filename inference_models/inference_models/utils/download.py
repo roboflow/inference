@@ -23,8 +23,8 @@ from inference_models.configuration import (
     API_CALLS_MAX_TRIES,
     API_CALLS_TIMEOUT,
     DISABLE_INTERACTIVE_PROGRESS_BARS,
-    IDEMPOTENT_API_REQUEST_CODES_TO_RETRY,
     FILE_LOCK_ACQUIRE_TIMEOUT,
+    IDEMPOTENT_API_REQUEST_CODES_TO_RETRY,
 )
 from inference_models.errors import (
     FileHashSumMissmatch,
