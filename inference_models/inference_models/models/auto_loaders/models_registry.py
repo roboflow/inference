@@ -46,25 +46,13 @@ REGISTERED_MODELS: Dict[
         module_name="inference_models.models.yolov5.yolov5_object_detection_onnx",
         class_name="YOLOv5ForObjectDetectionOnnx",
     ),
-    ("yolov5", OBJECT_DETECTION_TASK, BackendType.TRT): LazyClass(
-        module_name="inference_models.models.yolov5.yolov5_object_detection_trt",
-        class_name="YOLOv5ForObjectDetectionTRT",
-    ),
     ("yolov5", INSTANCE_SEGMENTATION_TASK, BackendType.ONNX): LazyClass(
         module_name="inference_models.models.yolov5.yolov5_instance_segmentation_onnx",
         class_name="YOLOv5ForInstanceSegmentationOnnx",
     ),
-    ("yolov5", INSTANCE_SEGMENTATION_TASK, BackendType.TRT): LazyClass(
-        module_name="inference_models.models.yolov5.yolov5_instance_segmentation_trt",
-        class_name="YOLOv5ForInstanceSegmentationTRT",
-    ),
     ("yolov7", INSTANCE_SEGMENTATION_TASK, BackendType.ONNX): LazyClass(
         module_name="inference_models.models.yolov7.yolov7_instance_segmentation_onnx",
         class_name="YOLOv7ForInstanceSegmentationOnnx",
-    ),
-    ("yolov7", INSTANCE_SEGMENTATION_TASK, BackendType.TRT): LazyClass(
-        module_name="inference_models.models.yolov7.yolov7_instance_segmentation_trt",
-        class_name="YOLOv7ForInstanceSegmentationTRT",
     ),
     ("yolov8", CLASSIFICATION_TASK, BackendType.ONNX): RegistryEntry(
         model_class=LazyClass(
@@ -411,10 +399,6 @@ REGISTERED_MODELS: Dict[
     ("yolact", INSTANCE_SEGMENTATION_TASK, BackendType.ONNX): LazyClass(
         module_name="inference_models.models.yolact.yolact_instance_segmentation_onnx",
         class_name="YOLOACTForInstanceSegmentationOnnx",
-    ),
-    ("yolact", INSTANCE_SEGMENTATION_TASK, BackendType.TRT): LazyClass(
-        module_name="inference_models.models.yolact.yolact_instance_segmentation_trt",
-        class_name="YOLOACTForInstanceSegmentationTRT",
     ),
     ("depth-anything-v2", DEPTH_ESTIMATION_TASK, BackendType.HF): LazyClass(
         module_name="inference_models.models.depth_anything_v2.depth_anything_v2_hf",
