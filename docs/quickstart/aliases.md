@@ -197,7 +197,7 @@ table {
 </tr>
 <tr>
     <td>YOLOv8x Keypoint Detection</td>
-    <td>1280</td>[version.py](../../inference/core/version.py)
+    <td>1280</td>
     <td>Keypoint Detection</td>
     <td>yolov8x-pose-1280</td>
     <td><a href="https://universe.roboflow.com/microsoft/coco-pose-detection/6">Test in Browser</a></td>

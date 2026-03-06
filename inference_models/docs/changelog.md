@@ -1,5 +1,15 @@
 # Changelog
 
+## `0.19.4`
+### Fixed
+
+- CUDA stream synchronization issues in TRT models.
+
+## `0.19.3`
+
+### Fixed
+- Post-processing for RF-DETR segmentation model - missing remapping for class ids regarding masks.
+
 ## `0.19.2`
 
 ### Fixed
@@ -9,7 +19,7 @@
 ## `0.19.1`
 
 ### Fixed
-- Fixed issue with RFDetr model post-processing causing all results to be empty (TRT implementation) 
+- Fixed issue with RF-DETR model post-processing causing all results to be empty (TRT implementation) 
 
 ---
 
