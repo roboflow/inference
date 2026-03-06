@@ -15,7 +15,7 @@ from rich.text import Text
 from inference_models.configuration import (
     DEFAULT_DEVICE,
     INFERENCE_HOME,
-    MODEL_DOWNLOAD_FILE_LOCK_ACQUIRE_TIMEOUT,
+    FILE_LOCK_ACQUIRE_TIMEOUT,
 )
 from inference_models.errors import (
     CorruptedModelPackageError,
@@ -435,7 +435,7 @@ class AutoModel:
         default_onnx_trt_options: bool = True,
         max_package_loading_attempts: Optional[int] = None,
         verbose: bool = False,
-        model_download_file_lock_acquire_timeout: int = MODEL_DOWNLOAD_FILE_LOCK_ACQUIRE_TIMEOUT,
+        model_download_file_lock_acquire_timeout: int = FILE_LOCK_ACQUIRE_TIMEOUT,
         allow_untrusted_packages: bool = False,
         trt_engine_host_code_allowed: bool = True,
         allow_local_code_packages: bool = True,
@@ -969,7 +969,7 @@ def attempt_loading_model_with_auto_load_cache(
     verbose: bool = False,
     weights_provider: str = "roboflow",
     max_package_loading_attempts: Optional[int] = None,
-    model_download_file_lock_acquire_timeout: int = MODEL_DOWNLOAD_FILE_LOCK_ACQUIRE_TIMEOUT,
+    model_download_file_lock_acquire_timeout: int = FILE_LOCK_ACQUIRE_TIMEOUT,
     allow_untrusted_packages: bool = False,
     trt_engine_host_code_allowed: bool = True,
     allow_local_code_packages: bool = True,
@@ -1113,7 +1113,7 @@ def attempt_loading_matching_model_packages(
     model_dependencies_instances: Dict[str, AnyModel],
     model_dependencies_directories: Dict[str, str],
     max_package_loading_attempts: Optional[int] = None,
-    model_download_file_lock_acquire_timeout: int = MODEL_DOWNLOAD_FILE_LOCK_ACQUIRE_TIMEOUT,
+    model_download_file_lock_acquire_timeout: int = FILE_LOCK_ACQUIRE_TIMEOUT,
     verbose: bool = True,
     verify_hash_while_download: bool = True,
     download_files_without_hash: bool = False,
@@ -1216,7 +1216,7 @@ def initialize_model(
     model_dependencies: Optional[List[ModelDependency]],
     model_dependencies_instances: Dict[str, AnyModel],
     model_dependencies_directories: Dict[str, str],
-    model_download_file_lock_acquire_timeout: int = MODEL_DOWNLOAD_FILE_LOCK_ACQUIRE_TIMEOUT,
+    model_download_file_lock_acquire_timeout: int = FILE_LOCK_ACQUIRE_TIMEOUT,
     verify_hash_while_download: bool = True,
     download_files_without_hash: bool = False,
     on_file_created: Optional[Callable[[str], None]] = None,
@@ -1320,7 +1320,7 @@ def initialize_model(
 def create_symlinks_to_shared_blobs(
     model_dir: str,
     shared_files_mapping: Dict[FileHandle, str],
-    model_download_file_lock_acquire_timeout: int = MODEL_DOWNLOAD_FILE_LOCK_ACQUIRE_TIMEOUT,
+    model_download_file_lock_acquire_timeout: int = FILE_LOCK_ACQUIRE_TIMEOUT,
     on_symlink_created: Optional[Callable[[str, str], None]] = None,
     on_symlink_deleted: Optional[Callable[[str], None]] = None,
 ) -> Dict[str, str]:
@@ -1348,7 +1348,7 @@ def create_symlinks_to_shared_blobs(
 def handle_symlink_creation(
     target_path: str,
     link_name: str,
-    model_download_file_lock_acquire_timeout: int = MODEL_DOWNLOAD_FILE_LOCK_ACQUIRE_TIMEOUT,
+    model_download_file_lock_acquire_timeout: int = FILE_LOCK_ACQUIRE_TIMEOUT,
     on_symlink_created: Optional[Callable[[str, str], None]] = None,
     on_symlink_deleted: Optional[Callable[[str], None]] = None,
 ) -> None:
@@ -1369,14 +1369,14 @@ def handle_symlink_creation(
             return
         try:
             os.symlink(target_path, link_name)
+            if on_symlink_created:
+                on_symlink_created(target_path, link_name)
         except FileExistsError:
             # Another process created the file/link between our check and symlink call
             LOGGER.debug(
                 f"Symlink target {link_name} was created by another process, skipping."
             )
             return
-        if on_symlink_created:
-            on_symlink_created(target_path, link_name)
 
 
 def dump_model_config_for_offline_use(
@@ -1409,7 +1409,7 @@ def dump_model_config_for_offline_use(
 def handle_dependencies_directories_creation(
     model_package_cache_dir: str,
     model_dependencies_directories: Dict[str, str],
-    model_download_file_lock_acquire_timeout: int = MODEL_DOWNLOAD_FILE_LOCK_ACQUIRE_TIMEOUT,
+    model_download_file_lock_acquire_timeout: int = FILE_LOCK_ACQUIRE_TIMEOUT,
     on_symlink_created: Optional[Callable[[str, str], None]] = None,
     on_symlink_deleted: Optional[Callable[[str], None]] = None,
 ) -> Set[str]:
