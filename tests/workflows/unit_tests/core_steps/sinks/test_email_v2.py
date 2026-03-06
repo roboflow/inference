@@ -236,18 +236,21 @@ def test_apply_operations_to_message_parameters_to_string() -> None:
 
 
 def test_apply_operations_to_message_parameters_chain() -> None:
-    """Multiple operations are applied in order (e.g. ToString then StringToUpperCase)."""
-    message_parameters = {"num": 42}
+    """Multiple operations are applied in order; each step produces a visible change."""
+    message_parameters = {"status": "pending"}
     result = apply_operations_to_message_parameters(
         message_parameters=message_parameters,
         message_parameters_operations={
-            "num": [
-                ToString(type="ToString"),
-                StringToUpperCase(type="StringToUpperCase"),
+            "status": [
+                LookupTable(
+                    type="LookupTable",
+                    lookup_table={"pending": "waiting", "done": "completed"},
+                ),  # pending -> waiting
+                StringToUpperCase(type="StringToUpperCase"),  # waiting -> WAITING
             ],
         },
     )
-    assert result["num"] == "42"
+    assert result["status"] == "WAITING"
 
 
 def test_apply_operations_to_message_parameters_preserves_workflow_image_data() -> None:

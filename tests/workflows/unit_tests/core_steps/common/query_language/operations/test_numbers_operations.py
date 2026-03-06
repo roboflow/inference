@@ -1,3 +1,5 @@
+from typing import Union
+
 import pytest
 
 from inference.core.workflows.core_steps.common.query_language.errors import (
@@ -19,7 +21,9 @@ from inference.core.workflows.core_steps.common.query_language.operations.core i
         ("3.14", "float", 3.14),
     ],
 )
-def test_to_number_operation(value: str, cast_to: str, expected: int | float) -> None:
+def test_to_number_operation(
+    value: str, cast_to: str, expected: Union[int, float]
+) -> None:
     """ToNumber converts values to int or float according to cast_to."""
     operations = [{"type": "ToNumber", "cast_to": cast_to}]
     result = execute_operations(value=value, operations=operations)
