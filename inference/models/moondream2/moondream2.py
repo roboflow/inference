@@ -74,24 +74,15 @@ class Moondream2(TransformerModel):
             return super().get_infer_bucket_file_list()
 
     def initialize_model(self, **kwargs):
-        model_cls = import_class_from_file(
+        model = import_class_from_file(
             os.path.join(self.cache_dir, "hf_moondream.py"),
             "HfMoondream",
         )
 
-        # The downloaded HfMoondream doesn't call self.post_init() at the end
-        # of __init__, which transformers 5.x requires to set
-        # all_tied_weights_keys and other attributes.
-        _original_init = model_cls.__init__
-
-        def _patched_init(self_inner, config):
-            _original_init(self_inner, config)
-            self_inner.post_init()
-
-        model_cls.__init__ = _patched_init
-
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-        self.model = model_cls.from_pretrained(self.cache_dir).to(device)
+        self.model = model.from_pretrained(
+            self.cache_dir,
+            device_map={"": "cuda" if torch.cuda.is_available() else "cpu"},
+        )
 
     def predict(self, image_in: Image.Image, prompt="", history=None, **kwargs):
         return self.detect(image_in, prompt=prompt, history=history, **kwargs)

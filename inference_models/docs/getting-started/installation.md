@@ -13,7 +13,7 @@ This modular approach keeps installations lightweight and avoids dependency conf
 
 ## ✅ Prerequisites
 
-- **Python 3.10 - 3.12**
+- **Python 3.9 - 3.12**
 - **pip** or **uv** package manager
 - For GPU support: **CUDA-compatible GPU** with appropriate drivers
 

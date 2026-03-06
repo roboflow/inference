@@ -17,9 +17,6 @@ FLORENCE2_LARGE_FT_URL = "https://storage.googleapis.com/roboflow-tests-assets/f
 QWEN25VL_3B_FT_URL = (
     "https://storage.googleapis.com/roboflow-tests-assets/qwen/qwen25vl-3b.zip"
 )
-QWEN35_08B_FT_URL = (
-    "https://storage.googleapis.com/roboflow-tests-assets/qwen/qwen35-0.8b.zip"
-)
 PALIGEMMA_BASE_FT_URL = "https://storage.googleapis.com/roboflow-tests-assets/paligemma/paligemma2-3b-pt-224.zip"
 SMOLVLM_BASE_FT_URL = (
     "https://storage.googleapis.com/roboflow-tests-assets/smolvlm/smolvlm-256m.zip"
@@ -177,7 +174,7 @@ YOLO26N_object_detection_sunflowers_LETTERBOX_TORCH_SCRIPT_URL = "https://storag
 DEPTH_ANYTHING_V2_SMALL_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/depth-anything-v2.zip"
 DEPTH_ANYTHING_V3_SMALL_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/depth-anything-v3-small.zip"
 DEPTH_ANYTHING_V3_BASE_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/depth-anything-v3-base.zip"
-DOCTR_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/doctr-dbnet-rn50-crnn-vgg16-v2.zip"
+DOCTR_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/doctr-dbnet-rn50-crnn-vgg16.zip"
 EASY_OCR_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/easy-ocr-english.zip"
 TROCR_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/tr-ocr-small-printed.zip"
 MEDIAPIPE_FACE_DETECTOR_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/mediapipe-face-detector.zip"
@@ -302,21 +299,6 @@ def qwen25vl_3b_path() -> str:
     os.makedirs(package_dir, exist_ok=True)
     zip_path = os.path.join(package_dir, "qwen25vl-3b.zip")
     _download_if_not_exists(file_path=zip_path, url=QWEN25VL_3B_FT_URL)
-    lock_path = f"{unzipped_package_path}.lock"
-    with FileLock(lock_path, timeout=180):
-        if not os.path.exists(unzipped_package_path):
-            with zipfile.ZipFile(zip_path, "r") as zip_ref:
-                zip_ref.extractall(package_dir)
-    return unzipped_package_path
-
-
-@pytest.fixture(scope="module")
-def qwen35_08b_path() -> str:
-    package_dir = os.path.join(MODELS_DIR, "qwen35-0.8b")
-    unzipped_package_path = os.path.join(package_dir, "weights")
-    os.makedirs(package_dir, exist_ok=True)
-    zip_path = os.path.join(package_dir, "qwen35-0.8b.zip")
-    _download_if_not_exists(file_path=zip_path, url=QWEN35_08B_FT_URL)
     lock_path = f"{unzipped_package_path}.lock"
     with FileLock(lock_path, timeout=180):
         if not os.path.exists(unzipped_package_path):

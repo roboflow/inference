@@ -169,9 +169,7 @@ class Qwen3VL(TransformerModel):
             },
         ]
 
-        text_input = self.processor.apply_chat_template(
-            conversation, tokenize=False, add_generation_prompt=True
-        )
+        text_input = self.processor.apply_chat_template(conversation, tokenize=False)
 
         model_inputs = self.processor(
             text=text_input,
@@ -353,9 +351,7 @@ class LoRAQwen3VL(LoRATransformerModel):
             },
         ]
 
-        text_input = self.processor.apply_chat_template(
-            conversation, tokenize=False, add_generation_prompt=True
-        )
+        text_input = self.processor.apply_chat_template(conversation, tokenize=False)
 
         model_inputs = self.processor(
             text=text_input,
