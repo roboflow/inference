@@ -7,33 +7,59 @@ import torch
 @pytest.mark.trt_extras
 def test_trt_package_numpy(
     yolo26_object_detections_coin_counting_trt_package: str,
-    asl_image_numpy: np.ndarray,
+    coins_counting_image_numpy: np.ndarray,
 ) -> None:
     # given
-    from inference_models.models.yolo26.yolo26_instance_segmentation_trt import (
-        YOLO26ForInstanceSegmentationTRT,
+    from inference_models.models.yolo26.yolo26_object_detection_trt import (
+        YOLO26ForObjectDetectionTRT,
     )
 
-    model = YOLO26ForInstanceSegmentationTRT.from_pretrained(
+    model = YOLO26ForObjectDetectionTRT.from_pretrained(
         model_name_or_path=yolo26_object_detections_coin_counting_trt_package,
         engine_host_code_allowed=True,
     )
 
     # when
-    predictions = model(asl_image_numpy)
+    predictions = model(coins_counting_image_numpy)
 
     # then
     assert torch.allclose(
         predictions[0].confidence.cpu(),
-        torch.tensor([0.9671]).cpu(),
+        torch.tensor(
+            [
+                0.9837,
+                0.9707,
+                0.9202,
+                0.8459,
+                0.8444,
+                0.8408,
+                0.5737,
+                0.4922,
+                0.4378,
+                0.4340,
+                0.2636,
+            ]
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
         predictions[0].class_id.cpu(),
-        torch.tensor([20], dtype=torch.int32).cpu(),
+        torch.tensor([2, 2, 2, 0, 1, 3, 0, 0, 1, 3, 3], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
-        [[63, 174, 186, 368]],
+        [
+            [1252, 2049, 1431, 2241],
+            [1741, 2285, 1921, 2480],
+            [1707, 2565, 1896, 2770],
+            [1459, 2296, 1633, 2476],
+            [1164, 2624, 1382, 2856],
+            [1502, 1867, 1728, 2096],
+            [923, 1836, 1100, 2009],
+            [1090, 2346, 1268, 2525],
+            [1164, 2625, 1381, 2857],
+            [1256, 2059, 1425, 2234],
+            [2670, 792, 2875, 979],
+        ],
         dtype=torch.int32,
     )
     assert torch.allclose(
@@ -41,40 +67,65 @@ def test_trt_package_numpy(
         expected_xyxy.cpu(),
         atol=5,
     )
-    assert 16500 <= predictions[0].mask.cpu().sum().item() <= 16600
 
 
 @pytest.mark.slow
 @pytest.mark.trt_extras
 def test_trt_package_batch_numpy(
     yolo26_object_detections_coin_counting_trt_package: str,
-    asl_image_numpy: np.ndarray,
+    coins_counting_image_numpy: np.ndarray,
 ) -> None:
     # given
-    from inference_models.models.yolo26.yolo26_instance_segmentation_trt import (
-        YOLO26ForInstanceSegmentationTRT,
+    from inference_models.models.yolo26.yolo26_object_detection_trt import (
+        YOLO26ForObjectDetectionTRT,
     )
 
-    model = YOLO26ForInstanceSegmentationTRT.from_pretrained(
+    model = YOLO26ForObjectDetectionTRT.from_pretrained(
         model_name_or_path=yolo26_object_detections_coin_counting_trt_package,
         engine_host_code_allowed=True,
     )
 
     # when
-    predictions = model([asl_image_numpy, asl_image_numpy])
+    predictions = model([coins_counting_image_numpy, coins_counting_image_numpy])
 
     # then
     assert torch.allclose(
         predictions[0].confidence.cpu(),
-        torch.tensor([0.9671]).cpu(),
+        torch.tensor(
+            [
+                0.9837,
+                0.9707,
+                0.9202,
+                0.8459,
+                0.8444,
+                0.8408,
+                0.5737,
+                0.4922,
+                0.4378,
+                0.4340,
+                0.2636,
+            ]
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
         predictions[0].class_id.cpu(),
-        torch.tensor([20], dtype=torch.int32).cpu(),
+        torch.tensor([2, 2, 2, 0, 1, 3, 0, 0, 1, 3, 3], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
-        [[63, 174, 186, 368]],
+        [
+            [1252, 2049, 1431, 2241],
+            [1741, 2285, 1921, 2480],
+            [1707, 2565, 1896, 2770],
+            [1459, 2296, 1633, 2476],
+            [1164, 2624, 1382, 2856],
+            [1502, 1867, 1728, 2096],
+            [923, 1836, 1100, 2009],
+            [1090, 2346, 1268, 2525],
+            [1164, 2625, 1381, 2857],
+            [1256, 2059, 1425, 2234],
+            [2670, 792, 2875, 979],
+        ],
         dtype=torch.int32,
     )
     assert torch.allclose(
@@ -82,18 +133,43 @@ def test_trt_package_batch_numpy(
         expected_xyxy.cpu(),
         atol=5,
     )
-    assert 16500 <= predictions[0].mask.cpu().sum().item() <= 16600
     assert torch.allclose(
         predictions[1].confidence.cpu(),
-        torch.tensor([0.9671]).cpu(),
+        torch.tensor(
+            [
+                0.9837,
+                0.9707,
+                0.9202,
+                0.8459,
+                0.8444,
+                0.8408,
+                0.5737,
+                0.4922,
+                0.4378,
+                0.4340,
+                0.2636,
+            ]
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
         predictions[1].class_id.cpu(),
-        torch.tensor([20], dtype=torch.int32).cpu(),
+        torch.tensor([2, 2, 2, 0, 1, 3, 0, 0, 1, 3, 3], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
-        [[63, 174, 186, 368]],
+        [
+            [1252, 2049, 1431, 2241],
+            [1741, 2285, 1921, 2480],
+            [1707, 2565, 1896, 2770],
+            [1459, 2296, 1633, 2476],
+            [1164, 2624, 1382, 2856],
+            [1502, 1867, 1728, 2096],
+            [923, 1836, 1100, 2009],
+            [1090, 2346, 1268, 2525],
+            [1164, 2625, 1381, 2857],
+            [1256, 2059, 1425, 2234],
+            [2670, 792, 2875, 979],
+        ],
         dtype=torch.int32,
     )
     assert torch.allclose(
@@ -101,40 +177,65 @@ def test_trt_package_batch_numpy(
         expected_xyxy.cpu(),
         atol=5,
     )
-    assert 16500 <= predictions[1].mask.cpu().sum().item() <= 16600
 
 
 @pytest.mark.slow
 @pytest.mark.trt_extras
 def test_trt_package_torch(
     yolo26_object_detections_coin_counting_trt_package: str,
-    asl_image_torch: torch.Tensor,
+    coins_counting_image_torch: torch.Tensor,
 ) -> None:
     # given
-    from inference_models.models.yolo26.yolo26_instance_segmentation_trt import (
-        YOLO26ForInstanceSegmentationTRT,
+    from inference_models.models.yolo26.yolo26_object_detection_trt import (
+        YOLO26ForObjectDetectionTRT,
     )
 
-    model = YOLO26ForInstanceSegmentationTRT.from_pretrained(
+    model = YOLO26ForObjectDetectionTRT.from_pretrained(
         model_name_or_path=yolo26_object_detections_coin_counting_trt_package,
         engine_host_code_allowed=True,
     )
 
     # when
-    predictions = model(asl_image_torch)
+    predictions = model(coins_counting_image_torch)
 
     # then
     assert torch.allclose(
         predictions[0].confidence.cpu(),
-        torch.tensor([0.9671]).cpu(),
+        torch.tensor(
+            [
+                0.9837,
+                0.9707,
+                0.9202,
+                0.8459,
+                0.8444,
+                0.8408,
+                0.5737,
+                0.4922,
+                0.4378,
+                0.4340,
+                0.2636,
+            ]
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
         predictions[0].class_id.cpu(),
-        torch.tensor([20], dtype=torch.int32).cpu(),
+        torch.tensor([2, 2, 2, 0, 1, 3, 0, 0, 1, 3, 3], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
-        [[63, 174, 186, 368]],
+        [
+            [1252, 2049, 1431, 2241],
+            [1741, 2285, 1921, 2480],
+            [1707, 2565, 1896, 2770],
+            [1459, 2296, 1633, 2476],
+            [1164, 2624, 1382, 2856],
+            [1502, 1867, 1728, 2096],
+            [923, 1836, 1100, 2009],
+            [1090, 2346, 1268, 2525],
+            [1164, 2625, 1381, 2857],
+            [1256, 2059, 1425, 2234],
+            [2670, 792, 2875, 979],
+        ],
         dtype=torch.int32,
     )
     assert torch.allclose(
@@ -142,40 +243,65 @@ def test_trt_package_torch(
         expected_xyxy.cpu(),
         atol=5,
     )
-    assert 16500 <= predictions[0].mask.cpu().sum().item() <= 16600
 
 
 @pytest.mark.slow
 @pytest.mark.trt_extras
 def test_trt_package_torch_list(
     yolo26_object_detections_coin_counting_trt_package: str,
-    asl_image_torch: torch.Tensor,
+    coins_counting_image_torch: torch.Tensor,
 ) -> None:
     # given
-    from inference_models.models.yolo26.yolo26_instance_segmentation_trt import (
-        YOLO26ForInstanceSegmentationTRT,
+    from inference_models.models.yolo26.yolo26_object_detection_trt import (
+        YOLO26ForObjectDetectionTRT,
     )
 
-    model = YOLO26ForInstanceSegmentationTRT.from_pretrained(
+    model = YOLO26ForObjectDetectionTRT.from_pretrained(
         model_name_or_path=yolo26_object_detections_coin_counting_trt_package,
         engine_host_code_allowed=True,
     )
 
     # when
-    predictions = model([asl_image_torch, asl_image_torch])
+    predictions = model([coins_counting_image_torch, coins_counting_image_torch])
 
     # then
     assert torch.allclose(
         predictions[0].confidence.cpu(),
-        torch.tensor([0.9671]).cpu(),
+        torch.tensor(
+            [
+                0.9837,
+                0.9707,
+                0.9202,
+                0.8459,
+                0.8444,
+                0.8408,
+                0.5737,
+                0.4922,
+                0.4378,
+                0.4340,
+                0.2636,
+            ]
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
         predictions[0].class_id.cpu(),
-        torch.tensor([20], dtype=torch.int32).cpu(),
+        torch.tensor([2, 2, 2, 0, 1, 3, 0, 0, 1, 3, 3], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
-        [[63, 174, 186, 368]],
+        [
+            [1252, 2049, 1431, 2241],
+            [1741, 2285, 1921, 2480],
+            [1707, 2565, 1896, 2770],
+            [1459, 2296, 1633, 2476],
+            [1164, 2624, 1382, 2856],
+            [1502, 1867, 1728, 2096],
+            [923, 1836, 1100, 2009],
+            [1090, 2346, 1268, 2525],
+            [1164, 2625, 1381, 2857],
+            [1256, 2059, 1425, 2234],
+            [2670, 792, 2875, 979],
+        ],
         dtype=torch.int32,
     )
     assert torch.allclose(
@@ -183,18 +309,43 @@ def test_trt_package_torch_list(
         expected_xyxy.cpu(),
         atol=5,
     )
-    assert 16500 <= predictions[0].mask.cpu().sum().item() <= 16600
     assert torch.allclose(
         predictions[1].confidence.cpu(),
-        torch.tensor([0.9671]).cpu(),
+        torch.tensor(
+            [
+                0.9837,
+                0.9707,
+                0.9202,
+                0.8459,
+                0.8444,
+                0.8408,
+                0.5737,
+                0.4922,
+                0.4378,
+                0.4340,
+                0.2636,
+            ]
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
         predictions[1].class_id.cpu(),
-        torch.tensor([20], dtype=torch.int32).cpu(),
+        torch.tensor([2, 2, 2, 0, 1, 3, 0, 0, 1, 3, 3], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
-        [[63, 174, 186, 368]],
+        [
+            [1252, 2049, 1431, 2241],
+            [1741, 2285, 1921, 2480],
+            [1707, 2565, 1896, 2770],
+            [1459, 2296, 1633, 2476],
+            [1164, 2624, 1382, 2856],
+            [1502, 1867, 1728, 2096],
+            [923, 1836, 1100, 2009],
+            [1090, 2346, 1268, 2525],
+            [1164, 2625, 1381, 2857],
+            [1256, 2059, 1425, 2234],
+            [2670, 792, 2875, 979],
+        ],
         dtype=torch.int32,
     )
     assert torch.allclose(
@@ -202,40 +353,67 @@ def test_trt_package_torch_list(
         expected_xyxy.cpu(),
         atol=5,
     )
-    assert 16500 <= predictions[1].mask.cpu().sum().item() <= 16600
 
 
 @pytest.mark.slow
 @pytest.mark.trt_extras
 def test_trt_package_torch_batch(
     yolo26_object_detections_coin_counting_trt_package: str,
-    asl_image_torch: torch.Tensor,
+    coins_counting_image_torch: torch.Tensor,
 ) -> None:
     # given
-    from inference_models.models.yolo26.yolo26_instance_segmentation_trt import (
-        YOLO26ForInstanceSegmentationTRT,
+    from inference_models.models.yolo26.yolo26_object_detection_trt import (
+        YOLO26ForObjectDetectionTRT,
     )
 
-    model = YOLO26ForInstanceSegmentationTRT.from_pretrained(
+    model = YOLO26ForObjectDetectionTRT.from_pretrained(
         model_name_or_path=yolo26_object_detections_coin_counting_trt_package,
         engine_host_code_allowed=True,
     )
 
     # when
-    predictions = model(torch.stack([asl_image_torch, asl_image_torch], dim=0))
+    predictions = model(
+        torch.stack([coins_counting_image_torch, coins_counting_image_torch], dim=0)
+    )
 
     # then
     assert torch.allclose(
         predictions[0].confidence.cpu(),
-        torch.tensor([0.9671]).cpu(),
+        torch.tensor(
+            [
+                0.9837,
+                0.9707,
+                0.9202,
+                0.8459,
+                0.8444,
+                0.8408,
+                0.5737,
+                0.4922,
+                0.4378,
+                0.4340,
+                0.2636,
+            ]
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
         predictions[0].class_id.cpu(),
-        torch.tensor([20], dtype=torch.int32).cpu(),
+        torch.tensor([2, 2, 2, 0, 1, 3, 0, 0, 1, 3, 3], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
-        [[63, 174, 186, 368]],
+        [
+            [1252, 2049, 1431, 2241],
+            [1741, 2285, 1921, 2480],
+            [1707, 2565, 1896, 2770],
+            [1459, 2296, 1633, 2476],
+            [1164, 2624, 1382, 2856],
+            [1502, 1867, 1728, 2096],
+            [923, 1836, 1100, 2009],
+            [1090, 2346, 1268, 2525],
+            [1164, 2625, 1381, 2857],
+            [1256, 2059, 1425, 2234],
+            [2670, 792, 2875, 979],
+        ],
         dtype=torch.int32,
     )
     assert torch.allclose(
@@ -243,18 +421,43 @@ def test_trt_package_torch_batch(
         expected_xyxy.cpu(),
         atol=5,
     )
-    assert 16500 <= predictions[0].mask.cpu().sum().item() <= 16600
     assert torch.allclose(
         predictions[1].confidence.cpu(),
-        torch.tensor([0.9671]).cpu(),
+        torch.tensor(
+            [
+                0.9837,
+                0.9707,
+                0.9202,
+                0.8459,
+                0.8444,
+                0.8408,
+                0.5737,
+                0.4922,
+                0.4378,
+                0.4340,
+                0.2636,
+            ]
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
         predictions[1].class_id.cpu(),
-        torch.tensor([20], dtype=torch.int32).cpu(),
+        torch.tensor([2, 2, 2, 0, 1, 3, 0, 0, 1, 3, 3], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
-        [[63, 174, 186, 368]],
+        [
+            [1252, 2049, 1431, 2241],
+            [1741, 2285, 1921, 2480],
+            [1707, 2565, 1896, 2770],
+            [1459, 2296, 1633, 2476],
+            [1164, 2624, 1382, 2856],
+            [1502, 1867, 1728, 2096],
+            [923, 1836, 1100, 2009],
+            [1090, 2346, 1268, 2525],
+            [1164, 2625, 1381, 2857],
+            [1256, 2059, 1425, 2234],
+            [2670, 792, 2875, 979],
+        ],
         dtype=torch.int32,
     )
     assert torch.allclose(
@@ -262,4 +465,3 @@ def test_trt_package_torch_batch(
         expected_xyxy.cpu(),
         atol=5,
     )
-    assert 16500 <= predictions[1].mask.cpu().sum().item() <= 16600
