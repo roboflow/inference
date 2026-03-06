@@ -1,8 +1,7 @@
 {
   "version": "1.0",
   "inputs": [
-    {"type": "WorkflowImage", "name": "image"},
-    {"type": "WorkflowParameter", "name": "dry_run"}
+    {"type": "WorkflowImage", "name": "image"}
   ],
   "steps": [
     {
@@ -53,8 +52,7 @@
       },
       "message_parameters_operations": {
         "num_detections": [{"type": "SequenceLength"}]
-      },
-      "disable_sink": "$inputs.dry_run"
+      }
     }
   ],
   "outputs": [
