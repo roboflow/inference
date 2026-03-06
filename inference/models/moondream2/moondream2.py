@@ -79,10 +79,8 @@ class Moondream2(TransformerModel):
             "HfMoondream",
         )
 
-        self.model = model.from_pretrained(
-            self.cache_dir,
-            device_map={"": "cuda" if torch.cuda.is_available() else "cpu"},
-        )
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.model = model.from_pretrained(self.cache_dir).to(device)
 
     def predict(self, image_in: Image.Image, prompt="", history=None, **kwargs):
         return self.detect(image_in, prompt=prompt, history=history, **kwargs)
