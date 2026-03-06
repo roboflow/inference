@@ -3,6 +3,7 @@ from typing import Type
 from unittest import mock
 from unittest.mock import MagicMock
 
+import aiohttp
 import pytest
 import requests.exceptions
 from aioresponses import aioresponses
@@ -25,6 +26,7 @@ from inference.core.exceptions import (
     RoboflowAPINotNotFoundError,
     RoboflowAPITimeoutError,
     RoboflowAPIUnsuccessfulRequestError,
+    RoboflowAPIUsagePausedError,
     WorkspaceLoadError,
 )
 from inference.core.roboflow_api import (
@@ -45,6 +47,7 @@ from inference.core.roboflow_api import (
     raise_from_lambda,
     register_image_at_roboflow,
     wrap_roboflow_api_errors,
+    wrap_roboflow_api_errors_async,
 )
 from inference.core.version import __version__
 from inference.core.utils.url_utils import wrap_url
@@ -147,6 +150,43 @@ def test_wrap_roboflow_api_errors_when_http_404_error_occurs_and_default_handler
     # when
     with pytest.raises(RoboflowAPINotNotFoundError):
         _ = my_fun(2, 3)
+
+
+def test_wrap_roboflow_api_errors_when_http_423_error_occurs_and_default_handlers_used() -> (
+    None
+):
+    @wrap_roboflow_api_errors()
+    def my_fun(a: int, b: int) -> int:
+        response = requests.Response()
+        response.status_code = 423
+        raise requests.exceptions.HTTPError("some", response=response)
+
+    # when
+    with pytest.raises(RoboflowAPIUsagePausedError):
+        _ = my_fun(2, 3)
+
+
+@pytest.mark.asyncio
+async def test_wrap_roboflow_api_errors_async_when_http_423_error_occurs_and_default_handlers_used() -> (
+    None
+):
+    @wrap_roboflow_api_errors_async()
+    async def my_fun(a: int, b: int) -> int:
+        raise aiohttp.ClientResponseError(
+            request_info=aiohttp.RequestInfo(
+                url=URL("http://some"),
+                method="GET",
+                headers={},
+                real_url=URL("http://some"),
+            ),
+            history=(),
+            status=423,
+            message="some",
+        )
+
+    # when
+    with pytest.raises(RoboflowAPIUsagePausedError):
+        _ = await my_fun(2, 3)
 
 
 def test_wrap_roboflow_api_errors_when_http_error_occurs_and_custom_handlers_used() -> (

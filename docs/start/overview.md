@@ -1,79 +1,98 @@
-# Overview
+# Inference
 
-Inference is the centralized hub that handles the core tasks of building
-computer vision applications. It implements the recurring heavy-lifting required for
-efficiently processing and managing video streams, deploying and monitoring
-models and pipelines, optimizing CPU and GPU resources, and managing dependencies.
+Inference is an open-source computer vision deployment hub by [Roboflow](https://roboflow.com).
+It handles model serving, video stream management, pre/post-processing, and
+GPU/CPU optimization so you can focus on building your application.
 
-## Core Principles
+## Architecture
 
-There are three three core principles of Inference:
+Read more about the Inference architecture [here](../../understand/architecture). Quick links:
 
-1. **Easy to Use** - You shouldn't need a PhD to use computer vision. Getting a project up and running should take hours, not weeks. Developers should spend their time on the things that are unique to their project, not reinventing the wheel. We try to maximize your speed of iteration and experimentation.
-2. **Production Grade** - Inference should be stable, thoroughly tested, scalable, secure, and fully-featured. It should be as fast as possible without degrading the developer experience.
-3. **Extensible** - Developers should never be constrained by what's included in the box. Adding additional models and functionality should be easy and seamless.
+<p style="text-align: center; font-size: 1.2em;"><a href="../../inference_helpers/inference_sdk">inference_sdk</a> · <a href="../../inference_helpers/inference_cli">inference_cli</a> · <a href="../../quickstart/docker">Inference server</a> · <a href="../../using_inference/about">inference</a></p>
 
-## Use at Any Scale
+![Inference Architecture](../../images/img-inference-diagram-v1.png)
 
-Inference is developed by [Roboflow](https://roboflow.com), a computer vision
-platform used by over a million developers and over half of the Fortune 100.
-Over the years, it has powered billions of inferences for mission critical
-applications like monitoring essential infrastructure, enforcing safety
-controls in warehouses, ensuring quality of life-saving products, and
-powering instant replay at some of the world's premier sporting events.
+## Features
 
-## Open Source
+- **[Model Serving](../quickstart/run_a_model)** - Object detection, classification, segmentation,
+  keypoint detection, OCR, VQA, gaze detection, and more. Supports
+  [pre-trained](../quickstart/aliases), [fine-tuned](https://roboflow.com/train),
+  and [foundation](../foundation/about) models.
+- **[Workflows](../workflows/about)** - Chain models, logic, integrations, and custom
+  Python code into declarative computation graphs with 100+ built-in blocks.
+- **[Video Streaming](../workflows/video_processing/overview)** - Efficient
+  `InferencePipeline` for consuming camera feeds, RTSP streams, and video files
+  with automatic frame management and state tracking.
+- **[Speed](../understand/features#speed)** - Automatic parallelization, hardware
+  acceleration, dynamic batching, and optional TensorRT quantization.
+- **[Extensibility](../understand/features#extensibility)** - Open source (Apache 2.0).
+  Add custom models, Workflow blocks, and backends.
 
-The core functionality of Inference is open source
-[on GitHub](https://github.com/roboflow/inference)
-under the Apache 2.0 license. You may freely fork, extend, or
-[contribute](https://github.com/roboflow/inference/blob/main/CONTRIBUTING.md) to its functionality.
+## Deploy Anywhere
 
-Models are subject to licensing which respects the underlying architecture.
-These licenses are listed in
-[`inference/models`](https://github.com/roboflow/inference/tree/main/inference/models).
-Paid Roboflow accounts include a commercial license for some models
-(see [roboflow.com/licensing](https://roboflow.com/licensing) for details).
+| | [Serverless](https://docs.roboflow.com/deploy/serverless-hosted-api-v2) | [Dedicated](https://docs.roboflow.com/deploy/dedicated-deployments) | [Self-Hosted](../install/) |
+|---|---|---|---|
+| Fine-Tuned & Pre-Trained Models | ✅ | ✅ | ✅ |
+| Workflows | ✅ | ✅ | ✅ |
+| Foundation Models | | ✅ | ✅ |
+| Video Streaming | | ✅ | ✅ |
+| Dynamic Python Blocks | | ✅ | ✅ |
+| Runs Offline | | | ✅ |
+| Billing | Per-Call | Hourly | Free + [metered](https://roboflow.com/pricing) |
 
-Cloud connected functionality (like our model and Workflows registries, dataset management,
-model monitoring, device management, and managed infrastructure) requires a Roboflow account
-and API key & is metered based on usage according to Roboflow's
-[platform pricing tiers](https://roboflow.com/pricing).
+**Serverless** - Scales to zero, pay per inference, supports cloud-hosted VLMs. No video streaming or heavy foundation models.
 
-|                         | Open Access | With API Key |
-|-------------------------|-------------|--------------|
-| [Pre-Trained Models](https://inference.roboflow.com/quickstart/aliases/#supported-pre-trained-models) | ✅ | ✅
-| [Foundation Models](https://inference.roboflow.com/foundation/about/) | ✅ | ✅
-| [Video Stream Management](https://inference.roboflow.com/workflows/video_processing/overview/) | ✅ | ✅
-| [Dynamic Python Blocks](https://inference.roboflow.com/workflows/custom_python_code_blocks/) | ✅ | ✅
-| [Public Workflows](https://inference.roboflow.com/workflows/about/) | ✅ | ✅
-| [Private Workflows](https://docs.roboflow.com/workflows/create-a-workflow) |  | ✅
-| [Fine-Tuned Models](https://roboflow.com/train) |  | ✅
-| [Universe Models](https://roboflow.com/universe) |  | ✅
-| [Active Learning](https://inference.roboflow.com/workflows/blocks/roboflow_dataset_upload/) |  | ✅
-| [Serverless Hosted API](https://docs.roboflow.com/deploy/hosted-api) |  | ✅
-| [Dedicated Deployments](https://docs.roboflow.com/deploy/dedicated-deployments) |  | ✅
-| [Commercial Model Licensing](https://roboflow.com/licensing) |  | Paid
-| [Device Management](https://docs.roboflow.com/roboflow-enterprise) |  | Enterprise
-| [Model Monitoring](https://docs.roboflow.com/deploy/model-monitoring) |  | Enterprise
+**Dedicated** - Single-tenant VMs with optional GPU. Video streaming, custom Python, heavy models (SAM 2, Florence-2, PaliGemma). Billed hourly.
 
-## Managed Compute
+**Self-Hosted** - Run on your own hardware. Full feature set, works offline. [Install guide →](../install/)
 
-If you don't want to manage your own infrastructure for self-hosting, Roboflow offers a hosted Inference Server via [one-click Dedicated Deployments](https://docs.roboflow.com/deploy/dedicated-deployments) (CPU and GPU machines) billed hourly, or simple models and Workflows via our [serverless Hosted API](https://docs.roboflow.com/deploy/hosted-api) billed per API-call.
+**Bring Your Own Cloud** - Self-host on [AWS, Azure, or GCP](../install/cloud/) for enterprise compliance.
 
-Roboflow offers a [generous free-tier](https://roboflow.com/pricing) to get started.
+## Quick Start
 
-## Local Installation
+??? note "Installation"
 
-Self-hosting for production or local development is easy. We recommend using Docker
-to manage your installation because machine learning dependencies are often
-fragile and finicky. On most systems, the easiest way to get started is to use our CLI
-to choose the right docker image with the `inference server start` command:
+    === "CPU"
+        ```bash
+        pip install inference
+        ```
+
+    === "Nvidia GPU"
+        ```bash
+        pip install inference-gpu
+        ```
+
+Or use Docker (recommended for production):
 
 ```bash
 pip install inference-cli
 inference server start
 ```
 
-For detailed instructions on various systems, see our [installation guide](../install/index.md)
-then see [next steps](./next.md) to connect to your new Inference Server.
+```python
+from inference import get_model
+
+model = get_model(model_id="yolov8n-640")
+results = model.infer("https://media.roboflow.com/inference/people-walking.jpg")
+```
+
+!!! info
+
+    For a more detailed example, see the tutorial on [running a model](../quickstart/run_a_model).
+
+## Related Products
+
+- **[Roboflow App](https://app.roboflow.com/)** - Upload data, annotate images, train and deploy models. [Get your API key](https://docs.roboflow.com/api-reference/authentication).
+- **[Universe](https://universe.roboflow.com/)** - Browse and use community datasets and models. Pass any Universe `model_id` directly to Inference. [Learn more →](../quickstart/explore_models.md)
+- **[Supervision](https://supervision.roboflow.com/latest/)** - Post-process results: plot bounding boxes, track objects, slice images for small object detection. Works with Inference, Ultralytics, Hugging Face, and more.
+- **[Workflows](../workflows/about.md)** - Chain blocks together to build CV pipelines without writing code. [Browse blocks →](/workflows/blocks/index.md)
+
+## Open Source
+
+Core functionality is open source under Apache 2.0.
+[View on GitHub](https://github.com/roboflow/inference) ·
+[Contribute](https://github.com/roboflow/inference/blob/main/CONTRIBUTING.md)
+
+Models are subject to their underlying architecture licenses
+([details](https://github.com/roboflow/inference/tree/main/inference/models)).
+Cloud-connected features require a [Roboflow API key](https://roboflow.com/pricing).

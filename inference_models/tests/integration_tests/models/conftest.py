@@ -64,6 +64,8 @@ COIN_COUNTING_YOLACT_ONNX_STATIC_BS_LETTERBOX_URL = "https://storage.googleapis.
 COIN_COUNTING_YOLACT_ONNX_STATIC_BS_STATIC_CROP_STRETCH_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolact-static-bs-static-crop-stretch-onnx.zip"
 COIN_COUNTING_YOLACT_ONNX_STATIC_BS_STRETCH_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolact-static-bs-stretch-onnx.zip"
 
+COIN_COUNTING_YOLOLITE_N_ONNX_DYNAMIC_BS_LETTERBOX_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/coin-counting-yololite-n-onnx-dynamic-bs-letterbox.zip"
+
 ASL_YOLOV8N_SEG_ONNX_DYNAMIC_BS_STRETCH_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov8n-seg-onnx-dynamic-bs-stretch.zip"
 ASL_YOLOV8N_SEG_ONNX_DYNAMIC_BS_STRETCH_FUSED_NMS_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov8n-seg-onnx-dynamic-bs-stretch-fused-nms.zip"
 ASL_YOLOV8N_SEG_ONNX_STATIC_BS_STRETCH_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov8n-seg-onnx-static-bs-stretch.zip"
@@ -182,6 +184,25 @@ SAM_PACKAGE_URL = (
 SAM2_PACKAGE_URL = (
     "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/sam2.zip"
 )
+COIN_COUNTING_TRT_PACKAGE_YOLO_V8_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov8-coin-counting-trt-t4-package.zip"
+COIN_COUNTING_TRT_PACKAGE_RF_DETR_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-coin-counting-trt-t4-package.zip"
+COIN_COUNTING_TRT_PACKAGE_YOLO_NAS_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolo-nas-coin-counting-trt-t4-package.zip"
+COIN_COUNTING_TRT_PACKAGE_YOLO_26_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolo26-coin-counting-trt-t4-package.zip"
+
+ASL_TRT_PACKAGE_RFDETR_SEG_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rf-detr-seg-asl-trt-t4-package.zip"
+ASL_TRT_PACKAGE_YOLO26_SEG_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolo26-seg-asl-trt-t4-package.zip"
+ASL_TRT_PACKAGE_YOLOV8_SEG_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov8-seg-asl-trt-t4-package.zip"
+
+YOLOV8N_POSE_TRT_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov8n-pose-trt-t4-package.zip"
+YOLO26N_POSE_TRT_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov26n-pose-trt-t4-package.zip"
+
+RESNET_SINGLE_LABEL_CLS_TRT_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/resnet-single-label-cls-trt-t4-package.zip"
+RESNET_MULTI_LABEL_CLS_TRT_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/resnet-multi-label-cls-trt-t4-package.zip"
+
+VIT_SINGLE_LABEL_CLS_TRT_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/vit-single-label-cls-trt-t4-package.zip"
+VIT_MULTI_LABEL_CLS_TRT_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/vit-multi-label-cls-trt-t4-package.zip"
+
+YOLOV10_TRT_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov10-trt-t4-package.zip"
 
 
 @pytest.fixture(scope="module")
@@ -590,6 +611,14 @@ def coin_counting_yolo_nas_onnx_static_bs_center_crop_package() -> str:
     return download_model_package(
         model_package_zip_url=COIN_COUNTING_YOLO_NAS_ONNX_STATIC_BS_CENTER_CROP_URL,
         package_name="coin-counting-yolo-nas-static-bs-center-crop",
+    )
+
+
+@pytest.fixture(scope="module")
+def coin_counting_yololite_n_onnx_dynamic_bs_letterbox_package() -> str:
+    return download_model_package(
+        model_package_zip_url=COIN_COUNTING_YOLOLITE_N_ONNX_DYNAMIC_BS_LETTERBOX_URL,
+        package_name="coin-counting-yololite-n-onnx-dynamic-bs-letterbox",
     )
 
 
@@ -1435,4 +1464,116 @@ def yolo26n_object_detection_sunflowers_letterbox_torch_script_package() -> str:
     return download_model_package(
         model_package_zip_url=YOLO26N_object_detection_sunflowers_LETTERBOX_TORCH_SCRIPT_URL,
         package_name="yolo26n-object-detection-sunflowers-letterbox-torch-script",
+    )
+
+
+@pytest.fixture(scope="module")
+def yolov8_coin_counting_trt_package() -> str:
+    return download_model_package(
+        model_package_zip_url=COIN_COUNTING_TRT_PACKAGE_YOLO_V8_URL,
+        package_name="coin-counting-yolov8-trt",
+    )
+
+
+@pytest.fixture(scope="module")
+def rfdetr_coin_counting_trt_package() -> str:
+    return download_model_package(
+        model_package_zip_url=COIN_COUNTING_TRT_PACKAGE_RF_DETR_URL,
+        package_name="coin-counting-rfdetr-trt",
+    )
+
+
+@pytest.fixture(scope="module")
+def yolo_nas_coin_counting_trt_package() -> str:
+    return download_model_package(
+        model_package_zip_url=COIN_COUNTING_TRT_PACKAGE_YOLO_NAS_URL,
+        package_name="coin-counting-yolo-nas-trt",
+    )
+
+
+@pytest.fixture(scope="module")
+def rfdetr_seg_asl_trt_package() -> str:
+    return download_model_package(
+        model_package_zip_url=ASL_TRT_PACKAGE_RFDETR_SEG_URL,
+        package_name="asl-rfdetr-seg-trt",
+    )
+
+
+@pytest.fixture(scope="module")
+def yolo26_seg_asl_trt_package() -> str:
+    return download_model_package(
+        model_package_zip_url=ASL_TRT_PACKAGE_YOLO26_SEG_URL,
+        package_name="asl-yolo26-seg-trt",
+    )
+
+
+@pytest.fixture(scope="module")
+def yolo26_object_detections_coin_counting_trt_package() -> str:
+    return download_model_package(
+        model_package_zip_url=COIN_COUNTING_TRT_PACKAGE_YOLO_26_URL,
+        package_name="coin-counting-yolo26-trt",
+    )
+
+
+@pytest.fixture(scope="module")
+def yolov8_seg_asl_trt_package() -> str:
+    return download_model_package(
+        model_package_zip_url=ASL_TRT_PACKAGE_YOLOV8_SEG_URL,
+        package_name="asl-yolov8-seg-trt",
+    )
+
+
+@pytest.fixture(scope="module")
+def yolov8_pose_trt_package() -> str:
+    return download_model_package(
+        model_package_zip_url=YOLOV8N_POSE_TRT_PACKAGE_URL,
+        package_name="yolov8-pose-trt",
+    )
+
+
+@pytest.fixture(scope="module")
+def yolo26_pose_trt_package() -> str:
+    return download_model_package(
+        model_package_zip_url=YOLO26N_POSE_TRT_PACKAGE_URL,
+        package_name="yolo26-pose-trt",
+    )
+
+
+@pytest.fixture(scope="module")
+def resnet_single_label_cls_trt_package() -> str:
+    return download_model_package(
+        model_package_zip_url=RESNET_SINGLE_LABEL_CLS_TRT_PACKAGE_URL,
+        package_name="resnet-single-label-cls-trt",
+    )
+
+
+@pytest.fixture(scope="module")
+def resnet_multi_label_cls_trt_package() -> str:
+    return download_model_package(
+        model_package_zip_url=RESNET_MULTI_LABEL_CLS_TRT_PACKAGE_URL,
+        package_name="resnet-multi-label-cls-trt",
+    )
+
+
+@pytest.fixture(scope="module")
+def vit_single_label_cls_trt_package() -> str:
+    return download_model_package(
+        model_package_zip_url=VIT_SINGLE_LABEL_CLS_TRT_PACKAGE_URL,
+        package_name="vit-single-label-cls-trt",
+    )
+
+
+@pytest.fixture(scope="module")
+def vit_multi_label_cls_trt_package() -> str:
+    return download_model_package(
+        model_package_zip_url=VIT_MULTI_LABEL_CLS_TRT_PACKAGE_URL,
+        package_name="vit-multi-label-cls-trt",
+    )
+
+
+@pytest.fixture(scope="module")
+def yolov10_object_detection_trt_package() -> str:
+    return download_model_package(
+        model_package_zip_url=YOLOV10_TRT_PACKAGE_URL,
+        package_name="yolov10-object-detection-trt",
     )
