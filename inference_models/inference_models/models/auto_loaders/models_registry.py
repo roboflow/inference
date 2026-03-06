@@ -46,17 +46,9 @@ REGISTERED_MODELS: Dict[
         module_name="inference_models.models.yolov5.yolov5_object_detection_onnx",
         class_name="YOLOv5ForObjectDetectionOnnx",
     ),
-    ("yolov5", OBJECT_DETECTION_TASK, BackendType.TRT): LazyClass(
-        module_name="inference_models.models.yolov5.yolov5_object_detection_trt",
-        class_name="YOLOv5ForObjectDetectionTRT",
-    ),
     ("yolov5", INSTANCE_SEGMENTATION_TASK, BackendType.ONNX): LazyClass(
         module_name="inference_models.models.yolov5.yolov5_instance_segmentation_onnx",
         class_name="YOLOv5ForInstanceSegmentationOnnx",
-    ),
-    ("yolov5", INSTANCE_SEGMENTATION_TASK, BackendType.TRT): LazyClass(
-        module_name="inference_models.models.yolov5.yolov5_instance_segmentation_trt",
-        class_name="YOLOv5ForInstanceSegmentationTRT",
     ),
     ("yolov7", INSTANCE_SEGMENTATION_TASK, BackendType.ONNX): LazyClass(
         module_name="inference_models.models.yolov7.yolov7_instance_segmentation_onnx",
