@@ -2,8 +2,7 @@
   "version": "1.0",
   "inputs": [
     {"type": "WorkflowImage", "name": "image"},
-    {"type": "WorkflowBatchInput", "name": "image_names", "dimensionality": 1},
-    {"type": "WorkflowParameter", "name": "dry_run"}
+    {"type": "WorkflowBatchInput", "name": "image_names", "dimensionality": 1}
   ],
   "steps": [
     {
@@ -45,8 +44,7 @@
       "message": "Image: {{ $parameters.image_name }}\nFound detection(s) for this image.",
       "message_parameters": {
         "image_name": "$inputs.image_names"
-      },
-      "disable_sink": "$inputs.dry_run"
+      }
     }
   ],
   "outputs": [

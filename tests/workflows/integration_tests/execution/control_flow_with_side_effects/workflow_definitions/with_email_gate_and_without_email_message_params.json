@@ -2,7 +2,6 @@
   "version": "1.0",
   "inputs": [
     {"type": "WorkflowImage", "name": "image"},
-    {"type": "WorkflowParameter", "name": "dry_run"},
     {"type": "WorkflowParameter", "name": "enable_email", "default_value": true}
   ],
   "steps": [
@@ -65,8 +64,7 @@
       "name": "email_notification",
       "subject": "Detection alert",
       "receiver_email": "noreply@example.com",
-      "message": "Found detection(s) for this image.",
-      "disable_sink": "$inputs.dry_run"
+      "message": "Found detection(s) for this image."
     }
   ],
   "outputs": [

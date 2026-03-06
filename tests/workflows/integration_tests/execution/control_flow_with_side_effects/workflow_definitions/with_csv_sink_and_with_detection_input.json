@@ -2,7 +2,6 @@
   "version": "1.0",
   "inputs": [
     {"type": "WorkflowImage", "name": "image"},
-    {"type": "WorkflowParameter", "name": "dry_run"},
     {"type": "WorkflowParameter", "name": "output_directory", "default_value": "detection_logs"}
   ],
   "steps": [

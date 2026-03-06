@@ -2,7 +2,6 @@
   "version": "1.0",
   "inputs": [
     {"type": "WorkflowImage", "name": "image"},
-    {"type": "WorkflowParameter", "name": "dry_run"},
     {"type": "WorkflowParameter", "name": "enable_email", "default_value": true}
   ],
   "steps": [
@@ -71,8 +70,7 @@
       },
       "message_parameters_operations": {
         "num_detections": [{"type": "SequenceLength"}]
-      },
-      "disable_sink": "$inputs.dry_run"
+      }
     }
   ],
   "outputs": [
