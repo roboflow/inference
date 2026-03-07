@@ -26,7 +26,7 @@ class Moondream2(TransformerModel):
     load_weights_as_transformers = True
     endpoint = "moondream2/moondream2_2b_jul24"
     trust_remote_code = True
-    revision = "2025-03-27"
+    revision = "2025-06-21"
 
     def __init__(self, *args, **kwargs):
         # if model_id in kwargs, delete
@@ -92,6 +92,28 @@ class Moondream2(TransformerModel):
 
         device = "cuda" if torch.cuda.is_available() else "cpu"
         self.model = model_cls.from_pretrained(self.cache_dir).to(device)
+        # Recompute non-persistent buffers (freqs_cis and attn_mask) after
+        # loading.  These are registered with persistent=False and are not
+        # saved in the checkpoint.  transformers 5.x's from_pretrained/
+        # post_init resets them to uninitialized memory.
+        config = self.model.model.config
+        tc = config.text
+
+        precompute_freqs_cis = import_class_from_file(
+            os.path.join(self.cache_dir, "rope.py"),
+            "precompute_freqs_cis",
+        )
+        self.model.model.text.freqs_cis = precompute_freqs_cis(
+            tc.dim // (2 * tc.n_heads), tc.max_context
+        ).to(device)
+
+        attn_mask = torch.tril(
+            torch.ones(1, 1, tc.max_context, tc.max_context, dtype=torch.bool)
+        )
+        patch_w = config.vision.crop_size // config.vision.enc_patch_size
+        prefix_attn_len = 1 + patch_w ** 2
+        attn_mask[..., :prefix_attn_len, :prefix_attn_len] = 1
+        self.model.model.attn_mask = attn_mask.to(device)
 
     def predict(self, image_in: Image.Image, prompt="", history=None, **kwargs):
         return self.detect(image_in, prompt=prompt, history=history, **kwargs)
