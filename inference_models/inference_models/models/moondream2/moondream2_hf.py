@@ -54,6 +54,16 @@ class MoonDream2HF:
             file_path=model_package_content["hf_moondream.py"],
             class_name="HfMoondream",
         )
+        # The downloaded HfMoondream doesn't call self.post_init() at the end
+        # of __init__, which transformers 5.x requires to set
+        # all_tied_weights_keys and other attributes.
+        _original_init = model_class.__init__
+
+        def _patched_init(self, config):
+            _original_init(self, config)
+            self.post_init()
+
+        model_class.__init__ = _patched_init
         model = model_class.from_pretrained(model_name_or_path).to(device)
         return cls(model=model, device=device)
 

@@ -1,9 +1,44 @@
 import os
 import urllib.request
 from time import perf_counter
-from typing import Any, List
+from typing import Any, List, Optional
 
 import torch
+from transformers import BertModel
+
+# Monkey-patch BertModel for transformers>=5.0 compatibility.
+# groundingdino's BertModelWarper relies on APIs removed/changed in transformers 5.x.
+_original_get_extended_attention_mask = BertModel.get_extended_attention_mask
+
+# 1) get_head_mask was removed from PreTrainedModel in transformers 5.x.
+if not hasattr(BertModel, "get_head_mask"):
+
+    def _get_head_mask(
+        self, head_mask: Optional[torch.Tensor], num_hidden_layers: int, is_attention_chunked: bool = False
+    ) -> List[Optional[torch.Tensor]]:
+        if head_mask is not None:
+            head_mask = self._convert_head_mask_to_5d(head_mask, num_hidden_layers)
+            if is_attention_chunked:
+                head_mask = head_mask.unsqueeze(-1)
+        else:
+            head_mask = [None] * num_hidden_layers
+        return head_mask
+
+    BertModel.get_head_mask = _get_head_mask
+
+
+# 2) get_extended_attention_mask's 3rd arg changed from `device` to `dtype` in transformers 5.x.
+#    groundingdino passes (attention_mask, input_shape, device) — wrap to handle both.
+def _patched_get_extended_attention_mask(self, attention_mask, input_shape, *args, **kwargs):
+    if args and isinstance(args[0], torch.device):
+        args = args[1:]
+    if "device" in kwargs and isinstance(kwargs.get("device"), torch.device):
+        kwargs.pop("device")
+    return _original_get_extended_attention_mask(self, attention_mask, input_shape, *args, **kwargs)
+
+
+BertModel.get_extended_attention_mask = _patched_get_extended_attention_mask
+
 from groundingdino.util.inference import Model
 
 from inference.core.entities.requests.groundingdino import GroundingDINOInferenceRequest
