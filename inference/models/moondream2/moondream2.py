@@ -111,7 +111,7 @@ class Moondream2(TransformerModel):
             torch.ones(1, 1, tc.max_context, tc.max_context, dtype=torch.bool)
         )
         patch_w = config.vision.crop_size // config.vision.enc_patch_size
-        prefix_attn_len = 1 + patch_w ** 2
+        prefix_attn_len = 1 + patch_w**2
         attn_mask[..., :prefix_attn_len, :prefix_attn_len] = 1
         self.model.model.attn_mask = attn_mask.to(device)
 
