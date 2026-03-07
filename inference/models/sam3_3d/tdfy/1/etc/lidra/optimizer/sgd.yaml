@@ -1,5 +1,0 @@
-defaults:
-  - base
-path: torch.optim.SGD
-momentum: 0.9
-weight_decay: 0.0

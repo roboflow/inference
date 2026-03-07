@@ -1,6 +1,0 @@
-job:
-  chdir: true
-run:
-  dir: ${cluster.path.logs}/timestamped/${now:%Y-%m-%d}/${now:%H-%M-%S}_${tag.name}
-sweep:
-  dir: ${cluster.path.logs}/timestamped/${now:%Y-%m-%d}/${now:%H-%M-%S}_${tag.name}

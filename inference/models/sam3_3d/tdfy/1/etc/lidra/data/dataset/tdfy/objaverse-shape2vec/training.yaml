@@ -1,4 +1,0 @@
-_target_: lidra.data.dataset.pth.Pth
-# TODO(Pierre) : Use cluster path (c.f. other datasets).
-path: "/fsx-3dfy/shared/vae_features/3dShape2Vec/objaverse"
-extension: ".pth.new"

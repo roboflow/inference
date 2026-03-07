@@ -1,4 +1,0 @@
-
-defaults:
-  - /data/module@_here_: tdfy/aria_digital_twin
-  - override /data/dataset/tdfy/trellis500k/preprocessor@validation.dataset.latent_loader_dataset.preprocessor: raw  # Override the preprocessor

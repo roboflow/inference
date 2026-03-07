@@ -1,8 +1,0 @@
-# Instantiate the Planner5D dataset via Hydra
-_target_: scripts.weiyaowang.inference_datasets.planner5d.Planner5DDataset
-base_path: /home/ssax/lidra/local_data/planner5d
-split: preview  # Options: preview, train, val, test
-scene_ids: null  # null for all scenes, or list specific scene IDs like ["scene_000", "scene_001"]
-load_depth: false  # Set to true to load depth maps
-load_normals: false  # Set to true to load normal maps
-metadata_csv: null  # Optional path to CSV with additional metadata

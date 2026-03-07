@@ -1,3 +1,0 @@
-defaults:
-  - /data/module@_here_: tdfy/ycb_bop-anything  # Use ycb_bop dataloader
-  - override /data/dataset/tdfy/trellis500k/preprocessor@validation.dataset.latent_loader_dataset.preprocessor: raw  # Override the preprocessor

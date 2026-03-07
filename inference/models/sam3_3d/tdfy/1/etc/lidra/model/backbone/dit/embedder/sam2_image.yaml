@@ -1,3 +1,0 @@
-_target_: lidra.model.backbone.dit.embedder.sam2_image_predictor.SAM2ImagePredictor
-hf_hub_model: facebook/sam2.1-hiera-large
-sam2_config:  /checkpoint/3dfy/shared/models/sam2/configs/sam2.1/sam2.1_hiera_l.yaml

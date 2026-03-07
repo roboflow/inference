@@ -1,3 +1,0 @@
-defaults:
-  - /model/backbone/llama@_here_: v2
-pretrained_model_name_or_path: meta-llama/Llama-2-70b-chat-hf

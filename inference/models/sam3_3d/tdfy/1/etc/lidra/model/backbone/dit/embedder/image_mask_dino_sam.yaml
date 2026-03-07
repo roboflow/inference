@@ -1,9 +1,0 @@
-defaults:
-  - _self_
-  - /model/backbone/dit/embedder@mask_embedder: sam2_image
-
-_target_: lidra.model.backbone.dit.embedder.image_and_masks.ImageAndMasks
-image_embedder:
-  _target_: lidra.model.backbone.dit.embedder.dino.Dino
-  dino_model: dinov2_vitl14_reg
-  input_size: 518

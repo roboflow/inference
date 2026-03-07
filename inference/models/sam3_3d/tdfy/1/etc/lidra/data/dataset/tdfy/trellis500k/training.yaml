@@ -1,9 +1,0 @@
-defaults:
-  - subset_train@datasets.ABO: ABO
-  - subset_train@datasets.HSSD: HSSD
-  - subset_train@datasets.ObjaverseXL_github: ObjaverseXL_github
-  - subset_train@datasets.ObjaverseXL_sketchfab: ObjaverseXL_sketchfab
-
-_target_: torch.utils.data.dataset.ConcatDataset
-datasets:
-  _target_: lidra.config.utils.make_list_from_kwargs

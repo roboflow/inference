@@ -1,3 +1,0 @@
-defaults:
-  - /data/module/dict/training@_here_
-  - /data/dataset/tdfy/preference@training.dataset: training

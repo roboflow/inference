@@ -1,5 +1,0 @@
-# @package _global_
-defaults:
-  - fm-trellis-trellis500k-tricks-moge-mm
-  - override /model/backbone/dit/embedder@tdfy.reverse_fn.condition_embedder: image_dino_moge_siglip2Patch
-  - _self_

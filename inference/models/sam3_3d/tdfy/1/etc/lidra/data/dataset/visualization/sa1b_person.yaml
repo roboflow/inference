@@ -1,4 +1,0 @@
-# Instantiate the SA1B Person dataset via Hydra
-_target_: scripts.weiyaowang.inference_datasets.sa1b_person.SA1BPersonDataset
-metadata_path: /checkpoint/3dfy/weiyaowang/3dfy/viz_images/sa1b_man_samples.csv
-base_path: /datasets/segment_everything/032322_resized/

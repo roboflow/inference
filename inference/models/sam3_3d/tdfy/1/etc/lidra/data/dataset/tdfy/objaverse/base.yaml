@@ -1,5 +1,0 @@
-_target_: lidra.data.dataset.tdfy.objaverse.dataset.Dataset
-path: ${cluster.path.datasets}/3dfy/objaverse
-split: ???
-preprocessed: true
-scale: 2

@@ -1,6 +1,0 @@
-_target_: lidra.data.dataset.tdfy.trellis.dataset.TrellisDataset
-# TODO(Pierre) : Use cluster path (c.f. other datasets).
-path: "/checkpoint/3dfy/shared/datasets/trellis500k"
-split: ???
-subsets: ???
-latent_type: "structure"

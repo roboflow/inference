@@ -1,7 +1,0 @@
-defaults:
-  - mock
-
-limit_train_batches: 1
-limit_val_batches: 1
-limit_test_batches: 1
-limit_predict_batches: 1

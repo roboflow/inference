@@ -1,6 +1,0 @@
-# @package inference_pipeline.depth_model
-_target_: lidra.pipeline.depth_models.moge.MoGe
-model:
-  _target_: moge.model.v1.MoGeModel.from_pretrained
-  pretrained_model_name_or_path: Ruicheng/moge-vitl
-device: cuda

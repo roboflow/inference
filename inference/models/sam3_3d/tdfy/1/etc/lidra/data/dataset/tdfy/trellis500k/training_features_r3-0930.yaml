@@ -1,9 +1,0 @@
-defaults:
-  - subset_train_features@datasets.r3-texture-0918: r3-texture-0918
-  - subset_train_features@datasets.r3-texture-0922: r3-texture-0922
-  - subset_train_features@datasets.r3-texture-0927: r3-texture-0927
-  - subset_train_features@datasets.r3-texture-0930: r3-texture-0930
-
-_target_: torch.utils.data.dataset.ConcatDataset
-datasets:
-  _target_: lidra.config.utils.make_list_from_kwargs

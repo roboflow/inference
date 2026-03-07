@@ -1,4 +1,0 @@
-lr: 1e-5
-
-loop:
-  max_epochs: 1000

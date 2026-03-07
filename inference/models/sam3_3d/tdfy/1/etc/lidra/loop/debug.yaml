@@ -1,9 +1,0 @@
-defaults:
-  - base
-
-# override field to run locally with a debugger
-num_nodes: 1
-strategy: auto
-accelerator: gpu
-devices: 1
-fast_dev_run: true # will start quick run only a few steps before ending the training

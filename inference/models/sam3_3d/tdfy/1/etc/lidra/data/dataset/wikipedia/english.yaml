@@ -1,6 +1,0 @@
-_target_: lidra.config.utils.subkey
-mapping:
-  _target_: datasets.load_dataset
-  path: wikipedia
-  name: 20220301.en
-key: train

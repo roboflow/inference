@@ -1,6 +1,0 @@
-_target_: lidra.callback.tdfy.compute_vlm_metrics.TdfySingleTrialVLMMetricsCallback
-output_dir: ${hydra:runtime.output_dir}/metrics_tdfy
-evaluation_fn:
-  _target_: lidra.callback.tdfy.compute_vlm_metrics.TdfySingleTrialVLMMetricsCallback.em_vlm_evaluation_fn
-  _partial_: true
-metrics_fstem: metrics
