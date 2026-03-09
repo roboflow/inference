@@ -94,6 +94,10 @@ jobs:
         run: pip install .
         working-directory: ./roboflow_enterprise_blocks
 
+      - name: Generate API reference pages
+        run: python docs/scripts/gen_ref_pages.py
+        working-directory: ./inference_repo
+
       - name: Build block docs
         run: python -m development.docs.build_block_docs
         working-directory: ./inference_repo
@@ -120,12 +124,17 @@ jobs:
         run: zensical build --clean
         working-directory: ./inference_repo
 
-      - name: Verify theme assets in build output
+      - name: Verify build output
         run: |
           echo "Checking for theme assets in site/..."
           test -f site/static/styles.css || { echo "ERROR: site/static/styles.css missing!"; exit 1; }
           test -f site/static/dist/home.js || { echo "ERROR: site/static/dist/home.js missing!"; exit 1; }
           echo "Theme assets OK."
+          echo "Checking for API reference pages..."
+          test -d site/reference/inference || { echo "ERROR: site/reference/inference/ missing!"; exit 1; }
+          test -d site/reference/inference_sdk || { echo "ERROR: site/reference/inference_sdk/ missing!"; exit 1; }
+          test -d site/reference/inference_cli || { echo "ERROR: site/reference/inference_cli/ missing!"; exit 1; }
+          echo "API reference OK."
         working-directory: ./inference_repo
 
       - name: Upload site artifact
