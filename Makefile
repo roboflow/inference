@@ -1,10 +1,10 @@
 .PHONY: style check_code_quality
 
 serve:
-	SKIP_CODEGEN=1 venv/bin/python -m zensical serve
+	SKIP_CODEGEN=1 python -m zensical serve
 
 serve-full:
-	venv/bin/python -m zensical serve
+	python -m zensical serve
 
 PYTHON=python
 export PYTHONPATH = .
