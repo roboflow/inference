@@ -757,14 +757,18 @@ def denote_data_flow_for_step(
         inputs_dimensionalities=inputs_dimensionalities,
         dimensionality_offstes=input_dimensionality_offsets,
     )
-    all_lineages = get_input_data_lineage_excluding_auto_batch_casting(
+    all_data_derived_lineages = get_input_data_lineage_excluding_auto_batch_casting(
         step_name=step_name,
         input_data=input_data,
         scalar_parameters_to_be_batched=scalar_parameters_to_be_batched,
     )
+    all_control_flow_lineages = get_lineage_derived_from_flow_control(
+        flow_control_steps_selectors=all_control_flow_predecessors,
+        execution_graph=execution_graph,
+    )
     verify_compatibility_of_input_data_lineage_with_control_flow_lineage(
         step_name=step_name,
-        inputs_lineage=all_lineages,
+        inputs_lineage=all_data_derived_lineages,
         flow_control_steps_selectors=all_control_flow_predecessors,
         execution_graph=execution_graph,
     )
@@ -777,7 +781,7 @@ def denote_data_flow_for_step(
             output_dimensionality_offset=output_dimensionality_offset,
         )
     )
-    if not all_lineages:
+    if not all_data_derived_lineages and not all_control_flow_lineages:
         if manifest.get_output_dimensionality_offset() > 0:
             # brave decision to open a Pandora box
             data_lineage = [node]
@@ -786,14 +790,15 @@ def denote_data_flow_for_step(
     else:
         data_lineage = establish_batch_oriented_step_lineage(
             step_selector=node,
-            all_lineages=all_lineages,
+            all_data_derived_lineages=all_data_derived_lineages,
+            all_control_flow_lineages=all_control_flow_lineages,
             input_data=input_data,
             dimensionality_reference_property=dimensionality_reference_property,
             output_dimensionality_offset=output_dimensionality_offset,
         )
     lineage_supports = get_lineage_support_for_auto_batch_casted_parameters(
         input_dimensionalities=inputs_dimensionalities,
-        all_lineages_of_batch_parameters=all_lineages,
+        all_lineages_of_batch_parameters=all_data_derived_lineages,
         scalar_parameters_to_be_batched=scalar_parameters_to_be_batched,
     )
     step_node_data.auto_batch_casting_lineage_supports = lineage_supports
@@ -801,6 +806,26 @@ def denote_data_flow_for_step(
         on_top_level_lineage_denoted(data_lineage[0])
     step_node_data.data_lineage = data_lineage
     return execution_graph
+
+
+def get_lineage_derived_from_flow_control(
+    flow_control_steps_selectors: List[str],
+    execution_graph: nx.DiGraph,
+) -> List[List[str]]:
+    all_flow_control_lineages = []
+    already_spotted_input_lineages = set()
+    for flow_control_steps_selector in flow_control_steps_selectors:
+        flow_control_step_data = node_as(
+            execution_graph=execution_graph,
+            node=flow_control_steps_selector,
+            expected_type=StepNode,
+        )
+        lineage = flow_control_step_data.data_lineage
+        lineage_id = identify_lineage(lineage=lineage)
+        if lineage_id not in already_spotted_input_lineages and lineage:
+            already_spotted_input_lineages.add(lineage_id)
+            all_flow_control_lineages.append(lineage)
+    return all_flow_control_lineages
 
 
 def separate_flow_control_predecessors_from_data_providers(
@@ -1359,6 +1384,8 @@ def verify_compatibility_of_input_data_lineage_with_control_flow_lineage(
             already_spotted_input_lineages.add(lineage_id)
             batch_oriented_control_flow_lineages.append(lineage)
         lineage_id2control_flow_steps[lineage_id].append(flow_control_steps_selector)
+    if not inputs_lineage:
+        return
     all_input_lineage_prefixes = get_all_batch_lineage_prefixes(lineages=inputs_lineage)
     all_input_lineage_prefixes_hashes = {
         identify_lineage(lineage=lineage) for lineage in all_input_lineage_prefixes
@@ -1376,7 +1403,6 @@ def verify_compatibility_of_input_data_lineage_with_control_flow_lineage(
                 f"to never execute. This behaviour is invalid and prevented upfront by Workflows compiler.",
                 context="workflow_compilation | execution_graph_construction | verification_of_flow_control_lineage",
             )
-
 
 def get_all_batch_lineage_prefixes(lineages: List[List[str]]) -> List[List[str]]:
     result = []
@@ -1770,14 +1796,16 @@ def establish_step_execution_dimensionality(
 
 def establish_batch_oriented_step_lineage(
     step_selector: str,
-    all_lineages: List[List[str]],
+    all_data_derived_lineages: List[List[str]],
+    all_control_flow_lineages: List[List[str]],
     input_data: StepInputData,
     dimensionality_reference_property: Optional[str],
     output_dimensionality_offset: int,
 ) -> List[str]:
     reference_lineage = get_reference_lineage(
         step_selector=step_selector,
-        all_lineages=all_lineages,
+        all_data_derived_lineages=all_data_derived_lineages,
+        all_control_flow_lineages=all_control_flow_lineages,
         input_data=input_data,
         dimensionality_reference_property=dimensionality_reference_property,
     )
@@ -1792,12 +1820,15 @@ def establish_batch_oriented_step_lineage(
 
 def get_reference_lineage(
     step_selector: str,
-    all_lineages: List[List[str]],
+    all_data_derived_lineages: List[List[str]],
+    all_control_flow_lineages: List[List[str]],
     input_data: StepInputData,
     dimensionality_reference_property: Optional[str],
 ) -> List[str]:
-    if len(all_lineages) == 1:
-        return copy(all_lineages[0])
+    if not all_data_derived_lineages:
+        pass
+    if len(all_data_derived_lineages) == 1:
+        return copy(all_data_derived_lineages[0])
     if dimensionality_reference_property not in input_data:
         raise AssumptionError(
             public_message=f"Workflow Compiler for step: `{step_selector}` expected dimensionality_reference_property "
