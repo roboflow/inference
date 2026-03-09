@@ -1,1 +1,1 @@
-sam3==0.1.2
+sam3 @ git+https://github.com/roboflow/sam3.git@transformers5_compatibility
