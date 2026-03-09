@@ -1,5 +1,9 @@
 zensical
 mkdocstrings[python]
+mkdocs-gen-files
+mkdocs-literate-nav
+mkdocs-ezlinks-plugin
+mkdocs-macros-plugin
 mkdocs-jupyter
 mkdocs-swagger-ui-tag
 pillow
