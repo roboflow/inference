@@ -41,6 +41,7 @@ from transformers.utils.backbone_utils import (
     get_aligned_output_features_output_indices,
 )
 
+
 logger = logging.get_logger(__name__)
 
 # Base docstring

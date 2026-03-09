@@ -43,7 +43,10 @@ class InferenceModelsGazeAdapter(Model):
         self.task_type = "gaze-detection"
         self.api_key = api_key if api_key else API_KEY
 
-        extra_weights_provider_headers = get_extra_weights_provider_headers()
+        extra_weights_provider_headers = get_extra_weights_provider_headers(
+            countinference=kwargs.get("countinference"),
+            service_secret=kwargs.get("service_secret"),
+        )
         self._pipeline: FaceAndGazeDetectionMPAndL2CS = (
             AutoModelPipeline.from_pretrained(
                 "face-and-gaze-detection",
