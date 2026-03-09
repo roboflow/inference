@@ -28,6 +28,7 @@ from inference.core.exceptions import (
     RoboflowAPINotNotFoundError,
     RoboflowAPITimeoutError,
     RoboflowAPIUnsuccessfulRequestError,
+    RoboflowAPIUsagePausedError,
     ServiceConfigurationError,
     WebRTCConfigurationError,
     WorkspaceLoadError,
@@ -225,6 +226,14 @@ def with_route_exceptions(route):
                     "message": "Unauthorized access to roboflow API - check API key and make sure the key is valid and "
                     "have required scopes. Visit https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key "
                     "to learn how to retrieve one."
+                },
+            )
+        except RoboflowAPIUsagePausedError as error:
+            logger.exception("%s: %s", type(error).__name__, error)
+            resp = JSONResponse(
+                status_code=423,
+                content={
+                    "message": "Roboflow API usage is paused. Please contact your workspace administrator to re-enable api keys."
                 },
             )
         except (RoboflowAPINotNotFoundError, ModelNotFoundError) as error:
@@ -606,6 +615,14 @@ def with_route_exceptions_async(route):
                     "message": "Unauthorized access to roboflow API - check API key and make sure the key is valid and "
                     "have required scopes. Visit https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key "
                     "to learn how to retrieve one."
+                },
+            )
+        except RoboflowAPIUsagePausedError as error:
+            logger.exception("%s: %s", type(error).__name__, error)
+            resp = JSONResponse(
+                status_code=423,
+                content={
+                    "message": "Roboflow API usage is paused. Please contact your workspace administrator to re-enable api keys."
                 },
             )
         except (RoboflowAPINotNotFoundError, ModelNotFoundError) as error:
