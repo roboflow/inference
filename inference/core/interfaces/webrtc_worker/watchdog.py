@@ -77,21 +77,6 @@ class Watchdog:
             )
             return
 
-        # Mask API key for logging (show first 4 and last 4 chars)
-        api_key_masked = (
-            f"{self._api_key[:4]}...{self._api_key[-4:]}"
-            if self._api_key and len(self._api_key) > 8
-            else "***"
-        )
-
-        logger.info(
-            "[HEARTBEAT] Sending request: url=%s, workspace=%s, session=%s, api_key=%s",
-            self._heartbeat_url,
-            self._workspace_id,
-            self._session_id,
-            api_key_masked,
-        )
-
         try:
             response = requests.post(
                 self._heartbeat_url,
@@ -104,74 +89,23 @@ class Watchdog:
             )
             if response.status_code == 200:
                 logger.info(
-                    "[HEARTBEAT] Success: workspace=%s, session=%s",
+                    "Session heartbeat sent for workspace=%s session=%s",
                     self._workspace_id,
                     self._session_id,
                 )
             else:
-                # Log detailed error info
-                try:
-                    response_body = response.text[:500]  # Limit response body size
-                except Exception:
-                    response_body = "<could not read body>"
-
-                logger.error(
-                    "[HEARTBEAT] Failed: url=%s, status=%s, "
-                    "workspace=%s, session=%s, response_headers=%s, response_body=%s",
-                    self._heartbeat_url,
-                    response.status_code,
-                    self._workspace_id,
-                    self._session_id,
-                    dict(response.headers),
-                    response_body,
+                logger.warning(
+                    "Failed to send session heartbeat: %s", response.status_code
                 )
-        except requests.exceptions.Timeout as e:
-            logger.error(
-                "[HEARTBEAT] Timeout: url=%s, workspace=%s, session=%s, error=%s",
-                self._heartbeat_url,
-                self._workspace_id,
-                self._session_id,
-                e,
-            )
-        except requests.exceptions.ConnectionError as e:
-            logger.error(
-                "[HEARTBEAT] Connection error: url=%s, workspace=%s, session=%s, error=%s",
-                self._heartbeat_url,
-                self._workspace_id,
-                self._session_id,
-                e,
-            )
         except Exception as e:
-            logger.error(
-                "[HEARTBEAT] Unexpected error: url=%s, workspace=%s, session=%s, "
-                "error_type=%s, error=%s",
-                self._heartbeat_url,
-                self._workspace_id,
-                self._session_id,
-                type(e).__name__,
-                e,
-                exc_info=True,
-            )
+            logger.warning("Error sending session heartbeat: %s", e)
 
     def _send_session_heartbeat_stop(self):
         """Send session end to immediately free the quota slot."""
         if not all([self._heartbeat_url, self._session_id]):
-            logger.info(
-                "[HEARTBEAT_STOP] Skipping: url=%s, session=%s",
-                bool(self._heartbeat_url),
-                bool(self._session_id),
-            )
             return
 
         url = self._heartbeat_url + "/end"
-
-        logger.info(
-            "[HEARTBEAT_STOP] Sending request: url=%s, workspace=%s, session=%s",
-            url,
-            self._workspace_id,
-            self._session_id,
-        )
-
         try:
             response = requests.post(
                 url,
@@ -184,53 +118,14 @@ class Watchdog:
             )
             if response.status_code == 200:
                 logger.info(
-                    "[HEARTBEAT_STOP] Success: workspace=%s, session=%s",
+                    "Session ended for workspace=%s session=%s",
                     self._workspace_id,
                     self._session_id,
                 )
             else:
-                try:
-                    response_body = response.text[:500]
-                except Exception:
-                    response_body = "<could not read body>"
-
-                logger.error(
-                    "[HEARTBEAT_STOP] Failed: url=%s, status=%s, "
-                    "workspace=%s, session=%s, response_headers=%s, response_body=%s",
-                    url,
-                    response.status_code,
-                    self._workspace_id,
-                    self._session_id,
-                    dict(response.headers),
-                    response_body,
-                )
-        except requests.exceptions.Timeout as e:
-            logger.error(
-                "[HEARTBEAT_STOP] Timeout: url=%s, workspace=%s, session=%s, error=%s",
-                url,
-                self._workspace_id,
-                self._session_id,
-                e,
-            )
-        except requests.exceptions.ConnectionError as e:
-            logger.error(
-                "[HEARTBEAT_STOP] Connection error: url=%s, workspace=%s, session=%s, error=%s",
-                url,
-                self._workspace_id,
-                self._session_id,
-                e,
-            )
+                logger.warning("Failed to send session end: %s", response.status_code)
         except Exception as e:
-            logger.error(
-                "[HEARTBEAT_STOP] Unexpected error: url=%s, workspace=%s, session=%s, "
-                "error_type=%s, error=%s",
-                url,
-                self._workspace_id,
-                self._session_id,
-                type(e).__name__,
-                e,
-                exc_info=True,
-            )
+            logger.warning("Error sending session end: %s", e)
 
     def _watchdog_thread(self):
         logger.info("Watchdog thread started")
