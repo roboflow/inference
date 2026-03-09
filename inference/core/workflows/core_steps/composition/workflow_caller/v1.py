@@ -7,7 +7,10 @@ import requests
 from pydantic import ConfigDict, Field, field_validator
 
 from inference.core.env import LOCAL_INFERENCE_API_URL
-from inference.core.roboflow_api import get_roboflow_workspace, get_workflow_specification
+from inference.core.roboflow_api import (
+    get_roboflow_workspace,
+    get_workflow_specification,
+)
 from inference.core.workflows.execution_engine.entities.base import (
     OutputDefinition,
     WorkflowImageData,
@@ -157,7 +160,11 @@ class BlockManifest(WorkflowBlockManifest):
         ),
         examples=[
             {"image": ["image"], "confidence_threshold": ["float"]},
-            {"image": ["image"], "class_filter": ["string"], "iou_threshold": ["float"]},
+            {
+                "image": ["image"],
+                "class_filter": ["string"],
+                "iou_threshold": ["float"],
+            },
         ],
     )
     output_definitions: Dict[str, List[str]] = Field(
@@ -209,12 +216,8 @@ class BlockManifest(WorkflowBlockManifest):
         if self.output_definitions:
             kind_name_map = _build_kind_name_map()
             for name, kind_names in self.output_definitions.items():
-                kinds = [
-                    kind_name_map[k] for k in kind_names if k in kind_name_map
-                ]
-                base.append(
-                    OutputDefinition(name=name, kind=kinds or [WILDCARD_KIND])
-                )
+                kinds = [kind_name_map[k] for k in kind_names if k in kind_name_map]
+                base.append(OutputDefinition(name=name, kind=kinds or [WILDCARD_KIND]))
             return base
         # 2. Fall back to auto-discovery from compile-time resolution
         if isinstance(self.workflow_id, str) and not self.workflow_id.startswith("$"):
@@ -280,9 +283,7 @@ class WorkflowCallerBlockV1(WorkflowBlock):
             workflow_version_id=workflow_version_id,
         )
         if error_status:
-            raise RuntimeError(
-                f"Workflow '{workflow_id}' execution failed: {message}"
-            )
+            raise RuntimeError(f"Workflow '{workflow_id}' execution failed: {message}")
         result: Dict[str, Any] = {}
         # Determine which outputs to extract and their kinds for deserialization
         output_kinds_map = _resolve_output_kinds_for_run(
@@ -718,11 +719,7 @@ def _convert_output_descriptions_to_kinds(
             # typed properties in a single OutputDefinition.
             result[name] = [DICTIONARY_KIND]
         else:
-            kinds = [
-                kind_name_map[k]
-                for k in kind_info
-                if k in kind_name_map
-            ]
+            kinds = [kind_name_map[k] for k in kind_info if k in kind_name_map]
             result[name] = kinds if kinds else [WILDCARD_KIND]
     return result
 
@@ -773,11 +770,13 @@ def _resolve_and_cache_workflow_inputs(
         if not name:
             continue
         inp_type = inp.get("type", "")
-        parsed.append({
-            "name": name,
-            "type": inp_type,
-            "has_default": "default_value" in inp,
-        })
+        parsed.append(
+            {
+                "name": name,
+                "type": inp_type,
+                "has_default": "default_value" in inp,
+            }
+        )
     _RESOLVED_WORKFLOW_INPUTS[cache_key] = parsed
 
 
@@ -803,8 +802,7 @@ def _validate_required_inputs(
     # present in inputs.
     if step_manifest.input_definitions:
         missing_declared = [
-            name for name in step_manifest.input_definitions
-            if name not in input_keys
+            name for name in step_manifest.input_definitions if name not in input_keys
         ]
         if missing_declared:
             raise ExecutionGraphStructureError(
@@ -861,9 +859,7 @@ def _resolve_output_kinds_for_run(
         kind_name_map = _build_kind_name_map()
         result: Dict[str, List[Kind]] = {}
         for name, kind_names in output_definitions.items():
-            kinds = [
-                kind_name_map[k] for k in kind_names if k in kind_name_map
-            ]
+            kinds = [kind_name_map[k] for k in kind_names if k in kind_name_map]
             result[name] = kinds or [WILDCARD_KIND]
         return result
     cache_key = _make_cache_key(workflow_id, workflow_version_id)
@@ -922,9 +918,7 @@ def _deserialize_output_value(
             errors.append((kind.name, error))
             continue
     if errors:
-        error_details = "; ".join(
-            f"{kind}: {error}" for kind, error in errors
-        )
+        error_details = "; ".join(f"{kind}: {error}" for kind, error in errors)
         raise RuntimeError(
             f"Failed to deserialize output '{output_name}' from target "
             f"workflow. Tried deserializers for kinds "
