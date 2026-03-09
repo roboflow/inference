@@ -51,9 +51,6 @@ from inference.core.workflows.core_steps.classical_cv.camera_focus.v1 import (
 from inference.core.workflows.core_steps.classical_cv.camera_focus.v2 import (
     CameraFocusBlockV2,
 )
-from inference.core.workflows.core_steps.composition.workflow_caller.v1 import (
-    WorkflowCallerBlockV1,
-)
 from inference.core.workflows.core_steps.classical_cv.contours.v1 import (
     ImageContoursDetectionBlockV1,
 )
@@ -133,6 +130,9 @@ from inference.core.workflows.core_steps.common.serializers import (
     serialize_timestamp,
     serialize_video_metadata_kind,
     serialize_wildcard_kind,
+)
+from inference.core.workflows.core_steps.composition.workflow_caller.v1 import (
+    WorkflowCallerBlockV1,
 )
 from inference.core.workflows.core_steps.flow_control.continue_if.v1 import (
     ContinueIfBlockV1,

@@ -6,6 +6,9 @@ from typing import Any, Callable, Dict, List, Optional, Union
 import networkx as nx
 from packaging.version import Version
 
+from inference.core.workflows.core_steps.composition.workflow_caller.v1 import (
+    validate_workflow_caller_no_circular_references,
+)
 from inference.core.workflows.execution_engine.entities.base import WorkflowParameter
 from inference.core.workflows.execution_engine.introspection.blocks_loader import (
     load_initializers,
@@ -40,9 +43,6 @@ from inference.core.workflows.execution_engine.v1.compiler.utils import (
 )
 from inference.core.workflows.execution_engine.v1.compiler.validator import (
     validate_workflow_specification,
-)
-from inference.core.workflows.core_steps.composition.workflow_caller.v1 import (
-    validate_workflow_caller_no_circular_references,
 )
 from inference.core.workflows.execution_engine.v1.debugger.core import (
     dump_execution_graph,
