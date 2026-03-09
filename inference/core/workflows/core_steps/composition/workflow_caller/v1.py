@@ -551,8 +551,9 @@ def _fetch_workflow_spec_for_validation(
         )
     except Exception as error:
         logging.debug(
-            f"Could not fetch workflow '{workflow_id}' for compile-time "
-            f"validation: {error}"
+            "Could not fetch workflow '%s' for compile-time validation (error type: %s)",
+            workflow_id,
+            type(error).__name__,
         )
         return None
 
@@ -566,8 +567,8 @@ def _resolve_workspace_for_validation(
         return get_roboflow_workspace(api_key=api_key)
     except Exception as error:
         logging.debug(
-            f"Could not resolve workspace for compile-time workflow validation: "
-            f"{error}"
+            "Could not resolve workspace for compile-time workflow validation (error type: %s)",
+            type(error).__name__,
         )
         return None
 
@@ -614,8 +615,9 @@ def _check_workflow_for_circular_references(
             )
         except Exception as error:
             logging.debug(
-                f"Could not fetch workflow '{target_workflow_id}' for circular "
-                f"dependency check: {error}"
+                "Could not fetch workflow '%s' for circular dependency check (error type: %s)",
+                target_workflow_id,
+                type(error).__name__,
             )
             return
     nested_workflows = _extract_workflow_caller_ids_from_spec(spec=spec)
