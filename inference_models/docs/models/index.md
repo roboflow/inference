@@ -92,6 +92,7 @@ The `inference-models` library supports a wide range of computer vision models a
 | [PaliGemma](paligemma.md) | `torch` | Gemma License | N/A                           | ✅ | ✅ |
 | [Qwen2.5-VL](qwen25vl.md) | `torch` | Apache 2.0 | N/A                           | ✅ | ✅ |
 | [Qwen3-VL](qwen3vl.md) | `torch` | Apache 2.0 | N/A                           | ✅ | ✅ |
+| [Qwen3.5](qwen35.md) | `torch` | Apache 2.0 | N/A                           | ✅ | ✅ |
 | [SmolVLM](smolvlm.md) | `torch` | Apache 2.0 | N/A                           | ✅ | ✅ |
 | [Moondream2](moondream2.md) | `torch` | Apache 2.0 | N/A                           | ✅ | ❌ |
 
