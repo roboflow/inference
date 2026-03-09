@@ -100,11 +100,7 @@ class ExecutionDataManager:
             and all_execution_branches_registered
         )
 
-    def get_non_simd_step_input(
-        self, step_selector: str
-    ) -> Optional[
-        Union[Dict[str, Any], Tuple[Dict[str, Any], List[DynamicBatchIndex]]]
-    ]:
+    def get_non_simd_step_input(self, step_selector: str) -> Optional[Dict[str, Any]]:
         if self.is_step_simd(step_selector=step_selector):
             raise ExecutionEngineRuntimeError(
                 public_message=f"Error in execution engine. In context of SIMD step: {step_selector} attempts to "

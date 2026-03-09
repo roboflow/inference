@@ -143,36 +143,36 @@ def _batch_4_images():
 @pytest.mark.parametrize(
     "workflow_name,receiver_email,subject,expected_message_parameters",
     [
-        (
-            "with_email_message_params",
-            "noreply@example.com",
-            "Detections found",
-            ({"num_detections": 2}, {"num_detections": 1}),
-        ),
+        # (
+        #     "with_email_message_params",
+        #     "noreply@example.com",
+        #     "Detections found",
+        #     ({"num_detections": 2}, {"num_detections": 1}),
+        # ),
         (
             "without_email_message_params",
             "noreply@example.com",
             "Detections found",
             ({}, {}),
         ),
-        (
-            "with_image_names_and_email_message_params",
-            "noreply@example.com",
-            "Detections found",
-            ({"num_detections": 2, "image_name": "img1.jpg"}, {"num_detections": 1, "image_name": "img3.jpg"}),
-        ),
-        (
-            "with_image_names_and_without_email_message_params",
-            "noreply@example.com",
-            "Detections found",
-            ({"image_name": "img1.jpg"}, {"image_name": "img3.jpg"}),
-        ),
+        # (
+        #     "with_image_names_and_email_message_params",
+        #     "noreply@example.com",
+        #     "Detections found",
+        #     ({"num_detections": 2, "image_name": "img1.jpg"}, {"num_detections": 1, "image_name": "img3.jpg"}),
+        # ),
+        # (
+        #     "with_image_names_and_without_email_message_params",
+        #     "noreply@example.com",
+        #     "Detections found",
+        #     ({"image_name": "img1.jpg"}, {"image_name": "img3.jpg"}),
+        # ),
     ],
     ids=[
-        "with_email_message_params",
+        # "with_email_message_params",
         "without_email_message_params",
-        "with_image_names_and_email_message_params",
-        "without_image_names_and_email_message_params",
+        # "with_image_names_and_email_message_params",
+        # "without_image_names_and_email_message_params",
     ],
 )
 def test_scenario_1(

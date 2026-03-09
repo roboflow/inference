@@ -378,26 +378,14 @@ def run_non_simd_step(
         return None
     step_name = get_last_chunk_of_selector(selector=step_selector)
     step_instance = workflow.steps[step_name].step
-    # Non-SIMD step gated by batch-oriented control flow: run once per passing index
-    if isinstance(step_input, tuple):
-        step_params, passing_indices = step_input
-        step_result = None
-        with profiler.profile_execution_phase(
-            name="step_code_execution",
-            categories=["workflow_block_operation"],
-            metadata={"step": step_selector},
-        ):
-            for _ in passing_indices:
-                step_result = step_instance.run(**step_params)
-    else:
-        with profiler.profile_execution_phase(
-            name="step_code_execution",
-            categories=["workflow_block_operation"],
-            metadata={
-                "step": step_selector,
-            },
-        ):
-            step_result = step_instance.run(**step_input)
+    with profiler.profile_execution_phase(
+        name="step_code_execution",
+        categories=["workflow_block_operation"],
+        metadata={
+            "step": step_selector,
+        },
+    ):
+        step_result = step_instance.run(**step_input)
     with profiler.profile_execution_phase(
         name="step_output_registration",
         categories=["execution_engine_operation"],
