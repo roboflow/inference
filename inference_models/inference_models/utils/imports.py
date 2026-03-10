@@ -53,6 +53,10 @@ def import_class_from_file(
         # Manually set the __package__ attribute to the parent package
         module.__package__ = os.path.basename(module_dir)
 
+        # Register in sys.modules so that transformers 5.x can look up the module
+        # (e.g. PreTrainedModel._can_set_experts_implementation uses sys.modules[cls.__module__]).
+        sys.modules[module_name] = module
+
         spec.loader.exec_module(module)
         cls = getattr(module, class_name)
         if alias_name:

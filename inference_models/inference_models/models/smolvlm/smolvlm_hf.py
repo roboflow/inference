@@ -245,17 +245,18 @@ class SmolVLMHF:
         text_prompts = self._processor.apply_chat_template(
             conversations, add_generation_prompt=True
         )
-        max_image_size = None
-        if image_size:
-            max_image_size = {"longest_edge": max(image_size[0], image_size[1])}
-
-        inputs = self._processor(
+        processor_kwargs = dict(
             text=text_prompts,
             images=image_list,
             return_tensors="pt",
             padding=True,
-            max_image_size=max_image_size,
         )
+        if image_size:
+            processor_kwargs["max_image_size"] = {
+                "longest_edge": max(image_size[0], image_size[1])
+            }
+
+        inputs = self._processor(**processor_kwargs)
         return inputs.to(self._device, dtype=self._torch_dtype)
 
     def generate(
