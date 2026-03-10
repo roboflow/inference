@@ -12,6 +12,8 @@ CYCLES = int(os.environ.get("CYCLES", "10_000"))
 WARMUP = int(os.environ.get("WARMUP", "50"))
 RECAPTURE_CYCLES = int(os.environ.get("RECAPTURE_CYCLES", "100"))
 
+os.environ["USE_TRT_CUDA_GRAPHS"] = "True"
+
 BATCH_SIZES = [1, 2, 3]
 
 
@@ -57,14 +59,14 @@ def main() -> None:
     torch.cuda.synchronize()
     start = time.perf_counter()
     for i in range(RECAPTURE_CYCLES):
-        model._trt_cuda_graph_cache = None
+        model._trt_cuda_graph_cache.cache.clear()
         batch = batches[BATCH_SIZES[i % len(BATCH_SIZES)]]
         model.forward(batch, use_cuda_graph=True)
     torch.cuda.synchronize()
     recapture_fps = RECAPTURE_CYCLES / (time.perf_counter() - start)
 
     # ── (3) Cycling batch sizes, CUDA graphs with normal caching ────────
-    model._trt_cuda_graph_cache = None
+    model._trt_cuda_graph_cache.cache.clear()
     for batch in batches.values():
         model.forward(batch, use_cuda_graph=True)
 
