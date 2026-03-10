@@ -13,7 +13,7 @@ Next, import a model:
 ```python
 from inference import get_model
 
-model = get_model(model_id="yolov8x-1280")
+model = get_model(model_id="rfdetr-large")
 ```
 
 The `get_model` method is a utility function which will help us load a computer vision model from Roboflow. We load a model by referencing its `model_id`. For Roboflow models, the model ID is a combination of a project name and a version number `f"{project_name}/{version_number}"`.
@@ -27,7 +27,7 @@ Next, we can run inference with our model by providing an input image:
 ```python
 from inference import get_model
 
-model = get_model(model_id="yolov8x-1280")
+model = get_model(model_id="rfdetr-large")
 
 results = model.infer("people-walking.jpg") # replace with path to your image
 ```
@@ -42,7 +42,7 @@ import supervision as sv
 import cv2
 
 # Load model
-model = get_model(model_id="yolov8x-1280")
+model = get_model(model_id="rfdetr-large")
 
 # Load image with cv2
 image = cv2.imread("people-walking.jpg")
@@ -85,7 +85,7 @@ from inference import get_model
 import cv2
 from PIL import Image
 
-model = get_model(model_id="yolov8x-1280")
+model = get_model(model_id="rfdetr-large")
 
 image_url = "https://media.roboflow.com/inference/people-walking.jpg"
 local_image_file = "people-walking.jpg"
@@ -105,7 +105,7 @@ The `infer(...)` method accepts [keyword arguments to set inference parameters](
 ```python
 from inference import get_model
 
-model = get_model(model_id="yolov8x-1280")
+model = get_model(model_id="rfdetr-large")
 
 results = model.infer("people-walking.jpg", confidence=0.75, iou_threshold=0.5)
 ```

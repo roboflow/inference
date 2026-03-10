@@ -29,8 +29,8 @@ api_key = "YOUR_ROBOFLOW_API_KEY"
 
 # Create an inference pipeline object
 pipeline = InferencePipeline.init(
-    # set the model id to a yolov8x model (pre-trained on COCO) with input size 1280x1280
-    model_id="yolov8x-1280", 
+    # set the model id to an rfdetr model (pre-trained on COCO)
+    model_id="rfdetr-large",
     # set the video reference (source of video), it can be a link/path to a video file, an RTSP stream url,
     # or an integer representing a device id (usually 0 for built in webcams)
     video_reference="https://storage.googleapis.com/com-roboflow-marketing/inference/people-walking.mp4", 
@@ -157,7 +157,7 @@ workflow_specification = {
                 "type": "ObjectDetectionModel",
                 "name": "step_1",
                 "image": "$inputs.image",
-                "model_id": "yolov8n-640",
+                "model_id": "rfdetr-small",
                 "confidence": 0.5,
             }
         ],
@@ -246,7 +246,7 @@ def on_prediction(
 
 pipeline = InferencePipeline.init(
   video_reference="./my_video.mp4",
-  model_id="yolov8n-640",
+  model_id="rfdetr-small",
   on_prediction=partial(on_prediction, my_parameter=42),
 )
 ```
@@ -266,7 +266,7 @@ def my_custom_sink(predictions: dict, video_frame: VideoFrame):
     print(f"Frame ID: {video_frame.frame_id}")
 
 pipeline = InferencePipeline.init(
-    model_id="yolov8x-1280",
+    model_id="rfdetr-large",
     video_reference="https://storage.googleapis.com/com-roboflow-marketing/inference/people-walking.mp4",
     on_prediction=my_custom_sink,
 )
@@ -313,7 +313,7 @@ def my_custom_sink(predictions: dict, video_frame: VideoFrame):
     cv2.waitKey(1)
 
 pipeline = InferencePipeline.init(
-    model_id="yolov8x-1280",
+    model_id="rfdetr-large",
     video_reference="https://storage.googleapis.com/com-roboflow-marketing/inference/people-walking.mp4",
     on_prediction=my_custom_sink,
 )
