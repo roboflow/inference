@@ -253,11 +253,14 @@ class ExecutionDataManager:
                 f"the problem - including workflow definition you use.",
                 context="workflow_execution | step_output_registration",
             )
+        print("DUMMY", indices, outputs)
         step_node = node_as(
             execution_graph=self._execution_graph,
             node=step_selector,
             expected_type=StepNode,
         )
+        print("DUMMY (2)", step_node.output_dimensionality, step_node.step_execution_dimensionality)
+
         step_name = get_last_chunk_of_selector(selector=step_selector)
         if step_node.output_dimensionality == 0:
             # SIMD step collapsing into scalar (can happen for auto-batch casting of parameters)

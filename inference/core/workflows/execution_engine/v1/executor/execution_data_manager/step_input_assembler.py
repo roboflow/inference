@@ -229,7 +229,10 @@ def iterate_over_simd_step_input(
         dynamic_batches_manager=dynamic_batches_manager,
         branching_manager=branching_manager,
     )
-    parameters_generator = unfold_parameters(parameters=simd_step_input.parameters)
+    parameters_generator = unfold_parameters(
+        parameters=simd_step_input.parameters,
+        indices=simd_step_input.indices,
+    )
     for index, single_parameters_set in zip(
         simd_step_input.indices, parameters_generator
     ):
@@ -266,6 +269,8 @@ def construct_mask_for_all_inputs_dimensionalities(
 ) -> Tuple[Any, bool]:
     inputs_dimensionalities = collect_inputs_dimensionalities(step_node=step_node)
     all_dimensionalities = {dim for dim in inputs_dimensionalities.values() if dim > 0}
+    if step_node.conditional_flow_lineage_support:
+        all_dimensionalities.add(len(step_node.conditional_flow_lineage_support))
     batch_masks, non_batch_masks = [], set()
     for execution_branch in step_node.execution_branches_impacting_inputs:
         if not branching_manager.is_execution_branch_registered(
@@ -415,15 +420,29 @@ def prepare_parameters(
     ]
     ensure_compound_input_indices_match(indices=batch_parameters_indices)
     if not batch_parameters_indices:
-        raise ExecutionEngineRuntimeError(
-            public_message=f"For step: {step_node.name} which is assessed by Workflows Compiler as "
-            f"SIMD step Execution Engine cannot detect batch inputs. "
-            f"This is most likely a bug. Contact Roboflow team through github issues "
-            f"(https://github.com/roboflow/inference/issues) providing full context of"
-            f"the problem - including workflow definition you use.",
-            context="workflow_execution | step_input_assembling",
+        if not step_node.conditional_flow_lineage_support:
+            raise ExecutionEngineRuntimeError(
+                public_message=f"For step: {step_node.name} which is assessed by Workflows Compiler as "
+                f"SIMD step Execution Engine cannot detect neither batch inputs nor control flow inputs. "
+                f"This is most likely a bug. Contact Roboflow team through github issues "
+                f"(https://github.com/roboflow/inference/issues) providing full context of"
+                f"the problem - including workflow definition you use.",
+                context="workflow_execution | step_input_assembling",
+            )
+        indices = dynamic_batches_manager.get_indices_for_data_lineage(
+            lineage=step_node.conditional_flow_lineage_support,
         )
-    indices = batch_parameters_indices[0]
+        mask_dimension = len(step_node.conditional_flow_lineage_support)
+        print("DUMMY MASK", masks)
+        mask_for_dimension = masks.get(mask_dimension)
+        if mask_for_dimension is not None:
+            # TODO: verify correctness
+            indices = [
+                idx for idx in indices if idx in mask_for_dimension
+            ]
+        print(f"Indices: {indices}")
+    else:
+        indices = batch_parameters_indices[0]
     if not step_node.step_manifest.accepts_empty_values():
         if contains_empty_scalar_step_output_selector:
             return BatchModeSIMDStepInput(
@@ -921,6 +940,7 @@ def remove_indices(value: Any, indices: Set[DynamicBatchIndex]) -> Any:
 
 def unfold_parameters(
     parameters: Dict[str, Any],
+    indices: Optional[List[tuple]] = None,  # TODO: none here is only for unit tests to pass
 ) -> Generator[Dict[str, Any], None, None]:
     batch_parameters = get_batch_parameters(parameters=parameters)
     non_batch_parameters = {
@@ -929,7 +949,11 @@ def unfold_parameters(
     if not batch_parameters:
         if not non_batch_parameters:
             return None
-        yield non_batch_parameters
+        if indices:
+            for _ in indices:
+                yield non_batch_parameters
+        else:
+            yield non_batch_parameters
         return None
     for unfolded_batch_parameters in iterate_over_batches(
         batch_parameters=batch_parameters

@@ -775,20 +775,15 @@ def denote_data_flow_for_step(
     step_node_data.input_data = input_data
     step_node_data.dimensionality_reference_property = dimensionality_reference_property
     step_node_data.batch_oriented_parameters = parameters_with_batch_inputs
-    step_node_data.step_execution_dimensionality = (
-        establish_step_execution_dimensionality(
-            inputs_dimensionalities=inputs_dimensionalities,
-            output_dimensionality_offset=output_dimensionality_offset,
-        )
-    )
     if not all_data_derived_lineages and not all_control_flow_lineages:
         if manifest.get_output_dimensionality_offset() > 0:
             # brave decision to open a Pandora box
             data_lineage = [node]
         else:
             data_lineage = []
+        conditional_flow_lineage_support = []
     else:
-        data_lineage = establish_batch_oriented_step_lineage(
+        data_lineage, conditional_flow_lineage_support = establish_batch_oriented_step_lineage(
             step_selector=node,
             all_data_derived_lineages=all_data_derived_lineages,
             all_control_flow_lineages=all_control_flow_lineages,
@@ -796,12 +791,20 @@ def denote_data_flow_for_step(
             dimensionality_reference_property=dimensionality_reference_property,
             output_dimensionality_offset=output_dimensionality_offset,
         )
+    step_node_data.step_execution_dimensionality = (
+        establish_step_execution_dimensionality(
+            inputs_dimensionalities=inputs_dimensionalities,
+            conditional_flow_lineage_support=conditional_flow_lineage_support,
+            output_dimensionality_offset=output_dimensionality_offset,
+        )
+    )
     lineage_supports = get_lineage_support_for_auto_batch_casted_parameters(
         input_dimensionalities=inputs_dimensionalities,
         all_lineages_of_batch_parameters=all_data_derived_lineages,
         scalar_parameters_to_be_batched=scalar_parameters_to_be_batched,
     )
     step_node_data.auto_batch_casting_lineage_supports = lineage_supports
+    step_node_data.conditional_flow_lineage_support = conditional_flow_lineage_support
     if data_lineage:
         on_top_level_lineage_denoted(data_lineage[0])
     step_node_data.data_lineage = data_lineage
@@ -1778,6 +1781,7 @@ def verify_lineages(step_name: str, detected_lineages: List[List[str]]) -> None:
 
 def establish_step_execution_dimensionality(
     inputs_dimensionalities: Dict[str, Set[int]],
+    conditional_flow_lineage_support: List[str],
     output_dimensionality_offset: int,
 ) -> int:
     step_execution_dimensionality = 0
@@ -1787,6 +1791,8 @@ def establish_step_execution_dimensionality(
         for dimensionality in dimensionalities
         if dimensionality > 0
     }
+    if len(non_zero_dimensionalities) == 0 and len(conditional_flow_lineage_support) > 0:
+        return len(conditional_flow_lineage_support)
     if len(non_zero_dimensionalities) > 0:
         step_execution_dimensionality = min(non_zero_dimensionalities)
         if output_dimensionality_offset < 0:
@@ -1801,8 +1807,8 @@ def establish_batch_oriented_step_lineage(
     input_data: StepInputData,
     dimensionality_reference_property: Optional[str],
     output_dimensionality_offset: int,
-) -> List[str]:
-    reference_lineage = get_reference_lineage(
+) -> Tuple[List[str], List[str]]:
+    reference_lineage, conditional_flow_lineage_support = get_reference_lineage(
         step_selector=step_selector,
         all_data_derived_lineages=all_data_derived_lineages,
         all_control_flow_lineages=all_control_flow_lineages,
@@ -1811,11 +1817,11 @@ def establish_batch_oriented_step_lineage(
     )
     if output_dimensionality_offset < 0:
         result_dimensionality = reference_lineage[:output_dimensionality_offset]
-        return result_dimensionality
+        return result_dimensionality, []
     if output_dimensionality_offset == 0:
-        return reference_lineage
+        return reference_lineage, conditional_flow_lineage_support
     reference_lineage.append(step_selector)
-    return reference_lineage
+    return reference_lineage, []
 
 
 def get_reference_lineage(
@@ -1824,11 +1830,26 @@ def get_reference_lineage(
     all_control_flow_lineages: List[List[str]],
     input_data: StepInputData,
     dimensionality_reference_property: Optional[str],
-) -> List[str]:
+) -> Tuple[List[str], List[str]]:
     if not all_data_derived_lineages:
-        pass
+        if len(all_control_flow_lineages) == 1:
+            return copy(all_control_flow_lineages[0]), copy(all_control_flow_lineages[0])
+        # HERE ELSE IS VERY PROBLEMATIC
+        # we have multiple lineages which are not data derived - so we need to decide
+        # what to do:
+        # TODO: check if conflicting lineages are eliminated earlier!
+        # my gut feeling is that we should seek for lineage which has deeper dimensionality and apply
+        # auto-batch-casting to handle outcomes
+        # corner-cases with two lineages of same final dimensionality must be verified - I believe those should
+        # be handled earlier as well - but need to check
+        max_lineage_len = max(len(lineage) for lineage in all_control_flow_lineages)
+        lineages_matching_max_len = [l for l in all_control_flow_lineages if len(l) == max_lineage_len]
+        if len(lineages_matching_max_len) == 1:
+            return copy(lineages_matching_max_len[0]), copy(lineages_matching_max_len[0])
+        else:
+            raise ValueError("SAFE-GUARD - should not be here where we found multiple distinct lineages at max level")
     if len(all_data_derived_lineages) == 1:
-        return copy(all_data_derived_lineages[0])
+        return copy(all_data_derived_lineages[0]), []
     if dimensionality_reference_property not in input_data:
         raise AssumptionError(
             public_message=f"Workflow Compiler for step: `{step_selector}` expected dimensionality_reference_property "
@@ -1844,7 +1865,7 @@ def get_reference_lineage(
         for nested_element in property_data.iterate_through_definitions():
             if nested_element.is_batch_oriented():
                 lineage = copy(nested_element.data_lineage)
-                return lineage
+                return lineage, []
         if lineage is None:
             raise AssumptionError(
                 public_message=f"Workflow Compiler for step: `{step_selector}` cannot establish output lineage. "
@@ -1863,7 +1884,7 @@ def get_reference_lineage(
             f"context of the problem - including workflow definition you use.",
             context="workflow_compilation | execution_graph_construction | collecting_step_inputs_lineage",
         )
-    return copy(property_data.data_lineage)
+    return copy(property_data.data_lineage), []
 
 
 def get_property_with_invalid_selector(
