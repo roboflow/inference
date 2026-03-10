@@ -8,11 +8,11 @@ Foundation models are being built for a range of vision tasks, from image segmen
 
 Inference supports the following foundation models:
 
-- Gaze (LC2S-Net): Detect the direction in which someone is looking.
-- CLIP: Classify images and compare the similarity of images and text.
-- DocTR: Read characters in images.
-- Grounding DINO: Detect objects in images using text prompts.
-- Segment Anything (SAM): Segment objects in images.
+- [Gaze (LC2S-Net)](./gaze.md): Detect the direction in which someone is looking.
+- [CLIP](./clip.md): Classify images and compare the similarity of images and text.
+- [DocTR](./doctr.md): Read characters in images.
+- [Grounding DINO](./grounding_dino.md): Detect objects in images using text prompts.
+- [Segment Anything 3 (SAM3)](./sam3.md): Segment objects in images.
 
 All of these models can be used over a HTTP request with Inference. This means you don't need to spend time setting up and configuring each model.
 
