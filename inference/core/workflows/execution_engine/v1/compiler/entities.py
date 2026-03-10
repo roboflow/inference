@@ -233,6 +233,7 @@ class StepNode(ExecutionGraphNode):
     auto_batch_casting_lineage_supports: Dict[str, AutoBatchCastingConfig] = field(
         default_factory=dict
     )
+    conditional_flow_lineage_support: List[str] = field(default_factory=list)
     step_execution_dimensionality: int = 0
 
     def controls_flow(self) -> bool:
@@ -245,7 +246,7 @@ class StepNode(ExecutionGraphNode):
         return len(self.data_lineage)
 
     def is_batch_oriented(self) -> bool:
-        return len(self.batch_oriented_parameters) > 0
+        return len(self.batch_oriented_parameters) > 0 or len(self.conditional_flow_lineage_support) > 0
 
 
 @dataclass(frozen=True)
