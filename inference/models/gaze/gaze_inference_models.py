@@ -16,7 +16,9 @@ from inference.core.env import (
     ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES,
     ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES,
     API_KEY,
+    DISABLED_INFERENCE_MODELS_BACKENDS,
     GAZE_MAX_BATCH_SIZE,
+    VALID_INFERENCE_MODELS_BACKENDS,
 )
 from inference.core.models.base import Model
 from inference.core.roboflow_api import get_extra_weights_provider_headers
@@ -47,6 +49,11 @@ class InferenceModelsGazeAdapter(Model):
             countinference=kwargs.get("countinference"),
             service_secret=kwargs.get("service_secret"),
         )
+        backend = list(
+            VALID_INFERENCE_MODELS_BACKENDS.difference(
+                DISABLED_INFERENCE_MODELS_BACKENDS
+            )
+        )
         self._pipeline: FaceAndGazeDetectionMPAndL2CS = (
             AutoModelPipeline.from_pretrained(
                 "face-and-gaze-detection",
@@ -54,6 +61,7 @@ class InferenceModelsGazeAdapter(Model):
                 extra_weights_provider_headers=extra_weights_provider_headers,
                 allow_untrusted_packages=ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES,
                 allow_direct_local_storage_loading=ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES,
+                backend=backend,
             )
         )
 

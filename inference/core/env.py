@@ -892,3 +892,30 @@ if WORKFLOW_DISABLED_BLOCK_PATTERNS:
     ]
 else:
     WORKFLOW_DISABLED_BLOCK_PATTERNS = []
+
+VALID_INFERENCE_MODELS_BACKENDS = {
+    "torch",
+    "torch-script",
+    "onnx",
+    "trt",
+    "hugging-face",
+    "ultralytics",
+    "mediapipe",
+    "custom",
+}
+# env variables to control inference-models auto-loader
+DISABLED_INFERENCE_MODELS_BACKENDS = os.getenv("DISABLED_INFERENCE_MODELS_BACKENDS")
+if DISABLED_INFERENCE_MODELS_BACKENDS is not None:
+    DISABLED_INFERENCE_MODELS_BACKENDS = set(
+        DISABLED_INFERENCE_MODELS_BACKENDS.split(",")
+    )
+    if any(
+        v not in VALID_INFERENCE_MODELS_BACKENDS
+        for v in DISABLED_INFERENCE_MODELS_BACKENDS
+    ):
+        raise ValueError(
+            "Invalid value of `DISABLED_INFERENCE_MODELS_BACKENDS` variable - each enlisted backend must "
+            f"be within {VALID_INFERENCE_MODELS_BACKENDS}"
+        )
+else:
+    DISABLED_INFERENCE_MODELS_BACKENDS = set()
