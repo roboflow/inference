@@ -53,7 +53,9 @@ PreProcessingMetadata = namedtuple(
         "scale_width",
         "scale_height",
         "static_crop_offset",
+        "nonsquare_intermediate_size",
     ],
+    defaults=[None],
 )
 
 
@@ -258,6 +260,7 @@ Number = Union[int, float]
 
 class NetworkInputDefinition(BaseModel):
     training_input_size: TrainingInputSize
+    dataset_version_resize_dimensions: Optional[TrainingInputSize] = Field(default=None)
     dynamic_spatial_size_supported: bool
     dynamic_spatial_size_mode: Optional[Union[DivisiblePadding, AnySizePadding]] = (
         Field(discriminator="type", default=None)

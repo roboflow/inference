@@ -27,6 +27,8 @@ from inference.core.env import (
     ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES,
     ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES,
     API_KEY,
+    DISABLED_INFERENCE_MODELS_BACKENDS,
+    VALID_INFERENCE_MODELS_BACKENDS,
 )
 from inference.core.models.base import Model
 from inference.core.roboflow_api import get_extra_weights_provider_headers
@@ -85,14 +87,22 @@ class InferenceModelsObjectDetectionAdapter(Model):
 
         self.task_type = "object-detection"
 
-        extra_weights_provider_headers = get_extra_weights_provider_headers()
-
+        extra_weights_provider_headers = get_extra_weights_provider_headers(
+            countinference=kwargs.get("countinference"),
+            service_secret=kwargs.get("service_secret"),
+        )
+        backend = list(
+            VALID_INFERENCE_MODELS_BACKENDS.difference(
+                DISABLED_INFERENCE_MODELS_BACKENDS
+            )
+        )
         self._model: ObjectDetectionModel = AutoModel.from_pretrained(
             model_id_or_path=model_id,
             api_key=self.api_key,
             allow_untrusted_packages=ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES,
             allow_direct_local_storage_loading=ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES,
             weights_provider_extra_headers=extra_weights_provider_headers,
+            backend=backend,
             **kwargs,
         )
         self.class_names = list(self._model.class_names)
@@ -221,14 +231,22 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
 
         self.task_type = "instance-segmentation"
 
-        extra_weights_provider_headers = get_extra_weights_provider_headers()
-
+        extra_weights_provider_headers = get_extra_weights_provider_headers(
+            countinference=kwargs.get("countinference"),
+            service_secret=kwargs.get("service_secret"),
+        )
+        backend = list(
+            VALID_INFERENCE_MODELS_BACKENDS.difference(
+                DISABLED_INFERENCE_MODELS_BACKENDS
+            )
+        )
         self._model: InstanceSegmentationModel = AutoModel.from_pretrained(
             model_id_or_path=model_id,
             api_key=self.api_key,
             allow_untrusted_packages=ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES,
             allow_direct_local_storage_loading=ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES,
             weights_provider_extra_headers=extra_weights_provider_headers,
+            backend=backend,
             **kwargs,
         )
         self.class_names = list(self._model.class_names)
@@ -364,14 +382,22 @@ class InferenceModelsKeyPointsDetectionAdapter(Model):
 
         self.task_type = "keypoint-detection"
 
-        extra_weights_provider_headers = get_extra_weights_provider_headers()
-
+        extra_weights_provider_headers = get_extra_weights_provider_headers(
+            countinference=kwargs.get("countinference"),
+            service_secret=kwargs.get("service_secret"),
+        )
+        backend = list(
+            VALID_INFERENCE_MODELS_BACKENDS.difference(
+                DISABLED_INFERENCE_MODELS_BACKENDS
+            )
+        )
         self._model: KeyPointsDetectionModel = AutoModel.from_pretrained(
             model_id_or_path=model_id,
             api_key=self.api_key,
             allow_untrusted_packages=ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES,
             allow_direct_local_storage_loading=ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES,
             weights_provider_extra_headers=extra_weights_provider_headers,
+            backend=backend,
             **kwargs,
         )
         self.class_names = list(self._model.class_names)
@@ -559,9 +585,15 @@ class InferenceModelsClassificationAdapter(Model):
         model_id = resolve_roboflow_model_alias(model_id=model_id)
 
         self.task_type = "classification"
-
-        extra_weights_provider_headers = get_extra_weights_provider_headers()
-
+        extra_weights_provider_headers = get_extra_weights_provider_headers(
+            countinference=kwargs.get("countinference"),
+            service_secret=kwargs.get("service_secret"),
+        )
+        backend = list(
+            VALID_INFERENCE_MODELS_BACKENDS.difference(
+                DISABLED_INFERENCE_MODELS_BACKENDS
+            )
+        )
         self._model: Union[ClassificationModel, MultiLabelClassificationModel] = (
             AutoModel.from_pretrained(
                 model_id_or_path=model_id,
@@ -569,6 +601,7 @@ class InferenceModelsClassificationAdapter(Model):
                 allow_untrusted_packages=ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES,
                 allow_direct_local_storage_loading=ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES,
                 weights_provider_extra_headers=extra_weights_provider_headers,
+                backend=backend,
                 **kwargs,
             )
         )

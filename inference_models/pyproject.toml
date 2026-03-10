@@ -1,9 +1,9 @@
 [project]
 name = "inference-models"
-version = "0.19.3"
+version = "0.19.6rc1"
 description = "The new inference engine for Computer Vision models"
 readme = "README.md"
-requires-python = ">=3.9,<3.13"
+requires-python = ">=3.10,<3.13"
 dependencies = [
   "numpy",
   "torch>=2.0.0,<3.0.0",
@@ -12,19 +12,19 @@ dependencies = [
   "requests>=2.32.0,<3.0.0",
   "supervision>=0.26.0",
   "backoff~=2.2.0",
-  "transformers>=4.56.0,<5.0.0",
+  "transformers>=5.2.0,<5.3.0",
   "timm>=1.0.0,<2.0.0",
   "accelerate>=1.0.0,<2.0.0",
   "einops>=0.7.0,<1.0.0",
-  "peft>=0.11.1,<0.18.0",
+  "peft>=0.18.1",
   "num2words~=0.5.14",
-  "bitsandbytes>=0.42.0,<0.48.0; sys_platform != 'darwin'",
+  "bitsandbytes>=0.46.1,<0.48.0; sys_platform != 'darwin'",
   "pyvips>=2.2.3,<3.0.0",
   "rf-clip==1.1",
-  "python-doctr[torch]>=0.10.0,<=0.11.0",
+  "python-doctr[torch]>=1.0.0",
   "packaging>=24.0.0",
   "rich>=13.0.0,<15.0.0",
-  "pydantic>=2.0.0,<3.0.0",
+  "pydantic>=2.11.7,<3.0.0",
   "filelock>=3.12.0,<4.0.0",
   "rich>=14.1.0,<15.0.0",
   "segmentation-models-pytorch>=0.5.0,<1.0.0",

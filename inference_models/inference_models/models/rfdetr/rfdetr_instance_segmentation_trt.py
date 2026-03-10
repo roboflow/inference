@@ -30,9 +30,6 @@ from inference_models.models.common.roboflow.model_packages import (
     parse_inference_config,
     parse_trt_config,
 )
-from inference_models.models.common.roboflow.pre_processing import (
-    pre_process_network_input,
-)
 from inference_models.models.common.trt import (
     TRTCudaGraphLRUCache,
     get_trt_engine_inputs_and_outputs,
@@ -46,6 +43,7 @@ from inference_models.models.rfdetr.class_remapping import (
 from inference_models.models.rfdetr.common import (
     post_process_instance_segmentation_results,
 )
+from inference_models.models.rfdetr.pre_processing import pre_process_network_input
 
 try:
     import tensorrt as trt
@@ -202,6 +200,8 @@ class RFDetrForInstanceSegmentationTRT(
             capacity=cuda_graph_cache_capacity,
         )
         self._lock = threading.Lock()
+        self._inference_stream = torch.cuda.Stream(device=self._device)
+        self._thread_local_storage = threading.local()
 
     @property
     def class_names(self) -> List[str]:
@@ -214,14 +214,17 @@ class RFDetrForInstanceSegmentationTRT(
         image_size: Optional[Tuple[int, int]] = None,
         **kwargs,
     ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
-        return pre_process_network_input(
-            images=images,
-            image_pre_processing=self._inference_config.image_pre_processing,
-            network_input=self._inference_config.network_input,
-            target_device=self._device,
-            input_color_format=input_color_format,
-            image_size_wh=image_size,
-        )
+        with torch.cuda.stream(self._pre_process_stream):
+            pre_processed_images, pre_processing_meta = pre_process_network_input(
+                images=images,
+                image_pre_processing=self._inference_config.image_pre_processing,
+                network_input=self._inference_config.network_input,
+                target_device=self._device,
+                input_color_format=input_color_format,
+                image_size_wh=image_size,
+            )
+        self._pre_process_stream.synchronize()
+        return pre_processed_images, pre_processing_meta
 
     def forward(
         self,
@@ -243,6 +246,7 @@ class RFDetrForInstanceSegmentationTRT(
                     device=self._device,
                     input_name=self._input_name,
                     outputs=self._output_names,
+                    stream=self._inference_stream,
                     trt_cuda_graph_cache=cache,
                 )
                 return detections, labels, masks
@@ -254,12 +258,33 @@ class RFDetrForInstanceSegmentationTRT(
         confidence: float = INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE,
         **kwargs,
     ) -> List[InstanceDetections]:
-        bboxes, logits, masks = model_results
-        return post_process_instance_segmentation_results(
-            bboxes=bboxes,
-            logits=logits,
-            masks=masks,
-            pre_processing_meta=pre_processing_meta,
-            threshold=confidence,
-            classes_re_mapping=self._classes_re_mapping,
-        )
+        with torch.cuda.stream(self._post_process_stream):
+            for result_element in model_results:
+                result_element.record_stream(self._post_process_stream)
+            bboxes, logits, masks = model_results
+            results = post_process_instance_segmentation_results(
+                bboxes=bboxes,
+                logits=logits,
+                masks=masks,
+                pre_processing_meta=pre_processing_meta,
+                threshold=confidence,
+                classes_re_mapping=self._classes_re_mapping,
+            )
+        self._post_process_stream.synchronize()
+        return results
+
+    @property
+    def _pre_process_stream(self) -> torch.cuda.Stream:
+        if not hasattr(self._thread_local_storage, "pre_process_stream"):
+            self._thread_local_storage.pre_process_stream = torch.cuda.Stream(
+                device=self._device
+            )
+        return self._thread_local_storage.pre_process_stream
+
+    @property
+    def _post_process_stream(self) -> torch.cuda.Stream:
+        if not hasattr(self._thread_local_storage, "post_process_stream"):
+            self._thread_local_storage.post_process_stream = torch.cuda.Stream(
+                device=self._device
+            )
+        return self._thread_local_storage.post_process_stream

@@ -192,6 +192,8 @@ class YOLOv8ForObjectDetectionTRT(
             capacity=cuda_graph_cache_capacity,
         )
         self._lock = threading.Lock()
+        self._inference_stream = torch.cuda.Stream(device=self._device)
+        self._thread_local_storage = threading.local()
 
     @property
     def class_names(self) -> List[str]:
@@ -203,13 +205,16 @@ class YOLOv8ForObjectDetectionTRT(
         input_color_format: Optional[ColorFormat] = None,
         **kwargs,
     ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
-        return pre_process_network_input(
-            images=images,
-            image_pre_processing=self._inference_config.image_pre_processing,
-            network_input=self._inference_config.network_input,
-            target_device=self._device,
-            input_color_format=input_color_format,
-        )
+        with torch.cuda.stream(self._pre_process_stream):
+            pre_processed_images, pre_processing_meta = pre_process_network_input(
+                images=images,
+                image_pre_processing=self._inference_config.image_pre_processing,
+                network_input=self._inference_config.network_input,
+                target_device=self._device,
+                input_color_format=input_color_format,
+            )
+        self._pre_process_stream.synchronize()
+        return pre_processed_images, pre_processing_meta
 
     def forward(
         self,
@@ -231,6 +236,7 @@ class YOLOv8ForObjectDetectionTRT(
                     device=self._device,
                     input_name=self._input_name,
                     outputs=self._output_names,
+                    stream=self._inference_stream,
                     trt_cuda_graph_cache=cache,
                 )[0]
 
@@ -244,29 +250,48 @@ class YOLOv8ForObjectDetectionTRT(
         class_agnostic_nms: bool = INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_CLASS_AGNOSTIC_NMS,
         **kwargs,
     ) -> List[Detections]:
-        if self._inference_config.post_processing.fused:
-            nms_results = post_process_nms_fused_model_output(
-                output=model_results, conf_thresh=confidence
-            )
-        else:
-            nms_results = run_nms_for_object_detection(
-                output=model_results,
-                conf_thresh=confidence,
-                iou_thresh=iou_threshold,
-                max_detections=max_detections,
-                class_agnostic=class_agnostic_nms,
-            )
-        rescaled_results = rescale_detections(
-            detections=nms_results,
-            images_metadata=pre_processing_meta,
-        )
-        results = []
-        for result in rescaled_results:
-            results.append(
-                Detections(
-                    xyxy=result[:, :4].round().int(),
-                    class_id=result[:, 5].int(),
-                    confidence=result[:, 4],
+        with torch.cuda.stream(self._post_process_stream):
+            model_results.record_stream(self._post_process_stream)
+            if self._inference_config.post_processing.fused:
+                nms_results = post_process_nms_fused_model_output(
+                    output=model_results, conf_thresh=confidence
                 )
+            else:
+                nms_results = run_nms_for_object_detection(
+                    output=model_results,
+                    conf_thresh=confidence,
+                    iou_thresh=iou_threshold,
+                    max_detections=max_detections,
+                    class_agnostic=class_agnostic_nms,
+                )
+            rescaled_results = rescale_detections(
+                detections=nms_results,
+                images_metadata=pre_processing_meta,
             )
+            results = []
+            for result in rescaled_results:
+                results.append(
+                    Detections(
+                        xyxy=result[:, :4].round().int(),
+                        class_id=result[:, 5].int(),
+                        confidence=result[:, 4],
+                    )
+                )
+        self._post_process_stream.synchronize()
         return results
+
+    @property
+    def _pre_process_stream(self) -> torch.cuda.Stream:
+        if not hasattr(self._thread_local_storage, "pre_process_stream"):
+            self._thread_local_storage.pre_process_stream = torch.cuda.Stream(
+                device=self._device
+            )
+        return self._thread_local_storage.pre_process_stream
+
+    @property
+    def _post_process_stream(self) -> torch.cuda.Stream:
+        if not hasattr(self._thread_local_storage, "post_process_stream"):
+            self._thread_local_storage.post_process_stream = torch.cuda.Stream(
+                device=self._device
+            )
+        return self._thread_local_storage.post_process_stream

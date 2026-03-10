@@ -98,7 +98,7 @@ SMOLVLM_ALIASES = {
 }
 
 SAM3_3D_ALIASES = {
-    "sam3-3d-objects": "sam3-3d-weights-vc6vz/1",
+    "sam3-3d-objects": "captoin-t38zo/1",  # "sam3-3d-weights-vc6vz/1",
 }
 
 RFDETR_ALIASES = {
@@ -169,9 +169,6 @@ REGISTERED_ALIASES = {
     **RFDETR_ALIASES,
     **CLASSIFICATION_ALIASES,
     **SAM3_3D_ALIASES,
-    **YOLO26_ALIASES,
-    **YOLO26_SEG_ALIASES,
-    **YOLO26_POSE_ALIASES,
     **YOLO26_ALIASES,
     **YOLO26_SEG_ALIASES,
     **YOLO26_POSE_ALIASES,

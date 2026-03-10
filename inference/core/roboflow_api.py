@@ -57,6 +57,7 @@ from inference.core.exceptions import (
     MalformedRoboflowAPIResponseError,
     MalformedWorkflowResponseError,
     MissingDefaultModelError,
+    PaymentRequiredError,
     RetryRequestError,
     RoboflowAPIConnectionError,
     RoboflowAPIForbiddenError,
@@ -67,6 +68,7 @@ from inference.core.exceptions import (
     RoboflowAPINotNotFoundError,
     RoboflowAPITimeoutError,
     RoboflowAPIUnsuccessfulRequestError,
+    RoboflowAPIUsagePausedError,
     WorkspaceLoadError,
 )
 from inference.core.utils.file_system import sanitize_path_segment
@@ -111,6 +113,11 @@ DEFAULT_ERROR_HANDLERS = {
         "Unauthorized access to roboflow API - check API key. Visit "
         "https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key to learn how to retrieve one.",
     ),
+    402: lambda e: raise_from_lambda(
+        e,
+        PaymentRequiredError,
+        "Not enough credits to perform this request. Verify your workspace billing page.",
+    ),
     403: lambda e: raise_from_lambda(
         e,
         RoboflowAPIForbiddenError,
@@ -119,6 +126,11 @@ DEFAULT_ERROR_HANDLERS = {
     ),
     404: lambda e: raise_from_lambda(
         e, RoboflowAPINotNotFoundError, NOT_FOUND_ERROR_MESSAGE
+    ),
+    423: lambda e: raise_from_lambda(
+        e,
+        RoboflowAPIUsagePausedError,
+        "Roboflow API usage is paused. Please contact your workspace administrator to re-enable api keys.",
     ),
 }
 
@@ -1035,12 +1047,21 @@ def send_inference_results_to_model_monitoring(
     api_key_safe_raise_for_status(response=response)
 
 
-def get_extra_weights_provider_headers() -> Optional[Dict[str, str]]:
+def get_extra_weights_provider_headers(
+    countinference: Optional[bool] = None,
+    service_secret: Optional[str] = None,
+) -> Optional[Dict[str, str]]:
     headers = {}
     if GCP_SERVERLESS:
         headers[ENFORCE_INTERNAL_ARTIFACTS_URLS_HEADER] = "true"
     if ENFORCE_CREDITS_VERIFICATION:
-        headers[ENFORCE_CREDITS_VERIFICATION_HEADER] = "true"
+        skip = (
+            countinference is False
+            and service_secret is not None
+            and service_secret == ROBOFLOW_SERVICE_SECRET
+        )
+        if not skip:
+            headers[ENFORCE_CREDITS_VERIFICATION_HEADER] = "true"
     return build_roboflow_api_headers(explicit_headers=headers)
 
 

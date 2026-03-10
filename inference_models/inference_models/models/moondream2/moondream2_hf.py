@@ -1,3 +1,4 @@
+import os
 from dataclasses import dataclass
 from threading import Lock
 from typing import Any, List, Literal, Optional, Tuple, Union
@@ -30,6 +31,38 @@ class Points:
     class_id: torch.Tensor
 
 
+def _recompute_non_persistent_buffers(model_dir: str, model) -> None:
+    """Recompute non-persistent buffers after loading.
+
+    freqs_cis and attn_mask are registered with persistent=False and are not
+    saved in the checkpoint.  transformers 5.x's from_pretrained/post_init
+    resets non-persistent buffers to uninitialized memory, so we must
+    recompute them.
+    """
+    config = model.model.config
+
+    # Recompute rotary position embeddings (freqs_cis).
+    precompute_freqs_cis = import_class_from_file(
+        file_path=os.path.join(model_dir, "rope.py"),
+        class_name="precompute_freqs_cis",
+    )
+    tc = config.text
+    model.model.text.freqs_cis = precompute_freqs_cis(
+        tc.dim // (2 * tc.n_heads), tc.max_context
+    ).to(model.device)
+
+    # Recompute causal attention mask with bidirectional prefix region.
+    attn_mask = torch.tril(
+        torch.ones(
+            1, 1, tc.max_context, tc.max_context, dtype=torch.bool
+        )
+    )
+    patch_w = config.vision.crop_size // config.vision.enc_patch_size
+    prefix_attn_len = 1 + patch_w ** 2
+    attn_mask[..., :prefix_attn_len, :prefix_attn_len] = 1
+    model.model.attn_mask = attn_mask.to(model.device)
+
+
 class MoonDream2HF:
 
     @classmethod
@@ -54,7 +87,18 @@ class MoonDream2HF:
             file_path=model_package_content["hf_moondream.py"],
             class_name="HfMoondream",
         )
+        # The downloaded HfMoondream doesn't call self.post_init() at the end
+        # of __init__, which transformers 5.x requires to set
+        # all_tied_weights_keys and other attributes.
+        _original_init = model_class.__init__
+
+        def _patched_init(self, config):
+            _original_init(self, config)
+            self.post_init()
+
+        model_class.__init__ = _patched_init
         model = model_class.from_pretrained(model_name_or_path).to(device)
+        _recompute_non_persistent_buffers(model_name_or_path, model)
         return cls(model=model, device=device)
 
     def __init__(self, model, device: torch.device):

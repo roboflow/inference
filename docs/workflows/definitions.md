@@ -20,7 +20,7 @@ analyse it step by step.
         {
           "type": "WorkflowParameter",
           "name": "model",
-          "default_value": "yolov8n-640"
+          "default_value": "rfdetr-small"
         }
       ],
       "steps": [
@@ -99,7 +99,7 @@ Our example workflow specifies two inputs:
       "type": "WorkflowImage", "name": "image"
     },
     {
-      "type": "WorkflowParameter", "name": "model", "default_value": "yolov8n-640"
+      "type": "WorkflowParameter", "name": "model", "default_value": "rfdetr-small"
     }
 ]
 ```
@@ -192,7 +192,7 @@ block data inputs, outputs and configuration properties.
 Input data bindings of blocks (like `images` property) can be filled with selectors to batch-oriented inputs and 
 step outputs. Configuration properties of blocks (like `model_id`) usually can be filled with either values
 hardcoded in workflow definition (they cannot be altered in runtime) or selectors to inputs of type `WorkflowParameter`.
-For instance, valid definition can be obtained when `model_id` is either `"$inputs.image"` or `yolov8n-640`.
+For instance, valid definition can be obtained when `model_id` is either `"$inputs.image"` or `rfdetr-small`.
 
 Let's see now how step outputs are referred as inputs of another step:
 ```json

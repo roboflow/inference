@@ -21,8 +21,10 @@ from inference.core.env import (
     ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES,
     ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES,
     API_KEY,
+    DISABLED_INFERENCE_MODELS_BACKENDS,
     SAM_MAX_EMBEDDING_CACHE_SIZE,
     SAM_VERSION_ID,
+    VALID_INFERENCE_MODELS_BACKENDS,
 )
 from inference.core.models.base import Model
 from inference.core.roboflow_api import get_extra_weights_provider_headers
@@ -62,8 +64,15 @@ class InferenceModelsSAMAdapter(Model):
             size_limit=SAM_MAX_EMBEDDING_CACHE_SIZE,
             send_to_cpu=True,
         )
-        extra_weights_provider_headers = get_extra_weights_provider_headers()
-
+        extra_weights_provider_headers = get_extra_weights_provider_headers(
+            countinference=kwargs.get("countinference"),
+            service_secret=kwargs.get("service_secret"),
+        )
+        backend = list(
+            VALID_INFERENCE_MODELS_BACKENDS.difference(
+                DISABLED_INFERENCE_MODELS_BACKENDS
+            )
+        )
         self._model: SAMTorch = AutoModel.from_pretrained(
             model_id_or_path=model_id,
             api_key=self.api_key,
@@ -73,6 +82,7 @@ class InferenceModelsSAMAdapter(Model):
             sam_low_resolution_masks_cache=sam_low_resolution_masks_cache,
             sam_allow_client_generated_hash_ids=True,
             weights_provider_extra_headers=extra_weights_provider_headers,
+            backend=backend,
             **kwargs,
         )
 

@@ -14,7 +14,6 @@ on:
         default: all
         options:
           - all
-          - "3.9"
           - "3.10"
           - "3.11"
           - "3.12"
@@ -39,7 +38,7 @@ jobs:
       group: public-depot
     strategy:
       matrix:
-        python-version: ${{ fromJSON((github.event.inputs.python-version || 'all') == 'all' && '["3.9","3.10","3.11","3.12"]' || format('["{0}"]', github.event.inputs.python-version)) }}
+        python-version: ${{ fromJSON((github.event.inputs.python-version || 'all') == 'all' && '["3.10","3.11","3.12"]' || format('["{0}"]', github.event.inputs.python-version)) }}
         use-inference-models: ${{ fromJSON((github.event.inputs.use-inference-models || 'all') == 'all'&& '["true","false"]'|| format('["{0}"]', github.event.inputs.use-inference-models)) }}
     timeout-minutes: 15
     steps:

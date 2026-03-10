@@ -40,8 +40,8 @@ import cv2
 image_file = "people-walking.jpg"
 image = cv2.imread(image_file)
 
-# load a pre-trained yolov8n model
-model = get_model(model_id="yolov8n-640")
+# load a pre-trained rfdetr model
+model = get_model(model_id="rfdetr-small")
 
 # run inference on our chosen image, image can be a url, a numpy array, a PIL image, etc.
 results = model.infer(image)
@@ -70,7 +70,7 @@ sv.plot_image(annotated_image)
 
 The `people-walking.jpg` file is hosted <a href="https://media.roboflow.com/inference/people-walking.jpg" target="_blank">here</a>.
 
-Replace `yolov8n-640` with the model ID you found on Universe, replace `image` with the image of your choosing, and be sure to export your API key:
+Replace `rfdetr-small` with the model ID you found on Universe, replace `image` with the image of your choosing, and be sure to export your API key:
 
 ```
 export ROBOFLOW_API_KEY=<your api key>
