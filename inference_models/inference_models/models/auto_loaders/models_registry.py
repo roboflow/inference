@@ -29,6 +29,7 @@ INTERACTIVE_INSTANCE_SEGMENTATION_TASK = "interactive-instance-segmentation"
 class RegistryEntry:
     model_class: LazyClass
     supported_model_features: Optional[Set[str]] = field(default=None)
+    required_model_features: Optional[Set[str]] = field(default=None)
 
 
 REGISTERED_MODELS: Dict[
@@ -278,6 +279,10 @@ REGISTERED_MODELS: Dict[
         module_name="inference_models.models.qwen3vl.qwen3vl_hf",
         class_name="Qwen3VLHF",
     ),
+    ("qwen3_5", VLM_TASK, BackendType.HF): LazyClass(
+        module_name="inference_models.models.qwen3_5.qwen3_5_hf",
+        class_name="Qwen35HF",
+    ),
     ("florence-2", VLM_TASK, BackendType.HF): LazyClass(
         module_name="inference_models.models.florence2.florence2_hf",
         class_name="Florence2HF",
@@ -408,8 +413,12 @@ REGISTERED_MODELS: Dict[
         module_name="inference_models.models.depth_anything_v3.depth_anything_v3_torch",
         class_name="DepthAnythingV3Torch",
     ),
-    ("doctr", STRUCTURED_OCR_TASK, BackendType.TORCH): LazyClass(
-        module_name="inference_models.models.doctr.doctr_torch", class_name="DocTR"
+    ("doctr", STRUCTURED_OCR_TASK, BackendType.TORCH): RegistryEntry(
+        model_class=LazyClass(
+            module_name="inference_models.models.doctr.doctr_torch", class_name="DocTR"
+        ),
+        supported_model_features={"doctr_vocab_127"},
+        required_model_features={"doctr_vocab_127"},
     ),
     ("easy-ocr", STRUCTURED_OCR_TASK, BackendType.TORCH): LazyClass(
         module_name="inference_models.models.easy_ocr.easy_ocr_torch",
@@ -530,10 +539,20 @@ def model_implementation_exists(
     lookup_key = (model_architecture, task_type, backend)
     if lookup_key not in REGISTERED_MODELS:
         return False
-    if not model_features:
-        return True
     matched_model = REGISTERED_MODELS[(model_architecture, task_type, backend)]
-    if not isinstance(matched_model, RegistryEntry):
-        # features requested, but no supported features manifested
+    if isinstance(matched_model, RegistryEntry):
+        # Check if implementation requires features that package doesn't have
+        if matched_model.required_model_features:
+            package_features = model_features or set()
+            if not all(f in package_features for f in matched_model.required_model_features):
+                return False
+        # Check if package has features that implementation doesn't support
+        if model_features:
+            if not matched_model.supported_model_features:
+                return False
+            if not all(f in matched_model.supported_model_features for f in model_features):
+                return False
+    elif model_features:
+        # LazyClass (not RegistryEntry) - features requested but no supported features manifested
         return False
-    return all(f in matched_model.supported_model_features for f in model_features)
+    return True

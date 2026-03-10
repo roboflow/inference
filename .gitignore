@@ -153,6 +153,8 @@ profile/
 *.png
 !favicon.png
 !icon.png
+!docs/images/**/*.png
+!docs/images/*.png
 *.mp4
 *.roboflow.txt
 dev_tools/
