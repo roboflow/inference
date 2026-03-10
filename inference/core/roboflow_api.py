@@ -57,6 +57,7 @@ from inference.core.exceptions import (
     MalformedRoboflowAPIResponseError,
     MalformedWorkflowResponseError,
     MissingDefaultModelError,
+    PaymentRequiredError,
     RetryRequestError,
     RoboflowAPIConnectionError,
     RoboflowAPIForbiddenError,
@@ -111,6 +112,11 @@ DEFAULT_ERROR_HANDLERS = {
         RoboflowAPINotAuthorizedError,
         "Unauthorized access to roboflow API - check API key. Visit "
         "https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key to learn how to retrieve one.",
+    ),
+    402: lambda e: raise_from_lambda(
+        e,
+        PaymentRequiredError,
+        "Not enough credits to perform this request. Verify your workspace billing page.",
     ),
     403: lambda e: raise_from_lambda(
         e,
