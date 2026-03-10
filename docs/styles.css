@@ -60,12 +60,51 @@ body[data-md-color-scheme] .md-header {
 }
 
 .md-tabs__link {
-  font-size: 0.9rem;
+  font-size: 0.82rem;
   margin-top: 0.1rem;
   color: #6F6C79 !important;
   opacity: 1 !important;
   padding: 8px 12px;
   transition: all 0.2s;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.md-tabs__link::before {
+  font-family: "Font Awesome 6 Pro";
+  font-weight: 400;
+  font-size: 14px;
+  display: inline-block;
+  text-rendering: auto;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Start - book icon */
+.md-tabs__item:nth-child(1) .md-tabs__link::before {
+  content: "\f02d";
+}
+
+/* Models - chart-network icon */
+.md-tabs__item:nth-child(2) .md-tabs__link::before {
+  content: "\f78a";
+}
+
+/* Workflows - network-wired icon */
+.md-tabs__item:nth-child(3) .md-tabs__link::before {
+  content: "\f6ff";
+}
+
+/* Reference - code icon */
+.md-tabs__item:nth-child(4) .md-tabs__link::before {
+  content: "\f121";
+}
+
+/* Active tab icon color override */
+.md-tabs__item--active > .md-tabs__link::before,
+.md-tabs__link--active::before,
+.md-tabs__link[data-md-state="active"]::before {
+  color: #6706CE;
 }
 
 .md-tabs__link:hover {
@@ -298,5 +337,68 @@ body[data-md-color-scheme] .md-header {
   .md-typeset .download-button {
     min-width: 11.25rem;
     padding: 0.75rem 1.25rem;
+  }
+}
+
+/* Related products cards */
+.product-cards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1rem;
+  margin: 1rem 0;
+}
+
+.md-typeset .product-card {
+  border: 1px solid #E7E4F0;
+  border-radius: 0.5rem;
+  padding: 1.25rem;
+  text-decoration: none;
+  color: inherit;
+  transition: all 0.2s ease;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.md-typeset .product-card:hover {
+  border-color: var(--md-primary-fg-color);
+  box-shadow: 0 0.25rem 0.75rem rgba(131, 21, 249, 0.08);
+  transform: translateY(-2px);
+  text-decoration: none;
+}
+
+.product-card__header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.product-card__icon {
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+}
+
+.md-typeset .product-card__title {
+  font-weight: 600;
+  color: #1D1D1F;
+  font-size: 0.95rem;
+  text-decoration: none;
+}
+
+.md-typeset .product-card__title:hover {
+  color: var(--md-primary-fg-color);
+}
+
+.product-card__desc {
+  font-size: 16px;
+  color: #6F6C79;
+  line-height: 1.5;
+  margin: 0;
+}
+
+@media (max-width: 48rem) {
+  .product-cards {
+    grid-template-columns: 1fr;
   }
 }

@@ -233,8 +233,10 @@ class Qwen3VLHF:
             },
         ]
 
-        # Apply chat template (without add_generation_prompt to match original)
-        text_input = self._processor.apply_chat_template(conversation, tokenize=False)
+        # Apply chat template with add_generation_prompt to signal assistant should respond
+        text_input = self._processor.apply_chat_template(
+            conversation, tokenize=False, add_generation_prompt=True
+        )
 
         # Process inputs - pass the image directly, processor handles PIL/tensor conversion
         model_inputs = self._processor(

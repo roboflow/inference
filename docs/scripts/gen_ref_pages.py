@@ -1,10 +1,18 @@
-"""Generate the code reference pages."""
+"""Generate the code reference pages.
+
+Can run as a mkdocs gen-files plugin script, or standalone via:
+    python -m docs.scripts.gen_ref_pages
+When run standalone, writes directly to docs/reference/.
+"""
 import ast
 import os
 from pathlib import Path
 from typing import Union
 
-import mkdocs_gen_files
+try:
+    import mkdocs_gen_files
+except ImportError:
+    mkdocs_gen_files = None
 
 SKIP_MODULES = [
     "inference.enterprise.device_manager.command_handler",
@@ -201,6 +209,17 @@ def _build_single_page_index(package, collected_modules):
     return "".join(lines)
 
 
+def _open_output(rel_path):
+    """Open an output file via gen-files plugin or directly to docs/."""
+    if mkdocs_gen_files is not None:
+        return mkdocs_gen_files.open(rel_path, "w")
+    # Standalone mode: write directly to docs/
+    docs_dir = Path(__file__).parent.parent
+    out = docs_dir / rel_path
+    out.parent.mkdir(parents=True, exist_ok=True)
+    return open(out, "w")
+
+
 if not os.environ.get("SKIP_CODEGEN"):
     for package in ["inference", "inference_sdk", "inference_cli"]:
         src = Path(__file__).parent.parent.parent / package
@@ -220,5 +239,5 @@ if not os.environ.get("SKIP_CODEGEN"):
             collected_modules.append((parts, identifier))
 
         # Write single-page index with all ::: directives
-        with mkdocs_gen_files.open(f"reference/{package}/index.md", "w") as index_file:
+        with _open_output(f"reference/{package}/index.md") as index_file:
             index_file.write(_build_single_page_index(package, collected_modules))

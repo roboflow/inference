@@ -104,18 +104,18 @@ class WithFixedSizeCache(ModelManagerDecorator):
                 or (MEMORY_FREE_THRESHOLD and self.memory_pressure_detected())
             ):
                 # To prevent flapping around the threshold, remove up to 3 models to make some space.
+                if not self._key_queue:
+                    logger.error(
+                        "Tried to remove model from cache even though key queue is already empty! "
+                        "(max_size: %s, len(self): %s, MEMORY_FREE_THRESHOLD: %s)",
+                        self.max_size,
+                        len(self),
+                        MEMORY_FREE_THRESHOLD,
+                    )
+                    break
                 evicted_count = 0
                 skipped_pinned = []
-                for _ in range(3):
-                    if not self._key_queue:
-                        logger.error(
-                            "Tried to remove model from cache even though key queue is already empty!"
-                            "(max_size: %s, len(self): %s, MEMORY_FREE_THRESHOLD: %s)",
-                            self.max_size,
-                            len(self),
-                            MEMORY_FREE_THRESHOLD,
-                        )
-                        break
+                while evicted_count < 3 and self._key_queue:
                     to_remove_model_id = self._key_queue.popleft()
                     if to_remove_model_id in self._pinned_models:
                         skipped_pinned.append(to_remove_model_id)
