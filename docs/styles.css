@@ -72,42 +72,39 @@ body[data-md-color-scheme] .md-header {
 }
 
 .md-tabs__link::before {
-  content: "";
+  font-family: "Font Awesome 6 Pro";
+  font-weight: 400;
+  font-size: 14px;
   display: inline-block;
-  width: 16px;
-  height: 16px;
-  background-size: contain;
-  background-repeat: no-repeat;
-  background-position: center;
-  flex-shrink: 0;
+  text-rendering: auto;
+  -webkit-font-smoothing: antialiased;
 }
 
 /* Start - book icon */
 .md-tabs__item:nth-child(1) .md-tabs__link::before {
-  background-image: url("images/nav/start.svg");
+  content: "\f02d";
 }
 
-/* Models - node/graph icon */
+/* Models - chart-network icon */
 .md-tabs__item:nth-child(2) .md-tabs__link::before {
-  background-image: url("images/nav/models.svg");
+  content: "\f78a";
 }
 
-/* Workflows - workflow/tree icon */
+/* Workflows - network-wired icon */
 .md-tabs__item:nth-child(3) .md-tabs__link::before {
-  width: 19px;
-  background-image: url("images/nav/workflows.svg");
+  content: "\f6ff";
 }
 
 /* Reference - code icon */
 .md-tabs__item:nth-child(4) .md-tabs__link::before {
-  background-image: url("images/nav/reference.svg");
+  content: "\f121";
 }
 
 /* Active tab icon color override */
 .md-tabs__item--active > .md-tabs__link::before,
 .md-tabs__link--active::before,
 .md-tabs__link[data-md-state="active"]::before {
-  filter: brightness(0) saturate(100%) invert(15%) sepia(95%) saturate(6000%) hue-rotate(268deg) brightness(90%) contrast(105%);
+  color: #6706CE;
 }
 
 .md-tabs__link:hover {
