@@ -2,7 +2,7 @@ import asyncio
 import concurrent.futures
 import re
 import time
-from typing import Callable, Dict, List, Optional
+from typing import Callable, Dict, List
 
 from prometheus_client.core import REGISTRY, CounterMetricFamily, GaugeMetricFamily
 from prometheus_client.registry import Collector
@@ -63,6 +63,8 @@ class CustomCollector(Collector):
         return results
 
     async def _fetch_stream_metrics(self) -> Dict[str, dict]:
+        # Pipeline status is fetched via TCP IPC to the stream manager process.
+        # Pipelines run in separate subprocesses, so socket-based IPC is required.
         pipelines_response = await self.stream_manager_client.list_pipelines()
         pipeline_ids = pipelines_response.pipelines
         metrics = {}
@@ -72,6 +74,7 @@ class CustomCollector(Collector):
             latency_reports = report.get("latency_reports", [])
             sources_metadata = report.get("sources_metadata", [])
             camera_fps = self._average_source_fps(sources_metadata)
+            source_label = self._extract_source_label(sources_metadata)
             metrics[pipeline_id] = {
                 "inference_throughput": report.get("inference_throughput", 0.0),
                 "camera_fps": camera_fps,
@@ -84,6 +87,7 @@ class CustomCollector(Collector):
                 "e2e_latency": self._average_latency_field(
                     latency_reports, "e2e_latency"
                 ),
+                "source": source_label,
             }
         return metrics
 
@@ -120,6 +124,15 @@ class CustomCollector(Collector):
         if not values:
             return 0.0
         return sum(values) / len(values)
+
+    @staticmethod
+    def _extract_source_label(sources_metadata: List[dict]) -> str:
+        refs = []
+        for src in sources_metadata:
+            ref = src.get("source_reference")
+            if ref is not None:
+                refs.append(str(ref))
+        return ",".join(refs) if refs else ""
 
     def sanitize_string(self, input_string):
         sanitized_string = re.sub(r"[^a-zA-Z0-9_]", "_", input_string)
@@ -167,33 +180,46 @@ class CustomCollector(Collector):
         )
 
         stream_metrics = self.get_stream_metrics()
+        pipeline_labels = ["pipeline_id", "source"]
+        inference_fps = GaugeMetricFamily(
+            "inference_pipeline_inference_fps",
+            "Inference throughput FPS",
+            labels=pipeline_labels,
+        )
+        camera_fps = GaugeMetricFamily(
+            "inference_pipeline_camera_fps",
+            "Camera source FPS",
+            labels=pipeline_labels,
+        )
+        frame_decoding_latency = GaugeMetricFamily(
+            "inference_pipeline_frame_decoding_latency",
+            "Average frame decoding latency (seconds)",
+            labels=pipeline_labels,
+        )
+        inference_latency = GaugeMetricFamily(
+            "inference_pipeline_inference_latency",
+            "Average inference latency (seconds)",
+            labels=pipeline_labels,
+        )
+        e2e_latency = GaugeMetricFamily(
+            "inference_pipeline_e2e_latency",
+            "Average end-to-end latency (seconds)",
+            labels=pipeline_labels,
+        )
         for pipeline_id, pm in stream_metrics.items():
-            sane_id = self.sanitize_string(pipeline_id)
-            yield GaugeMetricFamily(
-                f"inference_pipeline_inference_fps_{sane_id}",
-                "Inference throughput FPS",
-                value=pm["inference_throughput"],
+            label_values = [pipeline_id, pm["source"]]
+            inference_fps.add_metric(label_values, pm["inference_throughput"])
+            camera_fps.add_metric(label_values, pm["camera_fps"])
+            frame_decoding_latency.add_metric(
+                label_values, pm["frame_decoding_latency"]
             )
-            yield GaugeMetricFamily(
-                f"inference_pipeline_camera_fps_{sane_id}",
-                "Camera source FPS",
-                value=pm["camera_fps"],
-            )
-            yield GaugeMetricFamily(
-                f"inference_pipeline_frame_decoding_latency_{sane_id}",
-                "Average frame decoding latency (seconds)",
-                value=pm["frame_decoding_latency"],
-            )
-            yield GaugeMetricFamily(
-                f"inference_pipeline_inference_latency_{sane_id}",
-                "Average inference latency (seconds)",
-                value=pm["inference_latency"],
-            )
-            yield GaugeMetricFamily(
-                f"inference_pipeline_e2e_latency_{sane_id}",
-                "Average end-to-end latency (seconds)",
-                value=pm["e2e_latency"],
-            )
+            inference_latency.add_metric(label_values, pm["inference_latency"])
+            e2e_latency.add_metric(label_values, pm["e2e_latency"])
+        yield inference_fps
+        yield camera_fps
+        yield frame_decoding_latency
+        yield inference_latency
+        yield e2e_latency
         yield GaugeMetricFamily(
             "inference_pipeline_active_streams",
             "Number of active inference pipelines",
