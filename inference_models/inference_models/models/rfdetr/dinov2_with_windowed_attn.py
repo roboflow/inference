@@ -9,6 +9,7 @@
 
 import collections.abc
 import math
+from collections.abc import Iterable
 from typing import Dict, List, Optional, Set, Tuple, Union
 
 import torch
@@ -23,10 +24,35 @@ from transformers.modeling_outputs import (
     ImageClassifierOutput,
 )
 from transformers.modeling_utils import PreTrainedModel
-from transformers.pytorch_utils import (
-    find_pruneable_heads_and_indices,
-    prune_linear_layer,
-)
+from transformers.pytorch_utils import prune_linear_layer
+
+
+def find_pruneable_heads_and_indices(
+    heads: list[int], n_heads: int, head_size: int, already_pruned_heads: set[int]
+) -> tuple[set[int], torch.LongTensor]:
+    """
+    Finds the heads and their indices taking `already_pruned_heads` into account.
+
+    Args:
+        heads (`List[int]`): List of the indices of heads to prune.
+        n_heads (`int`): The number of heads in the model.
+        head_size (`int`): The size of each head.
+        already_pruned_heads (`Set[int]`): A set of already pruned heads.
+
+    Returns:
+        `Tuple[Set[int], torch.LongTensor]`: A tuple with the indices of heads to prune taking `already_pruned_heads`
+        into account and the indices of rows/columns to keep in the layer weight.
+    """
+    mask = torch.ones(n_heads, head_size)
+    heads = set(heads) - already_pruned_heads  # Convert to set and remove already pruned heads
+    for head in heads:
+        # Compute how many pruned heads are before the head and move the index accordingly
+        head = head - sum(1 if h < head else 0 for h in already_pruned_heads)
+        mask[head] = 0
+    mask = mask.view(-1).contiguous().eq(1)
+    index: torch.LongTensor = torch.arange(len(mask))[mask].long()
+    return heads, index
+
 from transformers.utils import (
     add_code_sample_docstrings,
     add_start_docstrings,
@@ -35,11 +61,112 @@ from transformers.utils import (
     replace_return_docstrings,
     torch_int,
 )
-from transformers.utils.backbone_utils import (
-    BackboneConfigMixin,
-    BackboneMixin,
-    get_aligned_output_features_output_indices,
-)
+from transformers.backbone_utils import BackboneConfigMixin, BackboneMixin
+
+def verify_out_features_out_indices(
+    out_features: Optional[Iterable[str]], out_indices: Optional[Iterable[int]], stage_names: Optional[Iterable[str]]
+):
+    """
+    Verify that out_indices and out_features are valid for the given stage_names.
+    """
+    if stage_names is None:
+        raise ValueError("Stage_names must be set for transformers backbones")
+
+    if out_features is not None:
+        if not isinstance(out_features, (list,)):
+            raise ValueError(f"out_features must be a list got {type(out_features)}")
+        if any(feat not in stage_names for feat in out_features):
+            raise ValueError(f"out_features must be a subset of stage_names: {stage_names} got {out_features}")
+        if len(out_features) != len(set(out_features)):
+            raise ValueError(f"out_features must not contain any duplicates, got {out_features}")
+        if out_features != (sorted_feats := [feat for feat in stage_names if feat in out_features]):
+            raise ValueError(
+                f"out_features must be in the same order as stage_names, expected {sorted_feats} got {out_features}"
+            )
+
+    if out_indices is not None:
+        if not isinstance(out_indices, list):
+            raise ValueError(f"out_indices must be a list, got {type(out_indices)}")
+        # Convert negative indices to their positive equivalent: [-1,] -> [len(stage_names) - 1,]
+        positive_indices = tuple(idx % len(stage_names) if idx < 0 else idx for idx in out_indices)
+        if any(idx for idx in positive_indices if idx not in range(len(stage_names))):
+            raise ValueError(f"out_indices must be valid indices for stage_names {stage_names}, got {out_indices}")
+        if len(positive_indices) != len(set(positive_indices)):
+            msg = f"out_indices must not contain any duplicates, got {out_indices}"
+            msg += f"(equivalent to {positive_indices}))" if positive_indices != out_indices else ""
+            raise ValueError(msg)
+        if positive_indices != tuple(sorted(positive_indices)):
+            sorted_negative = [idx for _, idx in sorted(zip(positive_indices, out_indices), key=lambda x: x[0])]
+            raise ValueError(
+                f"out_indices must be in the same order as stage_names, expected {sorted_negative} got {out_indices}"
+            )
+
+    if out_features is not None and out_indices is not None:
+        if len(out_features) != len(out_indices):
+            raise ValueError("out_features and out_indices should have the same length if both are set")
+        if out_features != [stage_names[idx] for idx in out_indices]:
+            raise ValueError("out_features and out_indices should correspond to the same stages if both are set")
+
+def _align_output_features_output_indices(
+    out_features: Optional[list[str]],
+    out_indices: Optional[Union[list[int], tuple[int]]],
+    stage_names: list[str],
+):
+    """
+    Finds the corresponding `out_features` and `out_indices` for the given `stage_names`.
+
+    The logic is as follows:
+        - `out_features` not set, `out_indices` set: `out_features` is set to the `out_features` corresponding to the
+        `out_indices`.
+        - `out_indices` not set, `out_features` set: `out_indices` is set to the `out_indices` corresponding to the
+        `out_features`.
+        - `out_indices` and `out_features` not set: `out_indices` and `out_features` are set to the last stage.
+        - `out_indices` and `out_features` set: input `out_indices` and `out_features` are returned.
+
+    Args:
+        out_features (`List[str]`): The names of the features for the backbone to output.
+        out_indices (`List[int]` or `Tuple[int]`): The indices of the features for the backbone to output.
+        stage_names (`List[str]`): The names of the stages of the backbone.
+    """
+    if out_indices is None and out_features is None:
+        out_indices = [len(stage_names) - 1]
+        out_features = [stage_names[-1]]
+    elif out_indices is None and out_features is not None:
+        out_indices = [stage_names.index(layer) for layer in out_features]
+    elif out_features is None and out_indices is not None:
+        out_features = [stage_names[idx] for idx in out_indices]
+    return out_features, out_indices
+
+def get_aligned_output_features_output_indices(
+    out_features: Optional[list[str]],
+    out_indices: Optional[Union[list[int], tuple[int]]],
+    stage_names: list[str],
+) -> tuple[list[str], list[int]]:
+    """
+    Get the `out_features` and `out_indices` so that they are aligned.
+
+    The logic is as follows:
+        - `out_features` not set, `out_indices` set: `out_features` is set to the `out_features` corresponding to the
+        `out_indices`.
+        - `out_indices` not set, `out_features` set: `out_indices` is set to the `out_indices` corresponding to the
+        `out_features`.
+        - `out_indices` and `out_features` not set: `out_indices` and `out_features` are set to the last stage.
+        - `out_indices` and `out_features` set: they are verified to be aligned.
+
+    Args:
+        out_features (`List[str]`): The names of the features for the backbone to output.
+        out_indices (`List[int]` or `Tuple[int]`): The indices of the features for the backbone to output.
+        stage_names (`List[str]`): The names of the stages of the backbone.
+    """
+    out_indices = list(out_indices) if out_indices is not None else None
+    # First verify that the out_features and out_indices are valid
+    verify_out_features_out_indices(out_features=out_features, out_indices=out_indices, stage_names=stage_names)
+    output_features, output_indices = _align_output_features_output_indices(
+        out_features=out_features, out_indices=out_indices, stage_names=stage_names
+    )
+    # Verify that the aligned out_features and out_indices are valid
+    verify_out_features_out_indices(out_features=output_features, out_indices=output_indices, stage_names=stage_names)
+    return output_features, output_indices
 
 
 logger = logging.get_logger(__name__)
@@ -450,7 +577,6 @@ class Dinov2WithRegistersSelfAttention(nn.Module):
     def forward(
         self,
         hidden_states,
-        head_mask: Optional[torch.Tensor] = None,
         output_attentions: bool = False,
     ) -> Union[Tuple[torch.Tensor, torch.Tensor], Tuple[torch.Tensor]]:
         mixed_query_layer = self.query(hidden_states)
@@ -470,10 +596,6 @@ class Dinov2WithRegistersSelfAttention(nn.Module):
         # This is actually dropping out entire tokens to attend to, which might
         # seem a bit unusual, but is taken from the original Transformer paper.
         attention_probs = self.dropout(attention_probs)
-
-        # Mask heads if we want to
-        if head_mask is not None:
-            attention_probs = attention_probs * head_mask
 
         context_layer = torch.matmul(attention_probs, value_layer)
 
@@ -496,18 +618,15 @@ class Dinov2WithRegistersSdpaSelfAttention(Dinov2WithRegistersSelfAttention):
     def forward(
         self,
         hidden_states,
-        head_mask: Optional[torch.Tensor] = None,
         output_attentions: bool = False,
     ) -> Union[Tuple[torch.Tensor, torch.Tensor], Tuple[torch.Tensor]]:
         if output_attentions:
-            # TODO: Improve this warning with e.g. `model.config.attn_implementation = "manual"` once this is implemented.
             logger.warning_once(
                 "Dinov2WithRegistersModel is using Dinov2WithRegistersSdpaSelfAttention, but `torch.nn.functional.scaled_dot_product_attention` does not support `output_attentions=True`. Falling back to the manual attention implementation, "
                 'but specifying the manual implementation will be required from Transformers version v5.0.0 onwards. This warning can be removed using the argument `attn_implementation="eager"` when loading the model.'
             )
             return super().forward(
                 hidden_states=hidden_states,
-                head_mask=head_mask,
                 output_attentions=output_attentions,
             )
 
@@ -521,8 +640,7 @@ class Dinov2WithRegistersSdpaSelfAttention(Dinov2WithRegistersSelfAttention):
             query_layer,
             key_layer,
             value_layer,
-            head_mask,
-            self.attention_probs_dropout_prob if self.training else 0.0,
+            dropout_p=self.attention_probs_dropout_prob if self.training else 0.0,
             is_causal=False,
             scale=None,
         )
@@ -589,10 +707,9 @@ class Dinov2WithRegistersAttention(nn.Module):
     def forward(
         self,
         hidden_states: torch.Tensor,
-        head_mask: Optional[torch.Tensor] = None,
         output_attentions: bool = False,
     ) -> Union[Tuple[torch.Tensor, torch.Tensor], Tuple[torch.Tensor]]:
-        self_outputs = self.attention(hidden_states, head_mask, output_attentions)
+        self_outputs = self.attention(hidden_states, output_attentions)
 
         attention_output = self.output(self_outputs[0], hidden_states)
 
@@ -731,11 +848,9 @@ class WindowedDinov2WithRegistersLayer(nn.Module):
     def forward(
         self,
         hidden_states: torch.Tensor,
-        head_mask: Optional[torch.Tensor] = None,
         output_attentions: bool = False,
         run_full_attention: bool = False,
     ) -> Union[Tuple[torch.Tensor, torch.Tensor], Tuple[torch.Tensor]]:
-        assert head_mask is None, "head_mask is not supported for windowed attention"
         assert (
             not output_attentions
         ), "output_attentions is not supported for windowed attention"
@@ -752,7 +867,6 @@ class WindowedDinov2WithRegistersLayer(nn.Module):
             self.norm1(
                 hidden_states
             ),  # in Dinov2WithRegisters, layernorm is applied before self-attention
-            head_mask,
             output_attentions=output_attentions,
         )
         attention_output = self_attention_outputs[0]
@@ -802,7 +916,6 @@ class WindowedDinov2WithRegistersEncoder(nn.Module):
     def forward(
         self,
         hidden_states: torch.Tensor,
-        head_mask: Optional[torch.Tensor] = None,
         output_attentions: bool = False,
         output_hidden_states: bool = False,
         return_dict: bool = True,
@@ -820,20 +933,16 @@ class WindowedDinov2WithRegistersEncoder(nn.Module):
 
             run_full_attention = i not in self.config.window_block_indexes
 
-            layer_head_mask = head_mask[i] if head_mask is not None else None
-
             if self.gradient_checkpointing and self.training:
                 layer_outputs = self._gradient_checkpointing_func(
                     layer_module.__call__,
                     hidden_states,
-                    layer_head_mask,
                     output_attentions,
                     run_full_attention,
                 )
             else:
                 layer_outputs = layer_module(
                     hidden_states,
-                    layer_head_mask,
                     output_attentions,
                     run_full_attention,
                 )
@@ -925,12 +1034,6 @@ DINOV2_WITH_REGISTERS_BASE_INPUTS_DOCSTRING = r"""
             Boolean masked positions. Indicates which patches are masked (1) and which aren't (0). Only relevant for
             pre-training.
 
-        head_mask (`torch.FloatTensor` of shape `(num_heads,)` or `(num_layers, num_heads)`, *optional*):
-            Mask to nullify selected heads of the self-attention modules. Mask values selected in `[0, 1]`:
-
-            - 1 indicates the head is **not masked**,
-            - 0 indicates the head is **masked**.
-
         output_attentions (`bool`, *optional*):
             Whether or not to return the attentions tensors of all attention layers. See `attentions` under returned
             tensors for more detail.
@@ -982,7 +1085,6 @@ class WindowedDinov2WithRegistersModel(WindowedDinov2WithRegistersPreTrainedMode
         self,
         pixel_values: Optional[torch.Tensor] = None,
         bool_masked_pos: Optional[torch.Tensor] = None,
-        head_mask: Optional[torch.Tensor] = None,
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
@@ -1004,20 +1106,12 @@ class WindowedDinov2WithRegistersModel(WindowedDinov2WithRegistersPreTrainedMode
         if pixel_values is None:
             raise ValueError("You have to specify pixel_values")
 
-        # Prepare head mask if needed
-        # 1.0 in head_mask indicate we keep the head
-        # attention_probs has shape bsz x n_heads x N x N
-        # input head_mask has shape [num_heads] or [num_hidden_layers x num_heads]
-        # and head_mask is converted to shape [num_hidden_layers x batch x num_heads x seq_length x seq_length]
-        head_mask = self.get_head_mask(head_mask, self.config.num_hidden_layers)
-
         embedding_output = self.embeddings(
             pixel_values, bool_masked_pos=bool_masked_pos
         )
 
         encoder_outputs = self.encoder(
             embedding_output,
-            head_mask=head_mask,
             output_attentions=output_attentions,
             output_hidden_states=output_hidden_states,
             return_dict=return_dict,
@@ -1047,12 +1141,6 @@ DINOV2_WITH_REGISTERS_INPUTS_DOCSTRING = r"""
         pixel_values (`torch.FloatTensor` of shape `(batch_size, num_channels, height, width)`):
             Pixel values. Pixel values can be obtained using [`AutoImageProcessor`]. See
             [`BitImageProcessor.preprocess`] for details.
-
-        head_mask (`torch.FloatTensor` of shape `(num_heads,)` or `(num_layers, num_heads)`, *optional*):
-            Mask to nullify selected heads of the self-attention modules. Mask values selected in `[0, 1]`:
-
-            - 1 indicates the head is **not masked**,
-            - 0 indicates the head is **masked**.
 
         output_attentions (`bool`, *optional*):
             Whether or not to return the attentions tensors of all attention layers. See `attentions` under returned
@@ -1101,7 +1189,6 @@ class WindowedDinov2WithRegistersForImageClassification(
     def forward(
         self,
         pixel_values: Optional[torch.Tensor] = None,
-        head_mask: Optional[torch.Tensor] = None,
         labels: Optional[torch.Tensor] = None,
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
@@ -1119,7 +1206,6 @@ class WindowedDinov2WithRegistersForImageClassification(
 
         outputs = self.dinov2_with_registers(
             pixel_values,
-            head_mask=head_mask,
             output_attentions=output_attentions,
             output_hidden_states=output_hidden_states,
             return_dict=return_dict,
@@ -1184,7 +1270,8 @@ class WindowedDinov2WithRegistersBackbone(
 ):
     def __init__(self, config: WindowedDinov2WithRegistersConfig):
         super().__init__(config)
-        super()._init_backbone(config)
+        # _init_backbone was renamed to _init_transformers_backbone in transformers 5.x
+        super()._init_transformers_backbone()
         self.num_features = [
             config.hidden_size for _ in range(config.num_hidden_layers + 1)
         ]
