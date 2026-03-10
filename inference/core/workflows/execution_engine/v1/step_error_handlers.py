@@ -4,7 +4,7 @@ from inference.core.exceptions import (
     ModelManagerLockAcquisitionError,
     RoboflowAPIForbiddenError,
     RoboflowAPINotAuthorizedError,
-    RoboflowAPINotNotFoundError,
+    RoboflowAPINotNotFoundError, PaymentRequiredError,
 )
 from inference.core.workflows.errors import ClientCausedStepExecutionError
 from inference_models.errors import ModelNotFoundError, UnauthorizedModelAccessError
@@ -43,6 +43,15 @@ def extended_roboflow_errors_handler(step_name: str, error: Exception) -> None:
             context="workflow_execution | step_execution",
             inner_error=error,
         ) from error
+    if isinstance(error, PaymentRequiredError):
+        raise ClientCausedStepExecutionError(
+            block_id=step_name,
+            status_code=402,
+            public_message=f"Not enough credits to execute step {step_name}. "
+                           f"Verify your workspace billing page. Details: {error}",
+            context="workflow_execution | step_execution",
+            inner_error=error,
+        ) from error
     if isinstance(error, RoboflowAPIForbiddenError):
         raise ClientCausedStepExecutionError(
             block_id=step_name,
@@ -77,6 +86,15 @@ def extended_roboflow_errors_handler(step_name: str, error: Exception) -> None:
                 status_code=401,
                 public_message=f"Unauthorized error occurred while remote execution of step {step_name} - "
                 f"details of error: {error}. This error usually mean the problem with Roboflow API key.",
+                context="workflow_execution | step_execution",
+                inner_error=error,
+            ) from error
+        if error.status_code == 402:
+            raise ClientCausedStepExecutionError(
+                block_id=step_name,
+                status_code=402,
+                public_message=f"Not enough credits to remote execute step {step_name}. "
+                f"Verify your workspace billing page. Details: {error}",
                 context="workflow_execution | step_execution",
                 inner_error=error,
             ) from error

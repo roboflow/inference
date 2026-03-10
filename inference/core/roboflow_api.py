@@ -68,7 +68,7 @@ from inference.core.exceptions import (
     RoboflowAPITimeoutError,
     RoboflowAPIUnsuccessfulRequestError,
     RoboflowAPIUsagePausedError,
-    WorkspaceLoadError,
+    WorkspaceLoadError, PaymentRequiredError,
 )
 from inference.core.utils.file_system import sanitize_path_segment
 from inference.core.utils.requests import (
@@ -111,6 +111,11 @@ DEFAULT_ERROR_HANDLERS = {
         RoboflowAPINotAuthorizedError,
         "Unauthorized access to roboflow API - check API key. Visit "
         "https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key to learn how to retrieve one.",
+    ),
+    402: lambda e: raise_from_lambda(
+        e,
+        PaymentRequiredError,
+        "Not enough credits to perform this request. Verify your workspace billing page.",
     ),
     403: lambda e: raise_from_lambda(
         e,

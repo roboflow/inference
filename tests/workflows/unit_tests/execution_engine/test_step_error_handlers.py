@@ -6,7 +6,7 @@ from inference.core.exceptions import (
     ModelManagerLockAcquisitionError,
     RoboflowAPIForbiddenError,
     RoboflowAPINotAuthorizedError,
-    RoboflowAPINotNotFoundError,
+    RoboflowAPINotNotFoundError, PaymentRequiredError,
 )
 from inference.core.workflows.errors import ClientCausedStepExecutionError
 from inference.core.workflows.execution_engine.v1.step_error_handlers import (
@@ -104,6 +104,25 @@ def test_extended_roboflow_errors_handler_when_forbidden_error_occurs_while_remo
     # then
     assert error.value.status_code == 403
 
+
+def test_extended_roboflow_errors_handler_when_payment_required_error_occurs() -> None:
+    # when
+    with pytest.raises(ClientCausedStepExecutionError) as error:
+        extended_roboflow_errors_handler("some", PaymentRequiredError())
+
+    # then
+    assert error.value.status_code == 402
+
+
+def test_extended_roboflow_errors_handler_when_payment_required_error_occurs_while_remote_execution() -> (
+    None
+):
+    # when
+    with pytest.raises(ClientCausedStepExecutionError) as error:
+        extended_roboflow_errors_handler("some", HTTPCallErrorError("", 402, None))
+
+    # then
+    assert error.value.status_code == 402
 
 def test_extended_roboflow_errors_handler_when_not_found_error_occurs() -> None:
     # when

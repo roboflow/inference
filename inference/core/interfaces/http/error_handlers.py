@@ -31,7 +31,7 @@ from inference.core.exceptions import (
     RoboflowAPIUsagePausedError,
     ServiceConfigurationError,
     WebRTCConfigurationError,
-    WorkspaceLoadError,
+    WorkspaceLoadError, PaymentRequiredError,
 )
 from inference.core.interfaces.stream_manager.api.errors import (
     ProcessesManagerAuthorisationError,
@@ -215,6 +215,14 @@ def with_route_exceptions(route):
                     "message": "Unauthorized access to roboflow API - check API key and make sure the key is valid for "
                     "workspace you use. Visit https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key "
                     "to learn how to retrieve one."
+                },
+            )
+        except PaymentRequiredError as error:
+            logger.warning("%s: %s", type(error).__name__, error)
+            resp = JSONResponse(
+                status_code=402,
+                content={
+                    "message": "Not enough credits to perform this request. Verify your workspace billing page."
                 },
             )
         except RoboflowAPIForbiddenError as error:
@@ -595,6 +603,14 @@ def with_route_exceptions_async(route):
                     "message": "Unauthorized access to roboflow API - check API key and make sure the key is valid for "
                     "workspace you use. Visit https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key "
                     "to learn how to retrieve one."
+                },
+            )
+        except PaymentRequiredError as error:
+            logger.warning("%s: %s", type(error).__name__, error)
+            resp = JSONResponse(
+                status_code=402,
+                content={
+                    "message": "Not enough credits to perform this request. Verify your workspace billing page."
                 },
             )
         except RoboflowAPIForbiddenError as error:
