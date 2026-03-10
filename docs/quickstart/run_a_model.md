@@ -32,7 +32,7 @@ Let's run a computer vision model with Inference. There are two ways to do this:
         api_url="https://serverless.roboflow.com",  # or "http://localhost:9001" for self-hosted
         api_key="ROBOFLOW_API_KEY",
     )
-    results = client.infer(image, model_id="yolov8n-640")
+    results = client.infer(image, model_id="rfdetr-small")
     ```
 
     `InferenceHTTPClient` sends requests to an Inference Server (Roboflow-hosted or [self-hosted](../inference_helpers/inference_cli.md)). See the [`inference-sdk` docs](../inference_helpers/inference_sdk.md) for more details.
@@ -43,7 +43,7 @@ Let's run a computer vision model with Inference. There are two ways to do this:
     from inference import get_model
 
     image = "https://media.roboflow.com/inference/people-walking.jpg"
-    model = get_model(model_id="yolov8n-640")
+    model = get_model(model_id="rfdetr-small")
     results = model.infer(image)
     ```
 
@@ -55,7 +55,7 @@ When you run inference on an image, the same augmentations you applied when you 
 
 The `model_id` parameter can be:
 
-- A [pre-trained model](../quickstart/aliases.md) alias (e.g. `yolov8n-640`, `rfdetr-base`)
+- A [pre-trained model](../quickstart/aliases.md) alias (e.g. `rfdetr-small`, `rfdetr-large`)
 - Your own [fine-tuned model](../quickstart/explore_models.md) from Roboflow (e.g. `my-project/1`)
 - A [Universe model](../quickstart/load_from_universe.md) (e.g. [soccer-players-xy9vk/2](https://universe.roboflow.com/soccer-players/soccer-players-xy9vk/model/2))
 
@@ -87,7 +87,7 @@ pip install supervision
         api_url="https://serverless.roboflow.com",
         api_key="ROBOFLOW_API_KEY",
     )
-    results = client.infer(image, model_id="yolov8m-640")
+    results = client.infer(image, model_id="rfdetr-medium")
 
     detections = sv.Detections.from_inference(results)
 
@@ -111,7 +111,7 @@ pip install supervision
         BytesIO(requests.get("https://media.roboflow.com/inference/people-walking.jpg").content)
     )
 
-    model = get_model(model_id="yolov8m-640")
+    model = get_model(model_id="rfdetr-medium")
     results = model.infer(image)[0]
 
     detections = sv.Detections.from_inference(results)

@@ -177,7 +177,7 @@ Let's take a look and discuss example workflow with dynamic Python blocks.
                 "type": "RoboflowObjectDetectionModel",
                 "name": "model",
                 "image": "$inputs.image",
-                "model_id": "yolov8n-640"
+                "model_id": "rfdetr-small"
             },
             {
                 "type": "OverlapMeasurement",

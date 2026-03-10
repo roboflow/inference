@@ -385,6 +385,55 @@ table {
     <td><a href="https://universe.roboflow.com/microsoft/coco-dataset-vdnr1/model/23">Test in Browser</a></td>
 </tr>
 <tr>
+    <td>RF-DETR (nano)</td>
+    <td>384</td>
+    <td>Object Detection</td>
+    <td>rfdetr-nano</td>
+    <td><a href="https://universe.roboflow.com/microsoft/coco/model/38">Test in Browser</a></td>
+</tr>
+<tr>
+    <td>RF-DETR (small)</td>
+    <td>512</td>
+    <td>Object Detection</td>
+    <td>rfdetr-small</td>
+    <td><a href="https://universe.roboflow.com/microsoft/coco/model/39">Test in Browser</a></td>
+</tr>
+<tr>
+    <td>RF-DETR (base)</td>
+    <td>560</td>
+    <td>Object Detection</td>
+    <td>rfdetr-base</td>
+    <td><a href="https://universe.roboflow.com/microsoft/coco/model/">Test in Browser</a></td>
+</tr>
+<tr>
+    <td>RF-DETR (medium)</td>
+    <td>576</td>
+    <td>Object Detection</td>
+    <td>rfdetr-medium</td>
+    <td><a href="https://universe.roboflow.com/microsoft/coco/model/40">Test in Browser</a></td>
+</tr>
+<tr>
+    <td>RF-DETR (large)</td>
+    <td>704</td>
+    <td>Object Detection</td>
+    <td>rfdetr-large</td>
+    <td><a href="https://universe.roboflow.com/microsoft/coco/model/50">Test in Browser</a></td>
+</tr>
+<tr>
+    <td>RF-DETR (xlarge)</td>
+    <td>700</td>
+    <td>Object Detection</td>
+    <td>rfdetr-xlarge</td>
+    <td><a href="https://universe.roboflow.com/microsoft/coco/model/47">Test in Browser</a></td>
+</tr>
+<tr>
+    <td>RF-DETR (2xlarge)</td>
+    <td>880</td>
+    <td>Object Detection</td>
+    <td>rfdetr-2xlarge</td>
+    <td><a href="https://universe.roboflow.com/microsoft/coco/model/48">Test in Browser</a></td>
+</tr>
+<tr>
     <td>YOLO26n</td>
     <td>640</td>
     <td>Object Detection</td>

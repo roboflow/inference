@@ -69,7 +69,7 @@ client = InferenceHTTPClient(
 )
 
 image_url="https://media.roboflow.com/inference/people-walking.jpg"
-results = client.infer(image_url, model_id="yolov8n-640")
+results = client.infer(image_url, model_id="rfdetr-small")
 ```
 
 For more information, see [Run a model](../quickstart/run_a_model.md).
