@@ -3,13 +3,6 @@ permissions:
   contents: read
 
 on:
-  pull_request:
-    paths:
-      - 'docs/**'
-      - 'theme/**'
-      - 'theme_build/**'
-      - 'mkdocs.yml'
-      - '.github/workflows/docs.yml'
   release:
     types: [created]
   workflow_dispatch:
@@ -138,7 +131,7 @@ jobs:
         working-directory: ./inference_repo
 
       - name: Upload site artifact
-        if: ${{ github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' }}
+        if: ${{ github.event_name == 'workflow_dispatch' }}
         uses: actions/upload-artifact@v4
         with:
           name: docs-site-preview
