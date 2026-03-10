@@ -57,6 +57,7 @@ from inference.core.exceptions import (
     MalformedRoboflowAPIResponseError,
     MalformedWorkflowResponseError,
     MissingDefaultModelError,
+    PaymentRequiredError,
     RetryRequestError,
     RoboflowAPIConnectionError,
     RoboflowAPIForbiddenError,
@@ -68,7 +69,7 @@ from inference.core.exceptions import (
     RoboflowAPITimeoutError,
     RoboflowAPIUnsuccessfulRequestError,
     RoboflowAPIUsagePausedError,
-    WorkspaceLoadError, PaymentRequiredError,
+    WorkspaceLoadError,
 )
 from inference.core.utils.file_system import sanitize_path_segment
 from inference.core.utils.requests import (

@@ -20,6 +20,7 @@ from inference.core.exceptions import (
     ModelArtefactError,
     ModelManagerLockAcquisitionError,
     OnnxProviderNotAvailable,
+    PaymentRequiredError,
     PostProcessingError,
     PreProcessingError,
     RoboflowAPIConnectionError,
@@ -31,7 +32,7 @@ from inference.core.exceptions import (
     RoboflowAPIUsagePausedError,
     ServiceConfigurationError,
     WebRTCConfigurationError,
-    WorkspaceLoadError, PaymentRequiredError,
+    WorkspaceLoadError,
 )
 from inference.core.interfaces.stream_manager.api.errors import (
     ProcessesManagerAuthorisationError,

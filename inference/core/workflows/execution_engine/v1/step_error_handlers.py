@@ -2,9 +2,10 @@ from inference.core.exceptions import (
     InferenceModelNotFound,
     InvalidModelIDError,
     ModelManagerLockAcquisitionError,
+    PaymentRequiredError,
     RoboflowAPIForbiddenError,
     RoboflowAPINotAuthorizedError,
-    RoboflowAPINotNotFoundError, PaymentRequiredError,
+    RoboflowAPINotNotFoundError,
 )
 from inference.core.workflows.errors import ClientCausedStepExecutionError
 from inference_models.errors import ModelNotFoundError, UnauthorizedModelAccessError
@@ -48,7 +49,7 @@ def extended_roboflow_errors_handler(step_name: str, error: Exception) -> None:
             block_id=step_name,
             status_code=402,
             public_message=f"Not enough credits to execute step {step_name}. "
-                           f"Verify your workspace billing page. Details: {error}",
+            f"Verify your workspace billing page. Details: {error}",
             context="workflow_execution | step_execution",
             inner_error=error,
         ) from error
