@@ -60,12 +60,54 @@ body[data-md-color-scheme] .md-header {
 }
 
 .md-tabs__link {
-  font-size: 0.9rem;
+  font-size: 0.82rem;
   margin-top: 0.1rem;
   color: #6F6C79 !important;
   opacity: 1 !important;
   padding: 8px 12px;
   transition: all 0.2s;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.md-tabs__link::before {
+  content: "";
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+  flex-shrink: 0;
+}
+
+/* Start - book icon */
+.md-tabs__item:nth-child(1) .md-tabs__link::before {
+  background-image: url("images/nav/start.svg");
+}
+
+/* Models - node/graph icon */
+.md-tabs__item:nth-child(2) .md-tabs__link::before {
+  background-image: url("images/nav/models.svg");
+}
+
+/* Workflows - workflow/tree icon */
+.md-tabs__item:nth-child(3) .md-tabs__link::before {
+  width: 19px;
+  background-image: url("images/nav/workflows.svg");
+}
+
+/* Reference - code icon */
+.md-tabs__item:nth-child(4) .md-tabs__link::before {
+  background-image: url("images/nav/reference.svg");
+}
+
+/* Active tab icon color override */
+.md-tabs__item--active > .md-tabs__link::before,
+.md-tabs__link--active::before,
+.md-tabs__link[data-md-state="active"]::before {
+  filter: brightness(0) saturate(100%) invert(15%) sepia(95%) saturate(6000%) hue-rotate(268deg) brightness(90%) contrast(105%);
 }
 
 .md-tabs__link:hover {
