@@ -22,9 +22,9 @@ The `inference-models` library supports a wide range of computer vision models a
 ### Object Detection
 
 | Model                                   | Backends | License    | Commercial License in RF Plan | Pre-trained Weights | Trainable at RF |
-|-----------------------------------------|----------|------------|-------------------------------|---------------------|----------------|
+|-----------------------------------------|--------|------------|-------------------------------|---------------------|----------------|
 | [RF-DETR](rfdetr-object-detection.md)   | `torch`, `onnx`, `trt` | Apache 2.0 | N/A | ✅ | ✅ |
-| [YOLOv5](yolov5-object-detection.md)    | `onnx`, `trt` | AGPL-3.0   | ✅ | ❌ | 📤 |
+| [YOLOv5](yolov5-object-detection.md)    | `onnx` | AGPL-3.0   | ✅ | ❌ | 📤 |
 | [YOLOv8](yolov8-object-detection.md)    | `onnx`, `torch-script`, `trt` | AGPL-3.0   | ✅ | ✅ | ✅ |
 | [YOLOv9](yolov9-object-detection.md)    | `onnx`, `torch-script`, `trt` | GPL-3.0    | ❌ | ❌ | 📤 |
 | [YOLOv10](yolov10-object-detection.md)  | `onnx`, `trt` | AGPL-3.0   | ✅ | ✅ | 📤 |
@@ -38,13 +38,13 @@ The `inference-models` library supports a wide range of computer vision models a
 ### Instance Segmentation
 
 | Model | Backends | License | Commercial License in RF Plan | Pre-trained Weights | Trainable at RF |
-|-------|----------|---------|-------------------------------|---------------------|-----------------|
+|-------|--------|---------|-------------------------------|---------------------|-----------------|
 | [RF-DETR Seg](rfdetr-instance-segmentation.md) | `torch` | Apache 2.0 | N/A | ✅ | ✅ |
-| [YOLOv5 Seg](yolov5-instance-segmentation.md) | `onnx`, `trt` | AGPL-3.0 | ✅ | ❌ | ✅ |
-| [YOLOv7 Seg](yolov7-instance-segmentation.md) | `onnx`, `trt` | AGPL-3.0 | ❌ | ❌ | ✅ |
+| [YOLOv5 Seg](yolov5-instance-segmentation.md) | `onnx` | AGPL-3.0 | ✅ | ❌ | ✅ |
+| [YOLOv7 Seg](yolov7-instance-segmentation.md) | `onnx` | AGPL-3.0 | ❌ | ❌ | ✅ |
 | [YOLOv8 Seg](yolov8-instance-segmentation.md) | `onnx`, `torch-script`, `trt` | AGPL-3.0 | ✅ | ✅ | ✅ |
 | [YOLOv11 Seg](yolov11-instance-segmentation.md) | `onnx`, `torch-script`, `trt` | AGPL-3.0 | ✅ | ✅ | ✅ |
-| [YOLACT](yolact-instance-segmentation.md) | `onnx`, `trt` | MIT | N/A | ❌ | ✅ |
+| [YOLACT](yolact-instance-segmentation.md) | `onnx` | MIT | N/A | ❌ | ✅ |
 
 ### Classification
 
@@ -92,6 +92,7 @@ The `inference-models` library supports a wide range of computer vision models a
 | [PaliGemma](paligemma.md) | `torch` | Gemma License | N/A                           | ✅ | ✅ |
 | [Qwen2.5-VL](qwen25vl.md) | `torch` | Apache 2.0 | N/A                           | ✅ | ✅ |
 | [Qwen3-VL](qwen3vl.md) | `torch` | Apache 2.0 | N/A                           | ✅ | ✅ |
+| [Qwen3.5](qwen35.md) | `torch` | Apache 2.0 | N/A                           | ✅ | ✅ |
 | [SmolVLM](smolvlm.md) | `torch` | Apache 2.0 | N/A                           | ✅ | ✅ |
 | [Moondream2](moondream2.md) | `torch` | Apache 2.0 | N/A                           | ✅ | ❌ |
 

@@ -64,7 +64,10 @@ class InferenceModelsRFInstantModelAdapter(Model):
 
         self.task_type = "object-detection"
         model_access_manager = RFInstantSpecificLiberalModelAccessManager()
-        extra_weights_provider_headers = get_extra_weights_provider_headers()
+        extra_weights_provider_headers = get_extra_weights_provider_headers(
+            countinference=kwargs.get("countinference"),
+            service_secret=kwargs.get("service_secret"),
+        )
         self._model: RoboflowInstantHF = AutoModel.from_pretrained(
             model_id_or_path=model_id,
             api_key=self.api_key,

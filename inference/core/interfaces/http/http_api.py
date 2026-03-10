@@ -1,5 +1,6 @@
 import base64
 import concurrent
+import logging
 import os
 import re
 from concurrent.futures import CancelledError, Future, ThreadPoolExecutor
@@ -29,7 +30,15 @@ from starlette.datastructures import UploadFile
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from inference.core import logger
-from inference.core.constants import PROCESSING_TIME_HEADER
+from inference.core.constants import (
+    MODEL_COLD_START_HEADER,
+    MODEL_ID_HEADER,
+    MODEL_LOAD_DETAILS_HEADER,
+    MODEL_LOAD_TIME_HEADER,
+    PROCESSING_TIME_HEADER,
+    WORKFLOW_ID_HEADER,
+    WORKSPACE_ID_HEADER,
+)
 from inference.core.devices.utils import GLOBAL_INFERENCE_SERVER_ID
 from inference.core.entities.requests.clip import (
     ClipCompareRequest,
@@ -177,6 +186,7 @@ from inference.core.env import (
     ROBOFLOW_SERVICE_SECRET,
     SAM3_EXEC_MODE,
     SAM3_FINE_TUNED_MODELS_ENABLED,
+    STRUCTURED_API_LOGGING,
     USE_INFERENCE_MODELS,
     WEBRTC_WORKER_ENABLED,
     WORKFLOWS_MAX_CONCURRENT_STEPS,
@@ -239,6 +249,13 @@ from inference.core.interfaces.webrtc_worker.entities import (
 )
 from inference.core.managers.base import ModelManager
 from inference.core.managers.metrics import get_container_stats
+from inference.core.managers.model_load_collector import (
+    ModelLoadCollector,
+    RequestModelIds,
+    model_load_info,
+    request_model_ids,
+    request_workflow_id,
+)
 from inference.core.managers.prometheus import InferenceInstrumentator
 from inference.core.roboflow_api import (
     build_roboflow_api_headers,
@@ -445,7 +462,14 @@ class HttpInterface(BaseInterface):
                     PROCESSING_TIME_HEADER,
                     REMOTE_PROCESSING_TIME_HEADER,
                     REMOTE_PROCESSING_TIMES_HEADER,
-                ],
+                    MODEL_COLD_START_HEADER,
+                    MODEL_LOAD_TIME_HEADER,
+                    MODEL_LOAD_DETAILS_HEADER,
+                    MODEL_ID_HEADER,
+                    WORKFLOW_ID_HEADER,
+                    WORKSPACE_ID_HEADER,
+                ]
+                + ([EXECUTION_ID_HEADER] if EXECUTION_ID_HEADER is not None else []),
             )
 
         # Optionally add middleware for profiling the FastAPI server and underlying inference API code
@@ -467,6 +491,12 @@ class HttpInterface(BaseInterface):
                 validator=lambda a: True,
                 transformer=lambda a: a,
             )
+            if STRUCTURED_API_LOGGING:
+                # Suppress uvicorn's default access log to avoid duplicate
+                # unstructured entries — we replace it with a structured
+                # access log middleware (see structured_access_log below).
+                logging.getLogger("uvicorn.access").handlers = []
+                logging.getLogger("uvicorn.access").propagate = False
         else:
             app.add_middleware(asgi_correlation_id.CorrelationIdMiddleware)
 
@@ -587,16 +617,26 @@ class HttpInterface(BaseInterface):
                 if api_key is None:
                     return _unauthorized_response("Unauthorized api_key")
 
-                if cached_api_keys.get(api_key, 0) < time.time():
+                cache_entry = cached_api_keys.get(api_key)
+                workspace_id = None
+                if cache_entry and cache_entry[0] >= time.time():
+                    workspace_id = cache_entry[1]
+                else:
                     try:
-                        await get_roboflow_workspace_async(api_key=api_key)
+                        workspace_id = await get_roboflow_workspace_async(
+                            api_key=api_key
+                        )
                         cached_api_keys[api_key] = (
-                            time.time() + 3600
+                            time.time() + 3600,
+                            workspace_id,
                         )  # expired after 1 hour
                     except (RoboflowAPINotAuthorizedError, WorkspaceLoadError):
                         return _unauthorized_response("Unauthorized api_key")
 
-                return await call_next(request)
+                response = await call_next(request)
+                if workspace_id:
+                    response.headers[WORKSPACE_ID_HEADER] = workspace_id
+                return response
 
         if DEDICATED_DEPLOYMENT_WORKSPACE_URL:
 
@@ -650,26 +690,33 @@ class HttpInterface(BaseInterface):
                 if api_key is None:
                     return _unauthorized_response("Unauthorized api_key")
 
-                if cached_api_keys.get(api_key, 0) < time.time():
+                cache_entry = cached_api_keys.get(api_key)
+                workspace_id = None
+                if cache_entry and cache_entry[0] >= time.time():
+                    workspace_id = cache_entry[1]
+                else:
                     try:
-                        # TODO: make this request async!
                         if api_key is None:
-                            workspace_url = None
+                            workspace_id = None
                         else:
-                            workspace_url = await get_roboflow_workspace_async(
+                            workspace_id = await get_roboflow_workspace_async(
                                 api_key=api_key
                             )
 
-                        if workspace_url != DEDICATED_DEPLOYMENT_WORKSPACE_URL:
+                        if workspace_id != DEDICATED_DEPLOYMENT_WORKSPACE_URL:
                             return _unauthorized_response("Unauthorized api_key")
 
                         cached_api_keys[api_key] = (
-                            time.time() + 3600
+                            time.time() + 3600,
+                            workspace_id,
                         )  # expired after 1 hour
                     except (RoboflowAPINotAuthorizedError, WorkspaceLoadError):
                         return _unauthorized_response("Unauthorized api_key")
 
-                return await call_next(request)
+                response = await call_next(request)
+                if workspace_id:
+                    response.headers[WORKSPACE_ID_HEADER] = workspace_id
+                return response
 
         @app.middleware("http")
         async def add_inference_engine_headers(request: Request, call_next):
@@ -679,6 +726,67 @@ class HttpInterface(BaseInterface):
             )
             response.headers["x-inference-engine"] = inference_engine
             return response
+
+        @app.middleware("http")
+        async def track_model_load(request: Request, call_next):
+            load_collector = ModelLoadCollector()
+            model_load_info.set(load_collector)
+            ids_collector = RequestModelIds()
+            request_model_ids.set(ids_collector)
+            response = await call_next(request)
+            if load_collector.has_data():
+                total, detail = load_collector.summarize()
+                response.headers[MODEL_COLD_START_HEADER] = "true"
+                response.headers[MODEL_LOAD_TIME_HEADER] = str(total)
+                if detail is not None:
+                    response.headers[MODEL_LOAD_DETAILS_HEADER] = detail
+            else:
+                response.headers[MODEL_COLD_START_HEADER] = "false"
+            model_ids = ids_collector.get_ids()
+            if model_ids:
+                response.headers[MODEL_ID_HEADER] = ",".join(sorted(model_ids))
+            wf_id = request_workflow_id.get(None)
+            if wf_id:
+                response.headers[WORKFLOW_ID_HEADER] = wf_id
+            return response
+
+        if API_LOGGING_ENABLED and STRUCTURED_API_LOGGING:
+
+            @app.middleware("http")
+            async def structured_access_log(request: Request, call_next):
+                response = await call_next(request)
+                log_fields = {
+                    "method": request.method,
+                    "path": request.url.path,
+                    "status_code": response.status_code,
+                }
+
+                # Read request_id and execution_id from response headers
+                # instead of ContextVars — @app.middleware("http") uses
+                # BaseHTTPMiddleware which runs the inner chain in a
+                # separate asyncio task, so ContextVars set by inner
+                # middlewares are not visible here.
+                header_fields = {
+                    "request_id": CORRELATION_ID_HEADER,
+                    "processing_time": PROCESSING_TIME_HEADER,
+                    "model_cold_start": MODEL_COLD_START_HEADER,
+                    "model_load_time": MODEL_LOAD_TIME_HEADER,
+                    "model_id": MODEL_ID_HEADER,
+                    "workflow_id": WORKFLOW_ID_HEADER,
+                    "workspace_id": WORKSPACE_ID_HEADER,
+                }
+                if EXECUTION_ID_HEADER is not None:
+                    header_fields["execution_id"] = EXECUTION_ID_HEADER
+                for field_name, header_name in header_fields.items():
+                    value = response.headers.get(header_name)
+                    if value is not None:
+                        log_fields[field_name] = value
+
+                logger.info(
+                    f"{request.method} {request.url.path} {response.status_code}",
+                    **log_fields,
+                )
+                return response
 
         self.app = app
         self.model_manager = model_manager
@@ -735,6 +843,8 @@ class HttpInterface(BaseInterface):
             background_tasks: Optional[BackgroundTasks],
             profiler: WorkflowsProfiler,
         ) -> WorkflowInferenceResponse:
+            if workflow_request.workflow_id:
+                request_workflow_id.set(workflow_request.workflow_id)
 
             workflow_init_parameters = {
                 "workflows_core.model_manager": model_manager,
@@ -1780,22 +1890,22 @@ class HttpInterface(BaseInterface):
                     excluded_fields=request.excluded_fields,
                 )
 
+        class ModelInitState:
+            """Class to track model initialization state."""
+
+            def __init__(self):
+                self.is_ready = False
+                self.lock = Lock()  # For thread-safe updates
+                self.initialization_errors = []  # Track errors per model
+
+        model_init_state = ModelInitState()
+
+        should_preload = PRELOAD_MODELS or PINNED_MODELS
+        if not should_preload:
+            model_init_state.is_ready = True
+
         # Enable preloading models at startup
-        if (
-            (PRELOAD_MODELS or PINNED_MODELS or DEDICATED_DEPLOYMENT_WORKSPACE_URL)
-            and PRELOAD_API_KEY
-            and (PINNED_MODELS or not (LAMBDA or GCP_SERVERLESS))
-        ):
-
-            class ModelInitState:
-                """Class to track model initialization state."""
-
-                def __init__(self):
-                    self.is_ready = False
-                    self.lock = Lock()  # For thread-safe updates
-                    self.initialization_errors = []  # Track errors per model
-
-            model_init_state = ModelInitState()
+        if should_preload:
 
             def initialize_models(state: ModelInitState):
                 """Perform asynchronous initialization tasks to load models."""
@@ -1859,6 +1969,12 @@ class HttpInterface(BaseInterface):
                                 )
                             )
                             future.cancel()
+                        except Exception as e:
+                            logger.error(
+                                f"Preload: unexpected error for model '{model_id}': {e}"
+                            )
+                            with state.lock:
+                                state.initialization_errors.append((model_id, str(e)))
 
                 # Update the readiness state in a thread-safe manner
                 with state.lock:
@@ -1873,23 +1989,24 @@ class HttpInterface(BaseInterface):
                 startup_thread.start()
                 logger.info("Model initialization started in the background.")
 
-            @app.get("/readiness", status_code=200)
-            def readiness(
-                state: ModelInitState = Depends(lambda: model_init_state),
-            ):
-                """Readiness endpoint for Kubernetes readiness probe."""
-                with state.lock:
-                    if state.is_ready:
-                        return {"status": "ready"}
-                    else:
-                        return JSONResponse(
-                            content={"status": "not ready"}, status_code=503
-                        )
+        # Attach health/readiness endpoints
+        @app.get("/readiness", status_code=200)
+        def readiness(
+            state: ModelInitState = Depends(lambda: model_init_state),
+        ):
+            """Readiness endpoint for Kubernetes readiness probe."""
+            with state.lock:
+                if state.is_ready:
+                    return {"status": "ready"}
+                else:
+                    return JSONResponse(
+                        content={"status": "not ready"}, status_code=503
+                    )
 
-            @app.get("/healthz", status_code=200)
-            def healthz():
-                """Health endpoint for Kubernetes liveness probe."""
-                return {"status": "healthy"}
+        @app.get("/healthz", status_code=200)
+        def healthz():
+            """Health endpoint for Kubernetes liveness probe."""
+            return {"status": "healthy"}
 
         if CORE_MODELS_ENABLED:
             if CORE_MODEL_CLIP_ENABLED:

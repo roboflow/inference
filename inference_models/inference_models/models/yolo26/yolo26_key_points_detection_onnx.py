@@ -239,15 +239,14 @@ class YOLO26ForKeyPointsDetectionOnnx(
                 .unsqueeze(1)
                 .to(device=result.device)
             )
-            instances_class_mask = (
+            invalid_slot_keypoints = (
                 torch.arange(self._key_points_slots_in_prediction, device=result.device)
                 .unsqueeze(0)
                 .repeat(result.shape[0], 1)
-                < key_points_classes_for_instance_class
+                >= key_points_classes_for_instance_class
             )
-
-            confidence_mask = kp_confidence < key_points_threshold
-            mask = instances_class_mask & confidence_mask
+            keypoints_below_threshold = kp_confidence < key_points_threshold
+            mask = invalid_slot_keypoints | keypoints_below_threshold
             xy[mask] = 0.0
             kp_confidence[mask] = 0.0
             all_key_points.append(

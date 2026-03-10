@@ -21,5 +21,4 @@ lightning>=2.2.1
 flash_attn==2.7.4.post1
 diff_gaussian_rasterization @ git+https://github.com/autonomousvision/mip-splatting.git@dda02ab5ecf45d6edb8c540d9bb65c7e451345a9#subdirectory=submodules/diff-gaussian-rasterization
 gsplat @ git+https://github.com/nerfstudio-project/gsplat.git@2323de5905d5e90e035f792fe65bad0fedd413e7
-# TODO: this is a branch commit - switch to main once https://github.com/roboflow/tdfy/pull/2 is merged
-tdfy @ git+https://github.com/roboflow/tdfy.git@255c365722531dd7c273e4d50c0dd9cd5868768f
+tdfy @ git+https://github.com/roboflow/tdfy.git@75aeb640527b14cc142c796cd332b725cd263fea
