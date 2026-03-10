@@ -78,6 +78,11 @@ class MachineSize(str, Enum):
     XL = "xl"
 
 
+class InferenceBackend(str, Enum):
+    OLD_INFERENCE = "old-inference"
+    INFERENCE_MODELS = "inference-models"
+
+
 class ComputeConfigurationV2(BaseModel):
     type: Literal["compute-configuration-v2"] = Field(
         default="compute-configuration-v2"
@@ -145,6 +150,9 @@ class WorkflowProcessingJobV1(BaseModel):
     notifications_url: Optional[str] = Field(
         serialization_alias="notificationsURL",
         default=None,
+    )
+    inference_backend: Optional[InferenceBackend] = Field(
+        serialization_alias="inferenceBackend", default=None
     )
 
 

@@ -27,7 +27,7 @@ from inference.core.exceptions import (
     RoboflowAPITimeoutError,
     RoboflowAPIUnsuccessfulRequestError,
     RoboflowAPIUsagePausedError,
-    WorkspaceLoadError,
+    WorkspaceLoadError, PaymentRequiredError,
 )
 from inference.core.roboflow_api import (
     ModelEndpointType,
@@ -135,6 +135,20 @@ def test_wrap_roboflow_api_errors_when_http_401_error_occurs_and_default_handler
 
     # when
     with pytest.raises(RoboflowAPINotAuthorizedError):
+        _ = my_fun(2, 3)
+
+
+def test_wrap_roboflow_api_errors_when_http_402_error_occurs_and_default_handlers_used() -> (
+    None
+):
+    @wrap_roboflow_api_errors()
+    def my_fun(a: int, b: int) -> int:
+        response = requests.Response()
+        response.status_code = 402
+        raise requests.exceptions.HTTPError("some", response=response)
+
+    # when
+    with pytest.raises(PaymentRequiredError):
         _ = my_fun(2, 3)
 
 
