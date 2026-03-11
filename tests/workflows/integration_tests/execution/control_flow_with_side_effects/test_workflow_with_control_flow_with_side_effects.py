@@ -411,7 +411,7 @@ def _run_workflow(
             _sliced_4_images,
             SLICED_NAMES,
             SLICED_DETECTION_COUNTS,
-            "with_detection_collapse_right_after_slice",
+            "with_detection_collapse_right_after_slice", # after the dim collapse we are dim=1
             4,  # In this scenario the continue_if step counts the number of slices for each image, so 4 calls to the email step
             "noreply@example.com",
             "Detections found",
@@ -432,12 +432,12 @@ def _run_workflow(
             _batch_4_images,
             BATCH_4_IMAGE_NAMES,
             BATCH_4_DETECTION_COUNTS,
-            "with_detection_collapse_and_message_params",
+            "with_detection_collapse_right_after_slice_with_agg_operation",
             1,
             "noreply@example.com",
             "Detections found",
             (
-                {"num_detections": 3},
+                {"num_slices": 3},
             ),
             (
                 {"email_message": SUCCESSFUL_EMAIL_MESSAGE_MOCK},
@@ -456,7 +456,7 @@ def _run_workflow(
         "with_email_gate_and_with_email_message_params",
         "with_email_gate_and_without_email_message_params",
         "with_detection_collapse_right_after_slice",
-        "with_detection_collapse_and_message_params",
+        "with_detection_collapse_right_after_slice_with_agg_operation",
     ],
 )
 def test_scenario_1(
@@ -498,7 +498,11 @@ def test_scenario_1(
 
         for param_name, param_value in params.items():
             if param_name in ["num_detections", "num_slices"]:
-                    assert len(call.kwargs["message_parameters"][param_name]) == param_value
+                    actual = call.kwargs["message_parameters"][param_name]
+                    if isinstance(actual, (list, tuple)):
+                        assert len(actual) == param_value
+                    else:
+                        assert actual == param_value
                     continue
 
             if param_name == "area_converted":
