@@ -2,7 +2,7 @@
   "version": "1.0",
   "inputs": [
     {"type": "WorkflowImage", "name": "image"},
-    {"type": "WorkflowBatchInput", "name": "image_names", "dimensionality": 1}
+    {"type": "WorkflowBatchInput", "name": "names", "dimensionality": 1}
   ],
   "steps": [
     {
@@ -41,10 +41,10 @@
       "name": "email_notification",
       "subject": "Detections found",
       "receiver_email": "noreply@example.com",
-      "message": "Image: {{ $parameters.image_name }}\nFound {{ $parameters.num_detections }} detection(s) for this image.",
+      "message": "Image: {{ $parameters.name }}\nFound {{ $parameters.num_detections }} detection(s) for this image.",
       "message_parameters": {
         "num_detections": "$steps.detection.predictions",
-        "image_name": "$inputs.image_names"
+        "name": "$inputs.names"
       },
       "message_parameters_operations": {
         "num_detections": [{"type": "SequenceLength"}]
