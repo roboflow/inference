@@ -329,6 +329,46 @@ def _run_workflow(
                 {"email_message": [None, None, None, None, None, SUCCESSFUL_EMAIL_MESSAGE_MOCK, None, None]},
             ),
         ),
+        (
+            _sliced_4_images,
+            SLICED_NAMES,
+            SLICED_DETECTION_COUNTS,
+            "sliced_image_with_email_message_params_and_area_size_step",
+            3,
+            "noreply@example.com",
+            "Detections found",
+            (
+                {"num_detections": 1, "area_converted": 2500},
+                {"num_detections": 1, "area_converted": 2500},
+                {"num_detections": 1, "area_converted": 2500},
+            ),
+            (
+                {"email_message": [None, None, None, None]},
+                {"email_message": [None, None, SUCCESSFUL_EMAIL_MESSAGE_MOCK, SUCCESSFUL_EMAIL_MESSAGE_MOCK]},
+                {"email_message": [None, None, None, None]},
+                {"email_message": [None, None, None, None, None, SUCCESSFUL_EMAIL_MESSAGE_MOCK, None, None]},
+            ),
+        ),
+        (
+            _sliced_4_images,
+            SLICED_NAMES,
+            SLICED_DETECTION_COUNTS,
+            "sliced_image_without_email_message_params_and_area_size_step",
+            3,
+            "noreply@example.com",
+            "Detections found",
+            (
+                {"area_converted": 2500},
+                {"area_converted": 2500},
+                {"area_converted": 2500},
+            ),
+            (
+                {"email_message": [None, None, None, None]},
+                {"email_message": [None, None, SUCCESSFUL_EMAIL_MESSAGE_MOCK, SUCCESSFUL_EMAIL_MESSAGE_MOCK]},
+                {"email_message": [None, None, None, None]},
+                {"email_message": [None, None, None, None, None, SUCCESSFUL_EMAIL_MESSAGE_MOCK, None, None]},
+            ),
+        ),
     ],
     ids=[
         "with_email_message_params",
@@ -337,6 +377,8 @@ def _run_workflow(
         "without_image_names_and_email_message_params",
         "sliced_image_with_email_message_params",
         "sliced_image_without_email_message_params",
+        "sliced_image_with_email_message_params_and_area_size_step",
+        "sliced_image_without_email_message_params_and_area_size_step",
     ],
 )
 def test_scenario_1(
@@ -374,15 +416,18 @@ def test_scenario_1(
 
         params = expected_message_parameters[i]
 
-        if not params:
-            assert call.kwargs["message_parameters"] == {}
-            continue
+        assert len(call.kwargs["message_parameters"]) == len(params)
 
         for param_name, param_value in params.items():
             if param_name == "num_detections":
                     assert len(call.kwargs["message_parameters"][param_name]) == param_value
-            else:
-                assert call.kwargs["message_parameters"][param_name] == param_value
+                    continue
+
+            if param_name == "area_converted":
+                assert call.kwargs["message_parameters"][param_name]["area_converted"] == param_value
+                continue
+            
+            assert call.kwargs["message_parameters"][param_name] == param_value
 
 
     assert len(result) == 4

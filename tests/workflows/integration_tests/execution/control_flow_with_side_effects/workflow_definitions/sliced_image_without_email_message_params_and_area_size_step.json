@@ -1,0 +1,72 @@
+{
+  "version": "1.0",
+  "inputs": [
+    {"type": "WorkflowImage", "name": "image"}
+  ],
+  "steps": [
+    {
+      "type": "roboflow_core/image_slicer@v2",
+      "name": "image_slicer",
+      "image": "$inputs.image",
+      "slice_width": 640,
+      "slice_height": 640,
+      "overlap_ratio_width": 0.2,
+      "overlap_ratio_height": 0.2
+    },
+    {
+      "type": "RoboflowObjectDetectionModel",
+      "name": "detection",
+      "image": "$steps.image_slicer.slices",
+      "model_id": "yolov8n-640",
+      "class_filter": ["person"]
+    },
+    {
+      "type": "roboflow_core/mask_area_measurement@v1",
+      "name": "areas",
+      "predictions": "$steps.detection.predictions",
+      "pixels_per_unit": 1.0
+    },
+    {
+      "type": "ContinueIf",
+      "name": "continue_if",
+      "condition_statement": {
+        "type": "StatementGroup",
+        "statements": [
+          {
+            "type": "BinaryStatement",
+            "left_operand": {
+              "type": "DynamicOperand",
+              "operand_name": "prediction",
+              "operations": [{"type": "SequenceLength"}]
+            },
+            "comparator": {"type": "(Number) >="},
+            "right_operand": {
+              "type": "StaticOperand",
+              "value": 1
+            }
+          }
+        ]
+      },
+      "evaluation_parameters": {"prediction": "$steps.detection.predictions"},
+      "next_steps": ["$steps.email_notification"]
+    },
+    {
+      "type": "roboflow_core/email_notification@v2",
+      "name": "email_notification",
+      "subject": "Detections found",
+      "receiver_email": "noreply@example.com",
+      "message": "Found {{ $parameters.area_converted }} area(s) for this image.",
+      "message_parameters": {
+        "area_converted": "$steps.areas.predictions"
+      },
+      "cooldown_seconds": 0
+    }
+  ],
+  "outputs": [
+    {
+      "type": "JsonField",
+      "name": "email_message",
+      "selector": "$steps.email_notification.message"
+    }
+  ]
+}
