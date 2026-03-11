@@ -794,6 +794,12 @@ if USE_INFERENCE_MODELS:
                 )
 
                 ROBOFLOW_MODEL_TYPES[(task, variant)] = InferenceModelsOwlV2Adapter
+            elif task == "object-detection" and variant == "rfdetr_few_shot":
+                from inference.models.rfdetr_few_shot.rfdetr_few_shot import (
+                    RFDETRFewShot,
+                )
+
+                ROBOFLOW_MODEL_TYPES[(task, variant)] = RFDETRFewShot
             elif task == "object-detection" and variant == "owlv2-finetuned":
                 from inference.models.owlv2.rf_instant_inference_models import (
                     InferenceModelsRFInstantModelAdapter,

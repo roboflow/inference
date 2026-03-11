@@ -61,6 +61,12 @@ from inference.core.entities.requests.inference import (
     SemanticSegmentationInferenceRequest,
 )
 from inference.core.entities.requests.owlv2 import OwlV2InferenceRequest
+from inference.core.entities.requests.rfdetr_few_shot import (
+    RFDETRFewShotInferenceRequest,
+)
+from inference.core.entities.responses.rfdetr_few_shot import (
+    RFDETRFewShotInferenceResponse,
+)
 from inference.core.entities.requests.perception_encoder import (
     PerceptionEncoderCompareRequest,
     PerceptionEncoderImageEmbeddingRequest,
@@ -149,6 +155,7 @@ from inference.core.env import (
     CORE_MODEL_GAZE_ENABLED,
     CORE_MODEL_GROUNDINGDINO_ENABLED,
     CORE_MODEL_OWLV2_ENABLED,
+    CORE_MODEL_RFDETR_FEW_SHOT_ENABLED,
     CORE_MODEL_PE_ENABLED,
     CORE_MODEL_SAM2_ENABLED,
     CORE_MODEL_SAM3_ENABLED,
@@ -1002,6 +1009,9 @@ class HttpInterface(BaseInterface):
 
         load_yolo_world_model = partial(load_core_model, core_model="yolo_world")
         load_owlv2_model = partial(load_core_model, core_model="owlv2")
+        load_rfdetr_few_shot_model = partial(
+            load_core_model, core_model="rfdetr_few_shot"
+        )
         """Loads the YOLO World model into the model manager.
 
         Args:
@@ -3075,6 +3085,43 @@ class HttpInterface(BaseInterface):
                     model_response = self.model_manager.infer_from_request_sync(
                         owl2_model_id, inference_request
                     )
+                    return model_response
+
+            if CORE_MODEL_RFDETR_FEW_SHOT_ENABLED:
+
+                @app.post(
+                    "/rfdetr_few_shot/infer",
+                    response_model=Union[
+                        RFDETRFewShotInferenceResponse,
+                        List[RFDETRFewShotInferenceResponse],
+                    ],
+                    summary="RF-DETR Few-Shot Object Detection",
+                    description="Run few-shot object detection using RF-DETR with inline LoRA fine-tuning",
+                )
+                @with_route_exceptions
+                @usage_collector("request")
+                def rfdetr_few_shot_infer(
+                    inference_request: RFDETRFewShotInferenceRequest,
+                    request: Request,
+                    api_key: Optional[str] = Query(
+                        None,
+                        description="Roboflow API Key",
+                    ),
+                    countinference: Optional[bool] = None,
+                    service_secret: Optional[str] = None,
+                ):
+                    logger.debug("Reached /rfdetr_few_shot/infer")
+                    model_id = load_rfdetr_few_shot_model(
+                        inference_request,
+                        api_key=api_key,
+                        countinference=countinference,
+                        service_secret=service_secret,
+                    )
+                    model_response = self.model_manager.infer_from_request_sync(
+                        model_id, inference_request
+                    )
+                    if isinstance(model_response, list) and len(model_response) == 1:
+                        return model_response[0]
                     return model_response
 
             if CORE_MODEL_GAZE_ENABLED:

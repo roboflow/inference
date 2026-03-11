@@ -1,3 +1,6 @@
+experiments/**/*.db*
+.claude/
+
 watch-dev.sh
 cpu_http.py
 

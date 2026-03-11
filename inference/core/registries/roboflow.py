@@ -58,6 +58,7 @@ GENERIC_MODELS = {
     "paligemma": ("llm", "paligemma"),
     "yolo_world": ("object-detection", "yolo-world"),
     "owlv2": ("object-detection", "owlv2"),
+    "rfdetr_few_shot": ("object-detection", "rfdetr_few_shot"),
     "smolvlm2": ("lmm", "smolvlm-2.2b-instruct"),
     "depth-anything-v2": ("depth-estimation", "depth-anything-v2"),
     "depth-anything-v3": ("depth-estimation", "depth-anything-v3"),

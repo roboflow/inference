@@ -165,6 +165,15 @@ CORE_MODEL_SAM3_ENABLED = str2bool(os.getenv("CORE_MODEL_SAM3_ENABLED", True))
 
 CORE_MODEL_OWLV2_ENABLED = str2bool(os.getenv("CORE_MODEL_OWLV2_ENABLED", False))
 
+CORE_MODEL_RFDETR_FEW_SHOT_ENABLED = str2bool(
+    os.getenv("CORE_MODEL_RFDETR_FEW_SHOT_ENABLED", False)
+)
+RFDETR_FEW_SHOT_CACHE_DIR = os.getenv(
+    "RFDETR_FEW_SHOT_CACHE_DIR",
+    os.path.join(os.getenv("MODEL_CACHE_DIR", "/tmp/cache"), "rfdetr_few_shot"),
+)
+RFDETR_FEW_SHOT_LRU_SIZE = int(os.getenv("RFDETR_FEW_SHOT_LRU_SIZE", "3"))
+
 # Maximum prompt batch size for SAM3 PCS requests
 SAM3_MAX_PROMPT_BATCH_SIZE = int(os.getenv("SAM3_MAX_PROMPT_BATCH_SIZE", 16))
 SAM3_EXEC_MODE = os.getenv("SAM3_EXEC_MODE", "local")

@@ -1,0 +1,1174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RF-DETR Few-Shot LoRA Grid Search</title>
+  <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+  <style>
+    :root {
+      --bg: #0d1117; --surface: #161b22; --border: #30363d;
+      --text: #e6edf3; --text-dim: #8b949e; --accent: #58a6ff;
+      --green: #3fb950; --red: #f85149; --yellow: #d29922; --purple: #bc8cff;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); line-height: 1.5; }
+    .container { max-width: 1600px; margin: 0 auto; padding: 20px; }
+    h1 { font-size: 24px; margin-bottom: 4px; }
+    .subtitle { color: var(--text-dim); font-size: 14px; margin-bottom: 24px; }
+
+    .progress-wrap { margin-bottom: 20px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
+    .progress-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+    .progress-header .left { font-size: 14px; font-weight: 600; }
+    .progress-header .right { font-size: 13px; color: var(--text-dim); }
+    .progress-bar-bg { height: 8px; background: var(--bg); border-radius: 4px; overflow: hidden; }
+    .progress-bar-fill { height: 100%; background: linear-gradient(90deg, var(--accent), var(--green)); border-radius: 4px; transition: width 0.5s ease; }
+    .progress-details { display: flex; gap: 24px; margin-top: 10px; font-size: 13px; color: var(--text-dim); }
+    .progress-details .value { color: var(--text); font-weight: 600; }
+
+    .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 24px; }
+    .stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
+    .stat-card .label { font-size: 12px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px; }
+    .stat-card .value { font-size: 28px; font-weight: 700; margin-top: 4px; }
+    .stat-card .value.green { color: var(--green); }
+    .stat-card .value.red { color: var(--red); }
+
+    .controls { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-bottom: 20px; padding: 16px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; }
+    .control-group { display: flex; flex-direction: column; gap: 4px; }
+    .control-group label { font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px; }
+    select, button { background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 6px 12px; font-size: 13px; cursor: pointer; }
+    select:hover, button:hover { border-color: var(--accent); }
+    label.check { font-size: 13px; display: flex; align-items: center; gap: 6px; cursor: pointer; color: var(--text-dim); }
+    label.check input { accent-color: var(--accent); }
+
+    .tabs { display: flex; gap: 2px; margin-bottom: 20px; }
+    .tab { padding: 8px 20px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px 8px 0 0; cursor: pointer; font-size: 13px; color: var(--text-dim); border-bottom: 2px solid transparent; transition: all 0.15s; }
+    .tab:hover { color: var(--text); }
+    .tab.active { color: var(--accent); border-bottom-color: var(--accent); background: var(--bg); }
+
+    .panel { display: none; }
+    .panel.active { display: block; }
+
+    .chart-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px; }
+    .chart-box { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px; min-height: 380px; }
+    .chart-box.full-width { grid-column: 1 / -1; }
+    .chart-title { font-size: 14px; font-weight: 600; margin-bottom: 8px; }
+
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; background: var(--surface); border-radius: 8px; overflow: hidden; }
+    th { background: var(--bg); padding: 6px 10px; text-align: left; font-weight: 600; color: var(--text-dim); font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid var(--border); cursor: pointer; user-select: none; white-space: nowrap; }
+    th:hover { color: var(--accent); }
+    th .sort-arrow { margin-left: 3px; font-size: 10px; }
+    th .sort-num { font-size: 9px; color: var(--accent); margin-left: 2px; }
+    td { padding: 6px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+    tr.clickable { cursor: pointer; }
+    tr.clickable:hover td { background: rgba(88, 166, 255, 0.08); }
+    .metric-bar { display: inline-block; height: 6px; border-radius: 3px; background: var(--accent); min-width: 2px; }
+    .metric-cell { display: flex; align-items: center; gap: 6px; }
+
+    /* Filter row */
+    th.filter-th { padding: 4px 4px; }
+    .col-filter { width: 100%; background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 4px; padding: 3px 6px; font-size: 11px; font-family: inherit; }
+    .col-filter::placeholder { color: var(--text-dim); opacity: 0.6; }
+    .col-filter:focus { outline: none; border-color: var(--accent); }
+
+    .best-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin-bottom: 12px; }
+    .best-card .rank-num { font-size: 32px; font-weight: 700; color: var(--accent); float: left; margin-right: 16px; line-height: 1; }
+    .best-card .params { font-size: 13px; color: var(--text-dim); }
+    .best-card .metrics { display: flex; gap: 20px; margin-top: 8px; }
+    .best-card .metric .val { font-size: 20px; font-weight: 600; }
+    .best-card .metric .lbl { font-size: 11px; color: var(--text-dim); }
+
+    .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+    .detail-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
+    .detail-card h4 { font-size: 14px; margin-bottom: 8px; color: var(--accent); }
+    .detail-card .metric-row { display: flex; gap: 20px; margin-bottom: 4px; font-size: 13px; }
+    .detail-card .metric-row .lbl { color: var(--text-dim); min-width: 80px; }
+
+    .auto-refresh { position: fixed; top: 12px; right: 20px; font-size: 12px; color: var(--text-dim); z-index: 10; }
+    .auto-refresh .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--green); margin-right: 6px; }
+    .auto-refresh .dot.off { background: var(--red); }
+
+    @media (max-width: 800px) { .chart-grid, .detail-grid { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🔬 RF-DETR Few-Shot LoRA — Grid Search Explorer</h1>
+    <p class="subtitle" id="subtitle">Hyperparameter search: rank × epochs × learning rate × num_train_images · Results averaged across training sets · Primary metrics: mAP@50 and mAP@50:95</p>
+
+    <div class="auto-refresh">
+      <span class="dot" id="refreshDot"></span>
+      <span id="refreshStatus">Auto-refresh: 5s</span>
+      <select id="refreshRate" style="font-size:11px;padding:1px 4px;background:var(--bg);color:var(--text-dim);border:1px solid var(--border);border-radius:4px;margin-left:4px">
+        <option value="3">3s</option>
+        <option value="5" selected>5s</option>
+        <option value="10">10s</option>
+        <option value="30">30s</option>
+        <option value="60">60s</option>
+        <option value="0">Off</option>
+      </select>
+    </div>
+
+    <div class="progress-wrap" id="progressWrap">
+      <div class="progress-header">
+        <span class="left" id="progressLabel">Loading...</span>
+        <span class="right" id="progressEta"></span>
+      </div>
+      <div class="progress-bar-bg"><div class="progress-bar-fill" id="progressFill" style="width:0%"></div></div>
+      <div class="progress-details" id="progressDetails"></div>
+      <div id="elapsedWrap" style="display:none;margin-top:8px;font-size:13px;color:var(--text-dim)">
+        <span id="elapsedIcon">⏱</span> Elapsed: <span class="value" id="elapsedValue">—</span>
+      </div>
+      <div id="gpuWrap" style="display:none;margin-top:10px;padding-top:10px;border-top:1px solid var(--border)">
+        <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+          <span style="font-size:13px;color:var(--text-dim)">🖥 GPU:</span>
+          <span style="font-size:13px"><span class="value" id="gpuUtilVal">—</span>% util</span>
+          <span style="font-size:13px"><span class="value" id="gpuMemVal">—</span> MB</span>
+          <span style="font-size:13px"><span class="value" id="gpuTempVal">—</span>°C</span>
+          <span style="font-size:13px"><span class="value" id="gpuPowerVal">—</span>W</span>
+          <canvas id="gpuSparkline" width="300" height="40" style="border:1px solid var(--border);border-radius:4px;background:var(--bg)"></canvas>
+          <div style="display:flex;align-items:center;gap:6px">
+            <label style="font-size:11px;color:var(--text-dim)">Workers:</label>
+            <select id="workerSelect" style="font-size:12px;padding:2px 6px;width:50px">
+              <option value="1" selected>1</option><option value="2">2</option><option value="3">3</option>
+              <option value="4">4</option><option value="5">5</option>
+              <option value="6">6</option><option value="8">8</option>
+            </select>
+          </div>
+        </div>
+      </div>
+      <div id="runningTasksWrap" style="display:none;margin-top:10px;padding-top:10px;border-top:1px solid var(--border)">
+        <div style="font-size:13px;color:var(--text-dim);margin-bottom:6px">🔄 <strong>Running Tasks:</strong></div>
+        <div id="runningTasksList" style="font-size:12px;font-family:monospace"></div>
+      </div>
+    </div>
+
+    <div class="stats" id="statsCards"></div>
+
+    <div class="tabs" id="tabBar">
+      <div class="tab active" data-tab="overview">Overview</div>
+      <div class="tab" data-tab="heatmaps">Heatmaps</div>
+      <div class="tab" data-tab="trends">Trends</div>
+      <div class="tab" data-tab="table">All Results</div>
+      <div class="tab" data-tab="detail">Detail</div>
+    </div>
+
+    <div class="panel active" id="panel-overview">
+      <div id="bestRuns"></div>
+      <div class="chart-grid" id="overviewCharts">
+        <div class="chart-box"><div class="chart-title">Avg mAP@50 by Rank</div><div id="chart-rank"></div></div>
+        <div class="chart-box"><div class="chart-title">Avg mAP@50 by Epochs</div><div id="chart-epochs"></div></div>
+        <div class="chart-box"><div class="chart-title">Avg mAP@50 by Learning Rate</div><div id="chart-lr"></div></div>
+        <div class="chart-box"><div class="chart-title">Avg mAP@50 by Num Train Images</div><div id="chart-ntrain"></div></div>
+        <!-- Phase 2 charts (hidden until phase 2 detected) -->
+        <div class="chart-box phase2-only" style="display:none"><div class="chart-title">Avg mAP@50 by LoRA Dropout</div><div id="chart-dropout"></div></div>
+        <div class="chart-box phase2-only" style="display:none"><div class="chart-title">Avg mAP@50 by Aug Level</div><div id="chart-aug"></div></div>
+        <div class="chart-box phase2-only" style="display:none"><div class="chart-title">Avg mAP@50 by Weight Decay</div><div id="chart-wd"></div></div>
+        <div class="chart-box phase2-only" style="display:none"><div class="chart-title">Avg mAP@50 by Alpha Ratio</div><div id="chart-alpha"></div></div>
+      </div>
+    </div>
+
+    <div class="panel" id="panel-heatmaps">
+      <div class="controls">
+        <div class="control-group">
+          <label>Metric</label>
+          <select id="hm-metric"><option value="mAP_50">mAP@50</option><option value="mAP_50_95">mAP@50:95</option></select>
+        </div>
+        <div class="control-group">
+          <label>Num Train Images</label>
+          <select id="hm-ntrain"><option value="">All</option><option value="1">1</option><option value="2">2</option><option value="5">5</option></select>
+        </div>
+        <div class="control-group">
+          <label>Train Set</label>
+          <select id="hm-trainset"><option value="">Averaged</option><option value="set_A">Set A only</option><option value="set_B">Set B only</option></select>
+        </div>
+        <div class="control-group phase2-only" style="display:none">
+          <label>LoRA Dropout</label>
+          <select id="hm-dropout"><option value="">All</option></select>
+        </div>
+        <div class="control-group phase2-only" style="display:none">
+          <label>Aug Level</label>
+          <select id="hm-aug"><option value="">All</option><option value="0">0</option><option value="1">1</option><option value="2">2</option></select>
+        </div>
+      </div>
+      <div class="chart-grid" id="heatmapCharts">
+        <div class="chart-box phase1-only"><div class="chart-title">Rank × Epochs</div><div id="hm-rank-epochs"></div></div>
+        <div class="chart-box phase1-only"><div class="chart-title">Rank × Learning Rate</div><div id="hm-rank-lr"></div></div>
+        <div class="chart-box phase1-only"><div class="chart-title">Epochs × Learning Rate</div><div id="hm-epochs-lr"></div></div>
+        <div class="chart-box phase1-only"><div class="chart-title">Training Time (s) — Rank × Epochs</div><div id="hm-time"></div></div>
+        <!-- Phase 2 heatmaps -->
+        <div class="chart-box phase2-only" style="display:none"><div class="chart-title">Dropout × Weight Decay</div><div id="hm-dropout-wd"></div></div>
+        <div class="chart-box phase2-only" style="display:none"><div class="chart-title">Dropout × Alpha Ratio</div><div id="hm-dropout-alpha"></div></div>
+        <div class="chart-box phase2-only" style="display:none"><div class="chart-title">Aug Level × Weight Decay</div><div id="hm-aug-wd"></div></div>
+        <div class="chart-box phase2-only" style="display:none"><div class="chart-title">Alpha Ratio × Num Train</div><div id="hm-alpha-ntrain"></div></div>
+      </div>
+    </div>
+
+    <div class="panel" id="panel-trends">
+      <div class="controls">
+        <div class="control-group">
+          <label>X Axis</label>
+          <select id="trend-x"><option value="num_epochs">Epochs</option><option value="lora_rank">Rank</option><option value="learning_rate">Learning Rate</option><option value="num_train_images">Num Train Images</option></select>
+        </div>
+        <div class="control-group">
+          <label>Color By</label>
+          <select id="trend-color"><option value="lora_rank">Rank</option><option value="num_epochs">Epochs</option><option value="learning_rate">Learning Rate</option><option value="num_train_images">Num Train Images</option></select>
+        </div>
+        <!-- Phase 2 trend options added dynamically -->
+        <div class="control-group">
+          <label>Metric</label>
+          <select id="trend-metric"><option value="mAP_50">mAP@50</option><option value="mAP_50_95">mAP@50:95</option></select>
+        </div>
+      </div>
+      <div class="chart-grid">
+        <div class="chart-box full-width" style="min-height:500px"><div class="chart-title" id="trend-title">mAP Trend</div><div id="trend-main"></div></div>
+        <div class="chart-box full-width" style="min-height:500px"><div class="chart-title">mAP@50 vs mAP@50:95</div><div id="trend-scatter"></div></div>
+        <div class="chart-box full-width" style="min-height:400px"><div class="chart-title">Training Time</div><div id="trend-time"></div></div>
+      </div>
+    </div>
+
+    <div class="panel" id="panel-table">
+      <div class="controls">
+        <div class="control-group">
+          <label>View</label>
+          <select id="table-view">
+            <option value="avg">Averaged across sets</option>
+            <option value="individual">Individual runs</option>
+          </select>
+        </div>
+        <div class="control-group" id="table-set-filter-wrap" style="display:none">
+          <label>Filter Set</label>
+          <select id="table-set-filter">
+            <option value="">All Sets</option>
+            <option value="set_A">Set A</option>
+            <option value="set_B">Set B</option>
+          </select>
+        </div>
+        <label class="check"><input type="checkbox" id="show-per-class"> Show per-class AP@50</label>
+        <span style="flex:1"></span>
+        <span style="font-size:12px;color:var(--text-dim)" id="table-count"></span>
+      </div>
+      <p style="font-size:11px;color:var(--text-dim);margin:-12px 0 12px 0">
+        Click headers to sort (shift-click for multi-sort) · Type in filter row: <code>&gt;30</code>, <code>&lt;60</code>, <code>5</code>, <code>set_A</code> · Pct columns filter as % · Click rows for detail
+      </p>
+      <div class="table-wrap">
+        <table id="resultsTable">
+          <thead>
+            <tr id="tableHead"></tr>
+            <tr id="tableFilters"></tr>
+          </thead>
+          <tbody id="tableBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="panel" id="panel-detail">
+      <div id="detail-content"><p style="color:var(--text-dim)">Click a row in the All Results table, or select below:</p></div>
+      <div class="controls" style="margin-top:12px">
+        <div class="control-group">
+          <label>Individual Experiment</label>
+          <select id="detail-select"></select>
+        </div>
+        <button id="detail-load-btn" onclick="loadSingleDetail()">Load</button>
+      </div>
+      <div id="detail-single"></div>
+    </div>
+  </div>
+
+  <script>
+    const PLOTLY_DARK = {
+      paper_bgcolor: '#161b22', plot_bgcolor: '#161b22',
+      font: { color: '#e6edf3', size: 12 },
+      xaxis: { gridcolor: '#30363d', zerolinecolor: '#30363d' },
+      yaxis: { gridcolor: '#30363d', zerolinecolor: '#30363d' },
+      margin: { l: 50, r: 20, t: 10, b: 40 },
+    };
+    const COLORS = ['#58a6ff','#3fb950','#d29922','#f85149','#bc8cff','#79c0ff','#56d364','#e3b341'];
+
+    let allExperiments = [];
+    let allClasses = [];
+    let sortKeys = [{col: 'mAP_50', dir: -1}];
+    let filters = {};
+    let tableViewMode = 'avg';
+    let isPhase2 = false;
+    let elapsedStartTime = null;
+    let elapsedTimerId = null;
+    let refreshIntervalId = null;
+    let refreshRateMs = 5000;
+    let runningTimerIds = [];
+
+    // ─── Tabs ──────────────────────────────────────────────────
+    function switchTab(name) {
+      document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+      document.querySelectorAll('.panel').forEach(x => x.classList.remove('active'));
+      document.querySelector(`.tab[data-tab="${name}"]`).classList.add('active');
+      document.getElementById('panel-' + name).classList.add('active');
+    }
+    document.querySelectorAll('.tab').forEach(t =>
+      t.addEventListener('click', () => switchTab(t.dataset.tab)));
+
+    async function fetchJSON(url) { return (await fetch(url)).json(); }
+    function fmtTime(s) {
+      if (!s || s < 0) return '—';
+      if (s < 60) return `${Math.round(s)}s`;
+      if (s < 3600) return `${Math.floor(s/60)}m ${Math.round(s%60)}s`;
+      return `${Math.floor(s/3600)}h ${Math.round((s%3600)/60)}m`;
+    }
+    function fmtPct(v) { return v != null ? (v*100).toFixed(1)+'%' : '—'; }
+
+    // ─── Phase 2 UI toggle ─────────────────────────────────────
+    function activatePhase2UI() {
+      if (isPhase2) return;
+      isPhase2 = true;
+      document.getElementById('subtitle').textContent =
+        'Phase 2: dropout × aug_level × weight_decay × alpha_ratio × num_train_images · Fixed: rank=4, epochs=50, lr=0.002';
+      // Show phase 2 elements, hide phase 1-only elements
+      document.querySelectorAll('.phase2-only').forEach(el => el.style.display = '');
+      document.querySelectorAll('.phase1-only').forEach(el => el.style.display = 'none');
+      // Add phase 2 options to trend selectors
+      const phase2Opts = [
+        {value: 'lora_dropout', label: 'LoRA Dropout'},
+        {value: 'augmentation_level', label: 'Aug Level'},
+        {value: 'weight_decay', label: 'Weight Decay'},
+        {value: 'alpha_ratio', label: 'Alpha Ratio'},
+      ];
+      ['trend-x', 'trend-color'].forEach(selId => {
+        const sel = document.getElementById(selId);
+        phase2Opts.forEach(o => {
+          if (!sel.querySelector(`option[value="${o.value}"]`)) {
+            sel.insertAdjacentHTML('beforeend', `<option value="${o.value}">${o.label}</option>`);
+          }
+        });
+      });
+      // Add phase 2 heatmap filter change listeners
+      ['hm-dropout','hm-aug'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.addEventListener('change', loadHeatmaps);
+      });
+    }
+
+    // ─── Elapsed time ────────────────────────────────────────────
+    function updateElapsedDisplay(elapsedSeconds, running) {
+      const wrap = document.getElementById('elapsedWrap');
+      const val = document.getElementById('elapsedValue');
+      const icon = document.getElementById('elapsedIcon');
+      if (elapsedSeconds == null) { wrap.style.display = 'none'; return; }
+      wrap.style.display = '';
+      val.textContent = fmtTime(elapsedSeconds);
+      if (running) {
+        icon.textContent = '⏱';
+        val.style.color = 'var(--yellow)';
+        // Start live counter if not already running
+        if (!elapsedTimerId) {
+          elapsedStartTime = Date.now() - elapsedSeconds * 1000;
+          elapsedTimerId = setInterval(() => {
+            const now = (Date.now() - elapsedStartTime) / 1000;
+            document.getElementById('elapsedValue').textContent = fmtTime(now);
+          }, 1000);
+        }
+      } else {
+        icon.textContent = '✅';
+        val.style.color = 'var(--green)';
+        if (elapsedTimerId) { clearInterval(elapsedTimerId); elapsedTimerId = null; }
+      }
+    }
+
+    // ─── GPU Stats + Sparkline ─────────────────────────────────
+    let gpuHistory = [];
+    const GPU_SPARKLINE_MAX = 60; // last 60 data points (5min at 5s interval)
+
+    async function loadGpuStats() {
+      try {
+        const d = await fetchJSON('/api/gpu_stats?limit=60');
+        if (!d.points || d.points.length === 0) return;
+        gpuHistory = d.points;
+        const latest = d.latest;
+        document.getElementById('gpuWrap').style.display = '';
+        document.getElementById('gpuUtilVal').textContent = Math.round(latest.gpu_util_pct);
+        document.getElementById('gpuMemVal').textContent = Math.round(latest.mem_used_mb);
+        document.getElementById('gpuTempVal').textContent = Math.round(latest.temp_c);
+        document.getElementById('gpuPowerVal').textContent = Math.round(latest.power_w);
+
+        // Color util value by utilization level
+        const utilEl = document.getElementById('gpuUtilVal');
+        if (latest.gpu_util_pct > 80) utilEl.style.color = 'var(--green)';
+        else if (latest.gpu_util_pct > 40) utilEl.style.color = 'var(--yellow)';
+        else utilEl.style.color = 'var(--red)';
+
+        drawGpuSparkline();
+      } catch(e) { /* gpu stats not available yet */ }
+    }
+
+    function drawGpuSparkline() {
+      const canvas = document.getElementById('gpuSparkline');
+      if (!canvas || gpuHistory.length < 2) return;
+      const ctx = canvas.getContext('2d');
+      const w = canvas.width, h = canvas.height;
+      const pad = 2;
+      ctx.clearRect(0, 0, w, h);
+
+      const vals = gpuHistory.map(p => p.gpu_util_pct);
+      const memVals = gpuHistory.map(p => (p.mem_used_mb / p.mem_total_mb) * 100);
+      const n = vals.length;
+      const xStep = (w - pad * 2) / Math.max(n - 1, 1);
+
+      // Draw memory fill (subtle)
+      ctx.beginPath();
+      ctx.moveTo(pad, h - pad);
+      for (let i = 0; i < n; i++) {
+        const x = pad + i * xStep;
+        const y = h - pad - (memVals[i] / 100) * (h - pad * 2);
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
+      ctx.lineTo(pad + (n - 1) * xStep, h - pad);
+      ctx.lineTo(pad, h - pad);
+      ctx.fillStyle = 'rgba(88, 166, 255, 0.1)';
+      ctx.fill();
+
+      // Draw GPU util line
+      ctx.beginPath();
+      for (let i = 0; i < n; i++) {
+        const x = pad + i * xStep;
+        const y = h - pad - (vals[i] / 100) * (h - pad * 2);
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
+      ctx.strokeStyle = '#58a6ff';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+
+      // Draw threshold lines
+      [25, 50, 75].forEach(pct => {
+        const y = h - pad - (pct / 100) * (h - pad * 2);
+        ctx.beginPath();
+        ctx.moveTo(pad, y);
+        ctx.lineTo(w - pad, y);
+        ctx.strokeStyle = 'rgba(48, 54, 61, 0.6)';
+        ctx.lineWidth = 0.5;
+        ctx.stroke();
+      });
+    }
+
+    // Poll GPU stats every 5 seconds
+    setInterval(loadGpuStats, 5000);
+    loadGpuStats();
+
+    // ─── Progress + Summary ────────────────────────────────────
+    async function loadSummary() {
+      const d = await fetchJSON('/api/summary');
+
+      // Detect phase 2
+      if (d.is_phase2) activatePhase2UI();
+
+      // Elapsed time
+      updateElapsedDisplay(d.elapsed_seconds, d.is_running);
+
+      const pct = d.pct_complete || 0;
+      const total = d.grid_total || '?';
+      document.getElementById('progressLabel').textContent = `${d.completed} / ${total} experiments completed (${pct.toFixed(1)}%)`;
+      document.getElementById('progressFill').style.width = pct + '%';
+      document.getElementById('progressEta').textContent =
+        d.eta_seconds > 0 ? `ETA: ${fmtTime(d.eta_seconds)}` : pct >= 100 ? '✅ Complete' : 'Estimating...';
+
+      let details = `<span>Completed: <span class="value">${d.completed}</span></span>`;
+      if (d.running > 0) details += `<span>Running: <span class="value" style="color:var(--yellow)">${d.running}</span></span>`;
+      if (d.failed > 0) details += `<span>Failed: <span class="value" style="color:var(--red)">${d.failed}</span></span>`;
+      if (d.avg_time_per_experiment) details += `<span>Avg: <span class="value">${fmtTime(d.avg_time_per_experiment)}</span>/exp</span>`;
+      if (d.remaining_count) details += `<span>Remaining: <span class="value">${d.remaining_count}</span></span>`;
+      if (d.elapsed_seconds != null) details += `<span>Total: <span class="value">${fmtTime(d.elapsed_seconds)}</span></span>`;
+      document.getElementById('progressDetails').innerHTML = details;
+
+      const best50 = d.best_runs.length ? d.best_runs[0].mAP_50 : null;
+      const best5095 = d.best_runs.length ? d.best_runs[0].mAP_50_95 : null;
+      document.getElementById('statsCards').innerHTML = `
+        <div class="stat-card"><div class="label">Best mAP@50</div><div class="value green">${fmtPct(best50)}</div></div>
+        <div class="stat-card"><div class="label">Best mAP@50:95</div><div class="value green">${fmtPct(best5095)}</div></div>
+        <div class="stat-card"><div class="label">Completed</div><div class="value">${d.completed}</div></div>
+        <div class="stat-card"><div class="label">Failed</div><div class="value ${d.failed>0?'red':''}">${d.failed}</div></div>`;
+
+      const br = document.getElementById('bestRuns');
+      br.innerHTML = '<h3 style="margin-bottom:12px;color:var(--text-dim)">🏆 Top 5 Configs (mAP@50, averaged across training sets)</h3>';
+      d.best_runs.slice(0, 5).forEach((r, i) => {
+        const badge = r.n_sets === 2
+          ? '<span style="color:var(--green);font-size:11px">✓ 2 sets</span>'
+          : `<span style="color:var(--yellow);font-size:11px">${r.n_sets||1} set</span>`;
+        let paramStr = `rank=${r.lora_rank} · epochs=${r.num_epochs} · lr=${r.learning_rate} · n_train=${r.num_train_images}`;
+        if (isPhase2) {
+          paramStr += ` · dropout=${r.lora_dropout ?? '—'} · aug=${r.augmentation_level ?? '—'} · wd=${r.weight_decay ?? '—'} · α/${r.alpha_ratio ?? '—'}`;
+        }
+        paramStr += ` · ${fmtTime(r.train_time_seconds)} ${badge}`;
+        br.innerHTML += `<div class="best-card">
+          <div class="rank-num">#${i+1}</div>
+          <div>
+            <div class="params">${paramStr}</div>
+            <div class="metrics">
+              <div class="metric"><div class="val">${fmtPct(r.mAP_50)}</div><div class="lbl">mAP@50</div></div>
+              <div class="metric"><div class="val">${fmtPct(r.mAP_50_95)}</div><div class="lbl">mAP@50:95</div></div>
+            </div>
+          </div>
+        </div>`;
+      });
+    }
+
+    // ─── Overview ──────────────────────────────────────────────
+    async function loadOverview() {
+      const charts = [
+        ['lora_rank','chart-rank'],['num_epochs','chart-epochs'],
+        ['learning_rate','chart-lr'],['num_train_images','chart-ntrain'],
+      ];
+      if (isPhase2) {
+        charts.push(
+          ['lora_dropout','chart-dropout'],['augmentation_level','chart-aug'],
+          ['weight_decay','chart-wd'],['alpha_ratio','chart-alpha'],
+        );
+      }
+      for (const [vary, elId] of charts) {
+        const el = document.getElementById(elId);
+        if (!el) continue;
+        const [d1, d2] = await Promise.all([
+          fetchJSON(`/api/compare?vary=${vary}&metric=mAP_50`),
+          fetchJSON(`/api/compare?vary=${vary}&metric=mAP_50_95`),
+        ]);
+        if (!d1.length) continue;
+        const x = d1.map(d => String(d[vary]));
+        Plotly.newPlot(elId, [
+          { x, y: d1.map(d=>(d.avg_metric||0)*100), type:'bar', name:'mAP@50', marker:{color:'#58a6ff'} },
+          { x, y: d2.map(d=>(d.avg_metric||0)*100), type:'bar', name:'mAP@50:95', marker:{color:'#3fb950'} },
+        ], { ...PLOTLY_DARK, barmode:'group', yaxis:{...PLOTLY_DARK.yaxis, title:'%', range:[0,100]} },
+        { responsive:true });
+      }
+    }
+
+    // ─── Heatmaps ──────────────────────────────────────────────
+    async function loadHeatmaps() {
+      const metric = document.getElementById('hm-metric').value;
+      const ntrain = document.getElementById('hm-ntrain').value;
+      const trainset = document.getElementById('hm-trainset').value;
+      let qs = `metric=${metric}`;
+      if (ntrain) qs += `&n_train=${ntrain}`;
+      if (trainset) qs += `&train_set=${trainset}`;
+      const data = await fetchJSON(`/api/heatmap?${qs}`);
+
+      function makeHeatmap(xKey, yKey, elId, useTime) {
+        const xVals = [...new Set(data.map(d=>d[xKey]))].sort((a,b)=>a-b);
+        const yVals = [...new Set(data.map(d=>d[yKey]))].sort((a,b)=>a-b);
+        const z = yVals.map(y => xVals.map(x => {
+          const m = data.filter(d => d[xKey]===x && d[yKey]===y);
+          if (!m.length) return null;
+          return useTime ? m.reduce((s,r)=>s+(r.train_time_seconds||0),0)/m.length
+                         : m.reduce((s,r)=>s+(r.metric_val||0),0)/m.length*100;
+        }));
+        const text = z.map(row => row.map(v => v !== null ? v.toFixed(1)+(useTime?'s':'%') : ''));
+        Plotly.newPlot(elId, [{
+          z, x: xVals.map(String), y: yVals.map(String), text,
+          texttemplate:'%{text}', type:'heatmap',
+          colorscale: useTime?'YlOrRd':'Viridis', hoverongaps:false,
+        }], {
+          ...PLOTLY_DARK,
+          xaxis:{...PLOTLY_DARK.xaxis, title:xKey.replace(/_/g,' '), type:'category'},
+          yaxis:{...PLOTLY_DARK.yaxis, title:yKey.replace(/_/g,' '), type:'category'},
+        }, {responsive:true});
+      }
+      if (isPhase2) {
+        makeHeatmap('lora_dropout','weight_decay','hm-dropout-wd',false);
+        makeHeatmap('lora_dropout','alpha_ratio','hm-dropout-alpha',false);
+        makeHeatmap('augmentation_level','weight_decay','hm-aug-wd',false);
+        makeHeatmap('alpha_ratio','num_train_images','hm-alpha-ntrain',false);
+      } else {
+        makeHeatmap('lora_rank','num_epochs','hm-rank-epochs',false);
+        makeHeatmap('lora_rank','learning_rate','hm-rank-lr',false);
+        makeHeatmap('num_epochs','learning_rate','hm-epochs-lr',false);
+        makeHeatmap('lora_rank','num_epochs','hm-time',true);
+      }
+    }
+    ['hm-metric','hm-ntrain','hm-trainset'].forEach(id =>
+      document.getElementById(id).addEventListener('change', loadHeatmaps));
+
+    // ─── Trends ────────────────────────────────────────────────
+    async function loadTrends() {
+      const metricKey = document.getElementById('trend-metric').value;
+      const xKey = document.getElementById('trend-x').value;
+      const colorKey = document.getElementById('trend-color').value;
+      document.getElementById('trend-title').textContent = `${metricKey.replace('_',' ')} by ${xKey.replace(/_/g,' ')} (averaged across sets)`;
+
+      const resp = await fetchJSON('/api/experiments?group=avg');
+      const data = resp.rows || resp;  // handle both formats
+      const colorVals = [...new Set(data.map(d => d[colorKey]))].sort((a,b) => a-b);
+
+      const traces = colorVals.map((cv, i) => {
+        const subset = data.filter(d => d[colorKey] === cv);
+        const grouped = {};
+        subset.forEach(d => { const xv = d[xKey]; (grouped[xv]=grouped[xv]||[]).push((d[metricKey]||0)*100); });
+        const xs = Object.keys(grouped).map(Number).sort((a,b)=>a-b);
+        const ys = xs.map(x => grouped[x].reduce((s,v)=>s+v,0)/grouped[x].length);
+        return { x:xs, y:ys, mode:'lines+markers', name:`${colorKey.replace(/_/g,' ')}=${cv}`,
+                 line:{color:COLORS[i%COLORS.length]}, marker:{size:6} };
+      });
+      Plotly.newPlot('trend-main', traces, {
+        ...PLOTLY_DARK, xaxis:{...PLOTLY_DARK.xaxis, title:xKey.replace(/_/g,' ')},
+        yaxis:{...PLOTLY_DARK.yaxis, title:metricKey.replace('_',' ')+' %', range:[0,100]},
+        legend:{bgcolor:'rgba(0,0,0,0)'},
+      }, {responsive:true});
+
+      const scatterTraces = colorVals.map((cv, i) => {
+        const subset = data.filter(d => d[colorKey] === cv);
+        return {
+          x:subset.map(d=>(d.mAP_50||0)*100), y:subset.map(d=>(d.mAP_50_95||0)*100),
+          mode:'markers', name:`${colorKey.replace(/_/g,' ')}=${cv}`,
+          marker:{size:8, color:COLORS[i%COLORS.length], opacity:0.7},
+          text:subset.map(d => {
+            let t = `r${d.lora_rank}_ep${d.num_epochs}_lr${d.learning_rate}_n${d.num_train_images}`;
+            if (isPhase2) t += `_do${d.lora_dropout}_aug${d.augmentation_level}_wd${d.weight_decay}_a${d.alpha_ratio}`;
+            return t;
+          }),
+        };
+      });
+      Plotly.newPlot('trend-scatter', scatterTraces, {
+        ...PLOTLY_DARK, xaxis:{...PLOTLY_DARK.xaxis, title:'mAP@50 %', range:[0,100]},
+        yaxis:{...PLOTLY_DARK.yaxis, title:'mAP@50:95 %', range:[0,60]},
+        legend:{bgcolor:'rgba(0,0,0,0)'},
+      }, {responsive:true});
+
+      const timeTraces = colorVals.map((cv, i) => {
+        const subset = data.filter(d => d[colorKey] === cv);
+        const grouped = {};
+        subset.forEach(d => { const xv = d[xKey]; (grouped[xv]=grouped[xv]||[]).push(d.train_time_seconds||0); });
+        const xs = Object.keys(grouped).map(Number).sort((a,b)=>a-b);
+        const ys = xs.map(x => grouped[x].reduce((s,v)=>s+v,0)/grouped[x].length);
+        return { x:xs, y:ys, mode:'lines+markers', name:`${colorKey.replace(/_/g,' ')}=${cv}`,
+                 line:{color:COLORS[i%COLORS.length]} };
+      });
+      Plotly.newPlot('trend-time', timeTraces, {
+        ...PLOTLY_DARK, xaxis:{...PLOTLY_DARK.xaxis, title:xKey.replace(/_/g,' ')},
+        yaxis:{...PLOTLY_DARK.yaxis, title:'Train Time (s)'},
+        legend:{bgcolor:'rgba(0,0,0,0)'},
+      }, {responsive:true});
+    }
+    ['trend-x','trend-color','trend-metric'].forEach(id =>
+      document.getElementById(id).addEventListener('change', loadTrends));
+
+    // ─── Table ─────────────────────────────────────────────────
+    const PCT_COLS = new Set(['mAP_50','mAP_50_95','recall_03','precision_03','f1_03']);
+
+    function getTableCols() {
+      const showClass = document.getElementById('show-per-class').checked;
+      const cols = [
+        { key:'lora_rank', label:'Rank', type:'num', ph:'e.g. 4' },
+        { key:'num_epochs', label:'Epochs', type:'num', ph:'e.g. >25' },
+        { key:'learning_rate', label:'LR', type:'num', ph:'e.g. 0.002' },
+        { key:'num_train_images', label:'N Train', type:'num', ph:'1,2,5' },
+      ];
+      if (isPhase2) {
+        cols.push(
+          { key:'lora_dropout', label:'Dropout', type:'num2', ph:'0.0' },
+          { key:'augmentation_level', label:'Aug', type:'num', ph:'0,1,2' },
+          { key:'weight_decay', label:'WD', type:'num', ph:'1e-4' },
+          { key:'alpha_ratio', label:'α/r', type:'num', ph:'1,2,4' },
+        );
+      }
+      if (tableViewMode === 'individual') {
+        cols.push({ key:'train_image_set', label:'Set', type:'text', ph:'set_A' });
+      }
+      cols.push(
+        { key:'mAP_50', label:'mAP@50', type:'pct', bar:true, ph:'>30' },
+        { key:'mAP_50_95', label:'mAP@50:95', type:'pct', bar:true, ph:'>20' },
+        { key:'recall_03', label:'Recall', type:'pct', ph:'>40' },
+        { key:'precision_03', label:'Prec', type:'pct', ph:'' },
+        { key:'f1_03', label:'F1', type:'pct', ph:'' },
+      );
+      if (showClass) {
+        for (const cls of allClasses) {
+          cols.push({ key:'class_'+cls, label:cls, type:'pct', isClass:true, ph:'' });
+          PCT_COLS.add('class_'+cls);
+        }
+      }
+      cols.push(
+        { key:'train_time_seconds', label:'Time(s)', type:'time', ph:'<120' },
+        { key:'final_loss', label:'Loss', type:'num2', ph:'' },
+      );
+      if (tableViewMode === 'avg') {
+        cols.push({ key:'n_sets', label:'Sets', type:'num', ph:'' });
+      }
+      return cols;
+    }
+
+    function flattenRow(row) {
+      const flat = {...row};
+      if (row.per_class_ap50) {
+        for (const [cls, val] of Object.entries(row.per_class_ap50)) {
+          flat['class_'+cls] = val;
+        }
+      }
+      return flat;
+    }
+
+    function fmtCell(val, type) {
+      if (val == null) return '—';
+      if (type === 'pct') return fmtPct(val);
+      if (type === 'time') return fmtTime(val);
+      if (type === 'num2') return val.toFixed(2);
+      return String(val);
+    }
+
+    function parseFilter(fstr) {
+      // Returns {op, target} or null if incomplete/invalid
+      if (!fstr || !fstr.trim()) return null;
+      const m = fstr.match(/^([<>!=]=?)\s*(.*)$/);
+      const op = m ? m[1] : '=';
+      const raw = (m ? m[2] : fstr).trim();
+      if (!raw) return null;              // incomplete: just "<" or ">" typed so far
+      const num = parseFloat(raw);
+      if (isNaN(num)) return { op: 'text', target: raw };
+      return { op, target: num };
+    }
+
+    function applyFilters(data) {
+      // Build parsed filters once
+      const active = [];
+      for (const [colKey, fstr] of Object.entries(filters)) {
+        const parsed = parseFilter(fstr);
+        if (!parsed) continue;
+        active.push({ colKey, ...parsed });
+      }
+      if (!active.length) return data;
+
+      return data.filter(row => {
+        for (const f of active) {
+          const val = row[f.colKey];
+          if (val == null) return false;
+
+          if (f.op === 'text') {
+            if (!String(val).toLowerCase().includes(f.target.toLowerCase())) return false;
+            continue;
+          }
+
+          const isPct = PCT_COLS.has(f.colKey);
+          const numVal = isPct ? (val * 100) : (typeof val === 'number' ? val : parseFloat(val));
+          if (isNaN(numVal)) return false;
+
+          const t = f.target;
+          if (f.op === '<'  && !(numVal <  t)) return false;
+          if (f.op === '>'  && !(numVal >  t)) return false;
+          if (f.op === '<=' && !(numVal <= t)) return false;
+          if (f.op === '>=' && !(numVal >= t)) return false;
+          if (f.op === '!=' && numVal === t)   return false;
+          if (f.op === '='  && Math.abs(numVal - t) > 0.01) return false;
+        }
+        return true;
+      });
+    }
+
+    function multiSort(data) {
+      return [...data].sort((a, b) => {
+        for (const {col, dir} of sortKeys) {
+          const av = a[col] ?? -Infinity, bv = b[col] ?? -Infinity;
+          const cmp = typeof av === 'string' ? av.localeCompare(bv) : (av - bv);
+          if (cmp !== 0) return cmp * dir;
+        }
+        return 0;
+      });
+    }
+
+    // Track current columns so we know when structure changes
+    let _currentColKeys = '';
+    let _filterDebounce = null;
+
+    // Full rebuild: headers + filter row + body. Called when columns change.
+    function renderTable() {
+      const cols = getTableCols();
+      const colKeys = cols.map(c => c.key).join(',');
+      const structureChanged = colKeys !== _currentColKeys;
+      _currentColKeys = colKeys;
+
+      if (structureChanged) {
+        renderTableHead(cols);
+        renderTableFilters(cols);
+      } else {
+        // Just update sort arrows in-place
+        const head = document.getElementById('tableHead');
+        head.querySelectorAll('th').forEach(th => {
+          const col = th.dataset.col;
+          const si = sortKeys.findIndex(s => s.col === col);
+          const arrowEl = th.querySelector('.sort-arrow');
+          const numEl = th.querySelector('.sort-num');
+          if (arrowEl) arrowEl.textContent = si >= 0 ? (sortKeys[si].dir > 0 ? '▲' : '▼') : '';
+          if (numEl) numEl.textContent = si >= 0 && sortKeys.length > 1 ? si+1 : '';
+        });
+      }
+      renderTableBody(cols);
+    }
+
+    function renderTableHead(cols) {
+      const head = document.getElementById('tableHead');
+      head.innerHTML = cols.map(c => {
+        const si = sortKeys.findIndex(s => s.col === c.key);
+        const arrow = si >= 0 ? (sortKeys[si].dir > 0 ? '▲' : '▼') : '';
+        const num = si >= 0 && sortKeys.length > 1 ? si+1 : '';
+        return `<th data-col="${c.key}">${c.label}<span class="sort-arrow">${arrow}</span><span class="sort-num">${num}</span></th>`;
+      }).join('');
+
+      head.querySelectorAll('th').forEach(th => {
+        th.addEventListener('click', (e) => {
+          const col = th.dataset.col;
+          if (e.shiftKey) {
+            const existing = sortKeys.find(s => s.col === col);
+            if (existing) existing.dir *= -1;
+            else sortKeys.push({col, dir: -1});
+          } else {
+            const existing = sortKeys.find(s => s.col === col);
+            if (existing && sortKeys.length === 1) existing.dir *= -1;
+            else sortKeys = [{col, dir: -1}];
+          }
+          renderTable();
+        });
+      });
+    }
+
+    function renderTableFilters(cols) {
+      const filterRow = document.getElementById('tableFilters');
+      filterRow.innerHTML = cols.map(c =>
+        `<th class="filter-th"><input class="col-filter" data-col="${c.key}" placeholder="${c.ph||''}" value="${filters[c.key]||''}"></th>`
+      ).join('');
+      filterRow.querySelectorAll('.col-filter').forEach(inp => {
+        inp.addEventListener('input', () => {
+          filters[inp.dataset.col] = inp.value;
+          // Debounce: only re-render body after 300ms pause
+          clearTimeout(_filterDebounce);
+          _filterDebounce = setTimeout(() => renderTableBody(getTableCols()), 300);
+        });
+      });
+    }
+
+    function renderTableBody(cols) {
+      const flat = allExperiments.map(flattenRow);
+      const filtered = applyFilters(flat);
+      const sorted = multiSort(filtered);
+      document.getElementById('table-count').textContent = `${sorted.length} / ${flat.length} rows`;
+
+      const body = document.getElementById('tableBody');
+      body.innerHTML = sorted.map(row => {
+        const rowData = {
+          rank: row.lora_rank, epochs: row.num_epochs, lr: row.learning_rate,
+          n_train: row.num_train_images, id: row.id, ids: row.experiment_ids,
+        };
+        if (isPhase2) {
+          rowData.dropout = row.lora_dropout;
+          rowData.aug = row.augmentation_level;
+          rowData.wd = row.weight_decay;
+          rowData.alpha_ratio = row.alpha_ratio;
+        }
+        return `<tr class="clickable" data-row='${JSON.stringify(rowData)}'>` + cols.map(c => {
+          const v = row[c.key];
+          const fv = fmtCell(v, c.type);
+          if (c.bar && v != null) {
+            const pct = Math.min(v * 100, 100);
+            return `<td><div class="metric-cell"><span style="width:50px">${fv}</span><span class="metric-bar" style="width:${pct}px"></span></div></td>`;
+          }
+          return `<td>${fv}</td>`;
+        }).join('') + '</tr>';
+      }).join('');
+
+      // Click handler for rows
+      body.querySelectorAll('tr.clickable').forEach(tr => {
+        tr.addEventListener('click', () => {
+          const info = JSON.parse(tr.dataset.row);
+          switchTab('detail');
+          if (tableViewMode === 'avg') {
+            loadGroupDetail(info);
+          } else {
+            loadSingleDetailById(info.id);
+          }
+        });
+      });
+    }
+
+    async function loadTable() {
+      tableViewMode = document.getElementById('table-view').value;
+      const setFilter = document.getElementById('table-set-filter').value;
+      let url = `/api/experiments?group=${tableViewMode}`;
+      if (tableViewMode === 'individual' && setFilter) url += `&train_set=${setFilter}`;
+      const resp = await fetchJSON(url);
+      allExperiments = resp.rows || resp;
+      allClasses = resp.classes || [];
+      renderTable();
+
+      // Populate detail individual selector
+      const indivResp = tableViewMode === 'individual' ? resp : await fetchJSON('/api/experiments?group=individual');
+      const indiv = indivResp.rows || indivResp;
+      const sel = document.getElementById('detail-select');
+      sel.innerHTML = indiv.map(e =>
+        `<option value="${e.id}">${e.run_id} — mAP@50=${fmtPct(e.mAP_50)}</option>`
+      ).join('');
+    }
+
+    document.getElementById('table-view').addEventListener('change', () => {
+      const v = document.getElementById('table-view').value;
+      document.getElementById('table-set-filter-wrap').style.display = v === 'individual' ? '' : 'none';
+      loadTable();
+    });
+    document.getElementById('table-set-filter').addEventListener('change', loadTable);
+    document.getElementById('show-per-class').addEventListener('change', renderTable);
+
+    // ─── Detail: Aggregated Group ──────────────────────────────
+    async function loadGroupDetail(info) {
+      const el = document.getElementById('detail-content');
+      el.innerHTML = '<p style="color:var(--text-dim)">Loading...</p>';
+
+      let url = `/api/experiment_group?rank=${info.rank}&epochs=${info.epochs}&lr=${info.lr}&n_train=${info.n_train}`;
+      if (isPhase2) {
+        url += `&dropout=${info.dropout}&aug_level=${info.aug}&wd=${info.wd}&alpha_ratio=${info.alpha_ratio}`;
+      }
+      const data = await fetchJSON(url);
+      if (!data.length) { el.innerHTML = '<p>No data found</p>'; return; }
+
+      // Compute aggregated metrics
+      const allMaps50 = [], allMaps5095 = [];
+      const classAps = {};
+      data.forEach(({experiment: e, eval_results: evs}) => {
+        allMaps50.push(e.mAP_50); allMaps5095.push(e.mAP_50_95);
+        evs.forEach(ev => {
+          if (ev.per_class_ap_json) {
+            const pcap = JSON.parse(ev.per_class_ap_json);
+            for (const [cls, aps] of Object.entries(pcap)) {
+              if (!classAps[cls]) classAps[cls] = [];
+              if (aps['0.5'] != null) classAps[cls].push(aps['0.5']);
+            }
+          }
+        });
+      });
+      const avgMap50 = allMaps50.reduce((s,v)=>s+v,0)/allMaps50.length;
+      const avgMap5095 = allMaps5095.reduce((s,v)=>s+v,0)/allMaps5095.length;
+
+      let paramStr = `rank=${info.rank} · epochs=${info.epochs} · lr=${info.lr} · n_train=${info.n_train}`;
+      if (isPhase2) {
+        paramStr += ` · dropout=${info.dropout} · aug=${info.aug} · wd=${info.wd} · α/${info.alpha_ratio}`;
+      }
+      let html = `<div class="best-card" style="margin-bottom:20px">
+        <div class="params" style="font-size:15px;margin-bottom:8px">
+          <strong>${paramStr}</strong>
+          <span style="color:var(--green);font-size:12px;margin-left:8px">${data.length} sets</span>
+        </div>
+        <div class="metrics">
+          <div class="metric"><div class="val">${fmtPct(avgMap50)}</div><div class="lbl">Avg mAP@50</div></div>
+          <div class="metric"><div class="val">${fmtPct(avgMap5095)}</div><div class="lbl">Avg mAP@50:95</div></div>
+        </div>
+      </div>`;
+
+      // Per-class AP bar chart (aggregated)
+      const sortedClasses = Object.entries(classAps)
+        .map(([cls, vs]) => [cls, vs.reduce((s,v)=>s+v,0)/vs.length])
+        .sort((a,b) => b[1]-a[1]);
+      html += '<div class="chart-box" style="min-height:250px;margin-bottom:16px"><div class="chart-title">Per-Class AP@50 (averaged)</div><div id="detail-class-chart"></div></div>';
+
+      // Side-by-side set comparison
+      html += '<div class="detail-grid">';
+      data.forEach(({experiment: e, eval_results: evs, train_images: imgs}) => {
+        const cm = evs.map(ev => {
+          const m = ev.conf_metrics_json ? JSON.parse(ev.conf_metrics_json) : {};
+          return m['0.3'] || {};
+        });
+        const avgR = cm.filter(c=>c.recall!=null).reduce((s,c)=>s+c.recall,0) / (cm.length||1);
+        const avgP = cm.filter(c=>c.precision!=null).reduce((s,c)=>s+c.precision,0) / (cm.length||1);
+        const avgF = cm.filter(c=>c.f1!=null).reduce((s,c)=>s+c.f1,0) / (cm.length||1);
+
+        html += `<div class="detail-card">
+          <h4>${e.train_image_set}</h4>
+          <div class="metric-row"><span class="lbl">mAP@50:</span> <strong>${fmtPct(e.mAP_50)}</strong></div>
+          <div class="metric-row"><span class="lbl">mAP@50:95:</span> <strong>${fmtPct(e.mAP_50_95)}</strong></div>
+          <div class="metric-row"><span class="lbl">Recall@0.3:</span> ${fmtPct(avgR)}</div>
+          <div class="metric-row"><span class="lbl">Prec@0.3:</span> ${fmtPct(avgP)}</div>
+          <div class="metric-row"><span class="lbl">F1@0.3:</span> ${fmtPct(avgF)}</div>
+          <div class="metric-row"><span class="lbl">Train time:</span> ${fmtTime(e.train_time_seconds)}</div>
+          <div class="metric-row"><span class="lbl">Final loss:</span> ${e.final_loss?.toFixed(4)}</div>
+          <div style="margin-top:8px;font-size:12px;color:var(--text-dim)">
+            Train images: ${imgs.map(i=>i.image_stem?.substring(0,8)).join(', ')}
+          </div>
+          <div id="detail-loss-${e.train_image_set}" style="height:180px;margin-top:8px"></div>
+          <h4 style="margin-top:12px">Per-Image Results</h4>
+          <table style="font-size:12px;width:100%">
+            <thead><tr><th>Image</th><th>mAP@50</th><th>mAP@50:95</th></tr></thead>
+            <tbody>${evs.map(ev => `<tr>
+              <td title="${ev.eval_image_stem}">${ev.eval_image_stem?.substring(0,10)}…</td>
+              <td>${fmtPct(ev.mAP_50)}</td><td>${fmtPct(ev.mAP_50_95)}</td>
+            </tr>`).join('')}</tbody>
+          </table>
+        </div>`;
+      });
+      html += '</div>';
+
+      // Overlaid loss curves
+      html += '<div class="chart-box" style="min-height:300px;margin-bottom:16px"><div class="chart-title">Loss Curves (overlaid)</div><div id="detail-loss-overlay"></div></div>';
+
+      el.innerHTML = html;
+
+      // Render per-class chart
+      if (sortedClasses.length) {
+        Plotly.newPlot('detail-class-chart', [{
+          x: sortedClasses.map(c=>c[0]),
+          y: sortedClasses.map(c=>c[1]*100),
+          type: 'bar', marker: { color: sortedClasses.map((_,i) => COLORS[i%COLORS.length]) },
+        }], { ...PLOTLY_DARK, yaxis: {...PLOTLY_DARK.yaxis, title:'AP@50 %', range:[0,100]} }, {responsive:true});
+      }
+
+      // Render per-set loss curves
+      const overlayTraces = [];
+      data.forEach(({experiment: e}, idx) => {
+        if (!e.loss_history) return;
+        const losses = JSON.parse(e.loss_history);
+        // Small per-set chart
+        Plotly.newPlot(`detail-loss-${e.train_image_set}`, [{
+          y: losses, mode:'lines', line:{color:COLORS[idx], width:2},
+        }], {...PLOTLY_DARK, margin:{l:40,r:10,t:5,b:30}, yaxis:{...PLOTLY_DARK.yaxis, title:'Loss'}}, {responsive:true});
+        // Overlay trace
+        overlayTraces.push({
+          y: losses, mode:'lines+markers', name: e.train_image_set,
+          line:{color:COLORS[idx]}, marker:{size:3},
+        });
+      });
+      if (overlayTraces.length) {
+        Plotly.newPlot('detail-loss-overlay', overlayTraces, {
+          ...PLOTLY_DARK, xaxis:{...PLOTLY_DARK.xaxis, title:'Epoch'},
+          yaxis:{...PLOTLY_DARK.yaxis, title:'Loss'}, legend:{bgcolor:'rgba(0,0,0,0)'},
+        }, {responsive:true});
+      }
+    }
+
+    // ─── Detail: Single Experiment ─────────────────────────────
+    async function loadSingleDetailById(id) {
+      const d = await fetchJSON(`/api/experiment?id=${id}`);
+      renderSingleDetail(d, document.getElementById('detail-content'));
+    }
+    async function loadSingleDetail() {
+      const id = document.getElementById('detail-select').value;
+      if (!id) return;
+      const d = await fetchJSON(`/api/experiment?id=${id}`);
+      renderSingleDetail(d, document.getElementById('detail-single'));
+    }
+
+    function renderSingleDetail(d, el) {
+      const e = d.experiment;
+      let html = `<div class="best-card">
+        <div class="params">
+          <strong>${e.run_id}</strong> · ${e.status} · ${e.timestamp}<br>
+          rank=${e.lora_rank} · alpha=${e.lora_alpha} · epochs=${e.num_epochs} · lr=${e.learning_rate} · n_train=${e.num_train_images} · ${e.train_image_set}<br>
+          Train: ${fmtTime(e.train_time_seconds)} (${e.time_per_epoch_ms?.toFixed(0)} ms/ep) · Loss: ${e.final_loss?.toFixed(4)}<br>
+          <strong>mAP@50: ${fmtPct(e.mAP_50)} · mAP@50:95: ${fmtPct(e.mAP_50_95)}</strong>
+        </div>
+      </div>`;
+      html += '<div class="chart-box" style="margin-bottom:16px"><div class="chart-title">Loss Curve</div><div id="single-loss"></div></div>';
+
+      html += '<h3 style="margin:16px 0 8px;color:var(--text-dim)">Per-Image Results</h3>';
+      html += '<div class="table-wrap"><table><thead><tr><th>Image</th><th>mAP@50</th><th>mAP@50:95</th><th>Recall</th><th>Prec</th><th>F1</th></tr></thead><tbody>';
+      d.eval_results.forEach(r => {
+        const cm = r.conf_metrics_json ? JSON.parse(r.conf_metrics_json) : {};
+        const c = cm['0.3'] || {};
+        html += `<tr><td title="${r.eval_image_stem}">${r.eval_image_stem?.substring(0,12)}…</td>
+          <td>${fmtPct(r.mAP_50)}</td><td>${fmtPct(r.mAP_50_95)}</td>
+          <td>${fmtPct(c.recall)}</td><td>${fmtPct(c.precision)}</td><td>${fmtPct(c.f1)}</td></tr>`;
+      });
+      html += '</tbody></table></div>';
+
+      if (d.eval_results.length > 0 && d.eval_results[0].per_class_ap_json) {
+        const pcap = JSON.parse(d.eval_results[0].per_class_ap_json);
+        html += '<h3 style="margin:16px 0 8px;color:var(--text-dim)">Per-Class AP (first eval image)</h3>';
+        html += '<div class="table-wrap"><table><thead><tr><th>Class</th><th>AP@50</th><th>AP@75</th><th>AP@50:95</th></tr></thead><tbody>';
+        for (const [cls, aps] of Object.entries(pcap)) {
+          const allAps = Object.values(aps).filter(v => v !== null);
+          const apAvg = allAps.length ? allAps.reduce((s,v)=>s+v,0)/allAps.length : null;
+          html += `<tr><td>${cls}</td><td>${fmtPct(aps['0.5'])}</td><td>${fmtPct(aps['0.75'])}</td><td>${fmtPct(apAvg)}</td></tr>`;
+        }
+        html += '</tbody></table></div>';
+      }
+
+      el.innerHTML = html;
+      if (e.loss_history) {
+        Plotly.newPlot('single-loss', [{
+          y: JSON.parse(e.loss_history), mode:'lines+markers',
+          marker:{size:4,color:'#58a6ff'}, line:{color:'#58a6ff'},
+        }], {...PLOTLY_DARK, xaxis:{...PLOTLY_DARK.xaxis,title:'Epoch'}, yaxis:{...PLOTLY_DARK.yaxis,title:'Loss'}},
+        {responsive:true});
+      }
+    }
+
+    // ─── Running Tasks ──────────────────────────────────────────
+    async function loadRunningTasks() {
+      try {
+        const d = await fetchJSON('/api/running');
+        const wrap = document.getElementById('runningTasksWrap');
+        const list = document.getElementById('runningTasksList');
+        if (!d.running || d.running.length === 0) {
+          wrap.style.display = 'none';
+          // Update worker select to reflect 0 running
+          return;
+        }
+        wrap.style.display = '';
+        // Update worker select to reflect actual running count
+        const workerSel = document.getElementById('workerSelect');
+        workerSel.value = String(d.count);
+
+        // Clear old timers
+        runningTimerIds.forEach(id => clearInterval(id));
+        runningTimerIds = [];
+
+        list.innerHTML = d.running.map((r, i) => {
+          let desc = `n_train=${r.num_train_images} · ${r.train_image_set}`;
+          if (r.lora_dropout != null) {
+            desc += ` · do=${r.lora_dropout} · aug=${r.augmentation_level} · wd=${r.weight_decay} · α/${r.alpha_ratio}`;
+          }
+          return `<div style="padding:3px 0;display:flex;gap:12px;align-items:center">
+            <span style="color:var(--yellow)">⏳</span>
+            <span style="min-width:200px">${desc}</span>
+            <span id="running-timer-${i}" style="color:var(--yellow)">${fmtTime(r.running_seconds)}</span>
+          </div>`;
+        }).join('');
+
+        // Start live timers for each running task
+        d.running.forEach((r, i) => {
+          if (r.running_seconds == null) return;
+          const startedAt = Date.now() - r.running_seconds * 1000;
+          const tid = setInterval(() => {
+            const el = document.getElementById(`running-timer-${i}`);
+            if (el) el.textContent = fmtTime((Date.now() - startedAt) / 1000);
+          }, 1000);
+          runningTimerIds.push(tid);
+        });
+      } catch(e) { /* running endpoint may not exist yet */ }
+    }
+
+    // ─── Refresh rate control ───────────────────────────────────
+    function setRefreshRate(seconds) {
+      if (refreshIntervalId) clearInterval(refreshIntervalId);
+      refreshRateMs = seconds * 1000;
+      const dot = document.getElementById('refreshDot');
+      const status = document.getElementById('refreshStatus');
+      if (seconds === 0) {
+        dot.className = 'dot off';
+        status.textContent = 'Auto-refresh: Off';
+        refreshIntervalId = null;
+      } else {
+        dot.className = 'dot';
+        status.textContent = `Auto-refresh: ${seconds}s`;
+        refreshIntervalId = setInterval(loadAll, refreshRateMs);
+      }
+    }
+    document.getElementById('refreshRate').addEventListener('change', (e) => {
+      setRefreshRate(parseInt(e.target.value));
+    });
+
+    // ─── Load all ──────────────────────────────────────────────
+    async function loadAll() {
+      try {
+        await Promise.all([loadSummary(), loadOverview(), loadTable(), loadRunningTasks()]);
+        await loadHeatmaps();
+        await loadTrends();
+        document.getElementById('refreshDot').className = refreshRateMs > 0 ? 'dot' : 'dot off';
+      } catch (e) {
+        console.error('Load error:', e);
+        document.getElementById('refreshDot').className = 'dot off';
+      }
+    }
+    loadAll();
+    refreshIntervalId = setInterval(loadAll, refreshRateMs);
+  </script>
+</body>
+</html>

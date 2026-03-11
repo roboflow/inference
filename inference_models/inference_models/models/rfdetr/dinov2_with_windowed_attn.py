@@ -61,7 +61,10 @@ from transformers.utils import (
     replace_return_docstrings,
     torch_int,
 )
-from transformers.backbone_utils import BackboneConfigMixin, BackboneMixin
+try:
+    from transformers.backbone_utils import BackboneConfigMixin, BackboneMixin
+except ModuleNotFoundError:
+    from transformers.utils.backbone_utils import BackboneConfigMixin, BackboneMixin
 
 def verify_out_features_out_indices(
     out_features: Optional[Iterable[str]], out_indices: Optional[Iterable[int]], stage_names: Optional[Iterable[str]]
@@ -1271,6 +1274,7 @@ class WindowedDinov2WithRegistersBackbone(
     def __init__(self, config: WindowedDinov2WithRegistersConfig):
         super().__init__(config)
         # _init_backbone was renamed to _init_transformers_backbone in transformers 5.x
+        # In transformers >= 5.2, it reads from self.config (no args)
         super()._init_transformers_backbone()
         self.num_features = [
             config.hidden_size for _ in range(config.num_hidden_layers + 1)

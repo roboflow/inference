@@ -2527,6 +2527,98 @@ class InferenceHTTPClient:
             max_concurrent_requests=self.__inference_configuration.max_concurrent_requests,
         )
 
+    @wrap_errors
+    def infer_from_rfdetr_few_shot(
+        self,
+        inference_input: Union[ImagesReference, List[ImagesReference]],
+        training_data: Optional[List[dict]] = None,
+        model_hash: Optional[str] = None,
+        model_variant: str = "rfdetr-base",
+        confidence: Optional[float] = None,
+        iou_threshold: Optional[float] = None,
+        lora_rank: int = 8,
+        learning_rate: float = 1e-4,
+        num_epochs: int = 1,
+    ) -> Union[dict, List[dict]]:
+        """Run few-shot object detection using RF-DETR with inline LoRA fine-tuning.
+
+        The first call with ``training_data`` will train a LoRA adapter and cache it.
+        Subsequent calls with the same ``training_data`` object will reuse the
+        ``model_hash`` from the first response (via Python object identity caching)
+        to avoid re-sending images over the wire.
+
+        Args:
+            inference_input: Query image(s) to detect objects in.
+            training_data: List of dicts, each with ``"image"`` (image reference) and
+                ``"boxes"`` (list of dicts with ``x``, ``y``, ``w``, ``h``, ``cls`` keys).
+            model_hash: Hash of a previously cached adapter (skips training_data).
+            model_variant: RF-DETR variant (rfdetr-nano/small/medium/base/large).
+            confidence: Confidence threshold.
+            iou_threshold: IoU threshold for NMS.
+            lora_rank: LoRA rank.
+            learning_rate: Learning rate for fine-tuning.
+            num_epochs: Number of training epochs.
+
+        Returns:
+            Detection result dict(s) including ``model_hash`` for reuse.
+        """
+        # Client-side hash caching via object identity
+        if not hasattr(self, "_rfdetr_few_shot_hash_cache"):
+            self._rfdetr_few_shot_hash_cache = {}
+
+        effective_hash = model_hash
+        if effective_hash is None and training_data is not None:
+            cache_key = id(training_data)
+            if cache_key in self._rfdetr_few_shot_hash_cache:
+                effective_hash = self._rfdetr_few_shot_hash_cache[cache_key]
+
+        payload = self.__initialise_payload()
+        payload["model_variant"] = model_variant
+        payload["lora_rank"] = lora_rank
+        payload["learning_rate"] = learning_rate
+        payload["num_epochs"] = num_epochs
+        if confidence is not None:
+            payload["confidence"] = confidence
+        if iou_threshold is not None:
+            payload["iou_threshold"] = iou_threshold
+
+        # Encode query image(s)
+        encoded_query = load_static_inference_input(inference_input=inference_input)
+        if len(encoded_query) == 1:
+            payload["image"] = {"type": "base64", "value": encoded_query[0][0]}
+        else:
+            payload["image"] = [
+                {"type": "base64", "value": img[0]} for img in encoded_query
+            ]
+
+        if effective_hash is not None:
+            payload["model_hash"] = effective_hash
+        elif training_data is not None:
+            encoded_training = []
+            for item in training_data:
+                img_ref = item["image"]
+                encoded_img = load_static_inference_input(inference_input=img_ref)
+                encoded_training.append({
+                    "image": {"type": "base64", "value": encoded_img[0][0]},
+                    "boxes": item["boxes"],
+                })
+            payload["training_data"] = encoded_training
+        else:
+            raise ValueError("Either training_data or model_hash must be provided")
+
+        url = self.__wrap_url_with_api_key(f"{self.__api_url}/rfdetr_few_shot/infer")
+        response = requests.post(url, json=payload, headers=DEFAULT_HEADERS)
+        response.raise_for_status()
+        result = response.json()
+
+        # Cache the model_hash for future calls with the same training_data object
+        if training_data is not None and isinstance(result, dict) and "model_hash" in result:
+            self._rfdetr_few_shot_hash_cache[id(training_data)] = result["model_hash"]
+        elif training_data is not None and isinstance(result, list) and result and "model_hash" in result[0]:
+            self._rfdetr_few_shot_hash_cache[id(training_data)] = result[0]["model_hash"]
+
+        return result
+
     @experimental(
         info="Video processing in inference server is under development. Breaking changes are possible."
     )
