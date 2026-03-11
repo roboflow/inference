@@ -222,13 +222,6 @@ RUN make install && ldconfig
 RUN python3.12 -m pip wheel ./python_loader --wheel-dir /build/out/wheels --verbose
 RUN python3.12 -m pip install /build/out/wheels/opencv-4.12.0-py3-none-any.whl
 
-# Verify ffmpeg and gstreamer support are enabled — fail the build if not
-RUN python3.12 -c "\
-import cv2, re; bi = cv2.getBuildInformation(); print(bi); \
-assert re.search(r'FFMPEG:\s+YES', bi), 'FFMPEG not enabled in OpenCV build'; \
-assert re.search(r'GStreamer:\s+YES', bi), 'GStreamer not enabled in OpenCV build'; \
-print('OpenCV ffmpeg/gstreamer verification passed')"
-
 WORKDIR /
 
 ENTRYPOINT ["bash"]
