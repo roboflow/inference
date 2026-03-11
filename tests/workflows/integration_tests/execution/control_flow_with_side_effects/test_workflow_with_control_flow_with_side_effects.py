@@ -253,8 +253,14 @@ def _run_workflow(
             "noreply@example.com",
             "Detections found",
             (
-                {"num_detections": 2, "name": "img1"},
-                {"num_detections": 1, "name": "img3"},
+                {
+                    "num_detections": 2,
+                    "name": "img1"
+                },
+                {
+                    "num_detections": 1,
+                    "name": "img3"
+                },
             ),
             (
                 {"email_message": None},
@@ -271,7 +277,10 @@ def _run_workflow(
             2,
             "noreply@example.com",
             "Detections found",
-            ({"name": "img1"}, {"name": "img3"}),
+            (
+                {"name": "img1"},
+                {"name": "img3"},
+            ),
             (
                 {"email_message": None},
                 {"email_message": SUCCESSFUL_EMAIL_MESSAGE_MOCK},
@@ -307,7 +316,11 @@ def _run_workflow(
             3,
             "noreply@example.com",
             "Detections found",
-            ({}, {}, {}),
+            (
+                {},
+                {},
+                {},
+            ),
             (
                 {"email_message": [None, None, None, None]},
                 {"email_message": [None, None, SUCCESSFUL_EMAIL_MESSAGE_MOCK, SUCCESSFUL_EMAIL_MESSAGE_MOCK]},
@@ -323,7 +336,20 @@ def _run_workflow(
             3,
             "noreply@example.com",
             "Detections found",
-            ({"num_detections": 1, "name": "image_1_slice_2"}, {"num_detections": 1, "name": "image_1_slice_3"}, {"num_detections": 1, "name": "image_3_slice_5"}),
+            (
+                {
+                    "num_detections": 1,
+                    "name": "image_1_slice_2"
+                },
+                {
+                    "num_detections": 1,
+                    "name": "image_1_slice_3"
+                },
+                {
+                    "num_detections": 1,
+                    "name": "image_3_slice_5"
+                },
+            ),
             (
                 {"email_message": [None, None, None, None]},
                 {"email_message": [None, None, SUCCESSFUL_EMAIL_MESSAGE_MOCK, SUCCESSFUL_EMAIL_MESSAGE_MOCK]},
@@ -339,7 +365,11 @@ def _run_workflow(
             3,
             "noreply@example.com",
             "Detections found",
-            ({"name": "image_1_slice_2"}, {"name": "image_1_slice_3"}, {"name": "image_3_slice_5"}),
+            (
+                {"name": "image_1_slice_2"},
+                {"name": "image_1_slice_3"},
+                {"name": "image_3_slice_5"},
+            ),
             (
                 {"email_message": [None, None, None, None]},
                 {"email_message": [None, None, SUCCESSFUL_EMAIL_MESSAGE_MOCK, SUCCESSFUL_EMAIL_MESSAGE_MOCK]},
