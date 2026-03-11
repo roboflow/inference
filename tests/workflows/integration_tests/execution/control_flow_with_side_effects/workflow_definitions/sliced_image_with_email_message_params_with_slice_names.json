@@ -2,7 +2,7 @@
   "version": "1.0",
   "inputs": [
     {"type": "WorkflowImage", "name": "image"},
-    {"type": "WorkflowBatchInput", "name": "names", "dimensionality": 1}
+    {"type": "WorkflowBatchInput", "name": "names", "dimensionality": 2}
   ],
   "steps": [
     {
