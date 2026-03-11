@@ -12,11 +12,6 @@
       "class_filter": ["person"]
     },
     {
-      "type": "roboflow_core/dimension_collapse@v1",
-      "name": "all_detections",
-      "data": "$steps.detection.predictions"
-    },
-    {
       "type": "ContinueIf",
       "name": "continue_if",
       "condition_statement": {
@@ -37,22 +32,27 @@
           }
         ]
       },
-      "evaluation_parameters": {"prediction": "$steps.all_detections.output"},
-      "next_steps": ["$steps.email_notification"]
+      "evaluation_parameters": {"prediction": "$steps.detection.predictions"},
+      "next_steps": ["$steps.collapsed_detections"]
+    },
+    {
+      "type": "roboflow_core/dimension_collapse@v1",
+      "name": "collapsed_detections",
+      "data": "$steps.detection.predictions"
     },
     {
       "type": "roboflow_core/email_notification@v2",
       "name": "email_notification",
-      "subject": "Workflow: detections found in batch",
+      "subject": "Detections found",
       "receiver_email": "noreply@example.com",
       "message": "Found {{ $parameters.num_detections }} detection(s) across the batch (at least one image had detections).",
       "message_parameters": {
-        "predictions": "$steps.all_detections.output",
-        "num_detections": "$steps.all_detections.output"
+        "num_detections": "$steps.collapsed_detections.output"
       },
       "message_parameters_operations": {
         "num_detections": [{"type": "SequenceLength"}]
-      }
+      },
+      "cooldown_seconds": 0
     }
   ],
   "outputs": [
