@@ -369,6 +369,44 @@ def _run_workflow(
                 {"email_message": [None, None, None, None, None, SUCCESSFUL_EMAIL_MESSAGE_MOCK, None, None]},
             ),
         ),
+         (
+            _batch_4_images,
+            BATCH_4_IMAGE_NAMES,
+            BATCH_4_DETECTION_COUNTS,
+            "with_email_gate_and_with_email_message_params",
+            2,
+            "noreply@example.com",
+            "Detections found",
+            (
+                {"num_detections": 2},
+                {"num_detections": 1},
+            ),
+            (
+                {"email_message": None},
+                {"email_message": SUCCESSFUL_EMAIL_MESSAGE_MOCK},
+                {"email_message": None},
+                {"email_message": SUCCESSFUL_EMAIL_MESSAGE_MOCK},
+            ),
+        ),
+         (
+            _batch_4_images,
+            BATCH_4_IMAGE_NAMES,
+            BATCH_4_DETECTION_COUNTS,
+            "with_email_gate_and_without_email_message_params",
+            2,
+            "noreply@example.com",
+            "Detections found",
+            (
+                {},
+                {},
+            ),
+            (
+                {"email_message": None},
+                {"email_message": SUCCESSFUL_EMAIL_MESSAGE_MOCK},
+                {"email_message": None},
+                {"email_message": SUCCESSFUL_EMAIL_MESSAGE_MOCK},
+            ),
+        ),
     ],
     ids=[
         "with_email_message_params",
@@ -379,6 +417,8 @@ def _run_workflow(
         "sliced_image_without_email_message_params",
         "sliced_image_with_email_message_params_and_area_size_step",
         "sliced_image_without_email_message_params_and_area_size_step",
+        "with_email_gate_and_with_email_message_params",
+        "with_email_gate_and_without_email_message_params",
     ],
 )
 def test_scenario_1(
