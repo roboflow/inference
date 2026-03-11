@@ -77,12 +77,25 @@ class BlockManifest(WorkflowBlockManifest):
         default="qwen3_5-0.8b",
         description="The Qwen3.5-VL model to be used for inference.",
         examples=["qwen3_5-0.8b", "qwen3_5-2b"],
+        json_schema_extra={
+            "predefined_options": ["qwen3_5-0.8b", "qwen3_5-2b"],
+        },
     )
 
     system_prompt: Optional[str] = Field(
         default=None,
         description="Optional system prompt to provide additional context to Qwen3.5-VL.",
-        examples=["You are a helpful assistant."],
+        examples=["You are a helpful assistant. Produce only concise outputs."],
+    )
+
+    enable_thinking: bool = Field(
+        default=False,
+        description="If true, enables Qwen3.5-VL's thinking mode, which allows the model to generate reasoning tokens before answering. The thinking output will be returned in the 'thinking' field.",
+    )
+
+    max_new_tokens: Optional[int] = Field(
+        default=None,
+        description="Maximum number of tokens to generate. If not set, the model's default will be used. Consider increasing for thinking mode.",
     )
 
     @classmethod
@@ -92,6 +105,11 @@ class BlockManifest(WorkflowBlockManifest):
                 name="parsed_output",
                 kind=[DICTIONARY_KIND],
                 description="A parsed version of the output, provided as a dictionary containing the text.",
+            ),
+            OutputDefinition(
+                name="thinking",
+                kind=[STRING_KIND],
+                description="The model's thinking/reasoning output when enable_thinking is True. Empty string when enable_thinking is False.",
             ),
         ]
 
@@ -133,6 +151,8 @@ class Qwen35VLBlockV1(WorkflowBlock):
         model_version: str,
         prompt: Optional[str],
         system_prompt: Optional[str],
+        enable_thinking: bool = False,
+        max_new_tokens: Optional[int] = None,
     ) -> BlockResult:
         if self._step_execution_mode == StepExecutionMode.LOCAL:
             return self.run_locally(
@@ -140,6 +160,8 @@ class Qwen35VLBlockV1(WorkflowBlock):
                 model_version=model_version,
                 prompt=prompt,
                 system_prompt=system_prompt,
+                enable_thinking=enable_thinking,
+                max_new_tokens=max_new_tokens,
             )
         elif self._step_execution_mode == StepExecutionMode.REMOTE:
             return self.run_remotely(
@@ -188,7 +210,7 @@ class Qwen35VLBlockV1(WorkflowBlock):
                 model_id_in_path=True,
             )
             response_text = result.get("response", result)
-            predictions.append({"parsed_output": response_text})
+            predictions.append({"parsed_output": response_text, "thinking": ""})
 
         return predictions
 
@@ -198,6 +220,8 @@ class Qwen35VLBlockV1(WorkflowBlock):
         model_version: str,
         prompt: Optional[str],
         system_prompt: Optional[str],
+        enable_thinking: bool = False,
+        max_new_tokens: Optional[int] = None,
     ) -> BlockResult:
         # Convert each image to the format required by the model.
         inference_images = [
@@ -207,7 +231,7 @@ class Qwen35VLBlockV1(WorkflowBlock):
         prompt = prompt or "Describe what's in this image."
         system_prompt = (
             system_prompt
-            or "You are a Qwen3.5-VL model that can answer questions about any image."
+            or "You are a helpful assistant. Produce only concise outputs."
         )
         prompts = [prompt + "<system_prompt>" + system_prompt] * len(inference_images)
         # Register Qwen3.5-VL with the model manager.
@@ -216,21 +240,39 @@ class Qwen35VLBlockV1(WorkflowBlock):
         predictions = []
         for image, single_prompt in zip(inference_images, prompts):
             # Build an LMMInferenceRequest with both prompt and image.
-            request = LMMInferenceRequest(
+            request_kwargs = dict(
                 api_key=self._api_key,
                 model_id=model_version,
                 image=image,
                 source="workflow-execution",
                 prompt=single_prompt,
+                enable_thinking=enable_thinking,
             )
+            if max_new_tokens is not None:
+                request_kwargs["max_new_tokens"] = max_new_tokens
+            request = LMMInferenceRequest(**request_kwargs)
             # Run inference.
             prediction = self._model_manager.infer_from_request_sync(
                 model_id=model_version, request=request
             )
             response_text = prediction.response
-            predictions.append(
-                {
-                    "parsed_output": response_text,
-                }
-            )
+            # When enable_thinking is used and the response contains
+            # thinking data (dict with 'thinking' and 'answer' keys),
+            # extract them separately.
+            if enable_thinking and isinstance(response_text, dict):
+                thinking = response_text.get("thinking", "")
+                answer = response_text.get("answer", "")
+                predictions.append(
+                    {
+                        "parsed_output": answer,
+                        "thinking": thinking,
+                    }
+                )
+            else:
+                predictions.append(
+                    {
+                        "parsed_output": response_text,
+                        "thinking": "",
+                    }
+                )
         return predictions
