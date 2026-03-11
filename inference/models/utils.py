@@ -770,6 +770,12 @@ if USE_INFERENCE_MODELS:
                 )
 
                 ROBOFLOW_MODEL_TYPES[(task, variant)] = InferenceModelsQwen3VLAdapter
+            elif variant.startswith("qwen3_5"):
+                from inference.models.qwen3_5vl.qwen3_5vl_inference_models import (
+                    InferenceModelsQwen35VLAdapter,
+                )
+
+                ROBOFLOW_MODEL_TYPES[(task, variant)] = InferenceModelsQwen35VLAdapter
             elif task == "embed" and variant == "sam":
                 from inference.models.sam.segment_anything_inference_models import (
                     InferenceModelsSAMAdapter,
@@ -897,4 +903,21 @@ if USE_INFERENCE_MODELS:
     ]:
         ROBOFLOW_MODEL_TYPES[("object-detection", variant)] = (
             InferenceModelsObjectDetectionAdapter
+        )
+
+    # Qwen3.5 is inference_models-only (no legacy implementation),
+    # so we add entries directly rather than swapping existing ones.
+    from inference.models.qwen3_5vl.qwen3_5vl_inference_models import (
+        InferenceModelsQwen35VLAdapter,
+    )
+
+    for variant in [
+        "qwen3_5-0.8b",
+        "qwen3_5-2b",
+        "qwen3_5-0.8b-peft",
+        "qwen3_5-2b-peft",
+    ]:
+        ROBOFLOW_MODEL_TYPES[("lmm", variant)] = InferenceModelsQwen35VLAdapter
+        ROBOFLOW_MODEL_TYPES[("text-image-pairs", variant)] = (
+            InferenceModelsQwen35VLAdapter
         )

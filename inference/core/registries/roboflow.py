@@ -63,6 +63,8 @@ GENERIC_MODELS = {
     "depth-anything-v3": ("depth-estimation", "depth-anything-v3"),
     "moondream2": ("lmm", "moondream2"),
     "perception_encoder": ("embed", "perception_encoder"),
+    "qwen3_5-0.8b": ("lmm", "qwen3_5-0.8b"),
+    "qwen3_5-2b": ("lmm", "qwen3_5-2b"),
 }
 
 STUB_VERSION_ID = "0"
