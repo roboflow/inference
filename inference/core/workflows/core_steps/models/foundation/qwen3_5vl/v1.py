@@ -229,10 +229,7 @@ class Qwen35VLBlockV1(WorkflowBlock):
         ]
         # Use the provided prompt or default to a generic image description request.
         prompt = prompt or "Describe what's in this image."
-        system_prompt = (
-            system_prompt
-            or "You are a helpful assistant."
-        )
+        system_prompt = system_prompt or "You are a helpful assistant."
         prompts = [prompt + "<system_prompt>" + system_prompt] * len(inference_images)
         # Register Qwen3.5-VL with the model manager.
         self._model_manager.add_model(model_id=model_version, api_key=self._api_key)

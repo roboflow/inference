@@ -911,6 +911,13 @@ if USE_INFERENCE_MODELS:
         InferenceModelsQwen35VLAdapter,
     )
 
-    for variant in ["qwen3_5-0.8b", "qwen3_5-2b", "qwen3_5-0.8b-peft", "qwen3_5-2b-peft"]:
+    for variant in [
+        "qwen3_5-0.8b",
+        "qwen3_5-2b",
+        "qwen3_5-0.8b-peft",
+        "qwen3_5-2b-peft",
+    ]:
         ROBOFLOW_MODEL_TYPES[("lmm", variant)] = InferenceModelsQwen35VLAdapter
-        ROBOFLOW_MODEL_TYPES[("text-image-pairs", variant)] = InferenceModelsQwen35VLAdapter
+        ROBOFLOW_MODEL_TYPES[("text-image-pairs", variant)] = (
+            InferenceModelsQwen35VLAdapter
+        )
