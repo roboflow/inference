@@ -108,6 +108,10 @@
         <option value="60">60s</option>
         <option value="0">Off</option>
       </select>
+      <span id="syncWrap" style="display:none;margin-left:10px;border-left:1px solid var(--border);padding-left:10px">
+        <button id="syncBtn" onclick="triggerSync()" style="font-size:11px;padding:1px 8px;cursor:pointer;background:var(--bg);color:var(--text-dim);border:1px solid var(--border);border-radius:4px">🔄 Sync</button>
+        <span id="syncStatus" style="font-size:11px;margin-left:4px"></span>
+      </span>
     </div>
 
     <div class="progress-wrap" id="progressWrap">
@@ -1155,10 +1159,60 @@
       setRefreshRate(parseInt(e.target.value));
     });
 
+    // ─── Remote DB Sync ────────────────────────────────────────
+    let syncEnabled = false;
+    async function checkSyncStatus() {
+      try {
+        const d = await fetchJSON('/api/sync_status');
+        syncEnabled = d.enabled;
+        const wrap = document.getElementById('syncWrap');
+        const status = document.getElementById('syncStatus');
+        if (d.enabled) {
+          wrap.style.display = '';
+          if (d.last_sync) {
+            const ago = Math.round((Date.now() - new Date(d.last_sync).getTime()) / 1000);
+            status.textContent = `${ago}s ago (#${d.sync_count})`;
+            status.style.color = ago > 30 ? 'var(--yellow)' : 'var(--text-dim)';
+          } else if (d.last_error) {
+            status.textContent = `⚠ ${d.last_error}`;
+            status.style.color = 'var(--red)';
+          }
+        } else {
+          wrap.style.display = 'none';
+        }
+      } catch(e) { /* sync endpoint may not exist */ }
+    }
+    async function triggerSync() {
+      const btn = document.getElementById('syncBtn');
+      const status = document.getElementById('syncStatus');
+      btn.disabled = true;
+      btn.textContent = '⏳ Syncing...';
+      try {
+        const d = await fetchJSON('/api/sync');
+        if (d.ok) {
+          status.textContent = 'Synced!';
+          status.style.color = 'var(--green)';
+          btn.textContent = '✅ Synced';
+          // Reload data immediately after sync
+          await loadAll();
+        } else {
+          status.textContent = `⚠ ${d.error || 'failed'}`;
+          status.style.color = 'var(--red)';
+          btn.textContent = '🔄 Sync';
+        }
+      } catch(e) {
+        status.textContent = '⚠ error';
+        status.style.color = 'var(--red)';
+        btn.textContent = '🔄 Sync';
+      }
+      btn.disabled = false;
+      setTimeout(() => { btn.textContent = '🔄 Sync'; }, 3000);
+    }
+
     // ─── Load all ──────────────────────────────────────────────
     async function loadAll() {
       try {
-        await Promise.all([loadSummary(), loadOverview(), loadTable(), loadRunningTasks()]);
+        await Promise.all([loadSummary(), loadOverview(), loadTable(), loadRunningTasks(), checkSyncStatus()]);
         await loadHeatmaps();
         await loadTrends();
         document.getElementById('refreshDot').className = refreshRateMs > 0 ? 'dot' : 'dot off';

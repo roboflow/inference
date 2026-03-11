@@ -1278,7 +1278,7 @@ def main():
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--phase2", action="store_true",
                         help="Run phase 2 broader sweep around phase 1 best")
-    parser.add_argument("--device", default="cpu")
+    parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     parser.add_argument("--workers", type=int, default=1,
                         help="Number of parallel experiment workers (phase 2 only)")
     parser.add_argument("--worker-id", type=int, default=None,

@@ -3,16 +3,116 @@
 
 import argparse
 import json
+import logging
 import sqlite3
+import subprocess
+import threading
+import time
 from collections import defaultdict
 from datetime import datetime
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
+logger = logging.getLogger(__name__)
+
 DB_PATH = Path(__file__).parent / "results.db"
 STATIC_DIR = Path(__file__).parent / "frontend"
 IS_PHASE2 = False  # set by --db flag if phase 2 DB is detected
+SYNC_MANAGER = None  # set by --remote flag
+
+
+class RemoteSyncManager:
+    """Background thread that syncs a remote SQLite DB to local via scp."""
+
+    def __init__(self, remote_host, remote_db_path, local_db_path, interval=10):
+        self.remote_host = remote_host  # e.g. "roboflow@100.94.130.94"
+        self.remote_db_path = remote_db_path
+        self.local_db_path = local_db_path
+        self.interval = interval
+        self._lock = threading.Lock()
+        self._last_sync = None
+        self._last_error = None
+        self._sync_count = 0
+        self._running = False
+        self._thread = None
+
+    def start(self):
+        """Start background sync thread."""
+        self._running = True
+        self._thread = threading.Thread(target=self._sync_loop, daemon=True)
+        self._thread.start()
+        logger.info("Sync thread started: %s every %ds", self.remote_host, self.interval)
+
+    def stop(self):
+        self._running = False
+
+    def sync_now(self):
+        """Trigger an immediate sync (can be called from API handler)."""
+        return self._do_sync()
+
+    def status(self):
+        return {
+            "enabled": True,
+            "remote_host": self.remote_host,
+            "last_sync": self._last_sync,
+            "last_error": self._last_error,
+            "sync_count": self._sync_count,
+            "interval": self.interval,
+        }
+
+    def _sync_loop(self):
+        while self._running:
+            self._do_sync()
+            time.sleep(self.interval)
+
+    def _do_sync(self):
+        """Run WAL checkpoint on remote, then scp the DB file."""
+        with self._lock:
+            try:
+                # Step 1: WAL checkpoint on remote via Python (sqlite3 CLI not available)
+                checkpoint_cmd = (
+                    f"sshpass -p 'roboflow' ssh -o StrictHostKeyChecking=no "
+                    f"-o ConnectTimeout=5 {self.remote_host} "
+                    f"\"~/.pyenv/versions/inference-exp/bin/python -c \\\"import sqlite3,os; "
+                    f"c=sqlite3.connect(os.path.expanduser('{self.remote_db_path}')); "
+                    f"c.execute('PRAGMA wal_checkpoint(TRUNCATE)'); c.close()\\\"\""
+                )
+                subprocess.run(
+                    checkpoint_cmd, shell=True, capture_output=True,
+                    timeout=15
+                )
+
+                # Step 2: scp the DB file (WAL should be empty after TRUNCATE checkpoint)
+                scp_cmd = (
+                    f"sshpass -p 'roboflow' scp -o StrictHostKeyChecking=no "
+                    f"-o ConnectTimeout=5 "
+                    f"{self.remote_host}:{self.remote_db_path} {self.local_db_path}"
+                )
+                result = subprocess.run(
+                    scp_cmd, shell=True, capture_output=True,
+                    timeout=30
+                )
+
+                if result.returncode == 0:
+                    self._last_sync = datetime.now().isoformat()
+                    self._last_error = None
+                    self._sync_count += 1
+                    return {"ok": True, "synced_at": self._last_sync}
+                else:
+                    err = result.stderr.decode().strip()[:200]
+                    self._last_error = err
+                    logger.warning("scp failed: %s", err)
+                    return {"ok": False, "error": err}
+
+            except subprocess.TimeoutExpired:
+                self._last_error = "timeout"
+                logger.warning("Sync timed out")
+                return {"ok": False, "error": "timeout"}
+            except Exception as e:
+                self._last_error = str(e)[:200]
+                logger.warning("Sync error: %s", e)
+                return {"ok": False, "error": str(e)[:200]}
 
 
 def get_db():
@@ -76,6 +176,12 @@ class Handler(SimpleHTTPRequestHandler):
                 self._api_gpu_stats(conn, qs)
             elif path == "/api/running":
                 self._api_running(conn)
+            elif path == "/api/sync":
+                self._api_sync()
+                return  # already sent response, skip finally close
+            elif path == "/api/sync_status":
+                self._api_sync_status()
+                return
             else:
                 self._json_response({"error": "unknown endpoint"}, 404)
         finally:
@@ -145,8 +251,16 @@ class Handler(SimpleHTTPRequestHandler):
 
         return enriched, all_classes
 
-    def _aggregate_experiments(self, experiments, all_classes):
-        """Group enriched experiments by hyperparams, averaging metrics across sets."""
+    def _aggregate_experiments(self, experiments, all_classes, require_all_sets=True):
+        """Group enriched experiments by hyperparams, averaging metrics across sets.
+
+        If require_all_sets is True, only include configs where all training sets
+        are present — incomplete configs (only one set done) are excluded.
+        """
+        # Count total distinct sets in the data
+        all_sets = set(e["train_image_set"] for e in experiments) if require_all_sets else set()
+        n_total_sets = len(all_sets) if all_sets else 1
+
         groups = defaultdict(list)
         for exp in experiments:
             key = (exp["lora_rank"], exp["num_epochs"],
@@ -193,6 +307,10 @@ class Handler(SimpleHTTPRequestHandler):
                     round(sum(vals) / len(vals), 4) if vals else None
                 )
             aggregated.append(agg)
+
+        # Filter out incomplete configs (not all training sets done)
+        if require_all_sets and n_total_sets > 1:
+            aggregated = [a for a in aggregated if a["n_sets"] >= n_total_sets]
 
         aggregated.sort(key=lambda x: x["mAP_50"] or 0, reverse=True)
         return aggregated
@@ -249,6 +367,11 @@ class Handler(SimpleHTTPRequestHandler):
         else:
             group_cols = "lora_rank, num_epochs, learning_rate, num_train_images"
 
+        # Count how many distinct training sets exist in the grid
+        n_total_sets = conn.execute(
+            "SELECT COUNT(DISTINCT train_image_set) FROM experiments"
+        ).fetchone()[0] or 1
+
         best = conn.execute(f"""
             SELECT {group_cols},
                    AVG(mAP_50) as mAP_50, AVG(mAP_50_95) as mAP_50_95,
@@ -257,6 +380,7 @@ class Handler(SimpleHTTPRequestHandler):
                    GROUP_CONCAT(DISTINCT train_image_set) as sets
             FROM experiments WHERE status = 'completed'
             GROUP BY {group_cols}
+            HAVING COUNT(DISTINCT train_image_set) = {n_total_sets}
             ORDER BY AVG(mAP_50) DESC LIMIT 10
         """).fetchall()
 
@@ -369,6 +493,15 @@ class Handler(SimpleHTTPRequestHandler):
         else:
             group_cols = "lora_rank, num_epochs, learning_rate, num_train_images"
 
+        # When averaging across sets (no specific set filter), only include
+        # configs where all training sets are completed
+        having_sql = ""
+        if not train_set:
+            n_total_sets = conn.execute(
+                "SELECT COUNT(DISTINCT train_image_set) FROM experiments"
+            ).fetchone()[0] or 1
+            having_sql = f"HAVING COUNT(DISTINCT train_image_set) = {n_total_sets}"
+
         rows = conn.execute(f"""
             SELECT {group_cols},
                    AVG({col}) as metric_val,
@@ -376,6 +509,7 @@ class Handler(SimpleHTTPRequestHandler):
                    AVG(time_per_epoch_ms) as time_per_epoch_ms
             FROM experiments WHERE {where_sql}
             GROUP BY {group_cols}
+            {having_sql}
         """).fetchall()
         self._json_response([dict(r) for r in rows])
 
@@ -519,18 +653,60 @@ class Handler(SimpleHTTPRequestHandler):
 
         self._json_response({"points": points, "latest": latest})
 
+    def _api_sync(self):
+        """Trigger an immediate DB sync from remote."""
+        if not SYNC_MANAGER:
+            return self._json_response({"ok": False, "error": "No remote sync configured. Use --remote flag."})
+        result = SYNC_MANAGER.sync_now()
+        self._json_response(result)
+
+    def _api_sync_status(self):
+        """Return current sync status."""
+        if not SYNC_MANAGER:
+            return self._json_response({"enabled": False})
+        self._json_response(SYNC_MANAGER.status())
+
     def log_message(self, format, *args):
         pass
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--db", default="results.db",
                         help="Database file (e.g. results.db or results_phase2.db)")
     parser.add_argument("--port", type=int, default=8765)
+    parser.add_argument("--remote", type=str, default=None,
+                        help="Remote host for DB sync, e.g. roboflow@100.94.130.94")
+    parser.add_argument("--remote-db", type=str, default=None,
+                        help="Path to DB on remote host (default: auto-detect from --db)")
+    parser.add_argument("--sync-interval", type=int, default=10,
+                        help="Seconds between background syncs (default: 10)")
     args = parser.parse_args()
 
     DB_PATH = Path(__file__).parent / args.db
+
+    # Start remote sync if configured
+    if args.remote:
+        remote_db = args.remote_db
+        if not remote_db:
+            # Default: ~/inference/experiments/rfdetr_few_shot/<db_name>
+            remote_db = f"~/inference/experiments/rfdetr_few_shot/{args.db}"
+        SYNC_MANAGER = RemoteSyncManager(
+            remote_host=args.remote,
+            remote_db_path=remote_db,
+            local_db_path=str(DB_PATH),
+            interval=args.sync_interval,
+        )
+        # Do an initial sync before starting the server
+        print(f"🔄 Initial sync from {args.remote}:{remote_db} ...")
+        result = SYNC_MANAGER.sync_now()
+        if result.get("ok"):
+            print(f"✅ Initial sync complete")
+        else:
+            print(f"⚠️  Initial sync failed: {result.get('error')} — will retry in background")
+        SYNC_MANAGER.start()
 
     # Auto-detect phase 2
     if DB_PATH.exists():
@@ -541,5 +717,6 @@ if __name__ == "__main__":
             print(f"📊 Phase 2 DB detected: {DB_PATH}")
 
     port = args.port
-    print(f"🚀 Results explorer: http://localhost:{port}")
+    sync_info = f" · syncing from {args.remote} every {args.sync_interval}s" if args.remote else ""
+    print(f"🚀 Results explorer: http://localhost:{port}{sync_info}")
     HTTPServer(("", port), Handler).serve_forever()
