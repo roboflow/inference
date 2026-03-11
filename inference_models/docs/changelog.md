@@ -1,5 +1,12 @@
 # Changelog
 
+## `0.20.0`
+### Added
+
+- Support for `transformers>=5`
+
+- Model registry feature allowing to treat specific model features as required during auto-negotiation  
+
 ## `0.19.4`
 ### Fixed
 
