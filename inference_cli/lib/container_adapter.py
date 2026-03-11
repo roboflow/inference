@@ -99,12 +99,22 @@ class _JetsonImage(NamedTuple):
 # See https://developer.nvidia.com/embedded/jetpack-archive for the full mapping.
 _JETSON_IMAGES: List[_JetsonImage] = [
     _JetsonImage(38, 0, "7", "roboflow/roboflow-inference-server-jetson-7.1.0:latest"),
-    _JetsonImage(36, 4, "6.2", "roboflow/roboflow-inference-server-jetson-6.2.0:latest"),
-    _JetsonImage(36, 3, "6.1", "roboflow/roboflow-inference-server-jetson-6.0.0:latest"),
-    _JetsonImage(36, 0, "6.0", "roboflow/roboflow-inference-server-jetson-6.0.0:latest"),
-    _JetsonImage(35, 0, "5",   "roboflow/roboflow-inference-server-jetson-5.1.1:latest"),
-    _JetsonImage(32, 6, "4.6", "roboflow/roboflow-inference-server-jetson-4.6.1:latest"),
-    _JetsonImage(32, 0, "4.5", "roboflow/roboflow-inference-server-jetson-4.5.0:latest"),
+    _JetsonImage(
+        36, 4, "6.2", "roboflow/roboflow-inference-server-jetson-6.2.0:latest"
+    ),
+    _JetsonImage(
+        36, 3, "6.1", "roboflow/roboflow-inference-server-jetson-6.0.0:latest"
+    ),
+    _JetsonImage(
+        36, 0, "6.0", "roboflow/roboflow-inference-server-jetson-6.0.0:latest"
+    ),
+    _JetsonImage(35, 0, "5", "roboflow/roboflow-inference-server-jetson-5.1.1:latest"),
+    _JetsonImage(
+        32, 6, "4.6", "roboflow/roboflow-inference-server-jetson-4.6.1:latest"
+    ),
+    _JetsonImage(
+        32, 0, "4.5", "roboflow/roboflow-inference-server-jetson-4.5.0:latest"
+    ),
 ]
 
 

@@ -109,8 +109,8 @@ the [Python Inference SDK](../inference_helpers/inference_sdk.md).
             "image": "https://media.roboflow.com/workflows/examples/bleachers.jpg"
         },
         parameters={
-            "model1": "yolov8n-640",
-            "model2": "yolov11n-640"
+            "model1": "rfdetr-small",
+            "model2": "rfdetr-medium"
         }
     )
 
@@ -133,8 +133,8 @@ the [Python Inference SDK](../inference_helpers/inference_sdk.md).
                     "type": "url",
                     "value": "https://media.roboflow.com/workflows/examples/bleachers.jpg"
                 },
-                "model1": "yolov8n-640",
-                "model2": "yolov11n-640"
+                "model1": "rfdetr-small",
+                "model2": "rfdetr-medium"
             }
         })
     });
@@ -161,8 +161,8 @@ the [Python Inference SDK](../inference_helpers/inference_sdk.md).
                 "type": "url",
                 "value": "https://media.roboflow.com/workflows/examples/bleachers.jpg"
             },
-            "model1": "yolov8n-640",
-            "model2": "yolov11n-640"
+            "model1": "rfdetr-small",
+            "model2": "rfdetr-medium"
         }
     }'
     ```
