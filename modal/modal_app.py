@@ -9,9 +9,15 @@ as a dependency for the main inference package.
 from typing import Any, Dict
 import base64
 import hashlib
+import inspect
 import os
+import traceback
 
 import modal
+
+from inference.core.workflows.execution_engine.v1.dynamic_blocks.error_utils import (
+    capture_output,
+)
 
 # Create the Modal App
 app = modal.App("webexec")
@@ -103,8 +109,7 @@ class Executor:
             Dictionary with results or error information
         """
         import json
-        import traceback
-        from datetime import datetime  # Import datetime at the top level
+        from datetime import datetime
 
         import numpy as np
 
@@ -340,16 +345,11 @@ from datetime import datetime
             user_function = namespace[run_function_name]
 
             # Check if function expects a 'self' parameter
-            import inspect
-            from contextlib import redirect_stderr, redirect_stdout
-            from io import StringIO
-
             sig = inspect.signature(user_function)
             params = list(sig.parameters.keys())
 
-            stdout_buf, stderr_buf = StringIO(), StringIO()
             try:
-                with redirect_stdout(stdout_buf), redirect_stderr(stderr_buf):
+                with capture_output() as (stdout_buf, stderr_buf):
                     # If function expects 'self' as first param, create a simple object to pass
                     if params and params[0] == "self":
 

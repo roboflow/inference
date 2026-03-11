@@ -20,8 +20,8 @@ from inference.core.env import (
     MODAL_WORKSPACE_NAME,
 )
 from inference.core.logger import logger
-from inference.core.workflows.errors import DynamicBlockError, PythonBlockError
-from inference.core.workflows.execution_engine.v1.dynamic_blocks.block_scaffolding import (
+from inference.core.workflows.errors import DynamicBlockCodeError, DynamicBlockError
+from inference.core.workflows.execution_engine.v1.dynamic_blocks.error_utils import (
     build_traceback_string,
     extract_code_snippet,
 )
@@ -340,8 +340,8 @@ class ModalExecutor:
                         code, line_number, function_name, error_type, error_msg
                     )
 
-                raise PythonBlockError(
-                    message=message,
+                raise DynamicBlockCodeError(
+                    public_message=message,
                     error_line=line_number,
                     code_snippet=code_snippet,
                     traceback_str=traceback_str,

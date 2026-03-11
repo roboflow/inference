@@ -1,8 +1,5 @@
-import sys
 import traceback
 import types
-from contextlib import redirect_stderr, redirect_stdout
-from io import StringIO
 from typing import Any, Dict, List, Optional, Type
 
 from inference.core.env import (
@@ -13,8 +10,8 @@ from inference.core.env import (
 from inference.core.exceptions import WorkspaceLoadError
 from inference.core.roboflow_api import get_roboflow_workspace
 from inference.core.workflows.errors import (
+    DynamicBlockCodeError,
     DynamicBlockError,
-    PythonBlockError,
     WorkflowEnvironmentConfigurationError,
 )
 from inference.core.workflows.execution_engine.v1.dynamic_blocks.entities import (
@@ -44,48 +41,10 @@ IMPORTS_LINES = [
 # Shared globals dict for all custom python blocks in local mode
 _LOCAL_SHARED_GLOBALS = {}
 
-
-def extract_code_snippet(
-    code: Optional[str], error_line: int, context: int = 10
-) -> str:
-    """Extract a code snippet around the error line with markers."""
-    if not code:
-        return ""
-
-    lines = code.splitlines()
-    error_idx = error_line - 1
-    start = max(0, error_idx - context)
-    end = min(len(lines), error_idx + context + 1)
-    snippet_lines = [
-        f"{'>>>' if i == error_idx else '   '} {i + 1}: {lines[i]}"
-        for i in range(start, end)
-    ]
-    return "\n" + "\n".join(snippet_lines)
-
-
-def build_traceback_string(
-    code: Optional[str],
-    line_number: int,
-    function_name: str,
-    error_type: str,
-    error_msg: str,
-) -> str:
-    """Build a traceback string from structured error data."""
-    code_lines = (code or "").splitlines()
-    code_line = (
-        code_lines[line_number - 1].strip()
-        if 0 < line_number <= len(code_lines)
-        else ""
-    )
-
-    lines = [
-        "Traceback (most recent call last):",
-        f'  File "Python Block", line {line_number}, in {function_name}',
-    ]
-    if code_line:
-        lines.append(f"    {code_line}")
-    lines.append(f"{error_type}: {error_msg}")
-    return "\n".join(lines)
+from inference.core.workflows.execution_engine.v1.dynamic_blocks.error_utils import (
+    capture_output,
+    extract_code_snippet,
+)
 
 
 def _create_clean_traceback(
@@ -114,17 +73,18 @@ def _create_clean_traceback(
     return "\n".join(lines)
 
 
-def _create_python_block_error(
+def _create_dynamic_block_code_error(
     error: Exception,
     python_code: PythonCode,
     stdout: Optional[str] = None,
     stderr: Optional[str] = None,
-) -> PythonBlockError:
-    """Create a PythonBlockError with structured code context."""
+) -> DynamicBlockCodeError:
+    """Create a DynamicBlockCodeError with structured code context."""
     tb = traceback.extract_tb(error.__traceback__)
     if not tb:
-        return PythonBlockError(
-            f"{error.__class__.__name__}: {error}",
+        return DynamicBlockCodeError(
+            public_message=f"{error.__class__.__name__}: {error}",
+            inner_error=error,
             stdout=stdout,
             stderr=stderr,
         )
@@ -137,8 +97,9 @@ def _create_python_block_error(
     message = f"Error in line {line_number}, in {frame.name}: {error.__class__.__name__}: {error}"
     clean_traceback = _create_clean_traceback(error, python_code, import_lines)
 
-    return PythonBlockError(
-        message=message,
+    return DynamicBlockCodeError(
+        public_message=message,
+        inner_error=error,
         error_line=line_number,
         code_snippet=code_snippet.lstrip("\n") if code_snippet else None,
         traceback_str=clean_traceback,
@@ -196,6 +157,7 @@ def assembly_custom_python_block(
                 inputs=kwargs,
                 workspace_id=workspace_id,
             )
+            # TODO: also in modal!
         else:
             # Local execution - check if allowed
             if not ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS:
@@ -205,12 +167,11 @@ def assembly_custom_python_block(
                     "`ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS=True`",
                     context="workflow_execution | step_execution | dynamic_step",
                 )
-            stdout_buf, stderr_buf = StringIO(), StringIO()
             try:
-                with redirect_stdout(stdout_buf), redirect_stderr(stderr_buf):
+                with capture_output() as (stdout_buf, stderr_buf):
                     return run_function(self, *args, **kwargs)
             except Exception as error:
-                raise _create_python_block_error(
+                raise _create_dynamic_block_code_error(
                     error,
                     python_code,
                     stdout=stdout_buf.getvalue() or None,
@@ -321,13 +282,19 @@ def create_dynamic_module(
             error_line = getattr(error, "lineno", None)
             code_snippet = None
             if error_line and python_code.run_function_code:
+                import_lines_offset = len(
+                    _get_python_code_imports(python_code).splitlines()
+                )
+                error_line -= import_lines_offset
                 snippet = extract_code_snippet(
                     python_code.run_function_code, error_line
                 )
                 code_snippet = snippet.lstrip("\n") if snippet else None
 
-            raise PythonBlockError(
-                message=f"{error.__class__.__name__}: {error}",
+            raise DynamicBlockCodeError(
+                public_message=f"{error.__class__.__name__}: {error}",
+                context="dynamic_block_code_compilation",
+                inner_error=error,
                 block_type_name=block_type_name,
                 error_line=error_line,
                 code_snippet=code_snippet,

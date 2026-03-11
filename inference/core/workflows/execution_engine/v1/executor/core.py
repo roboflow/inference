@@ -24,7 +24,6 @@ from inference.core import logger
 from inference.core.env import INFERENCE_DEBUG_OUTPUT_DIR
 from inference.core.workflows.errors import (
     BlockTraceback,
-    PythonBlockError,
     StepExecutionError,
     WorkflowError,
 )
@@ -210,8 +209,11 @@ def safe_execute_step(
             f"finished execution of: {step_selector} - {datetime.now().isoformat()}"
         )
     except WorkflowError as error:
+        # WorkflowError subclasses (for example:DynamicBlockCodeError)
+        # are reraised as they have their own HTTP handlers and don't need StepExecutionError wrapping
         raise error
     except Exception as error:
+        # TODO: think if we really need this.
         step_name = get_last_chunk_of_selector(selector=step_selector)
         if step_error_handler:
             step_error_handler(step_name, error)
@@ -232,7 +234,7 @@ def safe_execute_step(
             block_traceback=block_traceback,
             public_message=str(error),
             context="workflow_execution | step_execution",
-            inner_error=str(error),
+            inner_error=error,
         ) from error
 
 

@@ -54,7 +54,7 @@ from inference.core.workflows.errors import (
     ExecutionGraphStructureError,
     InvalidReferenceTargetError,
     NotSupportedExecutionEngineError,
-    PythonBlockError,
+    DynamicBlockCodeError,
     ReferenceTypeError,
     RuntimeInputError,
     StepExecutionError,
@@ -82,30 +82,38 @@ from inference_models.errors import (
 )
 
 
-def _build_python_block_error_response(
-    error: PythonBlockError,
+def _build_dynamic_block_code_error_response(
+    error: DynamicBlockCodeError,
 ) -> "WorkflowErrorResponse":
-    """Build a WorkflowErrorResponse for PythonBlockError (compilation errors)."""
-    from inference.core.entities.responses.workflows import WorkflowErrorResponse
-
+    """Build a WorkflowErrorResponse for DynamicBlockCodeError."""
     return WorkflowErrorResponse(
-        message="Python code compilation failed. See block details below.",
+        message=error.public_message,
         error_type=error.__class__.__name__,
-        context="workflow_compilation | python_code",
-        inner_error_type=error.__class__.__name__,
-        inner_error_message=str(error),
+        context=error.context,
+        inner_error_type=error.inner_error_type,
+        inner_error_message=str(error.inner_error) if error.inner_error else None,
         blocks_errors=[
             WorkflowBlockError(
-                block_id=error.block_type_name or "Python Block",
+                block_id=error.block_type_name or "Dynamic Block",
                 block_type=error.block_type_name,
                 property_name="Python code",
-                property_details=str(error),
+                property_details=error.public_message,
                 block_traceback=(
                     BlockTraceback(
                         error_line=error.error_line,
                         code_snippet=error.code_snippet,
+                        traceback=error.traceback_str,
+                        stdout=error.stdout,
+                        stderr=error.stderr,
                     )
-                    if error.error_line
+                    if any(
+                        [
+                            error.error_line,
+                            error.traceback_str,
+                            error.stdout,
+                            error.stderr,
+                        ]
+                    )
                     else None
                 ),
             ),
@@ -117,19 +125,16 @@ def _build_step_execution_error_response(
     error: StepExecutionError,
 ) -> "WorkflowErrorResponse":
     """Build a WorkflowErrorResponse for StepExecutionError (runtime errors)."""
-    from inference.core.entities.responses.workflows import WorkflowErrorResponse
-
     return WorkflowErrorResponse(
-        message=str(error.public_message),
+        message=error.public_message,
         error_type=error.__class__.__name__,
-        context=str(error.context),
-        inner_error_type=str(error.inner_error_type),
+        context=error.context,
+        inner_error_type=error.inner_error_type,
         inner_error_message=str(error.inner_error),
         blocks_errors=[
             WorkflowBlockError(
                 block_id=error.block_id,
                 block_type=error.block_type,
-                property_name="Python code",
                 property_details=str(error.inner_error),
                 block_traceback=error.block_traceback,
             ),
@@ -224,9 +229,9 @@ def with_route_exceptions(route):
                 blocks_errors=error.blocks_errors,
             )
             resp = JSONResponse(status_code=400, content=content.model_dump())
-        except PythonBlockError as error:
+        except DynamicBlockCodeError as error:
             logger.exception("%s: %s", type(error).__name__, error)
-            content = _build_python_block_error_response(error)
+            content = _build_dynamic_block_code_error_response(error)
             resp = JSONResponse(status_code=400, content=content.model_dump())
         except (
             WorkflowDefinitionError,
@@ -588,9 +593,9 @@ def with_route_exceptions_async(route):
                 blocks_errors=error.blocks_errors,
             )
             resp = JSONResponse(status_code=400, content=content.model_dump())
-        except PythonBlockError as error:
+        except DynamicBlockCodeError as error:
             logger.exception("%s: %s", type(error).__name__, error)
-            content = _build_python_block_error_response(error)
+            content = _build_dynamic_block_code_error_response(error)
             resp = JSONResponse(status_code=400, content=content.model_dump())
         except (
             WorkflowDefinitionError,

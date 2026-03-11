@@ -11,28 +11,6 @@ class BlockTraceback(BaseModel):
     stderr: Optional[str] = None
 
 
-class PythonBlockError(Exception):
-    """Exception for Python block errors with structured code context."""
-
-    def __init__(
-        self,
-        message: str,
-        block_type_name: Optional[str] = None,
-        error_line: Optional[int] = None,
-        code_snippet: Optional[str] = None,
-        traceback_str: Optional[str] = None,
-        stdout: Optional[str] = None,
-        stderr: Optional[str] = None,
-    ):
-        super().__init__(message)
-        self.block_type_name = block_type_name
-        self.error_line = error_line
-        self.code_snippet = code_snippet
-        self.traceback = traceback_str
-        self.stdout = stdout
-        self.stderr = stderr
-
-
 class WorkflowBlockError(BaseModel):
     block_id: Optional[str] = None
     block_type: Optional[str] = None
@@ -181,6 +159,32 @@ class ControlFlowDefinitionError(WorkflowCompilerError):
 
 class WorkflowExecutionEngineError(WorkflowError):
     pass
+
+
+class DynamicBlockCodeError(WorkflowExecutionEngineError):
+    """Exception for dynamic block code execution errors (errors provoked by user's code)."""
+
+    def __init__(
+        self,
+        public_message: str,
+        context: str = "dynamic_block_code_execution",
+        inner_error: Optional[Exception] = None,
+        block_type_name: Optional[str] = None,
+        error_line: Optional[int] = None,
+        code_snippet: Optional[str] = None,
+        traceback_str: Optional[str] = None,
+        stdout: Optional[str] = None,
+        stderr: Optional[str] = None,
+    ):
+        super().__init__(
+            public_message=public_message, context=context, inner_error=inner_error
+        )
+        self.block_type_name = block_type_name
+        self.error_line = error_line
+        self.code_snippet = code_snippet
+        self.traceback_str = traceback_str
+        self.stdout = stdout
+        self.stderr = stderr
 
 
 class NotSupportedExecutionEngineError(WorkflowExecutionEngineError):
