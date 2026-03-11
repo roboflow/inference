@@ -23,8 +23,43 @@ from inference.core.workflows.execution_engine.core import ExecutionEngine
 
 _WORKFLOW_DEFINITIONS_DIR = Path(__file__).resolve().parent / "workflow_definitions"
 
+# Not testing the message interpolation here
+SUCCESSFUL_EMAIL_MESSAGE_MOCK = "Notification sent successfully"
 
-BATCH_4_IMAGE_NAMES = ["img0.jpg", "img1.jpg", "img2.jpg", "img3.jpg"]
+BATCH_4_IMAGE_NAMES = [
+    "img0",
+    "img1",
+    "img2",
+    "img3",
+]
+
+SLICED_NAMES = [
+    # image 0
+    "image_0_slice_0",
+    "image_0_slice_1",
+    "image_0_slice_2",
+    "image_0_slice_3",
+    # image 1
+    "image_1_slice_0",
+    "image_1_slice_1",
+    "image_1_slice_2",
+    "image_1_slice_3",
+    # image 2
+    "image_2_slice_0",
+    "image_2_slice_1",
+    "image_2_slice_2",
+    "image_2_slice_3",
+    # image 3
+    "image_3_slice_0",
+    "image_3_slice_1",
+    "image_3_slice_2",
+    "image_3_slice_3",
+    "image_3_slice_4",
+    "image_3_slice_5",
+    "image_3_slice_6",
+    "image_3_slice_7",
+]
+
 BATCH_4_DETECTION_COUNTS = [0, 2, 0, 1]
 SLICED_DETECTION_COUNTS = [
     0, 0, 0, 0,  # image 0
@@ -32,6 +67,37 @@ SLICED_DETECTION_COUNTS = [
     0, 0, 0, 0,  # image 2
     0, 0, 0, 0, 0, 1, 0, 0,  # image 3 (slice 5)
 ]
+
+SLICED_EMAIL_IMAGE_INDEX_AND_SLICE = [
+    (1, 2),
+    (1, 3),
+    (3, 5),
+]
+
+
+def _batch_4_images():
+    """Four images (same shape for non-sliced scenario)."""
+    return [
+        np.zeros(
+            (480, 640, 3),
+            dtype=np.uint8,
+        )
+        for _ in range(4)
+    ]
+
+
+def _sliced_4_images():
+    """Three images that slice into 4 slices each, one into 8. 1152x1152 -> 2x2 = 4 slices;
+    2176x1152 -> 4x2 = 8 slices. 640x640, 0.2 overlap, stride 512."""
+    img_4 = np.zeros(
+        (1152, 1152, 3),
+        dtype=np.uint8,
+    )
+    img_8 = np.zeros(
+        (1152, 2176, 3),
+        dtype=np.uint8,
+    )
+    return [img_4, img_4, img_4, img_8]
 
 
 def _load_workflow_definition(name: str) -> dict:
@@ -126,84 +192,205 @@ def _run_workflow(
             )
 
 
-def _batch_4_images():
-    """Four images (same shape for non-sliced scenario)."""
-    return [
-        np.zeros(
-            (480, 640, 3),
-            dtype=np.uint8,
-        )
-        for _ in range(4)
-    ]
-
-
 @patch(
     "inference.core.workflows.core_steps.sinks.email_notification.v2.send_email_via_roboflow_proxy"
 )
 @pytest.mark.parametrize(
-    "workflow_name,receiver_email,subject,expected_message_parameters",
+    "image_gen_fn,\
+    names,\
+    detection_counts,\
+    workflow_name,\
+    expected_call_count,\
+    expected_receiver_email,\
+    expected_subject,\
+    expected_message_parameters,\
+    expected_result",
     [
-        # (
-        #     "with_email_message_params",
-        #     "noreply@example.com",
-        #     "Detections found",
-        #     ({"num_detections": 2}, {"num_detections": 1}),
-        # ),
         (
-            "without_email_message_params",
+            _batch_4_images,
+            BATCH_4_IMAGE_NAMES,
+            BATCH_4_DETECTION_COUNTS,
+            "with_email_message_params",
+            2,
             "noreply@example.com",
             "Detections found",
-            ({}, {}),
+            (
+                {"num_detections": 2},
+                {"num_detections": 1},
+            ),
+            (
+                {"email_message": None},
+                {"email_message": SUCCESSFUL_EMAIL_MESSAGE_MOCK},
+                {"email_message": None},
+                {"email_message": SUCCESSFUL_EMAIL_MESSAGE_MOCK},
+            ),
         ),
-        # (
-        #     "with_image_names_and_email_message_params",
-        #     "noreply@example.com",
-        #     "Detections found",
-        #     ({"num_detections": 2, "image_name": "img1.jpg"}, {"num_detections": 1, "image_name": "img3.jpg"}),
-        # ),
-        # (
-        #     "with_image_names_and_without_email_message_params",
-        #     "noreply@example.com",
-        #     "Detections found",
-        #     ({"image_name": "img1.jpg"}, {"image_name": "img3.jpg"}),
-        # ),
+        (
+            _batch_4_images,
+            BATCH_4_IMAGE_NAMES,
+            BATCH_4_DETECTION_COUNTS,
+            "without_email_message_params",
+            2,
+            "noreply@example.com",
+            "Detections found",
+            (
+                {},
+                {},
+            ),
+            (
+                {"email_message": None},
+                {"email_message": SUCCESSFUL_EMAIL_MESSAGE_MOCK},
+                {"email_message": None},
+                {"email_message": SUCCESSFUL_EMAIL_MESSAGE_MOCK},
+            ),
+        ),
+        (
+            _batch_4_images,
+            BATCH_4_IMAGE_NAMES,
+            BATCH_4_DETECTION_COUNTS,
+            "with_image_names_and_email_message_params",
+            2,
+            "noreply@example.com",
+            "Detections found",
+            (
+                {"num_detections": 2, "name": "img1"},
+                {"num_detections": 1, "name": "img3"},
+            ),
+            (
+                {"email_message": None},
+                {"email_message": SUCCESSFUL_EMAIL_MESSAGE_MOCK},
+                {"email_message": None},
+                {"email_message": SUCCESSFUL_EMAIL_MESSAGE_MOCK},
+            ),
+        ),
+        (
+            _batch_4_images,
+            BATCH_4_IMAGE_NAMES,
+            BATCH_4_DETECTION_COUNTS,
+            "with_image_names_and_without_email_message_params",
+            2,
+            "noreply@example.com",
+            "Detections found",
+            ({"name": "img1"}, {"name": "img3"}),
+            (
+                {"email_message": None},
+                {"email_message": SUCCESSFUL_EMAIL_MESSAGE_MOCK},
+                {"email_message": None},
+                {"email_message": SUCCESSFUL_EMAIL_MESSAGE_MOCK},
+            ),
+        ),
+        (
+            _sliced_4_images,
+            SLICED_NAMES,
+            SLICED_DETECTION_COUNTS,
+            "sliced_image_with_email_message_params",
+            3,
+            "noreply@example.com",
+            "Detections found",
+            (
+                {"num_detections": 1},
+                {"num_detections": 1},
+                {"num_detections": 1},
+            ),
+            (
+                {"email_message": [None, None, None, None]},
+                {"email_message": [None, None, SUCCESSFUL_EMAIL_MESSAGE_MOCK, SUCCESSFUL_EMAIL_MESSAGE_MOCK]},
+                {"email_message": [None, None, None, None]},
+                {"email_message": [None, None, None, None, None, SUCCESSFUL_EMAIL_MESSAGE_MOCK, None, None]},
+            ),
+        ),
+        (
+            _sliced_4_images,
+            SLICED_NAMES,
+            SLICED_DETECTION_COUNTS,
+            "sliced_image_without_email_message_params",
+            3,
+            "noreply@example.com",
+            "Detections found",
+            ({}, {}, {}),
+            (
+                {"email_message": [None, None, None, None]},
+                {"email_message": [None, None, SUCCESSFUL_EMAIL_MESSAGE_MOCK, SUCCESSFUL_EMAIL_MESSAGE_MOCK]},
+                {"email_message": [None, None, None, None]},
+                {"email_message": [None, None, None, None, None, SUCCESSFUL_EMAIL_MESSAGE_MOCK, None, None]},
+            ),
+        ),
+        (
+            _sliced_4_images,
+            SLICED_NAMES,
+            SLICED_DETECTION_COUNTS,
+            "sliced_image_with_email_message_params_with_slice_names",
+            3,
+            "noreply@example.com",
+            "Detections found",
+            ({"num_detections": 1, "name": "image_1_slice_2"}, {"num_detections": 1, "name": "image_1_slice_3"}, {"num_detections": 1, "name": "image_3_slice_5"}),
+            (
+                {"email_message": [None, None, None, None]},
+                {"email_message": [None, None, SUCCESSFUL_EMAIL_MESSAGE_MOCK, SUCCESSFUL_EMAIL_MESSAGE_MOCK]},
+                {"email_message": [None, None, None, None]},
+                {"email_message": [None, None, None, None, None, SUCCESSFUL_EMAIL_MESSAGE_MOCK, None, None]},
+            ),
+        ),
+        (
+            _sliced_4_images,
+            SLICED_NAMES,
+            SLICED_DETECTION_COUNTS,
+            "sliced_image_without_email_message_params_with_slice_names",
+            3,
+            "noreply@example.com",
+            "Detections found",
+            ({"name": "image_1_slice_2"}, {"name": "image_1_slice_3"}, {"name": "image_3_slice_5"}),
+            (
+                {"email_message": [None, None, None, None]},
+                {"email_message": [None, None, SUCCESSFUL_EMAIL_MESSAGE_MOCK, SUCCESSFUL_EMAIL_MESSAGE_MOCK]},
+                {"email_message": [None, None, None, None]},
+                {"email_message": [None, None, None, None, None, SUCCESSFUL_EMAIL_MESSAGE_MOCK, None, None]},
+            ),
+        ),
     ],
     ids=[
-        # "with_email_message_params",
+        "with_email_message_params",
         "without_email_message_params",
-        # "with_image_names_and_email_message_params",
-        # "without_image_names_and_email_message_params",
+        "with_image_names_and_email_message_params",
+        "without_image_names_and_email_message_params",
+        "sliced_image_with_email_message_params",
+        "sliced_image_without_email_message_params",
+        "sliced_image_with_email_message_params_with_slice_names",
+        "sliced_image_without_email_message_params_with_slice_names",
     ],
 )
 def test_scenario_1(
     send_email_mock,
+    image_gen_fn: callable,
+    names: List[str],
+    detection_counts: List[int],
     workflow_name: str,
-    receiver_email: str,
-    subject: str,
+    expected_call_count: int,
+    expected_receiver_email: str,
+    expected_subject: str,
     expected_message_parameters: tuple[dict[str, str | int], dict[str, str | int]],
+    expected_result: tuple[dict[str, str | int], dict[str, str | int]],
     model_manager,
 ) -> None:
-    """Batch of 4 images; images 1 and 3 have detections (2 and 1 respectively).
-    Assert email message content and that the send path was invoked with expected arguments."""
     send_email_mock.return_value = (False, "Notification sent successfully")
     workflow_definition = _load_workflow_definition(workflow_name)
 
-    runtime_parameters = {"image": _batch_4_images()}
+    runtime_parameters = {"image": image_gen_fn()}
     inputs = {inp["name"] for inp in workflow_definition.get("inputs", [])}
-    if "image_names" in inputs:
-        runtime_parameters["image_names"] = BATCH_4_IMAGE_NAMES
+    if "names" in inputs:
+        runtime_parameters["names"] = names
 
     result = _run_workflow(
         workflow_definition,
         runtime_parameters,
         model_manager,
-        detection_counts=BATCH_4_DETECTION_COUNTS,
+        detection_counts=detection_counts,
     )
 
-    assert send_email_mock.call_count == 2
+    assert send_email_mock.call_count == expected_call_count
     for i, call in enumerate(send_email_mock.call_args_list):
-        assert call.kwargs["receiver_email"] == [receiver_email]
-        assert call.kwargs["subject"] == subject
+        assert call.kwargs["receiver_email"] == [expected_receiver_email]
+        assert call.kwargs["subject"] == expected_subject
 
         params = expected_message_parameters[i]
 
@@ -219,87 +406,8 @@ def test_scenario_1(
 
 
     assert len(result) == 4
-    assert result[0].get("email_message") is None
-    assert result[2].get("email_message") is None
-    assert result[1].get("email_message") is not None
-    assert result[3].get("email_message") is not None
-
-
-
-# SLICED_EMAIL_IMAGE_INDEX_AND_SLICE = [
-#     (1, 2),
-#     (1, 3),
-#     (3, 5),
-# ]
-
-
-# def _sliced_4_images():
-#     """Three images that slice into 4 slices each, one into 8. 1152x1152 -> 2x2 = 4 slices;
-#     2176x1152 -> 4x2 = 8 slices. 640x640, 0.2 overlap, stride 512."""
-#     img_4 = np.zeros(
-#         (1152, 1152, 3),
-#         dtype=np.uint8,
-#     )
-#     img_8 = np.zeros(
-#         (1152, 2176, 3),
-#         dtype=np.uint8,
-#     )
-#     return [img_4, img_4, img_4, img_8]
-
-
-# @patch(
-#     "inference.core.workflows.core_steps.sinks.email_notification.v2.send_email_via_roboflow_proxy"
-# )
-# @pytest.mark.parametrize(
-#     "workflow_name,expected_in_message",
-#     [
-#         (
-#             "sliced_image_with_email_message_params",
-#             "1 detection",
-#         ),
-#         (
-#             "sliced_image_without_email_message_params",
-#             "Detection(s) found",
-#         ),
-#     ],
-#     ids=[
-#         "sliced_image_with_email_message_params",
-#         "sliced_image_without_email_message_params",
-#     ],
-# )
-# def test_scenario_2_sliced_email_messages(
-#     send_email_mock,
-#     workflow_name: str,
-#     expected_in_message: str,
-#     model_manager,
-# ) -> None:
-#     """Sliced (no stitch): image_slicer -> detection -> continue_if -> email per slice.
-#     First 3 images -> 4 slices each, last -> 8 (20 total). Detections in slice indices 6, 7, 16 only.
-#     One email per slice with detections; (a) and (b) only (no image_names).
-#     Per-image slice indices with detections: image 1 in slices 2,3; image 3 in slice 5 (0-based).
-#     Output: 4 batch elements, each email_message a list per slice."""
-#     send_email_mock.return_value = (False, "Notification sent successfully")
-#     workflow = _load_workflow_definition(workflow_name)
-#     runtime = {"image": _sliced_4_images()}
-
-#     result = _run_workflow(
-#         workflow,
-#         runtime,
-#         model_manager,
-#         detection_counts=SLICED_DETECTION_COUNTS,
-#     )
-
-#     assert len(result) == 4, "4 input images"
-
-#     for image_idx, slice_idx in SLICED_EMAIL_IMAGE_INDEX_AND_SLICE:
-#         messages = result[image_idx].get("email_message")
-#         assert messages is not None
-#         assert isinstance(messages, list)
-#         msg = messages[slice_idx]
-#         assert msg is not None
-#         assert expected_in_message in str(msg)
-
-#     assert send_email_mock.call_count >= 1
+    for i, result in enumerate(result):
+        assert result.get("email_message") == expected_result[i].get("email_message")
 
 
 # @patch(
