@@ -337,7 +337,6 @@ def run_simd_step_in_non_batch_mode(
         for input_definition in execution_data_manager.iterate_over_simd_step_input(
             step_selector=step_selector
         ):
-            print("input definition", input_definition)
             with profiler.profile_execution_phase(
                 name="step_code_execution",
                 categories=["workflow_block_operation"],
@@ -346,7 +345,6 @@ def run_simd_step_in_non_batch_mode(
                 },
             ):
                 result = step_instance.run(**input_definition.parameters)
-            print(result)
             results.append(result)
             indices.append(input_definition.index)
     with profiler.profile_execution_phase(

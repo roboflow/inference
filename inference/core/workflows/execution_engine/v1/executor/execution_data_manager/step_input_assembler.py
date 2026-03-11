@@ -433,14 +433,12 @@ def prepare_parameters(
             lineage=step_node.conditional_flow_lineage_support,
         )
         mask_dimension = len(step_node.conditional_flow_lineage_support)
-        print("DUMMY MASK", masks)
         mask_for_dimension = masks.get(mask_dimension)
         if mask_for_dimension is not None:
             # TODO: verify correctness
             indices = [
                 idx for idx in indices if idx in mask_for_dimension
             ]
-        print(f"Indices: {indices}")
     else:
         indices = batch_parameters_indices[0]
     if not step_node.step_manifest.accepts_empty_values():
