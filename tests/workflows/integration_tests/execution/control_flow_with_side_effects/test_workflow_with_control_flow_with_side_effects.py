@@ -20,6 +20,7 @@ from inference.core.entities.responses.inference import (
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.execution_engine.core import ExecutionEngine
+from inference.core.workflows.errors import StepInputLineageError, ControlFlowDefinitionError
 
 _WORKFLOW_DEFINITIONS_DIR = Path(__file__).resolve().parent / "workflow_definitions"
 
@@ -328,55 +329,6 @@ def _run_workflow(
                 {"email_message": [None, None, None, None, None, SUCCESSFUL_EMAIL_MESSAGE_MOCK, None, None]},
             ),
         ),
-        (
-            _sliced_4_images,
-            SLICED_NAMES,
-            SLICED_DETECTION_COUNTS,
-            "sliced_image_with_email_message_params_with_slice_names",
-            3,
-            "noreply@example.com",
-            "Detections found",
-            (
-                {
-                    "num_detections": 1,
-                    "name": "image_1_slice_2"
-                },
-                {
-                    "num_detections": 1,
-                    "name": "image_1_slice_3"
-                },
-                {
-                    "num_detections": 1,
-                    "name": "image_3_slice_5"
-                },
-            ),
-            (
-                {"email_message": [None, None, None, None]},
-                {"email_message": [None, None, SUCCESSFUL_EMAIL_MESSAGE_MOCK, SUCCESSFUL_EMAIL_MESSAGE_MOCK]},
-                {"email_message": [None, None, None, None]},
-                {"email_message": [None, None, None, None, None, SUCCESSFUL_EMAIL_MESSAGE_MOCK, None, None]},
-            ),
-        ),
-        (
-            _sliced_4_images,
-            SLICED_NAMES,
-            SLICED_DETECTION_COUNTS,
-            "sliced_image_without_email_message_params_with_slice_names",
-            3,
-            "noreply@example.com",
-            "Detections found",
-            (
-                {"name": "image_1_slice_2"},
-                {"name": "image_1_slice_3"},
-                {"name": "image_3_slice_5"},
-            ),
-            (
-                {"email_message": [None, None, None, None]},
-                {"email_message": [None, None, SUCCESSFUL_EMAIL_MESSAGE_MOCK, SUCCESSFUL_EMAIL_MESSAGE_MOCK]},
-                {"email_message": [None, None, None, None]},
-                {"email_message": [None, None, None, None, None, SUCCESSFUL_EMAIL_MESSAGE_MOCK, None, None]},
-            ),
-        ),
     ],
     ids=[
         "with_email_message_params",
@@ -385,8 +337,6 @@ def _run_workflow(
         "without_image_names_and_email_message_params",
         "sliced_image_with_email_message_params",
         "sliced_image_without_email_message_params",
-        "sliced_image_with_email_message_params_with_slice_names",
-        "sliced_image_without_email_message_params_with_slice_names",
     ],
 )
 def test_scenario_1(
@@ -439,6 +389,99 @@ def test_scenario_1(
     for i, result in enumerate(result):
         assert result.get("email_message") == expected_result[i].get("email_message")
 
+
+@patch(
+    "inference.core.workflows.core_steps.sinks.email_notification.v2.send_email_via_roboflow_proxy"
+)
+@pytest.mark.parametrize(
+    "image_gen_fn,\
+    names,\
+    detection_counts,\
+    workflow_name",
+    [
+        (
+            _sliced_4_images,
+            SLICED_NAMES,
+            SLICED_DETECTION_COUNTS,
+            "sliced_image_with_email_message_params_with_slice_names",
+        ),
+    ],
+    ids=[
+        "sliced_image_with_email_message_params_with_slice_names",
+    ],
+)
+def test_scenario_raises_step_input_lineage_error(
+    send_email_mock,
+    image_gen_fn: callable,
+    names: List[str],
+    detection_counts: List[int],
+    workflow_name: str,
+    model_manager,
+) -> None:
+    send_email_mock.return_value = (False, "This will not send an email")
+    workflow_definition = _load_workflow_definition(workflow_name)
+
+    runtime_parameters = {"image": image_gen_fn()}
+    inputs = {inp["name"] for inp in workflow_definition.get("inputs", [])}
+    if "names" in inputs:
+        runtime_parameters["names"] = names
+
+    with pytest.raises(StepInputLineageError):
+        _run_workflow(
+            workflow_definition,
+            runtime_parameters,
+            model_manager,
+            detection_counts=detection_counts,
+        )
+ 
+    assert send_email_mock.call_count == 0
+
+
+@patch(
+    "inference.core.workflows.core_steps.sinks.email_notification.v2.send_email_via_roboflow_proxy"
+)
+@pytest.mark.parametrize(
+    "image_gen_fn,\
+    names,\
+    detection_counts,\
+    workflow_name",
+    [
+        (
+            _sliced_4_images,
+            SLICED_NAMES,
+            SLICED_DETECTION_COUNTS,
+            "sliced_image_without_email_message_params_with_slice_names",
+        ),
+    ],
+    ids=[
+        "sliced_image_without_email_message_params_with_slice_names",
+    ],
+)
+def test_scenario_raises_control_flow_definition_error(
+    send_email_mock,
+    image_gen_fn: callable,
+    names: List[str],
+    detection_counts: List[int],
+    workflow_name: str,
+    model_manager,
+) -> None:
+    send_email_mock.return_value = (False, "This will not send an email")
+    workflow_definition = _load_workflow_definition(workflow_name)
+
+    runtime_parameters = {"image": image_gen_fn()}
+    inputs = {inp["name"] for inp in workflow_definition.get("inputs", [])}
+    if "names" in inputs:
+        runtime_parameters["names"] = names
+
+    with pytest.raises(ControlFlowDefinitionError):
+        _run_workflow(
+            workflow_definition,
+            runtime_parameters,
+            model_manager,
+            detection_counts=detection_counts,
+        )
+ 
+    assert send_email_mock.call_count == 0
 
 # @patch(
 #     "inference.core.workflows.core_steps.sinks.email_notification.v2.send_email_via_roboflow_proxy"
