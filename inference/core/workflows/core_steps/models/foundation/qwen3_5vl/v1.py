@@ -85,7 +85,7 @@ class BlockManifest(WorkflowBlockManifest):
     system_prompt: Optional[str] = Field(
         default=None,
         description="Optional system prompt to provide additional context to Qwen3.5-VL.",
-        examples=["You are a helpful assistant. Produce only concise outputs."],
+        examples=["You are a helpful assistant."],
     )
 
     enable_thinking: bool = Field(
@@ -231,7 +231,7 @@ class Qwen35VLBlockV1(WorkflowBlock):
         prompt = prompt or "Describe what's in this image."
         system_prompt = (
             system_prompt
-            or "You are a helpful assistant. Produce only concise outputs."
+            or "You are a helpful assistant."
         )
         prompts = [prompt + "<system_prompt>" + system_prompt] * len(inference_images)
         # Register Qwen3.5-VL with the model manager.
