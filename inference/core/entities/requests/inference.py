@@ -279,6 +279,14 @@ class LMMInferenceRequest(CVInferenceRequest):
         examples=["caption"],
         description="If set, use this prompt to guide the LMM",
     )
+    enable_thinking: bool = Field(
+        default=False,
+        description="If true, enables thinking/reasoning mode for models that support it (e.g. Qwen3.5-VL). The model's reasoning will be included in the response.",
+    )
+    max_new_tokens: Optional[int] = Field(
+        default=None,
+        description="Maximum number of tokens to generate. If not set, the model's default will be used.",
+    )
 
 
 def request_from_type(model_type, request_dict):
