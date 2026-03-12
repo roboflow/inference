@@ -320,7 +320,7 @@ REGISTERED_MODELS: Dict[
             "num_queries",
             "num_select",
         },
-    ),"InferenceModelsQwen3VLAdapter"
+    ),
     ("rfdetr", INSTANCE_SEGMENTATION_TASK, BackendType.TORCH): LazyClass(
         module_name="inference_models.models.rfdetr.rfdetr_instance_segmentation_pytorch",
         class_name="RFDetrForInstanceSegmentationTorch",
