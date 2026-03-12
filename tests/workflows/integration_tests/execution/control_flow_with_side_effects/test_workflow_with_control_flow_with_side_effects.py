@@ -570,7 +570,7 @@ def _run_workflow(
         "with_two_continue_if_different_control_flow_lineage",
     ],
 )
-def test_scenario_1(
+def test_properly_running_side_effect_step_and_returning_results_in_different_data_lineage_control_lineage_scenarios(
     send_email_mock,
     image_gen_fn: callable,
     names: List[str],
