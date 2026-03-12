@@ -340,6 +340,8 @@ class ModalExecutor:
                         code, line_number, function_name, error_type, error_msg
                     )
 
+                # Propagate DynamicBlockCodeError on runtime error. Will pass through
+                # the core executor and be handled by its own HTTP handler.
                 raise DynamicBlockCodeError(
                     public_message=message,
                     error_line=line_number,

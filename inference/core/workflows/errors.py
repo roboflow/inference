@@ -186,6 +186,19 @@ class DynamicBlockCodeError(WorkflowExecutionEngineError):
         self.stdout = stdout
         self.stderr = stderr
 
+    @property
+    def block_traceback(self) -> Optional[BlockTraceback]:
+        """Construct BlockTraceback from error fields if any are present."""
+        if not any([self.error_line, self.traceback_str, self.stdout, self.stderr]):
+            return None
+        return BlockTraceback(
+            error_line=self.error_line,
+            code_snippet=self.code_snippet,
+            traceback=self.traceback_str,
+            stdout=self.stdout,
+            stderr=self.stderr,
+        )
+
 
 class NotSupportedExecutionEngineError(WorkflowExecutionEngineError):
     pass

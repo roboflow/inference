@@ -1,4 +1,3 @@
-import traceback
 import types
 from typing import Any, Dict, List, Optional, Type
 
@@ -43,69 +42,9 @@ _LOCAL_SHARED_GLOBALS = {}
 
 from inference.core.workflows.execution_engine.v1.dynamic_blocks.error_utils import (
     capture_output,
+    create_dynamic_block_code_error,
     extract_code_snippet,
 )
-
-
-def _create_clean_traceback(
-    error: Exception, python_code: PythonCode, import_lines: int
-) -> str:
-    """Create a clean traceback showing only user code with adjusted line numbers."""
-    tb = traceback.extract_tb(error.__traceback__)
-    code_lines = (python_code.run_function_code or "").splitlines()
-
-    lines = ["Traceback (most recent call last):"]
-    for frame in tb:
-        if frame.filename == "<string>":
-            adjusted_line = frame.lineno - import_lines
-            code_line = (
-                code_lines[adjusted_line - 1]
-                if 0 < adjusted_line <= len(code_lines)
-                else ""
-            )
-            lines.append(
-                f'  File "Python Block", line {adjusted_line}, in {frame.name}'
-            )
-            if code_line:
-                lines.append(f"    {code_line.strip()}")
-
-    lines.append(f"{error.__class__.__name__}: {error}")
-    return "\n".join(lines)
-
-
-def _create_dynamic_block_code_error(
-    error: Exception,
-    python_code: PythonCode,
-    stdout: Optional[str] = None,
-    stderr: Optional[str] = None,
-) -> DynamicBlockCodeError:
-    """Create a DynamicBlockCodeError with structured code context."""
-    tb = traceback.extract_tb(error.__traceback__)
-    if not tb:
-        return DynamicBlockCodeError(
-            public_message=f"{error.__class__.__name__}: {error}",
-            inner_error=error,
-            stdout=stdout,
-            stderr=stderr,
-        )
-
-    import_lines = len(_get_python_code_imports(python_code).splitlines())
-    frame = tb[-1]
-    line_number = frame.lineno - import_lines
-
-    code_snippet = extract_code_snippet(python_code.run_function_code, line_number)
-    message = f"Error in line {line_number}, in {frame.name}: {error.__class__.__name__}: {error}"
-    clean_traceback = _create_clean_traceback(error, python_code, import_lines)
-
-    return DynamicBlockCodeError(
-        public_message=message,
-        inner_error=error,
-        error_line=line_number,
-        code_snippet=code_snippet.lstrip("\n") if code_snippet else None,
-        traceback_str=clean_traceback,
-        stdout=stdout,
-        stderr=stderr,
-    )
 
 
 def assembly_custom_python_block(
@@ -167,13 +106,15 @@ def assembly_custom_python_block(
                     "`ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS=True`",
                     context="workflow_execution | step_execution | dynamic_step",
                 )
+            import_lines_count = len(_get_python_code_imports(python_code).splitlines())
             try:
                 with capture_output() as (stdout_buf, stderr_buf):
                     return run_function(self, *args, **kwargs)
             except Exception as error:
-                raise _create_dynamic_block_code_error(
-                    error,
-                    python_code,
+                raise create_dynamic_block_code_error(
+                    error=error,
+                    user_code=python_code.run_function_code or "",
+                    import_lines_count=import_lines_count,
                     stdout=stdout_buf.getvalue() or None,
                     stderr=stderr_buf.getvalue() or None,
                 ) from error

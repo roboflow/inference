@@ -208,12 +208,11 @@ def safe_execute_step(
         logger.debug(
             f"finished execution of: {step_selector} - {datetime.now().isoformat()}"
         )
-    except WorkflowError as error:
-        # WorkflowError subclasses (for example:DynamicBlockCodeError)
-        # are reraised as they have their own HTTP handlers and don't need StepExecutionError wrapping
-        raise error
     except Exception as error:
-        # TODO: think if we really need this.
+        if isinstance(error, WorkflowError):
+            raise  # Already has proper context, let HTTP handlers deal with it
+
+        # Wrap unexpected exceptions in StepExecutionError with block context
         step_name = get_last_chunk_of_selector(selector=step_selector)
         if step_error_handler:
             step_error_handler(step_name, error)
