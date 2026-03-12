@@ -3,12 +3,14 @@ import concurrent.futures
 import re
 import time
 from typing import Callable, Dict, List
+from urllib.parse import urlparse, urlunparse
 
 from prometheus_client.core import REGISTRY, CounterMetricFamily, GaugeMetricFamily
 from prometheus_client.registry import Collector
 from prometheus_fastapi_instrumentator import Instrumentator
 
 from inference.core.devices.utils import GLOBAL_INFERENCE_SERVER_ID
+from inference.core.env import METRICS_INCLUDE_SOURCE_LABELS
 from inference.core.logger import logger
 from inference.core.managers.metrics import get_model_metrics
 
@@ -126,12 +128,25 @@ class CustomCollector(Collector):
         return sum(values) / len(values)
 
     @staticmethod
+    def _sanitize_source_reference(ref: str) -> str:
+        """Strip credentials and query parameters from URLs to avoid leaking
+        secrets in metrics."""
+        parsed = urlparse(ref)
+        if parsed.scheme and parsed.hostname:
+            netloc = parsed.hostname + (f":{parsed.port}" if parsed.port else "")
+            sanitized = parsed._replace(netloc=netloc, query="", fragment="")
+            return urlunparse(sanitized)
+        return ref
+
+    @staticmethod
     def _extract_source_label(sources_metadata: List[dict]) -> str:
+        if not METRICS_INCLUDE_SOURCE_LABELS:
+            return ""
         refs = []
         for src in sources_metadata:
             ref = src.get("source_reference")
             if ref is not None:
-                refs.append(str(ref))
+                refs.append(CustomCollector._sanitize_source_reference(str(ref)))
         return ",".join(refs) if refs else ""
 
     def sanitize_string(self, input_string):

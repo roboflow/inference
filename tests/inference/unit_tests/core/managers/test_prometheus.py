@@ -307,6 +307,62 @@ class TestAverageSourceFps:
         assert CustomCollector._average_source_fps(metadata) == 25.0
 
 
+class TestSanitizeSourceReference:
+    def test_strips_credentials_from_rtsp_url(self):
+        assert (
+            CustomCollector._sanitize_source_reference("rtsp://admin:secret@192.168.1.1:554/stream1")
+            == "rtsp://192.168.1.1:554/stream1"
+        )
+
+    def test_strips_credentials_from_http_url(self):
+        assert (
+            CustomCollector._sanitize_source_reference("http://user:pass@example.com:8080/feed")
+            == "http://example.com:8080/feed"
+        )
+
+    def test_strips_username_only(self):
+        assert (
+            CustomCollector._sanitize_source_reference("rtsp://admin@10.0.0.1/live")
+            == "rtsp://10.0.0.1/live"
+        )
+
+    def test_preserves_url_without_credentials(self):
+        assert (
+            CustomCollector._sanitize_source_reference("rtsp://192.168.1.1:554/stream")
+            == "rtsp://192.168.1.1:554/stream"
+        )
+
+    def test_preserves_device_index(self):
+        assert CustomCollector._sanitize_source_reference("0") == "0"
+
+    def test_preserves_file_path(self):
+        assert CustomCollector._sanitize_source_reference("/dev/video0") == "/dev/video0"
+
+    def test_preserves_regular_file_path(self):
+        assert (
+            CustomCollector._sanitize_source_reference("/home/user/video.mp4")
+            == "/home/user/video.mp4"
+        )
+
+    def test_strips_credentials_and_query_params(self):
+        assert (
+            CustomCollector._sanitize_source_reference("rtsp://user:p%40ss@cam.local:554/ch1?transport=tcp")
+            == "rtsp://cam.local:554/ch1"
+        )
+
+    def test_strips_query_params_without_credentials(self):
+        assert (
+            CustomCollector._sanitize_source_reference("rtsp://cam.local:554/stream?token=secret123&channel=1")
+            == "rtsp://cam.local:554/stream"
+        )
+
+    def test_strips_fragment(self):
+        assert (
+            CustomCollector._sanitize_source_reference("http://example.com/feed#section")
+            == "http://example.com/feed"
+        )
+
+
 class TestExtractSourceLabel:
     def test_single_source(self):
         metadata = [
@@ -337,6 +393,31 @@ class TestExtractSourceLabel:
             {"source_reference": "rtsp://cam1.local/stream", "source_id": 1},
         ]
         assert CustomCollector._extract_source_label(metadata) == "rtsp://cam1.local/stream"
+
+    def test_strips_credentials_from_source_references(self):
+        metadata = [
+            {"source_reference": "rtsp://admin:secret@192.168.1.1:554/stream", "source_id": 0},
+            {"source_reference": "rtsp://user:pass@10.0.0.1:554/live", "source_id": 1},
+        ]
+        assert (
+            CustomCollector._extract_source_label(metadata)
+            == "rtsp://192.168.1.1:554/stream,rtsp://10.0.0.1:554/live"
+        )
+
+    def test_strips_query_params_from_source_references(self):
+        metadata = [
+            {"source_reference": "rtsp://cam.local/stream?token=secret&channel=1", "source_id": 0},
+        ]
+        assert CustomCollector._extract_source_label(metadata) == "rtsp://cam.local/stream"
+
+    def test_returns_empty_when_source_labels_disabled(self):
+        metadata = [
+            {"source_reference": "rtsp://cam1.local/stream", "source_id": 0},
+        ]
+        with patch(
+            "inference.core.managers.prometheus.METRICS_INCLUDE_SOURCE_LABELS", False
+        ):
+            assert CustomCollector._extract_source_label(metadata) == ""
 
 
 def _find_samples(metric_families, name):
