@@ -36,7 +36,17 @@
               "left_operand": {
                 "type": "DynamicOperand",
                 "operand_name": "prediction",
-                "operations": [{"type": "SequenceLength"}]
+                "operations": [
+                  {
+                    "type": "SequenceApply",
+                    "operations": [{"type": "SequenceLength"}]
+                  },
+                  {
+                    "type": "NumericSequenceAggregate",
+                    "function": "sum",
+                    "neutral_value": 0
+                  }
+                ]
               },
               "comparator": {"type": "(Number) >="},
               "right_operand": {
@@ -60,7 +70,10 @@
           "num_slices": "$steps.collapsed_detections.output"
         },
         "message_parameters_operations": {
-          "num_slices": [{"type": "SequenceLength"}]
+          "num_slices": [
+            {"type": "SequenceApply", "operations": [{"type": "SequenceLength"}]},
+            {"type": "NumericSequenceAggregate", "function": "sum", "neutral_value": 0}
+          ]
         },
         "cooldown_seconds": 0
       }
