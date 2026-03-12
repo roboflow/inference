@@ -1931,20 +1931,22 @@ def get_reference_lineage(
     if not all_data_derived_lineages:
         if len(all_control_flow_lineages) == 1:
             return copy(all_control_flow_lineages[0]), copy(all_control_flow_lineages[0])
-        # HERE ELSE IS VERY PROBLEMATIC
-        # we have multiple lineages which are not data derived - so we need to decide
-        # what to do:
-        # TODO: check if conflicting lineages are eliminated earlier!
-        # my gut feeling is that we should seek for lineage which has deeper dimensionality and apply
-        # auto-batch-casting to handle outcomes
-        # corner-cases with two lineages of same final dimensionality must be verified - I believe those should
-        # be handled earlier as well - but need to check
-        max_lineage_len = min(len(lineage) for lineage in all_control_flow_lineages)
-        lineages_matching_max_len = [l for l in all_control_flow_lineages if len(l) == max_lineage_len]
-        if len(lineages_matching_max_len) == 1:
-            return copy(lineages_matching_max_len[0]), copy(lineages_matching_max_len[0])
+        # Multiple control-flow lineages and no data-derived lineage: pick the shortest.
+        # Mask intersection in the executor (get_masks_intersection_up_to_dimension) truncates
+        # each branch's indices to [:dimension] and intersects. Only at the minimum lineage
+        # length do all branches have comparable indices; at a higher dimension, longer-lineage
+        # indices would not match shorter ones, giving empty or wrong intersections.
+        min_lineage_len = min(len(lineage) for lineage in all_control_flow_lineages)
+        lineages_matching_min_len = [
+            l for l in all_control_flow_lineages if len(l) == min_lineage_len
+        ]
+        if len(lineages_matching_min_len) == 1:
+            return copy(lineages_matching_min_len[0]), copy(lineages_matching_min_len[0])
         else:
-            raise ValueError("SAFE-GUARD - should not be here where we found multiple distinct lineages at max level")
+            raise ValueError(
+                "SAFE-GUARD - multiple control-flow lineages with same minimum length "
+                "and no data-derived lineage; unique shortest lineage required."
+            )
     if len(all_data_derived_lineages) == 1:
         return copy(all_data_derived_lineages[0]), []
     if dimensionality_reference_property not in input_data:
