@@ -14,7 +14,7 @@ the **Create Workflow** button. Select **Custom Workflow** to start the creation
 
 
 ## Step 2: Add an object detection model
-We need to add a block with an object detection model to the existing workflow. We will use the `yolov8n-640` model.
+We need to add a block with an object detection model to the existing workflow. We will use the `rfdetr-small` model.
 
 ![Add object detection model](https://media.roboflow.com/inference/adding_object_detection_model.png)
 
@@ -103,7 +103,7 @@ To make it easier to reproduce the workflow, below you can find a workflow defin
           "type": "roboflow_core/roboflow_object_detection_model@v1",
           "name": "model",
           "images": "$inputs.image",
-          "model_id": "yolov8n-640"
+          "model_id": "rfdetr-small"
         },
         {
           "type": "roboflow_core/dynamic_crop@v1",

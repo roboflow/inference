@@ -16,9 +16,9 @@ def to_number(
 ) -> Union[float, int]:
     try:
         value = float(value)
-        if cast_to is cast_to.INT:
-            return value
-        return int(value)
+        if cast_to is NumberCastingMode.INT:
+            return int(value)
+        return value
     except (TypeError, ValueError) as e:
         value_as_str = safe_stringify(value=value)
         raise InvalidInputTypeError(

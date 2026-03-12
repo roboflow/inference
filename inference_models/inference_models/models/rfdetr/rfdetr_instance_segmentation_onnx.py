@@ -26,9 +26,6 @@ from inference_models.models.common.roboflow.model_packages import (
     parse_class_names_file,
     parse_inference_config,
 )
-from inference_models.models.common.roboflow.pre_processing import (
-    pre_process_network_input,
-)
 from inference_models.models.rfdetr.class_remapping import (
     ClassesReMapping,
     prepare_class_remapping,
@@ -36,6 +33,7 @@ from inference_models.models.rfdetr.class_remapping import (
 from inference_models.models.rfdetr.common import (
     post_process_instance_segmentation_results,
 )
+from inference_models.models.rfdetr.pre_processing import pre_process_network_input
 from inference_models.utils.onnx_introspection import (
     get_selected_onnx_execution_providers,
 )

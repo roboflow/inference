@@ -79,12 +79,15 @@ def post_process_instance_segmentation_results(
         xy_min = cxcy - 0.5 * wh
         xy_max = cxcy + 0.5 * wh
         selected_boxes_xyxy_pct = torch.cat([xy_min, xy_max], dim=-1)
-        inference_size_hwhw = torch.tensor(
+        denorm_size = (
+            image_meta.nonsquare_intermediate_size or image_meta.inference_size
+        )
+        denorm_size_whwh = torch.tensor(
             [
-                image_meta.inference_size.height,
-                image_meta.inference_size.width,
-                image_meta.inference_size.height,
-                image_meta.inference_size.width,
+                denorm_size.width,
+                denorm_size.height,
+                denorm_size.width,
+                denorm_size.height,
             ],
             device=device,
         )
@@ -94,7 +97,7 @@ def post_process_instance_segmentation_results(
             image_meta.pad_right,
             image_meta.pad_bottom,
         )
-        selected_boxes_xyxy = selected_boxes_xyxy_pct * inference_size_hwhw
+        selected_boxes_xyxy = selected_boxes_xyxy_pct * denorm_size_whwh
         aligned_boxes, aligned_masks = align_instance_segmentation_results(
             image_bboxes=selected_boxes_xyxy,
             masks=selected_masks,
@@ -103,7 +106,7 @@ def post_process_instance_segmentation_results(
             scale_width=image_meta.scale_width,
             original_size=image_meta.original_size,
             size_after_pre_processing=image_meta.size_after_pre_processing,
-            inference_size=image_meta.inference_size,
+            inference_size=denorm_size,
             static_crop_offset=image_meta.static_crop_offset,
         )
         detections = InstanceDetections(

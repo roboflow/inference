@@ -25,7 +25,7 @@ import cv2
 image_file = "taylor-swift-album-1989.jpeg"
 image = cv2.imread(image_file)
 
-# load a pre-trained yolov8n model
+# load a pre-trained rfdetr model
 model = get_model(model_id="taylor-swift-records/3")
 
 # run inference on our chosen image, image can be a url, a numpy array, a PIL image, etc.
