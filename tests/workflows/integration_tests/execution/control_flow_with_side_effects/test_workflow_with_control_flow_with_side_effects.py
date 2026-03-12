@@ -448,6 +448,25 @@ def _run_workflow(
                 {"email_message": SUCCESSFUL_EMAIL_MESSAGE_MOCK},
             ),
         ),
+        (
+            _sliced_4_images,
+            SLICED_NAMES,
+            SLICED_DETECTION_COUNTS,
+            "with_detection_collapse_right_after_slice_with_agg_operation_without_message_params",
+            2, # The continue-if correctly checks the number of detections for each image (given slices of that image)
+            "noreply@example.com",
+            "Detections found",
+            (
+                {},
+                {},
+            ),
+            (
+                {"email_message": None},
+                {"email_message": SUCCESSFUL_EMAIL_MESSAGE_MOCK},
+                {"email_message": None},
+                {"email_message": SUCCESSFUL_EMAIL_MESSAGE_MOCK},
+            ),
+        ),
     ],
     ids=[
         "with_email_message_params",
@@ -462,6 +481,7 @@ def _run_workflow(
         "with_email_gate_and_without_email_message_params",
         "with_detection_collapse_right_after_slice",
         "with_detection_collapse_right_after_slice_with_agg_operation",
+        "with_detection_collapse_right_after_slice_with_agg_operation_without_message_params",
     ],
 )
 def test_scenario_1(
