@@ -235,7 +235,7 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_parameters_accepting_batches(cls) -> List[str]:
-        return ["images", "predictions", "image_name", "metadata"]
+        return ["images", "predictions", "image_name"]
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
@@ -290,7 +290,7 @@ class RoboflowDatasetUploadBlockV2(WorkflowBlock):
         labeling_batch_prefix: str,
         labeling_batches_recreation_frequency: BatchCreationFrequency,
         image_name: Optional[Batch[Optional[str]]] = None,
-        metadata: Optional[Union[Dict[str, Any], Batch]] = None,
+        metadata: Optional[Dict[str, Any]] = None,
     ) -> BlockResult:
         if self._api_key is None:
             raise ValueError(
@@ -310,9 +310,8 @@ class RoboflowDatasetUploadBlockV2(WorkflowBlock):
         result = []
         predictions = [None] * len(images) if predictions is None else predictions
         image_names = [None] * len(images) if image_name is None else image_name
-        metadata_values = _expand_metadata_to_records(metadata, len(images))
-        for image, prediction, img_name, meta in zip(
-            images, predictions, image_names, metadata_values
+        for image, prediction, img_name in zip(
+            images, predictions, image_names
         ):
             error_status, message = maybe_register_datapoint_at_roboflow(
                 image=image,
@@ -335,38 +334,10 @@ class RoboflowDatasetUploadBlockV2(WorkflowBlock):
                 thread_pool_executor=self._thread_pool_executor,
                 api_key=self._api_key,
                 image_name=img_name,
-                metadata=meta,
+                metadata=metadata,
             )
             result.append({"error_status": error_status, "message": message})
         return result
-
-
-def _expand_metadata_to_records(
-    metadata: Optional[Union[Dict[str, Any], Batch]],
-    batch_size: int,
-) -> List[Optional[Dict[str, Any]]]:
-    """Transpose metadata into a per-image list of dicts.
-
-    Handles three cases:
-    - None / empty: returns [None] * batch_size
-    - Batch[Dict]: engine already wrapped it, unwrap directly
-    - Dict with possible Batch values inside: transpose into per-element dicts
-    """
-    if not metadata:
-        return [None] * batch_size
-    if isinstance(metadata, Batch):
-        return [m or None for m in metadata]
-    batch_entries = {k: v for k, v in metadata.items() if isinstance(v, Batch)}
-    non_batch_entries = {k: v for k, v in metadata.items() if not isinstance(v, Batch)}
-    if not batch_entries:
-        return [dict(metadata) for _ in range(batch_size)]
-    result = []
-    for i in range(batch_size):
-        entry = dict(non_batch_entries)
-        for k, batch_val in batch_entries.items():
-            entry[k] = batch_val[i]
-        result.append(entry)
-    return result
 
 
 def maybe_register_datapoint_at_roboflow(
