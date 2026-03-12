@@ -23,9 +23,7 @@ from inference_models.models.common.roboflow.model_packages import (
     ResizeMode,
     parse_inference_config,
 )
-from inference_models.models.qwen3vl.qwen3vl_hf import (
-    _get_qwen3vl_attn_implementation,
-)
+from inference_models.models.qwen3vl.qwen3vl_hf import _get_qwen3vl_attn_implementation
 
 
 class Qwen35HF:
@@ -143,9 +141,7 @@ class Qwen35HF:
         self._processor = processor
         self._inference_config = inference_config
         self._device = device
-        self.default_system_prompt = (
-            "You are a helpful assistant."
-        )
+        self.default_system_prompt = "You are a helpful assistant."
         self._lock = Lock()
 
     def prompt(
@@ -294,27 +290,21 @@ class Qwen35HF:
                 # Prepend it so the regex can parse thinking vs answer.
                 text = "<think>" + text
                 # Extract thinking and answer separately
-                think_match = re.search(
-                    r'<think>(.*?)</think>', text, flags=re.DOTALL
-                )
+                think_match = re.search(r"<think>(.*?)</think>", text, flags=re.DOTALL)
                 if think_match:
                     thinking = think_match.group(1).strip()
                     answer = re.sub(
-                        r'<think>.*?</think>\s*', '', text, flags=re.DOTALL
+                        r"<think>.*?</think>\s*", "", text, flags=re.DOTALL
                     ).strip()
                 else:
                     # Model hit max tokens before producing </think>.
                     # Everything after <think> is thinking, no answer yet.
                     thinking = text.replace("<think>", "").strip()
                     answer = ""
-                result.append(
-                    {"thinking": thinking, "answer": answer}
-                )
+                result.append({"thinking": thinking, "answer": answer})
             else:
                 # Remove <think>...</think> blocks (Qwen3.5 reasoning format)
-                text = re.sub(
-                    r'<think>.*?</think>\s*', '', text, flags=re.DOTALL
-                )
+                text = re.sub(r"<think>.*?</think>\s*", "", text, flags=re.DOTALL)
                 result.append(text.strip())
 
         return result

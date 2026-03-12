@@ -2,7 +2,6 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Optional, Union
 
-from inference_models import SemanticSegmentationModel
 from inference_models.models.base.classification import (
     ClassificationModel,
     MultiLabelClassificationModel,
@@ -16,6 +15,7 @@ from inference_models.models.base.object_detection import (
     ObjectDetectionModel,
     OpenVocabularyObjectDetectionModel,
 )
+from inference_models.models.base.semantic_segmentation import SemanticSegmentationModel
 
 ModelArchitecture = str
 TaskType = Optional[str]
