@@ -10,6 +10,7 @@ from unittest.mock import patch
 import numpy as np
 import pandas as pd
 import pytest
+import supervision as sv
 
 from inference.core.entities.requests.inference import ObjectDetectionInferenceRequest
 from inference.core.entities.responses.inference import (
@@ -429,17 +430,21 @@ def _run_workflow(
             ),
         ),
         (
-            _batch_4_images,
-            BATCH_4_IMAGE_NAMES,
-            BATCH_4_DETECTION_COUNTS,
+            _sliced_4_images,
+            SLICED_NAMES,
+            SLICED_DETECTION_COUNTS,
             "with_detection_collapse_right_after_slice_with_agg_operation",
-            1,
+            2, # The continue-if correctly checks the number of detections for each image (given slices of that image)
             "noreply@example.com",
             "Detections found",
-            (
-                {"num_slices": 3},
+            ( # The operations of counting the detection are done after receiving the params, so here we get the slices
+                {"num_slices": 4},
+                {"num_slices": 8},
             ),
             (
+                {"email_message": None},
+                {"email_message": SUCCESSFUL_EMAIL_MESSAGE_MOCK},
+                {"email_message": None},
                 {"email_message": SUCCESSFUL_EMAIL_MESSAGE_MOCK},
             ),
         ),
@@ -492,24 +497,27 @@ def test_scenario_1(
         assert call.kwargs["receiver_email"] == [expected_receiver_email]
         assert call.kwargs["subject"] == expected_subject
 
-        params = expected_message_parameters[i]
+        expected_params = expected_message_parameters[i]
+        assert len(call.kwargs["message_parameters"]) == len(expected_params)
 
-        assert len(call.kwargs["message_parameters"]) == len(params)
+        for param_name, param_value in expected_params.items():
+            actual = call.kwargs["message_parameters"][param_name]
 
-        for param_name, param_value in params.items():
-            if param_name in ["num_detections", "num_slices"]:
-                    actual = call.kwargs["message_parameters"][param_name]
-                    if isinstance(actual, (list, tuple)):
-                        assert len(actual) == param_value
-                    else:
-                        assert actual == param_value
-                    continue
+            if param_name == "num_detections":
+                assert isinstance(actual, sv.Detections)
+                assert len(actual) == param_value
+                continue
+
+            if param_name == "num_slices":
+                assert isinstance(actual, list)
+                assert len(actual) == param_value
+                continue
 
             if param_name == "area_converted":
-                assert call.kwargs["message_parameters"][param_name]["area_converted"] == param_value
+                assert actual["area_converted"] == param_value
                 continue
             
-            assert call.kwargs["message_parameters"][param_name] == param_value
+            assert actual == param_value
 
 
     assert len(result) == 4
