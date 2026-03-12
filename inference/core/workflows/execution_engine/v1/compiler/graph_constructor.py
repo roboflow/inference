@@ -1432,6 +1432,9 @@ def verify_compatibility_of_input_data_lineage_with_control_flow_lineage(
     prefixes and raises ControlFlowDefinitionError if any control flow lineage
     is not covered by the inputs.
 
+    If inputs_lineage is empty, there is no sense to verify compatibility. The lineage of the
+    step should be established based on the control flow lineages.
+
     Args:
         step_name: Name of the step being verified (used in error messages).
         inputs_lineage: Data lineages derived from the step's input data.
@@ -1452,6 +1455,7 @@ def verify_compatibility_of_input_data_lineage_with_control_flow_lineage(
     )
     if not inputs_lineage:
         return
+
     all_input_lineage_prefixes = get_all_batch_lineage_prefixes(lineages=inputs_lineage)
     all_input_lineage_prefixes_hashes = {
         identify_lineage(lineage=lineage) for lineage in all_input_lineage_prefixes
