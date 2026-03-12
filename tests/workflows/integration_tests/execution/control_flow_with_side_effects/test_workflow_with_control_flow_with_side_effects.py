@@ -69,7 +69,6 @@ SLICED_DETECTION_COUNTS = [
     0, 0, 0, 0,  # image 2
     0, 0, 0, 0, 0, 1, 0, 0,  # image 3 (slice 5)
 ]
-
 SLICED_EMAIL_IMAGE_INDEX_AND_SLICE = [
     (1, 2),
     (1, 3),
@@ -512,6 +511,24 @@ def _run_workflow(
                 {"email_message": SUCCESSFUL_EMAIL_MESSAGE_MOCK},
             ),
         ),
+        (
+            _batch_4_images,
+            BATCH_4_IMAGE_NAMES,
+            [3, 0, 1, 2],
+            "with_two_continue_if",
+            1,
+            "noreply@example.com",
+            "Detections found",
+            (
+                {},
+            ),
+            (
+                {"email_message": None},
+                {"email_message": None},
+                {"email_message": None},
+                {"email_message": SUCCESSFUL_EMAIL_MESSAGE_MOCK},
+            ),
+        ),
     ],
     ids=[
         "with_email_message_params",
@@ -530,6 +547,7 @@ def _run_workflow(
         "with_detection_collapse_right_after_detect_with_agg_operation",
         "with_detection_collapse_right_after_detect_with_agg_operation_without_message_params",
         "with_detection_collapse_after_continue_if",
+        "with_two_continue_if",
     ],
 )
 def test_scenario_1(
