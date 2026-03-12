@@ -2,7 +2,7 @@
 
 Below you can find the changelog for Execution Engine.
 
-## Execution Engine `v1.8.0` | inference `v1.0.5`
+## Execution Engine `v1.8.0` | inference `v1.1.1`
 
 !!! Note "Additive change — no breaking changes"
 

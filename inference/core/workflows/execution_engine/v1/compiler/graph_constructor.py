@@ -1951,7 +1951,7 @@ def get_reference_lineage(
                 lineages_matching_min_len[0]
             )
         else:
-            raise ValueError(
+            raise AssumptionError(
                 "SAFE-GUARD - multiple control-flow lineages with same minimum length "
                 "and no data-derived lineage; unique shortest lineage required."
             )
