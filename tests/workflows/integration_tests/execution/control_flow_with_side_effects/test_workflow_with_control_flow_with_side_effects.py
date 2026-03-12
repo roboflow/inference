@@ -761,6 +761,46 @@ def test_control_flow_lineage_using_workflow_with_scalar_only_block_parses_and_r
     assert result[0]["result"] == expect_result
 
 
+@pytest.mark.parametrize(
+    "workflow_name, \
+    names, \
+    expect_result",
+    [
+        ("with_scalar_only_step_getting_batch_data", BATCH_4_IMAGE_NAMES, BATCH_4_IMAGE_NAMES),
+        ("with_scalar_only_step_getting_batch_data_only_control_flow_lineage", BATCH_4_IMAGE_NAMES, ["foobar"] * len(BATCH_4_IMAGE_NAMES)),
+    ],
+    ids=[
+        "with_scalar_only_step_getting_batch_data",
+        "with_scalar_only_step_getting_batch_data_only_control_flow_lineage",
+    ],
+)
+@mock.patch.object(blocks_loader, "get_plugin_modules")
+def test_control_flow_lineage_using_workflow_with_scalar_only_block_that_gets_batch_data(
+    get_plugin_modules_mock: MagicMock,
+    workflow_name: str,
+    names: List[str],
+    expect_result: str,
+) -> None:
+    get_plugin_modules_mock.return_value = [
+        "tests.workflows.integration_tests.execution.stub_plugins.scalar_only_block_plugin",
+    ]
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=_load_workflow_definition(workflow_name),
+        init_parameters={
+            "workflows_core.model_manager": None,
+            "workflows_core.api_key": None,
+            "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+        },
+        max_concurrent_steps=1,
+    )
+    result = execution_engine.run(
+        runtime_parameters={"names": names},
+    )
+    assert len(result) == len(names)
+    for i in range(len(expect_result)):
+        assert result[i]["result"] == expect_result[i]
+
+
 # @patch(
 #     "inference.core.workflows.core_steps.sinks.email_notification.v2.send_email_via_roboflow_proxy"
 # )
