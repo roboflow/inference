@@ -249,10 +249,12 @@ def construct_simd_step_input(
     dynamic_batches_manager: DynamicBatchesManager,
     branching_manager: BranchingManager,
 ) -> BatchModeSIMDStepInput:
+    print("step_node", step_node.name)
     masks, scalars_discarded = construct_mask_for_all_inputs_dimensionalities(
         step_node=step_node,
         branching_manager=branching_manager,
     )
+    print("masks", masks)
     return prepare_parameters(
         step_node=step_node,
         dynamic_batches_manager=dynamic_batches_manager,
@@ -291,13 +293,13 @@ def construct_mask_for_all_inputs_dimensionalities(
         return {
             dimension: set() for dimension in all_dimensionalities
         }, scalar_mask_contains_false
-    return {
-        dimension: get_masks_intersection_up_to_dimension(
+    return (
+        get_masks_intersection_for_dimensions(
             batch_masks=batch_masks,
-            dimension=dimension,
-        )
-        for dimension in all_dimensionalities
-    }, scalar_mask_contains_false
+            dimensions=all_dimensionalities,
+        ),
+        scalar_mask_contains_false,
+    )
 
 
 def collect_inputs_dimensionalities(
@@ -318,25 +320,49 @@ def collect_inputs_dimensionalities(
     return result
 
 
-def get_masks_intersection_up_to_dimension(
+def get_masks_intersection_for_dimensions(
     batch_masks: List[Set[DynamicBatchIndex]],
-    dimension: int,
-) -> Optional[Set[DynamicBatchIndex]]:
+    dimensions: Set[int],
+) -> Dict[int, Optional[Set[DynamicBatchIndex]]]:
+    # TODO: verify with unit tests! Claude implementation
     if not batch_masks:
-        return None
+        return {dim: None for dim in dimensions}
 
-    # Initialize intersection with the first batch mask transformed up to the given dimension
-    intersection = {mask_element[:dimension] for mask_element in batch_masks[0]}
+    sorted_dims = sorted(dimensions)
 
-    # Perform the intersection with the transformed sets of subsequent batch masks
-    for batch_mask in batch_masks[1:]:
-        intersection &= {mask_element[:dimension] for mask_element in batch_mask}
+    # Group indices by their tuple length, only keeping relevant dimensions
+    by_dim: Dict[int, Set[DynamicBatchIndex]] = {dim: set() for dim in sorted_dims}
+    for mask in batch_masks:
+        for idx in mask:
+            by_dim[len(idx)].add(idx)
 
-        # Early exit if intersection becomes empty
-        if not intersection:
-            return set()
+    if len(sorted_dims) <= 1:
+        return {dim: by_dim[dim] for dim in sorted_dims}
 
-    return intersection
+    prev_dim = {sorted_dims[i]: sorted_dims[i - 1] for i in range(1, len(sorted_dims))}
+
+    # Bottom-up: mark indices that have at least one descendant
+    has_child: Set[DynamicBatchIndex] = set()
+    for dim in reversed(sorted_dims):
+        for idx in by_dim[dim]:
+            if dim == sorted_dims[-1] or idx in has_child:
+                parent = idx[:-1]
+                if parent:
+                    has_child.add(parent)
+
+    # Top-down: keep indices only if full prefix chain exists
+    valid: Dict[int, Set[DynamicBatchIndex]] = {dim: set() for dim in sorted_dims}
+    for dim in sorted_dims:
+        for idx in by_dim[dim]:
+            parent = idx[:-1]
+            if dim == sorted_dims[0]:
+                if idx in has_child:
+                    valid[dim].add(idx)
+            elif parent in valid[prev_dim[dim]]:
+                if dim == sorted_dims[-1] or idx in has_child:
+                    valid[dim].add(idx)
+
+    return valid
 
 
 class GuardForIndicesWrapping:
@@ -445,9 +471,11 @@ def prepare_parameters(
                 parameters={},
             )
         empty_indices = get_empty_batch_elements_indices(value=result)
+        print("empty_indices", empty_indices)
         if empty_indices:
             indices = [e for e in indices if e not in empty_indices]
             result = remove_indices(value=result, indices=empty_indices)
+    print(indices, result)
     return BatchModeSIMDStepInput(
         indices=indices,
         parameters=result,
