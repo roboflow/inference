@@ -529,6 +529,25 @@ def _run_workflow(
                 {"email_message": SUCCESSFUL_EMAIL_MESSAGE_MOCK},
             ),
         ),
+        (
+            _sliced_4_images,
+            BATCH_4_IMAGE_NAMES,
+            SLICED_DETECTION_COUNTS,
+            "with_two_continue_if_different_control_flow_lineage",
+            2, # The smaller of the two control-flow-lineage dimensionalities is used, thus we are masking on the batch level
+            "noreply@example.com",
+            "Detections found",
+            (
+                {},
+                {},
+            ),
+            (
+                {"email_message": None},
+                {"email_message": SUCCESSFUL_EMAIL_MESSAGE_MOCK},
+                {"email_message": None},
+                {"email_message": SUCCESSFUL_EMAIL_MESSAGE_MOCK},
+            ),
+        ),
     ],
     ids=[
         "with_email_message_params",
@@ -548,6 +567,7 @@ def _run_workflow(
         "with_detection_collapse_right_after_detect_with_agg_operation_without_message_params",
         "with_detection_collapse_after_continue_if",
         "with_two_continue_if",
+        "with_two_continue_if_different_control_flow_lineage",
     ],
 )
 def test_scenario_1(

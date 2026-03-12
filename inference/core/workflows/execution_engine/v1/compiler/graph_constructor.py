@@ -1842,7 +1842,7 @@ def get_reference_lineage(
         # auto-batch-casting to handle outcomes
         # corner-cases with two lineages of same final dimensionality must be verified - I believe those should
         # be handled earlier as well - but need to check
-        max_lineage_len = max(len(lineage) for lineage in all_control_flow_lineages)
+        max_lineage_len = min(len(lineage) for lineage in all_control_flow_lineages)
         lineages_matching_max_len = [l for l in all_control_flow_lineages if len(l) == max_lineage_len]
         if len(lineages_matching_max_len) == 1:
             return copy(lineages_matching_max_len[0]), copy(lineages_matching_max_len[0])
