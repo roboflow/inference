@@ -2,7 +2,8 @@
   "version": "1.0",
   "inputs": [
     {"type": "WorkflowImage", "name": "image"},
-    {"type": "WorkflowParameter", "name": "output_directory", "default_value": "detection_logs"}
+    {"type": "WorkflowParameter", "name": "output_directory", "default_value": "detection_logs"},
+    {"type": "WorkflowBatchInput", "name": "names", "dimensionality": 1}
   ],
   "steps": [
     {
@@ -40,7 +41,8 @@
       "type": "roboflow_core/csv_formatter@v1",
       "name": "csv_formatter",
       "columns_data": {
-        "num_detections": "$steps.detection.predictions"
+        "num_detections": "$steps.detection.predictions",
+        "name": "$inputs.names"
       },
       "columns_operations": {
         "num_detections": [{"type": "SequenceLength"}]

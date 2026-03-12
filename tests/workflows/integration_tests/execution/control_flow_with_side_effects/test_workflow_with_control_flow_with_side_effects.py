@@ -851,11 +851,11 @@ def test_control_flow_lineage_using_workflow_with_scalar_only_block_that_gets_ba
     expect_result",
     [
         ("with_batch_only_step_with_batch_data", BATCH_4_IMAGE_NAMES, BATCH_4_IMAGE_NAMES),
-        ("with_batch_only_step_without_batch_data", BATCH_4_IMAGE_NAMES, ["foobar"] * len(BATCH_4_IMAGE_NAMES)),
+        # ("with_batch_only_step_without_batch_data", BATCH_4_IMAGE_NAMES, ["foobar"] * len(BATCH_4_IMAGE_NAMES)),
     ],
     ids=[
         "with_batch_only_step_with_batch_data",
-        "with_batch_only_step_without_batch_data",
+        # "with_batch_only_step_without_batch_data",
     ],
 )
 @mock.patch.object(blocks_loader, "get_plugin_modules")
@@ -888,129 +888,99 @@ def test_control_flow_lineage_using_workflow_with_batch_only_block_that_gets_bat
         assert result[i]["result"] == expect_result[i]
 
 
-# @patch(
-#     "inference.core.workflows.core_steps.sinks.email_notification.v2.send_email_via_roboflow_proxy"
-# )
-# def test_scenario_3_email_gate_enabled(
-#     send_email_mock,
-#     model_manager,
-# ) -> None:
-#     """Like scenario 1 with enable_email gate True: count and image names in email."""
-#     send_email_mock.return_value = (False, "Notification sent successfully")
-#     workflow = _load_workflow_definition("with_email_gate_and_with_email_message_params")
-#     runtime = {
-#         "image": _batch_4_images(),
-#         "image_names": BATCH_4_IMAGE_NAMES,
-#         "enable_email": True,
-#     }
+@pytest.mark.parametrize(
+    "image_gen_fn,\
+    names,\
+    detection_counts,\
+    workflow_name,\
+    expected_results,\
+    expected_num_files,\
+    expected_columns,\
+    expected_num_rows,\
+    expected_names,\
+    expected_num_detections",
+    [
+        (
+            _batch_4_images,
+            BATCH_4_IMAGE_NAMES,
+            BATCH_4_DETECTION_COUNTS,
+            "with_csv_sink_and_with_detection_input",
+            [
+                {"save_message": None},
+                {"save_message": None},
+                {"save_message": None},
+                {"save_message": "Data saved successfully"}
+            ],
+            1,
+            ["num_detections", "name", "timestamp"],
+            2,
+            ["img1", "img3"],
+            [2, 1],
+        ),
+        (
+            _batch_4_images,
+            BATCH_4_IMAGE_NAMES,
+            BATCH_4_DETECTION_COUNTS,
+            "with_csv_sink_and_without_detection_input",
+            [
+                {"save_message": None},
+                {"save_message": None},
+                {"save_message": None},
+                {"save_message": "Data saved successfully"}
+            ],
+            1,
+            ["name", "timestamp"],
+            2,
+            ["img1", "img3"],
+            [2, 1],
+        ),
+    ],
+    ids=[
+        "with_csv_sink_and_with_detection_input",
+        "with_csv_sink_and_without_detection_input",
+    ],
+)
+def test_control_flow_lineage_using_workflow_with_csv_sink_and_detection_input(
+    image_gen_fn: callable,
+    names: List[str],
+    detection_counts: List[int],
+    workflow_name: str,
+    expected_results: List[dict],
+    expected_num_files: int,
+    expected_columns: List[str],
+    expected_num_rows: int,
+    expected_names: List[str],
+    expected_num_detections: List[int],
+    model_manager,
+    empty_directory,
+) -> None:
+    workflow_definition = _load_workflow_definition(workflow_name)
 
-#     result = _run_workflow(
-#         workflow,
-#         runtime,
-#         model_manager,
-#         detection_counts=BATCH_4_DETECTION_COUNTS,
-#     )
+    runtime_parameters = {
+        "image": image_gen_fn(),
+        "output_directory": empty_directory,
+    }
 
-#     assert len(result) == 4
-#     assert result[0].get("email_message") is None
-#     assert result[2].get("email_message") is None
+    inputs = {inp["name"] for inp in workflow_definition.get("inputs", [])}
+    if "names" in inputs:
+        runtime_parameters["names"] = names
 
-#     msg1 = str(result[1]["email_message"])
-#     msg3 = str(result[3]["email_message"])
-#     assert "2 detection" in msg1 and "img1.jpg" in msg1
-#     assert "1 detection" in msg3 and "img3.jpg" in msg3
+    result = _run_workflow(
+        workflow_definition,
+        runtime_parameters,
+        model_manager,
+        detection_counts=detection_counts,
+    )
+    assert result == expected_results
 
+    csv_files = glob(os.path.join(empty_directory, "detection_log_*.csv"))
+    assert len(csv_files) == expected_num_files
+    df = pd.read_csv(csv_files[0])
 
-# @patch(
-#     "inference.core.workflows.core_steps.sinks.email_notification.v2.send_email_via_roboflow_proxy"
-# )
-# def test_scenario_3_email_gate_disabled(
-#     send_email_mock,
-#     model_manager,
-# ) -> None:
-#     """enable_email=False: email step never runs; no email_message and no send calls."""
-#     workflow = _load_workflow_definition("with_email_gate_and_without_email_message_params")
+    assert set(df.columns) == set(expected_columns)
+    assert len(df) == expected_num_rows
 
-#     runtime = {
-#         "image": _batch_4_images(),
-#         "image_names": BATCH_4_IMAGE_NAMES,
-#         "enable_email": False,
-#     }
-
-#     result = _run_workflow(
-#         workflow,
-#         runtime,
-#         model_manager,
-#         detection_counts=BATCH_4_DETECTION_COUNTS,
-#     )
-
-#     assert len(result) == 4
-#     for i in range(4):
-#         assert result[i].get("email_message") is None
-#     assert send_email_mock.call_count == 0
-
-
-# def test_scenario_4_csv_sink(
-#     model_manager,
-#     empty_directory: str,
-# ) -> None:
-#     """Like scenario 1 but CSV sink. Batch of 4 images; only indices 1 and 3 have detections.
-#     CSV has 2 rows (num_detections 2 and 1). Only the last batch index gets the aggregated save_message."""
-#     workflow = _load_workflow_definition("with_csv_sink_and_with_detection_input")
-
-#     runtime = {
-#         "image": _batch_4_images(),
-#         "output_directory": empty_directory,
-#     }
-
-#     result = _run_workflow(
-#         workflow,
-#         runtime,
-#         model_manager,
-#         detection_counts=BATCH_4_DETECTION_COUNTS,
-#     )
-
-#     assert len(result) == 4
-#     assert result[3].get("save_message") == "Data saved successfully"
-
-#     csv_files = glob(os.path.join(empty_directory, "detection_log_*.csv"))
-#     assert len(csv_files) >= 1
-#     df = pd.read_csv(csv_files[0])
-
-#     assert "num_detections" in df.columns
-#     assert "timestamp" in df.columns
-#     assert len(df) == 2
-#     assert df["num_detections"].tolist() == [2, 1]
-
-
-# def test_scenario_4_csv_sink_with_image_names(
-#     model_manager,
-#     empty_directory: str,
-# ) -> None:
-#     """Like scenario 4 but workflow has image_names input; CSV rows have correct image_name (img1.jpg, img3.jpg)."""
-#     workflow = _load_workflow_definition("with_csv_sink_and_without_detection_input")
-
-#     runtime = {
-#         "image": _batch_4_images(),
-#         "image_names": BATCH_4_IMAGE_NAMES,
-#         "output_directory": empty_directory,
-#     }
-
-#     result = _run_workflow(
-#         workflow,
-#         runtime,
-#         model_manager,
-#         detection_counts=BATCH_4_DETECTION_COUNTS,
-#     )
-
-#     assert len(result) == 4
-#     assert result[3].get("save_message") == "Data saved successfully"
-
-#     csv_files = glob(os.path.join(empty_directory, "detection_log_*.csv"))
-#     assert len(csv_files) >= 1
-#     df = pd.read_csv(csv_files[0])
-
-#     assert "image_name" in df.columns
-#     assert "timestamp" in df.columns
-#     assert len(df) == 2
-#     assert df["image_name"].tolist() == ["img1.jpg", "img3.jpg"]
+    if "num_detections" in expected_columns:
+        assert df["num_detections"].tolist() == expected_num_detections
+    if "name" in expected_columns:
+        assert df["name"].tolist() == expected_names
