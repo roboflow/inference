@@ -18,7 +18,7 @@ from inference.core.env import (
     MODEL_CACHE_DIR,
     MODELS_CACHE_AUTH_CACHE_MAX_SIZE,
     MODELS_CACHE_AUTH_CACHE_TTL,
-    MODELS_CACHE_AUTH_ENABLED,
+    MODELS_CACHE_AUTH_ENABLED, USE_INFERENCE_MODELS,
 )
 from inference.core.exceptions import (
     MissingApiKeyError,
@@ -37,7 +37,7 @@ from inference.core.roboflow_api import (
     get_roboflow_dataset_type,
     get_roboflow_instant_model_data,
     get_roboflow_model_data,
-    get_roboflow_workspace,
+    get_roboflow_workspace, get_model_metadata_from_inference_models_registry,
 )
 from inference.core.utils.file_system import dump_json, read_json
 from inference.core.utils.roboflow import get_model_id_chunks
@@ -129,8 +129,15 @@ def _check_if_api_key_has_access_to_model(
                 countinference=countinference,
                 service_secret=service_secret,
             )
-        else:
+        elif not USE_INFERENCE_MODELS:
             get_roboflow_instant_model_data(
+                api_key=api_key,
+                model_id=model_id,
+                countinference=countinference,
+                service_secret=service_secret,
+            )
+        else:
+            get_model_metadata_from_inference_models_registry(
                 api_key=api_key,
                 model_id=model_id,
                 countinference=countinference,
