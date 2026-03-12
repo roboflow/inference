@@ -811,16 +811,33 @@ def denote_data_flow_for_step(
     return execution_graph
 
 
-def get_lineage_derived_from_flow_control(
+def _collect_unique_control_flow_lineages_with_step_mapping(
     flow_control_steps_selectors: List[str],
     execution_graph: nx.DiGraph,
-) -> List[List[str]]:
+) -> Tuple[List[List[str]], Dict[int, List[str]]]:
     """
-    Returns a list of unique (by ID) non-empty data lineages for each
-    control flow step in the provided list.
+    Collect data lineages from control flow steps and deduplicate by lineage id.
+
+    For each given control flow step selector, reads its data_lineage from the
+    execution graph. Returns unique non-empty lineages (by identify_lineage id)
+    and a mapping from lineage id to every step selector that produced that
+    lineage (used e.g. for error reporting when lineage is incompatible).
+
+    Args:
+        flow_control_steps_selectors: Step selectors (node ids) of control
+            flow steps whose data_lineage is to be collected.
+        execution_graph: The workflow execution graph containing step nodes
+            and their data_lineage.
+
+    Returns:
+        A tuple of (unique_lineages, lineage_id_to_step_selectors):
+        - unique_lineages: list of distinct non-empty data lineages.
+        - lineage_id_to_step_selectors: map from lineage id to list of step
+          selectors whose data_lineage has that id (includes empty lineages).
     """
-    unique_lineages = []
-    seen_lineage_ids = set()
+    unique_lineages: List[List[str]] = []
+    seen_lineage_ids: Set[int] = set()
+    lineage_id_to_step_selectors: Dict[int, List[str]] = defaultdict(list)
 
     for step_selector in flow_control_steps_selectors:
         step_data = node_as(
@@ -829,12 +846,39 @@ def get_lineage_derived_from_flow_control(
             expected_type=StepNode,
         )
         lineage = step_data.data_lineage
-        if lineage:
-            lineage_id = identify_lineage(lineage)
-            if lineage_id not in seen_lineage_ids:
-                seen_lineage_ids.add(lineage_id)
-                unique_lineages.append(lineage)
+        lineage_id = identify_lineage(lineage)
+        lineage_id_to_step_selectors[lineage_id].append(step_selector)
+        if lineage and lineage_id not in seen_lineage_ids:
+            seen_lineage_ids.add(lineage_id)
+            unique_lineages.append(lineage)
 
+    return unique_lineages, dict(lineage_id_to_step_selectors)
+
+
+def get_lineage_derived_from_flow_control(
+    flow_control_steps_selectors: List[str],
+    execution_graph: nx.DiGraph,
+) -> List[List[str]]:
+    """
+    Return unique non-empty data lineages from the given control flow steps.
+
+    Each lineage is taken from the step's data_lineage in the execution graph.
+    Lineages are deduplicated by lineage id (see identify_lineage); empty
+    lineages are omitted. Used when establishing batch-oriented step lineage.
+
+    Args:
+        flow_control_steps_selectors: Step selectors (node ids) of control
+            flow steps whose data_lineage is to be collected.
+        execution_graph: The workflow execution graph containing step nodes
+            and their data_lineage.
+
+    Returns:
+        List of distinct non-empty data lineages, one per unique lineage id.
+    """
+    unique_lineages, _ = _collect_unique_control_flow_lineages_with_step_mapping(
+        flow_control_steps_selectors=flow_control_steps_selectors,
+        execution_graph=execution_graph,
+    )
     return unique_lineages
 
 
@@ -1379,21 +1423,33 @@ def verify_compatibility_of_input_data_lineage_with_control_flow_lineage(
     flow_control_steps_selectors: List[str],
     execution_graph: DiGraph,
 ) -> None:
-    already_spotted_input_lineages = set()
-    lineage_id2control_flow_steps = defaultdict(list)
-    batch_oriented_control_flow_lineages = []
-    for flow_control_steps_selector in flow_control_steps_selectors:
-        flow_control_step_data = node_as(
-            execution_graph=execution_graph,
-            node=flow_control_steps_selector,
-            expected_type=StepNode,
-        )
-        lineage = flow_control_step_data.data_lineage
-        lineage_id = identify_lineage(lineage=lineage)
-        if lineage_id not in already_spotted_input_lineages and lineage:
-            already_spotted_input_lineages.add(lineage_id)
-            batch_oriented_control_flow_lineages.append(lineage)
-        lineage_id2control_flow_steps[lineage_id].append(flow_control_steps_selector)
+    """
+    Ensure control flow steps' data lineage is compatible with the step's inputs.
+
+    Control flow steps that affect this step must operate on data that is
+    compatible with the data fed to the step; otherwise the step could never
+    execute. Compares unique control flow lineages against input lineage
+    prefixes and raises ControlFlowDefinitionError if any control flow lineage
+    is not covered by the inputs.
+
+    Args:
+        step_name: Name of the step being verified (used in error messages).
+        inputs_lineage: Data lineages derived from the step's input data.
+        flow_control_steps_selectors: Step selectors of control flow steps
+            that affect this step's execution.
+        execution_graph: The workflow execution graph.
+
+    Raises:
+        ControlFlowDefinitionError: When a control flow step's lineage is not
+            compatible with the step's input lineage (step would never execute).
+    """
+    (
+        batch_oriented_control_flow_lineages,
+        lineage_id2control_flow_steps,
+    ) = _collect_unique_control_flow_lineages_with_step_mapping(
+        flow_control_steps_selectors=flow_control_steps_selectors,
+        execution_graph=execution_graph,
+    )
     if not inputs_lineage:
         return
     all_input_lineage_prefixes = get_all_batch_lineage_prefixes(lineages=inputs_lineage)
