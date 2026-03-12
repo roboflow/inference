@@ -467,6 +467,36 @@ def _run_workflow(
                 {"email_message": SUCCESSFUL_EMAIL_MESSAGE_MOCK},
             ),
         ),
+        (
+            _batch_4_images,
+            BATCH_4_IMAGE_NAMES,
+            BATCH_4_DETECTION_COUNTS,
+            "with_detection_collapse_right_after_detect_with_agg_operation",
+            1, # The continue-if correctly checks the total number of detections in the batch
+            "noreply@example.com",
+            "Detections found",
+            ( # The operations of counting the detection are done after receiving the params, so here we get the size of the batch
+                {"num_batch_detections": 4},
+            ),
+            (
+                {"email_message": SUCCESSFUL_EMAIL_MESSAGE_MOCK},
+            ),
+        ),
+         (
+            _batch_4_images,
+            BATCH_4_IMAGE_NAMES,
+            BATCH_4_DETECTION_COUNTS,
+            "with_detection_collapse_right_after_detect_with_agg_operation_without_message_params",
+            1, # The continue-if correctly checks the total number of detections in the batch
+            "noreply@example.com",
+            "Detections found",
+            (
+                {},
+            ),
+            (
+                {"email_message": SUCCESSFUL_EMAIL_MESSAGE_MOCK},
+            ),
+        ),
     ],
     ids=[
         "with_email_message_params",
@@ -482,6 +512,8 @@ def _run_workflow(
         "with_detection_collapse_right_after_slice",
         "with_detection_collapse_right_after_slice_with_agg_operation",
         "with_detection_collapse_right_after_slice_with_agg_operation_without_message_params",
+        "with_detection_collapse_right_after_detect_with_agg_operation",
+        "with_detection_collapse_right_after_detect_with_agg_operation_without_message_params",
     ],
 )
 def test_scenario_1(
@@ -528,7 +560,7 @@ def test_scenario_1(
                 assert len(actual) == param_value
                 continue
 
-            if param_name == "num_slices":
+            if param_name in ["num_slices", "num_batch_detections"]:
                 assert isinstance(actual, list)
                 assert len(actual) == param_value
                 continue
@@ -540,7 +572,7 @@ def test_scenario_1(
             assert actual == param_value
 
 
-    assert len(result) == 4
+    assert len(result) == len(expected_result)
     for i, result in enumerate(result):
         assert result.get("email_message") == expected_result[i].get("email_message")
 
