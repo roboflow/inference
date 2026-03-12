@@ -1,3 +1,4 @@
+from __future__ import annotations
 import base64
 from copy import copy
 from dataclasses import dataclass, replace
@@ -153,18 +154,19 @@ class Batch(Generic[B]):
         yield from self._content
 
     def remove_by_indices(self, indices_to_remove: Set[tuple]) -> "Batch":
-        filtered_content = [
-            (
-                element
-                if not isinstance(element, Batch)
-                else element.remove_by_indices(indices_to_remove=indices_to_remove)
-            )
-            for index, element in zip(self._indices, self._content)
-            if index not in indices_to_remove
-        ]
-        filtered_indices = [
-            index for index in self._indices if index not in indices_to_remove
-        ]
+        filtered_content: List[B] = []
+        filtered_indices: List[Tuple[int, ...]] = []
+
+        for index, element in zip(self._indices, self._content):
+            if index in indices_to_remove:
+                continue
+            if isinstance(element, Batch):
+                filtered_content.append(
+                    element.remove_by_indices(indices_to_remove=indices_to_remove)
+                )
+            else:
+                filtered_content.append(element)
+            filtered_indices.append(index)
 
         return Batch(content=filtered_content, indices=filtered_indices)
 
