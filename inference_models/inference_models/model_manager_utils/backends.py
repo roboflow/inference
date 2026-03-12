@@ -13,7 +13,7 @@ from uuid import uuid4
 
 import zmq
 
-_DEFAULT_INPUT_SHM_SIZE = 25 * 1024 * 1024   # 25 MB — fits up to ~4K RGB frame
+_DEFAULT_INPUT_SHM_SIZE = 100 * 1024 * 1024   # 100 MB
 _WORKER_READY_TIMEOUT_S = 60
 
 
@@ -78,6 +78,7 @@ def _worker_main(
     """
     zmq_ctx = zmq.Context()
     socket = zmq_ctx.socket(zmq.PAIR)
+    socket.setsockopt(zmq.LINGER, 0)
     socket.connect(socket_addr)
 
     input_shm = SharedMemory(name=input_shm_name)
@@ -89,7 +90,8 @@ def _worker_main(
         try:
             from inference_models.models.auto_loaders.core import AutoModel
             model = AutoModel.from_pretrained(model_id, api_key=api_key, **model_kwargs)
-            send({"status": "ready"})
+            class_names = getattr(model, "class_names", None)
+            send({"status": "ready", "class_names": class_names})
         except Exception as e:
             send({"status": "error", "error": str(e), "traceback": traceback.format_exc()})
             return
@@ -129,6 +131,12 @@ class Backend(ABC):
     ModelManager owns a dict of these and routes calls by model_id.
     """
 
+    @property
+    @abstractmethod
+    def class_names(self) -> list[str] | None:
+        """Class names for the loaded model, if available."""
+        ...
+
     @abstractmethod
     def unload(self) -> None:
         """Release all resources held by this model."""
@@ -158,6 +166,9 @@ class InProcessBackend(Backend):
     def __init__(self, model_id: str, api_key: str, **kwargs) -> None:
         """Loads the model in the current process."""
         ...
+
+    @property
+    def class_names(self) -> list[str] | None: ...
 
     def unload(self) -> None: ...
 
@@ -206,7 +217,10 @@ class MultiProcessBackend(Backend):
         socket_addr = f"ipc:///tmp/inference_worker_{uuid4().hex}"
         self._zmq_context = zmq.Context()
         self._socket = self._zmq_context.socket(zmq.PAIR)
+        self._socket.setsockopt(zmq.LINGER, 0)
+        self._socket.setsockopt(zmq.RCVTIMEO, 1000)  # 1s recv timeout — allows shutdown
         self._socket.bind(socket_addr)
+        self._shutting_down = False
         self._socket_lock = threading.Lock()
         # Async callers queue here as suspended coroutines — no thread consumed per waiter.
         self._async_lock = asyncio.Lock()
@@ -244,22 +258,35 @@ class MultiProcessBackend(Backend):
                 f"Worker for model '{model_id}' failed to initialize: "
                 f"{msg.get('error', msg)}"
             )
+        self._class_names = msg.get("class_names")
+
+    @property
+    def class_names(self) -> list[str] | None:
+        return self._class_names
 
     def _cleanup(self) -> None:
         """Terminate process and release all IPC resources."""
         if self._process.is_alive():
             self._process.terminate()
             self._process.join(timeout=5)
-        self._input_shm.close()
-        self._input_shm.unlink()
+            if self._process.is_alive():
+                self._process.kill()
         self._socket.close()
         self._zmq_context.term()
+        self._input_shm.close()
+        self._input_shm.unlink()
 
     def unload(self) -> None:
-        """Sends shutdown message to the worker process and joins it."""
-        with self._socket_lock:
-            self._socket.send_multipart([json.dumps({"type": "shutdown"}).encode(), b""])
-            self._process.join(timeout=10)
+        """Sends shutdown message to the worker process and cleans up."""
+        self._shutting_down = True
+        try:
+            self._socket.send_multipart(
+                [json.dumps({"type": "shutdown"}).encode(), b""],
+                flags=zmq.NOBLOCK,
+            )
+            self._process.join(timeout=3)
+        except zmq.ZMQError:
+            pass
         self._cleanup()
 
     async def infer_async(self, *args, **kwargs) -> Any:
@@ -291,6 +318,14 @@ class MultiProcessBackend(Backend):
             zmq_payload = None
             header = json.dumps({"type": "infer", "transport": "shm", "nbytes": len(serialized)}).encode()
 
+        def _recv_with_timeout():
+            while not self._shutting_down:
+                try:
+                    return self._socket.recv_multipart()
+                except zmq.Again:
+                    continue
+            raise RuntimeError("Backend is shutting down")
+
         async with self._async_lock:
             if zmq_payload is None:
                 self._input_shm.buf[:len(serialized)] = serialized
@@ -298,7 +333,7 @@ class MultiProcessBackend(Backend):
             else:
                 self._socket.send_multipart([header, zmq_payload])
             header_bytes, result_payload = await loop.run_in_executor(
-                None, self._socket.recv_multipart
+                None, _recv_with_timeout
             )
 
         msg = json.loads(header_bytes)
@@ -335,7 +370,14 @@ class MultiProcessBackend(Backend):
 
         with self._socket_lock:
             self._socket.send_multipart(send_frames)
-            header_bytes, result_payload = self._socket.recv_multipart()
+            while not self._shutting_down:
+                try:
+                    header_bytes, result_payload = self._socket.recv_multipart()
+                    break
+                except zmq.Again:
+                    continue
+            else:
+                raise RuntimeError("Backend is shutting down")
 
         msg = json.loads(header_bytes)
         if msg["type"] == "error":
