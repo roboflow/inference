@@ -2,6 +2,35 @@
 
 Below you can find the changelog for Execution Engine.
 
+## Execution Engine `v1.8.0` | inference `v1.0.5`
+
+!!! Note "Additive change — no breaking changes"
+
+    This release extends the Execution Engine so that steps gated by control flow (e.g. after a
+    `ContinueIf` block) can run even when they have **no data-derived lineage** — i.e. when they
+    do not receive batch-oriented inputs from upstream steps. Lineage and execution dimensionality
+    can now be derived from control flow predecessor steps. Existing workflows are unaffected.
+
+**What changed**
+
+* **Control flow lineage** — The compiler now tracks lineage that comes from control flow steps
+  (e.g. branches after `ContinueIf`). A new notion of **control flow lineage support** is used when
+  a step has no batch-oriented data inputs but is preceded by control flow steps: the step’s
+  execution slices and batch structure are taken from those control flow predecessors.
+
+* **Loosened compatibility check** — Previously, `verify_compatibility_of_input_data_lineage_with_control_flow_lineage`
+  raised `ControlFlowDefinitionError` for any step that had control flow predecessors but no
+  data-derived lineage, so such steps could not be compiled. That check is now relaxed: when a step
+  has no input data lineage, compatibility is not enforced and the step’s lineage is derived from
+  the control flow predecessor step lineage instead. The strict check still runs when the step
+  *does* have data-derived lineage, to ensure control flow and data lineage remain compatible.
+
+* **New step patterns** — Steps that are triggered only by control flow and do not consume
+  batch data now run correctly. For example, you can send email notifications (or run other
+  side-effect steps) after a `ContinueIf` without wiring any data into parameters like
+  `message_parameters`; the step will execute once per control flow branch with lineage and
+  dimensionality taken from the controlling step.
+
 ## Execution Engine `v1.7.0` | inference `v0.59.0`
 
 !!! warning "Breaking change regarding step errors in workflows"
