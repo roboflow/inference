@@ -815,20 +815,27 @@ def get_lineage_derived_from_flow_control(
     flow_control_steps_selectors: List[str],
     execution_graph: nx.DiGraph,
 ) -> List[List[str]]:
-    all_flow_control_lineages = []
-    already_spotted_input_lineages = set()
-    for flow_control_steps_selector in flow_control_steps_selectors:
-        flow_control_step_data = node_as(
+    """
+    Returns a list of unique (by ID) non-empty data lineages for each
+    control flow step in the provided list.
+    """
+    unique_lineages = []
+    seen_lineage_ids = set()
+
+    for step_selector in flow_control_steps_selectors:
+        step_data = node_as(
             execution_graph=execution_graph,
-            node=flow_control_steps_selector,
+            node=step_selector,
             expected_type=StepNode,
         )
-        lineage = flow_control_step_data.data_lineage
-        lineage_id = identify_lineage(lineage=lineage)
-        if lineage_id not in already_spotted_input_lineages and lineage:
-            already_spotted_input_lineages.add(lineage_id)
-            all_flow_control_lineages.append(lineage)
-    return all_flow_control_lineages
+        lineage = step_data.data_lineage
+        if lineage:
+            lineage_id = identify_lineage(lineage)
+            if lineage_id not in seen_lineage_ids:
+                seen_lineage_ids.add(lineage_id)
+                unique_lineages.append(lineage)
+
+    return unique_lineages
 
 
 def separate_flow_control_predecessors_from_data_providers(
