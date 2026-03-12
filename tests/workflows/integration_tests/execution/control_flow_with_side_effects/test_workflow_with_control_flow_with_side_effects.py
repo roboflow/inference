@@ -5,7 +5,9 @@ import os
 from glob import glob
 from pathlib import Path
 from typing import List
-from unittest.mock import patch
+from unittest import mock
+from unittest.mock import patch, MagicMock
+
 
 import numpy as np
 import pandas as pd
@@ -22,6 +24,7 @@ from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.execution_engine.core import ExecutionEngine
 from inference.core.workflows.errors import StepInputLineageError, ControlFlowDefinitionError
+from inference.core.workflows.execution_engine.introspection import blocks_loader
 
 _WORKFLOW_DEFINITIONS_DIR = Path(__file__).resolve().parent / "workflow_definitions"
 
@@ -723,6 +726,40 @@ def test_scenario_raises_control_flow_definition_error(
         )
  
     assert send_email_mock.call_count == 0
+
+
+@pytest.mark.parametrize(
+    "run_scalar_step, expect_result",
+    [
+        (True, "foobar"),
+        (False, None),
+    ],
+    ids=["run_scalar_step_true", "run_scalar_step_false"],
+)
+@mock.patch.object(blocks_loader, "get_plugin_modules")
+def test_control_flow_lineage_using_workflow_with_scalar_only_block_parses_and_runs(
+    get_plugin_modules_mock: MagicMock,
+    run_scalar_step: bool,
+    expect_result: str,
+) -> None:
+    get_plugin_modules_mock.return_value = [
+        "tests.workflows.integration_tests.execution.stub_plugins.scalar_only_block_plugin",
+    ]
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=_load_workflow_definition("with_scalar_only_step"),
+        init_parameters={
+            "workflows_core.model_manager": None,
+            "workflows_core.api_key": None,
+            "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+        },
+        max_concurrent_steps=1,
+    )
+    result = execution_engine.run(
+        runtime_parameters={"run_scalar_step": run_scalar_step},
+    )
+    assert len(result) == 1
+    assert result[0]["result"] == expect_result
+
 
 # @patch(
 #     "inference.core.workflows.core_steps.sinks.email_notification.v2.send_email_via_roboflow_proxy"
