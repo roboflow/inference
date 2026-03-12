@@ -435,7 +435,6 @@ def prepare_parameters(
         mask_dimension = len(step_node.control_flow_lineage_support)
         mask_for_dimension = masks.get(mask_dimension)
         if mask_for_dimension is not None:
-            # TODO: verify correctness
             indices = [
                 idx for idx in indices if idx in mask_for_dimension
             ]
