@@ -1942,7 +1942,9 @@ def get_reference_lineage(
         # indices would not match shorter ones, giving empty or wrong intersections.
         min_lineage_len = min(len(lineage) for lineage in all_control_flow_lineages)
         lineages_matching_min_len = [
-            _lineage for _lineage in all_control_flow_lineages if len(_lineage) == min_lineage_len
+            _lineage
+            for _lineage in all_control_flow_lineages
+            if len(_lineage) == min_lineage_len
         ]
         if len(lineages_matching_min_len) == 1:
             return copy(lineages_matching_min_len[0]), copy(
