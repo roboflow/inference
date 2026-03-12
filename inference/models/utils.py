@@ -705,6 +705,7 @@ if USE_INFERENCE_MODELS:
         InferenceModelsInstanceSegmentationAdapter,
         InferenceModelsKeyPointsDetectionAdapter,
         InferenceModelsObjectDetectionAdapter,
+        InferenceModelsSemanticSegmentationAdapter,
     )
 
     for task, variant in ROBOFLOW_MODEL_TYPES.keys():
@@ -891,6 +892,10 @@ if USE_INFERENCE_MODELS:
 
                 ROBOFLOW_MODEL_TYPES[(task, variant)] = (
                     InferenceModelsPerceptionEncoderAdapter
+                )
+            elif task == "semantic-segmentation" and variant == "deeplabv3plus":
+                ROBOFLOW_MODEL_TYPES[(task, variant)] = (
+                    InferenceModelsSemanticSegmentationAdapter
                 )
         except Exception as e:
             warnings.warn(
