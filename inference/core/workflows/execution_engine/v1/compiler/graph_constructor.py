@@ -78,7 +78,7 @@ from inference.core.workflows.execution_engine.v1.compiler.utils import (
     get_nodes_of_specific_category,
     get_step_selector_from_its_output,
     identify_lineage,
-    is_flow_control_step,
+    is_control_flow_step,
     is_input_node,
     is_input_selector,
     is_output_node,
@@ -275,7 +275,7 @@ def add_edge_for_step(
         end=target_step_selector,
     )
     if is_step_selector(target_step_parsed_selector.value):
-        return establish_flow_control_edge(
+        return establish_control_flow_edge(
             source_step_selector=source_step_selector,
             target_step_parsed_selector=target_step_parsed_selector,
             execution_graph=execution_graph,
@@ -339,12 +339,12 @@ def add_edge_for_step(
     return execution_graph
 
 
-def establish_flow_control_edge(
+def establish_control_flow_edge(
     source_step_selector: str,
     target_step_parsed_selector: ParsedSelector,
     execution_graph: DiGraph,
 ) -> DiGraph:
-    if not step_definition_allows_flow_control_references(
+    if not step_definition_allows_control_flow_references(
         parsed_selector=target_step_parsed_selector
     ):
         raise ExecutionGraphStructureError(
@@ -399,7 +399,7 @@ def establish_flow_control_edge(
     return execution_graph
 
 
-def step_definition_allows_flow_control_references(
+def step_definition_allows_control_flow_references(
     parsed_selector: ParsedSelector,
 ) -> bool:
     return any(
@@ -689,7 +689,7 @@ def denote_data_flow_for_step(
     on_top_level_lineage_denoted: Callable[[str], None],
 ) -> DiGraph:
     all_control_flow_predecessors, all_non_control_flow_predecessors = (
-        separate_flow_control_predecessors_from_data_providers(
+        separate_control_flow_predecessors_from_data_providers(
             execution_graph=execution_graph, node=node
         )
     )
@@ -762,14 +762,14 @@ def denote_data_flow_for_step(
         input_data=input_data,
         scalar_parameters_to_be_batched=scalar_parameters_to_be_batched,
     )
-    all_control_flow_lineages = get_lineage_derived_from_flow_control(
-        flow_control_steps_selectors=all_control_flow_predecessors,
+    all_control_flow_lineages = get_lineage_derived_from_control_flow(
+        control_flow_steps_selectors=all_control_flow_predecessors,
         execution_graph=execution_graph,
     )
     verify_compatibility_of_input_data_lineage_with_control_flow_lineage(
         step_name=step_name,
         inputs_lineage=all_data_derived_lineages,
-        flow_control_steps_selectors=all_control_flow_predecessors,
+        control_flow_steps_selectors=all_control_flow_predecessors,
         execution_graph=execution_graph,
     )
     step_node_data.input_data = input_data
@@ -781,9 +781,9 @@ def denote_data_flow_for_step(
             data_lineage = [node]
         else:
             data_lineage = []
-        conditional_flow_lineage_support = []
+        control_flow_lineage_support = []
     else:
-        data_lineage, conditional_flow_lineage_support = establish_batch_oriented_step_lineage(
+        data_lineage, control_flow_lineage_support = establish_batch_oriented_step_lineage(
             step_selector=node,
             all_data_derived_lineages=all_data_derived_lineages,
             all_control_flow_lineages=all_control_flow_lineages,
@@ -794,7 +794,7 @@ def denote_data_flow_for_step(
     step_node_data.step_execution_dimensionality = (
         establish_step_execution_dimensionality(
             inputs_dimensionalities=inputs_dimensionalities,
-            conditional_flow_lineage_support=conditional_flow_lineage_support,
+            control_flow_lineage_support=control_flow_lineage_support,
             output_dimensionality_offset=output_dimensionality_offset,
         )
     )
@@ -804,7 +804,7 @@ def denote_data_flow_for_step(
         scalar_parameters_to_be_batched=scalar_parameters_to_be_batched,
     )
     step_node_data.auto_batch_casting_lineage_supports = lineage_supports
-    step_node_data.conditional_flow_lineage_support = conditional_flow_lineage_support
+    step_node_data.control_flow_lineage_support = control_flow_lineage_support
     if data_lineage:
         on_top_level_lineage_denoted(data_lineage[0])
     step_node_data.data_lineage = data_lineage
@@ -812,7 +812,7 @@ def denote_data_flow_for_step(
 
 
 def _collect_unique_control_flow_lineages_with_step_mapping(
-    flow_control_steps_selectors: List[str],
+    control_flow_steps_selectors: List[str],
     execution_graph: nx.DiGraph,
 ) -> Tuple[List[List[str]], Dict[int, List[str]]]:
     """
@@ -824,7 +824,7 @@ def _collect_unique_control_flow_lineages_with_step_mapping(
     lineage (used e.g. for error reporting when lineage is incompatible).
 
     Args:
-        flow_control_steps_selectors: Step selectors (node ids) of control
+        control_flow_steps_selectors: Step selectors (node ids) of control
             flow steps whose data_lineage is to be collected.
         execution_graph: The workflow execution graph containing step nodes
             and their data_lineage.
@@ -839,7 +839,7 @@ def _collect_unique_control_flow_lineages_with_step_mapping(
     seen_lineage_ids: Set[int] = set()
     lineage_id_to_step_selectors: Dict[int, List[str]] = defaultdict(list)
 
-    for step_selector in flow_control_steps_selectors:
+    for step_selector in control_flow_steps_selectors:
         step_data = node_as(
             execution_graph=execution_graph,
             node=step_selector,
@@ -855,8 +855,8 @@ def _collect_unique_control_flow_lineages_with_step_mapping(
     return unique_lineages, dict(lineage_id_to_step_selectors)
 
 
-def get_lineage_derived_from_flow_control(
-    flow_control_steps_selectors: List[str],
+def get_lineage_derived_from_control_flow(
+    control_flow_steps_selectors: List[str],
     execution_graph: nx.DiGraph,
 ) -> List[List[str]]:
     """
@@ -867,7 +867,7 @@ def get_lineage_derived_from_flow_control(
     lineages are omitted. Used when establishing batch-oriented step lineage.
 
     Args:
-        flow_control_steps_selectors: Step selectors (node ids) of control
+        control_flow_steps_selectors: Step selectors (node ids) of control
             flow steps whose data_lineage is to be collected.
         execution_graph: The workflow execution graph containing step nodes
             and their data_lineage.
@@ -876,13 +876,13 @@ def get_lineage_derived_from_flow_control(
         List of distinct non-empty data lineages, one per unique lineage id.
     """
     unique_lineages, _ = _collect_unique_control_flow_lineages_with_step_mapping(
-        flow_control_steps_selectors=flow_control_steps_selectors,
+        control_flow_steps_selectors=control_flow_steps_selectors,
         execution_graph=execution_graph,
     )
     return unique_lineages
 
 
-def separate_flow_control_predecessors_from_data_providers(
+def separate_control_flow_predecessors_from_data_providers(
     execution_graph: DiGraph,
     node: str,
 ) -> Tuple[List[str], List[str]]:
@@ -890,12 +890,12 @@ def separate_flow_control_predecessors_from_data_providers(
     all_control_flow_predecessors = [
         predecessor
         for predecessor in all_predecessors
-        if is_flow_control_step(execution_graph=execution_graph, node=predecessor)
+        if is_control_flow_step(execution_graph=execution_graph, node=predecessor)
     ]
     all_non_control_flow_predecessors = [
         predecessor
         for predecessor in all_predecessors
-        if not is_flow_control_step(execution_graph=execution_graph, node=predecessor)
+        if not is_control_flow_step(execution_graph=execution_graph, node=predecessor)
     ]
     return all_control_flow_predecessors, all_non_control_flow_predecessors
 
@@ -1420,7 +1420,7 @@ def grab_input_data_dimensionality_specifications(
 def verify_compatibility_of_input_data_lineage_with_control_flow_lineage(
     step_name: str,
     inputs_lineage: List[List[str]],
-    flow_control_steps_selectors: List[str],
+    control_flow_steps_selectors: List[str],
     execution_graph: DiGraph,
 ) -> None:
     """
@@ -1438,7 +1438,7 @@ def verify_compatibility_of_input_data_lineage_with_control_flow_lineage(
     Args:
         step_name: Name of the step being verified (used in error messages).
         inputs_lineage: Data lineages derived from the step's input data.
-        flow_control_steps_selectors: Step selectors of control flow steps
+        control_flow_steps_selectors: Step selectors of control flow steps
             that affect this step's execution.
         execution_graph: The workflow execution graph.
 
@@ -1450,7 +1450,7 @@ def verify_compatibility_of_input_data_lineage_with_control_flow_lineage(
         batch_oriented_control_flow_lineages,
         lineage_id2control_flow_steps,
     ) = _collect_unique_control_flow_lineages_with_step_mapping(
-        flow_control_steps_selectors=flow_control_steps_selectors,
+        control_flow_steps_selectors=control_flow_steps_selectors,
         execution_graph=execution_graph,
     )
     if not inputs_lineage:
@@ -1471,7 +1471,7 @@ def verify_compatibility_of_input_data_lineage_with_control_flow_lineage(
                 f"steps {problematic_flow_control_steps} which make decision based on data that is "
                 f"not compatible with data fed to the step {step_name} - which would cause the step "
                 f"to never execute. This behaviour is invalid and prevented upfront by Workflows compiler.",
-                context="workflow_compilation | execution_graph_construction | verification_of_flow_control_lineage",
+                context="workflow_compilation | execution_graph_construction | verification_of_control_flow_lineage",
             )
 
 def get_all_batch_lineage_prefixes(lineages: List[List[str]]) -> List[List[str]]:
@@ -1848,9 +1848,39 @@ def verify_lineages(step_name: str, detected_lineages: List[List[str]]) -> None:
 
 def establish_step_execution_dimensionality(
     inputs_dimensionalities: Dict[str, Set[int]],
-    conditional_flow_lineage_support: List[str],
+    control_flow_lineage_support: List[str],
     output_dimensionality_offset: int,
 ) -> int:
+    """
+    Determine how many batch dimensions (execution slices) a step runs with.
+
+    Used during workflow compilation in denote_data_flow_for_step. The result
+    is stored on StepNode.step_execution_dimensionality and consumed at
+    execution time to:
+    - Drive how many times the step is executed (which batch indices/slices).
+    - Align and expand inputs (e.g. auto-batch casting) to match this size.
+    - Validate that parameter dimensionalities are compatible (runtime checks
+      in step_input_assembler and manager).
+
+    Logic:
+    - If no input has non-zero dimensionality but the step is gated by
+      control flow (control_flow_lineage_support non-empty), the
+      dimensionality is the number of control-flow branches.
+    - Otherwise, the minimum non-zero input dimensionality is used; if
+      output_dimensionality_offset < 0 (step reduces batch dimension),
+      one is subtracted.
+
+    Args:
+        inputs_dimensionalities: Per-input sets of dimensionalities (from
+            get_inputs_dimensionalities).
+        control_flow_lineage_support: Lineage identifiers for control-flow
+            branches that gate this step (from establish_batch_oriented_step_lineage).
+        output_dimensionality_offset: Block's output dimensionality offset
+            (positive = expand, negative = reduce batch dimension).
+
+    Returns:
+        The number of batch dimensions (execution slices) for this step.
+    """
     step_execution_dimensionality = 0
     non_zero_dimensionalities = {
         dimensionality
@@ -1858,8 +1888,8 @@ def establish_step_execution_dimensionality(
         for dimensionality in dimensionalities
         if dimensionality > 0
     }
-    if len(non_zero_dimensionalities) == 0 and len(conditional_flow_lineage_support) > 0:
-        return len(conditional_flow_lineage_support)
+    if len(non_zero_dimensionalities) == 0 and len(control_flow_lineage_support) > 0:
+        return len(control_flow_lineage_support)
     if len(non_zero_dimensionalities) > 0:
         step_execution_dimensionality = min(non_zero_dimensionalities)
         if output_dimensionality_offset < 0:
@@ -1875,7 +1905,7 @@ def establish_batch_oriented_step_lineage(
     dimensionality_reference_property: Optional[str],
     output_dimensionality_offset: int,
 ) -> Tuple[List[str], List[str]]:
-    reference_lineage, conditional_flow_lineage_support = get_reference_lineage(
+    reference_lineage, control_flow_lineage_support = get_reference_lineage(
         step_selector=step_selector,
         all_data_derived_lineages=all_data_derived_lineages,
         all_control_flow_lineages=all_control_flow_lineages,
@@ -1886,7 +1916,7 @@ def establish_batch_oriented_step_lineage(
         result_dimensionality = reference_lineage[:output_dimensionality_offset]
         return result_dimensionality, []
     if output_dimensionality_offset == 0:
-        return reference_lineage, conditional_flow_lineage_support
+        return reference_lineage, control_flow_lineage_support
     reference_lineage.append(step_selector)
     return reference_lineage, []
 

@@ -269,8 +269,8 @@ def construct_mask_for_all_inputs_dimensionalities(
 ) -> Tuple[Any, bool]:
     inputs_dimensionalities = collect_inputs_dimensionalities(step_node=step_node)
     all_dimensionalities = {dim for dim in inputs_dimensionalities.values() if dim > 0}
-    if step_node.conditional_flow_lineage_support:
-        all_dimensionalities.add(len(step_node.conditional_flow_lineage_support))
+    if step_node.control_flow_lineage_support:
+        all_dimensionalities.add(len(step_node.control_flow_lineage_support))
     batch_masks, non_batch_masks = [], set()
     for execution_branch in step_node.execution_branches_impacting_inputs:
         if not branching_manager.is_execution_branch_registered(
@@ -420,7 +420,7 @@ def prepare_parameters(
     ]
     ensure_compound_input_indices_match(indices=batch_parameters_indices)
     if not batch_parameters_indices:
-        if not step_node.conditional_flow_lineage_support:
+        if not step_node.control_flow_lineage_support:
             raise ExecutionEngineRuntimeError(
                 public_message=f"For step: {step_node.name} which is assessed by Workflows Compiler as "
                 f"SIMD step Execution Engine cannot detect neither batch inputs nor control flow inputs. "
@@ -430,9 +430,9 @@ def prepare_parameters(
                 context="workflow_execution | step_input_assembling",
             )
         indices = dynamic_batches_manager.get_indices_for_data_lineage(
-            lineage=step_node.conditional_flow_lineage_support,
+            lineage=step_node.control_flow_lineage_support,
         )
-        mask_dimension = len(step_node.conditional_flow_lineage_support)
+        mask_dimension = len(step_node.control_flow_lineage_support)
         mask_for_dimension = masks.get(mask_dimension)
         if mask_for_dimension is not None:
             # TODO: verify correctness
