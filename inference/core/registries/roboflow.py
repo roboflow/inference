@@ -18,7 +18,8 @@ from inference.core.env import (
     MODEL_CACHE_DIR,
     MODELS_CACHE_AUTH_CACHE_MAX_SIZE,
     MODELS_CACHE_AUTH_CACHE_TTL,
-    MODELS_CACHE_AUTH_ENABLED, USE_INFERENCE_MODELS,
+    MODELS_CACHE_AUTH_ENABLED,
+    USE_INFERENCE_MODELS,
 )
 from inference.core.exceptions import (
     MissingApiKeyError,
@@ -34,10 +35,11 @@ from inference.core.roboflow_api import (
     MODEL_TYPE_KEY,
     PROJECT_TASK_TYPE_KEY,
     ModelEndpointType,
+    get_model_metadata_from_inference_models_registry,
     get_roboflow_dataset_type,
     get_roboflow_instant_model_data,
     get_roboflow_model_data,
-    get_roboflow_workspace, get_model_metadata_from_inference_models_registry,
+    get_roboflow_workspace,
 )
 from inference.core.utils.file_system import dump_json, read_json
 from inference.core.utils.roboflow import get_model_id_chunks

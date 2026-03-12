@@ -19,8 +19,8 @@ from inference.core.env import (
     MOONDREAM2_ENABLED,
     PALIGEMMA_ENABLED,
     QWEN_2_5_ENABLED,
-    QWEN_3_ENABLED,
     QWEN_3_5_ENABLED,
+    QWEN_3_ENABLED,
     SAM3_3D_OBJECTS_ENABLED,
     SMOLVLM2_ENABLED,
     USE_INFERENCE_MODELS,
@@ -721,7 +721,8 @@ if USE_INFERENCE_MODELS:
         InferenceModelsSemanticSegmentationAdapter,
     )
 
-    for task, variant in ROBOFLOW_MODEL_TYPES.keys():
+    tasks_and_variants = list(ROBOFLOW_MODEL_TYPES.keys())
+    for task, variant in tasks_and_variants:
         try:
             if task == "object-detection" and variant.startswith("rfdetr"):
                 ROBOFLOW_MODEL_TYPES[(task, variant)] = (
@@ -735,7 +736,9 @@ if USE_INFERENCE_MODELS:
                 ROBOFLOW_MODEL_TYPES[(task, variant)] = (
                     InferenceModelsObjectDetectionAdapter
                 )
-            elif task == "object-detection" and (variant.startswith("yolo_nas") or variant.startswith("yolonas")):
+            elif task == "object-detection" and (
+                variant.startswith("yolo_nas") or variant.startswith("yolonas")
+            ):
                 ROBOFLOW_MODEL_TYPES[(task, variant)] = (
                     InferenceModelsObjectDetectionAdapter
                 )
@@ -778,22 +781,30 @@ if USE_INFERENCE_MODELS:
                 )
 
                 ROBOFLOW_MODEL_TYPES[(task, variant)] = InferenceModelsPaligemmaAdapter
-                ROBOFLOW_MODEL_TYPES[("vlm", "paligemma-2")] = InferenceModelsPaligemmaAdapter
-                ROBOFLOW_MODEL_TYPES[("vlm", "paligemma")] = InferenceModelsPaligemmaAdapter
+                ROBOFLOW_MODEL_TYPES[("vlm", "paligemma-2")] = (
+                    InferenceModelsPaligemmaAdapter
+                )
+                ROBOFLOW_MODEL_TYPES[("vlm", "paligemma")] = (
+                    InferenceModelsPaligemmaAdapter
+                )
             elif variant.startswith("florence-2"):
                 from inference.models.florence2.florence2_inference_models import (
                     InferenceModelsFlorence2Adapter,
                 )
 
                 ROBOFLOW_MODEL_TYPES[(task, variant)] = InferenceModelsFlorence2Adapter
-                ROBOFLOW_MODEL_TYPES[("vlm", "florence-2")] = InferenceModelsFlorence2Adapter
+                ROBOFLOW_MODEL_TYPES[("vlm", "florence-2")] = (
+                    InferenceModelsFlorence2Adapter
+                )
             elif variant.startswith("qwen25-vl"):
                 from inference.models.qwen25vl.qwen25vl_inference_models import (
                     InferenceModelsQwen25VLAdapter,
                 )
 
                 ROBOFLOW_MODEL_TYPES[(task, variant)] = InferenceModelsQwen25VLAdapter
-                ROBOFLOW_MODEL_TYPES[("vlm", "qwen25vl")] = InferenceModelsQwen25VLAdapter
+                ROBOFLOW_MODEL_TYPES[("vlm", "qwen25vl")] = (
+                    InferenceModelsQwen25VLAdapter
+                )
             elif variant.startswith("qwen3vl-"):
                 from inference.models.qwen3vl.qwen3vl_inference_models import (
                     InferenceModelsQwen3VLAdapter,
@@ -807,21 +818,27 @@ if USE_INFERENCE_MODELS:
                 )
 
                 ROBOFLOW_MODEL_TYPES[(task, variant)] = InferenceModelsQwen35VLAdapter
-                ROBOFLOW_MODEL_TYPES[("vlm", "qwen_3_5")] = InferenceModelsQwen35VLAdapter
+                ROBOFLOW_MODEL_TYPES[("vlm", "qwen_3_5")] = (
+                    InferenceModelsQwen35VLAdapter
+                )
             elif task == "embed" and variant == "sam":
                 from inference.models.sam.segment_anything_inference_models import (
                     InferenceModelsSAMAdapter,
                 )
 
                 ROBOFLOW_MODEL_TYPES[(task, variant)] = InferenceModelsSAMAdapter
-                ROBOFLOW_MODEL_TYPES[("interactive-instance-segmentation", "sam")] = InferenceModelsSAMAdapter
+                ROBOFLOW_MODEL_TYPES[("interactive-instance-segmentation", "sam")] = (
+                    InferenceModelsSAMAdapter
+                )
             elif task == "embed" and variant == "sam2":
                 from inference.models.sam2.segment_anything2_inference_models import (
                     InferenceModelsSAM2Adapter,
                 )
 
                 ROBOFLOW_MODEL_TYPES[(task, variant)] = InferenceModelsSAM2Adapter
-                ROBOFLOW_MODEL_TYPES[("interactive-instance-segmentation", "sam2")] = InferenceModelsSAM2Adapter
+                ROBOFLOW_MODEL_TYPES[("interactive-instance-segmentation", "sam2")] = (
+                    InferenceModelsSAM2Adapter
+                )
             elif task == "embed" and variant == "clip":
                 from inference.models.clip.clip_inference_models import (
                     InferenceModelsClipAdapter,
@@ -835,7 +852,9 @@ if USE_INFERENCE_MODELS:
                 )
 
                 ROBOFLOW_MODEL_TYPES[(task, variant)] = InferenceModelsOwlV2Adapter
-                ROBOFLOW_MODEL_TYPES[("open-vocabulary-object-detection", variant)] = InferenceModelsOwlV2Adapter
+                ROBOFLOW_MODEL_TYPES[("open-vocabulary-object-detection", variant)] = (
+                    InferenceModelsOwlV2Adapter
+                )
             elif task == "object-detection" and variant == "owlv2-finetuned":
                 from inference.models.owlv2.rf_instant_inference_models import (
                     InferenceModelsRFInstantModelAdapter,
@@ -863,7 +882,9 @@ if USE_INFERENCE_MODELS:
                 )
 
                 ROBOFLOW_MODEL_TYPES[(task, variant)] = InferenceModelsSmolVLMAdapter
-                ROBOFLOW_MODEL_TYPES[("vlm", "smolvlm-v2")] = InferenceModelsSmolVLMAdapter
+                ROBOFLOW_MODEL_TYPES[("vlm", "smolvlm-v2")] = (
+                    InferenceModelsSmolVLMAdapter
+                )
             elif task == "depth-estimation" and variant == "depth-anything-v2":
                 from inference.models.depth_anything_v2.depth_anything_v2_inference_models import (
                     InferenceModelsDepthAnythingV2Adapter,
@@ -886,28 +907,36 @@ if USE_INFERENCE_MODELS:
                 )
 
                 ROBOFLOW_MODEL_TYPES[(task, variant)] = InferenceModelsMoondream2Adapter
-                ROBOFLOW_MODEL_TYPES[("vlm", "moondream2")] = InferenceModelsMoondream2Adapter
+                ROBOFLOW_MODEL_TYPES[("vlm", "moondream2")] = (
+                    InferenceModelsMoondream2Adapter
+                )
             elif task == "ocr" and variant == "doctr":
                 from inference.models.doctr.doctr_model_inference_models import (
                     InferenceModelsDocTRAdapter,
                 )
 
                 ROBOFLOW_MODEL_TYPES[(task, variant)] = InferenceModelsDocTRAdapter
-                ROBOFLOW_MODEL_TYPES[("structured-ocr", "doctr")] = InferenceModelsDocTRAdapter
+                ROBOFLOW_MODEL_TYPES[("structured-ocr", "doctr")] = (
+                    InferenceModelsDocTRAdapter
+                )
             elif task == "ocr" and variant == "easy_ocr":
                 from inference.models.easy_ocr.easy_ocr_inference_models import (
                     InferenceModelsEasyOCRAdapter,
                 )
 
                 ROBOFLOW_MODEL_TYPES[(task, variant)] = InferenceModelsEasyOCRAdapter
-                ROBOFLOW_MODEL_TYPES[("structured-ocr", "easy-ocr")] = InferenceModelsEasyOCRAdapter
+                ROBOFLOW_MODEL_TYPES[("structured-ocr", "easy-ocr")] = (
+                    InferenceModelsEasyOCRAdapter
+                )
             elif task == "ocr" and variant == "trocr":
                 from inference.models.trocr.trocr_inference_models import (
                     InferenceModelsTrOCRAdapter,
                 )
 
                 ROBOFLOW_MODEL_TYPES[(task, variant)] = InferenceModelsTrOCRAdapter
-                ROBOFLOW_MODEL_TYPES[("text-only-ocr", "tr-ocr")] = InferenceModelsTrOCRAdapter
+                ROBOFLOW_MODEL_TYPES[("text-only-ocr", "tr-ocr")] = (
+                    InferenceModelsTrOCRAdapter
+                )
             elif task == "object-detection" and variant == "grounding-dino":
                 from inference.models.grounding_dino.grounding_dino_inference_models import (
                     InferenceModelsGroundingDINOAdapter,
