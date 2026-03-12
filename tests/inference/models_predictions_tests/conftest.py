@@ -450,11 +450,11 @@ def deep_lab_v3_plus_seg_model() -> Generator[str, None, None]:
 
 
 @pytest.fixture(scope="function")
-def deep_lab_v3_plus_seg_reference_prediction() -> SemanticSegmentationInferenceResponse:
+def deep_lab_v3_plus_seg_reference_prediction() -> (
+    SemanticSegmentationInferenceResponse
+):
     with open(
-        os.path.join(
-            ASSETS_DIR, "deep_lab_v3_plus_seg_reference_prediction.json"
-        ),
+        os.path.join(ASSETS_DIR, "deep_lab_v3_plus_seg_reference_prediction.json"),
         "r",
     ) as f:
         return SemanticSegmentationInferenceResponse.model_validate(json.load(f))
