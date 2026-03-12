@@ -203,6 +203,7 @@ def _run_workflow(
     "image_gen_fn,\
     names,\
     detection_counts,\
+    enable_email,\
     workflow_name,\
     expected_call_count,\
     expected_receiver_email,\
@@ -214,6 +215,7 @@ def _run_workflow(
             _batch_4_images,
             BATCH_4_IMAGE_NAMES,
             BATCH_4_DETECTION_COUNTS,
+            True,
             "with_email_message_params",
             2,
             "noreply@example.com",
@@ -233,6 +235,7 @@ def _run_workflow(
             _batch_4_images,
             BATCH_4_IMAGE_NAMES,
             BATCH_4_DETECTION_COUNTS,
+            True,
             "without_email_message_params",
             2,
             "noreply@example.com",
@@ -252,6 +255,7 @@ def _run_workflow(
             _batch_4_images,
             BATCH_4_IMAGE_NAMES,
             BATCH_4_DETECTION_COUNTS,
+            True,
             "with_image_names_and_email_message_params",
             2,
             "noreply@example.com",
@@ -277,6 +281,7 @@ def _run_workflow(
             _batch_4_images,
             BATCH_4_IMAGE_NAMES,
             BATCH_4_DETECTION_COUNTS,
+            True,
             "with_image_names_and_without_email_message_params",
             2,
             "noreply@example.com",
@@ -296,6 +301,7 @@ def _run_workflow(
             _sliced_4_images,
             SLICED_NAMES,
             SLICED_DETECTION_COUNTS,
+            True,
             "sliced_image_with_email_message_params",
             3,
             "noreply@example.com",
@@ -316,6 +322,7 @@ def _run_workflow(
             _sliced_4_images,
             SLICED_NAMES,
             SLICED_DETECTION_COUNTS,
+            True,
             "sliced_image_without_email_message_params",
             3,
             "noreply@example.com",
@@ -336,6 +343,7 @@ def _run_workflow(
             _sliced_4_images,
             SLICED_NAMES,
             SLICED_DETECTION_COUNTS,
+            True,
             "sliced_image_with_email_message_params_and_area_size_step",
             3,
             "noreply@example.com",
@@ -356,6 +364,7 @@ def _run_workflow(
             _sliced_4_images,
             SLICED_NAMES,
             SLICED_DETECTION_COUNTS,
+            True,
             "sliced_image_without_email_message_params_and_area_size_step",
             3,
             "noreply@example.com",
@@ -376,6 +385,7 @@ def _run_workflow(
             _batch_4_images,
             BATCH_4_IMAGE_NAMES,
             BATCH_4_DETECTION_COUNTS,
+            True,
             "with_email_gate_and_with_email_message_params",
             2,
             "noreply@example.com",
@@ -395,6 +405,7 @@ def _run_workflow(
             _batch_4_images,
             BATCH_4_IMAGE_NAMES,
             BATCH_4_DETECTION_COUNTS,
+            True,
             "with_email_gate_and_without_email_message_params",
             2,
             "noreply@example.com",
@@ -411,9 +422,29 @@ def _run_workflow(
             ),
         ),
         (
+            _batch_4_images,
+            BATCH_4_IMAGE_NAMES,
+            BATCH_4_DETECTION_COUNTS,
+            False,
+            "with_email_gate_and_without_email_message_params",
+            0,
+            "noreply@example.com",
+            "Detections found",
+            (
+                {},
+            ),
+            (
+                {"email_message": None},
+                {"email_message": None},
+                {"email_message": None},
+                {"email_message": None},
+            ),
+        ),
+        (
             _sliced_4_images,
             SLICED_NAMES,
             SLICED_DETECTION_COUNTS,
+            True,
             "with_detection_collapse_right_after_slice", # after the dim collapse we are dim=1
             4,  # In this scenario the continue_if step counts the number of slices for each image, so 4 calls to the email step
             "noreply@example.com",
@@ -435,6 +466,7 @@ def _run_workflow(
             _sliced_4_images,
             SLICED_NAMES,
             SLICED_DETECTION_COUNTS,
+            True,
             "with_detection_collapse_right_after_slice_with_agg_operation",
             2, # The continue-if correctly checks the number of detections for each image (given slices of that image)
             "noreply@example.com",
@@ -454,6 +486,7 @@ def _run_workflow(
             _sliced_4_images,
             SLICED_NAMES,
             SLICED_DETECTION_COUNTS,
+            True,
             "with_detection_collapse_right_after_slice_with_agg_operation_without_message_params",
             2, # The continue-if correctly checks the number of detections for each image (given slices of that image)
             "noreply@example.com",
@@ -473,6 +506,7 @@ def _run_workflow(
             _batch_4_images,
             BATCH_4_IMAGE_NAMES,
             BATCH_4_DETECTION_COUNTS,
+            True,
             "with_detection_collapse_right_after_detect_with_agg_operation",
             1, # The continue-if correctly checks the total number of detections in the batch
             "noreply@example.com",
@@ -488,6 +522,7 @@ def _run_workflow(
             _batch_4_images,
             BATCH_4_IMAGE_NAMES,
             BATCH_4_DETECTION_COUNTS,
+            True,
             "with_detection_collapse_right_after_detect_with_agg_operation_without_message_params",
             1, # The continue-if correctly checks the total number of detections in the batch
             "noreply@example.com",
@@ -503,6 +538,7 @@ def _run_workflow(
             _batch_4_images,
             BATCH_4_IMAGE_NAMES,
             BATCH_4_DETECTION_COUNTS,
+            True,
             "with_detection_collapse_after_continue_if",
             1, # We aggregated the detection lists after continue_if
             "noreply@example.com",
@@ -518,6 +554,7 @@ def _run_workflow(
             _batch_4_images,
             BATCH_4_IMAGE_NAMES,
             [3, 0, 1, 2],
+            True,
             "with_two_continue_if",
             1,
             "noreply@example.com",
@@ -536,6 +573,7 @@ def _run_workflow(
             _sliced_4_images,
             BATCH_4_IMAGE_NAMES,
             SLICED_DETECTION_COUNTS,
+            True,
             "with_two_continue_if_different_control_flow_lineage",
             2, # The smaller of the two control-flow-lineage dimensionalities is used, thus we are masking on the batch level
             "noreply@example.com",
@@ -563,6 +601,7 @@ def _run_workflow(
         "sliced_image_without_email_message_params_and_area_size_step",
         "with_email_gate_and_with_email_message_params",
         "with_email_gate_and_without_email_message_params",
+        "with_email_gate_and_without_email_message_params_and_email_disabled",
         "with_detection_collapse_right_after_slice",
         "with_detection_collapse_right_after_slice_with_agg_operation",
         "with_detection_collapse_right_after_slice_with_agg_operation_without_message_params",
@@ -578,6 +617,7 @@ def test_properly_running_side_effect_step_and_returning_results_in_different_da
     image_gen_fn: callable,
     names: List[str],
     detection_counts: List[int],
+    enable_email: bool,
     workflow_name: str,
     expected_call_count: int,
     expected_receiver_email: str,
@@ -593,6 +633,8 @@ def test_properly_running_side_effect_step_and_returning_results_in_different_da
     inputs = {inp["name"] for inp in workflow_definition.get("inputs", [])}
     if "names" in inputs:
         runtime_parameters["names"] = names
+    if "enable_email" in inputs:
+        runtime_parameters["enable_email"] = enable_email
 
     result = _run_workflow(
         workflow_definition,
@@ -767,10 +809,12 @@ def test_control_flow_lineage_using_workflow_with_scalar_only_block_parses_and_r
     expect_result",
     [
         ("with_scalar_only_step_getting_batch_data", BATCH_4_IMAGE_NAMES, BATCH_4_IMAGE_NAMES),
+        ("with_scalar_only_step_getting_batch_data_only_control_flow_lineage", ["img1", "img2", "img3", "not"], ["foobar"] * 3),
         ("with_scalar_only_step_getting_batch_data_only_control_flow_lineage", BATCH_4_IMAGE_NAMES, ["foobar"] * len(BATCH_4_IMAGE_NAMES)),
     ],
     ids=[
         "with_scalar_only_step_getting_batch_data",
+        "with_scalar_only_step_getting_batch_data_only_control_flow_lineage_with_not_all_elements_meeting_requirements",
         "with_scalar_only_step_getting_batch_data_only_control_flow_lineage",
     ],
 )
@@ -801,9 +845,25 @@ def test_control_flow_lineage_using_workflow_with_scalar_only_block_that_gets_ba
         assert result[i]["result"] == expect_result[i]
 
 
+@pytest.mark.parametrize(
+    "workflow_name, \
+    names, \
+    expect_result",
+    [
+        ("with_batch_only_step_with_batch_data", BATCH_4_IMAGE_NAMES, BATCH_4_IMAGE_NAMES),
+        ("with_batch_only_step_without_batch_data", BATCH_4_IMAGE_NAMES, ["foobar"] * len(BATCH_4_IMAGE_NAMES)),
+    ],
+    ids=[
+        "with_batch_only_step_with_batch_data",
+        "with_batch_only_step_without_batch_data",
+    ],
+)
 @mock.patch.object(blocks_loader, "get_plugin_modules")
 def test_control_flow_lineage_using_workflow_with_batch_only_block_that_gets_batch_data(
     get_plugin_modules_mock: MagicMock,
+    workflow_name: str,
+    names: List[str],
+    expect_result: str,
 ) -> None:
     """Workflow with batch_only_echo (optional batch-only input) wired to $inputs.names runs and echoes batch."""
     get_plugin_modules_mock.return_value = [
@@ -811,7 +871,7 @@ def test_control_flow_lineage_using_workflow_with_batch_only_block_that_gets_bat
     ]
     execution_engine = ExecutionEngine.init(
         workflow_definition=_load_workflow_definition(
-            "with_batch_only_step_getting_batch_data"
+            workflow_name
         ),
         init_parameters={
             "workflows_core.model_manager": None,
@@ -821,11 +881,11 @@ def test_control_flow_lineage_using_workflow_with_batch_only_block_that_gets_bat
         max_concurrent_steps=1,
     )
     result = execution_engine.run(
-        runtime_parameters={"names": BATCH_4_IMAGE_NAMES},
+        runtime_parameters={"names": names},
     )
-    assert len(result) == len(BATCH_4_IMAGE_NAMES)
-    for i in range(len(BATCH_4_IMAGE_NAMES)):
-        assert result[i]["result"] == BATCH_4_IMAGE_NAMES[i]
+    assert len(result) == len(expect_result)
+    for i in range(len(expect_result)):
+        assert result[i]["result"] == expect_result[i]
 
 
 # @patch(
