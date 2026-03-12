@@ -111,9 +111,18 @@ def _worker_main(
                         args, kwargs = pickle.loads(payload)
 
                     result = model.infer(*args, **kwargs)
+                    del args, kwargs  # release CUDA IPC tensors
                     send({"type": "result"}, _ipc_pickle(result))
                 except Exception as e:
                     send({"type": "error", "traceback": traceback.format_exc()})
+                finally:
+                    args = kwargs = None  # ensure cleanup even on error path
+                    try:
+                        import torch
+                        if torch.cuda.is_available():
+                            torch.cuda.empty_cache()
+                    except ImportError:
+                        pass
     finally:
         input_shm.close()
         socket.close()
