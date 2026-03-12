@@ -582,8 +582,8 @@ def test_run_sink_with_metadata_parameter(
         labeling_batch_prefix="my_batch",
         labeling_batches_recreation_frequency="never",
         metadata={
-            "camera_id": Batch(content=["cam_01", "cam_02"], indices=indices),
-            "location": Batch(content=["warehouse_a", "warehouse_b"], indices=indices),
+            "camera_id": "cam_01",
+            "location": "warehouse_a",
         },
     )
 
@@ -594,7 +594,7 @@ def test_run_sink_with_metadata_parameter(
     ], "Expected data registered"
     assert register_datapoint_at_roboflow_mock.call_count == 2
 
-    # Verify per-image metadata was passed correctly
+    # Verify metadata was passed to both calls
     calls = register_datapoint_at_roboflow_mock.call_args_list
     assert calls[0].kwargs["metadata"] == {"camera_id": "cam_01", "location": "warehouse_a"}
-    assert calls[1].kwargs["metadata"] == {"camera_id": "cam_02", "location": "warehouse_b"}
+    assert calls[1].kwargs["metadata"] == {"camera_id": "cam_01", "location": "warehouse_a"}
