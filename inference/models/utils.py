@@ -717,6 +717,10 @@ if USE_INFERENCE_MODELS:
                 ROBOFLOW_MODEL_TYPES[(task, variant)] = (
                     InferenceModelsObjectDetectionAdapter
                 )
+            elif task == "object-detection" and variant.startswith("yolo26"):
+                ROBOFLOW_MODEL_TYPES[(task, variant)] = (
+                    InferenceModelsObjectDetectionAdapter
+                )
             elif task == "object-detection" and variant.startswith("yolo_nas"):
                 ROBOFLOW_MODEL_TYPES[(task, variant)] = (
                     InferenceModelsObjectDetectionAdapter
@@ -729,11 +733,19 @@ if USE_INFERENCE_MODELS:
                 ROBOFLOW_MODEL_TYPES[(task, variant)] = (
                     InferenceModelsInstanceSegmentationAdapter
                 )
+            elif task == "instance-segmentation" and variant.startswith("yolo26"):
+                ROBOFLOW_MODEL_TYPES[(task, variant)] = (
+                    InferenceModelsInstanceSegmentationAdapter
+                )
             elif task == "instance-segmentation" and variant.startswith("yolact"):
                 ROBOFLOW_MODEL_TYPES[(task, variant)] = (
                     InferenceModelsInstanceSegmentationAdapter
                 )
             elif task == "keypoint-detection" and variant.startswith("yolov"):
+                ROBOFLOW_MODEL_TYPES[(task, variant)] = (
+                    InferenceModelsKeyPointsDetectionAdapter
+                )
+            elif task == "keypoint-detection" and variant.startswith("yolo26"):
                 ROBOFLOW_MODEL_TYPES[(task, variant)] = (
                     InferenceModelsKeyPointsDetectionAdapter
                 )
