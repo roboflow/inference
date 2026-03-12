@@ -229,8 +229,16 @@ def get_model_type(
             device_id=GLOBAL_DEVICE_ID,
         ).get("ort")
         project_task_type = api_data.get("type", "object-detection")
-    else:
+    elif not USE_INFERENCE_MODELS:
         api_data = get_roboflow_instant_model_data(
+            api_key=api_key,
+            model_id=model_id,
+            countinference=countinference,
+            service_secret=service_secret,
+        )
+        project_task_type = api_data.get("taskType", "object-detection")
+    else:
+        api_data = get_model_metadata_from_inference_models_registry(
             api_key=api_key,
             model_id=model_id,
             countinference=countinference,

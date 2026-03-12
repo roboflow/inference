@@ -955,7 +955,11 @@ class InferenceModelsSemanticSegmentationAdapter(Model):
                 class_map=self.class_map,
                 image=dict(response_image),
             )
-            responses.append(response_predictions)
+            response = SemanticSegmentationInferenceResponse(
+                predictions=response_predictions,
+                image=response_image,
+            )
+            responses.append(response)
         return responses
 
     def clear_cache(self, delete_from_disk: bool = True) -> None:
