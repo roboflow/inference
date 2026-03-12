@@ -246,7 +246,10 @@ class StepNode(ExecutionGraphNode):
         return len(self.data_lineage)
 
     def is_batch_oriented(self) -> bool:
-        return len(self.batch_oriented_parameters) > 0 or len(self.control_flow_lineage_support) > 0
+        return (
+            len(self.batch_oriented_parameters) > 0
+            or len(self.control_flow_lineage_support) > 0
+        )
 
 
 @dataclass(frozen=True)

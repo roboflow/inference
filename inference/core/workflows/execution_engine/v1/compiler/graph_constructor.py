@@ -16,7 +16,6 @@ from inference.core.workflows.errors import (
     InvalidReferenceTargetError,
     StepInputDimensionalityError,
     StepInputLineageError,
-    StepOutputLineageError,
     WorkflowBlockError,
 )
 from inference.core.workflows.execution_engine.constants import (
@@ -783,13 +782,15 @@ def denote_data_flow_for_step(
             data_lineage = []
         control_flow_lineage_support = []
     else:
-        data_lineage, control_flow_lineage_support = establish_batch_oriented_step_lineage(
-            step_selector=node,
-            all_data_derived_lineages=all_data_derived_lineages,
-            all_control_flow_lineages=all_control_flow_lineages,
-            input_data=input_data,
-            dimensionality_reference_property=dimensionality_reference_property,
-            output_dimensionality_offset=output_dimensionality_offset,
+        data_lineage, control_flow_lineage_support = (
+            establish_batch_oriented_step_lineage(
+                step_selector=node,
+                all_data_derived_lineages=all_data_derived_lineages,
+                all_control_flow_lineages=all_control_flow_lineages,
+                input_data=input_data,
+                dimensionality_reference_property=dimensionality_reference_property,
+                output_dimensionality_offset=output_dimensionality_offset,
+            )
         )
     step_node_data.step_execution_dimensionality = (
         establish_step_execution_dimensionality(
@@ -1474,6 +1475,7 @@ def verify_compatibility_of_input_data_lineage_with_control_flow_lineage(
                 context="workflow_compilation | execution_graph_construction | verification_of_control_flow_lineage",
             )
 
+
 def get_all_batch_lineage_prefixes(lineages: List[List[str]]) -> List[List[str]]:
     result = []
     already_spotted = set()
@@ -1930,7 +1932,9 @@ def get_reference_lineage(
 ) -> Tuple[List[str], List[str]]:
     if not all_data_derived_lineages:
         if len(all_control_flow_lineages) == 1:
-            return copy(all_control_flow_lineages[0]), copy(all_control_flow_lineages[0])
+            return copy(all_control_flow_lineages[0]), copy(
+                all_control_flow_lineages[0]
+            )
         # Multiple control-flow lineages and no data-derived lineage: pick the shortest.
         # Mask intersection in the executor (get_masks_intersection_up_to_dimension) truncates
         # each branch's indices to [:dimension] and intersects. Only at the minimum lineage
@@ -1938,10 +1942,12 @@ def get_reference_lineage(
         # indices would not match shorter ones, giving empty or wrong intersections.
         min_lineage_len = min(len(lineage) for lineage in all_control_flow_lineages)
         lineages_matching_min_len = [
-            l for l in all_control_flow_lineages if len(l) == min_lineage_len
+            _lineage for _lineage in all_control_flow_lineages if len(_lineage) == min_lineage_len
         ]
         if len(lineages_matching_min_len) == 1:
-            return copy(lineages_matching_min_len[0]), copy(lineages_matching_min_len[0])
+            return copy(lineages_matching_min_len[0]), copy(
+                lineages_matching_min_len[0]
+            )
         else:
             raise ValueError(
                 "SAFE-GUARD - multiple control-flow lineages with same minimum length "

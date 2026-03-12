@@ -435,9 +435,7 @@ def prepare_parameters(
         mask_dimension = len(step_node.control_flow_lineage_support)
         mask_for_dimension = masks.get(mask_dimension)
         if mask_for_dimension is not None:
-            indices = [
-                idx for idx in indices if idx in mask_for_dimension
-            ]
+            indices = [idx for idx in indices if idx in mask_for_dimension]
     else:
         indices = batch_parameters_indices[0]
     if not step_node.step_manifest.accepts_empty_values():
@@ -937,7 +935,9 @@ def remove_indices(value: Any, indices: Set[DynamicBatchIndex]) -> Any:
 
 def unfold_parameters(
     parameters: Dict[str, Any],
-    indices: Optional[List[tuple]] = None,  # TODO: none here is only for unit tests to pass
+    indices: Optional[
+        List[tuple]
+    ] = None,  # TODO: none here is only for unit tests to pass
 ) -> Generator[Dict[str, Any], None, None]:
     batch_parameters = get_batch_parameters(parameters=parameters)
     non_batch_parameters = {
