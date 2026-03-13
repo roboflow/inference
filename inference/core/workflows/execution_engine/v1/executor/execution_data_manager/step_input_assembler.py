@@ -272,7 +272,8 @@ def construct_mask_for_all_inputs_dimensionalities(
     inputs_dimensionalities = collect_inputs_dimensionalities(step_node=step_node)
     all_dimensionalities = {dim for dim in inputs_dimensionalities.values() if dim > 0}
     if step_node.control_flow_lineage_support:
-        all_dimensionalities.add(len(step_node.control_flow_lineage_support))
+        for dim_level in range(1, len(step_node.control_flow_lineage_support) + 1):
+            all_dimensionalities.add(dim_level)
     batch_masks, non_batch_masks = [], set()
     for execution_branch in step_node.execution_branches_impacting_inputs:
         if not branching_manager.is_execution_branch_registered(
@@ -320,30 +321,45 @@ def collect_inputs_dimensionalities(
     return result
 
 
-def get_masks_intersection_for_dimensions(
+def intersect_masks_per_dimension(
     batch_masks: List[Set[DynamicBatchIndex]],
     dimensions: Set[int],
-) -> Dict[int, Optional[Set[DynamicBatchIndex]]]:
-    # TODO: verify with unit tests! Claude implementation
-    if not batch_masks:
-        return {dim: None for dim in dimensions}
+) -> Dict[int, Set[DynamicBatchIndex]]:
+    """Intersect masks at each dimensionality level.
 
+    For each dimension d, returns the set of indices (with length d) that appear
+    in every mask that has at least one index at that dimension. Masks with no
+    indices at d are ignored for that dimension. Used for intra-dimensional
+    intersection.
+    """
     sorted_dims = sorted(dimensions)
+    result: Dict[int, Set[DynamicBatchIndex]] = {}
+    for dim in sorted_dims:
+        sets_at_dim = [
+            {idx for idx in mask if len(idx) == dim} for mask in batch_masks
+        ]
+        non_empty = [s for s in sets_at_dim if s]
+        result[dim] = set.intersection(*non_empty) if non_empty else set()
+    return result
+
+
+def filter_to_valid_prefix_chains(
+    per_dim_sets: Dict[int, Set[DynamicBatchIndex]],
+    dimensions: Set[int],
+) -> Dict[int, Set[DynamicBatchIndex]]:
+    """Keep only indices that form a complete parent-child chain across dimensions.
+
+    Given per-dimension sets (e.g. from intersect_masks_per_dimension), retains
+    only indices that have a full lineage from the smallest to the largest
+    dimension. Used for inter-level intersection.
+    """
+    sorted_dims = sorted(dimensions)
+    by_dim: Dict[int, Set[DynamicBatchIndex]] = {
+        dim: per_dim_sets.get(dim, set()) for dim in sorted_dims
+    }
 
     if len(sorted_dims) <= 1:
-        result: Dict[int, Optional[Set[DynamicBatchIndex]]] = {}
-        for dim in sorted_dims:
-            sets_at_dim = [
-                {idx for idx in mask if len(idx) == dim} for mask in batch_masks
-            ]
-            result[dim] = set.intersection(*sets_at_dim) if sets_at_dim else set()
-        return result
-
-    # Group indices by their tuple length, only keeping relevant dimensions
-    by_dim: Dict[int, Set[DynamicBatchIndex]] = {dim: set() for dim in sorted_dims}
-    for mask in batch_masks:
-        for idx in mask:
-            by_dim[len(idx)].add(idx)
+        return dict(by_dim)
 
     prev_dim = {sorted_dims[i]: sorted_dims[i - 1] for i in range(1, len(sorted_dims))}
 
@@ -369,6 +385,24 @@ def get_masks_intersection_for_dimensions(
                     valid[dim].add(idx)
 
     return valid
+
+
+def get_masks_intersection_for_dimensions(
+    batch_masks: List[Set[DynamicBatchIndex]],
+    dimensions: Set[int],
+) -> Dict[int, Optional[Set[DynamicBatchIndex]]]:
+    """Intersect masks at each dimension and filter to valid prefix chains."""
+    if not batch_masks:
+        return {dim: None for dim in dimensions}
+
+    sorted_dims = sorted(dimensions)
+
+    if len(sorted_dims) <= 1:
+        result = intersect_masks_per_dimension(batch_masks, dimensions)
+        return {dim: result[dim] for dim in sorted_dims}
+
+    per_dim = intersect_masks_per_dimension(batch_masks, dimensions)
+    return filter_to_valid_prefix_chains(per_dim, dimensions)
 
 
 class GuardForIndicesWrapping:
