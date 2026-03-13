@@ -865,11 +865,9 @@ def test_control_flow_lineage_using_workflow_with_scalar_only_block_that_gets_ba
     expect_result",
     [
         ("with_batch_only_step_with_batch_data", BATCH_4_IMAGE_NAMES, BATCH_4_IMAGE_NAMES),
-        # ("with_batch_only_step_without_batch_data", BATCH_4_IMAGE_NAMES, ["foobar"] * len(BATCH_4_IMAGE_NAMES)),
     ],
     ids=[
         "with_batch_only_step_with_batch_data",
-        # "with_batch_only_step_without_batch_data",
     ],
 )
 @mock.patch.object(blocks_loader, "get_plugin_modules")
