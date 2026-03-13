@@ -1952,8 +1952,12 @@ def get_reference_lineage(
             )
         else:
             raise AssumptionError(
-                "SAFE-GUARD - multiple control-flow lineages with same minimum length "
-                "and no data-derived lineage; unique shortest lineage required."
+                public_message=f"Multiple control-flow lineages at the same level for step `{step_selector}` "
+                f"and no data-derived lineage; unique lineage level required. "
+                f"Contact Roboflow team through github issues "
+                f"(https://github.com/roboflow/inference/issues) providing full "
+                f"context of the problem - including workflow definition you use.",
+                context="workflow_compilation | execution_graph_construction | collecting_step_inputs_lineage",
             )
     if len(all_data_derived_lineages) == 1:
         return copy(all_data_derived_lineages[0]), []
