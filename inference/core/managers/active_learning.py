@@ -72,7 +72,7 @@ class ActiveLearningManager(ModelManager):
     ) -> None:
         try:
             resolved_model_id = resolve_roboflow_model_alias(model_id=model_id)
-            if not hasattr(prediction, "active_learning_target_dataset"):
+            if not hasattr(request, "active_learning_target_dataset"):
                 return None
             target_dataset = (
                 request.active_learning_target_dataset
