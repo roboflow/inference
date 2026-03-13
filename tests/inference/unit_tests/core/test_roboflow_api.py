@@ -17,6 +17,7 @@ from inference.core.exceptions import (
     MalformedRoboflowAPIResponseError,
     MalformedWorkflowResponseError,
     MissingDefaultModelError,
+    PaymentRequiredError,
     RetryRequestError,
     RoboflowAPIConnectionError,
     RoboflowAPIIAlreadyAnnotatedError,
@@ -27,7 +28,7 @@ from inference.core.exceptions import (
     RoboflowAPITimeoutError,
     RoboflowAPIUnsuccessfulRequestError,
     RoboflowAPIUsagePausedError,
-    WorkspaceLoadError, PaymentRequiredError,
+    WorkspaceLoadError,
 )
 from inference.core.roboflow_api import (
     ModelEndpointType,
@@ -49,8 +50,8 @@ from inference.core.roboflow_api import (
     wrap_roboflow_api_errors,
     wrap_roboflow_api_errors_async,
 )
-from inference.core.version import __version__
 from inference.core.utils.url_utils import wrap_url
+from inference.core.version import __version__
 
 
 class TestException(Exception):
