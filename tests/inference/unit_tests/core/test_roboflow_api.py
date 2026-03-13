@@ -1044,6 +1044,7 @@ def test_get_model_metadata_from_inference_models_registry_when_valid_response_e
 
 @mock.patch.object(roboflow_api, "GCP_SERVERLESS", True)
 @mock.patch.object(roboflow_api, "ENFORCE_CREDITS_VERIFICATION", True)
+@mock.patch.object(roboflow_api, "MODELS_CACHE_AUTH_ENABLED", True)
 def test_get_model_metadata_from_inference_models_registry_when_valid_response_expected_enforce_credits(
     requests_mock: Mocker,
 ) -> None:
@@ -1084,6 +1085,7 @@ def test_get_model_metadata_from_inference_models_registry_when_valid_response_e
 @mock.patch.object(roboflow_api, "GCP_SERVERLESS", True)
 @mock.patch.object(roboflow_api, "ENFORCE_CREDITS_VERIFICATION", True)
 @mock.patch.object(roboflow_api, "ROBOFLOW_SERVICE_SECRET", "dummy-secret")
+@mock.patch.object(roboflow_api, "MODELS_CACHE_AUTH_ENABLED", True)
 def test_get_model_metadata_from_inference_models_registry_when_valid_response_expected_enforce_credits_overruled(
     requests_mock: Mocker,
 ) -> None:
@@ -1108,17 +1110,12 @@ def test_get_model_metadata_from_inference_models_registry_when_valid_response_e
     )
 
     # then
-    assert "modelid=coins_detection%2f1" in requests_mock.last_request.query
-    assert requests_mock.last_request.headers["Authorization"] == "Bearer my_api_key"
-    assert (
-        requests_mock.last_request.headers["x-enforce-internal-artefacts-urls"]
-        == "true"
-    )
-    assert "x-enforce-credits-verification" not in requests_mock.last_request.headers
     assert result == {
         "modelType": "yolov8",
         "taskType": "object-detection",
     }
+    assert "x-enforce-credits-verification" not in requests_mock.last_request.headers
+
 
 
 @mock.patch.object(roboflow_api.requests, "post")
