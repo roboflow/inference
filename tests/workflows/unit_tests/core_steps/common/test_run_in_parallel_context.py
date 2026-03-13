@@ -1,11 +1,5 @@
 from asgi_correlation_id import correlation_id
 
-from inference_sdk.config import (
-    RemoteProcessingTimeCollector,
-    execution_id,
-    remote_processing_times,
-)
-
 from inference.core.managers.model_load_collector import (
     ModelLoadCollector,
     RequestModelIds,
@@ -13,6 +7,11 @@ from inference.core.managers.model_load_collector import (
     request_model_ids,
 )
 from inference.core.workflows.core_steps.common.utils import run_in_parallel
+from inference_sdk.config import (
+    RemoteProcessingTimeCollector,
+    execution_id,
+    remote_processing_times,
+)
 
 
 def test_run_in_parallel_propagates_processing_time_collector() -> None:

@@ -5,9 +5,9 @@ import pytest
 
 from inference.core.interfaces.camera.entities import SourceProperties
 from inference.core.interfaces.camera.test_pattern_producer import (
+    FPS,
     HEIGHT,
     WIDTH,
-    FPS,
     TestPatternStreamProducer,
     generate_frame,
 )
@@ -73,7 +73,10 @@ def test_video_source_starts_and_reads_frames_from_test_pattern():
         assert metadata.source_properties.height == HEIGHT
         assert metadata.source_properties.fps == float(FPS)
         assert metadata.source_id == 99
-        assert metadata.buffer_filling_strategy is BufferFillingStrategy.ADAPTIVE_DROP_OLDEST
+        assert (
+            metadata.buffer_filling_strategy
+            is BufferFillingStrategy.ADAPTIVE_DROP_OLDEST
+        )
         assert metadata.buffer_consumption_strategy is BufferConsumptionStrategy.EAGER
     finally:
         source.terminate(wait_on_frames_consumption=False, purge_frames_buffer=True)
