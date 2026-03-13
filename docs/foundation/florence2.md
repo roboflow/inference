@@ -34,13 +34,13 @@ When using Florence-2 in a workflow, you can specify the execution mode to contr
     To install `inference` with Florence 2 support use the following command on CPU machine:
 
     ```bash
-    pip install inference[transformers]
+    pip install "inference[transformers]"
     ```
 
     or the following one for GPU machine:
 
     ```bash
-    pip install inference-gpu[transformers]
+    pip install "inference-gpu[transformers]"
     ```
 
 Create a new Python file called `app.py` and add the following code:
