@@ -1049,6 +1049,10 @@ async def init_rtc_peer_connection_with_loop(
         )
         video_processor.set_track(track=player.video)
 
+        # Default fps for billing when not explicitly declared
+        if video_processor._declared_fps is None:
+            video_processor._declared_fps = 30
+
         # For DATA_ONLY mode, start data-only processing task
         if not should_send_video:
             logger.info("Starting data-only processing for RTSP stream")
@@ -1058,6 +1062,10 @@ async def init_rtc_peer_connection_with_loop(
         logger.info("Processing MJPEG URL: %s", webrtc_request.mjpeg_url)
         player = MediaPlayer(webrtc_request.mjpeg_url)
         video_processor.set_track(track=player.video)
+
+        # Default fps for billing when not explicitly declared
+        if video_processor._declared_fps is None:
+            video_processor._declared_fps = 30
 
         if not should_send_video:
             logger.info("Starting data-only processing for MJPEG stream")
