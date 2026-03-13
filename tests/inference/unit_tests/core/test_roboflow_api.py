@@ -783,6 +783,21 @@ def test_get_roboflow_model_data_when_connection_error_occurs(
         )
 
 
+@mock.patch.object(roboflow_api.requests, "get")
+def test_get_model_metadata_from_inference_models_registry_when_connection_error_occurs(
+    get_mock: MagicMock,
+) -> None:
+    # given
+    get_mock.side_effect = ConnectionError()
+
+    # when
+    with pytest.raises(RoboflowAPIConnectionError):
+        _ = get_model_metadata_from_inference_models_registry(
+            api_key="my_api_key",
+            model_id="coins_detection/1",
+        )
+
+
 def test_get_roboflow_model_data_when_wrong_api_key_used(requests_mock: Mocker) -> None:
     # given
     requests_mock.get(
@@ -803,6 +818,28 @@ def test_get_roboflow_model_data_when_wrong_api_key_used(requests_mock: Mocker) 
     params = ["api_key=my_api_key", "nocache=true", "device=some", "dynamic=true"]
     for param in params:
         assert param in requests_mock.last_request.query
+
+def test_get_model_metadata_from_inference_models_registry_when_wrong_api_key_used(requests_mock: Mocker) -> None:
+    # given
+    requests_mock.get(
+        url=wrap_url(f"{API_BASE_URL}/ort/coins_detection/1"),
+        status_code=401,
+    )
+
+    # when
+    with pytest.raises(RoboflowAPINotAuthorizedError):
+        _ = get_roboflow_model_data(
+            api_key="my_api_key",
+            model_id="coins_detection/1",
+            endpoint_type=ModelEndpointType.ORT,
+            device_id="some",
+        )
+
+    # then
+    params = ["api_key=my_api_key", "nocache=true", "device=some", "dynamic=true"]
+    for param in params:
+        assert param in requests_mock.last_request.query
+
 
 
 def test_get_roboflow_model_data_when_wrong_model_used(requests_mock: Mocker) -> None:
