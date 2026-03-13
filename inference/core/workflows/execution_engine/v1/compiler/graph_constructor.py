@@ -773,7 +773,9 @@ def denote_data_flow_for_step(
     )
     step_node_data.input_data = input_data
     step_node_data.dimensionality_reference_property = dimensionality_reference_property
-    step_node_data.control_flow_lineage_dims = [len(_lineage) for _lineage in all_control_flow_lineages if _lineage]
+    step_node_data.control_flow_lineage_dims = [
+        len(_lineage) for _lineage in all_control_flow_lineages if _lineage
+    ]
     step_node_data.batch_oriented_parameters = parameters_with_batch_inputs
     if not all_data_derived_lineages and not all_control_flow_lineages:
         if manifest.get_output_dimensionality_offset() > 0:

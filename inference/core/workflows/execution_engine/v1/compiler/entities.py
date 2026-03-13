@@ -235,11 +235,15 @@ class StepNode(ExecutionGraphNode):
     )
     control_flow_lineage_dims: List[int] = field(
         default_factory=list,
-        metadata={"help": "The number of dimensions at which masks are provided through the control-flow lineage support"},
+        metadata={
+            "help": "The number of dimensions at which masks are provided through the control-flow lineage support"
+        },
     )
     control_flow_lineage_support: List[str] = field(
         default_factory=list,
-        metadata={"help": "The deepest control-flow lineage (mask level) supported by the step"},
+        metadata={
+            "help": "The deepest control-flow lineage (mask level) supported by the step"
+        },
     )
     step_execution_dimensionality: int = 0
 

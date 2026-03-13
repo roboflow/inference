@@ -333,9 +333,7 @@ def intersect_masks_per_dimension(
     sorted_dims = sorted(dimensions)
     result: Dict[int, Set[DynamicBatchIndex]] = {}
     for dim in sorted_dims:
-        sets_at_dim = [
-            {idx for idx in mask if len(idx) == dim} for mask in batch_masks
-        ]
+        sets_at_dim = [{idx for idx in mask if len(idx) == dim} for mask in batch_masks]
         non_empty = [s for s in sets_at_dim if s]
         result[dim] = set.intersection(*non_empty) if non_empty else set()
     return result
