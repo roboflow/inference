@@ -3,9 +3,9 @@ This is just example, test implementation, please do not assume it being fully f
 """
 
 import random
-from typing import Any, Dict, List, Literal, Type, Union
+from typing import Any, Dict, List, Literal, Optional, Type, Union
 
-from pydantic import ConfigDict, Field
+from pydantic import AliasChoices, ConfigDict, Field
 
 from inference.core.workflows.core_steps.common.query_language.entities.operations import (
     StatementGroup,
@@ -15,6 +15,9 @@ from inference.core.workflows.core_steps.common.query_language.evaluation_engine
 )
 from inference.core.workflows.execution_engine.entities.base import OutputDefinition
 from inference.core.workflows.execution_engine.entities.types import (
+    IMAGE_KIND,
+    STRING_KIND,
+    Selector,
     StepOutputSelector,
     StepSelector,
     WorkflowImageSelector,
@@ -121,5 +124,189 @@ class ConditionBlock(WorkflowBlock):
         return flow_control
 
 
+class AlwaysMoveManifest(WorkflowBlockManifest):
+    type: Literal["AlwaysMove"]
+    name: str = Field(description="name field")
+    a_step: StepSelector
+    evaluation_parameters: Dict[
+        str,
+        Selector(),
+    ] = Field(
+        description="Dictionary mapping operand names (used in condition_statement) to actual values from the workflow. These parameters provide the dynamic data that gets evaluated in the conditional statement. Keys match operand names in the condition (e.g., 'left', 'right'), and values are selectors referencing workflow inputs, step outputs, or computed values. Example: {'left': '$steps.detection.count', 'threshold': 5} where 'left' is referenced in the condition_statement.",
+        examples=[{"left": "$inputs.some"}],
+        default_factory=lambda: {},
+    )
+
+    @classmethod
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        return []
+
+
+class AlwaysMoveBlock(WorkflowBlock):
+
+    @classmethod
+    def get_manifest(cls) -> Type[WorkflowBlockManifest]:
+        return AlwaysMoveManifest
+
+    def run(
+        self,
+        a_step: StepSelector,
+        evaluation_parameters: dict,
+    ) -> BlockResult:
+        return FlowControl(context=a_step)
+
+
+class AlwaysStopManifest(WorkflowBlockManifest):
+    type: Literal["AlwaysStop"]
+    name: str = Field(description="name field")
+    a_step: StepSelector
+    evaluation_parameters: Dict[
+        str,
+        Selector(),
+    ] = Field(
+        description="Dictionary mapping operand names (used in condition_statement) to actual values from the workflow. These parameters provide the dynamic data that gets evaluated in the conditional statement. Keys match operand names in the condition (e.g., 'left', 'right'), and values are selectors referencing workflow inputs, step outputs, or computed values. Example: {'left': '$steps.detection.count', 'threshold': 5} where 'left' is referenced in the condition_statement.",
+        examples=[{"left": "$inputs.some"}],
+        default_factory=lambda: {},
+    )
+
+    @classmethod
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        return []
+
+
+class AlwaysStopBlock(WorkflowBlock):
+
+    @classmethod
+    def get_manifest(cls) -> Type[WorkflowBlockManifest]:
+        return AlwaysStopManifest
+
+    def run(
+        self,
+        a_step: StepSelector,
+        evaluation_parameters: dict,
+    ) -> BlockResult:
+        return FlowControl(context=None)
+
+
+class MoveEvenManifest(WorkflowBlockManifest):
+    type: Literal["MoveEven"]
+    name: str = Field(description="name field")
+    a_step: StepSelector
+    evaluation_parameters: Dict[
+        str,
+        Selector(),
+    ] = Field(
+        description="Dictionary mapping operand names (used in condition_statement) to actual values from the workflow. These parameters provide the dynamic data that gets evaluated in the conditional statement. Keys match operand names in the condition (e.g., 'left', 'right'), and values are selectors referencing workflow inputs, step outputs, or computed values. Example: {'left': '$steps.detection.count', 'threshold': 5} where 'left' is referenced in the condition_statement.",
+        examples=[{"left": "$inputs.some"}],
+        default_factory=lambda: {},
+    )
+
+    @classmethod
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        return []
+
+
+class MoveEvenBlock(WorkflowBlock):
+
+    @classmethod
+    def get_manifest(cls) -> Type[WorkflowBlockManifest]:
+        return MoveEvenManifest
+
+    def __init__(self):
+        self._runs = 0
+
+    def run(
+        self,
+        a_step: StepSelector,
+        evaluation_parameters: dict,
+    ) -> BlockResult:
+        prev_runs = self._runs
+        self._runs += 1
+        if prev_runs % 2 == 0:
+            return FlowControl(context=a_step)
+        else:
+            return FlowControl(context=None)
+
+
+class DimensionalityIncreaseManifest(WorkflowBlockManifest):
+    type: Literal["DimensionalityIncrease"]
+    name: str = Field(description="name field")
+    image: Selector(kind=[IMAGE_KIND]) = Field(
+        title="Input Image",
+        description="The input image or video frame to process for background subtraction. The block processes frames sequentially to build a background model - each frame updates the background model and creates a motion mask showing areas that differ from the learned background. Can be connected from workflow inputs or previous steps.",
+        examples=["$inputs.image", "$steps.cropping.crops"],
+        validation_alias=AliasChoices("image", "images"),
+    )
+
+    @classmethod
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        return [OutputDefinition(name="output", kind=[STRING_KIND])]
+
+    @classmethod
+    def get_output_dimensionality_offset(cls) -> int:
+        return 1
+
+
+class DimensionalityIncreaseBlock(WorkflowBlock):
+
+    @classmethod
+    def get_manifest(cls) -> Type[WorkflowBlockManifest]:
+        return DimensionalityIncreaseManifest
+
+    def run(self, image) -> BlockResult:
+        return [
+            {"output": "a"},
+            {"output": "b"},
+            {"output": "c"},
+            {"output": "d"},
+        ]
+
+
+class ImageAndTextsStitchManifest(WorkflowBlockManifest):
+    type: Literal["ImageAndTextsStitch"]
+    name: str = Field(description="name field")
+    image: Selector(kind=[IMAGE_KIND]) = Field(
+        title="Input Image",
+        description="The input image or video frame to process for background subtraction. The block processes frames sequentially to build a background model - each frame updates the background model and creates a motion mask showing areas that differ from the learned background. Can be connected from workflow inputs or previous steps.",
+        examples=["$inputs.image", "$steps.cropping.crops"],
+        validation_alias=AliasChoices("image", "images"),
+    )
+    texts: Selector(kind=[STRING_KIND])
+
+    @classmethod
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        return [OutputDefinition(name="output", kind=[STRING_KIND])]
+
+    @classmethod
+    def get_dimensionality_reference_property(cls) -> Optional[str]:
+        return "image"
+
+    @classmethod
+    def get_input_dimensionality_offsets(cls) -> Dict[str, int]:
+        return {"texts": 1}
+
+
+class ImageAndTextsStitchBlock(WorkflowBlock):
+
+    @classmethod
+    def get_manifest(cls) -> Type[WorkflowBlockManifest]:
+        return ImageAndTextsStitchManifest
+
+    def run(self, image, texts) -> BlockResult:
+        result = []
+        for text in texts:
+            print("text", text)
+            result.append(text)
+        return {"output": ", ".join(result)}
+
+
 def load_blocks() -> List[Type[WorkflowBlock]]:
-    return [ABTestBlock, ConditionBlock]
+    return [
+        ABTestBlock,
+        ConditionBlock,
+        AlwaysMoveBlock,
+        AlwaysStopBlock,
+        MoveEvenBlock,
+        DimensionalityIncreaseBlock,
+        ImageAndTextsStitchBlock,
+    ]

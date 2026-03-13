@@ -149,7 +149,9 @@ def build_sequence_apply_operation(
         )
         operations_functions.append(operation_function)
     chained_function = partial(chain, functions=operations_functions)
-    return partial(sequence_apply, fun=chained_function)
+    return partial(
+        sequence_apply, fun=chained_function, execution_context=execution_context
+    )
 
 
 def chain(

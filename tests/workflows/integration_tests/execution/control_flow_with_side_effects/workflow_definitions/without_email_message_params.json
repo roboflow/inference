@@ -1,0 +1,54 @@
+{
+  "version": "1.0",
+  "inputs": [
+    {"type": "WorkflowImage", "name": "image"}
+  ],
+  "steps": [
+    {
+      "type": "roboflow_core/roboflow_object_detection_model@v2",
+      "name": "detection",
+      "image": "$inputs.image",
+      "model_id": "yolov8n-640",
+      "class_filter": ["person"]
+    },
+    {
+      "type": "ContinueIf",
+      "name": "continue_if",
+      "condition_statement": {
+        "type": "StatementGroup",
+        "statements": [
+          {
+            "type": "BinaryStatement",
+            "left_operand": {
+              "type": "DynamicOperand",
+              "operand_name": "prediction",
+              "operations": [{"type": "SequenceLength"}]
+            },
+            "comparator": {"type": "(Number) >="},
+            "right_operand": {
+              "type": "StaticOperand",
+              "value": 1
+            }
+          }
+        ]
+      },
+      "evaluation_parameters": {"prediction": "$steps.detection.predictions"},
+      "next_steps": ["$steps.email_notification"]
+    },
+    {
+      "type": "roboflow_core/email_notification@v2",
+      "name": "email_notification",
+      "subject": "Detections found",
+      "receiver_email": "noreply@example.com",
+      "message": "Detection(s) found for this image.",
+      "cooldown_seconds": 0
+    }
+  ],
+  "outputs": [
+    {
+      "type": "JsonField",
+      "name": "email_message",
+      "selector": "$steps.email_notification.message"
+    }
+  ]
+}
