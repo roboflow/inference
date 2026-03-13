@@ -90,6 +90,7 @@ def _worker_main(
         try:
             from inference_models.models.auto_loaders.core import AutoModel
             model = AutoModel.from_pretrained(model_id, api_key=api_key, **model_kwargs)
+            print(model.__class__.__name__)
             class_names = getattr(model, "class_names", None)
             send({"status": "ready", "class_names": class_names})
         except Exception as e:
@@ -125,6 +126,12 @@ def _worker_main(
                         pass
     finally:
         input_shm.close()
+        try:
+            import torch
+            if torch.cuda.is_available():
+                torch.cuda.synchronize()
+        except ImportError:
+            pass
         socket.close()
         zmq_ctx.term()
 
@@ -309,7 +316,6 @@ class MultiProcessBackend(Backend):
         - CUDA tensor input → cuda_ipc (ZeroMQ frame, no GPU→CPU copy)
         - CPU / numpy input → shm (shared memory write)
         """
-        import asyncio
         loop = asyncio.get_running_loop()
 
         # Serialize outside the lock — can happen concurrently across callers.
