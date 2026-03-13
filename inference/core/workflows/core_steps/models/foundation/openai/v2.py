@@ -169,6 +169,7 @@ class BlockManifest(WorkflowBlockManifest):
             "gpt-4o",
             "gpt-4o-mini",
             "gpt-5",
+            "gpt-5.4",
         ],
     ] = Field(
         default="gpt-4o",

@@ -10,8 +10,10 @@ from inference.core.env import (
     ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES,
     ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES,
     API_KEY,
+    DISABLED_INFERENCE_MODELS_BACKENDS,
     MAX_DETECTIONS,
     OWLV2_VERSION_ID,
+    VALID_INFERENCE_MODELS_BACKENDS,
 )
 from inference.core.models.base import Model
 from inference.core.models.roboflow import DEFAULT_COLOR_PALETTE
@@ -64,7 +66,15 @@ class InferenceModelsRFInstantModelAdapter(Model):
 
         self.task_type = "object-detection"
         model_access_manager = RFInstantSpecificLiberalModelAccessManager()
-        extra_weights_provider_headers = get_extra_weights_provider_headers()
+        extra_weights_provider_headers = get_extra_weights_provider_headers(
+            countinference=kwargs.get("countinference"),
+            service_secret=kwargs.get("service_secret"),
+        )
+        backend = list(
+            VALID_INFERENCE_MODELS_BACKENDS.difference(
+                DISABLED_INFERENCE_MODELS_BACKENDS
+            )
+        )
         self._model: RoboflowInstantHF = AutoModel.from_pretrained(
             model_id_or_path=model_id,
             api_key=self.api_key,
@@ -72,6 +82,7 @@ class InferenceModelsRFInstantModelAdapter(Model):
             allow_direct_local_storage_loading=ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES,
             model_access_manager=model_access_manager,
             weights_provider_extra_headers=extra_weights_provider_headers,
+            backend=backend,
             **kwargs,
         )
 

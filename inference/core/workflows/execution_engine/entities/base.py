@@ -154,7 +154,11 @@ class Batch(Generic[B]):
 
     def remove_by_indices(self, indices_to_remove: Set[tuple]) -> "Batch":
         filtered_content = [
-            element
+            (
+                element
+                if not isinstance(element, Batch)
+                else element.remove_by_indices(indices_to_remove=indices_to_remove)
+            )
             for index, element in zip(self._indices, self._content)
             if index not in indices_to_remove
         ]

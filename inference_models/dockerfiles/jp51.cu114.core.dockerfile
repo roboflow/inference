@@ -9,7 +9,14 @@ RUN apt-get update -y && apt-get install -y \
     libssl-dev \
     libsqlite3-dev \
     zlib1g-dev \
-    liblzma-dev
+    liblzma-dev \
+    pkg-config \
+    libavcodec-dev \
+    libavformat-dev \
+    libswscale-dev \
+    libavutil-dev \
+    libgstreamer1.0-dev \
+    libgstreamer-plugins-base1.0-dev
 
 RUN mkdir -p /build/python-3.12
 WORKDIR /build/python-3.12
@@ -146,6 +153,7 @@ RUN git clone https://github.com/pytorch/vision.git
 WORKDIR /build/torchvision/vision
 RUN git checkout v0.19.1
 RUN git submodule sync && git submodule update --init --recursive
+RUN python3.12 -m pip install "setuptools<81"
 RUN CC=/root/GCC-11/bin/gcc CXX=/root/GCC-11/bin/g++ FORCE_CUDA=1 PATH=/build/cmake/build/bin:$PATH BUILD_VERSION=0.19.1 TORCH_CUDA_ARCH_LIST="8.7" CUDA_HOME=/usr/local/cuda-11.8 CMAKE_POLICY_VERSION_MINIMUM=3.5 python3.12 setup.py bdist_wheel
 RUN python3.12 -m pip install dist/torchvision-*.whl
 RUN cp dist/torchvision-*.whl /build/out/wheels/
@@ -160,7 +168,8 @@ RUN apt-get update -y && apt-get install -y \
     libssl-dev \
     libsqlite3-dev \
     zlib1g-dev \
-    liblzma-dev
+    liblzma-dev \
+    ffmpeg
 
 RUN apt remove -y 'libnvinfer*' 'libnvonnxparsers*' 'libnvparsers*' 'libnvinfer-plugin*' 'python3-libnvinfer*' 'tensorrt*' 'uff-converter*' 'graphsurgeon*'
 
@@ -186,6 +195,17 @@ ENV LD_LIBRARY_PATH="/opt/gcc-11/lib64:$$LD_LIBRARY_PATH"
 RUN update-alternatives --install /usr/bin/python python /usr/local/bin/python3.12 1
 RUN update-alternatives --install /usr/bin/python3 python3 /usr/local/bin/python3.12 1
 
+# Install ffmpeg/gstreamer dev packages for OpenCV build (must be after COPY from builder)
+RUN apt-get update -y && apt-get install -y --no-install-recommends \
+    pkg-config \
+    libavcodec-dev \
+    libavformat-dev \
+    libswscale-dev \
+    libavutil-dev \
+    libgstreamer1.0-dev \
+    libgstreamer-plugins-base1.0-dev \
+    && rm -rf /var/lib/apt/lists/*
+
 # Install OpenCV
 RUN mkdir -p /build/opencv
 WORKDIR  /build/opencv
@@ -196,9 +216,9 @@ RUN unzip opencv_contrib-4.12.0.zip
 WORKDIR /build/opencv/opencv-4.12.0
 RUN mkdir release
 WORKDIR /build/opencv/opencv-4.12.0/release
-RUN cmake -D WITH_CUDA=ON -D WITH_CUDNN=ON -D CUDA_ARCH_BIN="8.7" -D CUDA_ARCH_PTX="" -D OPENCV_GENERATE_PKGCONFIG=ON -D OPENCV_EXTRA_MODULES_PATH=../../opencv_contrib-4.12.0/modules -D WITH_GSTREAMER=ON -D WITH_LIBV4L=ON -D BUILD_opencv_python3=ON -D BUILD_TESTS=OFF -D BUILD_PERF_TESTS=OFF -D BUILD_EXAMPLES=OFF -D CMAKE_BUILD_TYPE=RELEASE -D CMAKE_INSTALL_PREFIX=/usr/local -D PYTHON3_INCLUDE_DIR=/usr/local/include/python3.12 -D OPENCV_PYTHON3_INSTALL_PATH=/usr/local/lib/python3.12/site-packages -D PYTHON3_EXECUTABLE=/usr/local/bin/python3.12 -D PYTHON_VERSION=312 -DBUILD_SHARED_LIBS=OFF -DWITH_OPENCLAMDFFT=OFF -DWITH_OPENCLAMDBLAS=OFF -DWITH_VA_INTEL=OFF ..
+RUN cmake -D WITH_CUDA=ON -D WITH_CUDNN=ON -D CUDA_ARCH_BIN="8.7" -D CUDA_ARCH_PTX="" -D OPENCV_GENERATE_PKGCONFIG=ON -D OPENCV_EXTRA_MODULES_PATH=../../opencv_contrib-4.12.0/modules -D WITH_FFMPEG=ON -D WITH_GSTREAMER=ON -D WITH_LIBV4L=ON -D BUILD_opencv_python3=ON -D BUILD_TESTS=OFF -D BUILD_PERF_TESTS=OFF -D BUILD_EXAMPLES=OFF -D CMAKE_BUILD_TYPE=RELEASE -D CMAKE_INSTALL_PREFIX=/usr/local -D PYTHON3_INCLUDE_DIR=/usr/local/include/python3.12 -D OPENCV_PYTHON3_INSTALL_PATH=/usr/local/lib/python3.12/site-packages -D PYTHON3_EXECUTABLE=/usr/local/bin/python3.12 -D PYTHON_VERSION=312 -DBUILD_SHARED_LIBS=OFF -DWITH_OPENCLAMDFFT=OFF -DWITH_OPENCLAMDBLAS=OFF -DWITH_VA_INTEL=OFF ..
 RUN make -j$(nproc)
-RUN make install
+RUN make install && ldconfig
 RUN python3.12 -m pip wheel ./python_loader --wheel-dir /build/out/wheels --verbose
 RUN python3.12 -m pip install /build/out/wheels/opencv-4.12.0-py3-none-any.whl
 

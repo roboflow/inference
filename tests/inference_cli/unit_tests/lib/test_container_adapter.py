@@ -334,9 +334,7 @@ class TestImageForL4t:
             (38, 4, JETSON_710),
         ],
     )
-    def test_l4t_to_image(
-        self, l4t_major: int, l4t_minor: int, expected: str
-    ) -> None:
+    def test_l4t_to_image(self, l4t_major: int, l4t_minor: int, expected: str) -> None:
         assert _image_for_l4t(l4t_major, l4t_minor) == expected
 
     def test_returns_none_for_unknown_l4t_major(self) -> None:
@@ -381,8 +379,12 @@ class TestDetectJetson:
         assert "/etc/nv_tegra_release" in source
 
     @patch.object(container_adapter, "_parse_tegra_release", return_value=None)
-    @patch.object(container_adapter, "_get_jetpack_version_from_dpkg", return_value="6.0")
-    def test_falls_back_to_dpkg(self, _dpkg_mock: MagicMock, _tegra_mock: MagicMock) -> None:
+    @patch.object(
+        container_adapter, "_get_jetpack_version_from_dpkg", return_value="6.0"
+    )
+    def test_falls_back_to_dpkg(
+        self, _dpkg_mock: MagicMock, _tegra_mock: MagicMock
+    ) -> None:
         result = _detect_jetson()
         assert result is not None
         image, source = result
@@ -390,8 +392,12 @@ class TestDetectJetson:
         assert "dpkg" in source
 
     @patch.object(container_adapter, "_parse_tegra_release", return_value=None)
-    @patch.object(container_adapter, "_get_jetpack_version_from_dpkg", return_value=None)
-    def test_returns_none_when_not_jetson(self, _dpkg_mock: MagicMock, _tegra_mock: MagicMock) -> None:
+    @patch.object(
+        container_adapter, "_get_jetpack_version_from_dpkg", return_value=None
+    )
+    def test_returns_none_when_not_jetson(
+        self, _dpkg_mock: MagicMock, _tegra_mock: MagicMock
+    ) -> None:
         assert _detect_jetson() is None
 
 
@@ -401,7 +407,9 @@ class TestGetImage:
         assert get_image() == JETSON_620
 
     @mock.patch.dict(os.environ, {}, clear=False)
-    @patch.object(container_adapter, "_detect_jetson", return_value=(JETSON_511, "test"))
+    @patch.object(
+        container_adapter, "_detect_jetson", return_value=(JETSON_511, "test")
+    )
     def test_uses_introspection_when_no_env_var(self, _mock: MagicMock) -> None:
         os.environ.pop("JETSON_JETPACK", None)
         assert get_image() == JETSON_511

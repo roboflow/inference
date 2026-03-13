@@ -15,6 +15,7 @@ from inference_models.models.base.object_detection import (
     ObjectDetectionModel,
     OpenVocabularyObjectDetectionModel,
 )
+from inference_models.models.base.semantic_segmentation import SemanticSegmentationModel
 
 ModelArchitecture = str
 TaskType = Optional[str]
@@ -42,6 +43,7 @@ AnyModel = Union[
     KeyPointsDetectionModel,
     ObjectDetectionModel,
     OpenVocabularyObjectDetectionModel,
+    SemanticSegmentationModel,
 ]
 
 

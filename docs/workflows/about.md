@@ -1,6 +1,6 @@
-# What is Roboflow Workflows?
+# What are Roboflow Workflows?
 
-Roboflow Workflows is an ecosystem that enables users to create machine learning applications using a wide range
+Workflows are an ecosystem that enables users to create machine learning applications using a wide range
 of pluggable and reusable blocks. These blocks are organized in a way that makes it easy for users to design
 and connect different components. The graphical interface allows you to visually construct workflows
 without needing extensive technical expertise. Once the workflow is designed, the Workflows engine runs the
@@ -15,9 +15,7 @@ that best suits their needs.
 With Workflows, you can:
 
 - Detect, classify, and segment objects in images using state-of-the-art models.
-
 - Use Large Multimodal Models (LMMs) to make determinations at any stage in a workflow.
-
 - Introduce elements of business logic to translate model predictions into your domain language
 
 <div class="button-holder">

@@ -29,7 +29,7 @@ structlog>=24.1.0,<25.0.0
 zxing-cpp~=2.2.0
 boto3>=1.40.0,<=1.41.5
 botocore>=1.40.0,<=1.41.5
-typing_extensions>=4.8.0,<=4.12.2
+typing_extensions>=4.8.0,<=4.15.0
 pydot~=2.0.0
 shapely>=2.0.4,<2.1.0
 tldextract~=5.1.2
@@ -50,4 +50,4 @@ filelock>=3.12.0,<=3.17.0
 onvif-zeep-async==2.0.0 # versions > 2.0.0 will not work with Python 3.9 despite docs
 simple-pid~=2.0.1
 qrcode~=8.0.0
-inference-models~=0.19.1
+inference-models~=0.20.1

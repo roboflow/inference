@@ -57,6 +57,7 @@ from inference.core.exceptions import (
     MalformedRoboflowAPIResponseError,
     MalformedWorkflowResponseError,
     MissingDefaultModelError,
+    PaymentRequiredError,
     RetryRequestError,
     RoboflowAPIConnectionError,
     RoboflowAPIForbiddenError,
@@ -67,6 +68,7 @@ from inference.core.exceptions import (
     RoboflowAPINotNotFoundError,
     RoboflowAPITimeoutError,
     RoboflowAPIUnsuccessfulRequestError,
+    RoboflowAPIUsagePausedError,
     WorkspaceLoadError,
 )
 from inference.core.utils.file_system import sanitize_path_segment
@@ -111,6 +113,11 @@ DEFAULT_ERROR_HANDLERS = {
         "Unauthorized access to roboflow API - check API key. Visit "
         "https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key to learn how to retrieve one.",
     ),
+    402: lambda e: raise_from_lambda(
+        e,
+        PaymentRequiredError,
+        "Not enough credits to perform this request. Verify your workspace billing page.",
+    ),
     403: lambda e: raise_from_lambda(
         e,
         RoboflowAPIForbiddenError,
@@ -119,6 +126,11 @@ DEFAULT_ERROR_HANDLERS = {
     ),
     404: lambda e: raise_from_lambda(
         e, RoboflowAPINotNotFoundError, NOT_FOUND_ERROR_MESSAGE
+    ),
+    423: lambda e: raise_from_lambda(
+        e,
+        RoboflowAPIUsagePausedError,
+        "Roboflow API usage is paused. Please contact your workspace administrator to re-enable api keys.",
     ),
 }
 
@@ -449,6 +461,58 @@ def get_roboflow_instant_model_data(
             f"Loaded model data from Roboflow API and saved to cache with key: {api_data_cache_key}."
         )
         return api_data
+
+
+@wrap_roboflow_api_errors()
+def get_model_metadata_from_inference_models_registry(
+    api_key: str,
+    model_id: ModelID,
+    cache_prefix: str = "roboflow_api_data:inference_models_registry",
+    countinference: Optional[bool] = None,
+    service_secret: Optional[str] = None,
+) -> dict:
+    # Watch out - this function should only be used to substitute get_roboflow_instant_model_data()
+    # and only in terms of getting model type and task type
+    # this is only stub to make sure auth works as it should for models which are not
+    # associated to project via version (for which old auth and metadata retrieval method work).
+    api_data_cache_key = f"{cache_prefix}:{model_id}"
+    api_data = None
+    if not MODELS_CACHE_AUTH_ENABLED:
+        api_data = cache.get(api_data_cache_key)
+    if api_data is not None:
+        logger.debug(f"Loaded model data from cache with key: {api_data_cache_key}.")
+        return api_data
+    query = [("modelId", model_id)]
+    headers = {"Authorization": f"Bearer {api_key}"}
+    if GCP_SERVERLESS:
+        headers[ENFORCE_INTERNAL_ARTIFACTS_URLS_HEADER] = "true"
+    if ENFORCE_CREDITS_VERIFICATION:
+        skip = (
+            countinference is False
+            and service_secret is not None
+            and service_secret == ROBOFLOW_SERVICE_SECRET
+        )
+        if not skip:
+            headers[ENFORCE_CREDITS_VERIFICATION_HEADER] = "true"
+    api_url = _add_params_to_url(
+        url=f"{API_BASE_URL}/models/v1/external/weights",
+        params=query,
+    )
+    raw_api_data = _get_from_url(url=api_url, headers=headers)
+    api_data = {
+        "modelType": raw_api_data["modelMetadata"]["modelArchitecture"],
+        "taskType": raw_api_data["modelMetadata"]["taskType"],
+    }
+    cache.set(
+        api_data_cache_key,
+        api_data,
+        expire=10,
+    )
+    logger.debug(
+        f"Loaded model data from Roboflow API (inference-models registry) "
+        f"and saved to cache with key: {api_data_cache_key}."
+    )
+    return api_data
 
 
 @wrap_roboflow_api_errors()
@@ -885,12 +949,13 @@ def get_from_url(
 def _get_from_url(
     url: str,
     json_response: bool = True,
+    headers: Optional[dict] = None,
 ) -> Union[Response, dict]:
     full_url = wrap_url(url)
     try:
         response = requests.get(
             full_url,
-            headers=build_roboflow_api_headers(),
+            headers=build_roboflow_api_headers(explicit_headers=headers),
             timeout=ROBOFLOW_API_REQUEST_TIMEOUT,
             verify=ROBOFLOW_API_VERIFY_SSL,
         )
@@ -1035,12 +1100,21 @@ def send_inference_results_to_model_monitoring(
     api_key_safe_raise_for_status(response=response)
 
 
-def get_extra_weights_provider_headers() -> Optional[Dict[str, str]]:
+def get_extra_weights_provider_headers(
+    countinference: Optional[bool] = None,
+    service_secret: Optional[str] = None,
+) -> Optional[Dict[str, str]]:
     headers = {}
     if GCP_SERVERLESS:
         headers[ENFORCE_INTERNAL_ARTIFACTS_URLS_HEADER] = "true"
     if ENFORCE_CREDITS_VERIFICATION:
-        headers[ENFORCE_CREDITS_VERIFICATION_HEADER] = "true"
+        skip = (
+            countinference is False
+            and service_secret is not None
+            and service_secret == ROBOFLOW_SERVICE_SECRET
+        )
+        if not skip:
+            headers[ENFORCE_CREDITS_VERIFICATION_HEADER] = "true"
     return build_roboflow_api_headers(explicit_headers=headers)
 
 

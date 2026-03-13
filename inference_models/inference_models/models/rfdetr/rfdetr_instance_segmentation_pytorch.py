@@ -32,9 +32,6 @@ from inference_models.models.common.roboflow.model_packages import (
     parse_class_names_file,
     parse_inference_config,
 )
-from inference_models.models.common.roboflow.pre_processing import (
-    pre_process_network_input,
-)
 from inference_models.models.rfdetr.class_remapping import (
     ClassesReMapping,
     prepare_class_remapping,
@@ -45,6 +42,7 @@ from inference_models.models.rfdetr.common import (
 )
 from inference_models.models.rfdetr.default_labels import resolve_labels
 from inference_models.models.rfdetr.post_processor import PostProcess
+from inference_models.models.rfdetr.pre_processing import pre_process_network_input
 from inference_models.models.rfdetr.rfdetr_base_pytorch import (
     LWDETR,
     RFDETRSeg2XLargeConfig,

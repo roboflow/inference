@@ -3277,11 +3277,8 @@ def test_workflow_with_simd_consumer_dec_dim_accepting_list_of_batch_and_scalar_
         i.numpy_image.shape if i is not None else None for i in results[0]["x"]
     ] == [
         (100, 100, 3),
-        None,
         (50, 50, 3),
-        None,
         (300, 300, 3),
-        None,
     ]
 
 
@@ -3360,11 +3357,8 @@ def test_workflow_with_simd_consumer_dec_dim_accepting_list_of_batch_and_scalar_
         i.numpy_image.shape if i is not None else None for i in results[0]["x"]
     ] == [
         (100, 100, 3),
-        None,
         (50, 50, 3),
-        None,
         (300, 300, 3),
-        None,
     ]
 
 
@@ -3669,21 +3663,15 @@ def test_workflow_with_simd_consumer_dec_dim_accepting_list_of_batch_and_scalar_
         i.numpy_image.shape if i is not None else None for i in results[0]["x"]
     ] == [
         (100, 100, 3),
-        None,
         (50, 50, 3),
-        None,
         (300, 300, 3),
-        None,
     ]
     assert [
         i.numpy_image.shape if i is not None else None for i in results[1]["x"]
     ] == [
         (120, 120, 3),
-        None,
         (50, 50, 3),
-        None,
         (320, 320, 3),
-        None,
     ]
 
 
@@ -3849,11 +3837,8 @@ def test_workflow_with_simd_consumer_dec_dim_accepting_list_of_batch_and_scalar_
         i.numpy_image.shape if i is not None else None for i in results[0]["x"]
     ] == [
         (100, 100, 3),
-        None,
         (50, 50, 3),
-        None,
         (300, 300, 3),
-        None,
     ]
     assert results[1]["x"] is None
 

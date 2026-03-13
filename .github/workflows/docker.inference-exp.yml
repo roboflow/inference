@@ -60,7 +60,7 @@ jobs:
     name: ${{ matrix.dockerfile }}:${{ matrix.platform }}
     needs: determine-tags
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 240
     permissions:
       # permission lets the workflow issue OIDC tokens, required by depot.dev auth
       id-token: write
@@ -83,6 +83,9 @@ jobs:
           - dockerfile: "x86.cu128.base.dockerfile"
             platform: "cu128"
             build_platforms: "linux/amd64"
+          - dockerfile: "jp51.cu114.core.dockerfile"
+            platform: "jp51"
+            build_platforms: "linux/arm64"
           # - dockerfile: "jp61.cu126.base.dockerfile"
           #   platform: "jp61"
           #   build_platforms: "linux/arm64"

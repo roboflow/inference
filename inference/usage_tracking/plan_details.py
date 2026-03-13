@@ -208,6 +208,17 @@ class PlanDetails(SQLiteWrapper):
         sqlite_connection: Optional[sqlite3.Connection] = None,
         date_time_now: Optional[datetime.datetime] = None,
     ) -> Dict[str, Union[str, bool]]:
+        if not api_key:
+            return {
+                self._ts_col_name: self._ts_default,
+                self._api_key_hash_col_name: "",
+                self._is_enterprise_col_name: self._is_enterprise_default,
+                self._is_pro_col_name: self._is_pro_default,
+                self._is_trial_col_name: self._is_trial_default,
+                self._is_billed_col_name: self._is_billed_default,
+                self._over_quota_col_name: self._over_quota_default,
+            }
+
         if date_time_now is None:
             date_time_now = datetime.datetime.now(tz=datetime.timezone.utc)
         api_key_hash = sha256_hash(api_key, length=-1)
