@@ -97,6 +97,7 @@ class RFDETRFewShotTrainer:
             lora_dropout=0.0,
             target_modules=all_targets,
             bias="none",
+            use_dora=False,
         )
         peft_model = get_peft_model(model, lora_config)
 

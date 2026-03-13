@@ -13,7 +13,7 @@
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); line-height: 1.5; }
-    .container { max-width: 1600px; margin: 0 auto; padding: 20px; }
+    .container { max-width: 1600px; margin: 0 auto; padding: 20px; position: relative; z-index: 1; }
     h1 { font-size: 24px; margin-bottom: 4px; }
     .subtitle { color: var(--text-dim); font-size: 14px; margin-bottom: 24px; }
 
@@ -22,16 +22,18 @@
     .progress-header .left { font-size: 14px; font-weight: 600; }
     .progress-header .right { font-size: 13px; color: var(--text-dim); }
     .progress-bar-bg { height: 8px; background: var(--bg); border-radius: 4px; overflow: hidden; }
-    .progress-bar-fill { height: 100%; background: linear-gradient(90deg, var(--accent), var(--green)); border-radius: 4px; transition: width 0.5s ease; }
+    .progress-bar-fill { height: 100%; background: linear-gradient(90deg, var(--accent), var(--green)); border-radius: 4px; transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1); box-shadow: 0 0 12px rgba(88,166,255,0.5), 0 0 4px rgba(63,185,80,0.3); position: relative; overflow: hidden; }
+    .progress-bar-fill::after { content: ''; position: absolute; top: 0; left: -50%; width: 50%; height: 100%; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.25), transparent); animation: shimmer 2s infinite; }
     .progress-details { display: flex; gap: 24px; margin-top: 10px; font-size: 13px; color: var(--text-dim); }
     .progress-details .value { color: var(--text); font-weight: 600; }
 
     .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 24px; }
-    .stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
+    .stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px; transition: transform 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease; }
+    .stat-card:hover { transform: translateY(-4px); box-shadow: 0 8px 32px rgba(88,166,255,0.12), 0 0 12px rgba(88,166,255,0.08); border-color: var(--accent); }
     .stat-card .label { font-size: 12px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px; }
     .stat-card .value { font-size: 28px; font-weight: 700; margin-top: 4px; }
-    .stat-card .value.green { color: var(--green); }
-    .stat-card .value.red { color: var(--red); }
+    .stat-card .value.green { color: var(--green); text-shadow: 0 0 10px rgba(63,185,80,0.5), 0 0 20px rgba(63,185,80,0.2); }
+    .stat-card .value.red { color: var(--red); text-shadow: 0 0 10px rgba(248,81,73,0.5), 0 0 20px rgba(248,81,73,0.2); }
 
     .controls { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-bottom: 20px; padding: 16px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; }
     .control-group { display: flex; flex-direction: column; gap: 4px; }
@@ -48,13 +50,26 @@
 
     .panel { display: none; }
     .panel.active { display: block; }
+    .panel.tab-enter { animation: fadeSlideUp 0.3s ease-out both; }
 
     .chart-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px; }
-    .chart-box { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px; min-height: 380px; }
+    .chart-box { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px; min-height: 380px; transition: transform 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease; }
+    .chart-box:hover { box-shadow: 0 4px 24px rgba(88,166,255,0.08); border-color: rgba(88,166,255,0.3); }
     .chart-box.full-width { grid-column: 1 / -1; }
     .chart-title { font-size: 14px; font-weight: 600; margin-bottom: 8px; }
 
-    .table-wrap { overflow-x: auto; }
+    .table-wrap { overflow-x: auto; position: relative; }
+    .table-loading-overlay {
+      display: none; position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(17,17,17,0.85); z-index: 5;
+      align-items: center; justify-content: center;
+    }
+    .table-loading-spinner {
+      width: 36px; height: 36px; border: 3px solid rgba(255,255,255,0.1);
+      border-top-color: var(--accent); border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
     table { width: 100%; border-collapse: collapse; font-size: 13px; background: var(--surface); border-radius: 8px; overflow: hidden; }
     th { background: var(--bg); padding: 6px 10px; text-align: left; font-weight: 600; color: var(--text-dim); font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid var(--border); cursor: pointer; user-select: none; white-space: nowrap; }
     th:hover { color: var(--accent); }
@@ -73,7 +88,7 @@
     .col-filter:focus { outline: none; border-color: var(--accent); }
 
     .best-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin-bottom: 12px; }
-    .best-card .rank-num { font-size: 32px; font-weight: 700; color: var(--accent); float: left; margin-right: 16px; line-height: 1; }
+    .best-card .rank-num { font-size: 32px; font-weight: 700; color: var(--accent); float: left; margin-right: 16px; line-height: 1; text-shadow: 0 0 15px rgba(88,166,255,0.6), 0 0 30px rgba(88,166,255,0.2); }
     .best-card .params { font-size: 13px; color: var(--text-dim); }
     .best-card .metrics { display: flex; gap: 20px; margin-top: 8px; }
     .best-card .metric .val { font-size: 20px; font-weight: 600; }
@@ -85,19 +100,120 @@
     .detail-card .metric-row { display: flex; gap: 20px; margin-bottom: 4px; font-size: 13px; }
     .detail-card .metric-row .lbl { color: var(--text-dim); min-width: 80px; }
 
-    .auto-refresh { position: fixed; top: 12px; right: 20px; font-size: 12px; color: var(--text-dim); z-index: 10; }
-    .auto-refresh .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--green); margin-right: 6px; }
-    .auto-refresh .dot.off { background: var(--red); }
+    .auto-refresh { position: fixed; top: 12px; right: 20px; font-size: 12px; color: var(--text-dim); z-index: 10; display: flex; align-items: center; gap: 8px; }
+    .skip-decrypt-btn { display: none; }
+    @keyframes beaconPulse { 0% { r: 5; opacity: 0.8; } 100% { r: 14; opacity: 0; } }
+    .auto-refresh .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--green); margin-right: 6px; animation: pulse 2s ease-in-out infinite; }
+    .auto-refresh .dot.off { background: var(--red); animation: pulseRed 2s ease-in-out infinite; }
+
+    .progress-wrap { border-color: rgba(88,166,255,0.2); box-shadow: 0 0 20px rgba(88,166,255,0.04), inset 0 1px 0 rgba(88,166,255,0.08); }
+    .best-card { transition: transform 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease; }
+    .best-card:hover { transform: translateY(-2px); box-shadow: 0 6px 24px rgba(88,166,255,0.1); border-color: rgba(88,166,255,0.3); }
+
+    /* Animations */
+    @keyframes fadeSlideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes shimmer { 0% { left: -50%; } 100% { left: 150%; } }
+    @keyframes pulse { 0%,100% { box-shadow: 0 0 4px rgba(63,185,80,0.4); } 50% { box-shadow: 0 0 12px rgba(63,185,80,0.8), 0 0 4px rgba(63,185,80,1); } }
+    @keyframes pulseRed { 0%,100% { box-shadow: 0 0 4px rgba(248,81,73,0.4); } 50% { box-shadow: 0 0 12px rgba(248,81,73,0.8); } }
+    @keyframes rowFadeIn { from { opacity: 0; transform: translateX(-8px); } to { opacity: 1; transform: translateX(0); } }
+    @keyframes borderPulse { 0%,100% { border-top-color: var(--border); } 50% { border-top-color: var(--yellow); } }
+    .animate-in { animation: fadeSlideUp 0.5s ease-out both; }
+    body .container { visibility: visible; }
+
+    /* CRT scanline overlay */
+    body::after { content: ''; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.03) 2px, rgba(0,0,0,0.03) 4px); pointer-events: none; z-index: 9999; }
 
     @media (max-width: 800px) { .chart-grid, .detail-grid { grid-template-columns: 1fr; } }
+
+    /* ── Visualization tab ────────────────────────── */
+    .viz-model-header {
+      background: var(--card-bg); border-radius: 12px; padding: 16px 20px;
+      margin-bottom: 8px; border: 1px solid rgba(0,255,100,0.3);
+      cursor: pointer; transition: background 0.2s;
+      display: flex; align-items: center; gap: 16px;
+    }
+    .viz-model-header:hover { background: rgba(0,255,100,0.05); }
+    .viz-model-header .chevron {
+      transition: transform 0.3s; font-size: 1.2em; color: var(--text-dim);
+    }
+    .viz-model-header .chevron.open { transform: rotate(90deg); }
+    .viz-model-header h3 { color: var(--accent); margin: 0; font-size: 1.1em; flex: 1; }
+    .viz-model-stats { display: flex; gap: 20px; flex-wrap: wrap; }
+    .viz-model-stats .stat { text-align: center; }
+    .viz-model-stats .stat .val { font-size: 1.2em; font-weight: bold; color: var(--text); }
+    .viz-model-stats .stat .lbl { font-size: 0.75em; color: var(--text-dim); }
+    .viz-model-body { overflow: hidden; max-height: 0; transition: max-height 0.4s ease; }
+    .viz-model-body.open { max-height: 20000px; }
+    .viz-grid {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+      gap: 16px; padding: 12px 0;
+    }
+    .viz-card {
+      background: var(--card-bg); border-radius: 10px; overflow: hidden;
+      border: 2px solid transparent; transition: border-color 0.3s, box-shadow 0.3s;
+      cursor: pointer; position: relative;
+    }
+    .viz-card.winner {
+      border-color: var(--accent); box-shadow: 0 0 20px rgba(0,255,100,0.15);
+    }
+    .viz-card .viz-badge {
+      position: absolute; top: 8px; right: 8px; z-index: 2;
+      background: var(--accent); color: #000; font-weight: bold; font-size: 0.75em;
+      padding: 3px 8px; border-radius: 6px;
+    }
+    .viz-card .viz-badge.not-winner {
+      background: rgba(255,255,255,0.15); color: var(--text-dim);
+    }
+    .viz-card img {
+      width: 100%; aspect-ratio: 4/3; object-fit: cover;
+      display: block; background: #111;
+    }
+    .viz-card .viz-info { padding: 10px 14px; }
+    .viz-card .viz-ds-name {
+      font-weight: bold; font-size: 0.95em; color: var(--text);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      margin-bottom: 4px;
+    }
+    .viz-card .viz-metrics {
+      display: flex; gap: 12px; font-size: 0.85em; color: var(--text-dim);
+    }
+    .viz-card .viz-metrics .metric-val { color: var(--text); font-weight: bold; }
+    .viz-card:hover { border-color: rgba(0,180,255,0.5); }
+    .viz-card.winner:hover { border-color: var(--accent); }
+    .viz-toggle {
+      position: sticky; top: 0; z-index: 10;
+      background: var(--bg); padding: 10px 0 6px 0;
+      margin-bottom: 12px; display: flex; gap: 8px;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+    }
+    .viz-toggle button {
+      background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15);
+      color: var(--text-dim); padding: 6px 14px; border-radius: 6px; cursor: pointer;
+      font-size: 0.85em; transition: all 0.2s;
+    }
+    .viz-toggle button.active {
+      background: rgba(0,255,100,0.15); border-color: var(--accent); color: var(--accent);
+    }
+    .viz-modal-overlay {
+      position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(0,0,0,0.85); z-index: 10000; display: flex;
+      align-items: center; justify-content: center;
+    }
+    .viz-modal-overlay img { max-width: 90vw; max-height: 90vh; border-radius: 8px; }
+    .viz-modal-overlay .close-btn {
+      position: absolute; top: 16px; right: 24px; color: white; font-size: 2em;
+      cursor: pointer; z-index: 10001;
+    }
   </style>
 </head>
 <body>
+  <canvas id="bgCanvas" style="position:fixed;top:0;left:0;width:100%;height:100%;z-index:0;pointer-events:none;opacity:0.4"></canvas>
   <div class="container">
     <h1>🔬 RF-DETR Few-Shot LoRA — Grid Search Explorer</h1>
     <p class="subtitle" id="subtitle">Hyperparameter search: rank × epochs × learning rate × num_train_images · Results averaged across training sets · Primary metrics: mAP@50 and mAP@50:95</p>
 
     <div class="auto-refresh">
+      <button class="skip-decrypt-btn" id="skipDecryptBtn" onclick="skipDecryption()" title="Skip text decryption animation">⏭ Skip FX</button>
       <span class="dot" id="refreshDot"></span>
       <span id="refreshStatus">Auto-refresh: 5s</span>
       <select id="refreshRate" style="font-size:11px;padding:1px 4px;background:var(--bg);color:var(--text-dim);border:1px solid var(--border);border-radius:4px;margin-left:4px">
@@ -142,7 +258,7 @@
           </div>
         </div>
       </div>
-      <div id="runningTasksWrap" style="display:none;margin-top:10px;padding-top:10px;border-top:1px solid var(--border)">
+      <div id="runningTasksWrap" style="display:none;margin-top:10px;padding-top:10px;border-top:2px solid var(--border);animation:borderPulse 3s ease-in-out infinite">
         <div style="font-size:13px;color:var(--text-dim);margin-bottom:6px">🔄 <strong>Running Tasks:</strong></div>
         <div id="runningTasksList" style="font-size:12px;font-family:monospace"></div>
       </div>
@@ -152,10 +268,12 @@
 
     <div class="tabs" id="tabBar">
       <div class="tab active" data-tab="overview">Overview</div>
+      <div class="tab benchmark-only" style="display:none" data-tab="benchmark">Benchmark</div>
       <div class="tab" data-tab="heatmaps">Heatmaps</div>
       <div class="tab" data-tab="trends">Trends</div>
       <div class="tab" data-tab="table">All Results</div>
       <div class="tab" data-tab="detail">Detail</div>
+      <div class="tab" data-tab="viz">Visualization</div>
     </div>
 
     <div class="panel active" id="panel-overview">
@@ -170,6 +288,24 @@
         <div class="chart-box phase2-only" style="display:none"><div class="chart-title">Avg mAP@50 by Aug Level</div><div id="chart-aug"></div></div>
         <div class="chart-box phase2-only" style="display:none"><div class="chart-title">Avg mAP@50 by Weight Decay</div><div id="chart-wd"></div></div>
         <div class="chart-box phase2-only" style="display:none"><div class="chart-title">Avg mAP@50 by Alpha Ratio</div><div id="chart-alpha"></div></div>
+      </div>
+    </div>
+
+    <div class="panel benchmark-only" style="display:none" id="panel-benchmark">
+      <div class="controls">
+        <div class="control-group">
+          <label>Metric</label>
+          <select id="bm-metric" onchange="loadBenchmarkHeatmap()"><option value="mAP_50">mAP@50</option><option value="mAP_50_95">mAP@50:95</option></select>
+        </div>
+        <div class="control-group">
+          <label>group_detr</label>
+          <select id="bm-group-detr" onchange="loadBenchmarkHeatmap()"><option value="">All</option><option value="1">1</option><option value="5">5</option><option value="13">13</option></select>
+        </div>
+      </div>
+      <div class="chart-grid">
+        <div class="chart-box full-width" style="min-height:500px"><div class="chart-title">Config × Dataset Heatmap</div><div id="bm-heatmap"></div></div>
+        <div class="chart-box"><div class="chart-title">Per-Dataset Average mAP</div><div id="bm-dataset-bars"></div></div>
+        <div class="chart-box"><div class="chart-title">group_detr Impact</div><div id="bm-groupdetr-bars"></div></div>
       </div>
     </div>
 
@@ -249,6 +385,12 @@
             <option value="set_B">Set B</option>
           </select>
         </div>
+        <div class="control-group benchmark-only" id="table-dataset-filter-wrap" style="display:none">
+          <label>Dataset</label>
+          <select id="table-dataset-filter" onchange="loadTable()">
+            <option value="">All (averaged)</option>
+          </select>
+        </div>
         <label class="check"><input type="checkbox" id="show-per-class"> Show per-class AP@50</label>
         <span style="flex:1"></span>
         <span style="font-size:12px;color:var(--text-dim)" id="table-count"></span>
@@ -278,9 +420,268 @@
       </div>
       <div id="detail-single"></div>
     </div>
+
+    <div class="panel" id="panel-viz">
+      <div id="viz-content">
+        <p style="color:var(--text-dim)">Loading champion visualization...</p>
+      </div>
+    </div>
   </div>
 
   <script>
+    // ─── Particle Background Engine ────────────────────────────────────
+    // Mouse position for particle interaction + fireworks
+    let mouseX = -1000, mouseY = -1000;
+    document.addEventListener('mousemove', (e) => { mouseX = e.clientX; mouseY = e.clientY; });
+    document.addEventListener('mouseleave', () => { mouseX = -1000; mouseY = -1000; });
+    // Double-click anywhere triggers fireworks for testing
+    document.addEventListener('dblclick', () => {
+      if (typeof fireworks !== 'undefined') fireworks.launch(6);
+    });
+
+    (function initParticles() {
+      const canvas = document.getElementById('bgCanvas');
+      const ctx = canvas.getContext('2d');
+      const PARTICLE_COUNT = 80;
+      const MAX_DIST = 150;
+      const MOUSE_RADIUS = 200;
+      const MOUSE_FORCE = 0.02;
+      const COLORS = ['#58a6ff', '#58a6ff', '#58a6ff', '#3fb950', '#bc8cff'];
+      let particles = [];
+      let w, h, animId, frame = 0;
+
+      function resize() {
+        w = canvas.width = window.innerWidth;
+        h = canvas.height = window.innerHeight;
+      }
+      window.addEventListener('resize', resize);
+      resize();
+
+      for (let i = 0; i < PARTICLE_COUNT; i++) {
+        particles.push({
+          x: Math.random() * w, y: Math.random() * h,
+          vx: (Math.random() - 0.5) * 0.4, vy: (Math.random() - 0.5) * 0.4,
+          r: Math.random() * 2 + 1,
+          color: COLORS[Math.floor(Math.random() * COLORS.length)],
+        });
+      }
+
+      function draw() {
+        animId = requestAnimationFrame(draw);
+        if (++frame % 2 !== 0) return; // 30fps
+        ctx.clearRect(0, 0, w, h);
+
+        // Update & draw particles
+        for (const p of particles) {
+          // Mouse interaction — gentle attraction toward cursor
+          const mdx = mouseX - p.x, mdy = mouseY - p.y;
+          const mDist = Math.sqrt(mdx * mdx + mdy * mdy);
+          if (mDist < MOUSE_RADIUS && mDist > 1) {
+            const force = MOUSE_FORCE * (1 - mDist / MOUSE_RADIUS);
+            p.vx += (mdx / mDist) * force;
+            p.vy += (mdy / mDist) * force;
+          }
+          // Dampen velocity to base speed
+          const speed = Math.sqrt(p.vx * p.vx + p.vy * p.vy);
+          if (speed > 1.2) { p.vx *= 0.95; p.vy *= 0.95; }
+
+          p.x += p.vx; p.y += p.vy;
+          if (p.x < 0) p.x = w; if (p.x > w) p.x = 0;
+          if (p.y < 0) p.y = h; if (p.y > h) p.y = 0;
+
+          // Size boost near mouse
+          const drawR = (mDist < MOUSE_RADIUS) ? p.r + (1 - mDist / MOUSE_RADIUS) * 2 : p.r;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, drawR, 0, Math.PI * 2);
+          ctx.fillStyle = p.color;
+          ctx.fill();
+        }
+
+        // Draw connecting lines (brighter near mouse)
+        for (let i = 0; i < particles.length; i++) {
+          for (let j = i + 1; j < particles.length; j++) {
+            const dx = particles[i].x - particles[j].x;
+            const dy = particles[i].y - particles[j].y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            if (dist < MAX_DIST) {
+              // Boost line opacity if midpoint is near mouse
+              const mx = (particles[i].x + particles[j].x) / 2;
+              const my = (particles[i].y + particles[j].y) / 2;
+              const mmd = Math.sqrt((mouseX - mx) ** 2 + (mouseY - my) ** 2);
+              const mouseBoost = mmd < MOUSE_RADIUS ? 0.2 * (1 - mmd / MOUSE_RADIUS) : 0;
+              ctx.beginPath();
+              ctx.moveTo(particles[i].x, particles[i].y);
+              ctx.lineTo(particles[j].x, particles[j].y);
+              ctx.strokeStyle = `rgba(88,166,255,${(0.15 + mouseBoost) * (1 - dist / MAX_DIST)})`;
+              ctx.lineWidth = 0.5 + mouseBoost;
+              ctx.stroke();
+            }
+          }
+        }
+
+        // Draw dynamic colored aurora around mouse
+        if (mouseX > 0 && mouseY > 0) {
+          const t = frame * 0.02;
+          // Three overlapping radial gradients with shifting colors
+          const auroraColors = [
+            { r: 88, g: 166, b: 255 },  // accent blue
+            { r: 63, g: 185, b: 80 },   // green
+            { r: 188, g: 140, b: 255 }, // purple
+          ];
+          for (let c = 0; c < auroraColors.length; c++) {
+            const col = auroraColors[c];
+            const angle = t + (c * Math.PI * 2 / 3);
+            const ox = Math.cos(angle) * 30;
+            const oy = Math.sin(angle) * 20;
+            const grad = ctx.createRadialGradient(
+              mouseX + ox, mouseY + oy, 0,
+              mouseX + ox, mouseY + oy, MOUSE_RADIUS * 0.8
+            );
+            const pulse = 0.04 + Math.sin(t * 2 + c) * 0.02;
+            grad.addColorStop(0, `rgba(${col.r},${col.g},${col.b},${pulse})`);
+            grad.addColorStop(0.5, `rgba(${col.r},${col.g},${col.b},${pulse * 0.3})`);
+            grad.addColorStop(1, `rgba(${col.r},${col.g},${col.b},0)`);
+            ctx.fillStyle = grad;
+            ctx.fillRect(mouseX - MOUSE_RADIUS, mouseY - MOUSE_RADIUS, MOUSE_RADIUS * 2, MOUSE_RADIUS * 2);
+          }
+        }
+      }
+      draw();
+
+      document.addEventListener('visibilitychange', () => {
+        if (document.hidden) cancelAnimationFrame(animId);
+        else draw();
+      });
+    })();
+
+    // ─── Fireworks Celebration Engine ───────────────────────────────────
+    const fireworks = (function() {
+      const fwCanvas = document.createElement('canvas');
+      fwCanvas.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;z-index:9998;pointer-events:none';
+      document.body.appendChild(fwCanvas);
+      const fCtx = fwCanvas.getContext('2d');
+      let fParticles = [], fAnimId = null;
+      const FW_COLORS = ['#3fb950','#58a6ff','#bc8cff','#d29922','#f0f6fc','#56d364','#79c0ff'];
+
+      function resizeFw() { fwCanvas.width = window.innerWidth; fwCanvas.height = window.innerHeight; }
+      window.addEventListener('resize', resizeFw);
+      resizeFw();
+
+      function launch(count = 5) {
+        for (let b = 0; b < count; b++) {
+          const cx = Math.random() * fwCanvas.width * 0.6 + fwCanvas.width * 0.2;
+          const cy = Math.random() * fwCanvas.height * 0.3 + fwCanvas.height * 0.1;
+          const numP = 40 + Math.floor(Math.random() * 30);
+          const baseColor = FW_COLORS[Math.floor(Math.random() * FW_COLORS.length)];
+          // Delay each burst slightly
+          const delay = b * 200;
+          setTimeout(() => {
+            for (let i = 0; i < numP; i++) {
+              const angle = (Math.PI * 2 * i) / numP + (Math.random() - 0.5) * 0.3;
+              const speed = 2 + Math.random() * 4;
+              fParticles.push({
+                x: cx, y: cy,
+                vx: Math.cos(angle) * speed,
+                vy: Math.sin(angle) * speed,
+                life: 1.0,
+                decay: 0.012 + Math.random() * 0.012,
+                size: 1.5 + Math.random() * 2,
+                color: baseColor,
+                trail: [],
+              });
+            }
+          }, delay);
+        }
+        if (!fAnimId) tickFw();
+      }
+
+      function tickFw() {
+        fCtx.clearRect(0, 0, fwCanvas.width, fwCanvas.height);
+        for (let i = fParticles.length - 1; i >= 0; i--) {
+          const p = fParticles[i];
+          p.trail.push({ x: p.x, y: p.y, life: p.life });
+          if (p.trail.length > 6) p.trail.shift();
+          p.x += p.vx;
+          p.y += p.vy;
+          p.vy += 0.04; // gravity
+          p.vx *= 0.99;
+          p.life -= p.decay;
+          if (p.life <= 0) { fParticles.splice(i, 1); continue; }
+          // Draw trail
+          for (let t = 0; t < p.trail.length; t++) {
+            const tp = p.trail[t];
+            const a = (t / p.trail.length) * p.life * 0.4;
+            fCtx.beginPath();
+            fCtx.arc(tp.x, tp.y, p.size * 0.5, 0, Math.PI * 2);
+            fCtx.fillStyle = p.color.replace(')', `,${a})`).replace('rgb', 'rgba').replace('#', '');
+            // hex to rgba
+            const hex = p.color;
+            const r = parseInt(hex.slice(1,3),16), g = parseInt(hex.slice(3,5),16), b = parseInt(hex.slice(5,7),16);
+            fCtx.fillStyle = `rgba(${r},${g},${b},${a})`;
+            fCtx.fill();
+          }
+          // Draw particle with glow
+          fCtx.save();
+          const hex = p.color;
+          const r = parseInt(hex.slice(1,3),16), g = parseInt(hex.slice(3,5),16), b = parseInt(hex.slice(5,7),16);
+          fCtx.shadowColor = p.color;
+          fCtx.shadowBlur = 8 * p.life;
+          fCtx.beginPath();
+          fCtx.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2);
+          fCtx.fillStyle = `rgba(${r},${g},${b},${p.life})`;
+          fCtx.fill();
+          fCtx.restore();
+        }
+        if (fParticles.length > 0) fAnimId = requestAnimationFrame(tickFw);
+        else { fAnimId = null; fCtx.clearRect(0, 0, fwCanvas.width, fwCanvas.height); }
+      }
+
+      return { launch };
+    })();
+
+    // Track best mAP for fireworks trigger
+    let _bestMaPSoFar = 0;
+    function checkForNewBest(newBestMaP) {
+      if (newBestMaP > 0 && _bestMaPSoFar > 0 && newBestMaP > _bestMaPSoFar) {
+        console.log(`🎆 New best mAP! ${(_bestMaPSoFar*100).toFixed(1)}% → ${(newBestMaP*100).toFixed(1)}%`);
+        fireworks.launch(6);
+      }
+      if (newBestMaP > 0) _bestMaPSoFar = newBestMaP;
+    }
+
+    // ─── Animation Utilities ───────────────────────────────────────────
+    const _prevValues = {};
+    function animateValue(el, end, key, duration = 500, suffix = '') {
+      const start = _prevValues[key] ?? end;
+      _prevValues[key] = end;
+      if (start === end) { el.textContent = (suffix === '%' ? end.toFixed(1) : Math.round(end)) + suffix; return; }
+      const t0 = performance.now();
+      function tick(now) {
+        const p = Math.min((now - t0) / duration, 1);
+        const eased = 1 - Math.pow(1 - p, 3);
+        const cur = start + (end - start) * eased;
+        el.textContent = (suffix === '%' ? cur.toFixed(1) : Math.round(cur)) + suffix;
+        if (p < 1) requestAnimationFrame(tick);
+      }
+      requestAnimationFrame(tick);
+    }
+
+    // 3D tilt on hover for cards
+    document.addEventListener('mousemove', (e) => {
+      document.querySelectorAll('.stat-card, .best-card').forEach(card => {
+        const rect = card.getBoundingClientRect();
+        if (e.clientX < rect.left || e.clientX > rect.right ||
+            e.clientY < rect.top || e.clientY > rect.bottom) {
+          card.style.transform = '';
+          return;
+        }
+        const x = (e.clientX - rect.left) / rect.width - 0.5;
+        const y = (e.clientY - rect.top) / rect.height - 0.5;
+        card.style.transform = `perspective(600px) rotateY(${x * 8}deg) rotateX(${-y * 8}deg) translateY(-2px)`;
+        card.style.boxShadow = `0 8px 32px rgba(88,166,255,0.15), 0 0 12px rgba(88,166,255,0.1)`;
+      });
+    });
+
     const PLOTLY_DARK = {
       paper_bgcolor: '#161b22', plot_bgcolor: '#161b22',
       font: { color: '#e6edf3', size: 12 },
@@ -296,21 +697,177 @@
     let filters = {};
     let tableViewMode = 'avg';
     let isPhase2 = false;
+    let isBenchmark = false;
+    let benchmarkDatasets = [];
     let elapsedStartTime = null;
     let elapsedTimerId = null;
     let refreshIntervalId = null;
     let refreshRateMs = 5000;
     let runningTimerIds = [];
+    let _isFirstLoad = true; // only animate entry on first load, not every refresh
+    let _decryptEnabled = false; // disabled — no more decrypt animation
+
+    // ─── Sneakers Text Decryption Engine (Code Page 437, random reveal) ─
+    const DECRYPT_CHARS = '░▒▓│┤╡╢╖╕╣║╗╝╜╛┐└┴├─┼╞╟╚╔╩╦╠═╬╧╨╤╥╙╘╒╓╫╪┘┌█▄▌▐▀αβΓπΣσμτΦΘΩδ∞φε∩≡±≥≤⌠⌡÷≈°∙·√ⁿ²■♠♣♥♦☺☻♪♫☼►◄↕‼¶§▬↨↑↓→←∟↔▲▼';
+    let _activeDecrypts = [];
+
+    function skipDecryption() {
+      _decryptEnabled = false;
+      document.getElementById('skipDecryptBtn').textContent = '⏭ FX Off';
+      document.getElementById('skipDecryptBtn').style.borderColor = 'var(--red)';
+      _activeDecrypts.forEach(d => {
+        if (d.el) d.el.textContent = d.target;
+        d.cancelled = true;
+      });
+      _activeDecrypts = [];
+      // Ensure container is visible
+      document.body.classList.remove('decrypt-pending');
+      document.body.classList.add('decrypt-ready');
+    }
+
+    function decryptText(el, finalText, opts = {}) {
+      if (!_decryptEnabled || !finalText || finalText.length > 200) {
+        el.textContent = finalText;
+        return Promise.resolve();
+      }
+      const delay = opts.delay || 0;
+      const speed = opts.speed || 35;        // ms per tick
+      const revealsPerTick = opts.revealsPerTick || 1; // chars to lock per tick
+
+      return new Promise(resolve => {
+        const tracker = { el, target: finalText, cancelled: false };
+        _activeDecrypts.push(tracker);
+
+        setTimeout(() => {
+          if (tracker.cancelled) { resolve(); return; }
+          const chars = finalText.split('');
+          const len = chars.length;
+          const display = new Array(len);
+          const locked = new Array(len);  // true when char revealed
+
+          // Build shuffled reveal order (skip spaces — reveal those immediately)
+          const revealOrder = [];
+          for (let i = 0; i < len; i++) {
+            if (chars[i] === ' ' || chars[i] === '\n' || chars[i] === '\t') {
+              display[i] = chars[i];
+              locked[i] = true;
+            } else {
+              display[i] = DECRYPT_CHARS[Math.floor(Math.random() * DECRYPT_CHARS.length)];
+              locked[i] = false;
+              revealOrder.push(i);
+            }
+          }
+          // Fisher-Yates shuffle for random reveal
+          for (let i = revealOrder.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [revealOrder[i], revealOrder[j]] = [revealOrder[j], revealOrder[i]];
+          }
+
+          let revealIdx = 0;
+
+          function tick() {
+            if (tracker.cancelled) { resolve(); return; }
+            // Scramble all still-unlocked positions
+            for (let i = 0; i < len; i++) {
+              if (!locked[i]) {
+                display[i] = DECRYPT_CHARS[Math.floor(Math.random() * DECRYPT_CHARS.length)];
+              }
+            }
+            // Lock next batch of random positions
+            for (let r = 0; r < revealsPerTick && revealIdx < revealOrder.length; r++, revealIdx++) {
+              const pos = revealOrder[revealIdx];
+              display[pos] = chars[pos];
+              locked[pos] = true;
+            }
+            el.textContent = display.join('');
+
+            if (revealIdx < revealOrder.length) {
+              setTimeout(tick, speed);
+            } else {
+              el.textContent = finalText;
+              const idx = _activeDecrypts.indexOf(tracker);
+              if (idx > -1) _activeDecrypts.splice(idx, 1);
+              resolve();
+            }
+          }
+          tick();
+        }, delay);
+      });
+    }
+
+    function decryptPanel(panel) {
+      if (!_decryptEnabled) return;
+      // Target text-bearing UI elements — skip table cells (th/td) to avoid column-width jitter
+      const targets = panel.querySelectorAll(
+        '.stat-card .value, .stat-card .label, .best-card .params, .best-card .val, .rank-num, ' +
+        '.chart-title, h3, h4, .progress-header .left, .progress-header .right, ' +
+        '.control-group label, #table-count'
+      );
+      targets.forEach((el, i) => {
+        const text = el.textContent;
+        if (text && text.trim() && text !== '—' && text.length < 200) {
+          const rpt = Math.max(1, Math.ceil(text.length / 15));
+          decryptText(el, text, { delay: i * 30, speed: 25, revealsPerTick: rpt });
+        }
+      });
+    }
+
+    // Full-page decrypt on first load — covers title, subtitle, tabs, and active content
+    function decryptFirstLoad() {
+      if (!_decryptEnabled) {
+        document.body.classList.remove('decrypt-pending');
+        document.body.classList.add('decrypt-ready');
+        return;
+      }
+      // Title & subtitle
+      const h1 = document.querySelector('h1');
+      const sub = document.querySelector('.subtitle');
+      const tabEls = document.querySelectorAll('.tab');
+      let idx = 0;
+      if (h1) { decryptText(h1, h1.textContent, { delay: idx * 30, speed: 20, revealsPerTick: 2 }); idx++; }
+      if (sub) { decryptText(sub, sub.textContent, { delay: idx * 30, speed: 18, revealsPerTick: 3 }); idx++; }
+      tabEls.forEach(el => {
+        decryptText(el, el.textContent, { delay: idx * 30, speed: 25, revealsPerTick: 1 }); idx++;
+      });
+      // Progress area + stats + active panel
+      decryptPanel(document.querySelector('.progress-wrap'));
+      decryptPanel(document.getElementById('statsCards'));
+      const activePanel = document.querySelector('.panel.active');
+      if (activePanel) decryptPanel(activePanel);
+      // Reveal container now that everything is scrambled
+      document.body.classList.remove('decrypt-pending');
+      document.body.classList.add('decrypt-ready');
+    }
 
     // ─── Tabs ──────────────────────────────────────────────────
-    function switchTab(name) {
+    let _activeTab = 'overview';
+    function switchTab(name, pushHash = true) {
       document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
-      document.querySelectorAll('.panel').forEach(x => x.classList.remove('active'));
-      document.querySelector(`.tab[data-tab="${name}"]`).classList.add('active');
-      document.getElementById('panel-' + name).classList.add('active');
+      document.querySelectorAll('.panel').forEach(x => { x.classList.remove('active'); x.classList.remove('tab-enter'); });
+      const tabEl = document.querySelector(`.tab[data-tab="${name}"]`);
+      if (!tabEl) return;
+      tabEl.classList.add('active');
+      const panel = document.getElementById('panel-' + name);
+      panel.classList.add('active', 'tab-enter');
+      _activeTab = name;
+      if (pushHash) location.hash = '#' + name;
+      loadTabData(name);
     }
     document.querySelectorAll('.tab').forEach(t =>
       t.addEventListener('click', () => switchTab(t.dataset.tab)));
+
+    // Hash-based deeplinks
+    window.addEventListener('hashchange', () => {
+      const parts = location.hash.slice(1).split('/');
+      const tabName = parts[0];
+      if (tabName && tabName !== _activeTab && document.querySelector(`.tab[data-tab="${tabName}"]`)) {
+        switchTab(tabName, false);
+        if (tabName === 'viz' && parts[1]?.startsWith('model-')) {
+          const idx = parseInt(parts[1].split('-')[1]);
+          if (!isNaN(idx)) _expandedModels.add(idx);
+        }
+      }
+    });
 
     async function fetchJSON(url) { return (await fetch(url)).json(); }
     function fmtTime(s) {
@@ -363,9 +920,9 @@
       if (running) {
         icon.textContent = '⏱';
         val.style.color = 'var(--yellow)';
-        // Start live counter if not already running
+        // Re-sync the base time every API call so counter never drifts
+        elapsedStartTime = Date.now() - elapsedSeconds * 1000;
         if (!elapsedTimerId) {
-          elapsedStartTime = Date.now() - elapsedSeconds * 1000;
           elapsedTimerId = setInterval(() => {
             const now = (Date.now() - elapsedStartTime) / 1000;
             document.getElementById('elapsedValue').textContent = fmtTime(now);
@@ -378,15 +935,26 @@
       }
     }
 
-    // ─── GPU Stats + Sparkline ─────────────────────────────────
-    let gpuHistory = [];
-    const GPU_SPARKLINE_MAX = 60; // last 60 data points (5min at 5s interval)
+    // ─── GPU Stats + Scrolling Sparkline ─────────────────────────────────
+    const GPU_SPARKLINE_MAX = 60;
+    // Ring buffer: fixed-size arrays, always GPU_SPARKLINE_MAX slots.
+    // Data scrolls left continuously; new points arrive on the right edge.
+    let _sparkUtil = new Array(GPU_SPARKLINE_MAX).fill(0);
+    let _sparkMem = new Array(GPU_SPARKLINE_MAX).fill(0);
+    let _sparkFilled = 0; // how many real data points we have
+    // Scroll animation state
+    let _sparkScrollOffset = 0; // 0→1 fractional pixel offset for smooth scroll
+    let _sparkLastDataTime = 0; // timestamp of last data push
+    let _sparkDataInterval = 5000; // expected interval between data points (ms)
+    // Latest point lerp (smooth the newest value in)
+    let _sparkLatestUtilTarget = 0, _sparkLatestUtilCurrent = 0;
+    let _sparkLatestMemTarget = 0, _sparkLatestMemCurrent = 0;
+    let _sparkAnimId = null;
 
     async function loadGpuStats() {
       try {
         const d = await fetchJSON('/api/gpu_stats?limit=60');
         if (!d.points || d.points.length === 0) return;
-        gpuHistory = d.points;
         const latest = d.latest;
         document.getElementById('gpuWrap').style.display = '';
         document.getElementById('gpuUtilVal').textContent = Math.round(latest.gpu_util_pct);
@@ -394,63 +962,180 @@
         document.getElementById('gpuTempVal').textContent = Math.round(latest.temp_c);
         document.getElementById('gpuPowerVal').textContent = Math.round(latest.power_w);
 
-        // Color util value by utilization level
         const utilEl = document.getElementById('gpuUtilVal');
         if (latest.gpu_util_pct > 80) utilEl.style.color = 'var(--green)';
         else if (latest.gpu_util_pct > 40) utilEl.style.color = 'var(--yellow)';
         else utilEl.style.color = 'var(--red)';
 
-        drawGpuSparkline();
+        // On first load, populate entire buffer from history
+        if (_sparkFilled === 0 && d.points.length > 0) {
+          const pts = d.points.slice(-GPU_SPARKLINE_MAX);
+          for (let i = 0; i < pts.length; i++) {
+            const idx = GPU_SPARKLINE_MAX - pts.length + i;
+            _sparkUtil[idx] = pts[i].gpu_util_pct;
+            _sparkMem[idx] = (pts[i].mem_used_mb / pts[i].mem_total_mb) * 100;
+          }
+          _sparkFilled = pts.length;
+          _sparkLatestUtilCurrent = _sparkLatestUtilTarget = latest.gpu_util_pct;
+          _sparkLatestMemCurrent = _sparkLatestMemTarget = (latest.mem_used_mb / latest.mem_total_mb) * 100;
+        } else {
+          // Push new data point: shift buffer left, append on right
+          _sparkUtil.shift();
+          _sparkUtil.push(latest.gpu_util_pct);
+          _sparkMem.shift();
+          _sparkMem.push((latest.mem_used_mb / latest.mem_total_mb) * 100);
+          if (_sparkFilled < GPU_SPARKLINE_MAX) _sparkFilled++;
+          // Set lerp target for smooth newest-point transition
+          _sparkLatestUtilTarget = latest.gpu_util_pct;
+          _sparkLatestMemTarget = (latest.mem_used_mb / latest.mem_total_mb) * 100;
+          // Reset scroll animation (scroll from 1 → 0 to "push" old data left)
+          _sparkScrollOffset = 1;
+        }
+        _sparkLastDataTime = performance.now();
+        if (!_sparkAnimId) tickSparkline();
       } catch(e) { /* gpu stats not available yet */ }
     }
 
-    function drawGpuSparkline() {
+    function tickSparkline() {
+      _sparkAnimId = requestAnimationFrame(tickSparkline);
+      const now = performance.now();
+      // Animate scroll offset toward 0
+      if (_sparkScrollOffset > 0) {
+        _sparkScrollOffset = Math.max(0, _sparkScrollOffset - (16 / 400)); // ~400ms scroll
+      }
+      // Lerp the latest point value smoothly
+      _sparkLatestUtilCurrent += (_sparkLatestUtilTarget - _sparkLatestUtilCurrent) * 0.15;
+      _sparkLatestMemCurrent += (_sparkLatestMemTarget - _sparkLatestMemCurrent) * 0.15;
+      drawSparklineFrame();
+    }
+
+    function drawSparklineFrame() {
       const canvas = document.getElementById('gpuSparkline');
-      if (!canvas || gpuHistory.length < 2) return;
+      if (!canvas || _sparkFilled < 2) return;
       const ctx = canvas.getContext('2d');
       const w = canvas.width, h = canvas.height;
       const pad = 2;
+      const drawW = w - pad * 2;
+      const drawH = h - pad * 2;
+      const n = GPU_SPARKLINE_MAX;
+      const xStep = drawW / (n - 1);
+      // Scroll offset in pixels (pushes everything left by up to 1 xStep)
+      const scrollPx = _sparkScrollOffset * xStep;
       ctx.clearRect(0, 0, w, h);
 
-      const vals = gpuHistory.map(p => p.gpu_util_pct);
-      const memVals = gpuHistory.map(p => (p.mem_used_mb / p.mem_total_mb) * 100);
-      const n = vals.length;
-      const xStep = (w - pad * 2) / Math.max(n - 1, 1);
-
-      // Draw memory fill (subtle)
-      ctx.beginPath();
-      ctx.moveTo(pad, h - pad);
-      for (let i = 0; i < n; i++) {
-        const x = pad + i * xStep;
-        const y = h - pad - (memVals[i] / 100) * (h - pad * 2);
-        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-      }
-      ctx.lineTo(pad + (n - 1) * xStep, h - pad);
-      ctx.lineTo(pad, h - pad);
-      ctx.fillStyle = 'rgba(88, 166, 255, 0.1)';
-      ctx.fill();
-
-      // Draw GPU util line
-      ctx.beginPath();
-      for (let i = 0; i < n; i++) {
-        const x = pad + i * xStep;
-        const y = h - pad - (vals[i] / 100) * (h - pad * 2);
-        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-      }
-      ctx.strokeStyle = '#58a6ff';
-      ctx.lineWidth = 1.5;
-      ctx.stroke();
-
-      // Draw threshold lines
+      // Threshold lines
       [25, 50, 75].forEach(pct => {
-        const y = h - pad - (pct / 100) * (h - pad * 2);
+        const y = h - pad - (pct / 100) * drawH;
         ctx.beginPath();
         ctx.moveTo(pad, y);
         ctx.lineTo(w - pad, y);
-        ctx.strokeStyle = 'rgba(48, 54, 61, 0.6)';
+        ctx.strokeStyle = 'rgba(48, 54, 61, 0.5)';
         ctx.lineWidth = 0.5;
         ctx.stroke();
       });
+
+      function valToY(v) { return h - pad - (v / 100) * drawH; }
+
+      function buildPts(values) {
+        const pts = [];
+        for (let i = 0; i < n; i++) {
+          let v = values[i];
+          // Smooth the very last point via lerp
+          if (i === n - 1) v = (values === _sparkUtil) ? _sparkLatestUtilCurrent : _sparkLatestMemCurrent;
+          pts.push({ x: pad + i * xStep - scrollPx, y: valToY(v) });
+        }
+        return pts;
+      }
+
+      function drawSmooth(pts) {
+        for (let i = 0; i < pts.length; i++) {
+          if (i === 0) ctx.moveTo(pts[i].x, pts[i].y);
+          else {
+            const cx = (pts[i-1].x + pts[i].x) / 2;
+            ctx.quadraticCurveTo(pts[i-1].x, pts[i-1].y, cx, (pts[i-1].y + pts[i].y) / 2);
+            if (i === pts.length - 1) ctx.quadraticCurveTo(pts[i].x, pts[i].y, pts[i].x, pts[i].y);
+          }
+        }
+      }
+
+      // Clip to drawing area (prevents scroll from bleeding outside)
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(pad, 0, drawW, h);
+      ctx.clip();
+
+      // Memory fill
+      const memPts = buildPts(_sparkMem);
+      const memGrad = ctx.createLinearGradient(0, 0, 0, h);
+      memGrad.addColorStop(0, 'rgba(88, 166, 255, 0.2)');
+      memGrad.addColorStop(1, 'rgba(88, 166, 255, 0.02)');
+      ctx.beginPath();
+      ctx.moveTo(memPts[0].x, h - pad);
+      drawSmooth(memPts);
+      ctx.lineTo(memPts[memPts.length - 1].x, h - pad);
+      ctx.closePath();
+      ctx.fillStyle = memGrad;
+      ctx.fill();
+
+      // Util fill
+      const utilPts = buildPts(_sparkUtil);
+      const utilGrad = ctx.createLinearGradient(0, 0, 0, h);
+      utilGrad.addColorStop(0, 'rgba(63, 185, 80, 0.25)');
+      utilGrad.addColorStop(0.5, 'rgba(88, 166, 255, 0.1)');
+      utilGrad.addColorStop(1, 'rgba(88, 166, 255, 0.0)');
+      ctx.beginPath();
+      ctx.moveTo(utilPts[0].x, h - pad);
+      drawSmooth(utilPts);
+      ctx.lineTo(utilPts[utilPts.length - 1].x, h - pad);
+      ctx.closePath();
+      ctx.fillStyle = utilGrad;
+      ctx.fill();
+
+      // Util line with glow
+      const latestV = _sparkLatestUtilCurrent;
+      const lineColor = latestV > 80 ? '#3fb950' : latestV > 40 ? '#d29922' : '#f85149';
+      ctx.save();
+      ctx.shadowColor = lineColor;
+      ctx.shadowBlur = 8;
+      ctx.beginPath();
+      drawSmooth(utilPts);
+      ctx.strokeStyle = lineColor;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.restore();
+
+      // Memory line
+      ctx.beginPath();
+      drawSmooth(memPts);
+      ctx.strokeStyle = 'rgba(88, 166, 255, 0.4)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+
+      // Pulsing beacon at rightmost point (current value)
+      const lastPt = utilPts[utilPts.length - 1];
+      const cr = parseInt(lineColor.slice(1,3),16), cg = parseInt(lineColor.slice(3,5),16), cb = parseInt(lineColor.slice(5,7),16);
+      const pulseT = (performance.now() % 2000) / 2000;
+      for (let ring = 0; ring < 2; ring++) {
+        const rT = (pulseT + ring * 0.5) % 1;
+        const radius = 4 + rT * 12;
+        const alpha = (1 - rT) * 0.5;
+        ctx.beginPath();
+        ctx.arc(lastPt.x, lastPt.y, radius, 0, Math.PI * 2);
+        ctx.strokeStyle = `rgba(${cr},${cg},${cb},${alpha})`;
+        ctx.lineWidth = 1.5 * (1 - rT);
+        ctx.stroke();
+      }
+      // Solid center dot
+      ctx.save();
+      ctx.shadowColor = lineColor;
+      ctx.shadowBlur = 12;
+      ctx.beginPath();
+      ctx.arc(lastPt.x, lastPt.y, 3, 0, Math.PI * 2);
+      ctx.fillStyle = lineColor;
+      ctx.fill();
+      ctx.restore();
+
+      ctx.restore(); // pop clip
     }
 
     // Poll GPU stats every 5 seconds
@@ -461,8 +1146,9 @@
     async function loadSummary() {
       const d = await fetchJSON('/api/summary');
 
-      // Detect phase 2
-      if (d.is_phase2) activatePhase2UI();
+      // Detect benchmark / phase 2
+      if (d.is_benchmark) activateBenchmarkUI();
+      else if (d.is_phase2) activatePhase2UI();
 
       // Elapsed time
       updateElapsedDisplay(d.elapsed_seconds, d.is_running);
@@ -479,26 +1165,55 @@
       if (d.failed > 0) details += `<span>Failed: <span class="value" style="color:var(--red)">${d.failed}</span></span>`;
       if (d.avg_time_per_experiment) details += `<span>Avg: <span class="value">${fmtTime(d.avg_time_per_experiment)}</span>/exp</span>`;
       if (d.remaining_count) details += `<span>Remaining: <span class="value">${d.remaining_count}</span></span>`;
-      if (d.elapsed_seconds != null) details += `<span>Total: <span class="value">${fmtTime(d.elapsed_seconds)}</span></span>`;
       document.getElementById('progressDetails').innerHTML = details;
 
       const best50 = d.best_runs.length ? d.best_runs[0].mAP_50 : null;
-      const best5095 = d.best_runs.length ? d.best_runs[0].mAP_50_95 : null;
-      document.getElementById('statsCards').innerHTML = `
+      const best5095 = d.best_runs.length ? Math.max(...d.best_runs.map(r => r.mAP_50_95 || 0)) : null;
+      // Check for new best → fireworks!
+      if (best50 != null) checkForNewBest(best50);
+      let statsHtml = `
         <div class="stat-card"><div class="label">Best mAP@50</div><div class="value green">${fmtPct(best50)}</div></div>
         <div class="stat-card"><div class="label">Best mAP@50:95</div><div class="value green">${fmtPct(best5095)}</div></div>
         <div class="stat-card"><div class="label">Completed</div><div class="value">${d.completed}</div></div>
         <div class="stat-card"><div class="label">Failed</div><div class="value ${d.failed>0?'red':''}">${d.failed}</div></div>`;
+      if (isBenchmark && d.n_datasets) {
+        statsHtml += `<div class="stat-card"><div class="label">Datasets</div><div class="value">${d.n_datasets}</div></div>`;
+      }
+      document.getElementById('statsCards').innerHTML = statsHtml;
+      // Staggered entrance animation on stat cards — first load only
+      if (_isFirstLoad) {
+        document.querySelectorAll('.stat-card').forEach((card, i) => {
+          card.style.animationDelay = `${i * 0.08}s`;
+          card.classList.add('animate-in');
+        });
+      }
 
       const br = document.getElementById('bestRuns');
-      br.innerHTML = '<h3 style="margin-bottom:12px;color:var(--text-dim)">🏆 Top 5 Configs (mAP@50, averaged across training sets)</h3>';
+      const headerText = isBenchmark
+        ? `🏆 Top 5 Configs (mAP@50, averaged across ${d.n_datasets || '?'} datasets)`
+        : '🏆 Top 5 Configs (mAP@50, averaged across training sets)';
+      br.innerHTML = `<h3 style="margin-bottom:12px;color:var(--text-dim)">${headerText}</h3>`;
       d.best_runs.slice(0, 5).forEach((r, i) => {
-        const badge = r.n_sets === 2
-          ? '<span style="color:var(--green);font-size:11px">✓ 2 sets</span>'
-          : `<span style="color:var(--yellow);font-size:11px">${r.n_sets||1} set</span>`;
-        let paramStr = `rank=${r.lora_rank} · epochs=${r.num_epochs} · lr=${r.learning_rate} · n_train=${r.num_train_images}`;
-        if (isPhase2) {
-          paramStr += ` · dropout=${r.lora_dropout ?? '—'} · aug=${r.augmentation_level ?? '—'} · wd=${r.weight_decay ?? '—'} · α/${r.alpha_ratio ?? '—'}`;
+        let badge;
+        if (isBenchmark) {
+          badge = `<span style="color:var(--green);font-size:11px">✓ ${r.n_sets} datasets</span>`;
+        } else {
+          badge = r.n_sets === 2
+            ? '<span style="color:var(--green);font-size:11px">✓ 2 sets</span>'
+            : `<span style="color:var(--yellow);font-size:11px">${r.n_sets||1} set</span>`;
+        }
+        let paramStr;
+        if (isBenchmark) {
+          if (r.batch_size != null) {
+            paramStr = `r=${r.lora_rank ?? '—'} · bs=${r.batch_size ?? '—'} · cp=${r.copy_paste ?? '—'} · mo=${r.mosaic ?? '—'} · lr=${r.learning_rate ?? '—'} · wd=${r.weight_decay ?? '—'} · α/${r.alpha_ratio ?? '—'}`;
+          } else {
+            paramStr = `r=${r.lora_rank ?? '—'} · e=${r.num_epochs ?? '—'} · lr=${r.learning_rate ?? '—'} · do=${r.lora_dropout ?? '—'} · aug=${r.augmentation_level ?? '—'} · wd=${r.weight_decay ?? '—'} · α/${r.alpha_ratio ?? '—'} · g=${r.group_detr ?? '—'}`;
+          }
+        } else {
+          paramStr = `rank=${r.lora_rank} · epochs=${r.num_epochs} · lr=${r.learning_rate} · n_train=${r.num_train_images}`;
+          if (isPhase2) {
+            paramStr += ` · dropout=${r.lora_dropout ?? '—'} · aug=${r.augmentation_level ?? '—'} · wd=${r.weight_decay ?? '—'} · α/${r.alpha_ratio ?? '—'}`;
+          }
         }
         paramStr += ` · ${fmtTime(r.train_time_seconds)} ${badge}`;
         br.innerHTML += `<div class="best-card">
@@ -512,6 +1227,13 @@
           </div>
         </div>`;
       });
+      // Staggered entrance on best cards — first load only
+      if (_isFirstLoad) {
+        br.querySelectorAll('.best-card').forEach((card, i) => {
+          card.style.animationDelay = `${i * 0.1}s`;
+          card.classList.add('animate-in');
+        });
+      }
     }
 
     // ─── Overview ──────────────────────────────────────────────
@@ -657,12 +1379,43 @@
     function getTableCols() {
       const showClass = document.getElementById('show-per-class').checked;
       const cols = [
+        { key:'_config_id', label:'Config', type:'text', ph:'' },
         { key:'lora_rank', label:'Rank', type:'num', ph:'e.g. 4' },
         { key:'num_epochs', label:'Epochs', type:'num', ph:'e.g. >25' },
         { key:'learning_rate', label:'LR', type:'num', ph:'e.g. 0.002' },
         { key:'num_train_images', label:'N Train', type:'num', ph:'1,2,5' },
       ];
-      if (isPhase2) {
+      if (isBenchmark) {
+        cols.push(
+          { key:'lora_dropout', label:'Dropout', type:'num2', ph:'0.0' },
+          { key:'augmentation_level', label:'Aug', type:'num', ph:'0,1,2' },
+          { key:'weight_decay', label:'WD', type:'num', ph:'1e-4' },
+          { key:'alpha_ratio', label:'α/r', type:'num', ph:'1,2,4' },
+        );
+        // Phase 3b columns
+        if (allExperiments.some(r => r.batch_size != null)) {
+          cols.push({ key:'batch_size', label:'BS', type:'num', ph:'4,8,16' });
+        }
+        if (allExperiments.some(r => r.copy_paste != null)) {
+          cols.push({ key:'copy_paste', label:'CP', type:'num', ph:'0,1' });
+        }
+        if (allExperiments.some(r => r.mosaic != null)) {
+          cols.push({ key:'mosaic', label:'Mosaic', type:'num', ph:'0,1' });
+        }
+        if (allExperiments.some(r => r.lora_targets != null)) {
+          cols.push({ key:'lora_targets', label:'Targets', type:'text', ph:'' });
+        }
+        // Phase 3a columns
+        if (allExperiments.some(r => r.group_detr != null)) {
+          cols.push({ key:'group_detr', label:'g_detr', type:'num', ph:'1,5,13' });
+        }
+        if (tableViewMode === 'individual') {
+          cols.push({ key:'dataset_name', label:'Dataset', type:'text', ph:'' });
+        }
+        if (tableViewMode === 'avg') {
+          cols.push({ key:'n_datasets', label:'#DS', type:'num', ph:'' });
+        }
+      } else if (isPhase2) {
         cols.push(
           { key:'lora_dropout', label:'Dropout', type:'num2', ph:'0.0' },
           { key:'augmentation_level', label:'Aug', type:'num', ph:'0,1,2' },
@@ -670,7 +1423,7 @@
           { key:'alpha_ratio', label:'α/r', type:'num', ph:'1,2,4' },
         );
       }
-      if (tableViewMode === 'individual') {
+      if (tableViewMode === 'individual' && !isBenchmark) {
         cols.push({ key:'train_image_set', label:'Set', type:'text', ph:'set_A' });
       }
       cols.push(
@@ -696,8 +1449,17 @@
       return cols;
     }
 
+    function configIdFromRow(row) {
+      const ep = row.num_epochs || 50;
+      const str = `${row.lora_rank||0}_${row.batch_size||0}_${row.copy_paste?1:0}_${row.mosaic?1:0}_${row.alpha_ratio||0}_${row.weight_decay||0}_${ep}`;
+      let h = 0;
+      for (let i = 0; i < str.length; i++) { h = ((h << 5) - h + str.charCodeAt(i)) | 0; }
+      return (h >>> 0).toString(36).slice(0, 5).toUpperCase();
+    }
+
     function flattenRow(row) {
       const flat = {...row};
+      flat._config_id = configIdFromRow(row);
       if (row.per_class_ap50) {
         for (const [cls, val] of Object.entries(row.per_class_ap50)) {
           flat['class_'+cls] = val;
@@ -884,25 +1646,67 @@
           }
         });
       });
+      // Staggered row entrance — first load only
+      if (_isFirstLoad) {
+        const trs = body.querySelectorAll('tr.clickable');
+        const limit = Math.min(trs.length, 20);
+        for (let i = 0; i < limit; i++) {
+          trs[i].style.animation = `rowFadeIn 0.3s ease-out ${i * 0.02}s both`;
+        }
+      }
     }
 
+    let _tableAbort = null;  // AbortController for in-flight table requests
+
     async function loadTable() {
+      // Cancel any in-flight request
+      if (_tableAbort) { _tableAbort.abort(); _tableAbort = null; }
+      _tableAbort = new AbortController();
+      const signal = _tableAbort.signal;
+
+      // Show loading overlay
+      const wrap = document.querySelector('.table-wrap');
+      let overlay = wrap.querySelector('.table-loading-overlay');
+      if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.className = 'table-loading-overlay';
+        overlay.innerHTML = '<div class="table-loading-spinner"></div>';
+        wrap.style.position = 'relative';
+        wrap.appendChild(overlay);
+      }
+      overlay.style.display = 'flex';
+
       tableViewMode = document.getElementById('table-view').value;
       const setFilter = document.getElementById('table-set-filter').value;
+      const dsFilter = isBenchmark ? (document.getElementById('table-dataset-filter')?.value || '') : '';
       let url = `/api/experiments?group=${tableViewMode}`;
       if (tableViewMode === 'individual' && setFilter) url += `&train_set=${setFilter}`;
-      const resp = await fetchJSON(url);
-      allExperiments = resp.rows || resp;
-      allClasses = resp.classes || [];
-      renderTable();
+      if (dsFilter) url += `&dataset=${encodeURIComponent(dsFilter)}`;
 
-      // Populate detail individual selector
-      const indivResp = tableViewMode === 'individual' ? resp : await fetchJSON('/api/experiments?group=individual');
-      const indiv = indivResp.rows || indivResp;
-      const sel = document.getElementById('detail-select');
-      sel.innerHTML = indiv.map(e =>
-        `<option value="${e.id}">${e.run_id} — mAP@50=${fmtPct(e.mAP_50)}</option>`
-      ).join('');
+      try {
+        const resp = await (await fetch(url, { signal })).json();
+        if (signal.aborted) return;
+        allExperiments = resp.rows || resp;
+        allClasses = resp.classes || [];
+        renderTable();
+
+        // Populate detail individual selector
+        const indivResp = tableViewMode === 'individual' ? resp : await (await fetch('/api/experiments?group=individual', { signal })).json();
+        if (signal.aborted) return;
+        const indiv = indivResp.rows || indivResp;
+        const sel = document.getElementById('detail-select');
+        sel.innerHTML = indiv.map(e =>
+          `<option value="${e.id}">${e.run_id} — mAP@50=${fmtPct(e.mAP_50)}</option>`
+        ).join('');
+      } catch(e) {
+        if (e.name === 'AbortError') return;  // Cancelled, ignore
+        console.error('loadTable error:', e);
+      } finally {
+        if (!signal.aborted) {
+          const ov = wrap.querySelector('.table-loading-overlay');
+          if (ov) ov.style.display = 'none';
+        }
+      }
     }
 
     document.getElementById('table-view').addEventListener('change', () => {
@@ -1115,8 +1919,13 @@
         runningTimerIds = [];
 
         list.innerHTML = d.running.map((r, i) => {
-          let desc = `n_train=${r.num_train_images} · ${r.train_image_set}`;
-          if (r.lora_dropout != null) {
+          const dsName = r.dataset_name || r.train_image_set || '—';
+          let desc = `n_train=${r.num_train_images} · ${dsName}`;
+          if (r.batch_size != null) {
+            desc += ` · r=${r.lora_rank} · bs=${r.batch_size}`;
+            if (r.copy_paste != null) desc += ` · cp=${r.copy_paste}`;
+            if (r.mosaic != null) desc += ` · mo=${r.mosaic}`;
+          } else if (r.lora_dropout != null) {
             desc += ` · do=${r.lora_dropout} · aug=${r.augmentation_level} · wd=${r.weight_decay} · α/${r.alpha_ratio}`;
           }
           return `<div style="padding:3px 0;display:flex;gap:12px;align-items:center">
@@ -1209,16 +2018,561 @@
       setTimeout(() => { btn.textContent = '🔄 Sync'; }, 3000);
     }
 
-    // ─── Load all ──────────────────────────────────────────────
+    // ─── Benchmark UI ──────────────────────────────────────────
+    function activateBenchmarkUI() {
+      if (isBenchmark) return;
+      isBenchmark = true;
+      isPhase2 = true;  // benchmark is also phase2-compatible
+      document.getElementById('subtitle').textContent =
+        'RF20-VL-FSOD Benchmark: top 10 combined configs × 20 datasets × 3 group_detr · Eval on test split';
+      document.querySelectorAll('.benchmark-only').forEach(el => el.style.display = '');
+      document.querySelectorAll('.phase2-only').forEach(el => el.style.display = '');
+      document.querySelectorAll('.phase1-only').forEach(el => el.style.display = 'none');
+      // Load dataset list for filters
+      loadDatasetList();
+    }
+
+    async function loadDatasetList() {
+      try {
+        const d = await fetchJSON('/api/datasets');
+        if (!d.is_benchmark) return;
+        benchmarkDatasets = d.datasets;
+        const sel = document.getElementById('table-dataset-filter');
+        sel.innerHTML = '<option value="">All (averaged)</option>';
+        d.datasets.forEach(ds => {
+          sel.innerHTML += `<option value="${ds.dataset_name}">${ds.dataset_name} (${ds.n_completed} runs, ${ds.avg_mAP_50}%)</option>`;
+        });
+      } catch(e) { console.error('Failed to load datasets:', e); }
+    }
+
+    async function loadBenchmarkHeatmap() {
+      if (!isBenchmark) return;
+      const metric = document.getElementById('bm-metric').value;
+      const gd = document.getElementById('bm-group-detr').value;
+      let url = `/api/benchmark_heatmap?metric=${metric}`;
+      if (gd) url += `&group_detr=${gd}`;
+      try {
+        const d = await fetchJSON(url);
+        if (!d.configs.length || !d.datasets.length) return;
+
+        // Config × Dataset heatmap
+        const z = d.configs.map(cfg => d.datasets.map(ds => {
+          const v = d.cells[`${cfg.key}|${ds}`];
+          return v != null ? v * 100 : null;
+        }));
+        const yLabels = d.configs.map(c => `r${c.lora_rank} e${c.num_epochs} lr${c.learning_rate} do${c.lora_dropout} aug${c.augmentation_level} wd${c.weight_decay} ar${c.alpha_ratio} g${c.group_detr}`);
+
+        Plotly.newPlot('bm-heatmap', [{
+          z, x: d.datasets, y: yLabels, type: 'heatmap',
+          colorscale: 'Viridis', hoverongaps: false,
+          hovertemplate: 'Dataset: %{x}<br>Config: %{y}<br>mAP: %{z:.1f}%<extra></extra>',
+          colorbar: { title: metric === 'mAP_50' ? 'mAP@50 (%)' : 'mAP@50:95 (%)' },
+        }], {
+          ...PLOTLY_DARK,
+          xaxis: { ...PLOTLY_DARK.xaxis, tickangle: 45, automargin: true },
+          yaxis: { ...PLOTLY_DARK.yaxis, automargin: true },
+          margin: { l: 220, r: 20, t: 10, b: 120 },
+        }, { responsive: true });
+
+        // Per-dataset bar chart
+        if (benchmarkDatasets.length) {
+          const sorted = [...benchmarkDatasets].sort((a, b) => b.avg_mAP_50 - a.avg_mAP_50);
+          Plotly.newPlot('bm-dataset-bars', [{
+            x: sorted.map(d => d.dataset_name),
+            y: sorted.map(d => d.avg_mAP_50),
+            type: 'bar',
+            marker: { color: sorted.map(d => d.avg_mAP_50), colorscale: 'Viridis' },
+            hovertemplate: '%{x}: %{y:.1f}%<extra></extra>',
+          }], {
+            ...PLOTLY_DARK,
+            xaxis: { ...PLOTLY_DARK.xaxis, tickangle: 45, automargin: true },
+            yaxis: { ...PLOTLY_DARK.yaxis, title: 'Avg mAP@50 (%)' },
+            margin: { l: 50, r: 20, t: 10, b: 120 },
+          }, { responsive: true });
+        }
+
+        // group_detr comparison (group configs by group_detr, average mAP across all)
+        const gdGroups = {};
+        d.configs.forEach((cfg, ci) => {
+          const gd = cfg.group_detr;
+          if (!gdGroups[gd]) gdGroups[gd] = [];
+          const vals = z[ci].filter(v => v != null);
+          if (vals.length) gdGroups[gd].push(vals.reduce((a,b) => a+b, 0) / vals.length);
+        });
+        const gdKeys = Object.keys(gdGroups).sort((a,b) => a-b);
+        if (gdKeys.length > 1) {
+          Plotly.newPlot('bm-groupdetr-bars', [{
+            x: gdKeys.map(k => `group_detr=${k}`),
+            y: gdKeys.map(k => { const v = gdGroups[k]; return v.reduce((a,b)=>a+b,0)/v.length; }),
+            type: 'bar',
+            marker: { color: COLORS.slice(0, gdKeys.length) },
+            hovertemplate: '%{x}: %{y:.1f}%<extra></extra>',
+          }], {
+            ...PLOTLY_DARK,
+            yaxis: { ...PLOTLY_DARK.yaxis, title: 'Avg mAP@50 (%)' },
+          }, { responsive: true });
+        }
+      } catch(e) { console.error('Benchmark heatmap error:', e); }
+    }
+
+    // ─── Visualization: Multi-Model with Hybrid View ──────────────────────────
+    let _vizData = null;
+    let _vizDataHash = '';
+    let _vizViewMode = 'hybrid';  // 'hybrid', 'pred', 'gt'
+    let _expandedModels = new Set();
+    let _vizFirstLoad = true;
+
+    async function loadVizChampion() {
+      const el = document.getElementById('viz-content');
+      try {
+        const d = await fetchJSON('/api/viz_champion');
+        if (!d.ready) {
+          el.innerHTML = `<div class="viz-model-header" style="cursor:default">
+            <h3>⏳ Generating Predictions</h3>
+            <span style="color:var(--text-dim)">${d.error || 'Visualization data is being generated. Check back in ~40 minutes.'}</span></div>`;
+          return;
+        }
+        // Skip re-render if data hasn't changed (prevents image flash on auto-refresh)
+        const hash = JSON.stringify(d.models?.map(m => m.datasets?.map(ds => ds.pred_image + '|' + ds.hybrid_image + '|' + (ds.raw_detections?.length||0))));
+        if (hash === _vizDataHash) { _vizData = d; return; }
+        _vizDataHash = hash;
+        _vizData = d;
+        // Auto-expand first model only on very first load
+        if (_vizFirstLoad && _expandedModels.size === 0) _expandedModels.add(0);
+        _vizFirstLoad = false;
+        renderViz(d);
+      } catch(e) {
+        el.innerHTML = `<div class="viz-model-header" style="cursor:default">
+          <h3>❌ Error</h3><span style="color:#f66">${e.message}</span></div>`;
+      }
+    }
+
+    function vizConfigId(c) {
+      // Short deterministic ID from config params for cross-referencing with All Results table
+      const ep = c.num_epochs || c.epochs || 50;
+      const str = `${c.rank||0}_${c.batch_size||0}_${c.copy_paste?1:0}_${c.mosaic?1:0}_${c.alpha_ratio||0}_${c.weight_decay||0}_${ep}`;
+      let h = 0;
+      for (let i = 0; i < str.length; i++) { h = ((h << 5) - h + str.charCodeAt(i)) | 0; }
+      return (h >>> 0).toString(36).slice(0, 5).toUpperCase();
+    }
+
+    function renderViz(d) {
+      const el = document.getElementById('viz-content');
+      // Support both old (champion/datasets) and new (models[]) manifest formats
+      const models = d.models || [{
+        model_index: 0,
+        config: d.champion || {},
+        config_key: 'champion',
+        wins: (d.datasets||[]).filter(x=>x.is_winner).length,
+        datasets: d.datasets || [],
+        avg_mAP_50: (d.datasets||[]).reduce((s,x)=>s+(x.mAP_50||0),0)/((d.datasets||[]).length||1),
+        avg_mAP_50_95: (d.datasets||[]).reduce((s,x)=>s+(x.mAP_50_95||0),0)/((d.datasets||[]).length||1),
+        avg_train_time: (d.datasets||[]).reduce((s,x)=>s+(x.train_time_seconds||0),0)/((d.datasets||[]).length||1),
+      }];
+
+      let html = `
+        <div class="viz-toggle">
+          <button class="${_vizViewMode==='hybrid'?'active':''}" onclick="vizSetMode('hybrid')">🔍 Hybrid</button>
+          <button class="${_vizViewMode==='pred'?'active':''}" onclick="vizSetMode('pred')">🔮 Predictions</button>
+          <button class="${_vizViewMode==='gt'?'active':''}" onclick="vizSetMode('gt')">🎯 Ground Truth</button>
+          <span style="margin-left:auto; color:var(--text-dim); font-size:0.8em; align-self:center">
+            ${_vizViewMode==='hybrid' ? '🟢 FP · 🔴 FN · clear=TP · dimmed=BG' : ''}
+          </span>
+        </div>`;
+
+      for (const model of models) {
+        const idx = model.model_index;
+        const isOpen = _expandedModels.has(idx);
+        const c = model.config || {};
+        const dsets = model.datasets || [];
+        const nWins = model.wins || dsets.filter(x=>x.is_winner).length;
+        const avgMap5095 = model.avg_mAP_50_95 || (dsets.reduce((s,x)=>s+(x.mAP_50_95||0),0)/(dsets.length||1));
+        const avgMap50 = model.avg_mAP_50 || (dsets.reduce((s,x)=>s+(x.mAP_50||0),0)/(dsets.length||1));
+        const avgTime = model.avg_train_time || (dsets.reduce((s,x)=>s+(x.train_time_seconds||0),0)/(dsets.length||1));
+
+        const cid = vizConfigId(c);
+        const configStr = `r${c.rank||'?'} bs${c.batch_size||'?'} cp=${c.copy_paste?'ON':'OFF'} mo=${c.mosaic?'ON':'OFF'} α/${c.alpha_ratio||'?'} wd=${c.weight_decay||'?'}`;
+
+        html += `
+          <div class="viz-model-header" onclick="vizToggleModel(${idx})">
+            <span class="chevron ${isOpen?'open':''}">▶</span>
+            <h3>${idx === 0 ? '🏆' : '🥈'} <code style="background:rgba(255,255,255,0.1);padding:2px 6px;border-radius:4px;font-size:0.85em;font-family:'Fira Code','Source Code Pro','Cascadia Code',monospace;font-variant-numeric:slashed-zero">${cid}</code> ${configStr}</h3>
+            <div class="viz-model-stats">
+              <div class="stat"><div class="val" style="color:var(--accent)">${nWins}</div><div class="lbl">Wins</div></div>
+              <div class="stat"><div class="val">${(avgMap50*100).toFixed(1)}%</div><div class="lbl">Avg @50</div></div>
+              <div class="stat"><div class="val">${(avgMap5095*100).toFixed(1)}%</div><div class="lbl">Avg @50:95</div></div>
+              <div class="stat"><div class="val">${avgTime.toFixed(0)}s</div><div class="lbl">Avg Time</div></div>
+              <div class="stat"><div class="val">${c.num_epochs||c.epochs||'?'}</div><div class="lbl">Epochs</div></div>
+            </div>
+          </div>
+          <div class="viz-model-body ${isOpen?'open':''}" id="viz-body-${idx}">
+            <div class="viz-grid">`;
+
+        // Sort: winners first, then by mAP
+        const sorted = [...dsets].sort((a,b) => {
+          if (a.is_winner && !b.is_winner) return -1;
+          if (!a.is_winner && b.is_winner) return 1;
+          return (b.mAP_50_95||0) - (a.mAP_50_95||0);
+        });
+
+        for (const item of sorted) {
+          const isWinner = item.is_winner;
+          const hasImage = !!(item.pred_image || item.gt_image);
+          let imgSrc = '';
+          if (hasImage) {
+            if (_vizViewMode === 'gt' && item.gt_image) imgSrc = `/viz/${item.gt_image}`;
+            else if (_vizViewMode === 'hybrid' && item.hybrid_image) imgSrc = `/viz/${item.hybrid_image}`;
+            else imgSrc = `/viz/${item.pred_image || item.gt_image}`;
+          }
+
+          const rankStr = '#' + (item.ranking||'?') + ' of ' + (item.total_configs||'?');
+          const shortName = item.name.replace(/-fsod-[a-z]+$/, '').replace(/-[a-z0-9]{4,5}$/, '');
+          const imgHtml = hasImage
+            ? `<img src="${imgSrc}" alt="${item.name}" loading="lazy">`
+            : `<div style="height:140px;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,0.03);color:var(--text-dim);font-size:0.8em">📊 Stats only</div>`;
+          html += `
+            <div class="viz-card ${isWinner ? 'winner' : ''}"
+                 title="${rankStr} on ${d.metric||'mAP_50_95'}"
+                 ${hasImage ? `onclick="vizZoom(${idx}, '${item.name}')"` : ''}>
+              ${isWinner
+                ? '<div class="viz-badge">\u2605 #1</div>'
+                : '<div class="viz-badge not-winner">' + rankStr + '</div>'}
+              ${imgHtml}
+              <div class="viz-info">
+                <div class="viz-ds-name">${shortName}</div>
+                <div class="viz-metrics">
+                  <span>@50: <span class="metric-val">${((item.mAP_50||0)*100).toFixed(1)}%</span></span>
+                  <span>@50:95: <span class="metric-val">${((item.mAP_50_95||0)*100).toFixed(1)}%</span></span>
+                  <span>\u23f1 ${(item.train_time_seconds||0).toFixed(0)}s</span>
+                  ${item.num_predictions != null ? `<span>${item.num_predictions}p/${item.num_gt_boxes||0}gt</span>` : ''}
+                </div>
+              </div>
+            </div>`;
+        }
+
+        html += '</div></div>';
+      }
+
+      el.innerHTML = html;
+    }
+
+    function vizSetMode(mode) {
+      _vizViewMode = mode;
+      if (_vizData) renderViz(_vizData);
+    }
+
+    function vizToggleModel(idx) {
+      if (_expandedModels.has(idx)) {
+        _expandedModels.delete(idx);
+      } else {
+        _expandedModels.add(idx);
+      }
+      location.hash = '#viz' + (_expandedModels.size ? '/model-' + idx : '');
+      if (_vizData) renderViz(_vizData);
+    }
+
+    function vizZoom(modelIdx, dsName) {
+      if (!_vizData) return;
+      const models = _vizData.models || [{datasets: _vizData.datasets||[]}];
+      const model = models[modelIdx] || models[0];
+      const item = (model.datasets||[]).find(d => d.name === dsName);
+      if (!item) return;
+
+      const overlay = document.createElement('div');
+      overlay.className = 'viz-modal-overlay';
+      const predSrc = '/viz/' + item.pred_image;
+      const gtSrc = '/viz/' + item.gt_image;
+      const hybridSrc = item.hybrid_image ? '/viz/' + item.hybrid_image : null;
+      const origSrc = item.original_image ? '/viz/' + item.original_image : null;
+      const shortName = item.name.replace(/-fsod-[a-z]+$/, '').replace(/-[a-z0-9]{4,5}$/, '');
+      const hasRawDets = !!(item.raw_detections && item.raw_detections.length);
+      const classNames = item.class_names || [];
+
+      // Static images (fallback when no raw detections available)
+      let imagesHtml = '';
+      if (!hasRawDets) {
+        if (hybridSrc) {
+          imagesHtml += `<div>
+            <div style="color:var(--text-dim); font-size:0.85em; margin-bottom:4px">Hybrid (🟢FP 🔴FN clear=TP dimmed=BG)</div>
+            <img src="${hybridSrc}" style="max-width:30vw; max-height:75vh; border-radius:6px">
+          </div>`;
+        }
+        imagesHtml += `<div>
+          <div style="color:var(--text-dim); font-size:0.85em; margin-bottom:4px">Predictions (${item.num_predictions||0} @ \u226525%)</div>
+          <img src="${predSrc}" style="max-width:30vw; max-height:75vh; border-radius:6px">
+        </div>
+        <div>
+          <div style="color:var(--text-dim); font-size:0.85em; margin-bottom:4px">Ground Truth (${item.num_gt_boxes||0} boxes)</div>
+          <img src="${gtSrc}" style="max-width:30vw; max-height:75vh; border-radius:6px">
+        </div>`;
+      }
+
+      // Toolbar: download button
+      let toolbarHtml = '';
+      if (origSrc) {
+        toolbarHtml += `<a href="${origSrc}" download style="color:var(--accent);text-decoration:none;font-size:0.85em;padding:4px 10px;border:1px solid var(--accent);border-radius:4px">\u2b07 Original Image</a>`;
+      }
+
+      // Confidence slider (only if raw_detections available)
+      let sliderHtml = '';
+      if (hasRawDets) {
+        sliderHtml = `
+          <div style="margin:10px 0; display:flex; align-items:center; gap:10px; justify-content:center">
+            <label style="color:var(--text-dim); font-size:0.85em">Confidence:</label>
+            <input type="range" id="viz-conf-slider" min="1" max="100" value="25"
+                   style="width:200px; accent-color:var(--accent)">
+            <span id="viz-conf-val" style="color:var(--text); font-size:0.85em; min-width:40px">25%</span>
+            <span id="viz-conf-count" style="color:var(--text-dim); font-size:0.8em"></span>
+          </div>
+          <div id="viz-canvas-wrap" style="display:flex; gap:12px; align-items:start; justify-content:center; flex-wrap:wrap"></div>`;
+      }
+
+      overlay.innerHTML = `
+        <span class="close-btn" onclick="this.parentElement.remove()">&times;</span>
+        <div style="text-align:center; max-width:95vw">
+          <div style="color:var(--text); font-size:1.1em; margin-bottom:8px; font-weight:bold">
+            ${shortName} \u2014 #${item.ranking||'?'}/${item.total_configs||'?'}
+            ${item.is_winner ? ' \u2605 WINNER' : ''}
+          </div>
+          ${hasRawDets ? sliderHtml : `<div style="display:flex; gap:12px; align-items:start; justify-content:center; flex-wrap:wrap">${imagesHtml}</div>`}
+          <div style="color:var(--text-dim); font-size:0.85em; margin-top:8px">
+            mAP@50: ${((item.mAP_50||0)*100).toFixed(1)}% \u00b7 mAP@50:95: ${((item.mAP_50_95||0)*100).toFixed(1)}%
+            \u00b7 ${item.num_classes||'?'} classes \u00b7 ${item.num_train_images||'?'} train imgs \u00b7 \u23f1 ${(item.train_time_seconds||0).toFixed(0)}s
+          </div>
+          ${toolbarHtml ? `<div style="margin-top:10px">${toolbarHtml}</div>` : ''}
+        </div>`;
+      overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+      document.body.appendChild(overlay);
+
+      // Setup canvas-based confidence slider
+      if (hasRawDets) {
+        const imgUrl = origSrc || predSrc;
+        const bgImg = new window.Image();
+        bgImg.crossOrigin = 'anonymous';
+        bgImg.onload = () => {
+          const [imgW, imgH] = item.image_size || [bgImg.naturalWidth, bgImg.naturalHeight];
+          const COLORS = ['#FF6B6B','#4ECDC4','#45B7D1','#96CEB4','#FFEAA7','#DDA0DD','#98D8C8','#F7DC6F','#BB8FCE','#85C1E9',
+                          '#F1948A','#82E0AA','#F8C471','#AED6F1','#D2B4DE','#A3E4D7','#FAD7A0','#D5F5E3','#FADBD8','#D6EAF8'];
+
+          function drawCanvas(confThresh) {
+            const wrap = document.getElementById('viz-canvas-wrap');
+            if (!wrap) return;
+            // Scale for display
+            const maxH = window.innerHeight * 0.65;
+            const maxW = window.innerWidth * 0.42;
+            const scale = Math.min(maxW / imgW, maxH / imgH, 1);
+            const dw = Math.round(imgW * scale), dh = Math.round(imgH * scale);
+
+            const filteredDets = item.raw_detections.filter(d => d.confidence >= confThresh / 100);
+            const gtBoxes = item.gt_boxes_data || [];
+
+            // Update count
+            const countEl = document.getElementById('viz-conf-count');
+            if (countEl) countEl.textContent = `(${filteredDets.length} predictions)`;
+
+            wrap.innerHTML = '';
+
+            // -- Hybrid canvas (ModelComparisonAnnotator logic) --
+            const hybridDiv = document.createElement('div');
+            hybridDiv.innerHTML = `<div style="color:var(--text-dim);font-size:0.85em;margin-bottom:4px">Hybrid (\u{1F7E2}FP \u{1F534}FN clear=TP dimmed=BG)</div>`;
+            const hybridCanvas = document.createElement('canvas');
+            hybridCanvas.width = dw; hybridCanvas.height = dh;
+            hybridCanvas.style.borderRadius = '6px';
+            const hctx = hybridCanvas.getContext('2d');
+            hctx.drawImage(bgImg, 0, 0, dw, dh);
+            const hImageData = hctx.getImageData(0, 0, dw, dh);
+            const px = hImageData.data;
+            // Build pixel masks
+            const predMask = new Uint8Array(dw * dh);
+            const gtMask = new Uint8Array(dw * dh);
+            for (const det of filteredDets) {
+              const [cx, cy, bw, bh] = det.bbox;
+              const x1 = Math.max(0, Math.floor((cx - bw/2) * dw));
+              const y1 = Math.max(0, Math.floor((cy - bh/2) * dh));
+              const x2 = Math.min(dw, Math.ceil((cx + bw/2) * dw));
+              const y2 = Math.min(dh, Math.ceil((cy + bh/2) * dh));
+              for (let row = y1; row < y2; row++)
+                for (let col = x1; col < x2; col++)
+                  predMask[row * dw + col] = 1;
+            }
+            for (const gt of gtBoxes) {
+              const [cx, cy, bw, bh] = gt.bbox;
+              const x1 = Math.max(0, Math.floor((cx - bw/2) * dw));
+              const y1 = Math.max(0, Math.floor((cy - bh/2) * dh));
+              const x2 = Math.min(dw, Math.ceil((cx + bw/2) * dw));
+              const y2 = Math.min(dh, Math.ceil((cy + bh/2) * dh));
+              for (let row = y1; row < y2; row++)
+                for (let col = x1; col < x2; col++)
+                  gtMask[row * dw + col] = 1;
+            }
+            // Apply overlays per-pixel
+            const op = 0.7;
+            for (let i = 0; i < dw * dh; i++) {
+              const p = predMask[i], g = gtMask[i], idx = i * 4;
+              if (p && g) continue;  // TP: keep original
+              if (p) {  // FP: green
+                px[idx]   = Math.round(px[idx]   * (1-op));
+                px[idx+1] = Math.round(px[idx+1] * (1-op) + 128 * op);
+                px[idx+2] = Math.round(px[idx+2] * (1-op));
+              } else if (g) {  // FN: red
+                px[idx]   = Math.round(px[idx]   * (1-op) + 255 * op);
+                px[idx+1] = Math.round(px[idx+1] * (1-op));
+                px[idx+2] = Math.round(px[idx+2] * (1-op));
+              } else {  // Neither: dimmed
+                px[idx]   = Math.round(px[idx]   * (1-op));
+                px[idx+1] = Math.round(px[idx+1] * (1-op));
+                px[idx+2] = Math.round(px[idx+2] * (1-op));
+              }
+            }
+            hctx.putImageData(hImageData, 0, 0);
+            hybridDiv.appendChild(hybridCanvas);
+            wrap.appendChild(hybridDiv);
+
+            // -- Predictions canvas --
+            const predDiv = document.createElement('div');
+            predDiv.innerHTML = `<div style="color:var(--text-dim);font-size:0.85em;margin-bottom:4px">Predictions (${filteredDets.length} @ \u2265${confThresh}%)</div>`;
+            const predCanvas = document.createElement('canvas');
+            predCanvas.width = dw; predCanvas.height = dh;
+            predCanvas.style.borderRadius = '6px';
+            const pctx = predCanvas.getContext('2d');
+            pctx.drawImage(bgImg, 0, 0, dw, dh);
+            for (const det of filteredDets) {
+              const [cx, cy, bw, bh] = det.bbox;  // YOLO normalized
+              const x = (cx - bw/2) * dw, y = (cy - bh/2) * dh;
+              const w = bw * dw, h = bh * dh;
+              const color = COLORS[det.class_id % COLORS.length];
+              pctx.strokeStyle = color; pctx.lineWidth = 2;
+              pctx.strokeRect(x, y, w, h);
+              const label = (classNames[det.class_id] || `cls${det.class_id}`) + ' ' + (det.confidence * 100).toFixed(0) + '%';
+              pctx.font = `bold ${Math.max(10, 12 * scale)}px sans-serif`;
+              const tm = pctx.measureText(label);
+              pctx.fillStyle = color; pctx.globalAlpha = 0.75;
+              pctx.fillRect(x, y - Math.max(10, 14 * scale) - 2, tm.width + 6, Math.max(10, 14 * scale) + 2);
+              pctx.globalAlpha = 1; pctx.fillStyle = '#000';
+              pctx.fillText(label, x + 3, y - 3);
+            }
+            predDiv.appendChild(predCanvas);
+            wrap.appendChild(predDiv);
+
+            // -- Ground Truth canvas --
+            const gtDiv = document.createElement('div');
+            gtDiv.innerHTML = `<div style="color:var(--text-dim);font-size:0.85em;margin-bottom:4px">Ground Truth (${gtBoxes.length} boxes)</div>`;
+            const gtCanvas = document.createElement('canvas');
+            gtCanvas.width = dw; gtCanvas.height = dh;
+            gtCanvas.style.borderRadius = '6px';
+            const gctx = gtCanvas.getContext('2d');
+            gctx.drawImage(bgImg, 0, 0, dw, dh);
+            for (const gt of gtBoxes) {
+              const [cx, cy, bw, bh] = gt.bbox;
+              const x = (cx - bw/2) * dw, y = (cy - bh/2) * dh;
+              const w = bw * dw, h = bh * dh;
+              const color = COLORS[gt.class_id % COLORS.length];
+              gctx.strokeStyle = color; gctx.lineWidth = 2;
+              gctx.setLineDash([6, 3]);
+              gctx.strokeRect(x, y, w, h);
+              gctx.setLineDash([]);
+              const label = classNames[gt.class_id] || `cls${gt.class_id}`;
+              gctx.font = `bold ${Math.max(10, 12 * scale)}px sans-serif`;
+              const tm = gctx.measureText(label);
+              gctx.fillStyle = color; gctx.globalAlpha = 0.75;
+              gctx.fillRect(x, y - Math.max(10, 14 * scale) - 2, tm.width + 6, Math.max(10, 14 * scale) + 2);
+              gctx.globalAlpha = 1; gctx.fillStyle = '#000';
+              gctx.fillText(label, x + 3, y - 3);
+            }
+            gtDiv.appendChild(gtCanvas);
+            wrap.appendChild(gtDiv);
+
+            // -- Base COCO canvas (if available) --
+            const cocoDets = item.base_coco_detections || [];
+            if (cocoDets.length > 0) {
+              const cocoFiltered = cocoDets.filter(d => d.confidence >= confThresh / 100);
+              const cocoDiv = document.createElement('div');
+              cocoDiv.innerHTML = `<div style="color:var(--text-dim);font-size:0.85em;margin-bottom:4px">Base COCO (${cocoFiltered.length} @ \u2265${confThresh}%)</div>`;
+              const cocoCanvas = document.createElement('canvas');
+              cocoCanvas.width = dw; cocoCanvas.height = dh;
+              cocoCanvas.style.borderRadius = '6px';
+              const cctx = cocoCanvas.getContext('2d');
+              cctx.drawImage(bgImg, 0, 0, dw, dh);
+              for (const det of cocoFiltered) {
+                const [cx, cy, bw, bh] = det.bbox;
+                const x = (cx - bw/2) * dw, y = (cy - bh/2) * dh;
+                const w = bw * dw, h = bh * dh;
+                const color = COLORS[det.class_id % COLORS.length];
+                cctx.strokeStyle = color; cctx.lineWidth = 2;
+                cctx.strokeRect(x, y, w, h);
+                const label = (det.coco_class || `cls${det.class_id}`) + ' ' + (det.confidence * 100).toFixed(0) + '%';
+                cctx.font = `bold ${Math.max(10, 12 * scale)}px sans-serif`;
+                const tm = cctx.measureText(label);
+                cctx.fillStyle = color; cctx.globalAlpha = 0.75;
+                cctx.fillRect(x, y - Math.max(10, 14 * scale) - 2, tm.width + 6, Math.max(10, 14 * scale) + 2);
+                cctx.globalAlpha = 1; cctx.fillStyle = '#000';
+                cctx.fillText(label, x + 3, y - 3);
+              }
+              cocoDiv.appendChild(cocoCanvas);
+              wrap.appendChild(cocoDiv);
+            }
+          }
+
+          drawCanvas(25);
+
+          const slider = document.getElementById('viz-conf-slider');
+          const valEl = document.getElementById('viz-conf-val');
+          if (slider) {
+            slider.addEventListener('input', () => {
+              valEl.textContent = slider.value + '%';
+              drawCanvas(parseInt(slider.value));
+            });
+          }
+        };
+        bgImg.src = imgUrl;
+      }
+    }
+
+    // ─── Lazy tab data loader ─────────────────────────────────
+    async function loadTabData(tab) {
+      try {
+        switch (tab) {
+          case 'overview':  await loadOverview(); break;
+          case 'benchmark': await loadBenchmarkHeatmap(); break;
+          case 'heatmaps':  await loadHeatmaps(); break;
+          case 'trends':    await loadTrends(); break;
+          case 'table':     await loadTable(); break;
+          case 'detail':    break; // detail loads on row click
+          case 'viz':       await loadVizChampion(); break;
+        }
+      } catch(e) { console.error(`Tab ${tab} load error:`, e); }
+    }
+
+    // ─── Refresh loop ──────────────────────────────────────────
     async function loadAll() {
       try {
-        await Promise.all([loadSummary(), loadOverview(), loadTable(), loadRunningTasks(), checkSyncStatus()]);
-        await loadHeatmaps();
-        await loadTrends();
+        // Always: lightweight summary + GPU + running tasks
+        await Promise.all([loadSummary(), loadRunningTasks(), checkSyncStatus()]);
+        // Only reload data for the active tab
+        await loadTabData(_activeTab);
         document.getElementById('refreshDot').className = refreshRateMs > 0 ? 'dot' : 'dot off';
+        // First load: trigger full-page decryption effect
+        if (_isFirstLoad) {
+          _isFirstLoad = false;
+          decryptFirstLoad();
+        } else {
+          document.body.classList.remove('decrypt-pending');
+          document.body.classList.add('decrypt-ready');
+        }
       } catch (e) {
         console.error('Load error:', e);
         document.getElementById('refreshDot').className = 'dot off';
+      }
+    }
+    // Handle initial hash on page load
+    const initHash = location.hash.slice(1);
+    if (initHash) {
+      const [tabName, sub] = initHash.split('/');
+      if (document.querySelector(`.tab[data-tab="${tabName}"]`)) {
+        if (tabName === 'viz' && sub?.startsWith('model-')) {
+          _expandedModels.add(parseInt(sub.split('-')[1]));
+        }
+        switchTab(tabName, false);
       }
     }
     loadAll();

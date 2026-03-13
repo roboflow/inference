@@ -45,6 +45,7 @@ class HungarianMatcher(nn.Module):
 
     @torch.no_grad()
     def forward(self, outputs, targets, group_detr=1):
+        """Perform the matching."""
         bs, num_queries = outputs["pred_logits"].shape[:2]
 
         flat_pred_logits = outputs["pred_logits"].flatten(0, 1)
@@ -61,7 +62,7 @@ class HungarianMatcher(nn.Module):
         cost_giou = -giou
 
         # Focal classification cost
-        alpha = 0.25
+        alpha = self.focal_alpha
         gamma = 2.0
         neg_cost_class = (1 - alpha) * (out_prob**gamma) * (-F.logsigmoid(-flat_pred_logits))
         pos_cost_class = alpha * ((1 - out_prob) ** gamma) * (-F.logsigmoid(flat_pred_logits))
@@ -78,31 +79,25 @@ class HungarianMatcher(nn.Module):
         )
         C = C.view(bs, num_queries, -1).float().cpu()
 
-        # Replace NaN/Inf with large values
-        max_cost = C.max() if C.numel() > 0 else 0
-        C[C.isinf() | C.isnan()] = max_cost * 2
-
         sizes = [len(v["boxes"]) for v in targets]
-        indices = []
         g_num_queries = num_queries // group_detr
         C_list = C.split(g_num_queries, dim=1)
+
+        # Replace NaN/Inf with large values
+        max_cost = C.max().item() if C.numel() > 0 else 0.0
+        C[C.isinf() | C.isnan()] = max_cost * 2 if max_cost > 0 else 1e6
+
+        indices = []
         for g_i in range(group_detr):
             C_g = C_list[g_i]
-            indices_g = [
-                linear_sum_assignment(c[i])
-                for i, c in enumerate(C_g.split(sizes, -1))
-            ]
-            if g_i == 0:
-                indices = indices_g
-            else:
-                indices = [
-                    (
-                        np.concatenate([indice1[0], indice2[0] + g_num_queries * g_i]),
-                        np.concatenate([indice1[1], indice2[1]]),
-                    )
-                    for indice1, indice2 in zip(indices, indices_g)
-                ]
-        return [
-            (torch.as_tensor(i, dtype=torch.int64), torch.as_tensor(j, dtype=torch.int64))
-            for i, j in indices
-        ]
+            for i, c in enumerate(C_g.split(sizes, -1)):
+                if i >= len(indices):
+                    indices.append([np.array([], dtype=np.int64),
+                                    np.array([], dtype=np.int64)])
+                cost_np = c[i].float().numpy()
+                row_ind, col_ind = linear_sum_assignment(cost_np)
+                indices[i][0] = np.concatenate([indices[i][0], row_ind + g_i * g_num_queries])
+                indices[i][1] = np.concatenate([indices[i][1], col_ind])
+
+        return [(torch.as_tensor(r, dtype=torch.int64),
+                 torch.as_tensor(c, dtype=torch.int64)) for r, c in indices]
