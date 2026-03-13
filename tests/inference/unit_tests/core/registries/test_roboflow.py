@@ -361,6 +361,7 @@ def test_get_model_type_when_roboflow_api_is_called_for_model_from_new_model_reg
         service_secret=None,
     )
 
+
 @mock.patch.object(roboflow, "get_roboflow_model_data")
 @mock.patch.object(roboflow, "construct_model_type_cache_path")
 def test_get_model_type_when_roboflow_api_is_called_for_specific_model_and_model_type_not_specified(

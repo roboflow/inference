@@ -484,10 +484,16 @@ def get_model_metadata_from_inference_models_registry(
         return api_data
     query = [("modelId", model_id)]
     headers = {"Authorization": f"Bearer {api_key}"}
-    if countinference is not None:
-        headers["countinference"] = "true" if countinference else "false"
-    if service_secret is not None:
-        headers["service_secret"] = service_secret
+    if GCP_SERVERLESS:
+        headers[ENFORCE_INTERNAL_ARTIFACTS_URLS_HEADER] = "true"
+    if ENFORCE_CREDITS_VERIFICATION:
+        skip = (
+            countinference is False
+            and service_secret is not None
+            and service_secret == ROBOFLOW_SERVICE_SECRET
+        )
+        if not skip:
+            headers[ENFORCE_CREDITS_VERIFICATION_HEADER] = "true"
     api_url = _add_params_to_url(
         url=f"{API_BASE_URL}/models/v1/external/weights",
         params=query,

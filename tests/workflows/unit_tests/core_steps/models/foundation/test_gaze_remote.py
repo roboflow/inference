@@ -6,9 +6,7 @@ import numpy as np
 import pytest
 
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
-from inference.core.workflows.core_steps.models.foundation.gaze.v1 import (
-    GazeBlockV1,
-)
+from inference.core.workflows.core_steps.models.foundation.gaze.v1 import GazeBlockV1
 from inference.core.workflows.execution_engine.entities.base import (
     ImageParentMetadata,
     WorkflowImageData,
