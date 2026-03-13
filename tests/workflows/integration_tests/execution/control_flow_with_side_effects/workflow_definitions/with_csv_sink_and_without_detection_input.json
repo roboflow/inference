@@ -1,0 +1,64 @@
+{
+  "version": "1.0",
+  "inputs": [
+    {"type": "WorkflowImage", "name": "image"},
+    {"type": "WorkflowParameter", "name": "output_directory", "default_value": "detection_logs"},
+    {"type": "WorkflowBatchInput", "name": "names", "dimensionality": 1}
+  ],
+  "steps": [
+    {
+      "type": "roboflow_core/roboflow_object_detection_model@v2",
+      "name": "detection",
+      "image": "$inputs.image",
+      "model_id": "yolov8n-640",
+      "class_filter": ["person"]
+    },
+    {
+      "type": "ContinueIf",
+      "name": "continue_if",
+      "condition_statement": {
+        "type": "StatementGroup",
+        "statements": [
+          {
+            "type": "BinaryStatement",
+            "left_operand": {
+              "type": "DynamicOperand",
+              "operand_name": "prediction",
+              "operations": [{"type": "SequenceLength"}]
+            },
+            "comparator": {"type": "(Number) >="},
+            "right_operand": {
+              "type": "StaticOperand",
+              "value": 1
+            }
+          }
+        ]
+      },
+      "evaluation_parameters": {"prediction": "$steps.detection.predictions"},
+      "next_steps": ["$steps.csv_formatter"]
+    },
+    {
+      "type": "roboflow_core/csv_formatter@v1",
+      "name": "csv_formatter",
+      "columns_data": {
+        "name": "$inputs.names"
+      }
+    },
+    {
+      "type": "roboflow_core/local_file_sink@v1",
+      "name": "local_file_sink",
+      "content": "$steps.csv_formatter.csv_content",
+      "file_type": "csv",
+      "output_mode": "separate_files",
+      "target_directory": "$inputs.output_directory",
+      "file_name_prefix": "detection_log"
+    }
+  ],
+  "outputs": [
+    {
+      "type": "JsonField",
+      "name": "save_message",
+      "selector": "$steps.local_file_sink.message"
+    }
+  ]
+}

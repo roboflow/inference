@@ -4,9 +4,10 @@ from inference.core.exceptions import (
     InferenceModelNotFound,
     InvalidModelIDError,
     ModelManagerLockAcquisitionError,
+    PaymentRequiredError,
     RoboflowAPIForbiddenError,
     RoboflowAPINotAuthorizedError,
-    RoboflowAPINotNotFoundError, PaymentRequiredError,
+    RoboflowAPINotNotFoundError,
 )
 from inference.core.workflows.errors import ClientCausedStepExecutionError
 from inference.core.workflows.execution_engine.v1.step_error_handlers import (
@@ -123,6 +124,7 @@ def test_extended_roboflow_errors_handler_when_payment_required_error_occurs_whi
 
     # then
     assert error.value.status_code == 402
+
 
 def test_extended_roboflow_errors_handler_when_not_found_error_occurs() -> None:
     # when

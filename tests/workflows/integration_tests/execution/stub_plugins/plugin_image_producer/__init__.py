@@ -764,6 +764,7 @@ class SIMDConsumerAcceptingListDecDimBlock(WorkflowBlock):
         idx2x = defaultdict(list)
         for batch_x in x:
             for idx, el in enumerate(batch_x):
+                print("d", list(el))
                 idx2x[idx].extend(list(el))
         indices_x = sorted(idx2x.keys())
         results = []
