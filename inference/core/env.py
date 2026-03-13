@@ -563,6 +563,14 @@ HOSTED_INSTANCE_SEGMENTATION_URL = os.getenv(
         else "https://lambda-instance-segmentation.staging.roboflow.com"
     ),
 )
+HOSTED_SEMANTIC_SEGMENTATION_URL = os.getenv(
+    "HOSTED_SEMANTIC_SEGMENTATION_URL",
+    (
+        "https://segment.roboflow.com"
+        if PROJECT == "roboflow-platform"
+        else "https://lambda-semantic-segmentation.staging.roboflow.com"
+    ),
+)
 HOSTED_CLASSIFICATION_URL = os.getenv(
     "HOSTED_CLASSIFICATION_URL",
     (

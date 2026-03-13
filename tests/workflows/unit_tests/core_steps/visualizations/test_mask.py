@@ -97,3 +97,38 @@ def test_mask_visualization_block() -> None:
     assert not np.array_equal(
         output.get("image").numpy_image, np.zeros((1000, 1000, 3), dtype=np.uint8)
     )
+
+
+def test_mask_visualization_block_with_semantic_segmentation() -> None:
+    """Block renders sv.Detections produced by the semantic segmentation model block."""
+    mask = np.zeros((2, 100, 100), dtype=np.bool_)
+    mask[0, 10:40, 10:40] = True  # class 1
+    mask[1, 60:90, 60:90] = True  # class 2
+
+    detections = sv.Detections(
+        xyxy=np.array([[10, 10, 40, 40], [60, 60, 90, 90]], dtype=np.float64),
+        mask=mask,
+        class_id=np.array([1, 2]),
+        data={"class_name": np.array(["cat", "dog"])},
+    )
+
+    block = MaskVisualizationBlockV1()
+    output = block.run(
+        image=WorkflowImageData(
+            parent_metadata=ImageParentMetadata(parent_id="some"),
+            numpy_image=np.zeros((100, 100, 3), dtype=np.uint8),
+        ),
+        predictions=detections,
+        copy_image=True,
+        color_palette="DEFAULT",
+        palette_size=10,
+        custom_colors=[],
+        color_axis="CLASS",
+        opacity=0.5,
+    )
+
+    assert output is not None
+    assert "image" in output
+    result_image = output["image"].numpy_image
+    assert result_image.shape == (100, 100, 3)
+    assert not np.array_equal(result_image, np.zeros((100, 100, 3), dtype=np.uint8))
