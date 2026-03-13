@@ -330,14 +330,20 @@ def get_masks_intersection_for_dimensions(
 
     sorted_dims = sorted(dimensions)
 
+    if len(sorted_dims) <= 1:
+        result: Dict[int, Optional[Set[DynamicBatchIndex]]] = {}
+        for dim in sorted_dims:
+            sets_at_dim = [
+                {idx for idx in mask if len(idx) == dim} for mask in batch_masks
+            ]
+            result[dim] = set.intersection(*sets_at_dim) if sets_at_dim else set()
+        return result
+
     # Group indices by their tuple length, only keeping relevant dimensions
     by_dim: Dict[int, Set[DynamicBatchIndex]] = {dim: set() for dim in sorted_dims}
     for mask in batch_masks:
         for idx in mask:
             by_dim[len(idx)].add(idx)
-
-    if len(sorted_dims) <= 1:
-        return {dim: by_dim[dim] for dim in sorted_dims}
 
     prev_dim = {sorted_dims[i]: sorted_dims[i - 1] for i in range(1, len(sorted_dims))}
 

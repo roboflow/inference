@@ -8,6 +8,7 @@ from inference.core.workflows.execution_engine.v1.executor.execution_data_manage
     GuardForIndicesWrapping,
     ensure_compound_input_indices_match,
     get_empty_batch_elements_indices,
+    get_masks_intersection_for_dimensions,
     reduce_batch_dimensionality,
     remove_indices,
     unfold_parameters,
@@ -597,3 +598,20 @@ def test_reduce_batch_dimensionality_when_reduction_is_illegal() -> None:
             data=["a", "b", "c", "d"],
             guard_of_indices_wrapping=guard_of_indices_wrapping,
         )
+
+
+def test_get_masks_intersection_for_dimensions_two_masks_same_dimension_returns_intersection() -> None:
+    # Two masks at the same dimension level (dimension 1): intersection should contain
+    # only indices that appear in both masks.
+    # given
+    mask_a = {(0,), (3,)}
+    mask_b = {(1,), (2,), (3,)}
+
+    # when
+    result = get_masks_intersection_for_dimensions(
+        batch_masks=[mask_a, mask_b],
+        dimensions={1},
+    )
+
+    # then
+    assert result == {1: {(3,)}}, "Expected intersection of two masks at dimension 1"
