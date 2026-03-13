@@ -421,6 +421,9 @@ from inference.core.workflows.core_steps.transformations.image_slicer.v1 import 
 from inference.core.workflows.core_steps.transformations.image_slicer.v2 import (
     ImageSlicerBlockV2,
 )
+from inference.core.workflows.core_steps.transformations.load_image_from_url.v1 import (
+    LoadImageFromUrlBlockV1,
+)
 from inference.core.workflows.core_steps.transformations.perspective_correction.v1 import (
     PerspectiveCorrectionBlockV1,
 )
@@ -681,6 +684,7 @@ def _should_filter_block(block_class: Type[WorkflowBlock]) -> bool:
 def load_blocks() -> List[Type[WorkflowBlock]]:
     blocks = [
         AbsoluteStaticCropBlockV1,
+        LoadImageFromUrlBlockV1,
         DynamicCropBlockV1,
         DetectionsFilterBlockV1,
         DetectionOffsetBlockV1,
