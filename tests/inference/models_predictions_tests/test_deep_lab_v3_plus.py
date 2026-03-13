@@ -52,9 +52,7 @@ def test_deep_lab_v3_plus_batch_inference_when_batch_size_smaller_than_max_batch
     assert len(result) == batch_size, "Number of results must match batch size"
     for prediction in result:
         assert_semantic_segmentation_predictions_match(
-            result_prediction=prediction.model_dump(
-                by_alias=True, exclude_none=True
-            ),
+            result_prediction=prediction.model_dump(by_alias=True, exclude_none=True),
             reference_prediction=deep_lab_v3_plus_seg_reference_prediction.model_dump(
                 by_alias=True, exclude_none=True
             ),
@@ -84,9 +82,7 @@ def test_deep_lab_v3_plus_batch_inference_when_batch_size_larger_than_max_batch_
     assert len(result) == batch_size, "Number of results must match batch size"
     for prediction in result:
         assert_semantic_segmentation_predictions_match(
-            result_prediction=prediction.model_dump(
-                by_alias=True, exclude_none=True
-            ),
+            result_prediction=prediction.model_dump(by_alias=True, exclude_none=True),
             reference_prediction=deep_lab_v3_plus_seg_reference_prediction.model_dump(
                 by_alias=True, exclude_none=True
             ),

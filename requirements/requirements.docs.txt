@@ -1,15 +1,11 @@
-cairosvg
-mike
-mkdocs-gen-files
-mkdocs-jupyter
-mkdocs-literate-nav
-mkdocs-macros-plugin
-mkdocs-material[imaging]
-mkdocs-material
-mkdocs-ezlinks-plugin
-mkdocs-swagger-ui-tag
-mkdocs
+zensical
 mkdocstrings[python]
+mkdocs-gen-files
+mkdocs-literate-nav
+mkdocs-ezlinks-plugin
+mkdocs-macros-plugin
+mkdocs-jupyter
+mkdocs-swagger-ui-tag
 pillow
 jinja2
 

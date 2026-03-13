@@ -938,3 +938,179 @@ def test_package_with_static_crop_letterbox_against_torch_batch_input(
         predictions[1].xyxy.cpu().numpy(), np.array([[427, 331, 852, 552]]), atol=1
     )
     assert 80000 <= np.sum(predictions[1].mask.cpu().numpy()) <= 81000
+
+
+_NONSQUARE_LETTERBOX_SEG_ONNX_EXPECTED_XYXY_NUMPY = np.array([[119, 318, 1261, 547]])
+_NONSQUARE_LETTERBOX_SEG_ONNX_EXPECTED_XYXY_TORCH = np.array([[119, 317, 1261, 547]])
+_NONSQUARE_LETTERBOX_SEG_ONNX_EXPECTED_MASK_SUM_NUMPY = 211515
+_NONSQUARE_LETTERBOX_SEG_ONNX_EXPECTED_MASK_SUM_TORCH = 211564
+
+
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+def test_package_with_nonsquare_letterbox_against_numpy_input(
+    snake_image_numpy: np.ndarray,
+    snakes_rfdetr_seg_onnx_static_bs_nonsquare_letterbox_package: str,
+) -> None:
+    # given
+    from inference_models.models.rfdetr.rfdetr_instance_segmentation_onnx import (
+        RFDetrForInstanceSegmentationOnnx,
+    )
+
+    model = RFDetrForInstanceSegmentationOnnx.from_pretrained(
+        model_name_or_path=snakes_rfdetr_seg_onnx_static_bs_nonsquare_letterbox_package,
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
+    )
+
+    # when
+    predictions = model(snake_image_numpy, confidence=0.5)
+
+    # then
+    assert len(predictions) == 1
+    assert np.allclose(
+        predictions[0].xyxy.cpu().numpy(),
+        _NONSQUARE_LETTERBOX_SEG_ONNX_EXPECTED_XYXY_NUMPY,
+        atol=2,
+    )
+    assert (
+        _NONSQUARE_LETTERBOX_SEG_ONNX_EXPECTED_MASK_SUM_NUMPY - 500
+        <= np.sum(predictions[0].mask.cpu().numpy())
+        <= _NONSQUARE_LETTERBOX_SEG_ONNX_EXPECTED_MASK_SUM_NUMPY + 500
+    )
+
+
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+def test_package_with_nonsquare_letterbox_against_numpy_list_input(
+    snake_image_numpy: np.ndarray,
+    snakes_rfdetr_seg_onnx_static_bs_nonsquare_letterbox_package: str,
+) -> None:
+    # given
+    from inference_models.models.rfdetr.rfdetr_instance_segmentation_onnx import (
+        RFDetrForInstanceSegmentationOnnx,
+    )
+
+    model = RFDetrForInstanceSegmentationOnnx.from_pretrained(
+        model_name_or_path=snakes_rfdetr_seg_onnx_static_bs_nonsquare_letterbox_package,
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
+    )
+
+    # when
+    predictions = model([snake_image_numpy, snake_image_numpy], confidence=0.5)
+
+    # then
+    assert len(predictions) == 2
+    for pred in predictions:
+        assert np.allclose(
+            pred.xyxy.cpu().numpy(),
+            _NONSQUARE_LETTERBOX_SEG_ONNX_EXPECTED_XYXY_NUMPY,
+            atol=2,
+        )
+        assert (
+            _NONSQUARE_LETTERBOX_SEG_ONNX_EXPECTED_MASK_SUM_NUMPY - 500
+            <= np.sum(pred.mask.cpu().numpy())
+            <= _NONSQUARE_LETTERBOX_SEG_ONNX_EXPECTED_MASK_SUM_NUMPY + 500
+        )
+
+
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+def test_package_with_nonsquare_letterbox_against_torch_input(
+    snake_image_torch: torch.Tensor,
+    snakes_rfdetr_seg_onnx_static_bs_nonsquare_letterbox_package: str,
+) -> None:
+    # given
+    from inference_models.models.rfdetr.rfdetr_instance_segmentation_onnx import (
+        RFDetrForInstanceSegmentationOnnx,
+    )
+
+    model = RFDetrForInstanceSegmentationOnnx.from_pretrained(
+        model_name_or_path=snakes_rfdetr_seg_onnx_static_bs_nonsquare_letterbox_package,
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
+    )
+
+    # when
+    predictions = model(snake_image_torch, confidence=0.5)
+
+    # then
+    assert len(predictions) == 1
+    assert np.allclose(
+        predictions[0].xyxy.cpu().numpy(),
+        _NONSQUARE_LETTERBOX_SEG_ONNX_EXPECTED_XYXY_TORCH,
+        atol=2,
+    )
+    assert (
+        _NONSQUARE_LETTERBOX_SEG_ONNX_EXPECTED_MASK_SUM_TORCH - 500
+        <= np.sum(predictions[0].mask.cpu().numpy())
+        <= _NONSQUARE_LETTERBOX_SEG_ONNX_EXPECTED_MASK_SUM_TORCH + 500
+    )
+
+
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+def test_package_with_nonsquare_letterbox_against_torch_list_input(
+    snake_image_torch: torch.Tensor,
+    snakes_rfdetr_seg_onnx_static_bs_nonsquare_letterbox_package: str,
+) -> None:
+    # given
+    from inference_models.models.rfdetr.rfdetr_instance_segmentation_onnx import (
+        RFDetrForInstanceSegmentationOnnx,
+    )
+
+    model = RFDetrForInstanceSegmentationOnnx.from_pretrained(
+        model_name_or_path=snakes_rfdetr_seg_onnx_static_bs_nonsquare_letterbox_package,
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
+    )
+
+    # when
+    predictions = model([snake_image_torch, snake_image_torch], confidence=0.5)
+
+    # then
+    assert len(predictions) == 2
+    for pred in predictions:
+        assert np.allclose(
+            pred.xyxy.cpu().numpy(),
+            _NONSQUARE_LETTERBOX_SEG_ONNX_EXPECTED_XYXY_TORCH,
+            atol=2,
+        )
+        assert (
+            _NONSQUARE_LETTERBOX_SEG_ONNX_EXPECTED_MASK_SUM_TORCH - 500
+            <= np.sum(pred.mask.cpu().numpy())
+            <= _NONSQUARE_LETTERBOX_SEG_ONNX_EXPECTED_MASK_SUM_TORCH + 500
+        )
+
+
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+def test_package_with_nonsquare_letterbox_against_torch_batch_input(
+    snake_image_torch: torch.Tensor,
+    snakes_rfdetr_seg_onnx_static_bs_nonsquare_letterbox_package: str,
+) -> None:
+    # given
+    from inference_models.models.rfdetr.rfdetr_instance_segmentation_onnx import (
+        RFDetrForInstanceSegmentationOnnx,
+    )
+
+    model = RFDetrForInstanceSegmentationOnnx.from_pretrained(
+        model_name_or_path=snakes_rfdetr_seg_onnx_static_bs_nonsquare_letterbox_package,
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
+    )
+
+    # when
+    predictions = model(
+        torch.stack([snake_image_torch, snake_image_torch], dim=0), confidence=0.5
+    )
+
+    # then
+    assert len(predictions) == 2
+    for pred in predictions:
+        assert np.allclose(
+            pred.xyxy.cpu().numpy(),
+            _NONSQUARE_LETTERBOX_SEG_ONNX_EXPECTED_XYXY_TORCH,
+            atol=2,
+        )
+        assert (
+            _NONSQUARE_LETTERBOX_SEG_ONNX_EXPECTED_MASK_SUM_TORCH - 500
+            <= np.sum(pred.mask.cpu().numpy())
+            <= _NONSQUARE_LETTERBOX_SEG_ONNX_EXPECTED_MASK_SUM_TORCH + 500
+        )

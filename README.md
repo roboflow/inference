@@ -275,7 +275,7 @@ Roboflow's [pricing tiers](https://roboflow.com/pricing).
 | [Fine-Tuned Models](https://roboflow.com/train) |  | ✅
 | [Universe Models](https://roboflow.com/universe) |  | ✅
 | [Active Learning](https://inference.roboflow.com/workflows/blocks/roboflow_dataset_upload/) |  | ✅
-| [Serverless Hosted API](https://docs.roboflow.com/deploy/hosted-api) |  | ✅
+| [Serverless Hosted API](https://docs.roboflow.com/deploy/serverless-hosted-api-v2) |  | ✅
 | [Dedicated Deployments](https://docs.roboflow.com/deploy/dedicated-deployments) |  | ✅
 | [Commercial Model Licensing](https://roboflow.com/licensing) |  | Paid
 | [Device Management](https://docs.roboflow.com/roboflow-enterprise) |  | Enterprise
@@ -283,7 +283,7 @@ Roboflow's [pricing tiers](https://roboflow.com/pricing).
 
 ## 🌩️ hosted compute
 
-If you don't want to manage your own infrastructure for self-hosting, Roboflow offers a hosted Inference Server via [one-click Dedicated Deployments](https://docs.roboflow.com/deploy/dedicated-deployments) (CPU and GPU machines) billed hourly, or simple models and Workflows via our [serverless Hosted API](https://docs.roboflow.com/deploy/hosted-api) billed per API-call.
+If you don't want to manage your own infrastructure for self-hosting, Roboflow offers a hosted Inference Server via [one-click Dedicated Deployments](https://docs.roboflow.com/deploy/dedicated-deployments) (CPU and GPU machines) billed hourly, or simple models and Workflows via our [serverless Hosted API](https://docs.roboflow.com/deploy/serverless-hosted-api-v2) billed per API-call.
 
 We offer a [generous free-tier](https://roboflow.com/pricing) to get started.
 
