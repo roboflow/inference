@@ -544,13 +544,17 @@ def model_implementation_exists(
         # Check if implementation requires features that package doesn't have
         if matched_model.required_model_features:
             package_features = model_features or set()
-            if not all(f in package_features for f in matched_model.required_model_features):
+            if not all(
+                f in package_features for f in matched_model.required_model_features
+            ):
                 return False
         # Check if package has features that implementation doesn't support
         if model_features:
             if not matched_model.supported_model_features:
                 return False
-            if not all(f in matched_model.supported_model_features for f in model_features):
+            if not all(
+                f in matched_model.supported_model_features for f in model_features
+            ):
                 return False
     elif model_features:
         # LazyClass (not RegistryEntry) - features requested but no supported features manifested

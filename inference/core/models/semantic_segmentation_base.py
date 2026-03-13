@@ -134,7 +134,7 @@ class SemanticSegmentationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceMo
                 f"img_to_b64_str requires uint8 tensor but got dtype {img.dtype}"
             )
 
-        img = Image.fromarray(img.numpy())
+        img = Image.fromarray(img.cpu().numpy())
         buffered = io.BytesIO()
         img.save(buffered, format="PNG")
 

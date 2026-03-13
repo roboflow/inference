@@ -1129,3 +1129,106 @@ def test_continue_if_with_stop_delay_false_condition(
     assert (
         result[0]["predictions"] is None
     ), "Expected no detections on first false condition"
+
+
+WORKFLOW_WITH_STACKED_CONDITIONS_WHEN_SCALAR_PASSES = {
+    "version": "1.0",
+    "inputs": [
+        {"type": "InferenceImage", "name": "image"},
+    ],
+    "steps": [
+        {
+            "type": "AlwaysMove",
+            "name": "always_move_scalar",
+            "a_step": "$steps.increase_dim",
+        },
+        {
+            "type": "AlwaysMove",
+            "name": "always_move_image",
+            "a_step": "$steps.increase_dim",
+            "evaluation_parameters": {
+                "image": "$inputs.image",
+            },
+        },
+        {
+            "type": "DimensionalityIncrease",
+            "name": "increase_dim",
+            "image": "$inputs.image",
+        },
+        {
+            "type": "MoveEven",
+            "name": "move_even_dim_1",
+            "a_step": "$steps.stitch",
+            "evaluation_parameters": {
+                "image": "$inputs.image",
+            },
+        },
+        {
+            "type": "MoveEven",
+            "name": "move_even_dim_2",
+            "a_step": "$steps.stitch",
+            "evaluation_parameters": {
+                "texts": "$steps.increase_dim.output",
+            },
+        },
+        {
+            "type": "ImageAndTextsStitch",
+            "name": "stitch",
+            "image": "$inputs.image",
+            "texts": "$steps.increase_dim.output",
+        },
+    ],
+    "outputs": [
+        {
+            "type": "JsonField",
+            "name": "output",
+            "selector": "$steps.stitch.output",
+        }
+    ],
+}
+
+
+@mock.patch.object(blocks_loader, "get_plugin_modules")
+def test_workflow_with_stacked_flow_control(
+    get_plugin_modules_mock: MagicMock,
+    model_manager: ModelManager,
+    crowd_image: np.ndarray,
+) -> None:
+    """
+    In this test scenario, we run step (ABTest) which is not running in
+    SIMD mode, as it only accepts non-batch parameters - hence
+    single decision made at start will affect all downstream execution
+    paths.
+
+    We expect, based on flip of coin to execute either step "a" or step "b".
+
+    What is verified from EE standpoint:
+    * Creating execution branches for all batch elements, when input batch size is 1
+    """
+    # given
+    get_plugin_modules_mock.return_value = [
+        "tests.workflows.integration_tests.execution.stub_plugins.flow_control_plugin"
+    ]
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=WORKFLOW_WITH_STACKED_CONDITIONS_WHEN_SCALAR_PASSES,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    result = execution_engine.run(
+        runtime_parameters={"image": [crowd_image, crowd_image, crowd_image]}
+    )
+
+    # then
+    assert isinstance(result, list), "Expected result to be list"
+    assert len(result) == 3
+    print(result)
+    assert result[0]["output"] == "a, c"
+    assert result[1]["output"] == None
+    assert result[2]["output"] == "a, c"
