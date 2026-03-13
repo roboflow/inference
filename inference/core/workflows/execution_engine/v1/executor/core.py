@@ -22,7 +22,11 @@ except ImportError:
 
 from inference.core import logger
 from inference.core.env import INFERENCE_DEBUG_OUTPUT_DIR
-from inference.core.workflows.errors import StepExecutionError, WorkflowError
+from inference.core.workflows.errors import (
+    BlockTraceback,
+    StepExecutionError,
+    WorkflowError,
+)
 from inference.core.workflows.execution_engine.profiling.core import (
     NullWorkflowsProfiler,
     WorkflowsProfiler,
@@ -204,19 +208,32 @@ def safe_execute_step(
         logger.debug(
             f"finished execution of: {step_selector} - {datetime.now().isoformat()}"
         )
-    except WorkflowError as error:
-        raise error
     except Exception as error:
+        if isinstance(error, WorkflowError):
+            raise  # Already has proper context, let HTTP handlers deal with it
+
+        # Wrap unexpected exceptions in StepExecutionError with block context
         step_name = get_last_chunk_of_selector(selector=step_selector)
         if step_error_handler:
             step_error_handler(step_name, error)
         logger.exception(f"Execution of step {step_selector} encountered error.")
+        error_traceback = getattr(error, "traceback", None) or "".join(
+            traceback.format_exception(type(error), error, error.__traceback__)
+        )
+        block_traceback = BlockTraceback(
+            traceback=error_traceback,
+            error_line=getattr(error, "error_line", None),
+            code_snippet=getattr(error, "code_snippet", None),
+            stdout=getattr(error, "stdout", None),
+            stderr=getattr(error, "stderr", None),
+        )
         raise StepExecutionError(
             block_id=step_name,
             block_type=workflow.steps[step_name].manifest.type,
+            block_traceback=block_traceback,
             public_message=str(error),
             context="workflow_execution | step_execution",
-            inner_error=str(error),
+            inner_error=error,
         ) from error
 
 

@@ -9,9 +9,15 @@ as a dependency for the main inference package.
 from typing import Any, Dict
 import base64
 import hashlib
+import inspect
 import os
+import traceback
 
 import modal
+
+from inference.core.workflows.execution_engine.v1.dynamic_blocks.error_utils import (
+    capture_output,
+)
 
 # Create the Modal App
 app = modal.App("webexec")
@@ -67,11 +73,11 @@ class Executor:
 
     # Parameterize by workspace_id
     workspace_id: str = modal.parameter()
-    
+
     # Store state for each unique code block within this container
     # Key is the hash of the code, value is the namespace dict for that code
     _code_namespaces: Dict[str, dict] = {}
-    
+
     # Shared globals dict that all custom python blocks can access
     _shared_globals: Dict[str, Any] = {}
 
@@ -103,8 +109,7 @@ class Executor:
             Dictionary with results or error information
         """
         import json
-        import traceback
-        from datetime import datetime  # Import datetime at the top level
+        from datetime import datetime
 
         import numpy as np
 
@@ -123,15 +128,15 @@ class Executor:
 
         # Get the hash of this code to identify it uniquely
         code_hash = self._get_code_hash(code_str, imports)
-        
+
         # Check if we already have a namespace for this code
         if code_hash not in self._code_namespaces:
             # Create a new namespace for this code block
             self._code_namespaces[code_hash] = {
                 "__name__": "__main__",
-                "globals": self._shared_globals  # Inject the shared globals dict
+                "globals": self._shared_globals,  # Inject the shared globals dict
             }
-            
+
             # Execute imports and code in the namespace to initialize it
             import_code = "\n".join(imports) if imports else ""
             full_imports = f"""
@@ -155,7 +160,7 @@ from datetime import datetime
             try:
                 # Execute imports in this namespace
                 exec(full_imports, self._code_namespaces[code_hash])
-                
+
                 # Execute the user code to define functions in this namespace
                 exec(code_str, self._code_namespaces[code_hash])
             except Exception as e:
@@ -166,7 +171,7 @@ from datetime import datetime
                     "error": f"Code initialization failed: {str(e)}",
                     "error_type": type(e).__name__,
                 }
-        
+
         # Get the namespace for this code
         namespace = self._code_namespaces[code_hash]
 
@@ -340,42 +345,49 @@ from datetime import datetime
             user_function = namespace[run_function_name]
 
             # Check if function expects a 'self' parameter
-            import inspect
-
             sig = inspect.signature(user_function)
             params = list(sig.parameters.keys())
 
-            # If function expects 'self' as first param, create a simple object to pass
-            if params and params[0] == "self":
-                # Create a simple object to pass as self
-                class BlockSelf:
-                    pass
+            try:
+                with capture_output() as (stdout_buf, stderr_buf):
+                    # If function expects 'self' as first param, create a simple object to pass
+                    if params and params[0] == "self":
 
-                block_self = BlockSelf()
-                # Execute with self parameter
-                result = user_function(block_self, **inputs)
-            else:
-                # Execute without self parameter
-                result = user_function(**inputs)
+                        class BlockSelf:
+                            pass
 
-            json_result = serialize_for_modal_remote_execution(result)
+                        block_self = BlockSelf()
+                        result = user_function(block_self, **inputs)
+                    else:
+                        result = user_function(**inputs)
 
-            # Return the serialized result with success flag
-            return {"success": True, "result": json_result}
+                json_result = serialize_for_modal_remote_execution(result)
+
+                # Return the serialized result with success flag
+                return {"success": True, "result": json_result}
+            except Exception as e:
+                # On error, capture stdout/stderr and return error details
+                result = {
+                    "success": False,
+                    "error": str(e),
+                    "error_type": type(e).__name__,
+                    "stdout": stdout_buf.getvalue() or None,
+                    "stderr": stderr_buf.getvalue() or None,
+                }
+
+                # Get the line number and function name from evaluated code
+                tb = traceback.extract_tb(e.__traceback__)
+                if tb:
+                    frame = tb[-1]
+                    result["line_number"] = frame.lineno
+                    result["function_name"] = frame.name
+
+                return result
 
         except Exception as e:
-            # On error, return error details
-            result = {
+            # Outer exception handler for non-execution errors (deserialization, etc.)
+            return {
                 "success": False,
                 "error": str(e),
                 "error_type": type(e).__name__,
             }
-
-            # Get the line number and function name from evaluated code
-            tb = traceback.extract_tb(e.__traceback__)
-            if tb:
-                frame = tb[-1]
-                result["line_number"] = frame.lineno
-                result["function_name"] = frame.name
-
-            return result

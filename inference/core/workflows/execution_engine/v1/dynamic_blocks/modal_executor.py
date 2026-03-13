@@ -20,7 +20,11 @@ from inference.core.env import (
     MODAL_WORKSPACE_NAME,
 )
 from inference.core.logger import logger
-from inference.core.workflows.errors import DynamicBlockError
+from inference.core.workflows.errors import DynamicBlockCodeError, DynamicBlockError
+from inference.core.workflows.execution_engine.v1.dynamic_blocks.error_utils import (
+    build_traceback_string,
+    extract_code_snippet,
+)
 from inference.core.workflows.execution_engine.v1.dynamic_blocks.entities import (
     PythonCode,
 )
@@ -317,17 +321,35 @@ class ModalExecutor:
             if not result.get("success", False):
                 error_msg = result.get("error", "Unknown error")
                 error_type = result.get("error_type", "RuntimeError")
-                line_number = result.get("line_number", None)
-                function_name = result.get("function_name", None)
+                line_number = result.get("line_number")
+                function_name = result.get("function_name") or "run"
+                code = python_code.run_function_code
 
-                if line_number and function_name:
-                    message = f"Error in line {line_number}, in {function_name}: {error_type}: {error_msg}"
-                else:
-                    message = f"{error_type}: {error_msg}"
+                message = (
+                    f"Error in line {line_number}, in {function_name}: {error_type}: {error_msg}"
+                    if line_number
+                    else f"{error_type}: {error_msg}"
+                )
 
-                # Propagate remote Exception on runtime error. Will be caught by the
-                # core executor and wrapped in StepExecutionError with block metadata.
-                raise Exception(message)
+                code_snippet = None
+                traceback_str = None
+                if line_number and code:
+                    snippet = extract_code_snippet(code, line_number)
+                    code_snippet = snippet.lstrip("\n") if snippet else None
+                    traceback_str = build_traceback_string(
+                        code, line_number, function_name, error_type, error_msg
+                    )
+
+                # Propagate DynamicBlockCodeError on runtime error. Will pass through
+                # the core executor and be handled by its own HTTP handler.
+                raise DynamicBlockCodeError(
+                    public_message=message,
+                    error_line=line_number,
+                    code_snippet=code_snippet,
+                    traceback_str=traceback_str,
+                    stdout=result.get("stdout"),
+                    stderr=result.get("stderr"),
+                )
 
             # Get the result and deserialize from JSON
             json_result = result.get("result", "{}")

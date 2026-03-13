@@ -84,6 +84,8 @@ class WebRTCWorkerResult(BaseModel):
     error_message: Optional[str] = None
     error_context: Optional[str] = None
     inner_error: Optional[str] = None
+    inner_error_type: Optional[str] = None
+    blocks_errors: Optional[List[Dict[str, Any]]] = None
 
 
 class StreamOutputMode(str, Enum):
