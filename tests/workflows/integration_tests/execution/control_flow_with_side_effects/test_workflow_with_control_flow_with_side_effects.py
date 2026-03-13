@@ -24,6 +24,7 @@ from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.execution_engine.core import ExecutionEngine
 from inference.core.workflows.errors import StepInputLineageError, ControlFlowDefinitionError
+from inference.core.workflows.core_steps.fusion.detections_stitch.v1 import DetectionsStitchBlockV1
 from inference.core.workflows.execution_engine.introspection import blocks_loader
 
 _WORKFLOW_DEFINITIONS_DIR = Path(__file__).resolve().parent / "workflow_definitions"
@@ -71,11 +72,6 @@ SLICED_DETECTION_COUNTS = [
     0, 0, 1, 1,  # image 1 (slices 2,3)
     0, 0, 0, 0,  # image 2
     0, 0, 0, 0, 0, 1, 0, 0,  # image 3 (slice 5)
-]
-SLICED_EMAIL_IMAGE_INDEX_AND_SLICE = [
-    (1, 2),
-    (1, 3),
-    (3, 5),
 ]
 
 
@@ -1008,7 +1004,8 @@ def test_control_flow_lineage_using_workflow_with_csv_sink_and_detection_input(
     "image_gen_fn,\
     detection_counts_per_model,\
     workflow_name,\
-    expected_call_count",
+    expected_call_count, \
+    expected_results",
     [
         (
             _sliced_4_images,
@@ -1017,7 +1014,13 @@ def test_control_flow_lineage_using_workflow_with_csv_sink_and_detection_input(
                 "yolov8s-640": BATCH_4_DETECTION_COUNTS,
             },
             "with_two_continue_if_data_lineage_present",
-            0,
+            2,
+            [
+                {"stitched_predictions": (type(None),)},
+                {"stitched_predictions": (sv.Detections, 2)},
+                {"stitched_predictions": (type(None),)},
+                {"stitched_predictions": (sv.Detections, 1)},
+            ],
         ),
     ],
     ids=[
@@ -1029,16 +1032,37 @@ def test_side_effect_step_with_data_lineage_and_continue_if_zero_calls(
     detection_counts_per_model: Dict[str, List[int]],
     workflow_name: str,
     expected_call_count: int,
+    expected_results: List[dict],
     model_manager,
 ) -> None:
     workflow_definition = _load_workflow_definition(workflow_name)
     runtime_parameters = {"image": image_gen_fn()}
 
-    result = _run_workflow(
-        workflow_definition,
-        runtime_parameters,
-        model_manager,
-        detection_counts_per_model=detection_counts_per_model,
-    )
+    stitch_run_call_count = []
+    real_run = DetectionsStitchBlockV1.run
 
-    assert len(result) == expected_call_count
+    def counting_run(self, *args, **kwargs):
+        stitch_run_call_count.append(1)
+        return real_run(self, *args, **kwargs)
+
+    with patch.object(DetectionsStitchBlockV1, "run", counting_run):
+        result = _run_workflow(
+            workflow_definition,
+            runtime_parameters,
+            model_manager,
+            detection_counts_per_model=detection_counts_per_model,
+        )
+
+    assert len(stitch_run_call_count) == expected_call_count, (
+        f"DetectionsStitchBlockV1.run should be called {expected_call_count} times, "
+        f"was {len(stitch_run_call_count)}"
+    )
+    assert len(result) == len(expected_results)
+    for i, item in enumerate(result):
+        assert isinstance(
+            item["stitched_predictions"],
+            expected_results[i]["stitched_predictions"][0],
+        )
+
+        if isinstance(item["stitched_predictions"], sv.Detections):
+            assert len(item["stitched_predictions"]) == expected_results[i]["stitched_predictions"][1]
