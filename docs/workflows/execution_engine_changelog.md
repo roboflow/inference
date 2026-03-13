@@ -4,12 +4,14 @@ Below you can find the changelog for Execution Engine.
 
 ## Execution Engine `v1.8.0` | inference `v1.1.1`
 
-!!! Note "Additive change — no breaking changes"
+!!! Note "Additive change — one behavioral fix"
 
     This release extends the Execution Engine so that steps gated by control flow (e.g. after a
     `ContinueIf` block) can run even when they have **no data-derived lineage** — i.e. when they
     do not receive batch-oriented inputs from upstream steps. Lineage and execution dimensionality
     can now be derived from control flow predecessor steps. Existing workflows are unaffected.
+    One bug fix affects `Batch.remove_by_indices` with nested batches (see below); impact is
+    expected to be minimal.
 
 **What changed**
 
@@ -30,6 +32,15 @@ Below you can find the changelog for Execution Engine.
   side-effect steps) after a `ContinueIf` without wiring any data into parameters like
   `message_parameters`; the step will execute once per control flow branch with lineage and
   dimensionality taken from the controlling step.
+
+* **`Batch.remove_by_indices` with nested batches (behavioral fix)** — When removing indices
+  via `Batch.remove_by_indices`, nested `Batch` elements are now recursively filtered by the
+  same index set. As a result, entries at removed indices (including `None` values) are now
+  correctly dropped from nested batches as well. Previously, only the top-level batch was
+  filtered; nested batches were left unchanged. This is the correct behaviour. Clients that
+  depended on the old behaviour (e.g. relying on `None`s remaining in nested batches after
+  a remove) would have had to filter those values themselves, so impact is expected to be
+  minimal.
 
 ## Execution Engine `v1.7.0` | inference `v0.59.0`
 
