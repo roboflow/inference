@@ -573,6 +573,7 @@ def register_image_at_roboflow(
     batch_name: str,
     tags: Optional[List[str]] = None,
     inference_id: Optional[str] = None,
+    metadata: Optional[Dict[str, Any]] = None,
 ) -> dict:
     url = f"{API_BASE_URL}/dataset/{dataset_id}/upload"
     params = [
@@ -585,12 +586,13 @@ def register_image_at_roboflow(
     for tag in tags:
         params.append(("tag", tag))
     wrapped_url = wrap_url(_add_params_to_url(url=url, params=params))
-    m = MultipartEncoder(
-        fields={
-            "name": f"{local_image_id}.jpg",
-            "file": ("imageToUpload", image_bytes, "image/jpeg"),
-        }
-    )
+    fields = {
+        "name": f"{local_image_id}.jpg",
+        "file": ("imageToUpload", image_bytes, "image/jpeg"),
+    }
+    if metadata is not None:
+        fields["metadata"] = json.dumps(metadata)
+    m = MultipartEncoder(fields=fields)
     headers = build_roboflow_api_headers(
         explicit_headers={"Content-Type": m.content_type},
     )
