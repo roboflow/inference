@@ -4,7 +4,7 @@ import json
 import os
 from glob import glob
 from pathlib import Path
-from typing import List
+from typing import Dict, List
 from unittest import mock
 from unittest.mock import patch, MagicMock
 
@@ -124,22 +124,38 @@ def _make_person_prediction() -> ObjectDetectionPrediction:
     )
 
 
-def make_mock_detection_responses(
-    counts: List[int],
+def make_mock_detection_responses_per_model(
+    model_id_to_counts: Dict[str, List[int]],
 ) -> callable:
-    """Build a mock that returns one ObjectDetectionInferenceResponse per request image with len(predictions) == counts[i]."""
+    """Build a mock that returns different detection counts per model_id.
+
+    Each value in model_id_to_counts is the full list of counts for all calls
+    to that model in order (consumed sequentially per model_id).
+    """
+
+    # Mutable index per model_id for consuming counts
+    model_id_index: Dict[str, int] = {mid: 0 for mid in model_id_to_counts}
 
     def mock_fn(model_id: str, request: ObjectDetectionInferenceRequest):
+        if model_id not in model_id_to_counts:
+            raise ValueError(
+                f"Mock received unknown model_id={model_id!r}. "
+                f"Known: {list(model_id_to_counts)}."
+            )
+        counts = model_id_to_counts[model_id]
         images = request.image if isinstance(request.image, list) else [request.image]
         n = len(images)
-        if n != len(counts):
+        start = model_id_index[model_id]
+        end = start + n
+        if end > len(counts):
             raise ValueError(
-                f"Mock expected {len(counts)} images but got {n}. "
-                "Check batch/slice counts for this scenario."
+                f"Mock for model_id={model_id!r} expected at least {end} counts "
+                f"but only {len(counts)} defined. Check detection_counts for this scenario."
             )
+        chunk = counts[start:end]
+        model_id_index[model_id] = end
         responses = []
-        for i in range(n):
-            k = counts[i]
+        for k in chunk:
             preds = [_make_person_prediction() for _ in range(k)]
             responses.append(
                 ObjectDetectionInferenceResponse(
@@ -167,7 +183,7 @@ def _run_workflow(
     workflow_definition: dict,
     runtime_parameters: dict,
     model_manager,
-    detection_counts: List[int],
+    detection_counts_per_model: Dict[str, List[int]],
 ):
     init_params = {
         "workflows_core.model_manager": model_manager,
@@ -180,7 +196,8 @@ def _run_workflow(
         init_parameters=init_params,
         max_concurrent_steps=1,
     )
-    mock_fn = make_mock_detection_responses(detection_counts)
+
+    mock_fn = make_mock_detection_responses_per_model(detection_counts_per_model)
 
     with patch.object(
         ModelManager,
@@ -202,7 +219,7 @@ def _run_workflow(
 @pytest.mark.parametrize(
     "image_gen_fn,\
     names,\
-    detection_counts,\
+    detection_counts_per_model,\
     enable_email,\
     workflow_name,\
     expected_call_count,\
@@ -214,7 +231,7 @@ def _run_workflow(
         (
             _batch_4_images,
             BATCH_4_IMAGE_NAMES,
-            BATCH_4_DETECTION_COUNTS,
+            {"yolov8n-640": BATCH_4_DETECTION_COUNTS},
             True,
             "with_email_message_params",
             2,
@@ -234,7 +251,7 @@ def _run_workflow(
         (
             _batch_4_images,
             BATCH_4_IMAGE_NAMES,
-            BATCH_4_DETECTION_COUNTS,
+            {"yolov8n-640": BATCH_4_DETECTION_COUNTS},
             True,
             "without_email_message_params",
             2,
@@ -254,7 +271,7 @@ def _run_workflow(
         (
             _batch_4_images,
             BATCH_4_IMAGE_NAMES,
-            BATCH_4_DETECTION_COUNTS,
+            {"yolov8n-640": BATCH_4_DETECTION_COUNTS},
             True,
             "with_image_names_and_email_message_params",
             2,
@@ -280,7 +297,7 @@ def _run_workflow(
         (
             _batch_4_images,
             BATCH_4_IMAGE_NAMES,
-            BATCH_4_DETECTION_COUNTS,
+            {"yolov8n-640": BATCH_4_DETECTION_COUNTS},
             True,
             "with_image_names_and_without_email_message_params",
             2,
@@ -300,7 +317,7 @@ def _run_workflow(
         (
             _sliced_4_images,
             SLICED_NAMES,
-            SLICED_DETECTION_COUNTS,
+            {"yolov8n-640": SLICED_DETECTION_COUNTS},
             True,
             "sliced_image_with_email_message_params",
             3,
@@ -321,7 +338,7 @@ def _run_workflow(
         (
             _sliced_4_images,
             SLICED_NAMES,
-            SLICED_DETECTION_COUNTS,
+            {"yolov8n-640": SLICED_DETECTION_COUNTS}    ,
             True,
             "sliced_image_without_email_message_params",
             3,
@@ -342,7 +359,7 @@ def _run_workflow(
         (
             _sliced_4_images,
             SLICED_NAMES,
-            SLICED_DETECTION_COUNTS,
+            {"yolov8n-640": SLICED_DETECTION_COUNTS},
             True,
             "sliced_image_with_email_message_params_and_area_size_step",
             3,
@@ -363,7 +380,7 @@ def _run_workflow(
         (
             _sliced_4_images,
             SLICED_NAMES,
-            SLICED_DETECTION_COUNTS,
+            {"yolov8n-640": SLICED_DETECTION_COUNTS},
             True,
             "sliced_image_without_email_message_params_and_area_size_step",
             3,
@@ -384,7 +401,7 @@ def _run_workflow(
         (
             _batch_4_images,
             BATCH_4_IMAGE_NAMES,
-            BATCH_4_DETECTION_COUNTS,
+            {"yolov8n-640": BATCH_4_DETECTION_COUNTS},
             True,
             "with_email_gate_and_with_email_message_params",
             2,
@@ -404,7 +421,7 @@ def _run_workflow(
         (
             _batch_4_images,
             BATCH_4_IMAGE_NAMES,
-            BATCH_4_DETECTION_COUNTS,
+            {"yolov8n-640": BATCH_4_DETECTION_COUNTS},
             True,
             "with_email_gate_and_without_email_message_params",
             2,
@@ -424,7 +441,7 @@ def _run_workflow(
         (
             _batch_4_images,
             BATCH_4_IMAGE_NAMES,
-            BATCH_4_DETECTION_COUNTS,
+            {"yolov8n-640": BATCH_4_DETECTION_COUNTS},
             False,
             "with_email_gate_and_without_email_message_params",
             0,
@@ -443,7 +460,7 @@ def _run_workflow(
         (
             _sliced_4_images,
             SLICED_NAMES,
-            SLICED_DETECTION_COUNTS,
+            {"yolov8n-640": SLICED_DETECTION_COUNTS},
             True,
             "with_detection_collapse_right_after_slice", # after the dim collapse we are dim=1
             4,  # In this scenario the continue_if step counts the number of slices for each image, so 4 calls to the email step
@@ -465,7 +482,7 @@ def _run_workflow(
         (
             _sliced_4_images,
             SLICED_NAMES,
-            SLICED_DETECTION_COUNTS,
+            {"yolov8n-640": SLICED_DETECTION_COUNTS},
             True,
             "with_detection_collapse_right_after_slice_with_agg_operation",
             2, # The continue-if correctly checks the number of detections for each image (given slices of that image)
@@ -485,7 +502,7 @@ def _run_workflow(
         (
             _sliced_4_images,
             SLICED_NAMES,
-            SLICED_DETECTION_COUNTS,
+            {"yolov8n-640": SLICED_DETECTION_COUNTS},
             True,
             "with_detection_collapse_right_after_slice_with_agg_operation_without_message_params",
             2, # The continue-if correctly checks the number of detections for each image (given slices of that image)
@@ -505,7 +522,7 @@ def _run_workflow(
         (
             _batch_4_images,
             BATCH_4_IMAGE_NAMES,
-            BATCH_4_DETECTION_COUNTS,
+            {"yolov8n-640": BATCH_4_DETECTION_COUNTS},
             True,
             "with_detection_collapse_right_after_detect_with_agg_operation",
             1, # The continue-if correctly checks the total number of detections in the batch
@@ -521,7 +538,7 @@ def _run_workflow(
          (
             _batch_4_images,
             BATCH_4_IMAGE_NAMES,
-            BATCH_4_DETECTION_COUNTS,
+            {"yolov8n-640": BATCH_4_DETECTION_COUNTS},
             True,
             "with_detection_collapse_right_after_detect_with_agg_operation_without_message_params",
             1, # The continue-if correctly checks the total number of detections in the batch
@@ -537,7 +554,7 @@ def _run_workflow(
         (
             _batch_4_images,
             BATCH_4_IMAGE_NAMES,
-            BATCH_4_DETECTION_COUNTS,
+            {"yolov8n-640": BATCH_4_DETECTION_COUNTS},
             True,
             "with_detection_collapse_after_continue_if",
             1, # We aggregated the detection lists after continue_if
@@ -553,7 +570,7 @@ def _run_workflow(
         (
             _batch_4_images,
             BATCH_4_IMAGE_NAMES,
-            [3, 0, 1, 2],
+            {"yolov8n-640": [3, 0, 1, 2]},
             True,
             "with_two_continue_if",
             1,
@@ -572,7 +589,7 @@ def _run_workflow(
         (
             _sliced_4_images,
             BATCH_4_IMAGE_NAMES,
-            SLICED_DETECTION_COUNTS,
+            {"yolov8n-640": SLICED_DETECTION_COUNTS},
             True,
             "with_two_continue_if_different_control_flow_lineage",
             2, # The smaller of the two control-flow-lineage dimensionalities is used, thus we are masking on the batch level
@@ -616,7 +633,7 @@ def test_properly_running_side_effect_step_and_returning_results_in_different_da
     send_email_mock,
     image_gen_fn: callable,
     names: List[str],
-    detection_counts: List[int],
+    detection_counts_per_model: Dict[str, List[int]],
     enable_email: bool,
     workflow_name: str,
     expected_call_count: int,
@@ -640,7 +657,7 @@ def test_properly_running_side_effect_step_and_returning_results_in_different_da
         workflow_definition,
         runtime_parameters,
         model_manager,
-        detection_counts=detection_counts,
+        detection_counts_per_model=detection_counts_per_model,
     )
 
     assert send_email_mock.call_count == expected_call_count
@@ -682,13 +699,13 @@ def test_properly_running_side_effect_step_and_returning_results_in_different_da
 @pytest.mark.parametrize(
     "image_gen_fn,\
     names,\
-    detection_counts,\
+    detection_counts_per_model,\
     workflow_name",
     [
         (
             _sliced_4_images,
             SLICED_NAMES,
-            SLICED_DETECTION_COUNTS,
+            {"yolov8n-640": SLICED_DETECTION_COUNTS},
             "sliced_image_with_email_message_params_with_slice_names",
         ),
     ],
@@ -700,7 +717,7 @@ def test_scenario_raises_step_input_lineage_error(
     send_email_mock,
     image_gen_fn: callable,
     names: List[str],
-    detection_counts: List[int],
+    detection_counts_per_model: Dict[str, List[int]],
     workflow_name: str,
     model_manager,
 ) -> None:
@@ -717,7 +734,7 @@ def test_scenario_raises_step_input_lineage_error(
             workflow_definition,
             runtime_parameters,
             model_manager,
-            detection_counts=detection_counts,
+            detection_counts_per_model=detection_counts_per_model,
         )
  
     assert send_email_mock.call_count == 0
@@ -729,13 +746,13 @@ def test_scenario_raises_step_input_lineage_error(
 @pytest.mark.parametrize(
     "image_gen_fn,\
     names,\
-    detection_counts,\
+    detection_counts_per_model,\
     workflow_name",
     [
         (
             _sliced_4_images,
             SLICED_NAMES,
-            SLICED_DETECTION_COUNTS,
+            {"yolov8n-640": SLICED_DETECTION_COUNTS},
             "sliced_image_without_email_message_params_with_slice_names",
         ),
     ],
@@ -747,7 +764,7 @@ def test_scenario_raises_control_flow_definition_error(
     send_email_mock,
     image_gen_fn: callable,
     names: List[str],
-    detection_counts: List[int],
+    detection_counts_per_model: Dict[str, List[int]],
     workflow_name: str,
     model_manager,
 ) -> None:
@@ -764,7 +781,7 @@ def test_scenario_raises_control_flow_definition_error(
             workflow_definition,
             runtime_parameters,
             model_manager,
-            detection_counts=detection_counts,
+            detection_counts_per_model=detection_counts_per_model,
         )
  
     assert send_email_mock.call_count == 0
@@ -891,7 +908,7 @@ def test_control_flow_lineage_using_workflow_with_batch_only_block_that_gets_bat
 @pytest.mark.parametrize(
     "image_gen_fn,\
     names,\
-    detection_counts,\
+    detection_counts_per_model,\
     workflow_name,\
     expected_results,\
     expected_num_files,\
@@ -903,7 +920,7 @@ def test_control_flow_lineage_using_workflow_with_batch_only_block_that_gets_bat
         (
             _batch_4_images,
             BATCH_4_IMAGE_NAMES,
-            BATCH_4_DETECTION_COUNTS,
+            {"yolov8n-640": BATCH_4_DETECTION_COUNTS},
             "with_csv_sink_and_with_detection_input",
             [
                 {"save_message": None},
@@ -920,7 +937,7 @@ def test_control_flow_lineage_using_workflow_with_batch_only_block_that_gets_bat
         (
             _batch_4_images,
             BATCH_4_IMAGE_NAMES,
-            BATCH_4_DETECTION_COUNTS,
+            {"yolov8n-640": BATCH_4_DETECTION_COUNTS},
             "with_csv_sink_and_without_detection_input",
             [
                 {"save_message": None},
@@ -943,7 +960,7 @@ def test_control_flow_lineage_using_workflow_with_batch_only_block_that_gets_bat
 def test_control_flow_lineage_using_workflow_with_csv_sink_and_detection_input(
     image_gen_fn: callable,
     names: List[str],
-    detection_counts: List[int],
+    detection_counts_per_model: Dict[str, List[int]],
     workflow_name: str,
     expected_results: List[dict],
     expected_num_files: int,
@@ -969,7 +986,7 @@ def test_control_flow_lineage_using_workflow_with_csv_sink_and_detection_input(
         workflow_definition,
         runtime_parameters,
         model_manager,
-        detection_counts=detection_counts,
+        detection_counts_per_model=detection_counts_per_model,
     )
     assert result == expected_results
 
@@ -984,3 +1001,43 @@ def test_control_flow_lineage_using_workflow_with_csv_sink_and_detection_input(
         assert df["num_detections"].tolist() == expected_num_detections
     if "name" in expected_columns:
         assert df["name"].tolist() == expected_names
+
+
+@pytest.mark.parametrize(
+    "image_gen_fn,\
+    detection_counts_per_model,\
+    workflow_name,\
+    expected_call_count",
+    [
+        (
+            _sliced_4_images,
+            {
+                "yolov8n-640": SLICED_DETECTION_COUNTS,
+                "yolov8s-640": BATCH_4_DETECTION_COUNTS,
+            },
+            "with_two_continue_if_data_lineage_present",
+            0,
+        ),
+    ],
+    ids=[
+        "with_two_continue_if_data_lineage_present",
+    ],
+)
+def test_side_effect_step_with_data_lineage_and_continue_if_zero_calls(
+    image_gen_fn: callable,
+    detection_counts_per_model: Dict[str, List[int]],
+    workflow_name: str,
+    expected_call_count: int,
+    model_manager,
+) -> None:
+    workflow_definition = _load_workflow_definition(workflow_name)
+    runtime_parameters = {"image": image_gen_fn()}
+
+    result = _run_workflow(
+        workflow_definition,
+        runtime_parameters,
+        model_manager,
+        detection_counts_per_model=detection_counts_per_model,
+    )
+
+    assert len(result) == expected_call_count
