@@ -592,18 +592,19 @@ def _run_workflow(
             {"yolov8n-640": SLICED_DETECTION_COUNTS},
             True,
             "with_two_continue_if_different_control_flow_lineage",
-            2, # The smaller of the two control-flow-lineage dimensionalities is used, thus we are masking on the batch level
+            3, # The deepest control-flow-lineage is used, thus we are masking up to the slice level
             "noreply@example.com",
             "Detections found",
             (
                 {},
                 {},
+                {},
             ),
             (
-                {"email_message": None},
-                {"email_message": SUCCESSFUL_EMAIL_MESSAGE_MOCK},
-                {"email_message": None},
-                {"email_message": SUCCESSFUL_EMAIL_MESSAGE_MOCK},
+                {"email_message": [None, None, None, None]},
+                {"email_message": [None, None, SUCCESSFUL_EMAIL_MESSAGE_MOCK, SUCCESSFUL_EMAIL_MESSAGE_MOCK]},
+                {"email_message": [None, None, None, None]},
+                {"email_message": [None, None, None, None, None, SUCCESSFUL_EMAIL_MESSAGE_MOCK, None, None]},
             ),
         ),
     ],

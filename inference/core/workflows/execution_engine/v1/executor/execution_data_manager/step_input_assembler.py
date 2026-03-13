@@ -249,12 +249,10 @@ def construct_simd_step_input(
     dynamic_batches_manager: DynamicBatchesManager,
     branching_manager: BranchingManager,
 ) -> BatchModeSIMDStepInput:
-    print("step_node", step_node.name)
     masks, scalars_discarded = construct_mask_for_all_inputs_dimensionalities(
         step_node=step_node,
         branching_manager=branching_manager,
     )
-    print("masks", masks)
     return prepare_parameters(
         step_node=step_node,
         dynamic_batches_manager=dynamic_batches_manager,
@@ -272,7 +270,7 @@ def construct_mask_for_all_inputs_dimensionalities(
     inputs_dimensionalities = collect_inputs_dimensionalities(step_node=step_node)
     all_dimensionalities = {dim for dim in inputs_dimensionalities.values() if dim > 0}
     if step_node.control_flow_lineage_support:
-        for dim_level in range(1, len(step_node.control_flow_lineage_support) + 1):
+        for dim_level in step_node.control_flow_lineage_dims:
             all_dimensionalities.add(dim_level)
     batch_masks, non_batch_masks = [], set()
     for execution_branch in step_node.execution_branches_impacting_inputs:

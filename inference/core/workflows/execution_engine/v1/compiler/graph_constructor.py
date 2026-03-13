@@ -773,6 +773,7 @@ def denote_data_flow_for_step(
     )
     step_node_data.input_data = input_data
     step_node_data.dimensionality_reference_property = dimensionality_reference_property
+    step_node_data.control_flow_lineage_dims = [len(_lineage) for _lineage in all_control_flow_lineages if _lineage]
     step_node_data.batch_oriented_parameters = parameters_with_batch_inputs
     if not all_data_derived_lineages and not all_control_flow_lineages:
         if manifest.get_output_dimensionality_offset() > 0:
@@ -1935,20 +1936,16 @@ def get_reference_lineage(
             return copy(all_control_flow_lineages[0]), copy(
                 all_control_flow_lineages[0]
             )
-        # Multiple control-flow lineages and no data-derived lineage: pick the shortest.
-        # Mask intersection in the executor (get_masks_intersection_up_to_dimension) truncates
-        # each branch's indices to [:dimension] and intersects. Only at the minimum lineage
-        # length do all branches have comparable indices; at a higher dimension, longer-lineage
-        # indices would not match shorter ones, giving empty or wrong intersections.
-        min_lineage_len = min(len(lineage) for lineage in all_control_flow_lineages)
-        lineages_matching_min_len = [
+        # Multiple control-flow lineages and no data-derived lineage: pick the deepest.
+        max_lineage_len = max(len(lineage) for lineage in all_control_flow_lineages)
+        lineages_matching_max_len = [
             _lineage
             for _lineage in all_control_flow_lineages
-            if len(_lineage) == min_lineage_len
+            if len(_lineage) == max_lineage_len
         ]
-        if len(lineages_matching_min_len) == 1:
-            return copy(lineages_matching_min_len[0]), copy(
-                lineages_matching_min_len[0]
+        if len(lineages_matching_max_len) == 1:
+            return copy(lineages_matching_max_len[0]), copy(
+                lineages_matching_max_len[0]
             )
         else:
             raise AssumptionError(
