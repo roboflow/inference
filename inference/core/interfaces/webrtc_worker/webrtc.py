@@ -654,7 +654,11 @@ class VideoFrameProcessor:
             frame,
             frame_id,
             self._declared_fps,
-            self._fps_monitor.fps if len(self._fps_monitor.all_timestamps) > 1 else self._declared_fps,
+            (
+                self._fps_monitor.fps
+                if len(self._fps_monitor.all_timestamps) > 1
+                else self._declared_fps
+            ),
             self._file_processing,
             self._inference_pipeline,
             stream_output,
