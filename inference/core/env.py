@@ -273,6 +273,14 @@ ENABLE_BYTE_TRACK = str2bool(os.getenv("ENABLE_BYTE_TRACK", False))
 
 ENABLE_PROMETHEUS = str2bool(os.getenv("ENABLE_PROMETHEUS", False))
 
+# Controls whether video source URLs (e.g. RTSP endpoints) are included as
+# Prometheus label values.  Credentials and query parameters are always
+# stripped, but the host/IP and path remain visible.  Set to "false" to omit
+# source labels entirely if internal network topology is sensitive.
+METRICS_INCLUDE_SOURCE_LABELS = str2bool(
+    os.getenv("METRICS_INCLUDE_SOURCE_LABELS", True)
+)
+
 # Flag to enforce FPS, default is False
 ENFORCE_FPS = str2bool(os.getenv("ENFORCE_FPS", False))
 MAX_FPS = os.getenv("MAX_FPS")
