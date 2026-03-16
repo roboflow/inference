@@ -10,6 +10,7 @@ from inference_models import (
     ClassificationPrediction,
     MultiLabelClassificationModel,
     MultiLabelClassificationPrediction,
+    PreProcessingOverrides,
 )
 from inference_models.configuration import (
     DEFAULT_DEVICE,
@@ -192,6 +193,7 @@ class ResNetForClassificationTRT(ClassificationModel[torch.Tensor, torch.Tensor]
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         input_color_format: Optional[ColorFormat] = None,
         image_size: Optional[Tuple[int, int]] = None,
+        pre_processing_overrides: Optional[PreProcessingOverrides] = None,
         **kwargs,
     ) -> torch.Tensor:
         with torch.cuda.stream(self._pre_process_stream):
@@ -202,6 +204,7 @@ class ResNetForClassificationTRT(ClassificationModel[torch.Tensor, torch.Tensor]
                 target_device=self._device,
                 input_color_format=input_color_format,
                 image_size_wh=image_size,
+                pre_processing_overrides=pre_processing_overrides,
             )[0]
         self._pre_process_stream.synchronize()
         return pre_processed_images
@@ -380,6 +383,7 @@ class ResNetForMultiLabelClassificationTRT(
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         input_color_format: Optional[ColorFormat] = None,
         image_size: Optional[Tuple[int, int]] = None,
+        pre_processing_overrides: Optional[PreProcessingOverrides] = None,
         **kwargs,
     ) -> torch.Tensor:
         with torch.cuda.stream(self._pre_process_stream):
@@ -390,6 +394,7 @@ class ResNetForMultiLabelClassificationTRT(
                 target_device=self._device,
                 input_color_format=input_color_format,
                 image_size_wh=image_size,
+                pre_processing_overrides=pre_processing_overrides,
             )[0]
         self._pre_process_stream.synchronize()
         return pre_processed_images

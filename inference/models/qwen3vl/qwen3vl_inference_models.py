@@ -17,7 +17,7 @@ from inference.core.models.base import Model
 from inference.core.models.types import PreprocessReturnMetadata
 from inference.core.roboflow_api import get_extra_weights_provider_headers
 from inference.core.utils.image_utils import load_image_bgr
-from inference_models import AutoModel
+from inference_models import AutoModel, PreProcessingOverrides
 from inference_models.models.qwen3vl.qwen3vl_hf import Qwen3VLHF
 
 
@@ -51,6 +51,12 @@ class InferenceModelsQwen3VLAdapter(Model):
         )
 
     def map_inference_kwargs(self, kwargs: dict) -> dict:
+        pre_processing_overrides = PreProcessingOverrides(
+            disable_contrast_enhancement=kwargs.get("disable_preproc_contrast", False),
+            disable_grayscale=kwargs.get("disable_preproc_grayscale", False),
+            disable_static_crop=kwargs.get("disable_preproc_static_crop", False),
+        )
+        kwargs["pre_processing_overrides"] = pre_processing_overrides
         return kwargs
 
     def preprocess(self, image: Any, prompt: str = "", **kwargs):

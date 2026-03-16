@@ -5,7 +5,11 @@ from typing import List, Optional, Tuple, Union
 import numpy as np
 import torch
 
-from inference_models import InstanceDetections, InstanceSegmentationModel
+from inference_models import (
+    InstanceDetections,
+    InstanceSegmentationModel,
+    PreProcessingOverrides,
+)
 from inference_models.configuration import (
     DEFAULT_DEVICE,
     INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_CLASS_AGNOSTIC_NMS,
@@ -205,6 +209,7 @@ class YOLOv8ForInstanceSegmentationTRT(
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         input_color_format: Optional[ColorFormat] = None,
+        pre_processing_overrides: Optional[PreProcessingOverrides] = None,
         **kwargs,
     ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
         with torch.cuda.stream(self._pre_process_stream):
@@ -214,6 +219,7 @@ class YOLOv8ForInstanceSegmentationTRT(
                 network_input=self._inference_config.network_input,
                 target_device=self._device,
                 input_color_format=input_color_format,
+                pre_processing_overrides=pre_processing_overrides,
             )
         self._pre_process_stream.synchronize()
         return pre_processed_images, pre_processing_meta
