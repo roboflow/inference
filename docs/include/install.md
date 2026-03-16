@@ -1,5 +1,4 @@
-!!! Info
-    Prior to installation, you may want to configure a [python virtual environment](https://docs.python.org/3/tutorial/venv.html) to isolate dependencies of inference.
+We recommend using [python virtual environment (venv)](https://docs.python.org/3/tutorial/venv.html) to isolate dependencies of inference.
 
 To install Inference via pip:
 
