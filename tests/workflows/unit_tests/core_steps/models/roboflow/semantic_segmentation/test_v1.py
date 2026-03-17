@@ -2,6 +2,7 @@ import base64
 import io
 
 import numpy as np
+import pycocotools.mask as mask_utils
 import pytest
 import supervision as sv
 from PIL import Image
@@ -122,8 +123,14 @@ def test_convert_to_sv_detections_produces_per_class_detections() -> None:
     assert isinstance(result, sv.Detections)
     assert len(result) == 2
     assert set(result.class_id.tolist()) == {1, 2}
-    assert result.mask is not None
-    assert result.mask.shape == (2, 100, 100)
+    # masks are RLE-encoded, not stored as binary arrays
+    assert result.mask is None
+    assert "rle_mask" in result.data
+    rle_masks = result.data["rle_mask"]
+    assert len(rle_masks) == 2
+    # decoded RLE masks must cover the original class pixels
+    decoded = np.array([mask_utils.decode(rle).astype(bool) for rle in rle_masks])
+    assert decoded.shape == (2, 100, 100)
     assert set(result.data["class_name"].tolist()) == {"cat", "dog"}
     # no confidence mask → defaults to 1.0
     assert result.confidence is not None
