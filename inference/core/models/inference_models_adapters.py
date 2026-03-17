@@ -53,6 +53,7 @@ from inference_models import (
     MultiLabelClassificationModel,
     MultiLabelClassificationPrediction,
     ObjectDetectionModel,
+    PreProcessingOverrides,
     SemanticSegmentationModel,
 )
 from inference_models.models.base.semantic_segmentation import (
@@ -117,6 +118,12 @@ class InferenceModelsObjectDetectionAdapter(Model):
         self.class_names = list(self._model.class_names)
 
     def map_inference_kwargs(self, kwargs: dict) -> dict:
+        pre_processing_overrides = PreProcessingOverrides(
+            disable_contrast_enhancement=kwargs.get("disable_preproc_contrast", False),
+            disable_grayscale=kwargs.get("disable_preproc_grayscale", False),
+            disable_static_crop=kwargs.get("disable_preproc_static_crop", False),
+        )
+        kwargs["pre_processing_overrides"] = pre_processing_overrides
         return kwargs
 
     def preprocess(self, image: Any, **kwargs):
@@ -261,6 +268,12 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
         self.class_names = list(self._model.class_names)
 
     def map_inference_kwargs(self, kwargs: dict) -> dict:
+        pre_processing_overrides = PreProcessingOverrides(
+            disable_contrast_enhancement=kwargs.get("disable_preproc_contrast", False),
+            disable_grayscale=kwargs.get("disable_preproc_grayscale", False),
+            disable_static_crop=kwargs.get("disable_preproc_static_crop", False),
+        )
+        kwargs["pre_processing_overrides"] = pre_processing_overrides
         return kwargs
 
     def preprocess(self, image: Any, **kwargs):
@@ -415,6 +428,12 @@ class InferenceModelsKeyPointsDetectionAdapter(Model):
         if "request" in kwargs:
             keypoint_confidence_threshold = kwargs["request"].keypoint_confidence
             kwargs["key_points_threshold"] = keypoint_confidence_threshold
+        pre_processing_overrides = PreProcessingOverrides(
+            disable_contrast_enhancement=kwargs.get("disable_preproc_contrast", False),
+            disable_grayscale=kwargs.get("disable_preproc_grayscale", False),
+            disable_static_crop=kwargs.get("disable_preproc_static_crop", False),
+        )
+        kwargs["pre_processing_overrides"] = pre_processing_overrides
         return kwargs
 
     def preprocess(self, image: Any, **kwargs):
@@ -617,6 +636,12 @@ class InferenceModelsClassificationAdapter(Model):
         self.class_names = list(self._model.class_names)
 
     def map_inference_kwargs(self, kwargs: dict) -> dict:
+        pre_processing_overrides = PreProcessingOverrides(
+            disable_contrast_enhancement=kwargs.get("disable_preproc_contrast", False),
+            disable_grayscale=kwargs.get("disable_preproc_grayscale", False),
+            disable_static_crop=kwargs.get("disable_preproc_static_crop", False),
+        )
+        kwargs["pre_processing_overrides"] = pre_processing_overrides
         return kwargs
 
     def preprocess(self, image: Any, **kwargs):
@@ -903,6 +928,12 @@ class InferenceModelsSemanticSegmentationAdapter(Model):
         return {str(k): v for k, v in enumerate(self.class_names)}
 
     def map_inference_kwargs(self, kwargs: dict) -> dict:
+        pre_processing_overrides = PreProcessingOverrides(
+            disable_contrast_enhancement=kwargs.get("disable_preproc_contrast", False),
+            disable_grayscale=kwargs.get("disable_preproc_grayscale", False),
+            disable_static_crop=kwargs.get("disable_preproc_static_crop", False),
+        )
+        kwargs["pre_processing_overrides"] = pre_processing_overrides
         return kwargs
 
     def preprocess(self, image: Any, **kwargs):

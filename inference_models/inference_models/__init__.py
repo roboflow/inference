@@ -31,7 +31,11 @@ if os.environ.get("TOKENIZERS_PARALLELISM") is None:
 from inference_models.entities import ColorFormat
 from inference_models.model_pipelines.auto_loaders.core import AutoModelPipeline
 from inference_models.models.auto_loaders.core import AutoModel
-from inference_models.models.auto_loaders.entities import AnyModel, BackendType
+from inference_models.models.auto_loaders.entities import (
+    AnyModel,
+    BackendType,
+    PreProcessingOverrides,
+)
 from inference_models.models.base.classification import (
     ClassificationModel,
     ClassificationPrediction,

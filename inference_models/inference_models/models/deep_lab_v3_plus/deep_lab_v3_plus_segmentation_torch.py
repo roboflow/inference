@@ -11,6 +11,7 @@ from inference_models.configuration import (
     INFERENCE_MODELS_DEEP_LAB_V3_PLUS_DEFAULT_CONFIDENCE,
 )
 from inference_models.errors import CorruptedModelPackageError
+from inference_models.models.auto_loaders.entities import PreProcessingOverrides
 from inference_models.models.base.semantic_segmentation import (
     SemanticSegmentationResult,
 )
@@ -137,6 +138,7 @@ class DeepLabV3PlusForSemanticSegmentationTorch(
         images: Union[torch.Tensor, List[torch.Tensor]],
         input_color_format: Optional[ColorFormat] = None,
         image_size: Optional[Tuple[int, int]] = None,
+        pre_processing_overrides: Optional[PreProcessingOverrides] = None,
         **kwargs,
     ) -> Tuple[torch.Tensor, PreprocessingMetadata]:
         return pre_process_network_input(
@@ -146,6 +148,7 @@ class DeepLabV3PlusForSemanticSegmentationTorch(
             target_device=self._device,
             input_color_format=input_color_format,
             image_size_wh=image_size,
+            pre_processing_overrides=pre_processing_overrides,
         )
 
     def forward(self, pre_processed_images: torch.Tensor, **kwargs) -> torch.Tensor:
