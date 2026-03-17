@@ -1,5 +1,8 @@
+import copy
 from typing import List, Literal, Optional, Type, Union
 
+import numpy as np
+import pycocotools.mask as mask_utils
 import supervision as sv
 from pydantic import ConfigDict, Field
 
@@ -9,6 +12,9 @@ from inference.core.workflows.core_steps.visualizations.common.base import (
 from inference.core.workflows.core_steps.visualizations.common.base_colorable import (
     ColorableVisualizationBlock,
     ColorableVisualizationManifest,
+)
+from inference.core.workflows.execution_engine.constants import (
+    RLE_MASK_KEY_IN_SV_DETECTIONS,
 )
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
 from inference.core.workflows.execution_engine.entities.types import (
@@ -167,6 +173,18 @@ class MaskVisualizationBlockV1(ColorableVisualizationBlock):
             color_axis,
             opacity,
         )
+
+        if (
+            predictions.mask is None
+            and RLE_MASK_KEY_IN_SV_DETECTIONS in predictions.data
+        ):
+            predictions = copy.copy(predictions)
+            predictions.mask = np.array(
+                [
+                    mask_utils.decode(rle).astype(bool)
+                    for rle in predictions.data[RLE_MASK_KEY_IN_SV_DETECTIONS]
+                ]
+            )
 
         annotated_image = annotator.annotate(
             scene=image.numpy_image.copy() if copy_image else image.numpy_image,

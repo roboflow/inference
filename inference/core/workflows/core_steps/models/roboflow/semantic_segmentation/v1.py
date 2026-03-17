@@ -4,6 +4,7 @@ from uuid import uuid4
 
 import cv2
 import numpy as np
+import pycocotools.mask as mask_utils
 import supervision as sv
 from pydantic import ConfigDict
 
@@ -22,6 +23,7 @@ from inference.core.workflows.core_steps.common.entities import StepExecutionMod
 from inference.core.workflows.execution_engine.constants import (
     DETECTION_ID_KEY,
     INFERENCE_ID_KEY,
+    RLE_MASK_KEY_IN_SV_DETECTIONS,
 )
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
@@ -250,15 +252,22 @@ class RoboflowSemanticSegmentationModelBlockV1(WorkflowBlock):
             else:
                 confidence_list.append(1.0)
 
+        rle_list = []
+        for mask in masks_list:
+            rle = mask_utils.encode(np.asfortranarray(mask.astype(np.uint8)))
+            rle["counts"] = rle["counts"].decode("utf-8")
+            rle_list.append(rle)
+
         detection_ids = np.array([str(uuid4()) for _ in class_id_list])
         result = sv.Detections(
             xyxy=np.array(xyxy_list, dtype=np.float64),
-            mask=np.array(masks_list, dtype=bool),
+            mask=None,
             class_id=np.array(class_id_list),
             confidence=np.array(confidence_list, dtype=np.float32),
             data={
                 "class_name": np.array(class_name_list),
                 DETECTION_ID_KEY: detection_ids,
+                RLE_MASK_KEY_IN_SV_DETECTIONS: np.array(rle_list, dtype=object),
             },
         )
 

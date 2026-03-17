@@ -751,46 +751,54 @@ RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND = Kind(
 
 
 SEMANTIC_SEGMENTATION_PREDICTION_KIND_DOCS = """
-This kind represents a single semantic segmentation prediction, providing a per-pixel
-class label and confidence score for the entire image (not individual object instances).
+This kind represents a single semantic segmentation prediction as an
+[`sv.Detections(...)`](https://supervision.roboflow.com/latest/detection/core/) object
+with one detection per predicted class. Each detection carries an RLE-encoded mask
+covering all pixels assigned to that class.
 
-Example:
-```
+**Why RLE and not polygons:**
+
+Semantic segmentation assigns a class label to every pixel in the image. A single class
+can appear in multiple spatially disconnected regions (e.g., two separate "person" regions
+on opposite sides of the frame). Polygon-based serialization uses `cv2.findContours()`,
+which only retains the first contiguous contour and silently discards all others — causing
+irreversible data loss for non-contiguous masks. RLE (Run-Length Encoding, COCO standard)
+is a pixel-level encoding that represents the complete mask regardless of spatial topology,
+making it the only correct serialization format for semantic segmentation masks.
+
+**Internal representation:** `sv.Detections` with:
+- `xyxy` — tight bounding box enclosing all pixels of the class
+- `class_id` — integer class ID
+- `confidence` — mean confidence over all pixels of the class
+- `data["class_name"]` — class label string
+- `data["rle_mask"]` — numpy object array of COCO RLE dicts `{"size": [H, W], "counts": "..."}`
+
+**Serialised format** (one entry per class in `predictions`):
+
+```json
 {
     "image": {"width": 640, "height": 480},
-    "predictions": {
-        "segmentation_mask": "<base64-encoded PNG>",
-        "confidence_mask": "<base64-encoded PNG>",
-        "class_map": {"0": "background", "1": "person", "2": "car"}
-    },
-    "inference_id": "8a1b2c3d-...",
-    "time": 0.043
+    "predictions": [
+        {
+            "x": 320.0, "y": 240.0, "width": 200.0, "height": 180.0,
+            "confidence": 0.92,
+            "class_id": 1,
+            "class": "person",
+            "detection_id": "a1b2c3d4-...",
+            "rle_mask": {"size": [480, 640], "counts": "XYZ..."}
+        }
+    ]
 }
 ```
 
-**Fields in the `predictions` dict:**
-
-* `segmentation_mask` - base64-encoded single-channel PNG where each pixel value is the integer
-  class ID predicted for that pixel (as defined in `class_map`)
-
-* `confidence_mask` - base64-encoded single-channel PNG where each pixel value represents the
-  model confidence (0-255 range, where 255 = 100% confidence) for the predicted class at that pixel
-
-* `class_map` - dict mapping pixel intensity string (e.g. `"0"`, `"1"`) to class label string
-  (e.g. `"background"`, `"person"`)
-
-**SERIALISATION:**
-
-Execution Engine behind API will pass through the prediction dict as-is. Decode
-`segmentation_mask` and `confidence_mask` using standard base64 + PNG libraries, e.g.:
+**Decoding RLE masks:**
 
 ```python
-import base64, numpy as np
-from PIL import Image
-import io
+import pycocotools.mask as mask_utils
+import numpy as np
 
-mask_bytes = base64.b64decode(prediction["segmentation_mask"])
-mask_array = np.array(Image.open(io.BytesIO(mask_bytes)))
+rle = prediction["rle_mask"]
+binary_mask = mask_utils.decode(rle).astype(bool)  # shape: (H, W)
 ```
 """
 SEMANTIC_SEGMENTATION_PREDICTION_KIND = Kind(
@@ -798,7 +806,7 @@ SEMANTIC_SEGMENTATION_PREDICTION_KIND = Kind(
     description="Prediction with per-pixel class label and confidence for semantic segmentation",
     docs=SEMANTIC_SEGMENTATION_PREDICTION_KIND_DOCS,
     serialised_data_type="dict",
-    internal_data_type="dict",
+    internal_data_type="sv.Detections",
 )
 
 
