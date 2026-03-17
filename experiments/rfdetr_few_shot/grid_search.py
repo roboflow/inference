@@ -395,7 +395,7 @@ def train_lora(
             logger.info("  Epoch %d/%d  loss=%.4f", epoch + 1, num_epochs, epoch_loss)
 
     merged = peft_model.merge_and_unload().eval()
-    return merged, epoch_losses, None  # no adapter_state in legacy path
+    return merged, epoch_losses, None, num_epochs, -1.0, {}  # legacy path: no adapter/val
 
 
 def prepare_template_model(base_model, config, num_classes, device):
@@ -640,6 +640,35 @@ def _gpu_augment_batch(images, boxes_list, labels_list, aug_level, resolution,
     return images, boxes_list, labels_list
 
 
+def _capture_adapter_state(peft_model, class_names, num_classes, rank, alpha):
+    """Snapshot LoRA adapter + detection head state from a PeftModel."""
+    state = {
+        "lora_state_dict": {
+            k: v.cpu() for k, v in peft_model.state_dict().items() if "lora_" in k
+        },
+        "head_state_dict": {
+            "class_embed": {
+                k: v.cpu() for k, v in peft_model.base_model.model.class_embed.state_dict().items()
+            },
+            "bbox_embed": {
+                k: v.cpu() for k, v in peft_model.base_model.model.bbox_embed.state_dict().items()
+            },
+        },
+        "class_names": class_names if class_names else [],
+        "num_classes": num_classes,
+        "lora_rank": rank,
+        "lora_alpha": alpha,
+    }
+    if hasattr(peft_model.base_model.model, "transformer") and hasattr(
+        peft_model.base_model.model.transformer, "enc_out_class_embed"
+    ):
+        state["head_state_dict"]["enc_out_class_embed"] = {
+            k: v.cpu()
+            for k, v in peft_model.base_model.model.transformer.enc_out_class_embed.state_dict().items()
+        }
+    return state
+
+
 def train_lora_fast(
     template_model, filtered_state, config, dataset, num_classes, device,
     criterion, weight_dict,
@@ -648,6 +677,7 @@ def train_lora_fast(
     class_names=None,
     batch_size=None, lora_targets_version="v1",
     copy_paste=False, mosaic=False, warmup=False, multi_scale=False,
+    progress_callback=None, val_callback=None, val_freq=50,
 ):
     """Optimised trainer: deepcopy (~0.3s) instead of build_model (~5s),
     GPU-side augmentation, reuses criterion across experiments."""
@@ -732,6 +762,10 @@ def train_lora_fast(
     peft_model.train()
     criterion.train()
     epoch_losses = []
+    val_maps = {}  # epoch -> mAP@50:95
+    best_val_map = -1.0
+    best_full_state = None
+    best_epoch = num_epochs  # default: final epoch
     indices = list(range(n_images))
 
     for epoch in range(num_epochs):
@@ -798,34 +832,41 @@ def train_lora_fast(
         if (epoch + 1) % max(1, num_epochs // 5) == 0 or epoch == 0:
             logger.info("  Epoch %d/%d  loss=%.4f", epoch + 1, num_epochs, epoch_loss)
 
-    # Capture adapter state before merging (for persistence / cache)
-    adapter_state = {
-        "lora_state_dict": {
-            k: v.cpu() for k, v in peft_model.state_dict().items() if "lora_" in k
-        },
-        "head_state_dict": {
-            "class_embed": {
-                k: v.cpu() for k, v in peft_model.base_model.model.class_embed.state_dict().items()
-            },
-            "bbox_embed": {
-                k: v.cpu() for k, v in peft_model.base_model.model.bbox_embed.state_dict().items()
-            },
-        },
-        "class_names": class_names if class_names else [],
-        "num_classes": num_classes,
-        "lora_rank": rank,
-        "lora_alpha": alpha,
-    }
-    if hasattr(peft_model.base_model.model, "transformer") and hasattr(
-        peft_model.base_model.model.transformer, "enc_out_class_embed"
-    ):
-        adapter_state["head_state_dict"]["enc_out_class_embed"] = {
-            k: v.cpu()
-            for k, v in peft_model.base_model.model.transformer.enc_out_class_embed.state_dict().items()
-        }
+        # Progress callback (epoch reporting to DB)
+        if progress_callback is not None:
+            progress_callback(epoch + 1, num_epochs, epoch_loss, epoch_losses,
+                              best_epoch, best_val_map)
 
+        # Periodic validation for best-checkpoint selection
+        if val_callback is not None and (
+            (epoch + 1) % val_freq == 0 or epoch + 1 == num_epochs
+        ):
+            peft_model.eval()
+            v_map = val_callback(peft_model, epoch + 1)
+            peft_model.train()
+            criterion.train()
+            val_maps[epoch + 1] = v_map
+            if v_map > best_val_map:
+                best_val_map = v_map
+                best_epoch = epoch + 1
+                best_full_state = {
+                    k: v.cpu().clone() for k, v in peft_model.state_dict().items()
+                }
+                logger.info("  ⭐ New best val mAP@50:95=%.1f%% at epoch %d",
+                            v_map * 100, epoch + 1)
+
+    # Restore best checkpoint if found
+    if best_full_state is not None and best_epoch < num_epochs:
+        peft_model.load_state_dict(
+            {k: v.to(device) for k, v in best_full_state.items()}
+        )
+        logger.info("🏆 Restored best checkpoint from epoch %d (val mAP=%.1f%%)",
+                     best_epoch, best_val_map * 100)
+    del best_full_state  # free memory
+
+    adapter_state = _capture_adapter_state(peft_model, class_names, num_classes, rank, alpha)
     merged = peft_model.merge_and_unload().eval()
-    return merged, epoch_losses, adapter_state
+    return merged, epoch_losses, adapter_state, best_epoch, best_val_map, val_maps
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -2476,6 +2517,18 @@ def init_db_phase3(db_path=None):
     conn.execute("""CREATE TABLE IF NOT EXISTS grid_meta (
         key TEXT PRIMARY KEY, value TEXT
     )""")
+    # Add progress / best-checkpoint columns to existing DBs
+    for col, coltype in [
+        ("current_epoch", "INTEGER"),
+        ("current_loss", "REAL"),
+        ("current_map", "REAL"),
+        ("best_epoch", "INTEGER"),
+        ("best_val_map", "REAL"),
+    ]:
+        try:
+            conn.execute(f"ALTER TABLE experiments ADD COLUMN {col} {coltype}")
+        except Exception:
+            pass  # column already exists
     conn.commit()
     return conn
 
@@ -2820,10 +2873,61 @@ def run_single_experiment_phase3(
             class_names=ds_class_names,
         )
 
+        # ── Progress callback: writes epoch/loss to DB periodically ──
+        def _progress_cb(epoch, total, loss, losses, b_epoch, b_map):
+            if epoch % max(1, total // 100) == 0 or epoch <= 10 or epoch == total:
+                try:
+                    pconn = sqlite3.connect(str(db_path))
+                    pconn.execute("PRAGMA journal_mode=WAL")
+                    pconn.execute(
+                        "UPDATE experiments SET current_epoch=?, current_loss=?, "
+                        "loss_history=?, best_epoch=?, best_val_map=? WHERE id=?",
+                        (epoch, loss, json.dumps(losses),
+                         b_epoch if b_map > 0 else None,
+                         b_map if b_map > 0 else None, exp_id),
+                    )
+                    pconn.commit()
+                    pconn.close()
+                except Exception:
+                    pass
+
+        # ── Validation callback: runs inference on test set, returns mAP ──
+        active_to_original = {i: ds_class_names.index(c) for i, c in enumerate(active_classes)}
+
+        def _val_cb(peft_model, epoch):
+            maps = []
+            for eval_stem in test_stems:
+                eval_img, eval_boxes = _load("test", eval_stem)
+                raw_dets = run_inference(peft_model, config, eval_img, confidence_threshold=0.01)
+                remapped = [{**d, "class_id": active_to_original.get(d["class_id"], -1)}
+                            for d in raw_dets if d["class_id"] in active_to_original]
+                m = compute_map(remapped, eval_boxes, eval_img.size,
+                                all_class_ids, MAP_IOU_THRESHOLDS, class_names=ds_class_names)
+                maps.append(m["mAP_50_95"])
+            avg = float(np.mean(maps)) if maps else 0.0
+            # Write intermediate mAP to DB
+            try:
+                pconn = sqlite3.connect(str(db_path))
+                pconn.execute("PRAGMA journal_mode=WAL")
+                pconn.execute(
+                    "UPDATE experiments SET current_map=? WHERE id=?",
+                    (avg, exp_id),
+                )
+                pconn.commit()
+                pconn.close()
+            except Exception:
+                pass
+            logger.info("  📈 Val epoch %d: mAP@50:95=%.1f%%", epoch, avg * 100)
+            return avg
+
+        # Only run periodic validation for long training runs
+        use_val = epochs >= 100
+        val_freq = max(50, epochs // 20)  # ~20 validation points
+
         # Train
         t0 = time.time()
         if template_model is not None and cached_criterion is not None:
-            merged_model, loss_history, adapter_state = train_lora_fast(
+            merged_model, loss_history, adapter_state, best_epoch, best_val_map, val_maps = train_lora_fast(
                 template_model, filtered_state, fresh_config,
                 dataset, num_classes, device,
                 cached_criterion, cached_weight_dict,
@@ -2833,10 +2937,13 @@ def run_single_experiment_phase3(
                 batch_size=batch_size, lora_targets_version=lora_targets,
                 copy_paste=copy_paste, mosaic=mosaic,
                 warmup=warmup, multi_scale=multi_scale,
+                progress_callback=_progress_cb,
+                val_callback=_val_cb if use_val else None,
+                val_freq=val_freq,
             )
         else:
             # Fallback to slow path (shouldn't happen in Phase 3)
-            merged_model, loss_history, adapter_state = train_lora(
+            merged_model, loss_history, adapter_state, best_epoch, best_val_map, val_maps = train_lora(
                 base_model, config, dataset, num_classes, device,
                 rank=rank, alpha=alpha, lr=lr, num_epochs=epochs,
                 lora_dropout=lora_dropout, weight_decay=weight_decay,
@@ -2846,9 +2953,9 @@ def run_single_experiment_phase3(
 
         _db_execute_with_retry(conn,
             """UPDATE experiments SET train_time_seconds=?, time_per_epoch_ms=?,
-               final_loss=?, loss_history=? WHERE id=?""",
+               final_loss=?, loss_history=?, best_epoch=?, best_val_map=? WHERE id=?""",
             (train_time, ms_per_epoch, loss_history[-1],
-             json.dumps(loss_history), exp_id),
+             json.dumps(loss_history), best_epoch, best_val_map, exp_id),
         )
         _db_commit_with_retry(conn)
         logger.info("✅ Trained in %.1fs (%.0f ms/ep)", train_time, ms_per_epoch)
@@ -2895,12 +3002,15 @@ def run_single_experiment_phase3(
         avg_mAP_50_95 = float(np.mean(all_mAP_50_95)) if all_mAP_50_95 else 0
 
         _db_execute_with_retry(conn,
-            "UPDATE experiments SET mAP_50=?, mAP_50_95=?, status='completed' WHERE id=?",
-            (avg_mAP_50, avg_mAP_50_95, exp_id),
+            """UPDATE experiments SET mAP_50=?, mAP_50_95=?, status='completed',
+               best_epoch=?, best_val_map=?, current_epoch=?, current_loss=NULL, current_map=NULL
+               WHERE id=?""",
+            (avg_mAP_50, avg_mAP_50_95, best_epoch, best_val_map, epochs, exp_id),
         )
         _db_commit_with_retry(conn)
-        logger.info("📊 %s  mAP@50=%.1f%%  mAP@50:95=%.1f%%",
-                     run_id, avg_mAP_50*100, avg_mAP_50_95*100)
+        best_info = f" (best@ep{best_epoch})" if best_epoch < epochs else ""
+        logger.info("📊 %s  mAP@50=%.1f%%  mAP@50:95=%.1f%%%s",
+                     run_id, avg_mAP_50*100, avg_mAP_50_95*100, best_info)
 
         # Live viz: check if this is new best for dataset, generate images if so
         try:

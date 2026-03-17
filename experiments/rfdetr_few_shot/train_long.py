@@ -29,6 +29,7 @@ from grid_search import (
     _db_execute_with_retry,
     _gpu_monitor_loop,
     discover_benchmark_datasets,
+    init_db_phase3,
     load_base_model,
     load_image_and_labels_generic,
     prepare_criterion,
@@ -96,6 +97,9 @@ def main():
     if not datasets:
         logger.error("No datasets found in %s", datasets_root)
         return
+
+    # Ensure schema is up-to-date (adds progress/best-checkpoint columns)
+    init_db_phase3(db_path)
 
     logger.info("📋 DB: %s", db_path)
     logger.info("📊 %d datasets × %d configs × %d epochs", len(datasets), len(LONG_CONFIGS), EPOCHS)

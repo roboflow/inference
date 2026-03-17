@@ -9,7 +9,7 @@ import subprocess
 import threading
 import time
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timezone
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from socketserver import ThreadingMixIn
 from pathlib import Path
@@ -171,7 +171,7 @@ class Handler(SimpleHTTPRequestHandler):
             parsed = urlparse(self.path)
             if parsed.path.startswith("/api/"):
                 self._handle_api(parsed)
-            elif parsed.path.startswith("/viz/"):
+            elif parsed.path.startswith("/viz/") or parsed.path.startswith("/viz_champion/"):
                 self._serve_viz_file(parsed.path)
             else:
                 super().do_GET()
@@ -226,6 +226,8 @@ class Handler(SimpleHTTPRequestHandler):
             elif path == "/api/viz_champion":
                 self._api_viz_champion()
                 return
+            elif path == "/api/config_detail":
+                self._api_config_detail(conn, qs)
             else:
                 self._json_response({"error": "unknown endpoint"}, 404)
         except Exception:
@@ -396,6 +398,13 @@ class Handler(SimpleHTTPRequestHandler):
         ).fetchone()
         grid_total = int(meta_row[0]) if meta_row else None
 
+        # Include any experiments added after grid_meta was set (e.g. 1000-epoch runs)
+        actual_total = conn.execute("SELECT count(*) FROM experiments").fetchone()[0]
+        if grid_total is None:
+            grid_total = actual_total
+        else:
+            grid_total = max(grid_total, actual_total)
+
         completed = conn.execute(
             "SELECT count(*) FROM experiments WHERE status='completed'"
         ).fetchone()[0]
@@ -472,7 +481,7 @@ class Handler(SimpleHTTPRequestHandler):
             FROM experiments WHERE status = 'completed'
             GROUP BY {group_cols}
             HAVING COUNT(DISTINCT {set_col}) = {n_total_sets}
-            ORDER BY AVG(mAP_50) DESC LIMIT 10
+            ORDER BY AVG(mAP_50) DESC LIMIT 100
         """).fetchall()
 
         # Count datasets in benchmark mode
@@ -630,7 +639,8 @@ class Handler(SimpleHTTPRequestHandler):
                    COUNT(*) as n_sets,
                    COUNT(DISTINCT dataset_name) as n_datasets,
                    GROUP_CONCAT(DISTINCT dataset_name) as datasets,
-                   MIN(num_train_images) as num_train_images
+                   MIN(num_train_images) as num_train_images,
+                   MAX(id) as max_id
             FROM experiments WHERE {where_sql}
             GROUP BY {group_sql}
             {having}
@@ -811,7 +821,9 @@ class Handler(SimpleHTTPRequestHandler):
         optional = ["train_image_set", "dataset_name", "lora_dropout",
                     "augmentation_level", "weight_decay", "alpha_ratio",
                     "batch_size", "lora_targets", "copy_paste", "mosaic",
-                    "warmup", "multi_scale"]
+                    "warmup", "multi_scale",
+                    "current_epoch", "current_loss", "current_map",
+                    "best_epoch", "best_val_map", "loss_history"]
         sel_cols = base_cols + [c for c in optional if c in DB_COLUMNS]
         rows = conn.execute(f"""
             SELECT {', '.join(sel_cols)}
@@ -822,10 +834,10 @@ class Handler(SimpleHTTPRequestHandler):
         running = []
         for r in rows:
             rd = dict(r)
-            # Compute how long it's been running
+            # Compute how long it's been running (timestamps are naive UTC)
             try:
                 started = datetime.fromisoformat(rd["timestamp"])
-                rd["running_seconds"] = (datetime.now() - started).total_seconds()
+                rd["running_seconds"] = (datetime.now(timezone.utc).replace(tzinfo=None) - started).total_seconds()
             except Exception:
                 rd["running_seconds"] = None
             running.append(rd)
@@ -965,6 +977,54 @@ class Handler(SimpleHTTPRequestHandler):
         if not SYNC_MANAGER:
             return self._json_response({"enabled": False})
         self._json_response(SYNC_MANAGER.status())
+
+    def _api_config_detail(self, conn, qs):
+        """Return cross-dataset detail for a specific config (for clickable config cards)."""
+        rank = int(qs.get("rank", [0])[0])
+        bs = int(qs.get("bs", [0])[0])
+        cp = int(qs.get("cp", [0])[0])
+        mo = int(qs.get("mo", [0])[0])
+        epochs = int(qs.get("epochs", [50])[0])
+
+        experiments = conn.execute("""
+            SELECT * FROM experiments
+            WHERE lora_rank=? AND batch_size=? AND copy_paste=? AND mosaic=?
+              AND num_epochs=? AND status='completed'
+            ORDER BY mAP_50_95 DESC
+        """, (rank, bs, cp, mo, epochs)).fetchall()
+
+        result = []
+        for exp in experiments:
+            exp_d = dict(exp)
+            evals = conn.execute(
+                "SELECT * FROM eval_results WHERE experiment_id=?", (exp_d["id"],)
+            ).fetchall()
+            exp_d["eval_results"] = [dict(r) for r in evals]
+            result.append(exp_d)
+
+        # Load viz_champion images from manifest
+        viz_images = {}  # dataset_name -> {pred_image, gt_image, hybrid_image}
+        viz_dir = DB_PATH.parent / "viz_champion"
+        manifest_path = viz_dir / "manifest.json"
+        if manifest_path.exists():
+            try:
+                import json
+                manifest = json.load(open(manifest_path))
+                for m in manifest.get("models", []):
+                    for ds in m.get("datasets", []):
+                        ds_name = ds.get("name") or ds.get("dataset_name")
+                        if not ds_name:
+                            continue
+                        imgs = {}
+                        for img_key in ("pred_image", "gt_image", "hybrid_image"):
+                            if img_key in ds and ds[img_key]:
+                                imgs[img_key] = ds[img_key]
+                        if imgs:
+                            viz_images[ds_name] = imgs
+            except Exception:
+                pass
+
+        self._json_response({"experiments": result, "viz_images": viz_images})
 
     def _api_viz_champion(self):
         """Build multi-model visualization manifest from DB + any existing images.
@@ -1111,8 +1171,11 @@ class Handler(SimpleHTTPRequestHandler):
     def _serve_viz_file(self, path):
         """Serve files from viz_champion/ directory under /viz/ URL prefix."""
         import mimetypes
-        # /viz/images/foo.jpg → viz_champion/images/foo.jpg
-        rel = path[len("/viz/"):]
+        # /viz/images/foo.jpg or /viz_champion/images/foo.jpg → viz_champion/images/foo.jpg
+        if path.startswith("/viz_champion/"):
+            rel = path[len("/viz_champion/"):]
+        else:
+            rel = path[len("/viz/"):]
         file_path = DB_PATH.parent / "viz_champion" / rel
         if not file_path.exists() or ".." in rel:
             self.send_error(404)
