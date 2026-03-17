@@ -380,14 +380,8 @@ from inference.core.workflows.core_steps.sinks.twilio.sms.v2 import (
     TwilioSMSNotificationBlockV2,
 )
 from inference.core.workflows.core_steps.sinks.webhook.v1 import WebhookSinkBlockV1
-from inference.core.workflows.core_steps.trackers.bytetrack.v4 import (
-    ByteTrackerBlockV4,
-)
-from inference.core.workflows.core_steps.trackers.ocsort.v1 import (
-    OCSORTTrackerBlockV1,
-)
-from inference.core.workflows.core_steps.trackers.sort.v1 import (
-    SORTTrackerBlockV1,
+from inference.core.workflows.core_steps.trackers.object_tracker.v1 import (
+    ObjectTrackerBlockV1,
 )
 from inference.core.workflows.core_steps.transformations.absolute_static_crop.v1 import (
     AbsoluteStaticCropBlockV1,
@@ -836,9 +830,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         TraceVisualizationBlockV1,
         ReferencePathVisualizationBlockV1,
         ByteTrackerBlockV3,
-        ByteTrackerBlockV4,
-        SORTTrackerBlockV1,
-        OCSORTTrackerBlockV1,
+        ObjectTrackerBlockV1,
         WebhookSinkBlockV1,
         VelocityBlockV1,
         RoboflowInstanceSegmentationModelBlockV2,
