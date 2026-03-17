@@ -18,11 +18,11 @@ Depth Estimation supports both local and remote execution modes when used in wor
 
 To install inference with the extra dependencies necessary to run Depth-Anything-V2-Small, run
 
-```pip install inference[transformers]```
+```pip install "inference[transformers]"```
 
 or
 
-```pip install inference-gpu[transformers]```
+```pip install "inference-gpu[transformers]"```
 
 ### How to Use Depth-Anything-V2-Small
 

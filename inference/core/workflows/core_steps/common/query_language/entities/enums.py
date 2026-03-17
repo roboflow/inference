@@ -31,6 +31,7 @@ class NumberCastingMode(Enum):
 class SequenceAggregationFunction(Enum):
     MIN = "min"
     MAX = "max"
+    SUM = "sum"
 
 
 class SequenceAggregationMode(Enum):

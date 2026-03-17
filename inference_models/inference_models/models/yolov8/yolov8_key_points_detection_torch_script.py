@@ -5,7 +5,12 @@ import numpy as np
 import torch
 import torchvision  # DO NOT REMOVE, THIS IMPORT ENABLES NMS OPERATION
 
-from inference_models import Detections, KeyPoints, KeyPointsDetectionModel
+from inference_models import (
+    Detections,
+    KeyPoints,
+    KeyPointsDetectionModel,
+    PreProcessingOverrides,
+)
 from inference_models.configuration import (
     DEFAULT_DEVICE,
     INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_CLASS_AGNOSTIC_NMS,
@@ -143,6 +148,7 @@ class YOLOv8ForKeyPointsDetectionTorchScript(
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         input_color_format: Optional[ColorFormat] = None,
+        pre_processing_overrides: Optional[PreProcessingOverrides] = None,
         **kwargs,
     ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
         return pre_process_network_input(
@@ -151,6 +157,7 @@ class YOLOv8ForKeyPointsDetectionTorchScript(
             network_input=self._inference_config.network_input,
             target_device=self._device,
             input_color_format=input_color_format,
+            pre_processing_overrides=pre_processing_overrides,
         )
 
     def forward(self, pre_processed_images: torch.Tensor, **kwargs) -> torch.Tensor:

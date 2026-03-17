@@ -18,8 +18,6 @@ Read more about the Inference architecture [here](../../understand/architecture)
   keypoint detection, OCR, VQA, gaze detection, and more. Supports
   [pre-trained](../quickstart/aliases), [fine-tuned](https://roboflow.com/train),
   and [foundation](../foundation/about) models.
-- **[Workflows](../workflows/about)** - Chain models, logic, integrations, and custom
-  Python code into declarative computation graphs with 100+ built-in blocks.
 - **[Video Streaming](../workflows/video_processing/overview)** - Efficient
   `InferencePipeline` for consuming camera feeds, RTSP streams, and video files
   with automatic frame management and state tracking.
@@ -40,52 +38,67 @@ Read more about the Inference architecture [here](../../understand/architecture)
 | Runs Offline | | | ✅ |
 | Billing | Per-Call | Hourly | Free + [metered](https://roboflow.com/pricing) |
 
-**Serverless** - Scales to zero, pay per inference, supports cloud-hosted VLMs. No video streaming or heavy foundation models.
-
-**Dedicated** - Single-tenant VMs with optional GPU. Video streaming, custom Python, heavy models (SAM 2, Florence-2, PaliGemma). Billed hourly.
-
-**Self-Hosted** - Run on your own hardware. Full feature set, works offline. [Install guide →](../install/)
-
-**Bring Your Own Cloud** - Self-host on [AWS, Azure, or GCP](../install/cloud/) for enterprise compliance.
+* **Serverless** - Pay-per-Inference, scales to zero. Doesn't support large [foundation models](../foundation/about).
+* **Dedicated** - Single-tenant VMs with optional GPU. Supports larger foundation models (SAM 2, Florence-2, PaliGemma). Billed hourly.
+* **Self-Hosted** - Run on your own hardware. [Install guide →](../install/)
+* **Bring Your Own Cloud** - Self-host on [AWS, Azure, or GCP](../install/cloud/) for enterprise compliance.
 
 ## Quick Start
 
-??? note "Installation"
-
-    === "CPU"
-        ```bash
-        pip install inference
-        ```
-
-    === "Nvidia GPU"
-        ```bash
-        pip install inference-gpu
-        ```
-
-Or use Docker (recommended for production):
+Install the [inference-sdk](../inference_helpers/inference_sdk.md):
 
 ```bash
-pip install inference-cli
-inference server start
+pip install inference-sdk
 ```
+
+To self-host, start a local [Inference server](../install/) with the [inference-cli](../inference_helpers/inference_cli.md):
+
+```bash
+pip install inference-cli && inference server start --port 9001
+```
+
+Then run inference:
 
 ```python
-from inference import get_model
+from inference_sdk import InferenceHTTPClient
 
-model = get_model(model_id="yolov8n-640")
-results = model.infer("https://media.roboflow.com/inference/people-walking.jpg")
+client = InferenceHTTPClient(
+    # api_url="https://serverless.roboflow.com", # for Roboflow hosted inference
+    api_url="http://localhost:9001",  # for self-hosted inference
+    api_key="YOUR_API_KEY", # For private/fine-tuned models
+)
+
+image_url="https://media.roboflow.com/inference/people-walking.jpg"
+results = client.infer(image_url, model_id="rfdetr-small")
 ```
 
-!!! info
-
-    For a more detailed example, see the tutorial on [running a model](../quickstart/run_a_model).
+For more information, see [Run a model](../quickstart/run_a_model.md).
 
 ## Related Products
 
-- **[Roboflow App](https://app.roboflow.com/)** - Upload data, annotate images, train and deploy models. [Get your API key](https://docs.roboflow.com/api-reference/authentication).
-- **[Universe](https://universe.roboflow.com/)** - Browse and use community datasets and models. Pass any Universe `model_id` directly to Inference. [Learn more →](../quickstart/explore_models.md)
-- **[Supervision](https://supervision.roboflow.com/latest/)** - Post-process results: plot bounding boxes, track objects, slice images for small object detection. Works with Inference, Ultralytics, Hugging Face, and more.
-- **[Workflows](../workflows/about.md)** - Chain blocks together to build CV pipelines without writing code. [Browse blocks →](/workflows/blocks/index.md)
+<div class="product-cards">
+  <div class="product-card">
+    <div class="product-card__header">
+      <img class="product-card__icon" src="https://universe.roboflow.com/favicon.ico" alt="Roboflow">
+      <a class="product-card__title" href="https://app.roboflow.com/">Roboflow App</a>
+    </div>
+    <p class="product-card__desc">Upload data, annotate images, train and deploy models. <a href="https://docs.roboflow.com/api-reference/authentication">Get your API key</a>.</p>
+  </div>
+  <div class="product-card">
+    <div class="product-card__header">
+      <img class="product-card__icon" src="../../images/universe-icon.svg" alt="Universe">
+      <a class="product-card__title" href="https://universe.roboflow.com/">Universe</a>
+    </div>
+    <p class="product-card__desc">Browse and use community datasets and models. Pass any Universe <code>model_id</code> directly to Inference.</p>
+  </div>
+  <div class="product-card">
+    <div class="product-card__header">
+      <img class="product-card__icon" src="https://supervision.roboflow.com/assets/supervision-lenny.png" alt="Supervision">
+      <a class="product-card__title" href="https://supervision.roboflow.com/latest/">Supervision</a>
+    </div>
+    <p class="product-card__desc">Post-process results: decode predictions, plot bounding boxes, track objects, slice images for small object detection.</p>
+  </div>
+</div>
 
 ## Open Source
 

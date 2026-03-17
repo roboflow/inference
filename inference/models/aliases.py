@@ -98,7 +98,7 @@ SMOLVLM_ALIASES = {
 }
 
 SAM3_3D_ALIASES = {
-    "sam3-3d-objects": "sam3-3d-weights-vc6vz/1",
+    "sam3-3d-objects": "captoin-t38zo/1",  # "sam3-3d-weights-vc6vz/1",
 }
 
 RFDETR_ALIASES = {
@@ -108,8 +108,8 @@ RFDETR_ALIASES = {
     "rfdetr-small": "coco/39",
     "rfdetr-medium": "coco/40",
     "rfdetr-large": "coco/50",
-    "rfdetr-xlarge": "coco/48",
-    "rfdetr-2xlarge": "coco/47",
+    "rfdetr-xlarge": "coco/47",
+    "rfdetr-2xlarge": "coco/48",
     "rfdetr-seg-preview": "coco-dataset-vdnr1/26",
     "rfdetr-seg-nano": "coco-dataset-vdnr1/41",
     "rfdetr-seg-small": "coco-dataset-vdnr1/36",
@@ -169,9 +169,6 @@ REGISTERED_ALIASES = {
     **RFDETR_ALIASES,
     **CLASSIFICATION_ALIASES,
     **SAM3_3D_ALIASES,
-    **YOLO26_ALIASES,
-    **YOLO26_SEG_ALIASES,
-    **YOLO26_POSE_ALIASES,
     **YOLO26_ALIASES,
     **YOLO26_SEG_ALIASES,
     **YOLO26_POSE_ALIASES,

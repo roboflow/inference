@@ -204,6 +204,8 @@ QWEN_2_5_ENABLED = str2bool(os.getenv("QWEN_2_5_ENABLED", True))
 
 QWEN_3_ENABLED = str2bool(os.getenv("QWEN_3_ENABLED", True))
 
+QWEN_3_5_ENABLED = str2bool(os.getenv("QWEN_3_5_ENABLED", True))
+
 DEPTH_ESTIMATION_ENABLED = str2bool(os.getenv("DEPTH_ESTIMATION_ENABLED", True))
 
 SMOLVLM2_ENABLED = str2bool(os.getenv("SMOLVLM2_ENABLED", True))
@@ -270,6 +272,14 @@ ELASTICACHE_ENDPOINT = os.environ.get(
 ENABLE_BYTE_TRACK = str2bool(os.getenv("ENABLE_BYTE_TRACK", False))
 
 ENABLE_PROMETHEUS = str2bool(os.getenv("ENABLE_PROMETHEUS", False))
+
+# Controls whether video source URLs (e.g. RTSP endpoints) are included as
+# Prometheus label values.  Credentials and query parameters are always
+# stripped, but the host/IP and path remain visible.  Set to "false" to omit
+# source labels entirely if internal network topology is sensitive.
+METRICS_INCLUDE_SOURCE_LABELS = str2bool(
+    os.getenv("METRICS_INCLUDE_SOURCE_LABELS", True)
+)
 
 # Flag to enforce FPS, default is False
 ENFORCE_FPS = str2bool(os.getenv("ENFORCE_FPS", False))
@@ -917,3 +927,30 @@ if WORKFLOW_DISABLED_BLOCK_PATTERNS:
     ]
 else:
     WORKFLOW_DISABLED_BLOCK_PATTERNS = []
+
+VALID_INFERENCE_MODELS_BACKENDS = {
+    "torch",
+    "torch-script",
+    "onnx",
+    "trt",
+    "hugging-face",
+    "ultralytics",
+    "mediapipe",
+    "custom",
+}
+# env variables to control inference-models auto-loader
+DISABLED_INFERENCE_MODELS_BACKENDS = os.getenv("DISABLED_INFERENCE_MODELS_BACKENDS")
+if DISABLED_INFERENCE_MODELS_BACKENDS is not None:
+    DISABLED_INFERENCE_MODELS_BACKENDS = set(
+        DISABLED_INFERENCE_MODELS_BACKENDS.split(",")
+    )
+    if any(
+        v not in VALID_INFERENCE_MODELS_BACKENDS
+        for v in DISABLED_INFERENCE_MODELS_BACKENDS
+    ):
+        raise ValueError(
+            "Invalid value of `DISABLED_INFERENCE_MODELS_BACKENDS` variable - each enlisted backend must "
+            f"be within {VALID_INFERENCE_MODELS_BACKENDS}"
+        )
+else:
+    DISABLED_INFERENCE_MODELS_BACKENDS = set()

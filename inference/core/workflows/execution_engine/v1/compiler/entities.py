@@ -233,6 +233,18 @@ class StepNode(ExecutionGraphNode):
     auto_batch_casting_lineage_supports: Dict[str, AutoBatchCastingConfig] = field(
         default_factory=dict
     )
+    control_flow_lineage_dims: List[int] = field(
+        default_factory=list,
+        metadata={
+            "help": "The number of dimensions at which masks are provided through the control-flow lineage support"
+        },
+    )
+    control_flow_lineage_support: List[str] = field(
+        default_factory=list,
+        metadata={
+            "help": "The deepest control-flow lineage (mask level) supported by the step"
+        },
+    )
     step_execution_dimensionality: int = 0
 
     def controls_flow(self) -> bool:
@@ -245,7 +257,10 @@ class StepNode(ExecutionGraphNode):
         return len(self.data_lineage)
 
     def is_batch_oriented(self) -> bool:
-        return len(self.batch_oriented_parameters) > 0
+        return (
+            len(self.batch_oriented_parameters) > 0
+            or len(self.control_flow_lineage_support) > 0
+        )
 
 
 @dataclass(frozen=True)
