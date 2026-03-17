@@ -281,7 +281,9 @@ def run_onnx_session_with_batch_size_limit(
             help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
         )
     input_batch_size = input_batch_sizes.pop()
-    if min_batch_size is None and input_batch_size <= max_batch_size:
+    if input_batch_size <= max_batch_size and (
+        min_batch_size is None or input_batch_size >= min_batch_size
+    ):
         # no point iterating
         return run_onnx_session_via_iobinding(
             session=session,

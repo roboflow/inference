@@ -448,7 +448,9 @@ class HttpInterface(BaseInterface):
             logger.info("Shutting down %s", description)
             await usage_collector.async_push_usage_payloads()
 
-        InferenceInstrumentator(app, model_manager=model_manager, endpoint="/metrics")
+        self._instrumentator = InferenceInstrumentator(
+            app, model_manager=model_manager, endpoint="/metrics"
+        )
         if LAMBDA:
             app.add_middleware(LambdaMiddleware)
         if GCP_SERVERLESS:
@@ -811,6 +813,7 @@ class HttpInterface(BaseInterface):
                 port=int(os.getenv("STREAM_MANAGER_PORT", "7070")),
                 operations_timeout=operations_timeout,
             )
+            self._instrumentator.set_stream_manager_client(self.stream_manager_client)
 
         def process_inference_request(
             inference_request: InferenceRequest,

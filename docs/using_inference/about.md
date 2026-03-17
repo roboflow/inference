@@ -15,7 +15,7 @@ The [Inference Server](../quickstart/docker.md) wraps this package and exposes i
 ```python
 from inference import get_model
 
-model = get_model(model_id="yolov8n-640")
+model = get_model(model_id="rfdetr-small")
 results = model.infer("https://media.roboflow.com/inference/people-walking.jpg")
 ```
 
@@ -36,7 +36,7 @@ from inference import InferencePipeline
 from inference.core.interfaces.stream.sinks import render_boxes
 
 pipeline = InferencePipeline.init(
-    model_id="yolov8x-1280",
+    model_id="rfdetr-large",
     video_reference="https://storage.googleapis.com/com-roboflow-marketing/inference/people-walking.mp4",
     on_prediction=render_boxes,
     api_key="ROBOFLOW_API_KEY",

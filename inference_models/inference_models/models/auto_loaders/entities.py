@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import Optional, Union
 
@@ -15,6 +15,7 @@ from inference_models.models.base.object_detection import (
     ObjectDetectionModel,
     OpenVocabularyObjectDetectionModel,
 )
+from inference_models.models.base.semantic_segmentation import SemanticSegmentationModel
 
 ModelArchitecture = str
 TaskType = Optional[str]
@@ -42,6 +43,7 @@ AnyModel = Union[
     KeyPointsDetectionModel,
     ObjectDetectionModel,
     OpenVocabularyObjectDetectionModel,
+    SemanticSegmentationModel,
 ]
 
 
@@ -55,3 +57,10 @@ class InferenceModelConfig:
 
     def is_library_model(self) -> bool:
         return self.model_architecture is not None and self.backend_type is not None
+
+
+@dataclass(frozen=True)
+class PreProcessingOverrides:
+    disable_contrast_enhancement: bool = field(default=False)
+    disable_grayscale: bool = field(default=False)
+    disable_static_crop: bool = field(default=False)

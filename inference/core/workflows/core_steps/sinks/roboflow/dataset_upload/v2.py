@@ -1,6 +1,6 @@
 import random
 from concurrent.futures import ThreadPoolExecutor
-from typing import List, Literal, Optional, Tuple, Type, Union
+from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
 
 import supervision as sv
 from fastapi import BackgroundTasks
@@ -227,6 +227,11 @@ class BlockManifest(WorkflowBlockManifest):
         description="Optional custom name for the uploaded image. This is useful when you want to preserve the original filename or use a meaningful identifier (e.g., serial number, timestamp) for the image in the Roboflow dataset. The name should not include file extension. If not provided, a UUID will be generated automatically.",
         examples=["serial_12345", "camera1_frame_001", "$inputs.filename"],
     )
+    metadata: Dict[str, Union[str, int, float, bool, Selector()]] = Field(
+        default_factory=dict,
+        description="Optional key-value metadata to attach to uploaded images. Metadata is stored as user_metadata on the image in Roboflow and can be used for filtering and organization. Values can be static strings, numbers, booleans, or references to workflow inputs/steps.",
+        examples=[{"camera_id": "cam_01", "location": "$inputs.location"}, {}],
+    )
 
     @classmethod
     def get_parameters_accepting_batches(cls) -> List[str]:
@@ -285,6 +290,7 @@ class RoboflowDatasetUploadBlockV2(WorkflowBlock):
         labeling_batch_prefix: str,
         labeling_batches_recreation_frequency: BatchCreationFrequency,
         image_name: Optional[Batch[Optional[str]]] = None,
+        metadata: Optional[Dict[str, Any]] = None,
     ) -> BlockResult:
         if self._api_key is None:
             raise ValueError(
@@ -326,6 +332,7 @@ class RoboflowDatasetUploadBlockV2(WorkflowBlock):
                 thread_pool_executor=self._thread_pool_executor,
                 api_key=self._api_key,
                 image_name=img_name,
+                metadata=metadata,
             )
             result.append({"error_status": error_status, "message": message})
         return result
@@ -352,6 +359,7 @@ def maybe_register_datapoint_at_roboflow(
     thread_pool_executor: Optional[ThreadPoolExecutor],
     api_key: str,
     image_name: Optional[str] = None,
+    metadata: Optional[Dict[str, Any]] = None,
 ) -> Tuple[bool, str]:
     normalised_probability = data_percentage / 100
     if random.random() < normalised_probability:
@@ -375,5 +383,6 @@ def maybe_register_datapoint_at_roboflow(
             thread_pool_executor=thread_pool_executor,
             api_key=api_key,
             image_name=image_name,
+            metadata=metadata,
         )
     return False, "Registration skipped due to sampling settings"

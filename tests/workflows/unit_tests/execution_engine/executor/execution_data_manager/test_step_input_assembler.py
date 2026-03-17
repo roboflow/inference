@@ -7,7 +7,10 @@ from inference.core.workflows.execution_engine.entities.base import Batch
 from inference.core.workflows.execution_engine.v1.executor.execution_data_manager.step_input_assembler import (
     GuardForIndicesWrapping,
     ensure_compound_input_indices_match,
+    filter_to_valid_prefix_chains,
     get_empty_batch_elements_indices,
+    get_masks_intersection_for_dimensions,
+    intersect_masks_per_dimension,
     reduce_batch_dimensionality,
     remove_indices,
     unfold_parameters,
@@ -597,3 +600,241 @@ def test_reduce_batch_dimensionality_when_reduction_is_illegal() -> None:
             data=["a", "b", "c", "d"],
             guard_of_indices_wrapping=guard_of_indices_wrapping,
         )
+
+
+def test_get_masks_intersection_for_dimensions_two_masks_same_dimension_returns_intersection() -> None:
+    # Two masks at the same dimension level (dimension 1): intersection should contain
+    # only indices that appear in both masks.
+    # given
+    mask_a = {(0,), (3,)}
+    mask_b = {(1,), (2,), (3,)}
+
+    # when
+    result = get_masks_intersection_for_dimensions(
+        batch_masks=[mask_a, mask_b],
+        dimensions={1},
+    )
+
+    # then
+    assert result == {1: {(3,)}}, "Expected intersection of two masks at dimension 1"
+
+
+# --- intersect_masks_per_dimension (intra-dimensional intersection) ---
+
+
+def test_intersect_masks_per_dimension_two_masks_same_dimension_returns_intersection() -> None:
+    # At dimension 1: only indices present in every mask are kept.
+    mask_a = {(0,), (3,)}
+    mask_b = {(1,), (2,), (3,)}
+
+    result = intersect_masks_per_dimension(
+        batch_masks=[mask_a, mask_b],
+        dimensions={1},
+    )
+
+    assert result == {1: {(3,)}}
+
+
+def test_intersect_masks_per_dimension_multi_dimension_separate_masks_at_dim2_empty() -> None:
+    # At dimension 2 we have two *separate* masks: one with {(1,0)}, one with {(3,1)}.
+    # Intra-dim intersection: only indices that appear in *every* contributing mask.
+    # So result[2] is empty (no index is in both). Contrast with scenario 1 where one mask
+    # has {(1,0), (3,1)} at dim 2, so after intersection dim 2 = {(1,0), (3,1)}.
+    mask_d1_a = {(0,), (1,), (3,)}
+    mask_d1_b = {(1,), (2,), (3,)}
+    mask_d2_a = {(1, 0)}
+    mask_d2_b = {(3, 1)}
+    mask_d3 = {(1, 0, 0)}
+
+    result = intersect_masks_per_dimension(
+        batch_masks=[mask_d1_a, mask_d1_b, mask_d2_a, mask_d2_b, mask_d3],
+        dimensions={1, 2, 3},
+    )
+
+    assert result[1] == {(1,), (3,)}
+    assert result[2] == set()
+    assert result[3] == {(1, 0, 0)}
+
+
+def test_intersect_masks_per_dimension_three_masks_partial_overlap_at_dim1() -> None:
+    # Three masks at dim 1: intersection is only the index present in all three.
+    mask_a = {(0,), (1,)}
+    mask_b = {(1,), (2,)}
+    mask_c = {(1,)}
+
+    result = intersect_masks_per_dimension(
+        batch_masks=[mask_a, mask_b, mask_c],
+        dimensions={1},
+    )
+
+    assert result == {1: {(1,)}}
+
+
+def test_intersect_masks_per_dimension_single_mask_multi_dim_returns_that_mask() -> None:
+    # Single mask: "intersection" over one set is the set itself.
+    mask = {(0,), (1,), (0, 0), (1, 0)}
+
+    result = intersect_masks_per_dimension(
+        batch_masks=[mask],
+        dimensions={1, 2},
+    )
+
+    assert result[1] == {(0,), (1,)}
+    assert result[2] == {(0, 0), (1, 0)}
+
+
+def test_intersect_masks_per_dimension_two_masks_agree_at_dim2_one_has_no_dim2() -> None:
+    # At dim 2 only one mask has indices; we intersect over non-empty sets only, so result is that set.
+    mask_d1_both = {(0,), (1,)}  # both masks have dim-1
+    mask_d2_one = {(0, 0), (1, 0)}  # only this mask has dim-2
+
+    result = intersect_masks_per_dimension(
+        batch_masks=[mask_d1_both, mask_d2_one],
+        dimensions={1, 2},
+    )
+
+    assert result[1] == {(0,), (1,)}
+    assert result[2] == {(0, 0), (1, 0)}
+
+
+# --- filter_to_valid_prefix_chains (inter-level intersection) ---
+
+
+def test_filter_to_valid_prefix_chains_keeps_only_full_chain() -> None:
+    # Input per_dim is what we get *after* intra-dim intersection when there is a single
+    # mask at dim 2 (e.g. scenario 1: one mask has {(1,0), (3,1)}). So dim 2 = {(1,0), (3,1)}.
+    # This test checks inter-level filtering only: keep indices that form a full chain.
+    # (1,) -> (1,0) -> (1,0,0) is complete; (3,) -> (3,1) has no dim3 child, so (3,) and (3,1) are dropped.
+    per_dim = {
+        1: {(1,), (3,)},
+        2: {(1, 0), (3, 1)},
+        3: {(1, 0, 0)},
+    }
+
+    result = filter_to_valid_prefix_chains(per_dim, dimensions={1, 2, 3})
+
+    assert result == {1: {(1,)}, 2: {(1, 0)}, 3: {(1, 0, 0)}}
+
+
+def test_filter_to_valid_prefix_chains_single_dimension_unchanged() -> None:
+    per_dim = {1: {(0,), (1,)}}
+
+    result = filter_to_valid_prefix_chains(per_dim, dimensions={1})
+
+    assert result == {1: {(0,), (1,)}}
+
+
+def test_filter_to_valid_prefix_chains_multiple_complete_chains_all_kept() -> None:
+    # Two full chains: (0,) -> (0,0) -> (0,0,0) and (1,) -> (1,0) -> (1,0,0). Both kept.
+    per_dim = {
+        1: {(0,), (1,)},
+        2: {(0, 0), (1, 0)},
+        3: {(0, 0, 0), (1, 0, 0)},
+    }
+
+    result = filter_to_valid_prefix_chains(per_dim, dimensions={1, 2, 3})
+
+    assert result[1] == {(0,), (1,)}
+    assert result[2] == {(0, 0), (1, 0)}
+    assert result[3] == {(0, 0, 0), (1, 0, 0)}
+
+
+def test_filter_to_valid_prefix_chains_orphan_at_dim1_dropped() -> None:
+    # (2,) at dim 1 has no descendant at dim 2; (0,) -> (0,0) is a complete chain.
+    per_dim = {
+        1: {(0,), (2,)},
+        2: {(0, 0)},
+    }
+
+    result = filter_to_valid_prefix_chains(per_dim, dimensions={1, 2})
+
+    assert result == {1: {(0,)}, 2: {(0, 0)}}
+
+
+def test_filter_to_valid_prefix_chains_empty_at_one_dimension_all_empty() -> None:
+    # Dim 2 is empty; no chain can cross all dimensions.
+    per_dim = {
+        1: {(0,), (1,)},
+        2: set(),
+        3: {(0, 0, 0)},
+    }
+
+    result = filter_to_valid_prefix_chains(per_dim, dimensions={1, 2, 3})
+
+    assert result == {1: set(), 2: set(), 3: set()}
+
+
+# --- get_masks_intersection_for_dimensions (full pipeline) ---
+
+
+def test_get_masks_intersection_for_dimensions_scenario1_hierarchical_chain() -> None:
+    # Intra-dim intersection then prefix-chain filter yields (1,) -> (1,0) -> (1,0,0).
+    batch_masks = [
+        {(0,), (1,), (3,)},
+        {(1,), (2,), (3,)},
+        {(1, 0), (3, 1)},
+        {(1, 0, 0)},
+    ]
+
+    result = get_masks_intersection_for_dimensions(
+        batch_masks=batch_masks,
+        dimensions={1, 2, 3},
+    )
+
+    assert result == {1: {(1,)}, 2: {(1, 0)}, 3: {(1, 0, 0)}}
+
+
+def test_get_masks_intersection_for_dimensions_scenario2_intra_dim_empty_all_empty() -> None:
+    # dim2 has two separate masks {(1,0)} and {(3,1)} -> intersection empty.
+    # So no valid chain; all dimensions end up empty.
+    batch_masks = [
+        {(0,), (1,), (3,)},
+        {(1,), (2,), (3,)},
+        {(1, 0)},
+        {(3, 1)},
+        {(1, 0, 0)},
+    ]
+
+    result = get_masks_intersection_for_dimensions(
+        batch_masks=batch_masks,
+        dimensions={1, 2, 3},
+    )
+
+    assert result == {1: set(), 2: set(), 3: set()}
+
+
+def test_get_masks_intersection_for_dimensions_empty_batch_masks_returns_none_per_dim() -> None:
+    result = get_masks_intersection_for_dimensions(
+        batch_masks=[],
+        dimensions={1, 2},
+    )
+
+    assert result == {1: None, 2: None}
+
+
+def test_get_masks_intersection_for_dimensions_single_mask_multi_dim_identity() -> None:
+    # One mask: intersection is that mask; chain filter keeps full chain(s).
+    batch_masks = [
+        {(0,), (1,), (0, 0), (1, 0), (0, 0, 0), (1, 0, 0)},
+    ]
+
+    result = get_masks_intersection_for_dimensions(
+        batch_masks=batch_masks,
+        dimensions={1, 2, 3},
+    )
+
+    assert result[1] == {(0,), (1,)}
+    assert result[2] == {(0, 0), (1, 0)}
+    assert result[3] == {(0, 0, 0), (1, 0, 0)}
+
+
+def test_get_masks_intersection_for_dimensions_three_masks_dim1_agree_one_index() -> None:
+    # All three masks at dim 1 contain only (1,); no higher dims.
+    batch_masks = [{(0,), (1,)}, {(1,), (2,)}, {(1,)}]
+
+    result = get_masks_intersection_for_dimensions(
+        batch_masks=batch_masks,
+        dimensions={1},
+    )
+
+    assert result == {1: {(1,)}}

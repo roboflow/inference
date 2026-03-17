@@ -229,7 +229,10 @@ def iterate_over_simd_step_input(
         dynamic_batches_manager=dynamic_batches_manager,
         branching_manager=branching_manager,
     )
-    parameters_generator = unfold_parameters(parameters=simd_step_input.parameters)
+    parameters_generator = unfold_parameters(
+        parameters=simd_step_input.parameters,
+        indices=simd_step_input.indices,
+    )
     for index, single_parameters_set in zip(
         simd_step_input.indices, parameters_generator
     ):
@@ -266,6 +269,9 @@ def construct_mask_for_all_inputs_dimensionalities(
 ) -> Tuple[Any, bool]:
     inputs_dimensionalities = collect_inputs_dimensionalities(step_node=step_node)
     all_dimensionalities = {dim for dim in inputs_dimensionalities.values() if dim > 0}
+    if step_node.control_flow_lineage_support:
+        for dim_level in step_node.control_flow_lineage_dims:
+            all_dimensionalities.add(dim_level)
     batch_masks, non_batch_masks = [], set()
     for execution_branch in step_node.execution_branches_impacting_inputs:
         if not branching_manager.is_execution_branch_registered(
@@ -286,13 +292,13 @@ def construct_mask_for_all_inputs_dimensionalities(
         return {
             dimension: set() for dimension in all_dimensionalities
         }, scalar_mask_contains_false
-    return {
-        dimension: get_masks_intersection_up_to_dimension(
+    return (
+        get_masks_intersection_for_dimensions(
             batch_masks=batch_masks,
-            dimension=dimension,
-        )
-        for dimension in all_dimensionalities
-    }, scalar_mask_contains_false
+            dimensions=all_dimensionalities,
+        ),
+        scalar_mask_contains_false,
+    )
 
 
 def collect_inputs_dimensionalities(
@@ -313,25 +319,86 @@ def collect_inputs_dimensionalities(
     return result
 
 
-def get_masks_intersection_up_to_dimension(
+def intersect_masks_per_dimension(
     batch_masks: List[Set[DynamicBatchIndex]],
-    dimension: int,
-) -> Optional[Set[DynamicBatchIndex]]:
+    dimensions: Set[int],
+) -> Dict[int, Set[DynamicBatchIndex]]:
+    """Intersect masks at each dimensionality level.
+
+    For each dimension d, returns the set of indices (with length d) that appear
+    in every mask that has at least one index at that dimension. Masks with no
+    indices at d are ignored for that dimension. Used for intra-dimensional
+    intersection.
+    """
+    sorted_dims = sorted(dimensions)
+    result: Dict[int, Set[DynamicBatchIndex]] = {}
+    for dim in sorted_dims:
+        sets_at_dim = [{idx for idx in mask if len(idx) == dim} for mask in batch_masks]
+        non_empty = [s for s in sets_at_dim if s]
+        result[dim] = set.intersection(*non_empty) if non_empty else set()
+    return result
+
+
+def filter_to_valid_prefix_chains(
+    per_dim_sets: Dict[int, Set[DynamicBatchIndex]],
+    dimensions: Set[int],
+) -> Dict[int, Set[DynamicBatchIndex]]:
+    """Keep only indices that form a complete parent-child chain across dimensions.
+
+    Given per-dimension sets (e.g. from intersect_masks_per_dimension), retains
+    only indices that have a full lineage from the smallest to the largest
+    dimension. Used for inter-level intersection.
+    """
+    sorted_dims = sorted(dimensions)
+    by_dim: Dict[int, Set[DynamicBatchIndex]] = {
+        dim: per_dim_sets.get(dim, set()) for dim in sorted_dims
+    }
+
+    if len(sorted_dims) <= 1:
+        return dict(by_dim)
+
+    prev_dim = {sorted_dims[i]: sorted_dims[i - 1] for i in range(1, len(sorted_dims))}
+
+    # Bottom-up: mark indices that have at least one descendant
+    has_child: Set[DynamicBatchIndex] = set()
+    for dim in reversed(sorted_dims):
+        for idx in by_dim[dim]:
+            if dim == sorted_dims[-1] or idx in has_child:
+                parent = idx[:-1]
+                if parent:
+                    has_child.add(parent)
+
+    # Top-down: keep indices only if full prefix chain exists
+    valid: Dict[int, Set[DynamicBatchIndex]] = {dim: set() for dim in sorted_dims}
+    for dim in sorted_dims:
+        for idx in by_dim[dim]:
+            parent = idx[:-1]
+            if dim == sorted_dims[0]:
+                if idx in has_child:
+                    valid[dim].add(idx)
+            elif parent in valid[prev_dim[dim]]:
+                if dim == sorted_dims[-1] or idx in has_child:
+                    valid[dim].add(idx)
+
+    return valid
+
+
+def get_masks_intersection_for_dimensions(
+    batch_masks: List[Set[DynamicBatchIndex]],
+    dimensions: Set[int],
+) -> Dict[int, Optional[Set[DynamicBatchIndex]]]:
+    """Intersect masks at each dimension and filter to valid prefix chains."""
     if not batch_masks:
-        return None
+        return {dim: None for dim in dimensions}
 
-    # Initialize intersection with the first batch mask transformed up to the given dimension
-    intersection = {mask_element[:dimension] for mask_element in batch_masks[0]}
+    sorted_dims = sorted(dimensions)
 
-    # Perform the intersection with the transformed sets of subsequent batch masks
-    for batch_mask in batch_masks[1:]:
-        intersection &= {mask_element[:dimension] for mask_element in batch_mask}
+    if len(sorted_dims) <= 1:
+        result = intersect_masks_per_dimension(batch_masks, dimensions)
+        return {dim: result[dim] for dim in sorted_dims}
 
-        # Early exit if intersection becomes empty
-        if not intersection:
-            return set()
-
-    return intersection
+    per_dim = intersect_masks_per_dimension(batch_masks, dimensions)
+    return filter_to_valid_prefix_chains(per_dim, dimensions)
 
 
 class GuardForIndicesWrapping:
@@ -415,15 +482,24 @@ def prepare_parameters(
     ]
     ensure_compound_input_indices_match(indices=batch_parameters_indices)
     if not batch_parameters_indices:
-        raise ExecutionEngineRuntimeError(
-            public_message=f"For step: {step_node.name} which is assessed by Workflows Compiler as "
-            f"SIMD step Execution Engine cannot detect batch inputs. "
-            f"This is most likely a bug. Contact Roboflow team through github issues "
-            f"(https://github.com/roboflow/inference/issues) providing full context of"
-            f"the problem - including workflow definition you use.",
-            context="workflow_execution | step_input_assembling",
+        if not step_node.control_flow_lineage_support:
+            raise ExecutionEngineRuntimeError(
+                public_message=f"For step: {step_node.name} which is assessed by Workflows Compiler as "
+                f"SIMD step Execution Engine cannot detect neither batch inputs nor control flow inputs. "
+                f"This is most likely a bug. Contact Roboflow team through github issues "
+                f"(https://github.com/roboflow/inference/issues) providing full context of"
+                f"the problem - including workflow definition you use.",
+                context="workflow_execution | step_input_assembling",
+            )
+        indices = dynamic_batches_manager.get_indices_for_data_lineage(
+            lineage=step_node.control_flow_lineage_support,
         )
-    indices = batch_parameters_indices[0]
+        mask_dimension = len(step_node.control_flow_lineage_support)
+        mask_for_dimension = masks.get(mask_dimension)
+        if mask_for_dimension is not None:
+            indices = [idx for idx in indices if idx in mask_for_dimension]
+    else:
+        indices = batch_parameters_indices[0]
     if not step_node.step_manifest.accepts_empty_values():
         if contains_empty_scalar_step_output_selector:
             return BatchModeSIMDStepInput(
@@ -921,6 +997,9 @@ def remove_indices(value: Any, indices: Set[DynamicBatchIndex]) -> Any:
 
 def unfold_parameters(
     parameters: Dict[str, Any],
+    indices: Optional[
+        List[tuple]
+    ] = None,  # TODO: none here is only for unit tests to pass
 ) -> Generator[Dict[str, Any], None, None]:
     batch_parameters = get_batch_parameters(parameters=parameters)
     non_batch_parameters = {
@@ -929,7 +1008,11 @@ def unfold_parameters(
     if not batch_parameters:
         if not non_batch_parameters:
             return None
-        yield non_batch_parameters
+        if indices:
+            for _ in indices:
+                yield non_batch_parameters
+        else:
+            yield non_batch_parameters
         return None
     for unfolded_batch_parameters in iterate_over_batches(
         batch_parameters=batch_parameters
