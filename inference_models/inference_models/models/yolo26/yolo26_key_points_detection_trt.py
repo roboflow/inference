@@ -207,6 +207,12 @@ class YOLO26ForKeyPointsDetectionTRT(
         self._inference_config = inference_config
         self._parsed_key_points_metadata = parsed_key_points_metadata
         self._trt_config = trt_config
+        if trt_config.static_batch_size is not None:
+            self._max_batch_size = trt_config.static_batch_size
+        elif trt_config.dynamic_batch_size_max is not None:
+            self._max_batch_size = trt_config.dynamic_batch_size_max
+        else:
+            self._max_batch_size = 1
         self._device = device
         self._session_thread_lock = Lock()
         self.recommended_parameters = recommended_parameters
