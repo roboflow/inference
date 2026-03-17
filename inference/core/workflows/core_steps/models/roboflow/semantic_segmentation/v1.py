@@ -241,6 +241,8 @@ class RoboflowSemanticSegmentationModelBlockV1(WorkflowBlock):
         )
         for class_id in unique_class_ids:
             binary_mask = mask_array == class_id
+            # xyxy is a required sv.Detections field so we make a bounding box around the entire
+            # class mask even though this is not necessarily meaningful for non-contiguous masks.
             rows = np.where(np.any(binary_mask, axis=1))[0]
             cols = np.where(np.any(binary_mask, axis=0))[0]
             xyxy_list.append([cols[0], rows[0], cols[-1], rows[-1]])
