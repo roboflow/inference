@@ -206,6 +206,12 @@ class RFDetrForInstanceSegmentationTRT(
         self._execution_context = execution_context
         self._trt_config = trt_config
         self._trt_cuda_graph_cache = trt_cuda_graph_cache
+        if trt_config.static_batch_size is not None:
+            self._max_batch_size = trt_config.static_batch_size
+        elif trt_config.dynamic_batch_size_max is not None:
+            self._max_batch_size = trt_config.dynamic_batch_size_max
+        else:
+            self._max_batch_size = 1
         self._lock = threading.Lock()
         self._inference_stream = torch.cuda.Stream(device=self._device)
         self._thread_local_storage = threading.local()

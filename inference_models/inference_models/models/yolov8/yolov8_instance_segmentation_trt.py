@@ -207,6 +207,12 @@ class YOLOv8ForInstanceSegmentationTRT(
         self._device = device
         self._cuda_context = cuda_context
         self._execution_context = execution_context
+        if trt_config.static_batch_size is not None:
+            self._max_batch_size = trt_config.static_batch_size
+        elif trt_config.dynamic_batch_size_max is not None:
+            self._max_batch_size = trt_config.dynamic_batch_size_max
+        else:
+            self._max_batch_size = 1
         self._session_thread_lock = Lock()
         self._inference_stream = torch.cuda.Stream(device=self._device)
         self._thread_local_storage = threading.local()

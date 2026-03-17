@@ -189,6 +189,12 @@ class DeepLabV3PlusForSemanticSegmentationTRT(
         self._background_class_id = background_class_id
         self._inference_config = inference_config
         self._trt_config = trt_config
+        if trt_config.static_batch_size is not None:
+            self._max_batch_size = trt_config.static_batch_size
+        elif trt_config.dynamic_batch_size_max is not None:
+            self._max_batch_size = trt_config.dynamic_batch_size_max
+        else:
+            self._max_batch_size = 1
         self._device = device
         self._cuda_context = cuda_context
         self._execution_context = execution_context
