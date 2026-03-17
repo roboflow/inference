@@ -63,6 +63,7 @@ class ObjectTrackerManifest(WorkflowBlockManifest):
                 "section": "video",
                 "icon": "far fa-location-crosshairs",
                 "blockPriority": 1,
+                "subtitle_field": "tracker_type",
             },
         },
         protected_namespaces=(),
@@ -87,6 +88,9 @@ class ObjectTrackerManifest(WorkflowBlockManifest):
         description="Tracking algorithm to use. 'bytetrack' for two-stage association "
         "(robust in crowds), 'sort' for lightweight IoU-based tracking, 'ocsort' for "
         "observation-centric SORT with improved occlusion handling.",
+        json_schema_extra={
+            "always_visible": True,
+        },
     )
     lost_track_buffer: Union[Optional[int], Selector(kind=[INTEGER_KIND])] = Field(
         default=30,
