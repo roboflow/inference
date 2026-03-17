@@ -18,6 +18,7 @@ from inference_models.configuration import (
 )
 from inference_models.entities import ColorFormat
 from inference_models.errors import CorruptedModelPackageError
+from inference_models.models.auto_loaders.entities import PreProcessingOverrides
 from inference_models.models.common.model_packages import get_model_package_contents
 from inference_models.models.common.roboflow.model_packages import (
     InferenceConfig,
@@ -167,6 +168,7 @@ class DinoV3ForClassificationTorch(ClassificationModel[torch.Tensor, torch.Tenso
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         input_color_format: Optional[ColorFormat] = None,
         image_size: Optional[Tuple[int, int]] = None,
+        pre_processing_overrides: Optional[PreProcessingOverrides] = None,
         **kwargs,
     ) -> torch.Tensor:
         return pre_process_network_input(
@@ -176,6 +178,7 @@ class DinoV3ForClassificationTorch(ClassificationModel[torch.Tensor, torch.Tenso
             target_device=self._device,
             input_color_format=input_color_format,
             image_size_wh=image_size,
+            pre_processing_overrides=pre_processing_overrides,
         )[0]
 
     def forward(self, pre_processed_images: torch.Tensor, **kwargs) -> torch.Tensor:
