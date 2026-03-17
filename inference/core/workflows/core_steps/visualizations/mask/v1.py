@@ -100,7 +100,7 @@ class MaskManifest(ColorableVisualizationManifest):
             SEMANTIC_SEGMENTATION_PREDICTION_KIND,
         ]
     ) = Field(  # type: ignore
-        description="Predictions containing segmentation masks. Accepts instance segmentation predictions (sv.Detections with per-object masks), RLE-encoded instance segmentation predictions, or semantic segmentation predictions (dict with base64-encoded PNG mask).",
+        description="Segmentation predictions containing masks for detected objects. The block uses segmentation masks to create colored fills that precisely follow object or class boundaries. Requires segmentation model outputs with mask data, which may be RLE-encoded.",
         examples=["$steps.instance_segmentation_model.predictions"],
     )
 
