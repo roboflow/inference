@@ -57,7 +57,7 @@ to `AutoModel.from_pretrained`:
 ```python
 import torch
 from inference_models import AutoModel
-from inference_models.models.common.trt import TRTCudaGraphCache
+from inference_models.developer_tools import TRTCudaGraphCache
 
 cache = TRTCudaGraphCache(capacity=16)
 
