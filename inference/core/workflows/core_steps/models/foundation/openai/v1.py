@@ -94,7 +94,7 @@ class BlockManifest(WorkflowBlockManifest):
     )
     openai_model: Union[
         Selector(kind=[STRING_KIND]),
-        Literal["gpt-4o", "gpt-4o-mini", "gpt-5.4"],
+        Literal["gpt-4o", "gpt-4o-mini", "gpt-5.4", "gpt-5.4-mini", "gpt-5.4-nano"],
     ] = Field(
         default="gpt-4o",
         description="Model to be used",
