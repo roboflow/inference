@@ -541,3 +541,60 @@ def test_manifest_parsing_with_static_image_name() -> None:
 
     # then
     assert result.image_name == "my_static_image_name"
+
+
+@mock.patch.object(v2, "register_datapoint_at_roboflow")
+def test_run_sink_with_metadata_parameter(
+    register_datapoint_at_roboflow_mock: MagicMock,
+) -> None:
+    # given
+    background_tasks = BackgroundTasks()
+    cache = MemoryCache()
+    data_collector_block = RoboflowDatasetUploadBlockV2(
+        cache=cache,
+        api_key="my_api_key",
+        background_tasks=background_tasks,
+        thread_pool_executor=None,
+    )
+    image = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+        numpy_image=np.zeros((512, 256, 3), dtype=np.uint8),
+    )
+    register_datapoint_at_roboflow_mock.return_value = False, "OK"
+    indices = [(0,), (1,)]
+
+    # when
+    result = data_collector_block.run(
+        images=Batch(content=[image, image], indices=indices),
+        predictions=None,
+        target_project="my_project",
+        usage_quota_name="my_quota",
+        data_percentage=100.0,
+        persist_predictions=True,
+        minutely_usage_limit=10,
+        hourly_usage_limit=100,
+        daily_usage_limit=1000,
+        max_image_size=(128, 128),
+        compression_level=75,
+        registration_tags=["some"],
+        disable_sink=False,
+        fire_and_forget=False,
+        labeling_batch_prefix="my_batch",
+        labeling_batches_recreation_frequency="never",
+        metadata={
+            "camera_id": "cam_01",
+            "location": "warehouse_a",
+        },
+    )
+
+    # then
+    assert result == [
+        {"error_status": False, "message": "OK"},
+        {"error_status": False, "message": "OK"},
+    ], "Expected data registered"
+    assert register_datapoint_at_roboflow_mock.call_count == 2
+
+    # Verify metadata was passed to both calls
+    calls = register_datapoint_at_roboflow_mock.call_args_list
+    assert calls[0].kwargs["metadata"] == {"camera_id": "cam_01", "location": "warehouse_a"}
+    assert calls[1].kwargs["metadata"] == {"camera_id": "cam_01", "location": "warehouse_a"}

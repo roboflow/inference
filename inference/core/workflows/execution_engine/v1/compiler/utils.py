@@ -85,7 +85,7 @@ def get_last_chunk_of_selector(selector: str) -> str:
     return selector.split(".")[-1]
 
 
-def is_flow_control_step(execution_graph: DiGraph, node: str) -> bool:
+def is_control_flow_step(execution_graph: DiGraph, node: str) -> bool:
     if not is_step_node(execution_graph=execution_graph, node=node):
         return False
     return execution_graph.nodes[node][NODE_COMPILATION_OUTPUT_PROPERTY].controls_flow()

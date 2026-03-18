@@ -4,7 +4,11 @@ from typing import List, Optional, Tuple, Union
 import numpy as np
 import torch
 
-from inference_models import InstanceDetections, InstanceSegmentationModel
+from inference_models import (
+    InstanceDetections,
+    InstanceSegmentationModel,
+    PreProcessingOverrides,
+)
 from inference_models.configuration import (
     DEFAULT_DEVICE,
     INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE,
@@ -212,6 +216,7 @@ class RFDetrForInstanceSegmentationTRT(
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         input_color_format: Optional[ColorFormat] = None,
         image_size: Optional[Tuple[int, int]] = None,
+        pre_processing_overrides: Optional[PreProcessingOverrides] = None,
         **kwargs,
     ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
         with torch.cuda.stream(self._pre_process_stream):
@@ -222,6 +227,7 @@ class RFDetrForInstanceSegmentationTRT(
                 target_device=self._device,
                 input_color_format=input_color_format,
                 image_size_wh=image_size,
+                pre_processing_overrides=pre_processing_overrides,
             )
         self._pre_process_stream.synchronize()
         return pre_processed_images, pre_processing_meta

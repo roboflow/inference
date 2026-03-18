@@ -12,11 +12,11 @@ You can deploy PaliGemma object detection models with Inference, and use PaliGem
 
 To install inference with the extra dependencies necessary to run PaliGemma, run
 
-```pip install inference[transformers]```
+```pip install "inference[transformers]"```
 
 or
 
-```pip install inference-gpu[transformers]```
+```pip install "inference-gpu[transformers]"```
 
 ### How to Use PaliGemma (VQA)
 

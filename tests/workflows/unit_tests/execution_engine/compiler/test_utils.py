@@ -29,7 +29,7 @@ from inference.core.workflows.execution_engine.v1.compiler.utils import (
     get_output_selectors,
     get_step_selector_from_its_output,
     get_steps_selectors,
-    is_flow_control_step,
+    is_control_flow_step,
     is_input_selector,
     is_selector,
     is_step_output_selector,
@@ -281,7 +281,7 @@ def test_get_last_chunk_of_selector() -> None:
     assert result == "value"
 
 
-def test_is_flow_control_step_when_not_a_step_node_given() -> None:
+def test_is_control_flow_step_when_not_a_step_node_given() -> None:
     # given
     graph = nx.DiGraph()
     graph.add_node(
@@ -299,13 +299,13 @@ def test_is_flow_control_step_when_not_a_step_node_given() -> None:
     )
 
     # when
-    result = is_flow_control_step(execution_graph=graph, node="some")
+    result = is_control_flow_step(execution_graph=graph, node="some")
 
     # then
     assert result is False
 
 
-def test_is_flow_control_step_when_step_node_given_but_not_control_flow() -> None:
+def test_is_control_flow_step_when_step_node_given_but_not_control_flow() -> None:
     # given
     graph = nx.DiGraph()
     graph.add_node(
@@ -320,13 +320,13 @@ def test_is_flow_control_step_when_step_node_given_but_not_control_flow() -> Non
     )
 
     # when
-    result = is_flow_control_step(execution_graph=graph, node="some")
+    result = is_control_flow_step(execution_graph=graph, node="some")
 
     # then
     assert result is False
 
 
-def test_is_flow_control_step_when_control_flow_step_given() -> None:
+def test_is_control_flow_step_when_control_flow_step_given() -> None:
     # given
     graph = nx.DiGraph()
     graph.add_node(
@@ -342,7 +342,7 @@ def test_is_flow_control_step_when_control_flow_step_given() -> None:
     )
 
     # when
-    result = is_flow_control_step(execution_graph=graph, node="some")
+    result = is_control_flow_step(execution_graph=graph, node="some")
 
     # then
     assert result is True

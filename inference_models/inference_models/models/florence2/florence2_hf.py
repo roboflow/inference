@@ -1,6 +1,5 @@
 import json
 import os
-import re
 from threading import Lock
 from typing import List, Literal, Optional, Tuple, Union
 
@@ -29,6 +28,7 @@ from inference_models.errors import (
     ModelInputError,
     ModelRuntimeError,
 )
+from inference_models.models.auto_loaders.entities import PreProcessingOverrides
 from inference_models.models.common.roboflow.model_packages import (
     InferenceConfig,
     PreProcessingMetadata,
@@ -212,6 +212,7 @@ class Florence2HF:
         num_beams: int = INFERENCE_MODELS_FLORENCE2_DEFAULT_NUM_BEAMS,
         do_sample: bool = INFERENCE_MODELS_FLORENCE2_DEFAULT_DO_SAMPLE,
         input_color_format: Optional[ColorFormat] = None,
+        pre_processing_overrides: Optional[PreProcessingOverrides] = None,
     ) -> List[str]:
         loc_phrases = region_to_loc_phrase(images=images, xyxy=xyxy)
         prompt = [f"<REGION_TO_CATEGORY>{phrase}" for phrase in loc_phrases]
@@ -224,6 +225,7 @@ class Florence2HF:
             do_sample=do_sample,
             task=task,
             input_color_format=input_color_format,
+            pre_processing_overrides=pre_processing_overrides,
         )
         return [deduce_localisation(r[task]) for r in result]
 
@@ -240,6 +242,7 @@ class Florence2HF:
         num_beams: int = INFERENCE_MODELS_FLORENCE2_DEFAULT_NUM_BEAMS,
         do_sample: bool = INFERENCE_MODELS_FLORENCE2_DEFAULT_DO_SAMPLE,
         input_color_format: Optional[ColorFormat] = None,
+        pre_processing_overrides: Optional[PreProcessingOverrides] = None,
     ) -> List[str]:
         loc_phrases = region_to_loc_phrase(images=images, xyxy=xyxy)
         prompt = [f"<REGION_TO_DESCRIPTION>{phrase}" for phrase in loc_phrases]
@@ -252,6 +255,7 @@ class Florence2HF:
             do_sample=do_sample,
             task=task,
             input_color_format=input_color_format,
+            pre_processing_overrides=pre_processing_overrides,
         )
         return [deduce_localisation(r[task]) for r in result]
 
@@ -268,6 +272,7 @@ class Florence2HF:
         num_beams: int = INFERENCE_MODELS_FLORENCE2_DEFAULT_NUM_BEAMS,
         do_sample: bool = INFERENCE_MODELS_FLORENCE2_DEFAULT_DO_SAMPLE,
         input_color_format: Optional[ColorFormat] = None,
+        pre_processing_overrides: Optional[PreProcessingOverrides] = None,
     ) -> List[str]:
         loc_phrases = region_to_loc_phrase(images=images, xyxy=xyxy)
         prompt = [f"<REGION_TO_OCR>{phrase}" for phrase in loc_phrases]
@@ -280,6 +285,7 @@ class Florence2HF:
             do_sample=do_sample,
             task=task,
             input_color_format=input_color_format,
+            pre_processing_overrides=pre_processing_overrides,
         )
         return [deduce_localisation(r[task]) for r in result]
 
@@ -296,12 +302,16 @@ class Florence2HF:
         num_beams: int = INFERENCE_MODELS_FLORENCE2_DEFAULT_NUM_BEAMS,
         do_sample: bool = INFERENCE_MODELS_FLORENCE2_DEFAULT_DO_SAMPLE,
         input_color_format: Optional[ColorFormat] = None,
+        pre_processing_overrides: Optional[PreProcessingOverrides] = None,
     ) -> List[InstanceDetections]:
         loc_phrases = region_to_loc_phrase(images=images, xyxy=xyxy)
         prompt = [f"<REGION_TO_SEGMENTATION>{phrase}" for phrase in loc_phrases]
         task = "<REGION_TO_SEGMENTATION>"
         inputs, image_dimensions, pre_processing_metadata = self.pre_process_generation(
-            images=images, prompt=prompt, input_color_format=input_color_format
+            images=images,
+            prompt=prompt,
+            input_color_format=input_color_format,
+            pre_processing_overrides=pre_processing_overrides,
         )
         generated_ids = self.generate(
             inputs=inputs,
@@ -336,11 +346,15 @@ class Florence2HF:
         num_beams: int = INFERENCE_MODELS_FLORENCE2_DEFAULT_NUM_BEAMS,
         do_sample: bool = INFERENCE_MODELS_FLORENCE2_DEFAULT_DO_SAMPLE,
         input_color_format: Optional[ColorFormat] = None,
+        pre_processing_overrides: Optional[PreProcessingOverrides] = None,
     ) -> List[InstanceDetections]:
         prompt = f"<REFERRING_EXPRESSION_SEGMENTATION>{phrase}"
         task = "<REFERRING_EXPRESSION_SEGMENTATION>"
         inputs, image_dimensions, pre_processing_metadata = self.pre_process_generation(
-            images=images, prompt=prompt, input_color_format=input_color_format
+            images=images,
+            prompt=prompt,
+            input_color_format=input_color_format,
+            pre_processing_overrides=pre_processing_overrides,
         )
         generated_ids = self.generate(
             inputs=inputs,
@@ -376,11 +390,15 @@ class Florence2HF:
         num_beams: int = INFERENCE_MODELS_FLORENCE2_DEFAULT_NUM_BEAMS,
         do_sample: bool = INFERENCE_MODELS_FLORENCE2_DEFAULT_DO_SAMPLE,
         input_color_format: Optional[ColorFormat] = None,
+        pre_processing_overrides: Optional[PreProcessingOverrides] = None,
     ) -> List[Detections]:
         prompt = f"<CAPTION_TO_PHRASE_GROUNDING>{phrase}"
         task = "<CAPTION_TO_PHRASE_GROUNDING>"
         inputs, image_dimensions, pre_processing_metadata = self.pre_process_generation(
-            images=images, prompt=prompt, input_color_format=input_color_format
+            images=images,
+            prompt=prompt,
+            input_color_format=input_color_format,
+            pre_processing_overrides=pre_processing_overrides,
         )
         generated_ids = self.generate(
             inputs=inputs,
@@ -413,6 +431,7 @@ class Florence2HF:
         num_beams: int = INFERENCE_MODELS_FLORENCE2_DEFAULT_NUM_BEAMS,
         do_sample: bool = INFERENCE_MODELS_FLORENCE2_DEFAULT_DO_SAMPLE,
         input_color_format: Optional[ColorFormat] = None,
+        pre_processing_overrides: Optional[PreProcessingOverrides] = None,
     ) -> List[Detections]:
         if classes:
             classes_str = "<and>".join(classes)
@@ -423,7 +442,10 @@ class Florence2HF:
             task = LABEL_MODE2TASK[labels_mode]
             prompt = task
         inputs, image_dimensions, pre_processing_metadata = self.pre_process_generation(
-            images=images, prompt=prompt, input_color_format=input_color_format
+            images=images,
+            prompt=prompt,
+            input_color_format=input_color_format,
+            pre_processing_overrides=pre_processing_overrides,
         )
         generated_ids = self.generate(
             inputs=inputs,
@@ -456,6 +478,7 @@ class Florence2HF:
         num_beams: int = INFERENCE_MODELS_FLORENCE2_DEFAULT_NUM_BEAMS,
         do_sample: bool = INFERENCE_MODELS_FLORENCE2_DEFAULT_DO_SAMPLE,
         input_color_format: Optional[ColorFormat] = None,
+        pre_processing_overrides: Optional[PreProcessingOverrides] = None,
     ) -> List[str]:
         task = GRANULARITY_2TASK[granularity]
         result = self.prompt(
@@ -466,6 +489,7 @@ class Florence2HF:
             do_sample=do_sample,
             task=task,
             input_color_format=input_color_format,
+            pre_processing_overrides=pre_processing_overrides,
         )
         return [r[task] for r in result]
 
@@ -531,10 +555,14 @@ class Florence2HF:
         skip_special_tokens: bool = False,
         task: Optional[str] = None,
         input_color_format: Optional[ColorFormat] = None,
+        pre_processing_overrides: Optional[PreProcessingOverrides] = None,
         **kwargs,
     ) -> List[str]:
         inputs, image_dimensions, _ = self.pre_process_generation(
-            images=images, prompt=prompt, input_color_format=input_color_format
+            images=images,
+            prompt=prompt,
+            input_color_format=input_color_format,
+            pre_processing_overrides=pre_processing_overrides,
         )
         generated_ids = self.generate(
             inputs=inputs,
@@ -554,6 +582,7 @@ class Florence2HF:
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         prompt: Union[str, List[str]],
         input_color_format: Optional[ColorFormat] = None,
+        pre_processing_overrides: Optional[PreProcessingOverrides] = None,
         **kwargs,
     ) -> Tuple[dict, List[ImageDimensions], Optional[List[PreProcessingMetadata]]]:
         # # maybe don't need to convert to tensor here, since processor also accepts numpy arrays
@@ -584,6 +613,7 @@ class Florence2HF:
                 network_input=self._inference_config.network_input,
                 target_device=self._device,
                 input_color_format=input_color_format,
+                pre_processing_overrides=pre_processing_overrides,
             )
             image_list = [e[0] for e in torch.split(images, 1, dim=0)]
             image_dimensions = [

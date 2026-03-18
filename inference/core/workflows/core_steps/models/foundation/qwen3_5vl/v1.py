@@ -73,13 +73,14 @@ class BlockManifest(WorkflowBlockManifest):
         description="Optional text prompt to provide additional context to Qwen3.5-VL. Otherwise it will just be a default one, which may affect the desired model behavior.",
         examples=["What is in this image?"],
     )
-    model_version: Union[Selector(kind=[ROBOFLOW_MODEL_ID_KIND]), str] = Field(
+    model_version: Union[
+        Literal["qwen3_5-0.8b", "qwen3_5-2b"],
+        Selector(kind=[ROBOFLOW_MODEL_ID_KIND]),
+        str,
+    ] = Field(
         default="qwen3_5-0.8b",
         description="The Qwen3.5-VL model to be used for inference.",
         examples=["qwen3_5-0.8b", "qwen3_5-2b"],
-        json_schema_extra={
-            "predefined_options": ["qwen3_5-0.8b", "qwen3_5-2b"],
-        },
     )
 
     system_prompt: Optional[str] = Field(
@@ -91,6 +92,13 @@ class BlockManifest(WorkflowBlockManifest):
     enable_thinking: bool = Field(
         default=False,
         description="If true, enables Qwen3.5-VL's thinking mode, which allows the model to generate reasoning tokens before answering. The thinking output will be returned in the 'thinking' field.",
+        json_schema_extra={
+            "relevant_for": {
+                "model_version": {
+                    "values": ["qwen3_5-2b", "qwen3_5-2b-peft"],
+                },
+            },
+        },
     )
 
     max_new_tokens: Optional[int] = Field(

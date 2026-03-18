@@ -15,6 +15,7 @@ from inference_models.errors import (
     MissingDependencyError,
     ModelRuntimeError,
 )
+from inference_models.models.auto_loaders.entities import PreProcessingOverrides
 from inference_models.models.base.semantic_segmentation import (
     SemanticSegmentationResult,
 )
@@ -193,6 +194,7 @@ class DeepLabV3PlusForSemanticSegmentationTRT(
         self,
         images: Union[torch.Tensor, List[torch.Tensor]],
         input_color_format: Optional[ColorFormat] = None,
+        pre_processing_overrides: Optional[PreProcessingOverrides] = None,
         **kwargs,
     ) -> Tuple[PreprocessedInputs, PreprocessingMetadata]:
         with torch.cuda.stream(self._pre_process_stream):
@@ -202,6 +204,7 @@ class DeepLabV3PlusForSemanticSegmentationTRT(
                 network_input=self._inference_config.network_input,
                 target_device=self._device,
                 input_color_format=input_color_format,
+                pre_processing_overrides=pre_processing_overrides,
             )
         self._pre_process_stream.synchronize()
         return pre_processed_images, pre_processing_meta
