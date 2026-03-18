@@ -1,5 +1,14 @@
 # Changelog
 
+## `0.21.0`
+### Added
+
+- Support for CUDA Graphs in TRT backend - all TRT models got upgraded - added ability to run with CUDA graphs, at 
+the expense of additional VRAM allocation, but with caller control on how many execution contexts for different 
+input shapes should be allowed.
+
+---
+
 ## `0.20.2`
 ### Added
 

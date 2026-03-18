@@ -547,7 +547,7 @@ def test_trt_cudagraph_cache_reuses_previously_seen_input_shapes(
 
         output = model.forward(batch)
 
-        cache_size_after = len(trt_cuda_graph_cache.cache)
+        cache_size_after = trt_cuda_graph_cache.get_current_size()
 
         if cache_key not in seen_shapes:
             assert cache_size_after == cache_size_before + 1
@@ -621,7 +621,7 @@ def test_trt_cudagraph_cache_eviction(
     batch_4 = pre_processed_single.repeat(4, 1, 1, 1)
     model.forward(batch_4)
 
-    assert len(trt_cuda_graph_cache.cache) == 3
+    assert trt_cuda_graph_cache.get_current_size() == 3
     keys_after = trt_cuda_graph_cache.list_keys()
     assert keys_before[0] not in keys_after
     for key in keys_before[1:]:

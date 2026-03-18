@@ -588,6 +588,7 @@ def test_trt_outputs_match_expected_shapes(
     model = AutoModel.from_pretrained(
         model_id_or_path=rfdetr_nano_t4_trt_package,
         device=torch.device("cuda:0"),
+        trt_cuda_graph_cache=trt_cuda_graph_cache,
     )
 
     pre_processed, _ = model.pre_process(dog_image_numpy)

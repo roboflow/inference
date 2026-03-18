@@ -103,6 +103,7 @@ nav:
       - Load Models Locally: how-to/local-packages.md
       - Understand Roboflow Model Packages: how-to/roboflow-model-packages.md
       - Manage Cache: how-to/cache-management.md
+      - Use CUDA Graphs: how-to/use-cuda-graphs.md
   - Contributors:
       - Development Environment: contributors/dev-environment.md
       - Core Architecture: contributors/core-architecture.md
