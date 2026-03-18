@@ -20,6 +20,9 @@ def test_trt_package_numpy(
     )
 
     # when
+    # warmup
+    for _ in range(5):
+        _ = model(coins_counting_image_numpy)
     predictions = model(coins_counting_image_numpy)
 
     # then
@@ -88,6 +91,9 @@ def test_trt_package_batch_numpy(
     )
 
     # when
+    # warmup
+    for _ in range(5):
+        _ = model([coins_counting_image_numpy, coins_counting_image_numpy])
     predictions = model([coins_counting_image_numpy, coins_counting_image_numpy])
 
     # then
@@ -202,6 +208,9 @@ def test_trt_package_torch(
     )
 
     # when
+    # warmup
+    for _ in range(5):
+        _ = model(coins_counting_image_torch)
     predictions = model(coins_counting_image_torch)
 
     # then
@@ -270,6 +279,9 @@ def test_trt_package_torch_multiple_predictions_in_row(
     )
 
     # when
+    # warmup
+    for _ in range(5):
+        _ = model(coins_counting_image_torch)
     for _ in range(8):
         predictions = model(coins_counting_image_torch)
 
@@ -339,6 +351,9 @@ def test_trt_package_torch_list(
     )
 
     # when
+    # warmup
+    for _ in range(5):
+        _ = model([coins_counting_image_torch, coins_counting_image_torch])
     predictions = model([coins_counting_image_torch, coins_counting_image_torch])
 
     # then
@@ -453,6 +468,9 @@ def test_trt_package_torch_batch(
     )
 
     # when
+    # warmup
+    for _ in range(5):
+        _ = model(torch.stack([coins_counting_image_torch, coins_counting_image_torch], dim=0))
     predictions = model(
         torch.stack([coins_counting_image_torch, coins_counting_image_torch], dim=0)
     )
