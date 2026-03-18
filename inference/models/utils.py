@@ -1006,3 +1006,11 @@ if USE_INFERENCE_MODELS:
                 InferenceModelsQwen35VLAdapter
             )
         ROBOFLOW_MODEL_TYPES[("vlm", "qwen_3_5")] = InferenceModelsQwen35VLAdapter
+
+    # GLM-OCR is inference_models-only
+    from inference.models.glm_ocr.glm_ocr_inference_models import (
+        InferenceModelsGlmOcrAdapter,
+    )
+
+    ROBOFLOW_MODEL_TYPES[("lmm", "glm-ocr")] = InferenceModelsGlmOcrAdapter
+    ROBOFLOW_MODEL_TYPES[("vlm", "glm-ocr")] = InferenceModelsGlmOcrAdapter

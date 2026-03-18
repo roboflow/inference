@@ -83,6 +83,10 @@ QWEN_ALIASES = {
     "qwen3vl-2b-instruct": "qwen-pretrains/2",
 }
 
+GLM_OCR_ALIASES = {
+    "glm-ocr": "glm-ocr-pretrains/1",
+}
+
 CLASSIFICATION_ALIASES = {
     "resnet18": "classifiers/1",
     "resnet34": "classifiers/2",
@@ -147,6 +151,7 @@ REGISTERED_ALIASES = {
     "florence-2-large": "florence-pretrains/4",
     **YOLOV11_ALIASES,
     **QWEN_ALIASES,
+    **GLM_OCR_ALIASES,
     **RFDETR_ALIASES,
     **CLASSIFICATION_ALIASES,
     **YOLO26_ALIASES,

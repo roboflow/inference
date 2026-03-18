@@ -97,6 +97,10 @@ SMOLVLM_ALIASES = {
     "smolvlm2": "smolvlm-2.2b-instruct",
 }
 
+GLM_OCR_ALIASES = {
+    "glm-ocr": "glm-ocr-pretrains/1",
+}
+
 SAM3_3D_ALIASES = {
     "sam3-3d-objects": "captoin-t38zo/1",  # "sam3-3d-weights-vc6vz/1",
 }
@@ -169,6 +173,7 @@ REGISTERED_ALIASES = {
     **RFDETR_ALIASES,
     **CLASSIFICATION_ALIASES,
     **SAM3_3D_ALIASES,
+    **GLM_OCR_ALIASES,
     **YOLO26_ALIASES,
     **YOLO26_SEG_ALIASES,
     **YOLO26_POSE_ALIASES,
