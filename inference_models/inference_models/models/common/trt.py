@@ -81,6 +81,42 @@ class TRTCudaGraphState:
 
 
 class TRTCudaGraphCache:
+
+    """LRU cache for captured CUDA graphs used in TensorRT inference.
+
+    Stores captured ``torch.cuda.CUDAGraph`` objects keyed by input
+    ``(shape, dtype, device)`` tuples. When the cache exceeds its capacity,
+    the least recently used entry is evicted and its GPU resources are released.
+
+    The cache is thread-safe — all mutating operations acquire an internal
+    ``threading.RLock``.
+
+    Args:
+        capacity: Maximum number of CUDA graphs to store. Each entry holds
+            a dedicated TensorRT execution context and GPU memory buffers,
+            so higher values increase VRAM usage.
+
+    Examples:
+        Create a cache and pass it to a model:
+
+        >>> from inference_models.models.common.trt import TRTCudaGraphCache
+        >>> from inference_models import AutoModel
+        >>> import torch
+        >>>
+        >>> cache = TRTCudaGraphCache(capacity=16)
+        >>> model = AutoModel.from_pretrained(
+        ...     model_id_or_path="rfdetr-nano",
+        ...     device=torch.device("cuda:0"),
+        ...     backend="trt",
+        ...     trt_cuda_graph_cache=cache,
+        ... )
+
+    See Also:
+        - ``establish_trt_cuda_graph_cache()``: Factory that creates a cache
+          based on environment configuration
+        - ``infer_from_trt_engine()``: Uses the cache during TRT inference
+    """
+
     def __init__(self, capacity: int):
         self._cache: OrderedDict[
             Tuple[Tuple[int, ...], torch.dtype, torch.device], TRTCudaGraphState
@@ -89,14 +125,67 @@ class TRTCudaGraphCache:
         self._state_lock = threading.RLock()
 
     def get_current_size(self) -> int:
-        return len(self._cache)
+        """Return the number of CUDA graphs currently stored in the cache.
+
+        Returns:
+            Number of cached entries.
+
+        Examples:
+            >>> cache = TRTCudaGraphCache(capacity=16)
+            >>> cache.get_current_size()
+            0
+        """
+        with self._state_lock:
+            return len(self._cache)
 
     def list_keys(self) -> List[Tuple[Tuple[int, ...], torch.dtype, torch.device]]:
-        return list(self._cache.keys())
+        """Return a list of all keys currently in the cache.
+
+        Each key is a ``(shape, dtype, device)`` tuple representing a cached
+        CUDA graph. Keys are returned in insertion order (oldest first), which
+        reflects eviction priority.
+
+        Returns:
+            List of ``(shape, dtype, device)`` tuples for all cached entries.
+
+        Examples:
+            >>> cache = TRTCudaGraphCache(capacity=16)
+            >>> # ... after some forward passes ...
+            >>> for shape, dtype, device in cache.list_keys():
+            ...     print(f"Cached: shape={shape}, dtype={dtype}")
+        """
+        with self._state_lock:
+            return list(self._cache.keys())
 
     def safe_remove(
         self, key: Tuple[Tuple[int, ...], torch.dtype, torch.device]
     ) -> None:
+        """Remove a single entry from the cache by its key.
+
+        If the key exists, the associated CUDA graph, execution context, and
+        GPU buffers are released and ``torch.cuda.empty_cache()`` is called.
+        If the key does not exist, this method is a no-op.
+
+        Args:
+            key: A ``(shape, dtype, device)`` tuple identifying the entry
+                to remove.
+
+        Examples:
+            Remove a cached graph for a specific input shape:
+
+            >>> import torch
+            >>> key = ((1, 3, 384, 384), torch.float16, torch.device("cuda:0"))
+            >>> cache.safe_remove(key)
+
+            Safe to call with a non-existent key:
+
+            >>> cache.safe_remove(((99, 99), torch.float32, torch.device("cuda:0")))
+            >>> # no error raised
+
+        See Also:
+            - ``purge()``: Remove multiple entries at once with batched
+              GPU memory cleanup
+        """
         with self._state_lock:
             if key not in self._cache:
                 return None
@@ -105,6 +194,40 @@ class TRTCudaGraphCache:
             return None
 
     def purge(self, n_oldest: Optional[int] = None) -> None:
+        """Remove entries from the cache, starting with the least recently used.
+
+        When called without arguments, clears the entire cache. When
+        ``n_oldest`` is specified, only that many entries are evicted
+        (or all entries if the cache contains fewer).
+
+        GPU memory cleanup (``torch.cuda.empty_cache()``) is called once
+        after all evictions, making this more efficient than calling
+        ``safe_remove()`` in a loop.
+
+        Args:
+            n_oldest: Number of least recently used entries to evict.
+                When ``None`` (default), all entries are removed.
+
+        Examples:
+            Evict the 4 oldest entries:
+
+            >>> cache.purge(n_oldest=4)
+
+            Clear the entire cache:
+
+            >>> cache.purge()
+            >>> cache.get_current_size()
+            0
+
+        Note:
+            - Eviction order follows LRU policy — entries that haven't been
+              accessed recently are removed first
+            - Each evicted entry's CUDA graph, execution context, and GPU
+              buffers are released
+
+        See Also:
+            - ``safe_remove()``: Remove a single entry by key
+        """
         with self._state_lock:
             if n_oldest is None:
                 n_oldest = len(self._cache)
@@ -117,7 +240,8 @@ class TRTCudaGraphCache:
     def __contains__(
         self, key: Tuple[Tuple[int, ...], torch.dtype, torch.device]
     ) -> bool:
-        return key in self._cache
+        with self._state_lock:
+            return key in self._cache
 
     def __getitem__(
         self, key: Tuple[Tuple[int, ...], torch.dtype, torch.device]
@@ -152,6 +276,83 @@ def establish_trt_cuda_graph_cache(
     default_cuda_graph_cache_size: int,
     cuda_graph_cache: Optional[TRTCudaGraphCache] = None,
 ) -> Optional[TRTCudaGraphCache]:
+    """Establish a CUDA graph cache for TensorRT inference acceleration.
+
+    Resolves which CUDA graph cache to use for a TRT model. If the caller
+    provides a cache instance, it is returned as-is. Otherwise, the function
+    checks the ``ENABLE_AUTO_CUDA_GRAPHS_FOR_TRT_BACKEND`` environment variable
+    to decide whether to create a new cache automatically. When the environment
+    variable is disabled (the default), no cache is created and CUDA graphs
+    are not used.
+
+    This function is typically called inside ``from_pretrained()`` of TRT model
+    classes. End users who want explicit control should create a
+    ``TRTCudaGraphCache`` themselves and pass it to ``AutoModel.from_pretrained``.
+
+    Args:
+        default_cuda_graph_cache_size: Maximum number of CUDA graphs to cache
+            when a new cache is created automatically. Each entry holds a
+            dedicated TensorRT execution context and GPU memory buffers, so
+            higher values increase VRAM usage.
+
+        cuda_graph_cache: Optional pre-existing cache instance. When provided,
+            it is returned directly and the environment variable is ignored.
+            This allows callers to share a single cache across multiple models
+            or to configure capacity explicitly.
+
+    Returns:
+        A ``TRTCudaGraphCache`` instance if CUDA graphs should be used, or
+        ``None`` if they are disabled. When ``None`` is returned, the model
+        falls back to standard TensorRT execution without graph capture.
+
+    Examples:
+        Automatic cache creation via environment variable:
+
+        >>> import os
+        >>> os.environ["ENABLE_AUTO_CUDA_GRAPHS_FOR_TRT_BACKEND"] = "True"
+        >>>
+        >>> from inference_models.models.common.trt import (
+        ...     establish_trt_cuda_graph_cache,
+        ... )
+        >>>
+        >>> cache = establish_trt_cuda_graph_cache(default_cuda_graph_cache_size=8)
+        >>> print(type(cache))  # <class 'TRTCudaGraphCache'>
+
+        Caller-provided cache takes priority:
+
+        >>> from inference_models.models.common.trt import (
+        ...     TRTCudaGraphCache,
+        ...     establish_trt_cuda_graph_cache,
+        ... )
+        >>>
+        >>> my_cache = TRTCudaGraphCache(capacity=32)
+        >>> result = establish_trt_cuda_graph_cache(
+        ...     default_cuda_graph_cache_size=8,
+        ...     cuda_graph_cache=my_cache,
+        ... )
+        >>> assert result is my_cache  # returned as-is
+
+        Typical usage inside a model's from_pretrained:
+
+        >>> cache = establish_trt_cuda_graph_cache(
+        ...     default_cuda_graph_cache_size=8,
+        ...     cuda_graph_cache=None,  # let env var decide
+        ... )
+        >>> # cache is None when env var is disabled (default)
+
+    Note:
+        - The environment variable ``ENABLE_AUTO_CUDA_GRAPHS_FOR_TRT_BACKEND``
+          defaults to ``False``
+        - When a caller-provided cache is given, the environment variable
+          is not checked
+        - CUDA graphs require TensorRT and a CUDA-capable GPU
+        - Each cached graph consumes VRAM proportional to the model's
+          execution context size
+
+    See Also:
+        - ``TRTCudaGraphCache``: The LRU cache class for CUDA graph state
+        - ``infer_from_trt_engine()``: Uses the cache during TRT inference
+    """
     if cuda_graph_cache is not None:
         return cuda_graph_cache
     auto_cuda_graphs_enabled = get_boolean_from_env(

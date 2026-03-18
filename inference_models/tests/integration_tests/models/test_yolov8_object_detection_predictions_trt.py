@@ -558,7 +558,7 @@ def test_trt_cudagraph_cache_reuses_previously_seen_input_shapes(
         assert cache_size_after == cache_size_before
         assert torch.allclose(capture_outputs[cache_key], output, atol=1e-6)
 
-    assert set(trt_cuda_graph_cache.cache.keys()) == seen_shapes
+    assert set(trt_cuda_graph_cache.list_keys()) == seen_shapes
 
 
 @pytest.mark.slow
