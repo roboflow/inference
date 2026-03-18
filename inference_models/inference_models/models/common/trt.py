@@ -811,6 +811,12 @@ def _capture_cuda_graph(
         results = [buf.clone() for buf in output_buffers]
     stream.synchronize()
 
+    # in order to avoid drift of results - it's better to replay to get the results
+    with torch.cuda.stream(stream):
+        cuda_graph.replay()
+        results = [buf.clone() for buf in output_buffers]
+    stream.synchronize()
+
     trt_cuda_graph_state = TRTCudaGraphState(
         cuda_graph=cuda_graph,
         cuda_stream=stream,
