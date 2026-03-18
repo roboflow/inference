@@ -13,6 +13,8 @@ from uuid import uuid4
 
 import zmq
 
+from .shm_serializer import pack, unpack
+
 _DEFAULT_INPUT_SHM_SIZE = 100 * 1024 * 1024   # 100 MB
 _WORKER_READY_TIMEOUT_S = 60
 
@@ -55,26 +57,28 @@ def _worker_main(
     api_key: str,
     socket_addr: str,
     input_shm_name: str,
+    result_shm_name: str,
     model_kwargs: dict,
 ) -> None:
     """Entry point for a spawned worker process.
 
     Loads one model and serves inference requests.
 
-    Input transport (manager → worker):
-        "shm"      — args pickled into shared memory; control message carries nbytes
-        "cuda_ipc" — args pickled with IPC-aware pickler; handle bytes in ZeroMQ frame
-
-    Result transport (worker → manager):
-        Always ZeroMQ, always IPC-aware pickle — CUDA tensors in the result
-        are automatically handled via CUDA IPC; CPU tensors are copied normally.
+    Transport:
+        "shm"      — arrays written to shared memory (zero-copy); descriptors +
+                      pickled remainder sent via ZeroMQ.  Input uses input_shm,
+                      results use result_shm.
+        "cuda_ipc" — IPC-aware pickle via ZeroMQ frame (no GPU→CPU copy).
 
     Protocol (all ZeroMQ messages are multipart [header_json, payload]):
-        manager → worker:  {"type": "infer", "transport": "shm",      "nbytes": N}, b""
-                        OR {"type": "infer", "transport": "cuda_ipc"},               <ipc_bytes>
-        worker  → manager: {"type": "result"},                                       <result_bytes>
-                        OR {"type": "error", "traceback": "..."},                    b""
-        manager → worker:  {"type": "shutdown"},                                     b""
+        manager → worker:  {"type": "infer", "transport": "shm",
+                            "descriptors": [...]},                    <pickled_remainder>
+                        OR {"type": "infer", "transport": "cuda_ipc"}, <ipc_bytes>
+        worker  → manager: {"type": "result", "transport": "shm",
+                            "descriptors": [...]},                    <pickled_remainder>
+                        OR {"type": "result"},                         <ipc_bytes>
+                        OR {"type": "error", "traceback": "..."},      b""
+        manager → worker:  {"type": "shutdown"},                       b""
     """
     zmq_ctx = zmq.Context()
     socket = zmq_ctx.socket(zmq.PAIR)
@@ -82,6 +86,7 @@ def _worker_main(
     socket.connect(socket_addr)
 
     input_shm = SharedMemory(name=input_shm_name)
+    result_shm = SharedMemory(name=result_shm_name)
 
     def send(header: dict, payload: bytes = b"") -> None:
         socket.send_multipart([json.dumps(header).encode(), payload])
@@ -107,13 +112,23 @@ def _worker_main(
             if msg["type"] == "infer":
                 try:
                     if msg["transport"] == "shm":
-                        args, kwargs = pickle.loads(bytes(input_shm.buf[:msg["nbytes"]]))
+                        args, kwargs = unpack(
+                            msg["descriptors"], payload, input_shm.buf, copy=False,
+                        )
                     else:  # cuda_ipc
                         args, kwargs = pickle.loads(payload)
 
                     result = model.infer(*args, **kwargs)
-                    del args, kwargs  # release CUDA IPC tensors
-                    send({"type": "result"}, _ipc_pickle(result))
+                    del args, kwargs
+
+                    if msg["transport"] == "shm":
+                        descriptors, pickled, _ = pack(result, result_shm.buf)
+                        send(
+                            {"type": "result", "transport": "shm", "descriptors": descriptors},
+                            pickled,
+                        )
+                    else:
+                        send({"type": "result"}, _ipc_pickle(result))
                 except Exception as e:
                     send({"type": "error", "traceback": traceback.format_exc()})
                 finally:
@@ -126,6 +141,7 @@ def _worker_main(
                         pass
     finally:
         input_shm.close()
+        result_shm.close()
         try:
             import torch
             if torch.cuda.is_available():
@@ -223,9 +239,32 @@ class MultiProcessBackend(Backend):
         api_key: str,
         input_shm_size: int = _DEFAULT_INPUT_SHM_SIZE,
         worker_ready_timeout_s: int = _WORKER_READY_TIMEOUT_S,
+        transport: str = "auto",
         **kwargs,
     ) -> None:
-        """Spawns the worker process, passes config, blocks until ready signal."""
+        """Spawns the worker process, passes config, blocks until ready signal.
+
+        Args:
+            transport: "auto" — cuda_ipc if CUDA is available, else shm.
+                       "shm"  — always use shared memory.
+                       "cuda_ipc" — always use CUDA IPC handles via ZeroMQ.
+        """
+        if transport == "auto":
+            try:
+                import torch
+                transport = "cuda_ipc" if torch.cuda.is_available() else "shm"
+            except ImportError:
+                transport = "shm"
+        elif transport == "cuda_ipc":
+            try:
+                import torch
+                if not torch.cuda.is_available():
+                    raise RuntimeError("transport='cuda_ipc' requires CUDA but no GPU is available")
+            except ImportError:
+                raise RuntimeError("transport='cuda_ipc' requires PyTorch with CUDA support")
+        elif transport != "shm":
+            raise ValueError(f"Unknown transport {transport!r}, expected 'auto', 'shm', or 'cuda_ipc'")
+        self._transport = transport
         self._model_id = model_id
 
         # ZeroMQ control + result channel — PAIR: point-to-point, bidirectional, ordered.
@@ -241,8 +280,9 @@ class MultiProcessBackend(Backend):
         # Async callers queue here as suspended coroutines — no thread consumed per waiter.
         self._async_lock = asyncio.Lock()
 
-        # Pre-allocated shared memory for CPU/numpy input.
+        # Pre-allocated shared memory for CPU/numpy data (both directions).
         self._input_shm = SharedMemory(create=True, size=input_shm_size)
+        self._result_shm = SharedMemory(create=True, size=input_shm_size)
 
         # Spawn worker — not fork, CUDA cannot be used after fork().
         ctx = mp.get_context("spawn")
@@ -253,6 +293,7 @@ class MultiProcessBackend(Backend):
                 api_key=api_key,
                 socket_addr=socket_addr,
                 input_shm_name=self._input_shm.name,
+                result_shm_name=self._result_shm.name,
                 model_kwargs=kwargs,
             ),
             daemon=True,
@@ -291,6 +332,8 @@ class MultiProcessBackend(Backend):
         self._zmq_context.term()
         self._input_shm.close()
         self._input_shm.unlink()
+        self._result_shm.close()
+        self._result_shm.unlink()
 
     def unload(self) -> None:
         """Sends shutdown message to the worker process and cleans up."""
@@ -318,20 +361,17 @@ class MultiProcessBackend(Backend):
         """
         loop = asyncio.get_running_loop()
 
-        # Serialize outside the lock — can happen concurrently across callers.
-        if _has_cuda_input(*args, **kwargs):
+        use_cuda_ipc = self._transport == "cuda_ipc" and _has_cuda_input(*args, **kwargs)
+
+        if use_cuda_ipc:
             zmq_payload = _ipc_pickle((args, kwargs))
             header = json.dumps({"type": "infer", "transport": "cuda_ipc"}).encode()
         else:
-            serialized = pickle.dumps((args, kwargs))
-            if len(serialized) > self._input_shm.size:
-                raise ValueError(
-                    f"Input payload ({len(serialized)} bytes) exceeds shared memory "
-                    f"buffer ({self._input_shm.size} bytes). Pass a larger "
-                    f"input_shm_size when constructing MultiProcessBackend."
-                )
-            zmq_payload = None
-            header = json.dumps({"type": "infer", "transport": "shm", "nbytes": len(serialized)}).encode()
+            descriptors, pickled, _ = pack((args, kwargs), self._input_shm.buf)
+            header = json.dumps({
+                "type": "infer", "transport": "shm", "descriptors": descriptors,
+            }).encode()
+            zmq_payload = pickled
 
         def _recv_with_timeout():
             while not self._shutting_down:
@@ -342,11 +382,7 @@ class MultiProcessBackend(Backend):
             raise RuntimeError("Backend is shutting down")
 
         async with self._async_lock:
-            if zmq_payload is None:
-                self._input_shm.buf[:len(serialized)] = serialized
-                self._socket.send_multipart([header, b""])
-            else:
-                self._socket.send_multipart([header, zmq_payload])
+            self._socket.send_multipart([header, zmq_payload])
             header_bytes, result_payload = await loop.run_in_executor(
                 None, _recv_with_timeout
             )
@@ -357,31 +393,30 @@ class MultiProcessBackend(Backend):
                 f"Worker for model '{self._model_id}' raised an exception:\n"
                 f"{msg['traceback']}"
             )
-        return pickle.loads(result_payload)
+        if use_cuda_ipc:
+            return pickle.loads(result_payload)
+        return unpack(msg["descriptors"], result_payload, self._result_shm.buf, copy=True)
 
     def infer_sync(self, *args, **kwargs) -> Any:
-        """Serializes input and sends to worker, blocks for result.
+        """Sends input to worker and blocks for result.
 
         Transport selection:
         - CUDA tensor input → cuda_ipc: IPC-aware pickle into ZeroMQ frame
-        - CPU / numpy input → shm: raw pickle into shared memory, size via ZeroMQ
-        Result always arrives as a ZeroMQ frame with IPC-aware pickle.
+        - CPU / numpy input → shm: raw array bytes in shared memory,
+          descriptors + pickled remainder via ZeroMQ
         """
-        if _has_cuda_input(*args, **kwargs):
+        use_cuda_ipc = self._transport == "cuda_ipc" and _has_cuda_input(*args, **kwargs)
+
+        if use_cuda_ipc:
             payload = _ipc_pickle((args, kwargs))
             header = json.dumps({"type": "infer", "transport": "cuda_ipc"}).encode()
             send_frames = [header, payload]
         else:
-            payload = pickle.dumps((args, kwargs))
-            if len(payload) > self._input_shm.size:
-                raise ValueError(
-                    f"Input payload ({len(payload)} bytes) exceeds shared memory "
-                    f"buffer ({self._input_shm.size} bytes). Pass a larger "
-                    f"input_shm_size when constructing MultiProcessBackend."
-                )
-            self._input_shm.buf[:len(payload)] = payload
-            header = json.dumps({"type": "infer", "transport": "shm", "nbytes": len(payload)}).encode()
-            send_frames = [header, b""]
+            descriptors, pickled, _ = pack((args, kwargs), self._input_shm.buf)
+            header = json.dumps({
+                "type": "infer", "transport": "shm", "descriptors": descriptors,
+            }).encode()
+            send_frames = [header, pickled]
 
         with self._socket_lock:
             self._socket.send_multipart(send_frames)
@@ -400,4 +435,6 @@ class MultiProcessBackend(Backend):
                 f"Worker for model '{self._model_id}' raised an exception:\n"
                 f"{msg['traceback']}"
             )
-        return pickle.loads(result_payload)
+        if use_cuda_ipc:
+            return pickle.loads(result_payload)
+        return unpack(msg["descriptors"], result_payload, self._result_shm.buf, copy=True)
