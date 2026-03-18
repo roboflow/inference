@@ -169,9 +169,11 @@ from inference.core.env import (
     GET_MODEL_REGISTRY_ENABLED,
     HTTP_API_SHARED_WORKFLOWS_THREAD_POOL_ENABLED,
     HTTP_API_SHARED_WORKFLOWS_THREAD_POOL_WORKERS,
+    INFERENCE_MODELS_CACHE_WATCHDOG_INTERVAL_MINUTES,
     LAMBDA,
     LEGACY_ROUTE_ENABLED,
     LMM_ENABLED,
+    MAX_INFERENCE_MODELS_CACHE_SIZE_MB,
     METRICS_ENABLED,
     MOONDREAM2_ENABLED,
     NOTEBOOK_ENABLED,
@@ -248,6 +250,9 @@ from inference.core.interfaces.webrtc_worker.entities import (
     WebRTCWorkerResult,
 )
 from inference.core.managers.base import ModelManager
+from inference.core.managers.inference_models_cache_watchdog import (
+    InferenceModelsCacheWatchdog,
+)
 from inference.core.managers.metrics import get_container_stats
 from inference.core.managers.model_load_collector import (
     ModelLoadCollector,
@@ -798,6 +803,18 @@ class HttpInterface(BaseInterface):
             self.shared_thread_pool_executor = ThreadPoolExecutor(
                 max_workers=HTTP_API_SHARED_WORKFLOWS_THREAD_POOL_WORKERS
             )
+        self.inference_models_cache_daemon: Optional[InferenceModelsCacheWatchdog] = (
+            None
+        )
+        if USE_INFERENCE_MODELS and MAX_INFERENCE_MODELS_CACHE_SIZE_MB > 0:
+            from inference_models.configuration import INFERENCE_HOME
+
+            self.inference_models_cache_daemon = InferenceModelsCacheWatchdog(
+                inference_home=INFERENCE_HOME,
+                max_cache_size_mb=MAX_INFERENCE_MODELS_CACHE_SIZE_MB,
+                interval_minutes=INFERENCE_MODELS_CACHE_WATCHDOG_INTERVAL_MINUTES,
+            )
+            self.inference_models_cache_daemon.start()
 
         if ENABLE_STREAM_API:
             operations_timeout = os.getenv("STREAM_MANAGER_OPERATIONS_TIMEOUT")
