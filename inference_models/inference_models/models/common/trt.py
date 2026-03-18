@@ -99,7 +99,7 @@ class TRTCudaGraphCache:
     Examples:
         Create a cache and pass it to a model:
 
-        >>> from inference_models.models.common.trt import TRTCudaGraphCache
+        >>> from inference_models.developer_tools import TRTCudaGraphCache
         >>> from inference_models import AutoModel
         >>> import torch
         >>>
@@ -311,7 +311,7 @@ def establish_trt_cuda_graph_cache(
         >>> import os
         >>> os.environ["ENABLE_AUTO_CUDA_GRAPHS_FOR_TRT_BACKEND"] = "True"
         >>>
-        >>> from inference_models.models.common.trt import (
+        >>> from inference_models.developer_tools import (
         ...     establish_trt_cuda_graph_cache,
         ... )
         >>>
