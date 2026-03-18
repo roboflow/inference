@@ -356,6 +356,7 @@ from inference.core.workflows.core_steps.sinks.email_notification.v2 import (
     EmailNotificationBlockV2,
 )
 from inference.core.workflows.core_steps.sinks.local_file.v1 import LocalFileSinkBlockV1
+from inference.core.workflows.core_steps.sinks.s3.v1 import S3SinkBlockV1
 from inference.core.workflows.core_steps.sinks.onvif_movement.v1 import ONVIFSinkBlockV1
 from inference.core.workflows.core_steps.sinks.roboflow.custom_metadata.v1 import (
     RoboflowCustomMetadataBlockV1,
@@ -822,6 +823,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         EmailNotificationBlockV1,
         EmailNotificationBlockV2,
         LocalFileSinkBlockV1,
+        S3SinkBlockV1,
         TraceVisualizationBlockV1,
         ReferencePathVisualizationBlockV1,
         ByteTrackerBlockV3,
