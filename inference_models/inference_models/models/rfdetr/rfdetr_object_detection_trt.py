@@ -8,7 +8,6 @@ from inference_models import Detections, ObjectDetectionModel, PreProcessingOver
 from inference_models.configuration import (
     DEFAULT_DEVICE,
     INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE,
-    USE_CUDA_GRAPHS_FOR_TRT_BACKEND,
 )
 from inference_models.entities import ColorFormat
 from inference_models.errors import (
@@ -34,7 +33,8 @@ from inference_models.models.common.roboflow.post_processing import (
     rescale_image_detections,
 )
 from inference_models.models.common.trt import (
-    TRTCudaGraphLRUCache,
+    TRTCudaGraphCache,
+    establish_trt_cuda_graph_cache,
     get_trt_engine_inputs_and_outputs,
     infer_from_trt_engine,
     load_trt_model,
@@ -86,7 +86,8 @@ class RFDetrForObjectDetectionTRT(
         model_name_or_path: str,
         device: torch.device = DEFAULT_DEVICE,
         engine_host_code_allowed: bool = False,
-        cuda_graph_cache_capacity: int = 16,
+        trt_cuda_graph_cache: Optional[TRTCudaGraphCache] = None,
+        default_trt_cuda_graph_cache_size: int = 8,
         **kwargs,
     ) -> "RFDetrForObjectDetectionTRT":
         if device.type != "cuda":
@@ -160,6 +161,10 @@ class RFDetrForObjectDetectionTRT(
                 message=f"Expected model outputs to be named `output0` and `output1`, but found: {outputs}.",
                 help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
+        trt_cuda_graph_cache = establish_trt_cuda_graph_cache(
+            default_cuda_graph_cache_size=default_trt_cuda_graph_cache_size,
+            cuda_graph_cache=trt_cuda_graph_cache,
+        )
         return cls(
             engine=engine,
             input_name=inputs[0],
@@ -171,7 +176,7 @@ class RFDetrForObjectDetectionTRT(
             device=device,
             cuda_context=cuda_context,
             execution_context=execution_context,
-            cuda_graph_cache_capacity=cuda_graph_cache_capacity,
+            trt_cuda_graph_cache=trt_cuda_graph_cache,
         )
 
     def __init__(
@@ -186,7 +191,7 @@ class RFDetrForObjectDetectionTRT(
         device: torch.device,
         cuda_context: cuda.Context,
         execution_context: trt.IExecutionContext,
-        cuda_graph_cache_capacity: int = 64,
+        trt_cuda_graph_cache: Optional[TRTCudaGraphCache],
     ):
         self._engine = engine
         self._input_name = input_name
@@ -198,9 +203,7 @@ class RFDetrForObjectDetectionTRT(
         self._cuda_context = cuda_context
         self._execution_context = execution_context
         self._trt_config = trt_config
-        self._trt_cuda_graph_cache = TRTCudaGraphLRUCache(
-            capacity=cuda_graph_cache_capacity,
-        )
+        self._trt_cuda_graph_cache = trt_cuda_graph_cache
         self._lock = threading.Lock()
         self._inference_stream = torch.cuda.Stream(device=self._device)
         self._thread_local_storage = threading.local()
@@ -231,20 +234,17 @@ class RFDetrForObjectDetectionTRT(
     def forward(
         self,
         pre_processed_images: torch.Tensor,
-        use_cuda_graph: Optional[bool] = None,
+        disable_cuda_graphs: bool = False,
         **kwargs,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        if use_cuda_graph is None:
-            use_cuda_graph = USE_CUDA_GRAPHS_FOR_TRT_BACKEND
-
-        cache = self._trt_cuda_graph_cache if use_cuda_graph else None
+        cache = self._trt_cuda_graph_cache if not disable_cuda_graphs else None
         with self._lock:
             with use_cuda_context(context=self._cuda_context):
                 detections, labels = infer_from_trt_engine(
                     pre_processed_images=pre_processed_images,
                     trt_config=self._trt_config,
                     engine=self._engine,
-                    context=self._execution_context if not use_cuda_graph else None,
+                    context=self._execution_context,
                     device=self._device,
                     input_name=self._input_name,
                     outputs=self._output_names,

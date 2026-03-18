@@ -465,7 +465,7 @@ def test_trt_cudagraph_output_matches_non_cudagraph_output(
     bike_image_numpy: np.ndarray,
 ) -> None:
     from inference_models import AutoModel
-    from inference_models.models.common.trt import TRTCudaGraphLRUCache
+    from inference_models.models.common.trt import TRTCudaGraphCache
 
     model = AutoModel.from_pretrained(
         model_id_or_path=rfdetr_nano_t4_trt_package,
@@ -478,7 +478,7 @@ def test_trt_cudagraph_output_matches_non_cudagraph_output(
     outputs = []
     for pre_processed in [pre_processed_1, pre_processed_2]:
         no_graph = model.forward(pre_processed, use_cuda_graph=False)
-        model._trt_cuda_graph_cache = TRTCudaGraphLRUCache(capacity=16)
+        model._trt_cuda_graph_cache = TRTCudaGraphCache(capacity=16)
         capture_graph = model.forward(pre_processed, use_cuda_graph=True)
         replay_graph = model.forward(pre_processed, use_cuda_graph=True)
 
@@ -508,6 +508,7 @@ def test_trt_cudagraph_output_matches_non_cudagraph_output(
                 atol=1e-6,
             )
 
+
 @pytest.mark.slow
 @pytest.mark.trt_extras
 def test_trt_outputs_match_expected_shapes(
@@ -515,7 +516,7 @@ def test_trt_outputs_match_expected_shapes(
     dog_image_numpy: np.ndarray,
 ) -> None:
     from inference_models import AutoModel
-    from inference_models.models.common.trt import TRTCudaGraphLRUCache
+    from inference_models.models.common.trt import TRTCudaGraphCache
 
     model = AutoModel.from_pretrained(
         model_id_or_path=rfdetr_nano_t4_trt_package,
@@ -529,12 +530,12 @@ def test_trt_outputs_match_expected_shapes(
     assert output[0].shape == (1, 300, 4)
     assert output[1].shape == (1, 300, 91)
 
-    output = model.forward(pre_processed, use_cuda_graph=True) # capture
+    output = model.forward(pre_processed, use_cuda_graph=True)  # capture
 
     assert output[0].shape == (1, 300, 4)
     assert output[1].shape == (1, 300, 91)
 
-    output = model.forward(pre_processed, use_cuda_graph=True) # replay
+    output = model.forward(pre_processed, use_cuda_graph=True)  # replay
 
     assert output[0].shape == (1, 300, 4)
     assert output[1].shape == (1, 300, 91)

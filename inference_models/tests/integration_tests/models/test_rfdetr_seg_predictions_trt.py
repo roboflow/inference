@@ -265,7 +265,6 @@ def test_trt_package_torch_batch(
     assert 16050 <= predictions[1].mask.cpu().sum().item() <= 16100
 
 
-
 @pytest.mark.slow
 @pytest.mark.trt_extras
 def test_trt_cudagraph_output_matches_non_cudagraph_output(
@@ -274,7 +273,7 @@ def test_trt_cudagraph_output_matches_non_cudagraph_output(
     dog_image_numpy: np.ndarray,
 ) -> None:
     from inference_models import AutoModel
-    from inference_models.models.common.trt import TRTCudaGraphLRUCache
+    from inference_models.models.common.trt import TRTCudaGraphCache
 
     model = AutoModel.from_pretrained(
         model_id_or_path=rfdetr_seg_nano_t4_trt_package,
@@ -287,7 +286,7 @@ def test_trt_cudagraph_output_matches_non_cudagraph_output(
     outputs = []
     for pre_processed in [pre_processed_1, pre_processed_2]:
         no_graph = model.forward(pre_processed, use_cuda_graph=False)
-        model._trt_cuda_graph_cache = TRTCudaGraphLRUCache(capacity=16)
+        model._trt_cuda_graph_cache = TRTCudaGraphCache(capacity=16)
         capture_graph = model.forward(pre_processed, use_cuda_graph=True)
         replay_graph = model.forward(pre_processed, use_cuda_graph=True)
 

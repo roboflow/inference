@@ -50,7 +50,7 @@ import numpy as np
 import torch
 
 from inference_models import AutoModel
-from inference_models.models.common.trt import TRTCudaGraphLRUCache
+from inference_models.models.common.trt import TRTCudaGraphCache
 
 MODEL_ID = "yolov8n-640"
 MB = 1024 ** 2
@@ -106,7 +106,7 @@ def main() -> None:
     baseline_gpu = gpu_used_bytes(device)
     baseline_cpu = cpu_rss_bytes()
 
-    model._trt_cuda_graph_cache = TRTCudaGraphLRUCache(
+    model._trt_cuda_graph_cache = TRTCudaGraphCache(
         capacity=args.cache_capacity,
     )
 
