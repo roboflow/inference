@@ -22,11 +22,11 @@ instance segmentation, keypoint detection, classification, and semantic segmenta
 
 ## Quick Start
 
-The simplest way to enable CUDA graphs is through the `USE_CUDA_GRAPHS_FOR_TRT_BACKEND` environment
+The simplest way to enable CUDA graphs is through the `ENABLE_AUTO_CUDA_GRAPHS_FOR_TRT_BACKEND` environment
 variable:
 
 ```bash
-export USE_CUDA_GRAPHS_FOR_TRT_BACKEND=True
+export ENABLE_AUTO_CUDA_GRAPHS_FOR_TRT_BACKEND=True
 ```
 
 With this set, all TRT models loaded via `AutoModel.from_pretrained` will automatically create a CUDA
