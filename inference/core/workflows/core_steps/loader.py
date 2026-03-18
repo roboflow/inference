@@ -354,6 +354,9 @@ from inference.core.workflows.core_steps.sinks.email_notification.v2 import (
 )
 from inference.core.workflows.core_steps.sinks.local_file.v1 import LocalFileSinkBlockV1
 from inference.core.workflows.core_steps.sinks.onvif_movement.v1 import ONVIFSinkBlockV1
+from inference.core.workflows.core_steps.sinks.v4l2_camera.v1 import (
+    V4L2CameraControlBlockV1,
+)
 from inference.core.workflows.core_steps.sinks.roboflow.custom_metadata.v1 import (
     RoboflowCustomMetadataBlockV1,
 )
@@ -844,6 +847,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         Moondream2BlockV1,
         OverlapBlockV1,
         ONVIFSinkBlockV1,
+        V4L2CameraControlBlockV1,
         EasyOCRBlockV1,
         QRCodeGeneratorBlockV1,
         DetectionsCombineBlockV1,
