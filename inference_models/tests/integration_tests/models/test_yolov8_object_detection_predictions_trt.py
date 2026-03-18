@@ -461,13 +461,14 @@ def test_trt_cudagraph_cache_reuses_previously_seen_input_shapes(
     from inference_models.models.common.trt import TRTCudaGraphCache
 
     device = torch.device("cuda:0")
+    trt_cuda_graph_cache = TRTCudaGraphCache(capacity=16)
     model = AutoModel.from_pretrained(
         model_id_or_path=yolov8n_640_t4_trt_package,
         device=device,
+        trt_cuda_graph_cache=trt_cuda_graph_cache,
     )
 
     pre_processed_single, _ = model.pre_process(dog_image_numpy)
-    model._trt_cuda_graph_cache = TRTCudaGraphCache(capacity=16)
 
     seen_shapes = set()
     capture_outputs = {}
@@ -477,14 +478,11 @@ def test_trt_cudagraph_cache_reuses_previously_seen_input_shapes(
         batch = pre_processed_single.repeat(batch_size, 1, 1, 1)
         cache_key = (tuple(batch.shape), batch.dtype, device)
 
-        cache_before = model._trt_cuda_graph_cache
-        cache_size_before = len(cache_before.cache) if cache_before is not None else 0
+        cache_size_before = len(trt_cuda_graph_cache.cache)
 
-        output = model.forward(batch, use_cuda_graph=True)
+        output = model.forward(batch)
 
-        cache_after = model._trt_cuda_graph_cache
-        assert cache_after is not None
-        cache_size_after = len(cache_after.cache)
+        cache_size_after = len(trt_cuda_graph_cache.cache)
 
         if cache_key not in seen_shapes:
             assert cache_size_after == cache_size_before + 1
@@ -495,7 +493,7 @@ def test_trt_cudagraph_cache_reuses_previously_seen_input_shapes(
         assert cache_size_after == cache_size_before
         assert torch.allclose(capture_outputs[cache_key], output, atol=1e-6)
 
-    assert set(model._trt_cuda_graph_cache.cache.keys()) == seen_shapes
+    assert set(trt_cuda_graph_cache.cache.keys()) == seen_shapes
 
 
 @pytest.mark.slow
@@ -508,20 +506,21 @@ def test_trt_cudagraph_output_matches_non_cudagraph_output(
     from inference_models.models.common.trt import TRTCudaGraphCache
 
     device = torch.device("cuda:0")
+    trt_cuda_graph_cache = TRTCudaGraphCache(capacity=16)
     model = AutoModel.from_pretrained(
         model_id_or_path=yolov8n_640_t4_trt_package,
         device=device,
+        trt_cuda_graph_cache=trt_cuda_graph_cache,
     )
     pre_processed_single, _ = model.pre_process(dog_image_numpy)
 
     for batch_size in [1, 4]:
         batch = pre_processed_single.repeat(batch_size, 1, 1, 1)
 
-        no_graph = model.forward(batch, use_cuda_graph=False)
+        no_graph = model.forward(batch, disable_cuda_graphs=True)
 
-        model._trt_cuda_graph_cache = TRTCudaGraphCache(capacity=16)
-        capture_graph = model.forward(batch, use_cuda_graph=True)
-        replay_graph = model.forward(batch, use_cuda_graph=True)
+        capture_graph = model.forward(batch)
+        replay_graph = model.forward(batch)
 
         assert torch.allclose(no_graph, capture_graph, atol=1e-6)
         assert torch.allclose(no_graph, replay_graph, atol=1e-6)
@@ -537,53 +536,53 @@ def test_trt_cudagraph_cache_eviction(
     from inference_models.models.common.trt import TRTCudaGraphCache
 
     device = torch.device("cuda:0")
+    trt_cuda_graph_cache = TRTCudaGraphCache(capacity=3)
     model = AutoModel.from_pretrained(
         model_id_or_path=yolov8n_640_t4_trt_package,
         device=device,
+        trt_cuda_graph_cache=trt_cuda_graph_cache,
     )
 
     pre_processed_single, _ = model.pre_process(dog_image_numpy)
-    capacity = 3
-    model._trt_cuda_graph_cache = TRTCudaGraphCache(capacity=capacity)
-    cache = model._trt_cuda_graph_cache
 
     batch_sizes = [1, 2, 3]
     for bs in batch_sizes:
         batch = pre_processed_single.repeat(bs, 1, 1, 1)
-        model.forward(batch, use_cuda_graph=True)
+        model.forward(batch)
 
-    assert len(cache.cache) == capacity
-    keys_before = list(cache.cache.keys())
+    assert len(trt_cuda_graph_cache.cache) == 3
+    keys_before = list(trt_cuda_graph_cache.list_keys())
 
     batch_4 = pre_processed_single.repeat(4, 1, 1, 1)
-    model.forward(batch_4, use_cuda_graph=True)
+    model.forward(batch_4)
 
-    assert len(cache.cache) == capacity
-    assert keys_before[0] not in cache.cache
+    assert len(trt_cuda_graph_cache.cache) == 3
+    keys_after = trt_cuda_graph_cache.list_keys()
+    assert keys_before[0] not in keys_after
     for key in keys_before[1:]:
-        assert key in cache.cache
+        assert key in keys_after
     key_4 = (tuple(batch_4.shape), batch_4.dtype, device)
-    assert key_4 in cache.cache
+    assert key_4 in trt_cuda_graph_cache
 
     batch_2 = pre_processed_single.repeat(2, 1, 1, 1)
-    model.forward(batch_2, use_cuda_graph=True)
+    model.forward(batch_2)
 
     batch_5 = pre_processed_single.repeat(5, 1, 1, 1)
-    model.forward(batch_5, use_cuda_graph=True)
+    model.forward(batch_5)
 
-    assert len(cache.cache) == capacity
+    assert trt_cuda_graph_cache.get_current_size() == 3
     key_3 = (
         tuple(pre_processed_single.repeat(3, 1, 1, 1).shape),
         batch_2.dtype,
         device,
     )
-    assert key_3 not in cache.cache
+    remaining_keys = trt_cuda_graph_cache.list_keys()
+    assert key_3 not in remaining_keys
 
-    remaining_keys = list(cache.cache.keys())
     key_2 = (tuple(batch_2.shape), batch_2.dtype, device)
     key_5 = (tuple(batch_5.shape), batch_5.dtype, device)
     assert remaining_keys == [key_4, key_2, key_5]
 
-    no_graph = model.forward(batch_5, use_cuda_graph=False)
-    replay = model.forward(batch_5, use_cuda_graph=True)
+    no_graph = model.forward(batch_5, disable_cuda_graphs=True)
+    replay = model.forward(batch_5)
     assert torch.allclose(no_graph, replay, atol=1e-6)

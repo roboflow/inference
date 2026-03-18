@@ -467,9 +467,11 @@ def test_trt_cudagraph_output_matches_non_cudagraph_output(
     from inference_models import AutoModel
     from inference_models.models.common.trt import TRTCudaGraphCache
 
+    trt_cuda_graph_cache = TRTCudaGraphCache(capacity=16)
     model = AutoModel.from_pretrained(
         model_id_or_path=rfdetr_nano_t4_trt_package,
         device=torch.device("cuda:0"),
+        trt_cuda_graph_cache=trt_cuda_graph_cache,
     )
 
     pre_processed_1, _ = model.pre_process(dog_image_numpy)
@@ -477,10 +479,9 @@ def test_trt_cudagraph_output_matches_non_cudagraph_output(
 
     outputs = []
     for pre_processed in [pre_processed_1, pre_processed_2]:
-        no_graph = model.forward(pre_processed, use_cuda_graph=False)
-        model._trt_cuda_graph_cache = TRTCudaGraphCache(capacity=16)
-        capture_graph = model.forward(pre_processed, use_cuda_graph=True)
-        replay_graph = model.forward(pre_processed, use_cuda_graph=True)
+        no_graph = model.forward(pre_processed, disable_cuda_graphs=True)
+        capture_graph = model.forward(pre_processed)
+        replay_graph = model.forward(pre_processed)
 
         outputs.append((no_graph, capture_graph, replay_graph))
 
@@ -518,6 +519,7 @@ def test_trt_outputs_match_expected_shapes(
     from inference_models import AutoModel
     from inference_models.models.common.trt import TRTCudaGraphCache
 
+    trt_cuda_graph_cache = TRTCudaGraphCache(capacity=16)
     model = AutoModel.from_pretrained(
         model_id_or_path=rfdetr_nano_t4_trt_package,
         device=torch.device("cuda:0"),
@@ -525,17 +527,17 @@ def test_trt_outputs_match_expected_shapes(
 
     pre_processed, _ = model.pre_process(dog_image_numpy)
 
-    output = model.forward(pre_processed, use_cuda_graph=False)
+    output = model.forward(pre_processed, disable_cuda_graphs=True)
 
     assert output[0].shape == (1, 300, 4)
     assert output[1].shape == (1, 300, 91)
 
-    output = model.forward(pre_processed, use_cuda_graph=True)  # capture
+    output = model.forward(pre_processed)  # capture
 
     assert output[0].shape == (1, 300, 4)
     assert output[1].shape == (1, 300, 91)
 
-    output = model.forward(pre_processed, use_cuda_graph=True)  # replay
+    output = model.forward(pre_processed)  # replay
 
     assert output[0].shape == (1, 300, 4)
     assert output[1].shape == (1, 300, 91)
