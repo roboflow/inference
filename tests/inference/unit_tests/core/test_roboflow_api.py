@@ -2985,3 +2985,70 @@ def test_get_from_url_when_md5_verification_enabled_but_md5_part_is_invalid_base
 
     assert "not valid base64" in str(exc_info.value)
     assert exc_info.value.__cause__ is not None
+
+
+@mock.patch.object(roboflow_api.requests, "get")
+def test_get_workflow_specification_falls_back_to_cache_on_timeout(
+    get_mock: MagicMock,
+) -> None:
+    # given - populate the file cache with a successful call first
+    delete_cached_workflow_response_if_exists(
+        workspace_id="my_workspace",
+        workflow_id="some_workflow",
+        api_key="my_api_key",
+    )
+    get_mock.return_value = MagicMock(
+        status_code=200,
+        json=MagicMock(
+            return_value={
+                "workflow": {
+                    "config": json.dumps(
+                        {"specification": {"timeout": "fallback"}}
+                    )
+                }
+            }
+        ),
+    )
+    _ = get_workflow_specification(
+        api_key="my_api_key",
+        workspace_id="my_workspace",
+        workflow_id="some_workflow",
+        ephemeral_cache=MemoryCache(),
+    )
+    get_mock.side_effect = requests.exceptions.Timeout()
+
+    # when
+    result = get_workflow_specification(
+        api_key="my_api_key",
+        workspace_id="my_workspace",
+        workflow_id="some_workflow",
+        ephemeral_cache=MemoryCache(),
+    )
+
+    # then
+    assert result == {
+        "timeout": "fallback",
+        "id": None,
+    }, "Expected workflow specification to be retrieved from file cache on Timeout"
+
+
+@mock.patch.object(roboflow_api.requests, "get")
+def test_get_workflow_specification_raises_timeout_when_no_cache(
+    get_mock: MagicMock,
+) -> None:
+    # given - no cached file exists
+    delete_cached_workflow_response_if_exists(
+        workspace_id="my_workspace",
+        workflow_id="timeout_no_cache_workflow",
+        api_key="my_api_key",
+    )
+    get_mock.side_effect = requests.exceptions.Timeout()
+
+    # when
+    with pytest.raises(RoboflowAPITimeoutError):
+        _ = get_workflow_specification(
+            api_key="my_api_key",
+            workspace_id="my_workspace",
+            workflow_id="timeout_no_cache_workflow",
+            use_cache=False,
+        )
