@@ -15,6 +15,7 @@ on:
           - ''
           - onnx_extras
           - trt_extras
+          - trt_extras_with_cuda_graphs
           - torch_models
           - hf_vlm_models
       python_version:
@@ -34,10 +35,11 @@ jobs:
       matrix:
         python-version: ["3.12"]
         extras:
-          - { install: "onnx-cu12,mediapipe", marker: "onnx_extras", workers: "auto" }
-          - { install: "trt10", marker: "trt_extras", workers: "auto" }
-          - { install: "torch-cu124,mediapipe", marker: "torch_models", workers: "1" }
-          - { install: "torch-cu124", marker: "hf_vlm_models", workers: "1" }
+          - { install: "onnx-cu12,mediapipe", marker: "onnx_extras", workers: "auto", enable_auto_cuda_graphs_for_trt: "false" }
+          - { install: "trt10", marker: "trt_extras", workers: "auto", enable_auto_cuda_graphs_for_trt: "false" }
+          - { install: "trt10", marker: "trt_extras_with_cuda_graphs", workers: "auto", enable_auto_cuda_graphs_for_trt: "true" }
+          - { install: "torch-cu124,mediapipe", marker: "torch_models", workers: "1", "enable_auto_cuda_graphs_for_trt": "false" }
+          - { install: "torch-cu124", marker: "hf_vlm_models", workers: "1", "enable_auto_cuda_graphs_for_trt": "false" }
     steps:
       - name: 🛎️ Checkout
         if: ${{ (github.event.inputs.extras == '' || github.event.inputs.extras == matrix.extras.marker) && (github.event.inputs.python_version == '' || github.event.inputs.python_version == matrix.python-version) }}
@@ -107,4 +109,4 @@ jobs:
         timeout-minutes: 25
         run: |
           source .venv/bin/activate
-          python -m pytest -n ${{ matrix.extras.workers }} -m "${{ matrix.extras.marker }} and not cpu_only" tests/integration_tests
+          ENABLE_AUTO_CUDA_GRAPHS_FOR_TRT_BACKEND=${{ matrix.extras.enable_auto_cuda_graphs_for_trt }} python -m pytest -n ${{ matrix.extras.workers }} -m "${{ matrix.extras.marker }} and not cpu_only" tests/integration_tests
