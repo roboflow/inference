@@ -179,12 +179,6 @@ class BlockManifest(WorkflowBlockManifest):
         description="AWS region where the bucket is located (e.g., 'us-east-1'). If not provided, boto3's default region is used (AWS_DEFAULT_REGION environment variable or ~/.aws/config).",
         examples=["us-east-1"],
     )
-    endpoint_url: Optional[Union[Selector(kind=[STRING_KIND]), str]] = Field(
-        default=None,
-        description="Custom endpoint URL for S3-compatible storage services (e.g., MinIO, Wasabi, Backblaze B2). Leave empty when using standard AWS S3.",
-        examples=["https://s3.example.com"],
-    )
-
     @field_validator("max_entries_per_file")
     @classmethod
     def ensure_max_entries_per_file_is_correct(cls, value: Any) -> Any:
@@ -227,13 +221,11 @@ class S3SinkBlockV1(WorkflowBlock):
         aws_access_key_id: Optional[str] = None,
         aws_secret_access_key: Optional[str] = None,
         aws_region: Optional[str] = None,
-        endpoint_url: Optional[str] = None,
     ) -> BlockResult:
         s3_client = create_s3_client(
             aws_access_key_id=aws_access_key_id,
             aws_secret_access_key=aws_secret_access_key,
             aws_region=aws_region,
-            endpoint_url=endpoint_url,
         )
 
         if output_mode == "separate_files":
@@ -337,7 +329,6 @@ def create_s3_client(
     aws_access_key_id: Optional[str],
     aws_secret_access_key: Optional[str],
     aws_region: Optional[str],
-    endpoint_url: Optional[str],
 ):
     kwargs = {}
     if aws_access_key_id:
@@ -346,8 +337,6 @@ def create_s3_client(
         kwargs["aws_secret_access_key"] = aws_secret_access_key
     if aws_region:
         kwargs["region_name"] = aws_region
-    if endpoint_url:
-        kwargs["endpoint_url"] = endpoint_url
     return boto3.client("s3", **kwargs)
 
 
