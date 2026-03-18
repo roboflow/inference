@@ -283,13 +283,6 @@ class Sam3ForInteractiveImageSegmentation(RoboflowCoreModel):
                 image=image, image_id=image_id
             )
 
-            # with _temporarily_disable_torch_jit_script():
-            # processor = Sam3Processor(self.sam_model)
-
-            # processor._is_image_set = True
-            # processor._features = embedding
-            # processor._orig_hw = [original_image_size]
-            # processor._is_batch = False
             args = dict()
             prompt_set: Sam2PromptSet
             if prompts:
@@ -311,14 +304,21 @@ class Sam3ForInteractiveImageSegmentation(RoboflowCoreModel):
             if not any(args.values()):
                 args = {"point_coords": [[0, 0]], "point_labels": [-1], "box": None}
 
-            masks, scores, low_resolution_logits = self.sam_model.predict_inst(
-                embedding,
-                mask_input=mask_input,
-                multimask_output=multimask_output,
-                return_logits=True,
-                normalize_coords=True,
-                **args,
-            )
+            # predict_inst internally sets/clears _is_image_set and _features
+            # on the shared inst_interactive_predictor (see sam3_image.py:627-635).
+            # Without a lock, concurrent requests race: one thread's cleanup
+            # (setting _is_image_set=False) can hit between another thread's
+            # set (_is_image_set=True) and its _predict() check, causing
+            # "An image must be set with .set_image(...)".
+            with self._state_lock:
+                masks, scores, low_resolution_logits = self.sam_model.predict_inst(
+                    embedding,
+                    mask_input=mask_input,
+                    multimask_output=multimask_output,
+                    return_logits=True,
+                    normalize_coords=True,
+                    **args,
+                )
             masks, scores, low_resolution_logits = choose_most_confident_sam_prediction(
                 masks=masks,
                 scores=scores,
