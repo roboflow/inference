@@ -3,6 +3,7 @@ import pytest
 import torch
 from PIL.Image import Image
 
+from inference_models import PreProcessingOverrides
 from inference_models.entities import ImageDimensions
 from inference_models.errors import ModelInputError, ModelRuntimeError
 from inference_models.models.common.roboflow.model_packages import (
@@ -1161,6 +1162,60 @@ def test_pre_process_numpy_image_with_stretch_and_crop() -> None:
     )
 
 
+def test_pre_process_numpy_image_with_stretch_and_crop_when_crop_is_disabled() -> None:
+    # given
+    image_pre_processing = ImagePreProcessing(
+        **{
+            "static-crop": StaticCrop(
+                enabled=True, x_min=10, x_max=90, y_min=20, y_max=80
+            )
+        }
+    )
+    network_input = NetworkInputDefinition(
+        training_input_size=TrainingInputSize(height=64, width=96),
+        dynamic_spatial_size_supported=False,
+        color_mode=ColorMode.RGB,
+        resize_mode=ResizeMode.STRETCH_TO,
+        input_channels=3,
+    )
+    image = np.ones((200, 100, 3), dtype=np.uint8)
+    image[40:160, 10:90, :] = (image[40:160, 10:90, :] * (10, 20, 30)).astype(np.uint8)
+
+    # when
+    result_image, result_meta = pre_process_network_input(
+        images=image,
+        image_pre_processing=image_pre_processing,
+        network_input=network_input,
+        target_device=torch.device("cpu"),
+        input_color_format="rgb",
+        pre_processing_overrides=PreProcessingOverrides(disable_static_crop=True),
+    )
+
+    # then
+    assert isinstance(result_image, torch.Tensor)
+    assert tuple(result_image.shape) == (1, 3, 64, 96)
+    assert not torch.all(result_image[0][2] == 30)
+    assert not torch.all(result_image[0][1] == 20)
+    assert not torch.all(result_image[0][0] == 10)
+    assert result_meta[0] == PreProcessingMetadata(
+        pad_left=0,
+        pad_top=0,
+        pad_right=0,
+        pad_bottom=0,
+        original_size=ImageDimensions(height=200, width=100),
+        size_after_pre_processing=ImageDimensions(height=200, width=100),
+        inference_size=ImageDimensions(height=64, width=96),
+        scale_width=96 / 100,
+        scale_height=64 / 200,
+        static_crop_offset=StaticCropOffset(
+            offset_x=0,
+            offset_y=0,
+            crop_width=100,
+            crop_height=200,
+        ),
+    )
+
+
 def test_pre_process_numpy_images_list_with_stretch_and_crop() -> None:
     # given
     image_pre_processing = ImagePreProcessing(
@@ -1213,6 +1268,67 @@ def test_pre_process_numpy_images_list_with_stretch_and_crop() -> None:
             offset_y=40,
             crop_width=80,
             crop_height=120,
+        ),
+    )
+    assert result_meta[0] == expected_meta
+    assert result_meta[1] == expected_meta
+
+
+def test_pre_process_numpy_images_list_with_stretch_and_crop_when_crop_disabled() -> (
+    None
+):
+    # given
+    image_pre_processing = ImagePreProcessing(
+        **{
+            "static-crop": StaticCrop(
+                enabled=True, x_min=10, x_max=90, y_min=20, y_max=80
+            )
+        }
+    )
+    network_input = NetworkInputDefinition(
+        training_input_size=TrainingInputSize(height=64, width=96),
+        dynamic_spatial_size_supported=False,
+        color_mode=ColorMode.RGB,
+        resize_mode=ResizeMode.STRETCH_TO,
+        input_channels=3,
+    )
+    image = np.ones((200, 100, 3), dtype=np.uint8)
+    image[40:160, 10:90, :] = (image[40:160, 10:90, :] * (10, 20, 30)).astype(np.uint8)
+
+    # when
+    result_image, result_meta = pre_process_network_input(
+        images=[image, image],
+        image_pre_processing=image_pre_processing,
+        network_input=network_input,
+        target_device=torch.device("cpu"),
+        input_color_format="rgb",
+        pre_processing_overrides=PreProcessingOverrides(disable_static_crop=True),
+    )
+
+    # then
+    assert isinstance(result_image, torch.Tensor)
+    assert tuple(result_image.shape) == (2, 3, 64, 96)
+    assert not torch.all(result_image[0][2] == 30)
+    assert not torch.all(result_image[0][1] == 20)
+    assert not torch.all(result_image[0][0] == 10)
+    assert not torch.all(result_image[1][2] == 30)
+    assert not torch.all(result_image[1][1] == 20)
+    assert not torch.all(result_image[1][0] == 10)
+    expected_meta = PreProcessingMetadata(
+        pad_left=0,
+        pad_top=0,
+        pad_right=0,
+        pad_bottom=0,
+        original_size=ImageDimensions(height=200, width=100),
+        size_after_pre_processing=ImageDimensions(height=200, width=100),
+        inference_size=ImageDimensions(height=64, width=96),
+        scale_width=96 / 100,
+        scale_height=64 / 200,
+        static_crop_offset=StaticCropOffset(
+            offset_x=0,
+            offset_y=0,
+            crop_width=100,
+            crop_height=200,
         ),
     )
     assert result_meta[0] == expected_meta
@@ -1274,6 +1390,64 @@ def test_pre_process_torch_3d_image_with_stretch_and_crop() -> None:
     )
 
 
+def test_pre_process_torch_3d_image_with_stretch_and_crop_when_crop_is_disabled() -> (
+    None
+):
+    # given
+    image_pre_processing = ImagePreProcessing(
+        **{
+            "static-crop": StaticCrop(
+                enabled=True, x_min=10, x_max=90, y_min=20, y_max=80
+            )
+        }
+    )
+    network_input = NetworkInputDefinition(
+        training_input_size=TrainingInputSize(height=64, width=96),
+        dynamic_spatial_size_supported=False,
+        color_mode=ColorMode.RGB,
+        resize_mode=ResizeMode.STRETCH_TO,
+        input_channels=3,
+    )
+    image = np.ones((200, 100, 3), dtype=np.uint8)
+    image[40:160, 10:90, :] = (image[40:160, 10:90, :] * (10, 20, 30)).astype(np.uint8)
+    image = torch.from_numpy(image)
+    image = torch.permute(image, (2, 0, 1))
+
+    # when
+    result_image, result_meta = pre_process_network_input(
+        images=image,
+        image_pre_processing=image_pre_processing,
+        network_input=network_input,
+        target_device=torch.device("cpu"),
+        input_color_format="rgb",
+        pre_processing_overrides=PreProcessingOverrides(disable_static_crop=True),
+    )
+
+    # then
+    assert isinstance(result_image, torch.Tensor)
+    assert tuple(result_image.shape) == (1, 3, 64, 96)
+    assert not torch.all(result_image[0][2] == 30)
+    assert not torch.all(result_image[0][1] == 20)
+    assert not torch.all(result_image[0][0] == 10)
+    assert result_meta[0] == PreProcessingMetadata(
+        pad_left=0,
+        pad_top=0,
+        pad_right=0,
+        pad_bottom=0,
+        original_size=ImageDimensions(height=200, width=100),
+        size_after_pre_processing=ImageDimensions(height=200, width=100),
+        inference_size=ImageDimensions(height=64, width=96),
+        scale_width=96 / 100,
+        scale_height=64 / 200,
+        static_crop_offset=StaticCropOffset(
+            offset_x=0,
+            offset_y=0,
+            crop_width=100,
+            crop_height=200,
+        ),
+    )
+
+
 def test_pre_process_list_of_torch_3d_image_with_stretch_and_crop() -> None:
     # given
     image_pre_processing = ImagePreProcessing(
@@ -1328,6 +1502,69 @@ def test_pre_process_list_of_torch_3d_image_with_stretch_and_crop() -> None:
             offset_y=40,
             crop_width=80,
             crop_height=120,
+        ),
+    )
+    assert result_meta[0] == expected_meta
+    assert result_meta[1] == expected_meta
+
+
+def test_pre_process_list_of_torch_3d_image_with_stretch_and_crop_when_crop_is_disabled() -> (
+    None
+):
+    # given
+    image_pre_processing = ImagePreProcessing(
+        **{
+            "static-crop": StaticCrop(
+                enabled=True, x_min=10, x_max=90, y_min=20, y_max=80
+            )
+        }
+    )
+    network_input = NetworkInputDefinition(
+        training_input_size=TrainingInputSize(height=64, width=96),
+        dynamic_spatial_size_supported=False,
+        color_mode=ColorMode.RGB,
+        resize_mode=ResizeMode.STRETCH_TO,
+        input_channels=3,
+    )
+    image = np.ones((200, 100, 3), dtype=np.uint8)
+    image[40:160, 10:90, :] = (image[40:160, 10:90, :] * (10, 20, 30)).astype(np.uint8)
+    image = torch.from_numpy(image)
+    image = torch.permute(image, (2, 0, 1))
+
+    # when
+    result_image, result_meta = pre_process_network_input(
+        images=[image, image],
+        image_pre_processing=image_pre_processing,
+        network_input=network_input,
+        target_device=torch.device("cpu"),
+        input_color_format="rgb",
+        pre_processing_overrides=PreProcessingOverrides(disable_static_crop=True),
+    )
+
+    # then
+    assert isinstance(result_image, torch.Tensor)
+    assert tuple(result_image.shape) == (2, 3, 64, 96)
+    assert not torch.all(result_image[0][2] == 30)
+    assert not torch.all(result_image[0][1] == 20)
+    assert not torch.all(result_image[0][0] == 10)
+    assert not torch.all(result_image[1][2] == 30)
+    assert not torch.all(result_image[1][1] == 20)
+    assert not torch.all(result_image[1][0] == 10)
+    expected_meta = PreProcessingMetadata(
+        pad_left=0,
+        pad_top=0,
+        pad_right=0,
+        pad_bottom=0,
+        original_size=ImageDimensions(height=200, width=100),
+        size_after_pre_processing=ImageDimensions(height=200, width=100),
+        inference_size=ImageDimensions(height=64, width=96),
+        scale_width=96 / 100,
+        scale_height=64 / 200,
+        static_crop_offset=StaticCropOffset(
+            offset_x=0,
+            offset_y=0,
+            crop_width=100,
+            crop_height=200,
         ),
     )
     assert result_meta[0] == expected_meta
@@ -1537,6 +1774,70 @@ def test_pre_process_torch_4d_image_with_stretch_and_crop() -> None:
             offset_y=40,
             crop_width=80,
             crop_height=120,
+        ),
+    )
+    assert result_meta[0] == expected_meta
+    assert result_meta[1] == expected_meta
+
+
+def test_pre_process_torch_4d_image_with_stretch_and_crop_when_crop_is_disabled() -> (
+    None
+):
+    # given
+    image_pre_processing = ImagePreProcessing(
+        **{
+            "static-crop": StaticCrop(
+                enabled=True, x_min=10, x_max=90, y_min=20, y_max=80
+            )
+        }
+    )
+    network_input = NetworkInputDefinition(
+        training_input_size=TrainingInputSize(height=64, width=96),
+        dynamic_spatial_size_supported=False,
+        color_mode=ColorMode.RGB,
+        resize_mode=ResizeMode.STRETCH_TO,
+        input_channels=3,
+    )
+    image = np.ones((200, 100, 3), dtype=np.uint8)
+    image[40:160, 10:90, :] = (image[40:160, 10:90, :] * (10, 20, 30)).astype(np.uint8)
+    image = torch.from_numpy(image)
+    image = torch.permute(image, (2, 0, 1))
+    image = torch.stack([image, image], dim=0)
+
+    # when
+    result_image, result_meta = pre_process_network_input(
+        images=image,
+        image_pre_processing=image_pre_processing,
+        network_input=network_input,
+        target_device=torch.device("cpu"),
+        input_color_format="rgb",
+        pre_processing_overrides=PreProcessingOverrides(disable_static_crop=True),
+    )
+
+    # then
+    assert isinstance(result_image, torch.Tensor)
+    assert tuple(result_image.shape) == (2, 3, 64, 96)
+    assert not torch.all(result_image[0][2] == 30)
+    assert not torch.all(result_image[0][1] == 20)
+    assert not torch.all(result_image[0][0] == 10)
+    assert not torch.all(result_image[1][2] == 30)
+    assert not torch.all(result_image[1][1] == 20)
+    assert not torch.all(result_image[1][0] == 10)
+    expected_meta = PreProcessingMetadata(
+        pad_left=0,
+        pad_top=0,
+        pad_right=0,
+        pad_bottom=0,
+        original_size=ImageDimensions(height=200, width=100),
+        size_after_pre_processing=ImageDimensions(height=200, width=100),
+        inference_size=ImageDimensions(height=64, width=96),
+        scale_width=96 / 100,
+        scale_height=64 / 200,
+        static_crop_offset=StaticCropOffset(
+            offset_x=0,
+            offset_y=0,
+            crop_width=100,
+            crop_height=200,
         ),
     )
     assert result_meta[0] == expected_meta
@@ -8347,6 +8648,52 @@ def test_grayscale_pre_processing_for_numpy_image() -> None:
     )
 
 
+def test_grayscale_pre_processing_for_numpy_image_when_grayscale_disabled() -> None:
+    # given
+    image_pre_processing = ImagePreProcessing(grayscale=Grayscale(enabled=True))
+    network_input = NetworkInputDefinition(
+        training_input_size=TrainingInputSize(height=64, width=96),
+        dynamic_spatial_size_supported=False,
+        color_mode=ColorMode.BGR,
+        resize_mode=ResizeMode.STRETCH_TO,
+        input_channels=3,
+    )
+    image = (np.ones((192, 168, 3), dtype=np.uint8) * (10, 20, 30)).astype(np.uint8)
+    # when
+    result_image, result_meta = pre_process_network_input(
+        images=image,
+        image_pre_processing=image_pre_processing,
+        network_input=network_input,
+        target_device=torch.device("cpu"),
+        input_color_format="bgr",
+        pre_processing_overrides=PreProcessingOverrides(disable_grayscale=True),
+    )
+
+    # then
+    assert isinstance(result_image, torch.Tensor)
+    assert tuple(result_image.shape) == (1, 3, 64, 96)
+    assert torch.all(result_image[0][0] == 10)
+    assert torch.all(result_image[0][1] == 20)
+    assert torch.all(result_image[0][2] == 30)
+    assert result_meta[0] == PreProcessingMetadata(
+        pad_left=0,
+        pad_top=0,
+        pad_right=0,
+        pad_bottom=0,
+        original_size=ImageDimensions(height=192, width=168),
+        size_after_pre_processing=ImageDimensions(height=192, width=168),
+        inference_size=ImageDimensions(height=64, width=96),
+        scale_width=96 / 168,
+        scale_height=64 / 192,
+        static_crop_offset=StaticCropOffset(
+            offset_x=0,
+            offset_y=0,
+            crop_width=168,
+            crop_height=192,
+        ),
+    )
+
+
 @pytest.mark.parametrize(
     "contrast_type",
     [
@@ -8380,6 +8727,66 @@ def test_contrast_pre_processing_for_numpy_image(contrast_type: ContrastType) ->
     # then
     assert isinstance(result_image, torch.Tensor)
     assert tuple(result_image.shape) == (1, 3, 64, 96)
+    assert result_meta[0] == PreProcessingMetadata(
+        pad_left=0,
+        pad_top=0,
+        pad_right=0,
+        pad_bottom=0,
+        original_size=ImageDimensions(height=192, width=168),
+        size_after_pre_processing=ImageDimensions(height=192, width=168),
+        inference_size=ImageDimensions(height=64, width=96),
+        scale_width=96 / 168,
+        scale_height=64 / 192,
+        static_crop_offset=StaticCropOffset(
+            offset_x=0,
+            offset_y=0,
+            crop_width=168,
+            crop_height=192,
+        ),
+    )
+
+
+@pytest.mark.parametrize(
+    "contrast_type",
+    [
+        ContrastType.ADAPTIVE_EQUALIZATION,
+        ContrastType.CONTRAST_STRETCHING,
+        ContrastType.HISTOGRAM_EQUALIZATION,
+    ],
+)
+def test_contrast_pre_processing_for_numpy_image_when_enhancement_is_disabled(
+    contrast_type: ContrastType,
+) -> None:
+    # given
+    image_pre_processing = ImagePreProcessing(
+        contrast=Contrast(enabled=True, type=contrast_type)
+    )
+    network_input = NetworkInputDefinition(
+        training_input_size=TrainingInputSize(height=64, width=96),
+        dynamic_spatial_size_supported=False,
+        color_mode=ColorMode.BGR,
+        resize_mode=ResizeMode.STRETCH_TO,
+        input_channels=3,
+    )
+    image = (np.ones((192, 168, 3), dtype=np.uint8) * (10, 20, 30)).astype(np.uint8)
+    # when
+    result_image, result_meta = pre_process_network_input(
+        images=image,
+        image_pre_processing=image_pre_processing,
+        network_input=network_input,
+        target_device=torch.device("cpu"),
+        input_color_format="bgr",
+        pre_processing_overrides=PreProcessingOverrides(
+            disable_contrast_enhancement=True
+        ),
+    )
+
+    # then
+    assert isinstance(result_image, torch.Tensor)
+    assert tuple(result_image.shape) == (1, 3, 64, 96)
+    assert torch.all(result_image[0][0] == 10)
+    assert torch.all(result_image[0][1] == 20)
+    assert torch.all(result_image[0][2] == 30)
     assert result_meta[0] == PreProcessingMetadata(
         pad_left=0,
         pad_top=0,
@@ -8504,6 +8911,59 @@ def test_grayscale_pre_processing_for_list_of_numpy_images() -> None:
     assert result_meta[1] == expected_meta
 
 
+def test_grayscale_pre_processing_for_list_of_numpy_images_when_grayscale_is_disabled() -> (
+    None
+):
+    # given
+    image_pre_processing = ImagePreProcessing(grayscale=Grayscale(enabled=True))
+    network_input = NetworkInputDefinition(
+        training_input_size=TrainingInputSize(height=64, width=96),
+        dynamic_spatial_size_supported=False,
+        color_mode=ColorMode.BGR,
+        resize_mode=ResizeMode.STRETCH_TO,
+        input_channels=3,
+    )
+    image = (np.ones((192, 168, 3), dtype=np.uint8) * (10, 20, 30)).astype(np.uint8)
+    # when
+    result_image, result_meta = pre_process_network_input(
+        images=[image, image],
+        image_pre_processing=image_pre_processing,
+        network_input=network_input,
+        target_device=torch.device("cpu"),
+        input_color_format="bgr",
+        pre_processing_overrides=PreProcessingOverrides(disable_grayscale=True),
+    )
+
+    # then
+    assert isinstance(result_image, torch.Tensor)
+    assert tuple(result_image.shape) == (2, 3, 64, 96)
+    assert torch.all(result_image[0][0] == 10)
+    assert torch.all(result_image[0][1] == 20)
+    assert torch.all(result_image[0][2] == 30)
+    assert torch.all(result_image[1][0] == 10)
+    assert torch.all(result_image[1][1] == 20)
+    assert torch.all(result_image[1][2] == 30)
+    expected_meta = PreProcessingMetadata(
+        pad_left=0,
+        pad_top=0,
+        pad_right=0,
+        pad_bottom=0,
+        original_size=ImageDimensions(height=192, width=168),
+        size_after_pre_processing=ImageDimensions(height=192, width=168),
+        inference_size=ImageDimensions(height=64, width=96),
+        scale_width=96 / 168,
+        scale_height=64 / 192,
+        static_crop_offset=StaticCropOffset(
+            offset_x=0,
+            offset_y=0,
+            crop_width=168,
+            crop_height=192,
+        ),
+    )
+    assert result_meta[0] == expected_meta
+    assert result_meta[1] == expected_meta
+
+
 @pytest.mark.parametrize(
     "contrast_type",
     [
@@ -8539,6 +8999,71 @@ def test_contrast_pre_processing_for_list_of_numpy_images(
     # then
     assert isinstance(result_image, torch.Tensor)
     assert tuple(result_image.shape) == (2, 3, 64, 96)
+    expected_meta = PreProcessingMetadata(
+        pad_left=0,
+        pad_top=0,
+        pad_right=0,
+        pad_bottom=0,
+        original_size=ImageDimensions(height=192, width=168),
+        size_after_pre_processing=ImageDimensions(height=192, width=168),
+        inference_size=ImageDimensions(height=64, width=96),
+        scale_width=96 / 168,
+        scale_height=64 / 192,
+        static_crop_offset=StaticCropOffset(
+            offset_x=0,
+            offset_y=0,
+            crop_width=168,
+            crop_height=192,
+        ),
+    )
+    assert result_meta[0] == expected_meta
+    assert result_meta[1] == expected_meta
+
+
+@pytest.mark.parametrize(
+    "contrast_type",
+    [
+        ContrastType.ADAPTIVE_EQUALIZATION,
+        ContrastType.CONTRAST_STRETCHING,
+        ContrastType.HISTOGRAM_EQUALIZATION,
+    ],
+)
+def test_contrast_pre_processing_for_list_of_numpy_images_when_enhancement_is_disabled(
+    contrast_type: ContrastType,
+) -> None:
+    # given
+    image_pre_processing = ImagePreProcessing(
+        contrast=Contrast(enabled=True, type=contrast_type),
+    )
+    network_input = NetworkInputDefinition(
+        training_input_size=TrainingInputSize(height=64, width=96),
+        dynamic_spatial_size_supported=False,
+        color_mode=ColorMode.BGR,
+        resize_mode=ResizeMode.STRETCH_TO,
+        input_channels=3,
+    )
+    image = (np.ones((192, 168, 3), dtype=np.uint8) * (10, 20, 30)).astype(np.uint8)
+    # when
+    result_image, result_meta = pre_process_network_input(
+        images=[image, image],
+        image_pre_processing=image_pre_processing,
+        network_input=network_input,
+        target_device=torch.device("cpu"),
+        input_color_format="bgr",
+        pre_processing_overrides=PreProcessingOverrides(
+            disable_contrast_enhancement=True
+        ),
+    )
+
+    # then
+    assert isinstance(result_image, torch.Tensor)
+    assert tuple(result_image.shape) == (2, 3, 64, 96)
+    assert torch.all(result_image[0][0] == 10)
+    assert torch.all(result_image[0][1] == 20)
+    assert torch.all(result_image[0][2] == 30)
+    assert torch.all(result_image[1][0] == 10)
+    assert torch.all(result_image[1][1] == 20)
+    assert torch.all(result_image[1][2] == 30)
     expected_meta = PreProcessingMetadata(
         pad_left=0,
         pad_top=0,
@@ -8646,6 +9171,57 @@ def test_grayscale_pre_processing_for_3d_torch_tensor_image() -> None:
     assert torch.all(result_image[0][0] == 18)
     assert torch.all(result_image[0][1] == 18)
     assert torch.all(result_image[0][2] == 18)
+    assert result_meta[0] == PreProcessingMetadata(
+        pad_left=0,
+        pad_top=0,
+        pad_right=0,
+        pad_bottom=0,
+        original_size=ImageDimensions(height=192, width=168),
+        size_after_pre_processing=ImageDimensions(height=192, width=168),
+        inference_size=ImageDimensions(height=64, width=96),
+        scale_width=96 / 168,
+        scale_height=64 / 192,
+        static_crop_offset=StaticCropOffset(
+            offset_x=0,
+            offset_y=0,
+            crop_width=168,
+            crop_height=192,
+        ),
+    )
+
+
+def test_grayscale_pre_processing_for_3d_torch_tensor_image_when_grayscale_is_disabled() -> (
+    None
+):
+    # given
+    image_pre_processing = ImagePreProcessing(grayscale=Grayscale(enabled=True))
+    network_input = NetworkInputDefinition(
+        training_input_size=TrainingInputSize(height=64, width=96),
+        dynamic_spatial_size_supported=False,
+        color_mode=ColorMode.BGR,
+        resize_mode=ResizeMode.STRETCH_TO,
+        input_channels=3,
+    )
+    image = (np.ones((192, 168, 3), dtype=np.uint8) * (10, 20, 30)).astype(np.uint8)
+    image = torch.from_numpy(image)
+    image = torch.permute(image, (2, 0, 1))
+
+    # when
+    result_image, result_meta = pre_process_network_input(
+        images=image,
+        image_pre_processing=image_pre_processing,
+        network_input=network_input,
+        target_device=torch.device("cpu"),
+        input_color_format="bgr",
+        pre_processing_overrides=PreProcessingOverrides(disable_grayscale=True),
+    )
+
+    # then
+    assert isinstance(result_image, torch.Tensor)
+    assert tuple(result_image.shape) == (1, 3, 64, 96)
+    assert torch.all(result_image[0][0] == 10)
+    assert torch.all(result_image[0][1] == 20)
+    assert torch.all(result_image[0][2] == 30)
     assert result_meta[0] == PreProcessingMetadata(
         pad_left=0,
         pad_top=0,
@@ -8994,6 +9570,63 @@ def test_grayscale_pre_processing_for_4d_torch_tensor_image() -> None:
     assert result_meta[1] == expected_meta
 
 
+def test_grayscale_pre_processing_for_4d_torch_tensor_image_when_grayscale_is_disabled() -> (
+    None
+):
+    # given
+    image_pre_processing = ImagePreProcessing(grayscale=Grayscale(enabled=True))
+    network_input = NetworkInputDefinition(
+        training_input_size=TrainingInputSize(height=64, width=96),
+        dynamic_spatial_size_supported=False,
+        color_mode=ColorMode.BGR,
+        resize_mode=ResizeMode.STRETCH_TO,
+        input_channels=3,
+    )
+    image = (np.ones((192, 168, 3), dtype=np.uint8) * (10, 20, 30)).astype(np.uint8)
+    image = torch.from_numpy(image)
+    image = torch.permute(image, (2, 0, 1))
+    image = torch.stack([image, image], dim=0)
+
+    # when
+    result_image, result_meta = pre_process_network_input(
+        images=image,
+        image_pre_processing=image_pre_processing,
+        network_input=network_input,
+        target_device=torch.device("cpu"),
+        input_color_format="bgr",
+        pre_processing_overrides=PreProcessingOverrides(disable_grayscale=True),
+    )
+
+    # then
+    assert isinstance(result_image, torch.Tensor)
+    assert tuple(result_image.shape) == (2, 3, 64, 96)
+    assert torch.all(result_image[0][0] == 10)
+    assert torch.all(result_image[0][1] == 20)
+    assert torch.all(result_image[0][2] == 30)
+    assert torch.all(result_image[1][0] == 10)
+    assert torch.all(result_image[1][1] == 20)
+    assert torch.all(result_image[1][2] == 30)
+    expected_meta = PreProcessingMetadata(
+        pad_left=0,
+        pad_top=0,
+        pad_right=0,
+        pad_bottom=0,
+        original_size=ImageDimensions(height=192, width=168),
+        size_after_pre_processing=ImageDimensions(height=192, width=168),
+        inference_size=ImageDimensions(height=64, width=96),
+        scale_width=96 / 168,
+        scale_height=64 / 192,
+        static_crop_offset=StaticCropOffset(
+            offset_x=0,
+            offset_y=0,
+            crop_width=168,
+            crop_height=192,
+        ),
+    )
+    assert result_meta[0] == expected_meta
+    assert result_meta[1] == expected_meta
+
+
 @pytest.mark.parametrize(
     "contrast_type",
     [
@@ -9033,6 +9666,75 @@ def test_contrast_pre_processing_for_4d_torch_tensor_image(
     # then
     assert isinstance(result_image, torch.Tensor)
     assert tuple(result_image.shape) == (2, 3, 64, 96)
+    expected_meta = PreProcessingMetadata(
+        pad_left=0,
+        pad_top=0,
+        pad_right=0,
+        pad_bottom=0,
+        original_size=ImageDimensions(height=192, width=168),
+        size_after_pre_processing=ImageDimensions(height=192, width=168),
+        inference_size=ImageDimensions(height=64, width=96),
+        scale_width=96 / 168,
+        scale_height=64 / 192,
+        static_crop_offset=StaticCropOffset(
+            offset_x=0,
+            offset_y=0,
+            crop_width=168,
+            crop_height=192,
+        ),
+    )
+    assert result_meta[0] == expected_meta
+    assert result_meta[1] == expected_meta
+
+
+@pytest.mark.parametrize(
+    "contrast_type",
+    [
+        ContrastType.ADAPTIVE_EQUALIZATION,
+        ContrastType.CONTRAST_STRETCHING,
+        ContrastType.HISTOGRAM_EQUALIZATION,
+    ],
+)
+def test_contrast_pre_processing_for_4d_torch_tensor_image_when_enhancement_is_disabled(
+    contrast_type: ContrastType,
+) -> None:
+    # given
+    image_pre_processing = ImagePreProcessing(
+        contrast=Contrast(enabled=True, type=contrast_type),
+    )
+    network_input = NetworkInputDefinition(
+        training_input_size=TrainingInputSize(height=64, width=96),
+        dynamic_spatial_size_supported=False,
+        color_mode=ColorMode.BGR,
+        resize_mode=ResizeMode.STRETCH_TO,
+        input_channels=3,
+    )
+    image = (np.ones((192, 168, 3), dtype=np.uint8) * (10, 20, 30)).astype(np.uint8)
+    image = torch.from_numpy(image)
+    image = torch.permute(image, (2, 0, 1))
+    image = torch.stack([image, image], dim=0)
+
+    # when
+    result_image, result_meta = pre_process_network_input(
+        images=image,
+        image_pre_processing=image_pre_processing,
+        network_input=network_input,
+        target_device=torch.device("cpu"),
+        input_color_format="bgr",
+        pre_processing_overrides=PreProcessingOverrides(
+            disable_contrast_enhancement=True
+        ),
+    )
+
+    # then
+    assert isinstance(result_image, torch.Tensor)
+    assert tuple(result_image.shape) == (2, 3, 64, 96)
+    assert torch.all(result_image[0][0] == 10)
+    assert torch.all(result_image[0][1] == 20)
+    assert torch.all(result_image[0][2] == 30)
+    assert torch.all(result_image[1][0] == 10)
+    assert torch.all(result_image[1][1] == 20)
+    assert torch.all(result_image[1][2] == 30)
     expected_meta = PreProcessingMetadata(
         pad_left=0,
         pad_top=0,
@@ -9254,6 +9956,61 @@ def test_grayscale_pre_processing_for_list_of_3d_torch_tensor_not_permuted_image
     assert torch.all(result_image[1][0] == 18)
     assert torch.all(result_image[1][1] == 18)
     assert torch.all(result_image[1][2] == 18)
+    expected_meta = PreProcessingMetadata(
+        pad_left=0,
+        pad_top=0,
+        pad_right=0,
+        pad_bottom=0,
+        original_size=ImageDimensions(height=192, width=168),
+        size_after_pre_processing=ImageDimensions(height=192, width=168),
+        inference_size=ImageDimensions(height=64, width=96),
+        scale_width=96 / 168,
+        scale_height=64 / 192,
+        static_crop_offset=StaticCropOffset(
+            offset_x=0,
+            offset_y=0,
+            crop_width=168,
+            crop_height=192,
+        ),
+    )
+    assert result_meta[0] == expected_meta
+    assert result_meta[1] == expected_meta
+
+
+def test_grayscale_pre_processing_for_list_of_3d_torch_tensor_not_permuted_images_when_grayscale_is_disabled() -> (
+    None
+):
+    # given
+    image_pre_processing = ImagePreProcessing(grayscale=Grayscale(enabled=True))
+    network_input = NetworkInputDefinition(
+        training_input_size=TrainingInputSize(height=64, width=96),
+        dynamic_spatial_size_supported=False,
+        color_mode=ColorMode.BGR,
+        resize_mode=ResizeMode.STRETCH_TO,
+        input_channels=3,
+    )
+    image = (np.ones((192, 168, 3), dtype=np.uint8) * (10, 20, 30)).astype(np.uint8)
+    image = torch.from_numpy(image)
+
+    # when
+    result_image, result_meta = pre_process_network_input(
+        images=[image, image],
+        image_pre_processing=image_pre_processing,
+        network_input=network_input,
+        target_device=torch.device("cpu"),
+        input_color_format="bgr",
+        pre_processing_overrides=PreProcessingOverrides(disable_grayscale=True),
+    )
+
+    # then
+    assert isinstance(result_image, torch.Tensor)
+    assert tuple(result_image.shape) == (2, 3, 64, 96)
+    assert torch.all(result_image[0][0] == 10)
+    assert torch.all(result_image[0][1] == 20)
+    assert torch.all(result_image[0][2] == 30)
+    assert torch.all(result_image[1][0] == 10)
+    assert torch.all(result_image[1][1] == 20)
+    assert torch.all(result_image[1][2] == 30)
     expected_meta = PreProcessingMetadata(
         pad_left=0,
         pad_top=0,
