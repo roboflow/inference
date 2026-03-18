@@ -15,7 +15,6 @@ on:
           - ''
           - onnx_extras
           - trt_extras
-          - trt_extras_with_cuda_graphs
           - torch_models
           - hf_vlm_models
       python_version:
