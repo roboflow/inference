@@ -1,5 +1,14 @@
 # Changelog
 
+## `0.20.2`
+### Added
+
+- Ability to override certain aspects of model pre-processing (like center-crop, contrast enhancement or grayscale 
+which may be performed by caller).  
+
+---
+
+
 ## `0.20.1`
 ### Fixed
 

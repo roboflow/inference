@@ -12,6 +12,7 @@ from torchvision.transforms import Grayscale, functional
 from inference_models.entities import ColorFormat, ImageDimensions
 from inference_models.errors import ModelInputError, ModelRuntimeError
 from inference_models.logger import LOGGER
+from inference_models.models.auto_loaders.entities import PreProcessingOverrides
 from inference_models.models.common.roboflow.model_packages import (
     AnySizePadding,
     ColorMode,
@@ -33,6 +34,7 @@ def pre_process_network_input(
     target_device: torch.device,
     input_color_format: Optional[ColorFormat] = None,
     image_size_wh: Optional[Union[int, Tuple[int, int]]] = None,
+    pre_processing_overrides: Optional[PreProcessingOverrides] = None,
 ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
     if network_input.input_channels != 3:
         raise ModelRuntimeError(
@@ -53,6 +55,7 @@ def pre_process_network_input(
             target_device=target_device,
             input_color_mode=input_color_mode,
             image_size_wh=image_size_wh,
+            pre_processing_overrides=pre_processing_overrides,
         )
     if isinstance(images, torch.Tensor):
         return pre_process_images_tensor(
@@ -62,6 +65,7 @@ def pre_process_network_input(
             input_color_mode=input_color_mode,
             target_device=target_device,
             image_size_wh=image_size_wh,
+            pre_processing_overrides=pre_processing_overrides,
         )
     if not isinstance(images, list):
         raise ModelInputError(
@@ -87,6 +91,7 @@ def pre_process_network_input(
             input_color_mode=input_color_mode,
             target_device=target_device,
             image_size_wh=image_size_wh,
+            pre_processing_overrides=pre_processing_overrides,
         )
     if isinstance(images[0], torch.Tensor):
         return pre_process_images_tensor_list(
@@ -96,6 +101,7 @@ def pre_process_network_input(
             input_color_mode=input_color_mode,
             target_device=target_device,
             image_size_wh=image_size_wh,
+            pre_processing_overrides=pre_processing_overrides,
         )
     raise ModelInputError(
         message=f"Detected unknown input batch element: {type(images[0])}",
@@ -111,6 +117,7 @@ def pre_process_images_tensor(
     target_device: torch.device,
     input_color_mode: Optional[ColorMode] = None,
     image_size_wh: Optional[Tuple[int, int]] = None,
+    pre_processing_overrides: Optional[PreProcessingOverrides] = None,
 ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
     if input_color_mode is None:
         input_color_mode = ColorMode.RGB
@@ -155,6 +162,7 @@ def pre_process_images_tensor(
         image=images,
         image_pre_processing=image_pre_processing,
         network_input_channels=network_input.input_channels,
+        pre_processing_overrides=pre_processing_overrides,
     )
     if network_input.resize_mode not in NUMPY_IMAGES_PREPARATION_HANDLERS:
         raise ModelRuntimeError(
@@ -175,6 +183,7 @@ def apply_pre_processing_to_torch_image(
     image: torch.Tensor,
     image_pre_processing: ImagePreProcessing,
     network_input_channels: int,
+    pre_processing_overrides: Optional[PreProcessingOverrides] = None,
 ) -> Tuple[torch.Tensor, StaticCropOffset]:
     static_crop_offset = StaticCropOffset(
         offset_x=0,
@@ -182,14 +191,38 @@ def apply_pre_processing_to_torch_image(
         crop_width=image.shape[3],
         crop_height=image.shape[2],
     )
-    if image_pre_processing.static_crop and image_pre_processing.static_crop.enabled:
+    static_crop_overridden = (
+        pre_processing_overrides is not None
+        and pre_processing_overrides.disable_static_crop
+    )
+    if (
+        image_pre_processing.static_crop
+        and image_pre_processing.static_crop.enabled
+        and not static_crop_overridden
+    ):
         image, static_crop_offset = apply_static_crop_to_torch_image(
             image=image,
             config=image_pre_processing.static_crop,
         )
-    if image_pre_processing.grayscale and image_pre_processing.grayscale.enabled:
+    grayscale_overridden = (
+        pre_processing_overrides is not None
+        and pre_processing_overrides.disable_grayscale
+    )
+    if (
+        image_pre_processing.grayscale
+        and image_pre_processing.grayscale.enabled
+        and not grayscale_overridden
+    ):
         image = Grayscale(num_output_channels=network_input_channels)(image)
-    if image_pre_processing.contrast and image_pre_processing.contrast.enabled:
+    contrast_enhancement_overridden = (
+        pre_processing_overrides is not None
+        and pre_processing_overrides.disable_contrast_enhancement
+    )
+    if (
+        image_pre_processing.contrast
+        and image_pre_processing.contrast.enabled
+        and not contrast_enhancement_overridden
+    ):
         if (
             image_pre_processing.contrast.type
             not in CONTRAST_ADJUSTMENT_METHODS_FOR_TORCH
@@ -544,6 +577,7 @@ def pre_process_images_tensor_list(
     target_device: torch.device,
     input_color_mode: Optional[ColorMode] = None,
     image_size_wh: Optional[Tuple[int, int]] = None,
+    pre_processing_overrides: Optional[PreProcessingOverrides] = None,
 ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
     if network_input.resize_mode not in TORCH_LIST_IMAGES_PREPARATION_HANDLERS:
         raise ModelRuntimeError(
@@ -585,6 +619,7 @@ def pre_process_images_tensor_list(
             image_pre_processing=image_pre_processing,
             network_input_channels=network_input.input_channels,
             target_device=target_device,
+            pre_processing_overrides=pre_processing_overrides,
         )
     )
     return TORCH_LIST_IMAGES_PREPARATION_HANDLERS[network_input.resize_mode](
@@ -603,6 +638,7 @@ def apply_pre_processing_to_list_of_torch_image(
     image_pre_processing: ImagePreProcessing,
     network_input_channels: int,
     target_device: torch.device,
+    pre_processing_overrides: Optional[PreProcessingOverrides] = None,
 ) -> Tuple[List[torch.Tensor], List[StaticCropOffset], List[ImageDimensions]]:
     result_images, result_offsets, original_sizes = [], [], []
     for image in images:
@@ -621,6 +657,7 @@ def apply_pre_processing_to_list_of_torch_image(
             image=image.unsqueeze(0),
             image_pre_processing=image_pre_processing,
             network_input_channels=network_input_channels,
+            pre_processing_overrides=pre_processing_overrides,
         )
         result_images.append(result_image)
         result_offsets.append(result_offset)
@@ -810,6 +847,7 @@ def pre_process_numpy_images_list(
     target_device: torch.device,
     input_color_mode: Optional[ColorMode] = None,
     image_size_wh: Optional[Tuple[int, int]] = None,
+    pre_processing_overrides: Optional[PreProcessingOverrides] = None,
 ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
     result_tensors, result_metadata = [], []
     for image in images:
@@ -820,6 +858,7 @@ def pre_process_numpy_images_list(
             target_device=target_device,
             input_color_mode=input_color_mode,
             image_size_wh=image_size_wh,
+            pre_processing_overrides=pre_processing_overrides,
         )
         result_tensors.append(tensor)
         result_metadata.extend(metadata)
@@ -834,6 +873,7 @@ def pre_process_numpy_image(
     target_device: torch.device,
     input_color_mode: Optional[ColorMode] = None,
     image_size_wh: Optional[Tuple[int, int]] = None,
+    pre_processing_overrides: Optional[PreProcessingOverrides] = None,
 ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
     if input_color_mode is None:
         input_color_mode = ColorMode.BGR
@@ -870,6 +910,7 @@ def pre_process_numpy_image(
         image_pre_processing=image_pre_processing,
         network_input_channels=network_input.input_channels,
         input_color_mode=input_color_mode,
+        pre_processing_overrides=pre_processing_overrides,
     )
     if network_input.resize_mode not in NUMPY_IMAGES_PREPARATION_HANDLERS:
         raise ModelRuntimeError(
@@ -892,6 +933,7 @@ def apply_pre_processing_to_numpy_image(
     image_pre_processing: ImagePreProcessing,
     network_input_channels: int,
     input_color_mode: Optional[ColorMode] = None,
+    pre_processing_overrides: Optional[PreProcessingOverrides] = None,
 ) -> Tuple[np.ndarray, StaticCropOffset]:
     if input_color_mode is None:
         input_color_mode = ColorMode.BGR
@@ -901,12 +943,28 @@ def apply_pre_processing_to_numpy_image(
         crop_width=image.shape[1],
         crop_height=image.shape[0],
     )
-    if image_pre_processing.static_crop and image_pre_processing.static_crop.enabled:
+    static_crop_overridden = (
+        pre_processing_overrides is not None
+        and pre_processing_overrides.disable_static_crop
+    )
+    if (
+        image_pre_processing.static_crop
+        and image_pre_processing.static_crop.enabled
+        and not static_crop_overridden
+    ):
         image, static_crop_offset = apply_static_crop_to_numpy_image(
             image=image,
             config=image_pre_processing.static_crop,
         )
-    if image_pre_processing.grayscale and image_pre_processing.grayscale.enabled:
+    grayscale_overridden = (
+        pre_processing_overrides is not None
+        and pre_processing_overrides.disable_grayscale
+    )
+    if (
+        image_pre_processing.grayscale
+        and image_pre_processing.grayscale.enabled
+        and not grayscale_overridden
+    ):
         mode = (
             cv2.COLOR_BGR2GRAY
             if input_color_mode is ColorMode.BGR
@@ -914,7 +972,15 @@ def apply_pre_processing_to_numpy_image(
         )
         image = cv2.cvtColor(image, mode)
         image = np.stack([image] * network_input_channels, axis=2)
-    if image_pre_processing.contrast and image_pre_processing.contrast.enabled:
+    contrast_enhancement_overridden = (
+        pre_processing_overrides is not None
+        and pre_processing_overrides.disable_contrast_enhancement
+    )
+    if (
+        image_pre_processing.contrast
+        and image_pre_processing.contrast.enabled
+        and not contrast_enhancement_overridden
+    ):
         if (
             image_pre_processing.contrast.type
             not in CONTRAST_ADJUSTMENT_METHODS_FOR_NUMPY

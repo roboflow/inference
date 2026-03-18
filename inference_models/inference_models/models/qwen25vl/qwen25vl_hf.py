@@ -13,6 +13,7 @@ from transformers import (
 )
 from transformers.utils import is_flash_attn_2_available
 
+from inference_models import PreProcessingOverrides
 from inference_models.configuration import (
     DEFAULT_DEVICE,
     INFERENCE_MODELS_QWEN25_VL_DEFAULT_DO_SAMPLE,
@@ -168,10 +169,14 @@ class Qwen25VLHF:
         max_new_tokens: int = INFERENCE_MODELS_QWEN25_VL_DEFAULT_MAX_NEW_TOKENS,
         do_sample: bool = INFERENCE_MODELS_QWEN25_VL_DEFAULT_DO_SAMPLE,
         skip_special_tokens: bool = INFERENCE_MODELS_QWEN25_VL_DEFAULT_SKIP_SPECIAL_TOKENS,
+        pre_processing_overrides: Optional[PreProcessingOverrides] = None,
         **kwargs,
     ) -> List[str]:
         inputs = self.pre_process_generation(
-            images=images, prompt=prompt, input_color_format=input_color_format
+            images=images,
+            prompt=prompt,
+            input_color_format=input_color_format,
+            prompt_overrides=pre_processing_overrides,
         )
         generated_ids = self.generate(
             inputs=inputs,
@@ -189,6 +194,7 @@ class Qwen25VLHF:
         prompt: str = None,
         input_color_format: ColorFormat = None,
         image_size: Optional[Tuple[int, int]] = None,
+        pre_processing_overrides: Optional[PreProcessingOverrides] = None,
         **kwargs,
     ) -> dict:
         def _to_tensor(image: Union[np.ndarray, torch.Tensor]) -> torch.Tensor:
@@ -216,6 +222,7 @@ class Qwen25VLHF:
                 target_device=self._device,
                 input_color_format=input_color_format,
                 image_size_wh=image_size,
+                pre_processing_overrides=pre_processing_overrides,
             )[0]
             image_list = [e[0] for e in torch.split(images, 1, dim=0)]
         # Handle prompt and system prompt parsing logic from original implementation

@@ -4,7 +4,12 @@ from typing import List, Optional, Tuple, Union
 import numpy as np
 import torch
 
-from inference_models import Detections, KeyPoints, KeyPointsDetectionModel
+from inference_models import (
+    Detections,
+    KeyPoints,
+    KeyPointsDetectionModel,
+    PreProcessingOverrides,
+)
 from inference_models.configuration import (
     DEFAULT_DEVICE,
     INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_CLASS_AGNOSTIC_NMS,
@@ -192,6 +197,7 @@ class YOLOv8ForKeyPointsDetectionOnnx(
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         input_color_format: Optional[ColorFormat] = None,
         image_size: Optional[Tuple[int, int]] = None,
+        pre_processing_overrides: Optional[PreProcessingOverrides] = None,
         **kwargs,
     ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
         return pre_process_network_input(
@@ -201,6 +207,7 @@ class YOLOv8ForKeyPointsDetectionOnnx(
             target_device=self._device,
             input_color_format=input_color_format,
             image_size_wh=image_size,
+            pre_processing_overrides=pre_processing_overrides,
         )
 
     def forward(self, pre_processed_images: torch.Tensor, **kwargs) -> torch.Tensor:
