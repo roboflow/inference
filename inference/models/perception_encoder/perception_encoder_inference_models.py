@@ -22,7 +22,9 @@ from inference.core.env import (
     API_KEY,
     CLIP_MAX_BATCH_SIZE,
     DEVICE,
+    DISABLED_INFERENCE_MODELS_BACKENDS,
     PERCEPTION_ENCODER_MODEL_ID,
+    VALID_INFERENCE_MODELS_BACKENDS,
 )
 from inference.core.models.base import Model
 from inference.core.models.types import PreprocessReturnMetadata
@@ -55,14 +57,22 @@ class InferenceModelsPerceptionEncoderAdapter(Model):
 
         self.task_type = "embedding"
 
-        extra_weights_provider_headers = get_extra_weights_provider_headers()
-
+        extra_weights_provider_headers = get_extra_weights_provider_headers(
+            countinference=kwargs.get("countinference"),
+            service_secret=kwargs.get("service_secret"),
+        )
+        backend = list(
+            VALID_INFERENCE_MODELS_BACKENDS.difference(
+                DISABLED_INFERENCE_MODELS_BACKENDS
+            )
+        )
         self._model: PerceptionEncoderTorch = AutoModel.from_pretrained(
             model_id_or_path=model_id,
             api_key=self.api_key,
             allow_untrusted_packages=ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES,
             allow_direct_local_storage_loading=ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES,
             weights_provider_extra_headers=extra_weights_provider_headers,
+            backend=backend,
             **kwargs,
         )
 

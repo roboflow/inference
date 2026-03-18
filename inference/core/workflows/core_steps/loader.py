@@ -256,6 +256,9 @@ from inference.core.workflows.core_steps.models.foundation.openai.v4 import (
 from inference.core.workflows.core_steps.models.foundation.perception_encoder.v1 import (
     PerceptionEncoderModelBlockV1,
 )
+from inference.core.workflows.core_steps.models.foundation.qwen3_5vl.v1 import (
+    Qwen35VLBlockV1,
+)
 from inference.core.workflows.core_steps.models.foundation.qwen3vl.v1 import (
     Qwen3VLBlockV1,
 )
@@ -836,6 +839,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         ImageSlicerBlockV2,
         Qwen25VLBlockV1,
         Qwen3VLBlockV1,
+        Qwen35VLBlockV1,
         SmolVLM2BlockV1,
         Moondream2BlockV1,
         OverlapBlockV1,

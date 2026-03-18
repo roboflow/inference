@@ -20,6 +20,7 @@ from inference.core.exceptions import (
 from inference.core.managers.base import Model, ModelManager, acquire_with_timeout
 from inference.core.managers.decorators.base import ModelManagerDecorator
 from inference.core.managers.entities import ModelDescription
+from inference.core.managers.model_load_collector import request_model_ids
 from inference.core.registries.roboflow import (
     ModelEndpointType,
     _check_if_api_key_has_access_to_model,
@@ -80,6 +81,9 @@ class WithFixedSizeCache(ModelManagerDecorator):
         queue_id = self._resolve_queue_id(
             model_id=model_id, model_id_alias=model_id_alias
         )
+        ids_collector = request_model_ids.get(None)
+        if ids_collector is not None:
+            ids_collector.add(queue_id)
         if queue_id in self:
             logger.debug(
                 f"Detected {queue_id} in WithFixedSizeCache models queue -> marking as most recently used."
@@ -100,18 +104,18 @@ class WithFixedSizeCache(ModelManagerDecorator):
                 or (MEMORY_FREE_THRESHOLD and self.memory_pressure_detected())
             ):
                 # To prevent flapping around the threshold, remove up to 3 models to make some space.
+                if not self._key_queue:
+                    logger.error(
+                        "Tried to remove model from cache even though key queue is already empty! "
+                        "(max_size: %s, len(self): %s, MEMORY_FREE_THRESHOLD: %s)",
+                        self.max_size,
+                        len(self),
+                        MEMORY_FREE_THRESHOLD,
+                    )
+                    break
                 evicted_count = 0
                 skipped_pinned = []
-                for _ in range(3):
-                    if not self._key_queue:
-                        logger.error(
-                            "Tried to remove model from cache even though key queue is already empty!"
-                            "(max_size: %s, len(self): %s, MEMORY_FREE_THRESHOLD: %s)",
-                            self.max_size,
-                            len(self),
-                            MEMORY_FREE_THRESHOLD,
-                        )
-                        break
+                while evicted_count < 3 and self._key_queue:
                     to_remove_model_id = self._key_queue.popleft()
                     if to_remove_model_id in self._pinned_models:
                         skipped_pinned.append(to_remove_model_id)

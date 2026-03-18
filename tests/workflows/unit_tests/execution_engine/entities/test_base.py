@@ -117,6 +117,79 @@ def test_filtering_out_batch_elements() -> None:
     ], "Expected to see only first and last elements of original content"
 
 
+def test_remove_by_indices_with_nested_batch_removes_indices_inside_nested() -> None:
+    # given: top-level batch with one nested batch (indices (0,0), (0,1)) and one scalar
+    nested = Batch.init(
+        content=["a", "b"],
+        indices=[(0, 0), (0, 1)],
+    )
+    batch = Batch.init(
+        content=[nested, "scalar"],
+        indices=[(0,), (1,)],
+    )
+
+    # when: remove index that exists only inside the nested batch
+    result = batch.remove_by_indices(indices_to_remove={(0, 1)})
+
+    # then: top-level unchanged; nested batch has (0,1) removed
+    assert result.indices == [(0,), (1,)]
+    assert len(result) == 2
+    first_element = result[0]
+    assert isinstance(first_element, Batch)
+    assert first_element.indices == [(0, 0)]
+    assert list(first_element) == ["a"]
+    assert result[1] == "scalar"
+
+
+def test_remove_by_indices_with_nested_batch_removes_top_level_index() -> None:
+    # given: top-level batch with one nested batch and one scalar
+    nested = Batch.init(
+        content=["a", "b"],
+        indices=[(0, 0), (0, 1)],
+    )
+    batch = Batch.init(
+        content=[nested, "scalar"],
+        indices=[(0,), (1,)],
+    )
+
+    # when: remove top-level index (0,) - the whole nested batch is dropped
+    result = batch.remove_by_indices(indices_to_remove={(0,)})
+
+    # then: only the scalar remains
+    assert result.indices == [(1,)]
+    assert list(result) == ["scalar"]
+
+
+def test_remove_by_indices_with_nested_batch_removes_mixed_indices() -> None:
+    # given: two nested batches at top level
+    nested_a = Batch.init(
+        content=["a1", "a2", "a3"],
+        indices=[(0, 0), (0, 1), (0, 2)],
+    )
+    nested_b = Batch.init(
+        content=["b1", "b2"],
+        indices=[(1, 0), (1, 1)],
+    )
+    batch = Batch.init(
+        content=[nested_a, nested_b],
+        indices=[(0,), (1,)],
+    )
+
+    # when: remove one index from first nested and one from second nested
+    result = batch.remove_by_indices(indices_to_remove={(0, 1), (1, 0)})
+
+    # then: both nested batches kept but filtered
+    assert result.indices == [(0,), (1,)]
+    first = result[0]
+    second = result[1]
+    assert isinstance(first, Batch)
+    assert isinstance(second, Batch)
+    assert first.indices == [(0, 0), (0, 2)]
+    assert list(first) == ["a1", "a3"]
+    assert second.indices == [(1, 1)]
+    assert list(second) == ["b2"]
+
+
 def test_broadcast_batch_when_requested_size_is_equal_to_batch_size() -> None:
     # given
     batch = Batch.init(

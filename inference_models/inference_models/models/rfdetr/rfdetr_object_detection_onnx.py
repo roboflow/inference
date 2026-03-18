@@ -4,7 +4,7 @@ from typing import List, Optional, Tuple, Union
 import numpy as np
 import torch
 
-from inference_models import Detections, ObjectDetectionModel
+from inference_models import Detections, ObjectDetectionModel, PreProcessingOverrides
 from inference_models.configuration import (
     DEFAULT_DEVICE,
     INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE,
@@ -29,13 +29,11 @@ from inference_models.models.common.roboflow.model_packages import (
 from inference_models.models.common.roboflow.post_processing import (
     rescale_image_detections,
 )
-from inference_models.models.common.roboflow.pre_processing import (
-    pre_process_network_input,
-)
 from inference_models.models.rfdetr.class_remapping import (
     ClassesReMapping,
     prepare_class_remapping,
 )
+from inference_models.models.rfdetr.pre_processing import pre_process_network_input
 from inference_models.utils.onnx_introspection import (
     get_selected_onnx_execution_providers,
 )
@@ -177,6 +175,7 @@ class RFDetrForObjectDetectionONNX(
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         input_color_format: Optional[ColorFormat] = None,
+        pre_processing_overrides: Optional[PreProcessingOverrides] = None,
         **kwargs,
     ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
         return pre_process_network_input(
@@ -185,6 +184,7 @@ class RFDetrForObjectDetectionONNX(
             network_input=self._inference_config.network_input,
             target_device=self._device,
             input_color_format=input_color_format,
+            pre_processing_overrides=pre_processing_overrides,
         )
 
     def forward(
@@ -236,16 +236,19 @@ class RFDetrForObjectDetectionONNX(
             xy_min = cxcy - 0.5 * wh
             xy_max = cxcy + 0.5 * wh
             selected_boxes_xyxy_pct = torch.cat([xy_min, xy_max], dim=-1)
-            inference_size_hwhw = torch.tensor(
+            denorm_size = (
+                image_meta.nonsquare_intermediate_size or image_meta.inference_size
+            )
+            inference_size_whwh = torch.tensor(
                 [
-                    image_meta.inference_size.height,
-                    image_meta.inference_size.width,
-                    image_meta.inference_size.height,
-                    image_meta.inference_size.width,
+                    denorm_size.width,
+                    denorm_size.height,
+                    denorm_size.width,
+                    denorm_size.height,
                 ],
                 device=self._device,
             )
-            selected_boxes_xyxy = selected_boxes_xyxy_pct * inference_size_hwhw
+            selected_boxes_xyxy = selected_boxes_xyxy_pct * inference_size_whwh
             selected_boxes_xyxy = rescale_image_detections(
                 image_detections=selected_boxes_xyxy,
                 image_metadata=image_meta,

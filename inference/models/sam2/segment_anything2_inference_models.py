@@ -44,9 +44,11 @@ from inference.core.env import (
     API_KEY,
     DEVICE,
     DISABLE_SAM2_LOGITS_CACHE,
+    DISABLED_INFERENCE_MODELS_BACKENDS,
     SAM2_MAX_EMBEDDING_CACHE_SIZE,
     SAM2_MAX_LOGITS_CACHE_SIZE,
     SAM2_VERSION_ID,
+    VALID_INFERENCE_MODELS_BACKENDS,
 )
 from inference.core.models.base import Model
 from inference.core.utils.image_utils import load_image_bgr
@@ -100,7 +102,15 @@ class InferenceModelsSAM2Adapter(Model):
             size_limit=low_res_logits_cache_size,
             send_to_cpu=True,
         )
-        extra_weights_provider_headers = get_extra_weights_provider_headers()
+        extra_weights_provider_headers = get_extra_weights_provider_headers(
+            countinference=kwargs.get("countinference"),
+            service_secret=kwargs.get("service_secret"),
+        )
+        backend = list(
+            VALID_INFERENCE_MODELS_BACKENDS.difference(
+                DISABLED_INFERENCE_MODELS_BACKENDS
+            )
+        )
         self._model: SAM2Torch = AutoModel.from_pretrained(
             model_id_or_path=model_id,
             api_key=self.api_key,
@@ -110,6 +120,7 @@ class InferenceModelsSAM2Adapter(Model):
             sam2_low_resolution_masks_cache=sam2_low_resolution_masks_cache,
             sam2_allow_client_generated_hash_ids=True,
             weights_provider_extra_headers=extra_weights_provider_headers,
+            backend=backend,
             **kwargs,
         )
 

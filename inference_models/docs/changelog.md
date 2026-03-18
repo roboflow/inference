@@ -1,9 +1,55 @@
 # Changelog
 
+## `0.20.2`
+### Added
+
+- Ability to override certain aspects of model pre-processing (like center-crop, contrast enhancement or grayscale 
+which may be performed by caller).  
+
+---
+
+
+## `0.20.1`
+### Fixed
+
+- `AnyModel` typing regarding semantic segmentation model
+
+---
+
+## `0.20.0`
+### Added
+
+- Support for `transformers>=5`
+
+- Model registry feature allowing to treat specific model features as required during auto-negotiation  
+
+---
+
+## `0.19.4`
+### Fixed
+
+- CUDA stream synchronization issues in TRT models.
+
+---
+
+## `0.19.3`
+
+### Fixed
+- Post-processing for RF-DETR segmentation model - missing remapping for class ids regarding masks.
+
+---
+
+## `0.19.2`
+
+### Fixed
+- Changed the default ranking for model packages in `AutoLoader` - ONNX to be preferred over Torch. 
+
+---
+
 ## `0.19.1`
 
 ### Fixed
-- Fixed issue with RFDetr model post-processing causing all results to be empty (TRT implementation) 
+- Fixed issue with RF-DETR model post-processing causing all results to be empty (TRT implementation) 
 
 ---
 

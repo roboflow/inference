@@ -89,6 +89,30 @@ Sets the maximum number of detections returned by a model.
 
 Sets the container path for the root model cache directory.
 
+### Persistent Model Cache
+
+By default, model weights are stored inside the container at `/tmp/cache` and will be **lost on container restart or system reboot**. For production deployments, mount a persistent host volume to preserve downloaded weights:
+
+```bash
+# Create persistent cache directory on host
+mkdir -p /var/lib/roboflow/cache
+
+# Run container with persistent cache
+docker run -d \
+  -p 9001:9001 \
+  -v /var/lib/roboflow/cache:/tmp/cache \
+  -e MODEL_CACHE_DIR=/tmp/cache \
+  roboflow/roboflow-inference-server-cpu:latest
+```
+
+**Important considerations:**
+
+- The host path should be on persistent storage, not in `/tmp`
+- Ensure the mounted directory has appropriate permissions for the container user (typically UID 1000 or root depending on the image)
+- This allows you to pre-populate weights before deployment and ensures they persist across container updates
+
+See [Model Weights Download](../using_inference/offline_weights_download.md) for more details on pre-downloading and caching weights.
+
 ## Number of Workers
 
 **NUM_WORKERS**: Integer (default = 1)

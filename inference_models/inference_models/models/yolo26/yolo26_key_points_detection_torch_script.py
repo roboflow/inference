@@ -4,7 +4,12 @@ from typing import List, Optional, Tuple, Union
 import numpy as np
 import torch
 
-from inference_models import Detections, KeyPoints, KeyPointsDetectionModel
+from inference_models import (
+    Detections,
+    KeyPoints,
+    KeyPointsDetectionModel,
+    PreProcessingOverrides,
+)
 from inference_models.configuration import (
     DEFAULT_DEVICE,
     INFERENCE_MODELS_YOLO26_DEFAULT_CONFIDENCE,
@@ -133,6 +138,7 @@ class YOLO26ForKeyPointsDetectionTorchScript(
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         input_color_format: Optional[ColorFormat] = None,
+        pre_processing_overrides: Optional[PreProcessingOverrides] = None,
         **kwargs,
     ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
         return pre_process_network_input(
@@ -141,6 +147,7 @@ class YOLO26ForKeyPointsDetectionTorchScript(
             network_input=self._inference_config.network_input,
             target_device=self._device,
             input_color_format=input_color_format,
+            pre_processing_overrides=pre_processing_overrides,
         )
 
     def forward(self, pre_processed_images: torch.Tensor, **kwargs) -> torch.Tensor:
@@ -198,14 +205,14 @@ class YOLO26ForKeyPointsDetectionTorchScript(
                 .unsqueeze(1)
                 .to(device=result.device)
             )
-            instances_class_mask = (
+            invalid_slot_keypoints = (
                 torch.arange(self._key_points_slots_in_prediction, device=result.device)
                 .unsqueeze(0)
                 .repeat(result.shape[0], 1)
-                < key_points_classes_for_instance_class
+                >= key_points_classes_for_instance_class
             )
-            confidence_mask = kp_confidence < key_points_threshold
-            mask = instances_class_mask & confidence_mask
+            keypoints_below_threshold = kp_confidence < key_points_threshold
+            mask = invalid_slot_keypoints | keypoints_below_threshold
             xy[mask] = 0.0
             kp_confidence[mask] = 0.0
             all_key_points.append(

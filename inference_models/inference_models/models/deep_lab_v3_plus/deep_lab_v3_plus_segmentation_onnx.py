@@ -13,6 +13,7 @@ from inference_models.errors import (
     EnvironmentConfigurationError,
     MissingDependencyError,
 )
+from inference_models.models.auto_loaders.entities import PreProcessingOverrides
 from inference_models.models.base.semantic_segmentation import (
     SemanticSegmentationResult,
 )
@@ -156,6 +157,7 @@ class DeepLabV3PlusForSemanticSegmentationOnnx(
         self,
         images: Union[torch.Tensor, List[torch.Tensor]],
         input_color_format: Optional[ColorFormat] = None,
+        pre_processing_overrides: Optional[PreProcessingOverrides] = None,
         **kwargs,
     ) -> Tuple[PreprocessedInputs, PreprocessingMetadata]:
         return pre_process_network_input(
@@ -164,6 +166,7 @@ class DeepLabV3PlusForSemanticSegmentationOnnx(
             network_input=self._inference_config.network_input,
             target_device=self._device,
             input_color_format=input_color_format,
+            pre_processing_overrides=pre_processing_overrides,
         )
 
     def forward(
@@ -221,7 +224,7 @@ class DeepLabV3PlusForSemanticSegmentationOnnx(
                     :,
                     padded_mask_offset_top : image_results.shape[1]
                     - padded_mask_offset_bottom,
-                    padded_mask_offset_left : image_results.shape[1]
+                    padded_mask_offset_left : image_results.shape[2]
                     - padded_mask_offset_right,
                 ]
             else:

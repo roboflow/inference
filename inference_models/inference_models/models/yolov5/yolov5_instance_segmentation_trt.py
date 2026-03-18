@@ -1,10 +1,15 @@
+import threading
 from threading import Lock
 from typing import List, Optional, Tuple, Union
 
 import numpy as np
 import torch
 
-from inference_models import InstanceDetections, InstanceSegmentationModel
+from inference_models import (
+    InstanceDetections,
+    InstanceSegmentationModel,
+    PreProcessingOverrides,
+)
 from inference_models.configuration import (
     DEFAULT_DEVICE,
     INFERENCE_MODELS_YOLOV5_DEFAULT_CLASS_AGNOSTIC_NMS,
@@ -98,7 +103,8 @@ class YOLOv5ForInstanceSegmentationTRT(
             model_package_dir=model_name_or_path,
             elements=[
                 "class_names.txt",
-                "inference_config.json" "trt_config.json",
+                "inference_config.json",
+                "trt_config.json",
                 "engine.plan",
             ],
         )
@@ -186,6 +192,8 @@ class YOLOv5ForInstanceSegmentationTRT(
         self._cuda_context = cuda_context
         self._execution_context = execution_context
         self._session_thread_lock = Lock()
+        self._inference_stream = torch.cuda.Stream(device=self._device)
+        self._thread_local_storage = threading.local()
 
     @property
     def class_names(self) -> List[str]:
@@ -195,15 +203,20 @@ class YOLOv5ForInstanceSegmentationTRT(
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         input_color_format: Optional[ColorFormat] = None,
+        pre_processing_overrides: Optional[PreProcessingOverrides] = None,
         **kwargs,
     ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
-        return pre_process_network_input(
-            images=images,
-            image_pre_processing=self._inference_config.image_pre_processing,
-            network_input=self._inference_config.network_input,
-            target_device=self._device,
-            input_color_format=input_color_format,
-        )
+        with torch.cuda.stream(self._pre_process_stream):
+            pre_processed_images, pre_processing_meta = pre_process_network_input(
+                images=images,
+                image_pre_processing=self._inference_config.image_pre_processing,
+                network_input=self._inference_config.network_input,
+                target_device=self._device,
+                input_color_format=input_color_format,
+                pre_processing_overrides=pre_processing_overrides,
+            )
+        self._pre_process_stream.synchronize()
+        return pre_processed_images, pre_processing_meta
 
     def forward(
         self, pre_processed_images: torch.Tensor, **kwargs
@@ -218,6 +231,7 @@ class YOLOv5ForInstanceSegmentationTRT(
                     device=self._device,
                     input_name=self._input_name,
                     outputs=self._output_names,
+                    stream=self._inference_stream,
                 )
                 return instances, protos
 
@@ -231,48 +245,68 @@ class YOLOv5ForInstanceSegmentationTRT(
         class_agnostic_nms: bool = INFERENCE_MODELS_YOLOV5_DEFAULT_CLASS_AGNOSTIC_NMS,
         **kwargs,
     ) -> List[InstanceDetections]:
-        instances, protos = model_results
-        nms_results = run_yolov5_nms_for_instance_segmentation(
-            output=instances.permute(0, 2, 1),
-            conf_thresh=confidence,
-            iou_thresh=iou_threshold,
-            max_detections=max_detections,
-            class_agnostic=class_agnostic_nms,
-        )
-        final_results = []
-        for image_bboxes, image_protos, image_meta in zip(
-            nms_results, protos, pre_processing_meta
-        ):
-            pre_processed_masks = preprocess_segmentation_masks(
-                protos=image_protos,
-                masks_in=image_bboxes[:, 6:],
+        with torch.cuda.stream(self._post_process_stream):
+            for result_element in model_results:
+                result_element.record_stream(self._post_process_stream)
+            instances, protos = model_results
+            nms_results = run_yolov5_nms_for_instance_segmentation(
+                output=instances.permute(0, 2, 1),
+                conf_thresh=confidence,
+                iou_thresh=iou_threshold,
+                max_detections=max_detections,
+                class_agnostic=class_agnostic_nms,
             )
-            cropped_masks = crop_masks_to_boxes(
-                image_bboxes[:, :4], pre_processed_masks
-            )
-            padding = (
-                image_meta.pad_left,
-                image_meta.pad_top,
-                image_meta.pad_right,
-                image_meta.pad_bottom,
-            )
-            aligned_boxes, aligned_masks = align_instance_segmentation_results(
-                image_bboxes=image_bboxes,
-                masks=cropped_masks,
-                padding=padding,
-                scale_height=image_meta.scale_height,
-                scale_width=image_meta.scale_width,
-                original_size=image_meta.original_size,
-                size_after_pre_processing=image_meta.size_after_pre_processing,
-                inference_size=image_meta.inference_size,
-                static_crop_offset=image_meta.static_crop_offset,
-            )
-            final_results.append(
-                InstanceDetections(
-                    xyxy=aligned_boxes[:, :4].round().int(),
-                    class_id=aligned_boxes[:, 5].int(),
-                    confidence=aligned_boxes[:, 4],
-                    mask=aligned_masks,
+            final_results = []
+            for image_bboxes, image_protos, image_meta in zip(
+                nms_results, protos, pre_processing_meta
+            ):
+                pre_processed_masks = preprocess_segmentation_masks(
+                    protos=image_protos,
+                    masks_in=image_bboxes[:, 6:],
                 )
-            )
+                cropped_masks = crop_masks_to_boxes(
+                    image_bboxes[:, :4], pre_processed_masks
+                )
+                padding = (
+                    image_meta.pad_left,
+                    image_meta.pad_top,
+                    image_meta.pad_right,
+                    image_meta.pad_bottom,
+                )
+                aligned_boxes, aligned_masks = align_instance_segmentation_results(
+                    image_bboxes=image_bboxes,
+                    masks=cropped_masks,
+                    padding=padding,
+                    scale_height=image_meta.scale_height,
+                    scale_width=image_meta.scale_width,
+                    original_size=image_meta.original_size,
+                    size_after_pre_processing=image_meta.size_after_pre_processing,
+                    inference_size=image_meta.inference_size,
+                    static_crop_offset=image_meta.static_crop_offset,
+                )
+                final_results.append(
+                    InstanceDetections(
+                        xyxy=aligned_boxes[:, :4].round().int(),
+                        class_id=aligned_boxes[:, 5].int(),
+                        confidence=aligned_boxes[:, 4],
+                        mask=aligned_masks,
+                    )
+                )
+        self._post_process_stream.synchronize()
         return final_results
+
+    @property
+    def _pre_process_stream(self) -> torch.cuda.Stream:
+        if not hasattr(self._thread_local_storage, "pre_process_stream"):
+            self._thread_local_storage.pre_process_stream = torch.cuda.Stream(
+                device=self._device
+            )
+        return self._thread_local_storage.pre_process_stream
+
+    @property
+    def _post_process_stream(self) -> torch.cuda.Stream:
+        if not hasattr(self._thread_local_storage, "post_process_stream"):
+            self._thread_local_storage.post_process_stream = torch.cuda.Stream(
+                device=self._device
+            )
+        return self._thread_local_storage.post_process_stream

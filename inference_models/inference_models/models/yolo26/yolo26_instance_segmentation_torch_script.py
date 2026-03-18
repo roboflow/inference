@@ -4,7 +4,11 @@ from typing import List, Optional, Tuple, Union
 import numpy as np
 import torch
 
-from inference_models import InstanceDetections, InstanceSegmentationModel
+from inference_models import (
+    InstanceDetections,
+    InstanceSegmentationModel,
+    PreProcessingOverrides,
+)
 from inference_models.configuration import (
     DEFAULT_DEVICE,
     INFERENCE_MODELS_YOLO26_DEFAULT_CONFIDENCE,
@@ -111,6 +115,7 @@ class YOLO26ForInstanceSegmentationTorchScript(
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         input_color_format: Optional[ColorFormat] = None,
+        pre_processing_overrides: Optional[PreProcessingOverrides] = None,
         **kwargs,
     ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
         return pre_process_network_input(
@@ -119,6 +124,7 @@ class YOLO26ForInstanceSegmentationTorchScript(
             network_input=self._inference_config.network_input,
             target_device=self._device,
             input_color_format=input_color_format,
+            pre_processing_overrides=pre_processing_overrides,
         )
 
     def forward(

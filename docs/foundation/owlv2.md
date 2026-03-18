@@ -5,11 +5,11 @@
 
 To install inference with the extra dependencies necessary to run OWLv2, run
 
-```pip install inference[transformers]```
+```pip install "inference[transformers]"```
 
 or
 
-```pip install inference-gpu[transformers]```
+```pip install "inference-gpu[transformers]"```
 
 ### How to Use OWLv2 
 

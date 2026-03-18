@@ -337,7 +337,7 @@ Here you can find example on how to run simple workflow in Python code.
     result = execution_engine.run(
         runtime_parameters={
             "image": [<your-image>],
-            "model_id": "yolov8n-640",
+            "model_id": "rfdetr-small",
         }
     )
     ```

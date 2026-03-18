@@ -68,9 +68,7 @@ class TestGCPServerlessMiddlewareRemoteProcessingTimes:
 
     def test_no_remote_headers_when_no_times_collected(self) -> None:
         # given
-        app = _create_app(
-            [Route("/workflow", endpoint=_endpoint_no_remote_times)]
-        )
+        app = _create_app([Route("/workflow", endpoint=_endpoint_no_remote_times)])
         client = TestClient(app)
 
         # when
@@ -83,9 +81,7 @@ class TestGCPServerlessMiddlewareRemoteProcessingTimes:
 
     def test_processing_time_header_always_present(self) -> None:
         # given
-        app = _create_app(
-            [Route("/workflow", endpoint=_endpoint_no_remote_times)]
-        )
+        app = _create_app([Route("/workflow", endpoint=_endpoint_no_remote_times)])
         client = TestClient(app)
 
         # when
@@ -94,7 +90,6 @@ class TestGCPServerlessMiddlewareRemoteProcessingTimes:
         # then
         assert PROCESSING_TIME_HEADER in response.headers
         assert float(response.headers[PROCESSING_TIME_HEADER]) >= 0
-
 
     def test_omits_detail_header_when_json_exceeds_size_limit(self) -> None:
         # given - endpoint that adds many entries to exceed 4KB
@@ -156,9 +151,7 @@ class TestApplyDurationMinimumContextVar:
         apply_duration_minimum=True (floor should apply)."""
         from inference_sdk.config import INTERNAL_REMOTE_EXEC_REQ_HEADER
 
-        app = _create_app(
-            [Route("/infer", endpoint=_endpoint_read_duration_minimum)]
-        )
+        app = _create_app([Route("/infer", endpoint=_endpoint_read_duration_minimum)])
         client = TestClient(app)
         response = client.get("/infer")
         assert response.status_code == 200
@@ -174,9 +167,7 @@ class TestApplyDurationMinimumContextVar:
         apply_duration_minimum=False (floor should NOT apply)."""
         from inference_sdk.config import INTERNAL_REMOTE_EXEC_REQ_HEADER
 
-        app = _create_app(
-            [Route("/infer", endpoint=_endpoint_read_duration_minimum)]
-        )
+        app = _create_app([Route("/infer", endpoint=_endpoint_read_duration_minimum)])
         client = TestClient(app)
         response = client.get(
             "/infer",
@@ -195,9 +186,7 @@ class TestApplyDurationMinimumContextVar:
         apply_duration_minimum=True (floor should apply)."""
         from inference_sdk.config import INTERNAL_REMOTE_EXEC_REQ_HEADER
 
-        app = _create_app(
-            [Route("/infer", endpoint=_endpoint_read_duration_minimum)]
-        )
+        app = _create_app([Route("/infer", endpoint=_endpoint_read_duration_minimum)])
         client = TestClient(app)
         response = client.get(
             "/infer",
@@ -216,9 +205,7 @@ class TestApplyDurationMinimumContextVar:
         apply_duration_minimum should be True regardless of header."""
         from inference_sdk.config import INTERNAL_REMOTE_EXEC_REQ_HEADER
 
-        app = _create_app(
-            [Route("/infer", endpoint=_endpoint_read_duration_minimum)]
-        )
+        app = _create_app([Route("/infer", endpoint=_endpoint_read_duration_minimum)])
         client = TestClient(app)
         response = client.get(
             "/infer",

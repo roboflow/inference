@@ -31,7 +31,6 @@ No pre-trained model aliases are available. Train custom models on Roboflow.
 | Backend | Extras Required |
 |---------|----------------|
 | `onnx` | `onnx-cpu`, `onnx-cu12`, `onnx-cu118`, `onnx-jp6-cu126` |
-| `trt` | `trt10` |
 
 ## Roboflow Platform Compatibility
 

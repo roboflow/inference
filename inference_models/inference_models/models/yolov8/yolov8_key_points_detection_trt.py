@@ -1,10 +1,16 @@
+import threading
 from threading import Lock
 from typing import List, Optional, Tuple, Union
 
 import numpy as np
 import torch
 
-from inference_models import Detections, KeyPoints, KeyPointsDetectionModel
+from inference_models import (
+    Detections,
+    KeyPoints,
+    KeyPointsDetectionModel,
+    PreProcessingOverrides,
+)
 from inference_models.configuration import (
     DEFAULT_DEVICE,
     INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_CLASS_AGNOSTIC_NMS,
@@ -203,6 +209,8 @@ class YOLOv8ForKeyPointsDetectionTRT(
         self._key_points_slots_in_prediction = max(
             len(e) for e in parsed_key_points_metadata
         )
+        self._inference_stream = torch.cuda.Stream(device=self._device)
+        self._thread_local_storage = threading.local()
 
     @property
     def class_names(self) -> List[str]:
@@ -220,17 +228,26 @@ class YOLOv8ForKeyPointsDetectionTRT(
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         input_color_format: Optional[ColorFormat] = None,
+        pre_processing_overrides: Optional[PreProcessingOverrides] = None,
         **kwargs,
     ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
-        return pre_process_network_input(
-            images=images,
-            image_pre_processing=self._inference_config.image_pre_processing,
-            network_input=self._inference_config.network_input,
-            target_device=self._device,
-            input_color_format=input_color_format,
-        )
+        with torch.cuda.stream(self._pre_process_stream):
+            pre_processed_images, pre_processing_meta = pre_process_network_input(
+                images=images,
+                image_pre_processing=self._inference_config.image_pre_processing,
+                network_input=self._inference_config.network_input,
+                target_device=self._device,
+                input_color_format=input_color_format,
+                pre_processing_overrides=pre_processing_overrides,
+            )
+        self._pre_process_stream.synchronize()
+        return pre_processed_images, pre_processing_meta
 
-    def forward(self, pre_processed_images: torch.Tensor, **kwargs) -> torch.Tensor:
+    def forward(
+        self,
+        pre_processed_images: torch.Tensor,
+        **kwargs,
+    ) -> torch.Tensor:
         with self._session_thread_lock:
             with use_cuda_context(context=self._cuda_context):
                 return infer_from_trt_engine(
@@ -241,6 +258,7 @@ class YOLOv8ForKeyPointsDetectionTRT(
                     device=self._device,
                     input_name=self._input_name,
                     outputs=self._output_names,
+                    stream=self._inference_stream,
                 )[0]
 
     def post_process(
@@ -254,61 +272,85 @@ class YOLOv8ForKeyPointsDetectionTRT(
         key_points_threshold: float = INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_KEY_POINTS_THRESHOLD,
         **kwargs,
     ) -> Tuple[List[KeyPoints], Optional[List[Detections]]]:
-        if self._inference_config.post_processing.fused:
-            nms_results = post_process_nms_fused_model_output(
-                output=model_results, conf_thresh=confidence
-            )
-        else:
-            nms_results = run_nms_for_key_points_detection(
-                output=model_results,
+        with torch.cuda.stream(self._post_process_stream):
+            model_results.record_stream(self._post_process_stream)
+            if self._inference_config.post_processing.fused:
+                nms_results = post_process_nms_fused_model_output(
+                    output=model_results, conf_thresh=confidence
+                )
+            else:
+                nms_results = run_nms_for_key_points_detection(
+                    output=model_results,
+                    num_classes=len(self._class_names),
+                    key_points_slots_in_prediction=self._key_points_slots_in_prediction,
+                    conf_thresh=confidence,
+                    iou_thresh=iou_threshold,
+                    max_detections=max_detections,
+                    class_agnostic=class_agnostic_nms,
+                )
+            rescaled_results = rescale_key_points_detections(
+                detections=nms_results,
+                images_metadata=pre_processing_meta,
                 num_classes=len(self._class_names),
                 key_points_slots_in_prediction=self._key_points_slots_in_prediction,
-                conf_thresh=confidence,
-                iou_thresh=iou_threshold,
-                max_detections=max_detections,
-                class_agnostic=class_agnostic_nms,
             )
-        rescaled_results = rescale_key_points_detections(
-            detections=nms_results,
-            images_metadata=pre_processing_meta,
-            num_classes=len(self._class_names),
-            key_points_slots_in_prediction=self._key_points_slots_in_prediction,
-        )
-        detections, all_key_points = [], []
-        for result in rescaled_results:
-            class_id = result[:, 5].int()
-            detections.append(
-                Detections(
-                    xyxy=result[:, :4].round().int(),
-                    class_id=class_id,
-                    confidence=result[:, 4],
+            detections, all_key_points = [], []
+            for result in rescaled_results:
+                class_id = result[:, 5].int()
+                detections.append(
+                    Detections(
+                        xyxy=result[:, :4].round().int(),
+                        class_id=class_id,
+                        confidence=result[:, 4],
+                    )
                 )
-            )
-            key_points_reshaped = result[:, 6:].view(
-                result.shape[0], self._key_points_slots_in_prediction, 3
-            )
-            xy = key_points_reshaped[:, :, :2]
-            predicted_key_points_confidence = key_points_reshaped[:, :, 2]
-            key_points_classes_for_instance_class = (
-                (self._key_points_classes_for_instances[class_id])
-                .unsqueeze(1)
-                .to(device=result.device)
-            )
-            instances_class_mask = (
-                torch.arange(self._key_points_slots_in_prediction, device=result.device)
-                .unsqueeze(0)
-                .repeat(result.shape[0], 1)
-                < key_points_classes_for_instance_class
-            )
-            confidence_mask = predicted_key_points_confidence < key_points_threshold
-            mask = instances_class_mask & confidence_mask
-            xy[mask] = 0.0
-            predicted_key_points_confidence[mask] = 0.0
-            all_key_points.append(
-                KeyPoints(
-                    xy=xy.round().int(),
-                    class_id=class_id,
-                    confidence=predicted_key_points_confidence,
+                key_points_reshaped = result[:, 6:].view(
+                    result.shape[0], self._key_points_slots_in_prediction, 3
                 )
-            )
+                xy = key_points_reshaped[:, :, :2]
+                predicted_key_points_confidence = key_points_reshaped[:, :, 2]
+                key_points_classes_for_instance_class = (
+                    (self._key_points_classes_for_instances[class_id])
+                    .unsqueeze(1)
+                    .to(device=result.device)
+                )
+                invalid_slot_keypoints = (
+                    torch.arange(
+                        self._key_points_slots_in_prediction, device=result.device
+                    )
+                    .unsqueeze(0)
+                    .repeat(result.shape[0], 1)
+                    >= key_points_classes_for_instance_class
+                )
+
+                keypoints_below_threshold = (
+                    predicted_key_points_confidence < key_points_threshold
+                )
+                mask = invalid_slot_keypoints | keypoints_below_threshold
+                xy[mask] = 0.0
+                predicted_key_points_confidence[mask] = 0.0
+                all_key_points.append(
+                    KeyPoints(
+                        xy=xy.round().int(),
+                        class_id=class_id,
+                        confidence=predicted_key_points_confidence,
+                    )
+                )
+        self._post_process_stream.synchronize()
         return all_key_points, detections
+
+    @property
+    def _pre_process_stream(self) -> torch.cuda.Stream:
+        if not hasattr(self._thread_local_storage, "pre_process_stream"):
+            self._thread_local_storage.pre_process_stream = torch.cuda.Stream(
+                device=self._device
+            )
+        return self._thread_local_storage.pre_process_stream
+
+    @property
+    def _post_process_stream(self) -> torch.cuda.Stream:
+        if not hasattr(self._thread_local_storage, "post_process_stream"):
+            self._thread_local_storage.post_process_stream = torch.cuda.Stream(
+                device=self._device
+            )
+        return self._thread_local_storage.post_process_stream
