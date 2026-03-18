@@ -210,9 +210,6 @@ class S3SinkBlockV1(WorkflowBlock):
         self._buffer: List[str] = []
         self._entries_in_buffer: int = 0
         self._current_key: Optional[str] = None
-        self._s3_client = None
-        self._cached_bucket: Optional[str] = None
-        self._cached_content_type: Optional[str] = None
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -238,8 +235,6 @@ class S3SinkBlockV1(WorkflowBlock):
             aws_region=aws_region,
             endpoint_url=endpoint_url,
         )
-        self._s3_client = s3_client
-        self._cached_bucket = bucket_name
 
         if output_mode == "separate_files":
             return self._upload_separate_file(
@@ -295,7 +290,6 @@ class S3SinkBlockV1(WorkflowBlock):
     ) -> BlockResult:
         extension = file_type if file_type != "json" else "jsonl"
         content_type = CONTENT_TYPES.get(extension, "text/plain")
-        self._cached_content_type = content_type
 
         if file_type == "json":
             try:
@@ -304,15 +298,13 @@ class S3SinkBlockV1(WorkflowBlock):
                 logging.warning(f"Could not process JSON content in append mode: {error}")
                 return {"error_status": True, "message": "Invalid JSON content"}
 
-        if not self._current_key or self._entries_in_buffer >= max_entries_per_file:
-            if self._buffer and self._current_key:
-                flush_result = self._flush_buffer(
-                    s3_client=s3_client,
-                    bucket_name=bucket_name,
-                    content_type=content_type,
-                )
-                if flush_result["error_status"]:
-                    return flush_result
+        needs_rotation = (
+            self._current_key is not None
+            and self._entries_in_buffer >= max_entries_per_file
+        )
+        is_first_entry = self._current_key is None
+
+        if needs_rotation or is_first_entry:
             self._buffer = []
             self._entries_in_buffer = 0
             self._current_key = generate_s3_key(
@@ -327,46 +319,18 @@ class S3SinkBlockV1(WorkflowBlock):
             content = f"{content}\n"
         self._buffer.append(content)
         self._entries_in_buffer += 1
-        return {"error_status": False, "message": "Data saved successfully"}
 
-    def _flush_buffer(
-        self,
-        s3_client,
-        bucket_name: str,
-        content_type: str,
-    ) -> dict:
-        if not self._buffer or not self._current_key:
-            return {"error_status": False, "message": "Nothing to flush"}
+        # Always upload the full accumulated buffer so that every run() call
+        # validates credentials and permissions, and errors are surfaced immediately
+        # rather than only when the buffer rotation limit is reached.
         full_content = "".join(self._buffer)
-        result = upload_content_to_s3(
+        return upload_content_to_s3(
             s3_client=s3_client,
             bucket_name=bucket_name,
             s3_key=self._current_key,
             content=full_content,
             content_type=content_type,
         )
-        if not result["error_status"]:
-            self._buffer = []
-            self._entries_in_buffer = 0
-            self._current_key = None
-        return result
-
-    def __del__(self):
-        if (
-            self._buffer
-            and self._current_key
-            and self._s3_client
-            and self._cached_bucket
-        ):
-            try:
-                content_type = self._cached_content_type or "text/plain"
-                self._flush_buffer(
-                    s3_client=self._s3_client,
-                    bucket_name=self._cached_bucket,
-                    content_type=content_type,
-                )
-            except Exception:
-                pass
 
 
 def create_s3_client(
