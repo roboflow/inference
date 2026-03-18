@@ -12,6 +12,8 @@ from transformers import (
 )
 from transformers.utils import is_flash_attn_2_available
 
+from inference_models import PreProcessingOverrides
+
 
 def _get_paligemma_attn_implementation(device: torch.device) -> str:
     """Use flash_attention_2 if available, otherwise eager.
@@ -164,10 +166,14 @@ class PaliGemmaHF:
         max_new_tokens: int = INFERENCE_MODELS_PALIGEMMA_DEFAULT_MAX_NEW_TOKENS,
         do_sample: bool = INFERENCE_MODELS_PALIGEMMA_DEFAULT_DO_SAMPLE,
         skip_special_tokens: bool = INFERENCE_MODELS_PALIGEMMA_DEFAULT_SKIP_SPECIAL_TOKENS,
+        pre_processing_overrides: Optional[PreProcessingOverrides] = None,
         **kwargs,
     ) -> List[str]:
         inputs = self.pre_process_generation(
-            images=images, prompt=prompt, input_color_format=input_color_format
+            images=images,
+            prompt=prompt,
+            input_color_format=input_color_format,
+            pre_processing_overrides=pre_processing_overrides,
         )
         generated_ids = self.generate(
             inputs=inputs,
@@ -185,6 +191,7 @@ class PaliGemmaHF:
         prompt: str,
         input_color_format: Optional[ColorFormat] = None,
         image_size: Optional[Tuple[int, int]] = None,
+        pre_processing_overrides: Optional[PreProcessingOverrides] = None,
         **kwargs,
     ) -> dict:
         def _to_tensor(image: Union[np.ndarray, torch.Tensor]) -> torch.Tensor:
@@ -212,6 +219,7 @@ class PaliGemmaHF:
                 target_device=self._device,
                 input_color_format=input_color_format,
                 image_size_wh=image_size,
+                pre_processing_overrides=pre_processing_overrides,
             )[0]
             image_list = [e[0] for e in torch.split(images, 1, dim=0)]
         num_images = len(image_list)

@@ -10,6 +10,7 @@ from inference_models import (
     ClassificationPrediction,
     MultiLabelClassificationModel,
     MultiLabelClassificationPrediction,
+    PreProcessingOverrides,
 )
 from inference_models.configuration import (
     DEFAULT_DEVICE,
@@ -191,6 +192,7 @@ class VITForClassificationTRT(ClassificationModel[torch.Tensor, torch.Tensor]):
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         input_color_format: Optional[ColorFormat] = None,
+        pre_processing_overrides: Optional[PreProcessingOverrides] = None,
         **kwargs,
     ) -> torch.Tensor:
         with torch.cuda.stream(self._pre_process_stream):
@@ -200,6 +202,7 @@ class VITForClassificationTRT(ClassificationModel[torch.Tensor, torch.Tensor]):
                 network_input=self._inference_config.network_input,
                 target_device=self._device,
                 input_color_format=input_color_format,
+                pre_processing_overrides=pre_processing_overrides,
             )[0]
         self._pre_process_stream.synchronize()
         return pre_processed_images
@@ -378,6 +381,7 @@ class VITForMultiLabelClassificationTRT(
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         input_color_format: Optional[ColorFormat] = None,
+        pre_processing_overrides: Optional[PreProcessingOverrides] = None,
         **kwargs,
     ) -> torch.Tensor:
         with torch.cuda.stream(self._pre_process_stream):
@@ -387,6 +391,7 @@ class VITForMultiLabelClassificationTRT(
                 network_input=self._inference_config.network_input,
                 target_device=self._device,
                 input_color_format=input_color_format,
+                pre_processing_overrides=pre_processing_overrides,
             )[0]
         self._pre_process_stream.synchronize()
         return pre_processed_images
