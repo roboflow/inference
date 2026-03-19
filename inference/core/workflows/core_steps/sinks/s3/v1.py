@@ -55,7 +55,7 @@ The block supports two storage strategies: separate files mode creates individua
 ## AWS Credentials
 
 Credentials can be supplied in three ways (evaluated in order):
-1. **Explicit fields** — provide `aws_access_key_id` and `aws_secret_access_key` (optionally `aws_region`) directly in the block, or connect them to a secrets provider block such as `Environment Secrets Store`
+1. **Workflow inputs** — declare `aws_access_key_id` and `aws_secret_access_key` as workflow inputs of kind `parameter` and connect them to the corresponding fields. This keeps credentials out of the workflow definition and allows them to be supplied at runtime.
 2. **Environment variables** — set `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `AWS_DEFAULT_REGION` on the host
 3. **IAM role / instance profile** — when running on EC2, ECS, Lambda, or another AWS-managed environment, credentials are picked up automatically via the instance metadata service
 
