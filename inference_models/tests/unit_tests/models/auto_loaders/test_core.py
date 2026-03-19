@@ -213,6 +213,7 @@ def test_dump_auto_resolution_cache_when_cache_disabled() -> None:
         backend_type=BackendType.ONNX,
         resolved_files={"some/file.txt"},
         model_dependencies=None,
+        model_features=None,
     )
 
     # then
@@ -240,6 +241,7 @@ def test_dump_auto_resolution_cache_when_cache_enabled(
         backend_type=BackendType.ONNX,
         resolved_files={"some/file.txt"},
         model_dependencies=None,
+        model_features={"some": "value"},
     )
 
     # then
@@ -253,6 +255,7 @@ def test_dump_auto_resolution_cache_when_cache_enabled(
             task_type="object-detection",
             backend_type=BackendType.ONNX,
             created_at=now,
+            model_features={"some": "value"},
         ),
     )
 
