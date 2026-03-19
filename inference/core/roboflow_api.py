@@ -833,7 +833,11 @@ def get_workflow_specification(
                     response=response,
                     workflow_version_id=workflow_version_id,
                 )
-        except (requests.exceptions.ConnectionError, ConnectionError) as error:
+        except (
+            requests.exceptions.ConnectionError,
+            ConnectionError,
+            requests.exceptions.Timeout,
+        ) as error:
             if not USE_FILE_CACHE_FOR_WORKFLOWS_DEFINITIONS:
                 raise error
             response = load_cached_workflow_response(
