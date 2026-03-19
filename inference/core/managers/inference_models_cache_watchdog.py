@@ -235,7 +235,10 @@ def purge_files(files: List[FileInfo], file_lock_acquire_timeout: int = 3) -> fl
     result = 0
     for file in files:
         try:
-            lock_path = f"{file.path}{LOCK_POSTFIX}"
+            file_absolute_path = os.path.abspath(file.path)
+            file_directory = os.path.dirname(file_absolute_path)
+            file_name = os.path.basename(file_absolute_path)
+            lock_path = os.path.join(file_directory, f".{file_name}{LOCK_POSTFIX}")
             with FileLock(lock_path, timeout=file_lock_acquire_timeout):
                 os.remove(file.path)
             result += file.size_mb
