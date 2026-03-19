@@ -1,16 +1,20 @@
 import os
+import time
 from datetime import datetime, timedelta
 from typing import Optional, Set
 
 import pytest
 
 from inference.core.managers.inference_models_cache_watchdog import (
+    MODELS_CACHE_DIR,
+    SHARED_BLOBS_DIR,
     FileInfo,
-    purge_files,
+    list_files,
     nominate_files_for_deletion,
+    purge_files,
+    purge_inference_models_cache,
     rank_for_deletion,
     summarize_disk_size,
-    list_files,
 )
 
 
@@ -653,6 +657,237 @@ def test_list_files_mixed_real_symlink_lock_and_hidden(
     assert _names(result) == {"real.bin", ".hidden.bin", "nested.bin"}
 
 
+def test_purge_skips_when_cache_is_under_limit(
+    empty_local_dir: str,
+) -> None:
+    # given
+    shared, models = _setup_inference_home(empty_local_dir)
+    _create_file(shared, "blob_a.bin", size_mb=1.0)
+    _create_file(models, "model_a.bin", size_mb=1.0)
+
+    # when
+    purge_inference_models_cache(
+        inference_home=empty_local_dir,
+        max_cache_size_mb=10,
+    )
+
+    # then — nothing deleted
+    assert os.path.exists(os.path.join(shared, "blob_a.bin"))
+    assert os.path.exists(os.path.join(models, "model_a.bin"))
+
+
+def test_purge_skips_when_cache_exactly_at_limit(
+    empty_local_dir: str,
+) -> None:
+    # given
+    shared, models = _setup_inference_home(empty_local_dir)
+    _create_file(shared, "blob.bin", size_mb=3.0)
+    _create_file(models, "model.bin", size_mb=2.0)
+
+    # when
+    purge_inference_models_cache(
+        inference_home=empty_local_dir,
+        max_cache_size_mb=5,
+    )
+
+    # then — nothing deleted
+    assert os.path.exists(os.path.join(shared, "blob.bin"))
+    assert os.path.exists(os.path.join(models, "model.bin"))
+
+
+def test_purge_deletes_oldest_file_first(
+    empty_local_dir: str,
+) -> None:
+    # given — 3MB total, limit 2MB, need to reclaim 1MB
+    shared, models = _setup_inference_home(empty_local_dir)
+    old = _create_file(shared, "old.bin", size_mb=1.0)
+    new = _create_file(models, "new.bin", size_mb=2.0)
+    _touch_with_age(old.path, days_old=60)
+    _touch_with_age(new.path, days_old=0.5)
+
+    # when
+    purge_inference_models_cache(
+        inference_home=empty_local_dir,
+        max_cache_size_mb=2,
+    )
+
+    # then — old file deleted, new file kept
+    assert not os.path.exists(old.path)
+    assert os.path.exists(new.path)
+
+
+def test_purge_deletes_bigger_file_first_within_same_staleness(
+    empty_local_dir: str,
+) -> None:
+    # given — 6MB total, limit 4MB, need 2MB, all same age group
+    shared, models = _setup_inference_home(empty_local_dir)
+    small = _create_file(shared, "small.bin", size_mb=1.0)
+    medium = _create_file(shared, "medium.bin", size_mb=2.0)
+    big = _create_file(models, "big.bin", size_mb=3.0)
+    for f in [small, medium, big]:
+        _touch_with_age(f.path, days_old=3)
+
+    # when
+    purge_inference_models_cache(
+        inference_home=empty_local_dir,
+        max_cache_size_mb=4,
+    )
+
+    # then — big file deleted (3MB > 2MB needed), others kept
+    assert not os.path.exists(big.path)
+    assert os.path.exists(small.path)
+    assert os.path.exists(medium.path)
+
+
+def test_purge_deletes_across_both_directories(
+    empty_local_dir: str,
+) -> None:
+    # given — 4MB total, limit 1MB, need 3MB
+    shared, models = _setup_inference_home(empty_local_dir)
+    blob = _create_file(shared, "blob.bin", size_mb=2.0)
+    model = _create_file(models, "model.bin", size_mb=2.0)
+    _touch_with_age(blob.path, days_old=60)
+    _touch_with_age(model.path, days_old=60)
+
+    # when
+    purge_inference_models_cache(
+        inference_home=empty_local_dir,
+        max_cache_size_mb=1,
+    )
+
+    # then — both deleted
+    assert not os.path.exists(blob.path)
+    assert not os.path.exists(model.path)
+
+
+def test_purge_deletes_only_enough_to_meet_budget(
+    empty_local_dir: str,
+) -> None:
+    # given — 5MB total, limit 3MB, need 2MB
+    # abandoned 2MB file should be enough
+    shared, models = _setup_inference_home(empty_local_dir)
+    abandoned = _create_file(shared, "abandoned.bin", size_mb=2.0)
+    stale = _create_file(shared, "stale.bin", size_mb=1.0)
+    recent = _create_file(models, "recent.bin", size_mb=2.0)
+    _touch_with_age(abandoned.path, days_old=60)
+    _touch_with_age(stale.path, days_old=15)
+    _touch_with_age(recent.path, days_old=0.5)
+
+    # when
+    purge_inference_models_cache(
+        inference_home=empty_local_dir,
+        max_cache_size_mb=3,
+    )
+
+    # then — only abandoned deleted
+    assert not os.path.exists(abandoned.path)
+    assert os.path.exists(stale.path)
+    assert os.path.exists(recent.path)
+
+
+def test_purge_handles_missing_cache_directories(
+    empty_local_dir: str,
+) -> None:
+    # given — no shared-blobs or models-cache created
+
+    # when / then — no crash
+    purge_inference_models_cache(
+        inference_home=empty_local_dir,
+        max_cache_size_mb=10,
+    )
+
+
+def test_purge_handles_only_one_directory_existing(
+    empty_local_dir: str,
+) -> None:
+    # given — only models-cache exists, over budget
+    models = os.path.join(empty_local_dir, MODELS_CACHE_DIR)
+    os.makedirs(models)
+    old = _create_file(models, "old.bin", size_mb=3.0)
+    _touch_with_age(old.path, days_old=60)
+
+    # when
+    purge_inference_models_cache(
+        inference_home=empty_local_dir,
+        max_cache_size_mb=1,
+    )
+
+    # then
+    assert not os.path.exists(old.path)
+
+
+def test_purge_preserves_files_in_nested_subdirectories_when_under_budget(
+    empty_local_dir: str,
+) -> None:
+    # given
+    shared, models = _setup_inference_home(empty_local_dir)
+    subdir = os.path.join(models, "rfdetr", "v1")
+    os.makedirs(subdir)
+    _create_file(subdir, "weights.bin", size_mb=1.0)
+    _create_file(shared, "blob.bin", size_mb=1.0)
+
+    # when
+    purge_inference_models_cache(
+        inference_home=empty_local_dir,
+        max_cache_size_mb=10,
+    )
+
+    # then
+    assert os.path.exists(os.path.join(subdir, "weights.bin"))
+    assert os.path.exists(os.path.join(shared, "blob.bin"))
+
+
+def test_purge_deletes_files_from_nested_subdirectories_when_over_budget(
+    empty_local_dir: str,
+) -> None:
+    # given — 3MB total, limit 1MB
+    shared, models = _setup_inference_home(empty_local_dir)
+    subdir = os.path.join(models, "yolov8", "v2")
+    os.makedirs(subdir)
+    nested = _create_file(subdir, "weights.bin", size_mb=2.0)
+    root = _create_file(shared, "blob.bin", size_mb=1.0)
+    _touch_with_age(nested.path, days_old=60)
+    _touch_with_age(root.path, days_old=0.5)
+
+    # when
+    purge_inference_models_cache(
+        inference_home=empty_local_dir,
+        max_cache_size_mb=1,
+    )
+
+    # then — oldest (nested) deleted first
+    assert not os.path.exists(nested.path)
+    assert os.path.exists(root.path)
+
+
+def test_purge_with_undeletable_file_reclaims_partial_amount(
+    empty_local_dir: str,
+) -> None:
+    # given — 4MB total, limit 1MB, need 3MB
+    # protected file (2MB) can't be deleted, only deletable (2MB) is reclaimed
+    shared, models = _setup_inference_home(empty_local_dir)
+    protected_dir = os.path.join(shared, "protected")
+    os.makedirs(protected_dir)
+    protected = _create_file(protected_dir, "locked.bin", size_mb=2.0)
+    deletable = _create_file(models, "deletable.bin", size_mb=2.0)
+    _touch_with_age(protected.path, days_old=60)
+    _touch_with_age(deletable.path, days_old=30)
+    os.chmod(protected_dir, 0o555)
+
+    # when
+    try:
+        purge_inference_models_cache(
+            inference_home=empty_local_dir,
+            max_cache_size_mb=1,
+        )
+    finally:
+        os.chmod(protected_dir, 0o755)
+
+    # then — deletable removed, protected survives
+    assert not os.path.exists(deletable.path)
+    assert os.path.exists(protected.path)
+
+
 def _days_ago(from_date: datetime, days: float) -> datetime:
     return from_date - timedelta(days=days)
 
@@ -683,3 +918,16 @@ def _paths(result) -> Set[str]:
 
 def _names(result) -> Set[str]:
     return {os.path.basename(f.path) for f in result}
+
+
+def _setup_inference_home(base_dir: str):
+    shared = os.path.join(base_dir, SHARED_BLOBS_DIR)
+    models = os.path.join(base_dir, MODELS_CACHE_DIR)
+    os.makedirs(shared, exist_ok=True)
+    os.makedirs(models, exist_ok=True)
+    return shared, models
+
+
+def _touch_with_age(path: str, days_old: float) -> None:
+    mtime = time.time() - (days_old * 86400)
+    os.utime(path, (mtime, mtime))
