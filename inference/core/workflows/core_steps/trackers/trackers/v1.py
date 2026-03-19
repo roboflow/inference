@@ -104,16 +104,16 @@ class TrackerManifest(WorkflowBlockManifest):
             "always_visible": True,
         },
     )
-    minimum_consecutive_frames: Union[
-        Optional[int], Selector(kind=[INTEGER_KIND])
-    ] = Field(
-        default=2,
-        description="Number of consecutive frames a track must be matched before it is "
-        "emitted as a confirmed track (tracker_id != -1). Default: 2.",
-        examples=[2, "$inputs.minimum_consecutive_frames"],
-        json_schema_extra={
-            "always_visible": True,
-        },
+    minimum_consecutive_frames: Union[Optional[int], Selector(kind=[INTEGER_KIND])] = (
+        Field(
+            default=2,
+            description="Number of consecutive frames a track must be matched before it is "
+            "emitted as a confirmed track (tracker_id != -1). Default: 2.",
+            examples=[2, "$inputs.minimum_consecutive_frames"],
+            json_schema_extra={
+                "always_visible": True,
+            },
+        )
     )
     lost_track_buffer: Union[Optional[int], Selector(kind=[INTEGER_KIND])] = Field(
         default=30,
