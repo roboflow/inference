@@ -1816,6 +1816,14 @@ class HttpInterface(BaseInterface):
                         status_code=401,
                         detail={"status": "error", "message": "unauthorized"},
                     )
+                if not workspace_id:
+                    raise HTTPException(
+                        status_code=500,
+                        detail={
+                            "status": "error",
+                            "message": "failed to retrieve workspace",
+                        },
+                    )
 
                 session_refreshed = refresh_webrtc_session(
                     workspace_id=workspace_id,
@@ -1848,6 +1856,14 @@ class HttpInterface(BaseInterface):
                     raise HTTPException(
                         status_code=401,
                         detail={"status": "error", "message": "unauthorized"},
+                    )
+                if not workspace_id:
+                    raise HTTPException(
+                        status_code=500,
+                        detail={
+                            "status": "error",
+                            "message": "failed to retrieve workspace",
+                        },
                     )
 
                 deregister_webrtc_session(
