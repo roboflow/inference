@@ -93,12 +93,6 @@ class TrackerManifest(WorkflowBlockManifest):
             "always_visible": True,
         },
     )
-    lost_track_buffer: Union[Optional[int], Selector(kind=[INTEGER_KIND])] = Field(
-        default=30,
-        description="Number of frames to keep a track alive after it loses its matched "
-        "detection. Higher values improve occlusion recovery. Default: 30.",
-        examples=[30, "$inputs.lost_track_buffer"],
-    )
     minimum_iou_threshold: Union[
         Optional[float], Selector(kind=[FLOAT_ZERO_TO_ONE_KIND])
     ] = Field(
@@ -106,6 +100,9 @@ class TrackerManifest(WorkflowBlockManifest):
         description="Minimum IoU required to associate a detection with an existing track. "
         "Default: 0.1.",
         examples=[0.1, "$inputs.minimum_iou_threshold"],
+        json_schema_extra={
+            "always_visible": True,
+        },
     )
     minimum_consecutive_frames: Union[
         Optional[int], Selector(kind=[INTEGER_KIND])
@@ -114,11 +111,18 @@ class TrackerManifest(WorkflowBlockManifest):
         description="Number of consecutive frames a track must be matched before it is "
         "emitted as a confirmed track (tracker_id != -1). Default: 2.",
         examples=[2, "$inputs.minimum_consecutive_frames"],
+        json_schema_extra={
+            "always_visible": True,
+        },
     )
-    instances_cache_size: int = Field(
-        default=16384,
-        description="Maximum number of track IDs retained in the instance cache for "
-        "new/already-seen categorisation. Uses FIFO eviction. Default: 16384.",
+    lost_track_buffer: Union[Optional[int], Selector(kind=[INTEGER_KIND])] = Field(
+        default=30,
+        description="Number of frames to keep a track alive after it loses its matched "
+        "detection. Higher values improve occlusion recovery. Default: 30.",
+        examples=[30, "$inputs.lost_track_buffer"],
+        json_schema_extra={
+            "always_visible": True,
+        },
     )
     track_activation_threshold: Union[
         Optional[float], Selector(kind=[FLOAT_ZERO_TO_ONE_KIND])
@@ -182,6 +186,11 @@ class TrackerManifest(WorkflowBlockManifest):
                 },
             },
         },
+    )
+    instances_cache_size: int = Field(
+        default=16384,
+        description="Maximum number of track IDs retained in the instance cache for "
+        "new/already-seen categorisation. Uses FIFO eviction. Default: 16384.",
     )
 
     @classmethod
