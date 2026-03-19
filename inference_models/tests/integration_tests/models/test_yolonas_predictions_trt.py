@@ -470,7 +470,9 @@ def test_trt_package_torch_batch(
     # when
     # warmup
     for _ in range(5):
-        _ = model(torch.stack([coins_counting_image_torch, coins_counting_image_torch], dim=0))
+        _ = model(
+            torch.stack([coins_counting_image_torch, coins_counting_image_torch], dim=0)
+        )
     predictions = model(
         torch.stack([coins_counting_image_torch, coins_counting_image_torch], dim=0)
     )
