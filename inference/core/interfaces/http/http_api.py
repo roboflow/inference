@@ -169,9 +169,11 @@ from inference.core.env import (
     GET_MODEL_REGISTRY_ENABLED,
     HTTP_API_SHARED_WORKFLOWS_THREAD_POOL_ENABLED,
     HTTP_API_SHARED_WORKFLOWS_THREAD_POOL_WORKERS,
+    INFERENCE_MODELS_CACHE_WATCHDOG_INTERVAL_MINUTES,
     LAMBDA,
     LEGACY_ROUTE_ENABLED,
     LMM_ENABLED,
+    MAX_INFERENCE_MODELS_CACHE_SIZE_MB,
     METRICS_ENABLED,
     MOONDREAM2_ENABLED,
     NOTEBOOK_ENABLED,
@@ -244,10 +246,18 @@ from inference.core.interfaces.stream_manager.manager_app.entities import (
 )
 from inference.core.interfaces.webrtc_worker import start_worker
 from inference.core.interfaces.webrtc_worker.entities import (
+    WebRTCSessionHeartbeatRequest,
     WebRTCWorkerRequest,
     WebRTCWorkerResult,
 )
+from inference.core.interfaces.webrtc_worker.utils import (
+    deregister_webrtc_session,
+    refresh_webrtc_session,
+)
 from inference.core.managers.base import ModelManager
+from inference.core.managers.inference_models_cache_watchdog import (
+    InferenceModelsCacheWatchdog,
+)
 from inference.core.managers.metrics import get_container_stats
 from inference.core.managers.model_load_collector import (
     ModelLoadCollector,
@@ -798,6 +808,18 @@ class HttpInterface(BaseInterface):
             self.shared_thread_pool_executor = ThreadPoolExecutor(
                 max_workers=HTTP_API_SHARED_WORKFLOWS_THREAD_POOL_WORKERS
             )
+        self.inference_models_cache_daemon: Optional[InferenceModelsCacheWatchdog] = (
+            None
+        )
+        if USE_INFERENCE_MODELS and MAX_INFERENCE_MODELS_CACHE_SIZE_MB > 0:
+            from inference_models.configuration import INFERENCE_HOME
+
+            self.inference_models_cache_daemon = InferenceModelsCacheWatchdog(
+                inference_home=INFERENCE_HOME,
+                max_cache_size_mb=MAX_INFERENCE_MODELS_CACHE_SIZE_MB,
+                interval_minutes=INFERENCE_MODELS_CACHE_WATCHDOG_INTERVAL_MINUTES,
+            )
+            self.inference_models_cache_daemon.start()
 
         if ENABLE_STREAM_API:
             operations_timeout = os.getenv("STREAM_MANAGER_OPERATIONS_TIMEOUT")
@@ -1785,6 +1807,87 @@ class HttpInterface(BaseInterface):
                     sdp=worker_result.answer.sdp,
                     type=worker_result.answer.type,
                 )
+
+            @app.post(
+                "/webrtc/session/heartbeat",
+                summary="WebRTC session heartbeat",
+            )
+            @with_route_exceptions_async
+            async def webrtc_session_heartbeat(
+                request: WebRTCSessionHeartbeatRequest,
+            ) -> dict:
+                """Receive heartbeat for an active WebRTC session.
+
+                This endpoint is called periodically to indicate
+                that their session is still active. The session will be removed from
+                the quota count if no heartbeat is received within the TTL period.
+
+                Requires api_key for authentication.
+                """
+                try:
+                    workspace_id = await get_roboflow_workspace_async(
+                        api_key=request.api_key
+                    )
+                except (RoboflowAPINotAuthorizedError, WorkspaceLoadError):
+                    raise HTTPException(
+                        status_code=401,
+                        detail={"status": "error", "message": "unauthorized"},
+                    )
+                if not workspace_id:
+                    raise HTTPException(
+                        status_code=500,
+                        detail={
+                            "status": "error",
+                            "message": "failed to retrieve workspace",
+                        },
+                    )
+
+                session_refreshed = refresh_webrtc_session(
+                    workspace_id=workspace_id,
+                    session_id=request.session_id,
+                )
+                if not session_refreshed:
+                    raise HTTPException(
+                        status_code=404,
+                        detail={"status": "error", "message": "session not found"},
+                    )
+                return {"status": "ok"}
+
+            @app.post(
+                "/webrtc/session/heartbeat/end",
+                summary="End WebRTC session",
+            )
+            @with_route_exceptions_async
+            async def webrtc_session_end(
+                request: WebRTCSessionHeartbeatRequest,
+            ) -> dict:
+                """End a WebRTC session and immediately free the quota slot.
+
+                Requires api_key for authentication.
+                """
+                try:
+                    workspace_id = await get_roboflow_workspace_async(
+                        api_key=request.api_key
+                    )
+                except (RoboflowAPINotAuthorizedError, WorkspaceLoadError):
+                    raise HTTPException(
+                        status_code=401,
+                        detail={"status": "error", "message": "unauthorized"},
+                    )
+                if not workspace_id:
+                    raise HTTPException(
+                        status_code=500,
+                        detail={
+                            "status": "error",
+                            "message": "failed to retrieve workspace",
+                        },
+                    )
+
+                deregister_webrtc_session(
+                    workspace_id=workspace_id,
+                    session_id=request.session_id,
+                )
+                return {"status": "ok"}
 
         if ENABLE_STREAM_API:
 

@@ -81,7 +81,6 @@ class TRTCudaGraphState:
 
 
 class TRTCudaGraphCache:
-
     """LRU cache for captured CUDA graphs used in TensorRT inference.
 
     Stores captured ``torch.cuda.CUDAGraph`` objects keyed by input

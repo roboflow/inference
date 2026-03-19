@@ -29,6 +29,7 @@ class AutoResolutionCacheEntry(BaseModel):
     backend_type: Optional[BackendType]
     model_dependencies: Optional[List[ModelDependency]] = Field(default=None)
     created_at: datetime
+    model_features: Optional[dict] = Field(default=None)
 
 
 class AutoResolutionCache(ABC):

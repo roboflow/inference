@@ -1,5 +1,14 @@
 # Changelog
 
+## `0.21.1`
+
+### Fixed
+
+- Lack of model package features denoted in auto-negotiation cache entries was causing errors while re-initialization 
+of models which had `required_features` denoted in model registry.
+
+---
+
 ## `0.21.0`
 ### Added
 
