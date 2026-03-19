@@ -47,7 +47,7 @@ class InferenceModelsCacheWatchdog:
         if interval_minutes < MIN_PURGE_INTERVAL_MINUTES:
             logger.warning(
                 f"Requested purge interval {interval_minutes}min is below minimum "
-                f"{MIN_PURGE_INTERVAL_MINUTES}min - falling back to minimum"
+                f"{MIN_PURGE_INTERVAL_MINUTES}min - falling back to minimum."
             )
             interval_minutes = MIN_PURGE_INTERVAL_MINUTES
         self._inference_home = inference_home

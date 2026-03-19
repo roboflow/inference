@@ -72,10 +72,26 @@ SLICED_NAMES = [
 
 BATCH_4_DETECTION_COUNTS = [0, 2, 0, 1]
 SLICED_DETECTION_COUNTS = [
-    0, 0, 0, 0,  # image 0
-    0, 0, 1, 1,  # image 1 (slices 2,3)
-    0, 0, 0, 0,  # image 2
-    0, 0, 0, 0, 0, 1, 0, 0,  # image 3 (slice 5)
+    0,
+    0,
+    0,
+    0,  # image 0
+    0,
+    0,
+    1,
+    1,  # image 1 (slices 2,3)
+    0,
+    0,
+    0,
+    0,  # image 2
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,  # image 3 (slice 5)
 ]
 
 
@@ -278,14 +294,8 @@ def _run_workflow(
             "noreply@example.com",
             "Detections found",
             (
-                {
-                    "num_detections": 2,
-                    "name": "img1"
-                },
-                {
-                    "num_detections": 1,
-                    "name": "img3"
-                },
+                {"num_detections": 2, "name": "img1"},
+                {"num_detections": 1, "name": "img3"},
             ),
             (
                 {"email_message": None},
@@ -330,15 +340,33 @@ def _run_workflow(
             ),
             (
                 {"email_message": [None, None, None, None]},
-                {"email_message": [None, None, SUCCESSFUL_EMAIL_MESSAGE_MOCK, SUCCESSFUL_EMAIL_MESSAGE_MOCK]},
+                {
+                    "email_message": [
+                        None,
+                        None,
+                        SUCCESSFUL_EMAIL_MESSAGE_MOCK,
+                        SUCCESSFUL_EMAIL_MESSAGE_MOCK,
+                    ]
+                },
                 {"email_message": [None, None, None, None]},
-                {"email_message": [None, None, None, None, None, SUCCESSFUL_EMAIL_MESSAGE_MOCK, None, None]},
+                {
+                    "email_message": [
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        SUCCESSFUL_EMAIL_MESSAGE_MOCK,
+                        None,
+                        None,
+                    ]
+                },
             ),
         ),
         (
             _sliced_4_images,
             SLICED_NAMES,
-            {"yolov8n-640": SLICED_DETECTION_COUNTS}    ,
+            {"yolov8n-640": SLICED_DETECTION_COUNTS},
             True,
             "sliced_image_without_email_message_params",
             3,
@@ -351,9 +379,27 @@ def _run_workflow(
             ),
             (
                 {"email_message": [None, None, None, None]},
-                {"email_message": [None, None, SUCCESSFUL_EMAIL_MESSAGE_MOCK, SUCCESSFUL_EMAIL_MESSAGE_MOCK]},
+                {
+                    "email_message": [
+                        None,
+                        None,
+                        SUCCESSFUL_EMAIL_MESSAGE_MOCK,
+                        SUCCESSFUL_EMAIL_MESSAGE_MOCK,
+                    ]
+                },
                 {"email_message": [None, None, None, None]},
-                {"email_message": [None, None, None, None, None, SUCCESSFUL_EMAIL_MESSAGE_MOCK, None, None]},
+                {
+                    "email_message": [
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        SUCCESSFUL_EMAIL_MESSAGE_MOCK,
+                        None,
+                        None,
+                    ]
+                },
             ),
         ),
         (
@@ -372,9 +418,27 @@ def _run_workflow(
             ),
             (
                 {"email_message": [None, None, None, None]},
-                {"email_message": [None, None, SUCCESSFUL_EMAIL_MESSAGE_MOCK, SUCCESSFUL_EMAIL_MESSAGE_MOCK]},
+                {
+                    "email_message": [
+                        None,
+                        None,
+                        SUCCESSFUL_EMAIL_MESSAGE_MOCK,
+                        SUCCESSFUL_EMAIL_MESSAGE_MOCK,
+                    ]
+                },
                 {"email_message": [None, None, None, None]},
-                {"email_message": [None, None, None, None, None, SUCCESSFUL_EMAIL_MESSAGE_MOCK, None, None]},
+                {
+                    "email_message": [
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        SUCCESSFUL_EMAIL_MESSAGE_MOCK,
+                        None,
+                        None,
+                    ]
+                },
             ),
         ),
         (
@@ -393,9 +457,27 @@ def _run_workflow(
             ),
             (
                 {"email_message": [None, None, None, None]},
-                {"email_message": [None, None, SUCCESSFUL_EMAIL_MESSAGE_MOCK, SUCCESSFUL_EMAIL_MESSAGE_MOCK]},
+                {
+                    "email_message": [
+                        None,
+                        None,
+                        SUCCESSFUL_EMAIL_MESSAGE_MOCK,
+                        SUCCESSFUL_EMAIL_MESSAGE_MOCK,
+                    ]
+                },
                 {"email_message": [None, None, None, None]},
-                {"email_message": [None, None, None, None, None, SUCCESSFUL_EMAIL_MESSAGE_MOCK, None, None]},
+                {
+                    "email_message": [
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        SUCCESSFUL_EMAIL_MESSAGE_MOCK,
+                        None,
+                        None,
+                    ]
+                },
             ),
         ),
         (
@@ -447,9 +529,7 @@ def _run_workflow(
             0,
             "noreply@example.com",
             "Detections found",
-            (
-                {},
-            ),
+            ({},),
             (
                 {"email_message": None},
                 {"email_message": None},
@@ -462,7 +542,7 @@ def _run_workflow(
             SLICED_NAMES,
             {"yolov8n-640": SLICED_DETECTION_COUNTS},
             True,
-            "with_detection_collapse_right_after_slice", # after the dim collapse we are dim=1
+            "with_detection_collapse_right_after_slice",  # after the dim collapse we are dim=1
             4,  # In this scenario the continue_if step counts the number of slices for each image, so 4 calls to the email step
             "noreply@example.com",
             "Detections found",
@@ -485,10 +565,10 @@ def _run_workflow(
             {"yolov8n-640": SLICED_DETECTION_COUNTS},
             True,
             "with_detection_collapse_right_after_slice_with_agg_operation",
-            2, # The continue-if correctly checks the number of detections for each image (given slices of that image)
+            2,  # The continue-if correctly checks the number of detections for each image (given slices of that image)
             "noreply@example.com",
             "Detections found",
-            ( # The operations of counting the detection are done after receiving the params, so here we get the slices
+            (  # The operations of counting the detection are done after receiving the params, so here we get the slices
                 {"num_slices": 4},
                 {"num_slices": 8},
             ),
@@ -505,7 +585,7 @@ def _run_workflow(
             {"yolov8n-640": SLICED_DETECTION_COUNTS},
             True,
             "with_detection_collapse_right_after_slice_with_agg_operation_without_message_params",
-            2, # The continue-if correctly checks the number of detections for each image (given slices of that image)
+            2,  # The continue-if correctly checks the number of detections for each image (given slices of that image)
             "noreply@example.com",
             "Detections found",
             (
@@ -525,31 +605,25 @@ def _run_workflow(
             {"yolov8n-640": BATCH_4_DETECTION_COUNTS},
             True,
             "with_detection_collapse_right_after_detect_with_agg_operation",
-            1, # The continue-if correctly checks the total number of detections in the batch
+            1,  # The continue-if correctly checks the total number of detections in the batch
             "noreply@example.com",
             "Detections found",
-            ( # The operations of counting the detection are done after receiving the params, so here we get the size of the batch
+            (  # The operations of counting the detection are done after receiving the params, so here we get the size of the batch
                 {"num_batch_detections": 4},
             ),
-            (
-                {"email_message": SUCCESSFUL_EMAIL_MESSAGE_MOCK},
-            ),
+            ({"email_message": SUCCESSFUL_EMAIL_MESSAGE_MOCK},),
         ),
-         (
+        (
             _batch_4_images,
             BATCH_4_IMAGE_NAMES,
             {"yolov8n-640": BATCH_4_DETECTION_COUNTS},
             True,
             "with_detection_collapse_right_after_detect_with_agg_operation_without_message_params",
-            1, # The continue-if correctly checks the total number of detections in the batch
+            1,  # The continue-if correctly checks the total number of detections in the batch
             "noreply@example.com",
             "Detections found",
-            (
-                {},
-            ),
-            (
-                {"email_message": SUCCESSFUL_EMAIL_MESSAGE_MOCK},
-            ),
+            ({},),
+            ({"email_message": SUCCESSFUL_EMAIL_MESSAGE_MOCK},),
         ),
         (
             _batch_4_images,
@@ -557,15 +631,11 @@ def _run_workflow(
             {"yolov8n-640": BATCH_4_DETECTION_COUNTS},
             True,
             "with_detection_collapse_after_continue_if",
-            1, # We aggregated the detection lists after continue_if
+            1,  # We aggregated the detection lists after continue_if
             "noreply@example.com",
             "Detections found",
-            (
-                {"num_batch_filtered_detections": 2}, # Only two images had detections
-            ),
-            (
-                {"email_message": SUCCESSFUL_EMAIL_MESSAGE_MOCK},
-            ),
+            ({"num_batch_filtered_detections": 2},),  # Only two images had detections
+            ({"email_message": SUCCESSFUL_EMAIL_MESSAGE_MOCK},),
         ),
         (
             _batch_4_images,
@@ -576,9 +646,7 @@ def _run_workflow(
             1,
             "noreply@example.com",
             "Detections found",
-            (
-                {},
-            ),
+            ({},),
             (
                 {"email_message": None},
                 {"email_message": None},
@@ -592,7 +660,7 @@ def _run_workflow(
             {"yolov8n-640": SLICED_DETECTION_COUNTS},
             True,
             "with_two_continue_if_different_control_flow_lineage",
-            3, # The deepest control-flow-lineage is used, thus we are masking up to the slice level
+            3,  # The deepest control-flow-lineage is used, thus we are masking up to the slice level
             "noreply@example.com",
             "Detections found",
             (
@@ -602,9 +670,27 @@ def _run_workflow(
             ),
             (
                 {"email_message": [None, None, None, None]},
-                {"email_message": [None, None, SUCCESSFUL_EMAIL_MESSAGE_MOCK, SUCCESSFUL_EMAIL_MESSAGE_MOCK]},
+                {
+                    "email_message": [
+                        None,
+                        None,
+                        SUCCESSFUL_EMAIL_MESSAGE_MOCK,
+                        SUCCESSFUL_EMAIL_MESSAGE_MOCK,
+                    ]
+                },
                 {"email_message": [None, None, None, None]},
-                {"email_message": [None, None, None, None, None, SUCCESSFUL_EMAIL_MESSAGE_MOCK, None, None]},
+                {
+                    "email_message": [
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        SUCCESSFUL_EMAIL_MESSAGE_MOCK,
+                        None,
+                        None,
+                    ]
+                },
             ),
         ),
     ],
@@ -677,7 +763,11 @@ def test_properly_running_side_effect_step_and_returning_results_in_different_da
                 assert len(actual) == param_value
                 continue
 
-            if param_name in ["num_slices", "num_batch_detections", "num_batch_filtered_detections"]:
+            if param_name in [
+                "num_slices",
+                "num_batch_detections",
+                "num_batch_filtered_detections",
+            ]:
                 assert isinstance(actual, list)
                 assert len(actual) == param_value
                 continue
@@ -685,9 +775,8 @@ def test_properly_running_side_effect_step_and_returning_results_in_different_da
             if param_name == "area_converted":
                 assert actual["area_converted"] == param_value
                 continue
-            
-            assert actual == param_value
 
+            assert actual == param_value
 
     assert len(result) == len(expected_result)
     for i, result in enumerate(result):
@@ -737,7 +826,7 @@ def test_scenario_raises_step_input_lineage_error(
             model_manager,
             detection_counts_per_model=detection_counts_per_model,
         )
- 
+
     assert send_email_mock.call_count == 0
 
 
@@ -784,7 +873,7 @@ def test_scenario_raises_control_flow_definition_error(
             model_manager,
             detection_counts_per_model=detection_counts_per_model,
         )
- 
+
     assert send_email_mock.call_count == 0
 
 
@@ -826,9 +915,21 @@ def test_control_flow_lineage_using_workflow_with_scalar_only_block_parses_and_r
     names, \
     expect_result",
     [
-        ("with_scalar_only_step_getting_batch_data", BATCH_4_IMAGE_NAMES, BATCH_4_IMAGE_NAMES),
-        ("with_scalar_only_step_getting_batch_data_only_control_flow_lineage", ["img1", "img2", "img3", "not"], ["foobar"] * 3),
-        ("with_scalar_only_step_getting_batch_data_only_control_flow_lineage", BATCH_4_IMAGE_NAMES, ["foobar"] * len(BATCH_4_IMAGE_NAMES)),
+        (
+            "with_scalar_only_step_getting_batch_data",
+            BATCH_4_IMAGE_NAMES,
+            BATCH_4_IMAGE_NAMES,
+        ),
+        (
+            "with_scalar_only_step_getting_batch_data_only_control_flow_lineage",
+            ["img1", "img2", "img3", "not"],
+            ["foobar"] * 3,
+        ),
+        (
+            "with_scalar_only_step_getting_batch_data_only_control_flow_lineage",
+            BATCH_4_IMAGE_NAMES,
+            ["foobar"] * len(BATCH_4_IMAGE_NAMES),
+        ),
     ],
     ids=[
         "with_scalar_only_step_getting_batch_data",
@@ -868,7 +969,11 @@ def test_control_flow_lineage_using_workflow_with_scalar_only_block_that_gets_ba
     names, \
     expect_result",
     [
-        ("with_batch_only_step_with_batch_data", BATCH_4_IMAGE_NAMES, BATCH_4_IMAGE_NAMES),
+        (
+            "with_batch_only_step_with_batch_data",
+            BATCH_4_IMAGE_NAMES,
+            BATCH_4_IMAGE_NAMES,
+        ),
     ],
     ids=[
         "with_batch_only_step_with_batch_data",
@@ -886,9 +991,7 @@ def test_control_flow_lineage_using_workflow_with_batch_only_block_that_gets_bat
         "tests.workflows.integration_tests.execution.stub_plugins.batch_only_block_plugin",
     ]
     execution_engine = ExecutionEngine.init(
-        workflow_definition=_load_workflow_definition(
-            workflow_name
-        ),
+        workflow_definition=_load_workflow_definition(workflow_name),
         init_parameters={
             "workflows_core.model_manager": None,
             "workflows_core.api_key": None,
@@ -925,7 +1028,7 @@ def test_control_flow_lineage_using_workflow_with_batch_only_block_that_gets_bat
                 {"save_message": None},
                 {"save_message": None},
                 {"save_message": None},
-                {"save_message": "Data saved successfully"}
+                {"save_message": "Data saved successfully"},
             ],
             1,
             ["num_detections", "name", "timestamp"],
@@ -942,7 +1045,7 @@ def test_control_flow_lineage_using_workflow_with_batch_only_block_that_gets_bat
                 {"save_message": None},
                 {"save_message": None},
                 {"save_message": None},
-                {"save_message": "Data saved successfully"}
+                {"save_message": "Data saved successfully"},
             ],
             1,
             ["name", "timestamp"],
@@ -1067,4 +1170,7 @@ def test_side_effect_step_with_data_lineage_and_continue_if_zero_calls(
         )
 
         if isinstance(item["stitched_predictions"], sv.Detections):
-            assert len(item["stitched_predictions"]) == expected_results[i]["stitched_predictions"][1]
+            assert (
+                len(item["stitched_predictions"])
+                == expected_results[i]["stitched_predictions"][1]
+            )
