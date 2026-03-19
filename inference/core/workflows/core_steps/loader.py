@@ -380,9 +380,7 @@ from inference.core.workflows.core_steps.sinks.twilio.sms.v2 import (
     TwilioSMSNotificationBlockV2,
 )
 from inference.core.workflows.core_steps.sinks.webhook.v1 import WebhookSinkBlockV1
-from inference.core.workflows.core_steps.trackers.trackers.v1 import (
-    TrackerBlockV1,
-)
+from inference.core.workflows.core_steps.trackers.trackers.v1 import TrackerBlockV1
 from inference.core.workflows.core_steps.transformations.absolute_static_crop.v1 import (
     AbsoluteStaticCropBlockV1,
 )
