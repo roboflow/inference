@@ -6,6 +6,8 @@ from botocore.exceptions import ClientError
 from pydantic import ValidationError
 
 from inference.core.workflows.core_steps.sinks.s3.v1 import (
+    MAX_UPLOAD_RETRIES,
+    NON_RETRYABLE_CLIENT_ERROR_CODES,
     BlockManifest,
     S3SinkBlockV1,
     deduct_csv_header,
@@ -539,3 +541,118 @@ def test_append_log_uses_correct_bucket_name() -> None:
 
     call_kwargs = mock_s3.put_object.call_args.kwargs
     assert call_kwargs["Bucket"] == "production-bucket"
+
+
+# ---------------------------------------------------------------------------
+# Retry logic
+# ---------------------------------------------------------------------------
+
+
+def _make_retryable_client_error(code: str) -> ClientError:
+    return ClientError(
+        error_response={"Error": {"Code": code, "Message": "error"}},
+        operation_name="PutObject",
+    )
+
+
+@patch("inference.core.workflows.core_steps.sinks.s3.v1.time.sleep")
+def test_upload_retries_on_retryable_client_error_then_succeeds(mock_sleep) -> None:
+    mock_s3 = MagicMock()
+    # Fail twice with a retryable error, succeed on the third attempt
+    mock_s3.put_object.side_effect = [
+        _make_retryable_client_error("SlowDown"),
+        _make_retryable_client_error("InternalError"),
+        None,  # success
+    ]
+
+    result = upload_content_to_s3(
+        s3_client=mock_s3,
+        bucket_name="my-bucket",
+        s3_key="output.txt",
+        content="data",
+        content_type="text/plain",
+    )
+
+    assert result["error_status"] is False
+    assert mock_s3.put_object.call_count == 3
+    assert mock_sleep.call_count == 2
+
+
+@patch("inference.core.workflows.core_steps.sinks.s3.v1.time.sleep")
+def test_upload_retries_on_botocore_error_then_succeeds(mock_sleep) -> None:
+    from botocore.exceptions import EndpointConnectionError
+
+    mock_s3 = MagicMock()
+    mock_s3.put_object.side_effect = [
+        EndpointConnectionError(endpoint_url="https://s3.amazonaws.com"),
+        None,  # success on second attempt
+    ]
+
+    result = upload_content_to_s3(
+        s3_client=mock_s3,
+        bucket_name="my-bucket",
+        s3_key="output.txt",
+        content="data",
+        content_type="text/plain",
+    )
+
+    assert result["error_status"] is False
+    assert mock_s3.put_object.call_count == 2
+    assert mock_sleep.call_count == 1
+
+
+@patch("inference.core.workflows.core_steps.sinks.s3.v1.time.sleep")
+def test_upload_returns_error_after_all_retries_exhausted(mock_sleep) -> None:
+    mock_s3 = MagicMock()
+    mock_s3.put_object.side_effect = _make_retryable_client_error("SlowDown")
+
+    result = upload_content_to_s3(
+        s3_client=mock_s3,
+        bucket_name="my-bucket",
+        s3_key="output.txt",
+        content="data",
+        content_type="text/plain",
+    )
+
+    assert result["error_status"] is True
+    assert mock_s3.put_object.call_count == 1 + MAX_UPLOAD_RETRIES
+    assert mock_sleep.call_count == MAX_UPLOAD_RETRIES
+
+
+@patch("inference.core.workflows.core_steps.sinks.s3.v1.time.sleep")
+def test_upload_does_not_retry_non_retryable_errors(mock_sleep) -> None:
+    for error_code in NON_RETRYABLE_CLIENT_ERROR_CODES:
+        mock_s3 = MagicMock()
+        mock_s3.put_object.side_effect = _make_retryable_client_error(error_code)
+
+        result = upload_content_to_s3(
+            s3_client=mock_s3,
+            bucket_name="my-bucket",
+            s3_key="output.txt",
+            content="data",
+            content_type="text/plain",
+        )
+
+        assert result["error_status"] is True, f"Expected error for {error_code}"
+        assert mock_s3.put_object.call_count == 1, f"Expected no retry for {error_code}"
+        mock_sleep.assert_not_called()
+
+
+@patch("inference.core.workflows.core_steps.sinks.s3.v1.time.sleep")
+def test_upload_retry_uses_exponential_backoff(mock_sleep) -> None:
+    mock_s3 = MagicMock()
+    mock_s3.put_object.side_effect = _make_retryable_client_error("SlowDown")
+
+    upload_content_to_s3(
+        s3_client=mock_s3,
+        bucket_name="my-bucket",
+        s3_key="output.txt",
+        content="data",
+        content_type="text/plain",
+    )
+
+    sleep_delays = [c.args[0] for c in mock_sleep.call_args_list]
+    # Each delay must be strictly larger than the previous (exponential growth)
+    assert all(
+        sleep_delays[i] < sleep_delays[i + 1] for i in range(len(sleep_delays) - 1)
+    ), f"Expected exponential backoff, got delays: {sleep_delays}"

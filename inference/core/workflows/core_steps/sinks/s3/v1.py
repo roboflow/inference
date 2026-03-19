@@ -1,5 +1,6 @@
 import json
 import logging
+import time
 from datetime import datetime
 from typing import Any, List, Literal, Optional, Type, Union
 
@@ -26,6 +27,19 @@ CONTENT_TYPES = {
     "jsonl": "application/x-ndjson",
     "txt": "text/plain",
 }
+
+# Errors that indicate a configuration or auth problem — retrying will not help.
+NON_RETRYABLE_CLIENT_ERROR_CODES = {
+    "InvalidAccessKeyId",
+    "AccessDenied",
+    "NoSuchBucket",
+    "InvalidBucketName",
+    "SignatureDoesNotMatch",
+    "AuthFailure",
+}
+
+MAX_UPLOAD_RETRIES = 3  # additional attempts after the initial try
+UPLOAD_RETRY_INITIAL_DELAY = 1.0  # seconds; doubles on each subsequent retry
 
 LONG_DESCRIPTION = """
 Save workflow data directly to an AWS S3 bucket, supporting CSV, JSON, and text file formats with configurable output modes for aggregating multiple entries into single objects or saving each entry as a separate S3 object.
@@ -355,24 +369,46 @@ def upload_content_to_s3(
     content: str,
     content_type: str,
 ) -> dict:
-    try:
-        content_bytes = content.encode("utf-8")
-        s3_client.put_object(
-            Bucket=bucket_name,
-            Key=s3_key,
-            Body=content_bytes,
-            ContentType=content_type,
-        )
-        return {
-            "error_status": False,
-            "message": f"Data saved successfully to s3://{bucket_name}/{s3_key}",
-        }
-    except (BotoCoreError, ClientError) as error:
-        logging.warning(f"Could not upload to S3: {error}")
-        return {"error_status": True, "message": str(error)}
-    except Exception as error:
-        logging.warning(f"Unexpected error uploading to S3: {error}")
-        return {"error_status": True, "message": str(error)}
+    content_bytes = content.encode("utf-8")
+    last_error: Optional[Exception] = None
+    for attempt in range(1 + MAX_UPLOAD_RETRIES):
+        if attempt > 0:
+            delay = UPLOAD_RETRY_INITIAL_DELAY * (2 ** (attempt - 1))
+            logging.warning(
+                f"Retrying S3 upload to s3://{bucket_name}/{s3_key} "
+                f"(attempt {attempt + 1}/{1 + MAX_UPLOAD_RETRIES}) after {delay:.1f}s..."
+            )
+            time.sleep(delay)
+        try:
+            s3_client.put_object(
+                Bucket=bucket_name,
+                Key=s3_key,
+                Body=content_bytes,
+                ContentType=content_type,
+            )
+            return {
+                "error_status": False,
+                "message": f"Data saved successfully to s3://{bucket_name}/{s3_key}",
+            }
+        except ClientError as error:
+            error_code = error.response["Error"]["Code"]
+            if error_code in NON_RETRYABLE_CLIENT_ERROR_CODES:
+                logging.warning(f"Non-retryable S3 error ({error_code}): {error}")
+                return {"error_status": True, "message": str(error)}
+            logging.warning(
+                f"Retryable S3 error on attempt {attempt + 1}/{1 + MAX_UPLOAD_RETRIES} "
+                f"({error_code}): {error}"
+            )
+            last_error = error
+        except BotoCoreError as error:
+            logging.warning(
+                f"S3 connection error on attempt {attempt + 1}/{1 + MAX_UPLOAD_RETRIES}: {error}"
+            )
+            last_error = error
+        except Exception as error:
+            logging.warning(f"Unexpected error uploading to S3: {error}")
+            return {"error_status": True, "message": str(error)}
+    return {"error_status": True, "message": str(last_error)}
 
 
 def deduct_csv_header(content: str) -> str:
