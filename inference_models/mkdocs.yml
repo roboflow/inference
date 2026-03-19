@@ -103,6 +103,7 @@ nav:
       - Load Models Locally: how-to/local-packages.md
       - Understand Roboflow Model Packages: how-to/roboflow-model-packages.md
       - Manage Cache: how-to/cache-management.md
+      - Use CUDA Graphs: how-to/use-cuda-graphs.md
   - Contributors:
       - Development Environment: contributors/dev-environment.md
       - Core Architecture: contributors/core-architecture.md
@@ -147,6 +148,8 @@ nav:
                   - get_trt_engine_inputs_and_outputs: api-reference/developer-tools/trt/get-trt-engine-inputs-and-outputs.md
                   - infer_from_trt_engine: api-reference/developer-tools/trt/infer-from-trt-engine.md
                   - load_trt_model: api-reference/developer-tools/trt/load-trt-model.md
+                  - establish_trt_cuda_graph_cache: api-reference/developer-tools/trt/establish-trt-cuda-graph-cache.md
+                  - TRTCudaGraphCache: api-reference/developer-tools/trt/trt-cuda-graph-cache.md
           - Entities:
               - RuntimeXRayResult: api-reference/developer-tools/runtime-xray-result.md
               - ModelMetadata: api-reference/developer-tools/model-metadata.md
