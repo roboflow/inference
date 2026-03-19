@@ -1117,7 +1117,6 @@ def test_get_model_metadata_from_inference_models_registry_when_valid_response_e
     assert "x-enforce-credits-verification" not in requests_mock.last_request.headers
 
 
-
 @mock.patch.object(roboflow_api.requests, "post")
 def test_register_image_at_roboflow_when_connection_error_occurs(
     post_mock: MagicMock,

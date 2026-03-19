@@ -1,5 +1,23 @@
 # Changelog
 
+## `0.21.1`
+
+### Fixed
+
+- Lack of model package features denoted in auto-negotiation cache entries was causing errors while re-initialization 
+of models which had `required_features` denoted in model registry.
+
+---
+
+## `0.21.0`
+### Added
+
+- Support for CUDA Graphs in TRT backend - all TRT models got upgraded - added ability to run with CUDA graphs, at 
+the expense of additional VRAM allocation, but with caller control on how many execution contexts for different 
+input shapes should be allowed.
+
+---
+
 ## `0.20.2`
 ### Added
 

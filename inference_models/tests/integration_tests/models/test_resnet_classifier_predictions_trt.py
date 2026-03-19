@@ -75,6 +75,30 @@ def test_single_label_trt_package_torch(
 
 @pytest.mark.slow
 @pytest.mark.trt_extras
+def test_single_label_trt_package_torch_multiple_predictions_in_row(
+    resnet_single_label_cls_trt_package: str,
+    bike_image_torch: np.ndarray,
+) -> None:
+    # given
+    from inference_models.models.resnet.resnet_classification_trt import (
+        ResNetForClassificationTRT,
+    )
+
+    model = ResNetForClassificationTRT.from_pretrained(
+        model_name_or_path=resnet_single_label_cls_trt_package,
+        engine_host_code_allowed=True,
+    )
+
+    for _ in range(8):
+        # when
+        predictions = model(bike_image_torch)
+
+        # then
+        assert abs(predictions.confidence[0, 2].item() - 0.9999516010284424) < 1e-3
+
+
+@pytest.mark.slow
+@pytest.mark.trt_extras
 def test_single_label_trt_package_torch_list(
     resnet_single_label_cls_trt_package: str,
     bike_image_torch: torch.Tensor,
@@ -189,6 +213,30 @@ def test_multi_label_trt_package_torch(
 
     # then
     assert abs(predictions[0].confidence[2].item() - 0.99951171875) < 1e-3
+
+
+@pytest.mark.slow
+@pytest.mark.trt_extras
+def test_multi_label_trt_package_torch_multiple_predictions_in_row(
+    resnet_multi_label_cls_trt_package: str,
+    dog_image_torch: torch.Tensor,
+) -> None:
+    # given
+    from inference_models.models.resnet.resnet_classification_trt import (
+        ResNetForMultiLabelClassificationTRT,
+    )
+
+    model = ResNetForMultiLabelClassificationTRT.from_pretrained(
+        model_name_or_path=resnet_multi_label_cls_trt_package,
+        engine_host_code_allowed=True,
+    )
+
+    for _ in range(8):
+        # when
+        predictions = model(dog_image_torch)
+
+        # then
+        assert abs(predictions[0].confidence[2].item() - 0.99951171875) < 1e-3
 
 
 @pytest.mark.slow
