@@ -137,6 +137,7 @@ ROBOFLOW_MODEL_TYPES = {
     ("object-detection", "rfdetr-xlarge"): RFDETRObjectDetection,
     ("object-detection", "rfdetr-2xlarge"): RFDETRObjectDetection,
     ("object-detection", "rfdetr-nas"): RFDETRNasObjectDetection,
+    ("instance-segmentation", "rfdetr"): RFDETRInstanceSegmentation,
     ("instance-segmentation", "rfdetr-seg-preview"): RFDETRInstanceSegmentation,
     ("instance-segmentation", "rfdetr-seg-nano"): RFDETRInstanceSegmentation,
     ("instance-segmentation", "rfdetr-seg-small"): RFDETRInstanceSegmentation,
