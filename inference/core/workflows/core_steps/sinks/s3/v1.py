@@ -341,7 +341,7 @@ def create_s3_client(
 
 def generate_s3_key(s3_prefix: str, file_name_prefix: str, file_type: str) -> str:
     timestamp = datetime.now().strftime("%Y_%m_%d_%H_%M_%S_%f")
-    file_name = f"{file_name_prefix}_{timestamp}.{file_type}"
+    file_name = f"{file_name_prefix.rstrip('/')}_{timestamp}.{file_type}"
     if s3_prefix:
         prefix = s3_prefix.rstrip("/")
         return f"{prefix}/{file_name}"
