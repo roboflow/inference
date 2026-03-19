@@ -128,6 +128,7 @@ ROBOFLOW_MODEL_TYPES = {
     ("object-detection", "yolo26m"): YOLO26ObjectDetection,
     ("object-detection", "yolo26l"): YOLO26ObjectDetection,
     ("object-detection", "yolo26x"): YOLO26ObjectDetection,
+    ("object-detection", "rfdetr"): RFDETRObjectDetection,
     ("object-detection", "rfdetr-base"): RFDETRObjectDetection,
     ("object-detection", "rfdetr-nano"): RFDETRObjectDetection,
     ("object-detection", "rfdetr-small"): RFDETRObjectDetection,
