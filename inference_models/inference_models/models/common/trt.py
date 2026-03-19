@@ -1,7 +1,14 @@
+import threading
+from collections import OrderedDict
+from dataclasses import dataclass
 from typing import List, Optional, Tuple
 
 import torch
 
+from inference_models.configuration import (
+    DEFAULT_ENABLE_AUTO_CUDA_GRAPHS_FOR_TRT_BACKEND,
+    ENABLE_AUTO_CUDA_GRAPHS_FOR_TRT_BACKEND_ENV_NAME,
+)
 from inference_models.errors import (
     CorruptedModelPackageError,
     MissingDependencyError,
@@ -9,6 +16,7 @@ from inference_models.errors import (
 )
 from inference_models.logger import LOGGER
 from inference_models.models.common.roboflow.model_packages import TRTConfig
+from inference_models.utils.environment import get_boolean_from_env
 
 try:
     import tensorrt as trt
@@ -40,7 +48,6 @@ except ImportError as import_error:
 
 
 class InferenceTRTLogger(trt.ILogger):
-
     def __init__(self, with_memory: bool = False):
         super().__init__()
         self._memory: List[Tuple[trt.ILogger.Severity, str]] = []
@@ -62,6 +69,299 @@ class InferenceTRTLogger(trt.ILogger):
 
     def get_memory(self) -> List[Tuple[trt.ILogger.Severity, str]]:
         return self._memory
+
+
+@dataclass
+class TRTCudaGraphState:
+    cuda_graph: torch.cuda.CUDAGraph
+    cuda_stream: torch.cuda.Stream
+    input_buffer: torch.Tensor
+    output_buffers: List[torch.Tensor]
+    execution_context: trt.IExecutionContext
+
+
+class TRTCudaGraphCache:
+
+    """LRU cache for captured CUDA graphs used in TensorRT inference.
+
+    Stores captured ``torch.cuda.CUDAGraph`` objects keyed by input
+    ``(shape, dtype, device)`` tuples. When the cache exceeds its capacity,
+    the least recently used entry is evicted and its GPU resources are released.
+
+    The cache is thread-safe — all mutating operations acquire an internal
+    ``threading.RLock``.
+
+    Args:
+        capacity: Maximum number of CUDA graphs to store. Each entry holds
+            a dedicated TensorRT execution context and GPU memory buffers,
+            so higher values increase VRAM usage.
+
+    Examples:
+        Create a cache and pass it to a model:
+
+        >>> from inference_models.developer_tools import TRTCudaGraphCache
+        >>> from inference_models import AutoModel
+        >>> import torch
+        >>>
+        >>> cache = TRTCudaGraphCache(capacity=16)
+        >>> model = AutoModel.from_pretrained(
+        ...     model_id_or_path="rfdetr-nano",
+        ...     device=torch.device("cuda:0"),
+        ...     backend="trt",
+        ...     trt_cuda_graph_cache=cache,
+        ... )
+
+    See Also:
+        - ``establish_trt_cuda_graph_cache()``: Factory that creates a cache
+          based on environment configuration
+        - ``infer_from_trt_engine()``: Uses the cache during TRT inference
+    """
+
+    def __init__(self, capacity: int):
+        self._cache: OrderedDict[
+            Tuple[Tuple[int, ...], torch.dtype, torch.device], TRTCudaGraphState
+        ] = OrderedDict()
+        self._capacity = capacity
+        self._state_lock = threading.RLock()
+
+    def get_current_size(self) -> int:
+        """Return the number of CUDA graphs currently stored in the cache.
+
+        Returns:
+            Number of cached entries.
+
+        Examples:
+            >>> cache = TRTCudaGraphCache(capacity=16)
+            >>> cache.get_current_size()
+            0
+        """
+        with self._state_lock:
+            return len(self._cache)
+
+    def list_keys(self) -> List[Tuple[Tuple[int, ...], torch.dtype, torch.device]]:
+        """Return a list of all keys currently in the cache.
+
+        Each key is a ``(shape, dtype, device)`` tuple representing a cached
+        CUDA graph. Keys are returned in insertion order (oldest first), which
+        reflects eviction priority.
+
+        Returns:
+            List of ``(shape, dtype, device)`` tuples for all cached entries.
+
+        Examples:
+            >>> cache = TRTCudaGraphCache(capacity=16)
+            >>> # ... after some forward passes ...
+            >>> for shape, dtype, device in cache.list_keys():
+            ...     print(f"Cached: shape={shape}, dtype={dtype}")
+        """
+        with self._state_lock:
+            return list(self._cache.keys())
+
+    def safe_remove(
+        self, key: Tuple[Tuple[int, ...], torch.dtype, torch.device]
+    ) -> None:
+        """Remove a single entry from the cache by its key.
+
+        If the key exists, the associated CUDA graph, execution context, and
+        GPU buffers are released and ``torch.cuda.empty_cache()`` is called.
+        If the key does not exist, this method is a no-op.
+
+        Args:
+            key: A ``(shape, dtype, device)`` tuple identifying the entry
+                to remove.
+
+        Examples:
+            Remove a cached graph for a specific input shape:
+
+            >>> import torch
+            >>> key = ((1, 3, 384, 384), torch.float16, torch.device("cuda:0"))
+            >>> cache.safe_remove(key)
+
+            Safe to call with a non-existent key:
+
+            >>> cache.safe_remove(((99, 99), torch.float32, torch.device("cuda:0")))
+            >>> # no error raised
+
+        See Also:
+            - ``purge()``: Remove multiple entries at once with batched
+              GPU memory cleanup
+        """
+        with self._state_lock:
+            if key not in self._cache:
+                return None
+            evicted = self._cache.pop(key)
+            self._evict(evicted=evicted)
+            return None
+
+    def purge(self, n_oldest: Optional[int] = None) -> None:
+        """Remove entries from the cache, starting with the least recently used.
+
+        When called without arguments, clears the entire cache. When
+        ``n_oldest`` is specified, only that many entries are evicted
+        (or all entries if the cache contains fewer).
+
+        GPU memory cleanup (``torch.cuda.empty_cache()``) is called once
+        after all evictions, making this more efficient than calling
+        ``safe_remove()`` in a loop.
+
+        Args:
+            n_oldest: Number of least recently used entries to evict.
+                When ``None`` (default), all entries are removed.
+
+        Examples:
+            Evict the 4 oldest entries:
+
+            >>> cache.purge(n_oldest=4)
+
+            Clear the entire cache:
+
+            >>> cache.purge()
+            >>> cache.get_current_size()
+            0
+
+        Note:
+            - Eviction order follows LRU policy — entries that haven't been
+              accessed recently are removed first
+            - Each evicted entry's CUDA graph, execution context, and GPU
+              buffers are released
+
+        See Also:
+            - ``safe_remove()``: Remove a single entry by key
+        """
+        with self._state_lock:
+            if n_oldest is None:
+                n_oldest = len(self._cache)
+            to_evict = min(len(self._cache), n_oldest)
+            for _ in range(to_evict):
+                _, evicted = self._cache.popitem(last=False)
+                self._evict(evicted=evicted, empty_cuda_cache=False)
+            torch.cuda.empty_cache()
+
+    def __contains__(
+        self, key: Tuple[Tuple[int, ...], torch.dtype, torch.device]
+    ) -> bool:
+        with self._state_lock:
+            return key in self._cache
+
+    def __getitem__(
+        self, key: Tuple[Tuple[int, ...], torch.dtype, torch.device]
+    ) -> TRTCudaGraphState:
+        with self._state_lock:
+            value = self._cache[key]
+            self._cache.move_to_end(key)
+            return value
+
+    def __setitem__(
+        self,
+        key: Tuple[Tuple[int, ...], torch.dtype, torch.device],
+        value: TRTCudaGraphState,
+    ):
+        with self._state_lock:
+            self._cache[key] = value
+            self._cache.move_to_end(key)
+            if len(self._cache) > self._capacity:
+                _, evicted = self._cache.popitem(last=False)
+                self._evict(evicted=evicted)
+
+    def _evict(self, evicted: TRTCudaGraphState, empty_cuda_cache: bool = True) -> None:
+        del evicted.cuda_graph
+        del evicted.input_buffer
+        del evicted.output_buffers
+        del evicted.execution_context
+        if empty_cuda_cache:
+            torch.cuda.empty_cache()
+
+
+def establish_trt_cuda_graph_cache(
+    default_cuda_graph_cache_size: int,
+    cuda_graph_cache: Optional[TRTCudaGraphCache] = None,
+) -> Optional[TRTCudaGraphCache]:
+    """Establish a CUDA graph cache for TensorRT inference acceleration.
+
+    Resolves which CUDA graph cache to use for a TRT model. If the caller
+    provides a cache instance, it is returned as-is. Otherwise, the function
+    checks the ``ENABLE_AUTO_CUDA_GRAPHS_FOR_TRT_BACKEND`` environment variable
+    to decide whether to create a new cache automatically. When the environment
+    variable is disabled (the default), no cache is created and CUDA graphs
+    are not used.
+
+    This function is typically called inside ``from_pretrained()`` of TRT model
+    classes. End users who want explicit control should create a
+    ``TRTCudaGraphCache`` themselves and pass it to ``AutoModel.from_pretrained``.
+
+    Args:
+        default_cuda_graph_cache_size: Maximum number of CUDA graphs to cache
+            when a new cache is created automatically. Each entry holds a
+            dedicated TensorRT execution context and GPU memory buffers, so
+            higher values increase VRAM usage.
+
+        cuda_graph_cache: Optional pre-existing cache instance. When provided,
+            it is returned directly and the environment variable is ignored.
+            This allows callers to share a single cache across multiple models
+            or to configure capacity explicitly.
+
+    Returns:
+        A ``TRTCudaGraphCache`` instance if CUDA graphs should be used, or
+        ``None`` if they are disabled. When ``None`` is returned, the model
+        falls back to standard TensorRT execution without graph capture.
+
+    Examples:
+        Automatic cache creation via environment variable:
+
+        >>> import os
+        >>> os.environ["ENABLE_AUTO_CUDA_GRAPHS_FOR_TRT_BACKEND"] = "True"
+        >>>
+        >>> from inference_models.developer_tools import (
+        ...     establish_trt_cuda_graph_cache,
+        ... )
+        >>>
+        >>> cache = establish_trt_cuda_graph_cache(default_cuda_graph_cache_size=8)
+        >>> print(type(cache))  # <class 'TRTCudaGraphCache'>
+
+        Caller-provided cache takes priority:
+
+        >>> from inference_models.models.common.trt import (
+        ...     TRTCudaGraphCache,
+        ...     establish_trt_cuda_graph_cache,
+        ... )
+        >>>
+        >>> my_cache = TRTCudaGraphCache(capacity=32)
+        >>> result = establish_trt_cuda_graph_cache(
+        ...     default_cuda_graph_cache_size=8,
+        ...     cuda_graph_cache=my_cache,
+        ... )
+        >>> assert result is my_cache  # returned as-is
+
+        Typical usage inside a model's from_pretrained:
+
+        >>> cache = establish_trt_cuda_graph_cache(
+        ...     default_cuda_graph_cache_size=8,
+        ...     cuda_graph_cache=None,  # let env var decide
+        ... )
+        >>> # cache is None when env var is disabled (default)
+
+    Note:
+        - The environment variable ``ENABLE_AUTO_CUDA_GRAPHS_FOR_TRT_BACKEND``
+          defaults to ``False``
+        - When a caller-provided cache is given, the environment variable
+          is not checked
+        - CUDA graphs require TensorRT and a CUDA-capable GPU
+        - Each cached graph consumes VRAM proportional to the model's
+          execution context size
+
+    See Also:
+        - ``TRTCudaGraphCache``: The LRU cache class for CUDA graph state
+        - ``infer_from_trt_engine()``: Uses the cache during TRT inference
+    """
+    if cuda_graph_cache is not None:
+        return cuda_graph_cache
+    auto_cuda_graphs_enabled = get_boolean_from_env(
+        variable_name=ENABLE_AUTO_CUDA_GRAPHS_FOR_TRT_BACKEND_ENV_NAME,
+        default=DEFAULT_ENABLE_AUTO_CUDA_GRAPHS_FOR_TRT_BACKEND,
+    )
+    if not auto_cuda_graphs_enabled:
+        return None
+    return TRTCudaGraphCache(capacity=default_cuda_graph_cache_size)
 
 
 def get_trt_engine_inputs_and_outputs(
@@ -135,12 +435,20 @@ def infer_from_trt_engine(
     input_name: str,
     outputs: List[str],
     stream: Optional[torch.cuda.Stream] = None,
+    trt_cuda_graph_cache: Optional[TRTCudaGraphCache] = None,
 ) -> List[torch.Tensor]:
-    """Run inference using a TensorRT engine.
+    """Run inference using a TensorRT engine, optionally with CUDA graph acceleration.
 
-    Executes inference on preprocessed images using a TensorRT engine and execution
-    context. Handles both static and dynamic batch sizes, automatically splitting
-    large batches if needed.
+    Executes inference on preprocessed images using a TensorRT engine. Handles both
+    static and dynamic batch sizes, automatically splitting large batches if needed.
+
+    When ``trt_cuda_graph_cache`` is provided, CUDA graphs are captured and replayed
+    for improved performance on repeated inference with the same input shape. Each
+    graph is keyed by (shape, dtype, device) and stored in the cache. The cache
+    itself must be created by the caller (typically in the model class).
+
+    When ``trt_cuda_graph_cache`` is ``None``, inference runs through the standard
+    TRT execution path using the provided ``context``.
 
     Args:
         pre_processed_images: Preprocessed input tensor on CUDA device.
@@ -151,22 +459,28 @@ def infer_from_trt_engine(
 
         engine: TensorRT CUDA engine (ICudaEngine) to use for inference.
 
-        context: TensorRT execution context (IExecutionContext) for running inference.
-
         device: PyTorch CUDA device to use for inference.
 
         input_name: Name of the input tensor in the TensorRT engine.
 
         outputs: List of output tensor names to retrieve from the engine.
 
-        stream: CUDA stream to use for inference.
+        context: TensorRT execution context (IExecutionContext) for running inference.
+            Required when ``trt_cuda_graph_cache`` is ``None``. Ignored when using
+            CUDA graphs (each cached graph owns its own execution context).
+
+        trt_cuda_graph_cache: Optional CUDA graph cache. When provided, CUDA graphs
+            are used for inference. When ``None``, standard TRT execution is used.
+
+        stream: CUDA stream to use for inference. Defaults to the current stream
+            for the given device.
 
     Returns:
         List of output tensors from the TensorRT engine, in the order specified
         by the outputs parameter.
 
     Examples:
-        Run TensorRT inference:
+        Run TensorRT inference (standard path):
 
         >>> from inference_models.developer_tools import (
         ...     load_trt_model,
@@ -197,7 +511,7 @@ def infer_from_trt_engine(
         ...     context=context,
         ...     device=torch.device("cuda:0"),
         ...     input_name=inputs[0],
-        ...     outputs=outputs
+        ...     outputs=outputs,
         ... )
 
         Handle large batches:
@@ -212,9 +526,24 @@ def infer_from_trt_engine(
         ...     context=context,
         ...     device=torch.device("cuda:0"),
         ...     input_name=inputs[0],
-        ...     outputs=outputs
+        ...     outputs=outputs,
         ... )
         >>> # Results are automatically concatenated
+
+        Run with CUDA graph acceleration:
+
+        >>> from inference_models.models.common.trt import TRTCudaGraphCache
+        >>> cache = TRTCudaGraphCache(capacity=16)
+        >>>
+        >>> results = infer_from_trt_engine(
+        ...     pre_processed_images=images,
+        ...     trt_config=trt_config,
+        ...     engine=engine,
+        ...     device=torch.device("cuda:0"),
+        ...     input_name=inputs[0],
+        ...     outputs=outputs,
+        ...     trt_cuda_graph_cache=cache,
+        ... )
 
     Note:
         - Requires TensorRT and PyCUDA to be installed
@@ -241,6 +570,7 @@ def infer_from_trt_engine(
             device=device,
             input_name=input_name,
             outputs=outputs,
+            trt_cuda_graph_cache=trt_cuda_graph_cache,
         )
     stream.synchronize()
     return results
@@ -254,18 +584,14 @@ def _infer_from_trt_engine(
     device: torch.device,
     input_name: str,
     outputs: List[str],
+    trt_cuda_graph_cache: Optional[TRTCudaGraphCache] = None,
 ) -> List[torch.Tensor]:
     if trt_config.static_batch_size is not None:
-        return _infer_from_trt_engine_with_batch_size_boundaries(
-            pre_processed_images=pre_processed_images,
-            engine=engine,
-            context=context,
-            device=device,
-            input_name=input_name,
-            outputs=outputs,
-            min_batch_size=trt_config.static_batch_size,
-            max_batch_size=trt_config.static_batch_size,
-        )
+        min_batch_size = trt_config.static_batch_size
+        max_batch_size = trt_config.static_batch_size
+    else:
+        min_batch_size = trt_config.dynamic_batch_size_min
+        max_batch_size = trt_config.dynamic_batch_size_max
     return _infer_from_trt_engine_with_batch_size_boundaries(
         pre_processed_images=pre_processed_images,
         engine=engine,
@@ -273,8 +599,9 @@ def _infer_from_trt_engine(
         device=device,
         input_name=input_name,
         outputs=outputs,
-        min_batch_size=trt_config.dynamic_batch_size_min,
-        max_batch_size=trt_config.dynamic_batch_size_max,
+        min_batch_size=min_batch_size,
+        max_batch_size=max_batch_size,
+        trt_cuda_graph_cache=trt_cuda_graph_cache,
     )
 
 
@@ -287,6 +614,7 @@ def _infer_from_trt_engine_with_batch_size_boundaries(
     outputs: List[str],
     min_batch_size: int,
     max_batch_size: int,
+    trt_cuda_graph_cache: Optional[TRTCudaGraphCache] = None,
 ) -> List[torch.Tensor]:
     if pre_processed_images.shape[0] <= max_batch_size:
         reminder = min_batch_size - pre_processed_images.shape[0]
@@ -309,6 +637,7 @@ def _infer_from_trt_engine_with_batch_size_boundaries(
             device=device,
             input_name=input_name,
             outputs=outputs,
+            trt_cuda_graph_cache=trt_cuda_graph_cache,
         )
         if reminder > 0:
             results = [r[:-reminder] for r in results]
@@ -338,6 +667,7 @@ def _infer_from_trt_engine_with_batch_size_boundaries(
             device=device,
             input_name=input_name,
             outputs=outputs,
+            trt_cuda_graph_cache=trt_cuda_graph_cache,
         )
         if reminder > 0:
             results = [r[:-reminder] for r in results]
@@ -353,39 +683,149 @@ def _execute_trt_engine(
     device: torch.device,
     input_name: str,
     outputs: List[str],
+    trt_cuda_graph_cache: Optional[TRTCudaGraphCache] = None,
 ) -> List[torch.Tensor]:
-    batch_size = pre_processed_images.shape[0]
-    results = []
+    if trt_cuda_graph_cache is not None:
+        input_shape = tuple(pre_processed_images.shape)
+        input_dtype = pre_processed_images.dtype
+        cache_key = (input_shape, input_dtype, device)
+
+        if cache_key not in trt_cuda_graph_cache:
+            LOGGER.debug("Capturing CUDA graph for shape %s", input_shape)
+
+            results, trt_cuda_graph = _capture_cuda_graph(
+                pre_processed_images=pre_processed_images,
+                engine=engine,
+                device=device,
+                input_name=input_name,
+                outputs=outputs,
+            )
+            trt_cuda_graph_cache[cache_key] = trt_cuda_graph
+            return results
+
+        else:
+            trt_cuda_graph_state = trt_cuda_graph_cache[cache_key]
+            stream = trt_cuda_graph_state.cuda_stream
+            with torch.cuda.stream(stream):
+                trt_cuda_graph_state.input_buffer.copy_(pre_processed_images)
+                trt_cuda_graph_state.cuda_graph.replay()
+                results = [buf.clone() for buf in trt_cuda_graph_state.output_buffers]
+            stream.synchronize()
+            return results
+
+    else:
+        status = context.set_input_shape(input_name, tuple(pre_processed_images.shape))
+        if not status:
+            raise ModelRuntimeError(
+                message="Failed to set TRT model input shape during forward pass from the model.",
+                help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
+            )
+        status = context.set_tensor_address(input_name, pre_processed_images.data_ptr())
+        if not status:
+            raise ModelRuntimeError(
+                message="Failed to set input tensor data pointer during forward pass from the model.",
+                help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
+            )
+        results = []
+        for output in outputs:
+            output_tensor_shape = context.get_tensor_shape(output)
+            output_tensor_type = _trt_dtype_to_torch(engine.get_tensor_dtype(output))
+            result = torch.empty(
+                tuple(output_tensor_shape),
+                dtype=output_tensor_type,
+                device=device,
+            )
+            context.set_tensor_address(output, result.data_ptr())
+            results.append(result)
+        stream = torch.cuda.current_stream(device)
+        status = context.execute_async_v3(stream_handle=stream.cuda_stream)
+        if not status:
+            raise ModelRuntimeError(
+                message="Failed to complete inference from TRT model",
+                help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
+            )
+        return results
+
+
+def _capture_cuda_graph(
+    pre_processed_images: torch.Tensor,
+    engine: trt.ICudaEngine,
+    device: torch.device,
+    input_name: str,
+    outputs: List[str],
+) -> Tuple[List[torch.Tensor], TRTCudaGraphState]:
+    # Each CUDA graph needs its own execution context. Sharing a single context
+    # across graphs for different input shapes causes TRT to reallocate internal
+    # workspace buffers, invalidating GPU addresses baked into earlier graphs.
+    graph_context = engine.create_execution_context()
+
+    input_buffer = torch.empty_like(pre_processed_images, device=device)
+    input_buffer.copy_(pre_processed_images)
+
+    status = graph_context.set_input_shape(
+        input_name, tuple(pre_processed_images.shape)
+    )
+    if not status:
+        raise ModelRuntimeError(
+            message="Failed to set TRT model input shape during CUDA graph capture.",
+            help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
+        )
+    status = graph_context.set_tensor_address(input_name, input_buffer.data_ptr())
+    if not status:
+        raise ModelRuntimeError(
+            message="Failed to set input tensor data pointer during CUDA graph capture.",
+            help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
+        )
+
+    output_buffers = []
     for output in outputs:
-        output_tensor_shape = engine.get_tensor_shape(output)
+        output_tensor_shape = graph_context.get_tensor_shape(output)
         output_tensor_type = _trt_dtype_to_torch(engine.get_tensor_dtype(output))
-        result = torch.empty(
-            (batch_size,) + output_tensor_shape[1:],
+        output_buffer = torch.empty(
+            tuple(output_tensor_shape),
             dtype=output_tensor_type,
             device=device,
         )
-        context.set_tensor_address(output, result.data_ptr())
-        results.append(result)
-    status = context.set_input_shape(input_name, tuple(pre_processed_images.shape))
-    if not status:
-        raise ModelRuntimeError(
-            message="Failed to set TRT model input shape during forward pass from the model.",
-            help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
-        )
-    status = context.set_tensor_address(input_name, pre_processed_images.data_ptr())
-    if not status:
-        raise ModelRuntimeError(
-            message="Failed to set input tensor data pointer during forward pass from the model.",
-            help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
-        )
-    stream = torch.cuda.current_stream(device)
-    status = context.execute_async_v3(stream_handle=stream.cuda_stream)
-    if not status:
-        raise ModelRuntimeError(
-            message="Failed to complete inference from TRT model",
-            help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
-        )
-    return results
+        graph_context.set_tensor_address(output, output_buffer.data_ptr())
+        output_buffers.append(output_buffer)
+
+    stream = torch.cuda.Stream(device=device)
+    with torch.cuda.stream(stream):
+        status = graph_context.execute_async_v3(stream_handle=stream.cuda_stream)
+        if not status:
+            raise ModelRuntimeError(
+                message="Failed to execute TRT model warmup before CUDA graph capture.",
+                help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
+            )
+    stream.synchronize()
+
+    cuda_graph = torch.cuda.CUDAGraph()
+    with torch.cuda.graph(cuda_graph, stream=stream):
+        status = graph_context.execute_async_v3(stream_handle=stream.cuda_stream)
+        if not status:
+            raise ModelRuntimeError(
+                message="Failed to capture CUDA graph from TRT model execution.",
+                help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
+            )
+    with torch.cuda.stream(stream):
+        results = [buf.clone() for buf in output_buffers]
+    stream.synchronize()
+
+    # in order to avoid drift of results - it's better to replay to get the results
+    with torch.cuda.stream(stream):
+        cuda_graph.replay()
+        results = [buf.clone() for buf in output_buffers]
+    stream.synchronize()
+
+    trt_cuda_graph_state = TRTCudaGraphState(
+        cuda_graph=cuda_graph,
+        cuda_stream=stream,
+        input_buffer=input_buffer,
+        output_buffers=output_buffers,
+        execution_context=graph_context,
+    )
+
+    return results, trt_cuda_graph_state
 
 
 def _trt_dtype_to_torch(trt_dtype):
