@@ -4,8 +4,8 @@ import numpy as np
 import supervision as sv
 
 from inference.core.workflows.core_steps.trackers._utils import InstanceCache
-from inference.core.workflows.core_steps.trackers.object_tracker.v1 import (
-    ObjectTrackerBlockV1,
+from inference.core.workflows.core_steps.trackers.trackers.v1 import (
+    TrackerBlockV1,
 )
 from inference.core.workflows.execution_engine.entities.base import (
     ImageParentMetadata,
@@ -60,7 +60,7 @@ def _detections(xyxy: np.ndarray, confidence: float = 0.9) -> sv.Detections:
 # ---------------------------------------------------------------------------
 
 def _run_three_frames(tracker_type: str, **extra_kwargs):
-    block = ObjectTrackerBlockV1()
+    block = TrackerBlockV1()
     block.run(
         image=_wrap_with_workflow_image(_make_metadata(10)),
         detections=_detections(_FRAME1_XYXY),
@@ -89,7 +89,7 @@ def _run_three_frames(tracker_type: str, **extra_kwargs):
 # Per-algorithm tracker tests
 # ---------------------------------------------------------------------------
 
-def test_object_tracker_bytetrack() -> None:
+def test_tracker_bytetrack() -> None:
     # given / when
     frame2_result, frame3_result = _run_three_frames("bytetrack")
 
@@ -107,7 +107,7 @@ def test_object_tracker_bytetrack() -> None:
     assert len(frame3_result["already_seen_instances"]) == 3, "Expected 3 already-seen in frame 3"
 
 
-def test_object_tracker_sort() -> None:
+def test_tracker_sort() -> None:
     # given / when
     frame2_result, frame3_result = _run_three_frames("sort")
 
@@ -125,7 +125,7 @@ def test_object_tracker_sort() -> None:
     assert len(frame3_result["already_seen_instances"]) == 3, "Expected 3 already-seen in frame 3"
 
 
-def test_object_tracker_ocsort() -> None:
+def test_tracker_ocsort() -> None:
     # given / when — use high_conf_det_threshold=0.5 so 0.9-confidence detections pass
     frame2_result, frame3_result = _run_three_frames(
         "ocsort", high_conf_det_threshold=0.5
@@ -145,9 +145,9 @@ def test_object_tracker_ocsort() -> None:
     assert len(frame3_result["already_seen_instances"]) == 3, "Expected 3 already-seen in frame 3"
 
 
-def test_object_tracker_independent_state_per_algorithm() -> None:
+def test_tracker_independent_state_per_algorithm() -> None:
     # given — same video_id, two different tracker_type values on the same block
-    block = ObjectTrackerBlockV1()
+    block = TrackerBlockV1()
 
     for tracker_type in ("bytetrack", "sort"):
         block.run(
@@ -175,9 +175,9 @@ def test_object_tracker_independent_state_per_algorithm() -> None:
     assert len(sort_result["tracked_detections"]) > 0, "SORT should have confirmed tracks"
 
 
-def test_object_tracker_not_video_file() -> None:
+def test_tracker_not_video_file() -> None:
     # given — comes_from_video_file=False with varying timestamps
-    block = ObjectTrackerBlockV1()
+    block = TrackerBlockV1()
     block.run(
         image=_wrap_with_workflow_image(_make_metadata(10, comes_from_video_file=False, timestamp_offset=0)),
         detections=_detections(_FRAME1_XYXY),
@@ -205,7 +205,7 @@ def test_object_tracker_not_video_file() -> None:
     assert frame3_ids == frame2_ids, "Expected the same 3 IDs in frame 3 as frame 2"
 
 
-def test_object_tracker_missing_fps() -> None:
+def test_tracker_missing_fps() -> None:
     # given — fps=None should not raise; block logs a warning and uses fps=0
     detections = sv.Detections(
         xyxy=np.array([[10, 10, 20, 20]]),
@@ -221,7 +221,7 @@ def test_object_tracker_missing_fps() -> None:
         ),
         comes_from_video_file=True,
     )
-    block = ObjectTrackerBlockV1()
+    block = TrackerBlockV1()
 
     # when / then — must not raise
     result = block.run(

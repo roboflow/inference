@@ -50,10 +50,10 @@ enabling multi-stream tracking within a single workflow.
 """
 
 
-class ObjectTrackerManifest(WorkflowBlockManifest):
+class TrackerManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
-            "name": "Object Tracker",
+            "name": "Tracker",
             "version": "v1",
             "short_description": SHORT_DESCRIPTION,
             "long_description": LONG_DESCRIPTION,
@@ -62,13 +62,14 @@ class ObjectTrackerManifest(WorkflowBlockManifest):
             "ui_manifest": {
                 "section": "video",
                 "icon": "far fa-location-crosshairs",
-                "blockPriority": 1,
+                "blockPriority": 0,
                 "subtitle_field": "tracker_type",
+                "trackers": True,
             },
         },
         protected_namespaces=(),
     )
-    type: Literal["roboflow_core/object_tracker@v1"]
+    type: Literal["roboflow_core/trackers@v1"]
     image: Selector(kind=[IMAGE_KIND]) = Field(
         description="Input image with embedded video metadata (fps and video_identifier). "
         "Used to initialise and retrieve per-video tracker state.",
@@ -201,7 +202,7 @@ class ObjectTrackerManifest(WorkflowBlockManifest):
         return ">=1.3.0,<2.0.0"
 
 
-class ObjectTrackerBlockV1(WorkflowBlock):
+class TrackerBlockV1(WorkflowBlock):
     def __init__(self) -> None:
         # Keyed by f"{video_id}::{tracker_type}" for independent state per algorithm
         self._trackers: Dict[str, Any] = {}
@@ -209,7 +210,7 @@ class ObjectTrackerBlockV1(WorkflowBlock):
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
-        return ObjectTrackerManifest
+        return TrackerManifest
 
     def run(
         self,
@@ -228,10 +229,10 @@ class ObjectTrackerBlockV1(WorkflowBlock):
         metadata = image.video_metadata
         fps = metadata.fps
         if not fps:
-            fps = 0
+            fps = 30
             logger.warning(
-                f"Malformed fps in VideoMetadata, {self.__class__.__name__} requires "
-                "fps in order to initialise tracker"
+                f"fps not available in VideoMetadata for {self.__class__.__name__}, "
+                "defaulting to 30 fps for tracker initialisation"
             )
         video_id = metadata.video_identifier
         key = f"{video_id}::{tracker_type}"
