@@ -39,7 +39,7 @@ def _ref_to_def_name(
 
 def _get_property_name_options(
     type_definition: dict,
-    defs: dict
+    defs: dict,
 ) -> Optional[List[str]]:
     """Resolve property_name enum from operation schema when present (e.g. DetectionsProperty)."""
     properties = type_definition.get("properties") or {}
@@ -63,10 +63,11 @@ def _get_property_name_options(
 def prepare_operations_descriptions() -> List[OperationDescription]:
     operations_chain_schema = OperationsChain.model_json_schema()
     defs = operations_chain_schema.get("$defs", {})
+    operation_type_definitions = operations_chain_schema["properties"]["operations"]["items"]["oneOf"]  # fmt: skip
 
     operation_types = [
         name
-        for type_definition in operations_chain_schema["properties"]["operations"]["items"]["oneOf"]
+        for type_definition in operation_type_definitions
         if (name := _ref_to_def_name(type_definition)) is not None
     ]
     type_definitions = [defs[operation_type] for operation_type in operation_types]
