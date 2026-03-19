@@ -177,12 +177,16 @@ class BlockManifest(WorkflowBlockManifest):
             }
         },
     )
-    aws_access_key_id: Optional[Union[Selector(kind=[SECRET_KIND, STRING_KIND]), str]] = Field(
+    aws_access_key_id: Optional[
+        Union[Selector(kind=[SECRET_KIND, STRING_KIND]), str]
+    ] = Field(
         default=None,
         description="AWS access key ID for authentication. If not provided, boto3's default credential chain is used (environment variables, ~/.aws/credentials, or IAM role). Recommended: connect this to an Environment Secrets Store block rather than hardcoding.",
         examples=["$steps.secrets.aws_access_key_id"],
     )
-    aws_secret_access_key: Optional[Union[Selector(kind=[SECRET_KIND, STRING_KIND]), str]] = Field(
+    aws_secret_access_key: Optional[
+        Union[Selector(kind=[SECRET_KIND, STRING_KIND]), str]
+    ] = Field(
         default=None,
         description="AWS secret access key for authentication. If not provided, boto3's default credential chain is used. Recommended: connect this to an Environment Secrets Store block rather than hardcoding.",
         examples=["$steps.secrets.aws_secret_access_key"],
@@ -192,6 +196,7 @@ class BlockManifest(WorkflowBlockManifest):
         description="AWS region where the bucket is located (e.g., 'us-east-1'). If not provided, boto3's default region is used (AWS_DEFAULT_REGION environment variable or ~/.aws/config).",
         examples=["us-east-1"],
     )
+
     @field_validator("max_entries_per_file")
     @classmethod
     def ensure_max_entries_per_file_is_correct(cls, value: Any) -> Any:
@@ -300,7 +305,9 @@ class S3SinkBlockV1(WorkflowBlock):
             try:
                 content = dump_json_inline(content=content)
             except Exception as error:
-                logging.warning(f"Could not process JSON content in append mode: {error}")
+                logging.warning(
+                    f"Could not process JSON content in append mode: {error}"
+                )
                 return {"error_status": True, "message": "Invalid JSON content"}
 
         needs_rotation = (

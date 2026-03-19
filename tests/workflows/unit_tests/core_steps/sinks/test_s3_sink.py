@@ -16,7 +16,6 @@ from inference.core.workflows.core_steps.sinks.s3.v1 import (
     upload_content_to_s3,
 )
 
-
 # ---------------------------------------------------------------------------
 # Manifest validation
 # ---------------------------------------------------------------------------
@@ -134,7 +133,9 @@ def test_manifest_parsing_rejects_invalid_output_mode() -> None:
 
 
 def test_generate_s3_key_with_prefix() -> None:
-    key = generate_s3_key(s3_prefix="logs/detections", file_name_prefix="run", file_type="csv")
+    key = generate_s3_key(
+        s3_prefix="logs/detections", file_name_prefix="run", file_type="csv"
+    )
 
     assert key.startswith("logs/detections/run_")
     assert key.endswith(".csv")
@@ -149,8 +150,12 @@ def test_generate_s3_key_without_prefix() -> None:
 
 
 def test_generate_s3_key_normalizes_trailing_slash_in_prefix() -> None:
-    key_with_slash = generate_s3_key(s3_prefix="logs/", file_name_prefix="run", file_type="csv")
-    key_without_slash = generate_s3_key(s3_prefix="logs", file_name_prefix="run", file_type="csv")
+    key_with_slash = generate_s3_key(
+        s3_prefix="logs/", file_name_prefix="run", file_type="csv"
+    )
+    key_without_slash = generate_s3_key(
+        s3_prefix="logs", file_name_prefix="run", file_type="csv"
+    )
 
     assert key_with_slash.startswith("logs/run_")
     assert key_without_slash.startswith("logs/run_")
@@ -194,7 +199,12 @@ def test_upload_content_to_s3_returns_success_on_ok() -> None:
 def test_upload_content_to_s3_returns_error_on_client_error() -> None:
     mock_s3 = MagicMock()
     mock_s3.put_object.side_effect = ClientError(
-        error_response={"Error": {"Code": "InvalidAccessKeyId", "Message": "The key does not exist."}},
+        error_response={
+            "Error": {
+                "Code": "InvalidAccessKeyId",
+                "Message": "The key does not exist.",
+            }
+        },
         operation_name="PutObject",
     )
 
@@ -378,7 +388,8 @@ def test_append_log_txt_accumulates_entries_in_single_object() -> None:
 
     for i in range(3):
         result = _run_block(
-            block, mock_s3,
+            block,
+            mock_s3,
             content=f"content-{i}",
             file_type="txt",
             output_mode="append_log",
@@ -401,7 +412,8 @@ def test_append_log_txt_rotates_to_new_key_after_limit() -> None:
 
     for i in range(5):
         _run_block(
-            block, mock_s3,
+            block,
+            mock_s3,
             content=f"content-{i}",
             file_type="txt",
             output_mode="append_log",
@@ -429,7 +441,8 @@ def test_append_log_json_converts_to_jsonl() -> None:
 
     for i in range(2):
         result = _run_block(
-            block, mock_s3,
+            block,
+            mock_s3,
             content=json.dumps({"data": i}),
             file_type="json",
             output_mode="append_log",
@@ -451,14 +464,16 @@ def test_append_log_csv_strips_header_on_subsequent_entries() -> None:
     block, mock_s3 = _make_block_with_mock_s3()
 
     _run_block(
-        block, mock_s3,
+        block,
+        mock_s3,
         content="col_a,col_b\n0,a\n",
         file_type="csv",
         output_mode="append_log",
         max_entries_per_file=10,
     )
     _run_block(
-        block, mock_s3,
+        block,
+        mock_s3,
         content="col_a,col_b\n1,b\n",
         file_type="csv",
         output_mode="append_log",
@@ -476,7 +491,8 @@ def test_append_log_invalid_json_returns_error_without_uploading() -> None:
     block, mock_s3 = _make_block_with_mock_s3()
 
     result = _run_block(
-        block, mock_s3,
+        block,
+        mock_s3,
         content="not valid json",
         file_type="json",
         output_mode="append_log",
@@ -497,7 +513,8 @@ def test_append_log_surfaces_credential_error_on_first_call() -> None:
     )
 
     result = _run_block(
-        block, mock_s3,
+        block,
+        mock_s3,
         content="content-0",
         file_type="txt",
         output_mode="append_log",
@@ -516,7 +533,8 @@ def test_append_log_surfaces_access_denied_error_on_first_call() -> None:
     )
 
     result = _run_block(
-        block, mock_s3,
+        block,
+        mock_s3,
         content="content-0",
         file_type="txt",
         output_mode="append_log",
@@ -531,7 +549,8 @@ def test_append_log_uses_correct_bucket_name() -> None:
     block, mock_s3 = _make_block_with_mock_s3()
 
     _run_block(
-        block, mock_s3,
+        block,
+        mock_s3,
         content="data",
         file_type="txt",
         output_mode="append_log",
