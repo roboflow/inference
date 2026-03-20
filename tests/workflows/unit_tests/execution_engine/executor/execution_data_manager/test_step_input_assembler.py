@@ -602,7 +602,9 @@ def test_reduce_batch_dimensionality_when_reduction_is_illegal() -> None:
         )
 
 
-def test_get_masks_intersection_for_dimensions_two_masks_same_dimension_returns_intersection() -> None:
+def test_get_masks_intersection_for_dimensions_two_masks_same_dimension_returns_intersection() -> (
+    None
+):
     # Two masks at the same dimension level (dimension 1): intersection should contain
     # only indices that appear in both masks.
     # given
@@ -622,7 +624,9 @@ def test_get_masks_intersection_for_dimensions_two_masks_same_dimension_returns_
 # --- intersect_masks_per_dimension (intra-dimensional intersection) ---
 
 
-def test_intersect_masks_per_dimension_two_masks_same_dimension_returns_intersection() -> None:
+def test_intersect_masks_per_dimension_two_masks_same_dimension_returns_intersection() -> (
+    None
+):
     # At dimension 1: only indices present in every mask are kept.
     mask_a = {(0,), (3,)}
     mask_b = {(1,), (2,), (3,)}
@@ -635,7 +639,9 @@ def test_intersect_masks_per_dimension_two_masks_same_dimension_returns_intersec
     assert result == {1: {(3,)}}
 
 
-def test_intersect_masks_per_dimension_multi_dimension_separate_masks_at_dim2_empty() -> None:
+def test_intersect_masks_per_dimension_multi_dimension_separate_masks_at_dim2_empty() -> (
+    None
+):
     # At dimension 2 we have two *separate* masks: one with {(1,0)}, one with {(3,1)}.
     # Intra-dim intersection: only indices that appear in *every* contributing mask.
     # So result[2] is empty (no index is in both). Contrast with scenario 1 where one mask
@@ -670,7 +676,9 @@ def test_intersect_masks_per_dimension_three_masks_partial_overlap_at_dim1() -> 
     assert result == {1: {(1,)}}
 
 
-def test_intersect_masks_per_dimension_single_mask_multi_dim_returns_that_mask() -> None:
+def test_intersect_masks_per_dimension_single_mask_multi_dim_returns_that_mask() -> (
+    None
+):
     # Single mask: "intersection" over one set is the set itself.
     mask = {(0,), (1,), (0, 0), (1, 0)}
 
@@ -683,7 +691,9 @@ def test_intersect_masks_per_dimension_single_mask_multi_dim_returns_that_mask()
     assert result[2] == {(0, 0), (1, 0)}
 
 
-def test_intersect_masks_per_dimension_two_masks_agree_at_dim2_one_has_no_dim2() -> None:
+def test_intersect_masks_per_dimension_two_masks_agree_at_dim2_one_has_no_dim2() -> (
+    None
+):
     # At dim 2 only one mask has indices; we intersect over non-empty sets only, so result is that set.
     mask_d1_both = {(0,), (1,)}  # both masks have dim-1
     mask_d2_one = {(0, 0), (1, 0)}  # only this mask has dim-2
@@ -784,7 +794,9 @@ def test_get_masks_intersection_for_dimensions_scenario1_hierarchical_chain() ->
     assert result == {1: {(1,)}, 2: {(1, 0)}, 3: {(1, 0, 0)}}
 
 
-def test_get_masks_intersection_for_dimensions_scenario2_intra_dim_empty_all_empty() -> None:
+def test_get_masks_intersection_for_dimensions_scenario2_intra_dim_empty_all_empty() -> (
+    None
+):
     # dim2 has two separate masks {(1,0)} and {(3,1)} -> intersection empty.
     # So no valid chain; all dimensions end up empty.
     batch_masks = [
@@ -803,7 +815,9 @@ def test_get_masks_intersection_for_dimensions_scenario2_intra_dim_empty_all_emp
     assert result == {1: set(), 2: set(), 3: set()}
 
 
-def test_get_masks_intersection_for_dimensions_empty_batch_masks_returns_none_per_dim() -> None:
+def test_get_masks_intersection_for_dimensions_empty_batch_masks_returns_none_per_dim() -> (
+    None
+):
     result = get_masks_intersection_for_dimensions(
         batch_masks=[],
         dimensions={1, 2},
@@ -828,7 +842,9 @@ def test_get_masks_intersection_for_dimensions_single_mask_multi_dim_identity() 
     assert result[3] == {(0, 0, 0), (1, 0, 0)}
 
 
-def test_get_masks_intersection_for_dimensions_three_masks_dim1_agree_one_index() -> None:
+def test_get_masks_intersection_for_dimensions_three_masks_dim1_agree_one_index() -> (
+    None
+):
     # All three masks at dim 1 contain only (1,); no higher dims.
     batch_masks = [{(0,), (1,)}, {(1,), (2,)}, {(1,)}]
 
