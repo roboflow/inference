@@ -16,6 +16,7 @@ from inference.core.env import (
     CORE_MODEL_YOLO_WORLD_ENABLED,
     DEPTH_ESTIMATION_ENABLED,
     FLORENCE2_ENABLED,
+    GLM_OCR_ENABLED,
     MOONDREAM2_ENABLED,
     PALIGEMMA_ENABLED,
     QWEN_2_5_ENABLED,
@@ -1008,3 +1009,10 @@ if USE_INFERENCE_MODELS:
                 InferenceModelsQwen35VLAdapter
             )
         ROBOFLOW_MODEL_TYPES[("vlm", "qwen_3_5")] = InferenceModelsQwen35VLAdapter
+
+    if GLM_OCR_ENABLED:
+        from inference.models.glm_ocr.glm_ocr_inference_models import (
+            InferenceModelsGLMOCRAdapter,
+        )
+
+        ROBOFLOW_MODEL_TYPES[("vlm", "glm-ocr")] = InferenceModelsGLMOCRAdapter

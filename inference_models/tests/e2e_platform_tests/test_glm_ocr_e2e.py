@@ -7,9 +7,7 @@ from inference_models.configuration import DEFAULT_DEVICE
 
 @pytest.mark.e2e_model_inference
 @pytest.mark.gpu_only
-def test_glm_ocr_model(
-    ocr_test_image_numpy: np.ndarray, roboflow_api_key: str
-) -> None:
+def test_glm_ocr_model(ocr_test_image_numpy: np.ndarray, roboflow_api_key: str) -> None:
     # given
     model = AutoModel.from_pretrained(
         "glm-ocr",

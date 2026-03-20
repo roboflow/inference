@@ -153,6 +153,7 @@ nav:
         - Changelog: workflows/execution_engine_changelog.md
       - Benchmarks: workflows/benchmarks.md
   - Reference:
+      - Overview: reference/overview.md
       - Inference SDK:
           - About: inference_helpers/inference_sdk.md
           - Configuration: inference_helpers/inference_sdk/configuration.md
