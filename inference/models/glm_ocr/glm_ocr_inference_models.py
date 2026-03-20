@@ -14,10 +14,10 @@ from inference.core.env import (
     VALID_INFERENCE_MODELS_BACKENDS,
 )
 from inference.core.models.base import Model
+from inference.core.models.types import PreprocessReturnMetadata
 from inference.core.roboflow_api import get_extra_weights_provider_headers
 from inference.core.utils.image_utils import load_image_bgr
 from inference_models import AutoModel
-from inference_models.entities import ImageDimensions
 from inference_models.models.glm_ocr.glm_ocr_hf import GlmOcrHF
 
 
@@ -60,7 +60,8 @@ class InferenceModelsGLMOCRAdapter(Model):
                 "disable_preproc_auto_orient", False
             ),
         )
-        return self._model.pre_process_generation(np_image, prompt, **kwargs)[:2]
+        input_shape = PreprocessReturnMetadata({"image_dims": np_image.shape[:2][::-1]})
+        return self._model.pre_process_generation(np_image, prompt, **kwargs), input_shape
 
     def predict(self, inputs, **kwargs) -> torch.Tensor:
         return self._model.generate(inputs, **kwargs)
@@ -68,7 +69,7 @@ class InferenceModelsGLMOCRAdapter(Model):
     def postprocess(
         self,
         predictions: torch.Tensor,
-        preprocess_return_metadata: List[ImageDimensions],
+        preprocess_return_metadata: PreprocessReturnMetadata,
         **kwargs,
     ) -> List[LMMInferenceResponse]:
         result = self._model.post_process_generation(
@@ -79,8 +80,8 @@ class InferenceModelsGLMOCRAdapter(Model):
             LMMInferenceResponse(
                 response=result,
                 image=InferenceResponseImage(
-                    width=preprocess_return_metadata[0].width,
-                    height=preprocess_return_metadata[0].height,
+                    width=preprocess_return_metadata["image_dims"][0],
+                    height=preprocess_return_metadata["image_dims"][1],
                 ),
             )
         ]
