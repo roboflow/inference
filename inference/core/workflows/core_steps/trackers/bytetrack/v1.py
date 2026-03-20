@@ -44,7 +44,7 @@ enabling multi-stream tracking within a single workflow.
 class ByteTrackManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
-            "name": "Byte Track",
+            "name": "ByteTrack Tracker",
             "version": "v1",
             "short_description": SHORT_DESCRIPTION,
             "long_description": LONG_DESCRIPTION,
