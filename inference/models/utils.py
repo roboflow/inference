@@ -16,6 +16,7 @@ from inference.core.env import (
     CORE_MODEL_YOLO_WORLD_ENABLED,
     DEPTH_ESTIMATION_ENABLED,
     FLORENCE2_ENABLED,
+    GLM_OCR_ENABLED,
     MOONDREAM2_ENABLED,
     PALIGEMMA_ENABLED,
     QWEN_2_5_ENABLED,
@@ -23,7 +24,7 @@ from inference.core.env import (
     QWEN_3_ENABLED,
     SAM3_3D_OBJECTS_ENABLED,
     SMOLVLM2_ENABLED,
-    USE_INFERENCE_MODELS, GLM_OCR_ENABLED,
+    USE_INFERENCE_MODELS,
 )
 from inference.core.models.base import Model
 from inference.core.models.stubs import (
@@ -1015,4 +1016,3 @@ if USE_INFERENCE_MODELS:
         )
 
         ROBOFLOW_MODEL_TYPES[("vlm", "glm-ocr")] = InferenceModelsGLMOCRAdapter
-

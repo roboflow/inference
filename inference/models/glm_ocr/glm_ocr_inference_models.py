@@ -1,8 +1,11 @@
-from typing import Any, Optional, List
+from typing import Any, List, Optional
 
 import torch
 
-from inference.core.entities.responses import LMMInferenceResponse, InferenceResponseImage
+from inference.core.entities.responses import (
+    InferenceResponseImage,
+    LMMInferenceResponse,
+)
 from inference.core.env import (
     ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES,
     ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES,
@@ -89,4 +92,3 @@ class InferenceModelsGLMOCRAdapter(Model):
             delete_from_disk (bool, optional): Whether to delete cached files from disk. Defaults to True.
         """
         pass
-
