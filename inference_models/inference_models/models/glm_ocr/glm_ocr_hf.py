@@ -3,7 +3,7 @@ This is inference-models wrapper for the model originally published in https://g
 """
 
 from threading import Lock
-from typing import List, Union
+from typing import List, Union, Any
 
 import numpy as np
 import torch
@@ -52,8 +52,7 @@ class GlmOcrHF:
         device: torch.device = DEFAULT_DEVICE,
         trust_remote_code: bool = False,
         local_files_only: bool = True,
-        quantization_config=None,
-        disable_quantization: bool = False,
+        quantization_config: Any = None,
         **kwargs,
     ) -> "GlmOcrHF":
         dtype = cls.default_dtype
