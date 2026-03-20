@@ -33,8 +33,9 @@ This block filters detections based on spatial overlap relationships with a spec
    - **Overlap class detections**: Objects matching the specified `overlap_class_name` (e.g., "bicycle", "pallet", "car")
    - **Other detections**: All remaining objects that may overlap with the overlap class
 3. For each overlap class detection, identifies other detections that spatially overlap with it using one of two overlap modes:
-   - **Center Overlap**: Checks if the center point of other detections falls within the overlap class bounding box (more precise, requires the center to be inside)
-   - **Any Overlap**: Checks if there's any spatial intersection between bounding boxes (more lenient, any overlap counts)
+   - **Center Overlap**: Checks if the center point of other detections falls within the overlap class region (more precise, requires the center to be inside)
+   - **Any Overlap**: Checks if there's any spatial intersection between detections (more lenient, any overlap counts)
+   When instance segmentation masks are available, overlap is computed at the pixel level using the actual mask shapes. For plain object detection predictions (no masks), overlap is computed using bounding boxes.
 4. Collects all detections that overlap with any overlap class instance
 5. Filters out the overlap class detections themselves from the output
 6. Returns only the overlapping detections (objects that are positioned relative to the overlap class)
@@ -88,7 +89,7 @@ class OverlapManifest(WorkflowBlockManifest):
     )
     overlap_type: Literal["Center Overlap", "Any Overlap"] = Field(
         default="Center Overlap",
-        description="Method for determining spatial overlap between detections. 'Center Overlap' checks if the center point of other detections falls within the overlap class bounding box (more precise, requires center to be inside). 'Any Overlap' checks if there's any spatial intersection between bounding boxes (more lenient, any overlap counts). Center Overlap is stricter and better for containment relationships, while Any Overlap is more inclusive and better for detecting any proximity or partial overlap.",
+        description="Method for determining spatial overlap between detections. 'Center Overlap' checks if the center point of other detections falls within the overlap class region (more precise, requires center to be inside). 'Any Overlap' checks if there's any spatial intersection between detections (more lenient, any overlap counts). Center Overlap is stricter and better for containment relationships, while Any Overlap is more inclusive and better for detecting any proximity or partial overlap. When segmentation masks are present, overlap is computed at the pixel level using the actual mask geometry; otherwise bounding boxes are used.",
         examples=["Center Overlap", "Any Overlap"],
     )
     overlap_class_name: Union[str] = Field(
@@ -144,6 +145,34 @@ class OverlapBlockV1(WorkflowBlock):
                 or other[1] > overlap[3]
             )
 
+    @classmethod
+    def masks_overlap(
+        cls,
+        overlap_mask: np.ndarray,
+        other_mask: np.ndarray,
+        other_bbox: list[int],
+        overlap_type: Literal["Center Overlap", "Any Overlap"],
+    ) -> bool:
+        """Check overlap using segmentation masks instead of bounding boxes.
+
+        Args:
+            overlap_mask: Boolean mask of the overlap-class detection.
+            other_mask: Boolean mask of the other detection.
+            other_bbox: Bounding box [x1, y1, x2, y2] of the other detection.
+            overlap_type: "Center Overlap" checks whether the center of
+                *other_bbox* falls on a True pixel in *overlap_mask*.
+                "Any Overlap" checks whether the two masks share any True pixel.
+        """
+        if overlap_type == "Center Overlap":
+            cx = int((other_bbox[0] + other_bbox[2]) / 2)
+            cy = int((other_bbox[1] + other_bbox[3]) / 2)
+            h, w = overlap_mask.shape
+            if 0 <= cy < h and 0 <= cx < w:
+                return bool(overlap_mask[cy, cx])
+            return False
+        else:
+            return bool(np.logical_and(overlap_mask, other_mask).any())
+
     def run(
         self,
         predictions: sv.Detections,
@@ -151,29 +180,51 @@ class OverlapBlockV1(WorkflowBlock):
         overlap_class_name: str,
     ) -> BlockResult:
 
-        overlaps = []
+        has_masks = (
+            getattr(predictions, "mask", None) is not None
+            and len(predictions.mask) == len(predictions.xyxy)
+        )
+
+        overlap_indices = []
         others = {}
         for i in range(len(predictions.xyxy)):
             data = get_data_item(predictions.data, i)
             if data["class_name"] == overlap_class_name:
-                overlaps.append(predictions.xyxy[i])
+                overlap_indices.append(i)
             else:
                 others[i] = predictions.xyxy[i]
 
         # set of indices representing the overlapped objects
         idx = set()
-        for overlap in overlaps:
+        for oi in overlap_indices:
             if not others:
                 break
-            overlapped = {
-                k
-                for k in others
-                if OverlapBlockV1.coords_overlap(overlap, others[k], overlap_type)
-            }
+
+            if has_masks:
+                overlapped = {
+                    k
+                    for k in others
+                    if OverlapBlockV1.masks_overlap(
+                        predictions.mask[oi],
+                        predictions.mask[k],
+                        predictions.xyxy[k],
+                        overlap_type,
+                    )
+                }
+            else:
+                overlapped = {
+                    k
+                    for k in others
+                    if OverlapBlockV1.coords_overlap(
+                        predictions.xyxy[oi], others[k], overlap_type
+                    )
+                }
+
             # once it's overlapped we don't need to check again
             for k in overlapped:
                 del others[k]
 
             idx = idx.union(overlapped)
 
-        return {OUTPUT_KEY: predictions[list(idx)]}
+        selected = sorted(idx)
+        return {OUTPUT_KEY: predictions[selected]}
