@@ -231,6 +231,12 @@ ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES = str2bool(
 ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES = str2bool(
     os.getenv("ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES", "False")
 )
+MAX_INFERENCE_MODELS_CACHE_SIZE_MB = int(
+    os.getenv("MAX_INFERENCE_MODELS_CACHE_SIZE_MB", "-1")
+)
+INFERENCE_MODELS_CACHE_WATCHDOG_INTERVAL_MINUTES = int(
+    os.getenv("INFERENCE_MODELS_CACHE_WATCHDOG_INTERVAL_MINUTES", "60")
+)
 
 # ID of host device, default is None
 DEVICE_ID = os.getenv("DEVICE_ID", None)
@@ -573,6 +579,14 @@ HOSTED_INSTANCE_SEGMENTATION_URL = os.getenv(
         else "https://lambda-instance-segmentation.staging.roboflow.com"
     ),
 )
+HOSTED_SEMANTIC_SEGMENTATION_URL = os.getenv(
+    "HOSTED_SEMANTIC_SEGMENTATION_URL",
+    (
+        "https://segment.roboflow.com"
+        if PROJECT == "roboflow-platform"
+        else "https://lambda-semantic-segmentation.staging.roboflow.com"
+    ),
+)
 HOSTED_CLASSIFICATION_URL = os.getenv(
     "HOSTED_CLASSIFICATION_URL",
     (
@@ -844,6 +858,31 @@ WEBRTC_MODAL_PUBLIC_STUN_SERVERS = os.getenv(
 WEBRTC_MODAL_USAGE_QUOTA_ENABLED = str2bool(
     os.getenv("WEBRTC_MODAL_USAGE_QUOTA_ENABLED", "False")
 )
+
+#
+# Workspace stream quota
+#
+# Redis-base rate limiting that disables more than N concurrent
+# connections from a single workspace
+WEBRTC_WORKSPACE_STREAM_QUOTA_ENABLED = str2bool(
+    os.getenv("WEBRTC_WORKSPACE_STREAM_QUOTA_ENABLED", "False")
+)
+WEBRTC_WORKSPACE_STREAM_QUOTA = int(os.getenv("WEBRTC_WORKSPACE_STREAM_QUOTA", "10"))
+# TTL in seconds for active stream entries (auto-expire if no explicit cleanup)
+WEBRTC_WORKSPACE_STREAM_TTL_SECONDS = int(
+    os.getenv("WEBRTC_WORKSPACE_STREAM_TTL_SECONDS", "60")
+)
+# URL for Modal to send session heartbeats to keep session alive
+# Example: "https://serverless.roboflow.com/webrtc/session/heartbeat"
+WEBRTC_SESSION_HEARTBEAT_URL = os.getenv(
+    "WEBRTC_SESSION_HEARTBEAT_URL",
+    None,
+)
+# How often Modal sends session heartbeats (in seconds)
+WEBRTC_SESSION_HEARTBEAT_INTERVAL_SECONDS = int(
+    os.getenv("WEBRTC_SESSION_HEARTBEAT_INTERVAL_SECONDS", "30")
+)
+
 WEBRTC_DATA_CHANNEL_BUFFER_DRAINING_DELAY = float(
     os.getenv("WEBRTC_DATA_CHANNEL_BUFFER_DRAINING_DELAY", "0.1")
 )
