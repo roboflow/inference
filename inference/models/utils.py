@@ -23,7 +23,7 @@ from inference.core.env import (
     QWEN_3_ENABLED,
     SAM3_3D_OBJECTS_ENABLED,
     SMOLVLM2_ENABLED,
-    USE_INFERENCE_MODELS,
+    USE_INFERENCE_MODELS, GLM_OCR_ENABLED,
 )
 from inference.core.models.base import Model
 from inference.core.models.stubs import (
@@ -1008,3 +1008,11 @@ if USE_INFERENCE_MODELS:
                 InferenceModelsQwen35VLAdapter
             )
         ROBOFLOW_MODEL_TYPES[("vlm", "qwen_3_5")] = InferenceModelsQwen35VLAdapter
+
+    if GLM_OCR_ENABLED:
+        from inference.models.glm_ocr.glm_ocr_inference_models import (
+            InferenceModelsGLMOCRAdapter,
+        )
+
+        ROBOFLOW_MODEL_TYPES[("vlm", "glm-ocr")] = InferenceModelsGLMOCRAdapter
+

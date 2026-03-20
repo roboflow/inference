@@ -179,7 +179,6 @@ class GlmOcrHF:
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         prompt: str = None,
-        input_color_format: ColorFormat = None,
         **kwargs,
     ) -> dict:
         prompt = prompt or TEXT_RECOGNITION_PROMPT
