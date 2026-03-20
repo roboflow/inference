@@ -75,6 +75,7 @@ The `inference-models` library supports a wide range of computer vision models a
 | [DocTR](doctr.md) | `torch` | Apache 2.0 | N/A | 🔑 | ❌ |
 | [EasyOCR](easyocr.md) | `torch` | Apache 2.0 | N/A | 🔑 | ❌ |
 | [TrOCR](trocr.md) | `hugging-face` | MIT | N/A | 🔑 | ❌ |
+| [GLM-OCR](glm-ocr.md) | `torch` | MIT | N/A | 🔑 | ❌ |
 
 ### Interactive Segmentation
 

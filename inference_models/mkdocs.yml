@@ -64,6 +64,7 @@ nav:
           - DocTR: models/doctr.md
           - EasyOCR: models/easyocr.md
           - TrOCR: models/trocr.md
+          - GLM-OCR: models/glm-ocr.md
       - Keypoint Detection:
           - YOLOv8: models/yolov8-keypoint-detection.md
           - YOLOv11: models/yolov11-keypoint-detection.md
