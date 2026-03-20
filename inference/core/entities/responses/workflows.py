@@ -61,6 +61,20 @@ class ExternalOperationDescription(BaseModel):
     nested_operation_output_kind: Optional[List[str]] = None
     description: Optional[str] = None
 
+    property_name_options: Optional[List[str]] = Field(
+        default=None,
+        description=(
+            "List of possible property names. \
+            Optional parameter for operations extracting property values from data. "
+        ),
+        examples=[
+            "size",
+            "height",
+            "width",
+            "aspect_ratio",
+        ],
+    )
+
     @classmethod
     def from_internal_entity(
         cls, operation_description: OperationDescription
@@ -82,6 +96,7 @@ class ExternalOperationDescription(BaseModel):
             nested_operation_input_kind=nested_operation_input_kind,
             nested_operation_output_kind=nested_operation_output_kind,
             description=operation_description.description,
+            property_name_options=operation_description.property_name_options,
         )
 
 
