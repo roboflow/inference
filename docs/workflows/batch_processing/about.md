@@ -261,48 +261,12 @@ That's it - you should be able to see your processing results now.
 
 The service charges usage based on the runtime of the underlying compute machines, starting at **4 credits** per GPU hour 
 and **1 credit** per CPU hour. You can find the specific rates for your workspace on our 
-[pricing page](https://roboflow.com/pricing).
+[credits page](https://roboflow.com/credits).
 
 We cannot provide an exact cost estimate for processing 1,000 images or 1 hour of video, as this depends entirely on 
-the **complexity of the chosen Workflow**. However, we offer benchmark results to help you better understand 
-potential costs.
-
-| Workflow Description                                                            | Dataset Size                    | Machine Type | Charge                                              |
-|---------------------------------------------------------------------------------|---------------------------------|--------------|-----------------------------------------------------|
-| Single Model - YOLOv8 Nano `(image size = 640)` - Object Detection              | 100k images                     | GPU          | 0.04  credit / 1k images                            |
-| Single Model - YOLOv8 Nano `(image size = 1280)`- Object Detection              | 100k images                     | GPU          | 0.06  credit / 1k images                            |
-| Single Model - YOLOv8 Medium `(image size = 640)` - Object Detection            | 100k images                     | GPU          | 0.06  credit / 1k images                            |
-| Single Model - YOLOv8 Medium `(image size = 1280)` - Object Detection           | 100k images                     | GPU          | 0.1  credit / 1k images                             |
-| Single Model - YOLOv8 Large `(image size = 640)` - Object Detection             | 100k images                     | GPU          | 0.08 credit / 1k images                             |
-| Single Model - YOLOv8 Large `(image size = 1280)` - Object Detection            | 100k images                     | GPU          | 0.18 credit / 1k images                             |
-| Single Model - Roboflow Instant - Object Detection                              | 30k images                      | GPU          | 0.33  credit / 1k images                            |
-| Single Model - Florence-2 - Object Detection + Region Captioning                | 30k images                      | GPU          | 0.5  credit / 1k images                             |
-| Two stage - YoloV8 Nano + crop + YoloV8 Nano `(image size = 640)` - OD          | 10k images                      | GPU          | 0.25  credit / 1k images                            |
-| Two stage - YoloV8 Nano + crop + YoloV8 Large `(image size = 640)` - OD + OD    | 10k images                      | GPU          | 0.30  credit / 1k images                            |
-| Two stage - YoloV8 Nano + crop + CLIP `(image size = 640)` - OD + Embeddings    | 10k images                      | GPU          | 0.25  credit / 1k images                            |
-| Two stage - YoloV8 Nano + crop + Classifier `(image size = 640)` - OD + CLS     | 10k images                      | GPU          | 0.20  credit / 1k images                            |
-| Two stage - YoloV8 Nano + crop + SAM 2 `(image size = 640)` - OD + Segmentation | 10k images                      | GPU          | 0.40  credit / 1k images                            |
-| Single Model - YOLOv8 Nano `(image size = 640)` - Object Detection              | 4 videos, each 1h @ 30 fps 480p | GPU          | 1  credit / video hour, 0.01 credit / 1k frames     |
-| Single Model - YOLOv8 Nano `(image size = 640)` - Object Detection + tracking   | 32 videos, each 1m @ 10 fps HD  | CPU          | 1.8 credit / video hour, 0.05 credit / 1k frames    |
-| Two stage - YoloV8 Nano + crop + Classifier `(image size = 640)` - OD + CLS     | 2 videos, each 1h @ 30 fps 480p | GPU          | 4.6  credits / video hour, 0.046 credit / 1k frames |
-
-
-!!! Warning "Cost estimation in practice"
-
-    Please consider the results above as reference values only—we advise checking the cost of smaller data batches 
-    before running large processing jobs. Reported values can be reproduced once optimal settings for machine type 
-    and machine concurrency are configured.
-
-    Please take into account the technical nuances of the service (described below) to better understand the pricing. 
-    In particular, since the service shards data under the hood and executes parallel processing on multiple machines
-    simultaneously, **wall clock execution time usually does not equal the billed time.** For instance, if a job uses 
-    four GPU machines for one hour, the billed amount would be **4 GPU-hours (16 credits)**.
+the **complexity of the chosen Workflow**.
 
 ## Known limitations
-
-<div style="border: 2px solid #059669; background: #D1FAE5; color: #065F46; padding: 1em; border-radius: 8px; text-align: center; margin-bottom: 1em; font-weight: bold;">
-  🚀 <b>Update:</b> Batch Processing service <b>now supports running Custom Python blocks.</b>
-</div>
 
 * Certain Workflow blocks requiring access to env variables and local storage (like File Sink and Environment 
 Secret Store) are blacklisted and will not execute.
