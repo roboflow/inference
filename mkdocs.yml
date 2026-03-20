@@ -104,6 +104,7 @@ nav:
           - Depth Estimation (Depth Anything V2 Small): foundation/depth_estimation.md
           - Florence-2: foundation/florence2.md
           - TrOCR (OCR): foundation/trocr.md
+          - GLM-OCR (OCR): foundation/glm_ocr.md
           - Grounding DINO (Object Detection): foundation/grounding_dino.md
           - L2CS-Net (Gaze Detection): foundation/gaze.md
           - Moondream2: foundation/moondream2.md
