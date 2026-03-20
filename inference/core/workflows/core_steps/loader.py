@@ -369,6 +369,7 @@ from inference.core.workflows.core_steps.sinks.roboflow.dataset_upload.v2 import
 from inference.core.workflows.core_steps.sinks.roboflow.model_monitoring_inference_aggregator.v1 import (
     ModelMonitoringInferenceAggregatorBlockV1,
 )
+from inference.core.workflows.core_steps.sinks.s3.v1 import S3SinkBlockV1
 from inference.core.workflows.core_steps.sinks.slack.notification.v1 import (
     SlackNotificationBlockV1,
 )
@@ -822,6 +823,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         EmailNotificationBlockV1,
         EmailNotificationBlockV2,
         LocalFileSinkBlockV1,
+        S3SinkBlockV1,
         TraceVisualizationBlockV1,
         ReferencePathVisualizationBlockV1,
         ByteTrackerBlockV3,
