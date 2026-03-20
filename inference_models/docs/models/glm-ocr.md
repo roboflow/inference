@@ -121,30 +121,6 @@ results = model.prompt(
 print(f"Serial number: {results[0]}")
 ```
 
-### Inference Server (HTTP API)
-
-GLM-OCR can also be used via the inference server HTTP API:
-
-```python
-import requests
-
-response = requests.post(
-    "http://localhost:9001/infer/lmm",
-    json={
-        "api_key": "your_roboflow_api_key",
-        "model_id": "glm-ocr",
-        "image": {
-            "type": "url",
-            "value": "https://example.com/image.png",
-        },
-        "prompt": "Text Recognition:",
-    },
-)
-
-data = response.json()
-print(f"Recognized text: {data['response']}")
-```
-
 ## Output Format
 
 GLM-OCR returns a `List[str]` containing the recognized text from the input images.
