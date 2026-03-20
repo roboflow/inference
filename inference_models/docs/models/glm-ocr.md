@@ -76,43 +76,60 @@ Install with PyTorch GPU extras:
 
 - **PyTorch**: `torch-cu118`, `torch-cu124`, `torch-cu126`, `torch-cu128`, `torch-jp6-cu126`
 
+## Recognition Methods
+
+GLM-OCR provides three convenience methods for common OCR tasks, plus a general `prompt()` method for custom prompts:
+
+- **`recognize_text(images)`** - General text recognition (uses `"Text Recognition:"` prompt)
+- **`recognize_formula(images)`** - Mathematical formula recognition (uses `"Formula Recognition:"` prompt)
+- **`recognize_table(images)`** - Table structure recognition (uses `"Table Recognition:"` prompt)
+- **`prompt(images, prompt="...")`** - Custom prompt for any recognition task
+
+All methods return `List[str]` and accept the same optional parameters: `max_new_tokens`, `do_sample`, `skip_special_tokens`.
+
 ## Usage Examples
 
-### Basic Text Recognition
+### Text Recognition
 
 ```python
 import cv2
 from inference_models import AutoModel
 
-# Load GLM-OCR model
 model = AutoModel.from_pretrained(
     "glm-ocr",
     api_key="your_roboflow_api_key"
 )
 
-# Load image
 image = cv2.imread("path/to/image.jpg")
 
-# Run OCR with default prompt ("Text Recognition:")
-results = model.prompt(images=image)
+# Using the convenience method
+results = model.recognize_text(images=image)
 print(f"Recognized text: {results[0]}")
+```
+
+### Formula Recognition
+
+```python
+image = cv2.imread("path/to/equation.png")
+
+results = model.recognize_formula(images=image)
+print(f"Formula: {results[0]}")
+```
+
+### Table Recognition
+
+```python
+image = cv2.imread("path/to/table.png")
+
+results = model.recognize_table(images=image)
+print(f"Table: {results[0]}")
 ```
 
 ### Custom Prompt
 
 ```python
-import cv2
-from inference_models import AutoModel
-
-# Load model
-model = AutoModel.from_pretrained(
-    "glm-ocr",
-    api_key="your_roboflow_api_key"
-)
-
 image = cv2.imread("path/to/serial_number.png")
 
-# Use a custom prompt to guide recognition
 results = model.prompt(
     images=image,
     prompt="Read the serial number in this image:",
@@ -133,4 +150,4 @@ GLM-OCR returns a `List[str]` containing the recognized text from the input imag
 1. **Use GPU** - GLM-OCR requires GPU with bfloat16 support
 2. **Flash Attention** - Automatically enabled on Ampere+ GPUs (compute capability >= 8.0) for faster inference
 3. **Adjust max_new_tokens** - Increase for longer text passages, decrease for short labels
-4. **Specific prompts** - Use targeted prompts like "Read the serial number:" for better results on specific tasks
+4. **Use convenience methods** - `recognize_text()`, `recognize_formula()`, `recognize_table()` use optimized prompts for each task
