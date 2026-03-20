@@ -77,20 +77,20 @@ class SORTManifest(WorkflowBlockManifest):
     minimum_iou_threshold: Union[
         Optional[float], Selector(kind=[FLOAT_ZERO_TO_ONE_KIND])
     ] = Field(
-        default=0.1,
+        default=0.3,
         description="Minimum IoU required to associate a detection with an existing track. "
-        "Default: 0.1.",
-        examples=[0.1, "$inputs.minimum_iou_threshold"],
+        "Default: 0.3.",
+        examples=[0.3, "$inputs.minimum_iou_threshold"],
         json_schema_extra={
             "always_visible": True,
         },
     )
     minimum_consecutive_frames: Union[Optional[int], Selector(kind=[INTEGER_KIND])] = (
         Field(
-            default=2,
+            default=3,
             description="Number of consecutive frames a track must be matched before it is "
-            "emitted as a confirmed track (tracker_id != -1). Default: 2.",
-            examples=[2, "$inputs.minimum_consecutive_frames"],
+            "emitted as a confirmed track (tracker_id != -1). Default: 3.",
+            examples=[3, "$inputs.minimum_consecutive_frames"],
             json_schema_extra={
                 "always_visible": True,
             },
@@ -108,10 +108,10 @@ class SORTManifest(WorkflowBlockManifest):
     track_activation_threshold: Union[
         Optional[float], Selector(kind=[FLOAT_ZERO_TO_ONE_KIND])
     ] = Field(
-        default=0.7,
+        default=0.25,
         description="Minimum detection confidence required to spawn a new track. "
-        "Detections below this threshold are not used to create new tracks. Default: 0.7.",
-        examples=[0.7, "$inputs.track_activation_threshold"],
+        "Detections below this threshold are not used to create new tracks. Default: 0.25.",
+        examples=[0.25, "$inputs.track_activation_threshold"],
     )
     instances_cache_size: int = Field(
         default=16384,
@@ -137,9 +137,9 @@ class SORTBlockV1(TrackerBlockBase):
         return SORTTracker(
             lost_track_buffer=kwargs.get("lost_track_buffer", 30),
             frame_rate=fps,
-            track_activation_threshold=kwargs.get("track_activation_threshold", 0.7),
-            minimum_consecutive_frames=kwargs.get("minimum_consecutive_frames", 2),
-            minimum_iou_threshold=kwargs.get("minimum_iou_threshold", 0.1),
+            track_activation_threshold=kwargs.get("track_activation_threshold", 0.25),
+            minimum_consecutive_frames=kwargs.get("minimum_consecutive_frames", 3),
+            minimum_iou_threshold=kwargs.get("minimum_iou_threshold", 0.3),
         )
 
     def run(
@@ -147,10 +147,10 @@ class SORTBlockV1(TrackerBlockBase):
         image: WorkflowImageData,
         detections: sv.Detections,
         lost_track_buffer: int = 30,
-        minimum_iou_threshold: float = 0.1,
-        minimum_consecutive_frames: int = 2,
+        minimum_iou_threshold: float = 0.3,
+        minimum_consecutive_frames: int = 3,
         instances_cache_size: int = 16384,
-        track_activation_threshold: float = 0.7,
+        track_activation_threshold: float = 0.25,
     ) -> BlockResult:
         return self._run_tracker(
             image=image,
