@@ -61,7 +61,10 @@ class InferenceModelsGLMOCRAdapter(Model):
             ),
         )
         input_shape = PreprocessReturnMetadata({"image_dims": np_image.shape[:2][::-1]})
-        return self._model.pre_process_generation(np_image, prompt, **kwargs), input_shape
+        return (
+            self._model.pre_process_generation(np_image, prompt, **kwargs),
+            input_shape,
+        )
 
     def predict(self, inputs, **kwargs) -> torch.Tensor:
         return self._model.generate(inputs, **kwargs)

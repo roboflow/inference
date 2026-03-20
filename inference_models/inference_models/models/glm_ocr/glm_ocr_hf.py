@@ -3,7 +3,7 @@ This is inference-models wrapper for the model originally published in https://g
 """
 
 from threading import Lock
-from typing import List, Union, Any
+from typing import Any, List, Union
 
 import numpy as np
 import torch
