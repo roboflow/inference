@@ -1,5 +1,13 @@
 # Changelog
 
+## `0.22.0`
+
+### Added
+
+- GLM-OCR model added to models zoo 
+
+---
+
 ## `0.21.1`
 
 ### Fixed

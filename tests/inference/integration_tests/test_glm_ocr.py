@@ -10,7 +10,6 @@ api_key = os.environ.get("API_KEY")
 
 @pytest.mark.skipif(
     bool_env(os.getenv("SKIP_GLM_OCR_TEST", False))
-    or bool_env(os.getenv("SKIP_LMM_TEST", False))
     or os.getenv("USE_INFERENCE_MODELS", "false").lower() != "true",
     reason="Skipping GLM OCR test (requires USE_INFERENCE_MODELS=true)",
 )

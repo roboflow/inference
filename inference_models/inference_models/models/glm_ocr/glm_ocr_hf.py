@@ -1,5 +1,9 @@
+"""
+This is inference-models wrapper for the model originally published in https://github.com/zai-org/GLM-OCR
+"""
+
 from threading import Lock
-from typing import List, Union
+from typing import Any, List, Union
 
 import numpy as np
 import torch
@@ -12,6 +16,10 @@ from inference_models.configuration import (
     INFERENCE_MODELS_GLM_OCR_DEFAULT_MAX_NEW_TOKENS,
 )
 from inference_models.entities import ColorFormat
+
+TEXT_RECOGNITION_PROMPT = "Text Recognition:"
+FORMULA_RECOGNITION_PROMPT = "Formula Recognition:"
+TABLE_RECOGNITION_PROMPT = "Table Recognition:"
 
 
 def _get_glm_ocr_attn_implementation(device: torch.device) -> str:
@@ -44,8 +52,7 @@ class GlmOcrHF:
         device: torch.device = DEFAULT_DEVICE,
         trust_remote_code: bool = False,
         local_files_only: bool = True,
-        quantization_config=None,
-        disable_quantization: bool = False,
+        quantization_config: Any = None,
         **kwargs,
     ) -> "GlmOcrHF":
         dtype = cls.default_dtype
@@ -88,6 +95,63 @@ class GlmOcrHF:
         self._device = device
         self._lock = Lock()
 
+    def recognize_table(
+        self,
+        images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
+        input_color_format: ColorFormat = None,
+        max_new_tokens: int = INFERENCE_MODELS_GLM_OCR_DEFAULT_MAX_NEW_TOKENS,
+        do_sample: bool = INFERENCE_MODELS_GLM_OCR_DEFAULT_DO_SAMPLE,
+        skip_special_tokens: bool = True,
+        **kwargs,
+    ) -> List[str]:
+        return self.prompt(
+            images=images,
+            prompt=FORMULA_RECOGNITION_PROMPT,
+            input_color_format=input_color_format,
+            max_new_tokens=max_new_tokens,
+            do_sample=do_sample,
+            skip_special_tokens=skip_special_tokens,
+            **kwargs,
+        )
+
+    def recognize_formula(
+        self,
+        images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
+        input_color_format: ColorFormat = None,
+        max_new_tokens: int = INFERENCE_MODELS_GLM_OCR_DEFAULT_MAX_NEW_TOKENS,
+        do_sample: bool = INFERENCE_MODELS_GLM_OCR_DEFAULT_DO_SAMPLE,
+        skip_special_tokens: bool = True,
+        **kwargs,
+    ) -> List[str]:
+        return self.prompt(
+            images=images,
+            prompt=FORMULA_RECOGNITION_PROMPT,
+            input_color_format=input_color_format,
+            max_new_tokens=max_new_tokens,
+            do_sample=do_sample,
+            skip_special_tokens=skip_special_tokens,
+            **kwargs,
+        )
+
+    def recognize_text(
+        self,
+        images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
+        input_color_format: ColorFormat = None,
+        max_new_tokens: int = INFERENCE_MODELS_GLM_OCR_DEFAULT_MAX_NEW_TOKENS,
+        do_sample: bool = INFERENCE_MODELS_GLM_OCR_DEFAULT_DO_SAMPLE,
+        skip_special_tokens: bool = True,
+        **kwargs,
+    ) -> List[str]:
+        return self.prompt(
+            images=images,
+            prompt=TEXT_RECOGNITION_PROMPT,
+            input_color_format=input_color_format,
+            max_new_tokens=max_new_tokens,
+            do_sample=do_sample,
+            skip_special_tokens=skip_special_tokens,
+            **kwargs,
+        )
+
     def prompt(
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
@@ -115,11 +179,9 @@ class GlmOcrHF:
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         prompt: str = None,
-        input_color_format: ColorFormat = None,
         **kwargs,
     ) -> dict:
-        prompt = prompt or "Text Recognition:"
-
+        prompt = prompt or TEXT_RECOGNITION_PROMPT
         messages = [
             {
                 "role": "user",
@@ -176,3 +238,10 @@ class GlmOcrHF:
         )
 
         return [text.strip() for text in decoded]
+
+    def __call__(
+        self,
+        images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
+        **kwargs,
+    ) -> List[str]:
+        return self.prompt(images, **kwargs)

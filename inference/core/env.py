@@ -218,13 +218,15 @@ FLORENCE2_ENABLED = str2bool(os.getenv("FLORENCE2_ENABLED", True))
 
 SAM3_3D_OBJECTS_ENABLED = str2bool(os.getenv("SAM3_3D_OBJECTS_ENABLED", False))
 
+GLM_OCR_ENABLED = str2bool(os.getenv("GLM_OCR_ENABLED", True))
+
 # Flag to enable YOLO-World core model, default is True
 CORE_MODEL_YOLO_WORLD_ENABLED = str2bool(
     os.getenv("CORE_MODEL_YOLO_WORLD_ENABLED", True)
 )
 
 # Enable experimental RFDETR backend (inference_models) rollout, default is True
-USE_INFERENCE_MODELS = str2bool(os.getenv("USE_INFERENCE_MODELS", "False"))
+USE_INFERENCE_MODELS = str2bool(os.getenv("USE_INFERENCE_MODELS", "True"))
 ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES = str2bool(
     os.getenv("ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES", "False")
 )
