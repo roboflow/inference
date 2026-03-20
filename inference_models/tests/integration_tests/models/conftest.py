@@ -27,6 +27,9 @@ SMOLVLM_BASE_FT_URL = (
 MOONDREAM2_BASE_FT_URL = (
     "https://storage.googleapis.com/roboflow-tests-assets/moondream2/moondream2-2b.zip"
 )
+GLM_OCR_BASE_FT_URL = (
+    "https://storage.googleapis.com/roboflow-tests-assets/glm-ocr/glm-ocr.zip"
+)
 COIN_COUNTING_RFDETR_NANO_TORCH_CS_STRETCH_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/coin-counting-rfdetr-nano-torch-cs-stretch-640.zip"
 COIN_COUNTING_RFDETR_NANO_ONNX_CS_STRETCH_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-nano-onnx-cs-stretch-640.zip"
 COIN_COUNTING_RFDETR_NANO_ONNX_STATIC_CROP_LETTERBOX_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-nano-onnx-static-crop-letterbox-640.zip"
@@ -367,6 +370,21 @@ def moondream2_path() -> str:
         if not os.path.exists(unzipped_package_path):
             with zipfile.ZipFile(zip_path, "r") as zip_ref:
                 zip_ref.extractall(unzipped_package_path)
+    return unzipped_package_path
+
+
+@pytest.fixture(scope="module")
+def glm_ocr_path() -> str:
+    package_dir = os.path.join(MODELS_DIR, "glm-ocr")
+    unzipped_package_path = os.path.join(package_dir, "weights")
+    os.makedirs(package_dir, exist_ok=True)
+    zip_path = os.path.join(package_dir, "glm-ocr.zip")
+    _download_if_not_exists(file_path=zip_path, url=GLM_OCR_BASE_FT_URL)
+    lock_path = f"{unzipped_package_path}.lock"
+    with FileLock(lock_path, timeout=180):
+        if not os.path.exists(unzipped_package_path):
+            with zipfile.ZipFile(zip_path, "r") as zip_ref:
+                zip_ref.extractall(package_dir)
     return unzipped_package_path
 
 
