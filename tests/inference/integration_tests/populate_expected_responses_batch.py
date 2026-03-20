@@ -3,8 +3,9 @@ import os
 from pathlib import Path
 
 import requests
-from .batch_regression_test import INFER_RESPONSE_FUNCTIONS
 from PIL import Image
+
+from .batch_regression_test import INFER_RESPONSE_FUNCTIONS
 
 TESTS_FILE = "batch_tests.json" if os.getenv("USE_INFERENCE_MODELS", "false").lower() != "true" else "batch_tests_inference_models.json"
 

@@ -38,6 +38,8 @@ from inference_models.models.common.roboflow.pre_processing import (
     pre_process_network_input,
 )
 from inference_models.models.common.trt import (
+    TRTCudaGraphCache,
+    establish_trt_cuda_graph_cache,
     get_trt_engine_inputs_and_outputs,
     infer_from_trt_engine,
     load_trt_model,
@@ -83,6 +85,8 @@ class YOLONasForObjectDetectionTRT(
         model_name_or_path: str,
         device: torch.device = DEFAULT_DEVICE,
         engine_host_code_allowed: bool = False,
+        trt_cuda_graph_cache: Optional[TRTCudaGraphCache] = None,
+        default_trt_cuda_graph_cache_size: int = 8,
         **kwargs,
     ) -> "YOLONasForObjectDetectionTRT":
         if device.type != "cuda":
@@ -155,6 +159,10 @@ class YOLONasForObjectDetectionTRT(
                 help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
         # git rid of outputs order and names verification, as YOLO-NAS clearly produces different outputs
+        trt_cuda_graph_cache = establish_trt_cuda_graph_cache(
+            default_cuda_graph_cache_size=default_trt_cuda_graph_cache_size,
+            cuda_graph_cache=trt_cuda_graph_cache,
+        )
         return cls(
             engine=engine,
             input_name=inputs[0],
@@ -165,6 +173,7 @@ class YOLONasForObjectDetectionTRT(
             device=device,
             cuda_context=cuda_context,
             execution_context=execution_context,
+            trt_cuda_graph_cache=trt_cuda_graph_cache,
         )
 
     def __init__(
@@ -178,6 +187,7 @@ class YOLONasForObjectDetectionTRT(
         device: torch.device,
         cuda_context: cuda.Context,
         execution_context: trt.IExecutionContext,
+        trt_cuda_graph_cache: Optional[TRTCudaGraphCache],
     ):
         self._engine = engine
         self._input_name = input_name
@@ -188,6 +198,7 @@ class YOLONasForObjectDetectionTRT(
         self._device = device
         self._cuda_context = cuda_context
         self._execution_context = execution_context
+        self._trt_cuda_graph_cache = trt_cuda_graph_cache
         self._session_thread_lock = Lock()
         self._inference_stream = torch.cuda.Stream(device=self._device)
         self._thread_local_storage = threading.local()
@@ -215,7 +226,13 @@ class YOLONasForObjectDetectionTRT(
         self._pre_process_stream.synchronize()
         return pre_processed_images, pre_processing_meta
 
-    def forward(self, pre_processed_images: torch.Tensor, **kwargs) -> torch.Tensor:
+    def forward(
+        self,
+        pre_processed_images: torch.Tensor,
+        disable_cuda_graphs: bool = False,
+        **kwargs,
+    ) -> torch.Tensor:
+        cache = self._trt_cuda_graph_cache if not disable_cuda_graphs else None
         with self._session_thread_lock:
             with use_cuda_context(context=self._cuda_context):
                 results = infer_from_trt_engine(
@@ -227,6 +244,7 @@ class YOLONasForObjectDetectionTRT(
                     input_name=self._input_name,
                     outputs=self._output_names,
                     stream=self._inference_stream,
+                    trt_cuda_graph_cache=cache,
                 )
                 return torch.cat(results, dim=-1)
 

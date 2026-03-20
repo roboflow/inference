@@ -25,8 +25,8 @@ class ScalarOnlyEchoBlockManifest(WorkflowBlockManifest):
     type: Literal["scalar_only_echo"]
     # Union allows runtime validator to set resolved input value (e.g. "hello") on this field
     value: Union[Selector(), str] = Field(
-        default="foobar", 
-        description="Scalar value to echo (e.g. from $inputs.param or another scalar step).", 
+        default="foobar",
+        description="Scalar value to echo (e.g. from $inputs.param or another scalar step).",
         examples=["$inputs.my_param"],
     )
 

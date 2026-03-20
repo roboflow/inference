@@ -27,6 +27,9 @@ SMOLVLM_BASE_FT_URL = (
 MOONDREAM2_BASE_FT_URL = (
     "https://storage.googleapis.com/roboflow-tests-assets/moondream2/moondream2-2b.zip"
 )
+GLM_OCR_BASE_FT_URL = (
+    "https://storage.googleapis.com/roboflow-tests-assets/glm-ocr/glm-ocr.zip"
+)
 COIN_COUNTING_RFDETR_NANO_TORCH_CS_STRETCH_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/coin-counting-rfdetr-nano-torch-cs-stretch-640.zip"
 COIN_COUNTING_RFDETR_NANO_ONNX_CS_STRETCH_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-nano-onnx-cs-stretch-640.zip"
 COIN_COUNTING_RFDETR_NANO_ONNX_STATIC_CROP_LETTERBOX_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-nano-onnx-static-crop-letterbox-640.zip"
@@ -192,6 +195,10 @@ SAM_PACKAGE_URL = (
 SAM2_PACKAGE_URL = (
     "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/sam2.zip"
 )
+
+RFDETR_NANO_T4_TRT_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-nano-t4-trt.zip"
+RFDETR_SEG_NANO_T4_TRT_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-seg-nano-t4-trt.zip"
+YOLOV8N_640_T4_TRT_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov8n-640-t4-trt.zip"
 COIN_COUNTING_TRT_PACKAGE_YOLO_V8_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov8-coin-counting-trt-t4-package.zip"
 COIN_COUNTING_TRT_PACKAGE_RF_DETR_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-coin-counting-trt-t4-package.zip"
 COIN_COUNTING_TRT_PACKAGE_YOLO_NAS_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolo-nas-coin-counting-trt-t4-package.zip"
@@ -370,6 +377,21 @@ def moondream2_path() -> str:
     return unzipped_package_path
 
 
+@pytest.fixture(scope="module")
+def glm_ocr_path() -> str:
+    package_dir = os.path.join(MODELS_DIR, "glm-ocr")
+    unzipped_package_path = os.path.join(package_dir, "weights")
+    os.makedirs(package_dir, exist_ok=True)
+    zip_path = os.path.join(package_dir, "glm-ocr.zip")
+    _download_if_not_exists(file_path=zip_path, url=GLM_OCR_BASE_FT_URL)
+    lock_path = f"{unzipped_package_path}.lock"
+    with FileLock(lock_path, timeout=180):
+        if not os.path.exists(unzipped_package_path):
+            with zipfile.ZipFile(zip_path, "r") as zip_ref:
+                zip_ref.extractall(package_dir)
+    return unzipped_package_path
+
+
 def download_model_package(
     model_package_zip_url: str,
     package_name: str,
@@ -448,6 +470,30 @@ def coin_counting_rfdetr_nano_torch_static_crop_center_crop_package() -> str:
     return download_model_package(
         model_package_zip_url=COIN_COUNTING_RFDETR_NANO_TORCH_STATIC_CROP_CENTER_CROP_URL,
         package_name="coin-counting-rfdetr-nano-torch-static-crop-center-crop",
+    )
+
+
+@pytest.fixture(scope="module")
+def rfdetr_nano_t4_trt_package() -> str:
+    return download_model_package(
+        model_package_zip_url=RFDETR_NANO_T4_TRT_PACKAGE_URL,
+        package_name="rfdetr-nano-t4-trt",
+    )
+
+
+@pytest.fixture(scope="module")
+def rfdetr_seg_nano_t4_trt_package() -> str:
+    return download_model_package(
+        model_package_zip_url=RFDETR_SEG_NANO_T4_TRT_PACKAGE_URL,
+        package_name="rfdetr-seg-nano-t4-trt",
+    )
+
+
+@pytest.fixture(scope="module")
+def yolov8n_640_t4_trt_package() -> str:
+    return download_model_package(
+        model_package_zip_url=YOLOV8N_640_T4_TRT_PACKAGE_URL,
+        package_name="yolov8n-640-t4-trt",
     )
 
 
