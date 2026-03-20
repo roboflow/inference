@@ -19,6 +19,8 @@ from inference.core.workflows.core_steps.common.query_language.operations.utils 
     safe_stringify,
 )
 from inference.core.workflows.execution_engine.constants import (
+    AREA_CONVERTED_KEY_IN_SV_DETECTIONS,
+    AREA_KEY_IN_SV_DETECTIONS,
     BOUNDING_RECT_ANGLE_KEY_IN_SV_DETECTIONS,
     BOUNDING_RECT_HEIGHT_KEY_IN_SV_DETECTIONS,
     BOUNDING_RECT_RECT_KEY_IN_SV_DETECTIONS,
@@ -83,6 +85,10 @@ DETECTION_PROPERTY_EXTRACTION = {
     ),
     DetectionsProperty.BOUNDING_RECT_ANGLE: lambda x: x[5].get(
         BOUNDING_RECT_ANGLE_KEY_IN_SV_DETECTIONS
+    ),
+    DetectionsProperty.AREA: lambda x: x[5].get(AREA_KEY_IN_SV_DETECTIONS),
+    DetectionsProperty.AREA_CONVERTED: lambda x: x[5].get(
+        AREA_CONVERTED_KEY_IN_SV_DETECTIONS
     ),
 }
 
