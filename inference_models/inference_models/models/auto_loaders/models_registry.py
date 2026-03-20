@@ -337,6 +337,10 @@ REGISTERED_MODELS: Dict[
         module_name="inference_models.models.moondream2.moondream2_hf",
         class_name="MoonDream2HF",
     ),
+    ("glm-ocr", VLM_TASK, BackendType.HF): LazyClass(
+        module_name="inference_models.models.glm_ocr.glm_ocr_hf",
+        class_name="GlmOcrHF",
+    ),
     ("vit", CLASSIFICATION_TASK, BackendType.ONNX): LazyClass(
         module_name="inference_models.models.vit.vit_classification_onnx",
         class_name="VITForClassificationOnnx",
