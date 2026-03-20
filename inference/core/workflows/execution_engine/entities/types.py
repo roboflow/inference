@@ -750,6 +750,66 @@ RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND = Kind(
 )
 
 
+SEMANTIC_SEGMENTATION_PREDICTION_KIND_DOCS = """
+This kind represents a single semantic segmentation prediction as an
+[`sv.Detections(...)`](https://supervision.roboflow.com/latest/detection/core/) object
+with one detection per predicted class. Each detection carries an RLE-encoded mask
+covering all pixels assigned to that class.
+
+**Why RLE and not polygons:**
+
+Semantic segmentation assigns a class label to every pixel in the image. A single class
+can appear in multiple spatially disconnected regions (e.g., two separate "person" regions
+on opposite sides of the frame). Polygon-based serialization uses `cv2.findContours()`,
+which only retains the first contiguous contour and silently discards all others — causing
+irreversible data loss for non-contiguous masks. RLE (Run-Length Encoding, COCO standard)
+is a pixel-level encoding that represents the complete mask regardless of spatial topology,
+making it the only correct serialization format for semantic segmentation masks.
+
+**Internal representation:** `sv.Detections` with:
+- `xyxy` — tight bounding box enclosing all pixels of the class
+- `class_id` — integer class ID
+- `confidence` — mean confidence over all pixels of the class
+- `data["class_name"]` — class label string
+- `data["rle_mask"]` — numpy object array of COCO RLE dicts `{"size": [H, W], "counts": "..."}`
+
+**Serialised format** (one entry per class in `predictions`):
+
+```json
+{
+    "image": {"width": 640, "height": 480},
+    "predictions": [
+        {
+            "x": 320.0, "y": 240.0, "width": 200.0, "height": 180.0,
+            "confidence": 0.92,
+            "class_id": 1,
+            "class": "person",
+            "detection_id": "a1b2c3d4-...",
+            "rle_mask": {"size": [480, 640], "counts": "XYZ..."}
+        }
+    ]
+}
+```
+
+**Decoding RLE masks:**
+
+```python
+import pycocotools.mask as mask_utils
+import numpy as np
+
+rle = prediction["rle_mask"]
+binary_mask = mask_utils.decode(rle).astype(bool)  # shape: (H, W)
+```
+"""
+SEMANTIC_SEGMENTATION_PREDICTION_KIND = Kind(
+    name="semantic_segmentation_prediction",
+    description="Prediction with per-pixel class label and confidence for semantic segmentation",
+    docs=SEMANTIC_SEGMENTATION_PREDICTION_KIND_DOCS,
+    serialised_data_type="dict",
+    internal_data_type="sv.Detections",
+)
+
+
 KEYPOINT_DETECTION_PREDICTION_KIND_DOCS = """
 This kind represents single keypoints prediction in form of 
 [`sv.Detections(...)`](https://supervision.roboflow.com/latest/detection/core/) object.
