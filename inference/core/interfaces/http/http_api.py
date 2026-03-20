@@ -1391,7 +1391,7 @@ class HttpInterface(BaseInterface):
                     service_secret=service_secret,
                 )
 
-        if LMM_ENABLED or MOONDREAM2_ENABLED:
+        if not LAMBDA and (LMM_ENABLED or MOONDREAM2_ENABLED):
 
             @app.post(
                 "/infer/lmm",
