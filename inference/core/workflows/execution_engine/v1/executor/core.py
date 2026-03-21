@@ -148,6 +148,13 @@ def execute_steps(
         duration_minimum_value = apply_duration_minimum.get()
     else:
         duration_minimum_value = None
+    # Capture OTel context so it can be re-attached inside worker threads
+    try:
+        from opentelemetry import context as otel_context
+
+        otel_ctx = otel_context.get_current()
+    except ImportError:
+        otel_ctx = None
     logger.debug(f"Executing steps: {next_steps}.")
     steps_functions = [
         partial(
@@ -160,6 +167,7 @@ def execute_steps(
             processing_time_collector=processing_time_collector,
             duration_minimum_value=duration_minimum_value,
             step_error_handler=step_error_handler,
+            otel_ctx=otel_ctx,
         )
         for step_selector in next_steps
     ]
@@ -182,6 +190,7 @@ def safe_execute_step(
     processing_time_collector=None,
     duration_minimum_value=None,
     step_error_handler: Optional[Callable[[str, Exception], None]] = None,
+    otel_ctx=None,
 ) -> None:
     if execution_id is not None:
         execution_id.set(workflow_execution_id)
@@ -189,6 +198,14 @@ def safe_execute_step(
         remote_processing_times.set(processing_time_collector)
     if apply_duration_minimum is not None and duration_minimum_value is not None:
         apply_duration_minimum.set(duration_minimum_value)
+    # Re-attach OTel context in worker thread so trace propagation works
+    if otel_ctx is not None:
+        try:
+            from opentelemetry import context as otel_context
+
+            otel_context.attach(otel_ctx)
+        except ImportError:
+            pass
     if profiler is None:
         profiler = NullWorkflowsProfiler.init()
     try:

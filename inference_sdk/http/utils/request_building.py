@@ -134,6 +134,18 @@ def assembly_request_data(
             if _internal_secret:
                 headers[INTERNAL_REMOTE_EXEC_REQ_HEADER] = _internal_secret
 
+    # Inject OTel trace context (traceparent/tracestate) into outgoing headers
+    try:
+        from opentelemetry.propagate import inject
+
+        if headers is None:
+            headers = {}
+        else:
+            headers = headers.copy() if execution_id_value is None else headers
+        inject(headers)
+    except ImportError:
+        pass
+
     return RequestData(
         url=url,
         request_elements=len(batch_inference_inputs),

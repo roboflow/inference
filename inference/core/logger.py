@@ -36,6 +36,22 @@ def add_correlation(
     return event_dict
 
 
+def add_trace_context(
+    logger: logging.Logger, method_name: str, event_dict: Dict[str, Any]
+) -> Dict[str, Any]:
+    try:
+        from opentelemetry import trace
+
+        span = trace.get_current_span()
+        ctx = span.get_span_context()
+        if ctx and ctx.trace_id:
+            event_dict["trace_id"] = format(ctx.trace_id, "032x")
+            event_dict["span_id"] = format(ctx.span_id, "016x")
+    except ImportError:
+        pass
+    return event_dict
+
+
 def add_execution_id(
     logger: logging.Logger, method_name: str, event_dict: Dict[str, Any]
 ) -> Dict[str, Any]:
@@ -128,6 +144,7 @@ if API_LOGGING_ENABLED:
 
     processors = [
         add_correlation,
+        add_trace_context,
         add_execution_id,
         structlog.stdlib.filter_by_level,
         structlog.stdlib.PositionalArgumentsFormatter(),

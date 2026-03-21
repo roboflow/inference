@@ -448,10 +448,23 @@ class HttpInterface(BaseInterface):
             name="_next_static",
         )
 
+        # OpenTelemetry: must be set up before any middleware is added
+        # so the FastAPI instrumentor wraps at the outermost ASGI layer.
+        from inference.core.env import OTEL_TRACING_ENABLED
+
+        if OTEL_TRACING_ENABLED:
+            from inference.core.telemetry import setup_telemetry
+
+            setup_telemetry(app)
+
         @app.on_event("shutdown")
         async def on_shutdown():
             logger.info("Shutting down %s", description)
             await usage_collector.async_push_usage_payloads()
+            if OTEL_TRACING_ENABLED:
+                from inference.core.telemetry import shutdown_telemetry
+
+                shutdown_telemetry()
 
         self._instrumentator = InferenceInstrumentator(
             app, model_manager=model_manager, endpoint="/metrics"
@@ -481,7 +494,8 @@ class HttpInterface(BaseInterface):
                     WORKFLOW_ID_HEADER,
                     WORKSPACE_ID_HEADER,
                 ]
-                + ([EXECUTION_ID_HEADER] if EXECUTION_ID_HEADER is not None else []),
+                + ([EXECUTION_ID_HEADER] if EXECUTION_ID_HEADER is not None else [])
+                + ["traceparent", "tracestate"],
             )
 
         # Optionally add middleware for profiling the FastAPI server and underlying inference API code
@@ -793,6 +807,14 @@ class HttpInterface(BaseInterface):
                     value = response.headers.get(header_name)
                     if value is not None:
                         log_fields[field_name] = value
+
+                # Extract trace_id from traceparent header if present
+                # (reading from header due to ContextVar isolation in BaseHTTPMiddleware)
+                traceparent = request.headers.get("traceparent")
+                if traceparent:
+                    parts = traceparent.split("-")
+                    if len(parts) >= 3:
+                        log_fields["trace_id"] = parts[1]
 
                 logger.info(
                     f"{request.method} {request.url.path} {response.status_code}",

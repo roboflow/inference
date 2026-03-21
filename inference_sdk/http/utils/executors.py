@@ -335,6 +335,14 @@ def send_post_request(
         if execution_id_value:
             headers = headers.copy()
             headers[EXECUTION_ID_HEADER] = execution_id_value
+        # Inject OTel trace context (traceparent/tracestate) into outgoing headers
+        try:
+            from opentelemetry.propagate import inject
+
+            headers = headers.copy() if execution_id_value is None else headers
+            inject(headers)
+        except ImportError:
+            pass
         response = requests.post(url, json=payload, headers=headers)
     except (ConnectionError, Timeout, requests.exceptions.ConnectionError) as error:
         if enable_retries:
