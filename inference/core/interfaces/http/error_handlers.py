@@ -3,7 +3,6 @@ from functools import wraps
 from starlette.responses import JSONResponse
 
 from inference.core import logger
-from inference.core.telemetry import record_error
 from inference.core.entities.responses.workflows import WorkflowErrorResponse
 from inference.core.exceptions import (
     ContentTypeInvalid,
@@ -47,6 +46,7 @@ from inference.core.interfaces.stream_manager.manager_app.errors import (
     MalformedPayloadError,
     MessageToBigError,
 )
+from inference.core.telemetry import record_error
 from inference.core.workflows.core_steps.common.query_language.errors import (
     InvalidInputTypeError,
     OperationTypeNotRecognisedError,

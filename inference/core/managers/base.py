@@ -27,7 +27,6 @@ from inference.core.exceptions import (
     RoboflowAPINotAuthorizedError,
 )
 from inference.core.logger import logger
-from inference.core.telemetry import record_error, start_span
 from inference.core.managers.entities import ModelDescription
 from inference.core.managers.model_load_collector import (
     model_load_info,
@@ -40,6 +39,7 @@ from inference.core.registries.roboflow import (
     ModelEndpointType,
     _check_if_api_key_has_access_to_model,
 )
+from inference.core.telemetry import record_error, start_span
 
 
 class ModelManager:
@@ -252,9 +252,7 @@ class ModelManager:
                             f"error:{GLOBAL_INFERENCE_SERVER_ID}:{model_id}",
                             value={
                                 "request": jsonable_encoder(
-                                    request.dict(
-                                        exclude={"image", "subject", "prompt"}
-                                    )
+                                    request.dict(exclude={"image", "subject", "prompt"})
                                 ),
                                 "error": str(e),
                             },
@@ -343,9 +341,7 @@ class ModelManager:
                             f"error:{GLOBAL_INFERENCE_SERVER_ID}:{model_id}",
                             value={
                                 "request": jsonable_encoder(
-                                    request.dict(
-                                        exclude={"image", "subject", "prompt"}
-                                    )
+                                    request.dict(exclude={"image", "subject", "prompt"})
                                 ),
                                 "error": str(e),
                             },

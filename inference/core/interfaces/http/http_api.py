@@ -197,7 +197,6 @@ from inference.core.env import (
     WORKFLOWS_REMOTE_EXECUTION_TIME_FORWARDING,
     WORKFLOWS_STEP_EXECUTION_MODE,
 )
-from inference.core.telemetry import setup_telemetry, shutdown_telemetry
 from inference.core.exceptions import (
     ContentTypeInvalid,
     ContentTypeMissing,
@@ -275,6 +274,7 @@ from inference.core.roboflow_api import (
     get_roboflow_workspace_async,
     get_workflow_specification,
 )
+from inference.core.telemetry import setup_telemetry, shutdown_telemetry
 from inference.core.utils.container import is_docker_socket_mounted
 from inference.core.utils.notebooks import start_notebook
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode

@@ -71,13 +71,13 @@ from inference.core.exceptions import (
     RoboflowAPIUsagePausedError,
     WorkspaceLoadError,
 )
+from inference.core.telemetry import record_error, start_span
 from inference.core.utils.file_system import sanitize_path_segment
 from inference.core.utils.requests import (
     api_key_safe_raise_for_status,
     api_key_safe_raise_for_status_aiohttp,
 )
 from inference.core.utils.url_utils import wrap_url
-from inference.core.telemetry import record_error, start_span
 from inference.core.version import __version__
 
 ENFORCE_CREDITS_VERIFICATION_HEADER = "x-enforce-credits-verification"
@@ -168,9 +168,7 @@ def wrap_roboflow_api_errors(
                 except requests.exceptions.HTTPError as error:
                     record_error(error)
                     user_handler_override = (
-                        http_errors_handlers
-                        if http_errors_handlers is not None
-                        else {}
+                        http_errors_handlers if http_errors_handlers is not None else {}
                     )
                     status_code = error.response.status_code
                     default_handler = DEFAULT_ERROR_HANDLERS.get(status_code)
@@ -227,9 +225,7 @@ def wrap_roboflow_api_errors_async(
                 except aiohttp.ClientResponseError as error:
                     record_error(error)
                     user_handler_override = (
-                        http_errors_handlers
-                        if http_errors_handlers is not None
-                        else {}
+                        http_errors_handlers if http_errors_handlers is not None else {}
                     )
                     status_code = error.status
                     default_handler = DEFAULT_ERROR_HANDLERS.get(status_code)

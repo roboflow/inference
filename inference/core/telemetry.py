@@ -214,9 +214,7 @@ def setup_telemetry(app: Any) -> None:
     )
 
     # W3C TraceContext propagator — always set so extract/inject are safe
-    set_global_textmap(
-        CompositePropagator([TraceContextTextMapPropagator()])
-    )
+    set_global_textmap(CompositePropagator([TraceContextTextMapPropagator()]))
 
     # Build root sampler with force-trace override
     if OTEL_SAMPLING_RATE <= 0:
