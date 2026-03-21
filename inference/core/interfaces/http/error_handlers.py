@@ -3,6 +3,7 @@ from functools import wraps
 from starlette.responses import JSONResponse
 
 from inference.core import logger
+from inference.core.telemetry import record_error
 from inference.core.entities.responses.workflows import WorkflowErrorResponse
 from inference.core.exceptions import (
     ContentTypeInvalid,
@@ -101,8 +102,6 @@ def with_route_exceptions(route):
             try:
                 return route(*args, **kwargs)
             except Exception as error:
-                from inference.core.telemetry import record_error
-
                 record_error(error)
                 raise
         except ContentTypeInvalid as error:
@@ -504,8 +503,6 @@ def with_route_exceptions_async(route):
             try:
                 return await route(*args, **kwargs)
             except Exception as error:
-                from inference.core.telemetry import record_error
-
                 record_error(error)
                 raise
         except ContentTypeInvalid as error:

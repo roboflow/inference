@@ -20,6 +20,14 @@ except ImportError:
     execution_id = None
     remote_processing_times = None
 
+try:
+    from opentelemetry import context as otel_context
+
+    _OTEL_AVAILABLE = True
+except ImportError:
+    otel_context = None
+    _OTEL_AVAILABLE = False
+
 from inference.core import logger
 from inference.core.env import INFERENCE_DEBUG_OUTPUT_DIR
 from inference.core.workflows.errors import StepExecutionError, WorkflowError
@@ -149,12 +157,7 @@ def execute_steps(
     else:
         duration_minimum_value = None
     # Capture OTel context so it can be re-attached inside worker threads
-    try:
-        from opentelemetry import context as otel_context
-
-        otel_ctx = otel_context.get_current()
-    except ImportError:
-        otel_ctx = None
+    otel_ctx = otel_context.get_current() if _OTEL_AVAILABLE else None
     logger.debug(f"Executing steps: {next_steps}.")
     steps_functions = [
         partial(
@@ -199,13 +202,8 @@ def safe_execute_step(
     if apply_duration_minimum is not None and duration_minimum_value is not None:
         apply_duration_minimum.set(duration_minimum_value)
     # Re-attach OTel context in worker thread so trace propagation works
-    if otel_ctx is not None:
-        try:
-            from opentelemetry import context as otel_context
-
-            otel_context.attach(otel_ctx)
-        except ImportError:
-            pass
+    if otel_ctx is not None and _OTEL_AVAILABLE:
+        otel_context.attach(otel_ctx)
     if profiler is None:
         profiler = NullWorkflowsProfiler.init()
     try:

@@ -20,6 +20,7 @@ from inference_sdk.config import (
     EXECUTION_ID_HEADER,
     PROCESSING_TIME_HEADER,
     execution_id,
+    inject_trace_context,
     remote_processing_times,
 )
 from inference_sdk.http.errors import RetryError
@@ -335,14 +336,7 @@ def send_post_request(
         if execution_id_value:
             headers = headers.copy()
             headers[EXECUTION_ID_HEADER] = execution_id_value
-        # Inject OTel trace context (traceparent/tracestate) into outgoing headers
-        try:
-            from opentelemetry.propagate import inject
-
-            headers = headers.copy() if execution_id_value is None else headers
-            inject(headers)
-        except ImportError:
-            pass
+        headers = inject_trace_context(headers)
         response = requests.post(url, json=payload, headers=headers)
     except (ConnectionError, Timeout, requests.exceptions.ConnectionError) as error:
         if enable_retries:

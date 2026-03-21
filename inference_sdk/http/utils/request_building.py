@@ -9,6 +9,7 @@ from inference_sdk.config import (
     EXECUTION_ID_HEADER,
     INTERNAL_REMOTE_EXEC_REQ_HEADER,
     execution_id,
+    inject_trace_context,
 )
 from inference_sdk.http.utils.iterables import make_batches
 from inference_sdk.http.utils.requests import inject_images_into_payload
@@ -134,17 +135,7 @@ def assembly_request_data(
             if _internal_secret:
                 headers[INTERNAL_REMOTE_EXEC_REQ_HEADER] = _internal_secret
 
-    # Inject OTel trace context (traceparent/tracestate) into outgoing headers
-    try:
-        from opentelemetry.propagate import inject
-
-        if headers is None:
-            headers = {}
-        else:
-            headers = headers.copy() if execution_id_value is None else headers
-        inject(headers)
-    except ImportError:
-        pass
+    headers = inject_trace_context(headers if headers is not None else {})
 
     return RequestData(
         url=url,

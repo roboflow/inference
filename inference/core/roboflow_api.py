@@ -77,6 +77,7 @@ from inference.core.utils.requests import (
     api_key_safe_raise_for_status_aiohttp,
 )
 from inference.core.utils.url_utils import wrap_url
+from inference.core.telemetry import record_error, start_span
 from inference.core.version import __version__
 
 ENFORCE_CREDITS_VERIFICATION_HEADER = "x-enforce-credits-verification"
@@ -142,8 +143,6 @@ def wrap_roboflow_api_errors(
 ) -> callable:
     def decorator(function: callable) -> callable:
         def wrapper(*args, **kwargs) -> Any:
-            from inference.core.telemetry import record_error, start_span
-
             with start_span(
                 "roboflow_api.call",
                 {"roboflow_api.function": function.__name__},
@@ -201,8 +200,6 @@ def wrap_roboflow_api_errors_async(
 ) -> callable:
     def decorator(function: callable) -> callable:
         async def wrapper(*args, **kwargs) -> Any:
-            from inference.core.telemetry import record_error, start_span
-
             with start_span(
                 "roboflow_api.call",
                 {"roboflow_api.function": function.__name__},
@@ -988,8 +985,6 @@ def _get_from_url(
     json_response: bool = True,
     headers: Optional[dict] = None,
 ) -> Union[Response, dict]:
-    from inference.core.telemetry import start_span
-
     full_url = wrap_url(url)
     with start_span(
         "roboflow_api.http_get",
@@ -1080,8 +1075,6 @@ def stream_url_to_cache(
     model_id: str,
 ) -> None:
     from inference_models.utils.download import download_files_to_directory
-
-    from inference.core.telemetry import start_span
 
     with start_span(
         "roboflow_api.download_artifact",

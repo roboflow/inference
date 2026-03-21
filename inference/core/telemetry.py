@@ -1,9 +1,8 @@
 """OpenTelemetry tracing setup and helpers for the inference server.
 
 Usage:
-    # In HttpInterface.__init__(), before middleware:
-    if OTEL_TRACING_ENABLED:
-        setup_telemetry(app)
+    # At the top of any module (always safe, even without opentelemetry):
+    from inference.core.telemetry import start_span, record_error
 
     # In handlers / managers:
     with start_span("model.infer", {"model.id": model_id}):
@@ -12,8 +11,12 @@ Usage:
     # Record errors on the current span:
     record_error(error)
 
-When OTEL_TRACING_ENABLED is False, setup_telemetry() is never called and all
-helper functions operate as noops via the OTel API's default noop tracer.
+    # In HttpInterface.__init__(), before middleware:
+    if OTEL_TRACING_ENABLED:
+        setup_telemetry(app)
+
+All public helpers (start_span, record_error, get_trace_id, inject_trace_context)
+are safe to call even when opentelemetry is not installed — they degrade to noops.
 """
 
 import contextvars
@@ -21,15 +24,24 @@ import logging
 from contextlib import contextmanager
 from typing import Any, Dict, Optional, Sequence
 
-from opentelemetry import trace
-from opentelemetry.propagate import set_global_textmap
-from opentelemetry.propagation.composite import CompositePropagator
-from opentelemetry.trace import StatusCode
-from opentelemetry.trace.propagation import TraceContextTextMapPropagator
-
 logger = logging.getLogger("inference")
 
-_tracer: Optional[trace.Tracer] = None
+# ---------------------------------------------------------------------------
+# Graceful opentelemetry imports — everything below is noop when not installed
+# ---------------------------------------------------------------------------
+try:
+    from opentelemetry import trace
+    from opentelemetry.propagate import inject as _otel_inject
+    from opentelemetry.propagate import set_global_textmap
+    from opentelemetry.propagation.composite import CompositePropagator
+    from opentelemetry.trace import StatusCode
+    from opentelemetry.trace.propagation import TraceContextTextMapPropagator
+
+    _OTEL_AVAILABLE = True
+except ImportError:
+    _OTEL_AVAILABLE = False
+
+_tracer = None
 _provider = None
 
 # Header name for forcing a trace on a specific request.
@@ -40,6 +52,67 @@ FORCE_TRACE_HEADER = b"x-force-trace"
 _force_trace_flag: contextvars.ContextVar[bool] = contextvars.ContextVar(
     "_force_trace_flag", default=False
 )
+
+
+# ---------------------------------------------------------------------------
+# Public helpers — always safe to call
+# ---------------------------------------------------------------------------
+
+
+@contextmanager
+def start_span(name: str, attributes: Optional[Dict[str, Any]] = None):
+    """Start a new span as a child of the current context.
+
+    Yields the span (or None when OTel is not available).
+    """
+    if not _OTEL_AVAILABLE:
+        yield None
+        return
+    tracer = _get_tracer()
+    with tracer.start_as_current_span(name, attributes=attributes) as span:
+        yield span
+
+
+def record_error(error: Exception) -> None:
+    """Record an exception on the current active span and set ERROR status.
+
+    Safe to call when OTel is not installed or there is no active span.
+    """
+    if not _OTEL_AVAILABLE:
+        return
+    span = trace.get_current_span()
+    if span and span.is_recording():
+        span.record_exception(error)
+        span.set_status(StatusCode.ERROR, str(error))
+
+
+def get_trace_id() -> Optional[str]:
+    """Return the current trace ID as a hex string, or None."""
+    if not _OTEL_AVAILABLE:
+        return None
+    span = trace.get_current_span()
+    ctx = span.get_span_context()
+    if ctx and ctx.trace_id:
+        return format(ctx.trace_id, "032x")
+    return None
+
+
+def inject_trace_context(headers: dict) -> dict:
+    """Inject W3C traceparent/tracestate into *headers* dict and return it.
+
+    Safe to call when OTel is not installed (returns headers unchanged).
+    """
+    if not _OTEL_AVAILABLE:
+        return headers
+    if headers is None:
+        headers = {}
+    _otel_inject(headers)
+    return headers
+
+
+# ---------------------------------------------------------------------------
+# Force-trace ASGI middleware + custom sampler
+# ---------------------------------------------------------------------------
 
 
 class _ForceTraceASGIMiddleware:
@@ -68,10 +141,10 @@ class _ForceTraceASGIMiddleware:
 class _ForceTraceRootSampler:
     """Custom root sampler that force-samples when X-Force-Trace is set.
 
-    Used as the `root` argument to ParentBased:
-      - Parent exists  → ParentBased honours the parent's decision (not us)
-      - No parent, X-Force-Trace: true → always sample
-      - No parent, no header → delegate to the ratio-based sampler
+    Used as the ``root`` argument to ParentBased:
+      - Parent exists  -> ParentBased honours the parent's decision (not us)
+      - No parent, X-Force-Trace: true -> always sample
+      - No parent, no header -> delegate to the ratio-based sampler
     """
 
     def __init__(self, delegate: Any) -> None:
@@ -101,6 +174,11 @@ class _ForceTraceRootSampler:
 
     def get_description(self) -> str:
         return f"ForceTraceRootSampler({self._delegate.get_description()})"
+
+
+# ---------------------------------------------------------------------------
+# Setup / shutdown — called only when OTEL_TRACING_ENABLED is True
+# ---------------------------------------------------------------------------
 
 
 def setup_telemetry(app: Any) -> None:
@@ -196,41 +274,8 @@ def shutdown_telemetry() -> None:
         _provider.shutdown()
 
 
-def _get_tracer() -> trace.Tracer:
+def _get_tracer():
     global _tracer
-    if _tracer is None:
+    if _tracer is None and _OTEL_AVAILABLE:
         _tracer = trace.get_tracer("inference")
     return _tracer
-
-
-@contextmanager
-def start_span(name: str, attributes: Optional[Dict[str, Any]] = None):
-    """Start a new span as a child of the current context.
-
-    Usage:
-        with start_span("model.infer", {"model.id": "abc/1"}) as span:
-            ...
-    """
-    tracer = _get_tracer()
-    with tracer.start_as_current_span(name, attributes=attributes) as span:
-        yield span
-
-
-def record_error(error: Exception) -> None:
-    """Record an exception on the current active span and set ERROR status.
-
-    Safe to call when there is no active span (noop).
-    """
-    span = trace.get_current_span()
-    if span and span.is_recording():
-        span.record_exception(error)
-        span.set_status(StatusCode.ERROR, str(error))
-
-
-def get_trace_id() -> Optional[str]:
-    """Return the current trace ID as a hex string, or None."""
-    span = trace.get_current_span()
-    ctx = span.get_span_context()
-    if ctx and ctx.trace_id:
-        return format(ctx.trace_id, "032x")
-    return None

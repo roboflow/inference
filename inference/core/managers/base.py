@@ -107,8 +107,6 @@ class ModelManager:
                     f"ModelManager - model with model_id={resolved_identifier} is already loaded."
                 )
                 return
-            from inference.core.telemetry import record_error, start_span
-
             try:
                 with start_span(
                     "model.load", {"model.id": resolved_identifier}
