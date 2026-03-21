@@ -179,6 +179,7 @@ from inference.core.env import (
     NOTEBOOK_ENABLED,
     NOTEBOOK_PASSWORD,
     NOTEBOOK_PORT,
+    OTEL_TRACING_ENABLED,
     PINNED_MODELS,
     PRELOAD_API_KEY,
     PRELOAD_MODELS,
@@ -196,6 +197,7 @@ from inference.core.env import (
     WORKFLOWS_REMOTE_EXECUTION_TIME_FORWARDING,
     WORKFLOWS_STEP_EXECUTION_MODE,
 )
+from inference.core.telemetry import setup_telemetry, shutdown_telemetry
 from inference.core.exceptions import (
     ContentTypeInvalid,
     ContentTypeMissing,
@@ -450,11 +452,7 @@ class HttpInterface(BaseInterface):
 
         # OpenTelemetry: must be set up before any middleware is added
         # so the FastAPI instrumentor wraps at the outermost ASGI layer.
-        from inference.core.env import OTEL_TRACING_ENABLED
-
         if OTEL_TRACING_ENABLED:
-            from inference.core.telemetry import setup_telemetry
-
             setup_telemetry(app)
 
         @app.on_event("shutdown")
@@ -462,8 +460,6 @@ class HttpInterface(BaseInterface):
             logger.info("Shutting down %s", description)
             await usage_collector.async_push_usage_payloads()
             if OTEL_TRACING_ENABLED:
-                from inference.core.telemetry import shutdown_telemetry
-
                 shutdown_telemetry()
 
         self._instrumentator = InferenceInstrumentator(
