@@ -149,7 +149,8 @@ class ModelManager:
                             )
 
                     load_time = time.perf_counter() - t_load_start
-                    span.set_attribute("model.load_time_seconds", load_time)
+                    if span is not None:
+                        span.set_attribute("model.load_time_seconds", load_time)
                     logger.debug(
                         f"ModelManager - model successfully loaded in {load_time:.2f}s."
                     )
