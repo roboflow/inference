@@ -159,6 +159,7 @@ class WorkflowProcessingJobV1(BaseModel):
 class CompilationDevice(str, Enum):
     NVIDIA_L4 = "nvidia-l4"
     NVIDIA_T4 = "nvidia-t4"
+    NVIDIA_L40S = "nvidia-l40s"
 
 
 class TRTCompilationJobV1(BaseModel):
