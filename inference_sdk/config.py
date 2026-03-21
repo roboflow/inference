@@ -108,6 +108,8 @@ def inject_trace_context(headers: dict) -> dict:
 
     Safe to call when opentelemetry is not installed — returns headers unchanged.
     """
+    if headers is None:
+        headers = {}
     try:
         from opentelemetry.propagate import inject
 

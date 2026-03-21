@@ -1,22 +1,20 @@
 """OpenTelemetry tracing setup and helpers for the inference server.
 
-Usage:
-    # At the top of any module (always safe, even without opentelemetry):
-    from inference.core.telemetry import start_span, record_error
+All public helpers are safe to import and call even when opentelemetry is not
+installed — they degrade to noops.  Business-logic code should never need to
+check whether OTel is available.
 
-    # In handlers / managers:
+Usage::
+
+    from inference.core.telemetry import (
+        start_span, record_error, set_span_attribute,
+    )
+
     with start_span("model.infer", {"model.id": model_id}):
         result = do_inference(...)
+        set_span_attribute("model.load_time_seconds", elapsed)
 
-    # Record errors on the current span:
     record_error(error)
-
-    # In HttpInterface.__init__(), before middleware:
-    if OTEL_TRACING_ENABLED:
-        setup_telemetry(app)
-
-All public helpers (start_span, record_error, get_trace_id, inject_trace_context)
-are safe to call even when opentelemetry is not installed — they degrade to noops.
 """
 
 import contextvars
@@ -97,6 +95,19 @@ def get_trace_id() -> Optional[str]:
     return None
 
 
+def set_span_attribute(key: str, value: Any) -> None:
+    """Set an attribute on the current active span.
+
+    Noop when OTel is unavailable or there is no recording span.
+    Callers never need to check for None spans.
+    """
+    if not _OTEL_AVAILABLE:
+        return
+    span = trace.get_current_span()
+    if span and span.is_recording():
+        span.set_attribute(key, value)
+
+
 def inject_trace_context(headers: dict) -> dict:
     """Inject W3C traceparent/tracestate into *headers* dict and return it.
 
@@ -108,6 +119,20 @@ def inject_trace_context(headers: dict) -> dict:
         headers = {}
     _otel_inject(headers)
     return headers
+
+
+def trace_context_log_processor(
+    logger_instance: Any, method_name: str, event_dict: Dict[str, Any]
+) -> Dict[str, Any]:
+    """Structlog processor that injects trace_id and span_id into log entries."""
+    if not _OTEL_AVAILABLE:
+        return event_dict
+    span = trace.get_current_span()
+    ctx = span.get_span_context()
+    if ctx and ctx.trace_id:
+        event_dict["trace_id"] = format(ctx.trace_id, "032x")
+        event_dict["span_id"] = format(ctx.span_id, "016x")
+    return event_dict
 
 
 # ---------------------------------------------------------------------------

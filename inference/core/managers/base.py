@@ -39,7 +39,7 @@ from inference.core.registries.roboflow import (
     ModelEndpointType,
     _check_if_api_key_has_access_to_model,
 )
-from inference.core.telemetry import record_error, start_span
+from inference.core.telemetry import record_error, set_span_attribute, start_span
 
 
 class ModelManager:
@@ -108,9 +108,7 @@ class ModelManager:
                 )
                 return
             try:
-                with start_span(
-                    "model.load", {"model.id": resolved_identifier}
-                ) as span:
+                with start_span("model.load", {"model.id": resolved_identifier}):
                     logger.debug("ModelManager - model initialisation...")
                     t_load_start = time.perf_counter()
                     model_class = self.model_registry.get_model(
@@ -149,8 +147,7 @@ class ModelManager:
                             )
 
                     load_time = time.perf_counter() - t_load_start
-                    if span is not None:
-                        span.set_attribute("model.load_time_seconds", load_time)
+                    set_span_attribute("model.load_time_seconds", load_time)
                     logger.debug(
                         f"ModelManager - model successfully loaded in {load_time:.2f}s."
                     )
