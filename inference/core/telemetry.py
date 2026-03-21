@@ -16,9 +16,10 @@ When OTEL_TRACING_ENABLED is False, setup_telemetry() is never called and all
 helper functions operate as noops via the OTel API's default noop tracer.
 """
 
+import contextvars
 import logging
 from contextlib import contextmanager
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Sequence
 
 from opentelemetry import trace
 from opentelemetry.propagate import set_global_textmap
@@ -30,6 +31,76 @@ logger = logging.getLogger("inference")
 
 _tracer: Optional[trace.Tracer] = None
 _provider = None
+
+# Header name for forcing a trace on a specific request.
+FORCE_TRACE_HEADER = b"x-force-trace"
+
+# ContextVar set by _ForceTraceASGIMiddleware, read by _ForceTraceRootSampler.
+# Per-request isolation is automatic in ASGI (each request runs in its own task).
+_force_trace_flag: contextvars.ContextVar[bool] = contextvars.ContextVar(
+    "_force_trace_flag", default=False
+)
+
+
+class _ForceTraceASGIMiddleware:
+    """Lightweight ASGI middleware that detects X-Force-Trace header.
+
+    Must wrap the app OUTSIDE the OTel instrumentor so the ContextVar is set
+    before the instrumentor's should_sample() call.  We achieve this by adding
+    it via app.add_middleware() AFTER FastAPIInstrumentor.instrument_app() —
+    Starlette builds the middleware stack so the last-added middleware is
+    outermost.
+    """
+
+    def __init__(self, app: Any) -> None:
+        self.app = app
+
+    async def __call__(self, scope: dict, receive: Any, send: Any) -> None:
+        if scope["type"] == "http":
+            for header_name, header_value in scope.get("headers", []):
+                if header_name == FORCE_TRACE_HEADER:
+                    if header_value.lower() == b"true":
+                        _force_trace_flag.set(True)
+                    break
+        await self.app(scope, receive, send)
+
+
+class _ForceTraceRootSampler:
+    """Custom root sampler that force-samples when X-Force-Trace is set.
+
+    Used as the `root` argument to ParentBased:
+      - Parent exists  → ParentBased honours the parent's decision (not us)
+      - No parent, X-Force-Trace: true → always sample
+      - No parent, no header → delegate to the ratio-based sampler
+    """
+
+    def __init__(self, delegate: Any) -> None:
+        self._delegate = delegate
+
+    def should_sample(
+        self,
+        parent_context: Any,
+        trace_id: int,
+        name: str,
+        kind: Any = None,
+        attributes: Any = None,
+        links: Optional[Sequence[Any]] = None,
+        trace_state: Any = None,
+    ) -> Any:
+        if _force_trace_flag.get(False):
+            from opentelemetry.sdk.trace.sampling import Decision, SamplingResult
+
+            return SamplingResult(
+                decision=Decision.RECORD_AND_SAMPLE,
+                attributes={"sampling.forced": True},
+                trace_state=trace_state,
+            )
+        return self._delegate.should_sample(
+            parent_context, trace_id, name, kind, attributes, links, trace_state
+        )
+
+    def get_description(self) -> str:
+        return f"ForceTraceRootSampler({self._delegate.get_description()})"
 
 
 def setup_telemetry(app: Any) -> None:
@@ -53,7 +124,8 @@ def setup_telemetry(app: Any) -> None:
     from opentelemetry.sdk.trace.sampling import (
         ALWAYS_OFF,
         ALWAYS_ON,
-        ParentBasedTraceIdRatio,
+        ParentBased,
+        TraceIdRatioBased,
     )
 
     from inference.core.env import (
@@ -68,13 +140,18 @@ def setup_telemetry(app: Any) -> None:
         CompositePropagator([TraceContextTextMapPropagator()])
     )
 
-    # Sampler: honour parent decision, ratio-based for root spans
+    # Build root sampler with force-trace override
     if OTEL_SAMPLING_RATE <= 0:
-        sampler = ALWAYS_OFF
+        root_sampler = ALWAYS_OFF
     elif OTEL_SAMPLING_RATE >= 1.0:
-        sampler = ALWAYS_ON
+        root_sampler = ALWAYS_ON
     else:
-        sampler = ParentBasedTraceIdRatio(OTEL_SAMPLING_RATE)
+        root_sampler = TraceIdRatioBased(OTEL_SAMPLING_RATE)
+
+    # ParentBased: child spans honour parent decision, root spans use our
+    # custom sampler that checks for X-Force-Trace before falling back to
+    # the ratio-based sampler.
+    sampler = ParentBased(root=_ForceTraceRootSampler(root_sampler))
 
     resource = Resource.create({"service.name": OTEL_SERVICE_NAME})
 
@@ -97,6 +174,12 @@ def setup_telemetry(app: Any) -> None:
 
     # Auto-instrument FastAPI: creates server spans, extracts traceparent
     FastAPIInstrumentor.instrument_app(app)
+
+    # Add force-trace middleware AFTER the instrumentor so it wraps outermost.
+    # Starlette builds middleware last-added = outermost, so this runs BEFORE
+    # the instrumentor's ASGI middleware, ensuring the ContextVar is set
+    # before should_sample() is called.
+    app.add_middleware(_ForceTraceASGIMiddleware)
 
     logger.info(
         "OpenTelemetry tracing enabled (service=%s, endpoint=%s, protocol=%s, sampling_rate=%s)",
