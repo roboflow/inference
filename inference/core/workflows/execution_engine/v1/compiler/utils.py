@@ -85,6 +85,16 @@ def get_last_chunk_of_selector(selector: str) -> str:
     return selector.split(".")[-1]
 
 
+def get_input_selector_base(selector: str) -> str:
+    """Strip sub-property suffix from input selector.
+    e.g. $inputs.image.name -> $inputs.image
+    """
+    parts = selector.split(".")
+    if len(parts) > 2:
+        return ".".join(parts[:2])
+    return selector
+
+
 def is_control_flow_step(execution_graph: DiGraph, node: str) -> bool:
     if not is_step_node(execution_graph=execution_graph, node=node):
         return False
