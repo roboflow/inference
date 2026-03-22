@@ -433,7 +433,14 @@ def setup_telemetry(app: Any) -> None:
     # the ratio-based sampler.
     sampler = ParentBased(root=_ForceTraceRootSampler(root_sampler))
 
-    resource = Resource.create({"service.name": OTEL_SERVICE_NAME})
+    from inference.core.devices.utils import GLOBAL_INFERENCE_SERVER_ID
+
+    resource = Resource.create(
+        {
+            "service.name": OTEL_SERVICE_NAME,
+            "service.instance.id": GLOBAL_INFERENCE_SERVER_ID,
+        }
+    )
 
     if OTEL_EXPORTER_PROTOCOL == "http":
         exporter = HTTPExporter(
