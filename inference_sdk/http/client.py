@@ -22,6 +22,7 @@ from inference_sdk.config import (
     EXECUTION_ID_HEADER,
     PROCESSING_TIME_HEADER,
     execution_id,
+    inject_trace_context,
     remote_processing_times,
 )
 from inference_sdk.http.entities import (
@@ -1365,6 +1366,7 @@ class InferenceHTTPClient:
         execution_id_value = execution_id.get()
         if execution_id_value is not None:
             headers[EXECUTION_ID_HEADER] = execution_id_value
+        inject_trace_context(headers)
 
         response = requests.post(
             self.__wrap_url_with_api_key(f"{self.__api_url}/clip/embed_text"),
@@ -1471,6 +1473,7 @@ class InferenceHTTPClient:
         execution_id_value = execution_id.get()
         if execution_id_value is not None:
             headers[EXECUTION_ID_HEADER] = execution_id_value
+        inject_trace_context(headers)
 
         response = requests.post(
             self.__wrap_url_with_api_key(f"{self.__api_url}/clip/compare"),
@@ -1582,6 +1585,7 @@ class InferenceHTTPClient:
         execution_id_value = execution_id.get()
         if execution_id_value is not None:
             headers[EXECUTION_ID_HEADER] = execution_id_value
+        inject_trace_context(headers)
 
         response = requests.post(
             self.__wrap_url_with_api_key(

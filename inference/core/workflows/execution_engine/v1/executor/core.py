@@ -20,6 +20,14 @@ except ImportError:
     execution_id = None
     remote_processing_times = None
 
+try:
+    from opentelemetry import context as otel_context
+
+    _OTEL_AVAILABLE = True
+except ImportError:
+    otel_context = None
+    _OTEL_AVAILABLE = False
+
 from inference.core import logger
 from inference.core.env import INFERENCE_DEBUG_OUTPUT_DIR
 from inference.core.workflows.errors import StepExecutionError, WorkflowError
@@ -148,6 +156,8 @@ def execute_steps(
         duration_minimum_value = apply_duration_minimum.get()
     else:
         duration_minimum_value = None
+    # Capture OTel context so it can be re-attached inside worker threads
+    otel_ctx = otel_context.get_current() if _OTEL_AVAILABLE else None
     logger.debug(f"Executing steps: {next_steps}.")
     steps_functions = [
         partial(
@@ -160,6 +170,7 @@ def execute_steps(
             processing_time_collector=processing_time_collector,
             duration_minimum_value=duration_minimum_value,
             step_error_handler=step_error_handler,
+            otel_ctx=otel_ctx,
         )
         for step_selector in next_steps
     ]
@@ -182,6 +193,7 @@ def safe_execute_step(
     processing_time_collector=None,
     duration_minimum_value=None,
     step_error_handler: Optional[Callable[[str, Exception], None]] = None,
+    otel_ctx=None,
 ) -> None:
     if execution_id is not None:
         execution_id.set(workflow_execution_id)
@@ -189,6 +201,9 @@ def safe_execute_step(
         remote_processing_times.set(processing_time_collector)
     if apply_duration_minimum is not None and duration_minimum_value is not None:
         apply_duration_minimum.set(duration_minimum_value)
+    # Re-attach OTel context in worker thread so trace propagation works
+    if otel_ctx is not None and _OTEL_AVAILABLE:
+        otel_context.attach(otel_ctx)
     if profiler is None:
         profiler = NullWorkflowsProfiler.init()
     try:

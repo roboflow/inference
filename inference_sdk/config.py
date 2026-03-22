@@ -103,6 +103,22 @@ WEBRTC_VIDEO_UPLOAD_BUFFER_LIMIT = int(
 RF_API_BASE_URL = os.getenv("RF_API_BASE_URL", "https://api.roboflow.com")
 
 
+def inject_trace_context(headers: dict) -> dict:
+    """Inject OTel trace context (traceparent/tracestate) into headers dict.
+
+    Safe to call when opentelemetry is not installed — returns headers unchanged.
+    """
+    if headers is None:
+        headers = {}
+    try:
+        from opentelemetry.propagate import inject
+
+        inject(headers)
+    except ImportError:
+        pass
+    return headers
+
+
 class InferenceSDKDeprecationWarning(Warning):
     """Class used for warning of deprecated features in the Inference SDK"""
 

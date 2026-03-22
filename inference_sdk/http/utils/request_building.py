@@ -9,6 +9,7 @@ from inference_sdk.config import (
     EXECUTION_ID_HEADER,
     INTERNAL_REMOTE_EXEC_REQ_HEADER,
     execution_id,
+    inject_trace_context,
 )
 from inference_sdk.http.utils.iterables import make_batches
 from inference_sdk.http.utils.requests import inject_images_into_payload
@@ -133,6 +134,8 @@ def assembly_request_data(
             _internal_secret = os.getenv("ROBOFLOW_INTERNAL_SERVICE_SECRET")
             if _internal_secret:
                 headers[INTERNAL_REMOTE_EXEC_REQ_HEADER] = _internal_secret
+
+    headers = inject_trace_context(headers if headers is not None else {})
 
     return RequestData(
         url=url,

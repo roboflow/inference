@@ -391,6 +391,13 @@ MODELS_CACHE_AUTH_CACHE_MAX_SIZE = int(
     os.getenv("MODELS_CACHE_AUTH_CACHE_MAX_SIZE", 100_000_000)
 )
 
+# --- OpenTelemetry tracing ---
+OTEL_TRACING_ENABLED = str2bool(os.getenv("OTEL_TRACING_ENABLED", "False"))
+OTEL_SERVICE_NAME = os.getenv("OTEL_SERVICE_NAME", "inference-server")
+OTEL_EXPORTER_PROTOCOL = os.getenv("OTEL_EXPORTER_PROTOCOL", "grpc")  # "grpc" or "http"
+OTEL_EXPORTER_ENDPOINT = os.getenv("OTEL_EXPORTER_ENDPOINT", "localhost:4317")
+OTEL_SAMPLING_RATE = float(os.getenv("OTEL_SAMPLING_RATE", "1.0"))
+
 # Metrics enabled flag, default is True
 METRICS_ENABLED = str2bool(os.getenv("METRICS_ENABLED", True))
 if LAMBDA or GCP_SERVERLESS:
