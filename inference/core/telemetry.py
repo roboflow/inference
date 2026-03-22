@@ -136,6 +136,137 @@ def trace_context_log_processor(
 
 
 # ---------------------------------------------------------------------------
+# Tracing ModelAccessManager for inference-models package
+# ---------------------------------------------------------------------------
+
+try:
+    from inference_models.models.auto_loaders.access_manager import (
+        AccessIdentifiers,
+        LiberalModelAccessManager,
+    )
+    from inference_models.models.auto_loaders.entities import AnyModel
+
+    _INFERENCE_MODELS_AVAILABLE = True
+except ImportError:
+    _INFERENCE_MODELS_AVAILABLE = False
+
+
+def create_tracing_model_access_manager():
+    """Create a ModelAccessManager that adds OTel spans to model loading.
+
+    Returns None when OTel or inference_models is unavailable — callers
+    should pass the result directly to AutoModel.from_pretrained() which
+    falls back to its default when it receives None.
+    """
+    if not _OTEL_AVAILABLE or not _INFERENCE_MODELS_AVAILABLE:
+        return None
+    return _TracingModelAccessManager()
+
+
+if _INFERENCE_MODELS_AVAILABLE:
+
+    class _TracingModelAccessManager(LiberalModelAccessManager):
+        """ModelAccessManager that wraps model loading in an OTel span.
+
+        Hooks called by AutoModel.from_pretrained():
+          on_model_package_access_granted  -> start span
+          on_file_created / on_file_renamed -> span events
+          on_model_loaded                  -> end span
+        """
+
+        def __init__(self):
+            super().__init__()
+            self._span = None
+            self._token = None
+
+        def on_model_package_access_granted(
+            self, access_identifiers: AccessIdentifiers
+        ) -> None:
+            super().on_model_package_access_granted(access_identifiers)
+            if not _OTEL_AVAILABLE:
+                return
+            tracer = _get_tracer()
+            if tracer is None:
+                return
+            self._span = tracer.start_span(
+                "inference_models.load",
+                attributes={
+                    "model.id": access_identifiers.model_id,
+                    "model.package_id": access_identifiers.package_id,
+                },
+            )
+            from opentelemetry import context
+
+            self._token = context.attach(trace.set_span_in_context(self._span))
+
+        def on_file_created(
+            self, file_path: str, access_identifiers: AccessIdentifiers
+        ) -> None:
+            super().on_file_created(file_path, access_identifiers)
+            if self._span is not None and self._span.is_recording():
+                self._span.add_event("file_created", {"file.path": file_path})
+
+        def on_file_renamed(
+            self,
+            old_path: str,
+            new_path: str,
+            access_identifiers: AccessIdentifiers,
+        ) -> None:
+            super().on_file_renamed(old_path, new_path, access_identifiers)
+            if self._span is not None and self._span.is_recording():
+                self._span.add_event(
+                    "file_renamed",
+                    {"file.old_path": old_path, "file.new_path": new_path},
+                )
+
+        def on_model_alias_discovered(self, alias: str, model_id: str) -> None:
+            super().on_model_alias_discovered(alias, model_id)
+            if self._span is not None and self._span.is_recording():
+                self._span.set_attribute("model.alias", alias)
+
+        def on_model_dependency_discovered(
+            self,
+            base_model_id: str,
+            base_model_package_id: Optional[str],
+            dependent_model_id: str,
+        ) -> None:
+            super().on_model_dependency_discovered(
+                base_model_id, base_model_package_id, dependent_model_id
+            )
+            if self._span is not None and self._span.is_recording():
+                self._span.add_event(
+                    "dependency_discovered",
+                    {
+                        "model.base_id": base_model_id,
+                        "model.dependent_id": dependent_model_id,
+                    },
+                )
+
+        def on_model_access_forbidden(
+            self, model_id: str, api_key: Optional[str]
+        ) -> None:
+            super().on_model_access_forbidden(model_id, api_key)
+            record_error(PermissionError(f"Model access forbidden: {model_id}"))
+
+        def on_model_loaded(
+            self,
+            model: "AnyModel",
+            access_identifiers: AccessIdentifiers,
+            model_storage_path: str,
+        ) -> None:
+            super().on_model_loaded(model, access_identifiers, model_storage_path)
+            if self._span is not None:
+                self._span.set_attribute("model.storage_path", model_storage_path)
+                self._span.end()
+                if self._token is not None:
+                    from opentelemetry import context
+
+                    context.detach(self._token)
+                self._span = None
+                self._token = None
+
+
+# ---------------------------------------------------------------------------
 # Force-trace ASGI middleware + custom sampler
 # ---------------------------------------------------------------------------
 
