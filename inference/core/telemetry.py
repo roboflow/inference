@@ -392,7 +392,6 @@ def setup_telemetry(app: Any) -> None:
     if OTEL_EXPORTER_PROTOCOL == "http":
         exporter = HTTPExporter(
             endpoint=f"http://{OTEL_EXPORTER_ENDPOINT}/v1/traces",
-            insecure=True,
         )
     else:
         exporter = GRPCExporter(
