@@ -30,7 +30,7 @@ class RemoteSyncManager:
     """Background thread that syncs a remote SQLite DB to local via scp."""
 
     def __init__(self, remote_host, remote_db_path, local_db_path, interval=10):
-        self.remote_host = remote_host  # e.g. "roboflow@100.94.130.94"
+        self.remote_host = remote_host  # e.g. "user@hostname"
         self.remote_db_path = remote_db_path
         self.local_db_path = local_db_path
         self.interval = interval
@@ -1405,7 +1405,7 @@ if __name__ == "__main__":
     parser.add_argument("--host", type=str, default="",
                         help="Bind address (default: '' = localhost, use '0.0.0.0' for all interfaces)")
     parser.add_argument("--remote", type=str, default=None,
-                        help="Remote host for DB sync, e.g. roboflow@100.94.130.94")
+                        help="Remote host for DB sync, e.g. user@hostname")
     parser.add_argument("--remote-db", type=str, default=None,
                         help="Path to DB on remote host (default: auto-detect from --db)")
     parser.add_argument("--compare-db", type=str, default=None,
