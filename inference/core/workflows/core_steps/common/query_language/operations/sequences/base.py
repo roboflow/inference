@@ -39,7 +39,7 @@ def sequence_apply(
     value: Any, fun: callable, execution_context: str, **kwargs
 ) -> List[Any]:
     try:
-        return [fun(v) for v in value]
+        return [fun(v, **kwargs) for v in value]
     except (TypeError, ValueError) as e:
         raise InvalidInputTypeError(
             public_message=f"While executing sequence_apply(...) in context {execution_context}, encountered "
@@ -52,6 +52,7 @@ def sequence_apply(
 AGGREGATION_FUNCTIONS = {
     SequenceAggregationFunction.MIN: min,
     SequenceAggregationFunction.MAX: max,
+    SequenceAggregationFunction.SUM: sum,
 }
 
 

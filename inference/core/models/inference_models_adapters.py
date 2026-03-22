@@ -1,8 +1,11 @@
+import base64
+import io
 from io import BytesIO
 from time import perf_counter
 from typing import Any, List, Optional, Tuple, Union
 
 import numpy as np
+import torch
 from PIL import Image, ImageDraw, ImageFont
 
 from inference.core.entities.requests import (
@@ -22,6 +25,8 @@ from inference.core.entities.responses.inference import (
     ObjectDetectionInferenceResponse,
     ObjectDetectionPrediction,
     Point,
+    SemanticSegmentationInferenceResponse,
+    SemanticSegmentationPrediction,
 )
 from inference.core.env import (
     ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES,
@@ -48,6 +53,11 @@ from inference_models import (
     MultiLabelClassificationModel,
     MultiLabelClassificationPrediction,
     ObjectDetectionModel,
+    PreProcessingOverrides,
+    SemanticSegmentationModel,
+)
+from inference_models.models.base.semantic_segmentation import (
+    SemanticSegmentationResult,
 )
 from inference_models.models.base.types import PreprocessingMetadata
 
@@ -108,6 +118,12 @@ class InferenceModelsObjectDetectionAdapter(Model):
         self.class_names = list(self._model.class_names)
 
     def map_inference_kwargs(self, kwargs: dict) -> dict:
+        pre_processing_overrides = PreProcessingOverrides(
+            disable_contrast_enhancement=kwargs.get("disable_preproc_contrast", False),
+            disable_grayscale=kwargs.get("disable_preproc_grayscale", False),
+            disable_static_crop=kwargs.get("disable_preproc_static_crop", False),
+        )
+        kwargs["pre_processing_overrides"] = pre_processing_overrides
         return kwargs
 
     def preprocess(self, image: Any, **kwargs):
@@ -252,6 +268,12 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
         self.class_names = list(self._model.class_names)
 
     def map_inference_kwargs(self, kwargs: dict) -> dict:
+        pre_processing_overrides = PreProcessingOverrides(
+            disable_contrast_enhancement=kwargs.get("disable_preproc_contrast", False),
+            disable_grayscale=kwargs.get("disable_preproc_grayscale", False),
+            disable_static_crop=kwargs.get("disable_preproc_static_crop", False),
+        )
+        kwargs["pre_processing_overrides"] = pre_processing_overrides
         return kwargs
 
     def preprocess(self, image: Any, **kwargs):
@@ -406,6 +428,12 @@ class InferenceModelsKeyPointsDetectionAdapter(Model):
         if "request" in kwargs:
             keypoint_confidence_threshold = kwargs["request"].keypoint_confidence
             kwargs["key_points_threshold"] = keypoint_confidence_threshold
+        pre_processing_overrides = PreProcessingOverrides(
+            disable_contrast_enhancement=kwargs.get("disable_preproc_contrast", False),
+            disable_grayscale=kwargs.get("disable_preproc_grayscale", False),
+            disable_static_crop=kwargs.get("disable_preproc_static_crop", False),
+        )
+        kwargs["pre_processing_overrides"] = pre_processing_overrides
         return kwargs
 
     def preprocess(self, image: Any, **kwargs):
@@ -608,6 +636,12 @@ class InferenceModelsClassificationAdapter(Model):
         self.class_names = list(self._model.class_names)
 
     def map_inference_kwargs(self, kwargs: dict) -> dict:
+        pre_processing_overrides = PreProcessingOverrides(
+            disable_contrast_enhancement=kwargs.get("disable_preproc_contrast", False),
+            disable_grayscale=kwargs.get("disable_preproc_grayscale", False),
+            disable_static_crop=kwargs.get("disable_preproc_static_crop", False),
+        )
+        kwargs["pre_processing_overrides"] = pre_processing_overrides
         return kwargs
 
     def preprocess(self, image: Any, **kwargs):
@@ -855,3 +889,139 @@ def draw_predictions(inference_request, inference_response, class_names: List[st
     image = image.convert("RGB")
     image.save(buffered, format="JPEG")
     return buffered.getvalue()
+
+
+class InferenceModelsSemanticSegmentationAdapter(Model):
+    def __init__(self, model_id: str, api_key: str = None, **kwargs):
+        super().__init__()
+
+        self.metrics = {"num_inferences": 0, "avg_inference_time": 0.0}
+
+        self.api_key = api_key if api_key else API_KEY
+        model_id = resolve_roboflow_model_alias(model_id=model_id)
+
+        self.task_type = "semantic-segmentation"
+
+        extra_weights_provider_headers = get_extra_weights_provider_headers(
+            countinference=kwargs.get("countinference"),
+            service_secret=kwargs.get("service_secret"),
+        )
+        backend = list(
+            VALID_INFERENCE_MODELS_BACKENDS.difference(
+                DISABLED_INFERENCE_MODELS_BACKENDS
+            )
+        )
+        self._model: SemanticSegmentationModel = AutoModel.from_pretrained(
+            model_id_or_path=model_id,
+            api_key=self.api_key,
+            allow_untrusted_packages=ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES,
+            allow_direct_local_storage_loading=ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES,
+            weights_provider_extra_headers=extra_weights_provider_headers,
+            backend=backend,
+            **kwargs,
+        )
+        self.class_names = list(self._model.class_names)
+
+    @property
+    def class_map(self):
+        # match segment.roboflow.com
+        return {str(k): v for k, v in enumerate(self.class_names)}
+
+    def map_inference_kwargs(self, kwargs: dict) -> dict:
+        pre_processing_overrides = PreProcessingOverrides(
+            disable_contrast_enhancement=kwargs.get("disable_preproc_contrast", False),
+            disable_grayscale=kwargs.get("disable_preproc_grayscale", False),
+            disable_static_crop=kwargs.get("disable_preproc_static_crop", False),
+        )
+        kwargs["pre_processing_overrides"] = pre_processing_overrides
+        return kwargs
+
+    def preprocess(self, image: Any, **kwargs):
+        is_batch = isinstance(image, list)
+        images = image if is_batch else [image]
+        np_images: List[np.ndarray] = [
+            load_image_bgr(
+                v,
+                disable_preproc_auto_orient=kwargs.get(
+                    "disable_preproc_auto_orient", False
+                ),
+            )
+            for v in images
+        ]
+        mapped_kwargs = self.map_inference_kwargs(kwargs)
+        return self._model.pre_process(np_images, **mapped_kwargs)
+
+    def predict(self, img_in, **kwargs):
+        mapped_kwargs = self.map_inference_kwargs(kwargs)
+        return self._model.forward(img_in, **mapped_kwargs)
+
+    def postprocess(
+        self,
+        predictions: torch.Tensor,
+        preprocess_return_metadata: PreprocessingMetadata,
+        **kwargs,
+    ) -> List[SemanticSegmentationInferenceResponse]:
+        mapped_kwargs = self.map_inference_kwargs(kwargs)
+        segmentation_results = self._model.post_process(
+            predictions, preprocess_return_metadata, **mapped_kwargs
+        )
+
+        responses: List[SemanticSegmentationInferenceResponse] = []
+        for preproc_metadata, segmentation in zip(
+            preprocess_return_metadata, segmentation_results
+        ):
+            height = preproc_metadata.original_size.height
+            width = preproc_metadata.original_size.width
+            response_image = InferenceResponseImage(width=width, height=height)
+            # WARNING! This way of conversion is hazardous - first of all, if background class is not in class names,
+            # for certain pre-processing, we end up with -1 values which will be wrapped to 255 - second of all,
+            # we can support only 256 classes - those constraints should be fine until inference 2.0
+            response_predictions = SemanticSegmentationPrediction(
+                segmentation_mask=self.img_to_b64_str(
+                    segmentation.segmentation_map.to(torch.uint8)
+                ),
+                confidence_mask=self.img_to_b64_str(
+                    (segmentation.confidence * 255).to(torch.uint8)
+                ),
+                class_map=self.class_map,
+                image=dict(response_image),
+            )
+            response = SemanticSegmentationInferenceResponse(
+                predictions=response_predictions,
+                image=response_image,
+            )
+            responses.append(response)
+        return responses
+
+    def clear_cache(self, delete_from_disk: bool = True) -> None:
+        """Clears any cache if necessary. TODO: Implement this to delete the cache from the experimental model.
+
+        Args:
+            delete_from_disk (bool, optional): Whether to delete cached files from disk. Defaults to True.
+        """
+        pass
+
+    def img_to_b64_str(self, img: torch.Tensor) -> str:
+        if img.dtype != torch.uint8:
+            raise ValueError(
+                f"img_to_b64_str requires uint8 tensor but got dtype {img.dtype}"
+            )
+
+        img = Image.fromarray(img.cpu().numpy())
+        buffered = io.BytesIO()
+        img.save(buffered, format="PNG")
+
+        img_str = base64.b64encode(buffered.getvalue())
+        img_str = img_str.decode("ascii")
+
+        return img_str
+
+    def draw_predictions(
+        self,
+        inference_request: InferenceRequest,
+        inference_response: InferenceResponse,
+    ) -> bytes:
+        raise NotImplementedError(
+            "draw_predictions(...) is not implemented for semantic segmentation models - responses contain "
+            "visualization already."
+        )

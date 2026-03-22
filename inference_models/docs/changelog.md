@@ -1,20 +1,76 @@
 # Changelog
 
+## `0.22.0`
+
+### Added
+
+- GLM-OCR model added to models zoo 
+
+---
+
+## `0.21.1`
+
+### Fixed
+
+- Lack of model package features denoted in auto-negotiation cache entries was causing errors while re-initialization 
+of models which had `required_features` denoted in model registry.
+
+---
+
+## `0.21.0`
+### Added
+
+- Support for CUDA Graphs in TRT backend - all TRT models got upgraded - added ability to run with CUDA graphs, at 
+the expense of additional VRAM allocation, but with caller control on how many execution contexts for different 
+input shapes should be allowed.
+
+---
+
+## `0.20.2`
+### Added
+
+- Ability to override certain aspects of model pre-processing (like center-crop, contrast enhancement or grayscale 
+which may be performed by caller).  
+
+---
+
+
+## `0.20.1`
+### Fixed
+
+- `AnyModel` typing regarding semantic segmentation model
+
+---
+
+## `0.20.0`
+### Added
+
+- Support for `transformers>=5`
+
+- Model registry feature allowing to treat specific model features as required during auto-negotiation  
+
+---
+
 ## `0.19.4`
 ### Fixed
 
 - CUDA stream synchronization issues in TRT models.
+
+---
 
 ## `0.19.3`
 
 ### Fixed
 - Post-processing for RF-DETR segmentation model - missing remapping for class ids regarding masks.
 
+---
+
 ## `0.19.2`
 
 ### Fixed
 - Changed the default ranking for model packages in `AutoLoader` - ONNX to be preferred over Torch. 
 
+---
 
 ## `0.19.1`
 

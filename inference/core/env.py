@@ -213,6 +213,8 @@ QWEN_2_5_ENABLED = str2bool(os.getenv("QWEN_2_5_ENABLED", True))
 
 QWEN_3_ENABLED = str2bool(os.getenv("QWEN_3_ENABLED", True))
 
+QWEN_3_5_ENABLED = str2bool(os.getenv("QWEN_3_5_ENABLED", True))
+
 DEPTH_ESTIMATION_ENABLED = str2bool(os.getenv("DEPTH_ESTIMATION_ENABLED", True))
 
 SMOLVLM2_ENABLED = str2bool(os.getenv("SMOLVLM2_ENABLED", True))
@@ -224,6 +226,8 @@ PALIGEMMA_ENABLED = str2bool(os.getenv("PALIGEMMA_ENABLED", True))
 FLORENCE2_ENABLED = str2bool(os.getenv("FLORENCE2_ENABLED", True))
 
 SAM3_3D_OBJECTS_ENABLED = str2bool(os.getenv("SAM3_3D_OBJECTS_ENABLED", False))
+
+GLM_OCR_ENABLED = str2bool(os.getenv("GLM_OCR_ENABLED", True))
 
 # Flag to enable YOLO-World core model, default is True
 CORE_MODEL_YOLO_WORLD_ENABLED = str2bool(
@@ -237,6 +241,12 @@ ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES = str2bool(
 )
 ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES = str2bool(
     os.getenv("ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES", "False")
+)
+MAX_INFERENCE_MODELS_CACHE_SIZE_MB = int(
+    os.getenv("MAX_INFERENCE_MODELS_CACHE_SIZE_MB", "-1")
+)
+INFERENCE_MODELS_CACHE_WATCHDOG_INTERVAL_MINUTES = int(
+    os.getenv("INFERENCE_MODELS_CACHE_WATCHDOG_INTERVAL_MINUTES", "60")
 )
 
 # ID of host device, default is None
@@ -279,6 +289,14 @@ ELASTICACHE_ENDPOINT = os.environ.get(
 ENABLE_BYTE_TRACK = str2bool(os.getenv("ENABLE_BYTE_TRACK", False))
 
 ENABLE_PROMETHEUS = str2bool(os.getenv("ENABLE_PROMETHEUS", False))
+
+# Controls whether video source URLs (e.g. RTSP endpoints) are included as
+# Prometheus label values.  Credentials and query parameters are always
+# stripped, but the host/IP and path remain visible.  Set to "false" to omit
+# source labels entirely if internal network topology is sensitive.
+METRICS_INCLUDE_SOURCE_LABELS = str2bool(
+    os.getenv("METRICS_INCLUDE_SOURCE_LABELS", True)
+)
 
 # Flag to enforce FPS, default is False
 ENFORCE_FPS = str2bool(os.getenv("ENFORCE_FPS", False))
@@ -572,6 +590,14 @@ HOSTED_INSTANCE_SEGMENTATION_URL = os.getenv(
         else "https://lambda-instance-segmentation.staging.roboflow.com"
     ),
 )
+HOSTED_SEMANTIC_SEGMENTATION_URL = os.getenv(
+    "HOSTED_SEMANTIC_SEGMENTATION_URL",
+    (
+        "https://segment.roboflow.com"
+        if PROJECT == "roboflow-platform"
+        else "https://lambda-semantic-segmentation.staging.roboflow.com"
+    ),
+)
 HOSTED_CLASSIFICATION_URL = os.getenv(
     "HOSTED_CLASSIFICATION_URL",
     (
@@ -843,6 +869,31 @@ WEBRTC_MODAL_PUBLIC_STUN_SERVERS = os.getenv(
 WEBRTC_MODAL_USAGE_QUOTA_ENABLED = str2bool(
     os.getenv("WEBRTC_MODAL_USAGE_QUOTA_ENABLED", "False")
 )
+
+#
+# Workspace stream quota
+#
+# Redis-base rate limiting that disables more than N concurrent
+# connections from a single workspace
+WEBRTC_WORKSPACE_STREAM_QUOTA_ENABLED = str2bool(
+    os.getenv("WEBRTC_WORKSPACE_STREAM_QUOTA_ENABLED", "False")
+)
+WEBRTC_WORKSPACE_STREAM_QUOTA = int(os.getenv("WEBRTC_WORKSPACE_STREAM_QUOTA", "10"))
+# TTL in seconds for active stream entries (auto-expire if no explicit cleanup)
+WEBRTC_WORKSPACE_STREAM_TTL_SECONDS = int(
+    os.getenv("WEBRTC_WORKSPACE_STREAM_TTL_SECONDS", "60")
+)
+# URL for Modal to send session heartbeats to keep session alive
+# Example: "https://serverless.roboflow.com/webrtc/session/heartbeat"
+WEBRTC_SESSION_HEARTBEAT_URL = os.getenv(
+    "WEBRTC_SESSION_HEARTBEAT_URL",
+    None,
+)
+# How often Modal sends session heartbeats (in seconds)
+WEBRTC_SESSION_HEARTBEAT_INTERVAL_SECONDS = int(
+    os.getenv("WEBRTC_SESSION_HEARTBEAT_INTERVAL_SECONDS", "30")
+)
+
 WEBRTC_DATA_CHANNEL_BUFFER_DRAINING_DELAY = float(
     os.getenv("WEBRTC_DATA_CHANNEL_BUFFER_DRAINING_DELAY", "0.1")
 )

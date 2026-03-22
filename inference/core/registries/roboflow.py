@@ -19,6 +19,7 @@ from inference.core.env import (
     MODELS_CACHE_AUTH_CACHE_MAX_SIZE,
     MODELS_CACHE_AUTH_CACHE_TTL,
     MODELS_CACHE_AUTH_ENABLED,
+    USE_INFERENCE_MODELS,
 )
 from inference.core.exceptions import (
     MissingApiKeyError,
@@ -34,6 +35,7 @@ from inference.core.roboflow_api import (
     MODEL_TYPE_KEY,
     PROJECT_TASK_TYPE_KEY,
     ModelEndpointType,
+    get_model_metadata_from_inference_models_registry,
     get_roboflow_dataset_type,
     get_roboflow_instant_model_data,
     get_roboflow_model_data,
@@ -64,6 +66,8 @@ GENERIC_MODELS = {
     "depth-anything-v3": ("depth-estimation", "depth-anything-v3"),
     "moondream2": ("lmm", "moondream2"),
     "perception_encoder": ("embed", "perception_encoder"),
+    "qwen3_5-0.8b": ("lmm", "qwen3_5-0.8b"),
+    "qwen3_5-2b": ("lmm", "qwen3_5-2b"),
 }
 
 STUB_VERSION_ID = "0"
@@ -128,8 +132,15 @@ def _check_if_api_key_has_access_to_model(
                 countinference=countinference,
                 service_secret=service_secret,
             )
-        else:
+        elif not USE_INFERENCE_MODELS:
             get_roboflow_instant_model_data(
+                api_key=api_key,
+                model_id=model_id,
+                countinference=countinference,
+                service_secret=service_secret,
+            )
+        else:
+            get_model_metadata_from_inference_models_registry(
                 api_key=api_key,
                 model_id=model_id,
                 countinference=countinference,
@@ -219,8 +230,16 @@ def get_model_type(
             device_id=GLOBAL_DEVICE_ID,
         ).get("ort")
         project_task_type = api_data.get("type", "object-detection")
-    else:
+    elif not USE_INFERENCE_MODELS:
         api_data = get_roboflow_instant_model_data(
+            api_key=api_key,
+            model_id=model_id,
+            countinference=countinference,
+            service_secret=service_secret,
+        )
+        project_task_type = api_data.get("taskType", "object-detection")
+    else:
+        api_data = get_model_metadata_from_inference_models_registry(
             api_key=api_key,
             model_id=model_id,
             countinference=countinference,

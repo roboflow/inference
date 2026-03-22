@@ -1,4 +1,4 @@
-from typing import Any, Dict, Generator, List, Optional, Set, Tuple, Union
+from typing import Any, Dict, Generator, List, Optional, Tuple, Union
 
 from networkx import DiGraph
 
@@ -155,7 +155,7 @@ class ExecutionDataManager:
                         f"the problem - including workflow definition you use.",
                         context="workflow_execution | step_output_registration",
                     )
-                self._register_flow_control_output_for_simd_step(
+                self._register_control_flow_output_for_simd_step(
                     step_node=step_node,
                     indices=indices,
                     outputs=output,
@@ -177,7 +177,7 @@ class ExecutionDataManager:
                 context="workflow_execution | step_output_registration",
             )
         if isinstance(output, FlowControl):
-            self._register_flow_control_output_for_non_simd_step(
+            self._register_control_flow_output_for_non_simd_step(
                 step_node=step_node,
                 output=output,
             )
@@ -258,6 +258,7 @@ class ExecutionDataManager:
             node=step_selector,
             expected_type=StepNode,
         )
+
         step_name = get_last_chunk_of_selector(selector=step_selector)
         if step_node.output_dimensionality == 0:
             # SIMD step collapsing into scalar (can happen for auto-batch casting of parameters)
@@ -280,7 +281,7 @@ class ExecutionDataManager:
             else:
                 output = outputs
             if isinstance(output, FlowControl):
-                self._register_flow_control_output_for_non_simd_step(
+                self._register_control_flow_output_for_non_simd_step(
                     step_node=step_node,
                     output=output,
                 )
@@ -311,7 +312,7 @@ class ExecutionDataManager:
                             f"the problem - including workflow definition you use.",
                             context="workflow_execution | step_output_registration",
                         )
-                    self._register_flow_control_output_for_simd_step(
+                    self._register_control_flow_output_for_simd_step(
                         step_node=step_node,
                         indices=indices,
                         outputs=outputs,
@@ -362,7 +363,7 @@ class ExecutionDataManager:
                     f"the problem - including workflow definition you use.",
                     context="workflow_execution | step_output_registration",
                 )
-            self._register_flow_control_output_for_simd_step(
+            self._register_control_flow_output_for_simd_step(
                 step_node=step_node,
                 indices=indices,
                 outputs=outputs,
@@ -544,7 +545,7 @@ class ExecutionDataManager:
         )
         return input_node.is_batch_oriented()
 
-    def _register_flow_control_output_for_non_simd_step(
+    def _register_control_flow_output_for_non_simd_step(
         self,
         step_node: StepNode,
         output: FlowControl,
@@ -577,7 +578,7 @@ class ExecutionDataManager:
             )
         return None
 
-    def _register_flow_control_output_for_simd_step(
+    def _register_control_flow_output_for_simd_step(
         self,
         step_node: StepNode,
         indices: List[DynamicBatchIndex],

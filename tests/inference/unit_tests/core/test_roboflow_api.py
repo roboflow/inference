@@ -17,6 +17,7 @@ from inference.core.exceptions import (
     MalformedRoboflowAPIResponseError,
     MalformedWorkflowResponseError,
     MissingDefaultModelError,
+    PaymentRequiredError,
     RetryRequestError,
     RoboflowAPIConnectionError,
     RoboflowAPIIAlreadyAnnotatedError,
@@ -27,7 +28,7 @@ from inference.core.exceptions import (
     RoboflowAPITimeoutError,
     RoboflowAPIUnsuccessfulRequestError,
     RoboflowAPIUsagePausedError,
-    WorkspaceLoadError, PaymentRequiredError,
+    WorkspaceLoadError,
 )
 from inference.core.roboflow_api import (
     ModelEndpointType,
@@ -35,6 +36,7 @@ from inference.core.roboflow_api import (
     build_roboflow_api_headers,
     delete_cached_workflow_response_if_exists,
     get_from_url,
+    get_model_metadata_from_inference_models_registry,
     get_roboflow_active_learning_configuration,
     get_roboflow_dataset_type,
     get_roboflow_labeling_batches,
@@ -49,8 +51,8 @@ from inference.core.roboflow_api import (
     wrap_roboflow_api_errors,
     wrap_roboflow_api_errors_async,
 )
-from inference.core.version import __version__
 from inference.core.utils.url_utils import wrap_url
+from inference.core.version import __version__
 
 
 class TestException(Exception):
@@ -783,6 +785,21 @@ def test_get_roboflow_model_data_when_connection_error_occurs(
         )
 
 
+@mock.patch.object(roboflow_api.requests, "get")
+def test_get_model_metadata_from_inference_models_registry_when_connection_error_occurs(
+    get_mock: MagicMock,
+) -> None:
+    # given
+    get_mock.side_effect = ConnectionError()
+
+    # when
+    with pytest.raises(RoboflowAPIConnectionError):
+        _ = get_model_metadata_from_inference_models_registry(
+            api_key="my_api_key",
+            model_id="coins_detection/1",
+        )
+
+
 def test_get_roboflow_model_data_when_wrong_api_key_used(requests_mock: Mocker) -> None:
     # given
     requests_mock.get(
@@ -803,6 +820,26 @@ def test_get_roboflow_model_data_when_wrong_api_key_used(requests_mock: Mocker) 
     params = ["api_key=my_api_key", "nocache=true", "device=some", "dynamic=true"]
     for param in params:
         assert param in requests_mock.last_request.query
+
+
+def test_get_model_metadata_from_inference_models_registry_when_wrong_api_key_used(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    requests_mock.get(
+        url=wrap_url(f"{API_BASE_URL}/models/v1/external/weights"),
+        status_code=401,
+    )
+
+    # when
+    with pytest.raises(RoboflowAPINotAuthorizedError):
+        _ = get_model_metadata_from_inference_models_registry(
+            api_key="my_api_key",
+            model_id="coins_detection/1",
+        )
+
+    assert "modelid=coins_detection%2f1" in requests_mock.last_request.query
+    assert requests_mock.last_request.headers["Authorization"] == "Bearer my_api_key"
 
 
 def test_get_roboflow_model_data_when_wrong_model_used(requests_mock: Mocker) -> None:
@@ -827,6 +864,26 @@ def test_get_roboflow_model_data_when_wrong_model_used(requests_mock: Mocker) ->
         assert param in requests_mock.last_request.query
 
 
+def test_get_model_metadata_from_inference_models_registry_when_wrong_model_used(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    requests_mock.get(
+        url=wrap_url(f"{API_BASE_URL}/models/v1/external/weights"),
+        status_code=404,
+    )
+
+    # when
+    with pytest.raises(RoboflowAPINotNotFoundError):
+        _ = get_model_metadata_from_inference_models_registry(
+            api_key="my_api_key",
+            model_id="coins_detection/1",
+        )
+
+    assert "modelid=coins_detection%2f1" in requests_mock.last_request.query
+    assert requests_mock.last_request.headers["Authorization"] == "Bearer my_api_key"
+
+
 def test_get_roboflow_model_data_when_http_error_occurs(requests_mock: Mocker) -> None:
     # given
     requests_mock.get(
@@ -847,6 +904,26 @@ def test_get_roboflow_model_data_when_http_error_occurs(requests_mock: Mocker) -
     params = ["api_key=my_api_key", "nocache=true", "device=some", "dynamic=true"]
     for param in params:
         assert param in requests_mock.last_request.query
+
+
+def test_get_model_metadata_from_inference_models_registry_when_http_error_occurs(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    requests_mock.get(
+        url=wrap_url(f"{API_BASE_URL}/models/v1/external/weights"),
+        status_code=500,
+    )
+
+    # when
+    with pytest.raises(RoboflowAPIUnsuccessfulRequestError):
+        _ = get_model_metadata_from_inference_models_registry(
+            api_key="my_api_key",
+            model_id="coins_detection/1",
+        )
+
+    assert "modelid=coins_detection%2f1" in requests_mock.last_request.query
+    assert requests_mock.last_request.headers["Authorization"] == "Bearer my_api_key"
 
 
 def test_get_roboflow_model_data_when_response_parsing_error_occurs(
@@ -872,6 +949,28 @@ def test_get_roboflow_model_data_when_response_parsing_error_occurs(
     params = ["api_key=my_api_key", "nocache=true", "device=some", "dynamic=true"]
     for param in params:
         assert param in requests_mock.last_request.query
+
+
+def test_get_model_metadata_from_inference_models_registry_when_response_parsing_error_occurs(
+    requests_mock: Mocker,
+) -> None:
+    expected_response = b"For sure not a JSON payload"
+    # given
+    requests_mock.get(
+        url=wrap_url(f"{API_BASE_URL}/models/v1/external/weights"),
+        content=expected_response,
+    )
+
+    # when
+    with pytest.raises(MalformedRoboflowAPIResponseError):
+        _ = get_model_metadata_from_inference_models_registry(
+            api_key="my_api_key",
+            model_id="coins_detection/1",
+        )
+
+    # then
+    assert "modelid=coins_detection%2f1" in requests_mock.last_request.query
+    assert requests_mock.last_request.headers["Authorization"] == "Bearer my_api_key"
 
 
 def test_get_roboflow_model_data_when_valid_response_expected(
@@ -911,6 +1010,111 @@ def test_get_roboflow_model_data_when_valid_response_expected(
         assert param in requests_mock.last_request.query
 
     assert result == expected_response
+
+
+def test_get_model_metadata_from_inference_models_registry_when_valid_response_expected(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    expected_response = {
+        "modelMetadata": {
+            "modelArchitecture": "yolov8",
+            "taskType": "object-detection",
+        }
+    }
+    requests_mock.get(
+        url=wrap_url(f"{API_BASE_URL}/models/v1/external/weights"),
+        json=expected_response,
+    )
+
+    # when
+    result = get_model_metadata_from_inference_models_registry(
+        api_key="my_api_key",
+        model_id="coins_detection/1",
+    )
+
+    # then
+    assert "modelid=coins_detection%2f1" in requests_mock.last_request.query
+    assert requests_mock.last_request.headers["Authorization"] == "Bearer my_api_key"
+    assert result == {
+        "modelType": "yolov8",
+        "taskType": "object-detection",
+    }
+
+
+@mock.patch.object(roboflow_api, "GCP_SERVERLESS", True)
+@mock.patch.object(roboflow_api, "ENFORCE_CREDITS_VERIFICATION", True)
+@mock.patch.object(roboflow_api, "MODELS_CACHE_AUTH_ENABLED", True)
+def test_get_model_metadata_from_inference_models_registry_when_valid_response_expected_enforce_credits(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    expected_response = {
+        "modelMetadata": {
+            "modelArchitecture": "yolov8",
+            "taskType": "object-detection",
+        }
+    }
+    requests_mock.get(
+        url=wrap_url(f"{API_BASE_URL}/models/v1/external/weights"),
+        json=expected_response,
+    )
+
+    # when
+    result = get_model_metadata_from_inference_models_registry(
+        api_key="my_api_key",
+        model_id="coins_detection/1",
+    )
+
+    # then
+    assert "modelid=coins_detection%2f1" in requests_mock.last_request.query
+    assert requests_mock.last_request.headers["Authorization"] == "Bearer my_api_key"
+    assert (
+        requests_mock.last_request.headers["x-enforce-credits-verification"] == "true"
+    )
+    assert (
+        requests_mock.last_request.headers["x-enforce-internal-artefacts-urls"]
+        == "true"
+    )
+    assert result == {
+        "modelType": "yolov8",
+        "taskType": "object-detection",
+    }
+
+
+@mock.patch.object(roboflow_api, "GCP_SERVERLESS", True)
+@mock.patch.object(roboflow_api, "ENFORCE_CREDITS_VERIFICATION", True)
+@mock.patch.object(roboflow_api, "ROBOFLOW_SERVICE_SECRET", "dummy-secret")
+@mock.patch.object(roboflow_api, "MODELS_CACHE_AUTH_ENABLED", True)
+def test_get_model_metadata_from_inference_models_registry_when_valid_response_expected_enforce_credits_overruled(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    expected_response = {
+        "modelMetadata": {
+            "modelArchitecture": "yolov8",
+            "taskType": "object-detection",
+        }
+    }
+    requests_mock.get(
+        url=wrap_url(f"{API_BASE_URL}/models/v1/external/weights"),
+        json=expected_response,
+    )
+
+    # when
+    result = get_model_metadata_from_inference_models_registry(
+        api_key="my_api_key",
+        model_id="coins_detection/1",
+        countinference=False,
+        service_secret="dummy-secret",
+    )
+
+    # then
+    assert result == {
+        "modelType": "yolov8",
+        "taskType": "object-detection",
+    }
+    assert "x-enforce-credits-verification" not in requests_mock.last_request.headers
 
 
 @mock.patch.object(roboflow_api.requests, "post")
@@ -2780,3 +2984,70 @@ def test_get_from_url_when_md5_verification_enabled_but_md5_part_is_invalid_base
 
     assert "not valid base64" in str(exc_info.value)
     assert exc_info.value.__cause__ is not None
+
+
+@mock.patch.object(roboflow_api.requests, "get")
+def test_get_workflow_specification_falls_back_to_cache_on_timeout(
+    get_mock: MagicMock,
+) -> None:
+    # given - populate the file cache with a successful call first
+    delete_cached_workflow_response_if_exists(
+        workspace_id="my_workspace",
+        workflow_id="some_workflow",
+        api_key="my_api_key",
+    )
+    get_mock.return_value = MagicMock(
+        status_code=200,
+        json=MagicMock(
+            return_value={
+                "workflow": {
+                    "config": json.dumps(
+                        {"specification": {"timeout": "fallback"}}
+                    )
+                }
+            }
+        ),
+    )
+    _ = get_workflow_specification(
+        api_key="my_api_key",
+        workspace_id="my_workspace",
+        workflow_id="some_workflow",
+        ephemeral_cache=MemoryCache(),
+    )
+    get_mock.side_effect = requests.exceptions.Timeout()
+
+    # when
+    result = get_workflow_specification(
+        api_key="my_api_key",
+        workspace_id="my_workspace",
+        workflow_id="some_workflow",
+        ephemeral_cache=MemoryCache(),
+    )
+
+    # then
+    assert result == {
+        "timeout": "fallback",
+        "id": None,
+    }, "Expected workflow specification to be retrieved from file cache on Timeout"
+
+
+@mock.patch.object(roboflow_api.requests, "get")
+def test_get_workflow_specification_raises_timeout_when_no_cache(
+    get_mock: MagicMock,
+) -> None:
+    # given - no cached file exists
+    delete_cached_workflow_response_if_exists(
+        workspace_id="my_workspace",
+        workflow_id="timeout_no_cache_workflow",
+        api_key="my_api_key",
+    )
+    get_mock.side_effect = requests.exceptions.Timeout()
+
+    # when
+    with pytest.raises(RoboflowAPITimeoutError):
+        _ = get_workflow_specification(
+            api_key="my_api_key",
+            workspace_id="my_workspace",
+            workflow_id="timeout_no_cache_workflow",
+            use_cache=False,
+        )

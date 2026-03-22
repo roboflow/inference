@@ -11,6 +11,7 @@ from inference_models import (
     ClassificationPrediction,
     MultiLabelClassificationModel,
     MultiLabelClassificationPrediction,
+    PreProcessingOverrides,
 )
 from inference_models.configuration import (
     DEFAULT_DEVICE,
@@ -150,6 +151,7 @@ class ResNetForClassificationTorch(ClassificationModel[torch.Tensor, torch.Tenso
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         input_color_format: Optional[ColorFormat] = None,
         image_size: Optional[Tuple[int, int]] = None,
+        pre_processing_overrides: Optional[PreProcessingOverrides] = None,
         **kwargs,
     ) -> torch.Tensor:
         return pre_process_network_input(
@@ -159,6 +161,7 @@ class ResNetForClassificationTorch(ClassificationModel[torch.Tensor, torch.Tenso
             target_device=self._device,
             input_color_format=input_color_format,
             image_size_wh=image_size,
+            pre_processing_overrides=pre_processing_overrides,
         )[0]
 
     def forward(self, pre_processed_images: torch.Tensor, **kwargs) -> torch.Tensor:
@@ -297,6 +300,7 @@ class ResNetForMultiLabelClassificationTorch(
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         input_color_format: Optional[ColorFormat] = None,
         image_size: Optional[Tuple[int, int]] = None,
+        pre_processing_overrides: Optional[PreProcessingOverrides] = None,
         **kwargs,
     ) -> torch.Tensor:
         return pre_process_network_input(
@@ -306,6 +310,7 @@ class ResNetForMultiLabelClassificationTorch(
             target_device=self._device,
             input_color_format=input_color_format,
             image_size_wh=image_size,
+            pre_processing_overrides=pre_processing_overrides,
         )[0]
 
     def forward(self, pre_processed_images: torch.Tensor, **kwargs) -> torch.Tensor:

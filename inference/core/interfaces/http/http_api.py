@@ -176,9 +176,11 @@ from inference.core.env import (
     GET_MODEL_REGISTRY_ENABLED,
     HTTP_API_SHARED_WORKFLOWS_THREAD_POOL_ENABLED,
     HTTP_API_SHARED_WORKFLOWS_THREAD_POOL_WORKERS,
+    INFERENCE_MODELS_CACHE_WATCHDOG_INTERVAL_MINUTES,
     LAMBDA,
     LEGACY_ROUTE_ENABLED,
     LMM_ENABLED,
+    MAX_INFERENCE_MODELS_CACHE_SIZE_MB,
     METRICS_ENABLED,
     MOONDREAM2_ENABLED,
     NOTEBOOK_ENABLED,
@@ -251,10 +253,18 @@ from inference.core.interfaces.stream_manager.manager_app.entities import (
 )
 from inference.core.interfaces.webrtc_worker import start_worker
 from inference.core.interfaces.webrtc_worker.entities import (
+    WebRTCSessionHeartbeatRequest,
     WebRTCWorkerRequest,
     WebRTCWorkerResult,
 )
+from inference.core.interfaces.webrtc_worker.utils import (
+    deregister_webrtc_session,
+    refresh_webrtc_session,
+)
 from inference.core.managers.base import ModelManager
+from inference.core.managers.inference_models_cache_watchdog import (
+    InferenceModelsCacheWatchdog,
+)
 from inference.core.managers.metrics import get_container_stats
 from inference.core.managers.model_load_collector import (
     ModelLoadCollector,
@@ -450,7 +460,9 @@ class HttpInterface(BaseInterface):
             logger.info("Shutting down %s", description)
             await usage_collector.async_push_usage_payloads()
 
-        InferenceInstrumentator(app, model_manager=model_manager, endpoint="/metrics")
+        self._instrumentator = InferenceInstrumentator(
+            app, model_manager=model_manager, endpoint="/metrics"
+        )
         if LAMBDA:
             app.add_middleware(LambdaMiddleware)
         if GCP_SERVERLESS:
@@ -803,6 +815,18 @@ class HttpInterface(BaseInterface):
             self.shared_thread_pool_executor = ThreadPoolExecutor(
                 max_workers=HTTP_API_SHARED_WORKFLOWS_THREAD_POOL_WORKERS
             )
+        self.inference_models_cache_daemon: Optional[InferenceModelsCacheWatchdog] = (
+            None
+        )
+        if USE_INFERENCE_MODELS and MAX_INFERENCE_MODELS_CACHE_SIZE_MB > 0:
+            from inference_models.configuration import INFERENCE_HOME
+
+            self.inference_models_cache_daemon = InferenceModelsCacheWatchdog(
+                inference_home=INFERENCE_HOME,
+                max_cache_size_mb=MAX_INFERENCE_MODELS_CACHE_SIZE_MB,
+                interval_minutes=INFERENCE_MODELS_CACHE_WATCHDOG_INTERVAL_MINUTES,
+            )
+            self.inference_models_cache_daemon.start()
 
         if ENABLE_STREAM_API:
             operations_timeout = os.getenv("STREAM_MANAGER_OPERATIONS_TIMEOUT")
@@ -813,6 +837,7 @@ class HttpInterface(BaseInterface):
                 port=int(os.getenv("STREAM_MANAGER_PORT", "7070")),
                 operations_timeout=operations_timeout,
             )
+            self._instrumentator.set_stream_manager_client(self.stream_manager_client)
 
         def process_inference_request(
             inference_request: InferenceRequest,
@@ -1376,95 +1401,95 @@ class HttpInterface(BaseInterface):
                     service_secret=service_secret,
                 )
 
-            if LMM_ENABLED or MOONDREAM2_ENABLED:
+        if not LAMBDA and (LMM_ENABLED or MOONDREAM2_ENABLED):
 
-                @app.post(
-                    "/infer/lmm",
-                    response_model=Union[
-                        LMMInferenceResponse,
-                        List[LMMInferenceResponse],
-                        StubResponse,
-                    ],
-                    summary="Large multi-modal model infer",
-                    description="Run inference with the specified large multi-modal model",
-                    response_model_exclude_none=True,
+            @app.post(
+                "/infer/lmm",
+                response_model=Union[
+                    LMMInferenceResponse,
+                    List[LMMInferenceResponse],
+                    StubResponse,
+                ],
+                summary="Large multi-modal model infer",
+                description="Run inference with the specified large multi-modal model",
+                response_model_exclude_none=True,
+            )
+            @with_route_exceptions
+            @usage_collector("request")
+            def infer_lmm(
+                inference_request: LMMInferenceRequest,
+                countinference: Optional[bool] = None,
+                service_secret: Optional[str] = None,
+            ):
+                """Run inference with the specified large multi-modal model.
+
+                Args:
+                    inference_request (LMMInferenceRequest): The request containing the necessary details for LMM inference.
+
+                Returns:
+                    Union[LMMInferenceResponse, List[LMMInferenceResponse]]: The response containing the inference results.
+                """
+                logger.debug(f"Reached /infer/lmm")
+                return process_inference_request(
+                    inference_request,
+                    countinference=countinference,
+                    service_secret=service_secret,
                 )
-                @with_route_exceptions
-                @usage_collector("request")
-                def infer_lmm(
-                    inference_request: LMMInferenceRequest,
-                    countinference: Optional[bool] = None,
-                    service_secret: Optional[str] = None,
+
+            @app.post(
+                "/infer/lmm/{model_id:path}",
+                response_model=Union[
+                    LMMInferenceResponse,
+                    List[LMMInferenceResponse],
+                    StubResponse,
+                ],
+                summary="Large multi-modal model infer with model ID in path",
+                description="Run inference with the specified large multi-modal model. Model ID is specified in the URL path (can contain slashes).",
+                response_model_exclude_none=True,
+            )
+            @with_route_exceptions
+            @usage_collector("request")
+            def infer_lmm_with_model_id(
+                model_id: str,
+                inference_request: LMMInferenceRequest,
+                countinference: Optional[bool] = None,
+                service_secret: Optional[str] = None,
+            ):
+                """Run inference with the specified large multi-modal model.
+
+                The model_id can be specified in the URL path. If model_id is also provided
+                in the request body, it must match the path parameter.
+
+                Args:
+                    model_id (str): The model identifier from the URL path.
+                    inference_request (LMMInferenceRequest): The request containing the necessary details for LMM inference.
+
+                Returns:
+                    Union[LMMInferenceResponse, List[LMMInferenceResponse]]: The response containing the inference results.
+
+                Raises:
+                    HTTPException: If model_id in path and request body don't match.
+                """
+                logger.debug(f"Reached /infer/lmm/{model_id}")
+
+                # Validate model_id consistency between path and request body
+                if (
+                    inference_request.model_id is not None
+                    and inference_request.model_id != model_id
                 ):
-                    """Run inference with the specified large multi-modal model.
-
-                    Args:
-                        inference_request (LMMInferenceRequest): The request containing the necessary details for LMM inference.
-
-                    Returns:
-                        Union[LMMInferenceResponse, List[LMMInferenceResponse]]: The response containing the inference results.
-                    """
-                    logger.debug(f"Reached /infer/lmm")
-                    return process_inference_request(
-                        inference_request,
-                        countinference=countinference,
-                        service_secret=service_secret,
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Model ID mismatch: path specifies '{model_id}' but request body specifies '{inference_request.model_id}'",
                     )
 
-                @app.post(
-                    "/infer/lmm/{model_id:path}",
-                    response_model=Union[
-                        LMMInferenceResponse,
-                        List[LMMInferenceResponse],
-                        StubResponse,
-                    ],
-                    summary="Large multi-modal model infer with model ID in path",
-                    description="Run inference with the specified large multi-modal model. Model ID is specified in the URL path (can contain slashes).",
-                    response_model_exclude_none=True,
+                # Set the model_id from path if not in request body
+                inference_request.model_id = model_id
+
+                return process_inference_request(
+                    inference_request,
+                    countinference=countinference,
+                    service_secret=service_secret,
                 )
-                @with_route_exceptions
-                @usage_collector("request")
-                def infer_lmm_with_model_id(
-                    model_id: str,
-                    inference_request: LMMInferenceRequest,
-                    countinference: Optional[bool] = None,
-                    service_secret: Optional[str] = None,
-                ):
-                    """Run inference with the specified large multi-modal model.
-
-                    The model_id can be specified in the URL path. If model_id is also provided
-                    in the request body, it must match the path parameter.
-
-                    Args:
-                        model_id (str): The model identifier from the URL path.
-                        inference_request (LMMInferenceRequest): The request containing the necessary details for LMM inference.
-
-                    Returns:
-                        Union[LMMInferenceResponse, List[LMMInferenceResponse]]: The response containing the inference results.
-
-                    Raises:
-                        HTTPException: If model_id in path and request body don't match.
-                    """
-                    logger.debug(f"Reached /infer/lmm/{model_id}")
-
-                    # Validate model_id consistency between path and request body
-                    if (
-                        inference_request.model_id is not None
-                        and inference_request.model_id != model_id
-                    ):
-                        raise HTTPException(
-                            status_code=400,
-                            detail=f"Model ID mismatch: path specifies '{model_id}' but request body specifies '{inference_request.model_id}'",
-                        )
-
-                    # Set the model_id from path if not in request body
-                    inference_request.model_id = model_id
-
-                    return process_inference_request(
-                        inference_request,
-                        countinference=countinference,
-                        service_secret=service_secret,
-                    )
 
         if not DISABLE_WORKFLOW_ENDPOINTS:
 
@@ -1792,6 +1817,87 @@ class HttpInterface(BaseInterface):
                     sdp=worker_result.answer.sdp,
                     type=worker_result.answer.type,
                 )
+
+            @app.post(
+                "/webrtc/session/heartbeat",
+                summary="WebRTC session heartbeat",
+            )
+            @with_route_exceptions_async
+            async def webrtc_session_heartbeat(
+                request: WebRTCSessionHeartbeatRequest,
+            ) -> dict:
+                """Receive heartbeat for an active WebRTC session.
+
+                This endpoint is called periodically to indicate
+                that their session is still active. The session will be removed from
+                the quota count if no heartbeat is received within the TTL period.
+
+                Requires api_key for authentication.
+                """
+                try:
+                    workspace_id = await get_roboflow_workspace_async(
+                        api_key=request.api_key
+                    )
+                except (RoboflowAPINotAuthorizedError, WorkspaceLoadError):
+                    raise HTTPException(
+                        status_code=401,
+                        detail={"status": "error", "message": "unauthorized"},
+                    )
+                if not workspace_id:
+                    raise HTTPException(
+                        status_code=500,
+                        detail={
+                            "status": "error",
+                            "message": "failed to retrieve workspace",
+                        },
+                    )
+
+                session_refreshed = refresh_webrtc_session(
+                    workspace_id=workspace_id,
+                    session_id=request.session_id,
+                )
+                if not session_refreshed:
+                    raise HTTPException(
+                        status_code=404,
+                        detail={"status": "error", "message": "session not found"},
+                    )
+                return {"status": "ok"}
+
+            @app.post(
+                "/webrtc/session/heartbeat/end",
+                summary="End WebRTC session",
+            )
+            @with_route_exceptions_async
+            async def webrtc_session_end(
+                request: WebRTCSessionHeartbeatRequest,
+            ) -> dict:
+                """End a WebRTC session and immediately free the quota slot.
+
+                Requires api_key for authentication.
+                """
+                try:
+                    workspace_id = await get_roboflow_workspace_async(
+                        api_key=request.api_key
+                    )
+                except (RoboflowAPINotAuthorizedError, WorkspaceLoadError):
+                    raise HTTPException(
+                        status_code=401,
+                        detail={"status": "error", "message": "unauthorized"},
+                    )
+                if not workspace_id:
+                    raise HTTPException(
+                        status_code=500,
+                        detail={
+                            "status": "error",
+                            "message": "failed to retrieve workspace",
+                        },
+                    )
+
+                deregister_webrtc_session(
+                    workspace_id=workspace_id,
+                    session_id=request.session_id,
+                )
+                return {"status": "ok"}
 
         if ENABLE_STREAM_API:
 

@@ -10,6 +10,8 @@ from inference.core.workflows.core_steps.analytics.velocity.v1 import (
     VELOCITY_KEY_IN_SV_DETECTIONS,
 )
 from inference.core.workflows.execution_engine.constants import (
+    AREA_CONVERTED_KEY_IN_SV_DETECTIONS,
+    AREA_KEY_IN_SV_DETECTIONS,
     BOUNDING_RECT_ANGLE_KEY_IN_SV_DETECTIONS,
     BOUNDING_RECT_HEIGHT_KEY_IN_SV_DETECTIONS,
     BOUNDING_RECT_RECT_KEY_IN_SV_DETECTIONS,
@@ -31,6 +33,7 @@ class NumberCastingMode(Enum):
 class SequenceAggregationFunction(Enum):
     MIN = "min"
     MAX = "max"
+    SUM = "sum"
 
 
 class SequenceAggregationMode(Enum):
@@ -78,6 +81,8 @@ class DetectionsProperty(Enum):
     BOUNDING_RECT_WIDTH = BOUNDING_RECT_WIDTH_KEY_IN_SV_DETECTIONS
     BOUNDING_RECT_HEIGHT = BOUNDING_RECT_HEIGHT_KEY_IN_SV_DETECTIONS
     BOUNDING_RECT_ANGLE = BOUNDING_RECT_ANGLE_KEY_IN_SV_DETECTIONS
+    AREA = AREA_KEY_IN_SV_DETECTIONS
+    AREA_CONVERTED = AREA_CONVERTED_KEY_IN_SV_DETECTIONS
 
 
 class DetectionsSortProperties(Enum):

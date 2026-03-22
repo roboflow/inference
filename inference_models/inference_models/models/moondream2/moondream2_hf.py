@@ -53,12 +53,10 @@ def _recompute_non_persistent_buffers(model_dir: str, model) -> None:
 
     # Recompute causal attention mask with bidirectional prefix region.
     attn_mask = torch.tril(
-        torch.ones(
-            1, 1, tc.max_context, tc.max_context, dtype=torch.bool
-        )
+        torch.ones(1, 1, tc.max_context, tc.max_context, dtype=torch.bool)
     )
     patch_w = config.vision.crop_size // config.vision.enc_patch_size
-    prefix_attn_len = 1 + patch_w ** 2
+    prefix_attn_len = 1 + patch_w**2
     attn_mask[..., :prefix_attn_len, :prefix_attn_len] = 1
     model.model.attn_mask = attn_mask.to(model.device)
 
