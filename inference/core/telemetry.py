@@ -31,9 +31,11 @@ try:
     from opentelemetry import trace
     from opentelemetry.propagate import inject as _otel_inject
     from opentelemetry.propagate import set_global_textmap
-    from opentelemetry.propagation.composite import CompositePropagator
+    from opentelemetry.propagators.composite import CompositePropagator
     from opentelemetry.trace import StatusCode
-    from opentelemetry.trace.propagation import TraceContextTextMapPropagator
+    from opentelemetry.trace.propagation.tracecontext import (
+        TraceContextTextMapPropagator,
+    )
 
     _OTEL_AVAILABLE = True
 except ImportError:
