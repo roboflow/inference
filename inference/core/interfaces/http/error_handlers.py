@@ -46,7 +46,7 @@ from inference.core.interfaces.stream_manager.manager_app.errors import (
     MalformedPayloadError,
     MessageToBigError,
 )
-from inference.core.telemetry import record_error
+from inference.core.telemetry import record_error, record_error_metric
 from inference.core.workflows.core_steps.common.query_language.errors import (
     InvalidInputTypeError,
     OperationTypeNotRecognisedError,
@@ -103,6 +103,7 @@ def with_route_exceptions(route):
                 return route(*args, **kwargs)
             except Exception as error:
                 record_error(error)
+                record_error_metric(type(error).__name__)
                 raise
         except ContentTypeInvalid as error:
             logger.exception("%s: %s", type(error).__name__, error)
@@ -504,6 +505,7 @@ def with_route_exceptions_async(route):
                 return await route(*args, **kwargs)
             except Exception as error:
                 record_error(error)
+                record_error_metric(type(error).__name__)
                 raise
         except ContentTypeInvalid as error:
             logger.exception("%s: %s", type(error).__name__, error)

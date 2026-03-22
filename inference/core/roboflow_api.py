@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 import re
+import time
 import urllib.parse
 from enum import Enum
 from hashlib import sha256
@@ -71,7 +72,7 @@ from inference.core.exceptions import (
     RoboflowAPIUsagePausedError,
     WorkspaceLoadError,
 )
-from inference.core.telemetry import record_error, start_span
+from inference.core.telemetry import record_api_call, record_error, start_span
 from inference.core.utils.file_system import sanitize_path_segment
 from inference.core.utils.requests import (
     api_key_safe_raise_for_status,
@@ -143,16 +144,22 @@ def wrap_roboflow_api_errors(
 ) -> callable:
     def decorator(function: callable) -> callable:
         def wrapper(*args, **kwargs) -> Any:
+            t_start = time.perf_counter()
             with start_span(
                 "roboflow_api.call",
                 {"roboflow_api.function": function.__name__},
             ):
                 try:
                     try:
-                        return function(*args, **kwargs)
+                        result = function(*args, **kwargs)
+                        record_api_call(
+                            function.__name__, time.perf_counter() - t_start
+                        )
+                        return result
                     except RetryRequestError as error:
                         raise error.inner_error
                 except Timeout as error:
+                    record_api_call(function.__name__, time.perf_counter() - t_start)
                     record_error(error)
                     raise RoboflowAPITimeoutError(
                         "Timeout when attempting to connect to Roboflow API."
@@ -161,11 +168,13 @@ def wrap_roboflow_api_errors(
                     requests.exceptions.ConnectionError,
                     ConnectionError,
                 ) as error:
+                    record_api_call(function.__name__, time.perf_counter() - t_start)
                     record_error(error)
                     raise RoboflowAPIConnectionError(
                         "Could not connect to Roboflow API."
                     ) from error
                 except requests.exceptions.HTTPError as error:
+                    record_api_call(function.__name__, time.perf_counter() - t_start)
                     record_error(error)
                     user_handler_override = (
                         http_errors_handlers if http_errors_handlers is not None else {}
@@ -181,6 +190,7 @@ def wrap_roboflow_api_errors(
                         f"Unsuccessful request to Roboflow API with response code: {status_code}"
                     ) from error
                 except requests.exceptions.InvalidJSONError as error:
+                    record_api_call(function.__name__, time.perf_counter() - t_start)
                     record_error(error)
                     raise MalformedRoboflowAPIResponseError(
                         "Could not decode JSON response from Roboflow API."
@@ -198,31 +208,40 @@ def wrap_roboflow_api_errors_async(
 ) -> callable:
     def decorator(function: callable) -> callable:
         async def wrapper(*args, **kwargs) -> Any:
+            t_start = time.perf_counter()
             with start_span(
                 "roboflow_api.call",
                 {"roboflow_api.function": function.__name__},
             ):
                 try:
                     try:
-                        return await function(*args, **kwargs)
+                        result = await function(*args, **kwargs)
+                        record_api_call(
+                            function.__name__, time.perf_counter() - t_start
+                        )
+                        return result
                     except RetryRequestError as error:
                         raise error.inner_error
                 except asyncio.TimeoutError as error:
+                    record_api_call(function.__name__, time.perf_counter() - t_start)
                     record_error(error)
                     raise RoboflowAPITimeoutError(
                         "Timeout when attempting to connect to Roboflow API."
                     ) from error
                 except (aiohttp.ClientConnectionError, ConnectionError) as error:
+                    record_api_call(function.__name__, time.perf_counter() - t_start)
                     record_error(error)
                     raise RoboflowAPIConnectionError(
                         "Could not connect to Roboflow API."
                     ) from error
                 except (aiohttp.ContentTypeError, JSONDecodeError) as error:
+                    record_api_call(function.__name__, time.perf_counter() - t_start)
                     record_error(error)
                     raise MalformedRoboflowAPIResponseError(
                         "Could not decode JSON response from Roboflow API."
                     ) from error
                 except aiohttp.ClientResponseError as error:
+                    record_api_call(function.__name__, time.perf_counter() - t_start)
                     record_error(error)
                     user_handler_override = (
                         http_errors_handlers if http_errors_handlers is not None else {}
