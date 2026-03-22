@@ -274,6 +274,7 @@
       <div class="tab" data-tab="table">All Results</div>
       <div class="tab" data-tab="detail">Detail</div>
       <div class="tab" data-tab="viz">Visualization</div>
+      <div class="tab" data-tab="ftcompare">FT vs LoRA</div>
     </div>
 
     <div class="panel active" id="panel-overview">
@@ -424,6 +425,16 @@
     <div class="panel" id="panel-viz">
       <div id="viz-content">
         <p style="color:var(--text-dim)">Loading champion visualization...</p>
+      </div>
+    </div>
+
+    <div class="panel" id="panel-ftcompare">
+      <h3 style="margin:0 0 12px 0;color:var(--text)">Full Fine-Tune vs LoRA Few-Shot Comparison</h3>
+      <p style="color:var(--text-dim);font-size:13px;margin-bottom:16px">
+        Compares RF-DETR Nano, Medium & 2XLarge full fine-tune (100 epochs, default settings) against best LoRA few-shot results and Gemini across all RF20 datasets.
+      </p>
+      <div id="ftcompare-content">
+        <p style="color:var(--text-dim)">Loading comparison data...</p>
       </div>
     </div>
   </div>
@@ -2104,15 +2115,21 @@
         runningTimerIds.forEach(id => clearInterval(id));
         runningTimerIds = [];
 
+        // Remove any orphaned tooltips from previous render
+        document.querySelectorAll('.running-task-tooltip, .ftcompare-chart-tooltip').forEach(el => el.remove());
+
         list.innerHTML = d.running.map((r, i) => {
           const dsName = r.dataset_name || r.train_image_set || '—';
-          let desc = `n_train=${r.num_train_images} · ${dsName}`;
-          if (r.batch_size != null) {
+          // Method + model size tag
+          const method = r.method || 'unknown';
+          const variant = (r.model_variant || '').replace('rfdetr-', '');
+          const methodTag = method === 'lora' ? `LoRA ${variant}` : method === 'full_finetune' ? `FT ${variant}` : variant;
+          let desc = `<span style="color:${method === 'lora' ? 'var(--green)' : 'var(--accent)'};font-weight:600">[${methodTag}]</span> ${dsName}`;
+          if (method === 'full_finetune') {
+            desc += ` · bs=${r.batch_size}`;
+            if (r.grad_accum_steps) desc += `×${r.grad_accum_steps}`;
+          } else if (r.lora_rank != null) {
             desc += ` · r=${r.lora_rank} · bs=${r.batch_size}`;
-            if (r.copy_paste != null) desc += ` · cp=${r.copy_paste}`;
-            if (r.mosaic != null) desc += ` · mo=${r.mosaic}`;
-          } else if (r.lora_dropout != null) {
-            desc += ` · do=${r.lora_dropout} · aug=${r.augmentation_level} · wd=${r.weight_decay} · α/${r.alpha_ratio}`;
           }
           // Epoch progress
           const curEp = r.current_epoch;
@@ -2121,8 +2138,8 @@
           if (epStr) desc += ` · ${epStr}`;
           // Loss & mAP
           if (r.current_loss != null) desc += ` · loss=${r.current_loss.toFixed(1)}`;
-          if (r.current_map != null) desc += ` · mAP=${(r.current_map*100).toFixed(1)}%`;
-          if (r.best_epoch != null && r.best_epoch < (r.num_epochs||0)) desc += ` · best@${r.best_epoch}`;
+          if (r.current_map != null) desc += ` · mAP@50:95=${(r.current_map*100).toFixed(1)}%`;
+          if (r.best_val_map != null && r.best_val_map > 0 && r.best_epoch != null) desc += ` · best=${(r.best_val_map*100).toFixed(1)}%@ep${r.best_epoch}`;
           // ETA
           let etaStr = '';
           if (curEp && curEp > 0 && r.running_seconds > 0 && totEp && curEp < totEp) {
@@ -2152,6 +2169,7 @@
           let tip = null;
           row.addEventListener('mouseenter', (e) => {
             tip = document.createElement('div');
+            tip.className = 'running-task-tooltip';
             tip.style.cssText = 'position:fixed;z-index:9999;background:var(--card-bg,#1a1e2e);border:1px solid var(--border,#333);border-radius:8px;padding:10px;pointer-events:none;box-shadow:0 4px 12px rgba(0,0,0,0.5)';
             // Canvas sparkline
             const c = document.createElement('canvas');
@@ -2179,8 +2197,8 @@
             const info = document.createElement('div');
             info.style.cssText = 'font-size:11px;color:#aaa;margin-top:4px;font-family:monospace';
             let txt = `Loss: ${losses[0].toFixed(1)} → ${losses[losses.length-1].toFixed(1)}`;
-            if (r.best_epoch) txt += ` | Best epoch: ${r.best_epoch}`;
-            if (r.best_val_map > 0) txt += ` (mAP=${(r.best_val_map*100).toFixed(1)}%)`;
+            if (r.best_epoch != null) txt += ` | Best@ep${r.best_epoch}`;
+            if (r.best_val_map > 0) txt += ` (mAP@50:95=${(r.best_val_map*100).toFixed(1)}%)`;
             info.textContent = txt;
             tip.appendChild(c);
             tip.appendChild(info);
@@ -2786,6 +2804,348 @@
       }
     }
 
+    // ─── Gemini baseline results (external) ─────────────────────
+    const GEMINI_RESULTS = {
+      'actions-zzid2-zb1hq-fsod-amih':              { mAP_50_95: 0.1663, mAP_50: 0.3233, cluster: 'Sport' },
+      'aerial-airport-7ap9o-fsod-ddgc':              { mAP_50_95: 0.4230, mAP_50: 0.7408, cluster: 'Aerial' },
+      'all-elements-fsod-mebv':                      { mAP_50_95: 0.5310, mAP_50: 0.7559, cluster: 'Document' },
+      'aquarium-combined-fsod-gjvb':                 { mAP_50_95: 0.3641, mAP_50: 0.5995, cluster: 'Flora/Fauna' },
+      'defect-detection-yjplx-fxobh-fsod-amdi':      { mAP_50_95: 0.3598, mAP_50: 0.6545, cluster: 'Industrial' },
+      'dentalai-i4clz-fsod-fsuo':                    { mAP_50_95: 0.0462, mAP_50: 0.0894, cluster: 'Lab Imaging' },
+      'flir-camera-objects-fsod-tdqp':               { mAP_50_95: 0.3184, mAP_50: 0.5993, cluster: 'Misc' },
+      'gwhd2021-fsod-atsv':                          { mAP_50_95: 0.1911, mAP_50: 0.4322, cluster: 'Flora/Fauna' },
+      'lacrosse-object-detection-fsod-uxkt':         { mAP_50_95: 0.3338, mAP_50: 0.5359, cluster: 'Sport' },
+      'new-defects-in-wood-uewd1-fsod-tffp':         { mAP_50_95: 0.2032, mAP_50: 0.3774, cluster: 'Misc' },
+      'orionproducts-vtl2z-fsod-puhv':               { mAP_50_95: 0.3140, mAP_50: 0.4661, cluster: 'Misc' },
+      'paper-parts-fsod-rmrg':                       { mAP_50_95: 0.1630, mAP_50: 0.3099, cluster: 'Document' },
+      'recode-waste-czvmg-fsod-yxsw':               { mAP_50_95: 0.3072, mAP_50: 0.3818, cluster: 'Industrial' },
+      'soda-bottles-fsod-haga':                      { mAP_50_95: 0.2886, mAP_50: 0.6487, cluster: 'Misc' },
+      'the-dreidel-project-anzyr-fsod-zejm':         { mAP_50_95: 0.5538, mAP_50: 0.7225, cluster: 'Misc' },
+      'trail-camera-fsod-egos':                      { mAP_50_95: 0.5472, mAP_50: 0.8869, cluster: 'Flora/Fauna' },
+      'water-meter-jbktv-7vz5k-fsod-ftoz':           { mAP_50_95: 0.3853, mAP_50: 0.8134, cluster: 'Industrial' },
+      'wb-prova-stqnm-fsod-rbvg':                   { mAP_50_95: 0.4711, mAP_50: 0.6259, cluster: 'Flora/Fauna' },
+      'wildfire-smoke-fsod-myxt':                    { mAP_50_95: 0.2150, mAP_50: 0.4797, cluster: 'Aerial' },
+      'x-ray-id-zfisb-fsod-dyjv':                   { mAP_50_95: 0.0030, mAP_50: 0.0240, cluster: 'Lab Imaging' },
+    };
+
+    // ─── FT vs LoRA Comparison ──────────────────────────────────
+    async function loadFTComparison() {
+      const container = document.getElementById('ftcompare-content');
+      try {
+        const resp = await fetch('/api/ft_comparison');
+        const data = await resp.json();
+        const apiRows = data.comparison || [];
+        const hasCompare = data.has_compare_db;
+
+        // Merge in Gemini datasets that don't have any experiments yet
+        const apiDsNames = new Set(apiRows.map(r => r.dataset_name));
+        const rows = [...apiRows];
+        for (const [dsName, gemini] of Object.entries(GEMINI_RESULTS)) {
+          if (!apiDsNames.has(dsName)) {
+            rows.push({ dataset_name: dsName, num_train_images: null, dataset_num_classes: null });
+          }
+        }
+        rows.sort((a, b) => (a.dataset_name || '').localeCompare(b.dataset_name || ''));
+
+        if (!rows.length) {
+          container.innerHTML = '<p style="color:var(--text-dim)">No fine-tune experiments yet. Start finetune_baseline.py to populate.</p>';
+          return;
+        }
+
+        // Summary stats
+        const completedNano = rows.filter(r => r.ft_nano && r.ft_nano.status === 'completed');
+        const completedBase = rows.filter(r => r.ft_medium && r.ft_medium.status === 'completed');
+        const completed2XL = rows.filter(r => r.ft_2xlarge && r.ft_2xlarge.status === 'completed');
+        const runningNano = rows.filter(r => r.ft_nano && r.ft_nano.status === 'running');
+        const runningBase = rows.filter(r => r.ft_medium && r.ft_medium.status === 'running');
+        const running2XL = rows.filter(r => r.ft_2xlarge && r.ft_2xlarge.status === 'running');
+
+        let summaryHtml = `<div style="display:flex;gap:16px;margin-bottom:16px;flex-wrap:wrap">`;
+        summaryHtml += `<div class="stat-card"><div class="stat-label">Nano Completed</div><div class="stat-value">${completedNano.length}/${rows.length}</div></div>`;
+        if (completedBase.length || runningBase.length)
+          summaryHtml += `<div class="stat-card"><div class="stat-label">Medium Completed</div><div class="stat-value">${completedBase.length}/${rows.length}</div></div>`;
+        if (completed2XL.length || running2XL.length)
+          summaryHtml += `<div class="stat-card"><div class="stat-label">2XL Completed</div><div class="stat-value">${completed2XL.length}/${rows.length}</div></div>`;
+        if (runningNano.length)
+          summaryHtml += `<div class="stat-card"><div class="stat-label">Nano Running</div><div class="stat-value">${runningNano.length}</div></div>`;
+        if (hasCompare)
+          summaryHtml += `<div class="stat-card"><div class="stat-label">LoRA DB</div><div class="stat-value" style="color:var(--green)">Connected</div></div>`;
+        summaryHtml += `</div>`;
+
+        // Table
+        // Always show all method columns — they'll fill in as experiments complete
+        const showBase = true;
+        const show2XL = true;
+        const hasLoraBase = true;
+        const hasLoraNano = true;
+        const hasLora2XL = true;
+        let tableHtml = `<div class="table-wrap"><table><thead><tr>
+          <th>Dataset</th><th>Cls</th><th>Train</th>
+          <th>Gemini</th>`;
+        if (hasLoraNano) tableHtml += `<th>LoRA Nano</th>`;
+        if (hasLoraBase) tableHtml += `<th>LoRA Med</th>`;
+        if (hasLora2XL) tableHtml += `<th>LoRA 2XL</th>`;
+        tableHtml += `<th>FT Nano</th>`;
+        if (showBase) tableHtml += `<th>FT Med</th>`;
+        if (show2XL) tableHtml += `<th>FT 2XL</th>`;
+        tableHtml += `<th>Status</th>`;
+        tableHtml += `</tr></thead><tbody>`;
+
+        let totalNanoMap = 0, totalLoraMap = 0, totalBaseMap = 0, totalGeminiMap = 0;
+        let nNano = 0, nLora = 0, nBase = 0, nGemini = 0;
+        const fmtT = s => s == null ? '-' : s > 3600 ? `${(s/3600).toFixed(1)}h` : s > 60 ? `${(s/60).toFixed(1)}m` : `${Math.round(s)}s`;
+        const statusColor = s => s === 'completed' ? 'var(--green)' : s === 'running' ? 'var(--accent)' : s === 'failed' ? '#f44' : 'var(--text-dim)';
+
+        // Helper: build a mAP cell with inline detail
+        const mapCell = (val, detail, highlight) => {
+          if (val == null) return '-';
+          const hl = highlight ? ';color:var(--green)' : '';
+          let html = `<span style="font-weight:600${hl}">${(val*100).toFixed(1)}%</span>`;
+          if (detail) html += `<div style="font-size:10px;font-weight:400;color:var(--text-dim)">${detail}</div>`;
+          return html;
+        };
+
+        let totalLoraBaseMap = 0, totalLoraNanoMap = 0, totalLora2XLMap = 0, nLoraBase = 0, nLoraNano = 0, nLora2XL = 0;
+        let total2XLMap = 0, n2XL = 0;
+
+        for (const r of rows) {
+          const dsName = (r.dataset_name || '').replace(/-fsod-\w+$/, '');
+          const nano = r.ft_nano || {};
+          const base = r.ft_medium || {};
+          const xl2 = r.ft_2xlarge || {};
+          const loraBase = r.lora_medium || {};
+          const loraNano = r.lora_nano || {};
+          const lora2XL = r.lora_2xlarge || {};
+          const gemini = GEMINI_RESULTS[r.dataset_name] || {};
+
+          const nanoMap = nano.mAP_50_95;
+          const baseMap = base.mAP_50_95;
+          const xl2Map = xl2.mAP_50_95;
+          const loraBaseMap = loraBase.best_mAP_50_95;
+          const loraNanoMap = loraNano.best_mAP_50_95;
+          const lora2XLMap = lora2XL.best_mAP_50_95;
+          const geminiMap = gemini.mAP_50_95;
+
+          const vals = [nanoMap, baseMap, xl2Map, loraBaseMap, loraNanoMap, lora2XLMap, geminiMap].filter(v => v != null);
+          const bestVal = vals.length ? Math.max(...vals) : null;
+
+          if (nanoMap != null) { totalNanoMap += nanoMap; nNano++; }
+          if (baseMap != null) { totalBaseMap += baseMap; nBase++; }
+          if (xl2Map != null) { total2XLMap += xl2Map; n2XL++; }
+          if (loraBaseMap != null) { totalLoraBaseMap += loraBaseMap; nLoraBase++; }
+          if (loraNanoMap != null) { totalLoraNanoMap += loraNanoMap; nLoraNano++; }
+          if (lora2XLMap != null) { totalLora2XLMap += lora2XLMap; nLora2XL++; }
+          if (geminiMap != null) { totalGeminiMap += geminiMap; nGemini++; }
+
+          const nanoDetail = nano.num_epochs ? `${nano.num_epochs}ep · ${fmtT(nano.train_time_seconds)}` : '';
+          const baseDetail = base.num_epochs ? `${base.num_epochs}ep · ${fmtT(base.train_time_seconds)}` : '';
+          const xl2Detail = xl2.num_epochs ? `${xl2.num_epochs}ep · ${fmtT(xl2.train_time_seconds)}` : '';
+          const fmtSpread = (obj) => {
+            if (!obj.trial_maps || !obj.trial_maps.length) return '';
+            const valid = obj.trial_maps.filter(v => v != null);
+            if (valid.length <= 1) return '';
+            return ` · ${valid.length}T [${valid.map(v => (v*100).toFixed(1)).join(', ')}]`;
+          };
+          const loraBaseDetail = loraBase.best_num_epochs ? `${loraBase.best_num_epochs}ep · ${fmtT(loraBase.best_train_time)}${fmtSpread(loraBase)}` : '';
+          const loraNanoDetail = loraNano.best_num_epochs ? `${loraNano.best_num_epochs}ep · ${fmtT(loraNano.best_train_time)}${fmtSpread(loraNano)}` : '';
+          const lora2XLDetail = lora2XL.best_num_epochs ? `${lora2XL.best_num_epochs}ep · ${fmtT(lora2XL.best_train_time)}${fmtSpread(lora2XL)}` : '';
+          const geminiDetail = gemini.cluster || '';
+
+          // Status: find what's currently running
+          const anyRunning = [loraBase, loraNano, lora2XL, nano, base, xl2].find(x => x.status === 'running');
+          let statusHtml;
+          if (anyRunning) {
+            const label = anyRunning === loraBase ? 'LoRA Med' : anyRunning === loraNano ? 'LoRA Nano' : anyRunning === lora2XL ? 'LoRA 2XL' : anyRunning === nano ? 'FT Nano' : anyRunning === base ? 'FT Med' : 'FT 2XL';
+            const ep = anyRunning.current_epoch != null ? ` ${anyRunning.current_epoch}/${anyRunning.num_epochs || anyRunning.best_num_epochs || '?'}` : '';
+            statusHtml = `<span style="color:var(--accent)">${label}${ep}</span>`;
+          } else {
+            const done = [loraBaseMap, loraNanoMap, lora2XLMap, nanoMap, baseMap, xl2Map].filter(v => v != null).length;
+            const total = 6;  // LoRA nano + LoRA base + LoRA 2XL + FT nano + FT base + FT 2XL
+            statusHtml = done === total
+              ? `<span style="color:var(--green)">${done}/${total}</span>`
+              : `<span style="color:var(--text-dim)">${done}/${total}</span>`;
+          }
+
+          tableHtml += `<tr>
+            <td title="${r.dataset_name}">${dsName}</td>
+            <td>${r.dataset_num_classes || '-'}</td>
+            <td>${r.num_train_images || '-'}</td>
+            <td>${mapCell(geminiMap, geminiDetail, geminiMap === bestVal)}</td>`;
+          if (hasLoraNano) tableHtml += `<td>${mapCell(loraNanoMap, loraNanoDetail, loraNanoMap === bestVal)}</td>`;
+          if (hasLoraBase) tableHtml += `<td>${mapCell(loraBaseMap, loraBaseDetail, loraBaseMap === bestVal)}</td>`;
+          if (hasLora2XL) tableHtml += `<td>${mapCell(lora2XLMap, lora2XLDetail, lora2XLMap === bestVal)}</td>`;
+          tableHtml += `<td>${mapCell(nanoMap, nanoDetail, nanoMap === bestVal)}</td>`;
+          if (showBase) tableHtml += `<td>${mapCell(baseMap, baseDetail, baseMap === bestVal)}</td>`;
+          if (show2XL) tableHtml += `<td>${mapCell(xl2Map, xl2Detail, xl2Map === bestVal)}</td>`;
+          tableHtml += `<td>${statusHtml}</td></tr>`;
+        }
+
+        // Averages row
+        const avgNano = nNano ? (totalNanoMap / nNano * 100).toFixed(1) + '%' : '-';
+        const avgBase = nBase ? (totalBaseMap / nBase * 100).toFixed(1) + '%' : '-';
+        const avg2XL = n2XL ? (total2XLMap / n2XL * 100).toFixed(1) + '%' : '-';
+        const avgLoraBase = nLoraBase ? (totalLoraBaseMap / nLoraBase * 100).toFixed(1) + '%' : '-';
+        const avgLoraNano = nLoraNano ? (totalLoraNanoMap / nLoraNano * 100).toFixed(1) + '%' : '-';
+        const avgLora2XL = nLora2XL ? (totalLora2XLMap / nLora2XL * 100).toFixed(1) + '%' : '-';
+        const avgGemini = nGemini ? (totalGeminiMap / nGemini * 100).toFixed(1) + '%' : '-';
+
+        tableHtml += `<tr style="background:var(--bg);font-weight:700;border-top:2px solid var(--border)">
+          <td>AVERAGE</td><td></td><td></td>
+          <td>${avgGemini}</td>`;
+        if (hasLoraNano) tableHtml += `<td>${avgLoraNano}</td>`;
+        if (hasLoraBase) tableHtml += `<td>${avgLoraBase}</td>`;
+        if (hasLora2XL) tableHtml += `<td>${avgLora2XL}</td>`;
+        tableHtml += `<td>${avgNano}</td>`;
+        if (showBase) tableHtml += `<td>${avgBase}</td>`;
+        if (show2XL) tableHtml += `<td>${avg2XL}</td>`;
+        tableHtml += `<td></td></tr></tbody></table></div>`;
+
+        // Bar chart — show as soon as we have any completed data
+        const anyCompleted = nNano >= 1 || nLora >= 1;
+        let chartHtml = '';
+        if (anyCompleted) {
+          chartHtml = '<h4 style="margin:20px 0 8px 0;color:var(--text)">mAP@50:95 by Dataset</h4>';
+          chartHtml += '<div style="overflow-x:auto"><svg id="ftcompare-chart" width="' + Math.max(rows.length * 80, 700) + '" height="300"></svg></div>';
+        }
+
+        container.innerHTML = summaryHtml + tableHtml + chartHtml;
+
+        // Draw bar chart
+        if (anyCompleted) {
+          const svg = document.getElementById('ftcompare-chart');
+          if (svg) {
+            const W = parseInt(svg.getAttribute('width'));
+            const H = 280;
+            const pad = {t: 20, b: 90, l: 45, r: 10};
+            const chartW = W - pad.l - pad.r;
+            const chartH = H - pad.t - pad.b;
+            const nBars = 6;
+            const barW = Math.min(14, chartW / rows.length / nBars - 1);
+            const bestLora = r => Math.max(r.lora_medium?.best_mAP_50_95 || 0, r.lora_nano?.best_mAP_50_95 || 0, r.lora_2xlarge?.best_mAP_50_95 || 0);
+            const maxVal = Math.max(...rows.map(r => Math.max(
+              (r.ft_nano?.mAP_50_95 || 0), bestLora(r),
+              (r.ft_medium?.mAP_50_95 || 0), (r.ft_2xlarge?.mAP_50_95 || 0),
+              (GEMINI_RESULTS[r.dataset_name]?.mAP_50_95 || 0)
+            ))) * 1.1 || 0.5;
+
+            let svgContent = '';
+            // Grid lines
+            for (let i = 0; i <= 4; i++) {
+              const y = pad.t + chartH * (1 - i/4);
+              const val = (maxVal * i / 4 * 100).toFixed(0);
+              svgContent += `<line x1="${pad.l}" y1="${y}" x2="${W-pad.r}" y2="${y}" stroke="rgba(255,255,255,0.1)" />`;
+              svgContent += `<text x="${pad.l-5}" y="${y+4}" fill="var(--text-dim)" font-size="10" text-anchor="end">${val}%</text>`;
+            }
+
+            const fmtTime = s => s == null ? '-' : s > 3600 ? `${(s/3600).toFixed(1)}h` : s > 60 ? `${(s/60).toFixed(1)}m` : `${Math.round(s)}s`;
+
+            const groupW = chartW / rows.length;
+            const barData = [];
+            rows.forEach((r, i) => {
+              const x = pad.l + i * groupW + groupW/2;
+              const nano = r.ft_nano || {};
+              const base = r.ft_medium || {};
+              const xl2 = r.ft_2xlarge || {};
+              const loraMed = r.lora_medium || {};
+              const loraNano = r.lora_nano || {};
+              const lora2XL = r.lora_2xlarge || {};
+              const lora = [loraMed, loraNano, lora2XL].reduce((best, cur) => (cur.best_mAP_50_95 || 0) > (best.best_mAP_50_95 || 0) ? cur : best, loraMed);
+              const gemini = GEMINI_RESULTS[r.dataset_name] || {};
+              const nanoV = nano.mAP_50_95 || 0;
+              const loraV = lora.best_mAP_50_95 || 0;
+              const baseV = base.mAP_50_95 || 0;
+              const xl2V = xl2.mAP_50_95 || 0;
+              const geminiV = gemini.mAP_50_95 || 0;
+              const dsLabel = (r.dataset_name || '').replace(/-fsod-\w+$/, '');
+
+              // Hit area
+              svgContent += `<rect class="ftc-hit" data-idx="${i}" x="${x - groupW/2}" y="${pad.t}" width="${groupW}" height="${chartH}" fill="transparent" style="cursor:pointer"/>`;
+
+              // Bars: Gemini, LoRA, Nano, Base, 2XL
+              const halfN = nBars / 2;
+              const drawBar = (idx, val, color) => {
+                if (val <= 0) return;
+                const bx = x + (idx - halfN + 0.5) * barW;
+                const bH = (val / maxVal) * chartH;
+                svgContent += `<rect x="${bx}" y="${pad.t + chartH - bH}" width="${barW-1}" height="${bH}" fill="${color}" rx="2" opacity="0.85" pointer-events="none"/>`;
+              };
+              drawBar(0, geminiV, '#f59e0b');
+              drawBar(1, loraV, 'var(--green)');
+              drawBar(2, nanoV, 'var(--accent)');
+              if (showBase) drawBar(3, baseV, '#f0a');
+              if (show2XL) drawBar(4, xl2V, '#06b6d4');
+
+              // X label
+              const label = dsLabel.slice(0, 14);
+              svgContent += `<text x="${x}" y="${pad.t + chartH + 12}" fill="var(--text-dim)" font-size="9" text-anchor="end" transform="rotate(-45 ${x} ${pad.t+chartH+12})" pointer-events="none">${label}</text>`;
+
+              barData.push({ dsLabel, nano, base, xl2, lora, lora2XL, gemini, nanoV, baseV, xl2V, loraV, geminiV });
+            });
+
+            // Legend
+            let lx = pad.l;
+            const addLegend = (color, label) => {
+              svgContent += `<rect x="${lx}" y="4" width="10" height="10" fill="${color}" rx="2"/>`;
+              svgContent += `<text x="${lx+14}" y="13" fill="var(--text)" font-size="10">${label}</text>`;
+              lx += label.length * 7 + 24;
+            };
+            addLegend('#f59e0b', 'Gemini');
+            addLegend('var(--green)', 'LoRA');
+            addLegend('var(--accent)', 'FT Nano');
+            if (nBase) addLegend('#f0a', 'FT Med');
+            if (n2XL) addLegend('#06b6d4', 'FT 2XL');
+
+            svg.innerHTML = svgContent;
+
+            // Hover tooltip for chart bars
+            let chartTip = null;
+            svg.querySelectorAll('.ftc-hit').forEach(hit => {
+              hit.addEventListener('mouseenter', (e) => {
+                const d = barData[+hit.dataset.idx];
+                if (!d) return;
+                // Remove any previous tooltip
+                if (chartTip) chartTip.remove();
+                chartTip = document.createElement('div');
+                chartTip.className = 'ftcompare-chart-tooltip';
+                chartTip.style.cssText = 'position:fixed;z-index:9999;background:var(--card-bg,#1a1e2e);border:1px solid var(--border,#333);border-radius:8px;padding:10px 14px;pointer-events:none;box-shadow:0 4px 12px rgba(0,0,0,0.5);font-size:12px;font-family:monospace;line-height:1.6;min-width:220px';
+
+                let html = `<div style="font-weight:700;margin-bottom:6px;color:var(--text)">${d.dsLabel}</div>`;
+                html += `<table style="border-collapse:collapse;width:100%">`;
+                html += `<tr style="color:var(--text-dim)"><td></td><td style="padding:0 6px">mAP@50:95</td><td style="padding:0 6px">Epochs</td><td style="padding:0 6px">Time</td></tr>`;
+                if (d.geminiV > 0)
+                  html += `<tr><td style="color:#f59e0b;padding:2px 0">Gemini</td><td style="padding:2px 6px;font-weight:600">${(d.geminiV*100).toFixed(1)}%</td><td style="padding:2px 6px;color:var(--text-dim)">-</td><td style="padding:2px 6px;color:var(--text-dim)">-</td></tr>`;
+                if (d.loraV > 0) {
+                  const loraSpread = d.lora.trial_maps ? ` <span style="color:var(--text-dim);font-size:10px">[${d.lora.trial_maps.filter(v=>v!=null).map(v=>(v*100).toFixed(1)).join(', ')}]</span>` : '';
+                  html += `<tr><td style="color:var(--green);padding:2px 0">LoRA</td><td style="padding:2px 6px;font-weight:600">${(d.loraV*100).toFixed(1)}%${loraSpread}</td><td style="padding:2px 6px">${d.lora.best_num_epochs || '-'}</td><td style="padding:2px 6px">${fmtTime(d.lora.best_train_time)}</td></tr>`;
+                }
+                if (d.nanoV > 0)
+                  html += `<tr><td style="color:var(--accent);padding:2px 0">FT Nano</td><td style="padding:2px 6px;font-weight:600">${(d.nanoV*100).toFixed(1)}%</td><td style="padding:2px 6px">${d.nano.num_epochs || '-'}</td><td style="padding:2px 6px">${fmtTime(d.nano.train_time_seconds)}</td></tr>`;
+                if (d.baseV > 0)
+                  html += `<tr><td style="color:#f0a;padding:2px 0">FT Med</td><td style="padding:2px 6px;font-weight:600">${(d.baseV*100).toFixed(1)}%</td><td style="padding:2px 6px">${d.base.num_epochs || '-'}</td><td style="padding:2px 6px">${fmtTime(d.base.train_time_seconds)}</td></tr>`;
+                if (d.xl2V > 0)
+                  html += `<tr><td style="color:#06b6d4;padding:2px 0">FT 2XL</td><td style="padding:2px 6px;font-weight:600">${(d.xl2V*100).toFixed(1)}%</td><td style="padding:2px 6px">${d.xl2.num_epochs || '-'}</td><td style="padding:2px 6px">${fmtTime(d.xl2.train_time_seconds)}</td></tr>`;
+                html += `</table>`;
+
+                chartTip.innerHTML = html;
+                const rect = hit.getBoundingClientRect();
+                chartTip.style.left = (rect.left + rect.width/2) + 'px';
+                chartTip.style.top = (rect.top - 10) + 'px';
+                chartTip.style.transform = 'translate(-50%, -100%)';
+                document.body.appendChild(chartTip);
+              });
+              hit.addEventListener('mouseleave', () => {
+                if (chartTip) { chartTip.remove(); chartTip = null; }
+              });
+            });
+          }
+        }
+
+      } catch(e) {
+        container.innerHTML = `<p style="color:#f44">Error loading comparison: ${e.message}</p>`;
+        console.error(e);
+      }
+    }
+
     // ─── Lazy tab data loader ─────────────────────────────────
     async function loadTabData(tab) {
       try {
@@ -2797,6 +3157,7 @@
           case 'table':     await loadTable(); break;
           case 'detail':    break; // detail loads on row click
           case 'viz':       await loadVizChampion(); break;
+          case 'ftcompare': await loadFTComparison(); break;
         }
       } catch(e) { console.error(`Tab ${tab} load error:`, e); }
     }

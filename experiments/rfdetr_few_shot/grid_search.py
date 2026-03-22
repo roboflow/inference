@@ -881,6 +881,29 @@ def compute_iou(a, b):
     return inter / union if union > 0 else 0
 
 
+def _vectorized_iou_matrix(pred_boxes, gt_boxes_arr):
+    """Compute IoU matrix between pred boxes and gt boxes using numpy vectorization.
+
+    pred_boxes: (N, 4) array of [x1, y1, x2, y2]
+    gt_boxes_arr: (M, 4) array of [x1, y1, x2, y2]
+
+    Returns: (N, M) IoU matrix
+    """
+    # Intersection
+    x1 = np.maximum(pred_boxes[:, 0:1], gt_boxes_arr[:, 0].T)  # (N, M)
+    y1 = np.maximum(pred_boxes[:, 1:2], gt_boxes_arr[:, 1].T)
+    x2 = np.minimum(pred_boxes[:, 2:3], gt_boxes_arr[:, 2].T)
+    y2 = np.minimum(pred_boxes[:, 3:4], gt_boxes_arr[:, 3].T)
+    inter = np.maximum(0, x2 - x1) * np.maximum(0, y2 - y1)
+
+    # Areas
+    pred_area = (pred_boxes[:, 2] - pred_boxes[:, 0]) * (pred_boxes[:, 3] - pred_boxes[:, 1])
+    gt_area = (gt_boxes_arr[:, 2] - gt_boxes_arr[:, 0]) * (gt_boxes_arr[:, 3] - gt_boxes_arr[:, 1])
+    union = pred_area[:, None] + gt_area[None, :] - inter
+
+    return np.where(union > 0, inter / union, 0.0)
+
+
 def compute_ap_single_class(preds, gt_boxes, iou_threshold):
     """Compute AP for a single class at a single IoU threshold.
 
@@ -895,23 +918,35 @@ def compute_ap_single_class(preds, gt_boxes, iou_threshold):
     if len(preds) == 0:
         return 0.0
 
-    gt_matched = [False] * len(gt_boxes)
-    tp = np.zeros(len(preds))
-    fp = np.zeros(len(preds))
+    pred_boxes_arr = np.array([p[1] for p in preds], dtype=np.float64)
+    gt_boxes_arr = np.array(gt_boxes, dtype=np.float64)
 
-    for i, (conf, pred_box) in enumerate(preds):
-        best_iou, best_j = 0, -1
-        for j, gt_box in enumerate(gt_boxes):
-            if gt_matched[j]:
-                continue
-            iou = compute_iou(pred_box, gt_box)
-            if iou > best_iou:
-                best_iou, best_j = iou, j
-        if best_iou >= iou_threshold and best_j >= 0:
-            gt_matched[best_j] = True
-            tp[i] = 1
-        else:
-            fp[i] = 1
+    n_preds = len(preds)
+    n_gt = len(gt_boxes)
+    gt_matched = np.zeros(n_gt, dtype=bool)
+    tp = np.zeros(n_preds)
+    fp = np.zeros(n_preds)
+
+    # Compute IoU in chunks to limit memory (target ~500MB max for the matrix)
+    # Each row is n_gt * 8 bytes; allow ~64M elements per chunk
+    chunk_size = max(1, min(n_preds, 64_000_000 // max(n_gt, 1)))
+
+    for chunk_start in range(0, n_preds, chunk_size):
+        chunk_end = min(chunk_start + chunk_size, n_preds)
+        iou_chunk = _vectorized_iou_matrix(
+            pred_boxes_arr[chunk_start:chunk_end], gt_boxes_arr
+        )  # (chunk_size, n_gt)
+
+        for ci, i in enumerate(range(chunk_start, chunk_end)):
+            ious = iou_chunk[ci]
+            ious[gt_matched] = 0.0
+            best_j = ious.argmax()
+            best_iou = ious[best_j]
+            if best_iou >= iou_threshold:
+                gt_matched[best_j] = True
+                tp[i] = 1
+            else:
+                fp[i] = 1
 
     # Cumulative sums
     tp_cum = np.cumsum(tp)

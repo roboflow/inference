@@ -6,6 +6,7 @@ import json
 import logging
 import sqlite3
 import subprocess
+import sys
 import threading
 import time
 from collections import defaultdict
@@ -18,6 +19,7 @@ from urllib.parse import parse_qs, urlparse
 logger = logging.getLogger(__name__)
 
 DB_PATH = Path(__file__).parent / "results.db"
+COMPARE_DB_PATH = None  # optional second DB for LoRA vs FT comparison
 STATIC_DIR = Path(__file__).parent / "frontend"
 IS_PHASE2 = False  # set by --db flag if phase 2 DB is detected
 IS_BENCHMARK = False  # set by --db flag if benchmark DB is detected
@@ -123,7 +125,7 @@ _DB_INDEXES_CREATED = False
 
 def get_db():
     """Return a per-thread read-only DB connection (WAL mode allows concurrent reads)."""
-    global _DB_INDEXES_CREATED
+    global _DB_INDEXES_CREATED, DB_COLUMNS, IS_BENCHMARK, IS_PHASE2
     conn = getattr(_DB_LOCAL, 'conn', None)
     if conn is None:
         conn = sqlite3.connect(str(DB_PATH))
@@ -141,6 +143,31 @@ def get_db():
                     except Exception:
                         pass
                     _DB_INDEXES_CREATED = True
+    # Always refresh DB_COLUMNS — schema can change at runtime (e.g. reeval adds lora columns)
+    if DB_PATH.exists():
+        try:
+            new_cols = {c[1] for c in conn.execute("PRAGMA table_info(experiments)").fetchall()}
+            if new_cols and new_cols != DB_COLUMNS:
+                DB_COLUMNS = new_cols
+                IS_BENCHMARK = _detect_benchmark(conn)
+                IS_PHASE2 = _detect_phase2(conn)
+        except Exception:
+            pass
+    return conn
+
+
+_COMPARE_DB_LOCAL = threading.local()
+
+def get_compare_db():
+    """Return a per-thread read-only connection to the comparison DB, or None."""
+    if COMPARE_DB_PATH is None or not COMPARE_DB_PATH.exists():
+        return None
+    conn = getattr(_COMPARE_DB_LOCAL, 'conn', None)
+    if conn is None:
+        conn = sqlite3.connect(str(COMPARE_DB_PATH))
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA journal_mode=WAL")
+        _COMPARE_DB_LOCAL.conn = conn
     return conn
 
 
@@ -164,7 +191,16 @@ def _avg(values):
 
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, directory=str(STATIC_DIR), **kwargs)
+        try:
+            super().__init__(*args, directory=str(STATIC_DIR), **kwargs)
+        except (ConnectionResetError, BrokenPipeError, ConnectionAbortedError, OSError):
+            pass  # client disconnected during init/handle — harmless
+
+    def handle_one_request(self):
+        try:
+            super().handle_one_request()
+        except (ConnectionResetError, BrokenPipeError, ConnectionAbortedError, OSError):
+            self.close_connection = True
 
     def do_GET(self):
         try:
@@ -228,6 +264,8 @@ class Handler(SimpleHTTPRequestHandler):
                 return
             elif path == "/api/config_detail":
                 self._api_config_detail(conn, qs)
+            elif path == "/api/ft_comparison":
+                self._api_ft_comparison(conn, qs)
             else:
                 self._json_response({"error": "unknown endpoint"}, 404)
         except Exception:
@@ -444,45 +482,55 @@ class Handler(SimpleHTTPRequestHandler):
                 elapsed = None
 
         # Phase 2 / benchmark group-by includes extra columns
-        if IS_BENCHMARK:
-            base_bm_cols = "lora_rank, num_epochs, learning_rate, lora_dropout, augmentation_level, weight_decay, alpha_ratio"
-            if "group_detr" in DB_COLUMNS:
-                group_cols = base_bm_cols + ", group_detr"
+        # Build group_cols from columns that actually exist in the DB
+        best = []
+        n_total_sets = 1
+        set_col = "dataset_name" if "dataset_name" in DB_COLUMNS else "train_image_set"
+        try:
+            if IS_BENCHMARK:
+                base_bm_cols = "lora_rank, num_epochs, learning_rate, lora_dropout, augmentation_level, weight_decay, alpha_ratio"
+                if "group_detr" in DB_COLUMNS:
+                    group_cols = base_bm_cols + ", group_detr"
+                else:
+                    # Phase 3+ benchmark without group_detr
+                    extras = []
+                    for col in ["batch_size", "lora_targets", "copy_paste", "mosaic", "warmup", "multi_scale"]:
+                        if col in DB_COLUMNS:
+                            extras.append(col)
+                    group_cols = base_bm_cols + (", " + ", ".join(extras) if extras else "")
+            elif IS_PHASE2:
+                group_cols = "lora_rank, num_epochs, learning_rate, num_train_images, lora_dropout, augmentation_level, weight_decay, alpha_ratio"
+            elif "lora_rank" in DB_COLUMNS:
+                group_cols = "lora_rank, num_epochs, learning_rate, num_train_images"
             else:
-                # Phase 3+ benchmark without group_detr
-                extras = []
-                for col in ["batch_size", "lora_targets", "copy_paste", "mosaic", "warmup", "multi_scale"]:
-                    if col in DB_COLUMNS:
-                        extras.append(col)
-                group_cols = base_bm_cols + (", " + ", ".join(extras) if extras else "")
-        elif IS_PHASE2:
-            group_cols = "lora_rank, num_epochs, learning_rate, num_train_images, lora_dropout, augmentation_level, weight_decay, alpha_ratio"
-        else:
-            group_cols = "lora_rank, num_epochs, learning_rate, num_train_images"
+                # Finetune baseline or other non-LoRA DB — group by model_variant
+                group_cols = "model_variant, num_epochs, learning_rate, batch_size"
 
-        # Count how many distinct training sets / datasets exist in the grid
-        if IS_BENCHMARK:
-            n_total_sets = conn.execute(
-                "SELECT COUNT(DISTINCT dataset_name) FROM experiments"
-            ).fetchone()[0] or 1
-            set_col = "dataset_name"
-        else:
-            n_total_sets = conn.execute(
-                "SELECT COUNT(DISTINCT train_image_set) FROM experiments"
-            ).fetchone()[0] or 1
-            set_col = "train_image_set"
+            # Count how many distinct training sets / datasets exist in the grid
+            if "dataset_name" in DB_COLUMNS:
+                n_total_sets = conn.execute(
+                    "SELECT COUNT(DISTINCT dataset_name) FROM experiments"
+                ).fetchone()[0] or 1
+                set_col = "dataset_name"
+            elif "train_image_set" in DB_COLUMNS:
+                n_total_sets = conn.execute(
+                    "SELECT COUNT(DISTINCT train_image_set) FROM experiments"
+                ).fetchone()[0] or 1
+                set_col = "train_image_set"
 
-        best = conn.execute(f"""
-            SELECT {group_cols},
-                   AVG(mAP_50) as mAP_50, AVG(mAP_50_95) as mAP_50_95,
-                   AVG(train_time_seconds) as train_time_seconds,
-                   COUNT(*) as n_sets,
-                   GROUP_CONCAT(DISTINCT {set_col}) as sets
-            FROM experiments WHERE status = 'completed'
-            GROUP BY {group_cols}
-            HAVING COUNT(DISTINCT {set_col}) = {n_total_sets}
-            ORDER BY AVG(mAP_50) DESC LIMIT 100
-        """).fetchall()
+            best = conn.execute(f"""
+                SELECT {group_cols},
+                       AVG(mAP_50) as mAP_50, AVG(mAP_50_95) as mAP_50_95,
+                       AVG(train_time_seconds) as train_time_seconds,
+                       COUNT(*) as n_sets,
+                       GROUP_CONCAT(DISTINCT {set_col}) as sets
+                FROM experiments WHERE status = 'completed'
+                GROUP BY {group_cols}
+                HAVING COUNT(DISTINCT {set_col}) = {n_total_sets}
+                ORDER BY AVG(mAP_50) DESC LIMIT 100
+            """).fetchall()
+        except Exception:
+            best = []
 
         # Count datasets in benchmark mode
         n_datasets = 0
@@ -510,53 +558,63 @@ class Handler(SimpleHTTPRequestHandler):
 
         pct = round(100 * completed / grid_total, 1)
 
-        # Simple approach that works for both phases: average time × remaining
-        row = conn.execute("""
-            SELECT AVG(train_time_seconds) as avg_time,
-                   COUNT(*) as cnt,
-                   SUM(train_time_seconds) as total_time
-            FROM experiments WHERE status='completed' AND train_time_seconds IS NOT NULL
-        """).fetchone()
+        # Method-aware ETA: compute avg time per (method, model_variant) bucket,
+        # then estimate remaining based on what's left to run in each bucket.
+        has_method = "method" in DB_COLUMNS
+        has_variant = "model_variant" in DB_COLUMNS
 
-        if not row or not row["avg_time"]:
-            return {"eta_seconds": None, "avg_time_per_experiment": None,
-                    "pct_complete": pct}
+        if has_method and has_variant:
+            # Get avg time per bucket from completed experiments
+            bucket_avgs = {}
+            rows = conn.execute("""
+                SELECT method, model_variant,
+                       AVG(train_time_seconds) as avg_time, COUNT(*) as cnt
+                FROM experiments
+                WHERE status='completed' AND train_time_seconds IS NOT NULL
+                GROUP BY method, model_variant
+            """).fetchall()
+            for r in rows:
+                bucket_avgs[(r["method"], r["model_variant"])] = r["avg_time"]
 
-        avg_time = row["avg_time"]
-        eval_overhead = 2.0  # eval + DB overhead per experiment
-        remaining_count = grid_total - completed
-        running = conn.execute(
-            "SELECT count(*) FROM experiments WHERE status='running'"
-        ).fetchone()[0]
-        remaining_count = max(0, remaining_count - running)
+            # Count remaining per bucket (pending + running)
+            remaining_rows = conn.execute("""
+                SELECT method, model_variant, COUNT(*) as cnt
+                FROM experiments WHERE status IN ('pending', 'running')
+                GROUP BY method, model_variant
+            """).fetchall()
 
-        # Use recent experiments for more accurate estimate (last 20)
-        recent = conn.execute("""
-            SELECT AVG(train_time_seconds) as avg_time
-            FROM (SELECT train_time_seconds FROM experiments
-                  WHERE status='completed' AND train_time_seconds IS NOT NULL
-                  ORDER BY timestamp DESC LIMIT 20)
-        """).fetchone()
-        recent_avg = recent["avg_time"] if recent and recent["avg_time"] else avg_time
+            # Also count experiments not yet inserted (total - actual)
+            actual_total = conn.execute("SELECT COUNT(*) FROM experiments").fetchone()[0]
+            unqueued = max(0, grid_total - actual_total)
 
-        # Blend recent and overall (weight recent more)
-        blended_avg = recent_avg * 0.7 + avg_time * 0.3
+            # Estimate remaining time
+            overall_avg = sum(bucket_avgs.values()) / len(bucket_avgs) if bucket_avgs else 60
+            eta = 0
+            for r in remaining_rows:
+                avg = bucket_avgs.get((r["method"], r["model_variant"]), overall_avg)
+                eta += r["cnt"] * avg
 
-        # Account for number of workers
-        workers_row = conn.execute(
-            "SELECT value FROM grid_meta WHERE key='num_workers'"
-        ).fetchone()
-        num_workers = int(workers_row[0]) if workers_row else max(1, running)
-        if num_workers < 1:
-            num_workers = 1
+            # For unqueued experiments, use overall average
+            eta += unqueued * overall_avg
 
-        eta = (remaining_count * (blended_avg + eval_overhead)) / num_workers
+            avg_time = overall_avg
+        else:
+            # Fallback: simple average
+            row = conn.execute("""
+                SELECT AVG(train_time_seconds) as avg_time
+                FROM experiments WHERE status='completed' AND train_time_seconds IS NOT NULL
+            """).fetchone()
+            avg_time = row["avg_time"] if row and row["avg_time"] else 60
+            running = conn.execute(
+                "SELECT count(*) FROM experiments WHERE status='running'"
+            ).fetchone()[0]
+            remaining_count = max(0, grid_total - completed - running)
+            eta = remaining_count * avg_time
 
         return {
             "eta_seconds": round(eta, 0),
             "avg_time_per_experiment": round(avg_time, 1),
             "pct_complete": pct,
-            "remaining_count": remaining_count,
         }
 
     # Cache for enriched experiments: key -> (count, enriched, classes)
@@ -816,14 +874,15 @@ class Handler(SimpleHTTPRequestHandler):
 
     def _api_running(self, conn):
         """Return currently running experiments with duration."""
-        base_cols = ["id", "run_id", "timestamp", "lora_rank", "num_epochs",
+        base_cols = ["id", "run_id", "timestamp", "num_epochs",
                      "learning_rate", "num_train_images"]
-        optional = ["train_image_set", "dataset_name", "lora_dropout",
+        optional = ["lora_rank", "train_image_set", "dataset_name", "lora_dropout",
                     "augmentation_level", "weight_decay", "alpha_ratio",
                     "batch_size", "lora_targets", "copy_paste", "mosaic",
                     "warmup", "multi_scale",
                     "current_epoch", "current_loss", "current_map",
-                    "best_epoch", "best_val_map", "loss_history"]
+                    "best_epoch", "best_val_map", "loss_history",
+                    "model_variant", "method", "grad_accum_steps"]
         sel_cols = base_cols + [c for c in optional if c in DB_COLUMNS]
         rows = conn.execute(f"""
             SELECT {', '.join(sel_cols)}
@@ -1026,6 +1085,148 @@ class Handler(SimpleHTTPRequestHandler):
 
         self._json_response({"experiments": result, "viz_images": viz_images})
 
+    def _api_ft_comparison(self, conn, qs):
+        """Compare fine-tune baseline results with LoRA results from --compare-db.
+
+        Returns per-dataset best mAP for each method.
+        """
+        compare_conn = get_compare_db()
+
+        # Get fine-tune results from the primary DB
+        # Detect available columns
+        _ft_cols = {c[1] for c in conn.execute("PRAGMA table_info(experiments)").fetchall()}
+        _has_method = "method" in _ft_cols
+        _has_notes = "notes" in _ft_cols
+        _method_col = ", method" if _has_method else ""
+        _notes_col = ", notes" if _has_notes else ""
+        ft_rows = conn.execute(f"""
+            SELECT dataset_name, model_variant, mAP_50, mAP_50_95,
+                   train_time_seconds, num_train_images, dataset_num_classes,
+                   status, current_epoch, num_epochs{_method_col}{_notes_col}
+            FROM experiments
+            ORDER BY dataset_name, model_variant
+        """).fetchall()
+
+        ft_by_dataset = {}
+        lora_by_dataset = {}
+        for r in ft_rows:
+            r = dict(r)
+            ds = r["dataset_name"]
+            method = r.get("method", "full_finetune") or "full_finetune"
+            variant = r.get("model_variant", "unknown")
+
+            if ds not in ft_by_dataset:
+                ft_by_dataset[ds] = {
+                    "num_train_images": r["num_train_images"],
+                    "dataset_num_classes": r["dataset_num_classes"],
+                }
+
+            # LoRA re-eval results live in the same DB — keyed by model_variant
+            if method == "lora":
+                lora_variant = variant  # e.g. "rfdetr-base" or "rfdetr-nano"
+                lora_key = f"lora_{lora_variant.replace('rfdetr-', '')}"  # "lora_base" or "lora_nano"
+                entry = {}
+                if r["status"] == "completed" and r["mAP_50_95"] is not None:
+                    # Parse trial spread from notes JSON if available
+                    trial_info = None
+                    notes = r.get("notes")
+                    if notes:
+                        try:
+                            trial_info = json.loads(notes)
+                        except (json.JSONDecodeError, TypeError):
+                            pass
+                    entry = {
+                        "best_mAP_50": r["mAP_50"],
+                        "best_mAP_50_95": r["mAP_50_95"],
+                        "best_train_time": r["train_time_seconds"],
+                        "best_num_epochs": r["num_epochs"],
+                        "num_experiments": 1,
+                    }
+                    if trial_info:
+                        entry["trial_maps"] = trial_info.get("trial_maps")
+                        entry["n_trials"] = trial_info.get("n_trials")
+                elif r["status"] == "running":
+                    entry = {
+                        "best_mAP_50": None,
+                        "best_mAP_50_95": None,
+                        "best_train_time": None,
+                        "best_num_epochs": r["num_epochs"],
+                        "num_experiments": 1,
+                        "status": "running",
+                        "current_epoch": r.get("current_epoch"),
+                    }
+                if entry:
+                    if ds not in lora_by_dataset:
+                        lora_by_dataset[ds] = {}
+                    lora_by_dataset[ds][lora_key] = entry
+            else:
+                ft_by_dataset[ds][variant] = {
+                    "mAP_50": r["mAP_50"],
+                    "mAP_50_95": r["mAP_50_95"],
+                    "train_time_seconds": r["train_time_seconds"],
+                    "status": r["status"],
+                    "current_epoch": r["current_epoch"],
+                    "num_epochs": r["num_epochs"],
+                }
+
+        # Get LoRA results from comparison DB for datasets not yet re-evaluated
+        if compare_conn:
+            try:
+                # Get best LoRA run per dataset (by mAP_50_95)
+                lora_cols = [c[1] for c in compare_conn.execute(
+                    "PRAGMA table_info(experiments)").fetchall()]
+                has_lora_rank = "lora_rank" in lora_cols
+                lora_rows = compare_conn.execute("""
+                    WITH best AS (
+                        SELECT *, ROW_NUMBER() OVER (
+                            PARTITION BY dataset_name ORDER BY mAP_50_95 DESC
+                        ) as rn
+                        FROM experiments WHERE status='completed'
+                    ),
+                    counts AS (
+                        SELECT dataset_name, COUNT(*) as num_experiments
+                        FROM experiments WHERE status='completed'
+                        GROUP BY dataset_name
+                    )
+                    SELECT b.dataset_name, b.mAP_50 as best_mAP_50,
+                           b.mAP_50_95 as best_mAP_50_95,
+                           b.train_time_seconds as best_train_time,
+                           b.num_epochs as best_num_epochs,
+                           c.num_experiments
+                    FROM best b JOIN counts c ON b.dataset_name = c.dataset_name
+                    WHERE b.rn = 1
+                """).fetchall()
+                for r in lora_rows:
+                    r = dict(r)
+                    ds = r["dataset_name"]
+                    # Only show corrected LoRA results — skip old uncorrected data
+                    pass
+            except Exception as e:
+                logger.warning("Failed to read compare DB: %s", e)
+
+        # Merge into comparison table
+        all_datasets = sorted(set(list(ft_by_dataset.keys()) + list(lora_by_dataset.keys())))
+        comparison = []
+        for ds in all_datasets:
+            lora_data = lora_by_dataset.get(ds, {})
+            row = {
+                "dataset_name": ds,
+                "num_train_images": ft_by_dataset.get(ds, {}).get("num_train_images"),
+                "dataset_num_classes": ft_by_dataset.get(ds, {}).get("dataset_num_classes"),
+                "ft_nano": ft_by_dataset.get(ds, {}).get("rfdetr-nano"),
+                "ft_medium": ft_by_dataset.get(ds, {}).get("rfdetr-medium"),
+                "ft_2xlarge": ft_by_dataset.get(ds, {}).get("rfdetr-2xlarge"),
+                "lora_medium": lora_data.get("lora_medium"),
+                "lora_nano": lora_data.get("lora_nano"),
+                "lora_2xlarge": lora_data.get("lora_2xlarge"),
+            }
+            comparison.append(row)
+
+        self._json_response({
+            "comparison": comparison,
+            "has_compare_db": compare_conn is not None,
+        })
+
     def _api_viz_champion(self):
         """Build multi-model visualization manifest from DB + any existing images.
 
@@ -1207,11 +1408,21 @@ if __name__ == "__main__":
                         help="Remote host for DB sync, e.g. roboflow@100.94.130.94")
     parser.add_argument("--remote-db", type=str, default=None,
                         help="Path to DB on remote host (default: auto-detect from --db)")
+    parser.add_argument("--compare-db", type=str, default=None,
+                        help="Second DB for LoRA vs FT comparison (e.g. results_phase3b.db)")
     parser.add_argument("--sync-interval", type=int, default=10,
                         help="Seconds between background syncs (default: 10)")
     args = parser.parse_args()
 
     DB_PATH = Path(__file__).parent / args.db
+
+    # Set up comparison DB if provided
+    if args.compare_db:
+        COMPARE_DB_PATH = Path(__file__).parent / args.compare_db
+        if COMPARE_DB_PATH.exists():
+            print(f"📊 Comparison DB: {COMPARE_DB_PATH}")
+        else:
+            print(f"⚠️  Comparison DB not found: {COMPARE_DB_PATH}")
 
     # Start remote sync if configured
     if args.remote:
@@ -1260,5 +1471,16 @@ if __name__ == "__main__":
     class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
         allow_reuse_address = True
         daemon_threads = True
+
+        def handle_error(self, request, client_address):
+            """Silently ignore client disconnection errors instead of crashing."""
+            import traceback
+            exc_type = sys.exc_info()[0]
+            if exc_type in (ConnectionResetError, BrokenPipeError,
+                            ConnectionAbortedError, OSError):
+                return  # harmless — client went away
+            # Log other errors but don't crash
+            print(f"[server] Error handling request from {client_address}:")
+            traceback.print_exc()
 
     ThreadedHTTPServer((host, port), Handler).serve_forever()
