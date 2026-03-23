@@ -1,3 +1,4 @@
+import inspect
 from typing import Any, List, Literal, Optional, Type, Union
 
 import supervision as sv
@@ -5,6 +6,7 @@ from pydantic import ConfigDict, Field
 from trackers import SORTTracker
 
 from inference.core.workflows.core_steps.trackers._base import (
+    DEFAULT_INSTANCES_CACHE_SIZE,
     TrackerBlockBase,
     tracker_describe_outputs,
 )
@@ -22,6 +24,16 @@ from inference.core.workflows.execution_engine.entities.types import (
     Selector,
 )
 from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
+
+_TRACKER_DEFAULTS = {
+    p.name: p.default
+    for p in inspect.signature(SORTTracker.__init__).parameters.values()
+    if p.default is not inspect.Parameter.empty
+}
+DEFAULT_MINIMUM_IOU_THRESHOLD = _TRACKER_DEFAULTS["minimum_iou_threshold"]
+DEFAULT_MINIMUM_CONSECUTIVE_FRAMES = _TRACKER_DEFAULTS["minimum_consecutive_frames"]
+DEFAULT_LOST_TRACK_BUFFER = _TRACKER_DEFAULTS["lost_track_buffer"]
+DEFAULT_TRACK_ACTIVATION_THRESHOLD = _TRACKER_DEFAULTS["track_activation_threshold"]
 
 SHORT_DESCRIPTION = "Track objects across video frames using SORT."
 LONG_DESCRIPTION = """
@@ -77,30 +89,33 @@ class SORTManifest(WorkflowBlockManifest):
     minimum_iou_threshold: Union[
         Optional[float], Selector(kind=[FLOAT_ZERO_TO_ONE_KIND])
     ] = Field(
-        default=0.3,
+        default=DEFAULT_MINIMUM_IOU_THRESHOLD,
         description="Minimum IoU required to associate a detection with an existing track. "
-        "Default: 0.3.",
-        examples=[0.3, "$inputs.minimum_iou_threshold"],
+        f"Default: {DEFAULT_MINIMUM_IOU_THRESHOLD}.",
+        examples=[DEFAULT_MINIMUM_IOU_THRESHOLD, "$inputs.minimum_iou_threshold"],
         json_schema_extra={
             "always_visible": True,
         },
     )
     minimum_consecutive_frames: Union[Optional[int], Selector(kind=[INTEGER_KIND])] = (
         Field(
-            default=3,
+            default=DEFAULT_MINIMUM_CONSECUTIVE_FRAMES,
             description="Number of consecutive frames a track must be matched before it is "
-            "emitted as a confirmed track (tracker_id != -1). Default: 3.",
-            examples=[3, "$inputs.minimum_consecutive_frames"],
+            f"emitted as a confirmed track (tracker_id != -1). Default: {DEFAULT_MINIMUM_CONSECUTIVE_FRAMES}.",
+            examples=[
+                DEFAULT_MINIMUM_CONSECUTIVE_FRAMES,
+                "$inputs.minimum_consecutive_frames",
+            ],
             json_schema_extra={
                 "always_visible": True,
             },
         )
     )
     lost_track_buffer: Union[Optional[int], Selector(kind=[INTEGER_KIND])] = Field(
-        default=30,
+        default=DEFAULT_LOST_TRACK_BUFFER,
         description="Number of frames to keep a track alive after it loses its matched "
-        "detection. Higher values improve occlusion recovery. Default: 30.",
-        examples=[30, "$inputs.lost_track_buffer"],
+        f"detection. Higher values improve occlusion recovery. Default: {DEFAULT_LOST_TRACK_BUFFER}.",
+        examples=[DEFAULT_LOST_TRACK_BUFFER, "$inputs.lost_track_buffer"],
         json_schema_extra={
             "always_visible": True,
         },
@@ -108,15 +123,18 @@ class SORTManifest(WorkflowBlockManifest):
     track_activation_threshold: Union[
         Optional[float], Selector(kind=[FLOAT_ZERO_TO_ONE_KIND])
     ] = Field(
-        default=0.25,
+        default=DEFAULT_TRACK_ACTIVATION_THRESHOLD,
         description="Minimum detection confidence required to spawn a new track. "
-        "Detections below this threshold are not used to create new tracks. Default: 0.25.",
-        examples=[0.25, "$inputs.track_activation_threshold"],
+        f"Detections below this threshold are not used to create new tracks. Default: {DEFAULT_TRACK_ACTIVATION_THRESHOLD}.",
+        examples=[
+            DEFAULT_TRACK_ACTIVATION_THRESHOLD,
+            "$inputs.track_activation_threshold",
+        ],
     )
     instances_cache_size: int = Field(
-        default=16384,
+        default=DEFAULT_INSTANCES_CACHE_SIZE,
         description="Maximum number of track IDs retained in the instance cache for "
-        "new/already-seen categorisation. Uses FIFO eviction. Default: 16384.",
+        f"new/already-seen categorisation. Uses FIFO eviction. Default: {DEFAULT_INSTANCES_CACHE_SIZE}.",
     )
 
     @classmethod
@@ -135,22 +153,22 @@ class SORTBlockV1(TrackerBlockBase):
 
     def _create_tracker(self, fps: int, **kwargs: Any) -> Any:
         return SORTTracker(
-            lost_track_buffer=kwargs.get("lost_track_buffer", 30),
+            lost_track_buffer=kwargs["lost_track_buffer"],
             frame_rate=fps,
-            track_activation_threshold=kwargs.get("track_activation_threshold", 0.25),
-            minimum_consecutive_frames=kwargs.get("minimum_consecutive_frames", 3),
-            minimum_iou_threshold=kwargs.get("minimum_iou_threshold", 0.3),
+            track_activation_threshold=kwargs["track_activation_threshold"],
+            minimum_consecutive_frames=kwargs["minimum_consecutive_frames"],
+            minimum_iou_threshold=kwargs["minimum_iou_threshold"],
         )
 
     def run(
         self,
         image: WorkflowImageData,
         detections: sv.Detections,
-        lost_track_buffer: int = 30,
-        minimum_iou_threshold: float = 0.3,
-        minimum_consecutive_frames: int = 3,
-        instances_cache_size: int = 16384,
-        track_activation_threshold: float = 0.25,
+        lost_track_buffer: int = DEFAULT_LOST_TRACK_BUFFER,
+        minimum_iou_threshold: float = DEFAULT_MINIMUM_IOU_THRESHOLD,
+        minimum_consecutive_frames: int = DEFAULT_MINIMUM_CONSECUTIVE_FRAMES,
+        instances_cache_size: int = DEFAULT_INSTANCES_CACHE_SIZE,
+        track_activation_threshold: float = DEFAULT_TRACK_ACTIVATION_THRESHOLD,
     ) -> BlockResult:
         return self._run_tracker(
             image=image,

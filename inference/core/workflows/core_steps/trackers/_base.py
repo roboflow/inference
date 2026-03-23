@@ -26,6 +26,7 @@ from inference.core.workflows.prototypes.block import (
 )
 
 OUTPUT_KEY: str = "tracked_detections"
+DEFAULT_INSTANCES_CACHE_SIZE: int = 16384
 
 
 class InstanceCache:
@@ -83,7 +84,7 @@ class TrackerBlockBase(WorkflowBlock):
         self,
         image: WorkflowImageData,
         detections: sv.Detections,
-        instances_cache_size: int = 16384,
+        instances_cache_size: int = DEFAULT_INSTANCES_CACHE_SIZE,
         **tracker_kwargs: Any,
     ) -> BlockResult:
         """Run one frame through the tracker.

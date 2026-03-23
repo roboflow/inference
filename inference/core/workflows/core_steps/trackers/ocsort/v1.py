@@ -1,3 +1,4 @@
+import inspect
 from typing import Any, List, Literal, Optional, Type, Union
 
 import supervision as sv
@@ -5,6 +6,7 @@ from pydantic import ConfigDict, Field
 from trackers import OCSORTTracker
 
 from inference.core.workflows.core_steps.trackers._base import (
+    DEFAULT_INSTANCES_CACHE_SIZE,
     TrackerBlockBase,
     tracker_describe_outputs,
 )
@@ -22,6 +24,18 @@ from inference.core.workflows.execution_engine.entities.types import (
     Selector,
 )
 from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
+
+_TRACKER_DEFAULTS = {
+    p.name: p.default
+    for p in inspect.signature(OCSORTTracker.__init__).parameters.values()
+    if p.default is not inspect.Parameter.empty
+}
+DEFAULT_MINIMUM_IOU_THRESHOLD = _TRACKER_DEFAULTS["minimum_iou_threshold"]
+DEFAULT_MINIMUM_CONSECUTIVE_FRAMES = _TRACKER_DEFAULTS["minimum_consecutive_frames"]
+DEFAULT_LOST_TRACK_BUFFER = _TRACKER_DEFAULTS["lost_track_buffer"]
+DEFAULT_HIGH_CONF_DET_THRESHOLD = _TRACKER_DEFAULTS["high_conf_det_threshold"]
+DEFAULT_DIRECTION_CONSISTENCY_WEIGHT = _TRACKER_DEFAULTS["direction_consistency_weight"]
+DEFAULT_DELTA_T = _TRACKER_DEFAULTS["delta_t"]
 
 SHORT_DESCRIPTION = "Track objects across video frames using OC-SORT."
 LONG_DESCRIPTION = """
@@ -77,30 +91,33 @@ class OCSORTManifest(WorkflowBlockManifest):
     minimum_iou_threshold: Union[
         Optional[float], Selector(kind=[FLOAT_ZERO_TO_ONE_KIND])
     ] = Field(
-        default=0.3,
+        default=DEFAULT_MINIMUM_IOU_THRESHOLD,
         description="Minimum IoU required to associate a detection with an existing track. "
-        "Default: 0.3.",
-        examples=[0.3, "$inputs.minimum_iou_threshold"],
+        f"Default: {DEFAULT_MINIMUM_IOU_THRESHOLD}.",
+        examples=[DEFAULT_MINIMUM_IOU_THRESHOLD, "$inputs.minimum_iou_threshold"],
         json_schema_extra={
             "always_visible": True,
         },
     )
     minimum_consecutive_frames: Union[Optional[int], Selector(kind=[INTEGER_KIND])] = (
         Field(
-            default=3,
+            default=DEFAULT_MINIMUM_CONSECUTIVE_FRAMES,
             description="Number of consecutive frames a track must be matched before it is "
-            "emitted as a confirmed track (tracker_id != -1). Default: 3.",
-            examples=[3, "$inputs.minimum_consecutive_frames"],
+            f"emitted as a confirmed track (tracker_id != -1). Default: {DEFAULT_MINIMUM_CONSECUTIVE_FRAMES}.",
+            examples=[
+                DEFAULT_MINIMUM_CONSECUTIVE_FRAMES,
+                "$inputs.minimum_consecutive_frames",
+            ],
             json_schema_extra={
                 "always_visible": True,
             },
         )
     )
     lost_track_buffer: Union[Optional[int], Selector(kind=[INTEGER_KIND])] = Field(
-        default=30,
+        default=DEFAULT_LOST_TRACK_BUFFER,
         description="Number of frames to keep a track alive after it loses its matched "
-        "detection. Higher values improve occlusion recovery. Default: 30.",
-        examples=[30, "$inputs.lost_track_buffer"],
+        f"detection. Higher values improve occlusion recovery. Default: {DEFAULT_LOST_TRACK_BUFFER}.",
+        examples=[DEFAULT_LOST_TRACK_BUFFER, "$inputs.lost_track_buffer"],
         json_schema_extra={
             "always_visible": True,
         },
@@ -108,30 +125,33 @@ class OCSORTManifest(WorkflowBlockManifest):
     high_conf_det_threshold: Union[
         Optional[float], Selector(kind=[FLOAT_ZERO_TO_ONE_KIND])
     ] = Field(
-        default=0.6,
+        default=DEFAULT_HIGH_CONF_DET_THRESHOLD,
         description="Confidence threshold for high-confidence detections used in "
-        "association. Default: 0.6.",
-        examples=[0.6, "$inputs.high_conf_det_threshold"],
+        f"association. Default: {DEFAULT_HIGH_CONF_DET_THRESHOLD}.",
+        examples=[DEFAULT_HIGH_CONF_DET_THRESHOLD, "$inputs.high_conf_det_threshold"],
     )
     direction_consistency_weight: Union[
         Optional[float], Selector(kind=[FLOAT_ZERO_TO_ONE_KIND])
     ] = Field(
-        default=0.2,
+        default=DEFAULT_DIRECTION_CONSISTENCY_WEIGHT,
         description="Weight for the direction consistency term in the OC-SORT association "
         "cost. Higher values prioritise alignment between historical motion direction and "
-        "the direction to the candidate detection. Default: 0.2.",
-        examples=[0.2, "$inputs.direction_consistency_weight"],
+        f"the direction to the candidate detection. Default: {DEFAULT_DIRECTION_CONSISTENCY_WEIGHT}.",
+        examples=[
+            DEFAULT_DIRECTION_CONSISTENCY_WEIGHT,
+            "$inputs.direction_consistency_weight",
+        ],
     )
     delta_t: Union[Optional[int], Selector(kind=[INTEGER_KIND])] = Field(
-        default=3,
+        default=DEFAULT_DELTA_T,
         description="Number of past frames used by OC-SORT to estimate per-track velocity "
-        "for direction consistency momentum. Default: 3.",
-        examples=[3, "$inputs.delta_t"],
+        f"for direction consistency momentum. Default: {DEFAULT_DELTA_T}.",
+        examples=[DEFAULT_DELTA_T, "$inputs.delta_t"],
     )
     instances_cache_size: int = Field(
-        default=16384,
+        default=DEFAULT_INSTANCES_CACHE_SIZE,
         description="Maximum number of track IDs retained in the instance cache for "
-        "new/already-seen categorisation. Uses FIFO eviction. Default: 16384.",
+        f"new/already-seen categorisation. Uses FIFO eviction. Default: {DEFAULT_INSTANCES_CACHE_SIZE}.",
     )
 
     @classmethod
@@ -150,28 +170,26 @@ class OCSORTBlockV1(TrackerBlockBase):
 
     def _create_tracker(self, fps: int, **kwargs: Any) -> Any:
         return OCSORTTracker(
-            lost_track_buffer=kwargs.get("lost_track_buffer", 30),
+            lost_track_buffer=kwargs["lost_track_buffer"],
             frame_rate=fps,
-            minimum_consecutive_frames=kwargs.get("minimum_consecutive_frames", 3),
-            minimum_iou_threshold=kwargs.get("minimum_iou_threshold", 0.3),
-            high_conf_det_threshold=kwargs.get("high_conf_det_threshold", 0.6),
-            direction_consistency_weight=kwargs.get(
-                "direction_consistency_weight", 0.2
-            ),
-            delta_t=kwargs.get("delta_t", 3),
+            minimum_consecutive_frames=kwargs["minimum_consecutive_frames"],
+            minimum_iou_threshold=kwargs["minimum_iou_threshold"],
+            high_conf_det_threshold=kwargs["high_conf_det_threshold"],
+            direction_consistency_weight=kwargs["direction_consistency_weight"],
+            delta_t=kwargs["delta_t"],
         )
 
     def run(
         self,
         image: WorkflowImageData,
         detections: sv.Detections,
-        lost_track_buffer: int = 30,
-        minimum_iou_threshold: float = 0.3,
-        minimum_consecutive_frames: int = 3,
-        instances_cache_size: int = 16384,
-        high_conf_det_threshold: float = 0.6,
-        direction_consistency_weight: float = 0.2,
-        delta_t: int = 3,
+        lost_track_buffer: int = DEFAULT_LOST_TRACK_BUFFER,
+        minimum_iou_threshold: float = DEFAULT_MINIMUM_IOU_THRESHOLD,
+        minimum_consecutive_frames: int = DEFAULT_MINIMUM_CONSECUTIVE_FRAMES,
+        instances_cache_size: int = DEFAULT_INSTANCES_CACHE_SIZE,
+        high_conf_det_threshold: float = DEFAULT_HIGH_CONF_DET_THRESHOLD,
+        direction_consistency_weight: float = DEFAULT_DIRECTION_CONSISTENCY_WEIGHT,
+        delta_t: int = DEFAULT_DELTA_T,
     ) -> BlockResult:
         return self._run_tracker(
             image=image,
