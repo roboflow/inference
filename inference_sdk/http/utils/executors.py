@@ -132,18 +132,29 @@ def make_parallel_requests(
     Returns:
         The list of responses.
     """
-    # Capture the current context (including OTel trace context) so it
-    # propagates into the thread pool workers. Each worker gets its own
-    # copy since Context.run() is not reentrant.
+    # Capture the current contextvars snapshot so OTel trace context
+    # propagates into the thread pool workers. Must capture here (caller
+    # thread) not inside the worker — workers run in fresh threads that
+    # don't inherit the caller's context.
+    parent_ctx = contextvars.copy_context()
     workers = len(requests_data)
     make_request_closure = partial(make_request, request_method=request_method)
 
-    def _run_with_context(rd: RequestData) -> Response:
-        ctx = contextvars.copy_context()
-        return ctx.run(make_request_closure, rd)
+    def _run_in_parent_context(rd: RequestData) -> Response:
+        # Restore all context vars from the parent thread snapshot.
+        # We iterate and set each var individually since Context.run()
+        # is not reentrant.
+        tokens = []
+        for var in parent_ctx:
+            tokens.append((var, var.set(parent_ctx[var])))
+        try:
+            return make_request_closure(rd)
+        finally:
+            for var, tok in tokens:
+                var.reset(tok)
 
     with ThreadPoolExecutor(max_workers=workers) as executor:
-        return list(executor.map(_run_with_context, requests_data))
+        return list(executor.map(_run_in_parent_context, requests_data))
 
 
 @backoff.on_predicate(
