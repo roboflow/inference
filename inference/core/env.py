@@ -397,6 +397,10 @@ OTEL_SERVICE_NAME = os.getenv("OTEL_SERVICE_NAME", "inference-server")
 OTEL_EXPORTER_PROTOCOL = os.getenv("OTEL_EXPORTER_PROTOCOL", "grpc")  # "grpc" or "http"
 OTEL_EXPORTER_ENDPOINT = os.getenv("OTEL_EXPORTER_ENDPOINT", "localhost:4317")
 OTEL_SAMPLING_RATE = float(os.getenv("OTEL_SAMPLING_RATE", "1.0"))
+OTEL_TRACE_EXPORT_INTERVAL_MS = int(os.getenv("OTEL_TRACE_EXPORT_INTERVAL_MS", "5000"))
+OTEL_METRIC_EXPORT_INTERVAL_MS = int(
+    os.getenv("OTEL_METRIC_EXPORT_INTERVAL_MS", "10000")
+)
 
 # Metrics enabled flag, default is True
 METRICS_ENABLED = str2bool(os.getenv("METRICS_ENABLED", True))

@@ -415,8 +415,10 @@ def setup_telemetry(app: Any) -> None:
     from inference.core.env import (
         OTEL_EXPORTER_ENDPOINT,
         OTEL_EXPORTER_PROTOCOL,
+        OTEL_METRIC_EXPORT_INTERVAL_MS,
         OTEL_SAMPLING_RATE,
         OTEL_SERVICE_NAME,
+        OTEL_TRACE_EXPORT_INTERVAL_MS,
     )
 
     # W3C TraceContext propagator — always set so extract/inject are safe
@@ -455,7 +457,11 @@ def setup_telemetry(app: Any) -> None:
         )
 
     _provider = TracerProvider(resource=resource, sampler=sampler)
-    _provider.add_span_processor(BatchSpanProcessor(exporter))
+    _provider.add_span_processor(
+        BatchSpanProcessor(
+            exporter, schedule_delay_millis=OTEL_TRACE_EXPORT_INTERVAL_MS
+        )
+    )
     trace.set_tracer_provider(_provider)
 
     _tracer = trace.get_tracer("inference")
@@ -482,7 +488,7 @@ def setup_telemetry(app: Any) -> None:
         )
 
     metric_reader = PeriodicExportingMetricReader(
-        metric_exporter, export_interval_millis=10_000
+        metric_exporter, export_interval_millis=OTEL_METRIC_EXPORT_INTERVAL_MS
     )
     _meter_provider = MeterProvider(resource=resource, metric_readers=[metric_reader])
     otel_metrics.set_meter_provider(_meter_provider)
