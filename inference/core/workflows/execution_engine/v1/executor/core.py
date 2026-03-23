@@ -225,39 +225,48 @@ def safe_execute_step(
         remote_processing_times.set(processing_time_collector)
     if apply_duration_minimum is not None and duration_minimum_value is not None:
         apply_duration_minimum.set(duration_minimum_value)
-    # Re-attach OTel context in worker thread so trace propagation works
+    # Re-attach OTel context in worker thread so trace propagation works.
+    # Must detach when done — threads are reused in the pool, and leaked
+    # contexts cause incorrect span parenting on subsequent tasks.
+    _otel_token = None
     if otel_ctx is not None and _OTEL_AVAILABLE:
-        otel_context.attach(otel_ctx)
+        _otel_token = otel_context.attach(otel_ctx)
     if profiler is None:
         profiler = NullWorkflowsProfiler.init()
     step_name = get_last_chunk_of_selector(selector=step_selector)
-    with start_span("workflow.step", {"workflow.step": step_name}):
-        try:
-            logger.debug(
-                f"started execution of: {step_selector} - {datetime.now().isoformat()}"
-            )
-            run_step(
-                step_selector=step_selector,
-                workflow=workflow,
-                execution_data_manager=execution_data_manager,
-                profiler=profiler,
-            )
-            logger.debug(
-                f"finished execution of: {step_selector} - {datetime.now().isoformat()}"
-            )
-        except WorkflowError as error:
-            raise error
-        except Exception as error:
-            if step_error_handler:
-                step_error_handler(step_name, error)
-            logger.exception(f"Execution of step {step_selector} encountered error.")
-            raise StepExecutionError(
-                block_id=step_name,
-                block_type=workflow.steps[step_name].manifest.type,
-                public_message=str(error),
-                context="workflow_execution | step_execution",
-                inner_error=str(error),
-            ) from error
+    try:
+        with start_span("workflow.step", {"workflow.step": step_name}):
+            try:
+                logger.debug(
+                    f"started execution of: {step_selector} - {datetime.now().isoformat()}"
+                )
+                run_step(
+                    step_selector=step_selector,
+                    workflow=workflow,
+                    execution_data_manager=execution_data_manager,
+                    profiler=profiler,
+                )
+                logger.debug(
+                    f"finished execution of: {step_selector} - {datetime.now().isoformat()}"
+                )
+            except WorkflowError as error:
+                raise error
+            except Exception as error:
+                if step_error_handler:
+                    step_error_handler(step_name, error)
+                logger.exception(
+                    f"Execution of step {step_selector} encountered error."
+                )
+                raise StepExecutionError(
+                    block_id=step_name,
+                    block_type=workflow.steps[step_name].manifest.type,
+                    public_message=str(error),
+                    context="workflow_execution | step_execution",
+                    inner_error=str(error),
+                ) from error
+    finally:
+        if _otel_token is not None and _OTEL_AVAILABLE:
+            otel_context.detach(_otel_token)
 
 
 def run_step(

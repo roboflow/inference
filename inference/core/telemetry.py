@@ -210,7 +210,10 @@ class _ForceTraceASGIMiddleware:
                     if header_value.lower() == b"true":
                         _force_trace_flag.set(True)
                     break
-        await self.app(scope, receive, send)
+        try:
+            await self.app(scope, receive, send)
+        finally:
+            _force_trace_flag.set(False)
 
 
 class _ForceTraceRootSampler:
