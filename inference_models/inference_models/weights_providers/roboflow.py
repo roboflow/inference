@@ -7,8 +7,6 @@ from packaging.version import InvalidVersion, Version
 from pydantic import BaseModel, Discriminator, Field, ValidationError
 from requests import Response, Timeout
 
-from inference_models.telemetry import record_error, set_span_attribute, start_span
-
 from inference_models.configuration import (
     API_CALLS_MAX_TRIES,
     API_CALLS_TIMEOUT,
@@ -85,23 +83,6 @@ class RoboflowModelMetadata(BaseModel):
 
 
 def get_roboflow_model(
-    model_id: str,
-    api_key: Optional[str] = None,
-    weights_provider_extra_query_params: Optional[List[Tuple[str, str]]] = None,
-    weights_provider_extra_headers: Optional[Dict[str, str]] = None,
-    **kwargs,
-) -> ModelMetadata:
-    with start_span("inference_models.resolve_metadata", {"model.id": model_id}):
-        return _get_roboflow_model(
-            model_id=model_id,
-            api_key=api_key,
-            weights_provider_extra_query_params=weights_provider_extra_query_params,
-            weights_provider_extra_headers=weights_provider_extra_headers,
-            **kwargs,
-        )
-
-
-def _get_roboflow_model(
     model_id: str,
     api_key: Optional[str] = None,
     weights_provider_extra_query_params: Optional[List[Tuple[str, str]]] = None,
@@ -206,25 +187,19 @@ def get_one_page_of_model_metadata(
     headers = append_extra_headers(headers=headers, extra_headers=extra_headers)
     if not headers:
         headers = None
-    with start_span(
-        "inference_models.api_request",
-        {"model.id": model_id},
-    ):
-        try:
-            response = requests.get(
-                f"{ROBOFLOW_API_HOST}/models/v1/external/weights",
-                params=query,
-                headers=headers,
-                timeout=API_CALLS_TIMEOUT,
-            )
-            set_span_attribute("http.status_code", response.status_code)
-        except (OSError, Timeout, requests.exceptions.ConnectionError) as error:
-            record_error(error)
-            raise RetryError(
-                message=f"Connectivity error",
-                help_url="https://inference-models.roboflow.com/errors/file-download/#retryerror",
-            ) from error
-        handle_response_errors(response=response, operation_name="get model weights")
+    try:
+        response = requests.get(
+            f"{ROBOFLOW_API_HOST}/models/v1/external/weights",
+            params=query,
+            headers=headers,
+            timeout=API_CALLS_TIMEOUT,
+        )
+    except (OSError, Timeout, requests.exceptions.ConnectionError) as error:
+        raise RetryError(
+            message=f"Connectivity error",
+            help_url="https://inference-models.roboflow.com/errors/file-download/#retryerror",
+        ) from error
+    handle_response_errors(response=response, operation_name="get model weights")
     try:
         return RoboflowModelMetadata.model_validate(response.json()["modelMetadata"])
     except (ValueError, ValidationError, KeyError) as error:

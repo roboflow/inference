@@ -33,7 +33,6 @@ from inference_models.errors import (
     UntrustedFileError,
 )
 from inference_models.logger import LOGGER
-from inference_models.telemetry import start_span
 from inference_models.utils.file_system import (
     ensure_parent_dir_exists,
     pre_allocate_file,
@@ -214,10 +213,7 @@ def download_files_to_directory(
         disable=not verbose,
     )
     download_id = str(uuid4())
-    with start_span(
-        "inference_models.download",
-        {"files.count": len(files_specs)},
-    ), progress:
+    with progress:
         with ThreadPoolExecutor(max_workers=max_parallel_downloads) as executor:
             futures = []
             for file_handle, download_url, md5_hash in files_specs:
