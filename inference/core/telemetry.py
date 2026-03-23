@@ -285,6 +285,8 @@ def setup_telemetry(app: Any) -> None:
         OTEL_EXPORTER_ENDPOINT,
         OTEL_EXPORTER_PROTOCOL,
         OTEL_METRIC_EXPORT_INTERVAL_MS,
+        OTEL_METRIC_EXPORTER_ENDPOINT,
+        OTEL_METRICS_ENABLED,
         OTEL_SAMPLING_RATE,
         OTEL_SERVICE_NAME,
         OTEL_TRACE_EXPORT_INTERVAL_MS,
@@ -336,74 +338,78 @@ def setup_telemetry(app: Any) -> None:
     _tracer = trace.get_tracer("inference")
 
     # --- Metrics ---
-    from opentelemetry import metrics as otel_metrics
-    from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import (
-        OTLPMetricExporter as GRPCMetricExporter,
-    )
-    from opentelemetry.exporter.otlp.proto.http.metric_exporter import (
-        OTLPMetricExporter as HTTPMetricExporter,
-    )
-    from opentelemetry.sdk.metrics import MeterProvider
-    from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
-
-    if OTEL_EXPORTER_PROTOCOL == "http":
-        metric_exporter = HTTPMetricExporter(
-            endpoint=f"http://{OTEL_EXPORTER_ENDPOINT}/v1/metrics",
+    if OTEL_METRICS_ENABLED:
+        from opentelemetry import metrics as otel_metrics
+        from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import (
+            OTLPMetricExporter as GRPCMetricExporter,
         )
-    else:
-        metric_exporter = GRPCMetricExporter(
-            endpoint=OTEL_EXPORTER_ENDPOINT,
-            insecure=True,
+        from opentelemetry.exporter.otlp.proto.http.metric_exporter import (
+            OTLPMetricExporter as HTTPMetricExporter,
         )
+        from opentelemetry.sdk.metrics import MeterProvider
+        from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
 
-    metric_reader = PeriodicExportingMetricReader(
-        metric_exporter, export_interval_millis=OTEL_METRIC_EXPORT_INTERVAL_MS
-    )
-    _meter_provider = MeterProvider(resource=resource, metric_readers=[metric_reader])
-    otel_metrics.set_meter_provider(_meter_provider)
+        metric_endpoint = OTEL_METRIC_EXPORTER_ENDPOINT or OTEL_EXPORTER_ENDPOINT
+        if OTEL_EXPORTER_PROTOCOL == "http":
+            metric_exporter = HTTPMetricExporter(
+                endpoint=f"http://{metric_endpoint}/v1/metrics",
+            )
+        else:
+            metric_exporter = GRPCMetricExporter(
+                endpoint=metric_endpoint,
+                insecure=True,
+            )
 
-    meter = _meter_provider.get_meter("inference")
-    _metrics = {
-        "models_loaded": meter.create_up_down_counter(
-            "inference.models.loaded",
-            description="Number of models currently loaded",
-        ),
-        "model_loads": meter.create_counter(
-            "inference.model.loads",
-            description="Total model loads (cold starts)",
-        ),
-        "model_unloads": meter.create_counter(
-            "inference.model.unloads",
-            description="Total model unloads",
-        ),
-        "model_load_duration": meter.create_histogram(
-            "inference.model.load.duration",
-            unit="s",
-            description="Model load time in seconds",
-        ),
-        "model_infer_count": meter.create_counter(
-            "inference.model.infer.count",
-            description="Total inference requests",
-        ),
-        "model_infer_duration": meter.create_histogram(
-            "inference.model.infer.duration",
-            unit="s",
-            description="Inference latency in seconds",
-        ),
-        "api_call_duration": meter.create_histogram(
-            "inference.roboflow_api.duration",
-            unit="s",
-            description="Roboflow API call latency in seconds",
-        ),
-        "errors": meter.create_counter(
-            "inference.errors",
-            description="Total errors by type",
-        ),
-    }
+        metric_reader = PeriodicExportingMetricReader(
+            metric_exporter, export_interval_millis=OTEL_METRIC_EXPORT_INTERVAL_MS
+        )
+        _meter_provider = MeterProvider(
+            resource=resource, metric_readers=[metric_reader]
+        )
+        otel_metrics.set_meter_provider(_meter_provider)
+
+        meter = _meter_provider.get_meter("inference")
+        _metrics = {
+            "models_loaded": meter.create_up_down_counter(
+                "inference.models.loaded",
+                description="Number of models currently loaded",
+            ),
+            "model_loads": meter.create_counter(
+                "inference.model.loads",
+                description="Total model loads (cold starts)",
+            ),
+            "model_unloads": meter.create_counter(
+                "inference.model.unloads",
+                description="Total model unloads",
+            ),
+            "model_load_duration": meter.create_histogram(
+                "inference.model.load.duration",
+                unit="s",
+                description="Model load time in seconds",
+            ),
+            "model_infer_count": meter.create_counter(
+                "inference.model.infer.count",
+                description="Total inference requests",
+            ),
+            "model_infer_duration": meter.create_histogram(
+                "inference.model.infer.duration",
+                unit="s",
+                description="Inference latency in seconds",
+            ),
+            "api_call_duration": meter.create_histogram(
+                "inference.roboflow_api.duration",
+                unit="s",
+                description="Roboflow API call latency in seconds",
+            ),
+            "errors": meter.create_counter(
+                "inference.errors",
+                description="Total errors by type",
+            ),
+        }
+        _install_export_error_filter("opentelemetry.sdk.metrics._internal.export")
 
     # Replace noisy connection-refused tracebacks with a single-line warning.
     _install_export_error_filter("opentelemetry.sdk.trace.export")
-    _install_export_error_filter("opentelemetry.sdk.metrics._internal.export")
 
     # Auto-instrument FastAPI: creates server spans, extracts traceparent
     FastAPIInstrumentor.instrument_app(app)
