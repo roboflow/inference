@@ -86,6 +86,13 @@ class TrackerBlockBase(WorkflowBlock):
         instances_cache_size: int = 16384,
         **tracker_kwargs: Any,
     ) -> BlockResult:
+        """Run one frame through the tracker.
+
+        Note: tracker parameters (``tracker_kwargs``) are only used when the
+        tracker is **first created** for a given ``video_identifier``.
+        Changing parameter values on subsequent frames has no effect because
+        the tracker instance is cached for the lifetime of the video stream.
+        """
         metadata = image.video_metadata
         fps = metadata.fps
         if not fps:
@@ -100,8 +107,7 @@ class TrackerBlockBase(WorkflowBlock):
             self._trackers[video_id] = self._create_tracker(fps=fps, **tracker_kwargs)
 
         tracker = self._trackers[video_id]
-        merged = sv.Detections.merge(detections[i] for i in range(len(detections)))
-        tracked_detections = tracker.update(merged)
+        tracked_detections = tracker.update(detections)
 
         # Filter out immature / unmatched tracks (tracker_id == -1)
         if tracked_detections.tracker_id is not None and len(tracked_detections) > 0:
