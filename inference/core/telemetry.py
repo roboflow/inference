@@ -526,6 +526,11 @@ def setup_telemetry(app: Any) -> None:
         ),
     }
 
+    # Suppress noisy connection-refused tracebacks when the collector is down.
+    # Export failures are expected and harmless — data is simply dropped.
+    logging.getLogger("opentelemetry.sdk.trace.export").setLevel(logging.CRITICAL)
+    logging.getLogger("opentelemetry.sdk.metrics.export").setLevel(logging.CRITICAL)
+
     # Auto-instrument FastAPI: creates server spans, extracts traceparent
     FastAPIInstrumentor.instrument_app(app)
 
