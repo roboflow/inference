@@ -37,7 +37,6 @@ from inference.core.env import (
 )
 from inference.core.models.base import Model
 from inference.core.roboflow_api import get_extra_weights_provider_headers
-from inference.core.telemetry import create_tracing_model_access_manager
 from inference.core.utils.image_utils import load_image_bgr, load_image_rgb
 from inference.core.utils.postprocess import masks2poly
 from inference.core.utils.visualisation import draw_detection_predictions
@@ -114,7 +113,6 @@ class InferenceModelsObjectDetectionAdapter(Model):
             allow_direct_local_storage_loading=ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES,
             weights_provider_extra_headers=extra_weights_provider_headers,
             backend=backend,
-            model_access_manager=create_tracing_model_access_manager(),
             **kwargs,
         )
         self.class_names = list(self._model.class_names)
@@ -265,7 +263,6 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
             allow_direct_local_storage_loading=ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES,
             weights_provider_extra_headers=extra_weights_provider_headers,
             backend=backend,
-            model_access_manager=create_tracing_model_access_manager(),
             **kwargs,
         )
         self.class_names = list(self._model.class_names)
@@ -423,7 +420,6 @@ class InferenceModelsKeyPointsDetectionAdapter(Model):
             allow_direct_local_storage_loading=ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES,
             weights_provider_extra_headers=extra_weights_provider_headers,
             backend=backend,
-            model_access_manager=create_tracing_model_access_manager(),
             **kwargs,
         )
         self.class_names = list(self._model.class_names)
@@ -922,7 +918,6 @@ class InferenceModelsSemanticSegmentationAdapter(Model):
             allow_direct_local_storage_loading=ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES,
             weights_provider_extra_headers=extra_weights_provider_headers,
             backend=backend,
-            model_access_manager=create_tracing_model_access_manager(),
             **kwargs,
         )
         self.class_names = list(self._model.class_names)

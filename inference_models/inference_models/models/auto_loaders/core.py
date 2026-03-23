@@ -77,6 +77,7 @@ from inference_models.utils.download import FileHandle, download_files_to_direct
 from inference_models.utils.file_system import dump_json, read_json
 from inference_models.utils.hashing import hash_dict_content
 from inference_models.weights_providers.core import get_model_from_provider
+from inference_models.telemetry import traced_from_pretrained
 from inference_models.weights_providers.entities import (
     ModelDependency,
     ModelPackageMetadata,
@@ -417,6 +418,7 @@ class AutoModel:
         console.print(table)
 
     @classmethod
+    @traced_from_pretrained
     def from_pretrained(
         cls,
         model_id_or_path: str,
