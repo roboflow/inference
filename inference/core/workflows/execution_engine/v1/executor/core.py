@@ -20,17 +20,14 @@ except ImportError:
     execution_id = None
     remote_processing_times = None
 
-try:
-    from opentelemetry import context as otel_context
-
-    _OTEL_AVAILABLE = True
-except ImportError:
-    otel_context = None
-    _OTEL_AVAILABLE = False
-
 from inference.core import logger
 from inference.core.env import INFERENCE_DEBUG_OUTPUT_DIR
-from inference.core.telemetry import start_span
+from inference.core.telemetry import (
+    attach_context,
+    capture_context,
+    detach_context,
+    start_span,
+)
 from inference.core.workflows.errors import StepExecutionError, WorkflowError
 from inference.core.workflows.execution_engine.profiling.core import (
     NullWorkflowsProfiler,
@@ -181,7 +178,7 @@ def execute_steps(
     else:
         duration_minimum_value = None
     # Capture OTel context so it can be re-attached inside worker threads
-    otel_ctx = otel_context.get_current() if _OTEL_AVAILABLE else None
+    otel_ctx = capture_context()
     logger.debug(f"Executing steps: {next_steps}.")
     steps_functions = [
         partial(
@@ -228,9 +225,7 @@ def safe_execute_step(
     # Re-attach OTel context in worker thread so trace propagation works.
     # Must detach when done — threads are reused in the pool, and leaked
     # contexts cause incorrect span parenting on subsequent tasks.
-    _otel_token = None
-    if otel_ctx is not None and _OTEL_AVAILABLE:
-        _otel_token = otel_context.attach(otel_ctx)
+    _otel_token = attach_context(otel_ctx)
     if profiler is None:
         profiler = NullWorkflowsProfiler.init()
     step_name = get_last_chunk_of_selector(selector=step_selector)
@@ -265,8 +260,7 @@ def safe_execute_step(
                     inner_error=str(error),
                 ) from error
     finally:
-        if _otel_token is not None and _OTEL_AVAILABLE:
-            otel_context.detach(_otel_token)
+        detach_context(_otel_token)
 
 
 def run_step(

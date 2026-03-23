@@ -112,6 +112,39 @@ def set_span_attribute(key: str, value: Any) -> None:
         span.set_attribute(key, value)
 
 
+def capture_context() -> Any:
+    """Capture the current OTel context for propagation to another thread.
+
+    Returns an opaque token (or None). Pass to attach_context() in the target thread.
+    """
+    if not _OTEL_AVAILABLE:
+        return None
+    from opentelemetry import context
+
+    return context.get_current()
+
+
+def attach_context(ctx: Any) -> Any:
+    """Attach a previously captured OTel context in the current thread.
+
+    Returns a token that MUST be passed to detach_context() when done.
+    """
+    if ctx is None or not _OTEL_AVAILABLE:
+        return None
+    from opentelemetry import context
+
+    return context.attach(ctx)
+
+
+def detach_context(token: Any) -> None:
+    """Detach a previously attached context. Must be called in a finally block."""
+    if token is None or not _OTEL_AVAILABLE:
+        return
+    from opentelemetry import context
+
+    context.detach(token)
+
+
 def inject_trace_context(headers: dict) -> dict:
     """Inject W3C traceparent/tracestate into *headers* dict and return it.
 
