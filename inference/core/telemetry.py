@@ -43,6 +43,8 @@ except ImportError:
 
 _tracer = None
 _provider = None
+_meter_provider = None
+_metrics: Optional[Dict[str, Any]] = None
 
 # Header name for forcing a trace on a specific request.
 FORCE_TRACE_HEADER = b"x-force-trace"
@@ -135,6 +137,52 @@ def trace_context_log_processor(
         event_dict["trace_id"] = format(ctx.trace_id, "032x")
         event_dict["span_id"] = format(ctx.span_id, "016x")
     return event_dict
+
+
+# ---------------------------------------------------------------------------
+# Metrics helpers — always safe to call
+# ---------------------------------------------------------------------------
+
+
+def record_model_loaded(model_id: str, load_time: float) -> None:
+    """Record a model load event: increment counters and record load duration."""
+    if _metrics is None:
+        return
+    _metrics["models_loaded"].add(1)
+    _metrics["model_loads"].add(1, {"model.id": model_id})
+    _metrics["model_load_duration"].record(load_time, {"model.id": model_id})
+
+
+def record_model_unloaded(model_id: str) -> None:
+    """Record a model unload event."""
+    if _metrics is None:
+        return
+    _metrics["models_loaded"].add(-1)
+    _metrics["model_unloads"].add(1, {"model.id": model_id})
+
+
+def record_inference(model_id: str, duration: float) -> None:
+    """Record an inference execution."""
+    if _metrics is None:
+        return
+    _metrics["model_infer_count"].add(1, {"model.id": model_id})
+    _metrics["model_infer_duration"].record(duration, {"model.id": model_id})
+
+
+def record_api_call(function_name: str, duration: float) -> None:
+    """Record a Roboflow API call duration."""
+    if _metrics is None:
+        return
+    _metrics["api_call_duration"].record(
+        duration, {"roboflow_api.function": function_name}
+    )
+
+
+def record_error_metric(error_type: str) -> None:
+    """Increment the error counter by error type."""
+    if _metrics is None:
+        return
+    _metrics["errors"].add(1, {"error.type": error_type})
 
 
 # ---------------------------------------------------------------------------
@@ -340,12 +388,12 @@ class _ForceTraceRootSampler:
 
 
 def setup_telemetry(app: Any) -> None:
-    """Initialize OTel TracerProvider and instrument the FastAPI app.
+    """Initialize OTel TracerProvider, MeterProvider, and instrument the FastAPI app.
 
     Must be called before any middleware is added so the FastAPI instrumentor
     wraps at the outermost ASGI layer.
     """
-    global _provider, _tracer
+    global _provider, _tracer, _meter_provider, _metrics
 
     from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (
         OTLPSpanExporter as GRPCExporter,
@@ -387,7 +435,14 @@ def setup_telemetry(app: Any) -> None:
     # the ratio-based sampler.
     sampler = ParentBased(root=_ForceTraceRootSampler(root_sampler))
 
-    resource = Resource.create({"service.name": OTEL_SERVICE_NAME})
+    from inference.core.devices.utils import GLOBAL_INFERENCE_SERVER_ID
+
+    resource = Resource.create(
+        {
+            "service.name": OTEL_SERVICE_NAME,
+            "service.instance.id": GLOBAL_INFERENCE_SERVER_ID,
+        }
+    )
 
     if OTEL_EXPORTER_PROTOCOL == "http":
         exporter = HTTPExporter(
@@ -404,6 +459,76 @@ def setup_telemetry(app: Any) -> None:
     trace.set_tracer_provider(_provider)
 
     _tracer = trace.get_tracer("inference")
+
+    # --- Metrics ---
+    from opentelemetry import metrics as otel_metrics
+    from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import (
+        OTLPMetricExporter as GRPCMetricExporter,
+    )
+    from opentelemetry.exporter.otlp.proto.http.metric_exporter import (
+        OTLPMetricExporter as HTTPMetricExporter,
+    )
+    from opentelemetry.sdk.metrics import MeterProvider
+    from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
+
+    if OTEL_EXPORTER_PROTOCOL == "http":
+        metric_exporter = HTTPMetricExporter(
+            endpoint=f"http://{OTEL_EXPORTER_ENDPOINT}/v1/metrics",
+        )
+    else:
+        metric_exporter = GRPCMetricExporter(
+            endpoint=OTEL_EXPORTER_ENDPOINT,
+            insecure=True,
+        )
+
+    metric_reader = PeriodicExportingMetricReader(
+        metric_exporter, export_interval_millis=10_000
+    )
+    _meter_provider = MeterProvider(resource=resource, metric_readers=[metric_reader])
+    otel_metrics.set_meter_provider(_meter_provider)
+
+    meter = _meter_provider.get_meter("inference")
+    _metrics = {
+        "models_loaded": meter.create_up_down_counter(
+            "inference.models.loaded",
+            description="Number of models currently loaded",
+        ),
+        "model_loads": meter.create_counter(
+            "inference.model.loads",
+            description="Total model loads (cold starts)",
+        ),
+        "model_unloads": meter.create_counter(
+            "inference.model.unloads",
+            description="Total model unloads",
+        ),
+        "model_load_duration": meter.create_histogram(
+            "inference.model.load.duration",
+            unit="s",
+            description="Model load time in seconds",
+        ),
+        "model_infer_count": meter.create_counter(
+            "inference.model.infer.count",
+            description="Total inference requests",
+        ),
+        "model_infer_duration": meter.create_histogram(
+            "inference.model.infer.duration",
+            unit="s",
+            description="Inference latency in seconds",
+        ),
+        "api_call_duration": meter.create_histogram(
+            "inference.roboflow_api.duration",
+            unit="s",
+            description="Roboflow API call latency in seconds",
+        ),
+        "errors": meter.create_counter(
+            "inference.errors",
+            description="Total errors by type",
+        ),
+    }
+
+    # Replace noisy connection-refused tracebacks with a single-line warning.
+    _install_export_error_filter("opentelemetry.sdk.trace.export")
+    _install_export_error_filter("opentelemetry.sdk.metrics._internal.export")
 
     # Auto-instrument FastAPI: creates server spans, extracts traceparent
     FastAPIInstrumentor.instrument_app(app)
@@ -424,9 +549,11 @@ def setup_telemetry(app: Any) -> None:
 
 
 def shutdown_telemetry() -> None:
-    """Flush pending spans and shut down the TracerProvider."""
+    """Flush pending spans/metrics and shut down providers."""
     if _provider is not None and hasattr(_provider, "shutdown"):
         _provider.shutdown()
+    if _meter_provider is not None and hasattr(_meter_provider, "shutdown"):
+        _meter_provider.shutdown()
 
 
 def _get_tracer():
@@ -434,3 +561,36 @@ def _get_tracer():
     if _tracer is None and _OTEL_AVAILABLE:
         _tracer = trace.get_tracer("inference")
     return _tracer
+
+
+class _ExportErrorFilter(logging.Filter):
+    """Replace noisy OTel export tracebacks with a single-line warning.
+
+    The OTel SDK logs full connection-refused tracebacks every export cycle
+    when the collector is down. This filter catches those ERROR-level records,
+    logs a clean warning once, and suppresses duplicates.
+    """
+
+    def __init__(self):
+        super().__init__()
+        self._warned = False
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if record.levelno >= logging.ERROR:
+            if not self._warned:
+                logger.warning(
+                    "OTel exporter cannot reach collector — traces/metrics will be dropped "
+                    "until the collector is available."
+                )
+                self._warned = True
+            return False  # suppress the original noisy traceback
+        # Reset warning flag when exports succeed again (logged at DEBUG/INFO)
+        if self._warned and record.levelno <= logging.INFO:
+            self._warned = False
+        return True
+
+
+def _install_export_error_filter(logger_name: str) -> None:
+    """Attach the export error filter to an OTel SDK logger."""
+    otel_logger = logging.getLogger(logger_name)
+    otel_logger.addFilter(_ExportErrorFilter())

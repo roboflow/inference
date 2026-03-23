@@ -39,7 +39,14 @@ from inference.core.registries.roboflow import (
     ModelEndpointType,
     _check_if_api_key_has_access_to_model,
 )
-from inference.core.telemetry import record_error, set_span_attribute, start_span
+from inference.core.telemetry import (
+    record_error,
+    record_inference,
+    record_model_loaded,
+    record_model_unloaded,
+    set_span_attribute,
+    start_span,
+)
 
 
 class ModelManager:
@@ -148,6 +155,7 @@ class ModelManager:
 
                     load_time = time.perf_counter() - t_load_start
                     set_span_attribute("model.load_time_seconds", load_time)
+                    record_model_loaded(resolved_identifier, load_time)
                     logger.debug(
                         f"ModelManager - model successfully loaded in {load_time:.2f}s."
                     )
@@ -197,9 +205,11 @@ class ModelManager:
             self.pingback.fallback_api_key = request.api_key
         with start_span("model.infer", {"model.id": model_id}):
             try:
+                t_infer_start = time.perf_counter()
                 rtn_val = await self.model_infer(
                     model_id=model_id, request=request, **kwargs
                 )
+                record_inference(model_id, time.perf_counter() - t_infer_start)
                 logger.debug(
                     f"ModelManager - inference from request finished for model_id={model_id}."
                 )
@@ -286,9 +296,11 @@ class ModelManager:
             self.pingback.fallback_api_key = request.api_key
         with start_span("model.infer", {"model.id": model_id}):
             try:
+                t_infer_start = time.perf_counter()
                 rtn_val = self.model_infer_sync(
                     model_id=model_id, request=request, **kwargs
                 )
+                record_inference(model_id, time.perf_counter() - t_infer_start)
                 logger.debug(
                     f"ModelManager - inference from request finished for model_id={model_id}."
                 )
@@ -473,6 +485,7 @@ class ModelManager:
                     return None
                 self._models[model_id].clear_cache(delete_from_disk=delete_from_disk)
                 del self._models[model_id]
+                record_model_unloaded(model_id)
                 self._dispose_model_lock(model_id=model_id)
                 try_releasing_cuda_memory()
         except InferenceModelNotFound:
