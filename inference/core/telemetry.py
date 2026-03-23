@@ -526,10 +526,9 @@ def setup_telemetry(app: Any) -> None:
         ),
     }
 
-    # Suppress noisy connection-refused tracebacks when the collector is down.
-    # Export failures are expected and harmless — data is simply dropped.
-    logging.getLogger("opentelemetry.sdk.trace.export").setLevel(logging.CRITICAL)
-    logging.getLogger("opentelemetry.sdk.metrics.export").setLevel(logging.CRITICAL)
+    # Replace noisy connection-refused tracebacks with a single-line warning.
+    _install_export_error_filter("opentelemetry.sdk.trace.export")
+    _install_export_error_filter("opentelemetry.sdk.metrics.export")
 
     # Auto-instrument FastAPI: creates server spans, extracts traceparent
     FastAPIInstrumentor.instrument_app(app)
@@ -562,3 +561,36 @@ def _get_tracer():
     if _tracer is None and _OTEL_AVAILABLE:
         _tracer = trace.get_tracer("inference")
     return _tracer
+
+
+class _ExportErrorFilter(logging.Filter):
+    """Replace noisy OTel export tracebacks with a single-line warning.
+
+    The OTel SDK logs full connection-refused tracebacks every export cycle
+    when the collector is down. This filter catches those ERROR-level records,
+    logs a clean warning once, and suppresses duplicates.
+    """
+
+    def __init__(self):
+        super().__init__()
+        self._warned = False
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if record.levelno >= logging.ERROR:
+            if not self._warned:
+                logger.warning(
+                    "OTel exporter cannot reach collector — traces/metrics will be dropped "
+                    "until the collector is available."
+                )
+                self._warned = True
+            return False  # suppress the original noisy traceback
+        # Reset warning flag when exports succeed again (logged at DEBUG/INFO)
+        if self._warned and record.levelno <= logging.INFO:
+            self._warned = False
+        return True
+
+
+def _install_export_error_filter(logger_name: str) -> None:
+    """Attach the export error filter to an OTel SDK logger."""
+    otel_logger = logging.getLogger(logger_name)
+    otel_logger.addFilter(_ExportErrorFilter())
