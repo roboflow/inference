@@ -133,14 +133,17 @@ def make_parallel_requests(
         The list of responses.
     """
     # Capture the current context (including OTel trace context) so it
-    # propagates into the thread pool workers.
-    ctx = contextvars.copy_context()
+    # propagates into the thread pool workers. Each worker gets its own
+    # copy since Context.run() is not reentrant.
     workers = len(requests_data)
     make_request_closure = partial(make_request, request_method=request_method)
+
+    def _run_with_context(rd: RequestData) -> Response:
+        ctx = contextvars.copy_context()
+        return ctx.run(make_request_closure, rd)
+
     with ThreadPoolExecutor(max_workers=workers) as executor:
-        return list(
-            executor.map(lambda rd: ctx.run(make_request_closure, rd), requests_data)
-        )
+        return list(executor.map(_run_with_context, requests_data))
 
 
 @backoff.on_predicate(
