@@ -408,6 +408,11 @@ def setup_telemetry(app: Any) -> None:
     # Auto-instrument FastAPI: creates server spans, extracts traceparent
     FastAPIInstrumentor.instrument_app(app)
 
+    # Auto-instrument outgoing requests: creates http.client spans, injects traceparent
+    from opentelemetry.instrumentation.requests import RequestsInstrumentor
+
+    RequestsInstrumentor().instrument()
+
     # Add force-trace middleware AFTER the instrumentor so it wraps outermost.
     # Starlette builds middleware last-added = outermost, so this runs BEFORE
     # the instrumentor's ASGI middleware, ensuring the ContextVar is set
