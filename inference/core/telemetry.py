@@ -528,7 +528,7 @@ def setup_telemetry(app: Any) -> None:
 
     # Replace noisy connection-refused tracebacks with a single-line warning.
     _install_export_error_filter("opentelemetry.sdk.trace.export")
-    _install_export_error_filter("opentelemetry.sdk.metrics.export")
+    _install_export_error_filter("opentelemetry.sdk.metrics._internal.export")
 
     # Auto-instrument FastAPI: creates server spans, extracts traceparent
     FastAPIInstrumentor.instrument_app(app)
