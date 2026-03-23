@@ -274,7 +274,7 @@ from inference.core.roboflow_api import (
     get_roboflow_workspace_async,
     get_workflow_specification,
 )
-from inference.core.telemetry import setup_telemetry, shutdown_telemetry
+from inference.core.telemetry import setup_telemetry, shutdown_telemetry, start_span
 from inference.core.utils.container import is_docker_socket_mounted
 from inference.core.utils.notebooks import start_notebook
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
@@ -894,15 +894,19 @@ class HttpInterface(BaseInterface):
                 "workflows_core.api_key": workflow_request.api_key,
                 "workflows_core.background_tasks": background_tasks,
             }
-            execution_engine = ExecutionEngine.init(
-                workflow_definition=workflow_specification,
-                init_parameters=workflow_init_parameters,
-                max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
-                prevent_local_images_loading=True,
-                profiler=profiler,
-                executor=self.shared_thread_pool_executor,
-                workflow_id=workflow_request.workflow_id,
-            )
+            with start_span(
+                "workflow.init",
+                {"workflow.id": workflow_request.workflow_id or ""},
+            ):
+                execution_engine = ExecutionEngine.init(
+                    workflow_definition=workflow_specification,
+                    init_parameters=workflow_init_parameters,
+                    max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+                    prevent_local_images_loading=True,
+                    profiler=profiler,
+                    executor=self.shared_thread_pool_executor,
+                    workflow_id=workflow_request.workflow_id,
+                )
             is_preview = False
             if hasattr(workflow_request, "is_preview"):
                 is_preview = workflow_request.is_preview

@@ -1,4 +1,5 @@
 import asyncio
+import contextvars
 import logging
 from concurrent.futures import ThreadPoolExecutor
 from enum import Enum
@@ -131,10 +132,15 @@ def make_parallel_requests(
     Returns:
         The list of responses.
     """
+    # Capture the current context (including OTel trace context) so it
+    # propagates into the thread pool workers.
+    ctx = contextvars.copy_context()
     workers = len(requests_data)
     make_request_closure = partial(make_request, request_method=request_method)
     with ThreadPoolExecutor(max_workers=workers) as executor:
-        return list(executor.map(make_request_closure, requests_data))
+        return list(
+            executor.map(lambda rd: ctx.run(make_request_closure, rd), requests_data)
+        )
 
 
 @backoff.on_predicate(

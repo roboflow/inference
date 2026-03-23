@@ -30,6 +30,7 @@ except ImportError:
 
 from inference.core import logger
 from inference.core.env import INFERENCE_DEBUG_OUTPUT_DIR
+from inference.core.telemetry import start_span
 from inference.core.workflows.errors import StepExecutionError, WorkflowError
 from inference.core.workflows.execution_engine.profiling.core import (
     NullWorkflowsProfiler,
@@ -89,6 +90,29 @@ def _store_crash_info(
     categories=["execution_engine_operation"],
 )
 def run_workflow(
+    workflow: CompiledWorkflow,
+    runtime_parameters: Dict[str, Any],
+    max_concurrent_steps: int,
+    kinds_serializers: Optional[Dict[str, Callable[[Any], Any]]],
+    serialize_results: bool = False,
+    profiler: Optional[WorkflowsProfiler] = None,
+    executor: Optional[ThreadPoolExecutor] = None,
+    step_error_handler: Optional[Callable[[Exception], None]] = None,
+) -> List[Dict[str, Any]]:
+    with start_span("workflow.run"):
+        return _run_workflow(
+            workflow=workflow,
+            runtime_parameters=runtime_parameters,
+            max_concurrent_steps=max_concurrent_steps,
+            kinds_serializers=kinds_serializers,
+            serialize_results=serialize_results,
+            profiler=profiler,
+            executor=executor,
+            step_error_handler=step_error_handler,
+        )
+
+
+def _run_workflow(
     workflow: CompiledWorkflow,
     runtime_parameters: Dict[str, Any],
     max_concurrent_steps: int,
@@ -206,33 +230,34 @@ def safe_execute_step(
         otel_context.attach(otel_ctx)
     if profiler is None:
         profiler = NullWorkflowsProfiler.init()
-    try:
-        logger.debug(
-            f"started execution of: {step_selector} - {datetime.now().isoformat()}"
-        )
-        run_step(
-            step_selector=step_selector,
-            workflow=workflow,
-            execution_data_manager=execution_data_manager,
-            profiler=profiler,
-        )
-        logger.debug(
-            f"finished execution of: {step_selector} - {datetime.now().isoformat()}"
-        )
-    except WorkflowError as error:
-        raise error
-    except Exception as error:
-        step_name = get_last_chunk_of_selector(selector=step_selector)
-        if step_error_handler:
-            step_error_handler(step_name, error)
-        logger.exception(f"Execution of step {step_selector} encountered error.")
-        raise StepExecutionError(
-            block_id=step_name,
-            block_type=workflow.steps[step_name].manifest.type,
-            public_message=str(error),
-            context="workflow_execution | step_execution",
-            inner_error=str(error),
-        ) from error
+    step_name = get_last_chunk_of_selector(selector=step_selector)
+    with start_span("workflow.step", {"workflow.step": step_name}):
+        try:
+            logger.debug(
+                f"started execution of: {step_selector} - {datetime.now().isoformat()}"
+            )
+            run_step(
+                step_selector=step_selector,
+                workflow=workflow,
+                execution_data_manager=execution_data_manager,
+                profiler=profiler,
+            )
+            logger.debug(
+                f"finished execution of: {step_selector} - {datetime.now().isoformat()}"
+            )
+        except WorkflowError as error:
+            raise error
+        except Exception as error:
+            if step_error_handler:
+                step_error_handler(step_name, error)
+            logger.exception(f"Execution of step {step_selector} encountered error.")
+            raise StepExecutionError(
+                block_id=step_name,
+                block_type=workflow.steps[step_name].manifest.type,
+                public_message=str(error),
+                context="workflow_execution | step_execution",
+                inner_error=str(error),
+            ) from error
 
 
 def run_step(
