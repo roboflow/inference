@@ -202,6 +202,22 @@ def init_target_db(db_path):
     conn.execute("""CREATE TABLE IF NOT EXISTS grid_meta (
         key TEXT PRIMARY KEY, value TEXT
     )""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS predictions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        experiment_id INTEGER NOT NULL,
+        eval_image_stem TEXT NOT NULL,
+        image_width INTEGER,
+        image_height INTEGER,
+        predictions_json TEXT NOT NULL,
+        gt_json TEXT NOT NULL,
+        class_names_json TEXT,
+        FOREIGN KEY (experiment_id) REFERENCES experiments(id)
+    )""")
+    try:
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_pred_exp ON predictions(experiment_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_pred_stem ON predictions(experiment_id, eval_image_stem)")
+    except Exception:
+        pass
     conn.commit()
     return conn
 
@@ -440,6 +456,7 @@ def main():
             best_loss_history = None
             best_best_epoch = None
             best_best_val_map = None
+            best_pred_data = None
             all_trial_maps = []  # track all trial results for spread display
 
             for trial in range(n_trials):
@@ -562,6 +579,19 @@ def main():
                                  trial+1, metrics["mAP_50_95"] * 100, train_time)
                     all_trial_maps.append(metrics["mAP_50_95"])
 
+                    # Save per-image predictions for this trial
+                    trial_pred_data = []
+                    for img_idx2, (es, ei, eb) in enumerate(test_data):
+                        iw, ih = ei.size
+                        # Collect preds for this image from all_preds
+                        img_preds = [p for p in all_preds if p["image_id"] == img_idx2 + 1]
+                        img_gt = [g for g in all_gt if g["image_id"] == img_idx2 + 1]
+                        trial_pred_data.append({
+                            "stem": es, "width": iw, "height": ih,
+                            "preds": [{"class_id": p["class_id"], "confidence": p["confidence"], "bbox": p["box"]} for p in img_preds],
+                            "gt": [{"class_id": g["class_id"], "bbox": g["box"]} for g in img_gt],
+                        })
+
                     # Keep best trial
                     if best_metrics is None or metrics["mAP_50_95"] > best_metrics["mAP_50_95"]:
                         best_metrics = metrics
@@ -569,6 +599,12 @@ def main():
                         best_loss_history = loss_history
                         best_best_epoch = b_epoch
                         best_best_val_map = b_map
+                        best_pred_data = trial_pred_data
+                        # Save best merged model for live inference viewer
+                        save_dir = Path(__file__).parent / "lora_merged" / variant_short / ds_name
+                        save_dir.mkdir(parents=True, exist_ok=True)
+                        torch.save({"model": merged_model.state_dict()},
+                                   save_dir / "merged_best.pth")
 
                     del merged_model
                     torch.cuda.empty_cache()
@@ -624,6 +660,29 @@ def main():
                 run_id,
             ))
             _db_commit_with_retry(target_conn)
+
+            # Write per-image predictions from best trial
+            exp_row = target_conn.execute(
+                "SELECT id FROM experiments WHERE run_id=?", (run_id,)
+            ).fetchone()
+            if exp_row and best_pred_data:
+                exp_id = exp_row[0]
+                # Clear any previous predictions for this experiment
+                _db_execute_with_retry(target_conn,
+                    "DELETE FROM predictions WHERE experiment_id=?", (exp_id,))
+                class_names_json = json.dumps(ds_class_names)
+                for pd in best_pred_data:
+                    _db_execute_with_retry(target_conn, """
+                        INSERT INTO predictions
+                        (experiment_id, eval_image_stem, image_width, image_height,
+                         predictions_json, gt_json, class_names_json)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        exp_id, pd["stem"], pd["width"], pd["height"],
+                        json.dumps(pd["preds"]), json.dumps(pd["gt"]),
+                        class_names_json,
+                    ))
+                _db_commit_with_retry(target_conn)
 
         except Exception as e:
             logger.error("FAILED: %s — %s", run_id, e, exc_info=True)

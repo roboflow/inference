@@ -153,6 +153,22 @@ def init_db(db_path=None):
         power_w REAL,
         temp_c REAL
     )""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS predictions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        experiment_id INTEGER NOT NULL,
+        eval_image_stem TEXT NOT NULL,
+        image_width INTEGER,
+        image_height INTEGER,
+        predictions_json TEXT NOT NULL,
+        gt_json TEXT NOT NULL,
+        class_names_json TEXT,
+        FOREIGN KEY (experiment_id) REFERENCES experiments(id)
+    )""")
+    try:
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_pred_exp ON predictions(experiment_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_pred_stem ON predictions(experiment_id, eval_image_stem)")
+    except Exception:
+        pass
     conn.commit()
     return conn
 
@@ -728,6 +744,7 @@ def run_finetune_and_eval(
         all_preds = []
         all_gt = []
         per_image_results = []
+        per_image_pred_data = []  # for predictions table
 
         for img_idx, stem in enumerate(ds_info["test_stems"]):
             image_id = img_idx + 1  # 1-indexed for COCO
@@ -759,8 +776,9 @@ def run_finetune_and_eval(
             all_preds.extend(preds)
 
             # Convert GT from normalized YOLO to absolute xyxy for dataset-level eval
+            gt_abs = []
             for b in gt_boxes:
-                all_gt.append({
+                gt_abs.append({
                     "image_id": image_id,
                     "class_id": b["class_id"],
                     "box": [
@@ -770,6 +788,15 @@ def run_finetune_and_eval(
                         (b["cy"] + b["h"]/2) * img_h,
                     ],
                 })
+            all_gt.extend(gt_abs)
+
+            # Store per-image predictions for the predictions table
+            per_image_pred_data.append({
+                "stem": stem,
+                "width": img_w, "height": img_h,
+                "preds": [{"class_id": p["class_id"], "confidence": p["confidence"], "bbox": p["box"]} for p in preds],
+                "gt": [{"class_id": g["class_id"], "bbox": g["box"]} for g in gt_abs],
+            })
 
             # Per-image metrics (for eval_results table detail)
             img_metrics = compute_map(
@@ -816,6 +843,21 @@ def run_finetune_and_eval(
                     exp_id, stem, metrics["mAP_50"], metrics["mAP_50_95"],
                     json.dumps(metrics["per_class_ap"]),
                     json.dumps(metrics["conf_metrics"]),
+                ))
+            _db_commit_with_retry(conn)
+
+            # Write per-image predictions for visualization
+            class_names_json = json.dumps(class_names)
+            for pd in per_image_pred_data:
+                _db_execute_with_retry(conn, """
+                    INSERT INTO predictions
+                    (experiment_id, eval_image_stem, image_width, image_height,
+                     predictions_json, gt_json, class_names_json)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    exp_id, pd["stem"], pd["width"], pd["height"],
+                    json.dumps(pd["preds"]), json.dumps(pd["gt"]),
+                    class_names_json,
                 ))
             _db_commit_with_retry(conn)
 

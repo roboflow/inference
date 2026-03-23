@@ -2880,8 +2880,8 @@
         const hasLoraNano = true;
         const hasLora2XL = true;
         let tableHtml = `<div class="table-wrap"><table><thead><tr>
-          <th>Dataset</th><th>Cls</th><th>Train</th>
-          <th>Gemini</th>`;
+          <th>Dataset</th><th>Cls</th><th>Images</th>
+          <th>Gemini</th><th>OWLv2</th><th>SAM3</th>`;
         if (hasLoraNano) tableHtml += `<th>LoRA Nano</th>`;
         if (hasLoraBase) tableHtml += `<th>LoRA Med</th>`;
         if (hasLora2XL) tableHtml += `<th>LoRA 2XL</th>`;
@@ -2907,6 +2907,8 @@
 
         let totalLoraBaseMap = 0, totalLoraNanoMap = 0, totalLora2XLMap = 0, nLoraBase = 0, nLoraNano = 0, nLora2XL = 0;
         let total2XLMap = 0, n2XL = 0;
+        let totalOwlv2Map = 0, nOwlv2 = 0;
+        let totalSam3Map = 0, nSam3 = 0;
 
         for (const r of rows) {
           const dsName = (r.dataset_name || '').replace(/-fsod-\w+$/, '');
@@ -2917,6 +2919,8 @@
           const loraNano = r.lora_nano || {};
           const lora2XL = r.lora_2xlarge || {};
           const gemini = GEMINI_RESULTS[r.dataset_name] || {};
+          const owlv2 = r.owlv2 || {};
+          const sam3 = r.sam3 || {};
 
           const nanoMap = nano.mAP_50_95;
           const baseMap = base.mAP_50_95;
@@ -2925,8 +2929,10 @@
           const loraNanoMap = loraNano.best_mAP_50_95;
           const lora2XLMap = lora2XL.best_mAP_50_95;
           const geminiMap = gemini.mAP_50_95;
+          const owlv2Map = owlv2.mAP_50_95;
+          const sam3Map = sam3.mAP_50_95;
 
-          const vals = [nanoMap, baseMap, xl2Map, loraBaseMap, loraNanoMap, lora2XLMap, geminiMap].filter(v => v != null);
+          const vals = [nanoMap, baseMap, xl2Map, loraBaseMap, loraNanoMap, lora2XLMap, geminiMap, owlv2Map, sam3Map].filter(v => v != null);
           const bestVal = vals.length ? Math.max(...vals) : null;
 
           if (nanoMap != null) { totalNanoMap += nanoMap; nNano++; }
@@ -2936,6 +2942,8 @@
           if (loraNanoMap != null) { totalLoraNanoMap += loraNanoMap; nLoraNano++; }
           if (lora2XLMap != null) { totalLora2XLMap += lora2XLMap; nLora2XL++; }
           if (geminiMap != null) { totalGeminiMap += geminiMap; nGemini++; }
+          if (owlv2Map != null) { totalOwlv2Map += owlv2Map; nOwlv2++; }
+          if (sam3Map != null) { totalSam3Map += sam3Map; nSam3++; }
 
           const nanoDetail = nano.num_epochs ? `${nano.num_epochs}ep · ${fmtT(nano.train_time_seconds)}` : '';
           const baseDetail = base.num_epochs ? `${base.num_epochs}ep · ${fmtT(base.train_time_seconds)}` : '';
@@ -2950,27 +2958,31 @@
           const loraNanoDetail = loraNano.best_num_epochs ? `${loraNano.best_num_epochs}ep · ${fmtT(loraNano.best_train_time)}${fmtSpread(loraNano)}` : '';
           const lora2XLDetail = lora2XL.best_num_epochs ? `${lora2XL.best_num_epochs}ep · ${fmtT(lora2XL.best_train_time)}${fmtSpread(lora2XL)}` : '';
           const geminiDetail = gemini.cluster || '';
+          const owlv2Detail = owlv2.train_time_seconds != null ? `${fmtT(owlv2.train_time_seconds)}` : '';
+          const sam3Detail = sam3.train_time_seconds != null ? `${fmtT(sam3.train_time_seconds)}` : '';
 
           // Status: find what's currently running
-          const anyRunning = [loraBase, loraNano, lora2XL, nano, base, xl2].find(x => x.status === 'running');
+          const anyRunning = [loraBase, loraNano, lora2XL, nano, base, xl2, owlv2, sam3].find(x => x.status === 'running');
           let statusHtml;
           if (anyRunning) {
-            const label = anyRunning === loraBase ? 'LoRA Med' : anyRunning === loraNano ? 'LoRA Nano' : anyRunning === lora2XL ? 'LoRA 2XL' : anyRunning === nano ? 'FT Nano' : anyRunning === base ? 'FT Med' : 'FT 2XL';
+            const label = anyRunning === sam3 ? 'SAM3' : anyRunning === owlv2 ? 'OWLv2' : anyRunning === loraBase ? 'LoRA Med' : anyRunning === loraNano ? 'LoRA Nano' : anyRunning === lora2XL ? 'LoRA 2XL' : anyRunning === nano ? 'FT Nano' : anyRunning === base ? 'FT Med' : 'FT 2XL';
             const ep = anyRunning.current_epoch != null ? ` ${anyRunning.current_epoch}/${anyRunning.num_epochs || anyRunning.best_num_epochs || '?'}` : '';
             statusHtml = `<span style="color:var(--accent)">${label}${ep}</span>`;
           } else {
-            const done = [loraBaseMap, loraNanoMap, lora2XLMap, nanoMap, baseMap, xl2Map].filter(v => v != null).length;
-            const total = 6;  // LoRA nano + LoRA base + LoRA 2XL + FT nano + FT base + FT 2XL
+            const done = [loraBaseMap, loraNanoMap, lora2XLMap, nanoMap, baseMap, xl2Map, owlv2Map, sam3Map].filter(v => v != null).length;
+            const total = 8;  // LoRA nano + LoRA med + LoRA 2XL + FT nano + FT med + FT 2XL + OWLv2 + SAM3
             statusHtml = done === total
               ? `<span style="color:var(--green)">${done}/${total}</span>`
               : `<span style="color:var(--text-dim)">${done}/${total}</span>`;
           }
 
-          tableHtml += `<tr>
+          tableHtml += `<tr class="ftcompare-row" data-dataset="${r.dataset_name}" style="cursor:pointer" title="Click to view predictions">
             <td title="${r.dataset_name}">${dsName}</td>
             <td>${r.dataset_num_classes || '-'}</td>
             <td>${r.num_train_images || '-'}</td>
-            <td>${mapCell(geminiMap, geminiDetail, geminiMap === bestVal)}</td>`;
+            <td>${mapCell(geminiMap, geminiDetail, geminiMap === bestVal)}</td>
+            <td>${mapCell(owlv2Map, owlv2Detail, owlv2Map === bestVal)}</td>
+            <td>${mapCell(sam3Map, sam3Detail, sam3Map === bestVal)}</td>`;
           if (hasLoraNano) tableHtml += `<td>${mapCell(loraNanoMap, loraNanoDetail, loraNanoMap === bestVal)}</td>`;
           if (hasLoraBase) tableHtml += `<td>${mapCell(loraBaseMap, loraBaseDetail, loraBaseMap === bestVal)}</td>`;
           if (hasLora2XL) tableHtml += `<td>${mapCell(lora2XLMap, lora2XLDetail, lora2XLMap === bestVal)}</td>`;
@@ -2988,10 +3000,12 @@
         const avgLoraNano = nLoraNano ? (totalLoraNanoMap / nLoraNano * 100).toFixed(1) + '%' : '-';
         const avgLora2XL = nLora2XL ? (totalLora2XLMap / nLora2XL * 100).toFixed(1) + '%' : '-';
         const avgGemini = nGemini ? (totalGeminiMap / nGemini * 100).toFixed(1) + '%' : '-';
+        const avgOwlv2 = nOwlv2 ? (totalOwlv2Map / nOwlv2 * 100).toFixed(1) + '%' : '-';
+        const avgSam3 = nSam3 ? (totalSam3Map / nSam3 * 100).toFixed(1) + '%' : '-';
 
         tableHtml += `<tr style="background:var(--bg);font-weight:700;border-top:2px solid var(--border)">
           <td>AVERAGE</td><td></td><td></td>
-          <td>${avgGemini}</td>`;
+          <td>${avgGemini}</td><td>${avgOwlv2}</td><td>${avgSam3}</td>`;
         if (hasLoraNano) tableHtml += `<td>${avgLoraNano}</td>`;
         if (hasLoraBase) tableHtml += `<td>${avgLoraBase}</td>`;
         if (hasLora2XL) tableHtml += `<td>${avgLora2XL}</td>`;
@@ -3009,6 +3023,14 @@
         }
 
         container.innerHTML = summaryHtml + tableHtml + chartHtml;
+
+        // Add click handlers for prediction viewer
+        document.querySelectorAll('.ftcompare-row').forEach(row => {
+          row.addEventListener('click', () => {
+            const dsName = row.dataset.dataset;
+            if (dsName) PredViewer.open(dsName);
+          });
+        });
 
         // Draw bar chart
         if (anyCompleted) {
@@ -3196,6 +3218,328 @@
     }
     loadAll();
     refreshIntervalId = setInterval(loadAll, refreshRateMs);
+
+    // ─── Prediction Viewer ──────────────────────────────────────
+    const PredViewer = (() => {
+      let currentDataset = null;
+      let experiments = [];
+      let images = [];
+      let currentImgIdx = 0;
+      let mode = 'compare';  // pred, gt, compare
+      let conf = parseFloat(localStorage.getItem('pv-conf') || '0.25');
+
+      function getModal() {
+        let m = document.getElementById('pred-viewer-modal');
+        if (m) return m;
+        m = document.createElement('div');
+        m.id = 'pred-viewer-modal';
+        m.innerHTML = `
+          <style>
+            #pred-viewer-modal {
+              display:none; position:fixed; top:0; left:0; right:0; bottom:0;
+              background:rgba(0,0,0,0.95); z-index:10000; flex-direction:column;
+            }
+            #pred-viewer-modal.active { display:flex; }
+            .pv-header {
+              display:flex; align-items:center; gap:12px; padding:8px 16px;
+              background:var(--surface); border-bottom:1px solid var(--border); flex-shrink:0;
+            }
+            .pv-header h3 { margin:0; color:var(--text); font-size:14px; }
+            .pv-header button {
+              background:var(--surface); color:var(--text); border:1px solid var(--border);
+              padding:4px 8px; border-radius:4px; font-size:12px; cursor:pointer;
+            }
+            .pv-header button:hover { background:var(--border); }
+            .pv-header button.active { background:var(--accent); color:#fff; border-color:var(--accent); }
+            .pv-header .pv-close {
+              margin-left:auto; font-size:20px; cursor:pointer; color:var(--text-dim);
+              background:none; border:none; padding:4px 8px;
+            }
+            .pv-header .pv-close:hover { color:var(--text); }
+            .pv-controls {
+              display:flex; align-items:center; gap:10px; padding:6px 16px;
+              background:var(--bg); border-bottom:1px solid var(--border); flex-shrink:0;
+              font-size:12px; color:var(--text-dim); flex-wrap:wrap;
+            }
+            .pv-controls label { display:flex; align-items:center; gap:4px; }
+            .pv-controls input[type=range] { width:100px; }
+            .pv-body { flex:1; display:flex; overflow:hidden; }
+            .pv-grid-area {
+              flex:1; overflow:auto; padding:8px;
+            }
+            .pv-grid {
+              display:grid; gap:4px; width:100%; height:100%;
+            }
+            .pv-grid-cell {
+              position:relative; overflow:hidden; background:#111;
+              display:flex; align-items:center; justify-content:center;
+              cursor:pointer;
+            }
+            .pv-grid-cell:hover { outline:2px solid var(--accent); z-index:1; }
+            .pv-grid-cell img {
+              max-width:100%; max-height:100%; object-fit:contain;
+              transition: opacity 0.2s;
+            }
+            .pv-grid-cell img.loading { opacity:0; }
+            .pv-grid-cell .pv-spinner {
+              position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+              width:28px; height:28px; border:3px solid rgba(255,255,255,0.2);
+              border-top-color:var(--accent); border-radius:50%;
+              animation:pv-spin 0.8s linear infinite;
+            }
+            @keyframes pv-spin { to { transform:translate(-50%,-50%) rotate(360deg); } }
+            .pv-grid-cell .pv-cell-label {
+              position:absolute; top:0; left:0; right:0;
+              background:rgba(0,0,0,0.7); color:#fff; font-size:11px;
+              padding:3px 6px; text-align:center; pointer-events:none;
+            }
+            .pv-zoom-overlay {
+              display:none; position:fixed; top:0; left:0; right:0; bottom:0;
+              background:rgba(0,0,0,0.92); z-index:10001;
+              align-items:center; justify-content:center; cursor:zoom-out;
+              flex-direction:column;
+            }
+            .pv-zoom-overlay.active { display:flex; }
+            .pv-zoom-overlay img {
+              max-width:95vw; max-height:90vh; object-fit:contain;
+            }
+            .pv-zoom-overlay .pv-zoom-label {
+              color:#fff; font-size:14px; margin-top:8px; text-align:center;
+            }
+            .pv-sidebar {
+              width:200px; overflow-y:auto; border-left:1px solid var(--border);
+              background:var(--surface); flex-shrink:0;
+            }
+            .pv-sidebar .pv-img-item {
+              padding:5px 8px; font-size:11px; cursor:pointer; border-bottom:1px solid var(--border);
+              color:var(--text-dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+            }
+            .pv-sidebar .pv-img-item:hover { background:var(--border); }
+            .pv-sidebar .pv-img-item.active { background:var(--accent); color:#fff; }
+            .pv-nav { display:flex; align-items:center; gap:6px; }
+            .pv-nav button { min-width:28px; }
+            .pv-drop-zone {
+              border:2px dashed var(--border); border-radius:8px; padding:8px 16px;
+              cursor:pointer; color:var(--text-dim); font-size:12px;
+              transition: border-color 0.2s;
+            }
+            .pv-drop-zone:hover, .pv-drop-zone.drag-over { border-color:var(--accent); color:var(--text); }
+          </style>
+          <div class="pv-header">
+            <h3 id="pv-title">-</h3>
+            <div class="pv-nav">
+              <button id="pv-prev" title="Previous (Left arrow)">&larr;</button>
+              <span id="pv-counter" style="color:var(--text-dim);font-size:12px">0/0</span>
+              <button id="pv-next" title="Next (Right arrow)">&rarr;</button>
+            </div>
+            <button id="pv-mode-compare" class="active" title="Compare pred vs GT (1)">Compare</button>
+            <button id="pv-mode-pred" title="Predictions only (2)">Pred</button>
+            <button id="pv-mode-gt" title="Ground Truth only (3)">GT</button>
+            <button class="pv-close" id="pv-close">&times;</button>
+          </div>
+          <div class="pv-controls">
+            <label>Confidence: <input type="range" id="pv-conf" min="0" max="100" value="25" step="5">
+            <span id="pv-conf-val">25%</span></label>
+            <span id="pv-img-stem" style="margin-left:8px;color:var(--text-dim)"></span>
+          </div>
+          <div class="pv-body">
+            <div class="pv-grid-area">
+              <div class="pv-grid" id="pv-grid"></div>
+            </div>
+            <div class="pv-sidebar" id="pv-sidebar"></div>
+          </div>
+        `;
+        document.body.appendChild(m);
+
+        // Wire up controls
+        document.getElementById('pv-close').onclick = () => close();
+        document.getElementById('pv-prev').onclick = () => navigate(-1);
+        document.getElementById('pv-next').onclick = () => navigate(1);
+        document.getElementById('pv-mode-pred').onclick = () => setMode('pred');
+        document.getElementById('pv-mode-gt').onclick = () => setMode('gt');
+        document.getElementById('pv-mode-compare').onclick = () => setMode('compare');
+        const confSlider = document.getElementById('pv-conf');
+        confSlider.oninput = () => {
+          conf = parseInt(confSlider.value) / 100;
+          localStorage.setItem('pv-conf', conf);
+          document.getElementById('pv-conf-val').textContent = confSlider.value + '%';
+          updateGrid();
+        };
+        m.addEventListener('click', (e) => { if (e.target === m) close(); });
+        return m;
+      }
+
+      async function open(datasetName) {
+        currentDataset = datasetName;
+        currentImgIdx = 0;
+        mode = 'compare';
+        conf = parseFloat(localStorage.getItem('pv-conf') || '0.25');
+
+        const modal = getModal();
+        modal.classList.add('active');
+        document.getElementById('pv-title').textContent = datasetName.replace(/-fsod-\w+$/, '');
+        const confPct = Math.round(conf * 100);
+        document.getElementById('pv-conf').value = confPct;
+        document.getElementById('pv-conf-val').textContent = confPct + '%';
+        document.querySelectorAll('#pred-viewer-modal .pv-header button[id^=pv-mode]').forEach(b => b.classList.remove('active'));
+        document.getElementById('pv-mode-compare').classList.add('active');
+
+        try {
+          const resp = await fetch(`/api/predictions/list?dataset_name=${encodeURIComponent(datasetName)}`);
+          const data = await resp.json();
+          experiments = data.experiments || [];
+          images = data.images || [];
+
+          if (!images.length) {
+            document.getElementById('pv-grid').innerHTML = '<p style="color:var(--text-dim);padding:20px">No test images found for this dataset.</p>';
+            return;
+          }
+
+          renderSidebar();
+          updateGrid();
+        } catch (e) {
+          document.getElementById('pv-grid').innerHTML = `<p style="color:#f44;padding:20px">Error: ${e.message}</p>`;
+        }
+      }
+
+      function renderSidebar() {
+        const sidebar = document.getElementById('pv-sidebar');
+        sidebar.innerHTML = images.map((stem, i) => {
+          const short = stem.length > 30 ? stem.substring(0, 27) + '...' : stem;
+          return `<div class="pv-img-item${i === currentImgIdx ? ' active' : ''}" data-idx="${i}" title="${stem}">${short}</div>`;
+        }).join('');
+        sidebar.querySelectorAll('.pv-img-item').forEach(item => {
+          item.onclick = () => {
+            currentImgIdx = parseInt(item.dataset.idx);
+            renderSidebar();
+            updateGrid();
+          };
+        });
+      }
+
+      function updateGrid() {
+        if (!images.length) return;
+        const stem = images[currentImgIdx];
+        const grid = document.getElementById('pv-grid');
+
+        // Compute grid dimensions based on number of experiments
+        const n = experiments.length || 1;
+        const cols = n <= 2 ? n : n <= 4 ? 2 : n <= 6 ? 3 : 4;
+        const rows = Math.ceil(n / cols);
+        grid.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+        grid.style.gridTemplateRows = `repeat(${rows}, 1fr)`;
+
+        // Build grid cells — sort to match table column order:
+        // OWLv2, SAM3, LoRA Nano, LoRA Med, LoRA 2XL, FT Nano, FT Med, FT 2XL
+        const ORDER = {
+          'zero_shot:owlv2-large': 0, 'zero_shot:sam3': 1,
+          'lora:rfdetr-nano': 2, 'lora:rfdetr-medium': 3, 'lora:rfdetr-2xlarge': 4,
+          'full_finetune:rfdetr-nano': 5, 'full_finetune:rfdetr-medium': 6, 'full_finetune:rfdetr-2xlarge': 7,
+        };
+        const sortedExps = [...experiments].sort((a, b) => {
+          const ka = `${a.method}:${a.model_variant}`, kb = `${b.method}:${b.model_variant}`;
+          return (ORDER[ka] ?? 99) - (ORDER[kb] ?? 99);
+        });
+        let html = '';
+        if (sortedExps.length === 0) {
+          html = '<div class="pv-grid-cell"><p style="color:var(--text-dim)">No completed experiments</p></div>';
+        } else if (mode === 'gt') {
+          // GT mode: show one large GT image (same for all models)
+          grid.style.gridTemplateColumns = '1fr';
+          grid.style.gridTemplateRows = '1fr';
+          const exp = sortedExps[0];
+          const url = `/api/predictions/render?experiment_id=${exp.id}&stem=${encodeURIComponent(stem)}&mode=gt&conf=${conf}`;
+          html = `<div class="pv-grid-cell">
+            <div class="pv-spinner"></div>
+            <img src="${url}" class="loading" alt="Ground Truth"
+                 onload="this.classList.remove('loading');this.previousElementSibling.remove()"
+                 onerror="this.previousElementSibling.remove();this.style.opacity=1">
+            <div class="pv-cell-label">Ground Truth</div>
+          </div>`;
+        } else {
+          for (const exp of sortedExps) {
+            const method = exp.method === 'full_finetune' ? 'FT' : exp.method === 'lora' ? 'LoRA' : exp.method || '';
+            const variant = (exp.model_variant || '').replace('rfdetr-', '').replace('owlv2-', 'OWLv2 ');
+            const mAP = exp.mAP_50_95 != null ? ` ${(exp.mAP_50_95 * 100).toFixed(1)}%` : '';
+            const label = `${method} ${variant}${mAP}`;
+            const url = `/api/predictions/render?experiment_id=${exp.id}&stem=${encodeURIComponent(stem)}&mode=${mode}&conf=${conf}`;
+            html += `<div class="pv-grid-cell">
+              <div class="pv-spinner"></div>
+              <img src="${url}" class="loading" alt="${label}"
+                   onload="this.classList.remove('loading');this.previousElementSibling.remove()"
+                   onerror="this.previousElementSibling.remove();this.style.opacity=1">
+              <div class="pv-cell-label">${label}</div>
+            </div>`;
+          }
+        }
+        grid.innerHTML = html;
+
+        // Click-to-zoom on grid cells
+        grid.querySelectorAll('.pv-grid-cell').forEach(cell => {
+          cell.addEventListener('click', () => {
+            const img = cell.querySelector('img');
+            const label = cell.querySelector('.pv-cell-label');
+            if (!img) return;
+            let overlay = document.getElementById('pv-zoom-overlay');
+            if (!overlay) {
+              overlay = document.createElement('div');
+              overlay.id = 'pv-zoom-overlay';
+              overlay.className = 'pv-zoom-overlay';
+              overlay.innerHTML = '<img id="pv-zoom-img"><div class="pv-zoom-label" id="pv-zoom-label"></div>';
+              overlay.addEventListener('click', () => overlay.classList.remove('active'));
+              document.body.appendChild(overlay);
+            }
+            document.getElementById('pv-zoom-img').src = img.src;
+            document.getElementById('pv-zoom-label').textContent = label ? label.textContent : '';
+            overlay.classList.add('active');
+          });
+        });
+
+        document.getElementById('pv-counter').textContent = `${currentImgIdx + 1}/${images.length}`;
+        document.getElementById('pv-img-stem').textContent = stem;
+      }
+
+      function navigate(delta) {
+        if (!images.length) return;
+        currentImgIdx = (currentImgIdx + delta + images.length) % images.length;
+        renderSidebar();
+        updateGrid();
+      }
+
+      function setMode(m) {
+        mode = m;
+        document.querySelectorAll('#pred-viewer-modal .pv-header button[id^=pv-mode]').forEach(b => b.classList.remove('active'));
+        const btn = document.getElementById('pv-mode-' + m);
+        if (btn) btn.classList.add('active');
+        updateGrid();
+      }
+
+      function close() {
+        const modal = document.getElementById('pred-viewer-modal');
+        if (modal) modal.classList.remove('active');
+      }
+
+      // Keyboard shortcuts
+      document.addEventListener('keydown', (e) => {
+        const modal = document.getElementById('pred-viewer-modal');
+        if (!modal || !modal.classList.contains('active')) return;
+        if (e.key === 'Escape') {
+          // Close zoom overlay first, then modal
+          const zoom = document.getElementById('pv-zoom-overlay');
+          if (zoom && zoom.classList.contains('active')) { zoom.classList.remove('active'); }
+          else { close(); }
+          e.preventDefault();
+          return;
+        }
+        else if (e.key === 'ArrowLeft') { navigate(-1); e.preventDefault(); }
+        else if (e.key === 'ArrowRight') { navigate(1); e.preventDefault(); }
+        else if (e.key === '1') { setMode('compare'); e.preventDefault(); }
+        else if (e.key === '2') { setMode('pred'); e.preventDefault(); }
+        else if (e.key === '3') { setMode('gt'); e.preventDefault(); }
+      });
+
+      return { open, close };
+    })();
   </script>
 </body>
 </html>

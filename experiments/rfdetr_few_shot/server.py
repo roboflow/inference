@@ -16,11 +16,292 @@ from socketserver import ThreadingMixIn
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
+from PIL import Image
+
 logger = logging.getLogger(__name__)
 
 DB_PATH = Path(__file__).parent / "results.db"
 COMPARE_DB_PATH = None  # optional second DB for LoRA vs FT comparison
+DATASETS_ROOT = Path.home() / "Downloads" / "rf20-vl-fsod"  # for prediction viewer
 STATIC_DIR = Path(__file__).parent / "frontend"
+SCRIPT_DIR = Path(__file__).parent
+_LIVE_MODEL_LOCK = threading.Lock()  # serialize GPU inference (not model loading)
+_MODEL_POOL = {}  # {key: model} — persistent GPU-resident models
+_MODEL_POOL_READY = False
+
+
+def _init_model_pool():
+    """Lazily load all models into GPU on first inference request."""
+    global _MODEL_POOL, _MODEL_POOL_READY
+    if _MODEL_POOL_READY:
+        return
+    with _LIVE_MODEL_LOCK:
+        if _MODEL_POOL_READY:
+            return  # double-check after lock
+        import torch, sys
+        sys.path.insert(0, str(SCRIPT_DIR))
+        sys.path.insert(0, str(SCRIPT_DIR.parent.parent / "inference_models"))
+        sys.path.insert(0, str(SCRIPT_DIR.parent.parent))
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+        # OWLv2
+        try:
+            from inference_models.models.owlv2.owlv2_hf import OWLv2HF
+            _MODEL_POOL["owlv2-large"] = OWLv2HF.from_pretrained(
+                "google/owlv2-large-patch14-ensemble",
+                device=device, local_files_only=True,
+            )
+            logger.info("Loaded OWLv2 into model pool")
+        except Exception as e:
+            logger.warning("Failed to load OWLv2: %s", e)
+
+        # RF-DETR base models (for FT checkpoint loading)
+        try:
+            from rfdetr import RFDETRNano, RFDETRMedium
+            _MODEL_POOL["rfdetr-nano-base"] = RFDETRNano()
+            logger.info("Loaded RF-DETR Nano into model pool")
+            _MODEL_POOL["rfdetr-medium-base"] = RFDETRMedium()
+            logger.info("Loaded RF-DETR Medium into model pool")
+        except Exception as e:
+            logger.warning("Failed to load RF-DETR nano/medium: %s", e)
+
+        try:
+            from rfdetr import RFDETR2XLarge
+            _MODEL_POOL["rfdetr-2xlarge-base"] = RFDETR2XLarge()
+            logger.info("Loaded RF-DETR 2XLarge into model pool")
+        except Exception as e:
+            logger.warning("Failed to load RF-DETR 2XLarge: %s", e)
+
+        _MODEL_POOL_READY = True
+        logger.info("Model pool ready: %s", list(_MODEL_POOL.keys()))
+
+
+def _run_live_inference(exp, pil_img, class_names):
+    """Run inference using persistent GPU-resident model pool.
+
+    Models are loaded once on first request and kept in memory.
+    Returns list of {class_id, confidence, bbox: [x1,y1,x2,y2]}.
+    """
+    import torch
+    _init_model_pool()
+
+    method = exp["method"] or "full_finetune"
+    variant = exp["model_variant"] or "unknown"
+    ds_name = exp["dataset_name"]
+    nc = exp["dataset_num_classes"] or len(class_names)
+
+    with _LIVE_MODEL_LOCK:
+        try:
+            if method == "zero_shot" and "owlv2" in variant:
+                return _infer_owlv2(pil_img, class_names, nc)
+            elif method == "zero_shot" and "sam3" in variant:
+                return _infer_sam3(pil_img, class_names, nc)
+            elif method == "full_finetune":
+                return _infer_ft(exp, pil_img, class_names, nc)
+            elif method == "lora":
+                return _infer_lora(exp, pil_img, class_names, nc)
+            else:
+                logger.warning("Unknown method/variant: %s/%s", method, variant)
+                return []
+        except Exception as e:
+            logger.error("Live inference failed for %s/%s: %s", method, variant, e)
+            return []
+        finally:
+            torch.cuda.empty_cache()
+
+
+def _infer_owlv2(pil_img, class_names, nc):
+    """Run OWLv2 inference using persistent model pool."""
+    import numpy as np
+    model = _MODEL_POOL.get("owlv2-large")
+    if model is None:
+        logger.warning("OWLv2 not in model pool")
+        return []
+
+    img_np = np.array(pil_img)
+    detections_list = model.infer(
+        img_np, classes=class_names,
+        confidence=0.001, iou_threshold=0.7, max_detections=500,
+    )
+    dets = detections_list[0]
+    preds = []
+    if dets.xyxy is not None and len(dets.xyxy) > 0:
+        for i in range(len(dets.xyxy)):
+            cid = int(dets.class_id[i])
+            if cid >= nc:
+                continue
+            preds.append({
+                "class_id": cid,
+                "confidence": float(dets.confidence[i]),
+                "bbox": [float(x) for x in dets.xyxy[i].tolist()],
+            })
+    preds.sort(key=lambda d: d["confidence"], reverse=True)
+    return preds[:500]
+
+
+def _infer_sam3(pil_img, class_names, nc):
+    """Run SAM3 text-prompt inference — same approach as eval_sam3.py."""
+    import numpy as np, os, sys
+    os.environ.setdefault("ROBOFLOW_API_KEY", "RSgmjzwOlrLb7vivbNyu")
+    sys.path.insert(0, str(SCRIPT_DIR))
+
+    from inference.models.sam3 import SegmentAnything3
+    from inference.core.entities.requests.sam3 import Sam3Prompt
+    from eval_sam3 import mask_polygons_to_bbox
+
+    model = _MODEL_POOL.get("sam3")
+    if model is None:
+        # SAM3 not in pool — load on demand (API-based, not GPU-heavy)
+        model = SegmentAnything3(
+            model_id="sam3/sam3_final",
+            api_key=os.environ["ROBOFLOW_API_KEY"],
+        )
+        _MODEL_POOL["sam3"] = model
+
+    img_w, img_h = pil_img.size
+    img_np = np.array(pil_img)
+    prompts = [Sam3Prompt(type="text", text=cn) for cn in class_names]
+
+    preds = []
+    try:
+        response = model.segment_image(
+            image=img_np,
+            prompts=prompts,
+            output_prob_thresh=0.01,
+            format="polygon",
+        )
+        for prompt_result in response.prompt_results:
+            class_id = prompt_result.prompt_index
+            if class_id >= nc:
+                continue
+            for pred in prompt_result.predictions:
+                bbox = mask_polygons_to_bbox(pred.masks, img_w, img_h)
+                if bbox is None:
+                    continue
+                preds.append({
+                    "class_id": class_id,
+                    "confidence": float(pred.confidence),
+                    "bbox": bbox,
+                })
+    except Exception as e:
+        logger.warning("SAM3 inference failed: %s", e)
+
+    preds.sort(key=lambda d: d["confidence"], reverse=True)
+    return preds[:500]
+
+
+def _infer_ft(exp, pil_img, class_names, nc):
+    """Run fine-tuned RF-DETR inference using pool model + dataset checkpoint."""
+    import torch
+    variant = exp["model_variant"].replace("rfdetr-", "")  # nano, medium, 2xlarge
+    pool_key = f"rfdetr-{variant}-base"
+    model = _MODEL_POOL.get(pool_key)
+    if model is None:
+        logger.warning("RF-DETR %s not in model pool", variant)
+        return []
+
+    ckpt_dir = SCRIPT_DIR / "finetune_outputs" / variant / exp["dataset_name"]
+    ckpt_path = ckpt_dir / "checkpoint_best_total.pth"
+    if not ckpt_path.exists():
+        logger.warning("No FT checkpoint at %s", ckpt_path)
+        return []
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    ckpt = torch.load(str(ckpt_path), map_location=device, weights_only=False)
+    model.model.model.load_state_dict(ckpt["model"], strict=True)
+    model.model.model.eval()
+
+    detections = model.predict(pil_img, threshold=0.01)
+    preds = []
+    if detections.xyxy is not None and len(detections.xyxy) > 0:
+        for i in range(len(detections.xyxy)):
+            cid = int(detections.class_id[i])
+            if cid >= nc:
+                continue
+            preds.append({
+                "class_id": cid,
+                "confidence": float(detections.confidence[i]),
+                "bbox": [float(x) for x in detections.xyxy[i].tolist()],
+            })
+    preds.sort(key=lambda d: d["confidence"], reverse=True)
+    del ckpt
+    return preds[:500]
+
+
+def _infer_lora(exp, pil_img, class_names, nc):
+    """Run LoRA RF-DETR inference using saved merged weights from reeval."""
+    import sys, torch
+    sys.path.insert(0, str(SCRIPT_DIR))
+    sys.path.insert(0, str(SCRIPT_DIR.parent.parent))
+
+    variant = exp["model_variant"]  # "rfdetr-nano", "rfdetr-medium", "rfdetr-2xlarge"
+    variant_short = variant.replace("rfdetr-", "")
+    ds_name = exp["dataset_name"]
+
+    # Look for saved merged weights
+    merged_path = SCRIPT_DIR / "lora_merged" / variant_short / ds_name / "merged_best.pth"
+    if not merged_path.exists():
+        logger.warning("No LoRA merged weights at %s", merged_path)
+        return []
+
+    # Use the pool's base model, load merged weights
+    pool_key = f"rfdetr-{variant_short}-base"
+    model = _MODEL_POOL.get(pool_key)
+    if model is None:
+        logger.warning("RF-DETR %s not in model pool for LoRA", variant_short)
+        return []
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    ckpt = torch.load(str(merged_path), map_location=device, weights_only=False)
+
+    # Merged model may have different num_classes than base — reinitialize head
+    ckpt_nc = ckpt["model"]["class_embed.bias"].shape[0]
+    model.model.model.reinitialize_detection_head(ckpt_nc)
+    model.model.model.load_state_dict(ckpt["model"], strict=True)
+    model.model.model = model.model.model.to(device).eval()
+
+    detections = model.predict(pil_img, threshold=0.01)
+
+    # Restore base model head for next use (COCO 91 classes)
+    base_nc = 91
+    model.model.model.reinitialize_detection_head(base_nc)
+
+    preds = []
+    if detections.xyxy is not None and len(detections.xyxy) > 0:
+        for i in range(len(detections.xyxy)):
+            cid = int(detections.class_id[i])
+            if cid >= nc:
+                continue
+            preds.append({
+                "class_id": cid,
+                "confidence": float(detections.confidence[i]),
+                "bbox": [float(x) for x in detections.xyxy[i].tolist()],
+            })
+    preds.sort(key=lambda d: d["confidence"], reverse=True)
+    del ckpt
+    return preds[:500]
+
+
+def _cache_predictions(conn, experiment_id, stem, img_w, img_h, preds, gt, class_names):
+    """Cache predictions+GT in the predictions table for future requests."""
+    # Ensure table exists
+    conn.execute("""CREATE TABLE IF NOT EXISTS predictions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        experiment_id INTEGER NOT NULL,
+        eval_image_stem TEXT NOT NULL,
+        image_width INTEGER, image_height INTEGER,
+        predictions_json TEXT NOT NULL,
+        gt_json TEXT NOT NULL,
+        class_names_json TEXT,
+        FOREIGN KEY (experiment_id) REFERENCES experiments(id)
+    )""")
+    conn.execute("""INSERT OR REPLACE INTO predictions
+        (experiment_id, eval_image_stem, image_width, image_height,
+         predictions_json, gt_json, class_names_json)
+        VALUES (?, ?, ?, ?, ?, ?, ?)""",
+        (experiment_id, stem, img_w, img_h,
+         json.dumps(preds), json.dumps(gt), json.dumps(class_names)))
+    conn.commit()
 IS_PHASE2 = False  # set by --db flag if phase 2 DB is detected
 IS_BENCHMARK = False  # set by --db flag if benchmark DB is detected
 SYNC_MANAGER = None  # set by --remote flag
@@ -30,7 +311,7 @@ class RemoteSyncManager:
     """Background thread that syncs a remote SQLite DB to local via scp."""
 
     def __init__(self, remote_host, remote_db_path, local_db_path, interval=10):
-        self.remote_host = remote_host  # e.g. "user@hostname"
+        self.remote_host = remote_host  # e.g. "roboflow@100.94.130.94"
         self.remote_db_path = remote_db_path
         self.local_db_path = local_db_path
         self.interval = interval
@@ -266,6 +547,10 @@ class Handler(SimpleHTTPRequestHandler):
                 self._api_config_detail(conn, qs)
             elif path == "/api/ft_comparison":
                 self._api_ft_comparison(conn, qs)
+            elif path == "/api/predictions/list":
+                self._api_predictions_list(conn, qs)
+            elif path == "/api/predictions/render":
+                self._api_predictions_render(conn, qs)
             else:
                 self._json_response({"error": "unknown endpoint"}, 404)
         except Exception:
@@ -1120,6 +1405,23 @@ class Handler(SimpleHTTPRequestHandler):
                     "num_train_images": r["num_train_images"],
                     "dataset_num_classes": r["dataset_num_classes"],
                 }
+            # Don't let zero-shot rows (num_train_images=0) overwrite real counts
+            if r["num_train_images"] and r["num_train_images"] > 0:
+                ft_by_dataset[ds]["num_train_images"] = r["num_train_images"]
+                ft_by_dataset[ds]["dataset_num_classes"] = r["dataset_num_classes"]
+
+            # OWLv2 zero-shot results
+            if method == "zero_shot" or "owlv2" in variant:
+                owlv2_key = variant  # e.g. "owlv2-large"
+                ft_by_dataset[ds][owlv2_key] = {
+                    "mAP_50": r["mAP_50"],
+                    "mAP_50_95": r["mAP_50_95"],
+                    "train_time_seconds": r["train_time_seconds"],
+                    "status": r["status"],
+                    "current_epoch": r.get("current_epoch"),
+                    "num_epochs": 0,
+                }
+                continue
 
             # LoRA re-eval results live in the same DB — keyed by model_variant
             if method == "lora":
@@ -1219,6 +1521,8 @@ class Handler(SimpleHTTPRequestHandler):
                 "lora_medium": lora_data.get("lora_medium"),
                 "lora_nano": lora_data.get("lora_nano"),
                 "lora_2xlarge": lora_data.get("lora_2xlarge"),
+                "owlv2": ft_by_dataset.get(ds, {}).get("owlv2-large"),
+                "sam3": ft_by_dataset.get(ds, {}).get("sam3"),
             }
             comparison.append(row)
 
@@ -1369,6 +1673,234 @@ class Handler(SimpleHTTPRequestHandler):
             logging.exception("Error building viz manifest")
             self._json_response({"error": str(e), "ready": False})
 
+    # ── Prediction Viewer Endpoints ──────────────────────────────
+
+    PALETTE = [
+        "#FF3838", "#FF9D97", "#FF701F", "#FFB21D", "#CFD231",
+        "#48F90A", "#92CC17", "#3DDB86", "#1A9334", "#00D4BB",
+        "#2C99A8", "#00C2FF", "#344593", "#6473FF", "#0018EC",
+        "#8438FF", "#520085", "#CB38FF", "#FF95C8", "#FF37C7",
+    ]
+
+    @staticmethod
+    def _load_font(size):
+        from PIL import ImageFont
+        for p in ["/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+                   "/usr/share/fonts/TTF/DejaVuSans-Bold.ttf"]:
+            try:
+                return ImageFont.truetype(p, size)
+            except (OSError, IOError):
+                continue
+        return ImageFont.load_default()
+
+    def _api_predictions_list(self, conn, qs):
+        """List experiments and test images for a dataset (no precomputed data needed)."""
+        dataset_name = qs.get("dataset_name", [None])[0]
+        if not dataset_name:
+            return self._json_response({"error": "dataset_name required"}, 400)
+
+        # Get all completed experiments for this dataset
+        exps = conn.execute("""
+            SELECT id, run_id, dataset_name, model_variant, method, mAP_50_95
+            FROM experiments
+            WHERE dataset_name = ? AND status = 'completed'
+            ORDER BY
+                CASE method WHEN 'full_finetune' THEN 0 WHEN 'lora' THEN 1 ELSE 2 END,
+                model_variant
+        """, (dataset_name,)).fetchall()
+
+        # Discover test image stems from the dataset directory
+        ds_dir = DATASETS_ROOT / dataset_name / "test" / "images"
+        stems = []
+        if ds_dir.exists():
+            stems = sorted(p.stem for p in ds_dir.iterdir()
+                           if p.suffix.lower() in (".jpg", ".jpeg", ".png", ".bmp"))
+
+        self._json_response({
+            "dataset_name": dataset_name,
+            "experiments": [dict(e) for e in exps],
+            "images": stems,
+        })
+
+    def _api_predictions_render(self, conn, qs):
+        """Render annotated image: check DB cache, compute on-the-fly if missing."""
+        experiment_id = qs.get("experiment_id", [None])[0]
+        stem = qs.get("stem", [None])[0]
+        mode = qs.get("mode", ["compare"])[0]  # pred, gt, compare
+        conf = float(qs.get("conf", ["0.25"])[0])
+
+        if not experiment_id or not stem:
+            return self._json_response({"error": "experiment_id and stem required"}, 400)
+
+        # Get experiment info
+        exp = conn.execute(
+            "SELECT * FROM experiments WHERE id=?", (experiment_id,)
+        ).fetchone()
+        if not exp:
+            return self._json_response({"error": "experiment not found"}, 404)
+
+        ds_name = exp["dataset_name"]
+
+        # Try DB cache first
+        cached = None
+        try:
+            cached = conn.execute("""
+                SELECT predictions_json, gt_json, class_names_json, image_width, image_height
+                FROM predictions WHERE experiment_id=? AND eval_image_stem=?
+            """, (experiment_id, stem)).fetchone()
+        except Exception:
+            pass  # predictions table may not exist
+
+        if cached:
+            preds = json.loads(cached["predictions_json"])
+            gt = json.loads(cached["gt_json"])
+            class_names = json.loads(cached["class_names_json"]) if cached["class_names_json"] else []
+        else:
+            preds = []
+            gt = []
+            # Load class names from data.yaml
+            import yaml
+            yaml_path = DATASETS_ROOT / ds_name / "data.yaml"
+            if yaml_path.exists():
+                with open(yaml_path) as f:
+                    data = yaml.safe_load(f)
+                class_names = data.get("names", [])
+                if isinstance(class_names, dict):
+                    class_names = [class_names[k] for k in sorted(class_names.keys())]
+            else:
+                class_names = []
+
+            # Load GT from label file
+            lbl_path = DATASETS_ROOT / ds_name / "test" / "labels" / f"{stem}.txt"
+            pil_img = self._load_dataset_image(ds_name, "test", stem)
+            if pil_img:
+                img_w, img_h = pil_img.size
+                if lbl_path.exists():
+                    for line in open(lbl_path).read().strip().split("\n"):
+                        if not line.strip():
+                            continue
+                        parts = line.strip().split()
+                        cid = int(parts[0])
+                        cx, cy, bw, bh = float(parts[1]), float(parts[2]), float(parts[3]), float(parts[4])
+                        gt.append({
+                            "class_id": cid,
+                            "bbox": [
+                                (cx - bw/2) * img_w, (cy - bh/2) * img_h,
+                                (cx + bw/2) * img_w, (cy + bh/2) * img_h,
+                            ],
+                        })
+            # Predictions not cached — compute on-the-fly
+            pil_img = self._load_dataset_image(ds_name, "test", stem)
+            if pil_img:
+                preds = _run_live_inference(exp, pil_img, class_names)
+                # Cache for next time
+                try:
+                    _cache_predictions(conn, int(experiment_id), stem,
+                                       pil_img.size[0], pil_img.size[1],
+                                       preds, gt, class_names)
+                except Exception:
+                    pass  # cache write failure is non-fatal
+
+        # Load source image
+        pil_img = self._load_dataset_image(ds_name, "test", stem)
+        if pil_img is None:
+            return self._json_response({"error": f"image not found: {ds_name}/test/{stem}"}, 404)
+
+        # Render
+        out = self._render_annotated(pil_img, preds, gt, class_names, mode, conf,
+                                      label=None)  # label shown in frontend grid cell, not baked into image
+        self._send_jpeg(out)
+
+    def _render_annotated(self, pil_img, preds, gt, class_names, mode, conf, label=None):
+        """Render predictions/GT on an image. Returns PIL Image."""
+        from PIL import ImageDraw
+        import numpy as np
+
+        img_scale = max(pil_img.width, pil_img.height) / 800
+        font_sz = max(10, int(12 * img_scale))
+        line_w = max(1, int(2 * img_scale))
+        thin_w = max(1, int(1.5 * img_scale))
+
+        if mode == "compare":
+            try:
+                from supervision import Color, Detections
+                from inference.core.workflows.core_steps.visualizations.common.annotators.model_comparison import ModelComparisonAnnotator
+
+                scene = np.array(pil_img)[:, :, ::-1].copy()
+                pred_boxes = [d["bbox"] for d in preds if d.get("confidence", 1) >= conf]
+                pred_xyxy = np.array(pred_boxes, dtype=np.float32).reshape(-1, 4) if pred_boxes else np.empty((0, 4), dtype=np.float32)
+                gt_xyxy = np.array([g["bbox"] for g in gt], dtype=np.float32).reshape(-1, 4) if gt else np.empty((0, 4), dtype=np.float32)
+
+                annotator = ModelComparisonAnnotator(
+                    color_a=Color.GREEN, color_b=Color.RED,
+                    background_color=Color.BLACK, opacity=0.7, force_box=True,
+                )
+                hybrid = annotator.annotate(scene, Detections(xyxy=pred_xyxy), Detections(xyxy=gt_xyxy))
+                out = Image.fromarray(hybrid[:, :, ::-1])
+            except Exception as e:
+                logger.warning("Compare render failed: %s", e)
+                out = pil_img.copy()
+        elif mode == "gt":
+            out = pil_img.copy()
+            draw = ImageDraw.Draw(out)
+            font = self._load_font(font_sz)
+            for g in gt:
+                x1, y1, x2, y2 = g["bbox"]
+                cid = g["class_id"]
+                color = self.PALETTE[cid % len(self.PALETTE)]
+                lbl = class_names[cid] if cid < len(class_names) else f"cls{cid}"
+                draw.rectangle([x1, y1, x2, y2], outline=color, width=thin_w)
+                draw.text((x1, max(y1 - font_sz - 2, 0)), f"GT: {lbl}", fill=color, font=font)
+        else:  # pred
+            out = pil_img.copy()
+            draw = ImageDraw.Draw(out)
+            font = self._load_font(font_sz)
+            for det in sorted(preds, key=lambda d: d.get("confidence", 0)):
+                if det.get("confidence", 0) < conf:
+                    continue
+                x1, y1, x2, y2 = det["bbox"]
+                cid = det["class_id"]
+                color = self.PALETTE[cid % len(self.PALETTE)]
+                lbl = class_names[cid] if cid < len(class_names) else f"cls{cid}"
+                txt = f"{lbl} {det['confidence']:.0%}"
+                draw.rectangle([x1, y1, x2, y2], outline=color, width=line_w)
+                bbox = draw.textbbox((x1, y1), txt, font=font)
+                draw.rectangle([bbox[0]-1, bbox[1]-1, bbox[2]+1, bbox[3]+1], fill=color)
+                draw.text((x1, y1), txt, fill="white", font=font)
+
+        # Add model label overlay
+        if label:
+            from PIL import ImageDraw as _ID
+            draw = _ID.Draw(out)
+            label_font = self._load_font(max(14, int(16 * img_scale)))
+            draw.text((5, 5), label, fill="white", font=label_font,
+                       stroke_width=2, stroke_fill="black")
+        return out
+
+    def _send_jpeg(self, pil_img, quality=85):
+        """Encode PIL image as JPEG and send HTTP response."""
+        import io
+        buf = io.BytesIO()
+        pil_img.save(buf, format="JPEG", quality=quality)
+        data = buf.getvalue()
+        self.send_response(200)
+        self.send_header("Content-Type", "image/jpeg")
+        self.send_header("Content-Length", len(data))
+        self.send_header("Cache-Control", "public, max-age=60")
+        self.send_header("Connection", "close")
+        self.end_headers()
+        self.wfile.write(data)
+
+    def _load_dataset_image(self, dataset_name, split, stem):
+        """Load a raw image from the YOLO dataset directory."""
+        ds_dir = DATASETS_ROOT / dataset_name
+        img_dir = ds_dir / split / "images"
+        for ext in (".jpg", ".jpeg", ".png", ".bmp"):
+            candidate = img_dir / f"{stem}{ext}"
+            if candidate.exists():
+                return Image.open(candidate).convert("RGB")
+        return None
+
     def _serve_viz_file(self, path):
         """Serve files from viz_champion/ directory under /viz/ URL prefix."""
         import mimetypes
@@ -1405,16 +1937,24 @@ if __name__ == "__main__":
     parser.add_argument("--host", type=str, default="",
                         help="Bind address (default: '' = localhost, use '0.0.0.0' for all interfaces)")
     parser.add_argument("--remote", type=str, default=None,
-                        help="Remote host for DB sync, e.g. user@hostname")
+                        help="Remote host for DB sync, e.g. roboflow@100.94.130.94")
     parser.add_argument("--remote-db", type=str, default=None,
                         help="Path to DB on remote host (default: auto-detect from --db)")
     parser.add_argument("--compare-db", type=str, default=None,
                         help="Second DB for LoRA vs FT comparison (e.g. results_phase3b.db)")
+    parser.add_argument("--datasets-root", type=str, default=None,
+                        help="Root dir for YOLO datasets (for prediction viewer images)")
     parser.add_argument("--sync-interval", type=int, default=10,
                         help="Seconds between background syncs (default: 10)")
     args = parser.parse_args()
 
     DB_PATH = Path(__file__).parent / args.db
+
+    # Set up datasets root for prediction viewer  # noqa: F841
+    if args.datasets_root:
+        DATASETS_ROOT = Path(args.datasets_root)
+    else:
+        DATASETS_ROOT = Path.home() / "Downloads" / "rf20-vl-fsod"
 
     # Set up comparison DB if provided
     if args.compare_db:
