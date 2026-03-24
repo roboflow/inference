@@ -400,6 +400,7 @@ def trigger_job_with_workflows_images_processing(
     notifications_url: Optional[str],
     api_key: str,
     inference_backend: Optional[InferenceBackend] = None,
+    job_name: Optional[str] = None,
 ) -> str:
     workspace = get_workspace(api_key=api_key)
     compute_configuration = ComputeConfigurationV2(
@@ -439,6 +440,7 @@ def trigger_job_with_workflows_images_processing(
         job_id=job_id,
         job_configuration=job_configuration,
         api_key=api_key,
+        job_name=job_name,
     )
     return job_id
 
@@ -461,6 +463,7 @@ def trigger_job_with_workflows_videos_processing(
     notifications_url: Optional[str],
     api_key: str,
     inference_backend: Optional[InferenceBackend] = None,
+    job_name: Optional[str] = None,
 ) -> str:
     workspace = get_workspace(api_key=api_key)
     compute_configuration = ComputeConfigurationV2(
@@ -501,6 +504,7 @@ def trigger_job_with_workflows_videos_processing(
         job_id=job_id,
         job_configuration=job_configuration,
         api_key=api_key,
+        job_name=job_name,
     )
     return job_id
 
@@ -511,6 +515,7 @@ def trigger_trt_compilation_job(
     compilation_devices: Optional[List[CompilationDevice]],
     notifications_url: Optional[str],
     api_key: str,
+    job_name: Optional[str] = None,
 ) -> str:
     if not job_id:
         job_id = f"trt-{_generate_random_string(length=12)}"
@@ -528,6 +533,7 @@ def trigger_trt_compilation_job(
         job_id=job_id,
         job_configuration=compilation_specification,
         api_key=api_key,
+        job_name=job_name,
     )
     return job_id
 
@@ -543,8 +549,11 @@ def create_batch_job(
     job_id: str,
     job_configuration: Union[WorkflowProcessingJobV1, TRTCompilationJobV1],
     api_key: str,
+    job_name: Optional[str] = None,
 ) -> None:
     params = {"api_key": api_key}
+    if job_name:
+        params["name"] = job_name
     try:
         response = requests.post(
             f"{API_BASE_URL}/batch-processing/v1/external/{workspace}/jobs/{job_id}",

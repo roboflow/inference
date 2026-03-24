@@ -227,6 +227,9 @@ def process_images_with_workflow(
         Optional[InferenceBackend],
         typer.Option("--inference-backend", "-ib", help="Inference backend to use"),
     ] = None,
+    job_name: Annotated[
+        Optional[str], typer.Option("--job-name", "-jn", help="Name of your job")
+    ] = None,
 ) -> None:
     if api_key is None:
         api_key = ROBOFLOW_API_KEY
@@ -257,6 +260,7 @@ def process_images_with_workflow(
             notifications_url=notifications_url,
             api_key=api_key,
             inference_backend=inference_backend,
+            job_name=job_name,
         )
         print(f"Triggered job with ID: {job_id}")
     except KeyboardInterrupt:
@@ -392,6 +396,9 @@ def process_videos_with_workflow(
         Optional[InferenceBackend],
         typer.Option("--inference-backend", "-ib", help="Inference backend to use"),
     ] = None,
+    job_name: Annotated[
+        Optional[str], typer.Option("--job-name", "-jn", help="Name of your job")
+    ] = None,
 ) -> None:
     if api_key is None:
         api_key = ROBOFLOW_API_KEY
@@ -423,6 +430,7 @@ def process_videos_with_workflow(
             notifications_url=notifications_url,
             api_key=api_key,
             inference_backend=inference_backend,
+            job_name=job_name,
         )
         print(f"Triggered job with ID: {job_id}")
     except KeyboardInterrupt:
@@ -475,6 +483,9 @@ def trt_compile(
             help="URL of the Webhook to be used for job state notifications.",
         ),
     ] = None,
+    job_name: Annotated[
+        Optional[str], typer.Option("--job-name", "-jn", help="Name of your job")
+    ] = None,
 ) -> None:
     if api_key is None:
         api_key = ROBOFLOW_API_KEY
@@ -486,6 +497,7 @@ def trt_compile(
             compilation_devices=compilation_devices,
             notifications_url=notifications_url,
             api_key=api_key,
+            job_name=job_name,
         )
         print(f"Triggered job with ID: {job_id}")
     except KeyboardInterrupt:
