@@ -37,10 +37,7 @@ DEFAULT_HIGH_CONF_DET_THRESHOLD = _TRACKER_DEFAULTS["high_conf_det_threshold"]
 DEFAULT_DIRECTION_CONSISTENCY_WEIGHT = _TRACKER_DEFAULTS["direction_consistency_weight"]
 DEFAULT_DELTA_T = _TRACKER_DEFAULTS["delta_t"]
 
-SHORT_DESCRIPTION = (
-    "Track objects across video frames using OC-SORT. "
-    "Best for heavy occlusion and non-linear motion."
-)
+SHORT_DESCRIPTION = "Tracks objects through occlusion and unpredictable movement."
 LONG_DESCRIPTION = """
 Track objects across video frames using the **OC-SORT** algorithm from the
 roboflow/trackers package.

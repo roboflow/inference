@@ -36,10 +36,7 @@ DEFAULT_LOST_TRACK_BUFFER = _TRACKER_DEFAULTS["lost_track_buffer"]
 DEFAULT_TRACK_ACTIVATION_THRESHOLD = _TRACKER_DEFAULTS["track_activation_threshold"]
 DEFAULT_HIGH_CONF_DET_THRESHOLD = _TRACKER_DEFAULTS["high_conf_det_threshold"]
 
-SHORT_DESCRIPTION = (
-    "Track objects across video frames using ByteTrack. "
-    "Good default for most scenes; recovers weak detections via two-stage association."
-)
+SHORT_DESCRIPTION = "Tracks objects across frames. Best for most scenes."
 LONG_DESCRIPTION = """
 Track objects across video frames using the **ByteTrack** algorithm from the
 roboflow/trackers package.

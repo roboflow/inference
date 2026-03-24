@@ -36,8 +36,7 @@ DEFAULT_LOST_TRACK_BUFFER = _TRACKER_DEFAULTS["lost_track_buffer"]
 DEFAULT_TRACK_ACTIVATION_THRESHOLD = _TRACKER_DEFAULTS["track_activation_threshold"]
 
 SHORT_DESCRIPTION = (
-    "Track objects across video frames using SORT. "
-    "Fastest and simplest; best with strong detections and minimal occlusion."
+    "Fast, lightweight object tracking. Works best when objects are clearly visible."
 )
 LONG_DESCRIPTION = """
 Track objects across video frames using the **SORT** algorithm from the
