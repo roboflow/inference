@@ -8,7 +8,7 @@ import pytest
 if os.getenv("ENFORCE_GPU_EXECUTION"):
     os.environ["ONNXRUNTIME_EXECUTION_PROVIDERS"] = "[CUDAExecutionProvider]"
 else:
-    os.environ["ONNXRUNTIME_EXECUTION_PROVIDERS"] = "[CUDAExecutionProvider]"
+    os.environ["ONNXRUNTIME_EXECUTION_PROVIDERS"] = "[CPUExecutionProvider]"
 
 
 REFERENCE_IMAGE_PATH = os.path.abspath(

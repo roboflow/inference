@@ -20,6 +20,17 @@ Let's run a computer vision model with Inference. There are two ways to do this:
     pip install inference-gpu
     ```
 
+    Starting from `inference 1.2.0`, the new inference engine — called `inference-models` — is used by default.
+    It brings support for different model backends, like TensorRT. By default, `inference` installs the dependencies
+    required to support `torch` and `onnx` models (CUDA 12.4 is used by default for `inference-gpu`).
+    Additional dependencies can be installed via `inference-models` package extras. For instance,
+    to install TRT dependencies:
+    ```
+    pip install inference-models[trt10]
+    ```
+    See the [full installation guide](https://inference-models.roboflow.com/getting-started/installation/) for 
+    more details.
+
 ## Load a Model and Run Inference
 
 === "inference-sdk (HTTP client)"
