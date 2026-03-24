@@ -203,7 +203,10 @@ class ModelManager:
         if METRICS_ENABLED and self.pingback and enable_model_monitoring:
             logger.debug("ModelManager - setting pingback fallback api key...")
             self.pingback.fallback_api_key = request.api_key
-        with start_span("model.infer", {"model.id": model_id}):
+        with start_span(
+            "model.infer",
+            {"model.id": model_id, "model.infer.caller": "infer_from_request"},
+        ):
             try:
                 t_infer_start = time.perf_counter()
                 rtn_val = await self.model_infer(
@@ -294,7 +297,10 @@ class ModelManager:
         if METRICS_ENABLED and self.pingback and enable_model_monitoring:
             logger.debug("ModelManager - setting pingback fallback api key...")
             self.pingback.fallback_api_key = request.api_key
-        with start_span("model.infer", {"model.id": model_id}):
+        with start_span(
+            "model.infer",
+            {"model.id": model_id, "model.infer.caller": "infer_from_request_sync"},
+        ):
             try:
                 t_infer_start = time.perf_counter()
                 rtn_val = self.model_infer_sync(

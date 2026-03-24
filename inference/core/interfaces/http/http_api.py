@@ -36,6 +36,7 @@ from inference.core.constants import (
     MODEL_LOAD_DETAILS_HEADER,
     MODEL_LOAD_TIME_HEADER,
     PROCESSING_TIME_HEADER,
+    TRACE_ID_HEADER,
     WORKFLOW_ID_HEADER,
     WORKSPACE_ID_HEADER,
 )
@@ -274,7 +275,12 @@ from inference.core.roboflow_api import (
     get_roboflow_workspace_async,
     get_workflow_specification,
 )
-from inference.core.telemetry import setup_telemetry, shutdown_telemetry, start_span
+from inference.core.telemetry import (
+    get_trace_id,
+    setup_telemetry,
+    shutdown_telemetry,
+    start_span,
+)
 from inference.core.utils.container import is_docker_socket_mounted
 from inference.core.utils.notebooks import start_notebook
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
@@ -489,6 +495,7 @@ class HttpInterface(BaseInterface):
                     MODEL_ID_HEADER,
                     WORKFLOW_ID_HEADER,
                     WORKSPACE_ID_HEADER,
+                    TRACE_ID_HEADER,
                 ]
                 + ([EXECUTION_ID_HEADER] if EXECUTION_ID_HEADER is not None else [])
                 + ["traceparent", "tracestate"],
@@ -747,6 +754,9 @@ class HttpInterface(BaseInterface):
                 "inference-models" if USE_INFERENCE_MODELS else "old-inference"
             )
             response.headers["x-inference-engine"] = inference_engine
+            trace_id = get_trace_id()
+            if trace_id:
+                response.headers[TRACE_ID_HEADER] = trace_id
             return response
 
         @app.middleware("http")
