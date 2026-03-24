@@ -64,7 +64,7 @@ USER_CONFIGURATION_HEADER = [
 BLOCK_FAMILY_TEMPLATE = """
 # {family_name}
 
-{content}
+{deprecation_warning}{content}
 """
 
 BLOCK_VERSION_TEMPLATE = """
@@ -331,9 +331,20 @@ def write_individual_block_pages(block_families, blocks_description):
             )
             versions_content.append(version_content)
         all_versions_combined = combined_content_from_versions(versions_content)
+        all_deprecated = all(
+            block.block_schema.get("deprecated", False) for block in family_members
+        )
+        if all_deprecated:
+            # Use custom deprecation message if provided, otherwise use default
+            custom_message = family_members[0].block_schema.get("deprecation_message")
+            message = custom_message or "This block is deprecated and may be removed in a future release."
+            deprecation_warning = f'!!! warning "Deprecated"\n\n    {message}\n\n'
+        else:
+            deprecation_warning = ""
         family_document_content = BLOCK_FAMILY_TEMPLATE.format(
             family_name=family_name,
             content=all_versions_combined,
+            deprecation_warning=deprecation_warning,
         )
         family_document_content = _escape_jinja2_expressions(family_document_content)
         with open(documentation_file_path, "w") as documentation_file:
@@ -379,7 +390,11 @@ def write_blocks_summary_md(block_families):
             # Suppose you had a function slugify_block_name:
             slug = slugify_block_name(family_name)
             # Link to foo.md (or bar.md, etc.)
-            lines.append(f"    * [{family_name}]({slug}.md)")
+            all_deprecated = all(
+                b.block_schema.get("deprecated", False) for b in block_families[family_name]
+            )
+            label = f"{family_name} (Deprecated)" if all_deprecated else family_name
+            lines.append(f"    * [{label}]({slug}.md)")
 
     summary_path = os.path.join(BLOCKS_DIR, "SUMMARY.md")
     with open(summary_path, "w", encoding="utf-8") as f:
@@ -400,12 +415,18 @@ def write_blocks_index_file(block_families):
         
         for family_name in sorted(block_families_by_section[section_id], key=lambda x: block_families[x][0].block_schema.get("ui_manifest", {}).get("blockPriority", 99)):
             block_schema = block_families[family_name][0].block_schema
+            # Hide deprecated blocks from the gallery index
+            all_deprecated = all(
+                b.block_schema.get("deprecated", False) for b in block_families[family_name]
+            )
+            if all_deprecated:
+                continue
             block_data = {
                 "name": family_name,
                 "url": slugify_block_name(family_name),
                 "description": block_schema.get("short_description", "Description not available"),
                 "license": block_schema.get("license", "").upper(),
-                "icon": block_schema.get("ui_manifest", {}).get("icon", "far fa-sparkles")
+                "icon": block_schema.get("ui_manifest", {}).get("icon", "far fa-sparkles"),
             }
             blocks_by_section[section_id].append(block_data)
 
