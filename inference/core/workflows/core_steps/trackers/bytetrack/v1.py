@@ -1,4 +1,3 @@
-import inspect
 from typing import Any, List, Literal, Optional, Type, Union
 
 import supervision as sv
@@ -6,7 +5,6 @@ from pydantic import ConfigDict, Field
 from trackers import ByteTrackTracker
 
 from inference.core.workflows.core_steps.trackers._base import (
-    DEFAULT_INSTANCES_CACHE_SIZE,
     TrackerBlockBase,
     tracker_describe_outputs,
 )
@@ -25,16 +23,12 @@ from inference.core.workflows.execution_engine.entities.types import (
 )
 from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
 
-_TRACKER_DEFAULTS = {
-    p.name: p.default
-    for p in inspect.signature(ByteTrackTracker.__init__).parameters.values()
-    if p.default is not inspect.Parameter.empty
-}
-DEFAULT_MINIMUM_IOU_THRESHOLD = _TRACKER_DEFAULTS["minimum_iou_threshold"]
-DEFAULT_MINIMUM_CONSECUTIVE_FRAMES = _TRACKER_DEFAULTS["minimum_consecutive_frames"]
-DEFAULT_LOST_TRACK_BUFFER = _TRACKER_DEFAULTS["lost_track_buffer"]
-DEFAULT_TRACK_ACTIVATION_THRESHOLD = _TRACKER_DEFAULTS["track_activation_threshold"]
-DEFAULT_HIGH_CONF_DET_THRESHOLD = _TRACKER_DEFAULTS["high_conf_det_threshold"]
+DEFAULT_LOST_TRACK_BUFFER = 30
+DEFAULT_TRACK_ACTIVATION_THRESHOLD = 0.7
+DEFAULT_MINIMUM_CONSECUTIVE_FRAMES = 2
+DEFAULT_MINIMUM_IOU_THRESHOLD = 0.1
+DEFAULT_HIGH_CONF_DET_THRESHOLD = 0.6
+DEFAULT_INSTANCES_CACHE_SIZE = 16384
 
 SHORT_DESCRIPTION = "Tracks objects across frames. Best for most scenes."
 LONG_DESCRIPTION = """
