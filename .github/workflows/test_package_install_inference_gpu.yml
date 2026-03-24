@@ -16,9 +16,7 @@ jobs:
   build:
     needs: call_is_mergeable
     if: ${{ github.event_name != 'pull_request' || needs.call_is_mergeable.outputs.mergeable_state != 'not_clean' }}
-    runs-on:
-      labels: depot-ubuntu-22.04-8
-      group: public-depot
+    runs-on: Roboflow-GPU-VM-Runner
     timeout-minutes: 15
     strategy:
       matrix:
