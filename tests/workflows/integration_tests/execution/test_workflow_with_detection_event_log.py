@@ -1,6 +1,7 @@
 import datetime
 
 import numpy as np
+import pytest
 
 from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
 from inference.core.managers.base import ModelManager
@@ -126,11 +127,29 @@ def test_workflow_with_detection_event_log_multiple_frames(
         max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
     )
 
-    # when - run multiple times to simulate video frames
-    for _ in range(3):
+    # when - run multiple times with controlled frame_timestamps so relative times are deterministic
+    fps = 30.0
+    base_ts = 1726570875.0
+    parent_metadata = ImageParentMetadata(parent_id="test_frame")
+    for frame_number in range(1, 4):
+        frame_ts = datetime.datetime.fromtimestamp(
+            base_ts + (frame_number - 1) / fps, tz=datetime.timezone.utc
+        )
+        metadata = VideoMetadata(
+            video_identifier="test_video",
+            frame_number=frame_number,
+            fps=fps,
+            frame_timestamp=frame_ts,
+            comes_from_video_file=True,
+        )
+        image_with_metadata = WorkflowImageData(
+            parent_metadata=parent_metadata,
+            numpy_image=dogs_image,
+            video_metadata=metadata,
+        )
         result = execution_engine.run(
             runtime_parameters={
-                "image": [dogs_image],
+                "image": [image_with_metadata],
             }
         )
 
@@ -141,12 +160,7 @@ def test_workflow_with_detection_event_log_multiple_frames(
     event_log = result[0]["event_log"]
     total_logged = result[0]["total_logged"]
 
-    # Relative times are frame-based: (frame - 1) / fps
-    # WorkflowImageData defaults to fps=30 when no video metadata is provided
-    # Frame 1: (1-1)/30 = 0.0, Frame 3: (3-1)/30 = 0.0666...
-    # Note: With auto-extraction of reference_timestamp from frame_timestamp,
-    # absolute timestamps (*_timestamp) are now also present
-
+    # Relative times derived from frame_timestamp: frame 1 = 0.0s, frame 3 = 2/30s
     assert total_logged == 2
     assert result[0]["total_pending"] == 0
     assert event_log["pending"] == {}
@@ -157,11 +171,10 @@ def test_workflow_with_detection_event_log_multiple_frames(
         assert event["tracker_id"] == int(tracker_id)
         assert event["class_name"] == "dog"
         assert event["first_seen_frame"] == 1
-        assert event["first_seen_relative"] == 0.0
+        assert event["first_seen_relative"] == pytest.approx(0.0, abs=1e-4)
         assert event["last_seen_frame"] == 3
-        assert event["last_seen_relative"] == 2 / 30
+        assert event["last_seen_relative"] == pytest.approx(2 / fps, abs=1e-4)
         assert event["frame_count"] == 3
-        # Auto-extracted timestamps should also be present
         assert "first_seen_timestamp" in event
         assert "last_seen_timestamp" in event
 
