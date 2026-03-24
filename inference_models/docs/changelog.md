@@ -1,5 +1,18 @@
 # Changelog
 
+## `0.22.1`
+
+### Added
+
+- Ability to restrict maximum input resolution for models
+
+- Restriction of input resolution for RF-DETR - providing ability for caller to avoid OOM when loading models 
+with large input resolutions
+
+- New type of error `ModelPackageRestrictedError` - to manifest restrictions of runtime environment with package
+
+---
+
 ## `0.22.0`
 
 ### Added

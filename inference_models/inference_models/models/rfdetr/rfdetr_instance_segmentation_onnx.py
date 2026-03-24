@@ -73,6 +73,7 @@ class RFDetrForInstanceSegmentationOnnx(
         onnx_execution_providers: Optional[List[Union[str, tuple]]] = None,
         default_onnx_trt_options: bool = True,
         device: torch.device = DEFAULT_DEVICE,
+        rf_detr_max_input_resolution: Optional[Union[int, Tuple[int, int]]] = None,
         **kwargs,
     ) -> "RFDetrForInstanceSegmentationOnnx":
         if onnx_execution_providers is None:
@@ -121,6 +122,7 @@ class RFDetrForInstanceSegmentationOnnx(
                     "we recommend using preprocessing method different that `fit-longer-edge`.",
                 )
             },
+            max_allowed_input_size=rf_detr_max_input_resolution,
         )
         classes_re_mapping = None
         if inference_config.class_names_operations:
