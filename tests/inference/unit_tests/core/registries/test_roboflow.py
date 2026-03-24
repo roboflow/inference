@@ -12,12 +12,20 @@ from inference.core.exceptions import MissingApiKeyError, ModelNotRecognisedErro
 from inference.core.registries import roboflow
 from inference.core.registries.roboflow import (
     RoboflowModelRegistry,
+    _in_process_metadata_cache,
     get_model_metadata_from_cache,
     get_model_type,
     model_metadata_content_is_invalid,
     save_model_metadata_in_cache,
 )
 from inference.core.roboflow_api import ModelEndpointType
+
+
+@pytest.fixture(autouse=True)
+def clear_in_process_metadata_cache():
+    _in_process_metadata_cache.cache.clear()
+    yield
+    _in_process_metadata_cache.cache.clear()
 
 
 @pytest.mark.parametrize("is_lambda", [False, True])
