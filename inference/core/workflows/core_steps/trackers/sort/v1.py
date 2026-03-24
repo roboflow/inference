@@ -35,13 +35,28 @@ DEFAULT_MINIMUM_CONSECUTIVE_FRAMES = _TRACKER_DEFAULTS["minimum_consecutive_fram
 DEFAULT_LOST_TRACK_BUFFER = _TRACKER_DEFAULTS["lost_track_buffer"]
 DEFAULT_TRACK_ACTIVATION_THRESHOLD = _TRACKER_DEFAULTS["track_activation_threshold"]
 
-SHORT_DESCRIPTION = "Track objects across video frames using SORT."
+SHORT_DESCRIPTION = (
+    "Track objects across video frames using SORT. "
+    "Fastest and simplest; best with strong detections and minimal occlusion."
+)
 LONG_DESCRIPTION = """
 Track objects across video frames using the **SORT** algorithm from the
 roboflow/trackers package.
 
-SORT is a lightweight IoU-based Hungarian assignment tracker with Kalman filtering.
-It is fast and well suited to controlled environments with reliable detections.
+SORT pairs a Kalman filter motion model with single-stage IoU-based Hungarian
+assignment.  It has the fewest parameters and lowest overhead, processing
+hundreds of frames per second.  However, it lacks re-identification and
+occlusion-recovery mechanisms, so tracks may fragment or switch IDs when objects
+are temporarily hidden.
+
+**When to use SORT:**
+- Controlled environments with reliable, high-confidence detections.
+- Real-time pipelines where maximum throughput is critical.
+- Simple scenes with minimal occlusion and predictable linear motion.
+
+**When to consider alternatives:**
+- If you see fragmented tracks or missed weak detections, try **ByteTrack**.
+- If objects undergo heavy occlusion or non-linear motion, try **OC-SORT**.
 
 Outputs three detection sets:
 - **tracked_detections**: All confirmed tracked detections with assigned track IDs.

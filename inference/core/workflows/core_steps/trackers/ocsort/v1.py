@@ -37,13 +37,36 @@ DEFAULT_HIGH_CONF_DET_THRESHOLD = _TRACKER_DEFAULTS["high_conf_det_threshold"]
 DEFAULT_DIRECTION_CONSISTENCY_WEIGHT = _TRACKER_DEFAULTS["direction_consistency_weight"]
 DEFAULT_DELTA_T = _TRACKER_DEFAULTS["delta_t"]
 
-SHORT_DESCRIPTION = "Track objects across video frames using OC-SORT."
+SHORT_DESCRIPTION = (
+    "Track objects across video frames using OC-SORT. "
+    "Best for heavy occlusion and non-linear motion."
+)
 LONG_DESCRIPTION = """
 Track objects across video frames using the **OC-SORT** algorithm from the
 roboflow/trackers package.
 
-OC-SORT is an observation-centric variant of SORT that corrects Kalman drift during
-occlusions and adds direction-consistency momentum for non-linear motion.
+OC-SORT extends SORT with two key mechanisms:
+
+1. **Observation-Centric Re-Update (OCR):** When a track reappears after
+   occlusion, OC-SORT retroactively corrects the Kalman filter using the real
+   observations before and after the gap, reducing accumulated drift.
+2. **Observation-Centric Momentum (OCM):** A direction-consistency cost is
+   blended with IoU during association, penalising matches where the candidate
+   detection lies in a direction inconsistent with the track's recent motion.
+
+This makes OC-SORT significantly more robust than SORT in scenes with heavy
+occlusion, erratic motion, and uniform appearance.
+
+**When to use OC-SORT:**
+- Crowded scenes with frequent and prolonged occlusions (e.g. pedestrians,
+  warehouse workers).
+- Non-linear or erratic motion patterns (e.g. dancing, sports with abrupt
+  direction changes).
+- When identity consistency over long sequences is more important than raw speed.
+
+**When to consider alternatives:**
+- For general-purpose tracking with mixed-confidence detections, try **ByteTrack**.
+- For maximum simplicity and speed with a strong detector, try **SORT**.
 
 Outputs three detection sets:
 - **tracked_detections**: All confirmed tracked detections with assigned track IDs.

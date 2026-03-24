@@ -36,13 +36,31 @@ DEFAULT_LOST_TRACK_BUFFER = _TRACKER_DEFAULTS["lost_track_buffer"]
 DEFAULT_TRACK_ACTIVATION_THRESHOLD = _TRACKER_DEFAULTS["track_activation_threshold"]
 DEFAULT_HIGH_CONF_DET_THRESHOLD = _TRACKER_DEFAULTS["high_conf_det_threshold"]
 
-SHORT_DESCRIPTION = "Track objects across video frames using ByteTrack."
+SHORT_DESCRIPTION = (
+    "Track objects across video frames using ByteTrack. "
+    "Good default for most scenes; recovers weak detections via two-stage association."
+)
 LONG_DESCRIPTION = """
 Track objects across video frames using the **ByteTrack** algorithm from the
 roboflow/trackers package.
 
-ByteTrack uses two-stage association with high- and low-confidence detection
-pools.  It is robust in crowded scenes and during occlusions.
+ByteTrack splits detections into high- and low-confidence pools and runs two
+rounds of IoU-based association.  The first round matches high-confidence
+detections to existing tracks; the second recovers weak detections that overlap
+unmatched tracks.  This makes ByteTrack particularly effective in **dense
+environments** where objects are frequently partially occluded and detector
+confidence fluctuates.
+
+**When to use ByteTrack:**
+- General-purpose tracking across diverse scenes.
+- Dense or crowded environments with partial occlusions.
+- Sports tracking and fast-moving objects (highest benchmark scores on SportsMOT).
+- When your detector produces a mix of high- and low-confidence detections that
+  you want to retain.
+
+**When to consider alternatives:**
+- For maximum simplicity and speed with a strong detector, use **SORT**.
+- For scenes with heavy occlusion and non-linear motion, use **OC-SORT**.
 
 Outputs three detection sets:
 - **tracked_detections**: All confirmed tracked detections with assigned track IDs.
