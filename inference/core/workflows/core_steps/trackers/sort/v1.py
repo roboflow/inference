@@ -73,7 +73,7 @@ class SORTManifest(WorkflowBlockManifest):
             "ui_manifest": {
                 "section": "video",
                 "icon": "far fa-location-crosshairs",
-                "blockPriority": 1,
+                "blockPriority": 0,
                 "trackers": True,
             },
         },

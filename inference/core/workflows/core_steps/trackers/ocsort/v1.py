@@ -81,7 +81,7 @@ class OCSORTManifest(WorkflowBlockManifest):
             "ui_manifest": {
                 "section": "video",
                 "icon": "far fa-location-crosshairs",
-                "blockPriority": 2,
+                "blockPriority": 0,
                 "trackers": True,
             },
         },
