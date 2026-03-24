@@ -4,6 +4,7 @@ from typing import Any, Dict, Optional, Tuple, Union
 from cachetools.func import ttl_cache
 
 from inference.core.cache import cache
+from inference.core.cache.lru_cache import LRUCache
 from inference.core.devices.utils import GLOBAL_DEVICE_ID
 from inference.core.entities.types import (
     DatasetID,
@@ -70,6 +71,9 @@ GENERIC_MODELS = {
 }
 
 STUB_VERSION_ID = "0"
+
+# In-process cache for model metadata to avoid Redis lock contention on every request.
+_in_process_metadata_cache = LRUCache(capacity=1000)
 
 
 class RoboflowModelRegistry(ModelRegistry):
@@ -271,16 +275,25 @@ def get_model_metadata_from_cache(
     dataset_id: Union[DatasetID, ModelID],
     version_id: Optional[VersionID],
 ) -> Optional[Tuple[TaskType, ModelType]]:
+    cache_key = (dataset_id, version_id)
+    cached = _in_process_metadata_cache.get(cache_key)
+    if cached is not None:
+        return cached
     if LAMBDA:
-        return _get_model_metadata_from_cache(
+        result = _get_model_metadata_from_cache(
             dataset_id=dataset_id, version_id=version_id
         )
-    with cache.lock(
-        f"lock:metadata:{dataset_id}:{version_id}", expire=CACHE_METADATA_LOCK_TIMEOUT
-    ):
-        return _get_model_metadata_from_cache(
-            dataset_id=dataset_id, version_id=version_id
-        )
+    else:
+        with cache.lock(
+            f"lock:metadata:{dataset_id}:{version_id}",
+            expire=CACHE_METADATA_LOCK_TIMEOUT,
+        ):
+            result = _get_model_metadata_from_cache(
+                dataset_id=dataset_id, version_id=version_id
+            )
+    if result is not None:
+        _in_process_metadata_cache.set(cache_key, result)
+    return result
 
 
 def _get_model_metadata_from_cache(
@@ -331,17 +344,20 @@ def save_model_metadata_in_cache(
             project_task_type=project_task_type,
             model_type=model_type,
         )
-        return None
-    with cache.lock(
-        f"lock:metadata:{dataset_id}:{version_id}", expire=CACHE_METADATA_LOCK_TIMEOUT
-    ):
-        _save_model_metadata_in_cache(
-            dataset_id=dataset_id,
-            version_id=version_id,
-            project_task_type=project_task_type,
-            model_type=model_type,
-        )
-        return None
+    else:
+        with cache.lock(
+            f"lock:metadata:{dataset_id}:{version_id}",
+            expire=CACHE_METADATA_LOCK_TIMEOUT,
+        ):
+            _save_model_metadata_in_cache(
+                dataset_id=dataset_id,
+                version_id=version_id,
+                project_task_type=project_task_type,
+                model_type=model_type,
+            )
+    _in_process_metadata_cache.set(
+        (dataset_id, version_id), (project_task_type, model_type)
+    )
 
 
 def _save_model_metadata_in_cache(

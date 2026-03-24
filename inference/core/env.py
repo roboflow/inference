@@ -226,7 +226,7 @@ CORE_MODEL_YOLO_WORLD_ENABLED = str2bool(
 )
 
 # Enable experimental RFDETR backend (inference_models) rollout, default is True
-USE_INFERENCE_MODELS = str2bool(os.getenv("USE_INFERENCE_MODELS", "False"))
+USE_INFERENCE_MODELS = str2bool(os.getenv("USE_INFERENCE_MODELS", "True"))
 ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES = str2bool(
     os.getenv("ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES", "False")
 )
@@ -389,6 +389,19 @@ MODELS_CACHE_AUTH_CACHE_TTL = int(os.getenv("MODELS_CACHE_AUTH_CACHE_TTL", 15 * 
 # Models cache auth cache max size, default is 100_000_000 (0 DOES NOT MAKE IT UNLIMITED)
 MODELS_CACHE_AUTH_CACHE_MAX_SIZE = int(
     os.getenv("MODELS_CACHE_AUTH_CACHE_MAX_SIZE", 100_000_000)
+)
+
+# --- OpenTelemetry tracing ---
+OTEL_TRACING_ENABLED = str2bool(os.getenv("OTEL_TRACING_ENABLED", "False"))
+OTEL_SERVICE_NAME = os.getenv("OTEL_SERVICE_NAME", "inference-server")
+OTEL_EXPORTER_PROTOCOL = os.getenv("OTEL_EXPORTER_PROTOCOL", "grpc")  # "grpc" or "http"
+OTEL_EXPORTER_ENDPOINT = os.getenv("OTEL_EXPORTER_ENDPOINT", "localhost:4317")
+OTEL_SAMPLING_RATE = float(os.getenv("OTEL_SAMPLING_RATE", "1.0"))
+OTEL_TRACE_EXPORT_INTERVAL_MS = int(os.getenv("OTEL_TRACE_EXPORT_INTERVAL_MS", "5000"))
+OTEL_METRICS_ENABLED = str2bool(os.getenv("OTEL_METRICS_ENABLED", "True"))
+OTEL_METRIC_EXPORTER_ENDPOINT = os.getenv("OTEL_METRIC_EXPORTER_ENDPOINT", "")
+OTEL_METRIC_EXPORT_INTERVAL_MS = int(
+    os.getenv("OTEL_METRIC_EXPORT_INTERVAL_MS", "10000")
 )
 
 # Metrics enabled flag, default is True

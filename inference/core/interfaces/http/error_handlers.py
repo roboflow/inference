@@ -46,6 +46,7 @@ from inference.core.interfaces.stream_manager.manager_app.errors import (
     MalformedPayloadError,
     MessageToBigError,
 )
+from inference.core.telemetry import record_error, record_error_metric
 from inference.core.workflows.core_steps.common.query_language.errors import (
     InvalidInputTypeError,
     OperationTypeNotRecognisedError,
@@ -98,7 +99,12 @@ def with_route_exceptions(route):
     @wraps(route)
     def wrapped_route(*args, **kwargs):
         try:
-            return route(*args, **kwargs)
+            try:
+                return route(*args, **kwargs)
+            except Exception as error:
+                record_error(error)
+                record_error_metric(type(error).__name__)
+                raise
         except ContentTypeInvalid as error:
             logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
@@ -495,7 +501,12 @@ def with_route_exceptions_async(route):
     @wraps(route)
     async def wrapped_route(*args, **kwargs):
         try:
-            return await route(*args, **kwargs)
+            try:
+                return await route(*args, **kwargs)
+            except Exception as error:
+                record_error(error)
+                record_error_metric(type(error).__name__)
+                raise
         except ContentTypeInvalid as error:
             logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
