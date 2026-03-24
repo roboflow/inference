@@ -44,8 +44,31 @@ jobs:
           key: ${{ runner.os }}-pip-${{ matrix.python-version }}-${{ hashFiles('requirements/**') }}
           restore-keys: |
             ${{ runner.os }}-pip-${{ matrix.python-version }}-
+      - name: 🔧 Install CUDA development toolkit
+        if: ${{ (github.event.inputs.extras == '' || github.event.inputs.extras == matrix.extras.marker) && (github.event.inputs.python_version == '' || github.event.inputs.python_version == matrix.python-version) }}
+        run: |
+          mkdir -p ~/apt-cache
+
+          sudo mkdir -p /var/cache/apt/archives
+          sudo cp -r ~/apt-cache/* /var/cache/apt/archives/ 2>/dev/null || true
+
+          sudo apt-get update
+          sudo apt-get install -y \
+              cuda-cudart-dev-12-5 \
+              cuda-nvcc-12-5 \
+              cuda-profiler-api-12-5 \
+              libcurand-dev-12-5 \
+              libvips-dev
+
+          sudo cp /var/cache/apt/archives/*.deb ~/apt-cache/ 2>/dev/null || true
+          sudo chown -R $(whoami):$(whoami) ~/apt-cache
       - name: 📦 Installing `inference` package...
         run: |
+          export CUDA_HOME=/usr/local/cuda-12.5
+          export PATH=/usr/local/cuda-12.5/bin:$PATH
+          export LD_LIBRARY_PATH=/usr/local/cuda-12.5/targets/x86_64-linux/lib64:$LD_LIBRARY_PATH
+          export CPATH=/usr/local/cuda-12.5/targets/x86_64-linux/include:$CPATH
+          export LIBRARY_PATH=/usr/local/cuda-12.5/targets/x86_64-linux/lib64:$LIBRARY_PATH
           wheel_name=`ls ./dist/inference_gpu-*-py3-none-any.whl | head -n 1`
           pip install "${wheel_name}[clip,gaze,grounding-dino,sam,waf,yolo-world,http,hosted,transformers]"
       - name: 🧪 Testing package installation
