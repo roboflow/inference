@@ -1023,14 +1023,14 @@ def test_get_roboflow_model_data_excludes_api_key_when_local(
         }
     }
     requests_mock.get(
-        url=wrap_url(f"{API_BASE_URL}/ort/coins_detection/1"),
+        url=wrap_url(f"{API_BASE_URL}/ort/local_test_model/1"),
         json=expected_response,
     )
 
     # when
     result = get_roboflow_model_data(
         api_key="local",
-        model_id="coins_detection/1",
+        model_id="local_test_model/1",
         endpoint_type=ModelEndpointType.ORT,
         device_id="some",
     )
