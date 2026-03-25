@@ -28,7 +28,9 @@ You should see a message showing your Python version.
 In a powershell terminal, run:
 
 ```
-py -m pip install inference-gpu
+py -m pip install --extra-index-url https://download.pytorch.org/whl/cu128 inference-gpu
+# please adjust the --extra-index-url to CUDA version installed in your OS
+# https://download.pytorch.org/whl/cu<major><minor>, for instance https://download.pytorch.org/whl/cu130 for CUDA 13.0
 ```
 
 ## Step #3: Install CUDA Toolkit 11.8
