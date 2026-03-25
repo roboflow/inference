@@ -19,6 +19,10 @@ Let's run a computer vision model with Inference. There are two ways to do this:
     ```
     pip install inference-gpu
     ```
+    GPU installation requires CUDA available in the OS - check 
+    [Linux](https://docs.nvidia.com/cuda/cuda-installation-guide-linux/) or 
+    [Windows](https://docs.nvidia.com/cuda/cuda-installation-guide-microsoft-windows/) CUDA installation guide if
+    your environment lacks required dependencies.
 
     Starting from `inference 1.2.0`, the new inference engine — called `inference-models` — is used by default.
     It brings support for different model backends, like TensorRT. By default, `inference` installs the dependencies
