@@ -272,7 +272,6 @@ from inference.core.registries.roboflow import GENERIC_MODELS, get_model_type
 from inference.core.roboflow_api import (
     build_roboflow_api_headers,
     get_roboflow_workspace_async,
-    get_roboflow_workspace_models,
     get_workflow_specification,
 )
 from inference.core.telemetry import setup_telemetry, shutdown_telemetry, start_span
@@ -3779,9 +3778,8 @@ class HttpInterface(BaseInterface):
         @app.get(
             "/list_models",
             summary="List available model endpoints",
-            description="Returns all inference endpoint URLs reachable by the "
-            "authenticated user, including public models and private "
-            "workspace models.",
+            description="Returns all public inference endpoint URLs "
+            "available on this server.",
         )
         @with_route_exceptions
         def list_models(
@@ -3789,10 +3787,10 @@ class HttpInterface(BaseInterface):
             api_key: str = Query(
                 ...,
                 description="Roboflow API Key used to authenticate and "
-                "discover private workspace models",
+                "resolve task types for public models",
             ),
         ) -> dict:
-            """Return inference endpoint URLs available to the caller.
+            """Return public inference endpoint URLs available on this server.
 
             Filters the full set of server routes to only those that
             accept model inference requests. This includes both
@@ -3807,15 +3805,12 @@ class HttpInterface(BaseInterface):
                /infer/* route (e.g. qwen3.5 → /infer/lmm).
             3. Public aliased models with task types resolved via
                get_model_type, deduplicated by dataset.
-            4. Private workspace models fetched via
-               get_roboflow_workspace_models using the caller's API key.
 
             Returns:
                 dict: ``{"endpoints": [...]}``
             """
             base_url = str(request.base_url).rstrip("/")
-            public_endpoints: List[str] = []
-            private_endpoints: List[str] = []
+            endpoints: List[str] = []
 
             task_to_path = {
                 "object-detection": "/infer/object_detection",
@@ -3843,7 +3838,7 @@ class HttpInterface(BaseInterface):
                     continue
                 for prefix in core_prefixes:
                     if route.path.startswith(f"/{prefix}/"):
-                        public_endpoints.append(f"{base_url}{route.path}")
+                        endpoints.append(f"{base_url}{route.path}")
                         break
 
             # Models supported by this server's configuration
@@ -3859,7 +3854,7 @@ class HttpInterface(BaseInterface):
                     continue
                 infer_path = task_to_path.get(task)
                 if infer_path is not None:
-                    public_endpoints.append(
+                    endpoints.append(
                         f"{base_url}{infer_path}?model_id={model_id}"
                     )
 
@@ -3901,39 +3896,10 @@ class HttpInterface(BaseInterface):
                 infer_path = task_to_path.get(task_type)
                 if infer_path is None:
                     continue
-                public_endpoints.append(f"{base_url}{infer_path}?model_id={alias}")
-
-            # ── Private workspace models ─────────────────────────────
-            try:
-                projects = get_roboflow_workspace_models(
-                    api_key=api_key,
-                )
-                for project in projects:
-                    task = project.get("type", "object-detection")
-                    infer_path = task_to_path.get(task)
-                    if infer_path is None:
-                        continue
-                    for version in project.get("versions", []):
-                        version_id = (
-                            version
-                            if isinstance(version, (str, int))
-                            else version.get("id")
-                        )
-                        if version_id is not None:
-                            private_endpoints.append(
-                                f"{base_url}{infer_path}?model_id={project['id']}/{version_id}"
-                            )
-            except (RoboflowAPINotAuthorizedError, WorkspaceLoadError):
-                logger.warning(
-                    "Failed to fetch workspace models for /list_models",
-                    exc_info=True,
-                )
+                endpoints.append(f"{base_url}{infer_path}?model_id={alias}")
 
             sort_key = lambda url: url.split("?")[0]
-            return {
-                "public_endpoints": sorted(public_endpoints, key=sort_key),
-                "private_endpoints": sorted(private_endpoints, key=sort_key),
-            }
+            return {"endpoints": sorted(endpoints, key=sort_key)}
 
         app.mount(
             "/",
