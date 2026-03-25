@@ -268,7 +268,7 @@ from inference.core.managers.model_load_collector import (
     request_workflow_id,
 )
 from inference.core.managers.prometheus import InferenceInstrumentator
-from inference.core.registries.roboflow import GENERIC_MODELS
+from inference.core.registries.roboflow import GENERIC_MODELS, get_model_type
 from inference.core.roboflow_api import (
     build_roboflow_api_headers,
     get_roboflow_workspace_async,
@@ -3822,51 +3822,29 @@ class HttpInterface(BaseInterface):
                     "keypoint-detection", task_to_path["keypoints-detection"]
                 )
 
-            # Build model_type → set(task_types) from the registry,
-            # pre-populating YOLO naming variants so lookups are a
-            # single dict.get()
-            model_type_to_tasks: Dict[str, set] = {}
-            for (
-                task_type,
-                model_type,
-            ) in self.model_manager.model_manager.model_registry.registry_dict:
-                if model_type == "stub":
-                    continue
-                model_type_to_tasks.setdefault(model_type, set()).add(task_type)
-            for mt, tasks in list(model_type_to_tasks.items()):
-                # yolov11n ↔ yolo11n, yolo26n ↔ yolov26n
-                if mt.startswith("yolov") and mt[5:6].isdigit():
-                    model_type_to_tasks.setdefault("yolo" + mt[5:], set()).update(tasks)
-                elif mt.startswith("yolo") and mt[4:5].isdigit():
-                    model_type_to_tasks.setdefault("yolov" + mt[4:], set()).update(tasks)
-                # yolo_nas_s → yolo-nas-s
-                if "_" in mt:
-                    model_type_to_tasks.setdefault(mt.replace("_", "-"), set()).update(tasks)
-
             # ── Public aliased models ────────────────────────────────
-            for alias in REGISTERED_ALIASES:
-                # Strip resolution suffix: yolov8n-640 → yolov8n
-                model_type = alias
-                for suffix in ("-640", "-1280"):
-                    if alias.endswith(suffix):
-                        model_type = alias[: -len(suffix)]
-                        break
-                tasks = model_type_to_tasks.get(model_type)
-                if not tasks:
+            # Resolve task type via get_model_type (same path the
+            # inference server uses).  Deduplicate by dataset_id so we
+            # make at most one API call per dataset (~8 total).
+            dataset_task_cache: Dict[str, Optional[str]] = {}
+            for alias, resolved in REGISTERED_ALIASES.items():
+                dataset_id = resolved.split("/")[0]
+                if dataset_id not in dataset_task_cache:
+                    try:
+                        task_type, _ = get_model_type(
+                            model_id=resolved,
+                            api_key=api_key,
+                        )
+                        dataset_task_cache[dataset_id] = task_type
+                    except Exception:
+                        logger.warning(
+                            "Could not resolve task type for dataset %s",
+                            dataset_id,
+                        )
+                        dataset_task_cache[dataset_id] = None
+                task = dataset_task_cache[dataset_id]
+                if task is None:
                     continue
-                # Disambiguate when model_type maps to multiple tasks
-                if len(tasks) == 1:
-                    task = next(iter(tasks))
-                elif "-seg" in alias and "instance-segmentation" in tasks:
-                    task = "instance-segmentation"
-                elif "-pose" in alias and "keypoint-detection" in tasks:
-                    task = "keypoint-detection"
-                elif "object-detection" in tasks:
-                    task = "object-detection"
-                elif "classification" in tasks:
-                    task = "classification"
-                else:
-                    task = next(iter(tasks))
                 infer_path = task_to_path.get(task)
                 if infer_path is None:
                     continue

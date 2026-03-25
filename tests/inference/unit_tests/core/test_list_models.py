@@ -1,19 +1,16 @@
-"""Tests for the GET /list_models endpoint and its helper logic.
+"""Tests for the GET /list_models endpoint.
 
-Tests are split into:
-1. Unit tests for the pure helper functions (_strip_resolution, _lookup_tasks,
-   _pick_task, _find_infer_endpoint) — exercised indirectly through the endpoint.
-2. Integration-style tests using FastAPI TestClient against a minimal
-   HttpInterface with a mocked model registry and mocked Roboflow API.
+Tests cover:
+1. Public aliased models — task types resolved via get_model_type
+   (same path the inference server uses), cached per dataset_id.
+2. Private workspace models — fetched via get_roboflow_workspace_models.
+3. Core model routes — discovered via GENERIC_MODELS prefix matching.
+4. URL construction and error handling.
 """
 
-from typing import Dict, List, Optional, Set
-from unittest import mock
 from unittest.mock import MagicMock, patch
 
 import pytest
-from fastapi import FastAPI
-from requests_mock import Mocker
 from starlette.testclient import TestClient
 
 from inference.core.env import API_BASE_URL
@@ -23,13 +20,10 @@ from inference.core.utils.url_utils import wrap_url
 
 
 # ---------------------------------------------------------------------------
-# Minimal fixtures that construct an HttpInterface with a controlled registry
+# Fixtures
 # ---------------------------------------------------------------------------
 
 def _make_model_manager(registry_dict: dict):
-    """Build a minimal ModelManager-like object matching the decorator chain
-    used in production (WithFixedSizeCache wrapping ModelManager).
-    HttpInterface accesses the registry via model_manager.model_manager.model_registry."""
     inner = MagicMock()
     inner.model_registry = ModelRegistry(registry_dict)
     outer = MagicMock()
@@ -40,12 +34,7 @@ def _make_model_manager(registry_dict: dict):
     return outer
 
 
-def _build_app(registry_dict: dict) -> FastAPI:
-    """
-    Instantiate HttpInterface with a controlled registry and return the
-    FastAPI app. We patch env flags so that the routes we care about are
-    registered without needing real model dependencies.
-    """
+def _build_app(registry_dict: dict):
     manager = _make_model_manager(registry_dict)
     with (
         patch("inference.core.interfaces.http.http_api.LAMBDA", False),
@@ -70,29 +59,8 @@ def _build_app(registry_dict: dict) -> FastAPI:
         return interface.app
 
 
-# A minimal registry that covers the key cases: object-detection,
-# instance-segmentation, classification, keypoint-detection, plus some
-# model_types that appear under multiple tasks (like yolov8n).
 SAMPLE_REGISTRY = {
-    ("object-detection", "rfdetr-nano"): MagicMock,
-    ("object-detection", "rfdetr-small"): MagicMock,
-    ("object-detection", "yolov8n"): MagicMock,
-    ("object-detection", "yolov8s"): MagicMock,
-    ("instance-segmentation", "yolov8n"): MagicMock,
-    ("instance-segmentation", "yolov8n-seg"): MagicMock,
-    ("instance-segmentation", "yolov8s-seg"): MagicMock,
-    ("instance-segmentation", "rfdetr-seg-nano"): MagicMock,
-    ("classification", "yolov8n"): MagicMock,
-    ("classification", "resnet50"): MagicMock,
-    ("keypoint-detection", "yolov8n-pose"): MagicMock,
-    # Naming variant tests: yolov11 in registry, yolo11 aliases exist
-    ("object-detection", "yolov11n"): MagicMock,
-    ("instance-segmentation", "yolov11n-seg"): MagicMock,
-    # Naming variant tests: yolo26 in registry (without 'v'), yolov26 aliases exist
-    ("object-detection", "yolo26n"): MagicMock,
-    ("instance-segmentation", "yolo26n-seg"): MagicMock,
-    # Naming variant tests: yolo_nas_s in registry, yolo-nas-s aliases exist
-    ("object-detection", "yolo_nas_s"): MagicMock,
+    ("object-detection", "stub"): MagicMock,
 }
 
 
@@ -106,276 +74,212 @@ def client(app):
     return TestClient(app)
 
 
+# Dataset → task type mapping used by the mocked get_model_type
+DATASET_TASK_MAP = {
+    "coco": "object-detection",
+    "coco-dataset-vdnr1": "instance-segmentation",
+    "coco-pose-detection": "keypoint-detection",
+    "classifiers": "classification",
+    "paligemma-pretrains": "object-detection",
+    "florence-pretrains": "object-detection",
+    "qwen-pretrains": "object-detection",
+}
+
+
+def _fake_get_model_type(model_id, api_key=None, **kwargs):
+    """Mock get_model_type: resolve dataset_id and return (task, model_type)."""
+    dataset_id = model_id.split("/")[0]
+    task = DATASET_TASK_MAP.get(dataset_id, "object-detection")
+    return (task, "stub")
+
+
+def _mock_roboflow_api():
+    """Return a dict of patches that mock the Roboflow API calls."""
+    return {
+        "model_type": patch(
+            "inference.core.interfaces.http.http_api.get_model_type",
+            side_effect=_fake_get_model_type,
+        ),
+        "ws_models": patch(
+            "inference.core.interfaces.http.http_api.get_roboflow_workspace_models",
+            side_effect=WorkspaceLoadError("no workspace"),
+        ),
+    }
+
+
 # ---------------------------------------------------------------------------
-# Tests for GET /list_models — public aliased models
+# Public aliased models — task type from get_model_type
 # ---------------------------------------------------------------------------
 
 
 class TestListModelsPublicAliases:
-    """Test that public models from REGISTERED_ALIASES appear correctly."""
+    """Task types are resolved via get_model_type, cached per dataset_id."""
 
-    @patch(
-        "inference.core.interfaces.http.http_api.get_roboflow_workspace_models",
-        side_effect=WorkspaceLoadError("no workspace"),
-    )
-    def test_rfdetr_nano_appears_as_object_detection(
-        self, _mock_ws, client: TestClient
-    ):
-        """rfdetr-nano should resolve to /infer/object_detection."""
-        response = client.get("/list_models", params={"api_key": "test_key"})
+    def test_rfdetr_nano_appears_as_object_detection(self, client: TestClient):
+        mocks = _mock_roboflow_api()
+        with mocks["model_type"], mocks["ws_models"]:
+            response = client.get("/list_models", params={"api_key": "test_key"})
+
         assert response.status_code == 200
         endpoints = response.json()["endpoints"]
         matching = [e for e in endpoints if "model_id=rfdetr-nano" in e]
         assert len(matching) == 1
         assert "/infer/object_detection?model_id=rfdetr-nano" in matching[0]
 
-    @patch(
-        "inference.core.interfaces.http.http_api.get_roboflow_workspace_models",
-        side_effect=WorkspaceLoadError("no workspace"),
-    )
-    def test_yolov8s_seg_640_appears_as_instance_segmentation(
-        self, _mock_ws, client: TestClient
-    ):
-        """yolov8s-seg-640 should strip -640 and resolve to instance_segmentation."""
-        response = client.get("/list_models", params={"api_key": "test_key"})
-        assert response.status_code == 200
+    def test_yolov8s_seg_640_appears_as_instance_segmentation(self, client: TestClient):
+        mocks = _mock_roboflow_api()
+        with mocks["model_type"], mocks["ws_models"]:
+            response = client.get("/list_models", params={"api_key": "test_key"})
+
         endpoints = response.json()["endpoints"]
         matching = [e for e in endpoints if "model_id=yolov8s-seg-640" in e]
         assert len(matching) == 1
         assert "/infer/instance_segmentation?model_id=yolov8s-seg-640" in matching[0]
 
-    @patch(
-        "inference.core.interfaces.http.http_api.get_roboflow_workspace_models",
-        side_effect=WorkspaceLoadError("no workspace"),
-    )
-    def test_yolov8n_640_appears_as_object_detection_not_classification(
-        self, _mock_ws, client: TestClient
-    ):
-        """yolov8n is in multiple tasks; alias yolov8n-640 (no -seg/-pose) should
-        resolve to object-detection, not classification."""
-        response = client.get("/list_models", params={"api_key": "test_key"})
-        assert response.status_code == 200
-        endpoints = response.json()["endpoints"]
-        matching = [e for e in endpoints if "model_id=yolov8n-640" in e]
-        assert len(matching) == 1
-        assert "/infer/object_detection?model_id=yolov8n-640" in matching[0]
+    def test_yolov8n_pose_640_appears_as_keypoints_detection(self, client: TestClient):
+        mocks = _mock_roboflow_api()
+        with mocks["model_type"], mocks["ws_models"]:
+            response = client.get("/list_models", params={"api_key": "test_key"})
 
-    @patch(
-        "inference.core.interfaces.http.http_api.get_roboflow_workspace_models",
-        side_effect=WorkspaceLoadError("no workspace"),
-    )
-    def test_yolov8x_pose_640_appears_as_keypoints_detection(
-        self, _mock_ws, client: TestClient
-    ):
-        """yolov8x-pose-640 should resolve to keypoints_detection."""
-        response = client.get("/list_models", params={"api_key": "test_key"})
-        assert response.status_code == 200
         endpoints = response.json()["endpoints"]
         matching = [e for e in endpoints if "model_id=yolov8n-pose-640" in e]
         assert len(matching) == 1
         assert "/infer/keypoints_detection?model_id=yolov8n-pose-640" in matching[0]
 
-    @patch(
-        "inference.core.interfaces.http.http_api.get_roboflow_workspace_models",
-        side_effect=WorkspaceLoadError("no workspace"),
-    )
-    def test_resnet50_appears_as_classification(
-        self, _mock_ws, client: TestClient
-    ):
-        """resnet50 has no resolution suffix and maps to classification."""
-        response = client.get("/list_models", params={"api_key": "test_key"})
-        assert response.status_code == 200
+    def test_resnet50_appears_as_classification(self, client: TestClient):
+        mocks = _mock_roboflow_api()
+        with mocks["model_type"], mocks["ws_models"]:
+            response = client.get("/list_models", params={"api_key": "test_key"})
+
         endpoints = response.json()["endpoints"]
         matching = [e for e in endpoints if "model_id=resnet50" in e]
         assert len(matching) == 1
         assert "/infer/classification?model_id=resnet50" in matching[0]
 
+    def test_get_model_type_called_once_per_dataset(self, client: TestClient):
+        """Multiple aliases sharing a dataset should trigger only one API call."""
+        mocks = _mock_roboflow_api()
+        with mocks["model_type"] as mock_mt, mocks["ws_models"]:
+            client.get("/list_models", params={"api_key": "test_key"})
 
-# ---------------------------------------------------------------------------
-# Tests for naming variant resolution
-# ---------------------------------------------------------------------------
+        # Count calls where model_id starts with "coco/" — should be exactly 1
+        coco_calls = [
+            c for c in mock_mt.call_args_list
+            if c.kwargs.get("model_id", "").startswith("coco/")
+            or (c.args and c.args[0].startswith("coco/"))
+        ]
+        assert len(coco_calls) == 1
 
+    def test_failed_dataset_lookup_skips_alias(self, client: TestClient):
+        """If get_model_type raises for a dataset, those aliases are skipped."""
+        with (
+            patch(
+                "inference.core.interfaces.http.http_api.get_model_type",
+                side_effect=Exception("API error"),
+            ),
+            patch(
+                "inference.core.interfaces.http.http_api.get_roboflow_workspace_models",
+                side_effect=WorkspaceLoadError("no workspace"),
+            ),
+        ):
+            response = client.get("/list_models", params={"api_key": "test_key"})
 
-class TestListModelsNamingVariants:
-    """Test that YOLO naming variants (yolo11/yolov11, yolov26/yolo26,
-    yolo-nas/yolo_nas) are resolved correctly."""
-
-    @patch(
-        "inference.core.interfaces.http.http_api.get_roboflow_workspace_models",
-        side_effect=WorkspaceLoadError("no workspace"),
-    )
-    def test_yolo11n_640_resolves_via_yolov11n(
-        self, _mock_ws, client: TestClient
-    ):
-        """Alias yolo11n-640 strips to yolo11n, which should fallback-match
-        yolov11n in the registry."""
-        response = client.get("/list_models", params={"api_key": "test_key"})
+        assert response.status_code == 200
         endpoints = response.json()["endpoints"]
-        matching = [e for e in endpoints if "model_id=yolo11n-640" in e]
-        assert len(matching) == 1
-        assert "/infer/object_detection" in matching[0]
-
-    @patch(
-        "inference.core.interfaces.http.http_api.get_roboflow_workspace_models",
-        side_effect=WorkspaceLoadError("no workspace"),
-    )
-    def test_yolov26n_640_resolves_via_yolo26n(
-        self, _mock_ws, client: TestClient
-    ):
-        """Alias yolov26n-640 strips to yolov26n, which should fallback-match
-        yolo26n in the registry."""
-        response = client.get("/list_models", params={"api_key": "test_key"})
-        endpoints = response.json()["endpoints"]
-        matching = [e for e in endpoints if "model_id=yolov26n-640" in e]
-        assert len(matching) == 1
-        assert "/infer/object_detection" in matching[0]
-
-    @patch(
-        "inference.core.interfaces.http.http_api.get_roboflow_workspace_models",
-        side_effect=WorkspaceLoadError("no workspace"),
-    )
-    def test_yolo26n_seg_640_resolves_to_instance_segmentation(
-        self, _mock_ws, client: TestClient
-    ):
-        """yolo26n-seg-640 → yolo26n-seg → instance-segmentation."""
-        response = client.get("/list_models", params={"api_key": "test_key"})
-        endpoints = response.json()["endpoints"]
-        matching = [e for e in endpoints if "model_id=yolo26n-seg-640" in e]
-        assert len(matching) == 1
-        assert "/infer/instance_segmentation" in matching[0]
-
-    @patch(
-        "inference.core.interfaces.http.http_api.get_roboflow_workspace_models",
-        side_effect=WorkspaceLoadError("no workspace"),
-    )
-    def test_yolo_nas_s_640_resolves_via_underscore_fallback(
-        self, _mock_ws, client: TestClient
-    ):
-        """yolo-nas-s-640 → yolo-nas-s → yolo_nas_s via hyphen→underscore."""
-        response = client.get("/list_models", params={"api_key": "test_key"})
-        endpoints = response.json()["endpoints"]
-        matching = [e for e in endpoints if "model_id=yolo-nas-s-640" in e]
-        assert len(matching) == 1
-        assert "/infer/object_detection" in matching[0]
+        alias_endpoints = [e for e in endpoints if "model_id=" in e]
+        assert len(alias_endpoints) == 0
 
 
 # ---------------------------------------------------------------------------
-# Tests for GET /list_models — private workspace models
+# Private workspace models
 # ---------------------------------------------------------------------------
 
 
 class TestListModelsPrivateModels:
-    """Test that private models from the user's workspace are included."""
 
-    @patch(
-        "inference.core.interfaces.http.http_api.get_roboflow_workspace_models",
-        return_value=(
-            {
-                "id": "my-dataset",
-                "type": "object-detection",
-                "versions": [1, 2],
-            },
-            {
-                "id": "seg-project",
-                "type": "instance-segmentation",
-                "versions": [3],
-            },
-        ),
-    )
-    def test_private_models_included_in_response(
-        self, _mock_projects, client: TestClient
-    ):
-        response = client.get("/list_models", params={"api_key": "test_key"})
+    def test_private_models_included_in_response(self, client: TestClient):
+        with (
+            patch(
+                "inference.core.interfaces.http.http_api.get_model_type",
+                side_effect=_fake_get_model_type,
+            ),
+            patch(
+                "inference.core.interfaces.http.http_api.get_roboflow_workspace_models",
+                return_value=(
+                    {
+                        "id": "my-dataset",
+                        "type": "object-detection",
+                        "versions": [1, 2],
+                    },
+                    {
+                        "id": "seg-project",
+                        "type": "instance-segmentation",
+                        "versions": [3],
+                    },
+                ),
+            ),
+        ):
+            response = client.get("/list_models", params={"api_key": "test_key"})
+
         assert response.status_code == 200
         endpoints = response.json()["endpoints"]
+        assert any("/infer/object_detection?model_id=my-dataset/1" in e for e in endpoints)
+        assert any("/infer/object_detection?model_id=my-dataset/2" in e for e in endpoints)
+        assert any("/infer/instance_segmentation?model_id=seg-project/3" in e for e in endpoints)
 
-        # Check private object-detection models
-        assert any(
-            "/infer/object_detection?model_id=my-dataset/1" in e
-            for e in endpoints
-        )
-        assert any(
-            "/infer/object_detection?model_id=my-dataset/2" in e
-            for e in endpoints
-        )
-        # Check private instance-segmentation model
-        assert any(
-            "/infer/instance_segmentation?model_id=seg-project/3" in e
-            for e in endpoints
-        )
+    def test_private_models_with_dict_versions(self, client: TestClient):
+        with (
+            patch(
+                "inference.core.interfaces.http.http_api.get_model_type",
+                side_effect=_fake_get_model_type,
+            ),
+            patch(
+                "inference.core.interfaces.http.http_api.get_roboflow_workspace_models",
+                return_value=(
+                    {
+                        "id": "my-dataset",
+                        "type": "object-detection",
+                        "versions": [{"id": 1}, {"id": 2}],
+                    },
+                ),
+            ),
+        ):
+            response = client.get("/list_models", params={"api_key": "test_key"})
 
-    @patch(
-        "inference.core.interfaces.http.http_api.get_roboflow_workspace_models",
-        return_value=(
-            {
-                "id": "my-dataset",
-                "type": "object-detection",
-                "versions": [{"id": 1}, {"id": 2}],
-            },
-        ),
-    )
-    def test_private_models_with_dict_versions(
-        self, _mock_projects, client: TestClient
-    ):
-        """Versions can be dicts with an 'id' key rather than plain ints."""
-        response = client.get("/list_models", params={"api_key": "test_key"})
+        endpoints = response.json()["endpoints"]
+        assert any("/infer/object_detection?model_id=my-dataset/1" in e for e in endpoints)
+        assert any("/infer/object_detection?model_id=my-dataset/2" in e for e in endpoints)
+
+    def test_workspace_failure_does_not_break_endpoint(self, client: TestClient):
+        mocks = _mock_roboflow_api()
+        with mocks["model_type"], mocks["ws_models"]:
+            response = client.get("/list_models", params={"api_key": "test_key"})
+
         assert response.status_code == 200
         endpoints = response.json()["endpoints"]
-
-        assert any(
-            "/infer/object_detection?model_id=my-dataset/1" in e
-            for e in endpoints
-        )
-        assert any(
-            "/infer/object_detection?model_id=my-dataset/2" in e
-            for e in endpoints
-        )
-
-    @patch(
-        "inference.core.interfaces.http.http_api.get_roboflow_workspace_models",
-        side_effect=WorkspaceLoadError("API unreachable"),
-    )
-    def test_workspace_failure_does_not_break_endpoint(
-        self, _mock_projects, client: TestClient
-    ):
-        """If the workspace API fails, public models should still be returned."""
-        response = client.get("/list_models", params={"api_key": "test_key"})
-        assert response.status_code == 200
-        endpoints = response.json()["endpoints"]
-        # Public aliases should still be present
         assert any("rfdetr-nano" in e for e in endpoints)
 
 
 # ---------------------------------------------------------------------------
-# Tests for URL construction
+# URL construction
 # ---------------------------------------------------------------------------
 
 
 class TestListModelsURLConstruction:
-    """Test that URLs are constructed using request.base_url."""
 
-    @patch(
-        "inference.core.interfaces.http.http_api.get_roboflow_workspace_models",
-        side_effect=WorkspaceLoadError("no workspace"),
-    )
-    def test_urls_use_testclient_base_url(
-        self, _mock_ws, client: TestClient
-    ):
-        """TestClient uses http://testserver as base_url."""
-        response = client.get("/list_models", params={"api_key": "test_key"})
-        assert response.status_code == 200
-        endpoints = response.json()["endpoints"]
-        # All endpoints should start with the test server base URL
-        for endpoint in endpoints:
+    def test_urls_use_testclient_base_url(self, client: TestClient):
+        mocks = _mock_roboflow_api()
+        with mocks["model_type"], mocks["ws_models"]:
+            response = client.get("/list_models", params={"api_key": "test_key"})
+
+        for endpoint in response.json()["endpoints"]:
             assert endpoint.startswith("http://testserver/")
 
-    @patch(
-        "inference.core.interfaces.http.http_api.get_roboflow_workspace_models",
-        side_effect=WorkspaceLoadError("no workspace"),
-    )
-    def test_response_structure(self, _mock_ws, client: TestClient):
-        """Response should be a JSON object with an 'endpoints' list of strings."""
-        response = client.get("/list_models", params={"api_key": "test_key"})
+    def test_response_structure(self, client: TestClient):
+        mocks = _mock_roboflow_api()
+        with mocks["model_type"], mocks["ws_models"]:
+            response = client.get("/list_models", params={"api_key": "test_key"})
+
         assert response.status_code == 200
         body = response.json()
         assert "endpoints" in body
@@ -384,38 +288,31 @@ class TestListModelsURLConstruction:
 
 
 # ---------------------------------------------------------------------------
-# Tests for the api_key requirement
+# Auth
 # ---------------------------------------------------------------------------
 
 
 class TestListModelsAuth:
-    """Test that the endpoint requires an api_key."""
 
     def test_missing_api_key_returns_422(self, client: TestClient):
-        """FastAPI should return 422 when required query param is missing."""
         response = client.get("/list_models")
         assert response.status_code == 422
 
 
 # ---------------------------------------------------------------------------
-# Tests for get_roboflow_workspace_models in roboflow_api.py
+# get_roboflow_workspace_models unit tests
 # ---------------------------------------------------------------------------
 
 
 class TestGetRoboflowWorkspaceModels:
-    """Test the new get_roboflow_workspace_models function."""
 
-    def test_returns_projects_from_workspace_detail(
-        self, requests_mock: Mocker
-    ):
+    def test_returns_projects_from_workspace_detail(self, requests_mock):
         from inference.core.roboflow_api import get_roboflow_workspace_models
 
-        # Root endpoint returns workspace slug
         requests_mock.get(
             url=wrap_url(f"{API_BASE_URL}/"),
             json={"workspace": "my_workspace"},
         )
-        # Workspace detail endpoint returns projects
         requests_mock.get(
             url=wrap_url(f"{API_BASE_URL}/my_workspace"),
             json={
@@ -426,7 +323,6 @@ class TestGetRoboflowWorkspaceModels:
                             "id": "cars",
                             "type": "object-detection",
                             "versions": [1, 2],
-                            "extra_field": "ignored",
                         },
                         {
                             "id": "people-seg",
@@ -448,9 +344,7 @@ class TestGetRoboflowWorkspaceModels:
         assert result[1]["id"] == "people-seg"
         assert result[1]["type"] == "instance-segmentation"
 
-    def test_returns_empty_tuple_when_no_projects(
-        self, requests_mock: Mocker
-    ):
+    def test_returns_empty_tuple_when_no_projects(self, requests_mock):
         from inference.core.roboflow_api import get_roboflow_workspace_models
 
         requests_mock.get(
@@ -463,12 +357,9 @@ class TestGetRoboflowWorkspaceModels:
         )
 
         result = get_roboflow_workspace_models(api_key="test_key_3")
-
         assert result == ()
 
-    def test_defaults_type_when_missing(
-        self, requests_mock: Mocker
-    ):
+    def test_defaults_type_when_missing(self, requests_mock):
         from inference.core.roboflow_api import get_roboflow_workspace_models
 
         requests_mock.get(
@@ -487,10 +378,9 @@ class TestGetRoboflowWorkspaceModels:
         )
 
         result = get_roboflow_workspace_models(api_key="test_key_4")
-
         assert result[0]["type"] == "object-detection"
 
-    def test_raises_on_unauthorized(self, requests_mock: Mocker):
+    def test_raises_on_unauthorized(self, requests_mock):
         from inference.core.exceptions import RoboflowAPINotAuthorizedError
         from inference.core.roboflow_api import get_roboflow_workspace_models
 
