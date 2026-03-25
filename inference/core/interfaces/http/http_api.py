@@ -3854,9 +3854,7 @@ class HttpInterface(BaseInterface):
                     continue
                 infer_path = task_to_path.get(task)
                 if infer_path is not None:
-                    endpoints.append(
-                        f"{base_url}{infer_path}?model_id={model_id}"
-                    )
+                    endpoints.append(f"{base_url}{infer_path}?model_id={model_id}")
 
             # ── Public aliased models ────────────────────────────────
             # Resolve task type via get_model_type (same path the
