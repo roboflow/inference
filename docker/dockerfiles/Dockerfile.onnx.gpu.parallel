@@ -36,7 +36,6 @@ RUN pip3 install \
     -r requirements.easyocr.txt \
     -r requirements.modal.txt \
     "setuptools<=75.5.0" \
-    --upgrade \
     && rm -rf ~/.cache/pip
 
 RUN apt-get update && apt-get install -y lsb-release curl gpg
