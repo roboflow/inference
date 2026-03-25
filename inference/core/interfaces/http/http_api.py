@@ -3814,7 +3814,8 @@ class HttpInterface(BaseInterface):
                 dict: ``{"endpoints": [...]}``
             """
             base_url = str(request.base_url).rstrip("/")
-            endpoints: List[str] = []
+            public_endpoints: List[str] = []
+            private_endpoints: List[str] = []
 
             task_to_path = {
                 "object-detection": "/infer/object_detection",
@@ -3842,7 +3843,7 @@ class HttpInterface(BaseInterface):
                     continue
                 for prefix in core_prefixes:
                     if route.path.startswith(f"/{prefix}/"):
-                        endpoints.append(f"{base_url}{route.path}")
+                        public_endpoints.append(f"{base_url}{route.path}")
                         break
 
             # ── Generic models reachable via /infer/* routes ─────────
@@ -3851,7 +3852,9 @@ class HttpInterface(BaseInterface):
                     continue
                 infer_path = task_to_path.get(task)
                 if infer_path is not None:
-                    endpoints.append(f"{base_url}{infer_path}?model_id={model_id}")
+                    public_endpoints.append(
+                        f"{base_url}{infer_path}?model_id={model_id}"
+                    )
 
             # ── Public aliased models ────────────────────────────────
             # Resolve task type via get_model_type (same path the
@@ -3886,7 +3889,7 @@ class HttpInterface(BaseInterface):
                 infer_path = task_to_path.get(task)
                 if infer_path is None:
                     continue
-                endpoints.append(f"{base_url}{infer_path}?model_id={alias}")
+                public_endpoints.append(f"{base_url}{infer_path}?model_id={alias}")
 
             # ── Private workspace models ─────────────────────────────
             try:
@@ -3905,7 +3908,7 @@ class HttpInterface(BaseInterface):
                             else version.get("id")
                         )
                         if version_id is not None:
-                            endpoints.append(
+                            private_endpoints.append(
                                 f"{base_url}{infer_path}?model_id={project['id']}/{version_id}"
                             )
             except (RoboflowAPINotAuthorizedError, WorkspaceLoadError):
@@ -3914,7 +3917,11 @@ class HttpInterface(BaseInterface):
                     exc_info=True,
                 )
 
-            return {"endpoints": endpoints}
+            sort_key = lambda url: url.split("?")[0]
+            return {
+                "public_endpoints": sorted(public_endpoints, key=sort_key),
+                "private_endpoints": sorted(private_endpoints, key=sort_key),
+            }
 
         app.mount(
             "/",

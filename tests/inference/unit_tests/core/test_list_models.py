@@ -121,7 +121,7 @@ class TestListModelsPublicAliases:
             response = client.get("/list_models", params={"api_key": "test_key"})
 
         assert response.status_code == 200
-        endpoints = response.json()["endpoints"]
+        endpoints = response.json()["public_endpoints"]
         matching = [e for e in endpoints if "model_id=rfdetr-nano" in e]
         assert len(matching) == 1
         assert "/infer/object_detection?model_id=rfdetr-nano" in matching[0]
@@ -131,7 +131,7 @@ class TestListModelsPublicAliases:
         with mocks["model_type"], mocks["ws_models"]:
             response = client.get("/list_models", params={"api_key": "test_key"})
 
-        endpoints = response.json()["endpoints"]
+        endpoints = response.json()["public_endpoints"]
         matching = [e for e in endpoints if "model_id=yolov8s-seg-640" in e]
         assert len(matching) == 1
         assert "/infer/instance_segmentation?model_id=yolov8s-seg-640" in matching[0]
@@ -141,7 +141,7 @@ class TestListModelsPublicAliases:
         with mocks["model_type"], mocks["ws_models"]:
             response = client.get("/list_models", params={"api_key": "test_key"})
 
-        endpoints = response.json()["endpoints"]
+        endpoints = response.json()["public_endpoints"]
         matching = [e for e in endpoints if "model_id=yolov8n-pose-640" in e]
         assert len(matching) == 1
         assert "/infer/keypoints_detection?model_id=yolov8n-pose-640" in matching[0]
@@ -151,7 +151,7 @@ class TestListModelsPublicAliases:
         with mocks["model_type"], mocks["ws_models"]:
             response = client.get("/list_models", params={"api_key": "test_key"})
 
-        endpoints = response.json()["endpoints"]
+        endpoints = response.json()["public_endpoints"]
         matching = [e for e in endpoints if "model_id=resnet50" in e]
         assert len(matching) == 1
         assert "/infer/classification?model_id=resnet50" in matching[0]
@@ -185,9 +185,9 @@ class TestListModelsPublicAliases:
             response = client.get("/list_models", params={"api_key": "test_key"})
 
         assert response.status_code == 200
-        endpoints = response.json()["endpoints"]
+        endpoints = response.json()["public_endpoints"]
         # No alias-based endpoints should appear, but GENERIC_MODELS
-        # entries (like classifiers, qwen3_5) still show up
+        # entries (like qwen3_5) still show up
         alias_endpoints = [
             e for e in endpoints
             if "model_id=" in e and "/" in e.split("model_id=")[1]
@@ -227,7 +227,7 @@ class TestListModelsPrivateModels:
             response = client.get("/list_models", params={"api_key": "test_key"})
 
         assert response.status_code == 200
-        endpoints = response.json()["endpoints"]
+        endpoints = response.json()["private_endpoints"]
         assert any("/infer/object_detection?model_id=my-dataset/1" in e for e in endpoints)
         assert any("/infer/object_detection?model_id=my-dataset/2" in e for e in endpoints)
         assert any("/infer/instance_segmentation?model_id=seg-project/3" in e for e in endpoints)
@@ -251,7 +251,7 @@ class TestListModelsPrivateModels:
         ):
             response = client.get("/list_models", params={"api_key": "test_key"})
 
-        endpoints = response.json()["endpoints"]
+        endpoints = response.json()["private_endpoints"]
         assert any("/infer/object_detection?model_id=my-dataset/1" in e for e in endpoints)
         assert any("/infer/object_detection?model_id=my-dataset/2" in e for e in endpoints)
 
@@ -261,7 +261,7 @@ class TestListModelsPrivateModels:
             response = client.get("/list_models", params={"api_key": "test_key"})
 
         assert response.status_code == 200
-        endpoints = response.json()["endpoints"]
+        endpoints = response.json()["public_endpoints"]
         assert any("rfdetr-nano" in e for e in endpoints)
 
 
@@ -277,7 +277,8 @@ class TestListModelsURLConstruction:
         with mocks["model_type"], mocks["ws_models"]:
             response = client.get("/list_models", params={"api_key": "test_key"})
 
-        for endpoint in response.json()["endpoints"]:
+        body = response.json()
+        for endpoint in body["public_endpoints"] + body["private_endpoints"]:
             assert endpoint.startswith("http://testserver/")
 
     def test_response_structure(self, client: TestClient):
@@ -287,9 +288,12 @@ class TestListModelsURLConstruction:
 
         assert response.status_code == 200
         body = response.json()
-        assert "endpoints" in body
-        assert isinstance(body["endpoints"], list)
-        assert all(isinstance(e, str) for e in body["endpoints"])
+        assert "public_endpoints" in body
+        assert "private_endpoints" in body
+        assert isinstance(body["public_endpoints"], list)
+        assert isinstance(body["private_endpoints"], list)
+        assert all(isinstance(e, str) for e in body["public_endpoints"])
+        assert all(isinstance(e, str) for e in body["private_endpoints"])
 
 
 # ---------------------------------------------------------------------------
