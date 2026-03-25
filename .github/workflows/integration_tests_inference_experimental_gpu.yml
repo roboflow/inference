@@ -34,7 +34,7 @@ jobs:
       matrix:
         python-version: ["3.12"]
         extras:
-          - { install: "onnx-cu12,mediapipe", marker: "onnx_extras", workers: "auto", enable_auto_cuda_graphs_for_trt: "false" }
+          - { install: "torch-cu124,onnx-cu12,mediapipe", marker: "onnx_extras", workers: "auto", enable_auto_cuda_graphs_for_trt: "false" }
           - { install: "trt10,torch-cu124", marker: "trt_extras", workers: "auto", enable_auto_cuda_graphs_for_trt: "false" }
           - { install: "trt10,torch-cu124", marker: "trt_extras", workers: "auto", enable_auto_cuda_graphs_for_trt: "true" }
           - { install: "torch-cu124,mediapipe", marker: "torch_models", workers: "1", "enable_auto_cuda_graphs_for_trt": "false" }
