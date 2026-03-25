@@ -88,6 +88,7 @@ class RFDetrForObjectDetectionTRT(
         engine_host_code_allowed: bool = False,
         trt_cuda_graph_cache: Optional[TRTCudaGraphCache] = None,
         default_trt_cuda_graph_cache_size: int = 8,
+        rf_detr_max_input_resolution: Optional[Union[int, Tuple[int, int]]] = None,
         **kwargs,
     ) -> "RFDetrForObjectDetectionTRT":
         if device.type != "cuda":
@@ -126,6 +127,7 @@ class RFDetrForObjectDetectionTRT(
                     "we recommend using preprocessing method different that `fit-longer-edge`.",
                 )
             },
+            max_allowed_input_size=rf_detr_max_input_resolution,
         )
         classes_re_mapping = None
         if inference_config.class_names_operations:
