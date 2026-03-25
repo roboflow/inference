@@ -310,6 +310,55 @@ async def get_roboflow_workspace_async(api_key: str) -> WorkspaceID:
         raise error
 
 
+@ttl_cache(ttl=60, maxsize=128)
+@wrap_roboflow_api_errors()
+def get_roboflow_workspace_models(
+    api_key: str,
+) -> Tuple[dict, ...]:
+    """Fetches all projects and their versions for the workspace tied to an API key.
+
+    First resolves the workspace slug via GET /, then fetches the full
+    workspace detail (including projects) via GET /{workspace_slug}.
+
+    Args:
+        api_key: The API key used to authenticate.
+
+    Returns:
+        Tuple of dicts, each containing project metadata including 'id', 'type',
+        and 'versions' (list of version dicts with 'id').
+    """
+    workspace_id = get_roboflow_workspace(api_key=api_key)
+    api_url = _add_params_to_url(
+        url=f"{API_BASE_URL}/{workspace_id}",
+        params=[("api_key", api_key), ("nocache", "true")],
+    )
+    workspace_data = _get_from_url(url=api_url)
+    workspace_info = workspace_data.get("workspace", workspace_data)
+    if isinstance(workspace_info, dict):
+        projects = workspace_info.get("projects", workspace_data.get("projects", []))
+    else:
+        projects = workspace_data.get("projects", [])
+    # Return as tuple so it's hashable for ttl_cache
+    result = []
+    for p in projects:
+        versions_raw = p.get("versions", [])
+        if isinstance(versions_raw, int):
+            # API returns version count — generate version IDs 1..N
+            versions = list(range(1, versions_raw + 1))
+        elif isinstance(versions_raw, list):
+            versions = versions_raw
+        else:
+            versions = []
+        result.append(
+            {
+                "id": p["id"],
+                "type": p.get("type", "object-detection"),
+                "versions": versions,
+            }
+        )
+    return tuple(result)
+
+
 @wrap_roboflow_api_errors()
 def add_custom_metadata(
     api_key: str,

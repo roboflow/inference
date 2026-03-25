@@ -268,10 +268,11 @@ from inference.core.managers.model_load_collector import (
     request_workflow_id,
 )
 from inference.core.managers.prometheus import InferenceInstrumentator
+from inference.core.registries.roboflow import GENERIC_MODELS
 from inference.core.roboflow_api import (
     build_roboflow_api_headers,
-    get_roboflow_workspace,
     get_roboflow_workspace_async,
+    get_roboflow_workspace_models,
     get_workflow_specification,
 )
 from inference.core.telemetry import setup_telemetry, shutdown_telemetry, start_span
@@ -296,7 +297,7 @@ from inference.core.workflows.execution_engine.v1.compiler.syntactic_parser impo
     get_workflow_schema_description,
     parse_workflow_definition,
 )
-from inference.models.aliases import resolve_roboflow_model_alias
+from inference.models.aliases import REGISTERED_ALIASES, resolve_roboflow_model_alias
 from inference.usage_tracking.collector import usage_collector
 
 if LAMBDA:
@@ -3774,6 +3775,130 @@ class HttpInterface(BaseInterface):
                     "message": f"Could not load input image. Cause: {exc.get_public_error_details()}"
                 },
             )
+
+        @app.get(
+            "/list_models",
+            summary="List available model endpoints",
+            description="Returns all inference endpoint URLs reachable by the "
+            "authenticated user, including public models and private "
+            "workspace models.",
+        )
+        @with_route_exceptions
+        def list_models(
+            request: Request,
+            api_key: str = Query(
+                ...,
+                description="Roboflow API Key used to authenticate and "
+                "discover private workspace models",
+            ),
+        ):
+            base_url = str(request.base_url).rstrip("/")
+            endpoints: List[str] = []
+
+            # Build task_type → /infer/* path lookup, keyed by task_type
+            # directly (e.g. "object-detection" → "/infer/object_detection")
+            task_to_path: Dict[str, str] = {}
+            core_prefixes = {key.split("/")[0] for key in GENERIC_MODELS}
+            for route in app.routes:
+                if not (
+                    hasattr(route, "path")
+                    and hasattr(route, "methods")
+                    and "POST" in route.methods
+                ):
+                    continue
+                if route.path.startswith("/infer/") and "{" not in route.path:
+                    # "/infer/object_detection" → key as "object-detection"
+                    key = route.path.split("/infer/", 1)[1].replace("_", "-")
+                    task_to_path[key] = route.path
+                else:
+                    for prefix in core_prefixes:
+                        if route.path.startswith(f"/{prefix}/"):
+                            endpoints.append(f"{base_url}{route.path}")
+                            break
+            # Handle irregular naming: route is keypoints (plural) but
+            # task type is keypoint (singular)
+            if "keypoints-detection" in task_to_path:
+                task_to_path.setdefault(
+                    "keypoint-detection", task_to_path["keypoints-detection"]
+                )
+
+            # Build model_type → set(task_types) from the registry,
+            # pre-populating YOLO naming variants so lookups are a
+            # single dict.get()
+            model_type_to_tasks: Dict[str, set] = {}
+            for (
+                task_type,
+                model_type,
+            ) in self.model_manager.model_manager.model_registry.registry_dict:
+                if model_type == "stub":
+                    continue
+                model_type_to_tasks.setdefault(model_type, set()).add(task_type)
+            for mt, tasks in list(model_type_to_tasks.items()):
+                # yolov11n ↔ yolo11n, yolo26n ↔ yolov26n
+                if mt.startswith("yolov") and mt[5:6].isdigit():
+                    model_type_to_tasks.setdefault("yolo" + mt[5:], set()).update(tasks)
+                elif mt.startswith("yolo") and mt[4:5].isdigit():
+                    model_type_to_tasks.setdefault("yolov" + mt[4:], set()).update(tasks)
+                # yolo_nas_s → yolo-nas-s
+                if "_" in mt:
+                    model_type_to_tasks.setdefault(mt.replace("_", "-"), set()).update(tasks)
+
+            # ── Public aliased models ────────────────────────────────
+            for alias in REGISTERED_ALIASES:
+                # Strip resolution suffix: yolov8n-640 → yolov8n
+                model_type = alias
+                for suffix in ("-640", "-1280"):
+                    if alias.endswith(suffix):
+                        model_type = alias[: -len(suffix)]
+                        break
+                tasks = model_type_to_tasks.get(model_type)
+                if not tasks:
+                    continue
+                # Disambiguate when model_type maps to multiple tasks
+                if len(tasks) == 1:
+                    task = next(iter(tasks))
+                elif "-seg" in alias and "instance-segmentation" in tasks:
+                    task = "instance-segmentation"
+                elif "-pose" in alias and "keypoint-detection" in tasks:
+                    task = "keypoint-detection"
+                elif "object-detection" in tasks:
+                    task = "object-detection"
+                elif "classification" in tasks:
+                    task = "classification"
+                else:
+                    task = next(iter(tasks))
+                infer_path = task_to_path.get(task)
+                if infer_path is None:
+                    continue
+                endpoints.append(f"{base_url}{infer_path}?model_id={alias}")
+
+            # ── Private workspace models ─────────────────────────────
+            try:
+                projects = get_roboflow_workspace_models(
+                    api_key=api_key,
+                )
+                for project in projects:
+                    task = project.get("type", "object-detection")
+                    infer_path = task_to_path.get(task)
+                    if infer_path is None:
+                        continue
+                    for version in project.get("versions", []):
+                        version_id = (
+                            version
+                            if isinstance(version, (str, int))
+                            else version.get("id")
+                        )
+                        if version_id is not None:
+                            endpoints.append(
+                                f"{base_url}{infer_path}?model_id={project['id']}/{version_id}"
+                            )
+            except (RoboflowAPINotAuthorizedError, WorkspaceLoadError):
+                logger.warning(
+                    "Failed to fetch workspace models for /list_models",
+                    exc_info=True,
+                )
+
+            return {"endpoints": endpoints}
 
         app.mount(
             "/",
