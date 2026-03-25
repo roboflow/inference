@@ -186,7 +186,12 @@ class TestListModelsPublicAliases:
 
         assert response.status_code == 200
         endpoints = response.json()["endpoints"]
-        alias_endpoints = [e for e in endpoints if "model_id=" in e]
+        # No alias-based endpoints should appear, but GENERIC_MODELS
+        # entries (like classifiers, qwen3_5) still show up
+        alias_endpoints = [
+            e for e in endpoints
+            if "model_id=" in e and "/" in e.split("model_id=")[1]
+        ]
         assert len(alias_endpoints) == 0
 
 

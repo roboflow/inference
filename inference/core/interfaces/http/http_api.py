@@ -3803,10 +3803,15 @@ class HttpInterface(BaseInterface):
                 "semantic-segmentation": "/infer/semantic_segmentation",
                 "lmm": "/infer/lmm",
                 "text-image-pairs": "/infer/lmm",
+                "depth-estimation": "/infer/depth-estimation",
             }
 
             # Core model endpoints (clip, sam, etc.)
             core_prefixes = {key.split("/")[0] for key in GENERIC_MODELS}
+            # Route is /sam3_3d/* but GENERIC_MODELS key is "sam3-3d-objects"
+            core_prefixes.add("sam3_3d")
+            # Route is /ocr/trocr but GENERIC_MODELS key is "trocr"
+            core_prefixes.add("ocr")
             for route in app.routes:
                 if not (
                     hasattr(route, "path")
@@ -3818,6 +3823,14 @@ class HttpInterface(BaseInterface):
                     if route.path.startswith(f"/{prefix}/"):
                         endpoints.append(f"{base_url}{route.path}")
                         break
+
+            # ── Generic models reachable via /infer/* routes ─────────
+            for model_id, (task, _) in GENERIC_MODELS.items():
+                if "/" in model_id:
+                    continue
+                infer_path = task_to_path.get(task)
+                if infer_path is not None:
+                    endpoints.append(f"{base_url}{infer_path}?model_id={model_id}")
 
             # ── Public aliased models ────────────────────────────────
             # Resolve task type via get_model_type (same path the
