@@ -1012,6 +1012,35 @@ def test_get_roboflow_model_data_when_valid_response_expected(
     assert result == expected_response
 
 
+def test_get_roboflow_model_data_excludes_api_key_when_local(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    expected_response = {
+        "ort": {
+            "name": "barbel-detection",
+            "type": "object-detection",
+        }
+    }
+    requests_mock.get(
+        url=wrap_url(f"{API_BASE_URL}/ort/coins_detection/1"),
+        json=expected_response,
+    )
+
+    # when
+    result = get_roboflow_model_data(
+        api_key="local",
+        model_id="coins_detection/1",
+        endpoint_type=ModelEndpointType.ORT,
+        device_id="some",
+    )
+
+    # then
+    assert "api_key" not in requests_mock.last_request.query
+    assert "nocache=true" in requests_mock.last_request.query
+    assert result == expected_response
+
+
 def test_get_model_metadata_from_inference_models_registry_when_valid_response_expected(
     requests_mock: Mocker,
 ) -> None:
