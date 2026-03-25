@@ -33,8 +33,8 @@ COPY requirements/requirements.sam.txt \
     ./
 
 RUN python3 -m pip install -U pip uv
+RUN uv pip install --system --index-url https://download.pytorch.org/whl/cu124 torch torchvision
 RUN uv pip install --system \
-    --extra-index-url https://download.pytorch.org/whl/cu124 \
     -r _requirements.txt \
     -r requirements.doctr.txt \
     -r requirements.sam.txt \

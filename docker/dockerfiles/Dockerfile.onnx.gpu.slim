@@ -21,8 +21,8 @@ COPY requirements/requirements.http.txt \
     requirements/requirements.modal.txt \
     ./
 
-RUN pip3 install --upgrade pip  && pip3 install \
-    --extra-index-url https://download.pytorch.org/whl/cu124 \
+RUN pip3 install --upgrade pip && pip3 install --system --index-url https://download.pytorch.org/whl/cu124 torch torchvision
+RUN pip3 install \
     -r _requirements.txt \
     -r requirements.http.txt \
     -r requirements.gpu.txt \
