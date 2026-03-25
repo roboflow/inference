@@ -121,8 +121,12 @@
             "application/json": {
               "schema": {
                 "oneOf": [
-                  {"$ref": "#/components/schemas/WorkflowProcessingJobV1"},
-                  {"$ref": "#/components/schemas/TRTCompilationJobV1"}
+                  {
+                    "$ref": "#/components/schemas/WorkflowProcessingJobV1"
+                  },
+                  {
+                    "$ref": "#/components/schemas/TRTCompilationJobV1"
+                  }
                 ]
               }
             }
@@ -788,7 +792,8 @@
         "type": "string",
         "enum": [
           "nvidia-l4",
-          "nvidia-t4"
+          "nvidia-t4",
+          "nvidia-l40s"
         ]
       },
       "TRTCompilationJobV1": {
@@ -817,7 +822,8 @@
             "minItems": 1,
             "default": [
               "nvidia-t4",
-              "nvidia-l4"
+              "nvidia-l4",
+              "nvidia-l40s"
             ]
           },
           "notificationsURL": {
@@ -826,7 +832,6 @@
             "default": null
           }
         }
-
       },
       "WorkflowProcessingJobV1": {
         "type": "object",
