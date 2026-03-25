@@ -753,9 +753,7 @@ def prepare_multi_label_classification_response(
     for prediction, image_size in zip(post_processed_predictions, image_sizes):
         image_predictions_dict = dict()
         predicted_classes = []
-        for class_id, confidence in zip(
-            prediction.class_ids.cpu().tolist(), prediction.confidence.cpu().tolist()
-        ):
+        for class_id, confidence in enumerate(prediction.confidence.cpu().tolist()):
             cls_name = class_names[class_id]
             image_predictions_dict[cls_name] = {
                 "confidence": confidence,
