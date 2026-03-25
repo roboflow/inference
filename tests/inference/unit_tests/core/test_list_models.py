@@ -61,6 +61,9 @@ def _build_app(registry_dict: dict):
 
 SAMPLE_REGISTRY = {
     ("object-detection", "stub"): MagicMock,
+    ("instance-segmentation", "stub"): MagicMock,
+    ("keypoint-detection", "stub"): MagicMock,
+    ("classification", "stub"): MagicMock,
 }
 
 

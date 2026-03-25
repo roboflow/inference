@@ -3846,9 +3846,14 @@ class HttpInterface(BaseInterface):
                         public_endpoints.append(f"{base_url}{route.path}")
                         break
 
+            # Models supported by this server's configuration
+            registry = self.model_manager.model_manager.model_registry.registry_dict
+
             # ── Generic models reachable via /infer/* routes ─────────
-            for model_id, (task, _) in GENERIC_MODELS.items():
+            for model_id, (task, model_type) in GENERIC_MODELS.items():
                 if "/" in model_id:
+                    continue
+                if (task, model_type) not in registry:
                     continue
                 infer_path = task_to_path.get(task)
                 if infer_path is not None:
@@ -3865,16 +3870,15 @@ class HttpInterface(BaseInterface):
             DATASET_TASK_FALLBACK = {
                 "classifiers": "classification",
             }
-            dataset_task_cache: Dict[str, Optional[str]] = {}
+            dataset_cache: Dict[str, Optional[tuple]] = {}
             for alias, resolved in REGISTERED_ALIASES.items():
                 dataset_id = resolved.split("/")[0]
-                if dataset_id not in dataset_task_cache:
+                if dataset_id not in dataset_cache:
                     try:
-                        task_type, _ = get_model_type(
+                        dataset_cache[dataset_id] = get_model_type(
                             model_id=resolved,
                             api_key=api_key,
                         )
-                        dataset_task_cache[dataset_id] = task_type
                     except Exception:
                         fallback = DATASET_TASK_FALLBACK.get(dataset_id)
                         if fallback is None:
@@ -3882,11 +3886,17 @@ class HttpInterface(BaseInterface):
                                 "Could not resolve task type for dataset %s",
                                 dataset_id,
                             )
-                        dataset_task_cache[dataset_id] = fallback
-                task = dataset_task_cache[dataset_id]
-                if task is None:
+                        dataset_cache[dataset_id] = (
+                            (fallback, None) if fallback else None
+                        )
+                cached = dataset_cache[dataset_id]
+                if cached is None:
                     continue
-                infer_path = task_to_path.get(task)
+                task_type, model_type = cached
+                # Skip models not supported by this server configuration
+                if model_type and (task_type, model_type) not in registry:
+                    continue
+                infer_path = task_to_path.get(task_type)
                 if infer_path is None:
                     continue
                 public_endpoints.append(f"{base_url}{infer_path}?model_id={alias}")
