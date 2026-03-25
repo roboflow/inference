@@ -3791,7 +3791,28 @@ class HttpInterface(BaseInterface):
                 description="Roboflow API Key used to authenticate and "
                 "discover private workspace models",
             ),
-        ):
+        ) -> dict:
+            """Return inference endpoint URLs available to the caller.
+
+            Filters the full set of server routes to only those that
+            accept model inference requests. This includes both
+            dedicated core model routes (e.g. /clip/embed_image,
+            /sam/segment_image) and generic /infer/* routes with the
+            appropriate model_id parameter appended. Endpoints are
+            discovered from:
+
+            1. Core model routes (CLIP, SAM, etc.) via GENERIC_MODELS
+               prefix matching against registered app routes.
+            2. GENERIC_MODELS entries whose task type maps to an
+               /infer/* route (e.g. qwen3.5 → /infer/lmm).
+            3. Public aliased models with task types resolved via
+               get_model_type, deduplicated by dataset.
+            4. Private workspace models fetched via
+               get_roboflow_workspace_models using the caller's API key.
+
+            Returns:
+                dict: ``{"endpoints": [...]}``
+            """
             base_url = str(request.base_url).rstrip("/")
             endpoints: List[str] = []
 
@@ -3836,6 +3857,11 @@ class HttpInterface(BaseInterface):
             # Resolve task type via get_model_type (same path the
             # inference server uses).  Deduplicate by dataset_id so we
             # make at most one API call per dataset (~8 total).
+            # Datasets that fail API resolution (e.g. internal
+            # pre-trained weight buckets) fall back to this map.
+            DATASET_TASK_FALLBACK = {
+                "classifiers": "classification",
+            }
             dataset_task_cache: Dict[str, Optional[str]] = {}
             for alias, resolved in REGISTERED_ALIASES.items():
                 dataset_id = resolved.split("/")[0]
@@ -3847,11 +3873,13 @@ class HttpInterface(BaseInterface):
                         )
                         dataset_task_cache[dataset_id] = task_type
                     except Exception:
-                        logger.warning(
-                            "Could not resolve task type for dataset %s",
-                            dataset_id,
-                        )
-                        dataset_task_cache[dataset_id] = None
+                        fallback = DATASET_TASK_FALLBACK.get(dataset_id)
+                        if fallback is None:
+                            logger.warning(
+                                "Could not resolve task type for dataset %s",
+                                dataset_id,
+                            )
+                        dataset_task_cache[dataset_id] = fallback
                 task = dataset_task_cache[dataset_id]
                 if task is None:
                     continue
