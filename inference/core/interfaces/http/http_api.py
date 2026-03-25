@@ -3795,9 +3795,17 @@ class HttpInterface(BaseInterface):
             base_url = str(request.base_url).rstrip("/")
             endpoints: List[str] = []
 
-            # Build task_type → /infer/* path lookup, keyed by task_type
-            # directly (e.g. "object-detection" → "/infer/object_detection")
-            task_to_path: Dict[str, str] = {}
+            task_to_path = {
+                "object-detection": "/infer/object_detection",
+                "instance-segmentation": "/infer/instance_segmentation",
+                "classification": "/infer/classification",
+                "keypoint-detection": "/infer/keypoints_detection",
+                "semantic-segmentation": "/infer/semantic_segmentation",
+                "lmm": "/infer/lmm",
+                "text-image-pairs": "/infer/lmm",
+            }
+
+            # Core model endpoints (clip, sam, etc.)
             core_prefixes = {key.split("/")[0] for key in GENERIC_MODELS}
             for route in app.routes:
                 if not (
@@ -3806,21 +3814,10 @@ class HttpInterface(BaseInterface):
                     and "POST" in route.methods
                 ):
                     continue
-                if route.path.startswith("/infer/") and "{" not in route.path:
-                    # "/infer/object_detection" → key as "object-detection"
-                    key = route.path.split("/infer/", 1)[1].replace("_", "-")
-                    task_to_path[key] = route.path
-                else:
-                    for prefix in core_prefixes:
-                        if route.path.startswith(f"/{prefix}/"):
-                            endpoints.append(f"{base_url}{route.path}")
-                            break
-            # Handle irregular naming: route is keypoints (plural) but
-            # task type is keypoint (singular)
-            if "keypoints-detection" in task_to_path:
-                task_to_path.setdefault(
-                    "keypoint-detection", task_to_path["keypoints-detection"]
-                )
+                for prefix in core_prefixes:
+                    if route.path.startswith(f"/{prefix}/"):
+                        endpoints.append(f"{base_url}{route.path}")
+                        break
 
             # ── Public aliased models ────────────────────────────────
             # Resolve task type via get_model_type (same path the
