@@ -54,6 +54,7 @@ GENERIC_MODELS = {
     "sam3/sam3_interactive": ("interactive-segmentation", "sam3"),
     "sam3-3d-objects": ("3d-reconstruction", "sam3-3d-objects"),
     "classifiers": ("classification", "resnet50"),
+    "qwen-pretrains": ("lmm", "qwen25-vl-7b"),
     "gaze": ("gaze", "l2cs"),
     "doctr": ("ocr", "doctr"),
     "easy_ocr": ("ocr", "easy_ocr"),
