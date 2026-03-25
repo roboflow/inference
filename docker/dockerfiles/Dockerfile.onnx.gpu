@@ -47,7 +47,7 @@ RUN UV_PROJECT_ENVIRONMENT=/usr uv sync --locked --extra torch-cu124 --extra onn
 WORKDIR /app
 
 RUN uv pip install --system \
-    --extra-index-url https://download.pytorch.org/whl/cu124
+    --extra-index-url https://download.pytorch.org/whl/cu124 \
     -r _requirements.txt \
     -r requirements.doctr.txt \
     -r requirements.sam.txt \

@@ -25,7 +25,7 @@ COPY requirements/requirements.sam.txt \
     ./
 
 RUN pip3 install --upgrade pip  && pip3 install \
-    --extra-index-url https://download.pytorch.org/whl/cu124
+    --extra-index-url https://download.pytorch.org/whl/cu124 \
     -r _requirements.txt \
     -r requirements.sam.txt \
     -r requirements.clip.txt \
