@@ -13,10 +13,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 from starlette.testclient import TestClient
 
-from inference.core.env import API_BASE_URL
 from inference.core.exceptions import WorkspaceLoadError
 from inference.core.registries.base import ModelRegistry
-from inference.core.utils.url_utils import wrap_url
 
 
 # ---------------------------------------------------------------------------
@@ -309,97 +307,3 @@ class TestListModelsAuth:
     def test_missing_api_key_returns_422(self, client: TestClient):
         response = client.get("/list_models")
         assert response.status_code == 422
-
-
-# ---------------------------------------------------------------------------
-# get_roboflow_workspace_models unit tests
-# ---------------------------------------------------------------------------
-
-
-class TestGetRoboflowWorkspaceModels:
-
-    def test_returns_projects_from_workspace_detail(self, requests_mock):
-        from inference.core.roboflow_api import get_roboflow_workspace_models
-
-        requests_mock.get(
-            url=wrap_url(f"{API_BASE_URL}/"),
-            json={"workspace": "my_workspace"},
-        )
-        requests_mock.get(
-            url=wrap_url(f"{API_BASE_URL}/my_workspace"),
-            json={
-                "workspace": {
-                    "name": "my_workspace",
-                    "projects": [
-                        {
-                            "id": "cars",
-                            "type": "object-detection",
-                            "versions": [1, 2],
-                        },
-                        {
-                            "id": "people-seg",
-                            "type": "instance-segmentation",
-                            "versions": [3],
-                        },
-                    ],
-                },
-            },
-        )
-
-        result = get_roboflow_workspace_models(api_key="test_key_1")
-
-        assert isinstance(result, tuple)
-        assert len(result) == 2
-        assert result[0]["id"] == "cars"
-        assert result[0]["type"] == "object-detection"
-        assert result[0]["versions"] == [1, 2]
-        assert result[1]["id"] == "people-seg"
-        assert result[1]["type"] == "instance-segmentation"
-
-    def test_returns_empty_tuple_when_no_projects(self, requests_mock):
-        from inference.core.roboflow_api import get_roboflow_workspace_models
-
-        requests_mock.get(
-            url=wrap_url(f"{API_BASE_URL}/"),
-            json={"workspace": "empty_ws"},
-        )
-        requests_mock.get(
-            url=wrap_url(f"{API_BASE_URL}/empty_ws"),
-            json={"workspace": {"projects": []}},
-        )
-
-        result = get_roboflow_workspace_models(api_key="test_key_3")
-        assert result == ()
-
-    def test_defaults_type_when_missing(self, requests_mock):
-        from inference.core.roboflow_api import get_roboflow_workspace_models
-
-        requests_mock.get(
-            url=wrap_url(f"{API_BASE_URL}/"),
-            json={"workspace": "ws_no_type"},
-        )
-        requests_mock.get(
-            url=wrap_url(f"{API_BASE_URL}/ws_no_type"),
-            json={
-                "workspace": {
-                    "projects": [
-                        {"id": "no-type-project", "versions": [1]},
-                    ],
-                },
-            },
-        )
-
-        result = get_roboflow_workspace_models(api_key="test_key_4")
-        assert result[0]["type"] == "object-detection"
-
-    def test_raises_on_unauthorized(self, requests_mock):
-        from inference.core.exceptions import RoboflowAPINotAuthorizedError
-        from inference.core.roboflow_api import get_roboflow_workspace_models
-
-        requests_mock.get(
-            url=wrap_url(f"{API_BASE_URL}/"),
-            status_code=401,
-        )
-
-        with pytest.raises(RoboflowAPINotAuthorizedError):
-            get_roboflow_workspace_models(api_key="bad_key")

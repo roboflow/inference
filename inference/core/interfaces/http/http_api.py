@@ -3851,6 +3851,8 @@ class HttpInterface(BaseInterface):
 
             # ── Generic models reachable via /infer/* routes ─────────
             for model_id, (task, model_type) in GENERIC_MODELS.items():
+                # Skip sub-model keys like "sam3/sam3_interactive" —
+                # these are served via dedicated core routes, not /infer/*
                 if "/" in model_id:
                     continue
                 if (task, model_type) not in registry:
