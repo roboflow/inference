@@ -413,7 +413,7 @@ class DetectionEventLogBlockV1(WorkflowBlock):
         """
         formatted = {}
         for event in complete_events:
-            event_data = asdict(event)
+            event_data = event.__dict__.copy()
             del event_data["logged"]
             formatted[str(event.tracker_id)] = event_data
 
@@ -433,7 +433,7 @@ class DetectionEventLogBlockV1(WorkflowBlock):
         pending_events = {}
 
         for tracker_id, event in event_log.items():
-            event_data = asdict(event)
+            event_data = event.__dict__.copy()
             del event_data["logged"]
 
             if event.frame_count >= frame_threshold:
