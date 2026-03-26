@@ -1,4 +1,5 @@
 import logging
+import os
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from functools import partial
@@ -66,6 +67,12 @@ structured annotations on the image within the event.
 
 Use the **Rate Limiter** workflow block upstream of this block to control how
 often events are sent.
+
+## Authentication
+
+If the Event Ingestion Service requires an API key, set the
+`EVENT_INGESTION_API_KEY` environment variable on the inference server.
+Requests are sent unauthenticated when the variable is not set.
 """
 
 QUALITY_CHECK_RELEVANT = {
@@ -112,26 +119,12 @@ class BlockManifest(WorkflowBlockManifest):
         default="http://localhost:8001",
         description="Base URL of the Event Ingestion Service.",
         examples=["http://localhost:8001", "$inputs.event_ingestion_url"],
-        json_schema_extra={"always_visible": True},
     )
-    api_key: Optional[Union[Selector(kind=[STRING_KIND]), str]] = Field(
-        default=None,
-        description="API key for the Event Ingestion Service (sent as X-API-Key header). "
-        "Only required if the service has authentication enabled.",
-        examples=["$inputs.event_api_key"],
-        json_schema_extra={"private": True},
-    )
+
     # --- Schema selector ---
     event_schema: Literal["quality_check", "inventory_count", "safety_alert", "custom"] = Field(
         description="The event schema to use.",
         json_schema_extra={"always_visible": True},
-    )
-
-    # --- Timestamp ---
-    inference_timestamp: Optional[Union[Selector(kind=[STRING_KIND]), str]] = Field(
-        default=None,
-        description="ISO 8601 timestamp for the event. Auto-generated if omitted.",
-        examples=["2025-11-04T12:00:00Z", "$inputs.timestamp"],
     )
 
     # --- Images ---
@@ -150,12 +143,20 @@ class BlockManifest(WorkflowBlockManifest):
     )
 
     # --- Custom metadata ---
-    custom_metadata: Optional[
-        Dict[str, Union[Selector(), str, int, float, bool]]
+    custom_metadata: Dict[
+        str,
+        Union[
+            Selector(),
+            str,
+            float,
+            bool,
+            int,
+        ],
     ] = Field(
-        default=None,
+        default_factory=dict,
         description="Flat key-value metadata (max 100 keys, values must be str/int/float/bool).",
         examples=[{"line": "A1", "shift": "morning"}],
+        json_schema_extra={"always_visible": True},
     )
 
     # --- Quality Check fields ---
@@ -265,7 +266,6 @@ class BlockManifest(WorkflowBlockManifest):
         description="If True, send the event asynchronously (no event_id returned). "
         "If False, wait for the response and return the event_id.",
         examples=[True, False, "$inputs.fire_and_forget"],
-        json_schema_extra={"always_visible": True},
     )
     disable_sink: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(
         default=False,
@@ -317,8 +317,6 @@ class EventWriterSinkBlockV1(WorkflowBlock):
         fire_and_forget: bool,
         disable_sink: bool,
         request_timeout: int,
-        api_key: Optional[str] = None,
-        inference_timestamp: Optional[str] = None,
         input_image: Optional[WorkflowImageData] = None,
         image_label: Optional[str] = None,
         custom_metadata: Optional[Dict[str, Any]] = None,
@@ -369,8 +367,7 @@ class EventWriterSinkBlockV1(WorkflowBlock):
         )
 
         payload: Dict[str, Any] = {
-            "inference_timestamp": inference_timestamp
-            or datetime.now(timezone.utc).isoformat(),
+            "inference_timestamp": datetime.now(timezone.utc).isoformat(),
             "event_schema": event_schema,
             "event_data": event_data,
             "images": [image_entry],
@@ -383,7 +380,7 @@ class EventWriterSinkBlockV1(WorkflowBlock):
             _execute_event_request,
             url=f"{url}/v2/events",
             payload=payload,
-            api_key=api_key,
+            api_key=os.environ.get("EVENT_INGESTION_API_KEY"),
             timeout=request_timeout,
         )
 
