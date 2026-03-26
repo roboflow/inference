@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import datetime
 import gzip
 import json
@@ -6,9 +7,8 @@ import logging
 import struct
 import time
 from typing import Any, Callable, Dict, List, Optional, Tuple
-import orjson
-import base64
 
+import orjson
 import supervision as sv
 from aioice import ice
 from aiortc import (
