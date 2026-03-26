@@ -6,6 +6,8 @@ import logging
 import struct
 import time
 from typing import Any, Callable, Dict, List, Optional, Tuple
+import orjson
+import base64
 
 import supervision as sv
 from aioice import ice
@@ -467,7 +469,11 @@ class VideoFrameProcessor:
 
         # TODO: use orjson
         json_bytes = await asyncio.to_thread(
-            lambda: json.dumps(webrtc_output.model_dump(mode="json")).encode("utf-8")
+            lambda: orjson.dumps(
+                webrtc_output.model_dump(),
+                default=default_encoder,
+                option=orjson.OPT_NON_STR_KEYS | orjson.OPT_SERIALIZE_NUMPY,
+            )
         )
 
         if WEBRTC_GZIP_PREVIEW_FRAME_COMPRESSION:
@@ -1316,3 +1322,9 @@ async def init_rtc_peer_connection_with_loop(
     await video_processor.close()
     await usage_collector.async_push_usage_payloads()
     logger.info("WebRTC peer connection closed")
+
+
+def default_encoder(obj: Any) -> Any:
+    if isinstance(obj, bytes):
+        return base64.b64encode(obj).decode("ascii")
+    return obj
