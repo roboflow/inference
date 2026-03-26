@@ -22,15 +22,16 @@ _OUTPUT_FILES = (
 
 def _needs_rebuild(build_dir):
     """Return True if source files are newer than output files."""
-    try:
-        oldest_output = min(
-            os.path.getmtime(os.path.join(build_dir, p))
-            for p in _OUTPUT_FILES
-            if os.path.exists(os.path.join(build_dir, p))
-        )
-    except ValueError:
-        # No output files exist yet – must build.
+    output_mtimes = []
+    for p in _OUTPUT_FILES:
+        full = os.path.join(build_dir, p)
+        if not os.path.exists(full):
+            # Any missing output file means we must rebuild.
+            return True
+        output_mtimes.append(os.path.getmtime(full))
+    if not output_mtimes:
         return True
+    oldest_output = min(output_mtimes)
 
     for pattern in _SOURCE_GLOBS:
         path = os.path.join(build_dir, pattern)

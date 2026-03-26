@@ -1,6 +1,7 @@
 name: Docs Workflow
 permissions:
   contents: read
+  pages: write
 
 on:
   release:
@@ -14,7 +15,7 @@ on:
         default: false
 
 jobs:
-  build:
+  deploy:
     runs-on: depot-ubuntu-22.04-32
     timeout-minutes: 20
     permissions:
@@ -43,6 +44,15 @@ jobs:
           path: roboflow_enterprise_blocks
           token: ${{ steps.enterprise_blocks_token.outputs.token }}
 
+      - name: Create GitHub App token (mkdocs)
+        id: mkdocs_token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.MKDOCS_APP_ID }}
+          private-key: ${{ secrets.MKDOCS_PEM }}
+          owner: roboflow
+          repositories: mkdocs-material-insiders
+
       - name: Set up Node
         uses: actions/setup-node@v3
         with:
@@ -51,10 +61,6 @@ jobs:
       - name: Install Docs Theme
         run: |
           npm ci
-        working-directory: ./inference_repo/theme_build
-
-      - name: Build theme assets
-        run: npm run build
         working-directory: ./inference_repo/theme_build
 
       - name: Set up Python
@@ -67,6 +73,9 @@ jobs:
         run: |
           # Upgrade pip and setuptools
           python -m pip install --upgrade pip setuptools
+
+          # Install mkdocs-material-insiders using the GitHub App token
+          pip install git+https://roboflow:${{ steps.mkdocs_token.outputs.token }}@github.com/roboflow/mkdocs-material-insiders.git
 
           # Install doc requirements
           pip install -r requirements/requirements.docs.txt
@@ -87,10 +96,6 @@ jobs:
         run: pip install .
         working-directory: ./roboflow_enterprise_blocks
 
-      - name: Generate API reference pages
-        run: python docs/scripts/gen_ref_pages.py
-        working-directory: ./inference_repo
-
       - name: Build block docs
         run: python -m development.docs.build_block_docs
         working-directory: ./inference_repo
@@ -109,43 +114,12 @@ jobs:
         run: python -m development.docs.write_openapi_spec
         working-directory: ./inference_repo
 
-      - name: Replace template variables (VERSION, etc.)
-        run: python docs/scripts/macros.py
-        working-directory: ./inference_repo
-
       - name: Validate generated docs (Jinja2 syntax)
         run: python -m development.docs.validate_docs_jinja2
         working-directory: ./inference_repo
 
-      - name: Build docs
-        run: zensical build --clean
-        working-directory: ./inference_repo
-
-      - name: Verify build output
-        run: |
-          echo "Checking for theme assets in site/..."
-          test -f site/static/styles.css || { echo "ERROR: site/static/styles.css missing!"; exit 1; }
-          test -f site/static/dist/home.js || { echo "ERROR: site/static/dist/home.js missing!"; exit 1; }
-          echo "Theme assets OK."
-          echo "Checking for API reference pages..."
-          test -d site/reference/inference || { echo "ERROR: site/reference/inference/ missing!"; exit 1; }
-          test -d site/reference/inference_sdk || { echo "ERROR: site/reference/inference_sdk/ missing!"; exit 1; }
-          test -d site/reference/inference_cli || { echo "ERROR: site/reference/inference_cli/ missing!"; exit 1; }
-          echo "API reference OK."
-        working-directory: ./inference_repo
-
-      - name: Upload site artifact
-        if: ${{ github.event_name == 'workflow_dispatch' }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: docs-site-preview
-          path: ./inference_repo/site
-          retention-days: 7
-
       - name: Deploy docs
         # Only deploy if release event OR if deploy input was set to true
         if: ${{ github.event_name == 'release' || github.event.inputs.deploy == 'true' }}
-        run: |
-          pip install ghp-import
-          ghp-import -n -p -f site
+        run: mkdocs gh-deploy --force --verbose
         working-directory: ./inference_repo
