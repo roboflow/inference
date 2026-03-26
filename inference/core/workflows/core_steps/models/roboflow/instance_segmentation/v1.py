@@ -154,7 +154,6 @@ class BlockManifest(WorkflowBlockManifest):
         examples=["my_project", "$inputs.al_target_project"],
     )
 
-
     @classmethod
     def get_compatible_task_types(cls) -> list:
         return ["instance-segmentation"]

@@ -244,7 +244,6 @@ class BlockManifest(WorkflowBlockManifest):
         examples=["serial_12345", "camera1_frame_001", "$inputs.filename"],
     )
 
-
     @classmethod
     def get_air_gapped_availability(cls) -> dict:
         return {"available": False, "reason": "requires_internet"}

@@ -130,7 +130,6 @@ class BlockManifest(WorkflowBlockManifest):
         examples=[{"count": "number of cats in the picture"}, "$inputs.json_output"],
     )
 
-
     @classmethod
     def get_air_gapped_availability(cls) -> dict:
         return {"available": False, "reason": "requires_internet"}

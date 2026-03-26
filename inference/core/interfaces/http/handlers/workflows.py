@@ -7,7 +7,6 @@ from typing import Any, Dict, List, Optional, Set, Union
 from packaging.specifiers import SpecifierSet
 
 from inference.core.cache.model_artifacts import are_all_files_cached
-from inference.core.env import ENABLE_BUILDER, MODEL_CACHE_DIR
 from inference.core.entities.responses.workflows import (
     DescribeInterfaceResponse,
     ExternalBlockPropertyPrimitiveDefinition,
@@ -15,6 +14,7 @@ from inference.core.entities.responses.workflows import (
     UniversalQueryLanguageDescription,
     WorkflowsBlocksDescription,
 )
+from inference.core.env import ENABLE_BUILDER, MODEL_CACHE_DIR
 from inference.core.workflows.core_steps.common.query_language.introspection.core import (
     prepare_operations_descriptions,
     prepare_operators_descriptions,

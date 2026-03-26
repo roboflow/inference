@@ -73,7 +73,6 @@ class BlockManifest(WorkflowBlockManifest):
         examples=["$steps.sam2.predictions", "$steps.detections.mask_polygon"],
     )
 
-
     @classmethod
     def get_air_gapped_availability(cls) -> dict:
         return {"available": False, "reason": "requires_internet"}

@@ -114,9 +114,7 @@ def scan_cached_models(cache_dir: str) -> List[Dict[str, Any]]:
             continue
 
         # Support both traditional keys and inference-models metadata keys.
-        task_type = metadata.get(PROJECT_TASK_TYPE_KEY) or metadata.get(
-            "taskType", ""
-        )
+        task_type = metadata.get(PROJECT_TASK_TYPE_KEY) or metadata.get("taskType", "")
         model_architecture = metadata.get(MODEL_TYPE_KEY) or metadata.get(
             "modelArchitecture", ""
         )

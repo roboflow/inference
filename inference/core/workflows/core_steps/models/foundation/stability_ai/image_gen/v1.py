@@ -112,7 +112,6 @@ class BlockManifest(WorkflowBlockManifest):
         private=True,
     )
 
-
     @classmethod
     def get_air_gapped_availability(cls) -> dict:
         return {"available": False, "reason": "requires_internet"}
