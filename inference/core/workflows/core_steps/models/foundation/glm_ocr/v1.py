@@ -29,7 +29,6 @@ from inference.core.workflows.prototypes.block import (
 )
 from inference_sdk import InferenceHTTPClient
 
-
 PROMPT_OPTIONS = {
     "text_recognition": "Text Recognition:",
     "formula_recognition": "Formula Recognition:",
