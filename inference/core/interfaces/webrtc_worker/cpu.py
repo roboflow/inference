@@ -19,10 +19,22 @@ def rtc_peer_connection_process(
         answer_conn.send(obj)
         answer_conn.close()
 
-    asyncio.run(
-        init_rtc_peer_connection_with_loop(
-            webrtc_request=webrtc_request,
-            send_answer=send_answer,
+    try:
+        asyncio.run(
+            init_rtc_peer_connection_with_loop(
+                webrtc_request=webrtc_request,
+                send_answer=send_answer,
+            )
         )
-    )
-    logger.info("WebRTC process terminated")
+        logger.info("WebRTC process terminated")
+    except Exception as exc:
+        logger.exception("WebRTC worker process crashed: %s", exc)
+        try:
+            send_answer(
+                WebRTCWorkerResult(
+                    exception_type=exc.__class__.__name__,
+                    error_message=str(exc),
+                )
+            )
+        except Exception:
+            pass
