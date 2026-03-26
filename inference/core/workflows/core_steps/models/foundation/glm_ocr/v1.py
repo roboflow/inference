@@ -36,7 +36,9 @@ TASK_TYPE_TO_PROMPT = {
     "custom": None,
 }
 
-TaskType = Literal["text-recognition", "table-recognition", "formula-recognition", "custom"]
+TaskType = Literal[
+    "text-recognition", "table-recognition", "formula-recognition", "custom"
+]
 
 TASKS_METADATA = {
     "text-recognition": {
@@ -144,9 +146,7 @@ class BlockManifest(WorkflowBlockManifest):
     @model_validator(mode="after")
     def validate_prompt(self) -> "BlockManifest":
         if self.task_type == "custom" and not self.prompt:
-            raise ValueError(
-                "`prompt` is required when task_type is 'custom'."
-            )
+            raise ValueError("`prompt` is required when task_type is 'custom'.")
         return self
 
     @classmethod
