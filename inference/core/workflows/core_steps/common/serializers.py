@@ -333,6 +333,8 @@ def serialize_wildcard_kind(value: Any) -> Any:
         value = serialise_sv_detections(detections=value)
     elif isinstance(value, datetime):
         value = serialize_timestamp(timestamp=value)
+    elif isinstance(value, np.ndarray):
+        value = serialize_numpy_array(value=value)
     return value
 
 
@@ -385,3 +387,7 @@ def serialise_rle_sv_detections(detections: sv.Detections) -> dict:
             detection_dict[RLE_MASK_KEY_IN_INFERENCE_RESPONSE] = rle
 
     return result
+
+
+def serialize_numpy_array(value: np.ndarray) -> list:
+    return value.tolist()

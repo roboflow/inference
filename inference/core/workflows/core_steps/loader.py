@@ -126,6 +126,7 @@ from inference.core.workflows.core_steps.common.serializers import (
     serialise_image,
     serialise_rle_sv_detections,
     serialise_sv_detections,
+    serialize_numpy_array,
     serialize_secret,
     serialize_timestamp,
     serialize_video_metadata_kind,
@@ -601,6 +602,7 @@ KINDS_SERIALIZERS = {
     SECRET_KIND.name: serialize_secret,
     WILDCARD_KIND.name: serialize_wildcard_kind,
     TIMESTAMP_KIND.name: serialize_timestamp,
+    NUMPY_ARRAY_KIND.name: serialize_numpy_array,
 }
 KINDS_DESERIALIZERS = {
     IMAGE_KIND.name: deserialize_image_kind,

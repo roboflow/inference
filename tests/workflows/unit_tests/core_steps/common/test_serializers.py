@@ -3,6 +3,7 @@ from datetime import datetime
 
 import cv2
 import numpy as np
+import pytest
 import supervision as sv
 
 from inference.core.workflows.core_steps.common.serializers import (
@@ -10,6 +11,7 @@ from inference.core.workflows.core_steps.common.serializers import (
     serialise_image,
     serialise_rle_sv_detections,
     serialise_sv_detections,
+    serialize_numpy_array,
     serialize_wildcard_kind,
 )
 from inference.core.workflows.execution_engine.entities.base import (
@@ -264,19 +266,29 @@ def test_serialize_wildcard_kind_when_dictionary_is_given() -> None:
             parent_metadata=ImageParentMetadata(parent_id="some"),
             numpy_image=np_image,
         ),
+        "d": [
+            np.array([1, 2, 3]),
+            [np.array([4, 5, 6]), np.array([7, 8, 9])],
+            [10, 11, 12],
+        ],
     }
 
     # when
     result = serialize_wildcard_kind(value=elements)
 
     # then
-    assert len(result) == 3, "The same number of elements must be returned"
+    assert len(result) == 4, "The same number of elements must be returned"
     assert result["a"] == 3, "First element of list must be untouched"
     assert result["b"] == "some", "Second element of list must be untouched"
     assert (
         result["c"]["type"] == "base64"
     ), "Type of third element must be changed into base64"
     decoded = base64.b64decode(result["c"]["value"])
+    assert result["d"] == [
+        [1, 2, 3],
+        [[4, 5, 6], [7, 8, 9]],
+        [10, 11, 12],
+    ], "Expectted nested with numpy arrays to be serialized"
     try:
         recovered_image = cv2.imdecode(
             np.frombuffer(decoded, dtype=np.uint8),
@@ -1156,3 +1168,52 @@ def test_serialise_rle_sv_detections_with_parent_origin() -> None:
             },
         ],
     }
+
+
+def test_serialize_1d_array():
+    arr = np.array([1, 2, 3])
+    result = serialize_numpy_array(arr)
+    assert result == [1, 2, 3]
+
+
+def test_serialize_2d_array():
+    arr = np.array([[1, 2], [3, 4]])
+    result = serialize_numpy_array(arr)
+    assert result == [[1, 2], [3, 4]]
+
+
+def test_serialize_3d_array():
+    arr = np.array([[[1, 2], [3, 4]], [[5, 6], [7, 8]]])
+    result = serialize_numpy_array(arr)
+    assert result == [[[1, 2], [3, 4]], [[5, 6], [7, 8]]]
+
+
+def test_serialize_float_array():
+    arr = np.array([1.5, 2.7, 3.9])
+    result = serialize_numpy_array(arr)
+    assert result == pytest.approx([1.5, 2.7, 3.9])
+
+
+def test_serialize_bool_array():
+    arr = np.array([True, False, True])
+    result = serialize_numpy_array(arr)
+    assert result == [True, False, True]
+
+
+def test_serialize_empty_array():
+    arr = np.array([])
+    result = serialize_numpy_array(arr)
+    assert result == []
+
+
+def test_serialize_single_element():
+    arr = np.array([42])
+    result = serialize_numpy_array(arr)
+    assert result == [42]
+
+
+def test_result_is_plain_list():
+    arr = np.array([1, 2, 3])
+    result = serialize_numpy_array(arr)
+    assert isinstance(result, list)
+    assert all(isinstance(x, (int, np.integer)) for x in result)
