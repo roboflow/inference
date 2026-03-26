@@ -3,11 +3,11 @@ import os
 from multiprocessing.connection import Connection
 
 from inference.core import logger
+from inference.core.env import WEBRTC_MODAL_WATCHDOG_TIMEMOUT
 from inference.core.interfaces.webrtc_worker.entities import (
     WebRTCWorkerRequest,
     WebRTCWorkerResult,
 )
-from inference.core.env import WEBRTC_MODAL_WATCHDOG_TIMEMOUT
 from inference.core.interfaces.webrtc_worker.watchdog import Watchdog
 from inference.core.interfaces.webrtc_worker.webrtc import (
     init_rtc_peer_connection_with_loop,
