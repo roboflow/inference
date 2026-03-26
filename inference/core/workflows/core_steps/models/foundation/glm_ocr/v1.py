@@ -17,7 +17,6 @@ from inference.core.workflows.execution_engine.entities.base import (
 )
 from inference.core.workflows.execution_engine.entities.types import (
     IMAGE_KIND,
-    LANGUAGE_MODEL_OUTPUT_KIND,
     ROBOFLOW_MODEL_ID_KIND,
     STRING_KIND,
     ImageInputField,
