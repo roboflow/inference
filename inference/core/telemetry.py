@@ -249,6 +249,43 @@ class _ForceTraceASGIMiddleware:
             _force_trace_flag.set(False)
 
 
+class _TraceIdResponseMiddleware:
+    """Raw ASGI middleware that injects X-Trace-Id into response headers.
+
+    Must sit INSIDE the OTel instrumentor in the middleware stack so the span
+    context is available when the response is sent.  Added via
+    app.add_middleware() BEFORE FastAPIInstrumentor.instrument_app() —
+    Starlette builds the stack so earlier-added middleware is innermost.
+
+    We use a raw ASGI middleware (not BaseHTTPMiddleware) because Starlette's
+    BaseHTTPMiddleware runs call_next in a separate task, which breaks
+    ContextVar propagation — get_trace_id() would return None.
+    """
+
+    def __init__(self, app: Any) -> None:
+        self.app = app
+
+    async def __call__(self, scope: dict, receive: Any, send: Any) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        async def send_with_trace_id(message: dict) -> None:
+            if message["type"] == "http.response.start":
+                trace_id = get_trace_id()
+                if trace_id:
+                    from inference.core.constants import TRACE_ID_HEADER
+
+                    headers = list(message.get("headers", []))
+                    headers.append(
+                        (TRACE_ID_HEADER.lower().encode(), trace_id.encode())
+                    )
+                    message = {**message, "headers": headers}
+            await send(message)
+
+        await self.app(scope, receive, send_with_trace_id)
+
+
 class _ForceTraceRootSampler:
     """Custom root sampler that force-samples when X-Force-Trace is set.
 
@@ -446,6 +483,10 @@ def setup_telemetry(app: Any) -> None:
 
     # Replace noisy connection-refused tracebacks with a single-line warning.
     _install_export_error_filter("opentelemetry.sdk.trace.export")
+
+    # Add trace-ID response middleware BEFORE the instrumentor so it sits
+    # INSIDE the OTel span context (earlier-added = innermost in Starlette).
+    app.add_middleware(_TraceIdResponseMiddleware)
 
     # Auto-instrument FastAPI: creates server spans, extracts traceparent
     FastAPIInstrumentor.instrument_app(app)
