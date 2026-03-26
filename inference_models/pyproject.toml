@@ -1,6 +1,6 @@
 [project]
 name = "inference-models"
-version = "0.22.1"
+version = "0.23.0"
 description = "The new inference engine for Computer Vision models"
 readme = "README.md"
 requires-python = ">=3.10,<3.13"
@@ -62,6 +62,11 @@ torch-cu128 = [
   "torch>=2.0.0,<3.0.0",
   "torchvision",
   "pycuda>=2025.0.0,<2026.0.0; platform_system != 'darwin' and python_version >= '3.10'",
+]
+torch-cu130 = [
+  "torch>=2.0.0,<3.0.0",
+  "torchvision",
+  "pycuda>=2025.0.0,<=2026.1.0; platform_system != 'darwin' and python_version >= '3.10'",
 ]
 torch-jp6-cu126 = [
   "numpy<2.0.0",
@@ -144,6 +149,16 @@ url = "https://download.pytorch.org/whl/cu124"
 explicit = true
 
 [[tool.uv.index]]
+name = "torch-cu126"
+url = "https://download.pytorch.org/whl/cu126"
+explicit = true
+
+[[tool.uv.index]]
+name = "torch-cu130"
+url = "https://download.pytorch.org/whl/cu130"
+explicit = true
+
+[[tool.uv.index]]
 name = "torch-cu128"
 url = "https://download.pytorch.org/whl/cu128"
 explicit = true
@@ -213,6 +228,7 @@ conflicts = [
     { extra = "torch-cu124" },
     { extra = "torch-cu126" },
     { extra = "torch-cu128" },
+    { extra = "torch-cu130" },
     { extra = "torch-jp6-cu126" },
   ],
   [

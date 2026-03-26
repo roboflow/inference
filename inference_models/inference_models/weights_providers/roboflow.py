@@ -14,6 +14,8 @@ from inference_models.configuration import (
     ROBOFLOW_API_HOST,
     ROBOFLOW_API_KEY,
 )
+LOCAL_API_KEY = "local"
+
 from inference_models.errors import (
     BaseInferenceModelsError,
     ModelMetadataConsistencyError,
@@ -129,7 +131,7 @@ def get_model_metadata(
     extra_query_params: Optional[List[Tuple[str, str]]] = None,
     extra_headers: Optional[Dict[str, str]] = None,
 ) -> RoboflowModelMetadata:
-    if api_key is None:
+    if api_key is None or api_key == LOCAL_API_KEY:
         api_key = ROBOFLOW_API_KEY
     fetched_pages = []
     start_after = None
@@ -175,7 +177,7 @@ def get_one_page_of_model_metadata(
         "modelId": model_id,
     }
     headers = {}
-    if api_key:
+    if api_key and api_key != LOCAL_API_KEY:
         headers = {"Authorization": f"Bearer {api_key}"}
     if page_size:
         query["pageSize"] = str(page_size)
