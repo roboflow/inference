@@ -133,11 +133,6 @@ nav:
         - Video Processing: workflows/video_processing/overview.md
       - Examples: workflows/gallery/
       - Block Gallery: workflows/blocks/
-      - Batch Processing:
-          - User Guide: workflows/batch_processing/about.md
-          - Integration: workflows/batch_processing/integration.md
-          - Debugging: workflows/batch_processing/known_issues.md
-          - API Reference: workflows/batch_processing/api_reference.md
       - Developer Guide:
         - Workflows Definitions: workflows/definitions.md
         - Workflow Execution: workflows/workflow_execution.md
@@ -153,6 +148,7 @@ nav:
         - Changelog: workflows/execution_engine_changelog.md
       - Benchmarks: workflows/benchmarks.md
       - Community Plugins: workflows/community_plugins.md
+      - "Deploy a Workflow »": "https://docs.roboflow.com/workflows/deploy-a-workflow"
   - Reference:
       - Overview: reference/overview.md
       - Inference SDK:
