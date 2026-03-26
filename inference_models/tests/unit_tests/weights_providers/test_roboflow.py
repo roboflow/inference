@@ -1157,6 +1157,29 @@ def test_get_one_page_of_model_metadata_when_retry_not_needed_and_parsable_respo
     assert parsed_params["startafter"][0] == "start"
 
 
+def test_get_one_page_of_model_metadata_excludes_auth_header_when_local_api_key(
+    requests_mock: Mocker,
+) -> None:
+    requests_mock.get(
+        f"{ROBOFLOW_API_HOST}/models/v1/external/weights",
+        json={
+            "modelMetadata": {
+                "type": "external-model-metadata-v1",
+                "modelId": "my-model",
+                "modelArchitecture": "yolov8",
+                "taskType": "object-detection",
+                "modelPackages": [],
+            }
+        },
+    )
+
+    # when
+    _ = get_one_page_of_model_metadata(model_id="my-model", api_key="local")
+
+    # then
+    assert "Authorization" not in requests_mock.last_request.headers
+
+
 def test_get_one_page_of_model_metadata_when_retry_not_needed_and_not_parsable_response(
     requests_mock: Mocker,
 ) -> None:

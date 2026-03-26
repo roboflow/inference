@@ -24,7 +24,8 @@ COPY requirements/requirements.sam.txt \
     requirements/requirements.modal.txt \
     ./
 
-RUN pip3 install --upgrade pip  && pip3 install \
+RUN pip3 install --upgrade pip && pip3 install --index-url https://download.pytorch.org/whl/cu124 torch torchvision
+RUN pip3 install \
     -r _requirements.txt \
     -r requirements.sam.txt \
     -r requirements.clip.txt \
@@ -35,7 +36,6 @@ RUN pip3 install --upgrade pip  && pip3 install \
     -r requirements.easyocr.txt \
     -r requirements.modal.txt \
     "setuptools<=75.5.0" \
-    --upgrade \
     && rm -rf ~/.cache/pip
 
 RUN apt-get update && apt-get install -y lsb-release curl gpg
