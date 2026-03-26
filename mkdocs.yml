@@ -147,6 +147,7 @@ nav:
         - Schema API: workflows/schema_api.md
         - Changelog: workflows/execution_engine_changelog.md
       - Benchmarks: workflows/benchmarks.md
+      - "Deploy a Workflow »": "https://docs.roboflow.com/workflows/deploy-a-workflow"
   - Reference:
       - Overview: reference/overview.md
       - Inference SDK:
