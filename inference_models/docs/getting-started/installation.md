@@ -11,6 +11,21 @@ The `inference-models` package uses **composable extras** to give you fine-grain
 
 This modular approach keeps installations lightweight and avoids dependency conflicts. For example, you can combine `torch-cu128` (PyTorch with CUDA 12.8) + `onnx-cu12` (ONNX Runtime) + `trt10` (TensorRT) in a single installation for maximum flexibility.
 
+!!! info "Backend-specific extras and PyPI package installation"
+    
+    The granular extras defined in `pyproject.toml` use a dependency control mechanism that works 
+    seamlessly when building `inference-models` locally with `uv`. However, packages published to PyPI 
+    are standard Python wheels, so resolution of additional indexes for certain dependencies requires 
+    manual adjustment. For example, installing `torch` with CUDA 12.8 support requires specifying a 
+    dedicated index: `https://download.pytorch.org/whl/cu128`. For this reason, when installing from 
+    PyPI, we recommend first installing dependencies such as `torch`, `onnxruntime`, or `tensorrt` in the 
+    specific versions you need. The `inference-models` package only defines loose constraints for these 
+    dependencies (e.g. `torch>=2.0.0,<3.0.0`), giving you full control over your build. Detailed 
+    instructions are provided in the sections below — you can also inspect 
+    [pyproject.toml](https://github.com/roboflow/inference/blob/main/inference_models/pyproject.toml) 
+    for exact dependency requirements and the additional indexes that provide them.
+    
+
 ## ✅ Prerequisites
 
 - **Python 3.10 - 3.12**
@@ -107,38 +122,56 @@ pip install "inference-models[onnx-cpu]"
 
 ```bash
 # Using uv (recommended)
-uv pip install "inference-models[torch-cu130,onnx-cu12,trt10]" "tensorrt==10.12.0.36"
+uv pip install --index-url https://download.pytorch.org/whl/cu130 torch torchvision
+uv pip install "tensorrt==10.12.0.36"
+uv pip install "inference-models[torch-cu130,onnx-cu12,trt10]"
 
 # Using pip
-pip install "inference-models[torch-cu130,onnx-cu12,trt10]" "tensorrt==10.12.0.36"
+pip install --index-url https://download.pytorch.org/whl/cu130 torch torchvision
+pip install "tensorrt==10.12.0.36"
+pip install "inference-models[torch-cu130,onnx-cu12,trt10]"
 ```
 
 ### CUDA 12.8
 
 ```bash
 # Using uv (recommended)
-uv pip install "inference-models[torch-cu128,onnx-cu12,trt10]" "tensorrt==10.12.0.36"
+uv pip install --index-url https://download.pytorch.org/whl/cu128 torch torchvision
+uv pip install "tensorrt==10.12.0.36"
+uv pip install "inference-models[torch-cu128,onnx-cu12,trt10]"
 
 # Using pip
-pip install "inference-models[torch-cu128,onnx-cu12,trt10]" "tensorrt==10.12.0.36"
+pip install --index-url https://download.pytorch.org/whl/cu128 torch torchvision
+pip install "tensorrt==10.12.0.36"
+pip install "inference-models[torch-cu128,onnx-cu12,trt10]"
 ```
 
 ### CUDA 12.6
 
 ```bash
-uv pip install "inference-models[torch-cu126,onnx-cu12,trt10]" "tensorrt==10.12.0.36"
+# Using uv (recommended)
+uv pip install --index-url https://download.pytorch.org/whl/cu126 torch torchvision
+uv pip install "tensorrt==10.12.0.36"
+uv pip install "inference-models[torch-cu126,onnx-cu12,trt10]"
+
+# Using pip
+pip install --index-url https://download.pytorch.org/whl/cu126 torch torchvision
+pip install "tensorrt==10.12.0.36"
+pip install "inference-models[torch-cu126,onnx-cu12,trt10]"
 ```
 
 ### CUDA 12.4
 
 ```bash
-uv pip install "inference-models[torch-cu124,onnx-cu12,trt10]" "tensorrt==10.12.0.36"
-```
+# Using uv (recommended)
+uv pip install --index-url https://download.pytorch.org/whl/cu124 torch torchvision
+uv pip install "tensorrt==10.12.0.36"
+uv pip install "inference-models[torch-cu124,onnx-cu12,trt10]"
 
-### CUDA 11.8 (Legacy)
-
-```bash
-uv pip install "inference-models[torch-cu118,onnx-cu118,trt10]" "tensorrt==10.12.0.36"
+# Using pip
+pip install --index-url https://download.pytorch.org/whl/cu124 torch torchvision
+pip install "tensorrt==10.12.0.36"
+pip install "inference-models[torch-cu124,onnx-cu12,trt10]"
 ```
 
 ## 🤖 Jetson Installation
@@ -148,7 +181,13 @@ For NVIDIA Jetson devices, see the [Hardware Compatibility](hardware-compatibili
 ### Jetson with JetPack 6 (CUDA 12.6)
 
 ```bash
+# Using uv (recommended)
+uv pip install --index-url https://pypi.jetson-ai-lab.io/jp6/cu126/+simple torch torchvision onnxruntime-gpu
 uv pip install "inference-models[torch-jp6-cu126,onnx-jp6-cu126]"
+
+# Using pip
+pip install --index-url https://pypi.jetson-ai-lab.io/jp6/cu126/+simple torch torchvision onnxruntime-gpu
+pip install "inference-models[torch-jp6-cu126,onnx-jp6-cu126]"
 ```
 
 !!! info "Jetson TensorRT"
