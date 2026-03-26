@@ -152,6 +152,7 @@ nav:
         - Schema API: workflows/schema_api.md
         - Changelog: workflows/execution_engine_changelog.md
       - Benchmarks: workflows/benchmarks.md
+      - Community Plugins: workflows/community_plugins.md
   - Reference:
       - Overview: reference/overview.md
       - Inference SDK:
