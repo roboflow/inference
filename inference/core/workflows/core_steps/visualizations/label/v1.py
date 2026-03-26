@@ -271,7 +271,8 @@ class LabelVisualizationBlockV1(ColorableVisualizationBlock):
         elif text == "Tracker Id":
             if predictions.tracker_id is not None:
                 labels = [
-                    str(t) if t else "No Tracker ID" for t in predictions.tracker_id
+                    str(t) if t is not None else "No Tracker ID"
+                    for t in predictions.tracker_id
                 ]
             else:
                 labels = ["No Tracker ID"] * len(predictions)
