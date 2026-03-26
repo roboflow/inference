@@ -276,7 +276,6 @@ from inference.core.roboflow_api import (
     get_workflow_specification,
 )
 from inference.core.telemetry import (
-    get_trace_id,
     setup_telemetry,
     shutdown_telemetry,
     start_span,
@@ -754,9 +753,6 @@ class HttpInterface(BaseInterface):
                 "inference-models" if USE_INFERENCE_MODELS else "old-inference"
             )
             response.headers["x-inference-engine"] = inference_engine
-            trace_id = get_trace_id()
-            if trace_id:
-                response.headers[TRACE_ID_HEADER] = trace_id
             return response
 
         @app.middleware("http")
