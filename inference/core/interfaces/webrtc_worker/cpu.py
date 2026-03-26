@@ -7,6 +7,8 @@ from inference.core.interfaces.webrtc_worker.entities import (
     WebRTCWorkerRequest,
     WebRTCWorkerResult,
 )
+from inference.core.env import WEBRTC_MODAL_WATCHDOG_TIMEMOUT
+from inference.core.interfaces.webrtc_worker.watchdog import Watchdog
 from inference.core.interfaces.webrtc_worker.webrtc import (
     init_rtc_peer_connection_with_loop,
 )
@@ -20,11 +22,17 @@ def rtc_peer_connection_process(
         answer_conn.send(obj)
         answer_conn.close()
 
+    watchdog = Watchdog(
+        api_key=webrtc_request.api_key,
+        timeout_seconds=WEBRTC_MODAL_WATCHDOG_TIMEMOUT,
+    )
+
     try:
         asyncio.run(
             init_rtc_peer_connection_with_loop(
                 webrtc_request=webrtc_request,
                 send_answer=send_answer,
+                heartbeat_callback=watchdog.heartbeat,
             )
         )
         logger.info("WebRTC process terminated")
