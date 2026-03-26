@@ -338,7 +338,7 @@ def write_individual_block_pages(block_families, blocks_description):
             # Use custom deprecation message if provided, otherwise use default
             custom_message = family_members[0].block_schema.get("deprecation_message")
             message = custom_message or "This block is deprecated and may be removed in a future release."
-            deprecation_warning = f'!!! warning "Deprecated"\n\n    {message}\n\n'
+            deprecation_warning = f'!!! warning "Deprecated"\n\n{" " * 4}{message}\n\n'
         else:
             deprecation_warning = ""
         family_document_content = BLOCK_FAMILY_TEMPLATE.format(
@@ -394,7 +394,7 @@ def write_blocks_summary_md(block_families):
                 b.block_schema.get("deprecated", False) for b in block_families[family_name]
             )
             label = f"{family_name} (Deprecated)" if all_deprecated else family_name
-            lines.append(f"    * [{label}]({slug}.md)")
+            lines.append(f"{' ' * 4}* [{label}]({slug}.md)")
 
     summary_path = os.path.join(BLOCKS_DIR, "SUMMARY.md")
     with open(summary_path, "w", encoding="utf-8") as f:
