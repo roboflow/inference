@@ -1,6 +1,6 @@
 from typing import List, Literal, Optional, Type, Union
 
-from pydantic import ConfigDict, Field
+from pydantic import ConfigDict, Field, model_validator
 
 from inference.core.entities.requests.inference import LMMInferenceRequest
 from inference.core.env import (
@@ -29,27 +29,50 @@ from inference.core.workflows.prototypes.block import (
 )
 from inference_sdk import InferenceHTTPClient
 
-PROMPT_OPTIONS = {
-    "text_recognition": "Text Recognition:",
-    "formula_recognition": "Formula Recognition:",
-    "table_recognition": "Table Recognition:",
+TASK_TYPE_TO_PROMPT = {
+    "text-recognition": "Text Recognition:",
+    "table-recognition": "Table Recognition:",
+    "formula-recognition": "Formula Recognition:",
+    "custom": None,
 }
 
-DEFAULT_PROMPT = "Text Recognition:"
+TaskType = Literal["text-recognition", "table-recognition", "formula-recognition", "custom"]
+
+TASKS_METADATA = {
+    "text-recognition": {
+        "name": "Text Recognition",
+        "description": "General-purpose text recognition for serial numbers, labels, scene text, and documents.",
+    },
+    "table-recognition": {
+        "name": "Table Recognition",
+        "description": "Recognizes table structures and content.",
+    },
+    "formula-recognition": {
+        "name": "Formula Recognition",
+        "description": "Recognizes mathematical formulas and equations.",
+    },
+    "custom": {
+        "name": "Custom Prompt",
+        "description": "Provide your own prompt for specialized recognition tasks.",
+    },
+}
+
+TASKS_REQUIRING_PROMPT = {"custom"}
 
 LONG_DESCRIPTION = """
 Recognize text in images using GLM-OCR, a vision language model by Zhipu AI specialized
 for optical character recognition.
 
-GLM-OCR supports three built-in recognition modes controlled by the prompt:
+GLM-OCR supports three built-in recognition modes:
 
-- **Text Recognition** (`Text Recognition:`) — General-purpose text recognition for
+- **Text Recognition** — General-purpose text recognition for
   serial numbers, labels, scene text, and documents.
-- **Formula Recognition** (`Formula Recognition:`) — Recognizes mathematical formulas
+- **Formula Recognition** — Recognizes mathematical formulas
   and equations.
-- **Table Recognition** (`Table Recognition:`) — Recognizes table structures and content.
+- **Table Recognition** — Recognizes table structures and content.
 
-You can also provide a custom prompt for specialized recognition tasks.
+You can also select **Custom Prompt** to provide your own prompt for specialized
+recognition tasks.
 
 This block pairs well with detection models and DynamicCropBlock to isolate regions of
 interest before running OCR. For example, use an object detection model to find labels
@@ -61,16 +84,25 @@ Note: GLM-OCR requires a GPU for inference.
 
 class BlockManifest(WorkflowBlockManifest):
     images: Selector(kind=[IMAGE_KIND]) = ImageInputField
-    prompt: Optional[str] = Field(
+
+    task_type: TaskType = Field(
+        default="text-recognition",
+        description="Recognition task to perform. Determines the prompt sent to GLM-OCR.",
+        json_schema_extra={
+            "values_metadata": TASKS_METADATA,
+            "always_visible": True,
+        },
+    )
+
+    prompt: Optional[Union[Selector(kind=[STRING_KIND]), str]] = Field(
         default=None,
-        description=(
-            "Text prompt to guide GLM-OCR recognition. "
-            "Use 'Text Recognition:' for general text, "
-            "'Formula Recognition:' for math formulas, "
-            "'Table Recognition:' for tables, "
-            "or provide a custom prompt."
-        ),
-        examples=["Text Recognition:", "Formula Recognition:", "Table Recognition:"],
+        description="Custom text prompt for GLM-OCR. Only used when task_type is 'custom'.",
+        examples=["Describe the text in the image."],
+        json_schema_extra={
+            "relevant_for": {
+                "task_type": {"values": TASKS_REQUIRING_PROMPT, "required": True},
+            },
+        },
     )
 
     model_config = ConfigDict(
@@ -109,6 +141,14 @@ class BlockManifest(WorkflowBlockManifest):
         examples=["glm-ocr"],
     )
 
+    @model_validator(mode="after")
+    def validate_prompt(self) -> "BlockManifest":
+        if self.task_type == "custom" and not self.prompt:
+            raise ValueError(
+                "`prompt` is required when task_type is 'custom'."
+            )
+        return self
+
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
@@ -126,6 +166,12 @@ class BlockManifest(WorkflowBlockManifest):
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.3.0,<2.0.0"
+
+
+def _resolve_prompt(task_type: str, prompt: Optional[str]) -> str:
+    if task_type == "custom":
+        return prompt
+    return TASK_TYPE_TO_PROMPT[task_type]
 
 
 class GLMOCRBlockV1(WorkflowBlock):
@@ -151,19 +197,21 @@ class GLMOCRBlockV1(WorkflowBlock):
         self,
         images: Batch[WorkflowImageData],
         model_version: str,
+        task_type: str,
         prompt: Optional[str],
     ) -> BlockResult:
+        resolved_prompt = _resolve_prompt(task_type, prompt)
         if self._step_execution_mode == StepExecutionMode.LOCAL:
             return self.run_locally(
                 images=images,
                 model_version=model_version,
-                prompt=prompt,
+                prompt=resolved_prompt,
             )
         elif self._step_execution_mode == StepExecutionMode.REMOTE:
             return self.run_remotely(
                 images=images,
                 model_version=model_version,
-                prompt=prompt,
+                prompt=resolved_prompt,
             )
         else:
             raise ValueError(
@@ -174,7 +222,7 @@ class GLMOCRBlockV1(WorkflowBlock):
         self,
         images: Batch[WorkflowImageData],
         model_version: str,
-        prompt: Optional[str],
+        prompt: str,
     ) -> BlockResult:
         api_url = (
             LOCAL_INFERENCE_API_URL
@@ -187,8 +235,6 @@ class GLMOCRBlockV1(WorkflowBlock):
         )
         if WORKFLOWS_REMOTE_API_TARGET == "hosted":
             client.select_api_v0()
-
-        prompt = prompt or DEFAULT_PROMPT
 
         predictions = []
         for image in images:
@@ -207,12 +253,11 @@ class GLMOCRBlockV1(WorkflowBlock):
         self,
         images: Batch[WorkflowImageData],
         model_version: str,
-        prompt: Optional[str],
+        prompt: str,
     ) -> BlockResult:
         inference_images = [
             i.to_inference_format(numpy_preferred=False) for i in images
         ]
-        prompt = prompt or DEFAULT_PROMPT
 
         self._model_manager.add_model(model_id=model_version, api_key=self._api_key)
 
