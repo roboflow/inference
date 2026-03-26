@@ -265,7 +265,9 @@ class ModelManager:
                                 f"error:{GLOBAL_INFERENCE_SERVER_ID}:{model_id}",
                                 value={
                                     "request": jsonable_encoder(
-                                        request.dict(exclude={"image", "subject", "prompt"})
+                                        request.dict(
+                                            exclude={"image", "subject", "prompt"}
+                                        )
                                     ),
                                     "error": str(e),
                                 },
@@ -361,7 +363,9 @@ class ModelManager:
                                 f"error:{GLOBAL_INFERENCE_SERVER_ID}:{model_id}",
                                 value={
                                     "request": jsonable_encoder(
-                                        request.dict(exclude={"image", "subject", "prompt"})
+                                        request.dict(
+                                            exclude={"image", "subject", "prompt"}
+                                        )
                                     ),
                                     "error": str(e),
                                 },
