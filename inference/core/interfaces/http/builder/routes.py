@@ -2,14 +2,20 @@ import json
 import logging
 import os
 import re
+import time
 from hashlib import sha256
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import APIRouter, Body, Depends, Header, HTTPException, status
 from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from starlette.status import HTTP_201_CREATED, HTTP_400_BAD_REQUEST, HTTP_404_NOT_FOUND
 
+from inference.core.cache.air_gapped import (
+    get_cached_foundation_models,
+    get_task_type_to_block_mapping,
+    scan_cached_models,
+)
 from inference.core.env import BUILDER_ORIGIN, MODEL_CACHE_DIR
 from inference.core.interfaces.http.error_handlers import with_route_exceptions_async
 
@@ -127,6 +133,83 @@ async def get_all_workflows():
 
     return Response(
         content=json.dumps({"data": data}, indent=4),
+        media_type="application/json",
+        status_code=200,
+    )
+
+
+# ----------------------------------------------------------------
+# Models cache for /build/api/models (TTL-based)
+# IMPORTANT: This route MUST be defined BEFORE /api/{workflow_id}
+# otherwise FastAPI will match "models" as a workflow_id.
+# ----------------------------------------------------------------
+_models_cache: Optional[Tuple[float, List[Dict[str, Any]]]] = None
+_MODELS_CACHE_TTL = 30.0  # seconds
+
+
+@router.get("/api/models", dependencies=[Depends(verify_csrf_token)])
+@with_route_exceptions_async
+async def get_cached_models():
+    """Return all models available in the local cache.
+
+    Combines user-trained models discovered via ``model_type.json`` markers
+    with foundation-model blocks whose weights are fully cached.
+    Results are cached for 30 seconds to avoid repeated filesystem scans.
+    """
+    global _models_cache  # noqa: PLW0603
+
+    now = time.time()
+    if _models_cache is not None:
+        cached_at, cached_result = _models_cache
+        if now - cached_at < _MODELS_CACHE_TTL:
+            return Response(
+                content=json.dumps({"models": cached_result}),
+                media_type="application/json",
+                status_code=200,
+            )
+
+    # Build reverse alias map: canonical_id → [alias1, alias2, ...]
+    from inference.models.aliases import REGISTERED_ALIASES
+
+    reverse_aliases: Dict[str, List[str]] = {}
+    for alias, canonical in REGISTERED_ALIASES.items():
+        reverse_aliases.setdefault(canonical, []).append(alias)
+
+    # Scan the filesystem for cached models.
+    user_models = scan_cached_models(MODEL_CACHE_DIR)
+    foundation_models = get_cached_foundation_models()
+
+    # De-duplicate by model_id (foundation models take precedence).
+    seen: Dict[str, Dict[str, Any]] = {}
+    for m in user_models:
+        seen[m["model_id"]] = m
+    for m in foundation_models:
+        seen[m["model_id"]] = m
+
+    # Enrich each model with compatible block types and aliases.
+    task_to_blocks = get_task_type_to_block_mapping()
+    models = []
+    for m in seen.values():
+        entry = dict(m)
+        entry.setdefault(
+            "compatible_block_types",
+            task_to_blocks.get(m.get("task_type", ""), []),
+        )
+        # Add known aliases for this model
+        model_id = m.get("model_id", "")
+        aliases = reverse_aliases.get(model_id, [])
+        entry["aliases"] = aliases
+        # Use the shortest alias as display name if available
+        if aliases and (entry.get("name") == model_id or not entry.get("name")):
+            entry["name"] = min(aliases, key=len)
+        # Remove internal-only keys if present.
+        entry.pop("block_type", None)
+        models.append(entry)
+
+    _models_cache = (now, models)
+
+    return Response(
+        content=json.dumps({"models": models}),
         media_type="application/json",
         status_code=200,
     )

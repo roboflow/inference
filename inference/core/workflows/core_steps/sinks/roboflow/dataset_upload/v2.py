@@ -233,6 +233,11 @@ class BlockManifest(WorkflowBlockManifest):
         examples=[{"camera_id": "cam_01", "location": "$inputs.location"}, {}],
     )
 
+
+    @classmethod
+    def get_air_gapped_availability(cls) -> dict:
+        return {"available": False, "reason": "requires_internet"}
+
     @classmethod
     def get_parameters_accepting_batches(cls) -> List[str]:
         return ["images", "predictions", "image_name"]

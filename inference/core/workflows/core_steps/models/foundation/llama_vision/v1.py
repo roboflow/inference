@@ -262,6 +262,10 @@ class BlockManifest(WorkflowBlockManifest):
             )
         return self
 
+    @classmethod
+    def get_air_gapped_availability(cls) -> dict:
+        return {"available": False, "reason": "requires_internet"}
+
     @field_validator("temperature")
     @classmethod
     def validate_temperature(cls, value: Union[str, float]) -> Union[str, float]:

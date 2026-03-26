@@ -186,6 +186,10 @@ class BlockManifest(WorkflowBlockManifest):
         json_schema_extra={"hidden": True},
     )
 
+    @classmethod
+    def get_air_gapped_availability(cls) -> dict:
+        return {"available": False, "reason": "requires_internet"}
+
     @field_validator("cooldown_seconds")
     @classmethod
     def ensure_cooldown_seconds_within_bounds(cls, value: Any) -> dict:

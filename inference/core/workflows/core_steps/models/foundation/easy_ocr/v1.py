@@ -144,6 +144,19 @@ class BlockManifest(WorkflowBlockManifest):
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.3.0,<2.0.0"
 
+    @classmethod
+    def get_required_cache_artifacts(cls) -> list:
+        """Return list of model_id variants that can satisfy this block."""
+        return [
+            "easy_ocr/english_g2",
+            "easy_ocr/japanese_g2",
+            "easy_ocr/kannada_g2",
+            "easy_ocr/korean_g2",
+            "easy_ocr/latin_g2",
+            "easy_ocr/telugu_g2",
+            "easy_ocr/zh_sim_g2",
+        ]
+
 
 class EasyOCRBlockV1(WorkflowBlock):
     def __init__(

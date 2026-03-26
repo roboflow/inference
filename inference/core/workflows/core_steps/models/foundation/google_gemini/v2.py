@@ -287,6 +287,10 @@ class BlockManifest(WorkflowBlockManifest):
         "Please restrict if you hit Google Gemini API limits.",
     )
 
+    @classmethod
+    def get_air_gapped_availability(cls) -> dict:
+        return {"available": False, "reason": "requires_internet"}
+
     @field_validator("model_version", mode="before")
     @classmethod
     def validate_model_version(cls, value):

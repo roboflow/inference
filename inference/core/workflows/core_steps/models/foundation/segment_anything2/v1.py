@@ -144,6 +144,16 @@ class BlockManifest(WorkflowBlockManifest):
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.3.0,<2.0.0"
 
+    @classmethod
+    def get_required_cache_artifacts(cls) -> list:
+        """Return list of model_id variants that can satisfy this block."""
+        return [
+            "sam2/hiera_large",
+            "sam2/hiera_small",
+            "sam2/hiera_tiny",
+            "sam2/hiera_b_plus",
+        ]
+
 
 class SegmentAnything2BlockV1(WorkflowBlock):
 

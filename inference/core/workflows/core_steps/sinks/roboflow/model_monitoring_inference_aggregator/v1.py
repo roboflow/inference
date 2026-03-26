@@ -189,6 +189,10 @@ class BlockManifest(WorkflowBlockManifest):
         examples=[True, False],
     )
 
+    @classmethod
+    def get_air_gapped_availability(cls) -> dict:
+        return {"available": False, "reason": "requires_internet"}
+
     @field_validator("frequency")
     @classmethod
     def ensure_frequency_is_correct(cls, value: Any) -> Any:

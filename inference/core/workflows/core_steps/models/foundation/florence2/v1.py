@@ -289,6 +289,14 @@ class BaseManifest(WorkflowBlockManifest):
 
 
 class BlockManifest(BaseManifest):
+    @classmethod
+    def get_required_cache_artifacts(cls) -> list:
+        """Return list of model_id variants that can satisfy this block."""
+        return [
+            "florence-pretrains/3",
+            "florence-pretrains/4",
+        ]
+
     model_config = ConfigDict(
         json_schema_extra={
             "name": "Florence-2 Model",

@@ -147,6 +147,11 @@ class BlockManifest(WorkflowBlockManifest):
         examples=[200],
     )
 
+
+    @classmethod
+    def get_air_gapped_availability(cls) -> dict:
+        return {"available": False, "reason": "requires_internet"}
+
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [

@@ -99,6 +99,21 @@ class BlockManifest(WorkflowBlockManifest):
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.3.0,<2.0.0"
 
+    @classmethod
+    def get_required_cache_artifacts(cls) -> list:
+        """Return list of model_id variants that can satisfy this block."""
+        return [
+            "clip/RN101",
+            "clip/RN50",
+            "clip/RN50x16",
+            "clip/RN50x4",
+            "clip/RN50x64",
+            "clip/ViT-B-16",
+            "clip/ViT-B-32",
+            "clip/ViT-L-14-336px",
+            "clip/ViT-L-14",
+        ]
+
 
 class ClipComparisonBlockV1(WorkflowBlock):
 

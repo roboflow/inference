@@ -1,8 +1,13 @@
 # TODO - for everyone: start migrating other handlers to bring relief to http_api.py
-from typing import Dict, List, Optional, Set, Union
+import copy
+import logging
+import os
+from typing import Any, Dict, List, Optional, Set, Union
 
 from packaging.specifiers import SpecifierSet
 
+from inference.core.cache.model_artifacts import are_all_files_cached
+from inference.core.env import ENABLE_BUILDER, MODEL_CACHE_DIR
 from inference.core.entities.responses.workflows import (
     DescribeInterfaceResponse,
     ExternalBlockPropertyPrimitiveDefinition,
@@ -41,11 +46,14 @@ from inference.core.workflows.execution_engine.v1.introspection.types_discovery 
     discover_kinds_typing_hints,
 )
 
+logger = logging.getLogger(__name__)
+
 
 def handle_describe_workflows_blocks_request(
     dynamic_blocks_definitions: Optional[List[DynamicBlockDefinition]] = None,
     requested_execution_engine_version: Optional[str] = None,
     api_key: Optional[str] = None,
+    air_gapped: bool = False,
 ) -> WorkflowsBlocksDescription:
     if dynamic_blocks_definitions is None:
         dynamic_blocks_definitions = []
@@ -91,7 +99,7 @@ def handle_describe_workflows_blocks_request(
             operators_descriptions=uql_operators_descriptions,
         )
     )
-    return WorkflowsBlocksDescription(
+    result = WorkflowsBlocksDescription(
         blocks=blocks_description.blocks,
         declared_kinds=blocks_description.declared_kinds,
         kinds_connections=kinds_connections,
@@ -99,6 +107,108 @@ def handle_describe_workflows_blocks_request(
         universal_query_language_description=universal_query_language_description,
         dynamic_block_definition_schema=DynamicBlockDefinition.schema(),
     )
+    if air_gapped and ENABLE_BUILDER:
+        result = enrich_with_air_gapped_info(result)
+    return result
+
+
+def enrich_with_air_gapped_info(
+    result: WorkflowsBlocksDescription,
+) -> WorkflowsBlocksDescription:
+    """Post-process block descriptions to include air-gapped availability info.
+
+    Deep-copies block schemas before mutating so the LRU-cached objects are
+    not modified.
+    """
+    enriched_blocks = []
+    for block in result.blocks:
+        manifest_cls = block.manifest_class
+        air_gapped_info = _get_air_gapped_info_for_block(manifest_cls)
+        # Deep-copy the schema dict to avoid mutating the cached object
+        enriched_schema = copy.deepcopy(block.block_schema)
+        if "json_schema_extra" not in enriched_schema:
+            enriched_schema["json_schema_extra"] = {}
+        enriched_schema["json_schema_extra"]["air_gapped_info"] = air_gapped_info
+        enriched_blocks.append(
+            block.model_copy(update={"block_schema": enriched_schema})
+        )
+    return result.model_copy(update={"blocks": enriched_blocks})
+
+
+def _get_air_gapped_info_for_block(
+    manifest_cls: Any,
+) -> Dict[str, Any]:
+    """Determine air-gapped availability for a single block manifest class."""
+    # 1. Explicit air-gapped availability declaration (e.g. cloud-only blocks)
+    if hasattr(manifest_cls, "get_air_gapped_availability"):
+        try:
+            info = manifest_cls.get_air_gapped_availability()
+            if isinstance(info, dict):
+                result: Dict[str, Any] = dict(info)
+                _add_compatible_task_types(manifest_cls, result)
+                return result
+        except Exception:
+            logger.debug(
+                "Error calling get_air_gapped_availability on %s",
+                getattr(manifest_cls, "__name__", str(manifest_cls)),
+                exc_info=True,
+            )
+
+    # 2. Foundation model blocks with cache artifact requirements
+    if hasattr(manifest_cls, "get_required_cache_artifacts"):
+        try:
+            artifacts_spec = manifest_cls.get_required_cache_artifacts()
+            if isinstance(artifacts_spec, list):
+                from inference.core.cache.air_gapped import _is_model_cached
+
+                cached = any(_is_model_cached(mid) for mid in artifacts_spec)
+                model_id = artifacts_spec[0] if artifacts_spec else ""
+                result = {
+                    "available": cached,
+                    "reason": None if cached else "missing_cache_artifacts",
+                    "model_id": model_id,
+                }
+                _add_compatible_task_types(manifest_cls, result)
+                return result
+            elif isinstance(artifacts_spec, dict):
+                model_id = artifacts_spec.get("model_id")
+                required_files = artifacts_spec.get("files", [])
+                if model_id and required_files:
+                    cached = are_all_files_cached(
+                        files=required_files, model_id=model_id
+                    )
+                    result = {
+                        "available": cached,
+                        "reason": None if cached else "missing_cache_artifacts",
+                        "model_id": model_id,
+                    }
+                    _add_compatible_task_types(manifest_cls, result)
+                    return result
+        except Exception:
+            logger.debug(
+                "Error checking cache artifacts for %s",
+                getattr(manifest_cls, "__name__", str(manifest_cls)),
+                exc_info=True,
+            )
+
+    # 3. Default: block is available (pure logic blocks, local-network blocks, etc.)
+    result: Dict[str, Any] = {"available": True}
+    _add_compatible_task_types(manifest_cls, result)
+    return result
+
+
+def _add_compatible_task_types(
+    manifest_cls: Any,
+    info: Dict[str, Any],
+) -> None:
+    """If the manifest exposes compatible task types, add them to the info dict."""
+    if hasattr(manifest_cls, "get_compatible_task_types"):
+        try:
+            task_types = manifest_cls.get_compatible_task_types()
+            if isinstance(task_types, (list, tuple, set)):
+                info["compatible_task_types"] = list(task_types)
+        except Exception:
+            pass
 
 
 def handle_describe_workflows_interface(

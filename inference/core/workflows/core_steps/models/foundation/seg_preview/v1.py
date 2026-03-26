@@ -105,6 +105,11 @@ class BlockManifest(WorkflowBlockManifest):
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.3.0,<2.0.0"
 
+    @classmethod
+    def get_air_gapped_availability(cls) -> dict:
+        """This block requires internet access to the remote inference proxy."""
+        return {"available": False, "reason": "requires_internet"}
+
 
 class SegPreviewBlockV1(WorkflowBlock):
 
