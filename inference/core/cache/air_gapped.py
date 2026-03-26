@@ -37,7 +37,7 @@ def _slugify_model_id(model_id: str) -> str:
     return f"{slug}-{digest}"
 
 
-def _is_model_cached(model_id: str) -> bool:
+def is_model_cached(model_id: str) -> bool:
     """Check if *model_id* has cached artifacts in either cache layout.
 
     Layout 1 (traditional): ``MODEL_CACHE_DIR/{model_id}/`` with files inside.
@@ -55,6 +55,27 @@ def _is_model_cached(model_id: str) -> bool:
     if os.path.isdir(models_cache_path) and os.listdir(models_cache_path):
         return True
 
+    return False
+
+
+def is_block_cached(artifacts_spec) -> bool:
+    """Check whether a block's required cache artifacts are present.
+
+    Handles both formats returned by ``get_required_cache_artifacts()``:
+    - **list of model_id strings** (new): block is cached if ANY variant exists.
+    - **dict** with ``model_id`` and ``files`` keys (legacy): block is cached
+      if all listed files exist for that model_id.
+
+    Returns ``False`` for unrecognised formats.
+    """
+    if isinstance(artifacts_spec, list):
+        return any(is_model_cached(mid) for mid in artifacts_spec)
+    if isinstance(artifacts_spec, dict):
+        model_id = artifacts_spec.get("model_id")
+        required_files = artifacts_spec.get("files", [])
+        if not model_id or not required_files:
+            return False
+        return are_all_files_cached(files=required_files, model_id=model_id)
     return False
 
 
@@ -181,22 +202,14 @@ def get_cached_foundation_models(
             )
             continue
 
-        # artifacts_spec can be:
-        #   - list of model_id strings (new format): block is cached if ANY
-        #     variant directory exists and contains files
-        #   - dict with {"model_id": ..., "files": [...]} (legacy format)
+        if not is_block_cached(artifacts_spec):
+            continue
+
+        # Derive a representative model_id for the result entry.
         if isinstance(artifacts_spec, list):
-            cached = any(_is_model_cached(mid) for mid in artifacts_spec)
-            if not cached:
-                continue
             model_id = artifacts_spec[0] if artifacts_spec else ""
         elif isinstance(artifacts_spec, dict):
-            model_id = artifacts_spec.get("model_id")
-            required_files = artifacts_spec.get("files", [])
-            if not model_id or not required_files:
-                continue
-            if not are_all_files_cached(files=required_files, model_id=model_id):
-                continue
+            model_id = artifacts_spec.get("model_id", "")
         else:
             continue
 

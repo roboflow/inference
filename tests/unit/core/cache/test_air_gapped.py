@@ -297,3 +297,34 @@ class TestFoundationModelListFormat:
             result = get_cached_foundation_models(blocks=[block])
 
         assert len(result) == 0
+
+
+# ── Cross-validation: _slugify_model_id must match inference_models ──────────
+
+_SLUGIFY_TEST_IDS = [
+    "clip/ViT-B-16",
+    "coco/40",
+    "rfdetr-medium",
+    "sam3/sam3_final",
+    "florence-pretrains/3",
+    "depth-anything-v3/small",
+    "smolvlm2/smolvlm-2.2b-instruct",
+    "qwen-pretrains/1",
+    "a" * 100,  # long model id
+    "special!!!chars###here",
+]
+
+
+@pytest.mark.parametrize("model_id", _SLUGIFY_TEST_IDS)
+def test_slugify_matches_inference_models(model_id: str):
+    """Ensure _slugify_model_id stays in sync with the canonical implementation."""
+    try:
+        from inference_models.models.auto_loaders.core import (
+            slugify_model_id_to_os_safe_format,
+        )
+    except ImportError:
+        pytest.skip("inference_models not installed")
+
+    from inference.core.cache.air_gapped import _slugify_model_id
+
+    assert _slugify_model_id(model_id) == slugify_model_id_to_os_safe_format(model_id)

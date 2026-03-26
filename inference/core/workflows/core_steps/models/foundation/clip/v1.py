@@ -96,17 +96,21 @@ class BlockManifest(WorkflowBlockManifest):
     @classmethod
     def get_required_cache_artifacts(cls) -> list:
         """Return list of model_id variants that can satisfy this block."""
-        return [
-            "clip/RN101",
-            "clip/RN50",
-            "clip/RN50x16",
-            "clip/RN50x4",
-            "clip/RN50x64",
-            "clip/ViT-B-16",
-            "clip/ViT-B-32",
-            "clip/ViT-L-14-336px",
-            "clip/ViT-L-14",
-        ]
+        return list(CLIP_CACHE_MODEL_IDS)
+
+
+# All CLIP model_id cache paths.  Shared with clip_comparison blocks.
+CLIP_CACHE_MODEL_IDS = [
+    "clip/RN101",
+    "clip/RN50",
+    "clip/RN50x16",
+    "clip/RN50x4",
+    "clip/RN50x64",
+    "clip/ViT-B-16",
+    "clip/ViT-B-32",
+    "clip/ViT-L-14-336px",
+    "clip/ViT-L-14",
+]
 
 
 text_cache = LRUCache()

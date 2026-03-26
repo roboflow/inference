@@ -215,7 +215,7 @@ class TestGetAirGappedInfoForBlock:
         assert info["available"] is True
 
     @patch(
-        "inference.core.interfaces.http.handlers.workflows.are_all_files_cached",
+        "inference.core.interfaces.http.handlers.workflows.is_block_cached",
         return_value=True,
     )
     def test_foundation_model_cached(self, mock_cache):
@@ -230,7 +230,7 @@ class TestGetAirGappedInfoForBlock:
         mock_cache.assert_called_once()
 
     @patch(
-        "inference.core.interfaces.http.handlers.workflows.are_all_files_cached",
+        "inference.core.interfaces.http.handlers.workflows.is_block_cached",
         return_value=False,
     )
     def test_foundation_model_not_cached(self, mock_cache):
@@ -366,7 +366,7 @@ class TestEnrichWithAirGappedInfo:
         assert result.blocks[0].block_schema == original_schema
 
     @patch(
-        "inference.core.interfaces.http.handlers.workflows.are_all_files_cached",
+        "inference.core.interfaces.http.handlers.workflows.is_block_cached",
         return_value=True,
     )
     def test_foundation_model_cached_shows_available(self, mock_cache):
@@ -391,7 +391,7 @@ class TestEnrichWithAirGappedInfo:
         assert "object-detection" in info["compatible_task_types"]
 
     @patch(
-        "inference.core.interfaces.http.handlers.workflows.are_all_files_cached",
+        "inference.core.interfaces.http.handlers.workflows.is_block_cached",
         return_value=False,
     )
     def test_foundation_model_not_cached_shows_unavailable(self, mock_cache):
@@ -431,9 +431,6 @@ class TestListFormatFoundationModel:
         open(os.path.join(variant_dir, "visual.onnx"), "w").close()
 
         with patch(
-            "inference.core.interfaces.http.handlers.workflows.MODEL_CACHE_DIR",
-            cache,
-        ), patch(
             "inference.core.cache.air_gapped.MODEL_CACHE_DIR",
             cache,
         ):
@@ -452,9 +449,6 @@ class TestListFormatFoundationModel:
         cache = str(tmp_path)
 
         with patch(
-            "inference.core.interfaces.http.handlers.workflows.MODEL_CACHE_DIR",
-            cache,
-        ), patch(
             "inference.core.cache.air_gapped.MODEL_CACHE_DIR",
             cache,
         ):

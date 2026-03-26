@@ -102,17 +102,11 @@ class BlockManifest(WorkflowBlockManifest):
     @classmethod
     def get_required_cache_artifacts(cls) -> list:
         """Return list of model_id variants that can satisfy this block."""
-        return [
-            "clip/RN101",
-            "clip/RN50",
-            "clip/RN50x16",
-            "clip/RN50x4",
-            "clip/RN50x64",
-            "clip/ViT-B-16",
-            "clip/ViT-B-32",
-            "clip/ViT-L-14-336px",
-            "clip/ViT-L-14",
-        ]
+        from inference.core.workflows.core_steps.models.foundation.clip.v1 import (
+            CLIP_CACHE_MODEL_IDS,
+        )
+
+        return list(CLIP_CACHE_MODEL_IDS)
 
 
 class ClipComparisonBlockV1(WorkflowBlock):

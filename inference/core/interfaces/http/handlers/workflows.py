@@ -1,12 +1,11 @@
 # TODO - for everyone: start migrating other handlers to bring relief to http_api.py
 import copy
 import logging
-import os
 from typing import Any, Dict, List, Optional, Set, Union
 
 from packaging.specifiers import SpecifierSet
 
-from inference.core.cache.model_artifacts import are_all_files_cached
+from inference.core.cache.air_gapped import is_block_cached
 from inference.core.entities.responses.workflows import (
     DescribeInterfaceResponse,
     ExternalBlockPropertyPrimitiveDefinition,
@@ -14,7 +13,7 @@ from inference.core.entities.responses.workflows import (
     UniversalQueryLanguageDescription,
     WorkflowsBlocksDescription,
 )
-from inference.core.env import ENABLE_BUILDER, MODEL_CACHE_DIR
+from inference.core.env import ENABLE_BUILDER
 from inference.core.workflows.core_steps.common.query_language.introspection.core import (
     prepare_operations_descriptions,
     prepare_operators_descriptions,
@@ -158,32 +157,19 @@ def _get_air_gapped_info_for_block(
     if hasattr(manifest_cls, "get_required_cache_artifacts"):
         try:
             artifacts_spec = manifest_cls.get_required_cache_artifacts()
-            if isinstance(artifacts_spec, list):
-                from inference.core.cache.air_gapped import _is_model_cached
-
-                cached = any(_is_model_cached(mid) for mid in artifacts_spec)
-                model_id = artifacts_spec[0] if artifacts_spec else ""
-                result = {
-                    "available": cached,
-                    "reason": None if cached else "missing_cache_artifacts",
-                    "model_id": model_id,
-                }
-                _add_compatible_task_types(manifest_cls, result)
-                return result
+            cached = is_block_cached(artifacts_spec)
+            model_id = ""
+            if isinstance(artifacts_spec, list) and artifacts_spec:
+                model_id = artifacts_spec[0]
             elif isinstance(artifacts_spec, dict):
-                model_id = artifacts_spec.get("model_id")
-                required_files = artifacts_spec.get("files", [])
-                if model_id and required_files:
-                    cached = are_all_files_cached(
-                        files=required_files, model_id=model_id
-                    )
-                    result = {
-                        "available": cached,
-                        "reason": None if cached else "missing_cache_artifacts",
-                        "model_id": model_id,
-                    }
-                    _add_compatible_task_types(manifest_cls, result)
-                    return result
+                model_id = artifacts_spec.get("model_id", "")
+            result = {
+                "available": cached,
+                "reason": None if cached else "missing_cache_artifacts",
+                "model_id": model_id,
+            }
+            _add_compatible_task_types(manifest_cls, result)
+            return result
         except Exception:
             logger.debug(
                 "Error checking cache artifacts for %s",
