@@ -4,6 +4,14 @@
 
 ### Added
 
+- Support for Roboflow License Server proxy in Roboflow weights provider 
+
+---
+
+## `0.23.0`
+
+### Added
+
 - Support for CUDA 13.0 on x86 architecture - as a result of `torch 2.11` release which makes CUDA 13.0 default version
 
 ---
