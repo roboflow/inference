@@ -1,0 +1,14 @@
+{
+  "your-workspace-slug": {
+    "my-detection-project": [
+      "yolov8n-640",
+      "rfdetr-base"
+    ],
+    "my-segmentation-project": [
+      "yolov8n-seg-640"
+    ],
+    "my-classification-project": [
+      "resnet50"
+    ]
+  }
+}
