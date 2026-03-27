@@ -450,8 +450,10 @@ if modal is not None:
                     "is_preview": webrtc_request.is_preview,
                 },
                 execution_duration=(
-                    _exec_session_stopped - _exec_session_started
-                ).total_seconds(),
+                    (_exec_session_stopped - _exec_session_started).total_seconds()
+                    if watchdog.connection_established
+                    else 0
+                ),
             )
             usage_collector.push_usage_payloads()
             logger.info("Function completed")
