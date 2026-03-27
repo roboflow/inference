@@ -32,7 +32,10 @@ router = APIRouter()
 # Generate or read the "csrf" token from disk once per server run
 # ----------------------------------------------------------------
 csrf_file = workflow_local_dir / ".csrf"
-if csrf_file.exists():
+if os.getenv("BUILDER_CSRF"):
+    csrf = os.getenv("BUILDER_CSRF")
+    logger.info("Using CSRF token from BUILDER_CSRF env var")
+elif csrf_file.exists():
     csrf = csrf_file.read_text()
 else:
     csrf = os.urandom(16).hex()
@@ -44,6 +47,11 @@ else:
 # ----------------------------------------------------------------
 def verify_csrf_token(x_csrf: str = Header(None)):
     if x_csrf != csrf:
+        logger.warning(
+            "CSRF validation failed: received=%s, expected=%s",
+            x_csrf,
+            csrf,
+        )
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="Invalid CSRF token"
         )
