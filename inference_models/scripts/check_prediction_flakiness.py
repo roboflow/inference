@@ -39,6 +39,17 @@ SUPPORTED_IMAGE_EXTENSIONS = {
     ".webp",
 }
 
+# How model load + inference is repeated across iterations.
+REFETCH_ARTIFACT = "refetch-artifact"
+SAME_MODEL_REPEATED_INFERENCE = "same-model-repeated-inference"
+RELOAD_LOCAL_ARTIFACT = "reload-local-artifact"
+SCENARIOS = (
+    REFETCH_ARTIFACT,
+    SAME_MODEL_REPEATED_INFERENCE,
+    RELOAD_LOCAL_ARTIFACT,
+)
+
+
 def run_flakiness_check(
     models_by_workspace: Mapping[str, Mapping[str, List[str]]],
     iterations: int,
@@ -50,8 +61,10 @@ def run_flakiness_check(
     num_test_images: int,
     roboflow_images_cache_dir: Path,
     use_roboflow_image_cache: bool,
+    scenario: str,
 ) -> Dict[str, Any]:
     report: Dict[str, Any] = {
+        "scenario": scenario,
         "iterations": iterations,
         "cache_dir": str(cache_dir),
         "results": defaultdict(lambda: defaultdict(dict)),
@@ -81,7 +94,7 @@ def run_flakiness_check(
             )
 
             for model_id in model_ids:
-                LOGGER.info("Running model: %s", model_id)
+                LOGGER.info("Running model: %s (scenario=%s)", model_id, scenario)
                 accumulated_outputs: List[List[Any]] = []
                 accumulated_load_streams: List[str] = []
                 status = "stable"
@@ -89,45 +102,114 @@ def run_flakiness_check(
                 iteration_diffs: Dict[str, Any] = {}
                 mismatch_stream_logs: List[str] = []
 
-                for iteration in range(1, iterations + 1):
-                    LOGGER.info(
-                        "  Iteration %s/%s: clearing cache and reloading",
-                        iteration,
-                        iterations,
+                if scenario == SAME_MODEL_REPEATED_INFERENCE:
+                    model, load_stream = load_model(
+                        model_id=model_id, api_key=api_key
                     )
-                    clear_cache(cache_dir)
-                    run_outputs, load_stream = run_model_once(
-                        model_id=model_id,
+                    accumulated_load_streams.append(load_stream)
+                    first_outputs = run_inference_only(
+                        model=model,
                         image_paths=image_paths,
-                        api_key=api_key,
                         float_precision=float_precision,
                     )
-                    accumulated_outputs.append(run_outputs)
-                    accumulated_load_streams.append(load_stream)
-
-                    if iteration > 1 and run_outputs != accumulated_outputs[0]:
-                        status = "flaky"
-                        mismatch_iterations.append(iteration)
-                        iteration_diffs[str(iteration)] = compute_diff_summary(
-                            baseline=accumulated_outputs[0],
-                            candidate=run_outputs,
-                            image_paths=image_paths,
-                            sample_different_images_limit=sample_different_images_limit,
-                        )
-                        stream_log_path = save_mismatch_streams(
-                            workspace=workspace,
-                            project=project,
-                            model_id=model_id,
-                            baseline_iteration=1,
-                            candidate_iteration=iteration,
-                            baseline_stream=accumulated_load_streams[0],
-                            candidate_stream=load_stream,
-                            streams_output_dir=streams_output_dir,
-                        )
-                        mismatch_stream_logs.append(str(stream_log_path))
+                    accumulated_outputs.append(first_outputs)
+                    LOGGER.info(
+                        "  Iteration 1/%s: loaded model; baseline inference",
+                        iterations,
+                    )
+                    for iteration in range(2, iterations + 1):
                         LOGGER.info(
-                            "  Saved mismatch load streams to: %s", stream_log_path
+                            "  Iteration %s/%s: repeated inference (same loaded model)",
+                            iteration,
+                            iterations,
                         )
+                        run_outputs = run_inference_only(
+                            model=model,
+                            image_paths=image_paths,
+                            float_precision=float_precision,
+                        )
+                        accumulated_load_streams.append("")
+                        accumulated_outputs.append(run_outputs)
+                        if run_outputs != accumulated_outputs[0]:
+                            status = "flaky"
+                            mismatch_iterations.append(iteration)
+                            iteration_diffs[str(iteration)] = compute_diff_summary(
+                                baseline=accumulated_outputs[0],
+                                candidate=run_outputs,
+                                image_paths=image_paths,
+                                sample_different_images_limit=sample_different_images_limit,
+                            )
+                            stream_log_path = save_mismatch_streams(
+                                workspace=workspace,
+                                project=project,
+                                model_id=model_id,
+                                baseline_iteration=1,
+                                candidate_iteration=iteration,
+                                baseline_stream=accumulated_load_streams[0],
+                                candidate_stream="",
+                                streams_output_dir=streams_output_dir,
+                                candidate_note=(
+                                    "No model reload — same process, same loaded model "
+                                    "(inference-only iteration)."
+                                ),
+                            )
+                            mismatch_stream_logs.append(str(stream_log_path))
+                            LOGGER.info(
+                                "  Saved mismatch load streams to: %s", stream_log_path
+                            )
+                    del model
+                    gc.collect()
+                    if torch.cuda.is_available():
+                        torch.cuda.empty_cache()
+
+                else:
+                    for iteration in range(1, iterations + 1):
+                        if scenario == REFETCH_ARTIFACT:
+                            LOGGER.info(
+                                "  Iteration %s/%s: clearing model cache and reloading",
+                                iteration,
+                                iterations,
+                            )
+                            clear_cache(cache_dir)
+                        else:
+                            LOGGER.info(
+                                "  Iteration %s/%s: reloading model from local artifact "
+                                "(cache not cleared)",
+                                iteration,
+                                iterations,
+                            )
+                        run_outputs, load_stream = run_model_once(
+                            model_id=model_id,
+                            image_paths=image_paths,
+                            api_key=api_key,
+                            float_precision=float_precision,
+                        )
+                        accumulated_outputs.append(run_outputs)
+                        accumulated_load_streams.append(load_stream)
+
+                        if iteration > 1 and run_outputs != accumulated_outputs[0]:
+                            status = "flaky"
+                            mismatch_iterations.append(iteration)
+                            iteration_diffs[str(iteration)] = compute_diff_summary(
+                                baseline=accumulated_outputs[0],
+                                candidate=run_outputs,
+                                image_paths=image_paths,
+                                sample_different_images_limit=sample_different_images_limit,
+                            )
+                            stream_log_path = save_mismatch_streams(
+                                workspace=workspace,
+                                project=project,
+                                model_id=model_id,
+                                baseline_iteration=1,
+                                candidate_iteration=iteration,
+                                baseline_stream=accumulated_load_streams[0],
+                                candidate_stream=load_stream,
+                                streams_output_dir=streams_output_dir,
+                            )
+                            mismatch_stream_logs.append(str(stream_log_path))
+                            LOGGER.info(
+                                "  Saved mismatch load streams to: %s", stream_log_path
+                            )
 
                 LOGGER.info(
                     "  Result: %s (mismatched iterations: %s)",
@@ -138,6 +220,7 @@ def run_flakiness_check(
                     # Drop captured load logs when model is stable.
                     accumulated_load_streams = []
                 report["results"][workspace][project][model_id] = {
+                    "scenario": scenario,
                     "status": status,
                     "mismatch_iterations": mismatch_iterations,
                     "iteration_diffs": iteration_diffs,
@@ -164,6 +247,23 @@ def run_model_once(
     model_id: str, image_paths: List[Path], api_key: Optional[str], float_precision: int
 ) -> tuple[List[Any], str]:
     model, load_stream = load_model(model_id=model_id, api_key=api_key)
+    normalized_outputs = run_inference_only(
+        model=model,
+        image_paths=image_paths,
+        float_precision=float_precision,
+    )
+    del model
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+    return normalized_outputs, load_stream
+
+
+def run_inference_only(
+    model: Any,
+    image_paths: List[Path],
+    float_precision: int,
+) -> List[Any]:
     normalized_outputs: List[Any] = []
     for image_path in image_paths:
         image = load_image(image_path)
@@ -171,11 +271,7 @@ def run_model_once(
         normalized_outputs.append(
             normalize_output(predictions, float_precision=float_precision)
         )
-    del model
-    gc.collect()
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
-    return normalized_outputs, load_stream
+    return normalized_outputs
 
 
 def load_image(image_path: Path) -> torch.Tensor:
@@ -263,6 +359,7 @@ def save_mismatch_streams(
     baseline_stream: str,
     candidate_stream: str,
     streams_output_dir: Path,
+    candidate_note: Optional[str] = None,
 ) -> Path:
     streams_output_dir.mkdir(parents=True, exist_ok=True)
     file_name = (
@@ -279,6 +376,8 @@ def save_mismatch_streams(
         f.write("=== BASELINE LOAD STREAM ===\n")
         f.write(baseline_stream)
         f.write("\n\n=== CANDIDATE LOAD STREAM ===\n")
+        if candidate_note:
+            f.write(f"{candidate_note}\n")
         f.write(candidate_stream)
         f.write("\n")
     return output_path
@@ -471,14 +570,27 @@ def load_models_config(path: Path) -> Dict[str, Dict[str, List[str]]]:
     type=int,
     default=3,
     show_default=True,
-    help="How many times each model should be reloaded and re-run.",
+    help=(
+        "Number of per-model passes to compare (see --scenario). Must be >= 2."
+    ),
+)
+@click.option(
+    "--scenario",
+    type=click.Choice(SCENARIOS, case_sensitive=True),
+    default=REFETCH_ARTIFACT,
+    show_default=True,
+    help=(
+        "refetch-artifact: delete model cache each iteration, re-download/load. "
+        "same-model-repeated-inference: load once, run inference N times in one process. "
+        "reload-local-artifact: keep cache; load from disk each iteration (no re-download)."
+    ),
 )
 @click.option(
     "--inference-home",
     type=click.Path(path_type=Path),
     default=lambda: Path(os.getenv("INFERENCE_HOME", "/tmp/cache")),
     show_default="INFERENCE_HOME or /tmp/cache",
-    help="Model cache path to purge before each iteration.",
+    help="Model cache directory (INFERENCE_HOME). Cleared each iteration only for refetch-artifact.",
 )
 @click.option(
     "--api-key",
@@ -536,6 +648,7 @@ def load_models_config(path: Path) -> Dict[str, Dict[str, List[str]]]:
 def main(
     models_config: Path,
     iterations: int,
+    scenario: str,
     inference_home: Path,
     api_key: Optional[str],
     float_precision: int,
@@ -570,6 +683,7 @@ def main(
         num_test_images=num_test_images,
         roboflow_images_cache_dir=roboflow_images_cache_dir,
         use_roboflow_image_cache=not no_roboflow_image_cache,
+        scenario=scenario,
     )
 
     LOGGER.info("")
