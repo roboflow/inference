@@ -198,6 +198,32 @@ def test_same_model_repeated_inference_flaky_when_second_inference_differs(
     assert entry["mismatch_iterations"] == [2, 3]
 
 
+def test_search_response_results_prefers_results_key(flakiness_mod):
+    data = {"results": [{"id": "a"}], "images": [{"id": "legacy"}]}
+    assert flakiness_mod.search_response_results(data) == [{"id": "a"}]
+
+
+def test_search_response_results_falls_back_to_images(flakiness_mod):
+    data = {"images": [{"id": "legacy"}]}
+    assert flakiness_mod.search_response_results(data) == [{"id": "legacy"}]
+
+
+def test_pick_download_url_from_urls_field(flakiness_mod):
+    assert (
+        flakiness_mod.pick_download_url_from_urls_field(
+            "https://example.com/o.jpg"
+        )
+        == "https://example.com/o.jpg"
+    )
+    assert (
+        flakiness_mod.pick_download_url_from_urls_field(
+            {"original": "https://example.com/original.jpg", "thumb": "https://x/t.jpg"}
+        )
+        == "https://example.com/original.jpg"
+    )
+    assert flakiness_mod.pick_download_url_from_urls_field({}) is None
+
+
 def test_compute_diff_summary_lists_mismatched_paths(flakiness_mod, fake_image_paths):
     """Sanity check: diff summary ties mismatches to image paths."""
     baseline = [[1], [2]]

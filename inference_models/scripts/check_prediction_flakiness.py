@@ -421,6 +421,66 @@ def summarize_report(
 ROBOFLOW_SEARCH_PAGE_SIZE = 25
 
 
+def project_api_base(workspace: str, project: str) -> str:
+    return f"https://api.roboflow.com/{workspace}/{project}"
+
+
+def search_response_results(data: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Normalize search JSON: prefer `results`, fall back to legacy `images`."""
+    if "results" in data and isinstance(data["results"], list):
+        return data["results"]
+    legacy = data.get("images")
+    if isinstance(legacy, list):
+        return legacy
+    return []
+
+
+def pick_download_url_from_urls_field(urls: Any) -> Optional[str]:
+    """Pick a single HTTPS URL from Roboflow `image.urls` payload."""
+    if isinstance(urls, str) and urls.startswith("http"):
+        return urls
+    if isinstance(urls, list):
+        for item in urls:
+            if isinstance(item, str) and item.startswith("http"):
+                return item
+    if isinstance(urls, dict):
+        for key in ("original", "OR_FULL", "full", "thumb", "small"):
+            val = urls.get(key)
+            if isinstance(val, str) and val.startswith("http"):
+                return val
+        for val in urls.values():
+            if isinstance(val, str) and val.startswith("http"):
+                return val
+    return None
+
+
+def fetch_image_detail_download_url(
+    *,
+    workspace: str,
+    project: str,
+    image_id: str,
+    api_key: str,
+) -> Optional[str]:
+    """GET /images/{id} and resolve a download URL from `image.urls`."""
+    base = project_api_base(workspace, project)
+    detail = requests.get(
+        f"{base}/images/{image_id}",
+        params={"api_key": api_key},
+        timeout=60,
+    )
+    detail.raise_for_status()
+    body = detail.json()
+    image_obj = body.get("image") if isinstance(body, dict) else None
+    if not isinstance(image_obj, dict):
+        LOGGER.warning("Image detail missing 'image' object for id=%s", image_id)
+        return None
+    urls = image_obj.get("urls")
+    url = pick_download_url_from_urls_field(urls)
+    if not url:
+        LOGGER.warning("Could not resolve download URL from detail for id=%s", image_id)
+    return url
+
+
 def fetch_roboflow_test_images(
     *,
     workspace: str,
@@ -436,7 +496,8 @@ def fetch_roboflow_test_images(
 
     collected: List[Dict[str, Any]] = []
     offset = 0
-    url = f"https://api.roboflow.com/{workspace}/{project}/search"
+
+    search_url = f"{project_api_base(workspace, project)}/search"
 
     while len(collected) < num_images:
         need = num_images - len(collected)
@@ -447,14 +508,14 @@ def fetch_roboflow_test_images(
             "offset": offset,
         }
         response = requests.post(
-            url,
+            search_url,
             params={"api_key": api_key},
             json=payload,
             timeout=60,
         )
         response.raise_for_status()
         data = response.json()
-        batch = data.get("images") or []
+        batch = search_response_results(data)
         if not batch:
             LOGGER.warning(
                 "Roboflow search returned no more images at offset %s "
@@ -487,24 +548,40 @@ def fetch_roboflow_test_images(
     paths: List[Path] = []
     for image in collected[:num_images]:
         image_id = image.get("id")
-        name = image.get("name") or "image"
-        original_url = image.get("original_url")
-        if not original_url:
-            LOGGER.warning("Skipping image without original_url: %s", image)
+        if not image_id or not isinstance(image_id, str):
+            LOGGER.warning("Skipping search result without string id: %s", image)
             continue
+
+        name = image.get("name")
+        if isinstance(name, str) and name.strip():
+            name = name.strip()
+        else:
+            name = "image"
 
         ext = Path(name).suffix.lower()
         if ext not in SUPPORTED_IMAGE_EXTENSIONS:
             ext = ".jpg"
         safe_name = slugify(Path(name).stem) or "image"
-        file_stem = f"{image_id}_{safe_name}" if image_id is not None else safe_name
+        file_stem = f"{image_id}_{safe_name}"
         dest = cache_root / f"{file_stem}{ext}"
 
         if use_cache and dest.exists():
             paths.append(dest)
             continue
 
-        img_response = requests.get(original_url, timeout=120)
+        download_url = image.get("original_url")
+        if not download_url:
+            download_url = fetch_image_detail_download_url(
+                workspace=workspace,
+                project=project,
+                image_id=image_id,
+                api_key=api_key,
+            )
+        if not download_url:
+            LOGGER.warning("Skipping image with no download URL for id=%s", image_id)
+            continue
+
+        img_response = requests.get(download_url, timeout=120)
         img_response.raise_for_status()
         dest.write_bytes(img_response.content)
         paths.append(dest)
