@@ -1,6 +1,7 @@
 import json
 import urllib.parse
 from typing import Optional
+from unittest.mock import patch
 
 import pytest
 from packaging.version import Version
@@ -9,12 +10,14 @@ from requests_mock import Mocker
 
 from inference_models.configuration import API_CALLS_MAX_TRIES, ROBOFLOW_API_HOST
 from inference_models.errors import (
+    AssumptionError,
     ModelMetadataConsistencyError,
     ModelRetrievalError,
     RetryError,
     UnauthorizedModelAccessError,
 )
 from inference_models.models.auto_loaders.entities import BackendType
+from inference_models.weights_providers import roboflow as roboflow_module
 from inference_models.weights_providers.entities import (
     FileDownloadSpecs,
     JetsonEnvironmentRequirements,
@@ -36,6 +39,7 @@ from inference_models.weights_providers.roboflow import (
     get_roboflow_model,
     handle_response_errors,
     parse_model_package_metadata,
+    roboflow_license_server_proxy_url_builder,
 )
 
 
@@ -1479,3 +1483,211 @@ def test_get_roboflow_model(requests_mock: Mocker) -> None:
     assert result.model_variant == "yolov8-n"
     assert result.task_type == "object-detection"
     assert len(result.model_packages) == 2
+
+
+@patch.object(roboflow_module, "ROBOFLOW_LICENSE_SERVER", "license.local:8080")
+def test_basic_url_no_query():
+    result = roboflow_license_server_proxy_url_builder(
+        url="https://api.roboflow.com/models/v1/weights",
+        query=None,
+    )
+    outer = _parse_proxy_result(result)
+    assert outer.scheme == "http"
+    assert outer.netloc == "license.local:8080"
+    assert outer.path == "/proxy"
+
+    inner_url = _extract_proxied_url(result)
+    inner = urllib.parse.urlparse(inner_url)
+    assert inner.scheme == "https"
+    assert inner.netloc == "api.roboflow.com"
+    assert inner.path == "/models/v1/weights"
+    assert inner.query == ""
+
+
+@patch.object(roboflow_module, "ROBOFLOW_LICENSE_SERVER", "license.local:8080")
+def test_query_params_are_embedded_in_proxied_url():
+    result = roboflow_license_server_proxy_url_builder(
+        url="https://api.roboflow.com/weights",
+        query={"modelId": "my-model", "api_key": "abc123"},
+    )
+    inner_params = _parse_proxied_url_query(result)
+    assert inner_params["modelId"] == ["my-model"]
+    assert inner_params["api_key"] == ["abc123"]
+
+
+@patch.object(roboflow_module, "ROBOFLOW_LICENSE_SERVER", "license.local:8080")
+def test_query_with_list_values():
+    result = roboflow_license_server_proxy_url_builder(
+        url="https://api.roboflow.com/weights",
+        query={"tag": ["a", "b"]},
+    )
+    inner_params = _parse_proxied_url_query(result)
+    assert inner_params["tag"] == ["a", "b"]
+
+
+@patch.object(roboflow_module, "ROBOFLOW_LICENSE_SERVER", "license.local:8080")
+def test_empty_query_dict_no_params_in_proxied_url():
+    result = roboflow_license_server_proxy_url_builder(
+        url="https://api.roboflow.com/weights",
+        query={},
+    )
+    inner_url = _extract_proxied_url(result)
+    inner = urllib.parse.urlparse(inner_url)
+    assert inner.query == ""
+
+
+@patch.object(roboflow_module, "ROBOFLOW_LICENSE_SERVER", None)
+def test_no_license_server_returns_plain_url():
+    result = roboflow_license_server_proxy_url_builder(
+        url="https://api.roboflow.com/weights",
+        query=None,
+    )
+    parsed = urllib.parse.urlparse(result)
+    assert parsed.scheme == "https"
+    assert parsed.netloc == "api.roboflow.com"
+    assert parsed.path == "/weights"
+    assert parsed.query == ""
+
+
+@patch.object(roboflow_module, "ROBOFLOW_LICENSE_SERVER", None)
+def test_no_license_server_with_query_returns_url_with_params():
+    result = roboflow_license_server_proxy_url_builder(
+        url="https://api.roboflow.com/weights",
+        query={"modelId": "my-model"},
+    )
+    parsed = urllib.parse.urlparse(result)
+    assert parsed.scheme == "https"
+    assert parsed.netloc == "api.roboflow.com"
+    assert parsed.path == "/weights"
+    params = urllib.parse.parse_qs(parsed.query)
+    assert params["modelId"] == ["my-model"]
+
+
+@patch.object(roboflow_module, "ROBOFLOW_LICENSE_SERVER", "")
+def test_empty_string_license_server_returns_plain_url():
+    result = roboflow_license_server_proxy_url_builder(
+        url="https://api.roboflow.com/weights",
+        query=None,
+    )
+    parsed = urllib.parse.urlparse(result)
+    assert parsed.scheme == "https"
+    assert parsed.netloc == "api.roboflow.com"
+    assert parsed.query == ""
+
+
+@patch.object(roboflow_module, "ROBOFLOW_LICENSE_SERVER", "proxy.internal")
+def test_url_with_existing_params_preserved_after_proxying():
+    result = roboflow_license_server_proxy_url_builder(
+        url="https://api.roboflow.com/weights?existing=val&other=123",
+        query=None,
+    )
+    inner_params = _parse_proxied_url_query(result)
+    assert inner_params["existing"] == ["val"]
+    assert inner_params["other"] == ["123"]
+
+
+@patch.object(roboflow_module, "ROBOFLOW_LICENSE_SERVER", "proxy.internal:9090")
+def test_proxy_url_structure():
+    result = roboflow_license_server_proxy_url_builder(
+        url="https://api.roboflow.com/weights",
+        query=None,
+    )
+    outer = _parse_proxy_result(result)
+    assert outer.scheme == "http"
+    assert outer.netloc == "proxy.internal:9090"
+    assert outer.path == "/proxy"
+    assert "url" in urllib.parse.parse_qs(outer.query)
+
+
+@patch.object(roboflow_module, "ROBOFLOW_LICENSE_SERVER", "proxy.internal")
+def test_proxy_uses_http_not_https():
+    result = roboflow_license_server_proxy_url_builder(
+        url="https://api.roboflow.com/weights",
+        query=None,
+    )
+    outer = _parse_proxy_result(result)
+    assert outer.scheme == "http"
+
+
+@patch.object(roboflow_module, "ROBOFLOW_LICENSE_SERVER", "proxy.internal")
+def test_roundtrip_preserves_query_with_special_characters():
+    result = roboflow_license_server_proxy_url_builder(
+        url="https://api.roboflow.com/weights",
+        query={"modelId": "workspace/model", "api_key": "key=with=equals"},
+    )
+    inner_params = _parse_proxied_url_query(result)
+    assert inner_params["modelId"] == ["workspace/model"]
+    assert inner_params["api_key"] == ["key=with=equals"]
+
+
+@patch.object(roboflow_module, "ROBOFLOW_LICENSE_SERVER", "proxy.internal")
+def test_proxy_url_param_does_not_leak_into_inner_url():
+    result = roboflow_license_server_proxy_url_builder(
+        url="https://api.roboflow.com/weights",
+        query={"modelId": "test"},
+    )
+    outer = _parse_proxy_result(result)
+    outer_params = urllib.parse.parse_qs(outer.query)
+    # outer should only have "url", not "modelId"
+    assert "modelId" not in outer_params
+    assert "url" in outer_params
+    # inner should have "modelId", not "url"
+    inner_params = _parse_proxied_url_query(result)
+    assert "modelId" in inner_params
+
+
+@patch.object(roboflow_module, "ROBOFLOW_LICENSE_SERVER", "proxy.internal")
+def test_params_from_url_and_query_are_both_preserved():
+    result = roboflow_license_server_proxy_url_builder(
+        url="https://api.roboflow.com/weights?existing=from_url&page=1",
+        query={"modelId": "my-model", "api_key": "abc123"},
+    )
+    inner_params = _parse_proxied_url_query(result)
+    # params originally in the URL
+    assert inner_params["existing"] == ["from_url"]
+    assert inner_params["page"] == ["1"]
+    # params added via query argument
+    assert inner_params["modelId"] == ["my-model"]
+    assert inner_params["api_key"] == ["abc123"]
+
+
+@patch.object(roboflow_module, "ROBOFLOW_LICENSE_SERVER", "proxy.internal")
+def test_overlapping_params_from_url_and_query():
+    with pytest.raises(AssumptionError):
+        _ = roboflow_license_server_proxy_url_builder(
+            url="https://api.roboflow.com/weights?key=from_url",
+            query={"key": "from_query"},
+        )
+
+
+@patch.object(roboflow_module, "ROBOFLOW_LICENSE_SERVER", None)
+def test_params_from_url_and_query_are_both_preserved_without_proxy():
+    result = roboflow_license_server_proxy_url_builder(
+        url="https://api.roboflow.com/weights?existing=from_url",
+        query={"modelId": "my-model"},
+    )
+    parsed = urllib.parse.urlparse(result)
+    params = urllib.parse.parse_qs(parsed.query)
+    assert params["existing"] == ["from_url"]
+    assert params["modelId"] == ["my-model"]
+
+
+def _parse_proxy_result(result: str) -> urllib.parse.ParseResult:
+    """Parse the outer proxy URL and return ParseResult."""
+    return urllib.parse.urlparse(result)
+
+
+def _parse_proxied_url_query(result: str) -> dict:
+    """Extract and parse query params from the inner proxied URL."""
+    inner_url = _extract_proxied_url(result)
+    parsed_inner = urllib.parse.urlparse(inner_url)
+    return urllib.parse.parse_qs(parsed_inner.query)
+
+
+def _extract_proxied_url(result: str) -> str:
+    """Extract the inner URL from the proxy's ?url= parameter."""
+    parsed = _parse_proxy_result(result)
+    proxy_params = urllib.parse.parse_qs(parsed.query)
+    assert "url" in proxy_params, f"Expected 'url' query param in: {result}"
+    assert len(proxy_params["url"]) == 1, f"Expected single 'url' value in: {result}"
+    return proxy_params["url"][0]

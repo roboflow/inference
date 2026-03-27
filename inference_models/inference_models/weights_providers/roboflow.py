@@ -20,6 +20,7 @@ from inference_models.configuration import (
 LOCAL_API_KEY = "local"
 
 from inference_models.errors import (
+    AssumptionError,
     BaseInferenceModelsError,
     ModelMetadataConsistencyError,
     ModelMetadataHandlerNotImplementedError,
@@ -48,6 +49,10 @@ MODEL_PACKAGES_TO_IGNORE = {
     "oak-model-package-v1",
     "tfjs-model-package-v1",
 }
+
+ProxyUrlBuilder = Optional[
+    Callable[[str, Optional[Dict[str, Union[str, List[str]]]]], str]
+]
 
 
 class RoboflowModelPackageFile(BaseModel):
@@ -137,6 +142,10 @@ def get_roboflow_model(
 def roboflow_license_server_proxy_url_builder(
     url: str, query: Optional[Dict[str, Union[str, List[str]]]]
 ) -> str:
+    """
+    When this wrapper is used, query params are added to returned url -
+    no need to make request repeating those params in downstream library, like `requests`.
+    """
     if query is not None:
         url = _add_query_params_to_url(url=url, query=query)
     if not ROBOFLOW_LICENSE_SERVER:
@@ -152,9 +161,7 @@ def get_model_metadata(
     max_pages: int = MAX_MODEL_PACKAGE_PAGES,
     extra_query_params: Optional[List[Tuple[str, str]]] = None,
     extra_headers: Optional[Dict[str, str]] = None,
-    proxy_url_builder: Optional[
-        Callable[[str, Optional[Dict[str, Union[str, List[str]]]]], str]
-    ] = None,
+    proxy_url_builder: ProxyUrlBuilder = None,
 ) -> RoboflowModelMetadata:
     if api_key is None or api_key == LOCAL_API_KEY:
         api_key = ROBOFLOW_API_KEY
@@ -198,9 +205,7 @@ def get_one_page_of_model_metadata(
     start_after: Optional[str] = None,
     extra_query_params: Optional[List[Tuple[str, str]]] = None,
     extra_headers: Optional[Dict[str, str]] = None,
-    proxy_url_builder: Optional[
-        Callable[[str, Optional[Dict[str, Union[str, List[str]]]]], str]
-    ] = None,
+    proxy_url_builder: ProxyUrlBuilder = None,
 ) -> RoboflowModelMetadata:
     query = {
         "modelId": model_id,
@@ -226,7 +231,6 @@ def get_one_page_of_model_metadata(
     try:
         response = requests.get(
             full_url,
-            params=query,
             headers=headers,
             timeout=API_CALLS_TIMEOUT,
         )
@@ -281,8 +285,20 @@ def append_extra_headers(
 def _add_query_params_to_url(url: str, query: Dict[str, List[str]]) -> str:
     if not query:
         return url
-    query_string = urllib.parse.urlencode(query, doseq=True)
-    return f"{url}?{query_string}"
+    parsed = urllib.parse.urlparse(url)
+    existing_params = urllib.parse.parse_qs(parsed.query)
+    overlap = set(existing_params) & set(query)
+    if overlap:
+        raise AssumptionError(
+            message=f"Detected overlapping query parameters in request URL to "
+            f"{parsed.scheme}://{parsed.netloc}{parsed.path} in scope of Roboflow Weights Provider - "
+            f"overlapping parameters: {overlap}. This problem indicates bug - "
+            f"please report https://github.com/roboflow/inference/issues",
+            help_url="https://inference-models.roboflow.com/errors/input-validation/#assumptionerror",
+        )
+    merged = {**existing_params, **query}
+    new_query = urllib.parse.urlencode(merged, doseq=True)
+    return urllib.parse.urlunparse(parsed._replace(query=new_query))
 
 
 def handle_response_errors(response: Response, operation_name: str) -> None:
@@ -323,9 +339,7 @@ def get_error_response_payload(response: Response) -> str:
 
 def parse_model_package_metadata(
     metadata: Union[RoboflowModelPackageV1, dict],
-    proxy_url_builder: Optional[
-        Callable[[str, Optional[Dict[str, Union[str, List[str]]]]], str]
-    ] = None,
+    proxy_url_builder: ProxyUrlBuilder = None,
 ) -> Optional[ModelPackageMetadata]:
     if isinstance(metadata, dict):
         metadata_type = metadata.get("type", "unknown")
@@ -376,9 +390,7 @@ class OnnxModelPackageV1(BaseModel):
 
 def parse_onnx_model_package(
     metadata: RoboflowModelPackageV1,
-    proxy_url_builder: Optional[
-        Callable[[str, Optional[Dict[str, Union[str, List[str]]]]], str]
-    ] = None,
+    proxy_url_builder: ProxyUrlBuilder = None,
 ) -> ModelPackageMetadata:
     parsed_manifest = OnnxModelPackageV1.model_validate(metadata.package_manifest)
     validate_batch_settings(
@@ -445,9 +457,7 @@ class TrtModelPackageV1(BaseModel):
 
 def parse_trt_model_package(
     metadata: RoboflowModelPackageV1,
-    proxy_url_builder: Optional[
-        Callable[[str, Optional[Dict[str, Union[str, List[str]]]]], str]
-    ] = None,
+    proxy_url_builder: ProxyUrlBuilder = None,
 ) -> ModelPackageMetadata:
     parsed_manifest = TrtModelPackageV1.model_validate(metadata.package_manifest)
     validate_batch_settings(
@@ -544,9 +554,7 @@ class TorchModelPackageV1(BaseModel):
 
 def parse_torch_model_package(
     metadata: RoboflowModelPackageV1,
-    proxy_url_builder: Optional[
-        Callable[[str, Optional[Dict[str, Union[str, List[str]]]]], str]
-    ] = None,
+    proxy_url_builder: ProxyUrlBuilder = None,
 ) -> ModelPackageMetadata:
     parsed_manifest = TorchModelPackageV1.model_validate(metadata.package_manifest)
     validate_batch_settings(
@@ -577,9 +585,7 @@ class HFModelPackageV1(BaseModel):
 
 def parse_hf_model_package(
     metadata: RoboflowModelPackageV1,
-    proxy_url_builder: Optional[
-        Callable[[str, Optional[Dict[str, Union[str, List[str]]]]], str]
-    ] = None,
+    proxy_url_builder: ProxyUrlBuilder = None,
 ) -> ModelPackageMetadata:
     parsed_manifest = HFModelPackageV1.model_validate(metadata.package_manifest)
     package_artefacts = parse_package_artefacts(
@@ -598,9 +604,7 @@ def parse_hf_model_package(
 
 def parse_ultralytics_model_package(
     metadata: RoboflowModelPackageV1,
-    proxy_url_builder: Optional[
-        Callable[[str, Optional[Dict[str, Union[str, List[str]]]]], str]
-    ] = None,
+    proxy_url_builder: ProxyUrlBuilder = None,
 ) -> ModelPackageMetadata:
     package_artefacts = parse_package_artefacts(
         package_artefacts=metadata.package_files,
@@ -631,9 +635,7 @@ class TorchScriptModelPackageV1(BaseModel):
 
 def parse_torch_script_model_package(
     metadata: RoboflowModelPackageV1,
-    proxy_url_builder: Optional[
-        Callable[[str, Optional[Dict[str, Union[str, List[str]]]]], str]
-    ] = None,
+    proxy_url_builder: ProxyUrlBuilder = None,
 ) -> ModelPackageMetadata:
     parsed_manifest = TorchScriptModelPackageV1.model_validate(
         metadata.package_manifest
@@ -674,9 +676,7 @@ class MediapipeModelPackageV1(BaseModel):
 
 def parse_mediapipe_model_package(
     metadata: RoboflowModelPackageV1,
-    proxy_url_builder: Optional[
-        Callable[[str, Optional[Dict[str, Union[str, List[str]]]]], str]
-    ] = None,
+    proxy_url_builder: ProxyUrlBuilder = None,
 ) -> ModelPackageMetadata:
     _ = MediapipeModelPackageV1.model_validate(metadata.package_manifest)
     package_artefacts = parse_package_artefacts(
@@ -714,9 +714,7 @@ def validate_batch_settings(
 
 def parse_package_artefacts(
     package_artefacts: List[RoboflowModelPackageFile],
-    proxy_url_builder: Optional[
-        Callable[[str, Optional[Dict[str, Union[str, List[str]]]]], str]
-    ] = None,
+    proxy_url_builder: ProxyUrlBuilder = None,
 ) -> List[FileDownloadSpecs]:
     return [
         FileDownloadSpecs(
