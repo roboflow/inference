@@ -122,7 +122,9 @@ class BlockManifest(WorkflowBlockManifest):
     )
 
     # --- Schema selector ---
-    event_schema: Literal["quality_check", "inventory_count", "safety_alert", "custom"] = Field(
+    event_schema: Literal[
+        "quality_check", "inventory_count", "safety_alert", "custom"
+    ] = Field(
         description="The event schema to use.",
         json_schema_extra={"always_visible": True},
     )
@@ -160,7 +162,9 @@ class BlockManifest(WorkflowBlockManifest):
     )
 
     # --- Quality Check fields ---
-    qc_result: Optional[Union[Selector(kind=[STRING_KIND]), Literal["pass", "fail"]]] = Field(
+    qc_result: Optional[
+        Union[Selector(kind=[STRING_KIND]), Literal["pass", "fail"]]
+    ] = Field(
         default=None,
         description="Quality check result: pass or fail.",
         examples=["pass", "fail", "$steps.qc_logic.result"],
@@ -231,16 +235,14 @@ class BlockManifest(WorkflowBlockManifest):
     )
 
     # --- Annotation pass-through ---
-    object_detections: Optional[
-        Selector(kind=[OBJECT_DETECTION_PREDICTION_KIND])
-    ] = Field(
-        default=None,
-        description="Object detection predictions to attach to the image.",
-        json_schema_extra={"additional_section": True},
+    object_detections: Optional[Selector(kind=[OBJECT_DETECTION_PREDICTION_KIND])] = (
+        Field(
+            default=None,
+            description="Object detection predictions to attach to the image.",
+            json_schema_extra={"additional_section": True},
+        )
     )
-    classifications: Optional[
-        Selector(kind=[CLASSIFICATION_PREDICTION_KIND])
-    ] = Field(
+    classifications: Optional[Selector(kind=[CLASSIFICATION_PREDICTION_KIND])] = Field(
         default=None,
         description="Classification predictions to attach to the image.",
         json_schema_extra={"additional_section": True},
@@ -461,14 +463,18 @@ def _detections_to_v2_object_detections(detections: Any) -> List[Dict[str, Any]]
             x1, y1, x2, y2 = xyxy[i]
             w = float(x2 - x1)
             h = float(y2 - y1)
-            results.append({
-                "class": class_names[i] if i < len(class_names) else "unknown",
-                "x": float((x1 + x2) / 2),
-                "y": float((y1 + y2) / 2),
-                "width": w,
-                "height": h,
-                "confidence": float(confidence[i]) if confidence is not None else 0.0,
-            })
+            results.append(
+                {
+                    "class": class_names[i] if i < len(class_names) else "unknown",
+                    "x": float((x1 + x2) / 2),
+                    "y": float((y1 + y2) / 2),
+                    "width": w,
+                    "height": h,
+                    "confidence": (
+                        float(confidence[i]) if confidence is not None else 0.0
+                    ),
+                }
+            )
     except Exception as e:
         logging.warning(f"Failed to convert object detections: {e}")
     return results
@@ -524,18 +530,28 @@ def _classifications_to_v2(predictions: Any) -> List[Dict[str, Any]]:
             class_names = predictions.get("class_name", [])
             confidences = predictions.get("confidence", [])
             for i in range(len(class_names)):
-                results.append({
-                    "class": class_names[i],
-                    "confidence": float(confidences[i]) if i < len(confidences) else 0.0,
-                })
+                results.append(
+                    {
+                        "class": class_names[i],
+                        "confidence": (
+                            float(confidences[i]) if i < len(confidences) else 0.0
+                        ),
+                    }
+                )
         elif hasattr(predictions, "data"):
             class_names = predictions.data.get("class_name", [])
             confidences = predictions.confidence
             for i in range(len(class_names)):
-                results.append({
-                    "class": class_names[i],
-                    "confidence": float(confidences[i]) if confidences is not None and i < len(confidences) else 0.0,
-                })
+                results.append(
+                    {
+                        "class": class_names[i],
+                        "confidence": (
+                            float(confidences[i])
+                            if confidences is not None and i < len(confidences)
+                            else 0.0
+                        ),
+                    }
+                )
     except Exception as e:
         logging.warning(f"Failed to convert classifications: {e}")
     return results
@@ -567,11 +583,13 @@ def _keypoints_to_v2(detections: Any) -> List[Dict[str, Any]]:
             if keypoints_xy is not None and i < len(keypoints_xy):
                 kps = keypoints_xy[i]
                 for j, kp in enumerate(kps):
-                    entry["keypoints"].append({
-                        "id": j,
-                        "x": float(kp[0]),
-                        "y": float(kp[1]),
-                    })
+                    entry["keypoints"].append(
+                        {
+                            "id": j,
+                            "x": float(kp[0]),
+                            "y": float(kp[1]),
+                        }
+                    )
             if entry["keypoints"]:
                 results.append(entry)
     except Exception as e:
