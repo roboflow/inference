@@ -36,6 +36,7 @@ from inference.core.constants import (
     MODEL_LOAD_DETAILS_HEADER,
     MODEL_LOAD_TIME_HEADER,
     PROCESSING_TIME_HEADER,
+    TRACE_ID_HEADER,
     WORKFLOW_ID_HEADER,
     WORKSPACE_ID_HEADER,
 )
@@ -489,6 +490,7 @@ class HttpInterface(BaseInterface):
                     MODEL_ID_HEADER,
                     WORKFLOW_ID_HEADER,
                     WORKSPACE_ID_HEADER,
+                    TRACE_ID_HEADER,
                 ]
                 + ([EXECUTION_ID_HEADER] if EXECUTION_ID_HEADER is not None else [])
                 + ["traceparent", "tracestate"],
