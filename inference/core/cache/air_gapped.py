@@ -37,23 +37,44 @@ def _slugify_model_id(model_id: str) -> str:
     return f"{slug}-{digest}"
 
 
+def _get_inference_models_home() -> Optional[str]:
+    """Return INFERENCE_HOME from the inference_models package, or None if not installed."""
+    try:
+        from inference_models.configuration import INFERENCE_HOME
+
+        return INFERENCE_HOME
+    except ImportError:
+        return None
+
+
 def is_model_cached(model_id: str) -> bool:
     """Check if *model_id* has cached artifacts in either cache layout.
 
     Layout 1 (traditional): ``MODEL_CACHE_DIR/{model_id}/`` with files inside.
-    Layout 2 (inference-models): ``MODEL_CACHE_DIR/models-cache/{slug}/`` with
-    sub-directories containing model files.
+    Layout 2 (inference-models): ``{base}/models-cache/{slug}/`` with
+    sub-directories containing model files.  The base directory is checked
+    under both ``MODEL_CACHE_DIR`` and ``INFERENCE_HOME`` (from the
+    inference_models package) since the two env-vars can be configured
+    independently even though they share the same default.
     """
     # Traditional layout
     traditional_path = os.path.join(MODEL_CACHE_DIR, model_id)
     if os.path.isdir(traditional_path) and os.listdir(traditional_path):
         return True
 
-    # inference-models layout
     slug = _slugify_model_id(model_id)
+
+    # inference-models layout under MODEL_CACHE_DIR
     models_cache_path = os.path.join(MODEL_CACHE_DIR, "models-cache", slug)
     if os.path.isdir(models_cache_path) and os.listdir(models_cache_path):
         return True
+
+    # inference-models layout under INFERENCE_HOME (may differ from MODEL_CACHE_DIR)
+    inference_home = _get_inference_models_home()
+    if inference_home is not None and inference_home != MODEL_CACHE_DIR:
+        ih_path = os.path.join(inference_home, "models-cache", slug)
+        if os.path.isdir(ih_path) and os.listdir(ih_path):
+            return True
 
     return False
 
@@ -89,11 +110,19 @@ def _load_blocks() -> list:
 
 
 def scan_cached_models(cache_dir: str) -> List[Dict[str, Any]]:
-    """Walk *cache_dir* looking for ``model_type.json`` marker files.
+    """Walk *cache_dir* and the inference-models cache looking for cached user models.
 
-    Each marker is written by the model registry when a model is first
-    downloaded.  The file contains at least ``project_task_type`` and
-    ``model_type`` keys.
+    Two layouts are scanned:
+
+    Layout 1 — traditional (``model_type.json``):
+        ``{cache_dir}/{workspace}/{project}/{version}/model_type.json``
+        Written by the inference model registry on first download.
+
+    Layout 2 — inference-models (``model_config.json``):
+        ``{inference_home}/models-cache/{slug}/{package_id}/model_config.json``
+        Written by the inference-models package on first download.
+        The ``model_id`` field in that file (added so air-gapped scanning works)
+        is used as the canonical identifier.
 
     Returns a list of dicts with the following shape::
 
@@ -104,60 +133,112 @@ def scan_cached_models(cache_dir: str) -> List[Dict[str, Any]]:
             "model_architecture": "yolov8n",
             "is_foundation": False,
         }
+
+    Results are de-duplicated by ``model_id``; layout-1 entries take precedence.
     """
-    results: List[Dict[str, Any]] = []
-    if not os.path.isdir(cache_dir):
-        return results
+    seen: Dict[str, Dict[str, Any]] = {}
 
-    for root, dirs, files in os.walk(cache_dir):
-        # Prune top-level directories we know are not model trees.
-        rel = os.path.relpath(root, cache_dir)
-        if rel == ".":
-            dirs[:] = [d for d in dirs if d not in _SKIP_TOP_LEVEL]
-            continue
+    # ── Layout 1: model_type.json ────────────────────────────────────────────
+    if os.path.isdir(cache_dir):
+        for root, dirs, files in os.walk(cache_dir):
+            rel = os.path.relpath(root, cache_dir)
+            if rel == ".":
+                # Skip top-level dirs that are not model trees (incl. models-cache).
+                dirs[:] = [
+                    d for d in dirs if d not in _SKIP_TOP_LEVEL | {"models-cache"}
+                ]
+                continue
 
-        if "model_type.json" not in files:
-            continue
+            if "model_type.json" not in files:
+                continue
 
-        model_type_path = os.path.join(root, "model_type.json")
-        try:
-            with open(model_type_path, "r") as fh:
-                metadata = json.load(fh)
-        except (json.JSONDecodeError, OSError) as exc:
-            logger.warning(
-                "Skipping unreadable model_type.json at %s: %s",
-                model_type_path,
-                exc,
+            model_type_path = os.path.join(root, "model_type.json")
+            try:
+                with open(model_type_path, "r") as fh:
+                    metadata = json.load(fh)
+            except (json.JSONDecodeError, OSError) as exc:
+                logger.warning(
+                    "Skipping unreadable model_type.json at %s: %s",
+                    model_type_path,
+                    exc,
+                )
+                continue
+
+            if not isinstance(metadata, dict):
+                continue
+
+            task_type = metadata.get(PROJECT_TASK_TYPE_KEY) or metadata.get(
+                "taskType", ""
             )
-            continue
+            model_architecture = metadata.get(MODEL_TYPE_KEY) or metadata.get(
+                "modelArchitecture", ""
+            )
 
-        if not isinstance(metadata, dict):
-            continue
+            if not task_type:
+                continue
 
-        # Support both traditional keys and inference-models metadata keys.
-        task_type = metadata.get(PROJECT_TASK_TYPE_KEY) or metadata.get("taskType", "")
-        model_architecture = metadata.get(MODEL_TYPE_KEY) or metadata.get(
-            "modelArchitecture", ""
-        )
-
-        if not task_type:
-            continue
-
-        model_id = os.path.relpath(root, cache_dir)
-        # Normalise path separators on Windows.
-        model_id = model_id.replace(os.sep, "/")
-
-        results.append(
-            {
+            model_id = os.path.relpath(root, cache_dir).replace(os.sep, "/")
+            seen[model_id] = {
                 "model_id": model_id,
                 "name": model_id,
                 "task_type": task_type,
                 "model_architecture": model_architecture,
                 "is_foundation": False,
             }
-        )
 
-    return results
+    # ── Layout 2: inference-models model_config.json ────────────────────────
+    bases = [cache_dir]
+    inference_home = _get_inference_models_home()
+    if inference_home is not None and inference_home != cache_dir:
+        bases.append(inference_home)
+
+    for base in bases:
+        models_cache = os.path.join(base, "models-cache")
+        if not os.path.isdir(models_cache):
+            continue
+        for slug in os.listdir(models_cache):
+            slug_dir = os.path.join(models_cache, slug)
+            if not os.path.isdir(slug_dir):
+                continue
+            for package_id in os.listdir(slug_dir):
+                config_path = os.path.join(
+                    slug_dir, package_id, "model_config.json"
+                )
+                if not os.path.isfile(config_path):
+                    continue
+                try:
+                    with open(config_path, "r") as fh:
+                        metadata = json.load(fh)
+                except (json.JSONDecodeError, OSError) as exc:
+                    logger.warning(
+                        "Skipping unreadable model_config.json at %s: %s",
+                        config_path,
+                        exc,
+                    )
+                    continue
+
+                if not isinstance(metadata, dict):
+                    continue
+
+                model_id = metadata.get("model_id")
+                task_type = metadata.get("task_type", "")
+                model_architecture = metadata.get("model_architecture", "")
+
+                # model_id is only present for caches written after the fix
+                # that added it to dump_model_config_for_offline_use.
+                if not model_id or not task_type:
+                    continue
+
+                if model_id not in seen:
+                    seen[model_id] = {
+                        "model_id": model_id,
+                        "name": model_id,
+                        "task_type": task_type,
+                        "model_architecture": model_architecture or "",
+                        "is_foundation": False,
+                    }
+
+    return list(seen.values())
 
 
 def get_cached_foundation_models(

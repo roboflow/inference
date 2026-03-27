@@ -1291,6 +1291,7 @@ def initialize_model(
         task_type=task_type,
         backend_type=model_package.backend,
         file_lock_acquire_timeout=model_download_file_lock_acquire_timeout,
+        model_id=model_id,
         on_file_created=on_file_created,
     )
     resolved_files = set(shared_files_mapping.values())
@@ -1391,6 +1392,7 @@ def dump_model_config_for_offline_use(
     task_type: TaskType,
     backend_type: Optional[BackendType],
     file_lock_acquire_timeout: int,
+    model_id: Optional[str] = None,
     on_file_created: Optional[Callable[[str], None]] = None,
 ) -> None:
     if os.path.exists(config_path):
@@ -1399,14 +1401,17 @@ def dump_model_config_for_offline_use(
         return None
     target_file_dir, target_file_name = os.path.split(config_path)
     lock_path = os.path.join(target_file_dir, f".{target_file_name}.lock")
+    content = {
+        "model_architecture": model_architecture,
+        "task_type": task_type,
+        "backend_type": backend_type,
+    }
+    if model_id is not None:
+        content["model_id"] = model_id
     with FileLock(lock_path, timeout=file_lock_acquire_timeout):
         dump_json(
             path=config_path,
-            content={
-                "model_architecture": model_architecture,
-                "task_type": task_type,
-                "backend_type": backend_type,
-            },
+            content=content,
         )
         if on_file_created:
             on_file_created(config_path)
