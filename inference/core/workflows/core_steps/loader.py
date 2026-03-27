@@ -218,6 +218,9 @@ from inference.core.workflows.core_steps.models.foundation.florence2.v2 import (
     Florence2BlockV2,
 )
 from inference.core.workflows.core_steps.models.foundation.gaze.v1 import GazeBlockV1
+from inference.core.workflows.core_steps.models.foundation.glm_ocr.v1 import (
+    GLMOCRBlockV1,
+)
 from inference.core.workflows.core_steps.models.foundation.google_gemini.v1 import (
     GoogleGeminiBlockV1,
 )
@@ -865,6 +868,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         Moondream2BlockV1,
         OverlapBlockV1,
         ONVIFSinkBlockV1,
+        GLMOCRBlockV1,
         EasyOCRBlockV1,
         QRCodeGeneratorBlockV1,
         DetectionsCombineBlockV1,
