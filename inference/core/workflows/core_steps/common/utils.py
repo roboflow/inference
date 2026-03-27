@@ -147,36 +147,35 @@ def add_inference_keypoints_to_sv_detections(
     for inference_detection in inference_prediction:
         keypoints = inference_detection.get(KEYPOINTS_KEY_IN_INFERENCE_RESPONSE, [])
         keypoints_class_names.append(
-            np.array(
-                [k[KEYPOINTS_CLASS_NAME_KEY_IN_INFERENCE_RESPONSE] for k in keypoints]
-            )
+            [k[KEYPOINTS_CLASS_NAME_KEY_IN_INFERENCE_RESPONSE] for k in keypoints]
         )
         keypoints_class_ids.append(
-            np.array(
-                [k[KEYPOINTS_CLASS_ID_KEY_IN_INFERENCE_RESPONSE] for k in keypoints]
-            )
+            [k[KEYPOINTS_CLASS_ID_KEY_IN_INFERENCE_RESPONSE] for k in keypoints]
         )
         keypoints_confidences.append(
-            np.array(
-                [k[KEYPOINTS_CONFIDENCE_KEY_IN_INFERENCE_RESPONSE] for k in keypoints],
-                dtype=np.float32,
-            )
+            [k[KEYPOINTS_CONFIDENCE_KEY_IN_INFERENCE_RESPONSE] for k in keypoints]
         )
-        keypoints_xy.append(
-            np.array([[k[X_KEY], k[Y_KEY]] for k in keypoints], dtype=np.float32)
-        )
-    detections[KEYPOINTS_CLASS_NAME_KEY_IN_SV_DETECTIONS] = np.array(
-        keypoints_class_names, dtype="object"
-    )
-    detections[KEYPOINTS_CLASS_ID_KEY_IN_SV_DETECTIONS] = np.array(
-        keypoints_class_ids, dtype="object"
-    )
-    detections[KEYPOINTS_CONFIDENCE_KEY_IN_SV_DETECTIONS] = np.array(
-        keypoints_confidences, dtype="object"
-    )
-    detections[KEYPOINTS_XY_KEY_IN_SV_DETECTIONS] = np.array(
-        keypoints_xy, dtype="object"
-    )
+        keypoints_xy.append([[k[X_KEY], k[Y_KEY]] for k in keypoints])
+    # Pad to uniform length so arrays are proper N-d numpy arrays instead of
+    # object-dtype ragged arrays. Object-dtype arrays break supervision's
+    # is_data_equal (used in Detections indexing/comparison).
+    max_kps = max((len(kp) for kp in keypoints_xy), default=0)
+    n = len(inference_prediction)
+    padded_xy = np.zeros((n, max_kps, 2), dtype=np.float32)
+    padded_conf = np.zeros((n, max_kps), dtype=np.float32)
+    padded_class_id = np.zeros((n, max_kps), dtype=int)
+    padded_class_name = np.full((n, max_kps), "", dtype=object)
+    for i in range(n):
+        k = len(keypoints_xy[i])
+        if k > 0:
+            padded_xy[i, :k] = keypoints_xy[i]
+            padded_conf[i, :k] = keypoints_confidences[i]
+            padded_class_id[i, :k] = keypoints_class_ids[i]
+            padded_class_name[i, :k] = keypoints_class_names[i]
+    detections[KEYPOINTS_XY_KEY_IN_SV_DETECTIONS] = padded_xy
+    detections[KEYPOINTS_CONFIDENCE_KEY_IN_SV_DETECTIONS] = padded_conf
+    detections[KEYPOINTS_CLASS_ID_KEY_IN_SV_DETECTIONS] = padded_class_id
+    detections[KEYPOINTS_CLASS_NAME_KEY_IN_SV_DETECTIONS] = padded_class_name
     return detections
 
 
