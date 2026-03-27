@@ -4,6 +4,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from functools import partial
 from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
+from urllib.parse import urljoin
 
 import cv2
 import numpy as np
@@ -343,8 +344,6 @@ class EventWriterSinkBlockV1(WorkflowBlock):
                 "message": "Sink was disabled by parameter `disable_sink`",
             }
 
-        url = event_ingestion_url.rstrip("/")
-
         event_data = _build_event_data(
             event_schema=event_schema,
             qc_result=qc_result,
@@ -375,12 +374,12 @@ class EventWriterSinkBlockV1(WorkflowBlock):
             "images": [image_entry],
             "displayImagePosition": 0,
         }
-        if custom_metadata is not None:
+        if custom_metadata:
             payload["custom_metadata"] = custom_metadata
 
         request_handler = partial(
             _execute_event_request,
-            url=f"{url}/v2/events",
+            url=urljoin(event_ingestion_url, "/v2/events"),
             payload=payload,
             api_key=os.environ.get("EVENT_INGESTION_API_KEY"),
             timeout=request_timeout,

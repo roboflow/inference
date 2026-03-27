@@ -36,7 +36,6 @@ from inference.enterprise.workflows.enterprise_blocks.sinks.event_writer.v1 impo
     _keypoints_to_v2,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -682,7 +681,15 @@ class TestEventWriterRun:
         pool.submit.assert_called_once()
         assert result["error_status"] is False
 
-    def test_url_trailing_slash_stripped(self):
+    @pytest.mark.parametrize(
+        "base_url",
+        [
+            "http://localhost:8001",
+            "http://localhost:8001/",
+            "http://172.17.0.1:8001",
+        ],
+    )
+    def test_url_constructed_correctly(self, base_url):
         block = _make_block()
         captured = {}
 
@@ -695,7 +702,7 @@ class TestEventWriterRun:
             side_effect=capture,
         ):
             block.run(
-                event_ingestion_url="http://localhost:8001///",
+                event_ingestion_url=base_url,
                 event_schema="custom",
                 output_image=_make_image(),
                 fire_and_forget=False,
@@ -703,7 +710,8 @@ class TestEventWriterRun:
                 request_timeout=5,
             )
 
-        assert captured["url"] == "http://localhost:8001/v2/events"
+        host = base_url.rstrip("/")
+        assert captured["url"] == f"{host}/v2/events"
 
     def test_api_key_read_from_env_var(self):
         block = _make_block()
@@ -781,8 +789,9 @@ class TestEventWriterRun:
             "shift": "morning",
         }
 
-    def test_custom_metadata_omitted_from_payload_when_none(self):
-        """custom_metadata is only omitted when None (the default), not when empty dict."""
+    @pytest.mark.parametrize("empty_value", [None, {}])
+    def test_custom_metadata_omitted_from_payload_when_empty(self, empty_value):
+        """custom_metadata is omitted for both None and {} — absent vs {} differ in the API."""
         block = _make_block()
         captured = {}
 
@@ -801,7 +810,7 @@ class TestEventWriterRun:
                 fire_and_forget=False,
                 disable_sink=False,
                 request_timeout=5,
-                custom_metadata=None,
+                custom_metadata=empty_value,
             )
 
         assert "custom_metadata" not in captured["payload"]
