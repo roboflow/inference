@@ -119,6 +119,9 @@ class AutoModel:
         pull_artefacts_size: bool = False,
         weights_provider_extra_query_params: Optional[List[Tuple[str, str]]] = None,
         weights_provider_extra_headers: Optional[Dict[str, str]] = None,
+        weights_provider_proxy_url_builder: Optional[
+            Callable[[str, Optional[Dict[str, Union[str, List[str]]]]], str]
+        ] = None,
     ) -> None:
         """Display comprehensive metadata and available packages for a model.
 

@@ -43,6 +43,7 @@ ROBOFLOW_API_HOST = os.getenv(
         else "https://api.roboflow.one"
     ),
 )
+ROBOFLOW_LICENSE_SERVER = os.getenv("LICENSE_SERVER", None)
 RUNNING_ON_JETSON = os.getenv("RUNNING_ON_JETSON")
 L4T_VERSION = os.getenv("L4T_VERSION")
 INFERENCE_HOME = os.getenv("INFERENCE_HOME", "/tmp/cache")
