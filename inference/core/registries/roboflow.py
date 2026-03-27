@@ -299,21 +299,71 @@ def get_model_metadata_from_cache(
 def _get_model_metadata_from_cache(
     dataset_id: Union[DatasetID, ModelID], version_id: Optional[VersionID]
 ) -> Optional[Tuple[TaskType, ModelType]]:
+    # Layout 1: traditional model_type.json
     model_type_cache_path = construct_model_type_cache_path(
         dataset_id=dataset_id, version_id=version_id
     )
-    if not os.path.isfile(model_type_cache_path):
-        return None
-    try:
-        model_metadata = read_json(path=model_type_cache_path)
-        if model_metadata_content_is_invalid(content=model_metadata):
-            return None
-        return model_metadata[PROJECT_TASK_TYPE_KEY], model_metadata[MODEL_TYPE_KEY]
-    except ValueError as e:
-        logger.warning(
-            f"Could not load model description from cache under path: {model_type_cache_path} - decoding issue: {e}."
-        )
-        return None
+    if os.path.isfile(model_type_cache_path):
+        try:
+            model_metadata = read_json(path=model_type_cache_path)
+            if not model_metadata_content_is_invalid(content=model_metadata):
+                return (
+                    model_metadata[PROJECT_TASK_TYPE_KEY],
+                    model_metadata[MODEL_TYPE_KEY],
+                )
+        except ValueError as e:
+            logger.warning(
+                f"Could not load model description from cache under path: "
+                f"{model_type_cache_path} - decoding issue: {e}."
+            )
+
+    # Layout 2: inference-models model_config.json
+    model_id = f"{dataset_id}/{version_id}" if version_id else dataset_id
+    result = _get_model_metadata_from_inference_models_cache(model_id)
+    if result is not None:
+        return result
+
+    return None
+
+
+def _get_model_metadata_from_inference_models_cache(
+    model_id: str,
+) -> Optional[Tuple[TaskType, ModelType]]:
+    """Check the inference-models cache layout for model metadata.
+
+    Looks for ``model_config.json`` under
+    ``{base}/models-cache/{slug}/{package_id}/model_config.json``
+    where *base* is ``MODEL_CACHE_DIR`` and optionally ``INFERENCE_HOME``.
+    """
+    from inference.core.cache.air_gapped import _get_inference_models_home, _slugify_model_id
+
+    slug = _slugify_model_id(model_id)
+
+    bases = [MODEL_CACHE_DIR]
+    inference_home = _get_inference_models_home()
+    if inference_home is not None and inference_home != MODEL_CACHE_DIR:
+        bases.append(inference_home)
+
+    for base in bases:
+        slug_dir = os.path.join(base, "models-cache", slug)
+        if not os.path.isdir(slug_dir):
+            continue
+        for package_id in os.listdir(slug_dir):
+            config_path = os.path.join(slug_dir, package_id, "model_config.json")
+            if not os.path.isfile(config_path):
+                continue
+            try:
+                metadata = read_json(path=config_path)
+            except ValueError:
+                continue
+            if not isinstance(metadata, dict):
+                continue
+            task_type = metadata.get("task_type", "")
+            model_arch = metadata.get("model_architecture", "")
+            if task_type and model_arch:
+                return task_type, model_arch
+
+    return None
 
 
 def model_metadata_content_is_invalid(content: Optional[Union[list, dict]]) -> bool:
