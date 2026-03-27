@@ -50,6 +50,7 @@ def run_flakiness_check(
     api_key: Optional[str],
     float_precision: int,
     streams_output_dir: Path,
+    sample_different_images_limit: int,
 ) -> Dict[str, Any]:
     report: Dict[str, Any] = {
         "iterations": iterations,
@@ -93,6 +94,7 @@ def run_flakiness_check(
                         baseline=accumulated_outputs[0],
                         candidate=run_outputs,
                         image_paths=images,
+                        sample_different_images_limit=sample_different_images_limit,
                     )
                     stream_log_path = save_mismatch_streams(
                         problem=problem,
@@ -208,7 +210,10 @@ def normalize_output(value: Any, float_precision: int) -> Any:
 
 
 def compute_diff_summary(
-    baseline: List[Any], candidate: List[Any], image_paths: Iterable[Path]
+    baseline: List[Any],
+    candidate: List[Any],
+    image_paths: Iterable[Path],
+    sample_different_images_limit: int,
 ) -> Dict[str, Any]:
     mismatched_images: List[str] = []
     baseline_by_path = dict(zip([str(p) for p in image_paths], baseline))
@@ -221,7 +226,7 @@ def compute_diff_summary(
     return {
         "num_images_compared": len(baseline),
         "num_images_with_differences": len(mismatched_images),
-        "sample_different_images": mismatched_images[:10],
+        "sample_different_images": mismatched_images[:sample_different_images_limit],
     }
 
 
@@ -381,6 +386,13 @@ def load_models_config(path: Path) -> Dict[str, List[str]]:
     show_default=True,
     help="Directory where mismatch model-load streams are saved.",
 )
+@click.option(
+    "--sample-different-images-limit",
+    type=int,
+    default=10,
+    show_default=True,
+    help="How many different-image paths to keep in sample_different_images.",
+)
 def main(
     images_dir: Path,
     models_config: Path,
@@ -390,9 +402,12 @@ def main(
     float_precision: int,
     report_json: Optional[Path],
     streams_output_dir: Path,
+    sample_different_images_limit: int,
 ) -> None:
     if iterations < 2:
         raise click.BadParameter("iterations must be >= 2 to detect differences.")
+    if sample_different_images_limit < 0:
+        raise click.BadParameter("sample-different-images-limit must be >= 0.")
 
     images = list_images(images_dir)
     grouped_models = load_models_config(models_config)
@@ -405,6 +420,7 @@ def main(
         api_key=api_key,
         float_precision=float_precision,
         streams_output_dir=streams_output_dir,
+        sample_different_images_limit=sample_different_images_limit,
     )
 
     LOGGER.info("")
