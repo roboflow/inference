@@ -7,6 +7,7 @@ import shutil
 import sys
 from collections import defaultdict
 from contextlib import redirect_stdout
+from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional
 
@@ -175,16 +176,27 @@ def load_model(model_id: str, api_key: Optional[str]) -> tuple[Any, str]:
 def normalize_output(value: Any, float_precision: int) -> Any:
     if dataclasses.is_dataclass(value):
         return normalize_output(dataclasses.asdict(value), float_precision=float_precision)
+    # Namedtuple support (for metadata like PreProcessingMetadata / ImageDimensions).
+    if hasattr(value, "_asdict") and callable(value._asdict):
+        return normalize_output(value._asdict(), float_precision=float_precision)
+    if isinstance(value, Enum):
+        return normalize_output(value.value, float_precision=float_precision)
     if isinstance(value, torch.Tensor):
         return normalize_output(value.detach().cpu().numpy(), float_precision=float_precision)
     if isinstance(value, np.ndarray):
         return normalize_output(value.tolist(), float_precision=float_precision)
+    if isinstance(value, np.bool_):
+        return bool(value)
     if isinstance(value, np.floating):
         return round(float(value), float_precision)
     if isinstance(value, float):
         return round(value, float_precision)
     if isinstance(value, np.integer):
         return int(value)
+    if isinstance(value, np.generic):
+        return normalize_output(value.item(), float_precision=float_precision)
+    if isinstance(value, Path):
+        return str(value)
     if isinstance(value, dict):
         return {
             str(key): normalize_output(sub_value, float_precision=float_precision)
