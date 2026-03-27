@@ -263,6 +263,8 @@ if modal is not None:
             logger.warning("WebRTC connection task was cancelled (%s)", exc)
         except Exception as exc:
             logger.error(exc)
+            if webrtc_request.rtsp_url and not watchdog.connection_established:
+                watchdog.mark_connection_established()
         finally:
             watchdog.stop()
 
