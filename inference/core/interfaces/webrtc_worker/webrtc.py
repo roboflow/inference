@@ -836,6 +836,7 @@ async def init_rtc_peer_connection_with_loop(
     model_manager: Optional[ModelManager] = None,
     shutdown_reserve: int = WEBRTC_MODAL_SHUTDOWN_RESERVE,
     heartbeat_callback: Optional[Callable[[], None]] = None,
+    connection_established_callback: Optional[Callable[[], None]] = None,
 ) -> RTCPeerConnectionWithLoop:
     logger.info(
         "=" * 60 + "\n"
@@ -1107,6 +1108,9 @@ async def init_rtc_peer_connection_with_loop(
                 else "N/A"
             ),
         )
+        if state == "connected":
+            if connection_established_callback:
+                connection_established_callback()
         if state in {"failed", "closed"}:
             logger.error(
                 "[CONNECTION_STATE] FATAL: Connection %s! ICE=%s, "

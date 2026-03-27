@@ -33,6 +33,7 @@ class Watchdog:
         self._log_interval_seconds = 10
         self._heartbeats = 0
         self._total_heartbeats = 0
+        self._connection_established = False
         self._workspace_id = workspace_id
         self._session_id = session_id
         self._heartbeat_url = heartbeat_url
@@ -41,6 +42,13 @@ class Watchdog:
     @property
     def total_heartbeats(self) -> int:
         return self._total_heartbeats
+
+    @property
+    def connection_established(self) -> bool:
+        return self._connection_established
+
+    def mark_connection_established(self):
+        self._connection_established = True
 
     def start(self):
         logger.info("Starting watchdog with timeout %s", self.timeout_seconds)
