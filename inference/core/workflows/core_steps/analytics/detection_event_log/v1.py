@@ -1,6 +1,6 @@
 import time
 from dataclasses import asdict, dataclass
-from typing import Any, Dict, List, Literal, Optional, Type, Union
+from typing import Tuple, Any, Dict, List, Literal, Optional, Type, Union
 
 import numpy as np
 import supervision as sv
@@ -27,6 +27,7 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
+import heapq
 
 OUTPUT_KEY = "event_log"
 DETECTIONS_OUTPUT_KEY = "detections"
@@ -189,6 +190,8 @@ class DetectionEventLogBlockV1(WorkflowBlock):
         self._first_frame_timestamps: Dict[str, float] = {}
         # Global frame counter for tracking video access order
         self._global_frame: int = 0
+        # Min-heap of (last_access_frame, video_id) for efficient oldest video lookup
+        self._access_heap: List[Tuple[int, str]] = []
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -223,8 +226,22 @@ class DetectionEventLogBlockV1(WorkflowBlock):
         if len(self._event_logs) <= MAX_VIDEOS:
             return
 
-        # Find the video with the oldest last access time
-        oldest_video_id = min(self._last_access, key=self._last_access.get)
+        # Rebuild heap if out of sync with current state
+        if len(self._access_heap) < len(self._last_access):
+            self._access_heap[:] = [
+                (frame, vid) for vid, frame in self._last_access.items()
+            ]
+            heapq.heapify(self._access_heap)
+
+        # Pop stale entries until we find a valid current entry
+        while self._access_heap:
+            frame, vid = heapq.heappop(self._access_heap)
+            if self._last_access.get(vid) == frame and vid in self._event_logs:
+                oldest_video_id = vid
+                break
+        else:
+            # If heap is empty but we have event_logs, use fallback
+            oldest_video_id = min(self._last_access, key=self._last_access.get)
 
         # Remove all data for this video
         self._event_logs.pop(oldest_video_id, None)
