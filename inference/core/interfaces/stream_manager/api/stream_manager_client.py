@@ -13,6 +13,7 @@ from inference.core.interfaces.stream_manager.api.entities import (
     FrameMetadata,
     InferencePipelineStatusResponse,
     InitializeWebRTCPipelineResponse,
+    LatestFrameResponse,
     ListPipelinesResponse,
 )
 from inference.core.interfaces.stream_manager.api.errors import (
@@ -198,6 +199,26 @@ class StreamManagerClient:
                 FrameMetadata.model_validate(f)
                 for f in response[RESPONSE_KEY]["frames_metadata"]
             ],
+        )
+
+    async def get_latest_frame(self, pipeline_id: str) -> LatestFrameResponse:
+        command = {
+            TYPE_KEY: CommandType.LATEST_FRAME,
+            PIPELINE_ID_KEY: pipeline_id,
+        }
+        response = await self._handle_command(command=command)
+        status = response[RESPONSE_KEY][STATUS_KEY]
+        context = CommandContext(
+            request_id=response.get(REQUEST_ID_KEY),
+            pipeline_id=response.get(PIPELINE_ID_KEY),
+        )
+        return LatestFrameResponse(
+            status=status,
+            context=context,
+            frame_data=response[RESPONSE_KEY].get("frame_data"),
+            frame_id=response[RESPONSE_KEY].get("frame_id"),
+            frame_timestamp=response[RESPONSE_KEY].get("frame_timestamp"),
+            source_id=response[RESPONSE_KEY].get("source_id"),
         )
 
     async def _handle_command(self, command: dict) -> dict:
