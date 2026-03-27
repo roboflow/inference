@@ -1,6 +1,7 @@
 import json
+import re
 import urllib.parse
-from typing import Optional, Dict, Union, List
+from typing import Dict, List, Optional, Union
 from unittest.mock import patch
 
 import pytest
@@ -43,7 +44,6 @@ from inference_models.weights_providers.roboflow import (
 )
 
 DUMMY_PROXY_PREFIX = "http://license.local/proxy?url="
-
 
 
 def test_as_version_when_valid_version_provided() -> None:
@@ -1488,6 +1488,133 @@ def test_get_roboflow_model(requests_mock: Mocker) -> None:
     assert len(result.model_packages) == 2
 
 
+@patch.object(roboflow_module, "ROBOFLOW_LICENSE_SERVER", "license.local")
+def test_get_roboflow_model_with_proxy(requests_mock: Mocker) -> None:
+    # given
+    requests_mock.register_uri(
+        "GET",
+        re.compile(r"http://license\.local/proxy"),
+        [
+            {
+                "status_code": 200,
+                "json": {
+                    "modelMetadata": {
+                        "type": "external-model-metadata-v1",
+                        "modelId": "my-model",
+                        "modelArchitecture": "yolov8",
+                        "modelVariant": "yolov8-n",
+                        "taskType": "object-detection",
+                        "modelPackages": [
+                            {
+                                "type": "new-unknown",
+                            },
+                            {
+                                "type": "external-model-package-v1",
+                                "packageId": "my-package-id-1",
+                                "packageManifest": {
+                                    "type": "onnx-model-package-v1",
+                                    "backendType": "onnx",
+                                    "quantization": "fp32",
+                                    "dynamicBatchSize": True,
+                                    "opset": 19,
+                                    "incompatibleProviders": ["TRTExecutionProvider"],
+                                },
+                                "packageFiles": [
+                                    {
+                                        "fileHandle": "some",
+                                        "downloadUrl": "https://link.com",
+                                    }
+                                ],
+                            },
+                        ],
+                        "nextPage": "some",
+                    }
+                },
+            },
+            {
+                "status_code": 200,
+                "json": {
+                    "modelMetadata": {
+                        "type": "external-model-metadata-v1",
+                        "modelId": "my-model",
+                        "modelArchitecture": "yolov8",
+                        "modelVariant": "yolov8-n",
+                        "taskType": "object-detection",
+                        "modelPackages": [
+                            {
+                                "type": "external-model-package-v1",
+                                "packageId": "my-package-id-2",
+                                "packageManifest": {
+                                    "type": "trt-model-package-v1",
+                                    "backendType": "trt",
+                                    "dynamicBatchSize": True,
+                                    "static_batch_size": None,
+                                    "minBatchSize": 1,
+                                    "optBatchSize": 8,
+                                    "maxBatchSize": 16,
+                                    "quantization": "fp16",
+                                    "cudaDeviceType": "orin",
+                                    "cudaDeviceCC": "8.7",
+                                    "cudaVersion": "12.6",
+                                    "trtVersion": "10.3.0.17",
+                                    "sameCCCompatible": False,
+                                    "trtForwardCompatible": False,
+                                    "trtLeanRuntimeExcluded": False,
+                                    "machineType": "jetson",
+                                    "machineSpecs": {
+                                        "type": "jetson-machine-specs-v1",
+                                        "l4tVersion": "36.4.3",
+                                        "deviceName": "jetson-orin-nx",
+                                        "driverVersion": "540.0.1",
+                                    },
+                                },
+                                "packageFiles": [
+                                    {
+                                        "fileHandle": "some",
+                                        "downloadUrl": "https://link.com",
+                                    }
+                                ],
+                            }
+                        ],
+                    }
+                },
+            },
+        ],
+    )
+
+    # when
+    result = get_roboflow_model(model_id="my-model", api_key="my-api-key")
+
+    # then — same structural assertions as non-proxy test
+    assert result.model_id == "my-model"
+    assert result.model_architecture == "yolov8"
+    assert result.model_variant == "yolov8-n"
+    assert result.task_type == "object-detection"
+    assert len(result.model_packages) == 2
+
+    # verify all API calls went through proxy
+    assert requests_mock.call_count == 2
+    for history_entry in requests_mock.request_history:
+        parsed = urllib.parse.urlparse(history_entry.url)
+        assert parsed.scheme == "http"
+        assert parsed.netloc == "license.local"
+        assert parsed.path == "/proxy"
+        outer_params = urllib.parse.parse_qs(parsed.query)
+        assert "url" in outer_params
+        # verify the inner URL points to the real API
+        inner_url = outer_params["url"][0]
+        assert inner_url.startswith(f"{ROBOFLOW_API_HOST}/models/v1/external/weights")
+
+    # verify download URLs in parsed packages are proxied
+    for package in result.model_packages:
+        for artefact in package.package_artefacts:
+            parsed = urllib.parse.urlparse(artefact.download_url)
+            assert parsed.netloc == "license.local"
+            assert parsed.path == "/proxy"
+            inner_url = urllib.parse.parse_qs(parsed.query)["url"][0]
+            assert inner_url == "https://link.com"
+
+
 @patch.object(roboflow_module, "ROBOFLOW_LICENSE_SERVER", "license.local:8080")
 def test_basic_url_no_query():
     result = roboflow_license_server_proxy_url_builder(
@@ -1675,7 +1802,9 @@ def test_params_from_url_and_query_are_both_preserved_without_proxy():
     assert params["modelId"] == ["my-model"]
 
 
-def test_parse_mediapipe_model_package_when_package_is_valid_with_proxy_builder() -> None:
+def test_parse_mediapipe_model_package_when_package_is_valid_with_proxy_builder() -> (
+    None
+):
     # given
     metadata = RoboflowModelPackageV1(
         type="external-model-package-v1",
@@ -1793,7 +1922,9 @@ def test_parse_hf_model_package_when_valid_input_provided_with_proxy_builder() -
     )
 
 
-def test_parse_torch_model_package_when_valid_manifest_provided_with_proxy_builder() -> None:
+def test_parse_torch_model_package_when_valid_manifest_provided_with_proxy_builder() -> (
+    None
+):
     # given
     metadata = RoboflowModelPackageV1(
         type="external-model-package-v1",
@@ -1836,7 +1967,9 @@ def test_parse_torch_model_package_when_valid_manifest_provided_with_proxy_build
     )
 
 
-def test_parse_onnx_model_package_when_valid_manifest_provided_with_proxy_builder() -> None:
+def test_parse_onnx_model_package_when_valid_manifest_provided_with_proxy_builder() -> (
+    None
+):
     # given
     metadata = RoboflowModelPackageV1(
         type="external-model-package-v1",
@@ -2095,6 +2228,7 @@ def test_parse_torch_script_model_package_when_valid_with_proxy_builder() -> Non
             torch_vision_version=Version("0.22.0"),
         ),
     )
+
 
 def _parse_proxy_result(result: str) -> urllib.parse.ParseResult:
     """Parse the outer proxy URL and return ParseResult."""
