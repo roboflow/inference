@@ -13,7 +13,9 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional
 
 import click
 import numpy as np
+import requests
 import torch
+from dotenv import find_dotenv, load_dotenv
 from torchvision.io import ImageReadMode, decode_image
 
 # Enable running this script directly from source checkout.
@@ -23,6 +25,9 @@ if str(REPO_PACKAGE_ROOT) not in sys.path:
 
 from inference_models import AutoModel
 from inference_models.logger import LOGGER
+
+# Load .env from current working directory ancestry when available.
+load_dotenv(find_dotenv(usecwd=True), override=False)
 
 SUPPORTED_IMAGE_EXTENSIONS = {
     ".bmp",
@@ -43,7 +48,7 @@ SUPPORTED_PROBLEMS = {
 
 
 def run_flakiness_check(
-    images: List[Path],
+    image_paths: List[Path],
     grouped_models: Mapping[str, List[str]],
     iterations: int,
     cache_dir: Path,
@@ -54,7 +59,7 @@ def run_flakiness_check(
 ) -> Dict[str, Any]:
     report: Dict[str, Any] = {
         "iterations": iterations,
-        "images_dir_size": len(images),
+        "images_dir_size": len(image_paths),
         "cache_dir": str(cache_dir),
         "results": defaultdict(dict),
     }
@@ -80,7 +85,7 @@ def run_flakiness_check(
                 clear_cache(cache_dir)
                 run_outputs, load_stream = run_model_once(
                     model_id=model_id,
-                    image_paths=images,
+                    image_paths=image_paths,
                     api_key=api_key,
                     float_precision=float_precision,
                 )
@@ -93,7 +98,7 @@ def run_flakiness_check(
                     iteration_diffs[str(iteration)] = compute_diff_summary(
                         baseline=accumulated_outputs[0],
                         candidate=run_outputs,
-                        image_paths=images,
+                        image_paths=image_paths,
                         sample_different_images_limit=sample_different_images_limit,
                     )
                     stream_log_path = save_mismatch_streams(
@@ -286,20 +291,135 @@ def summarize_report(results: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
     }
 
 
-def list_images(images_dir: Path) -> List[Path]:
-    if not images_dir.is_dir():
-        raise ValueError(f"images-dir does not exist or is not a directory: {images_dir}")
-    images = [
-        p
-        for p in sorted(images_dir.iterdir())
-        if p.is_file() and p.suffix.lower() in SUPPORTED_IMAGE_EXTENSIONS
-    ]
-    if not images:
-        raise ValueError(
-            f"No supported image files found in {images_dir}. "
-            f"Supported extensions: {sorted(SUPPORTED_IMAGE_EXTENSIONS)}"
+ROBOFLOW_SEARCH_PAGE_SIZE = 25
+
+
+def fetch_test_image_paths(
+    *,
+    workspace: Optional[str],
+    project: Optional[str],
+    num_test_images: Optional[int],
+    api_key: Optional[str],
+    roboflow_images_cache_dir: Path,
+    use_roboflow_image_cache: bool,
+) -> List[Path]:
+    """Fetch test images from Roboflow project search + download."""
+    any_ws = workspace is not None and str(workspace).strip() != ""
+    any_proj = project is not None and str(project).strip() != ""
+    any_num = num_test_images is not None
+    partial_roboflow = int(any_ws) + int(any_proj) + int(any_num)
+    if partial_roboflow != 3:
+        raise click.BadParameter(
+            "Provide all of --workspace, --project, and --num-test-images."
         )
-    return images
+    if not api_key:
+        raise click.BadParameter(
+            "ROBOFLOW_API_KEY (or --api-key) is required when fetching "
+            "images from the Roboflow API."
+        )
+    if num_test_images is None or num_test_images < 1:
+        raise click.BadParameter("--num-test-images must be >= 1.")
+    return fetch_roboflow_test_images(
+        workspace=workspace.strip(),
+        project=project.strip(),
+        num_images=num_test_images,
+        api_key=api_key,
+        cache_dir=roboflow_images_cache_dir,
+        use_cache=use_roboflow_image_cache,
+    )
+
+
+def fetch_roboflow_test_images(
+    *,
+    workspace: str,
+    project: str,
+    num_images: int,
+    api_key: str,
+    cache_dir: Path,
+    use_cache: bool,
+) -> List[Path]:
+    """Search test split images via Roboflow API and download into cache_dir."""
+    cache_root = cache_dir / slugify(workspace) / slugify(project)
+    cache_root.mkdir(parents=True, exist_ok=True)
+
+    collected: List[Dict[str, Any]] = []
+    offset = 0
+    url = f"https://api.roboflow.com/{workspace}/{project}/search"
+
+    while len(collected) < num_images:
+        need = num_images - len(collected)
+        limit = min(ROBOFLOW_SEARCH_PAGE_SIZE, need)
+        payload: Dict[str, Any] = {
+            "split": "test",
+            "limit": limit,
+            "offset": offset,
+        }
+        response = requests.post(
+            url,
+            params={"api_key": api_key},
+            json=payload,
+            timeout=60,
+        )
+        response.raise_for_status()
+        data = response.json()
+        batch = data.get("images") or []
+        if not batch:
+            LOGGER.warning(
+                "Roboflow search returned no more images at offset %s "
+                "(have %s, need %s).",
+                offset,
+                len(collected),
+                num_images,
+            )
+            break
+        take = batch[:need]
+        collected.extend(take)
+        offset += len(batch)
+        if len(batch) < limit:
+            break
+
+    collected = collected[:num_images]
+
+    if len(collected) < num_images:
+        LOGGER.warning(
+            "Only %s test images available from API (requested %s).",
+            len(collected),
+            num_images,
+        )
+
+    if not collected:
+        raise RuntimeError(
+            f"No test images returned for workspace={workspace!r} project={project!r}."
+        )
+
+    paths: List[Path] = []
+    for image in collected[:num_images]:
+        image_id = image.get("id")
+        name = image.get("name") or "image"
+        original_url = image.get("original_url")
+        if not original_url:
+            LOGGER.warning("Skipping image without original_url: %s", image)
+            continue
+
+        ext = Path(name).suffix.lower()
+        if ext not in SUPPORTED_IMAGE_EXTENSIONS:
+            ext = ".jpg"
+        safe_name = slugify(Path(name).stem) or "image"
+        file_stem = f"{image_id}_{safe_name}" if image_id is not None else safe_name
+        dest = cache_root / f"{file_stem}{ext}"
+
+        if use_cache and dest.exists():
+            paths.append(dest)
+            continue
+
+        img_response = requests.get(original_url, timeout=120)
+        img_response.raise_for_status()
+        dest.write_bytes(img_response.content)
+        paths.append(dest)
+
+    if not paths:
+        raise RuntimeError("No images could be downloaded or found in cache.")
+    return paths
 
 
 def load_models_config(path: Path) -> Dict[str, List[str]]:
@@ -328,12 +448,6 @@ def load_models_config(path: Path) -> Dict[str, List[str]]:
         "Check prediction flakiness by repeatedly reloading models and "
         "comparing outputs across runs."
     )
-)
-@click.option(
-    "--images-dir",
-    required=True,
-    type=click.Path(path_type=Path, exists=True, file_okay=False, dir_okay=True),
-    help="Path to a directory with images.",
 )
 @click.option(
     "--models-config",
@@ -393,8 +507,38 @@ def load_models_config(path: Path) -> Dict[str, List[str]]:
     show_default=True,
     help="How many different-image paths to keep in sample_different_images.",
 )
+@click.option(
+    "--workspace",
+    type=str,
+    default=None,
+    help="Roboflow workspace slug (use with --project and --num-test-images).",
+)
+@click.option(
+    "--project",
+    type=str,
+    default=None,
+    help="Roboflow project slug (use with --workspace and --num-test-images).",
+)
+@click.option(
+    "--num-test-images",
+    type=int,
+    default=None,
+    help="How many test-split images to fetch from the Roboflow search API.",
+)
+@click.option(
+    "--roboflow-images-cache-dir",
+    type=click.Path(path_type=Path),
+    default=Path("flakiness_roboflow_images_cache"),
+    show_default=True,
+    help="Directory to cache downloaded Roboflow test images (reused across runs).",
+)
+@click.option(
+    "--no-roboflow-image-cache",
+    is_flag=True,
+    default=False,
+    help="Re-download Roboflow images instead of reusing files under --roboflow-images-cache-dir.",
+)
 def main(
-    images_dir: Path,
     models_config: Path,
     iterations: int,
     inference_home: Path,
@@ -403,17 +547,30 @@ def main(
     report_json: Optional[Path],
     streams_output_dir: Path,
     sample_different_images_limit: int,
+    workspace: Optional[str],
+    project: Optional[str],
+    num_test_images: Optional[int],
+    roboflow_images_cache_dir: Path,
+    no_roboflow_image_cache: bool,
 ) -> None:
     if iterations < 2:
         raise click.BadParameter("iterations must be >= 2 to detect differences.")
     if sample_different_images_limit < 0:
         raise click.BadParameter("sample-different-images-limit must be >= 0.")
 
-    images = list_images(images_dir)
+    image_paths = fetch_test_image_paths(
+        workspace=workspace,
+        project=project,
+        num_test_images=num_test_images,
+        api_key=api_key,
+        roboflow_images_cache_dir=roboflow_images_cache_dir,
+        use_roboflow_image_cache=not no_roboflow_image_cache,
+    )
+    LOGGER.info("Using %s image file(s) for inference.", len(image_paths))
     grouped_models = load_models_config(models_config)
 
     report = run_flakiness_check(
-        images=images,
+        image_paths=image_paths,
         grouped_models=grouped_models,
         iterations=iterations,
         cache_dir=inference_home,
