@@ -21,6 +21,7 @@ if str(REPO_PACKAGE_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_PACKAGE_ROOT))
 
 from inference_models import AutoModel
+from inference_models.logger import LOGGER
 
 SUPPORTED_IMAGE_EXTENSIONS = {
     ".bmp",
@@ -57,9 +58,10 @@ def run_flakiness_check(
     }
 
     for problem, model_ids in grouped_models.items():
-        print(f"\n=== Problem: {problem} ===")
+        LOGGER.info("")
+        LOGGER.info("=== Problem: %s ===", problem)
         for model_id in model_ids:
-            print(f"Running model: {model_id}")
+            LOGGER.info("Running model: %s", model_id)
             accumulated_outputs: List[List[Any]] = []
             accumulated_load_streams: List[str] = []
             status = "stable"
@@ -68,7 +70,11 @@ def run_flakiness_check(
             mismatch_stream_logs: List[str] = []
 
             for iteration in range(1, iterations + 1):
-                print(f"  Iteration {iteration}/{iterations}: clearing cache and reloading")
+                LOGGER.info(
+                    "  Iteration %s/%s: clearing cache and reloading",
+                    iteration,
+                    iterations,
+                )
                 clear_cache(cache_dir)
                 run_outputs, load_stream = run_model_once(
                     model_id=model_id,
@@ -97,11 +103,14 @@ def run_flakiness_check(
                         streams_output_dir=streams_output_dir,
                     )
                     mismatch_stream_logs.append(str(stream_log_path))
-                    print(f"  Saved mismatch load streams to: {stream_log_path}")
+                    LOGGER.info(
+                        "  Saved mismatch load streams to: %s", stream_log_path
+                    )
 
-            print(
-                f"  Result: {status.upper()} "
-                f"(mismatched iterations: {mismatch_iterations or 'none'})"
+            LOGGER.info(
+                "  Result: %s (mismatched iterations: %s)",
+                status.upper(),
+                mismatch_iterations or "none",
             )
             if status == "stable":
                 # Drop captured load logs when model is stable.
@@ -386,14 +395,15 @@ def main(
         streams_output_dir=streams_output_dir,
     )
 
-    print("\n=== Summary ===")
-    print(json.dumps(report["summary"], indent=2))
+    LOGGER.info("")
+    LOGGER.info("=== Summary ===")
+    LOGGER.info("%s", json.dumps(report["summary"], indent=2))
 
     if report_json:
         report_json.parent.mkdir(parents=True, exist_ok=True)
         with report_json.open("w", encoding="utf-8") as f:
             json.dump(report, f, indent=2)
-        print(f"\nReport written to: {report_json}")
+        LOGGER.info("Report written to: %s", report_json)
 
 
 if __name__ == "__main__":
