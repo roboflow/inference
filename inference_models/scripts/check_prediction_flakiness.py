@@ -39,99 +39,118 @@ SUPPORTED_IMAGE_EXTENSIONS = {
     ".webp",
 }
 
-SUPPORTED_PROBLEMS = {
-    "object-detection",
-    "instance-segmentation",
-    "single-label-classification",
-    "multi-label-classification",
-}
-
-
 def run_flakiness_check(
-    image_paths: List[Path],
-    grouped_models: Mapping[str, List[str]],
+    models_by_workspace: Mapping[str, Mapping[str, List[str]]],
     iterations: int,
     cache_dir: Path,
-    api_key: Optional[str],
+    api_key: str,
     float_precision: int,
     streams_output_dir: Path,
     sample_different_images_limit: int,
+    num_test_images: int,
+    roboflow_images_cache_dir: Path,
+    use_roboflow_image_cache: bool,
 ) -> Dict[str, Any]:
     report: Dict[str, Any] = {
         "iterations": iterations,
-        "images_dir_size": len(image_paths),
         "cache_dir": str(cache_dir),
-        "results": defaultdict(dict),
+        "results": defaultdict(lambda: defaultdict(dict)),
+        "project_image_counts": defaultdict(dict),
     }
 
-    for problem, model_ids in grouped_models.items():
+    for workspace, models_by_project in models_by_workspace.items():
         LOGGER.info("")
-        LOGGER.info("=== Problem: %s ===", problem)
-        for model_id in model_ids:
-            LOGGER.info("Running model: %s", model_id)
-            accumulated_outputs: List[List[Any]] = []
-            accumulated_load_streams: List[str] = []
-            status = "stable"
-            mismatch_iterations: List[int] = []
-            iteration_diffs: Dict[str, Any] = {}
-            mismatch_stream_logs: List[str] = []
-
-            for iteration in range(1, iterations + 1):
-                LOGGER.info(
-                    "  Iteration %s/%s: clearing cache and reloading",
-                    iteration,
-                    iterations,
-                )
-                clear_cache(cache_dir)
-                run_outputs, load_stream = run_model_once(
-                    model_id=model_id,
-                    image_paths=image_paths,
-                    api_key=api_key,
-                    float_precision=float_precision,
-                )
-                accumulated_outputs.append(run_outputs)
-                accumulated_load_streams.append(load_stream)
-
-                if iteration > 1 and run_outputs != accumulated_outputs[0]:
-                    status = "flaky"
-                    mismatch_iterations.append(iteration)
-                    iteration_diffs[str(iteration)] = compute_diff_summary(
-                        baseline=accumulated_outputs[0],
-                        candidate=run_outputs,
-                        image_paths=image_paths,
-                        sample_different_images_limit=sample_different_images_limit,
-                    )
-                    stream_log_path = save_mismatch_streams(
-                        problem=problem,
-                        model_id=model_id,
-                        baseline_iteration=1,
-                        candidate_iteration=iteration,
-                        baseline_stream=accumulated_load_streams[0],
-                        candidate_stream=load_stream,
-                        streams_output_dir=streams_output_dir,
-                    )
-                    mismatch_stream_logs.append(str(stream_log_path))
-                    LOGGER.info(
-                        "  Saved mismatch load streams to: %s", stream_log_path
-                    )
-
-            LOGGER.info(
-                "  Result: %s (mismatched iterations: %s)",
-                status.upper(),
-                mismatch_iterations or "none",
+        LOGGER.info("=== Workspace: %s ===", workspace)
+        for project, model_ids in models_by_project.items():
+            LOGGER.info("")
+            LOGGER.info("=== Project: %s ===", project)
+            image_paths = fetch_roboflow_test_images(
+                workspace=workspace,
+                project=project,
+                num_images=num_test_images,
+                api_key=api_key,
+                cache_dir=roboflow_images_cache_dir,
+                use_cache=use_roboflow_image_cache,
             )
-            if status == "stable":
-                # Drop captured load logs when model is stable.
-                accumulated_load_streams = []
-            report["results"][problem][model_id] = {
-                "status": status,
-                "mismatch_iterations": mismatch_iterations,
-                "iteration_diffs": iteration_diffs,
-                "mismatch_stream_logs": mismatch_stream_logs,
-                "accumulated_outputs": accumulated_outputs,
-            }
+            report["project_image_counts"][workspace][project] = len(image_paths)
+            LOGGER.info(
+                "Using %s test image file(s) for workspace=%s project=%s.",
+                len(image_paths),
+                workspace,
+                project,
+            )
 
-    report["results"] = dict(report["results"])
+            for model_id in model_ids:
+                LOGGER.info("Running model: %s", model_id)
+                accumulated_outputs: List[List[Any]] = []
+                accumulated_load_streams: List[str] = []
+                status = "stable"
+                mismatch_iterations: List[int] = []
+                iteration_diffs: Dict[str, Any] = {}
+                mismatch_stream_logs: List[str] = []
+
+                for iteration in range(1, iterations + 1):
+                    LOGGER.info(
+                        "  Iteration %s/%s: clearing cache and reloading",
+                        iteration,
+                        iterations,
+                    )
+                    clear_cache(cache_dir)
+                    run_outputs, load_stream = run_model_once(
+                        model_id=model_id,
+                        image_paths=image_paths,
+                        api_key=api_key,
+                        float_precision=float_precision,
+                    )
+                    accumulated_outputs.append(run_outputs)
+                    accumulated_load_streams.append(load_stream)
+
+                    if iteration > 1 and run_outputs != accumulated_outputs[0]:
+                        status = "flaky"
+                        mismatch_iterations.append(iteration)
+                        iteration_diffs[str(iteration)] = compute_diff_summary(
+                            baseline=accumulated_outputs[0],
+                            candidate=run_outputs,
+                            image_paths=image_paths,
+                            sample_different_images_limit=sample_different_images_limit,
+                        )
+                        stream_log_path = save_mismatch_streams(
+                            workspace=workspace,
+                            project=project,
+                            model_id=model_id,
+                            baseline_iteration=1,
+                            candidate_iteration=iteration,
+                            baseline_stream=accumulated_load_streams[0],
+                            candidate_stream=load_stream,
+                            streams_output_dir=streams_output_dir,
+                        )
+                        mismatch_stream_logs.append(str(stream_log_path))
+                        LOGGER.info(
+                            "  Saved mismatch load streams to: %s", stream_log_path
+                        )
+
+                LOGGER.info(
+                    "  Result: %s (mismatched iterations: %s)",
+                    status.upper(),
+                    mismatch_iterations or "none",
+                )
+                if status == "stable":
+                    # Drop captured load logs when model is stable.
+                    accumulated_load_streams = []
+                report["results"][workspace][project][model_id] = {
+                    "status": status,
+                    "mismatch_iterations": mismatch_iterations,
+                    "iteration_diffs": iteration_diffs,
+                    "mismatch_stream_logs": mismatch_stream_logs,
+                    "accumulated_outputs": accumulated_outputs,
+                }
+
+    report["results"] = {
+        ws: dict(projects) for ws, projects in report["results"].items()
+    }
+    report["project_image_counts"] = {
+        ws: dict(counts) for ws, counts in report["project_image_counts"].items()
+    }
     report["summary"] = summarize_report(report["results"])
     return report
 
@@ -236,7 +255,8 @@ def compute_diff_summary(
 
 
 def save_mismatch_streams(
-    problem: str,
+    workspace: str,
+    project: str,
     model_id: str,
     baseline_iteration: int,
     candidate_iteration: int,
@@ -246,12 +266,13 @@ def save_mismatch_streams(
 ) -> Path:
     streams_output_dir.mkdir(parents=True, exist_ok=True)
     file_name = (
-        f"{slugify(problem)}__{slugify(model_id)}"
+        f"{slugify(workspace)}__{slugify(project)}__{slugify(model_id)}"
         f"__iter-{baseline_iteration}-vs-{candidate_iteration}.log"
     )
     output_path = streams_output_dir / file_name
     with output_path.open("w", encoding="utf-8") as f:
-        f.write(f"problem: {problem}\n")
+        f.write(f"workspace: {workspace}\n")
+        f.write(f"project: {project}\n")
         f.write(f"model_id: {model_id}\n")
         f.write(f"baseline_iteration: {baseline_iteration}\n")
         f.write(f"candidate_iteration: {candidate_iteration}\n\n")
@@ -271,62 +292,34 @@ def slugify(value: str) -> str:
     return slug.strip("-") or "value"
 
 
-def summarize_report(results: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
+def summarize_report(
+    results: Dict[str, Dict[str, Dict[str, Any]]],
+) -> Dict[str, Any]:
     total_models = 0
     flaky_models = 0
-    flaky_by_problem: Dict[str, List[str]] = defaultdict(list)
+    flaky_by_workspace: Dict[str, Dict[str, List[str]]] = defaultdict(
+        lambda: defaultdict(list)
+    )
 
-    for problem, models in results.items():
-        for model_id, model_report in models.items():
-            total_models += 1
-            if model_report["status"] == "flaky":
-                flaky_models += 1
-                flaky_by_problem[problem].append(model_id)
+    for workspace, projects in results.items():
+        for project, models in projects.items():
+            for model_id, model_report in models.items():
+                total_models += 1
+                if model_report["status"] == "flaky":
+                    flaky_models += 1
+                    flaky_by_workspace[workspace][project].append(model_id)
 
     return {
         "total_models": total_models,
         "flaky_models": flaky_models,
         "stable_models": total_models - flaky_models,
-        "flaky_by_problem": dict(flaky_by_problem),
+        "flaky_by_workspace": {
+            ws: dict(projects) for ws, projects in flaky_by_workspace.items()
+        },
     }
 
 
 ROBOFLOW_SEARCH_PAGE_SIZE = 25
-
-
-def fetch_test_image_paths(
-    *,
-    workspace: Optional[str],
-    project: Optional[str],
-    num_test_images: Optional[int],
-    api_key: Optional[str],
-    roboflow_images_cache_dir: Path,
-    use_roboflow_image_cache: bool,
-) -> List[Path]:
-    """Fetch test images from Roboflow project search + download."""
-    any_ws = workspace is not None and str(workspace).strip() != ""
-    any_proj = project is not None and str(project).strip() != ""
-    any_num = num_test_images is not None
-    partial_roboflow = int(any_ws) + int(any_proj) + int(any_num)
-    if partial_roboflow != 3:
-        raise click.BadParameter(
-            "Provide all of --workspace, --project, and --num-test-images."
-        )
-    if not api_key:
-        raise click.BadParameter(
-            "ROBOFLOW_API_KEY (or --api-key) is required when fetching "
-            "images from the Roboflow API."
-        )
-    if num_test_images is None or num_test_images < 1:
-        raise click.BadParameter("--num-test-images must be >= 1.")
-    return fetch_roboflow_test_images(
-        workspace=workspace.strip(),
-        project=project.strip(),
-        num_images=num_test_images,
-        api_key=api_key,
-        cache_dir=roboflow_images_cache_dir,
-        use_cache=use_roboflow_image_cache,
-    )
 
 
 def fetch_roboflow_test_images(
@@ -422,25 +415,40 @@ def fetch_roboflow_test_images(
     return paths
 
 
-def load_models_config(path: Path) -> Dict[str, List[str]]:
+def load_models_config(path: Path) -> Dict[str, Dict[str, List[str]]]:
+    """Load JSON: workspace slug -> project slug -> list of model_id strings."""
     with path.open("r", encoding="utf-8") as f:
         payload = json.load(f)
     if not isinstance(payload, dict):
         raise ValueError("models-config must be a JSON object.")
-    normalized_payload: Dict[str, List[str]] = {}
-    for problem, model_ids in payload.items():
-        if problem not in SUPPORTED_PROBLEMS:
+    if not payload:
+        raise ValueError("models-config must contain at least one workspace entry.")
+    normalized: Dict[str, Dict[str, List[str]]] = {}
+    for workspace, projects in payload.items():
+        if not isinstance(workspace, str) or not workspace.strip():
             raise ValueError(
-                f"Unsupported problem '{problem}'. Supported: {sorted(SUPPORTED_PROBLEMS)}"
+                "Each top-level key must be a non-empty Roboflow workspace slug."
             )
-        if not isinstance(model_ids, list) or not all(
-            isinstance(model_id, str) and model_id for model_id in model_ids
-        ):
+        if not isinstance(projects, dict) or not projects:
             raise ValueError(
-                f"Problem '{problem}' must map to a non-empty list of model_id strings."
+                f"Workspace '{workspace}' must map to a non-empty object of projects."
             )
-        normalized_payload[problem] = model_ids
-    return normalized_payload
+        ws_key = workspace.strip()
+        normalized[ws_key] = {}
+        for project, model_ids in projects.items():
+            if not isinstance(project, str) or not project.strip():
+                raise ValueError(
+                    f"Workspace '{workspace}': each project key must be a non-empty slug."
+                )
+            if not isinstance(model_ids, list) or not all(
+                isinstance(model_id, str) and model_id for model_id in model_ids
+            ):
+                raise ValueError(
+                    f"Workspace '{workspace}', project '{project}' must map to a "
+                    "non-empty list of model_id strings."
+                )
+            normalized[ws_key][project.strip()] = model_ids
+    return normalized
 
 
 @click.command(
@@ -454,9 +462,8 @@ def load_models_config(path: Path) -> Dict[str, List[str]]:
     required=True,
     type=click.Path(path_type=Path, exists=True, file_okay=True, dir_okay=False),
     help=(
-        "Path to JSON mapping problem -> list[model_id]. Supported problems: "
-        "object-detection, instance-segmentation, "
-        "single-label-classification, multi-label-classification."
+        "Path to JSON: workspace slug -> project slug -> list[model_id]. "
+        "Test images are fetched per workspace/project from the API."
     ),
 )
 @click.option(
@@ -508,22 +515,10 @@ def load_models_config(path: Path) -> Dict[str, List[str]]:
     help="How many different-image paths to keep in sample_different_images.",
 )
 @click.option(
-    "--workspace",
-    type=str,
-    default=None,
-    help="Roboflow workspace slug (use with --project and --num-test-images).",
-)
-@click.option(
-    "--project",
-    type=str,
-    default=None,
-    help="Roboflow project slug (use with --workspace and --num-test-images).",
-)
-@click.option(
     "--num-test-images",
     type=int,
-    default=None,
-    help="How many test-split images to fetch from the Roboflow search API.",
+    required=True,
+    help="How many test-split images to fetch per project from the Roboflow search API.",
 )
 @click.option(
     "--roboflow-images-cache-dir",
@@ -547,9 +542,7 @@ def main(
     report_json: Optional[Path],
     streams_output_dir: Path,
     sample_different_images_limit: int,
-    workspace: Optional[str],
-    project: Optional[str],
-    num_test_images: Optional[int],
+    num_test_images: int,
     roboflow_images_cache_dir: Path,
     no_roboflow_image_cache: bool,
 ) -> None:
@@ -557,27 +550,26 @@ def main(
         raise click.BadParameter("iterations must be >= 2 to detect differences.")
     if sample_different_images_limit < 0:
         raise click.BadParameter("sample-different-images-limit must be >= 0.")
+    if num_test_images < 1:
+        raise click.BadParameter("--num-test-images must be >= 1.")
+    if not api_key:
+        raise click.BadParameter(
+            "ROBOFLOW_API_KEY (or --api-key) is required for image search and model access."
+        )
 
-    image_paths = fetch_test_image_paths(
-        workspace=workspace,
-        project=project,
-        num_test_images=num_test_images,
-        api_key=api_key,
-        roboflow_images_cache_dir=roboflow_images_cache_dir,
-        use_roboflow_image_cache=not no_roboflow_image_cache,
-    )
-    LOGGER.info("Using %s image file(s) for inference.", len(image_paths))
-    grouped_models = load_models_config(models_config)
+    models_by_workspace = load_models_config(models_config)
 
     report = run_flakiness_check(
-        image_paths=image_paths,
-        grouped_models=grouped_models,
+        models_by_workspace=models_by_workspace,
         iterations=iterations,
         cache_dir=inference_home,
         api_key=api_key,
         float_precision=float_precision,
         streams_output_dir=streams_output_dir,
         sample_different_images_limit=sample_different_images_limit,
+        num_test_images=num_test_images,
+        roboflow_images_cache_dir=roboflow_images_cache_dir,
+        use_roboflow_image_cache=not no_roboflow_image_cache,
     )
 
     LOGGER.info("")
