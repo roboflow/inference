@@ -1,6 +1,7 @@
+import heapq
 import time
 from dataclasses import asdict, dataclass
-from typing import Tuple, Any, Dict, List, Literal, Optional, Type, Union
+from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
 
 import numpy as np
 import supervision as sv
@@ -27,7 +28,6 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
-import heapq
 
 OUTPUT_KEY = "event_log"
 DETECTIONS_OUTPUT_KEY = "detections"
@@ -120,6 +120,7 @@ class BlockManifest(WorkflowBlockManifest):
         default=None,
         description="Deprecated, no longer used. Absolute timestamps are now taken directly from frame_timestamp metadata (or time.time() as fallback).",
         examples=[1726570875.0],
+        deprecated=True,
     )
 
     fallback_fps: Union[float, WorkflowParameterSelector(kind=[FLOAT_KIND])] = Field(
@@ -200,7 +201,6 @@ class DetectionEventLogBlockV1(WorkflowBlock):
     def _get_relative_time(
         self,
         video_id: str,
-        current_frame: int,
         metadata: VideoMetadata,
         fallback_fps: float,
     ) -> float:
@@ -208,8 +208,8 @@ class DetectionEventLogBlockV1(WorkflowBlock):
 
         Uses frame_timestamp from metadata when available for accurate timing,
         even when inference doesn't run at the camera's reported FPS (e.g. due
-        to dropped frames or processing lag). Falls back to internal frame
-        counter / FPS when frame_timestamp is not available.
+        to dropped frames or processing lag). Falls back to metadata.frame_number
+        / FPS when frame_timestamp is not available.
         """
         if metadata.frame_timestamp is not None:
             frame_ts = metadata.frame_timestamp.timestamp()
@@ -217,9 +217,11 @@ class DetectionEventLogBlockV1(WorkflowBlock):
                 self._first_frame_timestamps[video_id] = frame_ts
             return frame_ts - self._first_frame_timestamps[video_id]
 
-        # Fallback: use internal frame counter and FPS
+        # Fallback: use actual video frame number (not internal counter) to
+        # correctly account for dropped/skipped frames during inference.
+        # frame_number=0 is a sentinel for static/non-video images, treat as first frame.
         fps = metadata.fps if metadata.fps and metadata.fps != 0 else fallback_fps
-        return (current_frame - 1) / fps
+        return max(metadata.frame_number - 1, 0) / fps
 
     def _evict_oldest_video(self) -> None:
         """Remove the oldest video stream data when MAX_VIDEOS is exceeded."""
@@ -314,9 +316,7 @@ class DetectionEventLogBlockV1(WorkflowBlock):
         current_frame = self._frame_count.get(video_id, 0) + 1
         self._frame_count[video_id] = current_frame
 
-        current_time = self._get_relative_time(
-            video_id, current_frame, metadata, fallback_fps
-        )
+        current_time = self._get_relative_time(video_id, metadata, fallback_fps)
 
         # Use frame_timestamp for absolute time when available (reflects actual capture
         # time, not inference processing time). Falls back to time.time().
