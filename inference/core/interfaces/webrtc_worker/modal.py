@@ -238,6 +238,7 @@ if modal is not None:
                 send_answer=send_answer,
                 model_manager=model_manager,
                 heartbeat_callback=watchdog.heartbeat,
+                connection_established_callback=watchdog.mark_connection_established,
             )
         )
 
@@ -424,10 +425,8 @@ if modal is not None:
                 "WebRTC session stopped at %s",
                 _exec_session_stopped.isoformat(),
             )
-            if watchdog.total_heartbeats == 0:
-                raise Exception(
-                    "WebRTC worker was terminated before processing a single frame"
-                )
+
+            no_frames_processed = watchdog.total_heartbeats == 0
 
             # requested plan is guaranteed to be set due to validation in spawn_rtc_peer_connection_modal
             webrtc_plan = webrtc_request.requested_plan
@@ -456,6 +455,18 @@ if modal is not None:
             )
             usage_collector.push_usage_payloads()
             logger.info("Function completed")
+
+            if no_frames_processed:
+                if watchdog.connection_established:
+                    raise Exception(
+                        "WebRTC connection was established but no frames were processed. "
+                        "This typically indicates an invalid RTSP stream URL or corrupted video file."
+                    )
+                else:
+                    raise Exception(
+                        "WebRTC connection could not be established. "
+                        "No frames were processed."
+                    )
 
         @modal.exit()
         def stop(self):
