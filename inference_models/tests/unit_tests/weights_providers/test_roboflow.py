@@ -1,6 +1,6 @@
 import json
 import urllib.parse
-from typing import Optional
+from typing import Optional, Dict, Union, List
 from unittest.mock import patch
 
 import pytest
@@ -41,6 +41,9 @@ from inference_models.weights_providers.roboflow import (
     parse_model_package_metadata,
     roboflow_license_server_proxy_url_builder,
 )
+
+DUMMY_PROXY_PREFIX = "http://license.local/proxy?url="
+
 
 
 def test_as_version_when_valid_version_provided() -> None:
@@ -1672,6 +1675,427 @@ def test_params_from_url_and_query_are_both_preserved_without_proxy():
     assert params["modelId"] == ["my-model"]
 
 
+def test_parse_mediapipe_model_package_when_package_is_valid_with_proxy_builder() -> None:
+    # given
+    metadata = RoboflowModelPackageV1(
+        type="external-model-package-v1",
+        packageId="my-package-id",
+        packageManifest={
+            "type": "mediapipe-model-package-v1",
+            "backendType": "mediapipe",
+        },
+        packageFiles=[
+            RoboflowModelPackageFile(
+                fileHandle="some", downloadUrl="https://dummy.com", md5Hash="some"
+            )
+        ],
+        trustedSource=True,
+    )
+
+    # when
+    result = parse_model_package_metadata(
+        metadata=metadata,
+        proxy_url_builder=_dummy_proxy_url_builder,
+    )
+
+    # then
+    assert result == ModelPackageMetadata(
+        package_id="my-package-id",
+        backend=BackendType.MEDIAPIPE,
+        package_artefacts=[
+            FileDownloadSpecs(
+                download_url=f"{DUMMY_PROXY_PREFIX}https://dummy.com",
+                file_handle="some",
+                md5_hash="some",
+            ),
+        ],
+        quantization=Quantization.UNKNOWN,
+        trusted_source=True,
+    )
+
+
+def test_parse_ultralytics_model_package_with_proxy_builder() -> None:
+    # given
+    metadata = RoboflowModelPackageV1(
+        type="external-model-package-v1",
+        packageId="my-package-id",
+        packageManifest={
+            "type": "ultralytics-model-package-v1",
+            "backendType": "ultralytics",
+        },
+        packageFiles=[
+            RoboflowModelPackageFile(
+                fileHandle="some", downloadUrl="https://dummy.com", md5Hash="some"
+            )
+        ],
+        trustedSource=False,
+    )
+
+    # when
+    result = parse_model_package_metadata(
+        metadata=metadata,
+        proxy_url_builder=_dummy_proxy_url_builder,
+    )
+
+    # then
+    assert result == ModelPackageMetadata(
+        package_id="my-package-id",
+        backend=BackendType.ULTRALYTICS,
+        package_artefacts=[
+            FileDownloadSpecs(
+                download_url=f"{DUMMY_PROXY_PREFIX}https://dummy.com",
+                file_handle="some",
+                md5_hash="some",
+            ),
+        ],
+        quantization=Quantization.UNKNOWN,
+        trusted_source=False,
+    )
+
+
+def test_parse_hf_model_package_when_valid_input_provided_with_proxy_builder() -> None:
+    # given
+    metadata = RoboflowModelPackageV1(
+        type="external-model-package-v1",
+        packageId="my-package-id",
+        packageManifest={
+            "type": "hf-model-package-v1",
+            "backendType": "hf",
+            "quantization": "fp32",
+        },
+        packageFiles=[
+            RoboflowModelPackageFile(
+                fileHandle="some", downloadUrl="https://dummy.com", md5Hash="some"
+            )
+        ],
+        trustedSource=True,
+    )
+
+    # when
+    result = parse_model_package_metadata(
+        metadata=metadata,
+        proxy_url_builder=_dummy_proxy_url_builder,
+    )
+
+    # then
+    assert result == ModelPackageMetadata(
+        package_id="my-package-id",
+        backend=BackendType.HF,
+        package_artefacts=[
+            FileDownloadSpecs(
+                download_url=f"{DUMMY_PROXY_PREFIX}https://dummy.com",
+                file_handle="some",
+                md5_hash="some",
+            ),
+        ],
+        quantization=Quantization.FP32,
+        trusted_source=True,
+    )
+
+
+def test_parse_torch_model_package_when_valid_manifest_provided_with_proxy_builder() -> None:
+    # given
+    metadata = RoboflowModelPackageV1(
+        type="external-model-package-v1",
+        packageId="my-package-id",
+        packageManifest={
+            "type": "torch-model-package-v1",
+            "backendType": "torch",
+            "quantization": "fp32",
+            "dynamicBatchSize": True,
+        },
+        packageFiles=[
+            RoboflowModelPackageFile(
+                fileHandle="some", downloadUrl="https://dummy.com", md5Hash="some"
+            )
+        ],
+        trustedSource=True,
+    )
+
+    # when
+    result = parse_model_package_metadata(
+        metadata=metadata,
+        proxy_url_builder=_dummy_proxy_url_builder,
+    )
+
+    # then
+    assert result == ModelPackageMetadata(
+        package_id="my-package-id",
+        backend=BackendType.TORCH,
+        quantization=Quantization.FP32,
+        dynamic_batch_size_supported=True,
+        static_batch_size=None,
+        package_artefacts=[
+            FileDownloadSpecs(
+                download_url=f"{DUMMY_PROXY_PREFIX}https://dummy.com",
+                file_handle="some",
+                md5_hash="some",
+            ),
+        ],
+        trusted_source=True,
+    )
+
+
+def test_parse_onnx_model_package_when_valid_manifest_provided_with_proxy_builder() -> None:
+    # given
+    metadata = RoboflowModelPackageV1(
+        type="external-model-package-v1",
+        packageId="my-package-id",
+        packageManifest={
+            "type": "onnx-model-package-v1",
+            "backendType": "onnx",
+            "quantization": "fp32",
+            "dynamicBatchSize": True,
+            "opset": 19,
+            "incompatibleProviders": ["TRTExecutionProvider"],
+        },
+        packageFiles=[
+            RoboflowModelPackageFile(
+                fileHandle="some", downloadUrl="https://dummy.com", md5Hash="some"
+            )
+        ],
+        trustedSource=True,
+    )
+
+    # when
+    result = parse_model_package_metadata(
+        metadata=metadata,
+        proxy_url_builder=_dummy_proxy_url_builder,
+    )
+
+    # then
+    assert result == ModelPackageMetadata(
+        package_id=metadata.package_id,
+        backend=BackendType.ONNX,
+        quantization=Quantization.FP32,
+        dynamic_batch_size_supported=True,
+        static_batch_size=None,
+        package_artefacts=[
+            FileDownloadSpecs(
+                download_url=f"{DUMMY_PROXY_PREFIX}https://dummy.com",
+                file_handle="some",
+                md5_hash="some",
+            ),
+        ],
+        onnx_package_details=ONNXPackageDetails(
+            opset=19,
+            incompatible_providers=["TRTExecutionProvider"],
+        ),
+        trusted_source=True,
+    )
+
+
+def test_parse_trt_model_package_with_jetson_env_and_proxy_builder() -> None:
+    # given
+    metadata = RoboflowModelPackageV1(
+        type="external-model-package-v1",
+        packageId="my-package-id",
+        packageManifest={
+            "type": "trt-model-package-v1",
+            "backendType": "trt",
+            "dynamicBatchSize": True,
+            "static_batch_size": None,
+            "minBatchSize": 1,
+            "optBatchSize": 8,
+            "maxBatchSize": 16,
+            "quantization": "fp16",
+            "cudaDeviceType": "orin",
+            "cudaDeviceCC": "8.7",
+            "cudaVersion": "12.6",
+            "trtVersion": "10.3.0.17",
+            "sameCCCompatible": False,
+            "trtForwardCompatible": False,
+            "trtLeanRuntimeExcluded": False,
+            "machineType": "jetson",
+            "machineSpecs": {
+                "type": "jetson-machine-specs-v1",
+                "l4tVersion": "36.4.3",
+                "deviceName": "jetson-orin-nx",
+                "driverVersion": "540.0.1",
+            },
+        },
+        packageFiles=[
+            RoboflowModelPackageFile(
+                fileHandle="some", downloadUrl="https://dummy.com", md5Hash="some"
+            )
+        ],
+        trustedSource=True,
+    )
+
+    # when
+    result = parse_model_package_metadata(
+        metadata=metadata,
+        proxy_url_builder=_dummy_proxy_url_builder,
+    )
+
+    # then
+    environment_requirements = JetsonEnvironmentRequirements(
+        cuda_device_cc=Version("8.7"),
+        cuda_device_name="orin",
+        l4t_version=Version("36.4.3"),
+        jetson_product_name="jetson-orin-nx",
+        cuda_version=Version("12.6"),
+        trt_version=Version("10.3.0.17"),
+        driver_version=Version("540.0.1"),
+    )
+    trt_package_details = TRTPackageDetails(
+        min_dynamic_batch_size=1,
+        opt_dynamic_batch_size=8,
+        max_dynamic_batch_size=16,
+        same_cc_compatible=False,
+        trt_forward_compatible=False,
+        trt_lean_runtime_excluded=False,
+    )
+    assert result == ModelPackageMetadata(
+        package_id="my-package-id",
+        backend=BackendType.TRT,
+        quantization=Quantization.FP16,
+        dynamic_batch_size_supported=True,
+        static_batch_size=None,
+        trt_package_details=trt_package_details,
+        package_artefacts=[
+            FileDownloadSpecs(
+                download_url=f"{DUMMY_PROXY_PREFIX}https://dummy.com",
+                file_handle="some",
+                md5_hash="some",
+            ),
+        ],
+        environment_requirements=environment_requirements,
+        trusted_source=True,
+    )
+
+
+def test_parse_trt_model_package_with_server_env_and_proxy_builder() -> None:
+    # given
+    metadata = RoboflowModelPackageV1(
+        type="external-model-package-v1",
+        packageId="my-package-id",
+        packageManifest={
+            "type": "trt-model-package-v1",
+            "backendType": "trt",
+            "dynamicBatchSize": True,
+            "static_batch_size": None,
+            "minBatchSize": 1,
+            "optBatchSize": 8,
+            "maxBatchSize": 16,
+            "quantization": "fp16",
+            "cudaDeviceType": "orin",
+            "cudaDeviceCC": "8.7",
+            "cudaVersion": "12.6",
+            "trtVersion": "10.3.0.17",
+            "sameCCCompatible": False,
+            "trtForwardCompatible": False,
+            "trtLeanRuntimeExcluded": False,
+            "machineType": "gpu-server",
+            "machineSpecs": {
+                "type": "gpu-server-specs-v1",
+                "osVersion": "ubuntu-20.04",
+                "driverVersion": "540.0.1",
+            },
+        },
+        packageFiles=[
+            RoboflowModelPackageFile(
+                fileHandle="some", downloadUrl="https://dummy.com", md5Hash="some"
+            )
+        ],
+        trustedSource=True,
+    )
+
+    # when
+    result = parse_model_package_metadata(
+        metadata=metadata,
+        proxy_url_builder=_dummy_proxy_url_builder,
+    )
+
+    # then
+    environment_requirements = ServerEnvironmentRequirements(
+        cuda_device_cc=Version("8.7"),
+        cuda_device_name="orin",
+        cuda_version=Version("12.6"),
+        trt_version=Version("10.3.0.17"),
+        driver_version=Version("540.0.1"),
+        os_version="ubuntu-20.04",
+    )
+    trt_package_details = TRTPackageDetails(
+        min_dynamic_batch_size=1,
+        opt_dynamic_batch_size=8,
+        max_dynamic_batch_size=16,
+        same_cc_compatible=False,
+        trt_forward_compatible=False,
+        trt_lean_runtime_excluded=False,
+    )
+    assert result == ModelPackageMetadata(
+        package_id="my-package-id",
+        backend=BackendType.TRT,
+        quantization=Quantization.FP16,
+        dynamic_batch_size_supported=True,
+        static_batch_size=None,
+        trt_package_details=trt_package_details,
+        package_artefacts=[
+            FileDownloadSpecs(
+                download_url=f"{DUMMY_PROXY_PREFIX}https://dummy.com",
+                file_handle="some",
+                md5_hash="some",
+            ),
+        ],
+        environment_requirements=environment_requirements,
+        trusted_source=True,
+    )
+
+
+def test_parse_torch_script_model_package_when_valid_with_proxy_builder() -> None:
+    # given
+    metadata = RoboflowModelPackageV1(
+        type="external-model-package-v1",
+        packageId="my-package-id",
+        packageManifest={
+            "type": "torch-script-model-package-v1",
+            "backendType": "torch-script",
+            "dynamicBatchSize": False,
+            "staticBatchSize": 2,
+            "quantization": "fp32",
+            "supportedDeviceTypes": ["cuda", "cpu", "mps"],
+            "torchVersion": "2.6.0",
+            "torchVisionVersion": "0.22.0",
+        },
+        packageFiles=[
+            RoboflowModelPackageFile(
+                fileHandle="some", downloadUrl="https://dummy.com", md5Hash="some"
+            )
+        ],
+        modelFeatures={"nms_fused": True},
+        trustedSource=True,
+    )
+
+    # when
+    result = parse_model_package_metadata(
+        metadata=metadata,
+        proxy_url_builder=_dummy_proxy_url_builder,
+    )
+
+    # then
+    assert result == ModelPackageMetadata(
+        package_id="my-package-id",
+        backend=BackendType.TORCH_SCRIPT,
+        dynamic_batch_size_supported=False,
+        static_batch_size=2,
+        package_artefacts=[
+            FileDownloadSpecs(
+                download_url=f"{DUMMY_PROXY_PREFIX}https://dummy.com",
+                file_handle="some",
+                md5_hash="some",
+            ),
+        ],
+        quantization=Quantization.FP32,
+        trusted_source=True,
+        model_features={"nms_fused": True},
+        torch_script_package_details=TorchScriptPackageDetails(
+            supported_device_types={"cuda", "cpu", "mps"},
+            torch_version=Version("2.6.0"),
+            torch_vision_version=Version("0.22.0"),
+        ),
+    )
+
 def _parse_proxy_result(result: str) -> urllib.parse.ParseResult:
     """Parse the outer proxy URL and return ParseResult."""
     return urllib.parse.urlparse(result)
@@ -1691,3 +2115,9 @@ def _extract_proxied_url(result: str) -> str:
     assert "url" in proxy_params, f"Expected 'url' query param in: {result}"
     assert len(proxy_params["url"]) == 1, f"Expected single 'url' value in: {result}"
     return proxy_params["url"][0]
+
+
+def _dummy_proxy_url_builder(
+    url: str, query: Optional[Dict[str, Union[str, List[str]]]]
+) -> str:
+    return f"{DUMMY_PROXY_PREFIX}{url}"
