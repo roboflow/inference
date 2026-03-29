@@ -17,11 +17,11 @@ from inference.core.cache.air_gapped import (
     get_task_type_to_block_mapping,
     scan_cached_models,
 )
+from inference.core.env import BUILDER_ORIGIN, MODEL_CACHE_DIR
+from inference.core.interfaces.http.error_handlers import with_route_exceptions_async
 from inference.core.workflows.execution_engine.introspection.blocks_loader import (
     load_workflow_blocks,
 )
-from inference.core.env import BUILDER_ORIGIN, MODEL_CACHE_DIR
-from inference.core.interfaces.http.error_handlers import with_route_exceptions_async
 
 logger = logging.getLogger(__name__)
 
