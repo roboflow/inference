@@ -1,5 +1,13 @@
 # Changelog
 
+## `0.24.0`
+
+### Added
+
+- Support for Roboflow License Server proxy in Roboflow weights provider 
+
+---
+
 ## `0.23.0`
 
 ### Added

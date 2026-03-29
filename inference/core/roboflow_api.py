@@ -1086,7 +1086,7 @@ def stream_url_to_cache(
         try:
             download_files_to_directory(
                 target_dir=cache_dir,
-                files_specs=[(filename, url, md5_hash)],
+                files_specs=[(filename, wrap_url(url), md5_hash)],
                 verbose=True,
                 download_files_without_hash=True,
                 verify_hash_while_download=False,
