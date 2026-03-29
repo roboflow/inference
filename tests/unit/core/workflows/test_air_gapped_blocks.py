@@ -5,6 +5,8 @@ and Roboflow model blocks declare compatible task types.
 
 import pytest
 
+from inference.core.workflows.prototypes.block import AirGappedAvailability
+
 
 # --- Part 1: Air-gapped availability tests ---
 
@@ -40,6 +42,8 @@ _FOUNDATION_MODULES = [
     f"{_FOUNDATION_BASE}.lmm_classifier.v1",
     f"{_FOUNDATION_BASE}.llama_vision.v1",
     f"{_FOUNDATION_BASE}.segment_anything3_3d.v1",
+    f"{_FOUNDATION_BASE}.cog_vlm.v1",
+    f"{_FOUNDATION_BASE}.seg_preview.v1",
 ]
 
 # Sink blocks
@@ -59,20 +63,12 @@ ALL_AIR_GAPPED_MODULES = _FOUNDATION_MODULES + _SINK_MODULES
 
 
 @pytest.mark.parametrize("module_path", ALL_AIR_GAPPED_MODULES)
-def test_air_gapped_availability_exists(module_path):
-    manifest = _import_manifest(module_path)
-    assert hasattr(manifest, "get_air_gapped_availability"), (
-        f"{module_path}.BlockManifest missing get_air_gapped_availability classmethod"
-    )
-
-
-@pytest.mark.parametrize("module_path", ALL_AIR_GAPPED_MODULES)
 def test_air_gapped_availability_returns_correct_value(module_path):
     manifest = _import_manifest(module_path)
     result = manifest.get_air_gapped_availability()
-    assert isinstance(result, dict)
-    assert result["available"] is False
-    assert result["reason"] == "requires_internet"
+    assert isinstance(result, AirGappedAvailability)
+    assert result.available is False
+    assert result.reason == "requires_internet"
 
 
 # --- Part 2: Compatible task types tests ---
@@ -90,19 +86,8 @@ TASK_TYPE_TEST_CASES = [
     (f"{_ROBOFLOW_BASE}.multi_class_classification.v2", ["classification"]),
     (f"{_ROBOFLOW_BASE}.multi_label_classification.v1", ["multi-label-classification"]),
     (f"{_ROBOFLOW_BASE}.multi_label_classification.v2", ["multi-label-classification"]),
+    (f"{_ROBOFLOW_BASE}.semantic_segmentation.v1", ["semantic-segmentation"]),
 ]
-
-
-@pytest.mark.parametrize(
-    "module_path,expected_types",
-    TASK_TYPE_TEST_CASES,
-    ids=[t[0].split(".")[-2] + "_" + t[0].split(".")[-1] for t in TASK_TYPE_TEST_CASES],
-)
-def test_compatible_task_types_exists(module_path, expected_types):
-    manifest = _import_manifest(module_path)
-    assert hasattr(manifest, "get_compatible_task_types"), (
-        f"{module_path}.BlockManifest missing get_compatible_task_types classmethod"
-    )
 
 
 @pytest.mark.parametrize(

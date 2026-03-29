@@ -11,7 +11,6 @@ import os
 import re
 from typing import Any, Dict, List, Optional
 
-from inference.core.cache.model_artifacts import are_all_files_cached, get_cache_dir
 from inference.core.env import MODEL_CACHE_DIR, USE_INFERENCE_MODELS
 from inference.core.roboflow_api import MODEL_TYPE_KEY, PROJECT_TASK_TYPE_KEY
 
