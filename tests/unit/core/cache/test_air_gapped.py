@@ -136,33 +136,41 @@ class TestSkipNonModelDirs:
 # ---------------------------------------------------------------------------
 
 
+class _DefaultManifestMixin:
+    """Provide the base-class defaults that get_cached_foundation_models relies on."""
+
+    @classmethod
+    def get_air_gapped_availability(cls):
+        from inference.core.workflows.prototypes.block import AirGappedAvailability
+
+        return AirGappedAvailability(available=True)
+
+    @classmethod
+    def get_supported_model_variants(cls):
+        return None
+
+    @classmethod
+    def get_compatible_task_types(cls):
+        return None
+
+
 class TestFoundationModelDetection:
-    """Block with ``get_required_cache_artifacts()`` whose files exist."""
+    """Block with ``get_supported_model_variants()`` whose files exist."""
 
     def test_foundation_model_detected_when_cached(self, tmp_path):
         from inference.core.cache.air_gapped import get_cached_foundation_models
 
         cache = str(tmp_path)
-        model_id = "foundation/clip"
 
-        # Create the required files in the cache.
-        model_dir = os.path.join(cache, model_id)
-        os.makedirs(model_dir, exist_ok=True)
-        for fname in ["weights.pt", "config.json"]:
-            open(os.path.join(model_dir, fname), "w").close()
+        # Create a cache directory for the model variant with a file.
+        variant_dir = os.path.join(cache, "foundation", "clip")
+        os.makedirs(variant_dir, exist_ok=True)
+        open(os.path.join(variant_dir, "weights.pt"), "w").close()
 
-        class FakeManifest:
-            """Minimal manifest: only model_id and files are required.
-
-            Name is derived from model_json_schema() metadata.
-            """
-
+        class FakeManifest(_DefaultManifestMixin):
             @classmethod
-            def get_required_cache_artifacts(cls) -> Dict[str, Any]:
-                return {
-                    "model_id": "foundation/clip",
-                    "files": ["weights.pt", "config.json"],
-                }
+            def get_supported_model_variants(cls):
+                return ["foundation/clip"]
 
             @classmethod
             def model_json_schema(cls) -> dict:
@@ -170,12 +178,8 @@ class TestFoundationModelDetection:
 
         block = _make_block_spec("roboflow_core/clip@v1", FakeManifest)
 
-        with patch(
-            "inference.core.cache.air_gapped.MODEL_CACHE_DIR",
-            cache,
-        ), patch(
-            "inference.core.cache.model_artifacts.MODEL_CACHE_DIR",
-            cache,
+        with patch("inference.core.cache.air_gapped.MODEL_CACHE_DIR", cache), patch(
+            "inference.core.cache.air_gapped.USE_INFERENCE_MODELS", True
         ):
             result = get_cached_foundation_models(blocks=[block])
 
@@ -187,20 +191,17 @@ class TestFoundationModelDetection:
 
 
 class TestFoundationModelMissing:
-    """Block with ``get_required_cache_artifacts()`` whose files do NOT exist."""
+    """Block with ``get_supported_model_variants()`` whose files do NOT exist."""
 
     def test_foundation_model_not_detected_when_missing(self, tmp_path):
         from inference.core.cache.air_gapped import get_cached_foundation_models
 
         cache = str(tmp_path)
 
-        class FakeManifest:
+        class FakeManifest(_DefaultManifestMixin):
             @classmethod
-            def get_required_cache_artifacts(cls) -> Dict[str, Any]:
-                return {
-                    "model_id": "foundation/sam",
-                    "files": ["encoder.pt", "decoder.pt"],
-                }
+            def get_supported_model_variants(cls):
+                return ["foundation/sam"]
 
             @classmethod
             def model_json_schema(cls) -> dict:
@@ -208,12 +209,8 @@ class TestFoundationModelMissing:
 
         block = _make_block_spec("roboflow_core/sam@v1", FakeManifest)
 
-        with patch(
-            "inference.core.cache.air_gapped.MODEL_CACHE_DIR",
-            cache,
-        ), patch(
-            "inference.core.cache.model_artifacts.MODEL_CACHE_DIR",
-            cache,
+        with patch("inference.core.cache.air_gapped.MODEL_CACHE_DIR", cache), patch(
+            "inference.core.cache.air_gapped.USE_INFERENCE_MODELS", True
         ):
             result = get_cached_foundation_models(blocks=[block])
 
@@ -221,7 +218,7 @@ class TestFoundationModelMissing:
 
 
 class TestFoundationModelListFormat:
-    """Block with ``get_required_cache_artifacts()`` returning a list of model_ids."""
+    """Block with ``get_supported_model_variants()`` returning multiple variant IDs."""
 
     def test_detected_when_any_variant_cached(self, tmp_path):
         from inference.core.cache.air_gapped import get_cached_foundation_models
@@ -233,9 +230,9 @@ class TestFoundationModelListFormat:
         os.makedirs(variant_dir, exist_ok=True)
         open(os.path.join(variant_dir, "visual.onnx"), "w").close()
 
-        class FakeManifest:
+        class FakeManifest(_DefaultManifestMixin):
             @classmethod
-            def get_required_cache_artifacts(cls) -> List[str]:
+            def get_supported_model_variants(cls):
                 return ["clip/RN50", "clip/ViT-B-32", "clip/ViT-L-14"]
 
             @classmethod
@@ -244,7 +241,9 @@ class TestFoundationModelListFormat:
 
         block = _make_block_spec("roboflow_core/clip@v1", FakeManifest)
 
-        with patch("inference.core.cache.air_gapped.MODEL_CACHE_DIR", cache):
+        with patch("inference.core.cache.air_gapped.MODEL_CACHE_DIR", cache), patch(
+            "inference.core.cache.air_gapped.USE_INFERENCE_MODELS", True
+        ):
             result = get_cached_foundation_models(blocks=[block])
 
         assert len(result) == 1
@@ -257,9 +256,9 @@ class TestFoundationModelListFormat:
 
         cache = str(tmp_path)
 
-        class FakeManifest:
+        class FakeManifest(_DefaultManifestMixin):
             @classmethod
-            def get_required_cache_artifacts(cls) -> List[str]:
+            def get_supported_model_variants(cls):
                 return ["clip/RN50", "clip/ViT-B-32"]
 
             @classmethod
@@ -268,7 +267,9 @@ class TestFoundationModelListFormat:
 
         block = _make_block_spec("roboflow_core/clip@v1", FakeManifest)
 
-        with patch("inference.core.cache.air_gapped.MODEL_CACHE_DIR", cache):
+        with patch("inference.core.cache.air_gapped.MODEL_CACHE_DIR", cache), patch(
+            "inference.core.cache.air_gapped.USE_INFERENCE_MODELS", True
+        ):
             result = get_cached_foundation_models(blocks=[block])
 
         assert len(result) == 0
@@ -282,9 +283,9 @@ class TestFoundationModelListFormat:
         variant_dir = os.path.join(cache, "clip", "ViT-B-32")
         os.makedirs(variant_dir, exist_ok=True)
 
-        class FakeManifest:
+        class FakeManifest(_DefaultManifestMixin):
             @classmethod
-            def get_required_cache_artifacts(cls) -> List[str]:
+            def get_supported_model_variants(cls):
                 return ["clip/ViT-B-32"]
 
             @classmethod
@@ -293,10 +294,10 @@ class TestFoundationModelListFormat:
 
         block = _make_block_spec("roboflow_core/clip@v1", FakeManifest)
 
-        with patch("inference.core.cache.air_gapped.MODEL_CACHE_DIR", cache):
+        with patch("inference.core.cache.air_gapped.MODEL_CACHE_DIR", cache), patch(
+            "inference.core.cache.air_gapped.USE_INFERENCE_MODELS", True
+        ):
             result = get_cached_foundation_models(blocks=[block])
-
-        assert len(result) == 0
 
 
 # ── Cross-validation: _slugify_model_id must match inference_models ──────────

@@ -13,7 +13,10 @@ from inference.core.workflows.execution_engine.entities.base import OutputDefini
 from inference.core.workflows.execution_engine.introspection.entities import (
     BlockDescription,
 )
-from inference.core.workflows.prototypes.block import WorkflowBlock
+from inference.core.workflows.prototypes.block import (
+    AirGappedAvailability,
+    WorkflowBlock,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -22,6 +25,8 @@ from inference.core.workflows.prototypes.block import WorkflowBlock
 
 
 class _BaseManifest(BaseModel):
+    """Minimal stub with the same interface as WorkflowBlockManifest defaults."""
+
     type: str = "stub"
 
     @classmethod
@@ -44,9 +49,21 @@ class _BaseManifest(BaseModel):
     def describe_outputs(cls) -> List[OutputDefinition]:
         return []
 
+    @classmethod
+    def get_air_gapped_availability(cls) -> AirGappedAvailability:
+        return AirGappedAvailability(available=True)
+
+    @classmethod
+    def get_supported_model_variants(cls) -> Optional[List[str]]:
+        return None
+
+    @classmethod
+    def get_compatible_task_types(cls) -> Optional[List[str]]:
+        return None
+
 
 class PlainBlockManifest(_BaseManifest):
-    """A block with no air-gapped classmethods -- should default to available."""
+    """A block with default air-gapped methods -- should default to available."""
 
     type: str = "test/plain_block@v1"
 
@@ -57,10 +74,9 @@ class CloudOnlyManifest(_BaseManifest):
     type: str = "test/cloud_only@v1"
 
 
-# Attach the classmethod manually to avoid Pydantic treating it as a validator.
 @classmethod  # type: ignore[misc]
-def _cloud_only_air_gapped(cls) -> Dict[str, Any]:
-    return {"available": False, "reason": "requires_internet"}
+def _cloud_only_air_gapped(cls) -> AirGappedAvailability:
+    return AirGappedAvailability(available=False, reason="requires_internet")
 
 
 CloudOnlyManifest.get_air_gapped_availability = _cloud_only_air_gapped
@@ -73,39 +89,36 @@ class FoundationModelManifest(_BaseManifest):
 
 
 @classmethod  # type: ignore[misc]
-def _foundation_cache_artifacts(cls) -> Dict[str, Any]:
-    return {
-        "model_id": "yolov8n-640",
-        "files": ["weights.pt", "config.json"],
-    }
+def _foundation_model_variants(cls) -> Optional[List[str]]:
+    return ["yolov8n-640"]
 
 
 @classmethod  # type: ignore[misc]
-def _foundation_task_types(cls) -> List[str]:
+def _foundation_task_types(cls) -> Optional[List[str]]:
     return ["object-detection", "instance-segmentation"]
 
 
-FoundationModelManifest.get_required_cache_artifacts = _foundation_cache_artifacts
+FoundationModelManifest.get_supported_model_variants = _foundation_model_variants
 FoundationModelManifest.get_compatible_task_types = _foundation_task_types
 
 
 class ListFormatFoundationManifest(_BaseManifest):
-    """Simulates a foundation model block with list-format cache artifacts."""
+    """Simulates a foundation model block with multiple model variant IDs."""
 
     type: str = "test/list_foundation@v1"
 
 
 @classmethod  # type: ignore[misc]
-def _list_cache_artifacts(cls) -> List[str]:
+def _list_model_variants(cls) -> Optional[List[str]]:
     return ["clip/RN50", "clip/ViT-B-32", "clip/ViT-L-14"]
 
 
 @classmethod  # type: ignore[misc]
-def _list_task_types(cls) -> List[str]:
+def _list_task_types(cls) -> Optional[List[str]]:
     return ["embedding"]
 
 
-ListFormatFoundationManifest.get_required_cache_artifacts = _list_cache_artifacts
+ListFormatFoundationManifest.get_supported_model_variants = _list_model_variants
 ListFormatFoundationManifest.get_compatible_task_types = _list_task_types
 
 
@@ -195,7 +208,7 @@ class TestGetAirGappedInfoForBlock:
         )
 
         info = _get_air_gapped_info_for_block(PlainBlockManifest)
-        assert info["available"] is True
+        assert info.available is True
 
     def test_cloud_only_block_requires_internet(self):
         from inference.core.interfaces.http.handlers.workflows import (
@@ -203,8 +216,8 @@ class TestGetAirGappedInfoForBlock:
         )
 
         info = _get_air_gapped_info_for_block(CloudOnlyManifest)
-        assert info["available"] is False
-        assert info["reason"] == "requires_internet"
+        assert info.available is False
+        assert info.reason == "requires_internet"
 
     def test_local_network_block_is_available(self):
         from inference.core.interfaces.http.handlers.workflows import (
@@ -212,10 +225,10 @@ class TestGetAirGappedInfoForBlock:
         )
 
         info = _get_air_gapped_info_for_block(LocalNetworkManifest)
-        assert info["available"] is True
+        assert info.available is True
 
     @patch(
-        "inference.core.interfaces.http.handlers.workflows.is_block_cached",
+        "inference.core.interfaces.http.handlers.workflows.has_cached_model_variant",
         return_value=True,
     )
     def test_foundation_model_cached(self, mock_cache):
@@ -224,13 +237,13 @@ class TestGetAirGappedInfoForBlock:
         )
 
         info = _get_air_gapped_info_for_block(FoundationModelManifest)
-        assert info["available"] is True
-        assert info["model_id"] == "yolov8n-640"
-        assert "object-detection" in info["compatible_task_types"]
+        assert info.available is True
+        assert info.model_id == "yolov8n-640"
+        assert "object-detection" in info.compatible_task_types
         mock_cache.assert_called_once()
 
     @patch(
-        "inference.core.interfaces.http.handlers.workflows.is_block_cached",
+        "inference.core.interfaces.http.handlers.workflows.has_cached_model_variant",
         return_value=False,
     )
     def test_foundation_model_not_cached(self, mock_cache):
@@ -239,9 +252,9 @@ class TestGetAirGappedInfoForBlock:
         )
 
         info = _get_air_gapped_info_for_block(FoundationModelManifest)
-        assert info["available"] is False
-        assert info["reason"] == "missing_cache_artifacts"
-        assert info["model_id"] == "yolov8n-640"
+        assert info.available is False
+        assert info.reason == "missing_cache_artifacts"
+        assert info.model_id == "yolov8n-640"
 
 
 class TestEnrichWithAirGappedInfo:
@@ -366,7 +379,7 @@ class TestEnrichWithAirGappedInfo:
         assert result.blocks[0].block_schema == original_schema
 
     @patch(
-        "inference.core.interfaces.http.handlers.workflows.is_block_cached",
+        "inference.core.interfaces.http.handlers.workflows.has_cached_model_variant",
         return_value=True,
     )
     def test_foundation_model_cached_shows_available(self, mock_cache):
@@ -391,7 +404,7 @@ class TestEnrichWithAirGappedInfo:
         assert "object-detection" in info["compatible_task_types"]
 
     @patch(
-        "inference.core.interfaces.http.handlers.workflows.is_block_cached",
+        "inference.core.interfaces.http.handlers.workflows.has_cached_model_variant",
         return_value=False,
     )
     def test_foundation_model_not_cached_shows_unavailable(self, mock_cache):
@@ -415,10 +428,10 @@ class TestEnrichWithAirGappedInfo:
 
 
 class TestListFormatFoundationModel:
-    """Tests for blocks using the new list-format get_required_cache_artifacts."""
+    """Tests for blocks with multiple supported model variants."""
 
     def test_list_format_cached_variant(self, tmp_path):
-        """List-format block with a cached variant directory should be available."""
+        """Block with a cached variant directory should be available."""
         import os
 
         from inference.core.interfaces.http.handlers.workflows import (
@@ -433,15 +446,18 @@ class TestListFormatFoundationModel:
         with patch(
             "inference.core.cache.air_gapped.MODEL_CACHE_DIR",
             cache,
+        ), patch(
+            "inference.core.cache.air_gapped.USE_INFERENCE_MODELS",
+            True,
         ):
             info = _get_air_gapped_info_for_block(ListFormatFoundationManifest)
 
-        assert info["available"] is True
-        assert info["model_id"] == "clip/RN50"
-        assert "embedding" in info["compatible_task_types"]
+        assert info.available is True
+        assert info.model_id == "clip/RN50"
+        assert "embedding" in info.compatible_task_types
 
     def test_list_format_no_cached_variant(self, tmp_path):
-        """List-format block with no cached variants should be unavailable."""
+        """Block with no cached variants should be unavailable."""
         from inference.core.interfaces.http.handlers.workflows import (
             _get_air_gapped_info_for_block,
         )
@@ -451,8 +467,11 @@ class TestListFormatFoundationModel:
         with patch(
             "inference.core.cache.air_gapped.MODEL_CACHE_DIR",
             cache,
+        ), patch(
+            "inference.core.cache.air_gapped.USE_INFERENCE_MODELS",
+            True,
         ):
             info = _get_air_gapped_info_for_block(ListFormatFoundationManifest)
 
-        assert info["available"] is False
-        assert info["reason"] == "missing_cache_artifacts"
+        assert info.available is False
+        assert info.reason == "missing_cache_artifacts"

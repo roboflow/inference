@@ -31,6 +31,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     Selector,
 )
 from inference.core.workflows.prototypes.block import (
+    AirGappedAvailability,
     BlockResult,
     WorkflowBlock,
     WorkflowBlockManifest,
@@ -226,8 +227,8 @@ class BlockManifest(WorkflowBlockManifest):
         return self
 
     @classmethod
-    def get_air_gapped_availability(cls) -> dict:
-        return {"available": False, "reason": "requires_internet"}
+    def get_air_gapped_availability(cls) -> AirGappedAvailability:
+        return AirGappedAvailability(available=False, reason="requires_internet")
 
     @classmethod
     def get_parameters_accepting_batches(cls) -> List[str]:

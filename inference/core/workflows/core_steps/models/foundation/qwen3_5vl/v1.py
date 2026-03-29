@@ -131,7 +131,7 @@ class BlockManifest(WorkflowBlockManifest):
         return ">=1.3.0,<2.0.0"
 
     @classmethod
-    def get_required_cache_artifacts(cls) -> list:
+    def get_supported_model_variants(cls) -> Optional[List[str]]:
         """Return list of model_id variants that can satisfy this block."""
         return ["qwen3_5-0.8b", "qwen3_5-2b"]
 
