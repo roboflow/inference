@@ -79,9 +79,7 @@ def is_model_cached(model_id: str) -> bool:
 
     slug = _slugify_model_id(model_id)
     models_cache_path = os.path.join(MODEL_CACHE_DIR, "models-cache", slug)
-    if os.path.isdir(models_cache_path) and _has_non_hidden_children(
-        models_cache_path
-    ):
+    if os.path.isdir(models_cache_path) and _has_non_hidden_children(models_cache_path):
         return True
 
     return False

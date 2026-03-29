@@ -124,9 +124,9 @@ def enrich_with_air_gapped_info(
         enriched_schema = copy.deepcopy(block.block_schema)
         if "json_schema_extra" not in enriched_schema:
             enriched_schema["json_schema_extra"] = {}
-        enriched_schema["json_schema_extra"]["air_gapped_info"] = (
-            air_gapped_info.to_dict()
-        )
+        enriched_schema["json_schema_extra"][
+            "air_gapped_info"
+        ] = air_gapped_info.to_dict()
         enriched_blocks.append(
             block.model_copy(update={"block_schema": enriched_schema})
         )
