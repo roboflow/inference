@@ -165,10 +165,14 @@ def _get_air_gapped_info_for_block(
     model_variants = manifest_cls.get_supported_model_variants()
     if model_variants is not None:
         cached = has_cached_model_variant(model_variants)
+        # Use the first variant as a representative identifier for the UI.
+        # The list is ordered by convention (default/primary variant first),
+        # and individual variant selection happens at workflow-execution time.
+        representative_id = model_variants[0] if model_variants else None
         return BlockAirGappedInfo(
             available=cached,
             reason=None if cached else "missing_cache_artifacts",
-            model_id=model_variants[0] if model_variants else None,
+            model_id=representative_id,
             compatible_task_types=task_types,
         )
 
