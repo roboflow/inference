@@ -49,6 +49,7 @@ from inference.core.telemetry import (
     start_span,
 )
 
+
 class ModelManager:
     """Model managers keep track of a dictionary of Model objects and is responsible for passing requests to the right model using the infer method."""
 
@@ -612,7 +613,9 @@ class ModelManager:
                 input_width=getattr(model, "img_size_w", None),
                 input_height=getattr(model, "img_size_h", None),
                 vram_bytes=getattr(model, "_vram_bytes", None),
-                request_aliases=sorted(self._model_request_aliases.get(model_id, set())),
+                request_aliases=sorted(
+                    self._model_request_aliases.get(model_id, set())
+                ),
                 request_paths=sorted(self._model_request_paths.get(model_id, set())),
             )
             for model_id, model in self._models.items()

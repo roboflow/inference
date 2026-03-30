@@ -112,9 +112,7 @@ class WithFixedSizeCache(ModelManagerDecorator):
                         MEMORY_FREE_THRESHOLD,
                     )
                     break
-                eviction_reason = (
-                    "cache_full" if cache_full else "memory_pressure"
-                )
+                eviction_reason = "cache_full" if cache_full else "memory_pressure"
                 evicted_count = 0
                 skipped_pinned = []
                 while evicted_count < 3 and self._key_queue:
@@ -148,7 +146,9 @@ class WithFixedSizeCache(ModelManagerDecorator):
                     break
                 gc.collect()
                 cache_full = len(self) >= self.max_size
-                memory_pressure = MEMORY_FREE_THRESHOLD and self.memory_pressure_detected()
+                memory_pressure = (
+                    MEMORY_FREE_THRESHOLD and self.memory_pressure_detected()
+                )
             logger.debug(f"Marking new model {queue_id} as most recently used.")
             self._key_queue.append(queue_id)
         try:
