@@ -85,6 +85,10 @@ class BlockManifest(WorkflowBlockManifest):
     model_id: Union[Selector(kind=[ROBOFLOW_MODEL_ID_KIND]), str] = RoboflowModelField
 
     @classmethod
+    def get_compatible_task_types(cls) -> Optional[List[str]]:
+        return ["semantic-segmentation"]
+
+    @classmethod
     def get_parameters_accepting_batches(cls) -> List[str]:
         return ["images"]
 

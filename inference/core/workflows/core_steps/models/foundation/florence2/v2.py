@@ -22,6 +22,14 @@ from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlock
 
 
 class V2BlockManifest(BaseManifest):
+    @classmethod
+    def get_supported_model_variants(cls) -> Optional[List[str]]:
+        """Return list of model_id variants that can satisfy this block."""
+        return [
+            "florence-pretrains/3",
+            "florence-pretrains/4",
+        ]
+
     type: Literal["roboflow_core/florence_2@v2"]
     model_id: Union[WorkflowParameterSelector(kind=[ROBOFLOW_MODEL_ID_KIND]), str] = (
         Field(
