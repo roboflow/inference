@@ -1,5 +1,6 @@
 import time
 from contextlib import contextmanager
+from contextvars import ContextVar
 from threading import Lock
 from typing import Dict, Generator, List, Optional, Tuple, Union
 
@@ -46,6 +47,11 @@ from inference.core.telemetry import (
     record_model_unloaded,
     set_span_attribute,
     start_span,
+)
+
+# Set by HTTP middleware so add_model can auto-record the request path
+current_request_path: ContextVar[Optional[str]] = ContextVar(
+    "current_request_path", default=None
 )
 
 
@@ -108,6 +114,10 @@ class ModelManager:
             self._model_request_aliases[resolved_identifier].add(model_id)
         if model_id_alias is not None and model_id_alias != resolved_identifier:
             self._model_request_aliases[resolved_identifier].add(model_id_alias)
+        # Auto-record HTTP request path from context (set by middleware)
+        req_path = current_request_path.get(None)
+        if req_path:
+            self.record_model_request_path(resolved_identifier, req_path)
         ids_collector = request_model_ids.get(None)
         if ids_collector is not None:
             ids_collector.add(resolved_identifier)

@@ -256,7 +256,7 @@ from inference.core.interfaces.webrtc_worker.utils import (
     deregister_webrtc_session,
     refresh_webrtc_session,
 )
-from inference.core.managers.base import ModelManager
+from inference.core.managers.base import ModelManager, current_request_path
 from inference.core.managers.inference_models_cache_watchdog import (
     InferenceModelsCacheWatchdog,
 )
@@ -455,6 +455,14 @@ class HttpInterface(BaseInterface):
         # so the FastAPI instrumentor wraps at the outermost ASGI layer.
         if OTEL_TRACING_ENABLED:
             setup_telemetry(app)
+
+        @app.middleware("http")
+        async def set_request_path_context(request: Request, call_next):
+            token = current_request_path.set(request.url.path)
+            try:
+                return await call_next(request)
+            finally:
+                current_request_path.reset(token)
 
         @app.on_event("shutdown")
         async def on_shutdown():
@@ -856,7 +864,6 @@ class HttpInterface(BaseInterface):
             inference_request: InferenceRequest,
             countinference: Optional[bool] = None,
             service_secret: Optional[str] = None,
-            request_path: Optional[str] = None,
             **kwargs,
         ) -> InferenceResponse:
             """Processes an inference request by calling the appropriate model.
@@ -879,10 +886,6 @@ class HttpInterface(BaseInterface):
                 countinference=countinference,
                 service_secret=service_secret,
             )
-            if request_path:
-                self.model_manager.record_model_request_path(
-                    de_aliased_model_id, request_path
-                )
             resp = self.model_manager.infer_from_request_sync(
                 de_aliased_model_id, inference_request, **kwargs
             )
@@ -1287,7 +1290,6 @@ class HttpInterface(BaseInterface):
                     background_tasks=background_tasks,
                     countinference=countinference,
                     service_secret=service_secret,
-                    request_path="/infer/object_detection",
                 )
 
             @app.post(
@@ -1322,7 +1324,6 @@ class HttpInterface(BaseInterface):
                     background_tasks=background_tasks,
                     countinference=countinference,
                     service_secret=service_secret,
-                    request_path="/infer/instance_segmentation",
                 )
 
             @app.post(
@@ -1357,7 +1358,6 @@ class HttpInterface(BaseInterface):
                     background_tasks=background_tasks,
                     countinference=countinference,
                     service_secret=service_secret,
-                    request_path="/infer/semantic_segmentation",
                 )
 
             @app.post(
@@ -1394,7 +1394,6 @@ class HttpInterface(BaseInterface):
                     background_tasks=background_tasks,
                     countinference=countinference,
                     service_secret=service_secret,
-                    request_path="/infer/classification",
                 )
 
             @app.post(
@@ -1423,7 +1422,6 @@ class HttpInterface(BaseInterface):
                     inference_request,
                     countinference=countinference,
                     service_secret=service_secret,
-                    request_path="/infer/keypoints_detection",
                 )
 
         if not LAMBDA and (LMM_ENABLED or MOONDREAM2_ENABLED):
@@ -1459,7 +1457,6 @@ class HttpInterface(BaseInterface):
                     inference_request,
                     countinference=countinference,
                     service_secret=service_secret,
-                    request_path="/infer/lmm",
                 )
 
             @app.post(
@@ -1515,7 +1512,6 @@ class HttpInterface(BaseInterface):
                     inference_request,
                     countinference=countinference,
                     service_secret=service_secret,
-                    request_path=f"/infer/lmm/{model_id}",
                 )
 
         if not DISABLE_WORKFLOW_ENDPOINTS:
@@ -3660,10 +3656,6 @@ class HttpInterface(BaseInterface):
                     countinference=countinference,
                     service_secret=service_secret,
                 )
-                self.model_manager.record_model_request_path(
-                    model_id, request.url.path
-                )
-
                 task_type = self.model_manager.get_task_type(model_id, api_key=api_key)
                 inference_request_type = ObjectDetectionInferenceRequest
                 args = dict()
