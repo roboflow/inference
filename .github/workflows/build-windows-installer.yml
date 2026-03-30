@@ -35,16 +35,19 @@ jobs:
           Write-Host "Downloading CUDA $version network installer..."
           Invoke-WebRequest -Uri $url -OutFile cuda_installer.exe -UseBasicParsing
 
-          Write-Host "Installing selected sub-packages (nvcc, cudart, cudart_dev, cublas, cublas_dev)..."
-          Start-Process -FilePath .\cuda_installer.exe -ArgumentList @(
+          Write-Host "Installing sub-packages..."
+          $proc = Start-Process -FilePath .\cuda_installer.exe -ArgumentList @(
+            "-s",
             "nvcc_$short",
             "cudart_$short",
-            "cudart_dev_$short",
-            "cuda_cudart_$short",
-            "cuda_cudart_dev_$short",
             "cublas_$short",
-            "cublas_dev_$short"
-          ) -Wait -NoNewWindow
+            "cublas_dev_$short",
+            "curand_$short",
+            "curand_dev_$short",
+            "visual_studio_integration_$short"
+          ) -Wait -NoNewWindow -PassThru
+      
+          Write-Host "Installer exit code: $($proc.ExitCode)"
 
           $cudaPath = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v$short"
           Write-Host "CUDA installed at: $cudaPath"
