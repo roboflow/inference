@@ -118,6 +118,7 @@ class ModelManager:
                 with start_span("model.load", {"model.id": resolved_identifier}):
                     logger.debug("ModelManager - model initialisation...")
                     t_load_start = time.perf_counter()
+                    vram_before = _get_cuda_memory_allocated()
                     model_class = self.model_registry.get_model(
                         resolved_identifier,
                         api_key,
@@ -131,6 +132,9 @@ class ModelManager:
                         countinference=countinference,
                         service_secret=service_secret,
                     )
+                    vram_after = _get_cuda_memory_allocated()
+                    if vram_before is not None and vram_after is not None:
+                        model._vram_bytes = vram_after - vram_before
 
                     # Pass countinference and service_secret to download_model_artifacts_from_roboflow_api if available
                     if (
@@ -154,10 +158,15 @@ class ModelManager:
                             )
 
                     load_time = time.perf_counter() - t_load_start
+                    vram_delta = getattr(model, "_vram_bytes", None)
                     set_span_attribute("model.load_time_seconds", load_time)
                     record_model_loaded(resolved_identifier, load_time)
-                    logger.debug(
-                        f"ModelManager - model successfully loaded in {load_time:.2f}s."
+                    logger.info(
+                        "Model loaded: model_id=%s, load_time=%.2fs, task_type=%s, vram_bytes=%s",
+                        resolved_identifier,
+                        load_time,
+                        getattr(model, "task_type", "unknown"),
+                        vram_delta,
                     )
                     self._models[resolved_identifier] = model
                     collector = model_load_info.get(None)
@@ -497,8 +506,18 @@ class ModelManager:
                     )
                 if model_id not in self._models:
                     return None
-                self._models[model_id].clear_cache(delete_from_disk=delete_from_disk)
+                model = self._models[model_id]
+                vram_bytes = getattr(model, "_vram_bytes", None)
+                task_type = getattr(model, "task_type", "unknown")
+                model.clear_cache(delete_from_disk=delete_from_disk)
                 del self._models[model_id]
+                logger.info(
+                    "Model unloaded: model_id=%s, task_type=%s, vram_bytes=%s, remaining_models=%d",
+                    model_id,
+                    task_type,
+                    vram_bytes,
+                    len(self._models),
+                )
                 record_model_unloaded(model_id)
                 self._dispose_model_lock(model_id=model_id)
                 try_releasing_cuda_memory()
@@ -575,6 +594,7 @@ class ModelManager:
                 batch_size=getattr(model, "batch_size", None),
                 input_width=getattr(model, "img_size_w", None),
                 input_height=getattr(model, "img_size_h", None),
+                vram_bytes=getattr(model, "_vram_bytes", None),
             )
             for model_id, model in self._models.items()
         ]
@@ -610,6 +630,19 @@ def acquire_with_timeout(
     finally:
         if acquired:
             lock.release()
+
+
+def _get_cuda_memory_allocated() -> Optional[int]:
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            return torch.cuda.memory_allocated()
+    except ImportError:
+        pass
+    except Exception:
+        pass
+    return None
 
 
 def try_releasing_cuda_memory() -> None:

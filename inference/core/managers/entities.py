@@ -9,3 +9,4 @@ class ModelDescription:
     batch_size: Optional[int]
     input_height: Optional[int]
     input_width: Optional[int]
+    vram_bytes: Optional[int] = None
