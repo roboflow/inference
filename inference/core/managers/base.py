@@ -7,7 +7,6 @@ import numpy as np
 from fastapi.encoders import jsonable_encoder
 
 from inference.core.cache import cache
-from inference.core.interfaces.http import current_request_path
 from inference.core.cache.serializers import to_cachable_inference_item
 from inference.core.devices.utils import GLOBAL_INFERENCE_SERVER_ID
 from inference.core.entities.requests.inference import InferenceRequest
@@ -30,6 +29,7 @@ from inference.core.exceptions import (
 from inference.core.logger import logger
 from inference.core.managers.entities import ModelDescription
 from inference.core.managers.model_load_collector import (
+    current_request_path,
     model_load_info,
     request_model_ids,
 )
