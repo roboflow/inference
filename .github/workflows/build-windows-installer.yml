@@ -36,10 +36,16 @@ jobs:
           Invoke-WebRequest -Uri $url -OutFile cuda_installer.exe -UseBasicParsing
 
           Write-Host "Installing selected sub-packages (nvcc, cudart, cudart_dev, cublas, cublas_dev)..."
-          $packages = "nvcc_$short cudart_$short cudart_dev_$short cuda_cudart_$short cuda_cudart_dev_$short cublas_$short cublas_dev_$short"
-          Start-Process -FilePath .\cuda_installer.exe `
-            -ArgumentList "-s $packages" `
-            -Wait -NoNewWindow
+          Start-Process -FilePath .\cuda_installer.exe -ArgumentList @(
+            "-s",
+            "nvcc_$short",
+            "cudart_$short",
+            "cudart_dev_$short",
+            "cuda_cudart_$short",
+            "cuda_cudart_dev_$short",
+            "cublas_$short",
+            "cublas_dev_$short"
+          ) -Wait -NoNewWindow
 
           $cudaPath = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v$short"
           Write-Host "CUDA installed at: $cudaPath"
