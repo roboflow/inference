@@ -56,6 +56,7 @@ class ModelManager:
         self.model_registry = model_registry
         self._models: Dict[str, Model] = models if models is not None else {}
         self._model_request_aliases: Dict[str, set] = {}
+        self._model_request_paths: Dict[str, set] = {}
         self.pingback = None
         self._state_lock = Lock()
         self._models_state_locks: Dict[str, Lock] = {}
@@ -186,6 +187,12 @@ class ModelManager:
                 record_error(error)
                 self._dispose_model_lock(model_id=resolved_identifier)
                 raise error
+
+    def record_model_request_path(self, model_id: str, request_path: str) -> None:
+        """Record an HTTP request path that was used to reach this model."""
+        if model_id not in self._model_request_paths:
+            self._model_request_paths[model_id] = set()
+        self._model_request_paths[model_id].add(request_path)
 
     def check_for_model(self, model_id: str) -> None:
         """Checks whether the model with the given ID is in the manager.
@@ -528,6 +535,7 @@ class ModelManager:
                 )
                 record_model_unloaded(model_id)
                 self._model_request_aliases.pop(model_id, None)
+                self._model_request_paths.pop(model_id, None)
                 self._dispose_model_lock(model_id=model_id)
                 try_releasing_cuda_memory()
         except InferenceModelNotFound:
@@ -605,6 +613,7 @@ class ModelManager:
                 input_height=getattr(model, "img_size_h", None),
                 vram_bytes=getattr(model, "_vram_bytes", None),
                 request_aliases=sorted(self._model_request_aliases.get(model_id, set())),
+                request_paths=sorted(self._model_request_paths.get(model_id, set())),
             )
             for model_id, model in self._models.items()
         ]

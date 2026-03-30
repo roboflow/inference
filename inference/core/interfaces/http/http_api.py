@@ -856,6 +856,7 @@ class HttpInterface(BaseInterface):
             inference_request: InferenceRequest,
             countinference: Optional[bool] = None,
             service_secret: Optional[str] = None,
+            request_path: Optional[str] = None,
             **kwargs,
         ) -> InferenceResponse:
             """Processes an inference request by calling the appropriate model.
@@ -878,6 +879,10 @@ class HttpInterface(BaseInterface):
                 countinference=countinference,
                 service_secret=service_secret,
             )
+            if request_path:
+                self.model_manager.record_model_request_path(
+                    de_aliased_model_id, request_path
+                )
             resp = self.model_manager.infer_from_request_sync(
                 de_aliased_model_id, inference_request, **kwargs
             )
@@ -1282,6 +1287,7 @@ class HttpInterface(BaseInterface):
                     background_tasks=background_tasks,
                     countinference=countinference,
                     service_secret=service_secret,
+                    request_path="/infer/object_detection",
                 )
 
             @app.post(
@@ -1316,6 +1322,7 @@ class HttpInterface(BaseInterface):
                     background_tasks=background_tasks,
                     countinference=countinference,
                     service_secret=service_secret,
+                    request_path="/infer/instance_segmentation",
                 )
 
             @app.post(
@@ -1350,6 +1357,7 @@ class HttpInterface(BaseInterface):
                     background_tasks=background_tasks,
                     countinference=countinference,
                     service_secret=service_secret,
+                    request_path="/infer/semantic_segmentation",
                 )
 
             @app.post(
@@ -1386,6 +1394,7 @@ class HttpInterface(BaseInterface):
                     background_tasks=background_tasks,
                     countinference=countinference,
                     service_secret=service_secret,
+                    request_path="/infer/classification",
                 )
 
             @app.post(
@@ -1414,6 +1423,7 @@ class HttpInterface(BaseInterface):
                     inference_request,
                     countinference=countinference,
                     service_secret=service_secret,
+                    request_path="/infer/keypoints_detection",
                 )
 
         if not LAMBDA and (LMM_ENABLED or MOONDREAM2_ENABLED):
@@ -1449,6 +1459,7 @@ class HttpInterface(BaseInterface):
                     inference_request,
                     countinference=countinference,
                     service_secret=service_secret,
+                    request_path="/infer/lmm",
                 )
 
             @app.post(
@@ -1504,6 +1515,7 @@ class HttpInterface(BaseInterface):
                     inference_request,
                     countinference=countinference,
                     service_secret=service_secret,
+                    request_path=f"/infer/lmm/{model_id}",
                 )
 
         if not DISABLE_WORKFLOW_ENDPOINTS:
@@ -3647,6 +3659,9 @@ class HttpInterface(BaseInterface):
                     model_id_alias=model_id,
                     countinference=countinference,
                     service_secret=service_secret,
+                )
+                self.model_manager.record_model_request_path(
+                    model_id, request.url.path
                 )
 
                 task_type = self.model_manager.get_task_type(model_id, api_key=api_key)

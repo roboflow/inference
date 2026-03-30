@@ -46,7 +46,11 @@ class ModelDescriptionEntity(BaseModel):
     )
     request_aliases: List[str] = Field(
         default_factory=list,
-        description="Other model IDs or request paths that resolved to this model.",
+        description="Other model IDs that resolved to this model.",
+    )
+    request_paths: List[str] = Field(
+        default_factory=list,
+        description="HTTP request paths that triggered inference on this model (e.g. /door-glyph-locator/10, /infer/object_detection).",
     )
 
     @classmethod
@@ -67,6 +71,7 @@ class ModelDescriptionEntity(BaseModel):
             input_width=model_description.input_width,
             vram_bytes=model_description.vram_bytes,
             request_aliases=model_description.request_aliases,
+            request_paths=model_description.request_paths,
         )
 
 

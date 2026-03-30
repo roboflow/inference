@@ -11,3 +11,4 @@ class ModelDescription:
     input_width: Optional[int]
     vram_bytes: Optional[int] = None
     request_aliases: List[str] = field(default_factory=list)
+    request_paths: List[str] = field(default_factory=list)
