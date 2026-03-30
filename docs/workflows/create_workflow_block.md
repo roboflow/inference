@@ -2171,6 +2171,84 @@ Let's see how to request init parameters while defining block.
 
     * lines `30-31` declare class constructor which is not parameter-free
 
-    * to inform Execution Engine that block requires custom initialisation, 
-    `get_init_parameters(...)` method in lines `33-35` enlists names of all 
+    * to inform Execution Engine that block requires custom initialisation,
+    `get_init_parameters(...)` method in lines `33-35` enlists names of all
     parameters that must be provided
+
+
+### Air-gapped / offline availability metadata
+
+When building blocks for environments that may run without internet access
+(air-gapped deployments), `WorkflowBlockManifest` exposes three optional
+classmethods.  Override them to help the air-gapped workflow builder
+determine which blocks are usable offline.
+
+All three have sensible defaults so existing blocks require **no changes**.
+
+#### `get_air_gapped_availability()`
+
+Declares whether the block can operate without internet.
+Override this in blocks that call cloud APIs (OpenAI, Anthropic, etc.).
+
+```python
+from inference.core.workflows.prototypes.block import (
+    AirGappedAvailability,
+    WorkflowBlockManifest,
+)
+
+class BlockManifest(WorkflowBlockManifest):
+    # ...
+
+    @classmethod
+    def get_air_gapped_availability(cls) -> AirGappedAvailability:
+        return AirGappedAvailability(
+            available=False,
+            reason="requires_internet",
+        )
+```
+
+The default returns `AirGappedAvailability(available=True)` — suitable for
+pure-logic blocks, local-network blocks, and any block that does not need
+external connectivity.
+
+#### `get_supported_model_variants()`
+
+For foundation-model blocks whose weights can be pre-cached locally,
+return the list of model variant IDs.  The block is considered available
+offline if **any** variant has cached artifacts.
+
+```python
+class BlockManifest(WorkflowBlockManifest):
+    # ...
+
+    @classmethod
+    def get_supported_model_variants(cls) -> Optional[List[str]]:
+        return [
+            "sam2/hiera_large",
+            "sam2/hiera_small",
+            "sam2/hiera_tiny",
+            "sam2/hiera_b_plus",
+        ]
+```
+
+The default returns `None`, meaning the block does not depend on
+locally-cached model weights.
+
+#### `get_compatible_task_types()`
+
+For Roboflow-model blocks that accept a user-trained model, return the
+task types this block can handle.  The air-gapped builder uses this
+to match cached user models to compatible blocks.
+
+```python
+class BlockManifest(WorkflowBlockManifest):
+    # ...
+
+    @classmethod
+    def get_compatible_task_types(cls) -> Optional[List[str]]:
+        return ["object-detection"]
+```
+
+The default returns `None` — appropriate for blocks that are not
+parameterised by a Roboflow model (foundation models, logic blocks, sinks,
+etc.).
