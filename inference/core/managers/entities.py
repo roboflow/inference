@@ -1,5 +1,5 @@
-from dataclasses import dataclass
-from typing import Optional
+from dataclasses import dataclass, field
+from typing import List, Optional
 
 
 @dataclass(frozen=True)
@@ -10,3 +10,4 @@ class ModelDescription:
     input_height: Optional[int]
     input_width: Optional[int]
     vram_bytes: Optional[int] = None
+    request_aliases: List[str] = field(default_factory=list)

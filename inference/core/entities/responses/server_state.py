@@ -44,6 +44,10 @@ class ModelDescriptionEntity(BaseModel):
         None,
         description="Estimated GPU VRAM consumed by this model in bytes (measured during load).",
     )
+    request_aliases: List[str] = Field(
+        default_factory=list,
+        description="Other model IDs or request paths that resolved to this model.",
+    )
 
     @classmethod
     def from_model_description(
@@ -62,6 +66,7 @@ class ModelDescriptionEntity(BaseModel):
             input_height=model_description.input_height,
             input_width=model_description.input_width,
             vram_bytes=model_description.vram_bytes,
+            request_aliases=model_description.request_aliases,
         )
 
 

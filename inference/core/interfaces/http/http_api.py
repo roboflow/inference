@@ -874,6 +874,7 @@ class HttpInterface(BaseInterface):
             self.model_manager.add_model(
                 de_aliased_model_id,
                 inference_request.api_key,
+                model_id_alias=inference_request.model_id if de_aliased_model_id != inference_request.model_id else None,
                 countinference=countinference,
                 service_secret=service_secret,
             )
