@@ -655,11 +655,18 @@ def acquire_with_timeout(
 
 
 def _get_cuda_memory_allocated() -> Optional[int]:
+    """Return total GPU memory in use (bytes), across all allocators.
+
+    Uses torch.cuda.mem_get_info() which reports device-level free/total,
+    capturing allocations from both PyTorch and other runtimes (e.g. ONNX
+    Runtime's CUDA execution provider).
+    """
     try:
         import torch
 
         if torch.cuda.is_available():
-            return torch.cuda.memory_allocated()
+            free, total = torch.cuda.mem_get_info()
+            return total - free
     except ImportError:
         pass
     except Exception:
