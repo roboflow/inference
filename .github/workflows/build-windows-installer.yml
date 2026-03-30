@@ -37,7 +37,6 @@ jobs:
 
           Write-Host "Installing selected sub-packages (nvcc, cudart, cudart_dev, cublas, cublas_dev)..."
           Start-Process -FilePath .\cuda_installer.exe -ArgumentList @(
-            "-s",
             "nvcc_$short",
             "cudart_$short",
             "cudart_dev_$short",
