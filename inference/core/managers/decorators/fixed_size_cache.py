@@ -123,7 +123,7 @@ class WithFixedSizeCache(ModelManagerDecorator):
                     super().remove(
                         to_remove_model_id, delete_from_disk=DISK_CACHE_CLEANUP
                     )  # LRU model overflow cleanup may or maynot need the weights removed from disk
-                    logger.warning(
+                    logger.info(
                         "Model evicted from cache: model_id=%s, reason=%s, "
                         "loaded_models=%d, max_active_models=%d, "
                         "memory_free_threshold=%s, evicted_to_make_room_for=%s",
