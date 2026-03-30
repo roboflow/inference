@@ -215,6 +215,10 @@ class CannotInitialiseModelError(Exception):
     pass
 
 
+class CannotInitialiseModelDueToInputSizeError(CannotInitialiseModelError):
+    pass
+
+
 class RetryRequestError(Exception):
 
     def __init__(self, message: str, inner_error: Exception):
