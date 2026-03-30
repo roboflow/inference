@@ -50,6 +50,11 @@ jobs:
           $cudaPath = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v$short"
           Write-Host "CUDA installed at: $cudaPath"
           
+          Write-Host "Contents of CUDA path:"
+          Get-ChildItem $cudaPath -ErrorAction SilentlyContinue
+          Write-Host "Contents of include dir:"
+          Get-ChildItem "$cudaPath\include" -ErrorAction SilentlyContinue | Select-Object -First 10
+          
           if (Test-Path "$cudaPath\include\cuda.h") {
             Write-Host "cuda.h found"
           } else {
