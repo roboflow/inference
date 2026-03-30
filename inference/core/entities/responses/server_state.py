@@ -83,13 +83,13 @@ class ModelsDescriptions(BaseModel):
         None,
         description="Total estimated VRAM consumed by all loaded models in bytes.",
     )
-    cuda_memory_allocated: Optional[int] = Field(
+    gpu_memory_used: Optional[int] = Field(
         None,
-        description="Current total CUDA memory allocated (from torch.cuda.memory_allocated).",
+        description="Current GPU memory in use in bytes (device-level, includes all runtimes).",
     )
-    cuda_memory_reserved: Optional[int] = Field(
+    gpu_memory_total: Optional[int] = Field(
         None,
-        description="Current total CUDA memory reserved by the allocator (from torch.cuda.memory_reserved).",
+        description="Total GPU memory available in bytes.",
     )
 
     @classmethod
@@ -104,21 +104,22 @@ class ModelsDescriptions(BaseModel):
         ]
         vram_values = [m.vram_bytes for m in model_entities if m.vram_bytes is not None]
         total_vram = sum(vram_values) if vram_values else None
-        cuda_allocated, cuda_reserved = _get_cuda_memory_stats()
+        gpu_used, gpu_total = _get_gpu_memory_stats()
         return cls(
             models=model_entities,
             total_vram_bytes=total_vram,
-            cuda_memory_allocated=cuda_allocated,
-            cuda_memory_reserved=cuda_reserved,
+            gpu_memory_used=gpu_used,
+            gpu_memory_total=gpu_total,
         )
 
 
-def _get_cuda_memory_stats() -> tuple:
+def _get_gpu_memory_stats() -> tuple:
     try:
         import torch
 
         if torch.cuda.is_available():
-            return torch.cuda.memory_allocated(), torch.cuda.memory_reserved()
+            free, total = torch.cuda.mem_get_info()
+            return total - free, total
     except ImportError:
         pass
     except Exception:
