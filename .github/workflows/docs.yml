@@ -109,6 +109,10 @@ jobs:
         run: python -m development.docs.write_openapi_spec
         working-directory: ./inference_repo
 
+      - name: Expand literate-nav SUMMARY.md into mkdocs.yml
+        run: python docs/scripts/expand_literate_nav.py
+        working-directory: ./inference_repo
+
       - name: Replace template variables (VERSION, etc.)
         run: python docs/scripts/macros.py
         working-directory: ./inference_repo
