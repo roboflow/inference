@@ -123,6 +123,15 @@ class BlockManifest(WorkflowBlockManifest):
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.3.0,<2.0.0"
 
+    @classmethod
+    def get_supported_model_variants(cls) -> Optional[List[str]]:
+        """Return list of model_id variants that can satisfy this block."""
+        from inference.core.workflows.core_steps.models.foundation.clip.v1 import (
+            CLIP_CACHE_MODEL_IDS,
+        )
+
+        return list(CLIP_CACHE_MODEL_IDS)
+
 
 class ClipComparisonBlockV2(WorkflowBlock):
 
