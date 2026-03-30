@@ -30,7 +30,7 @@ jobs:
         with:
           cuda: '12.8.0'
           method: 'network'
-          sub-packages: '["nvcc", "cudnn", "cudart", "cuda_cudart", "cuda_nvrtc", "visual_studio_integration"]'
+          sub-packages: '["nvcc", "cudart", "cuda_cudart", "cuda_nvrtc", "visual_studio_integration"]'
 
 
       - name: Determine Version
