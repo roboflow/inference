@@ -264,6 +264,7 @@ from inference.core.managers.metrics import get_container_stats
 from inference.core.managers.model_load_collector import (
     ModelLoadCollector,
     RequestModelIds,
+    current_request_path,
     model_load_info,
     request_model_ids,
     request_workflow_id,
@@ -455,6 +456,14 @@ class HttpInterface(BaseInterface):
         # so the FastAPI instrumentor wraps at the outermost ASGI layer.
         if OTEL_TRACING_ENABLED:
             setup_telemetry(app)
+
+        @app.middleware("http")
+        async def set_request_path_context(request: Request, call_next):
+            token = current_request_path.set(request.url.path)
+            try:
+                return await call_next(request)
+            finally:
+                current_request_path.reset(token)
 
         @app.on_event("shutdown")
         async def on_shutdown():
@@ -874,6 +883,11 @@ class HttpInterface(BaseInterface):
             self.model_manager.add_model(
                 de_aliased_model_id,
                 inference_request.api_key,
+                model_id_alias=(
+                    inference_request.model_id
+                    if de_aliased_model_id != inference_request.model_id
+                    else None
+                ),
                 countinference=countinference,
                 service_secret=service_secret,
             )

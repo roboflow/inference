@@ -29,6 +29,7 @@ from inference.core.exceptions import (
 from inference.core.logger import logger
 from inference.core.managers.entities import ModelDescription
 from inference.core.managers.model_load_collector import (
+    current_request_path,
     model_load_info,
     request_model_ids,
 )
@@ -55,6 +56,8 @@ class ModelManager:
     def __init__(self, model_registry: ModelRegistry, models: Optional[dict] = None):
         self.model_registry = model_registry
         self._models: Dict[str, Model] = models if models is not None else {}
+        self._model_request_aliases: Dict[str, set] = {}
+        self._model_request_paths: Dict[str, set] = {}
         self.pingback = None
         self._state_lock = Lock()
         self._models_state_locks: Dict[str, Lock] = {}
@@ -99,6 +102,19 @@ class ModelManager:
             f"ModelManager - Adding model with model_id={model_id}, model_id_alias={model_id_alias}"
         )
         resolved_identifier = model_id if model_id_alias is None else model_id_alias
+        # Track all request paths / aliases that map to this model
+        if resolved_identifier not in self._model_request_aliases:
+            self._model_request_aliases[resolved_identifier] = set()
+        if model_id != resolved_identifier:
+            self._model_request_aliases[resolved_identifier].add(model_id)
+        if model_id_alias is not None and model_id_alias != resolved_identifier:
+            self._model_request_aliases[resolved_identifier].add(model_id_alias)
+        # Auto-record HTTP request path from context (set by middleware)
+        req_path = current_request_path.get(None)
+        if req_path:
+            if resolved_identifier not in self._model_request_paths:
+                self._model_request_paths[resolved_identifier] = set()
+            self._model_request_paths[resolved_identifier].add(req_path)
         ids_collector = request_model_ids.get(None)
         if ids_collector is not None:
             ids_collector.add(resolved_identifier)
@@ -118,6 +134,7 @@ class ModelManager:
                 with start_span("model.load", {"model.id": resolved_identifier}):
                     logger.debug("ModelManager - model initialisation...")
                     t_load_start = time.perf_counter()
+                    vram_before = _get_cuda_memory_allocated()
                     model_class = self.model_registry.get_model(
                         resolved_identifier,
                         api_key,
@@ -131,6 +148,9 @@ class ModelManager:
                         countinference=countinference,
                         service_secret=service_secret,
                     )
+                    vram_after = _get_cuda_memory_allocated()
+                    if vram_before is not None and vram_after is not None:
+                        model._vram_bytes = vram_after - vram_before
 
                     # Pass countinference and service_secret to download_model_artifacts_from_roboflow_api if available
                     if (
@@ -154,10 +174,15 @@ class ModelManager:
                             )
 
                     load_time = time.perf_counter() - t_load_start
+                    vram_delta = getattr(model, "_vram_bytes", None)
                     set_span_attribute("model.load_time_seconds", load_time)
                     record_model_loaded(resolved_identifier, load_time)
-                    logger.debug(
-                        f"ModelManager - model successfully loaded in {load_time:.2f}s."
+                    logger.info(
+                        "Model loaded: model_id=%s, load_time=%.2fs, task_type=%s, vram_bytes=%s",
+                        resolved_identifier,
+                        load_time,
+                        getattr(model, "task_type", "unknown"),
+                        vram_delta,
                     )
                     self._models[resolved_identifier] = model
                     collector = model_load_info.get(None)
@@ -497,9 +522,21 @@ class ModelManager:
                     )
                 if model_id not in self._models:
                     return None
-                self._models[model_id].clear_cache(delete_from_disk=delete_from_disk)
+                model = self._models[model_id]
+                vram_bytes = getattr(model, "_vram_bytes", None)
+                task_type = getattr(model, "task_type", "unknown")
+                model.clear_cache(delete_from_disk=delete_from_disk)
                 del self._models[model_id]
+                logger.info(
+                    "Model unloaded: model_id=%s, task_type=%s, vram_bytes=%s, remaining_models=%d",
+                    model_id,
+                    task_type,
+                    vram_bytes,
+                    len(self._models),
+                )
                 record_model_unloaded(model_id)
+                self._model_request_aliases.pop(model_id, None)
+                self._model_request_paths.pop(model_id, None)
                 self._dispose_model_lock(model_id=model_id)
                 try_releasing_cuda_memory()
         except InferenceModelNotFound:
@@ -575,6 +612,11 @@ class ModelManager:
                 batch_size=getattr(model, "batch_size", None),
                 input_width=getattr(model, "img_size_w", None),
                 input_height=getattr(model, "img_size_h", None),
+                vram_bytes=getattr(model, "_vram_bytes", None),
+                request_aliases=sorted(
+                    self._model_request_aliases.get(model_id, set())
+                ),
+                request_paths=sorted(self._model_request_paths.get(model_id, set())),
             )
             for model_id, model in self._models.items()
         ]
@@ -610,6 +652,19 @@ def acquire_with_timeout(
     finally:
         if acquired:
             lock.release()
+
+
+def _get_cuda_memory_allocated() -> Optional[int]:
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            return torch.cuda.memory_allocated()
+    except ImportError:
+        pass
+    except Exception:
+        pass
+    return None
 
 
 def try_releasing_cuda_memory() -> None:

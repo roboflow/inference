@@ -99,10 +99,9 @@ class WithFixedSizeCache(ModelManagerDecorator):
                 raise ModelManagerLockAcquisitionError(
                     "Could not acquire lock on Model Manager state to add model from active models queue."
                 )
-            while self._key_queue and (
-                len(self) >= self.max_size
-                or (MEMORY_FREE_THRESHOLD and self.memory_pressure_detected())
-            ):
+            cache_full = len(self) >= self.max_size
+            memory_pressure = MEMORY_FREE_THRESHOLD and self.memory_pressure_detected()
+            while self._key_queue and (cache_full or memory_pressure):
                 # To prevent flapping around the threshold, remove up to 3 models to make some space.
                 if not self._key_queue:
                     logger.error(
@@ -113,6 +112,7 @@ class WithFixedSizeCache(ModelManagerDecorator):
                         MEMORY_FREE_THRESHOLD,
                     )
                     break
+                eviction_reason = "cache_full" if cache_full else "memory_pressure"
                 evicted_count = 0
                 skipped_pinned = []
                 while evicted_count < 3 and self._key_queue:
@@ -123,7 +123,17 @@ class WithFixedSizeCache(ModelManagerDecorator):
                     super().remove(
                         to_remove_model_id, delete_from_disk=DISK_CACHE_CLEANUP
                     )  # LRU model overflow cleanup may or maynot need the weights removed from disk
-                    logger.debug(f"Model {to_remove_model_id} successfully unloaded.")
+                    logger.warning(
+                        "Model evicted from cache: model_id=%s, reason=%s, "
+                        "loaded_models=%d, max_active_models=%d, "
+                        "memory_free_threshold=%s, evicted_to_make_room_for=%s",
+                        to_remove_model_id,
+                        eviction_reason,
+                        len(self),
+                        self.max_size,
+                        MEMORY_FREE_THRESHOLD,
+                        queue_id,
+                    )
                     evicted_count += 1
                 # Put pinned models back at the front of the queue
                 for mid in reversed(skipped_pinned):
@@ -135,6 +145,10 @@ class WithFixedSizeCache(ModelManagerDecorator):
                     )
                     break
                 gc.collect()
+                cache_full = len(self) >= self.max_size
+                memory_pressure = (
+                    MEMORY_FREE_THRESHOLD and self.memory_pressure_detected()
+                )
             logger.debug(f"Marking new model {queue_id} as most recently used.")
             self._key_queue.append(queue_id)
         try:
