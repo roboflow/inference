@@ -117,7 +117,9 @@ class ModelManager:
         # Auto-record HTTP request path from context (set by middleware)
         req_path = current_request_path.get(None)
         if req_path:
-            self.record_model_request_path(resolved_identifier, req_path)
+            if resolved_identifier not in self._model_request_paths:
+                self._model_request_paths[resolved_identifier] = set()
+            self._model_request_paths[resolved_identifier].add(req_path)
         ids_collector = request_model_ids.get(None)
         if ids_collector is not None:
             ids_collector.add(resolved_identifier)
@@ -197,12 +199,6 @@ class ModelManager:
                 record_error(error)
                 self._dispose_model_lock(model_id=resolved_identifier)
                 raise error
-
-    def record_model_request_path(self, model_id: str, request_path: str) -> None:
-        """Record an HTTP request path that was used to reach this model."""
-        if model_id not in self._model_request_paths:
-            self._model_request_paths[model_id] = set()
-        self._model_request_paths[model_id].add(request_path)
 
     def check_for_model(self, model_id: str) -> None:
         """Checks whether the model with the given ID is in the manager.

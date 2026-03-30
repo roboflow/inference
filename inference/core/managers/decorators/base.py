@@ -166,9 +166,6 @@ class ModelManagerDecorator(ModelManager):
         """
         return self.model_manager.remove(model_id, delete_from_disk=delete_from_disk)
 
-    def record_model_request_path(self, model_id: str, request_path: str) -> None:
-        self.model_manager.record_model_request_path(model_id, request_path)
-
     def __len__(self) -> int:
         """Returns the number of models in the manager.
 
