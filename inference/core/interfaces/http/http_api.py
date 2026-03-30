@@ -256,7 +256,8 @@ from inference.core.interfaces.webrtc_worker.utils import (
     deregister_webrtc_session,
     refresh_webrtc_session,
 )
-from inference.core.managers.base import ModelManager, current_request_path
+from inference.core.interfaces.http import current_request_path
+from inference.core.managers.base import ModelManager
 from inference.core.managers.inference_models_cache_watchdog import (
     InferenceModelsCacheWatchdog,
 )

@@ -1,6 +1,5 @@
 import time
 from contextlib import contextmanager
-from contextvars import ContextVar
 from threading import Lock
 from typing import Dict, Generator, List, Optional, Tuple, Union
 
@@ -8,6 +7,7 @@ import numpy as np
 from fastapi.encoders import jsonable_encoder
 
 from inference.core.cache import cache
+from inference.core.interfaces.http import current_request_path
 from inference.core.cache.serializers import to_cachable_inference_item
 from inference.core.devices.utils import GLOBAL_INFERENCE_SERVER_ID
 from inference.core.entities.requests.inference import InferenceRequest
@@ -48,12 +48,6 @@ from inference.core.telemetry import (
     set_span_attribute,
     start_span,
 )
-
-# Set by HTTP middleware so add_model can auto-record the request path
-current_request_path: ContextVar[Optional[str]] = ContextVar(
-    "current_request_path", default=None
-)
-
 
 class ModelManager:
     """Model managers keep track of a dictionary of Model objects and is responsible for passing requests to the right model using the infer method."""
