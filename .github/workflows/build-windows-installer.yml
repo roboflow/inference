@@ -43,11 +43,22 @@ jobs:
 
           $cudaPath = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v$short"
           Write-Host "CUDA installed at: $cudaPath"
+          
+          if (Test-Path "$cudaPath\include\cuda.h") {
+            Write-Host "cuda.h found"
+          } else {
+            Write-Host "ERROR: cuda.h NOT found"
+            exit 1
+          }
 
           # Replicate the outputs that Jimver/cuda-toolkit provides so downstream
           # steps using steps.cuda-toolkit.outputs.CUDA_PATH require no changes.
           "CUDA_PATH=$cudaPath" | Out-File -Append $env:GITHUB_OUTPUT
           "CUDA_PATH=$cudaPath" | Out-File -Append $env:GITHUB_ENV
+          "CUDA_HOME=$cudaPath" | Out-File -Append $env:GITHUB_ENV
+          "INCLUDE=$cudaPath\include;$env:INCLUDE"     | Out-File -Append $env:GITHUB_ENV
+          "LIB=$cudaPath\lib\x64;$env:LIB"             | Out-File -Append $env:GITHUB_ENV
+          "$cudaPath\bin"                              | Out-File -Append $env:GITHUB_PATH
 
       - name: Determine Version
         id: determine_version
@@ -227,6 +238,7 @@ jobs:
       - name: Install inference_gpu and dependencies from local wheels
         shell: bash # Using bash for wildcard expansion in pip install
         run: |
+          pip install --index-url https://download.pytorch.org/whl/cu128 torch torchvision 
           WHEEL_FILE=$(ls dist/inference_gpu-*.whl)
           echo "Found GPU wheel: $WHEEL_FILE"
           pip install --find-links=./dist/ "$WHEEL_FILE[sam,transformers,clip,http,yolo-world,gaze,grounding-dino]"
