@@ -25,13 +25,29 @@ jobs:
           python-version: '3.12'
 
       - name: Install CUDA Toolkit
-        uses: Jimver/cuda-toolkit@v0.2.35
         id: cuda-toolkit
-        with:
-          cuda: '12.8.0'
-          method: 'network'
-          sub-packages: '["nvcc", "cudart", "cuda_cudart", "cuda_nvrtc", "visual_studio_integration"]'
+        shell: pwsh
+        run: |
+          $version = "12.8.1"
+          $short   = "12.8"
+          $url     = "https://developer.download.nvidia.com/compute/cuda/$version/network_installers/cuda_${version}_windows_network.exe"
 
+          Write-Host "Downloading CUDA $version network installer..."
+          Invoke-WebRequest -Uri $url -OutFile cuda_installer.exe -UseBasicParsing
+
+          Write-Host "Installing selected sub-packages (nvcc, cudart, cudart_dev, cublas, cublas_dev)..."
+          $packages = "nvcc_$short cudart_$short cudart_dev_$short cublas_$short cublas_dev_$short"
+          Start-Process -FilePath .\cuda_installer.exe `
+            -ArgumentList "-s $packages" `
+            -Wait -NoNewWindow
+
+          $cudaPath = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v$short"
+          Write-Host "CUDA installed at: $cudaPath"
+
+          # Replicate the outputs that Jimver/cuda-toolkit provides so downstream
+          # steps using steps.cuda-toolkit.outputs.CUDA_PATH require no changes.
+          "CUDA_PATH=$cudaPath" | Out-File -Append $env:GITHUB_OUTPUT
+          "CUDA_PATH=$cudaPath" | Out-File -Append $env:GITHUB_ENV
 
       - name: Determine Version
         id: determine_version
