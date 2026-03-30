@@ -60,6 +60,7 @@ from inference.core.workflows.errors import (
     NotSupportedExecutionEngineError,
     ReferenceTypeError,
     RuntimeInputError,
+    RuntimeLimitsCausedStepExecutionError,
     StepExecutionError,
     StepInputDimensionalityError,
     WorkflowBlockError,
@@ -423,7 +424,10 @@ def with_route_exceptions(route):
                     "message": "Timeout when attempting to connect to Roboflow API."
                 },
             )
-        except ClientCausedStepExecutionError as error:
+        except (
+            ClientCausedStepExecutionError,
+            RuntimeLimitsCausedStepExecutionError,
+        ) as error:
             logger.exception("%s: %s", type(error).__name__, error)
             content = WorkflowErrorResponse(
                 message=str(error.public_message),
@@ -856,7 +860,10 @@ def with_route_exceptions_async(route):
                     "message": "Timeout when attempting to connect to Roboflow API."
                 },
             )
-        except ClientCausedStepExecutionError as error:
+        except (
+            ClientCausedStepExecutionError,
+            RuntimeLimitsCausedStepExecutionError,
+        ) as error:
             logger.exception("%s: %s", type(error).__name__, error)
             content = WorkflowErrorResponse(
                 message=str(error.public_message),

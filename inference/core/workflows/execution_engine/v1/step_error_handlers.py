@@ -50,7 +50,7 @@ def extended_roboflow_errors_handler(step_name: str, error: Exception) -> None:
         isinstance(e, ModelPackageRestrictedError)
         for e in (error.alternatives_errors or [])
     ):
-        raise ClientCausedStepExecutionError(
+        raise RuntimeLimitsCausedStepExecutionError(
             block_id=step_name,
             status_code=507,
             public_message="Model loading failed due to restrictions of server configuration - "
