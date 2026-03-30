@@ -252,7 +252,7 @@ jobs:
       - name: Install inference_gpu and dependencies from local wheels
         shell: bash # Using bash for wildcard expansion in pip install
         run: |
-          pip install --index-url https://download.pytorch.org/whl/cu128 torch torchvision 
+          pip install -U --index-url https://download.pytorch.org/whl/cu128 torch torchvision 
           WHEEL_FILE=$(ls dist/inference_gpu-*.whl)
           echo "Found GPU wheel: $WHEEL_FILE"
           pip install --find-links=./dist/ "$WHEEL_FILE[sam,transformers,clip,http,yolo-world,gaze,grounding-dino]"
