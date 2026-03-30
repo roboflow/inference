@@ -1,20 +1,27 @@
 import pytest
 
 from inference.core.exceptions import (
+    CannotInitialiseModelDueToInputSizeError,
     InferenceModelNotFound,
     InvalidModelIDError,
     ModelManagerLockAcquisitionError,
     PaymentRequiredError,
     RoboflowAPIForbiddenError,
     RoboflowAPINotAuthorizedError,
-    RoboflowAPINotNotFoundError, CannotInitialiseModelDueToInputSizeError,
+    RoboflowAPINotNotFoundError,
 )
-from inference.core.workflows.errors import ClientCausedStepExecutionError, RuntimeLimitsCausedStepExecutionError
+from inference.core.workflows.errors import (
+    ClientCausedStepExecutionError,
+    RuntimeLimitsCausedStepExecutionError,
+)
 from inference.core.workflows.execution_engine.v1.step_error_handlers import (
     extended_roboflow_errors_handler,
     legacy_step_error_handler,
 )
-from inference_models.errors import ModelPackageAlternativesExhaustedError, ModelPackageRestrictedError
+from inference_models.errors import (
+    ModelPackageAlternativesExhaustedError,
+    ModelPackageRestrictedError,
+)
 from inference_sdk.http.errors import HTTPCallErrorError
 
 
@@ -147,12 +154,15 @@ def test_extended_roboflow_errors_handler_when_not_found_error_occurs_while_remo
     assert error.value.status_code == 404
 
 
-def test_extended_roboflow_errors_handler_when_http_507_occurs() -> (
-    None
-):
+def test_extended_roboflow_errors_handler_when_http_507_occurs() -> None:
     # when
     with pytest.raises(RuntimeLimitsCausedStepExecutionError) as error:
-        extended_roboflow_errors_handler("some", HTTPCallErrorError("", 507, "Could not load model due to input resolution constraint"))
+        extended_roboflow_errors_handler(
+            "some",
+            HTTPCallErrorError(
+                "", 507, "Could not load model due to input resolution constraint"
+            ),
+        )
 
     # then
     assert error.value.status_code == 507
@@ -163,7 +173,12 @@ def test_extended_roboflow_errors_handler_when_old_inference_input_size_error_oc
 ):
     # when
     with pytest.raises(RuntimeLimitsCausedStepExecutionError) as error:
-        extended_roboflow_errors_handler("some", CannotInitialiseModelDueToInputSizeError("Could not load model due to input resolution constraint"))
+        extended_roboflow_errors_handler(
+            "some",
+            CannotInitialiseModelDueToInputSizeError(
+                "Could not load model due to input resolution constraint"
+            ),
+        )
 
     # then
     assert error.value.status_code == 507
@@ -173,7 +188,12 @@ def test_extended_roboflow_errors_handler_when_new_inference_model_loading_faile
     None
 ):
     # when
-    extended_roboflow_errors_handler("some", ModelPackageAlternativesExhaustedError("Could not load model due to input resolution constraint"))
+    extended_roboflow_errors_handler(
+        "some",
+        ModelPackageAlternativesExhaustedError(
+            "Could not load model due to input resolution constraint"
+        ),
+    )
 
     # then
     # expected not to raise
@@ -184,10 +204,33 @@ def test_extended_roboflow_errors_handler_when_new_inference_model_loading_faile
 ):
     # when
     with pytest.raises(RuntimeLimitsCausedStepExecutionError) as error:
-        extended_roboflow_errors_handler("some", ModelPackageAlternativesExhaustedError(
-            "Could not load model due to input resolution constraint",
-            alternatives_errors=[ModelPackageRestrictedError("Could not load model due to input resolution constraint")]
-        ))
+        extended_roboflow_errors_handler(
+            "some",
+            ModelPackageAlternativesExhaustedError(
+                "Could not load model due to input resolution constraint",
+                alternatives_errors=[
+                    ModelPackageRestrictedError(
+                        "Could not load model due to input resolution constraint"
+                    )
+                ],
+            ),
+        )
+
+    # then
+    assert error.value.status_code == 507
+
+
+def test_extended_roboflow_errors_handler_when_new_inference_model_loading_failed_with_package_restriction_errors_directly() -> (
+    None
+):
+    # when
+    with pytest.raises(RuntimeLimitsCausedStepExecutionError) as error:
+        extended_roboflow_errors_handler(
+            "some",
+            ModelPackageRestrictedError(
+                "Could not load model due to input resolution constraint"
+            ),
+        )
 
     # then
     assert error.value.status_code == 507

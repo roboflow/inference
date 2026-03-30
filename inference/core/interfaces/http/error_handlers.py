@@ -313,7 +313,10 @@ def with_route_exceptions(route):
             resp = JSONResponse(
                 status_code=500, content={"message": "Model package is broken."}
             )
-        except CannotInitialiseModelDueToInputSizeError as error:
+        except (
+            CannotInitialiseModelDueToInputSizeError,
+            ModelPackageRestrictedError,
+        ) as error:
             logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
                 status_code=507,
@@ -749,7 +752,10 @@ def with_route_exceptions_async(route):
             resp = JSONResponse(
                 status_code=500, content={"message": "Model package is broken."}
             )
-        except CannotInitialiseModelDueToInputSizeError as error:
+        except (
+            CannotInitialiseModelDueToInputSizeError,
+            ModelPackageRestrictedError,
+        ) as error:
             logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
                 status_code=507,

@@ -46,6 +46,16 @@ def extended_roboflow_errors_handler(step_name: str, error: Exception) -> None:
             context="workflow_execution | step_execution",
             inner_error=error,
         ) from error
+    if isinstance(error, ModelPackageRestrictedError):
+        raise RuntimeLimitsCausedStepExecutionError(
+            block_id=step_name,
+            status_code=507,
+            public_message="Model loading failed due to restrictions of server configuration - "
+            "usually due to excessive runtime memory requirement of the model (for instance "
+            "caused by large input size).",
+            context="workflow_execution | step_execution",
+            inner_error=error,
+        ) from error
     if isinstance(error, ModelPackageAlternativesExhaustedError) and any(
         isinstance(e, ModelPackageRestrictedError)
         for e in (error.alternatives_errors or [])
