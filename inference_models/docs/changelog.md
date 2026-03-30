@@ -1,5 +1,15 @@
 # Changelog
 
+## `0.24.1`
+
+### Changed
+
+- Added optional field `alternatives_errors` to `ModelPackageAlternativesExhaustedError`, making it possible 
+to report to the caller what types of errors happened during the load - making it possible to deduce if 
+problem with loading is recoverable.
+
+---
+
 ## `0.24.0`
 
 ### Added

@@ -36,7 +36,6 @@ from inference.enterprise.workflows.enterprise_blocks.sinks.event_writer.v1 impo
     _keypoints_to_v2,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

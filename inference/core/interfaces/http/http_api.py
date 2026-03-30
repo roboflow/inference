@@ -1658,8 +1658,11 @@ class HttpInterface(BaseInterface):
             @with_route_exceptions
             def describe_workflows_blocks(
                 request: Request,
+                air_gapped: bool = Query(False),
             ) -> Union[WorkflowsBlocksDescription, Response]:
-                result = handle_describe_workflows_blocks_request()
+                result = handle_describe_workflows_blocks_request(
+                    air_gapped=air_gapped,
+                )
                 return gzip_response_if_requested(request=request, response=result)
 
             @app.post(
@@ -1676,6 +1679,7 @@ class HttpInterface(BaseInterface):
             def describe_workflows_blocks(
                 request: Request,
                 request_payload: Optional[DescribeBlocksRequest] = None,
+                air_gapped: bool = Query(False),
             ) -> Union[WorkflowsBlocksDescription, Response]:
                 # TODO: get rid of async: https://github.com/roboflow/inference/issues/569
                 dynamic_blocks_definitions = None
@@ -1695,6 +1699,7 @@ class HttpInterface(BaseInterface):
                     dynamic_blocks_definitions=dynamic_blocks_definitions,
                     requested_execution_engine_version=requested_execution_engine_version,
                     api_key=api_key,
+                    air_gapped=air_gapped,
                 )
                 return gzip_response_if_requested(request=request, response=result)
 

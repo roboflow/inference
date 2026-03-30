@@ -22,7 +22,7 @@ from inference.core.env import (
     USE_PYTORCH_FOR_PREPROCESSING,
 )
 from inference.core.exceptions import (
-    CannotInitialiseModelError,
+    CannotInitialiseModelDueToInputSizeError,
     ModelArtefactError,
     OnnxProviderNotAvailable,
 )
@@ -450,7 +450,9 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
                 input_resolution,
                 RFDETR_ONNX_MAX_RESOLUTION,
             )
-            raise CannotInitialiseModelError(f"Resolution too high for RFDETR")
+            raise CannotInitialiseModelDueToInputSizeError(
+                f"Resolution too high for RFDETR"
+            )
 
         logger.debug("Creating inference session")
         if self.load_weights or not self.has_model_metadata:

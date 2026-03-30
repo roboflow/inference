@@ -3030,9 +3030,7 @@ def test_get_workflow_specification_falls_back_to_cache_on_timeout(
         json=MagicMock(
             return_value={
                 "workflow": {
-                    "config": json.dumps(
-                        {"specification": {"timeout": "fallback"}}
-                    )
+                    "config": json.dumps({"specification": {"timeout": "fallback"}})
                 }
             }
         ),

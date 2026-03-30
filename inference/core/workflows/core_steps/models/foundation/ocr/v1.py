@@ -106,6 +106,11 @@ class BlockManifest(WorkflowBlockManifest):
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.3.0,<2.0.0"
 
+    @classmethod
+    def get_supported_model_variants(cls) -> Optional[List[str]]:
+        """Return list of model_id variants that can satisfy this block."""
+        return ["doctr/default"]
+
 
 class OCRModelBlockV1(WorkflowBlock):
     # TODO: we need data model for OCR predictions
