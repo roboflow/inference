@@ -44,6 +44,7 @@ jobs:
             "cublas_dev_$short",
             "curand_$short",
             "curand_dev_$short",
+            "cuda_profiler_api_$short",
             "visual_studio_integration_$short"
           ) -Wait -NoNewWindow -PassThru
       
