@@ -360,8 +360,8 @@ def test_build_event_payload_minimal() -> None:
         event_type="custom",
         solution="test",
         images=[],
+        event_data={},
         custom_metadata={},
-
     )
 
     assert payload["eventType"] == "custom"
