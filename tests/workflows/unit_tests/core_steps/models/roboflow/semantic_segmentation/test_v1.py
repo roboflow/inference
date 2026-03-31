@@ -70,7 +70,9 @@ def test_semantic_segmentation_model_validation_when_invalid_type_provided() -> 
         _ = BlockManifest.model_validate(data)
 
 
-def test_semantic_segmentation_model_validation_when_model_id_has_invalid_type() -> None:
+def test_semantic_segmentation_model_validation_when_model_id_has_invalid_type() -> (
+    None
+):
     # given
     data = {
         "type": "roboflow_core/roboflow_semantic_segmentation_model@v1",
@@ -84,7 +86,9 @@ def test_semantic_segmentation_model_validation_when_model_id_has_invalid_type()
         _ = BlockManifest.model_validate(data)
 
 
-def test_semantic_segmentation_model_validation_when_images_selector_has_invalid_type() -> None:
+def test_semantic_segmentation_model_validation_when_images_selector_has_invalid_type() -> (
+    None
+):
     # given
     data = {
         "type": "roboflow_core/roboflow_semantic_segmentation_model@v1",

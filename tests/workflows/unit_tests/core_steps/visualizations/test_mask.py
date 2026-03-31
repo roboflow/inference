@@ -1,8 +1,8 @@
 import numpy as np
 import pytest
 import supervision as sv
-from pydantic import ValidationError
 from pycocotools import mask as mask_utils
+from pydantic import ValidationError
 
 from inference.core.workflows.core_steps.visualizations.mask.v1 import (
     MaskManifest,

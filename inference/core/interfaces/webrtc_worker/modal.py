@@ -168,6 +168,9 @@ if modal is not None:
             "ONNXRUNTIME_EXECUTION_PROVIDERS": "[CUDAExecutionProvider,CPUExecutionProvider]",
             "PROJECT": PROJECT,
             "PYTHONASYNCIODEBUG": str(os.getenv("PYTHONASYNCIODEBUG", "0")),
+            "ROBOFLOW_ENVIRONMENT": (
+                "prod" if PROJECT == "roboflow-platform" else "staging"
+            ),
             "ROBOFLOW_INTERNAL_SERVICE_NAME": WEBRTC_MODAL_ROBOFLOW_INTERNAL_SERVICE_NAME,
             "ROBOFLOW_INTERNAL_SERVICE_SECRET": ROBOFLOW_INTERNAL_SERVICE_SECRET,
             "WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE": WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE,
@@ -238,6 +241,7 @@ if modal is not None:
                 send_answer=send_answer,
                 model_manager=model_manager,
                 heartbeat_callback=watchdog.heartbeat,
+                connection_established_callback=watchdog.mark_connection_established,
             )
         )
 
@@ -424,10 +428,8 @@ if modal is not None:
                 "WebRTC session stopped at %s",
                 _exec_session_stopped.isoformat(),
             )
-            if watchdog.total_heartbeats == 0:
-                raise Exception(
-                    "WebRTC worker was terminated before processing a single frame"
-                )
+
+            no_frames_processed = watchdog.total_heartbeats == 0
 
             # requested plan is guaranteed to be set due to validation in spawn_rtc_peer_connection_modal
             webrtc_plan = webrtc_request.requested_plan
@@ -451,11 +453,25 @@ if modal is not None:
                     "is_preview": webrtc_request.is_preview,
                 },
                 execution_duration=(
-                    _exec_session_stopped - _exec_session_started
-                ).total_seconds(),
+                    (_exec_session_stopped - _exec_session_started).total_seconds()
+                    if watchdog.connection_established
+                    else 0
+                ),
             )
             usage_collector.push_usage_payloads()
             logger.info("Function completed")
+
+            if no_frames_processed:
+                if watchdog.connection_established:
+                    raise Exception(
+                        "WebRTC connection was established but no frames were processed. "
+                        "This typically indicates an invalid RTSP stream URL or corrupted video file."
+                    )
+                else:
+                    raise Exception(
+                        "WebRTC connection could not be established. "
+                        "No frames were processed."
+                    )
 
         @modal.exit()
         def stop(self):

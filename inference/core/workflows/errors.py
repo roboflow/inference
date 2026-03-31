@@ -189,6 +189,22 @@ class ClientCausedStepExecutionError(WorkflowExecutionEngineError):
         self.status_code = status_code
 
 
+class RuntimeLimitsCausedStepExecutionError(WorkflowExecutionEngineError):
+    def __init__(
+        self,
+        block_id: str,
+        status_code: int,
+        public_message: str,
+        context: str,
+        inner_error: Optional[Exception] = None,
+    ):
+        super().__init__(
+            public_message=public_message, context=context, inner_error=inner_error
+        )
+        self.block_id = block_id
+        self.status_code = status_code
+
+
 class ExecutionEngineRuntimeError(WorkflowExecutionEngineError):
     pass
 
