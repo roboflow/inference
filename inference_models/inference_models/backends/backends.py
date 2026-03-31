@@ -5,7 +5,6 @@ import multiprocessing as mp
 import pickle
 import threading
 import traceback
-from abc import ABC, abstractmethod
 from multiprocessing.reduction import ForkingPickler
 from multiprocessing.shared_memory import SharedMemory
 from typing import Any
@@ -156,29 +155,6 @@ def _worker_main(
 # Base class
 # ---------------------------------------------------------------------------
 
-class Backend(ABC):
-    """Handle to a single loaded model.
-
-    One instance per model. Loading happens in __init__ (blocks until ready).
-    ModelManager owns a dict of these and routes calls by model_id.
-    """
-
-    @property
-    @abstractmethod
-    def class_names(self) -> list[str] | None:
-        """Class names for the loaded model, if available."""
-        ...
-
-    @abstractmethod
-    def unload(self) -> None:
-        """Release all resources held by this model."""
-        ...
-
-    @abstractmethod
-    async def infer_async(self, *args, **kwargs) -> Any: ...
-
-    @abstractmethod
-    def infer_sync(self, *args, **kwargs) -> Any: ...
 
 
 # ---------------------------------------------------------------------------
