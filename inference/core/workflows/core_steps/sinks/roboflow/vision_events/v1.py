@@ -439,20 +439,12 @@ class RoboflowVisionEventsBlockV1(WorkflowBlock):
                 for _ in range(batch_size)
             ]
 
-        input_images = (
-            [None] * batch_size if input_image is None else input_image
-        )
-        output_images = (
-            [None] * batch_size if output_image is None else output_image
-        )
-        predictions_list = (
-            [None] * batch_size if predictions is None else predictions
-        )
+        input_images = [None] * batch_size if input_image is None else input_image
+        output_images = [None] * batch_size if output_image is None else output_image
+        predictions_list = [None] * batch_size if predictions is None else predictions
 
         result = []
-        for img_in, img_out, pred in zip(
-            input_images, output_images, predictions_list
-        ):
+        for img_in, img_out, pred in zip(input_images, output_images, predictions_list):
             event_data = _build_event_data(
                 event_type=event_type,
                 external_id=external_id,
@@ -499,9 +491,7 @@ class RoboflowVisionEventsBlockV1(WorkflowBlock):
                 )
             else:
                 error_status, message = task()
-                result.append(
-                    {"error_status": error_status, "message": message}
-                )
+                result.append({"error_status": error_status, "message": message})
 
         return result
 
@@ -521,32 +511,46 @@ def _build_event_data(
     feedback: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Build schema-specific eventData dict with camelCase keys, stripping None values."""
+    data: Dict[str, Any] = {}
+
     if event_type == "quality_check":
-        data = {"result": qc_result, "externalId": external_id}
+        if qc_result is not None:
+            data["result"] = qc_result
+        if external_id is not None:
+            data["externalId"] = external_id
     elif event_type == "inventory_count":
-        data = {
-            "location": location,
-            "itemCount": item_count,
-            "itemType": item_type,
-            "externalId": external_id,
-        }
+        if location is not None:
+            data["location"] = location
+        if item_count is not None:
+            data["itemCount"] = item_count
+        if item_type is not None:
+            data["itemType"] = item_type
+        if external_id is not None:
+            data["externalId"] = external_id
     elif event_type == "safety_alert":
-        data = {
-            "alertType": alert_type,
-            "severity": severity,
-            "description": alert_description,
-            "externalId": external_id,
-        }
+        if alert_type is not None:
+            data["alertType"] = alert_type
+        if severity is not None:
+            data["severity"] = severity
+        if alert_description is not None:
+            data["description"] = alert_description
+        if external_id is not None:
+            data["externalId"] = external_id
     elif event_type == "custom":
-        data = {"value": custom_value, "externalId": external_id}
+        if custom_value is not None:
+            data["value"] = custom_value
+        if external_id is not None:
+            data["externalId"] = external_id
     elif event_type == "operator_feedback":
-        data = {
-            "relatedEventId": related_event_id,
-            "feedback": feedback,
-        }
+        if related_event_id is not None:
+            data["relatedEventId"] = related_event_id
+        if feedback is not None:
+            data["feedback"] = feedback
     else:
-        data = {}
-    return {k: v for k, v in data.items() if v is not None}
+        # Unknown event types return an empty dict (preserve original behavior)
+        pass
+
+    return data
 
 
 def _execute_vision_event(
@@ -587,9 +591,7 @@ def _execute_vision_event(
         annotation_target: Optional[Dict[str, Any]] = None
 
         if output_image is not None:
-            output_source_id, _ = _upload_image(
-                api_base_url, api_key, output_image
-            )
+            output_source_id, _ = _upload_image(api_base_url, api_key, output_image)
             output_entry: Dict[str, Any] = {
                 "label": "output",
                 "sourceId": output_source_id,
@@ -598,9 +600,7 @@ def _execute_vision_event(
             annotation_target = output_entry
 
         if input_image is not None:
-            input_source_id, _ = _upload_image(
-                api_base_url, api_key, input_image
-            )
+            input_source_id, _ = _upload_image(api_base_url, api_key, input_image)
             input_image_entry: Dict[str, Any] = {
                 "label": "input",
                 "sourceId": input_source_id,
@@ -615,9 +615,7 @@ def _execute_vision_event(
             if classifications:
                 annotation_target["classifications"] = classifications
             if instance_segmentations:
-                annotation_target[
-                    "instanceSegmentations"
-                ] = instance_segmentations
+                annotation_target["instanceSegmentations"] = instance_segmentations
             if keypoints_detections:
                 annotation_target["keypoints"] = keypoints_detections
 
@@ -721,9 +719,7 @@ def _convert_sv_detections_to_vision_events_format(
             if polygon is not None and len(polygon) >= 3:
                 if isinstance(polygon, np.ndarray):
                     polygon = polygon.astype(float).tolist()
-                seg_entry["points"] = [
-                    [float(pt[0]), float(pt[1])] for pt in polygon
-                ]
+                seg_entry["points"] = [[float(pt[0]), float(pt[1])] for pt in polygon]
                 instance_segmentations.append(seg_entry)
             else:
                 # Fall back to object detection if polygon is invalid
