@@ -5,6 +5,7 @@ from starlette.responses import JSONResponse
 from inference.core import logger
 from inference.core.entities.responses.workflows import WorkflowErrorResponse
 from inference.core.exceptions import (
+    CannotInitialiseModelDueToInputSizeError,
     ContentTypeInvalid,
     ContentTypeMissing,
     CreditsExceededError,
@@ -59,6 +60,7 @@ from inference.core.workflows.errors import (
     NotSupportedExecutionEngineError,
     ReferenceTypeError,
     RuntimeInputError,
+    RuntimeLimitsCausedStepExecutionError,
     StepExecutionError,
     StepInputDimensionalityError,
     WorkflowBlockError,
@@ -77,7 +79,9 @@ from inference_models.errors import (
     ModelInputError,
     ModelLoadingError,
     ModelNotFoundError,
+    ModelPackageAlternativesExhaustedError,
     ModelPackageNegotiationError,
+    ModelPackageRestrictedError,
     ModelRetrievalError,
     UnauthorizedModelAccessError,
     UntrustedFileError,
@@ -309,6 +313,40 @@ def with_route_exceptions(route):
             resp = JSONResponse(
                 status_code=500, content={"message": "Model package is broken."}
             )
+        except (
+            CannotInitialiseModelDueToInputSizeError,
+            ModelPackageRestrictedError,
+        ) as error:
+            logger.exception("%s: %s", type(error).__name__, error)
+            resp = JSONResponse(
+                status_code=507,
+                content={
+                    "message": "Model loading failed due to restrictions of server configuration - "
+                    "usually due to excessive runtime memory requirement of the model (for instance "
+                    "caused by large input size).",
+                },
+            )
+        except ModelPackageAlternativesExhaustedError as error:
+            logger.exception("%s: %s", type(error).__name__, error)
+            inner_errors = error.alternatives_errors or []
+            if any(isinstance(e, ModelPackageRestrictedError) for e in inner_errors):
+                resp = JSONResponse(
+                    status_code=507,
+                    content={
+                        "message": "Model loading failed due to restrictions of server configuration - "
+                        "usually due to excessive runtime memory requirement of the model (for instance "
+                        "caused by large input size).",
+                        "help_url": error.help_url,
+                    },
+                )
+            else:
+                resp = JSONResponse(
+                    status_code=500,
+                    content={
+                        "message": f"Model loading failed: {error}",
+                        "help_url": error.help_url,
+                    },
+                )
         except ModelLoadingError as error:
             logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
@@ -389,7 +427,10 @@ def with_route_exceptions(route):
                     "message": "Timeout when attempting to connect to Roboflow API."
                 },
             )
-        except ClientCausedStepExecutionError as error:
+        except (
+            ClientCausedStepExecutionError,
+            RuntimeLimitsCausedStepExecutionError,
+        ) as error:
             logger.exception("%s: %s", type(error).__name__, error)
             content = WorkflowErrorResponse(
                 message=str(error.public_message),
@@ -711,6 +752,40 @@ def with_route_exceptions_async(route):
             resp = JSONResponse(
                 status_code=500, content={"message": "Model package is broken."}
             )
+        except (
+            CannotInitialiseModelDueToInputSizeError,
+            ModelPackageRestrictedError,
+        ) as error:
+            logger.exception("%s: %s", type(error).__name__, error)
+            resp = JSONResponse(
+                status_code=507,
+                content={
+                    "message": "Model loading failed due to restrictions of server configuration - "
+                    "usually due to excessive runtime memory requirement of the model (for instance "
+                    "caused by large input size).",
+                },
+            )
+        except ModelPackageAlternativesExhaustedError as error:
+            logger.exception("%s: %s", type(error).__name__, error)
+            inner_errors = error.alternatives_errors or []
+            if any(isinstance(e, ModelPackageRestrictedError) for e in inner_errors):
+                resp = JSONResponse(
+                    status_code=507,
+                    content={
+                        "message": "Model loading failed due to restrictions of server configuration - "
+                        "usually due to excessive runtime memory requirement of the model (for instance "
+                        "caused by large input size).",
+                        "help_url": error.help_url,
+                    },
+                )
+            else:
+                resp = JSONResponse(
+                    status_code=500,
+                    content={
+                        "message": f"Model loading failed: {error}",
+                        "help_url": error.help_url,
+                    },
+                )
         except ModelLoadingError as error:
             logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
@@ -791,7 +866,10 @@ def with_route_exceptions_async(route):
                     "message": "Timeout when attempting to connect to Roboflow API."
                 },
             )
-        except ClientCausedStepExecutionError as error:
+        except (
+            ClientCausedStepExecutionError,
+            RuntimeLimitsCausedStepExecutionError,
+        ) as error:
             logger.exception("%s: %s", type(error).__name__, error)
             content = WorkflowErrorResponse(
                 message=str(error.public_message),
