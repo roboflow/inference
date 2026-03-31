@@ -1,11 +1,10 @@
 # TODO - for everyone: start migrating other handlers to bring relief to http_api.py
 import copy
-import logging
 from typing import Any, Dict, List, Optional, Set, Union
 
 from packaging.specifiers import SpecifierSet
 
-from inference.core.cache.air_gapped import is_block_cached
+from inference.core.cache.air_gapped import has_cached_model_variant
 from inference.core.entities.responses.workflows import (
     DescribeInterfaceResponse,
     ExternalBlockPropertyPrimitiveDefinition,
@@ -44,6 +43,7 @@ from inference.core.workflows.execution_engine.v1.introspection.types_discovery 
     discover_kinds_schemas,
     discover_kinds_typing_hints,
 )
+from inference.core.workflows.prototypes.block import BlockAirGappedInfo
 
 logger = logging.getLogger(__name__)
 
@@ -123,11 +123,12 @@ def enrich_with_air_gapped_info(
     for block in result.blocks:
         manifest_cls = block.manifest_class
         air_gapped_info = _get_air_gapped_info_for_block(manifest_cls)
-        # Deep-copy the schema dict to avoid mutating the cached object
         enriched_schema = copy.deepcopy(block.block_schema)
         if "json_schema_extra" not in enriched_schema:
             enriched_schema["json_schema_extra"] = {}
-        enriched_schema["json_schema_extra"]["air_gapped_info"] = air_gapped_info
+        enriched_schema["json_schema_extra"][
+            "air_gapped_info"
+        ] = air_gapped_info.to_dict()
         enriched_blocks.append(
             block.model_copy(update={"block_schema": enriched_schema})
         )
@@ -136,65 +137,52 @@ def enrich_with_air_gapped_info(
 
 def _get_air_gapped_info_for_block(
     manifest_cls: Any,
-) -> Dict[str, Any]:
-    """Determine air-gapped availability for a single block manifest class."""
-    # 1. Explicit air-gapped availability declaration (e.g. cloud-only blocks)
-    if hasattr(manifest_cls, "get_air_gapped_availability"):
-        try:
-            info = manifest_cls.get_air_gapped_availability()
-            if isinstance(info, dict):
-                result: Dict[str, Any] = dict(info)
-                _add_compatible_task_types(manifest_cls, result)
-                return result
-        except Exception:
-            logger.debug(
-                "Error calling get_air_gapped_availability on %s",
-                getattr(manifest_cls, "__name__", str(manifest_cls)),
-                exc_info=True,
-            )
+) -> BlockAirGappedInfo:
+    """Determine air-gapped availability for a single block manifest class.
 
-    # 2. Foundation model blocks with cache artifact requirements
-    if hasattr(manifest_cls, "get_required_cache_artifacts"):
-        try:
-            artifacts_spec = manifest_cls.get_required_cache_artifacts()
-            cached = is_block_cached(artifacts_spec)
-            model_id = ""
-            if isinstance(artifacts_spec, list) and artifacts_spec:
-                model_id = artifacts_spec[0]
-            elif isinstance(artifacts_spec, dict):
-                model_id = artifacts_spec.get("model_id", "")
-            result = {
-                "available": cached,
-                "reason": None if cached else "missing_cache_artifacts",
-                "model_id": model_id,
-            }
-            _add_compatible_task_types(manifest_cls, result)
-            return result
-        except Exception:
-            logger.debug(
-                "Error checking cache artifacts for %s",
-                getattr(manifest_cls, "__name__", str(manifest_cls)),
-                exc_info=True,
-            )
+    Resolution order:
+
+    1. **Cloud-only blocks** — ``get_air_gapped_availability()`` returns
+       ``available=False`` (e.g. blocks wrapping OpenAI / Anthropic APIs).
+    2. **Foundation-model blocks** — ``get_supported_model_variants()``
+       returns a non-None list; availability depends on whether any
+       variant has cached weights.
+    3. **Default** — the block is available (pure logic, local-network, etc.).
+
+    Compatible task types from ``get_compatible_task_types()`` are always
+    attached when present.
+    """
+    task_types = manifest_cls.get_compatible_task_types()
+
+    # 1. Explicit cloud/internet declaration
+    availability = manifest_cls.get_air_gapped_availability()
+    if not availability.available:
+        return BlockAirGappedInfo(
+            available=False,
+            reason=availability.reason,
+            compatible_task_types=task_types,
+        )
+
+    # 2. Foundation models with locally-cacheable weights
+    model_variants = manifest_cls.get_supported_model_variants()
+    if model_variants is not None:
+        cached = has_cached_model_variant(model_variants)
+        # Use the first variant as a representative identifier for the UI.
+        # The list is ordered by convention (default/primary variant first),
+        # and individual variant selection happens at workflow-execution time.
+        representative_id = model_variants[0] if model_variants else None
+        return BlockAirGappedInfo(
+            available=cached,
+            reason=None if cached else "missing_cache_artifacts",
+            model_id=representative_id,
+            compatible_task_types=task_types,
+        )
 
     # 3. Default: block is available (pure logic blocks, local-network blocks, etc.)
-    result: Dict[str, Any] = {"available": True}
-    _add_compatible_task_types(manifest_cls, result)
-    return result
-
-
-def _add_compatible_task_types(
-    manifest_cls: Any,
-    info: Dict[str, Any],
-) -> None:
-    """If the manifest exposes compatible task types, add them to the info dict."""
-    if hasattr(manifest_cls, "get_compatible_task_types"):
-        try:
-            task_types = manifest_cls.get_compatible_task_types()
-            if isinstance(task_types, (list, tuple, set)):
-                info["compatible_task_types"] = list(task_types)
-        except Exception:
-            pass
+    return BlockAirGappedInfo(
+        available=True,
+        compatible_task_types=task_types,
+    )
 
 
 def handle_describe_workflows_interface(

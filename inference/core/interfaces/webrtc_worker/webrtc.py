@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import datetime
 import gzip
 import json
@@ -7,6 +8,7 @@ import struct
 import time
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
+import orjson
 import supervision as sv
 from aioice import ice
 from aiortc import (
@@ -467,7 +469,11 @@ class VideoFrameProcessor:
 
         # TODO: use orjson
         json_bytes = await asyncio.to_thread(
-            lambda: json.dumps(webrtc_output.model_dump(mode="json")).encode("utf-8")
+            lambda: orjson.dumps(
+                webrtc_output.model_dump(),
+                default=default_encoder,
+                option=orjson.OPT_NON_STR_KEYS | orjson.OPT_SERIALIZE_NUMPY,
+            )
         )
 
         if WEBRTC_GZIP_PREVIEW_FRAME_COMPRESSION:
@@ -830,6 +836,7 @@ async def init_rtc_peer_connection_with_loop(
     model_manager: Optional[ModelManager] = None,
     shutdown_reserve: int = WEBRTC_MODAL_SHUTDOWN_RESERVE,
     heartbeat_callback: Optional[Callable[[], None]] = None,
+    connection_established_callback: Optional[Callable[[], None]] = None,
 ) -> RTCPeerConnectionWithLoop:
     logger.info(
         "=" * 60 + "\n"
@@ -1101,6 +1108,9 @@ async def init_rtc_peer_connection_with_loop(
                 else "N/A"
             ),
         )
+        if state == "connected":
+            if connection_established_callback:
+                connection_established_callback()
         if state in {"failed", "closed"}:
             logger.error(
                 "[CONNECTION_STATE] FATAL: Connection %s! ICE=%s, "
@@ -1316,3 +1326,9 @@ async def init_rtc_peer_connection_with_loop(
     await video_processor.close()
     await usage_collector.async_push_usage_payloads()
     logger.info("WebRTC peer connection closed")
+
+
+def default_encoder(obj: Any) -> Any:
+    if isinstance(obj, bytes):
+        return base64.b64encode(obj).decode("ascii")
+    return obj

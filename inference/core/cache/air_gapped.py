@@ -11,8 +11,7 @@ import os
 import re
 from typing import Any, Dict, List, Optional
 
-from inference.core.cache.model_artifacts import are_all_files_cached, get_cache_dir
-from inference.core.env import MODEL_CACHE_DIR
+from inference.core.env import MODEL_CACHE_DIR, USE_INFERENCE_MODELS
 from inference.core.roboflow_api import MODEL_TYPE_KEY, PROJECT_TASK_TYPE_KEY
 
 logger = logging.getLogger(__name__)
@@ -37,67 +36,65 @@ def _slugify_model_id(model_id: str) -> str:
     return f"{slug}-{digest}"
 
 
-def _get_inference_models_home() -> Optional[str]:
-    """Return INFERENCE_HOME from the inference_models package, or None if not installed."""
-    try:
-        from inference_models.configuration import INFERENCE_HOME
+def _has_non_hidden_children(path: str) -> bool:
+    """Return True if *path* contains at least one non-hidden entry.
 
-        return INFERENCE_HOME
-    except ImportError:
-        return None
+    Hidden files (names starting with ``"."``) are excluded because they may be
+    stale lock-file leftovers that do not represent usable model artifacts.
+    """
+    try:
+        return any(not f.startswith(".") for f in os.listdir(path))
+    except OSError:
+        return False
 
 
 def is_model_cached(model_id: str) -> bool:
-    """Check if *model_id* has cached artifacts in either cache layout.
+    """Best-effort check whether *model_id* has cached artifacts.
 
-    Layout 1 (traditional): ``MODEL_CACHE_DIR/{model_id}/`` with files inside.
-    Layout 2 (inference-models): ``{base}/models-cache/{slug}/`` with
-    sub-directories containing model files.  The base directory is checked
-    under both ``MODEL_CACHE_DIR`` and ``INFERENCE_HOME`` (from the
-    inference_models package) since the two env-vars can be configured
-    independently even though they share the same default.
+    Checks both the traditional and ``inference-models`` cache layouts,
+    respecting the ``USE_INFERENCE_MODELS`` flag to avoid false positives
+    from one layout when the runtime uses the other.
+
+    .. note::
+
+       This is intentionally optimistic — a directory with non-hidden files
+       is assumed to contain a usable model.  Full integrity verification
+       (hash checks, registry validation) happens at model-load time inside
+       ``inference-models``.  Treat the result as *"there is a chance the
+       model is cached"* rather than a guarantee.
     """
-    # Traditional layout
+    if not USE_INFERENCE_MODELS:
+        # Only check the traditional layout when inference-models is disabled.
+        traditional_path = os.path.join(MODEL_CACHE_DIR, model_id)
+        return os.path.isdir(traditional_path) and _has_non_hidden_children(
+            traditional_path
+        )
+
+    # When inference-models is enabled, check both layouts — models cached
+    # before the migration still sit in the traditional tree.
     traditional_path = os.path.join(MODEL_CACHE_DIR, model_id)
-    if os.path.isdir(traditional_path) and os.listdir(traditional_path):
+    if os.path.isdir(traditional_path) and _has_non_hidden_children(traditional_path):
         return True
 
     slug = _slugify_model_id(model_id)
-
-    # inference-models layout under MODEL_CACHE_DIR
     models_cache_path = os.path.join(MODEL_CACHE_DIR, "models-cache", slug)
-    if os.path.isdir(models_cache_path) and os.listdir(models_cache_path):
+    if os.path.isdir(models_cache_path) and _has_non_hidden_children(models_cache_path):
         return True
 
-    # inference-models layout under INFERENCE_HOME (may differ from MODEL_CACHE_DIR)
-    inference_home = _get_inference_models_home()
-    if inference_home is not None and inference_home != MODEL_CACHE_DIR:
-        ih_path = os.path.join(inference_home, "models-cache", slug)
-        if os.path.isdir(ih_path) and os.listdir(ih_path):
-            return True
-
     return False
 
 
-def is_block_cached(artifacts_spec) -> bool:
-    """Check whether a block's required cache artifacts are present.
+def has_cached_model_variant(model_variants: Optional[List[str]]) -> bool:
+    """Return True if **any** of the given model variant IDs has cached artifacts.
 
-    Handles both formats returned by ``get_required_cache_artifacts()``:
-    - **list of model_id strings** (new): block is cached if ANY variant exists.
-    - **dict** with ``model_id`` and ``files`` keys (legacy): block is cached
-      if all listed files exist for that model_id.
-
-    Returns ``False`` for unrecognised formats.
+    Args:
+        model_variants: List of model IDs as returned by
+            ``WorkflowBlockManifest.get_supported_model_variants()``.
+            Returns ``False`` when *None* or empty.
     """
-    if isinstance(artifacts_spec, list):
-        return any(is_model_cached(mid) for mid in artifacts_spec)
-    if isinstance(artifacts_spec, dict):
-        model_id = artifacts_spec.get("model_id")
-        required_files = artifacts_spec.get("files", [])
-        if not model_id or not required_files:
-            return False
-        return are_all_files_cached(files=required_files, model_id=model_id)
-    return False
+    if not model_variants:
+        return False
+    return any(is_model_cached(mid) for mid in model_variants)
 
 
 def _load_blocks() -> list:
@@ -110,19 +107,11 @@ def _load_blocks() -> list:
 
 
 def scan_cached_models(cache_dir: str) -> List[Dict[str, Any]]:
-    """Walk *cache_dir* and the inference-models cache looking for cached user models.
+    """Walk *cache_dir* looking for ``model_type.json`` marker files.
 
-    Two layouts are scanned:
-
-    Layout 1 — traditional (``model_type.json``):
-        ``{cache_dir}/{workspace}/{project}/{version}/model_type.json``
-        Written by the inference model registry on first download.
-
-    Layout 2 — inference-models (``model_config.json``):
-        ``{inference_home}/models-cache/{slug}/{package_id}/model_config.json``
-        Written by the inference-models package on first download.
-        The ``model_id`` field in that file (added so air-gapped scanning works)
-        is used as the canonical identifier.
+    Each marker is written by the model registry when a model is first
+    downloaded.  The file contains at least ``project_task_type`` and
+    ``model_type`` keys.
 
     Returns a list of dicts with the following shape::
 
@@ -133,112 +122,60 @@ def scan_cached_models(cache_dir: str) -> List[Dict[str, Any]]:
             "model_architecture": "yolov8n",
             "is_foundation": False,
         }
-
-    Results are de-duplicated by ``model_id``; layout-1 entries take precedence.
     """
-    seen: Dict[str, Dict[str, Any]] = {}
+    results: List[Dict[str, Any]] = []
+    if not os.path.isdir(cache_dir):
+        return results
 
-    # ── Layout 1: model_type.json ────────────────────────────────────────────
-    if os.path.isdir(cache_dir):
-        for root, dirs, files in os.walk(cache_dir):
-            rel = os.path.relpath(root, cache_dir)
-            if rel == ".":
-                # Skip top-level dirs that are not model trees (incl. models-cache).
-                dirs[:] = [
-                    d for d in dirs if d not in _SKIP_TOP_LEVEL | {"models-cache"}
-                ]
-                continue
+    for root, dirs, files in os.walk(cache_dir):
+        # Prune top-level directories we know are not model trees.
+        rel = os.path.relpath(root, cache_dir)
+        if rel == ".":
+            dirs[:] = [d for d in dirs if d not in _SKIP_TOP_LEVEL]
+            continue
 
-            if "model_type.json" not in files:
-                continue
+        if "model_type.json" not in files:
+            continue
 
-            model_type_path = os.path.join(root, "model_type.json")
-            try:
-                with open(model_type_path, "r") as fh:
-                    metadata = json.load(fh)
-            except (json.JSONDecodeError, OSError) as exc:
-                logger.warning(
-                    "Skipping unreadable model_type.json at %s: %s",
-                    model_type_path,
-                    exc,
-                )
-                continue
-
-            if not isinstance(metadata, dict):
-                continue
-
-            task_type = metadata.get(PROJECT_TASK_TYPE_KEY) or metadata.get(
-                "taskType", ""
+        model_type_path = os.path.join(root, "model_type.json")
+        try:
+            with open(model_type_path, "r") as fh:
+                metadata = json.load(fh)
+        except (json.JSONDecodeError, OSError) as exc:
+            logger.warning(
+                "Skipping unreadable model_type.json at %s: %s",
+                model_type_path,
+                exc,
             )
-            model_architecture = metadata.get(MODEL_TYPE_KEY) or metadata.get(
-                "modelArchitecture", ""
-            )
+            continue
 
-            if not task_type:
-                continue
+        if not isinstance(metadata, dict):
+            continue
 
-            model_id = os.path.relpath(root, cache_dir).replace(os.sep, "/")
-            seen[model_id] = {
+        # Support both traditional keys and inference-models metadata keys.
+        task_type = metadata.get(PROJECT_TASK_TYPE_KEY) or metadata.get("taskType", "")
+        model_architecture = metadata.get(MODEL_TYPE_KEY) or metadata.get(
+            "modelArchitecture", ""
+        )
+
+        if not task_type:
+            continue
+
+        model_id = os.path.relpath(root, cache_dir)
+        # Normalise path separators on Windows.
+        model_id = model_id.replace(os.sep, "/")
+
+        results.append(
+            {
                 "model_id": model_id,
                 "name": model_id,
                 "task_type": task_type,
                 "model_architecture": model_architecture,
                 "is_foundation": False,
             }
+        )
 
-    # ── Layout 2: inference-models model_config.json ────────────────────────
-    bases = [cache_dir]
-    inference_home = _get_inference_models_home()
-    if inference_home is not None and inference_home != cache_dir:
-        bases.append(inference_home)
-
-    for base in bases:
-        models_cache = os.path.join(base, "models-cache")
-        if not os.path.isdir(models_cache):
-            continue
-        for slug in os.listdir(models_cache):
-            slug_dir = os.path.join(models_cache, slug)
-            if not os.path.isdir(slug_dir):
-                continue
-            for package_id in os.listdir(slug_dir):
-                config_path = os.path.join(
-                    slug_dir, package_id, "model_config.json"
-                )
-                if not os.path.isfile(config_path):
-                    continue
-                try:
-                    with open(config_path, "r") as fh:
-                        metadata = json.load(fh)
-                except (json.JSONDecodeError, OSError) as exc:
-                    logger.warning(
-                        "Skipping unreadable model_config.json at %s: %s",
-                        config_path,
-                        exc,
-                    )
-                    continue
-
-                if not isinstance(metadata, dict):
-                    continue
-
-                model_id = metadata.get("model_id")
-                task_type = metadata.get("task_type", "")
-                model_architecture = metadata.get("model_architecture", "")
-
-                # model_id is only present for caches written after the fix
-                # that added it to dump_model_config_for_offline_use.
-                if not model_id or not task_type:
-                    continue
-
-                if model_id not in seen:
-                    seen[model_id] = {
-                        "model_id": model_id,
-                        "name": model_id,
-                        "task_type": task_type,
-                        "model_architecture": model_architecture or "",
-                        "is_foundation": False,
-                    }
-
-    return list(seen.values())
+    return results
 
 
 def get_cached_foundation_models(
@@ -246,11 +183,9 @@ def get_cached_foundation_models(
 ) -> List[Dict[str, Any]]:
     """Return metadata for workflow blocks whose required weights are cached.
 
-    Each block whose manifest class exposes a ``get_required_cache_artifacts``
-    classmethod is inspected.  If every artifact it declares is already present
-    in the local cache the block is included in the result list.
-
-    Blocks that do not expose the classmethod are silently skipped.
+    Each block whose manifest class exposes ``get_supported_model_variants``
+    is inspected.  If any variant it declares is present in the local cache
+    the block is included in the result list.
 
     Args:
         blocks: Optional pre-loaded list of block specifications.  When
@@ -270,32 +205,15 @@ def get_cached_foundation_models(
 
     for block in blocks:
         manifest_cls = block.manifest_class
-        if not hasattr(manifest_cls, "get_required_cache_artifacts"):
+        model_variants = manifest_cls.get_supported_model_variants()
+        if model_variants is None:
             continue
 
-        try:
-            artifacts_spec = manifest_cls.get_required_cache_artifacts()
-        except Exception:
-            logger.debug(
-                "Error calling get_required_cache_artifacts on %s",
-                block.identifier,
-                exc_info=True,
-            )
+        if not has_cached_model_variant(model_variants):
             continue
 
-        if not is_block_cached(artifacts_spec):
-            continue
+        model_id = model_variants[0] if model_variants else ""
 
-        # Derive a representative model_id for the result entry.
-        if isinstance(artifacts_spec, list):
-            model_id = artifacts_spec[0] if artifacts_spec else ""
-        elif isinstance(artifacts_spec, dict):
-            model_id = artifacts_spec.get("model_id", "")
-        else:
-            continue
-
-        # Derive name from the block's manifest schema (json_schema_extra)
-        # rather than requiring it in the artifacts dict.
         block_name = model_id
         try:
             schema = manifest_cls.model_json_schema()
@@ -303,7 +221,6 @@ def get_cached_foundation_models(
         except Exception:
             pass
 
-        # Use the block type identifier from the manifest's type field.
         block_type_id = _get_block_type_identifier(block)
 
         results.append(
@@ -325,8 +242,8 @@ def get_task_type_to_block_mapping(
 ) -> Dict[str, List[str]]:
     """Build a reverse mapping from task_type to compatible block type identifiers.
 
-    Uses ``get_compatible_task_types()`` classmethod on block manifests when
-    available.  Blocks that do not expose the classmethod are skipped.
+    Uses ``get_compatible_task_types()`` on block manifests.  Blocks whose
+    method returns *None* (the base-class default) are skipped.
 
     Args:
         blocks: Optional pre-loaded list of block specifications.  When
@@ -346,27 +263,11 @@ def get_task_type_to_block_mapping(
 
     for block in blocks:
         manifest_cls = block.manifest_class
-        if not hasattr(manifest_cls, "get_compatible_task_types"):
+        task_types = manifest_cls.get_compatible_task_types()
+        if task_types is None:
             continue
 
-        try:
-            task_types = manifest_cls.get_compatible_task_types()
-        except Exception:
-            logger.debug(
-                "Error calling get_compatible_task_types on %s",
-                block.identifier,
-                exc_info=True,
-            )
-            continue
-
-        if not isinstance(task_types, (list, tuple, set)):
-            continue
-
-        # Derive the manifest type identifier
-        # (e.g. "roboflow_core/roboflow_object_detection_model@v2")
-        # from the block schema.
         block_type_id = _get_block_type_identifier(block)
-
         for tt in task_types:
             mapping.setdefault(tt, []).append(block_type_id)
 

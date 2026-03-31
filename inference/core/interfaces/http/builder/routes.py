@@ -13,13 +13,15 @@ from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse, Re
 from starlette.status import HTTP_201_CREATED, HTTP_400_BAD_REQUEST, HTTP_404_NOT_FOUND
 
 from inference.core.cache.air_gapped import (
-    _load_blocks,
     get_cached_foundation_models,
     get_task_type_to_block_mapping,
     scan_cached_models,
 )
 from inference.core.env import BUILDER_ORIGIN, MODEL_CACHE_DIR
 from inference.core.interfaces.http.error_handlers import with_route_exceptions_async
+from inference.core.workflows.execution_engine.introspection.blocks_loader import (
+    load_workflow_blocks,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -142,6 +144,9 @@ async def get_all_workflows():
 # IMPORTANT: This route MUST be defined BEFORE /api/{workflow_id}
 # otherwise FastAPI will match "models" as a workflow_id.
 # ----------------------------------------------------------------
+# IDs that are claimed by explicit sub-routes and therefore cannot
+# be used as workflow identifiers.
+_RESERVED_WORKFLOW_IDS = {"models"}
 _models_cache: Optional[Tuple[float, List[Dict[str, Any]]]] = None
 _MODELS_CACHE_TTL = 30.0  # seconds
 _models_lock = asyncio.Lock()
@@ -176,10 +181,16 @@ async def get_cached_models():
         for alias, canonical in REGISTERED_ALIASES.items():
             reverse_aliases.setdefault(canonical, []).append(alias)
 
-        # Load blocks once and pass to both helpers to avoid triple-loading.
+        # Load blocks once and pass to both helpers to avoid double-loading.
         try:
-            blocks = _load_blocks()
+            blocks = load_workflow_blocks()
         except Exception:
+            logger.warning(
+                "Failed to load workflow blocks — foundation model data will "
+                "be unavailable. This may indicate a broken build or missing "
+                "dependencies.",
+                exc_info=True,
+            )
             blocks = []
 
         # Scan the filesystem for cached models.
@@ -229,9 +240,16 @@ async def get_cached_models():
 async def get_workflow(workflow_id: str):
     """
     Return JSON for workflow_id.json, or 404 if missing.
+    IDs in ``_RESERVED_WORKFLOW_IDS`` are rejected to avoid shadowing
+    explicit sub-routes like ``/api/models``.
     """
     if not re.match(r"^[\w\-]+$", workflow_id):
         return JSONResponse({"error": "invalid id"}, status_code=HTTP_400_BAD_REQUEST)
+    if workflow_id in _RESERVED_WORKFLOW_IDS:
+        return JSONResponse(
+            {"error": f"'{workflow_id}' is a reserved identifier"},
+            status_code=HTTP_400_BAD_REQUEST,
+        )
 
     workflow_hash = sha256(workflow_id.encode()).hexdigest()
     file_path = workflow_local_dir / f"{workflow_hash}.json"
@@ -273,6 +291,11 @@ async def create_or_overwrite_workflow(
     """
     if not re.match(r"^[\w\-]+$", workflow_id):
         return JSONResponse({"error": "invalid id"}, status_code=HTTP_400_BAD_REQUEST)
+    if workflow_id in _RESERVED_WORKFLOW_IDS:
+        return JSONResponse(
+            {"error": f"'{workflow_id}' is a reserved identifier"},
+            status_code=HTTP_400_BAD_REQUEST,
+        )
 
     workflow_local_dir.mkdir(parents=True, exist_ok=True)
 
@@ -319,6 +342,11 @@ async def delete_workflow(workflow_id: str):
     """
     if not re.match(r"^[\w\-]+$", workflow_id):
         return JSONResponse({"error": "invalid id"}, status_code=HTTP_400_BAD_REQUEST)
+    if workflow_id in _RESERVED_WORKFLOW_IDS:
+        return JSONResponse(
+            {"error": f"'{workflow_id}' is a reserved identifier"},
+            status_code=HTTP_400_BAD_REQUEST,
+        )
 
     workflow_hash = sha256(workflow_id.encode()).hexdigest()
     file_path = workflow_local_dir / f"{workflow_hash}.json"

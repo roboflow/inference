@@ -99,7 +99,7 @@ class BlockManifest(WorkflowBlockManifest):
     )
 
     @classmethod
-    def get_compatible_task_types(cls) -> list:
+    def get_compatible_task_types(cls) -> Optional[List[str]]:
         return ["classification"]
 
     @classmethod

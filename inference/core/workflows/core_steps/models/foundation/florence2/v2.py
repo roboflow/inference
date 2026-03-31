@@ -23,7 +23,7 @@ from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlock
 
 class V2BlockManifest(BaseManifest):
     @classmethod
-    def get_required_cache_artifacts(cls) -> list:
+    def get_supported_model_variants(cls) -> Optional[List[str]]:
         """Return list of model_id variants that can satisfy this block."""
         return [
             "florence-pretrains/3",

@@ -3,9 +3,7 @@ import datetime
 import numpy as np
 import supervision as sv
 
-from inference.core.workflows.core_steps.trackers.bytetrack.v1 import (
-    ByteTrackBlockV1,
-)
+from inference.core.workflows.core_steps.trackers.bytetrack.v1 import ByteTrackBlockV1
 from inference.core.workflows.execution_engine.entities.base import VideoMetadata
 from tests.workflows.unit_tests.core_steps.trackers.conftest import (
     FRAME1_XYXY,
@@ -78,17 +76,23 @@ def test_byte_track_missing_fps() -> None:
 def test_byte_track_not_video_file() -> None:
     block = ByteTrackBlockV1()
     block.run(
-        image=wrap_with_workflow_image(make_metadata(10, comes_from_video_file=False, timestamp_offset=0)),
+        image=wrap_with_workflow_image(
+            make_metadata(10, comes_from_video_file=False, timestamp_offset=0)
+        ),
         detections=make_detections(FRAME1_XYXY),
         minimum_consecutive_frames=1,
     )
     frame2_result = block.run(
-        image=wrap_with_workflow_image(make_metadata(11, comes_from_video_file=False, timestamp_offset=1)),
+        image=wrap_with_workflow_image(
+            make_metadata(11, comes_from_video_file=False, timestamp_offset=1)
+        ),
         detections=make_detections(FRAME2_XYXY),
         minimum_consecutive_frames=1,
     )
     frame3_result = block.run(
-        image=wrap_with_workflow_image(make_metadata(12, comes_from_video_file=False, timestamp_offset=2)),
+        image=wrap_with_workflow_image(
+            make_metadata(12, comes_from_video_file=False, timestamp_offset=2)
+        ),
         detections=make_detections(FRAME3_XYXY),
         minimum_consecutive_frames=1,
     )
