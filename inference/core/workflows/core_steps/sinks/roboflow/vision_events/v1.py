@@ -439,20 +439,12 @@ class RoboflowVisionEventsBlockV1(WorkflowBlock):
                 for _ in range(batch_size)
             ]
 
-        input_images = (
-            [None] * batch_size if input_image is None else input_image
-        )
-        output_images = (
-            [None] * batch_size if output_image is None else output_image
-        )
-        predictions_list = (
-            [None] * batch_size if predictions is None else predictions
-        )
+        input_images = [None] * batch_size if input_image is None else input_image
+        output_images = [None] * batch_size if output_image is None else output_image
+        predictions_list = [None] * batch_size if predictions is None else predictions
 
         result = []
-        for img_in, img_out, pred in zip(
-            input_images, output_images, predictions_list
-        ):
+        for img_in, img_out, pred in zip(input_images, output_images, predictions_list):
             event_data = _build_event_data(
                 event_type=event_type,
                 external_id=external_id,
@@ -499,9 +491,7 @@ class RoboflowVisionEventsBlockV1(WorkflowBlock):
                 )
             else:
                 error_status, message = task()
-                result.append(
-                    {"error_status": error_status, "message": message}
-                )
+                result.append({"error_status": error_status, "message": message})
 
         return result
 
@@ -587,9 +577,7 @@ def _execute_vision_event(
         annotation_target: Optional[Dict[str, Any]] = None
 
         if output_image is not None:
-            output_source_id, _ = _upload_image(
-                api_base_url, api_key, output_image
-            )
+            output_source_id, _ = _upload_image(api_base_url, api_key, output_image)
             output_entry: Dict[str, Any] = {
                 "label": "output",
                 "sourceId": output_source_id,
@@ -598,9 +586,7 @@ def _execute_vision_event(
             annotation_target = output_entry
 
         if input_image is not None:
-            input_source_id, _ = _upload_image(
-                api_base_url, api_key, input_image
-            )
+            input_source_id, _ = _upload_image(api_base_url, api_key, input_image)
             input_image_entry: Dict[str, Any] = {
                 "label": "input",
                 "sourceId": input_source_id,
@@ -615,9 +601,7 @@ def _execute_vision_event(
             if classifications:
                 annotation_target["classifications"] = classifications
             if instance_segmentations:
-                annotation_target[
-                    "instanceSegmentations"
-                ] = instance_segmentations
+                annotation_target["instanceSegmentations"] = instance_segmentations
             if keypoints_detections:
                 annotation_target["keypoints"] = keypoints_detections
 
@@ -676,8 +660,14 @@ def _convert_sv_detections_to_vision_events_format(
 
     for xyxy, mask, confidence, _class_id, _tracker_id, data in detections:
         if isinstance(xyxy, np.ndarray):
-            xyxy = xyxy.astype(float).tolist()
-        x1, y1, x2, y2 = xyxy
+            # Explicitly cast each coordinate to float to match previous behavior
+            x1 = float(xyxy[0])
+            y1 = float(xyxy[1])
+            x2 = float(xyxy[2])
+            y2 = float(xyxy[3])
+        else:
+            x1, y1, x2, y2 = xyxy
+
         w = abs(x2 - x1)
         h = abs(y2 - y1)
         cx = x1 + w / 2
@@ -685,7 +675,10 @@ def _convert_sv_detections_to_vision_events_format(
         class_name = str(data.get("class_name", "unknown"))
         conf = float(confidence) if confidence is not None else 0.0
         # Clamp confidence to [0, 1]
-        conf = max(0.0, min(1.0, conf))
+        if conf < 0.0:
+            conf = 0.0
+        elif conf > 1.0:
+            conf = 1.0
 
         base = {
             "class": class_name,
@@ -719,11 +712,7 @@ def _convert_sv_detections_to_vision_events_format(
             if polygon is None and mask is not None:
                 polygon = mask_to_polygon(mask=mask)
             if polygon is not None and len(polygon) >= 3:
-                if isinstance(polygon, np.ndarray):
-                    polygon = polygon.astype(float).tolist()
-                seg_entry["points"] = [
-                    [float(pt[0]), float(pt[1])] for pt in polygon
-                ]
+                seg_entry["points"] = [[float(pt[0]), float(pt[1])] for pt in polygon]
                 instance_segmentations.append(seg_entry)
             else:
                 # Fall back to object detection if polygon is invalid
