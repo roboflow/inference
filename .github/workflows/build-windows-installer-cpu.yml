@@ -1,4 +1,4 @@
-name: Build Windows Installer
+name: Build Windows Installer (CPU)
 
 on:
   release:
@@ -23,56 +23,6 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-
-      - name: Install CUDA Toolkit
-        id: cuda-toolkit
-        shell: pwsh
-        run: |
-          $version = "12.8.1"
-          $short   = "12.8"
-          $url     = "https://developer.download.nvidia.com/compute/cuda/$version/network_installers/cuda_${version}_windows_network.exe"
-
-          Write-Host "Downloading CUDA $version network installer..."
-          Invoke-WebRequest -Uri $url -OutFile cuda_installer.exe -UseBasicParsing
-
-          Write-Host "Installing sub-packages..."
-          $proc = Start-Process -FilePath .\cuda_installer.exe -ArgumentList @(
-            "-s",
-            "nvcc_$short",
-            "cudart_$short",
-            "cublas_$short",
-            "cublas_dev_$short",
-            "curand_$short",
-            "curand_dev_$short",
-            "cuda_profiler_api_$short",
-            "visual_studio_integration_$short"
-          ) -Wait -NoNewWindow -PassThru
-      
-          Write-Host "Installer exit code: $($proc.ExitCode)"
-
-          $cudaPath = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v$short"
-          Write-Host "CUDA installed at: $cudaPath"
-          
-          Write-Host "Contents of CUDA path:"
-          Get-ChildItem $cudaPath -ErrorAction SilentlyContinue
-          Write-Host "Contents of include dir:"
-          Get-ChildItem "$cudaPath\include" -ErrorAction SilentlyContinue | Select-Object -First 10
-          
-          if (Test-Path "$cudaPath\include\cuda.h") {
-            Write-Host "cuda.h found"
-          } else {
-            Write-Host "ERROR: cuda.h NOT found"
-            exit 1
-          }
-
-          # Replicate the outputs that Jimver/cuda-toolkit provides so downstream
-          # steps using steps.cuda-toolkit.outputs.CUDA_PATH require no changes.
-          "CUDA_PATH=$cudaPath" | Out-File -Append $env:GITHUB_OUTPUT
-          "CUDA_PATH=$cudaPath" | Out-File -Append $env:GITHUB_ENV
-          "CUDA_HOME=$cudaPath" | Out-File -Append $env:GITHUB_ENV
-          "INCLUDE=$cudaPath\include;$env:INCLUDE"     | Out-File -Append $env:GITHUB_ENV
-          "LIB=$cudaPath\lib\x64;$env:LIB"             | Out-File -Append $env:GITHUB_ENV
-          "$cudaPath\bin"                              | Out-File -Append $env:GITHUB_PATH
 
       - name: Determine Version
         id: determine_version
@@ -249,15 +199,15 @@ jobs:
         shell: bash # Ensures 'make' and 'rm -rf' work as expected
         run: make create_wheels
 
-      - name: Install inference_gpu and dependencies from local wheels
+      - name: Install inference and dependencies from local wheels
         shell: bash # Using bash for wildcard expansion in pip install
         run: |
-          pip install -U --index-url https://download.pytorch.org/whl/cu128 torch torchvision 
-          WHEEL_FILE=$(ls dist/inference_gpu-*.whl)
-          echo "Found GPU wheel: $WHEEL_FILE"
+          pip install -U --index-url https://download.pytorch.org/whl/cpu torch torchvision 
+          WHEEL_FILE=$(ls dist/inference-*.whl)
+          echo "Found CPU wheel: $WHEEL_FILE"
           pip install --find-links=./dist/ "$WHEEL_FILE[sam,transformers,clip,http,yolo-world,gaze,grounding-dino]"
-          echo "--- Installed inference_gpu details ---"
-          pip show inference-gpu
+          echo "--- Installed inference details ---"
+          pip show inference
           
 
       - name: Install PyInstaller and other build dependencies
@@ -401,5 +351,5 @@ jobs:
         with:
           upload_url: ${{ github.event.release.upload_url }}
           asset_path: ./app_bundles/windows/installer/inference-${{ steps.determine_version.outputs.installer_version_out }}-installer.exe
-          asset_name: inference-${{ steps.determine_version.outputs.installer_version_out }}-installer.exe
+          asset_name: inference-${{ steps.determine_version.outputs.installer_version_out }}-cpu-installer.exe
           asset_content_type: application/vnd.microsoft.portable-executable 
