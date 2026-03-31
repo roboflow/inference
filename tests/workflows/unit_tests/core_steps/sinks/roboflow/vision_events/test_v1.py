@@ -360,7 +360,6 @@ def test_build_event_payload_minimal() -> None:
         event_type="custom",
         solution="test",
         images=[],
-        event_data={},
         custom_metadata={},
 
     )
@@ -456,7 +455,6 @@ def test_run_disabled() -> None:
         predictions=None,
         event_type="custom",
         solution="test",
-        event_data={},
         custom_metadata={},
 
         fire_and_forget=False,
@@ -484,7 +482,6 @@ def test_run_fire_and_forget_background_tasks(mock_execute: MagicMock) -> None:
         predictions=None,
         event_type="custom",
         solution="test",
-        event_data={},
         custom_metadata={},
 
         fire_and_forget=True,
@@ -512,7 +509,6 @@ def test_run_fire_and_forget_thread_pool(mock_execute: MagicMock) -> None:
         predictions=None,
         event_type="custom",
         solution="test",
-        event_data={},
         custom_metadata={},
 
         fire_and_forget=True,
@@ -540,7 +536,6 @@ def test_run_synchronous(mock_execute: MagicMock) -> None:
         predictions=None,
         event_type="custom",
         solution="test",
-        event_data={},
         custom_metadata={},
 
         fire_and_forget=False,
