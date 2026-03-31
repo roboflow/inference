@@ -45,7 +45,10 @@ else:
 # Dependency to verify the X-CSRF header on any protected route
 # ----------------------------------------------------------------
 def verify_csrf_token(x_csrf: str = Header(None)):
-    return
+    if x_csrf != csrf:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Invalid CSRF token"
+        )
 
 
 # ---------------------
