@@ -7,7 +7,8 @@ You can enable profiling to measure execution timing of your Workflow and identi
 The screenshots in this guide use the following workflow as an example; it includes 2x object detection, dynamic cropping, a Google Gemini call, and several visualization steps:
 
 <div align="center">
-  <img src="/images/workflows/workflow.png" alt="Example workflow in the Roboflow editor" width="800"/>
+  <img src="/images/workflows/workflow.webp" alt="Example workflow in the Roboflow editor" width="800"/>
+  <p style="margin-top: 4px; font-size: 0.85em;">Workflow definition JSON can be found <a href="/static/lpr-workflow.json">here</a>.</p>
 </div>
 
 ## Profiling with the Inference SDK
@@ -74,13 +75,13 @@ Profiling traces are saved in Chrome Tracing Format. To visualize them:
 Clicking on any span shows its duration, category, and arguments — such as which block's `step_execution` you are looking at:
 
 <div align="center">
-  <img src="/images/workflows/profiling.png" alt="Chrome tracing timeline with a selected step" width="800"/>
+  <img src="/images/workflows/profiling.webp" alt="Chrome tracing timeline with a selected step" width="800"/>
 </div>
 
 Most of the time was spent on 2x object detection (process 57) and Gemini call (process 78). If you zoom-in, you can see other steps (detection offset, dynamic cropping, visualization, etc.) between the object detection steps:
 
 <div align="center">
-  <img src="/images/workflows/profiling2.png" alt="Chrome tracing aggregated statistics view" width="800"/>
+  <img src="/images/workflows/profiling2.webp" alt="Chrome tracing aggregated statistics view" width="800"/>
 </div>
 
 ## Key Details
