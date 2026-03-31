@@ -16,12 +16,40 @@ print("PYINSTALLER HOOK (WINDOWS): Running hook-inference.models.py")
 # ------------------------------------------------------------------
 # Locate the physical directory of `inference.models`
 # ------------------------------------------------------------------
+hiddenimports = []
+datas = []
+print("PYINSTALLER HOOK (WINDOWS): Attempting to find spec for inference_models.models")
+inference_models_spec = importlib.util.find_spec("inference_models.models")
+if inference_models_spec is None or not inference_models_spec.submodule_search_locations:
+    print("PYINSTALLER HOOK (WINDOWS): inference_models.models package NOT FOUND or no submodule_search_locations.")
+else:
+    print(f"PYINSTALLER HOOK (WINDOWS): inference_models.models package FOUND. Locations: inference_models_specspec.submodule_search_locations}")
+    models_dir = pathlib.Path(inference_models_spec.submodule_search_locations[0])
+    print(f"PYINSTALLER HOOK (WINDOWS): models_dir set to: {models_dir}")
+    model_names = []
+    print(f"PYINSTALLER HOOK (WINDOWS): Iterating models_dir: {models_dir}")
+    for p in models_dir.iterdir():
+        print(f"PYINSTALLER HOOK (WINDOWS): Checking path: {p}")
+        if p.name.startswith("_") or p.name.startswith("."):
+            print(f"PYINSTALLER HOOK (WINDOWS): Skipping private/hidden: {p.name}")
+            continue
+        if p.is_dir() and (p / "__init__.py").exists():
+            model_names.append(f"inference_models.models.{p.name}")
+            print(f"PYINSTALLER HOOK (WINDOWS): Added directory model: {p.name}")
+        elif p.suffix == ".py" and p.name != "__init__.py":
+            model_names.append(f"inference_models.models.{p.stem}")
+            print(f"PYINSTALLER HOOK (WINDOWS): Added file model: {p.stem}")
+
+    print(f"PYINSTALLER HOOK (WINDOWS): Identified model_names: {model_names}")
+    for mod in model_names:
+        print(f"PYINSTALLER HOOK (WINDOWS): Collecting submodules and data for: {mod}")
+        hiddenimports += collect_submodules(mod)
+        datas += collect_data_files(mod)
+
 print("PYINSTALLER HOOK (WINDOWS): Attempting to find spec for inference.models")
 spec = importlib.util.find_spec("inference.models")
 if spec is None or not spec.submodule_search_locations:
     print("PYINSTALLER HOOK (WINDOWS): inference.models package NOT FOUND or no submodule_search_locations.")
-    hiddenimports = []
-    datas = []
 else:
     print(f"PYINSTALLER HOOK (WINDOWS): inference.models package FOUND. Locations: {spec.submodule_search_locations}")
     models_dir = pathlib.Path(spec.submodule_search_locations[0])
@@ -46,14 +74,13 @@ else:
             print(f"PYINSTALLER HOOK (WINDOWS): Added file model: {p.stem}")
 
     print(f"PYINSTALLER HOOK (WINDOWS): Identified model_names: {model_names}")
-    hiddenimports = []
-    datas = []
     for mod in model_names:
         print(f"PYINSTALLER HOOK (WINDOWS): Collecting submodules and data for: {mod}")
         hiddenimports += collect_submodules(mod)
         datas += collect_data_files(mod)
-    print(f"PYINSTALLER HOOK (WINDOWS): Final hiddenimports: {hiddenimports}")
-    print(f"PYINSTALLER HOOK (WINDOWS): Final datas: {datas}")
+
+print(f"PYINSTALLER HOOK (WINDOWS): Final hiddenimports: {hiddenimports}")
+print(f"PYINSTALLER HOOK (WINDOWS): Final datas: {datas}")
 
 print("PYINSTALLER HOOK (WINDOWS): hook-inference.models.py finished.")
 
