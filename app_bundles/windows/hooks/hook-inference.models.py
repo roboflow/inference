@@ -23,7 +23,7 @@ inference_models_spec = importlib.util.find_spec("inference_models.models")
 if inference_models_spec is None or not inference_models_spec.submodule_search_locations:
     print("PYINSTALLER HOOK (WINDOWS): inference_models.models package NOT FOUND or no submodule_search_locations.")
 else:
-    print(f"PYINSTALLER HOOK (WINDOWS): inference_models.models package FOUND. Locations: inference_models_specspec.submodule_search_locations}")
+    print(f"PYINSTALLER HOOK (WINDOWS): inference_models.models package FOUND. Locations: {inference_models_spec.submodule_search_locations}")
     models_dir = pathlib.Path(inference_models_spec.submodule_search_locations[0])
     print(f"PYINSTALLER HOOK (WINDOWS): models_dir set to: {models_dir}")
     model_names = []
