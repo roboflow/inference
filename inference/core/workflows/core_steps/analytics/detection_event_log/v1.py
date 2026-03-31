@@ -1,6 +1,7 @@
-import logging
+import heapq
+import time
 from dataclasses import asdict, dataclass
-from typing import Any, Dict, List, Literal, Optional, Type, Union
+from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
 
 import numpy as np
 import supervision as sv
@@ -40,9 +41,11 @@ class DetectionEvent:
     tracker_id: int
     class_name: str
     first_seen_frame: int
-    first_seen_timestamp: float
+    first_seen_timestamp: float  # Unix wall-clock time (frame_timestamp or time.time())
     last_seen_frame: int
-    last_seen_timestamp: float
+    last_seen_timestamp: float  # Unix wall-clock time (frame_timestamp or time.time())
+    first_seen_relative: float = 0.0  # seconds since video start
+    last_seen_relative: float = 0.0  # seconds since video start
     frame_count: int = 1
     logged: bool = False
 
@@ -55,9 +58,16 @@ class BlockManifest(WorkflowBlockManifest):
             "short_description": "Tracks detection events over time, logging when objects first appear and persist.",
             "long_description": (
                 "This block maintains a log of detection events from tracked objects. "
-                "It records when each object was first seen, its class, and the last time it was seen."
-                "Objects must be seen for a minimum number of frames (frame_threshold) before being logged. "
-                "Stale events (not seen for stale_frames) are removed during periodic cleanup (every flush_interval frames)."
+                "For each tracked object it records: class name, first and last seen frame numbers, "
+                "absolute wall-clock timestamps (Unix epoch floats derived from frame_timestamp metadata, "
+                "or time.time() as fallback), and relative timestamps in seconds since the video started. "
+                "Objects must be seen for a minimum number of frames (frame_threshold) before being moved "
+                "from 'pending' to 'logged' status. "
+                "Stale events (not seen for stale_frames frames) are removed during periodic cleanup "
+                "(every flush_interval frames). When a logged event goes stale it is emitted in the "
+                "complete_events output, which contains the full event data for objects that were tracked "
+                "long enough to be logged and have since left the scene. "
+                "The reference_timestamp parameter is deprecated and no longer used."
             ),
             "license": "Apache-2.0",
             "block_type": "analytics",
@@ -108,8 +118,9 @@ class BlockManifest(WorkflowBlockManifest):
 
     reference_timestamp: Optional[Union[float, Selector(kind=[FLOAT_KIND])]] = Field(
         default=None,
-        description="Unix timestamp when the video started. When provided, absolute timestamps (first_seen_timestamp, last_seen_timestamp) are included in output, calculated as relative time + reference_timestamp. If not provided and the video metadata contains frame_timestamp, the reference timestamp will be automatically extracted from the first frame.",
+        description="Deprecated, no longer used. Absolute timestamps are now taken directly from frame_timestamp metadata (or time.time() as fallback).",
         examples=[1726570875.0],
+        deprecated=True,
     )
 
     fallback_fps: Union[float, WorkflowParameterSelector(kind=[FLOAT_KIND])] = Field(
@@ -175,40 +186,71 @@ class DetectionEventLogBlockV1(WorkflowBlock):
         self._frame_count: Dict[str, int] = {}
         # Dict[video_id, last_access_frame] - tracks when each video was last accessed (global frame count)
         self._last_access: Dict[str, int] = {}
-        # Dict[video_id, reference_timestamp] - stores extracted reference timestamp per video
-        self._reference_timestamps: Dict[str, float] = {}
+        # Dict[video_id, first_frame_timestamp] - stores the first frame's wall-clock timestamp
+        # Used as the anchor for frame_timestamp-based relative time calculation
+        self._first_frame_timestamps: Dict[str, float] = {}
         # Global frame counter for tracking video access order
         self._global_frame: int = 0
+        # Min-heap of (last_access_frame, video_id) for efficient oldest video lookup
+        self._access_heap: List[Tuple[int, str]] = []
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BlockManifest
 
     def _get_relative_time(
-        self, current_frame: int, metadata: VideoMetadata, fallback_fps: float
+        self,
+        video_id: str,
+        metadata: VideoMetadata,
+        fallback_fps: float,
     ) -> float:
         """Calculate relative time in seconds since video started.
 
-        Uses frame number and FPS when available, otherwise uses fallback_fps.
-        Frame 1 corresponds to 0.0 seconds.
+        Uses frame_timestamp from metadata when available for accurate timing,
+        even when inference doesn't run at the camera's reported FPS (e.g. due
+        to dropped frames or processing lag). Falls back to metadata.frame_number
+        / FPS when frame_timestamp is not available.
         """
+        if metadata.frame_timestamp is not None:
+            frame_ts = metadata.frame_timestamp.timestamp()
+            if video_id not in self._first_frame_timestamps:
+                self._first_frame_timestamps[video_id] = frame_ts
+            return frame_ts - self._first_frame_timestamps[video_id]
+
+        # Fallback: use actual video frame number (not internal counter) to
+        # correctly account for dropped/skipped frames during inference.
+        # frame_number=0 is a sentinel for static/non-video images, treat as first frame.
         fps = metadata.fps if metadata.fps and metadata.fps != 0 else fallback_fps
-        return (current_frame - 1) / fps
+        return max(metadata.frame_number - 1, 0) / fps
 
     def _evict_oldest_video(self) -> None:
         """Remove the oldest video stream data when MAX_VIDEOS is exceeded."""
         if len(self._event_logs) <= MAX_VIDEOS:
             return
 
-        # Find the video with the oldest last access time
-        oldest_video_id = min(self._last_access, key=self._last_access.get)
+        # Rebuild heap if out of sync with current state
+        if len(self._access_heap) < len(self._last_access):
+            self._access_heap[:] = [
+                (frame, vid) for vid, frame in self._last_access.items()
+            ]
+            heapq.heapify(self._access_heap)
+
+        # Pop stale entries until we find a valid current entry
+        while self._access_heap:
+            frame, vid = heapq.heappop(self._access_heap)
+            if self._last_access.get(vid) == frame and vid in self._event_logs:
+                oldest_video_id = vid
+                break
+        else:
+            # If heap is empty but we have event_logs, use fallback
+            oldest_video_id = min(self._last_access, key=self._last_access.get)
 
         # Remove all data for this video
         self._event_logs.pop(oldest_video_id, None)
         self._last_flush_frame.pop(oldest_video_id, None)
         self._frame_count.pop(oldest_video_id, None)
         self._last_access.pop(oldest_video_id, None)
-        self._reference_timestamps.pop(oldest_video_id, None)
+        self._first_frame_timestamps.pop(oldest_video_id, None)
 
     def _remove_stale_events(
         self,
@@ -258,8 +300,7 @@ class DetectionEventLogBlockV1(WorkflowBlock):
             flush_interval: How often to run stale event cleanup.
             stale_frames: Remove events not seen for this many frames.
             fallback_fps: FPS to use when video metadata doesn't provide FPS.
-            reference_timestamp: Optional Unix timestamp when video started. When provided,
-                absolute timestamps are included in output.
+            reference_timestamp: Unused, kept for backward compatibility.
 
         Returns:
             Dictionary containing event_log, detections, total_logged, and total_pending.
@@ -275,25 +316,15 @@ class DetectionEventLogBlockV1(WorkflowBlock):
         current_frame = self._frame_count.get(video_id, 0) + 1
         self._frame_count[video_id] = current_frame
 
-        current_time = self._get_relative_time(current_frame, metadata, fallback_fps)
+        current_time = self._get_relative_time(video_id, metadata, fallback_fps)
 
-        # If reference_timestamp not provided, try to extract from video metadata
-        effective_reference_timestamp = reference_timestamp
-        if effective_reference_timestamp is None:
-            # Check if we already have a stored reference timestamp for this video
-            if video_id in self._reference_timestamps:
-                effective_reference_timestamp = self._reference_timestamps[video_id]
-            elif metadata.frame_timestamp is not None:
-                # Calculate reference timestamp: frame_timestamp - relative_time
-                # This gives us the timestamp when the video/stream started
-                # frame_timestamp is a datetime object, so we need to convert to Unix timestamp
-                frame_ts = metadata.frame_timestamp.timestamp()
-                effective_reference_timestamp = frame_ts - current_time
-                self._reference_timestamps[video_id] = effective_reference_timestamp
-                logger.debug(
-                    f"Extracted reference_timestamp for video {video_id}: {effective_reference_timestamp} "
-                    f"(frame_timestamp={frame_ts}, relative_time={current_time})"
-                )
+        # Use frame_timestamp for absolute time when available (reflects actual capture
+        # time, not inference processing time). Falls back to time.time().
+        current_absolute_time = (
+            metadata.frame_timestamp.timestamp()
+            if metadata.frame_timestamp is not None
+            else time.time()
+        )
 
         # Initialize event log for this video if needed
         event_log = self._event_logs.setdefault(video_id, {})
@@ -315,15 +346,13 @@ class DetectionEventLogBlockV1(WorkflowBlock):
             self._last_flush_frame[video_id] = current_frame
 
         # Format complete events
-        complete_events = self._format_complete_events(
-            complete_events_list, effective_reference_timestamp
-        )
+        complete_events = self._format_complete_events(complete_events_list)
 
         # Process detections
         if detections.tracker_id is None or len(detections.tracker_id) == 0:
             # No tracked detections, return current log
             event_log_dict, total_logged, total_pending = self._format_event_log(
-                event_log, frame_threshold, effective_reference_timestamp
+                event_log, frame_threshold
             )
             return {
                 OUTPUT_KEY: event_log_dict,
@@ -351,7 +380,8 @@ class DetectionEventLogBlockV1(WorkflowBlock):
                 # Update existing event
                 event = event_log[tracker_id]
                 event.last_seen_frame = current_frame
-                event.last_seen_timestamp = current_time
+                event.last_seen_timestamp = current_absolute_time
+                event.last_seen_relative = current_time
                 event.frame_count += 1
 
                 # Mark as logged once threshold is reached
@@ -366,15 +396,17 @@ class DetectionEventLogBlockV1(WorkflowBlock):
                     tracker_id=tracker_id,
                     class_name=class_name,
                     first_seen_frame=current_frame,
-                    first_seen_timestamp=current_time,
+                    first_seen_timestamp=current_absolute_time,
                     last_seen_frame=current_frame,
-                    last_seen_timestamp=current_time,
+                    last_seen_timestamp=current_absolute_time,
+                    first_seen_relative=current_time,
+                    last_seen_relative=current_time,
                     frame_count=1,
                     logged=False,
                 )
 
         event_log_dict, total_logged, total_pending = self._format_event_log(
-            event_log, frame_threshold, effective_reference_timestamp
+            event_log, frame_threshold
         )
         return {
             OUTPUT_KEY: event_log_dict,
@@ -387,38 +419,19 @@ class DetectionEventLogBlockV1(WorkflowBlock):
     def _format_complete_events(
         self,
         complete_events: List[DetectionEvent],
-        reference_timestamp: Optional[float] = None,
     ) -> Dict[str, Any]:
         """Format complete events for output.
 
         Args:
             complete_events: List of DetectionEvent objects that have completed (gone stale).
-            reference_timestamp: Optional reference timestamp for absolute time calculation.
 
         Returns:
             Dictionary with tracker_id as key and event data as value.
         """
         formatted = {}
         for event in complete_events:
-            event_data = asdict(event)
+            event_data = event.__dict__.copy()
             del event_data["logged"]
-
-            # Internal timestamps are relative (seconds since video start)
-            # Rename to *_relative in output
-            first_seen_relative = event_data.pop("first_seen_timestamp")
-            last_seen_relative = event_data.pop("last_seen_timestamp")
-            event_data["first_seen_relative"] = first_seen_relative
-            event_data["last_seen_relative"] = last_seen_relative
-
-            # Add absolute timestamps if reference_timestamp is provided
-            if reference_timestamp is not None:
-                event_data["first_seen_timestamp"] = (
-                    first_seen_relative + reference_timestamp
-                )
-                event_data["last_seen_timestamp"] = (
-                    last_seen_relative + reference_timestamp
-                )
-
             formatted[str(event.tracker_id)] = event_data
 
         return formatted
@@ -427,7 +440,6 @@ class DetectionEventLogBlockV1(WorkflowBlock):
         self,
         event_log: Dict[int, DetectionEvent],
         frame_threshold: int,
-        reference_timestamp: Optional[float] = None,
     ) -> tuple:
         """Format the event log for output.
 
@@ -438,24 +450,8 @@ class DetectionEventLogBlockV1(WorkflowBlock):
         pending_events = {}
 
         for tracker_id, event in event_log.items():
-            event_data = asdict(event)
+            event_data = event.__dict__.copy()
             del event_data["logged"]
-
-            # Internal timestamps are relative (seconds since video start)
-            # Rename to *_relative in output
-            first_seen_relative = event_data.pop("first_seen_timestamp")
-            last_seen_relative = event_data.pop("last_seen_timestamp")
-            event_data["first_seen_relative"] = first_seen_relative
-            event_data["last_seen_relative"] = last_seen_relative
-
-            # Add absolute timestamps if reference_timestamp is provided
-            if reference_timestamp is not None:
-                event_data["first_seen_timestamp"] = (
-                    first_seen_relative + reference_timestamp
-                )
-                event_data["last_seen_timestamp"] = (
-                    last_seen_relative + reference_timestamp
-                )
 
             if event.frame_count >= frame_threshold:
                 logged_events[str(tracker_id)] = event_data
