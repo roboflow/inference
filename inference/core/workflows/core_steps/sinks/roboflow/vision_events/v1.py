@@ -138,6 +138,7 @@ class BlockManifest(WorkflowBlockManifest):
                 "blockPriority": 1,
                 "popular": False,
                 "requires_rf_key": True,
+                "enterprise_only": True,
             },
         }
     )
@@ -148,6 +149,7 @@ class BlockManifest(WorkflowBlockManifest):
         description="The original input image. Uploaded to the Vision Events API and "
         "used as the base image for detection annotations.",
         examples=["$inputs.image", "$steps.cropping.crops"],
+        json_schema_extra={"always_visible": True},
     )
     output_image: Optional[Selector(kind=[IMAGE_KIND])] = Field(
         default=None,
@@ -155,6 +157,7 @@ class BlockManifest(WorkflowBlockManifest):
         description="An optional output/visualized image (e.g., from a visualization "
         "block). Displayed as the primary image in the Vision Events dashboard.",
         examples=["$steps.visualization.image"],
+        json_schema_extra={"always_visible": True},
     )
     predictions: Optional[
         Selector(
@@ -340,7 +343,7 @@ class BlockManifest(WorkflowBlockManifest):
         description="Flat key-value metadata to attach to the event. Keys must match "
         "pattern [a-zA-Z0-9_ -]+ (max 100 chars). String values max 1000 chars.",
         examples=[{"camera_id": "cam_01", "location": "$inputs.location"}],
-        json_schema_extra={"always_visible": True},
+        json_schema_extra={"additional_section": True},
     )
     fire_and_forget: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(
         default=True,
