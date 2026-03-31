@@ -62,6 +62,7 @@ from inference_models.models.base.semantic_segmentation import (
 )
 from inference_models.models.base.types import PreprocessingMetadata
 
+
 def _resolve_cached_model_path(model_id: str) -> str:
     """If the model is already in the inference-models local cache, return the
     package directory path so ``AutoModel.from_pretrained`` can load directly

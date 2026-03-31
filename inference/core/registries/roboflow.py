@@ -335,7 +335,10 @@ def _get_model_metadata_from_inference_models_cache(
     ``{base}/models-cache/{slug}/{package_id}/model_config.json``
     where *base* is ``MODEL_CACHE_DIR`` and optionally ``INFERENCE_HOME``.
     """
-    from inference.core.cache.air_gapped import _get_inference_models_home, _slugify_model_id
+    from inference.core.cache.air_gapped import (
+        _get_inference_models_home,
+        _slugify_model_id,
+    )
 
     slug = _slugify_model_id(model_id)
 
