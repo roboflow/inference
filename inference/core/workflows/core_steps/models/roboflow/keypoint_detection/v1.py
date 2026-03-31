@@ -147,6 +147,10 @@ class BlockManifest(WorkflowBlockManifest):
     )
 
     @classmethod
+    def get_compatible_task_types(cls) -> Optional[List[str]]:
+        return ["keypoint-detection"]
+
+    @classmethod
     def get_parameters_accepting_batches(cls) -> List[str]:
         return ["images"]
 
