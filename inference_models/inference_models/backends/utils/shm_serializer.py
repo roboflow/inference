@@ -1,4 +1,4 @@
-"""Shared-memory serializer for the MultiProcessBackend data path.
+"""Shared-memory serializer for the SubprocessBackend data path.
 
 Extracts ``np.ndarray`` and ``torch.Tensor`` objects from an arbitrary Python
 structure, writes their raw bytes into a pre-allocated shared memory buffer,
