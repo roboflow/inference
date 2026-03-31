@@ -125,6 +125,10 @@ jobs:
         run: zensical build --clean
         working-directory: ./inference_repo
 
+      - name: Generate llms.txt and markdown pages
+        run: python docs/scripts/generate_llms_txt.py
+        working-directory: ./inference_repo
+
       - name: Verify build output
         run: |
           echo "Checking for theme assets in site/..."
@@ -136,6 +140,10 @@ jobs:
           test -d site/reference/inference_sdk || { echo "ERROR: site/reference/inference_sdk/ missing!"; exit 1; }
           test -d site/reference/inference_cli || { echo "ERROR: site/reference/inference_cli/ missing!"; exit 1; }
           echo "API reference OK."
+          echo "Checking for llms.txt..."
+          test -f site/llms.txt || { echo "ERROR: site/llms.txt missing!"; exit 1; }
+          test -f site/llms-full.txt || { echo "ERROR: site/llms-full.txt missing!"; exit 1; }
+          echo "llms.txt OK."
         working-directory: ./inference_repo
 
       - name: Upload site artifact
