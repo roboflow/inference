@@ -199,7 +199,7 @@ if __name__ == "__main__":
             "─────────────────────────────────────────────────────────── \n"
             "                                                           \n"
             "  Roboflow Inference is ready                              \n"
-            f"  Dashboard: {url:<44} │\n"
+            f"  Dashboard: {url:<44} (since IPv6 is attempted first when making requests, please use this address instead of localhost)\n"
             "                                                           \n"
             "───────────────────────────────────────────────────────────\n"
         )

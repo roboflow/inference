@@ -48,7 +48,10 @@ jobs:
             "visual_studio_integration_$short"
           ) -Wait -NoNewWindow -PassThru
       
-          Write-Host "Installer exit code: $($proc.ExitCode)"
+          if ($proc.ExitCode -ne 0) {
+            Write-Error "CUDA installer failed with exit code $($proc.ExitCode)"
+            exit $proc.ExitCode
+          }
 
           $cudaPath = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v$short"
           Write-Host "CUDA installed at: $cudaPath"
@@ -298,13 +301,6 @@ jobs:
           set CERTSYNC_EXIT_CODE=%ERRORLEVEL%
           REM Always display smctl.log after certsync, as it might contain TRACE details for this operation
           set SMCTL_LOG_FILE_PATH_AFTER_CERTSYNC=%USERPROFILE%\.signingmanager\logs\smctl.log
-          echo "--- smctl.log content after certsync (from %SMCTL_LOG_FILE_PATH_AFTER_CERTSYNC%) ---"
-          if exist "%SMCTL_LOG_FILE_PATH_AFTER_CERTSYNC%" (
-            type "%SMCTL_LOG_FILE_PATH_AFTER_CERTSYNC%"
-          ) else (
-            echo "smctl.log not found at %SMCTL_LOG_FILE_PATH_AFTER_CERTSYNC% after certsync attempt."
-          )
-          echo "--- end of smctl.log content after certsync ---"
           if %CERTSYNC_EXIT_CODE% neq 0 (
             echo "Error: smctl windows certsync command failed with exit code %CERTSYNC_EXIT_CODE%."
             exit /b 1

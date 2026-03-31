@@ -301,13 +301,6 @@ jobs:
 
           REM Display the detailed smctl.log file
           set SMCTL_LOG_FILE_PATH=%USERPROFILE%\.signingmanager\logs\smctl.log
-          echo "--- smctl.log content (from %SMCTL_LOG_FILE_PATH%) ---"
-          if exist "%SMCTL_LOG_FILE_PATH%" (
-            type "%SMCTL_LOG_FILE_PATH%"
-          ) else (
-            echo "smctl.log not found at %SMCTL_LOG_FILE_PATH%."
-          )
-          echo "--- end of smctl.log content ---"
 
           REM We need to re-capture CLI output or pass it if we want to search it again here.
           REM Let's assume for a moment that with TRACE logging, the exit code becomes more reliable,
