@@ -42,6 +42,9 @@ class DirectBackend(Backend):
         self._inference_count = 0
         self._total_latency_s = 0.0
         self._last_latency_s = 0.0
+        self._avg_latency_s = 0.0
+        self._ram_usage_mb = 0.0
+        self._gpu_usage_mb = 0.0
         self._error_count = 0
 
     @property
