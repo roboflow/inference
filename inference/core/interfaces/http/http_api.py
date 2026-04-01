@@ -884,22 +884,31 @@ class HttpInterface(BaseInterface):
             """
             if api_key is not None:
                 inference_request.api_key = api_key
+            requested_model_id = inference_request.model_id
             de_aliased_model_id = resolve_roboflow_model_alias(
-                model_id=inference_request.model_id
+                model_id=requested_model_id
+            )
+            model_id_alias = (
+                requested_model_id
+                if de_aliased_model_id != requested_model_id
+                else None
             )
             self.model_manager.add_model(
                 de_aliased_model_id,
                 inference_request.api_key,
-                model_id_alias=(
-                    inference_request.model_id
-                    if de_aliased_model_id != inference_request.model_id
-                    else None
-                ),
+                model_id_alias=model_id_alias,
                 countinference=countinference,
                 service_secret=service_secret,
             )
+            inference_model_id = (
+                requested_model_id
+                if model_id_alias is not None
+                else de_aliased_model_id
+            )
             resp = self.model_manager.infer_from_request_sync(
-                de_aliased_model_id, inference_request, **kwargs
+                inference_model_id,
+                inference_request,
+                **kwargs,
             )
             return orjson_response(resp)
 
