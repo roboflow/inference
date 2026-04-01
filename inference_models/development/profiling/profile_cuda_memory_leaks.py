@@ -78,11 +78,8 @@ MODEL_SETS = {
         "rfdetr-seg-nano",
         # Keypoint Detection
         "yolov8n-pose-640",
-        # Classification
-        "resnet50",
         # Core / Foundation models
         "florence-2-base",
-        "clip/1",
         "sam2/hiera_tiny",
     ],
 }
@@ -178,10 +175,11 @@ def create_test_image() -> np.ndarray:
 
 
 def make_detection_request(
-    image: np.ndarray, api_key: str
+    image: np.ndarray, api_key: str, model_id: str
 ) -> ObjectDetectionInferenceRequest:
     return ObjectDetectionInferenceRequest(
         image=InferenceRequestImage(type="numpy_object", value=image),
+        model_id=model_id,
         api_key=api_key,
         confidence=0.5,
     )
@@ -368,7 +366,7 @@ def run_phase2(
 
     model_id = det_models[0]
     image = create_test_image()
-    request = make_detection_request(image, api_key)
+    request = make_detection_request(image, api_key, model_id)
 
     manager = create_base_model_manager()
     print_step(f"Loading {model_id} for inference test...")
@@ -435,11 +433,11 @@ def run_phase3(
     measurements: List[VRAMMeasurement] = []
 
     image = create_test_image()
-    request = make_detection_request(image, api_key)
 
     # Pick a model — prefer detection for inference, but load-only works too
     test_model = models[0]
     can_infer = test_model in DETECTION_MODELS
+    request = make_detection_request(image, api_key, test_model) if can_infer else None
 
     baseline = tracker.snapshot("p3_baseline")
     measurements.append(tracker.log[-1])
@@ -538,7 +536,6 @@ def run_phase4(
         )
 
     image = create_test_image()
-    request = make_detection_request(image, api_key)
 
     manager = create_cached_model_manager(max_size=cache_size)
 
@@ -564,8 +561,9 @@ def run_phase4(
 
             # Run a few inferences if possible
             if model_id in DETECTION_MODELS:
+                req = make_detection_request(image, api_key, model_id)
                 for _ in range(5):
-                    try_infer(manager, model_id, request)
+                    try_infer(manager, model_id, req)
 
             vram = tracker.snapshot(f"p4_step_{step}_{model_id}")
             measurements.append(tracker.log[-1])
