@@ -140,14 +140,32 @@ def test_workflow_with_detection_event_log_multiple_frames(
         max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
     )
 
-    # when - run multiple times to simulate video frames
+    # when - run multiple times with controlled frame_timestamps so relative times are deterministic
     # 5 frames ensures all trackers have enough frames to confirm tracks
-    # (the trackers library always returns tracker_id=-1 on the first frame)
+    # (some trackers return tracker_id=-1 on the first frame)
+    fps = 30.0
+    base_ts = 1726570875.0
+    parent_metadata = ImageParentMetadata(parent_id="test_frame")
     num_frames = 5
-    for _ in range(num_frames):
+    for frame_number in range(1, num_frames + 1):
+        frame_ts = datetime.datetime.fromtimestamp(
+            base_ts + (frame_number - 1) / fps, tz=datetime.timezone.utc
+        )
+        metadata = VideoMetadata(
+            video_identifier="test_video",
+            frame_number=frame_number,
+            fps=fps,
+            frame_timestamp=frame_ts,
+            comes_from_video_file=True,
+        )
+        image_with_metadata = WorkflowImageData(
+            parent_metadata=parent_metadata,
+            numpy_image=dogs_image,
+            video_metadata=metadata,
+        )
         result = execution_engine.run(
             runtime_parameters={
-                "image": [dogs_image],
+                "image": [image_with_metadata],
             }
         )
 
@@ -169,6 +187,8 @@ def test_workflow_with_detection_event_log_multiple_frames(
         assert 1 <= event["last_seen_frame"] <= num_frames
         assert event["first_seen_frame"] <= event["last_seen_frame"]
         assert event["frame_count"] >= 1
+        assert event["first_seen_relative"] >= 0.0
+        assert event["last_seen_relative"] >= event["first_seen_relative"]
         assert "first_seen_timestamp" in event
         assert "last_seen_timestamp" in event
 
