@@ -6,7 +6,7 @@ from typing import Dict, Generator, List, Optional, Tuple, Union
 import numpy as np
 from fastapi.encoders import jsonable_encoder
 
-from inference.core.cache import cache
+from inference.core.cache import model_monitoring as model_monitoring_cache_module
 from inference.core.cache.serializers import to_cachable_inference_item
 from inference.core.devices.utils import GLOBAL_INFERENCE_SERVER_ID
 from inference.core.entities.requests.inference import InferenceRequest
@@ -223,7 +223,7 @@ class ModelManager:
                             logger.debug(
                                 f"ModelManager - caching inference request started for model_id={model_id}"
                             )
-                            cache.zadd(
+                            model_monitoring_cache_module.model_monitoring_cache.zadd(
                                 f"models",
                                 value=f"{GLOBAL_INFERENCE_SERVER_ID}:{request.api_key}:{model_id}",
                                 score=finish_time,
@@ -235,7 +235,7 @@ class ModelManager:
                                 and request.image.type == "numpy"
                             ):
                                 request.image.value = str(request.image.value)
-                            cache.zadd(
+                            model_monitoring_cache_module.model_monitoring_cache.zadd(
                                 f"inference:{GLOBAL_INFERENCE_SERVER_ID}:{model_id}",
                                 value=to_cachable_inference_item(request, rtn_val),
                                 score=finish_time,
@@ -255,13 +255,13 @@ class ModelManager:
                 if not DISABLE_INFERENCE_CACHE and enable_model_monitoring:
                     with start_span("model.infer.cache_error"):
                         try:
-                            cache.zadd(
+                            model_monitoring_cache_module.model_monitoring_cache.zadd(
                                 f"models",
                                 value=f"{GLOBAL_INFERENCE_SERVER_ID}:{request.api_key}:{model_id}",
                                 score=finish_time,
                                 expire=METRICS_INTERVAL * 2,
                             )
-                            cache.zadd(
+                            model_monitoring_cache_module.model_monitoring_cache.zadd(
                                 f"error:{GLOBAL_INFERENCE_SERVER_ID}:{model_id}",
                                 value={
                                     "request": jsonable_encoder(
@@ -321,7 +321,7 @@ class ModelManager:
                             logger.debug(
                                 f"ModelManager - caching inference request started for model_id={model_id}"
                             )
-                            cache.zadd(
+                            model_monitoring_cache_module.model_monitoring_cache.zadd(
                                 f"models",
                                 value=f"{GLOBAL_INFERENCE_SERVER_ID}:{request.api_key}:{model_id}",
                                 score=finish_time,
@@ -333,7 +333,7 @@ class ModelManager:
                                 and request.image.type == "numpy"
                             ):
                                 request.image.value = str(request.image.value)
-                            cache.zadd(
+                            model_monitoring_cache_module.model_monitoring_cache.zadd(
                                 f"inference:{GLOBAL_INFERENCE_SERVER_ID}:{model_id}",
                                 value=to_cachable_inference_item(request, rtn_val),
                                 score=finish_time,
@@ -353,13 +353,13 @@ class ModelManager:
                 if not DISABLE_INFERENCE_CACHE and enable_model_monitoring:
                     with start_span("model.infer.cache_error"):
                         try:
-                            cache.zadd(
+                            model_monitoring_cache_module.model_monitoring_cache.zadd(
                                 f"models",
                                 value=f"{GLOBAL_INFERENCE_SERVER_ID}:{request.api_key}:{model_id}",
                                 score=finish_time,
                                 expire=METRICS_INTERVAL * 2,
                             )
-                            cache.zadd(
+                            model_monitoring_cache_module.model_monitoring_cache.zadd(
                                 f"error:{GLOBAL_INFERENCE_SERVER_ID}:{model_id}",
                                 value={
                                     "request": jsonable_encoder(
