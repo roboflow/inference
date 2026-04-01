@@ -1504,13 +1504,13 @@ def dump_auto_resolution_cache(
 
 
 def generate_shared_blobs_path() -> str:
-    return os.path.join(INFERENCE_HOME, "shared-blobs")
+    return os.path.abspath(os.path.join(INFERENCE_HOME, "shared-blobs"))
 
 
 def generate_model_package_cache_path(model_id: str, package_id: str) -> str:
     ensure_package_id_is_os_safe(model_id=model_id, package_id=package_id)
     model_id_slug = slugify_model_id_to_os_safe_format(model_id=model_id)
-    return os.path.join(INFERENCE_HOME, "models-cache", model_id_slug, package_id)
+    return os.path.abspath(os.path.join(INFERENCE_HOME, "models-cache", model_id_slug, package_id))
 
 
 def ensure_package_id_is_os_safe(model_id: str, package_id: str) -> None:

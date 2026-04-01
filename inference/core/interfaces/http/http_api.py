@@ -279,7 +279,11 @@ from inference.core.telemetry import setup_telemetry, shutdown_telemetry, start_
 from inference.core.utils.container import is_docker_socket_mounted
 from inference.core.utils.notebooks import start_notebook
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
-from inference.core.workflows.errors import WorkflowError, WorkflowSyntaxError
+from inference.core.workflows.errors import (
+    WorkflowBlockError,
+    WorkflowError,
+    WorkflowSyntaxError,
+)
 from inference.core.workflows.execution_engine.core import (
     ExecutionEngine,
     get_available_versions,
@@ -1800,10 +1804,30 @@ class HttpInterface(BaseInterface):
                 )
                 if worker_result.exception_type is not None:
                     if worker_result.exception_type == "WorkflowSyntaxError":
+                        # Reconstruct exception from serialized worker result.
+                        # We dynamically create an exception class to preserve
+                        # the original type name (e.g., "ValidationError") for
+                        # the inner_error_type property, since exceptions can't
+                        # be pickled across the worker process boundary.
+                        inner_error = None
+                        if worker_result.inner_error and worker_result.inner_error_type:
+                            inner_error = type(
+                                worker_result.inner_error_type,
+                                (Exception,),
+                                {},
+                            )(worker_result.inner_error)
+
+                        blocks_errors = None
+                        if worker_result.blocks_errors:
+                            blocks_errors = [
+                                WorkflowBlockError(**be)
+                                for be in worker_result.blocks_errors
+                            ]
                         raise WorkflowSyntaxError(
                             public_message=worker_result.error_message,
                             context=worker_result.error_context,
-                            inner_error=worker_result.inner_error,
+                            inner_error=inner_error,
+                            blocks_errors=blocks_errors,
                         )
                     if worker_result.exception_type == "WorkflowError":
                         raise WorkflowError(
