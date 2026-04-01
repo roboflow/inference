@@ -1,5 +1,5 @@
-import logging
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timezone
 from functools import partial
 from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
 from uuid import uuid4
@@ -11,6 +11,7 @@ from fastapi import BackgroundTasks
 from pydantic import ConfigDict, Field
 
 from inference.core.env import API_BASE_URL
+from inference.core.logger import logger
 from inference.core.utils.image_utils import encode_image_to_jpeg_bytes
 from inference.core.workflows.core_steps.common.serializers import mask_to_polygon
 from inference.core.workflows.execution_engine.constants import (
@@ -42,7 +43,6 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 
-logger = logging.getLogger(__name__)
 
 VALID_EVENT_TYPES = [
     "quality_check",
@@ -538,6 +538,7 @@ def _build_event_data(
             "feedback": feedback,
         }
     else:
+        logger.warning("Unknown event_type: %s", event_type)
         data = {}
     return {k: v for k, v in data.items() if v is not None}
 
@@ -609,7 +610,7 @@ def _execute_vision_event(
 
         return _send_event(api_base_url, api_key, payload)
     except Exception as error:
-        logger.warning(f"Failed to create vision event: {error}")
+        logger.warning("Failed to create vision event: %s", error)
         return True, f"Error creating vision event: {type(error).__name__}: {error}"
 
 
@@ -771,7 +772,7 @@ def _upload_image(
     Returns:
         Tuple of (sourceId, url)
     """
-    image_bytes = encode_image_to_jpeg_bytes(image_data.numpy_image, jpeg_quality=95)
+    image_bytes = encode_image_to_jpeg_bytes(image_data.numpy_image, jpeg_quality=85)
     response = requests.post(
         f"{api_base_url}/vision-events/upload",
         headers={"Authorization": f"Bearer {api_key}"},
@@ -791,8 +792,6 @@ def _build_event_payload(
     custom_metadata: Dict[str, Any],
 ) -> dict:
     """Build the full event payload for the Vision Events API."""
-    from datetime import datetime, timezone
-
     event_id = str(uuid4())
     timestamp = datetime.now(timezone.utc).isoformat()
 
@@ -840,11 +839,11 @@ def _send_event(
     except requests.exceptions.HTTPError as e:
         status_code = e.response.status_code if e.response is not None else "unknown"
         body = e.response.text if e.response is not None else "no response"
-        logger.warning(f"Vision Events API error ({status_code}): {body}")
+        logger.warning("Vision Events API error (%s): %s", status_code, body)
         return (
             True,
             f"Failed to send vision event. Status: {status_code}. Details: {body}",
         )
     except Exception as e:
-        logger.warning(f"Failed to send vision event: {e}")
+        logger.warning("Failed to send vision event: %s", e)
         return True, f"Failed to send vision event. Error: {type(e).__name__}: {e}"
