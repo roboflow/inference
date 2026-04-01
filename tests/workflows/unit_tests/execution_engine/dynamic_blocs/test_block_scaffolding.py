@@ -4,6 +4,7 @@ import pytest
 
 from inference.core.workflows.core_steps.formatters.expression.v1 import BlockManifest
 from inference.core.workflows.errors import (
+    DynamicBlockCodeError,
     DynamicBlockError,
     WorkflowEnvironmentConfigurationError,
 )
@@ -39,7 +40,7 @@ def run_function( -> BlockResult:
     )
 
     # when
-    with pytest.raises(DynamicBlockError):
+    with pytest.raises(DynamicBlockCodeError):
         _ = create_dynamic_module(
             block_type_name="some", python_code=python_code, module_name="my_module"
         )
