@@ -81,6 +81,8 @@ from inference.core.utils.requests import (
 from inference.core.utils.url_utils import wrap_url
 from inference.core.version import __version__
 
+LOCAL_API_KEY = "local"
+
 ENFORCE_CREDITS_VERIFICATION_HEADER = "x-enforce-credits-verification"
 ENFORCE_INTERNAL_ARTIFACTS_URLS_HEADER = "x-enforce-internal-artefacts-urls"
 
@@ -417,7 +419,7 @@ def get_roboflow_model_data(
             ("device", device_id),
             ("dynamic", "true"),
         ]
-        if api_key is not None:
+        if api_key is not None and api_key != LOCAL_API_KEY:
             params.append(("api_key", api_key))
 
         if (
@@ -464,7 +466,7 @@ def get_roboflow_instant_model_data(
         params = [
             ("model", model_id),
         ]
-        if api_key is not None:
+        if api_key is not None and api_key != LOCAL_API_KEY:
             params.append(("api_key", api_key))
 
         if (
@@ -562,7 +564,7 @@ def get_roboflow_base_lora(
             ("device", device_id),
             ("repoAndRevision", full_path),
         ]
-        if api_key is not None:
+        if api_key is not None and api_key != LOCAL_API_KEY:
             params.append(("api_key", api_key))
         api_url = _add_params_to_url(
             url=f"{API_BASE_URL}/lora_bases",
@@ -844,7 +846,7 @@ def get_workflow_specification(
         response = {"workflow": local_config}
     else:
         params = []
-        if api_key is not None:
+        if api_key is not None and api_key != LOCAL_API_KEY:
             params.append(("api_key", api_key))
         if workflow_version_id is not None:
             params.append(("workflow_version", workflow_version_id))
@@ -1084,7 +1086,7 @@ def stream_url_to_cache(
         try:
             download_files_to_directory(
                 target_dir=cache_dir,
-                files_specs=[(filename, url, md5_hash)],
+                files_specs=[(filename, wrap_url(url), md5_hash)],
                 verbose=True,
                 download_files_without_hash=True,
                 verify_hash_while_download=False,
@@ -1201,7 +1203,7 @@ def post_to_roboflow_api(
     @wrap_roboflow_api_errors(http_errors_handlers=http_errors_handlers)
     def _make_request():
         url_params = []
-        if api_key:
+        if api_key and api_key != LOCAL_API_KEY:
             url_params.append(("api_key", api_key))
         if params:
             url_params.extend(params)

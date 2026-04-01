@@ -6,7 +6,6 @@ from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.execution_engine.core import ExecutionEngine
 
-
 SEMANTIC_SEGMENTATION_WORKFLOW = {
     "version": "1.3.0",
     "inputs": [
@@ -119,10 +118,12 @@ def test_semantic_segmentation_workflow_when_batch_input_provided(
         assert isinstance(
             detections, sv.Detections
         ), f"Expected predictions for image {i} to be sv.Detections"
-        assert len(detections) > 0, f"Expected at least one class detected for image {i}"
-        assert "rle_mask" in detections.data, (
-            f"Expected rle_mask in detections data for image {i}"
-        )
+        assert (
+            len(detections) > 0
+        ), f"Expected at least one class detected for image {i}"
+        assert (
+            "rle_mask" in detections.data
+        ), f"Expected rle_mask in detections data for image {i}"
 
 
 def test_semantic_segmentation_workflow_with_serialization(
@@ -153,15 +154,17 @@ def test_semantic_segmentation_workflow_with_serialization(
     assert len(result) == 1, "Single image provided - single output expected"
     predictions = result[0]["predictions"]
     assert isinstance(predictions, dict), "Expected serialized predictions to be a dict"
-    assert "predictions" in predictions, (
-        "Expected 'predictions' key in serialized output"
-    )
-    assert isinstance(predictions["predictions"], list), (
-        "Expected serialized predictions list"
-    )
+    assert (
+        "predictions" in predictions
+    ), "Expected 'predictions' key in serialized output"
+    assert isinstance(
+        predictions["predictions"], list
+    ), "Expected serialized predictions list"
     for pred in predictions["predictions"]:
         assert "class" in pred, "Expected 'class' in each serialized prediction"
-        assert "confidence" in pred, "Expected 'confidence' in each serialized prediction"
-        assert "rle_mask" in pred, (
-            "Expected 'rle_mask' in each serialized semantic segmentation prediction"
-        )
+        assert (
+            "confidence" in pred
+        ), "Expected 'confidence' in each serialized prediction"
+        assert (
+            "rle_mask" in pred
+        ), "Expected 'rle_mask' in each serialized semantic segmentation prediction"

@@ -1203,6 +1203,7 @@ def attempt_loading_matching_model_packages(
         f"the event. https://github.com/roboflow/inference/issues\n\n"
         f"Here is the summary of errors for specific model packages:\n{summary_of_errors}\n\n",
         help_url="https://inference-models.roboflow.com/errors/model-loading/#modelpackagealternativesexhaustederror",
+        alternatives_errors=[summary[1] for summary in failed_load_attempts],
     )
 
 

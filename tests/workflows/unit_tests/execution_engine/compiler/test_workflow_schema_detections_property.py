@@ -29,9 +29,9 @@ def test_workflow_schema_includes_area_px_and_area_converted_in_detections_prope
     defs = schema.get("$defs", schema.get("definitions", {}))
 
     detections_property_schema = defs.get("DetectionsProperty")
-    assert detections_property_schema is not None, (
-        "Schema should define DetectionsProperty (e.g. under $defs)"
-    )
+    assert (
+        detections_property_schema is not None
+    ), "Schema should define DetectionsProperty (e.g. under $defs)"
     enum_values = detections_property_schema.get("enum", [])
     assert "area_px" in enum_values, (
         "DetectionsProperty enum in workflow schema must include 'area_px' "

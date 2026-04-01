@@ -211,9 +211,7 @@ def test_property_extraction_block_with_area_converted() -> None:
         class_id=np.array([0, 1], dtype=np.int32),
         confidence=np.array([0.6, 0.4], dtype=np.float32),
         data={
-            AREA_CONVERTED_KEY_IN_SV_DETECTIONS: np.array(
-                [4.0, 10.0], dtype=np.float32
-            )
+            AREA_CONVERTED_KEY_IN_SV_DETECTIONS: np.array([4.0, 10.0], dtype=np.float32)
         },
     )
     operations = OperationsChain.model_validate(

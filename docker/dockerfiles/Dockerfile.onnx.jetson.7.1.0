@@ -315,7 +315,7 @@ COPY inference_cli inference_cli
 COPY inference_sdk inference_sdk
 COPY docker/config/gpu_http.py gpu_http.py
 
-RUN python -m pip install --break-system-packages "boto3>=1.40.0,<=1.41.5" "botocore>=1.40.0,<=1.41.5"
+RUN python -m pip install --break-system-packages --force-reinstall "boto3>=1.40.0,<=1.41.5" "botocore>=1.40.0,<=1.41.5"
 
 # Environment variables
 ENV NVIDIA_VISIBLE_DEVICES=all \
