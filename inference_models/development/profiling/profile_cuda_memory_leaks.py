@@ -5,11 +5,12 @@ RoboflowModelRegistry + InferenceModels*Adapter classes) and measures device-lev
 VRAM at each step to identify whether GPU memory is properly reclaimed after
 model eviction.
 
-Four phases:
+Five phases:
   1. Load/Evict       — load N models, evict all, check VRAM returns to baseline
   2. Inference         — run many inferences on one model, check for per-inference growth
   3. Load/Infer/Evict  — repeated load→infer→evict cycles, check cumulative growth
   4. Production Sim    — WithFixedSizeCache round-robin, check VRAM with constant model count
+  5. Embedding Cache   — SAM3 embed_image with unique images, check VRAM growth per embedding
 
 Example:
     python profile_cuda_memory_leaks.py --api-key YOUR_KEY
@@ -39,6 +40,7 @@ from inference.core.entities.requests.inference import (
     InferenceRequestImage,
     ObjectDetectionInferenceRequest,
 )
+from inference.core.entities.requests.sam2 import Sam2EmbeddingRequest
 from inference.core.managers.base import ModelManager
 from inference.core.managers.decorators.fixed_size_cache import WithFixedSizeCache
 from inference.core.registries.roboflow import RoboflowModelRegistry
@@ -65,6 +67,8 @@ MODEL_SETS = {
         "yolov8n-seg-640",
         # Keypoint Detection
         "yolov8n-pose-640",
+        # Foundation models with embedding caches
+        "sam3/sam3_interactive",
     ],
     "full": [
         # Object Detection
@@ -81,10 +85,20 @@ MODEL_SETS = {
         # Core / Foundation models
         "florence-2-base",
         "sam2/hiera_tiny",
+        "sam3/sam3_interactive",
     ],
 }
 
 # Models that support standard ObjectDetectionInferenceRequest
+# Models that have embedding caches storing GPU tensors
+EMBEDDING_CACHE_MODELS = {
+    "sam3/sam3_interactive",
+    "sam2/hiera_tiny",
+}
+
+# SAM3 interactive model ID for Phase 5
+SAM3_MODEL_ID = "sam3/sam3_interactive"
+
 DETECTION_MODELS = {
     "yolov8n-640",
     "yolov8s-640",
@@ -634,6 +648,119 @@ def run_phase4(
 
 
 # ---------------------------------------------------------------------------
+# Phase 5: Embedding cache VRAM growth (SAM3)
+# ---------------------------------------------------------------------------
+def run_phase5(
+    api_key: str,
+    tracker: VRAMTracker,
+    threshold_mb: float,
+    num_embeddings: int,
+    embedding_cache_size: int,
+    verbose: bool,
+) -> PhaseResult:
+    print_header(
+        f"Phase 5: SAM3 embedding cache (cache_size={embedding_cache_size}, "
+        f"num_images={num_embeddings})"
+    )
+    measurements: List[VRAMMeasurement] = []
+
+    # Override the SAM3 embedding cache size for this test
+    os.environ["SAM3_MAX_EMBEDDING_CACHE_SIZE"] = str(embedding_cache_size)
+
+    manager = create_base_model_manager()
+
+    print_step(f"Loading {SAM3_MODEL_ID}...")
+    try:
+        manager.add_model(SAM3_MODEL_ID, api_key)
+    except Exception as e:
+        print_step(f"FAILED to load {SAM3_MODEL_ID}: {e}")
+        return PhaseResult(
+            name="Phase 5 (Embedding Cache)",
+            passed=True,
+            baseline_mb=0,
+            final_mb=0,
+            leaked_mb=0,
+            details=f"Skipped: failed to load {SAM3_MODEL_ID}: {e}",
+        )
+
+    # Get the underlying model to call embed_image directly
+    model = manager[SAM3_MODEL_ID]
+
+    # Warmup with one embedding
+    warmup_image = InferenceRequestImage(
+        type="numpy_object", value=create_test_image()
+    )
+    warmup_request = Sam2EmbeddingRequest(
+        image=warmup_image,
+        image_id="warmup_0",
+        api_key=api_key,
+    )
+    model.infer_from_request(warmup_request)
+
+    baseline = tracker.snapshot("p5_baseline")
+    measurements.append(tracker.log[-1])
+    print_step(f"Post-warmup baseline (1 cached embedding): {tracker.fmt(baseline)}")
+
+    # Send N unique images through embed_image, each with a unique image_id.
+    # With cache_size=1, each new image should evict the previous embedding.
+    # If VRAM grows, the evicted GPU tensors are not being freed.
+    for i in range(1, num_embeddings + 1):
+        unique_image = InferenceRequestImage(
+            type="numpy_object",
+            value=(np.random.rand(640, 640, 3) * 255).astype(np.uint8),
+        )
+        embed_request = Sam2EmbeddingRequest(
+            image=unique_image,
+            image_id=f"leak_test_{i}",
+            api_key=api_key,
+        )
+        model.infer_from_request(embed_request)
+
+        if i % max(1, num_embeddings // 10) == 0 or i == num_embeddings:
+            vram = tracker.snapshot_light(f"p5_embed_{i}")
+            measurements.append(tracker.log[-1])
+            delta = (vram - baseline) / MB
+            if verbose:
+                print_step(
+                    f"  After {i}/{num_embeddings} embeddings: "
+                    f"{tracker.fmt(vram)} (delta: {delta:+.1f} MB)"
+                )
+
+    # Final measurement with full GC
+    final = tracker.snapshot("p5_final")
+    measurements.append(tracker.log[-1])
+
+    # Cleanup
+    manager.remove(SAM3_MODEL_ID)
+    del manager
+    post_cleanup = tracker.snapshot("p5_post_cleanup")
+    measurements.append(tracker.log[-1])
+
+    leaked_mb = (final - baseline) / MB
+    cleanup_delta = (post_cleanup - tracker.log[0].vram_bytes) / MB
+    passed = leaked_mb <= threshold_mb
+
+    print_step(
+        f"After {num_embeddings} unique embeddings (cache_size={embedding_cache_size}): "
+        f"{tracker.fmt(final)} (delta: {leaked_mb:.1f} MB)"
+    )
+    print_step(f"Post-cleanup VRAM delta from initial: {cleanup_delta:.1f} MB")
+
+    return PhaseResult(
+        name="Phase 5 (Embedding Cache)",
+        passed=passed,
+        baseline_mb=baseline / MB,
+        final_mb=final / MB,
+        leaked_mb=leaked_mb,
+        details=(
+            f"{num_embeddings} unique images, cache_size={embedding_cache_size}, "
+            f"delta={leaked_mb:.1f} MB"
+        ),
+        measurements=measurements,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Reporting
 # ---------------------------------------------------------------------------
 def print_summary(results: List[PhaseResult]) -> None:
@@ -786,8 +913,20 @@ def parse_args() -> argparse.Namespace:
         "--phases",
         type=str,
         nargs="+",
-        default=["1", "2", "3", "4"],
-        help="Which phases to run (default: 1 2 3 4)",
+        default=["1", "2", "3", "4", "5"],
+        help="Which phases to run (default: 1 2 3 4 5)",
+    )
+    parser.add_argument(
+        "--num-embeddings",
+        type=int,
+        default=50,
+        help="Number of unique images for Phase 5 SAM3 embedding cache test (default: 50)",
+    )
+    parser.add_argument(
+        "--embedding-cache-size",
+        type=int,
+        default=1,
+        help="SAM3 embedding cache size for Phase 5 — mirrors production SAM3_MAX_EMBEDDING_CACHE_SIZE (default: 1)",
     )
     parser.add_argument(
         "--verbose",
@@ -861,6 +1000,18 @@ def main() -> None:
                 args.threshold_mb,
                 args.cache_size,
                 args.num_rounds,
+                args.verbose,
+            )
+        )
+
+    if "5" in args.phases:
+        results.append(
+            run_phase5(
+                args.api_key,
+                tracker,
+                args.threshold_mb,
+                args.num_embeddings,
+                args.embedding_cache_size,
                 args.verbose,
             )
         )
