@@ -546,12 +546,16 @@ def run_phase4(
         f"Cache size: {cache_size}, models: {len(models)}, rounds: {num_rounds}"
     )
 
-    # Track the VRAM after the cache is first full (the "expected" steady-state)
-    first_full_vram = None
+    # Track VRAM at the same model position across rounds to detect drift.
+    # Key insight: different models have different VRAM footprints, so we must
+    # compare the same model at the same cache position across rounds.
+    # vram_by_round[round_num][model_position] = vram_bytes
+    vram_by_round: Dict[int, Dict[int, int]] = {}
     step = 0
 
     for round_num in range(num_rounds):
-        for model_id in models:
+        vram_by_round[round_num] = {}
+        for pos, model_id in enumerate(models):
             step += 1
             try:
                 manager.add_model(model_id, api_key)
@@ -565,52 +569,64 @@ def run_phase4(
                 for _ in range(5):
                     try_infer(manager, model_id, req)
 
-            vram = tracker.snapshot(f"p4_step_{step}_{model_id}")
+            vram = tracker.snapshot(f"p4_r{round_num + 1}_{model_id}")
             measurements.append(tracker.log[-1])
+            vram_by_round[round_num][pos] = vram
 
             loaded = len(manager)
-            if first_full_vram is None and loaded >= cache_size:
-                first_full_vram = vram
-
             if verbose:
                 print_step(
                     f"  R{round_num + 1} step {step}: loaded {model_id} "
                     f"({loaded}/{cache_size} models) | VRAM: {tracker.fmt(vram)}"
                 )
 
-    final = tracker.snapshot("p4_final")
-    measurements.append(tracker.log[-1])
-
     # Cleanup
     manager.clear()
     del manager
     post_cleanup = tracker.snapshot("p4_post_cleanup")
     measurements.append(tracker.log[-1])
-
-    if first_full_vram is None:
-        first_full_vram = baseline
-
-    leaked_mb = (final - first_full_vram) / MB
     cleanup_delta = (post_cleanup - baseline) / MB
-    passed = leaked_mb <= threshold_mb
 
-    print_step(f"VRAM when cache first full: {tracker.fmt(first_full_vram)}")
-    print_step(f"VRAM after {num_rounds} rounds: {tracker.fmt(final)}")
-    print_step(
-        f"Growth beyond steady-state: {leaked_mb:.1f} MB (threshold: {threshold_mb:.1f} MB)"
-    )
+    # Compare VRAM at equivalent positions across rounds.
+    # For each model position that appears in all rounds, compute
+    # the drift from round 1 to the last round.
+    drifts_mb = []
+    if num_rounds >= 2:
+        positions_in_all = set(vram_by_round[0].keys())
+        for r in range(1, num_rounds):
+            positions_in_all &= set(vram_by_round[r].keys())
+        for pos in sorted(positions_in_all):
+            r1_vram = vram_by_round[0][pos]
+            last_vram = vram_by_round[num_rounds - 1][pos]
+            drift = (last_vram - r1_vram) / MB
+            drifts_mb.append(drift)
+            if verbose:
+                model_name = models[pos] if pos < len(models) else f"pos{pos}"
+                print_step(
+                    f"  Drift for {model_name}: R1={tracker.fmt(r1_vram)} → "
+                    f"R{num_rounds}={tracker.fmt(last_vram)} ({drift:+.1f} MB)"
+                )
+
+    if drifts_mb:
+        avg_drift = sum(drifts_mb) / len(drifts_mb)
+        max_drift = max(drifts_mb)
+    else:
+        avg_drift = 0.0
+        max_drift = 0.0
+
+    passed = max_drift <= threshold_mb and cleanup_delta <= threshold_mb
+
+    print_step(f"Per-position VRAM drift (R1 → R{num_rounds}): avg={avg_drift:.1f} MB, max={max_drift:.1f} MB")
     print_step(f"VRAM after full cleanup: {tracker.fmt(post_cleanup)} (delta from baseline: {cleanup_delta:.1f} MB)")
 
     return PhaseResult(
         name="Phase 4 (Production Sim)",
         passed=passed,
-        baseline_mb=first_full_vram / MB,
-        final_mb=final / MB,
-        leaked_mb=leaked_mb,
+        baseline_mb=baseline / MB,
+        final_mb=post_cleanup / MB,
+        leaked_mb=max(max_drift, cleanup_delta),
         details=(
-            f"steady_state={tracker.fmt(first_full_vram)}, "
-            f"final={tracker.fmt(final)}, "
-            f"growth={leaked_mb:.1f} MB, "
+            f"avg_drift={avg_drift:.1f} MB, max_drift={max_drift:.1f} MB, "
             f"post_cleanup_delta={cleanup_delta:.1f} MB"
         ),
         measurements=measurements,
