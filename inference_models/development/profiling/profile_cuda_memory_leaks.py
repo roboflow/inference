@@ -657,8 +657,96 @@ def run_phase4(
 
 
 # ---------------------------------------------------------------------------
-# Phase 5: Embedding cache VRAM growth (SAM3)
+# Phase 5: SAM3 deep diagnostic
 # ---------------------------------------------------------------------------
+def _inspect_sam3_model(model, tracker: VRAMTracker, label: str, verbose: bool) -> None:
+    """Introspect SAM3 model internals for GPU tensor accumulation."""
+    vram = tracker.snapshot_light(f"p5_{label}")
+    parts = []
+    parts.append(f"VRAM={tracker.fmt(vram)}")
+
+    # Check embedding cache size
+    embed_count = len(getattr(model, "embedding_cache", {}))
+    embed_keys = len(getattr(model, "embedding_cache_keys", []))
+    parts.append(f"embed_cache={embed_count} entries (keys={embed_keys})")
+
+    # Check logits cache size
+    logits_count = len(getattr(model, "low_res_logits_cache", {}))
+    logits_keys = len(getattr(model, "low_res_logits_cache_keys", []))
+    parts.append(f"logits_cache={logits_count} entries (keys={logits_keys})")
+
+    # Check sam_model internal state
+    sam_model = getattr(model, "sam_model", None)
+    if sam_model is not None:
+        # Look for internal predictor state
+        for attr_name in [
+            "inst_interactive_predictor",
+            "_features",
+            "_is_image_set",
+            "image_encoder",
+        ]:
+            obj = getattr(sam_model, attr_name, None)
+            if obj is not None:
+                if hasattr(obj, "_features"):
+                    features = obj._features
+                    if isinstance(features, dict):
+                        sizes = {
+                            k: tuple(v.shape) if hasattr(v, "shape") else type(v).__name__
+                            for k, v in features.items()
+                        }
+                        parts.append(f"predictor._features={sizes}")
+                    elif features is not None:
+                        parts.append(f"predictor._features={type(features).__name__}")
+                    else:
+                        parts.append("predictor._features=None")
+                if hasattr(obj, "_is_image_set"):
+                    parts.append(f"predictor._is_image_set={obj._is_image_set}")
+
+    # Count GPU tensors referenced by embedding_cache values
+    gpu_tensor_count = 0
+    gpu_tensor_bytes = 0
+    for cached_val in getattr(model, "embedding_cache", {}).values():
+        if isinstance(cached_val, dict):
+            for v in cached_val.values():
+                if isinstance(v, torch.Tensor) and v.is_cuda:
+                    gpu_tensor_count += 1
+                    gpu_tensor_bytes += v.nelement() * v.element_size()
+        elif isinstance(cached_val, torch.Tensor) and cached_val.is_cuda:
+            gpu_tensor_count += 1
+            gpu_tensor_bytes += cached_val.nelement() * cached_val.element_size()
+    if gpu_tensor_count:
+        parts.append(f"cached_gpu_tensors={gpu_tensor_count} ({gpu_tensor_bytes / MB:.1f} MB)")
+
+    if verbose:
+        print_step(f"  [{label}] {', '.join(parts)}")
+
+
+def _make_embed_request(api_key: str, image_id: str) -> Sam2EmbeddingRequest:
+    return Sam2EmbeddingRequest(
+        image=InferenceRequestImage(
+            type="numpy_object",
+            value=(np.random.rand(640, 640, 3) * 255).astype(np.uint8),
+        ),
+        image_id=image_id,
+        api_key=api_key,
+    )
+
+
+def _make_segment_request(api_key: str, image_id: str):
+    from inference.core.entities.requests.sam2 import Sam2SegmentationRequest
+
+    return Sam2SegmentationRequest(
+        image=InferenceRequestImage(
+            type="numpy_object",
+            value=(np.random.rand(640, 640, 3) * 255).astype(np.uint8),
+        ),
+        image_id=image_id,
+        point_coords=[[320, 320]],
+        point_labels=[1],
+        api_key=api_key,
+    )
+
+
 def run_phase5(
     api_key: str,
     tracker: VRAMTracker,
@@ -667,14 +755,13 @@ def run_phase5(
     embedding_cache_size: int,
     verbose: bool,
 ) -> PhaseResult:
-    print_header(
-        f"Phase 5: SAM3 embedding cache (cache_size={embedding_cache_size}, "
-        f"num_images={num_embeddings})"
-    )
+    print_header("Phase 5: SAM3 deep diagnostic")
     measurements: List[VRAMMeasurement] = []
 
-    # Override the SAM3 embedding cache size for this test
+    # Override SAM3 cache sizes for this test
     os.environ["SAM3_MAX_EMBEDDING_CACHE_SIZE"] = str(embedding_cache_size)
+    # Also limit logits cache to isolate its effect
+    os.environ["SAM3_MAX_LOGITS_CACHE_SIZE"] = "1"
 
     manager = create_base_model_manager()
 
@@ -684,7 +771,7 @@ def run_phase5(
     except Exception as e:
         print_step(f"FAILED to load {SAM3_MODEL_ID}: {e}")
         return PhaseResult(
-            name="Phase 5 (Embedding Cache)",
+            name="Phase 5 (SAM3 Diagnostic)",
             passed=True,
             baseline_mb=0,
             final_mb=0,
@@ -692,78 +779,131 @@ def run_phase5(
             details=f"Skipped: failed to load {SAM3_MODEL_ID}: {e}",
         )
 
-    # Get the underlying model to call embed_image directly
     model = manager[SAM3_MODEL_ID]
-
-    # Warmup with one embedding
-    warmup_image = InferenceRequestImage(
-        type="numpy_object", value=create_test_image()
-    )
-    warmup_request = Sam2EmbeddingRequest(
-        image=warmup_image,
-        image_id="warmup_0",
-        api_key=api_key,
-    )
-    model.infer_from_request(warmup_request)
-
-    baseline = tracker.snapshot("p5_baseline")
+    model_loaded = tracker.snapshot("p5_model_loaded")
     measurements.append(tracker.log[-1])
-    print_step(f"Post-warmup baseline (1 cached embedding): {tracker.fmt(baseline)}")
+    print_step(f"Model loaded VRAM: {tracker.fmt(model_loaded)}")
 
-    # Send N unique images through embed_image, each with a unique image_id.
-    # With cache_size=1, each new image should evict the previous embedding.
-    # If VRAM grows, the evicted GPU tensors are not being freed.
+    # --- Sub-test A: embed_image only (cache_size={embedding_cache_size}) ---
+    print_step(
+        f"\n  --- Sub-test A: embed_image only (cache_size={embedding_cache_size}) ---"
+    )
+
+    # Warmup
+    model.infer_from_request(_make_embed_request(api_key, "warmup_0"))
+    baseline_a = tracker.snapshot("p5a_baseline")
+    measurements.append(tracker.log[-1])
+    print_step(f"  Baseline (after warmup embed): {tracker.fmt(baseline_a)}")
+    _inspect_sam3_model(model, tracker, "post_warmup", verbose)
+
     for i in range(1, num_embeddings + 1):
-        unique_image = InferenceRequestImage(
-            type="numpy_object",
-            value=(np.random.rand(640, 640, 3) * 255).astype(np.uint8),
-        )
-        embed_request = Sam2EmbeddingRequest(
-            image=unique_image,
-            image_id=f"leak_test_{i}",
-            api_key=api_key,
-        )
-        model.infer_from_request(embed_request)
-
+        model.infer_from_request(_make_embed_request(api_key, f"embed_{i}"))
         if i % max(1, num_embeddings // 10) == 0 or i == num_embeddings:
-            vram = tracker.snapshot_light(f"p5_embed_{i}")
+            vram = tracker.snapshot_light(f"p5a_embed_{i}")
             measurements.append(tracker.log[-1])
-            delta = (vram - baseline) / MB
+            delta = (vram - baseline_a) / MB
             if verbose:
                 print_step(
-                    f"  After {i}/{num_embeddings} embeddings: "
+                    f"  After {i}/{num_embeddings} embeds: "
                     f"{tracker.fmt(vram)} (delta: {delta:+.1f} MB)"
                 )
+                _inspect_sam3_model(model, tracker, f"after_embed_{i}", verbose)
 
-    # Final measurement with full GC
-    final = tracker.snapshot("p5_final")
+    embed_final = tracker.snapshot("p5a_final")
+    measurements.append(tracker.log[-1])
+    embed_leak = (embed_final - baseline_a) / MB
+    print_step(f"  Embed-only result: {tracker.fmt(embed_final)} (delta: {embed_leak:.1f} MB)")
+
+    per_embed_mb = embed_leak / max(num_embeddings, 1)
+    print_step(f"  Per-embedding growth: {per_embed_mb:.1f} MB")
+
+    # --- Sub-test B: segment_image (embed + decode + logits cache) ---
+    print_step(
+        f"\n  --- Sub-test B: segment_image (embeds + decodes, logits_cache_size=1) ---"
+    )
+
+    # Reset by doing a GC pass
+    baseline_b = tracker.snapshot("p5b_baseline")
+    measurements.append(tracker.log[-1])
+    print_step(f"  Baseline (post embed test): {tracker.fmt(baseline_b)}")
+
+    num_segments = min(num_embeddings, 20)  # Segment is slower, use fewer
+    for i in range(1, num_segments + 1):
+        try:
+            model.infer_from_request(_make_segment_request(api_key, f"seg_{i}"))
+        except Exception as e:
+            if verbose:
+                print_step(f"  Segment {i} failed: {type(e).__name__}: {e}")
+            break
+        if i % max(1, num_segments // 5) == 0 or i == num_segments:
+            vram = tracker.snapshot_light(f"p5b_seg_{i}")
+            measurements.append(tracker.log[-1])
+            delta = (vram - baseline_b) / MB
+            if verbose:
+                print_step(
+                    f"  After {i}/{num_segments} segments: "
+                    f"{tracker.fmt(vram)} (delta: {delta:+.1f} MB)"
+                )
+                _inspect_sam3_model(model, tracker, f"after_seg_{i}", verbose)
+
+    seg_final = tracker.snapshot("p5b_final")
+    measurements.append(tracker.log[-1])
+    seg_leak = (seg_final - baseline_b) / MB
+    print_step(f"  Segment result: {tracker.fmt(seg_final)} (delta: {seg_leak:.1f} MB)")
+
+    # --- Sub-test C: same image repeated (should NOT leak if cache hit works) ---
+    print_step(
+        "\n  --- Sub-test C: same image_id repeated (cache hit, no new embeds) ---"
+    )
+    baseline_c = tracker.snapshot("p5c_baseline")
     measurements.append(tracker.log[-1])
 
-    # Cleanup
+    # Re-embed an image then hit cache 20 times
+    model.infer_from_request(_make_embed_request(api_key, "repeat_test"))
+    for i in range(20):
+        model.infer_from_request(
+            Sam2EmbeddingRequest(
+                image=None,
+                image_id="repeat_test",
+                api_key=api_key,
+            )
+        )
+    repeat_final = tracker.snapshot("p5c_final")
+    measurements.append(tracker.log[-1])
+    repeat_leak = (repeat_final - baseline_c) / MB
+    print_step(
+        f"  Same-image repeated 20x: {tracker.fmt(repeat_final)} "
+        f"(delta: {repeat_leak:.1f} MB)"
+    )
+
+    # --- Summary & cleanup ---
+    print_step("\n  --- Cleanup ---")
+    _inspect_sam3_model(model, tracker, "pre_cleanup", verbose)
+
     manager.remove(SAM3_MODEL_ID)
+    del model
     del manager
     post_cleanup = tracker.snapshot("p5_post_cleanup")
     measurements.append(tracker.log[-1])
 
-    leaked_mb = (final - baseline) / MB
-    cleanup_delta = (post_cleanup - tracker.log[0].vram_bytes) / MB
-    passed = leaked_mb <= threshold_mb
+    total_leaked_mb = embed_leak  # Embed-only is the primary signal
+    cleanup_delta = (post_cleanup - measurements[0].vram_bytes) / MB
+    passed = total_leaked_mb <= threshold_mb
 
-    print_step(
-        f"After {num_embeddings} unique embeddings (cache_size={embedding_cache_size}): "
-        f"{tracker.fmt(final)} (delta: {leaked_mb:.1f} MB)"
-    )
-    print_step(f"Post-cleanup VRAM delta from initial: {cleanup_delta:.1f} MB")
+    print_step(f"VRAM after full cleanup: {tracker.fmt(post_cleanup)} (delta from model load: {cleanup_delta:.1f} MB)")
 
     return PhaseResult(
-        name="Phase 5 (Embedding Cache)",
+        name="Phase 5 (SAM3 Diagnostic)",
         passed=passed,
-        baseline_mb=baseline / MB,
-        final_mb=final / MB,
-        leaked_mb=leaked_mb,
+        baseline_mb=baseline_a / MB,
+        final_mb=embed_final / MB,
+        leaked_mb=total_leaked_mb,
         details=(
-            f"{num_embeddings} unique images, cache_size={embedding_cache_size}, "
-            f"delta={leaked_mb:.1f} MB"
+            f"embed_only={embed_leak:.0f} MB over {num_embeddings} imgs "
+            f"({per_embed_mb:.1f} MB/img), "
+            f"segment={seg_leak:.0f} MB over {num_segments} imgs, "
+            f"repeat={repeat_leak:.0f} MB, "
+            f"post_cleanup={cleanup_delta:.1f} MB"
         ),
         measurements=measurements,
     )
