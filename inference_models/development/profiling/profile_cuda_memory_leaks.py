@@ -605,6 +605,8 @@ def run_phase4(
     # For each model position that appears in all rounds, compute
     # the drift from round 1 to the last round.
     drifts_mb = []
+    embedding_cache_drifts_mb = []
+    other_drifts_mb = []
     if num_rounds >= 2:
         positions_in_all = set(vram_by_round[0].keys())
         for r in range(1, num_rounds):
@@ -614,23 +616,29 @@ def run_phase4(
             last_vram = vram_by_round[num_rounds - 1][pos]
             drift = (last_vram - r1_vram) / MB
             drifts_mb.append(drift)
+            model_name = models[pos] if pos < len(models) else f"pos{pos}"
+            if model_name in EMBEDDING_CACHE_MODELS:
+                embedding_cache_drifts_mb.append(drift)
+            else:
+                other_drifts_mb.append(drift)
             if verbose:
-                model_name = models[pos] if pos < len(models) else f"pos{pos}"
+                tag = " [has embedding cache]" if model_name in EMBEDDING_CACHE_MODELS else ""
                 print_step(
-                    f"  Drift for {model_name}: R1={tracker.fmt(r1_vram)} → "
+                    f"  Drift for {model_name}{tag}: R1={tracker.fmt(r1_vram)} → "
                     f"R{num_rounds}={tracker.fmt(last_vram)} ({drift:+.1f} MB)"
                 )
 
-    if drifts_mb:
-        avg_drift = sum(drifts_mb) / len(drifts_mb)
-        max_drift = max(drifts_mb)
-    else:
-        avg_drift = 0.0
-        max_drift = 0.0
+    max_other_drift = max(other_drifts_mb) if other_drifts_mb else 0.0
+    max_embed_drift = max(embedding_cache_drifts_mb) if embedding_cache_drifts_mb else 0.0
 
-    passed = max_drift <= threshold_mb and cleanup_delta <= threshold_mb
+    # Use non-embedding-cache model drift for pass/fail (Phase 5 tests embedding cache separately)
+    passed = max_other_drift <= threshold_mb and cleanup_delta <= threshold_mb
 
-    print_step(f"Per-position VRAM drift (R1 → R{num_rounds}): avg={avg_drift:.1f} MB, max={max_drift:.1f} MB")
+    print_step(f"Per-position VRAM drift (R1 → R{num_rounds}):")
+    if other_drifts_mb:
+        print_step(f"  Non-embedding-cache models: avg={sum(other_drifts_mb)/len(other_drifts_mb):.1f} MB, max={max_other_drift:.1f} MB")
+    if embedding_cache_drifts_mb:
+        print_step(f"  Embedding-cache models (sam3/sam2): avg={sum(embedding_cache_drifts_mb)/len(embedding_cache_drifts_mb):.1f} MB, max={max_embed_drift:.1f} MB (tested in Phase 5)")
     print_step(f"VRAM after full cleanup: {tracker.fmt(post_cleanup)} (delta from baseline: {cleanup_delta:.1f} MB)")
 
     return PhaseResult(
@@ -638,9 +646,10 @@ def run_phase4(
         passed=passed,
         baseline_mb=baseline / MB,
         final_mb=post_cleanup / MB,
-        leaked_mb=max(max_drift, cleanup_delta),
+        leaked_mb=max(max_other_drift, cleanup_delta),
         details=(
-            f"avg_drift={avg_drift:.1f} MB, max_drift={max_drift:.1f} MB, "
+            f"other_max_drift={max_other_drift:.1f} MB, "
+            f"embed_cache_max_drift={max_embed_drift:.1f} MB, "
             f"post_cleanup_delta={cleanup_delta:.1f} MB"
         ),
         measurements=measurements,
