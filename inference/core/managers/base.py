@@ -201,10 +201,7 @@ class ModelManager:
         resolved_identifier = model_id
         if resolved_identifier not in self._model_request_aliases:
             self._model_request_aliases[resolved_identifier] = set()
-        if (
-            original_model_id is not None
-            and original_model_id != resolved_identifier
-        ):
+        if original_model_id is not None and original_model_id != resolved_identifier:
             self._model_request_aliases[resolved_identifier].add(original_model_id)
         if model_id_alias is not None and model_id_alias != resolved_identifier:
             self._model_request_aliases[resolved_identifier].add(model_id_alias)
