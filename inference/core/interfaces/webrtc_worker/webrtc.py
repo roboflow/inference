@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import datetime
 import gzip
 import json
@@ -7,6 +8,8 @@ import struct
 import time
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
+import orjson
+import supervision as sv
 from aioice import ice
 from aiortc import (
     RTCConfiguration,
@@ -240,6 +243,7 @@ class VideoFrameProcessor:
         self._av_logging_set: bool = False
         self._received_frames = 0
         self._declared_fps = declared_fps
+        self._fps_monitor = sv.FPSMonitor()
         self._stop_processing = False
         self._termination_reason: Optional[str] = None
         self._processing_complete_sent = False
@@ -465,7 +469,11 @@ class VideoFrameProcessor:
 
         # TODO: use orjson
         json_bytes = await asyncio.to_thread(
-            lambda: json.dumps(webrtc_output.model_dump(mode="json")).encode("utf-8")
+            lambda: orjson.dumps(
+                webrtc_output.model_dump(),
+                default=default_encoder,
+                option=orjson.OPT_NON_STR_KEYS | orjson.OPT_SERIALIZE_NUMPY,
+            )
         )
 
         if WEBRTC_GZIP_PREVIEW_FRAME_COMPRESSION:
@@ -545,6 +553,7 @@ class VideoFrameProcessor:
 
                 frame = await self.track.recv()
                 self._received_frames += 1
+                self._fps_monitor.tick()
                 frame_timestamp = datetime.datetime.now()
 
                 workflow_output, _, errors = await self._process_frame_async(
@@ -651,7 +660,11 @@ class VideoFrameProcessor:
             frame,
             frame_id,
             self._declared_fps,
-            self._declared_fps,  # TODO: measure fps
+            (
+                self._fps_monitor.fps
+                if len(self._fps_monitor.all_timestamps) > 1
+                else self._declared_fps
+            ),
             self._file_processing,
             self._inference_pipeline,
             stream_output,
@@ -767,6 +780,7 @@ class VideoTransformTrackWithLoop(VideoStreamTrack, VideoFrameProcessor):
             raise
 
         self._received_frames += 1
+        self._fps_monitor.tick()
         frame_id = self._received_frames
         frame_timestamp = datetime.datetime.now()
 
@@ -822,6 +836,7 @@ async def init_rtc_peer_connection_with_loop(
     model_manager: Optional[ModelManager] = None,
     shutdown_reserve: int = WEBRTC_MODAL_SHUTDOWN_RESERVE,
     heartbeat_callback: Optional[Callable[[], None]] = None,
+    connection_established_callback: Optional[Callable[[], None]] = None,
 ) -> RTCPeerConnectionWithLoop:
     logger.info(
         "=" * 60 + "\n"
@@ -929,7 +944,6 @@ async def init_rtc_peer_connection_with_loop(
         KeyError,
         NotImplementedError,
     ) as error:
-        # heartbeat to indicate caller error
         if heartbeat_callback:
             heartbeat_callback()
         send_answer(
@@ -940,7 +954,6 @@ async def init_rtc_peer_connection_with_loop(
         )
         return
     except WebRTCConfigurationError as error:
-        # heartbeat to indicate caller error
         if heartbeat_callback:
             heartbeat_callback()
         send_answer(
@@ -951,7 +964,6 @@ async def init_rtc_peer_connection_with_loop(
         )
         return
     except RoboflowAPINotAuthorizedError:
-        # heartbeat to indicate caller error
         if heartbeat_callback:
             heartbeat_callback()
         send_answer(
@@ -962,7 +974,6 @@ async def init_rtc_peer_connection_with_loop(
         )
         return
     except RoboflowAPINotNotFoundError:
-        # heartbeat to indicate caller error
         if heartbeat_callback:
             heartbeat_callback()
         send_answer(
@@ -973,7 +984,6 @@ async def init_rtc_peer_connection_with_loop(
         )
         return
     except WorkflowSyntaxError as error:
-        # heartbeat to indicate caller error
         if heartbeat_callback:
             heartbeat_callback()
         blocks_errors_serialized = None
@@ -981,7 +991,6 @@ async def init_rtc_peer_connection_with_loop(
             blocks_errors_serialized = [
                 block_error.model_dump() for block_error in error.blocks_errors
             ]
-
         send_answer(
             WebRTCWorkerResult(
                 exception_type=WorkflowSyntaxError.__name__,
@@ -994,7 +1003,6 @@ async def init_rtc_peer_connection_with_loop(
         )
         return
     except WorkflowError as error:
-        # heartbeat to indicate caller error
         if heartbeat_callback:
             heartbeat_callback()
         send_answer(
@@ -1107,6 +1115,9 @@ async def init_rtc_peer_connection_with_loop(
                 else "N/A"
             ),
         )
+        if state == "connected":
+            if connection_established_callback:
+                connection_established_callback()
         if state in {"failed", "closed"}:
             logger.error(
                 "[CONNECTION_STATE] FATAL: Connection %s! ICE=%s, "
@@ -1322,3 +1333,9 @@ async def init_rtc_peer_connection_with_loop(
     await video_processor.close()
     await usage_collector.async_push_usage_payloads()
     logger.info("WebRTC peer connection closed")
+
+
+def default_encoder(obj: Any) -> Any:
+    if isinstance(obj, bytes):
+        return base64.b64encode(obj).decode("ascii")
+    return obj

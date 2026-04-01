@@ -29,6 +29,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     Selector,
 )
 from inference.core.workflows.prototypes.block import (
+    AirGappedAvailability,
     BlockResult,
     WorkflowBlock,
     WorkflowBlockManifest,
@@ -97,6 +98,10 @@ class BlockManifest(WorkflowBlockManifest):
         "If provided, language codes must be supported by the OCR API, visit https://cloud.google.com/vision/docs/languages for list of supported language codes.",
         examples=[["en", "fr"], ["de"]],
     )
+
+    @classmethod
+    def get_air_gapped_availability(cls) -> AirGappedAvailability:
+        return AirGappedAvailability(available=False, reason="requires_internet")
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:

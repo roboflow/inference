@@ -6,7 +6,11 @@ from typing import List, Optional, Tuple, Union
 import numpy as np
 import torch
 
-from inference_models import InstanceDetections, InstanceSegmentationModel
+from inference_models import (
+    InstanceDetections,
+    InstanceSegmentationModel,
+    PreProcessingOverrides,
+)
 from inference_models.configuration import (
     DEFAULT_DEVICE,
     INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE,
@@ -17,6 +21,7 @@ from inference_models.errors import (
     InvalidModelInitParameterError,
     MissingModelInitParameterError,
     ModelInputError,
+    ModelPackageRestrictedError,
     ModelRuntimeError,
 )
 from inference_models.logger import LOGGER
@@ -88,6 +93,7 @@ class RFDetrForInstanceSegmentationTorch(
         model_type: Optional[str] = None,
         labels: Optional[Union[str, List[str]]] = None,
         resolution: Optional[int] = None,
+        rf_detr_max_input_resolution: Optional[Union[int, Tuple[int, int]]] = None,
         **kwargs,
     ) -> "RFDetrForInstanceSegmentationTorch":
         if os.path.isfile(model_name_or_path):
@@ -96,6 +102,7 @@ class RFDetrForInstanceSegmentationTorch(
                 model_type=model_type,
                 labels=labels,
                 resolution=resolution,
+                rf_detr_max_input_resolution=rf_detr_max_input_resolution,
             )
         model_package_content = get_model_package_contents(
             model_package_dir=model_name_or_path,
@@ -128,6 +135,7 @@ class RFDetrForInstanceSegmentationTorch(
                     "we recommend using preprocessing method different that `fit-longer-edge`.",
                 )
             },
+            max_allowed_input_size=rf_detr_max_input_resolution,
         )
         classes_re_mapping = None
         if inference_config.class_names_operations:
@@ -178,6 +186,7 @@ class RFDetrForInstanceSegmentationTorch(
         labels: Optional[Union[str, List[str]]] = None,
         resolution: Optional[int] = None,
         device: torch.device = DEFAULT_DEVICE,
+        rf_detr_max_input_resolution: Optional[Union[int, Tuple[int, int]]] = None,
     ):
         if model_type is None:
             raise MissingModelInitParameterError(
@@ -211,6 +220,24 @@ class RFDetrForInstanceSegmentationTorch(
                     help_url="https://inference-models.roboflow.com/errors/model-loading/#invalidmodelinitparametererror",
                 )
             model_config.resolution = resolution
+        if rf_detr_max_input_resolution is not None:
+            if isinstance(rf_detr_max_input_resolution, int):
+                rf_detr_max_input_resolution = (
+                    rf_detr_max_input_resolution,
+                    rf_detr_max_input_resolution,
+                )
+            if (
+                model_config.resolution > rf_detr_max_input_resolution[0]
+                or model_config.resolution > rf_detr_max_input_resolution[1]
+            ):
+                raise ModelPackageRestrictedError(
+                    message="Configuration of runtime environment prevents packages with input size larger than "
+                    f"{rf_detr_max_input_resolution} from being loaded. Package attempted to be loaded define "
+                    f"input size ({model_config.resolution}, {model_config.resolution}). "
+                    f"Running locally, verify configuration of your environment. If you see this error running "
+                    f"on Roboflow platform - contact support.",
+                    help_url="https://inference-models.roboflow.com/errors/model-loading/#modelpackagerestrictederror",
+                )
         inference_config = InferenceConfig(
             network_input=NetworkInputDefinition(
                 training_input_size=TrainingInputSize(
@@ -325,6 +352,7 @@ class RFDetrForInstanceSegmentationTorch(
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         input_color_format: Optional[ColorFormat] = None,
         image_size: Optional[Tuple[int, int]] = None,
+        pre_processing_overrides: Optional[PreProcessingOverrides] = None,
         **kwargs,
     ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
         return pre_process_network_input(
@@ -334,6 +362,7 @@ class RFDetrForInstanceSegmentationTorch(
             target_device=self._device,
             input_color_format=input_color_format,
             image_size_wh=image_size,
+            pre_processing_overrides=pre_processing_overrides,
         )
 
     def forward(self, pre_processed_images: torch.Tensor, **kwargs) -> dict:

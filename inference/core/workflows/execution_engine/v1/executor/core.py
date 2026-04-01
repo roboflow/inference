@@ -22,6 +22,12 @@ except ImportError:
 
 from inference.core import logger
 from inference.core.env import INFERENCE_DEBUG_OUTPUT_DIR
+from inference.core.telemetry import (
+    attach_context,
+    capture_context,
+    detach_context,
+    start_span,
+)
 from inference.core.workflows.errors import (
     BlockTraceback,
     StepExecutionError,
@@ -94,6 +100,29 @@ def run_workflow(
     executor: Optional[ThreadPoolExecutor] = None,
     step_error_handler: Optional[Callable[[Exception], None]] = None,
 ) -> List[Dict[str, Any]]:
+    with start_span("workflow.run"):
+        return _run_workflow(
+            workflow=workflow,
+            runtime_parameters=runtime_parameters,
+            max_concurrent_steps=max_concurrent_steps,
+            kinds_serializers=kinds_serializers,
+            serialize_results=serialize_results,
+            profiler=profiler,
+            executor=executor,
+            step_error_handler=step_error_handler,
+        )
+
+
+def _run_workflow(
+    workflow: CompiledWorkflow,
+    runtime_parameters: Dict[str, Any],
+    max_concurrent_steps: int,
+    kinds_serializers: Optional[Dict[str, Callable[[Any], Any]]],
+    serialize_results: bool = False,
+    profiler: Optional[WorkflowsProfiler] = None,
+    executor: Optional[ThreadPoolExecutor] = None,
+    step_error_handler: Optional[Callable[[Exception], None]] = None,
+) -> List[Dict[str, Any]]:
     execution_data_manager = ExecutionDataManager.init(
         execution_graph=workflow.execution_graph,
         runtime_parameters=runtime_parameters,
@@ -152,6 +181,8 @@ def execute_steps(
         duration_minimum_value = apply_duration_minimum.get()
     else:
         duration_minimum_value = None
+    # Capture OTel context so it can be re-attached inside worker threads
+    otel_ctx = capture_context()
     logger.debug(f"Executing steps: {next_steps}.")
     steps_functions = [
         partial(
@@ -164,6 +195,7 @@ def execute_steps(
             processing_time_collector=processing_time_collector,
             duration_minimum_value=duration_minimum_value,
             step_error_handler=step_error_handler,
+            otel_ctx=otel_ctx,
         )
         for step_selector in next_steps
     ]
@@ -186,6 +218,7 @@ def safe_execute_step(
     processing_time_collector=None,
     duration_minimum_value=None,
     step_error_handler: Optional[Callable[[str, Exception], None]] = None,
+    otel_ctx=None,
 ) -> None:
     if execution_id is not None:
         execution_id.set(workflow_execution_id)
@@ -193,48 +226,56 @@ def safe_execute_step(
         remote_processing_times.set(processing_time_collector)
     if apply_duration_minimum is not None and duration_minimum_value is not None:
         apply_duration_minimum.set(duration_minimum_value)
+    # Re-attach OTel context in worker thread so trace propagation works.
+    # Must detach when done — threads are reused in the pool, and leaked
+    # contexts cause incorrect span parenting on subsequent tasks.
+    _otel_token = attach_context(otel_ctx)
     if profiler is None:
         profiler = NullWorkflowsProfiler.init()
+    step_name = get_last_chunk_of_selector(selector=step_selector)
     try:
-        logger.debug(
-            f"started execution of: {step_selector} - {datetime.now().isoformat()}"
-        )
-        run_step(
-            step_selector=step_selector,
-            workflow=workflow,
-            execution_data_manager=execution_data_manager,
-            profiler=profiler,
-        )
-        logger.debug(
-            f"finished execution of: {step_selector} - {datetime.now().isoformat()}"
-        )
-    except Exception as error:
-        if isinstance(error, WorkflowError):
-            raise  # Already has proper context, let HTTP handlers deal with it
-
-        # Wrap unexpected exceptions in StepExecutionError with block context
-        step_name = get_last_chunk_of_selector(selector=step_selector)
-        if step_error_handler:
-            step_error_handler(step_name, error)
-        logger.exception(f"Execution of step {step_selector} encountered error.")
-        error_traceback = "".join(
-            traceback.format_exception(type(error), error, error.__traceback__)
-        )
-        block_traceback = BlockTraceback(
-            traceback=error_traceback,
-            error_line=getattr(error, "error_line", None),
-            code_snippet=getattr(error, "code_snippet", None),
-            stdout=getattr(error, "stdout", None),
-            stderr=getattr(error, "stderr", None),
-        )
-        raise StepExecutionError(
-            block_id=step_name,
-            block_type=workflow.steps[step_name].manifest.type,
-            block_traceback=block_traceback,
-            public_message=str(error),
-            context="workflow_execution | step_execution",
-            inner_error=error,
-        ) from error
+        with start_span("workflow.step", {"workflow.step": step_name}):
+            try:
+                logger.debug(
+                    f"started execution of: {step_selector} - {datetime.now().isoformat()}"
+                )
+                run_step(
+                    step_selector=step_selector,
+                    workflow=workflow,
+                    execution_data_manager=execution_data_manager,
+                    profiler=profiler,
+                )
+                logger.debug(
+                    f"finished execution of: {step_selector} - {datetime.now().isoformat()}"
+                )
+            except WorkflowError:
+                raise
+            except Exception as error:
+                if step_error_handler:
+                    step_error_handler(step_name, error)
+                logger.exception(
+                    f"Execution of step {step_selector} encountered error."
+                )
+                error_traceback = "".join(
+                    traceback.format_exception(type(error), error, error.__traceback__)
+                )
+                block_traceback = BlockTraceback(
+                    traceback=error_traceback,
+                    error_line=getattr(error, "error_line", None),
+                    code_snippet=getattr(error, "code_snippet", None),
+                    stdout=getattr(error, "stdout", None),
+                    stderr=getattr(error, "stderr", None),
+                )
+                raise StepExecutionError(
+                    block_id=step_name,
+                    block_type=workflow.steps[step_name].manifest.type,
+                    block_traceback=block_traceback,
+                    public_message=str(error),
+                    context="workflow_execution | step_execution",
+                    inner_error=error,
+                ) from error
+    finally:
+        detach_context(_otel_token)
 
 
 def run_step(

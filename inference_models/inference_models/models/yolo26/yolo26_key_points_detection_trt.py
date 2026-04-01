@@ -5,7 +5,12 @@ from typing import List, Optional, Tuple, Union
 import numpy as np
 import torch
 
-from inference_models import Detections, KeyPoints, KeyPointsDetectionModel
+from inference_models import (
+    Detections,
+    KeyPoints,
+    KeyPointsDetectionModel,
+    PreProcessingOverrides,
+)
 from inference_models.configuration import (
     DEFAULT_DEVICE,
     INFERENCE_MODELS_YOLO26_DEFAULT_CONFIDENCE,
@@ -40,6 +45,8 @@ from inference_models.models.common.roboflow.pre_processing import (
     pre_process_network_input,
 )
 from inference_models.models.common.trt import (
+    TRTCudaGraphCache,
+    establish_trt_cuda_graph_cache,
     get_trt_engine_inputs_and_outputs,
     infer_from_trt_engine,
     load_trt_model,
@@ -83,6 +90,8 @@ class YOLO26ForKeyPointsDetectionTRT(
         model_name_or_path: str,
         device: torch.device = DEFAULT_DEVICE,
         engine_host_code_allowed: bool = False,
+        trt_cuda_graph_cache: Optional[TRTCudaGraphCache] = None,
+        default_trt_cuda_graph_cache_size: int = 8,
         **kwargs,
     ) -> "YOLO26ForKeyPointsDetectionTRT":
         if device.type != "cuda":
@@ -148,6 +157,10 @@ class YOLO26ForKeyPointsDetectionTRT(
                 message=f"Implementation assume single model output, found: {len(outputs)}.",
                 help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
+        trt_cuda_graph_cache = establish_trt_cuda_graph_cache(
+            default_cuda_graph_cache_size=default_trt_cuda_graph_cache_size,
+            cuda_graph_cache=trt_cuda_graph_cache,
+        )
         return cls(
             engine=engine,
             input_name=inputs[0],
@@ -160,6 +173,7 @@ class YOLO26ForKeyPointsDetectionTRT(
             device=device,
             cuda_context=cuda_context,
             execution_context=execution_context,
+            trt_cuda_graph_cache=trt_cuda_graph_cache,
         )
 
     def __init__(
@@ -175,12 +189,14 @@ class YOLO26ForKeyPointsDetectionTRT(
         device: torch.device,
         cuda_context: cuda.Context,
         execution_context: trt.IExecutionContext,
+        trt_cuda_graph_cache: Optional[TRTCudaGraphCache],
     ):
         self._engine = engine
         self._input_name = input_name
         self._output_names = [output_name]
         self._cuda_context = cuda_context
         self._execution_context = execution_context
+        self._trt_cuda_graph_cache = trt_cuda_graph_cache
         self._class_names = class_names
         self._skeletons = skeletons
         self._inference_config = inference_config
@@ -188,7 +204,6 @@ class YOLO26ForKeyPointsDetectionTRT(
         self._trt_config = trt_config
         self._device = device
         self._session_thread_lock = Lock()
-        self._parsed_key_points_metadata = parsed_key_points_metadata
         self._key_points_classes_for_instances = torch.tensor(
             [len(e) for e in self._parsed_key_points_metadata], device=device
         )
@@ -214,6 +229,7 @@ class YOLO26ForKeyPointsDetectionTRT(
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         input_color_format: Optional[ColorFormat] = None,
+        pre_processing_overrides: Optional[PreProcessingOverrides] = None,
         **kwargs,
     ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
         with torch.cuda.stream(self._pre_process_stream):
@@ -223,6 +239,7 @@ class YOLO26ForKeyPointsDetectionTRT(
                 network_input=self._inference_config.network_input,
                 target_device=self._device,
                 input_color_format=input_color_format,
+                pre_processing_overrides=pre_processing_overrides,
             )
         self._pre_process_stream.synchronize()
         return pre_processed_images, pre_processing_meta
@@ -230,8 +247,10 @@ class YOLO26ForKeyPointsDetectionTRT(
     def forward(
         self,
         pre_processed_images: torch.Tensor,
+        disable_cuda_graphs: bool = False,
         **kwargs,
     ) -> torch.Tensor:
+        cache = self._trt_cuda_graph_cache if not disable_cuda_graphs else None
         with self._session_thread_lock:
             with use_cuda_context(context=self._cuda_context):
                 return infer_from_trt_engine(
@@ -243,6 +262,7 @@ class YOLO26ForKeyPointsDetectionTRT(
                     input_name=self._input_name,
                     outputs=self._output_names,
                     stream=self._inference_stream,
+                    trt_cuda_graph_cache=cache,
                 )[0]
 
     def post_process(

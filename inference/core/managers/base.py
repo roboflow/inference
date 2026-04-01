@@ -39,6 +39,14 @@ from inference.core.registries.roboflow import (
     ModelEndpointType,
     _check_if_api_key_has_access_to_model,
 )
+from inference.core.telemetry import (
+    record_error,
+    record_inference,
+    record_model_loaded,
+    record_model_unloaded,
+    set_span_attribute,
+    start_span,
+)
 
 
 class ModelManager:
@@ -107,52 +115,58 @@ class ModelManager:
                 )
                 return
             try:
-                logger.debug("ModelManager - model initialisation...")
-                t_load_start = time.perf_counter()
-                model_class = self.model_registry.get_model(
-                    resolved_identifier,
-                    api_key,
-                    countinference=countinference,
-                    service_secret=service_secret,
-                )
+                with start_span("model.load", {"model.id": resolved_identifier}):
+                    logger.debug("ModelManager - model initialisation...")
+                    t_load_start = time.perf_counter()
+                    model_class = self.model_registry.get_model(
+                        resolved_identifier,
+                        api_key,
+                        countinference=countinference,
+                        service_secret=service_secret,
+                    )
 
-                model = model_class(
-                    model_id=model_id,
-                    api_key=api_key,
-                    countinference=countinference,
-                    service_secret=service_secret,
-                )
+                    model = model_class(
+                        model_id=model_id,
+                        api_key=api_key,
+                        countinference=countinference,
+                        service_secret=service_secret,
+                    )
 
-                # Pass countinference and service_secret to download_model_artifacts_from_roboflow_api if available
-                if (
-                    hasattr(model, "download_model_artifacts_from_roboflow_api")
-                    and INTERNAL_WEIGHTS_URL_SUFFIX == "serverless"
-                ):
-                    # Only pass these parameters if INTERNAL_WEIGHTS_URL_SUFFIX is "serverless"
+                    # Pass countinference and service_secret to download_model_artifacts_from_roboflow_api if available
                     if (
-                        hasattr(model, "cache_model_artefacts")
-                        and not model.has_model_metadata
+                        hasattr(model, "download_model_artifacts_from_roboflow_api")
+                        and INTERNAL_WEIGHTS_URL_SUFFIX == "serverless"
                     ):
-                        # Override the download_model_artifacts_from_roboflow_api method with parameters
-                        original_method = (
-                            model.download_model_artifacts_from_roboflow_api
-                        )
-                        model.download_model_artifacts_from_roboflow_api = (
-                            lambda: original_method(
-                                countinference=countinference,
-                                service_secret=service_secret,
+                        # Only pass these parameters if INTERNAL_WEIGHTS_URL_SUFFIX is "serverless"
+                        if (
+                            hasattr(model, "cache_model_artefacts")
+                            and not model.has_model_metadata
+                        ):
+                            # Override the download_model_artifacts_from_roboflow_api method with parameters
+                            original_method = (
+                                model.download_model_artifacts_from_roboflow_api
                             )
-                        )
+                            model.download_model_artifacts_from_roboflow_api = (
+                                lambda: original_method(
+                                    countinference=countinference,
+                                    service_secret=service_secret,
+                                )
+                            )
 
-                load_time = time.perf_counter() - t_load_start
-                logger.debug(
-                    f"ModelManager - model successfully loaded in {load_time:.2f}s."
-                )
-                self._models[resolved_identifier] = model
-                collector = model_load_info.get(None)
-                if collector is not None:
-                    collector.record(model_id=resolved_identifier, load_time=load_time)
+                    load_time = time.perf_counter() - t_load_start
+                    set_span_attribute("model.load_time_seconds", load_time)
+                    record_model_loaded(resolved_identifier, load_time)
+                    logger.debug(
+                        f"ModelManager - model successfully loaded in {load_time:.2f}s."
+                    )
+                    self._models[resolved_identifier] = model
+                    collector = model_load_info.get(None)
+                    if collector is not None:
+                        collector.record(
+                            model_id=resolved_identifier, load_time=load_time
+                        )
             except Exception as error:
+                record_error(error)
                 self._dispose_model_lock(model_id=resolved_identifier)
                 raise error
 
@@ -189,71 +203,82 @@ class ModelManager:
         if METRICS_ENABLED and self.pingback and enable_model_monitoring:
             logger.debug("ModelManager - setting pingback fallback api key...")
             self.pingback.fallback_api_key = request.api_key
-        try:
-            rtn_val = await self.model_infer(
-                model_id=model_id, request=request, **kwargs
-            )
-            logger.debug(
-                f"ModelManager - inference from request finished for model_id={model_id}."
-            )
-            finish_time = time.time()
-            if not DISABLE_INFERENCE_CACHE and enable_model_monitoring:
-                try:
-                    logger.debug(
-                        f"ModelManager - caching inference request started for model_id={model_id}"
-                    )
-                    cache.zadd(
-                        f"models",
-                        value=f"{GLOBAL_INFERENCE_SERVER_ID}:{request.api_key}:{model_id}",
-                        score=finish_time,
-                        expire=METRICS_INTERVAL * 2,
-                    )
-                    if (
-                        hasattr(request, "image")
-                        and hasattr(request.image, "type")
-                        and request.image.type == "numpy"
-                    ):
-                        request.image.value = str(request.image.value)
-                    cache.zadd(
-                        f"inference:{GLOBAL_INFERENCE_SERVER_ID}:{model_id}",
-                        value=to_cachable_inference_item(request, rtn_val),
-                        score=finish_time,
-                        expire=METRICS_INTERVAL * 2,
-                    )
-                    logger.debug(
-                        f"ModelManager - caching inference request finished for model_id={model_id}"
-                    )
-                except Exception as cache_error:
-                    logger.warning(
-                        f"Failed to cache inference data for model {model_id}: {cache_error}"
-                    )
-            return rtn_val
-        except Exception as e:
-            finish_time = time.time()
-            if not DISABLE_INFERENCE_CACHE and enable_model_monitoring:
-                try:
-                    cache.zadd(
-                        f"models",
-                        value=f"{GLOBAL_INFERENCE_SERVER_ID}:{request.api_key}:{model_id}",
-                        score=finish_time,
-                        expire=METRICS_INTERVAL * 2,
-                    )
-                    cache.zadd(
-                        f"error:{GLOBAL_INFERENCE_SERVER_ID}:{model_id}",
-                        value={
-                            "request": jsonable_encoder(
-                                request.dict(exclude={"image", "subject", "prompt"})
-                            ),
-                            "error": str(e),
-                        },
-                        score=finish_time,
-                        expire=METRICS_INTERVAL * 2,
-                    )
-                except Exception as cache_error:
-                    logger.warning(
-                        f"Failed to cache error data for model {model_id}: {cache_error}"
-                    )
-            raise
+        with start_span(
+            "model.infer",
+            {"model.id": model_id, "model.infer.caller": "infer_from_request"},
+        ):
+            try:
+                t_infer_start = time.perf_counter()
+                rtn_val = await self.model_infer(
+                    model_id=model_id, request=request, **kwargs
+                )
+                record_inference(model_id, time.perf_counter() - t_infer_start)
+                logger.debug(
+                    f"ModelManager - inference from request finished for model_id={model_id}."
+                )
+                finish_time = time.time()
+                if not DISABLE_INFERENCE_CACHE and enable_model_monitoring:
+                    with start_span("model.infer.cache"):
+                        try:
+                            logger.debug(
+                                f"ModelManager - caching inference request started for model_id={model_id}"
+                            )
+                            cache.zadd(
+                                f"models",
+                                value=f"{GLOBAL_INFERENCE_SERVER_ID}:{request.api_key}:{model_id}",
+                                score=finish_time,
+                                expire=METRICS_INTERVAL * 2,
+                            )
+                            if (
+                                hasattr(request, "image")
+                                and hasattr(request.image, "type")
+                                and request.image.type == "numpy"
+                            ):
+                                request.image.value = str(request.image.value)
+                            cache.zadd(
+                                f"inference:{GLOBAL_INFERENCE_SERVER_ID}:{model_id}",
+                                value=to_cachable_inference_item(request, rtn_val),
+                                score=finish_time,
+                                expire=METRICS_INTERVAL * 2,
+                            )
+                            logger.debug(
+                                f"ModelManager - caching inference request finished for model_id={model_id}"
+                            )
+                        except Exception as cache_error:
+                            logger.warning(
+                                f"Failed to cache inference data for model {model_id}: {cache_error}"
+                            )
+                return rtn_val
+            except Exception as e:
+                record_error(e)
+                finish_time = time.time()
+                if not DISABLE_INFERENCE_CACHE and enable_model_monitoring:
+                    with start_span("model.infer.cache_error"):
+                        try:
+                            cache.zadd(
+                                f"models",
+                                value=f"{GLOBAL_INFERENCE_SERVER_ID}:{request.api_key}:{model_id}",
+                                score=finish_time,
+                                expire=METRICS_INTERVAL * 2,
+                            )
+                            cache.zadd(
+                                f"error:{GLOBAL_INFERENCE_SERVER_ID}:{model_id}",
+                                value={
+                                    "request": jsonable_encoder(
+                                        request.dict(
+                                            exclude={"image", "subject", "prompt"}
+                                        )
+                                    ),
+                                    "error": str(e),
+                                },
+                                score=finish_time,
+                                expire=METRICS_INTERVAL * 2,
+                            )
+                        except Exception as cache_error:
+                            logger.warning(
+                                f"Failed to cache error data for model {model_id}: {cache_error}"
+                            )
+                raise
 
     def infer_from_request_sync(
         self, model_id: str, request: InferenceRequest, **kwargs
@@ -276,71 +301,82 @@ class ModelManager:
         if METRICS_ENABLED and self.pingback and enable_model_monitoring:
             logger.debug("ModelManager - setting pingback fallback api key...")
             self.pingback.fallback_api_key = request.api_key
-        try:
-            rtn_val = self.model_infer_sync(
-                model_id=model_id, request=request, **kwargs
-            )
-            logger.debug(
-                f"ModelManager - inference from request finished for model_id={model_id}."
-            )
-            finish_time = time.time()
-            if not DISABLE_INFERENCE_CACHE and enable_model_monitoring:
-                try:
-                    logger.debug(
-                        f"ModelManager - caching inference request started for model_id={model_id}"
-                    )
-                    cache.zadd(
-                        f"models",
-                        value=f"{GLOBAL_INFERENCE_SERVER_ID}:{request.api_key}:{model_id}",
-                        score=finish_time,
-                        expire=METRICS_INTERVAL * 2,
-                    )
-                    if (
-                        hasattr(request, "image")
-                        and hasattr(request.image, "type")
-                        and request.image.type == "numpy"
-                    ):
-                        request.image.value = str(request.image.value)
-                    cache.zadd(
-                        f"inference:{GLOBAL_INFERENCE_SERVER_ID}:{model_id}",
-                        value=to_cachable_inference_item(request, rtn_val),
-                        score=finish_time,
-                        expire=METRICS_INTERVAL * 2,
-                    )
-                    logger.debug(
-                        f"ModelManager - caching inference request finished for model_id={model_id}"
-                    )
-                except Exception as cache_error:
-                    logger.warning(
-                        f"Failed to cache inference data for model {model_id}: {cache_error}"
-                    )
-            return rtn_val
-        except Exception as e:
-            finish_time = time.time()
-            if not DISABLE_INFERENCE_CACHE and enable_model_monitoring:
-                try:
-                    cache.zadd(
-                        f"models",
-                        value=f"{GLOBAL_INFERENCE_SERVER_ID}:{request.api_key}:{model_id}",
-                        score=finish_time,
-                        expire=METRICS_INTERVAL * 2,
-                    )
-                    cache.zadd(
-                        f"error:{GLOBAL_INFERENCE_SERVER_ID}:{model_id}",
-                        value={
-                            "request": jsonable_encoder(
-                                request.dict(exclude={"image", "subject", "prompt"})
-                            ),
-                            "error": str(e),
-                        },
-                        score=finish_time,
-                        expire=METRICS_INTERVAL * 2,
-                    )
-                except Exception as cache_error:
-                    logger.warning(
-                        f"Failed to cache error data for model {model_id}: {cache_error}"
-                    )
-            raise
+        with start_span(
+            "model.infer",
+            {"model.id": model_id, "model.infer.caller": "infer_from_request_sync"},
+        ):
+            try:
+                t_infer_start = time.perf_counter()
+                rtn_val = self.model_infer_sync(
+                    model_id=model_id, request=request, **kwargs
+                )
+                record_inference(model_id, time.perf_counter() - t_infer_start)
+                logger.debug(
+                    f"ModelManager - inference from request finished for model_id={model_id}."
+                )
+                finish_time = time.time()
+                if not DISABLE_INFERENCE_CACHE and enable_model_monitoring:
+                    with start_span("model.infer.cache"):
+                        try:
+                            logger.debug(
+                                f"ModelManager - caching inference request started for model_id={model_id}"
+                            )
+                            cache.zadd(
+                                f"models",
+                                value=f"{GLOBAL_INFERENCE_SERVER_ID}:{request.api_key}:{model_id}",
+                                score=finish_time,
+                                expire=METRICS_INTERVAL * 2,
+                            )
+                            if (
+                                hasattr(request, "image")
+                                and hasattr(request.image, "type")
+                                and request.image.type == "numpy"
+                            ):
+                                request.image.value = str(request.image.value)
+                            cache.zadd(
+                                f"inference:{GLOBAL_INFERENCE_SERVER_ID}:{model_id}",
+                                value=to_cachable_inference_item(request, rtn_val),
+                                score=finish_time,
+                                expire=METRICS_INTERVAL * 2,
+                            )
+                            logger.debug(
+                                f"ModelManager - caching inference request finished for model_id={model_id}"
+                            )
+                        except Exception as cache_error:
+                            logger.warning(
+                                f"Failed to cache inference data for model {model_id}: {cache_error}"
+                            )
+                return rtn_val
+            except Exception as e:
+                record_error(e)
+                finish_time = time.time()
+                if not DISABLE_INFERENCE_CACHE and enable_model_monitoring:
+                    with start_span("model.infer.cache_error"):
+                        try:
+                            cache.zadd(
+                                f"models",
+                                value=f"{GLOBAL_INFERENCE_SERVER_ID}:{request.api_key}:{model_id}",
+                                score=finish_time,
+                                expire=METRICS_INTERVAL * 2,
+                            )
+                            cache.zadd(
+                                f"error:{GLOBAL_INFERENCE_SERVER_ID}:{model_id}",
+                                value={
+                                    "request": jsonable_encoder(
+                                        request.dict(
+                                            exclude={"image", "subject", "prompt"}
+                                        )
+                                    ),
+                                    "error": str(e),
+                                },
+                                score=finish_time,
+                                expire=METRICS_INTERVAL * 2,
+                            )
+                        except Exception as cache_error:
+                            logger.warning(
+                                f"Failed to cache error data for model {model_id}: {cache_error}"
+                            )
+                raise
 
     async def model_infer(self, model_id: str, request: InferenceRequest, **kwargs):
         model = self._get_model_reference(model_id=model_id)
@@ -463,6 +499,7 @@ class ModelManager:
                     return None
                 self._models[model_id].clear_cache(delete_from_disk=delete_from_disk)
                 del self._models[model_id]
+                record_model_unloaded(model_id)
                 self._dispose_model_lock(model_id=model_id)
                 try_releasing_cuda_memory()
         except InferenceModelNotFound:

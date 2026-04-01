@@ -98,16 +98,10 @@ class TestGetStreamMetrics:
 
     def test_returns_metrics_for_multiple_pipelines(self, collector):
         client = AsyncMock()
-        client.list_pipelines.return_value = _make_list_response(
-            ["pipe-a", "pipe-b"]
-        )
+        client.list_pipelines.return_value = _make_list_response(["pipe-a", "pipe-b"])
         client.get_status.side_effect = [
-            _make_status_response(
-                _full_report(inference_throughput=10.0)
-            ),
-            _make_status_response(
-                _full_report(inference_throughput=20.0)
-            ),
+            _make_status_response(_full_report(inference_throughput=10.0)),
+            _make_status_response(_full_report(inference_throughput=20.0)),
         ]
         collector.stream_manager_client = client
 
@@ -179,7 +173,16 @@ class TestGetStreamMetrics:
         client.get_status.return_value = _make_status_response(_full_report())
         collector.stream_manager_client = client
 
-        expected = {"fb-pipe": {"inference_throughput": 10.0, "camera_fps": 30.0, "source": "rtsp://example.com/stream", "frame_decoding_latency": 0.0, "inference_latency": 0.0, "e2e_latency": 0.0}}
+        expected = {
+            "fb-pipe": {
+                "inference_throughput": 10.0,
+                "camera_fps": 30.0,
+                "source": "rtsp://example.com/stream",
+                "frame_decoding_latency": 0.0,
+                "inference_latency": 0.0,
+                "e2e_latency": 0.0,
+            }
+        }
 
         mock_future = MagicMock()
         mock_future.result.return_value = expected
@@ -250,9 +253,9 @@ class TestAverageLatencyField:
 
     def test_handles_missing_key(self):
         reports = [{"other_field": 1.0}]
-        assert CustomCollector._average_latency_field(
-            reports, "inference_latency"
-        ) == 0.0
+        assert (
+            CustomCollector._average_latency_field(reports, "inference_latency") == 0.0
+        )
 
     def test_computes_correct_average(self):
         reports = [
@@ -310,13 +313,17 @@ class TestAverageSourceFps:
 class TestSanitizeSourceReference:
     def test_strips_credentials_from_rtsp_url(self):
         assert (
-            CustomCollector._sanitize_source_reference("rtsp://admin:secret@192.168.1.1:554/stream1")
+            CustomCollector._sanitize_source_reference(
+                "rtsp://admin:secret@192.168.1.1:554/stream1"
+            )
             == "rtsp://192.168.1.1:554/stream1"
         )
 
     def test_strips_credentials_from_http_url(self):
         assert (
-            CustomCollector._sanitize_source_reference("http://user:pass@example.com:8080/feed")
+            CustomCollector._sanitize_source_reference(
+                "http://user:pass@example.com:8080/feed"
+            )
             == "http://example.com:8080/feed"
         )
 
@@ -336,7 +343,9 @@ class TestSanitizeSourceReference:
         assert CustomCollector._sanitize_source_reference("0") == "0"
 
     def test_preserves_file_path(self):
-        assert CustomCollector._sanitize_source_reference("/dev/video0") == "/dev/video0"
+        assert (
+            CustomCollector._sanitize_source_reference("/dev/video0") == "/dev/video0"
+        )
 
     def test_preserves_regular_file_path(self):
         assert (
@@ -346,19 +355,25 @@ class TestSanitizeSourceReference:
 
     def test_strips_credentials_and_query_params(self):
         assert (
-            CustomCollector._sanitize_source_reference("rtsp://user:p%40ss@cam.local:554/ch1?transport=tcp")
+            CustomCollector._sanitize_source_reference(
+                "rtsp://user:p%40ss@cam.local:554/ch1?transport=tcp"
+            )
             == "rtsp://cam.local:554/ch1"
         )
 
     def test_strips_query_params_without_credentials(self):
         assert (
-            CustomCollector._sanitize_source_reference("rtsp://cam.local:554/stream?token=secret123&channel=1")
+            CustomCollector._sanitize_source_reference(
+                "rtsp://cam.local:554/stream?token=secret123&channel=1"
+            )
             == "rtsp://cam.local:554/stream"
         )
 
     def test_strips_fragment(self):
         assert (
-            CustomCollector._sanitize_source_reference("http://example.com/feed#section")
+            CustomCollector._sanitize_source_reference(
+                "http://example.com/feed#section"
+            )
             == "http://example.com/feed"
         )
 
@@ -368,7 +383,10 @@ class TestExtractSourceLabel:
         metadata = [
             {"source_reference": "rtsp://cam1.local/stream", "source_id": 0},
         ]
-        assert CustomCollector._extract_source_label(metadata) == "rtsp://cam1.local/stream"
+        assert (
+            CustomCollector._extract_source_label(metadata)
+            == "rtsp://cam1.local/stream"
+        )
 
     def test_multiple_sources(self):
         metadata = [
@@ -392,11 +410,17 @@ class TestExtractSourceLabel:
             {"source_reference": None, "source_id": 0},
             {"source_reference": "rtsp://cam1.local/stream", "source_id": 1},
         ]
-        assert CustomCollector._extract_source_label(metadata) == "rtsp://cam1.local/stream"
+        assert (
+            CustomCollector._extract_source_label(metadata)
+            == "rtsp://cam1.local/stream"
+        )
 
     def test_strips_credentials_from_source_references(self):
         metadata = [
-            {"source_reference": "rtsp://admin:secret@192.168.1.1:554/stream", "source_id": 0},
+            {
+                "source_reference": "rtsp://admin:secret@192.168.1.1:554/stream",
+                "source_id": 0,
+            },
             {"source_reference": "rtsp://user:pass@10.0.0.1:554/live", "source_id": 1},
         ]
         assert (
@@ -406,9 +430,14 @@ class TestExtractSourceLabel:
 
     def test_strips_query_params_from_source_references(self):
         metadata = [
-            {"source_reference": "rtsp://cam.local/stream?token=secret&channel=1", "source_id": 0},
+            {
+                "source_reference": "rtsp://cam.local/stream?token=secret&channel=1",
+                "source_id": 0,
+            },
         ]
-        assert CustomCollector._extract_source_label(metadata) == "rtsp://cam.local/stream"
+        assert (
+            CustomCollector._extract_source_label(metadata) == "rtsp://cam.local/stream"
+        )
 
     def test_returns_empty_when_source_labels_disabled(self):
         metadata = [
@@ -457,7 +486,9 @@ class TestCollectYieldsStreamMetrics:
         samples = _find_samples(metric_families, "inference_pipeline_camera_fps")
         assert samples[0].value == 30.0
 
-        samples = _find_samples(metric_families, "inference_pipeline_frame_decoding_latency")
+        samples = _find_samples(
+            metric_families, "inference_pipeline_frame_decoding_latency"
+        )
         assert samples[0].value == pytest.approx(0.02)
 
         samples = _find_samples(metric_families, "inference_pipeline_inference_latency")
@@ -471,7 +502,8 @@ class TestCollectYieldsStreamMetrics:
     def test_collect_yields_zero_active_streams_when_no_client(self, collector):
         metric_families = list(collector.collect())
         active = next(
-            mf for mf in metric_families
+            mf
+            for mf in metric_families
             if mf.name == "inference_pipeline_active_streams"
         )
         assert active.samples[0].value == 0
@@ -479,9 +511,7 @@ class TestCollectYieldsStreamMetrics:
     def test_collect_uses_pipeline_id_and_source_as_labels(self, collector):
         """Pipeline IDs (even UUIDs) go into labels, not metric names."""
         client = AsyncMock()
-        client.list_pipelines.return_value = _make_list_response(
-            ["my/pipeline.v2"]
-        )
+        client.list_pipelines.return_value = _make_list_response(["my/pipeline.v2"])
         client.get_status.return_value = _make_status_response(_full_report())
         collector.stream_manager_client = client
 
@@ -493,15 +523,14 @@ class TestCollectYieldsStreamMetrics:
 
     def test_collect_multiple_pipelines_yields_correct_active_count(self, collector):
         client = AsyncMock()
-        client.list_pipelines.return_value = _make_list_response(
-            ["p1", "p2", "p3"]
-        )
+        client.list_pipelines.return_value = _make_list_response(["p1", "p2", "p3"])
         client.get_status.return_value = _make_status_response(_full_report())
         collector.stream_manager_client = client
 
         metric_families = list(collector.collect())
         active = next(
-            mf for mf in metric_families
+            mf
+            for mf in metric_families
             if mf.name == "inference_pipeline_active_streams"
         )
         assert active.samples[0].value == 3
@@ -517,9 +546,7 @@ class TestCollectYieldsStreamMetrics:
         )
 
         client = AsyncMock()
-        client.list_pipelines.side_effect = ConnectivityError(
-            private_message="down"
-        )
+        client.list_pipelines.side_effect = ConnectivityError(private_message="down")
         collector.stream_manager_client = client
 
         metric_families = list(collector.collect())
@@ -529,7 +556,8 @@ class TestCollectYieldsStreamMetrics:
         assert "avg_inference_time_total" in names
         assert "num_errors_total" in names
         active = next(
-            mf for mf in metric_families
+            mf
+            for mf in metric_families
             if mf.name == "inference_pipeline_active_streams"
         )
         assert active.samples[0].value == 0

@@ -33,6 +33,7 @@ from inference.core.env import (
     ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES,
     API_KEY,
     DISABLED_INFERENCE_MODELS_BACKENDS,
+    RFDETR_ONNX_MAX_RESOLUTION,
     VALID_INFERENCE_MODELS_BACKENDS,
 )
 from inference.core.models.base import Model
@@ -53,6 +54,7 @@ from inference_models import (
     MultiLabelClassificationModel,
     MultiLabelClassificationPrediction,
     ObjectDetectionModel,
+    PreProcessingOverrides,
     SemanticSegmentationModel,
 )
 from inference_models.models.base.semantic_segmentation import (
@@ -112,11 +114,18 @@ class InferenceModelsObjectDetectionAdapter(Model):
             allow_direct_local_storage_loading=ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES,
             weights_provider_extra_headers=extra_weights_provider_headers,
             backend=backend,
+            rf_detr_max_input_resolution=RFDETR_ONNX_MAX_RESOLUTION,
             **kwargs,
         )
         self.class_names = list(self._model.class_names)
 
     def map_inference_kwargs(self, kwargs: dict) -> dict:
+        pre_processing_overrides = PreProcessingOverrides(
+            disable_contrast_enhancement=kwargs.get("disable_preproc_contrast", False),
+            disable_grayscale=kwargs.get("disable_preproc_grayscale", False),
+            disable_static_crop=kwargs.get("disable_preproc_static_crop", False),
+        )
+        kwargs["pre_processing_overrides"] = pre_processing_overrides
         return kwargs
 
     def preprocess(self, image: Any, **kwargs):
@@ -256,11 +265,18 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
             allow_direct_local_storage_loading=ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES,
             weights_provider_extra_headers=extra_weights_provider_headers,
             backend=backend,
+            rf_detr_max_input_resolution=RFDETR_ONNX_MAX_RESOLUTION,
             **kwargs,
         )
         self.class_names = list(self._model.class_names)
 
     def map_inference_kwargs(self, kwargs: dict) -> dict:
+        pre_processing_overrides = PreProcessingOverrides(
+            disable_contrast_enhancement=kwargs.get("disable_preproc_contrast", False),
+            disable_grayscale=kwargs.get("disable_preproc_grayscale", False),
+            disable_static_crop=kwargs.get("disable_preproc_static_crop", False),
+        )
+        kwargs["pre_processing_overrides"] = pre_processing_overrides
         return kwargs
 
     def preprocess(self, image: Any, **kwargs):
@@ -415,6 +431,12 @@ class InferenceModelsKeyPointsDetectionAdapter(Model):
         if "request" in kwargs:
             keypoint_confidence_threshold = kwargs["request"].keypoint_confidence
             kwargs["key_points_threshold"] = keypoint_confidence_threshold
+        pre_processing_overrides = PreProcessingOverrides(
+            disable_contrast_enhancement=kwargs.get("disable_preproc_contrast", False),
+            disable_grayscale=kwargs.get("disable_preproc_grayscale", False),
+            disable_static_crop=kwargs.get("disable_preproc_static_crop", False),
+        )
+        kwargs["pre_processing_overrides"] = pre_processing_overrides
         return kwargs
 
     def preprocess(self, image: Any, **kwargs):
@@ -617,6 +639,12 @@ class InferenceModelsClassificationAdapter(Model):
         self.class_names = list(self._model.class_names)
 
     def map_inference_kwargs(self, kwargs: dict) -> dict:
+        pre_processing_overrides = PreProcessingOverrides(
+            disable_contrast_enhancement=kwargs.get("disable_preproc_contrast", False),
+            disable_grayscale=kwargs.get("disable_preproc_grayscale", False),
+            disable_static_crop=kwargs.get("disable_preproc_static_crop", False),
+        )
+        kwargs["pre_processing_overrides"] = pre_processing_overrides
         return kwargs
 
     def preprocess(self, image: Any, **kwargs):
@@ -725,9 +753,7 @@ def prepare_multi_label_classification_response(
     for prediction, image_size in zip(post_processed_predictions, image_sizes):
         image_predictions_dict = dict()
         predicted_classes = []
-        for class_id, confidence in zip(
-            prediction.class_ids.cpu().tolist(), prediction.confidence.cpu().tolist()
-        ):
+        for class_id, confidence in enumerate(prediction.confidence.cpu().tolist()):
             cls_name = class_names[class_id]
             image_predictions_dict[cls_name] = {
                 "confidence": confidence,
@@ -903,6 +929,12 @@ class InferenceModelsSemanticSegmentationAdapter(Model):
         return {str(k): v for k, v in enumerate(self.class_names)}
 
     def map_inference_kwargs(self, kwargs: dict) -> dict:
+        pre_processing_overrides = PreProcessingOverrides(
+            disable_contrast_enhancement=kwargs.get("disable_preproc_contrast", False),
+            disable_grayscale=kwargs.get("disable_preproc_grayscale", False),
+            disable_static_crop=kwargs.get("disable_preproc_static_crop", False),
+        )
+        kwargs["pre_processing_overrides"] = pre_processing_overrides
         return kwargs
 
     def preprocess(self, image: Any, **kwargs):

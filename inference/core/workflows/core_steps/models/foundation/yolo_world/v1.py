@@ -119,6 +119,20 @@ class BlockManifest(WorkflowBlockManifest):
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.3.0,<2.0.0"
 
+    @classmethod
+    def get_supported_model_variants(cls) -> Optional[List[str]]:
+        """Return list of model_id variants that can satisfy this block."""
+        return [
+            "yolo_world/v2-s",
+            "yolo_world/v2-m",
+            "yolo_world/v2-l",
+            "yolo_world/v2-x",
+            "yolo_world/s",
+            "yolo_world/m",
+            "yolo_world/l",
+            "yolo_world/x",
+        ]
+
 
 class YoloWorldModelBlockV1(WorkflowBlock):
 

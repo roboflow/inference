@@ -1071,6 +1071,7 @@ def attempt_loading_model_with_auto_load_cache(
             model_architecture=cache_entry.model_architecture,
             task_type=cache_entry.task_type,
             backend=cache_entry.backend_type,
+            model_features=cache_entry.model_features,
         )
         model_package_cache_dir = generate_model_package_cache_path(
             model_id=cache_entry.model_id,
@@ -1202,6 +1203,7 @@ def attempt_loading_matching_model_packages(
         f"the event. https://github.com/roboflow/inference/issues\n\n"
         f"Here is the summary of errors for specific model packages:\n{summary_of_errors}\n\n",
         help_url="https://inference-models.roboflow.com/errors/model-loading/#modelpackagealternativesexhaustederror",
+        alternatives_errors=[summary[1] for summary in failed_load_attempts],
     )
 
 
@@ -1317,6 +1319,7 @@ def initialize_model(
         backend_type=model_package.backend,
         resolved_files=resolved_files,
         model_dependencies=model_dependencies,
+        model_features=model_package.model_features,
     )
     return model, model_package_cache_dir
 
@@ -1480,6 +1483,7 @@ def dump_auto_resolution_cache(
     backend_type: Optional[BackendType],
     resolved_files: Set[str],
     model_dependencies: Optional[List[ModelDependency]],
+    model_features: Optional[dict],
 ) -> None:
     if not use_auto_resolution_cache:
         return None
@@ -1492,6 +1496,7 @@ def dump_auto_resolution_cache(
         backend_type=backend_type,
         created_at=datetime.now(),
         model_dependencies=model_dependencies,
+        model_features=model_features,
     )
     auto_resolution_cache.register(
         auto_negotiation_hash=auto_negotiation_hash, cache_entry=cache_content
@@ -1499,13 +1504,13 @@ def dump_auto_resolution_cache(
 
 
 def generate_shared_blobs_path() -> str:
-    return os.path.join(INFERENCE_HOME, "shared-blobs")
+    return os.path.abspath(os.path.join(INFERENCE_HOME, "shared-blobs"))
 
 
 def generate_model_package_cache_path(model_id: str, package_id: str) -> str:
     ensure_package_id_is_os_safe(model_id=model_id, package_id=package_id)
     model_id_slug = slugify_model_id_to_os_safe_format(model_id=model_id)
-    return os.path.join(INFERENCE_HOME, "models-cache", model_id_slug, package_id)
+    return os.path.abspath(os.path.join(INFERENCE_HOME, "models-cache", model_id_slug, package_id))
 
 
 def ensure_package_id_is_os_safe(model_id: str, package_id: str) -> None:

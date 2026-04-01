@@ -1,6 +1,7 @@
 import numpy as np
 import pytest
 import supervision as sv
+from pycocotools import mask as mask_utils
 from pydantic import ValidationError
 
 from inference.core.workflows.core_steps.visualizations.mask.v1 import (
@@ -97,3 +98,50 @@ def test_mask_visualization_block() -> None:
     assert not np.array_equal(
         output.get("image").numpy_image, np.zeros((1000, 1000, 3), dtype=np.uint8)
     )
+
+
+def test_mask_visualization_block_with_semantic_segmentation() -> None:
+    """Block renders sv.Detections with RLE-encoded masks as produced by the
+    semantic segmentation model block (mask=None, data["rle_mask"] populated)."""
+    # Build binary masks, then RLE-encode them the same way the semantic
+    # segmentation block does.
+    mask_cat = np.zeros((100, 100), dtype=np.uint8)
+    mask_cat[10:40, 10:40] = 1
+    mask_dog = np.zeros((100, 100), dtype=np.uint8)
+    mask_dog[60:90, 60:90] = 1
+
+    rle_cat = mask_utils.encode(np.asfortranarray(mask_cat))
+    rle_cat["counts"] = rle_cat["counts"].decode("utf-8")
+    rle_dog = mask_utils.encode(np.asfortranarray(mask_dog))
+    rle_dog["counts"] = rle_dog["counts"].decode("utf-8")
+
+    detections = sv.Detections(
+        xyxy=np.array([[10, 10, 40, 40], [60, 60, 90, 90]], dtype=np.float64),
+        mask=None,
+        class_id=np.array([1, 2]),
+        data={
+            "class_name": np.array(["cat", "dog"]),
+            "rle_mask": np.array([rle_cat, rle_dog], dtype=object),
+        },
+    )
+
+    block = MaskVisualizationBlockV1()
+    output = block.run(
+        image=WorkflowImageData(
+            parent_metadata=ImageParentMetadata(parent_id="some"),
+            numpy_image=np.zeros((100, 100, 3), dtype=np.uint8),
+        ),
+        predictions=detections,
+        copy_image=True,
+        color_palette="DEFAULT",
+        palette_size=10,
+        custom_colors=[],
+        color_axis="CLASS",
+        opacity=0.5,
+    )
+
+    assert output is not None
+    assert "image" in output
+    result_image = output["image"].numpy_image
+    assert result_image.shape == (100, 100, 3)
+    assert not np.array_equal(result_image, np.zeros((100, 100, 3), dtype=np.uint8))

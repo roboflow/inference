@@ -5,8 +5,10 @@ from typing import Annotated, Dict, List, Literal, Optional, Set, Tuple, Union
 
 from pydantic import BaseModel, BeforeValidator, Field, ValidationError
 
-from inference_models.entities import ImageDimensions
-from inference_models.errors import CorruptedModelPackageError
+from inference_models.errors import (
+    CorruptedModelPackageError,
+    ModelPackageRestrictedError,
+)
 from inference_models.logger import LOGGER
 from inference_models.utils.file_system import read_json, stream_file_lines
 
@@ -334,6 +336,7 @@ def parse_inference_config(
     implicit_resize_mode_substitutions: Optional[
         Dict[ResizeMode, Tuple[ResizeMode, Optional[int], Optional[str]]]
     ] = None,
+    max_allowed_input_size: Optional[Union[int, Tuple[int, int]]] = None,
 ) -> InferenceConfig:
     try:
         decoded_config = read_json(path=config_path)
@@ -375,4 +378,20 @@ def parse_inference_config(
             f"{allowed_resize_modes_str}.",
             help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
         )
+    if max_allowed_input_size is not None:
+        if isinstance(max_allowed_input_size, int):
+            max_allowed_input_size = (max_allowed_input_size, max_allowed_input_size)
+        training_input_size = parsed_config.network_input.training_input_size
+        if (
+            training_input_size.height > max_allowed_input_size[0]
+            or training_input_size.width > max_allowed_input_size[1]
+        ):
+            raise ModelPackageRestrictedError(
+                message="Configuration of runtime environment prevents packages with input size larger than "
+                f"{max_allowed_input_size} from being loaded. Package attempted to be loaded define "
+                f"input size ({training_input_size.height}, {training_input_size.width}). "
+                f"Running locally, verify configuration of your environment. If you see this error running "
+                f"on Roboflow platform - contact support.",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#modelpackagerestrictederror",
+            )
     return parsed_config

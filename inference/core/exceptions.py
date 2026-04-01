@@ -215,6 +215,10 @@ class CannotInitialiseModelError(Exception):
     pass
 
 
+class CannotInitialiseModelDueToInputSizeError(CannotInitialiseModelError):
+    pass
+
+
 class RetryRequestError(Exception):
 
     def __init__(self, message: str, inner_error: Exception):
@@ -231,4 +235,15 @@ class WebRTCConfigurationError(Exception):
 
 
 class CreditsExceededError(Exception):
+    pass
+
+
+class WorkspaceStreamQuotaError(Exception):
+    """Raised when the workspace stream quota has been exceeded.
+
+    This error is returned when a workspace has reached its maximum number
+    of concurrent WebRTC streams. This is to prevent that a single user
+    uses all our modal resources.
+    """
+
     pass

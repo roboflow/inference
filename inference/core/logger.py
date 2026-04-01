@@ -126,8 +126,11 @@ if API_LOGGING_ENABLED:
             force=True,
         )
 
+    from inference.core.telemetry import trace_context_log_processor
+
     processors = [
         add_correlation,
+        trace_context_log_processor,
         add_execution_id,
         structlog.stdlib.filter_by_level,
         structlog.stdlib.PositionalArgumentsFormatter(),

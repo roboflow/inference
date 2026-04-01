@@ -33,6 +33,7 @@ COPY requirements/requirements.sam.txt \
     ./
 
 RUN python3 -m pip install -U pip uv
+RUN uv pip install --system --index-url https://download.pytorch.org/whl/cu124 torch torchvision
 RUN uv pip install --system \
     -r _requirements.txt \
     -r requirements.doctr.txt \
@@ -49,7 +50,6 @@ RUN uv pip install --system \
     -r requirements.modal.txt \
     jupyterlab \
     "setuptools<=75.5.0" \
-    --upgrade \
     && rm -rf ~/.cache/pip
 
 # Install setup.py requirements for flash_attn

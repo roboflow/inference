@@ -26,9 +26,7 @@ class BatchOnlyEchoBlockManifest(WorkflowBlockManifest):
     """Manifest for a block that accepts only one optional batch input (no scalars)."""
 
     type: Literal["batch_only_echo"]
-    items: Optional[
-        Union[Selector(kind=[LIST_OF_VALUES_KIND]), List[str]]
-    ] = Field(
+    items: Optional[Union[Selector(kind=[LIST_OF_VALUES_KIND]), List[str]]] = Field(
         default=None,
         description="Optional batch of values to echo (e.g. from $inputs.names).",
         examples=["$inputs.names"],
