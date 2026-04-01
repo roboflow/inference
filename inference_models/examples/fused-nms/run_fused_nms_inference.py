@@ -56,6 +56,12 @@ def _write_json(path: Path, payload: dict[str, Any]) -> None:
 
 @click.command()
 @click.option(
+    "--run-name",
+    type=str,
+    required=True,
+    help="Name of the run for reporting. Will be used as a subdirectory in the target directory.",
+)
+@click.option(
     "--image-path",
     type=click.Path(path_type=Path, exists=True, dir_okay=False, readable=True),
     required=True,
@@ -66,6 +72,12 @@ def _write_json(path: Path, payload: dict[str, Any]) -> None:
     type=click.Path(path_type=Path, exists=True, dir_okay=True, readable=True),
     required=True,
     help="Path to the model directory.",
+)
+@click.option(
+    "--target-dir",
+    type=click.Path(path_type=Path, file_okay=False),
+    required=True,
+    help="Directory for latency.json and prediction.json (created if missing).",
 )
 @click.option(
     "--confidence",
@@ -100,13 +112,8 @@ def _write_json(path: Path, payload: dict[str, Any]) -> None:
     show_default=True,
     help="Untimed warmup runs before timed iterations.",
 )
-@click.option(
-    "--target-dir",
-    type=click.Path(path_type=Path, file_okay=False),
-    required=True,
-    help="Directory for latency.json and prediction.json (created if missing).",
-)
 def main(
+    run_name: str,
     image_path: Path,
     model_path: Path,
     target_dir: Path,
@@ -179,10 +186,10 @@ def main(
     }
 
     target_dir.mkdir(parents=True, exist_ok=True)
-    latency_path = target_dir / "latency.json"
-    prediction_path = target_dir / "prediction.json"
-    nms_params_path = target_dir / "nms_params.json"
-    inference_config_path = target_dir / "inference_config.json"
+    latency_path = target_dir / run_name / "latency.json"
+    prediction_path = target_dir / run_name / "prediction.json"
+    nms_params_path = target_dir / run_name / "nms_params.json"
+    inference_config_path = target_dir / run_name / "inference_config.json"
 
     _write_json(
         latency_path,
