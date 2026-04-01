@@ -246,7 +246,6 @@ class YOLOv8ForObjectDetectionOnnx(
     ) -> torch.Tensor:
         with self._session_thread_lock:
             device = pre_processed_images.device
-            batch_size = pre_processed_images.shape[0]
 
             input_builders = {
                 INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_IMAGES_INPUT_NAME: lambda: pre_processed_images,
@@ -254,16 +253,16 @@ class YOLOv8ForObjectDetectionOnnx(
 
             if self._inference_config.post_processing.fused:
                 if INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_CONFIDENCE_INPUT_NAME in self._input_names:
-                    input_builders[INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_CONFIDENCE_INPUT_NAME] = lambda: torch.full(
-                        (batch_size,), float(confidence), dtype=torch.float32, device=device
+                    input_builders[INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_CONFIDENCE_INPUT_NAME] = lambda: torch.tensor(
+                        [float(confidence)], dtype=torch.float32, device=device
                     )
                 if INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_IOU_THRESHOLD_INPUT_NAME in self._input_names:
-                    input_builders[INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_IOU_THRESHOLD_INPUT_NAME] = lambda: torch.full(
-                        (batch_size,), float(iou_threshold), dtype=torch.float32, device=device
+                    input_builders[INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_IOU_THRESHOLD_INPUT_NAME] = lambda: torch.tensor(
+                        [float(iou_threshold)], dtype=torch.float32, device=device
                     )
                 if INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_MAX_DETECTIONS_INPUT_NAME in self._input_names:
-                    input_builders[INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_MAX_DETECTIONS_INPUT_NAME] = lambda: torch.full(
-                        (batch_size,), int(max_detections), dtype=torch.int64, device=device
+                    input_builders[INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_MAX_DETECTIONS_INPUT_NAME] = lambda: torch.tensor(
+                        [int(max_detections)], dtype=torch.int64, device=device
                     )
 
             inputs = {name: builder_fn() for name, builder_fn in input_builders.items()}
