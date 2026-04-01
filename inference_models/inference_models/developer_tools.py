@@ -13,7 +13,7 @@ The modul contains standard imports for symbols which are safe to use within bas
 along with library. Utilities depending on optional dependencies are exposed as lazy imports.
 """
 
-from typing import Any, Dict
+from typing import Any, Dict, Union
 
 from inference_models.models.common.model_packages import get_model_package_contents
 from inference_models.runtime_introspection.core import (
@@ -21,7 +21,7 @@ from inference_models.runtime_introspection.core import (
     x_ray_runtime_environment,
 )
 from inference_models.utils.download import download_files_to_directory
-from inference_models.utils.imports import LazyFunction
+from inference_models.utils.imports import LazyClass, LazyFunction
 from inference_models.utils.onnx_introspection import (
     get_selected_onnx_execution_providers,
 )
@@ -42,7 +42,7 @@ from inference_models.weights_providers.entities import (
     TRTPackageDetails,
 )
 
-OPTIONAL_IMPORTS: Dict[str, LazyFunction] = {
+OPTIONAL_IMPORTS: Dict[str, Union[LazyFunction, LazyClass]] = {
     "use_primary_cuda_context": LazyFunction(
         module_name="inference_models.models.common.cuda",
         function_name="use_primary_cuda_context",
@@ -78,6 +78,14 @@ OPTIONAL_IMPORTS: Dict[str, LazyFunction] = {
     "load_trt_model": LazyFunction(
         module_name="inference_models.models.common.trt",
         function_name="load_trt_model",
+    ),
+    "establish_trt_cuda_graph_cache": LazyFunction(
+        module_name="inference_models.models.common.trt",
+        function_name="establish_trt_cuda_graph_cache",
+    ),
+    "TRTCudaGraphCache": LazyClass(
+        module_name="inference_models.models.common.trt",
+        class_name="TRTCudaGraphCache",
     ),
 }
 

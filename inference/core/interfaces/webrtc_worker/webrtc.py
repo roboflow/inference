@@ -7,6 +7,7 @@ import struct
 import time
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
+import supervision as sv
 from aioice import ice
 from aiortc import (
     RTCConfiguration,
@@ -240,6 +241,7 @@ class VideoFrameProcessor:
         self._av_logging_set: bool = False
         self._received_frames = 0
         self._declared_fps = declared_fps
+        self._fps_monitor = sv.FPSMonitor()
         self._stop_processing = False
         self._termination_reason: Optional[str] = None
         self._processing_complete_sent = False
@@ -545,6 +547,7 @@ class VideoFrameProcessor:
 
                 frame = await self.track.recv()
                 self._received_frames += 1
+                self._fps_monitor.tick()
                 frame_timestamp = datetime.datetime.now()
 
                 workflow_output, _, errors = await self._process_frame_async(
@@ -651,7 +654,11 @@ class VideoFrameProcessor:
             frame,
             frame_id,
             self._declared_fps,
-            self._declared_fps,  # TODO: measure fps
+            (
+                self._fps_monitor.fps
+                if len(self._fps_monitor.all_timestamps) > 1
+                else self._declared_fps
+            ),
             self._file_processing,
             self._inference_pipeline,
             stream_output,
@@ -767,6 +774,7 @@ class VideoTransformTrackWithLoop(VideoStreamTrack, VideoFrameProcessor):
             raise
 
         self._received_frames += 1
+        self._fps_monitor.tick()
         frame_id = self._received_frames
         frame_timestamp = datetime.datetime.now()
 
@@ -929,8 +937,8 @@ async def init_rtc_peer_connection_with_loop(
         KeyError,
         NotImplementedError,
     ) as error:
-        # heartbeat to indicate caller error
-        heartbeat_callback()
+        if heartbeat_callback:
+            heartbeat_callback()
         send_answer(
             WebRTCWorkerResult(
                 exception_type=error.__class__.__name__,
@@ -939,8 +947,8 @@ async def init_rtc_peer_connection_with_loop(
         )
         return
     except WebRTCConfigurationError as error:
-        # heartbeat to indicate caller error
-        heartbeat_callback()
+        if heartbeat_callback:
+            heartbeat_callback()
         send_answer(
             WebRTCWorkerResult(
                 exception_type=error.__class__.__name__,
@@ -949,8 +957,8 @@ async def init_rtc_peer_connection_with_loop(
         )
         return
     except RoboflowAPINotAuthorizedError:
-        # heartbeat to indicate caller error
-        heartbeat_callback()
+        if heartbeat_callback:
+            heartbeat_callback()
         send_answer(
             WebRTCWorkerResult(
                 exception_type=RoboflowAPINotAuthorizedError.__name__,
@@ -959,8 +967,8 @@ async def init_rtc_peer_connection_with_loop(
         )
         return
     except RoboflowAPINotNotFoundError:
-        # heartbeat to indicate caller error
-        heartbeat_callback()
+        if heartbeat_callback:
+            heartbeat_callback()
         send_answer(
             WebRTCWorkerResult(
                 exception_type=RoboflowAPINotNotFoundError.__name__,
@@ -969,8 +977,8 @@ async def init_rtc_peer_connection_with_loop(
         )
         return
     except WorkflowSyntaxError as error:
-        # heartbeat to indicate caller error
-        heartbeat_callback()
+        if heartbeat_callback:
+            heartbeat_callback()
         send_answer(
             WebRTCWorkerResult(
                 exception_type=WorkflowSyntaxError.__name__,
@@ -981,8 +989,8 @@ async def init_rtc_peer_connection_with_loop(
         )
         return
     except WorkflowError as error:
-        # heartbeat to indicate caller error
-        heartbeat_callback()
+        if heartbeat_callback:
+            heartbeat_callback()
         send_answer(
             WebRTCWorkerResult(
                 exception_type=WorkflowError.__name__,

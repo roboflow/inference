@@ -3,6 +3,7 @@ from typing import List, Optional, Tuple, Union
 import numpy as np
 import torch
 
+from inference_models import PreProcessingOverrides
 from inference_models.entities import ColorFormat, ImageDimensions
 from inference_models.models.common.roboflow.model_packages import (
     ImagePreProcessing,
@@ -32,6 +33,7 @@ def pre_process_network_input(
     target_device: torch.device,
     input_color_format: Optional[ColorFormat] = None,
     image_size_wh: Optional[Union[int, Tuple[int, int]]] = None,
+    pre_processing_overrides: Optional[PreProcessingOverrides] = None,
 ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
     """RF-DETR wrapper around the shared pre_process_network_input.
 
@@ -59,6 +61,7 @@ def pre_process_network_input(
         target_device=target_device,
         input_color_format=input_color_format,
         image_size_wh=image_size_wh,
+        pre_processing_overrides=pre_processing_overrides,
     )
 
     if two_step:

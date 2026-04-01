@@ -16,6 +16,7 @@ from inference.core.env import (
     CORE_MODEL_YOLO_WORLD_ENABLED,
     DEPTH_ESTIMATION_ENABLED,
     FLORENCE2_ENABLED,
+    GLM_OCR_ENABLED,
     MOONDREAM2_ENABLED,
     PALIGEMMA_ENABLED,
     QWEN_2_5_ENABLED,
@@ -128,6 +129,7 @@ ROBOFLOW_MODEL_TYPES = {
     ("object-detection", "yolo26m"): YOLO26ObjectDetection,
     ("object-detection", "yolo26l"): YOLO26ObjectDetection,
     ("object-detection", "yolo26x"): YOLO26ObjectDetection,
+    ("object-detection", "rfdetr"): RFDETRObjectDetection,
     ("object-detection", "rfdetr-base"): RFDETRObjectDetection,
     ("object-detection", "rfdetr-nano"): RFDETRObjectDetection,
     ("object-detection", "rfdetr-small"): RFDETRObjectDetection,
@@ -136,6 +138,7 @@ ROBOFLOW_MODEL_TYPES = {
     ("object-detection", "rfdetr-xlarge"): RFDETRObjectDetection,
     ("object-detection", "rfdetr-2xlarge"): RFDETRObjectDetection,
     ("object-detection", "rfdetr-nas"): RFDETRNasObjectDetection,
+    ("instance-segmentation", "rfdetr"): RFDETRInstanceSegmentation,
     ("instance-segmentation", "rfdetr-seg-preview"): RFDETRInstanceSegmentation,
     ("instance-segmentation", "rfdetr-seg-nano"): RFDETRInstanceSegmentation,
     ("instance-segmentation", "rfdetr-seg-small"): RFDETRInstanceSegmentation,
@@ -1006,3 +1009,10 @@ if USE_INFERENCE_MODELS:
                 InferenceModelsQwen35VLAdapter
             )
         ROBOFLOW_MODEL_TYPES[("vlm", "qwen_3_5")] = InferenceModelsQwen35VLAdapter
+
+    if GLM_OCR_ENABLED:
+        from inference.models.glm_ocr.glm_ocr_inference_models import (
+            InferenceModelsGLMOCRAdapter,
+        )
+
+        ROBOFLOW_MODEL_TYPES[("vlm", "glm-ocr")] = InferenceModelsGLMOCRAdapter

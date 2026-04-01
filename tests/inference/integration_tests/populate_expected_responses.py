@@ -4,6 +4,7 @@ from pathlib import Path
 
 import requests
 from PIL import Image
+
 from .regression_test import (
     legacy_infer_with_base64_image,
     legacy_infer_with_image_url,

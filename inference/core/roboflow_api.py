@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 import re
+import time
 import urllib.parse
 from enum import Enum
 from hashlib import sha256
@@ -71,6 +72,7 @@ from inference.core.exceptions import (
     RoboflowAPIUsagePausedError,
     WorkspaceLoadError,
 )
+from inference.core.telemetry import record_api_call, record_error, start_span
 from inference.core.utils.file_system import sanitize_path_segment
 from inference.core.utils.requests import (
     api_key_safe_raise_for_status,
@@ -142,35 +144,51 @@ def wrap_roboflow_api_errors(
 ) -> callable:
     def decorator(function: callable) -> callable:
         def wrapper(*args, **kwargs) -> Any:
-            try:
+            t_start = time.perf_counter()
+            with start_span(
+                "roboflow_api.call",
+                {"roboflow_api.function": function.__name__},
+            ):
                 try:
-                    return function(*args, **kwargs)
-                except RetryRequestError as error:
-                    raise error.inner_error
-            except Timeout as error:
-                raise RoboflowAPITimeoutError(
-                    "Timeout when attempting to connect to Roboflow API."
-                ) from error
-            except (requests.exceptions.ConnectionError, ConnectionError) as error:
-                raise RoboflowAPIConnectionError(
-                    "Could not connect to Roboflow API."
-                ) from error
-            except requests.exceptions.HTTPError as error:
-                user_handler_override = (
-                    http_errors_handlers if http_errors_handlers is not None else {}
-                )
-                status_code = error.response.status_code
-                default_handler = DEFAULT_ERROR_HANDLERS.get(status_code)
-                error_handler = user_handler_override.get(status_code, default_handler)
-                if error_handler is not None:
-                    error_handler(error)
-                raise RoboflowAPIUnsuccessfulRequestError(
-                    f"Unsuccessful request to Roboflow API with response code: {status_code}"
-                ) from error
-            except requests.exceptions.InvalidJSONError as error:
-                raise MalformedRoboflowAPIResponseError(
-                    "Could not decode JSON response from Roboflow API."
-                ) from error
+                    try:
+                        return function(*args, **kwargs)
+                    except RetryRequestError as error:
+                        raise error.inner_error
+                except Timeout as error:
+                    record_error(error)
+                    raise RoboflowAPITimeoutError(
+                        "Timeout when attempting to connect to Roboflow API."
+                    ) from error
+                except (
+                    requests.exceptions.ConnectionError,
+                    ConnectionError,
+                ) as error:
+                    record_error(error)
+                    raise RoboflowAPIConnectionError(
+                        "Could not connect to Roboflow API."
+                    ) from error
+                except requests.exceptions.HTTPError as error:
+                    record_error(error)
+                    user_handler_override = (
+                        http_errors_handlers if http_errors_handlers is not None else {}
+                    )
+                    status_code = error.response.status_code
+                    default_handler = DEFAULT_ERROR_HANDLERS.get(status_code)
+                    error_handler = user_handler_override.get(
+                        status_code, default_handler
+                    )
+                    if error_handler is not None:
+                        error_handler(error)
+                    raise RoboflowAPIUnsuccessfulRequestError(
+                        f"Unsuccessful request to Roboflow API with response code: {status_code}"
+                    ) from error
+                except requests.exceptions.InvalidJSONError as error:
+                    record_error(error)
+                    raise MalformedRoboflowAPIResponseError(
+                        "Could not decode JSON response from Roboflow API."
+                    ) from error
+                finally:
+                    record_api_call(function.__name__, time.perf_counter() - t_start)
 
         return wrapper
 
@@ -184,38 +202,49 @@ def wrap_roboflow_api_errors_async(
 ) -> callable:
     def decorator(function: callable) -> callable:
         async def wrapper(*args, **kwargs) -> Any:
-            try:
+            t_start = time.perf_counter()
+            with start_span(
+                "roboflow_api.call",
+                {"roboflow_api.function": function.__name__},
+            ):
                 try:
-                    return await function(*args, **kwargs)
-                except RetryRequestError as error:
-                    raise error.inner_error
-            except asyncio.TimeoutError as error:
-                raise RoboflowAPITimeoutError(
-                    "Timeout when attempting to connect to Roboflow API."
-                ) from error
-            except (aiohttp.ClientConnectionError, ConnectionError) as error:
-                raise RoboflowAPIConnectionError(
-                    "Could not connect to Roboflow API."
-                ) from error
-            except (aiohttp.ContentTypeError, JSONDecodeError) as error:
-                raise MalformedRoboflowAPIResponseError(
-                    "Could not decode JSON response from Roboflow API."
-                ) from error
-            except aiohttp.ClientResponseError as error:
-                user_handler_override = (
-                    http_errors_handlers if http_errors_handlers is not None else {}
-                )
-                status_code = error.status
-                default_handler = DEFAULT_ERROR_HANDLERS.get(status_code)
-                error_handler = user_handler_override.get(status_code, default_handler)
-                if error_handler is not None:
-                    error_handler(error)
-                raise RoboflowAPIUnsuccessfulRequestError(
-                    f"Unsuccessful request to Roboflow API with response code: {status_code}"
-                ) from error
-            # remaining aiohttp.ClientError seems to qualify to simply pass-through raise, as
-            # this seems to be adequate to trigger HTTP 500 upstream or let final client to handle
-            # such cases like invalid pattern of API_BASE_URL (as we are setting it correctly)
+                    try:
+                        return await function(*args, **kwargs)
+                    except RetryRequestError as error:
+                        raise error.inner_error
+                except asyncio.TimeoutError as error:
+                    record_error(error)
+                    raise RoboflowAPITimeoutError(
+                        "Timeout when attempting to connect to Roboflow API."
+                    ) from error
+                except (aiohttp.ClientConnectionError, ConnectionError) as error:
+                    record_error(error)
+                    raise RoboflowAPIConnectionError(
+                        "Could not connect to Roboflow API."
+                    ) from error
+                except (aiohttp.ContentTypeError, JSONDecodeError) as error:
+                    record_error(error)
+                    raise MalformedRoboflowAPIResponseError(
+                        "Could not decode JSON response from Roboflow API."
+                    ) from error
+                except aiohttp.ClientResponseError as error:
+                    record_error(error)
+                    user_handler_override = (
+                        http_errors_handlers if http_errors_handlers is not None else {}
+                    )
+                    status_code = error.status
+                    default_handler = DEFAULT_ERROR_HANDLERS.get(status_code)
+                    error_handler = user_handler_override.get(
+                        status_code, default_handler
+                    )
+                    if error_handler is not None:
+                        error_handler(error)
+                    raise RoboflowAPIUnsuccessfulRequestError(
+                        f"Unsuccessful request to Roboflow API with response code: {status_code}"
+                    ) from error
+                # remaining aiohttp.ClientError seems to qualify to simply pass-through raise
+                finally:
+                    record_api_call(function.__name__, time.perf_counter() - t_start)
 
         return wrapper
 
@@ -833,7 +862,11 @@ def get_workflow_specification(
                     response=response,
                     workflow_version_id=workflow_version_id,
                 )
-        except (requests.exceptions.ConnectionError, ConnectionError) as error:
+        except (
+            requests.exceptions.ConnectionError,
+            ConnectionError,
+            requests.exceptions.Timeout,
+        ) as error:
             if not USE_FILE_CACHE_FOR_WORKFLOWS_DEFINITIONS:
                 raise error
             response = load_cached_workflow_response(
@@ -1038,25 +1071,29 @@ def stream_url_to_cache(
 ) -> None:
     from inference_models.utils.download import download_files_to_directory
 
-    initialise_cache(model_id=model_id)
-    cache_dir = get_cache_dir(model_id=model_id)
-    md5_hash = None
+    with start_span(
+        "roboflow_api.download_artifact",
+        {"http.url": _url_for_safe_logging(url), "model.id": model_id},
+    ):
+        initialise_cache(model_id=model_id)
+        cache_dir = get_cache_dir(model_id=model_id)
+        md5_hash = None
 
-    max_threads = 8 if _test_range_request(url) else 1
+        max_threads = 8 if _test_range_request(url) else 1
 
-    try:
-        download_files_to_directory(
-            target_dir=cache_dir,
-            files_specs=[(filename, url, md5_hash)],
-            verbose=True,
-            download_files_without_hash=True,
-            verify_hash_while_download=False,
-            max_threads_per_download=max_threads,
-        )
-    except Exception as e:
-        raise RoboflowAPIUnsuccessfulRequestError(
-            f"Failed to download {filename}: {str(e)}"
-        ) from e
+        try:
+            download_files_to_directory(
+                target_dir=cache_dir,
+                files_specs=[(filename, url, md5_hash)],
+                verbose=True,
+                download_files_without_hash=True,
+                verify_hash_while_download=False,
+                max_threads_per_download=max_threads,
+            )
+        except Exception as e:
+            raise RoboflowAPIUnsuccessfulRequestError(
+                f"Failed to download {filename}: {str(e)}"
+            ) from e
 
 
 def _url_for_safe_logging(url: str) -> str:

@@ -178,6 +178,8 @@ class BlockManifest(WorkflowBlockManifest):
             "gpt-5-mini",
             "gpt-5-nano",
             "gpt-5.4",
+            "gpt-5.4-mini",
+            "gpt-5.4-nano",
             "o3",
             "o4-mini",
         ],

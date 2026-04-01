@@ -1,1 +1,2 @@
 onnxruntime-openvino>=1.15.0,<1.22.0
+inference-models[torch-cpu]~=0.22.1  # keep in sync between requirements.gpu.txt, requirements.cpu.txt, requirements.vino.txt

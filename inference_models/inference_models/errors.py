@@ -137,6 +137,10 @@ class CorruptedModelPackageError(ModelLoadingError):
     pass
 
 
+class ModelPackageRestrictedError(ModelLoadingError):
+    pass
+
+
 class MissingDependencyError(BaseInferenceModelsError):
     pass
 

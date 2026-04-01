@@ -1,5 +1,61 @@
 # Changelog
 
+## `0.23.0`
+
+### Added
+
+- Support for CUDA 13.0 on x86 architecture - as a result of `torch 2.11` release which makes CUDA 13.0 default version
+
+---
+
+## `0.22.1`
+
+### Added
+
+- Ability to restrict maximum input resolution for models
+
+- Restriction of input resolution for RF-DETR - providing ability for caller to avoid OOM when loading models 
+with large input resolutions
+
+- New type of error `ModelPackageRestrictedError` - to manifest restrictions of runtime environment with package
+
+---
+
+## `0.22.0`
+
+### Added
+
+- GLM-OCR model added to models zoo 
+
+---
+
+## `0.21.1`
+
+### Fixed
+
+- Lack of model package features denoted in auto-negotiation cache entries was causing errors while re-initialization 
+of models which had `required_features` denoted in model registry.
+
+---
+
+## `0.21.0`
+### Added
+
+- Support for CUDA Graphs in TRT backend - all TRT models got upgraded - added ability to run with CUDA graphs, at 
+the expense of additional VRAM allocation, but with caller control on how many execution contexts for different 
+input shapes should be allowed.
+
+---
+
+## `0.20.2`
+### Added
+
+- Ability to override certain aspects of model pre-processing (like center-crop, contrast enhancement or grayscale 
+which may be performed by caller).  
+
+---
+
+
 ## `0.20.1`
 ### Fixed
 

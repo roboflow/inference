@@ -45,22 +45,23 @@ For information about which extras are required for specific model architectures
 
 Install additional backends and specialized models using extras:
 
-| Extra | What It Provides | When to Use |
-|-------|------------------|-------------|
-| **Backend Extras** | | |
-| `torch-cpu` | PyTorch CPU-only | CPU-only environments, development |
-| `torch-cu118` | PyTorch + CUDA 11.8 | NVIDIA GPUs with CUDA 11.8 (legacy) |
-| `torch-cu124` | PyTorch + CUDA 12.4 | NVIDIA GPUs with CUDA 12.4 |
-| `torch-cu126` | PyTorch + CUDA 12.6 | NVIDIA GPUs with CUDA 12.6 |
-| `torch-cu128` | PyTorch + CUDA 12.8 | NVIDIA GPUs with CUDA 12.8 |
-| `torch-jp6-cu126` | PyTorch for Jetson JetPack 6 | NVIDIA Jetson devices (see [Hardware Compatibility](hardware-compatibility.md)) |
-| `onnx-cpu` | ONNX Runtime CPU | CPU inference, Roboflow models |
-| `onnx-cu118` | ONNX Runtime + CUDA 11.8 | GPU inference with CUDA 11.8 |
-| `onnx-cu12` | ONNX Runtime + CUDA 12.x | GPU inference with CUDA 12.x |
-| `onnx-jp6-cu126` | ONNX Runtime for Jetson | NVIDIA Jetson devices (see [Hardware Compatibility](hardware-compatibility.md)) |
-| `trt10` | TensorRT 10 | Maximum GPU performance, production |
-| **Model Extras** | | |
-| `mediapipe` | MediaPipe models | Face detection, pose estimation |
+| Extra              | What It Provides             | When to Use                                                                     |
+|--------------------|------------------------------|---------------------------------------------------------------------------------|
+| **Backend Extras** |                              |                                                                                 |
+| `torch-cpu`        | PyTorch CPU-only             | CPU-only environments, development                                              |
+| `torch-cu118`      | PyTorch + CUDA 11.8          | NVIDIA GPUs with CUDA 11.8 (legacy)                                             |
+| `torch-cu124`      | PyTorch + CUDA 12.4          | NVIDIA GPUs with CUDA 12.4                                                      |
+| `torch-cu126`      | PyTorch + CUDA 12.6          | NVIDIA GPUs with CUDA 12.6                                                      |
+| `torch-cu128`      | PyTorch + CUDA 12.8          | NVIDIA GPUs with CUDA 12.8                                                      |
+| `torch-cu130`      | PyTorch + CUDA 13.0          | NVIDIA GPUs with CUDA 13.0                                                      |
+| `torch-jp6-cu126`  | PyTorch for Jetson JetPack 6 | NVIDIA Jetson devices (see [Hardware Compatibility](hardware-compatibility.md)) |
+| `onnx-cpu`         | ONNX Runtime CPU             | CPU inference, Roboflow models                                                  |
+| `onnx-cu118`       | ONNX Runtime + CUDA 11.8     | GPU inference with CUDA 11.8                                                    |
+| `onnx-cu12`        | ONNX Runtime + CUDA 12.x     | GPU inference with CUDA 12.x                                                    |
+| `onnx-jp6-cu126`   | ONNX Runtime for Jetson      | NVIDIA Jetson devices (see [Hardware Compatibility](hardware-compatibility.md)) |
+| `trt10`            | TensorRT 10                  | Maximum GPU performance, production                                             |
+| **Model Extras**   |                              |                                                                                 |
+| `mediapipe`        | MediaPipe models             | Face detection, pose estimation                                                 |
 
 ## 💻 Basic Installation
 
@@ -101,6 +102,16 @@ pip install "inference-models[onnx-cpu]"
     - **Best practice**: Match your TensorRT version with other dependencies in your environment
 
     When installing the `trt10` extra, we recommend pinning to `tensorrt==10.12.0.36` for compatibility with Roboflow-provided engines.
+
+### CUDA 13.0
+
+```bash
+# Using uv (recommended)
+uv pip install "inference-models[torch-cu130,onnx-cu12,trt10]" "tensorrt==10.12.0.36"
+
+# Using pip
+pip install "inference-models[torch-cu130,onnx-cu12,trt10]" "tensorrt==10.12.0.36"
+```
 
 ### CUDA 12.8
 

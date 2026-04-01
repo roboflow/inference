@@ -8,6 +8,7 @@ from peft import PeftModel
 from transformers import AutoModelForImageTextToText, AutoProcessor, BitsAndBytesConfig
 from transformers.utils import is_flash_attn_2_available
 
+from inference_models import PreProcessingOverrides
 from inference_models.configuration import (
     DEFAULT_DEVICE,
     INFERENCE_MODELS_SMOL_VLM_DEFAULT_DO_SAMPLE,
@@ -163,6 +164,7 @@ class SmolVLMHF:
         max_new_tokens: int = INFERENCE_MODELS_SMOL_VLM_DEFAULT_MAX_NEW_TOKENS,
         do_sample: bool = INFERENCE_MODELS_SMOL_VLM_DEFAULT_DO_SAMPLE,
         skip_special_tokens: bool = INFERENCE_MODELS_SMOL_VLM_DEFAULT_SKIP_SPECIAL_TOKENS,
+        pre_processing_overrides: Optional[PreProcessingOverrides] = None,
         **kwargs,
     ) -> List[str]:
         prompt = prompt or "Describe what's in this image."
@@ -171,6 +173,7 @@ class SmolVLMHF:
             prompt=prompt,
             images_to_single_prompt=images_to_single_prompt,
             input_color_format=input_color_format,
+            pre_processing_overrides=pre_processing_overrides,
         )
         generated_ids = self.generate(
             inputs=inputs,
@@ -189,6 +192,7 @@ class SmolVLMHF:
         images_to_single_prompt: bool = True,
         input_color_format: Optional[ColorFormat] = None,
         image_size: Optional[Tuple[int, int]] = None,
+        pre_processing_overrides: Optional[PreProcessingOverrides] = None,
         **kwargs,
     ) -> dict:
         def _to_tensor(image: Union[np.ndarray, torch.Tensor]) -> torch.Tensor:
@@ -222,6 +226,7 @@ class SmolVLMHF:
                 target_device=self._device,
                 input_color_format=input_color_format,
                 image_size_wh=image_size,
+                pre_processing_overrides=pre_processing_overrides,
             )[0]
             image_list = [e[0] for e in torch.split(images, 1, dim=0)]
         if images_to_single_prompt:

@@ -110,6 +110,9 @@
           },
           {
             "$ref": "#/components/parameters/apiKeyParam"
+          },
+          {
+            "$ref": "#/components/parameters/jobNameParam"
           }
         ],
         "requestBody": {
@@ -419,6 +422,15 @@
         "in": "query",
         "description": "The API key for authentication",
         "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      "jobNameParam": {
+        "name": "name",
+        "in": "query",
+        "description": "Name of batch job",
+        "required": false,
         "schema": {
           "type": "string"
         }
