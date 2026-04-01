@@ -2,10 +2,11 @@ import json
 import statistics
 import time
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, Union
 
 import click
 import cv2
+import numpy as np
 import supervision as sv
 
 from inference_models import AutoModel
@@ -55,6 +56,7 @@ def _latency_report_dict(
     onnx_execution_providers_preset: str,
     onnx_execution_providers: list[str],
     device: str,
+    batch_size: int,
 ) -> dict[str, Any]:
     n = len(latencies_ms)
     return {
@@ -72,7 +74,15 @@ def _latency_report_dict(
         "onnx_execution_providers_preset": onnx_execution_providers_preset,
         "onnx_execution_providers": onnx_execution_providers,
         "device": device,
+        "batch_size": batch_size,
     }
+
+
+def _batch_input_from_image(image: np.ndarray, batch_size: int) -> Union[np.ndarray, list[np.ndarray]]:
+    """Build model input: one HxWxC array for batch 1, else a list of `batch_size` copies."""
+    if batch_size == 1:
+        return image
+    return [np.ascontiguousarray(image) for _ in range(batch_size)]
 
 
 def _write_json(path: Path, payload: dict[str, Any]) -> None:
@@ -151,6 +161,13 @@ def _write_json(path: Path, payload: dict[str, Any]) -> None:
         "tensorrt (TensorrtExecutionProvider, CUDA, then CPU fallbacks)."
     ),
 )
+@click.option(
+    "--batch-size",
+    type=click.IntRange(min=1),
+    default=1,
+    show_default=True,
+    help="Duplicate the input image this many times and run a single batched forward pass.",
+)
 def main(
     run_name: str,
     image_path: Path,
@@ -162,10 +179,15 @@ def main(
     benchmark_iters: int = 0,
     warmup: int = 5,
     onnx_ep_preset: str = "cpu",
+    batch_size: int = 1,
 ) -> None:
     image = cv2.imread(str(image_path))
     if image is None:
         raise click.ClickException(f"Could not load image from: {image_path}")
+
+    batch_input = _batch_input_from_image(image, batch_size)
+    if batch_size > 1:
+        click.echo(f"Batching: batch_size={batch_size} (repeated single image).")
 
     nms_params = {
         "confidence": confidence,
@@ -210,14 +232,14 @@ def main(
     if warmup > 0:
         click.echo(f"Warmup: {warmup} untimed runs...")
         for _ in range(warmup):
-            model(image, **nms_params)
+            model(batch_input, **nms_params)
 
     click.echo(f"Benchmarking: {benchmark_iters} timed runs...")
 
     predictions = None
     for _ in range(benchmark_iters):
         t0 = time.perf_counter()
-        predictions = model(image, **nms_params)
+        predictions = model(batch_input, **nms_params)
         latencies_ms.append((time.perf_counter() - t0) * 1000.0)
 
     assert predictions is not None
@@ -227,6 +249,7 @@ def main(
     detections = predictions[0].to_supervision()
     pred_payload: dict[str, Any] = {
         "image_path": str(image_path.resolve()),
+        "batch_size": batch_size,
         "detections": _detections_to_json_dict(detections),
     }
 
@@ -246,6 +269,7 @@ def main(
             onnx_execution_providers_preset=onnx_ep_preset,
             onnx_execution_providers=list(onnx_providers),
             device=device_str,
+            batch_size=batch_size,
         ),
     )
     _write_json(prediction_path, pred_payload)
