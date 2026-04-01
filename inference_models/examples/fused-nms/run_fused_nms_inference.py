@@ -9,6 +9,8 @@ import numpy as np
 
 from inference_models import AutoModel
 
+TEST_BATCH_SIZE = 4
+
 
 def _onnx_ep_preset_to_providers_and_device(
     preset: str,
@@ -39,9 +41,11 @@ def _latency_report_dict(
     onnx_execution_providers: list[str],
     device: str,
     batch_size: int,
+    images: list[Path],
 ) -> dict[str, Any]:
     return {
         "model_path": str(model_path.resolve()),
+        "images": [str(image.resolve()) for image in images],
         "onnx_execution_providers_preset": onnx_execution_providers_preset,
         "onnx_execution_providers": onnx_execution_providers,
         "device": device,
@@ -106,7 +110,7 @@ def _write_json(path: Path, payload: dict[str, Any]) -> None:
     "-n",
     "--benchmark-iters",
     type=click.IntRange(min=1),
-    default=1,
+    default=200,
     show_default=True,
     help=(
         "Number of timed inference runs for benchmarking (mean/median/std in ms). "
@@ -116,7 +120,7 @@ def _write_json(path: Path, payload: dict[str, Any]) -> None:
 @click.option(
     "--warmup",
     type=click.IntRange(min=0),
-    default=5,
+    default=20,
     show_default=True,
     help="Untimed warmup runs before timed iterations.",
 )
@@ -133,11 +137,6 @@ def _write_json(path: Path, payload: dict[str, Any]) -> None:
         "tensorrt (TensorrtExecutionProvider, CUDA, then CPU fallbacks)."
     ),
 )
-@click.option(
-    "--batch-images",
-    type=click.Flag(default=False),
-    help="Batch the input images and run a single batched forward pass.",
-)
 def main(
     run_name: str,
     image_dir: Path,
@@ -146,37 +145,13 @@ def main(
     confidence: Optional[float] = None,
     iou_threshold: Optional[float] = None,
     max_detections: Optional[int] = None,
-    benchmark_iters: int = 0,
-    warmup: int = 5,
+    benchmark_iters: int = 200,
+    warmup: int = 20,
     onnx_ep_preset: str = "cpu",
-    batch_images: bool = False,
 ) -> None:
-    image_paths = list(image_dir.glob("*.jpg"))
-
-    images = []
-    for image_path in image_paths:
-        image = cv2.imread(str(image_path))
-        if image is None:
-            raise click.ClickException(f"Could not load image from: {image_path}")
-        images.append(image)
-
-    if batch_images:
-        batch_input = images[:4]
-    else:
-        batch_input = images[0]
-
-    nms_params = {
-        "confidence": confidence,
-        "iou_threshold": iou_threshold,
-        "max_detections": max_detections,
-    }
-
-    nms_params = {name: value for name, value in nms_params.items() if value is not None}
-    if nms_params:
-        click.echo(f"User provided NMS parameters: {nms_params}")
-
     onnx_ep_preset = onnx_ep_preset.lower()
     onnx_providers, device_str = _onnx_ep_preset_to_providers_and_device(onnx_ep_preset)
+
     click.echo(
         f"Loading model: {model_path} "
         f"(onnx_execution_providers={onnx_providers!r}, device={device_str!r})"
@@ -188,25 +163,41 @@ def main(
     )
 
     click.echo(f"Fused NMS available: {model._inference_config.post_processing.fused}")
+    
+    nms_params = {
+        "confidence": confidence,
+        "iou_threshold": iou_threshold,
+        "max_detections": max_detections,
+    }
+    nms_params = {name: value for name, value in nms_params.items() if value is not None}
+
+    if nms_params:
+        click.echo(f"User provided NMS parameters: {nms_params}")
 
     forward_pass = model._inference_config.forward_pass
-    if forward_pass.static_batch_size is None:
-        max_dyn = forward_pass.max_dynamic_batch_size
-        if max_dyn is not None:
-            click.echo(
-                "Batching: dynamic mode (no static batch size); "
-                f"maximum batch size is {max_dyn}."
-            )
-        else:
-            click.echo(
-                "Batching: dynamic mode (no static batch size); "
-                "max_dynamic_batch_size is not set in the model config."
-            )
+    use_batching = forward_pass.static_batch_size is None
+
+    if use_batching:
+        click.echo(f"Model exported as dynamic. Using image batch")
+    else:
+        click.echo(f"Model exported as static. Using single image inference")
+
+    image_paths = list(image_dir.glob("*.jpg"))
+    batched_image_paths = image_paths[:TEST_BATCH_SIZE] if use_batching else image_paths[:1]
+
+    images = []
+    for image_path in batched_image_paths:
+        image = cv2.imread(str(image_path))
+        if image is None:
+            raise click.ClickException(f"Could not load image from: {image_path}")
+        images.append(image)
+
+    inputs = images[:TEST_BATCH_SIZE] if use_batching else images[0]
 
     click.echo(f"Warmup: {warmup} untimed runs..." if warmup > 0 else "No warmup runs.")
 
     for _ in range(warmup):
-        predictions = model(batch_input, **nms_params)
+        predictions = model(inputs, **nms_params)
         _ = predictions[0].to_supervision()
 
     click.echo(f"Benchmarking: {benchmark_iters} timed runs...")
@@ -214,7 +205,7 @@ def main(
     latencies_ms: list[float] = []
     for _ in range(benchmark_iters):
         t0 = time.perf_counter()
-        predictions = model(batch_input, **nms_params)
+        predictions = model(inputs, **nms_params)
         _ = predictions[0].to_supervision()
         latencies_ms.append((time.perf_counter() - t0) * 1000.0)
 
@@ -234,11 +225,12 @@ def main(
             onnx_execution_providers_preset=onnx_ep_preset,
             onnx_execution_providers=list(onnx_providers),
             device=device_str,
-            batch_size=len(batch_input) if isinstance(batch_input, list) else 1,
+            batch_size=len(inputs) if isinstance(inputs, list) else 1,
+            images=batched_image_paths,
         ),
     )
-    _write_json(nms_params_path, nms_params)
     _write_json(inference_config_path, model._inference_config.model_dump_json())
+    _write_json(nms_params_path, nms_params)
 
     click.echo("Done!")
 
