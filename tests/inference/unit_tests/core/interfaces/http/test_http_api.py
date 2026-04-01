@@ -40,6 +40,7 @@ def test_infer_lmm_with_model_id_uses_alias_registry_key(monkeypatch) -> None:
             "/infer/lmm/florence-2-base",
             params={"api_key": "query-api-key"},
             json={
+                "model_id": "florence-2-base",
                 "image": {
                     "type": "url",
                     "value": "https://example.com/test.jpg",
