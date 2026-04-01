@@ -188,12 +188,9 @@ def test_detect_prediction_type_from_prediction_type_key() -> None:
 def test_convert_object_detections_center_based_coordinates() -> None:
     """Verify xyxy → center-based conversion is correct."""
     detections = _make_detections(n=1)
-    obj_dets, classifications, seg, kp = _convert_sv_detections_to_vision_events_format(
-        detections
-    )
+    obj_dets, seg, kp = _convert_sv_detections_to_vision_events_format(detections)
 
     assert len(obj_dets) == 1
-    assert len(classifications) == 0
     assert len(seg) == 0
     assert len(kp) == 0
 
@@ -209,7 +206,7 @@ def test_convert_object_detections_center_based_coordinates() -> None:
 
 def test_convert_multiple_object_detections() -> None:
     detections = _make_detections(n=2)
-    obj_dets, _, _, _ = _convert_sv_detections_to_vision_events_format(detections)
+    obj_dets, _, _ = _convert_sv_detections_to_vision_events_format(detections)
 
     assert len(obj_dets) == 2
     # Second detection: xyxy = [100, 200, 150, 260] → w=50, h=60, cx=125, cy=230
@@ -225,7 +222,7 @@ def test_convert_multiple_object_detections() -> None:
 
 def test_convert_instance_segmentation_with_polygon() -> None:
     detections = _make_detections(n=1, with_polygon=True)
-    obj_dets, _, seg, _ = _convert_sv_detections_to_vision_events_format(detections)
+    obj_dets, seg, _ = _convert_sv_detections_to_vision_events_format(detections)
 
     assert len(obj_dets) == 0
     assert len(seg) == 1
@@ -243,7 +240,7 @@ def test_convert_instance_segmentation_with_polygon() -> None:
 
 def test_convert_instance_segmentation_with_mask() -> None:
     detections = _make_detections(n=1, with_mask=True)
-    obj_dets, _, seg, _ = _convert_sv_detections_to_vision_events_format(detections)
+    obj_dets, seg, _ = _convert_sv_detections_to_vision_events_format(detections)
 
     # Should have found polygon from mask
     assert len(seg) + len(obj_dets) == 1
@@ -257,7 +254,7 @@ def test_convert_instance_segmentation_with_mask() -> None:
 
 def test_convert_keypoint_detection() -> None:
     detections = _make_detections(n=1, with_keypoints=True)
-    _, _, _, kp = _convert_sv_detections_to_vision_events_format(detections)
+    _, _, kp = _convert_sv_detections_to_vision_events_format(detections)
 
     assert len(kp) == 1
     k = kp[0]
@@ -325,9 +322,8 @@ def test_convert_classification_predicted_classes() -> None:
 
 def test_convert_empty_detections() -> None:
     detections = sv.Detections.empty()
-    obj_dets, cls, seg, kp = _convert_sv_detections_to_vision_events_format(detections)
+    obj_dets, seg, kp = _convert_sv_detections_to_vision_events_format(detections)
     assert obj_dets == []
-    assert cls == []
     assert seg == []
     assert kp == []
 

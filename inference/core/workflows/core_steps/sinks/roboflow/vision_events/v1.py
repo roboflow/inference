@@ -565,7 +565,6 @@ def _execute_vision_event(
             if isinstance(prediction, sv.Detections) and len(prediction) > 0:
                 (
                     object_detections,
-                    classifications,
                     instance_segmentations,
                     keypoints_detections,
                 ) = _convert_sv_detections_to_vision_events_format(prediction)
@@ -583,7 +582,9 @@ def _execute_vision_event(
             image_entry["sourceId"] = output_source_id
 
         if input_image is not None:
-            input_source_id, _ = _upload_image(api_base_url, api_key, input_image)
+            input_source_id, _ = _upload_image(
+                api_base_url, api_key, input_image, jpeg_quality=95
+            )
             image_entry["inputSourceId"] = input_source_id
 
         if image_entry:
@@ -638,17 +639,16 @@ def _detect_prediction_type(detections: sv.Detections) -> str:
 
 def _convert_sv_detections_to_vision_events_format(
     detections: sv.Detections,
-) -> Tuple[List[dict], List[dict], List[dict], List[dict]]:
+) -> Tuple[List[dict], List[dict], List[dict]]:
     """Convert sv.Detections to vision events format.
 
     Returns:
-        Tuple of (object_detections, classifications, instance_segmentations, keypoints)
+        Tuple of (object_detections, instance_segmentations, keypoints)
         using center-based bounding boxes in absolute pixel coordinates.
     """
     detection_type = _detect_prediction_type(detections)
 
     object_detections: List[dict] = []
-    classifications: List[dict] = []
     instance_segmentations: List[dict] = []
     keypoints_list: List[dict] = []
 
@@ -708,7 +708,7 @@ def _convert_sv_detections_to_vision_events_format(
         else:
             object_detections.append(base)
 
-    return object_detections, classifications, instance_segmentations, keypoints_list
+    return object_detections, instance_segmentations, keypoints_list
 
 
 def _convert_classification_to_vision_events_format(
@@ -766,13 +766,16 @@ def _upload_image(
     api_base_url: str,
     api_key: str,
     image_data: WorkflowImageData,
+    jpeg_quality: int = 85,
 ) -> Tuple[str, str]:
     """Upload an image to the Vision Events API.
 
     Returns:
         Tuple of (sourceId, url)
     """
-    image_bytes = encode_image_to_jpeg_bytes(image_data.numpy_image, jpeg_quality=85)
+    image_bytes = encode_image_to_jpeg_bytes(
+        image_data.numpy_image, jpeg_quality=jpeg_quality
+    )
     response = requests.post(
         f"{api_base_url}/vision-events/upload",
         headers={"Authorization": f"Bearer {api_key}"},
