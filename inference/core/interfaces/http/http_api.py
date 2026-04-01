@@ -867,6 +867,7 @@ class HttpInterface(BaseInterface):
 
         def process_inference_request(
             inference_request: InferenceRequest,
+            api_key: Optional[str] = None,
             countinference: Optional[bool] = None,
             service_secret: Optional[str] = None,
             **kwargs,
@@ -881,6 +882,8 @@ class HttpInterface(BaseInterface):
             Returns:
                 InferenceResponse: The response containing the inference results.
             """
+            if api_key is not None:
+                inference_request.api_key = api_key
             de_aliased_model_id = resolve_roboflow_model_alias(
                 model_id=inference_request.model_id
             )
@@ -1450,6 +1453,10 @@ class HttpInterface(BaseInterface):
             @usage_collector("request")
             def infer_lmm(
                 inference_request: LMMInferenceRequest,
+                api_key: Optional[str] = Query(
+                    None,
+                    description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
+                ),
                 countinference: Optional[bool] = None,
                 service_secret: Optional[str] = None,
             ):
@@ -1464,6 +1471,7 @@ class HttpInterface(BaseInterface):
                 logger.debug(f"Reached /infer/lmm")
                 return process_inference_request(
                     inference_request,
+                    api_key=api_key,
                     countinference=countinference,
                     service_secret=service_secret,
                 )
@@ -1484,6 +1492,10 @@ class HttpInterface(BaseInterface):
             def infer_lmm_with_model_id(
                 model_id: str,
                 inference_request: LMMInferenceRequest,
+                api_key: Optional[str] = Query(
+                    None,
+                    description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
+                ),
                 countinference: Optional[bool] = None,
                 service_secret: Optional[str] = None,
             ):
@@ -1519,6 +1531,7 @@ class HttpInterface(BaseInterface):
 
                 return process_inference_request(
                     inference_request,
+                    api_key=api_key,
                     countinference=countinference,
                     service_secret=service_secret,
                 )
