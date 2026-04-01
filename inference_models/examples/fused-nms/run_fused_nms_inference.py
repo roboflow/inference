@@ -1,13 +1,11 @@
 import json
-import statistics
 import time
 from pathlib import Path
-from typing import Any, Optional, Union
+from typing import Any, Optional
 
 import click
 import cv2
 import numpy as np
-import supervision as sv
 
 from inference_models import AutoModel
 
@@ -32,24 +30,8 @@ def _onnx_ep_preset_to_providers_and_device(
     raise click.ClickException(f"Unknown onnx-execution-providers preset: {preset!r}")
 
 
-def _detections_to_json_dict(detections: sv.Detections) -> dict[str, Any]:
-    return {
-        "xyxy": detections.xyxy.tolist(),
-        "mask": detections.mask.tolist() if detections.mask is not None else None,
-        "confidence": (
-            detections.confidence.tolist()
-            if detections.confidence is not None
-            else None
-        ),
-        "class_id": (
-            detections.class_id.tolist() if detections.class_id is not None else None
-        ),
-    }
-
-
 def _latency_report_dict(
     *,
-    image_path: Path,
     model_path: Path,
     warmup_runs: int,
     latencies_ms: list[float],
@@ -58,31 +40,21 @@ def _latency_report_dict(
     device: str,
     batch_size: int,
 ) -> dict[str, Any]:
-    n = len(latencies_ms)
     return {
-        "image_path": str(image_path.resolve()),
         "model_path": str(model_path.resolve()),
-        "warmup_runs": warmup_runs,
-        "timed_runs": n,
-        "unit": "ms",
-        "latencies_ms": latencies_ms,
-        "mean_ms": statistics.mean(latencies_ms) if n else None,
-        "median_ms": statistics.median(latencies_ms) if n else None,
-        "min_ms": min(latencies_ms) if n else None,
-        "max_ms": max(latencies_ms) if n else None,
-        "std_ms": statistics.stdev(latencies_ms) if n > 1 else None,
         "onnx_execution_providers_preset": onnx_execution_providers_preset,
         "onnx_execution_providers": onnx_execution_providers,
         "device": device,
         "batch_size": batch_size,
+        "warmup_runs": warmup_runs,
+        "timed_runs": len(latencies_ms),
+        "mean_ms": np.mean(latencies_ms),
+        "p_50_ms": np.percentile(latencies_ms, 50),
+        "p_95_ms": np.percentile(latencies_ms, 95),
+        "p_99_ms": np.percentile(latencies_ms, 99),
+        "mean_per_image_ms": np.mean(latencies_ms) / batch_size,
+        "throughput_fps": (batch_size * len(latencies_ms)) / (np.sum(latencies_ms) / 1000),
     }
-
-
-def _batch_input_from_image(image: np.ndarray, batch_size: int) -> Union[np.ndarray, list[np.ndarray]]:
-    """Build model input: one HxWxC array for batch 1, else a list of `batch_size` copies."""
-    if batch_size == 1:
-        return image
-    return [np.ascontiguousarray(image) for _ in range(batch_size)]
 
 
 def _write_json(path: Path, payload: dict[str, Any]) -> None:
@@ -98,10 +70,10 @@ def _write_json(path: Path, payload: dict[str, Any]) -> None:
     help="Name of the run for reporting. Will be used as a subdirectory in the target directory.",
 )
 @click.option(
-    "--image-path",
-    type=click.Path(path_type=Path, exists=True, dir_okay=False, readable=True),
+    "--image-dir",
+    type=click.Path(path_type=Path, exists=True, dir_okay=True, readable=True),
     required=True,
-    help="Path to the input image.",
+    help="Path to the input image directory.",
 )
 @click.option(
     "--model-path",
@@ -113,7 +85,7 @@ def _write_json(path: Path, payload: dict[str, Any]) -> None:
     "--target-dir",
     type=click.Path(path_type=Path, file_okay=False),
     required=True,
-    help="Directory for latency.json and prediction.json (created if missing).",
+    help="Directory for latency.json (created if missing).",
 )
 @click.option(
     "--confidence",
@@ -162,15 +134,13 @@ def _write_json(path: Path, payload: dict[str, Any]) -> None:
     ),
 )
 @click.option(
-    "--batch-size",
-    type=click.IntRange(min=1),
-    default=1,
-    show_default=True,
-    help="Duplicate the input image this many times and run a single batched forward pass.",
+    "--batch-images",
+    type=click.Flag(default=False),
+    help="Batch the input images and run a single batched forward pass.",
 )
 def main(
     run_name: str,
-    image_path: Path,
+    image_dir: Path,
     model_path: Path,
     target_dir: Path,
     confidence: Optional[float] = None,
@@ -179,15 +149,21 @@ def main(
     benchmark_iters: int = 0,
     warmup: int = 5,
     onnx_ep_preset: str = "cpu",
-    batch_size: int = 1,
+    batch_images: bool = False,
 ) -> None:
-    image = cv2.imread(str(image_path))
-    if image is None:
-        raise click.ClickException(f"Could not load image from: {image_path}")
+    image_paths = list(image_dir.glob("*.jpg"))
 
-    batch_input = _batch_input_from_image(image, batch_size)
-    if batch_size > 1:
-        click.echo(f"Batching: batch_size={batch_size} (repeated single image).")
+    images = []
+    for image_path in image_paths:
+        image = cv2.imread(str(image_path))
+        if image is None:
+            raise click.ClickException(f"Could not load image from: {image_path}")
+        images.append(image)
+
+    if batch_images:
+        batch_input = images[:4]
+    else:
+        batch_input = images[0]
 
     nms_params = {
         "confidence": confidence,
@@ -227,52 +203,40 @@ def main(
                 "max_dynamic_batch_size is not set in the model config."
             )
 
-    latencies_ms: list[float] = []
+    click.echo(f"Warmup: {warmup} untimed runs..." if warmup > 0 else "No warmup runs.")
 
-    if warmup > 0:
-        click.echo(f"Warmup: {warmup} untimed runs...")
-        for _ in range(warmup):
-            model(batch_input, **nms_params)
+    for _ in range(warmup):
+        predictions = model(batch_input, **nms_params)
+        _ = predictions[0].to_supervision()
 
     click.echo(f"Benchmarking: {benchmark_iters} timed runs...")
 
-    predictions = None
+    latencies_ms: list[float] = []
     for _ in range(benchmark_iters):
         t0 = time.perf_counter()
         predictions = model(batch_input, **nms_params)
+        _ = predictions[0].to_supervision()
         latencies_ms.append((time.perf_counter() - t0) * 1000.0)
-
-    assert predictions is not None
 
     click.echo("Writing reports ...")
 
-    detections = predictions[0].to_supervision()
-    pred_payload: dict[str, Any] = {
-        "image_path": str(image_path.resolve()),
-        "batch_size": batch_size,
-        "detections": _detections_to_json_dict(detections),
-    }
-
     target_dir.mkdir(parents=True, exist_ok=True)
     latency_path = target_dir / run_name / "latency.json"
-    prediction_path = target_dir / run_name / "prediction.json"
     nms_params_path = target_dir / run_name / "nms_params.json"
     inference_config_path = target_dir / run_name / "inference_config.json"
 
     _write_json(
         latency_path,
         _latency_report_dict(
-            image_path=image_path,
             model_path=model_path,
             warmup_runs=warmup,
             latencies_ms=latencies_ms,
             onnx_execution_providers_preset=onnx_ep_preset,
             onnx_execution_providers=list(onnx_providers),
             device=device_str,
-            batch_size=batch_size,
+            batch_size=len(batch_input) if isinstance(batch_input, list) else 1,
         ),
     )
-    _write_json(prediction_path, pred_payload)
     _write_json(nms_params_path, nms_params)
     _write_json(inference_config_path, model._inference_config.model_dump_json())
 
