@@ -11,6 +11,26 @@ import supervision as sv
 from inference_models import AutoModel
 
 
+def _onnx_ep_preset_to_providers_and_device(
+    preset: str,
+) -> tuple[list[str], str]:
+    """Map CLI preset to ONNX Runtime provider chain and PyTorch device string."""
+    if preset == "cpu":
+        return (["CPUExecutionProvider"], "cpu")
+    if preset == "cuda":
+        return (["CUDAExecutionProvider", "CPUExecutionProvider"], "cuda")
+    if preset == "tensorrt":
+        return (
+            [
+                "TensorrtExecutionProvider",
+                "CUDAExecutionProvider",
+                "CPUExecutionProvider",
+            ],
+            "cuda",
+        )
+    raise click.ClickException(f"Unknown onnx-execution-providers preset: {preset!r}")
+
+
 def _detections_to_json_dict(detections: sv.Detections) -> dict[str, Any]:
     return {
         "xyxy": detections.xyxy.tolist(),
@@ -32,6 +52,9 @@ def _latency_report_dict(
     model_path: Path,
     warmup_runs: int,
     latencies_ms: list[float],
+    onnx_execution_providers_preset: str,
+    onnx_execution_providers: list[str],
+    device: str,
 ) -> dict[str, Any]:
     n = len(latencies_ms)
     return {
@@ -46,6 +69,9 @@ def _latency_report_dict(
         "min_ms": min(latencies_ms) if n else None,
         "max_ms": max(latencies_ms) if n else None,
         "std_ms": statistics.stdev(latencies_ms) if n > 1 else None,
+        "onnx_execution_providers_preset": onnx_execution_providers_preset,
+        "onnx_execution_providers": onnx_execution_providers,
+        "device": device,
     }
 
 
@@ -112,6 +138,19 @@ def _write_json(path: Path, payload: dict[str, Any]) -> None:
     show_default=True,
     help="Untimed warmup runs before timed iterations.",
 )
+@click.option(
+    "--onnx-execution-providers",
+    "onnx_ep_preset",
+    type=click.Choice(["cpu", "cuda", "tensorrt"], case_sensitive=False),
+    default="cpu",
+    show_default=True,
+    help=(
+        "ONNX Runtime execution provider chain: "
+        "cpu (CPUExecutionProvider); "
+        "cuda (CUDAExecutionProvider then CPUExecutionProvider); "
+        "tensorrt (TensorrtExecutionProvider, CUDA, then CPU fallbacks)."
+    ),
+)
 def main(
     run_name: str,
     image_path: Path,
@@ -122,6 +161,7 @@ def main(
     max_detections: Optional[int] = None,
     benchmark_iters: int = 0,
     warmup: int = 5,
+    onnx_ep_preset: str = "cpu",
 ) -> None:
     image = cv2.imread(str(image_path))
     if image is None:
@@ -137,11 +177,16 @@ def main(
     if nms_params:
         click.echo(f"User provided NMS parameters: {nms_params}")
 
-    click.echo(f"Loading model: {model_path}")
+    onnx_ep_preset = onnx_ep_preset.lower()
+    onnx_providers, device_str = _onnx_ep_preset_to_providers_and_device(onnx_ep_preset)
+    click.echo(
+        f"Loading model: {model_path} "
+        f"(onnx_execution_providers={onnx_providers!r}, device={device_str!r})"
+    )
     model = AutoModel.from_pretrained(
         model_path,
-        onnx_execution_providers=["CPUExecutionProvider"],
-        device="cpu",
+        onnx_execution_providers=list(onnx_providers),
+        device=device_str,
     )
 
     click.echo(f"Fused NMS available: {model._inference_config.post_processing.fused}")
@@ -198,6 +243,9 @@ def main(
             model_path=model_path,
             warmup_runs=warmup,
             latencies_ms=latencies_ms,
+            onnx_execution_providers_preset=onnx_ep_preset,
+            onnx_execution_providers=list(onnx_providers),
+            device=device_str,
         ),
     )
     _write_json(prediction_path, pred_payload)
