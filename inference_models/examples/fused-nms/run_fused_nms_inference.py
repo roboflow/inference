@@ -1,8 +1,11 @@
+import statistics
+import time
 from pathlib import Path
+from typing import Optional
 
 import click
 import cv2
-from typing import Optional
+
 from inference_models import AutoModel
 
 
@@ -34,12 +37,32 @@ from inference_models import AutoModel
     type=int,
     help="Maximum number of detections used by post-processing.",
 )
+@click.option(
+    "-n",
+    "--benchmark-iters",
+    type=click.IntRange(min=0),
+    default=0,
+    show_default=True,
+    help=(
+        "Number of timed inference runs for benchmarking (mean/median/std in ms). "
+        "0 runs inference once without benchmark stats."
+    ),
+)
+@click.option(
+    "--warmup",
+    type=click.IntRange(min=0),
+    default=5,
+    show_default=True,
+    help="Untimed warmup runs before timed iterations (only used when -n > 0).",
+)
 def main(
     image_path: Path,
     model_path: Path,
     confidence: Optional[float] = None,
     iou_threshold: Optional[float] = None,
     max_detections: Optional[int] = None,
+    benchmark_iters: int = 0,
+    warmup: int = 5,
 ) -> None:
     image = cv2.imread(str(image_path))
     if image is None:
@@ -78,8 +101,39 @@ def main(
                 "max_dynamic_batch_size is not set in the model config."
             )
 
-    click.echo("Running inference...")
-    predictions = model(image, **nms_params)
+    if benchmark_iters > 0:
+        if warmup > 0:
+            click.echo(f"Warmup: {warmup} untimed run(s)...")
+            for _ in range(warmup):
+                model(image, **nms_params)
+
+        click.echo(f"Benchmark: {benchmark_iters} timed run(s)...")
+
+        latencies_s: list[float] = []
+        predictions = None
+        for _ in range(benchmark_iters):
+            t0 = time.perf_counter()
+            predictions = model(image, **nms_params)
+            latencies_s.append(time.perf_counter() - t0)
+
+        latencies_ms = [t * 1000.0 for t in latencies_s]
+        mean_ms = statistics.mean(latencies_ms)
+        median_ms = statistics.median(latencies_ms)
+
+        if len(latencies_ms) > 1:
+            stdev_str = f"{statistics.stdev(latencies_ms):.4f}"
+        else:
+            stdev_str = "n/a (use -n 2 or more for std)"
+            
+        click.echo(
+            f"Inference latency (ms): mean={mean_ms:.4f}, median={median_ms:.4f}, "
+            f"std={stdev_str}"
+        )
+    else:
+        click.echo("Running inference...")
+        predictions = model(image, **nms_params)
+
+    assert predictions is not None
     detections = predictions[0].to_supervision()
 
     click.echo(f"Detected {len(detections)} objects")
