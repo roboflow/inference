@@ -584,9 +584,6 @@ def _execute_vision_event(
         if input_image is not None:
             input_source_id, _ = _upload_image(api_base_url, api_key, input_image)
             image_entry["inputSourceId"] = input_source_id
-            # If no output image was provided, use input as the display image
-            if "sourceId" not in image_entry:
-                image_entry["sourceId"] = input_source_id
 
         if image_entry:
             if object_detections:
