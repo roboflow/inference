@@ -1,5 +1,14 @@
 # Changelog
 
+## `0.24.2`
+
+### Fixed
+
+- Issue with `INFERENCE_HOME` derived paths issues when running on Windows (lack `/tmp/cache` dereference to 
+Windows path). 
+
+---
+
 ## `0.24.1`
 
 ### Changed
