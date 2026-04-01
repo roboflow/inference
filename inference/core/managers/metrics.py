@@ -29,11 +29,13 @@ def get_model_metrics(
               - num_errors (int): The number of errors occurred.
     """
     now = time.time()
-    inferences_with_times = model_monitoring_cache_module.model_monitoring_cache.zrangebyscore(
-        f"inference:{inference_server_id}:{model_id}",
-        min=min,
-        max=max,
-        withscores=True,
+    inferences_with_times = (
+        model_monitoring_cache_module.model_monitoring_cache.zrangebyscore(
+            f"inference:{inference_server_id}:{model_id}",
+            min=min,
+            max=max,
+            withscores=True,
+        )
     )
     num_inferences = len(inferences_with_times)
     inference_times = []
@@ -48,11 +50,13 @@ def get_model_metrics(
     avg_inference_time = (
         sum(inference_times) / len(inference_times) if len(inference_times) > 0 else 0
     )
-    errors_with_times = model_monitoring_cache_module.model_monitoring_cache.zrangebyscore(
-        f"error:{inference_server_id}:{model_id}",
-        min=min,
-        max=max,
-        withscores=True,
+    errors_with_times = (
+        model_monitoring_cache_module.model_monitoring_cache.zrangebyscore(
+            f"error:{inference_server_id}:{model_id}",
+            min=min,
+            max=max,
+            withscores=True,
+        )
     )
     num_errors = len(errors_with_times)
     return {
@@ -87,11 +91,13 @@ def get_system_info() -> dict:
 def get_inference_results_for_model(
     inference_server_id: str, model_id: str, min: float = -1, max: float = float("inf")
 ):
-    inferences_with_times = model_monitoring_cache_module.model_monitoring_cache.zrangebyscore(
-        f"inference:{inference_server_id}:{model_id}",
-        min=min,
-        max=max,
-        withscores=True,
+    inferences_with_times = (
+        model_monitoring_cache_module.model_monitoring_cache.zrangebyscore(
+            f"inference:{inference_server_id}:{model_id}",
+            min=min,
+            max=max,
+            withscores=True,
+        )
     )
     inference_results = []
     for result, score in inferences_with_times:

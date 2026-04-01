@@ -265,9 +265,7 @@ MODEL_MONITORING_CACHE_BACKEND = os.getenv(
     "MODEL_MONITORING_CACHE_BACKEND", "default"
 ).lower()
 if MODEL_MONITORING_CACHE_BACKEND not in {"default", "memory"}:
-    raise ValueError(
-        "MODEL_MONITORING_CACHE_BACKEND must be one of: default, memory"
-    )
+    raise ValueError("MODEL_MONITORING_CACHE_BACKEND must be one of: default, memory")
 
 # Flag to disable auto-orientation preprocessing, default is False
 DISABLE_PREPROC_AUTO_ORIENT = str2bool(os.getenv("DISABLE_PREPROC_AUTO_ORIENT", False))
