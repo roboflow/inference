@@ -1,6 +1,5 @@
-import traceback
 import types
-from typing import List, Optional, Type
+from typing import Any, Dict, List, Optional, Type
 
 from inference.core.env import (
     ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS,
@@ -10,6 +9,7 @@ from inference.core.env import (
 from inference.core.exceptions import WorkspaceLoadError
 from inference.core.roboflow_api import get_roboflow_workspace
 from inference.core.workflows.errors import (
+    DynamicBlockCodeError,
     DynamicBlockError,
     WorkflowEnvironmentConfigurationError,
 )
@@ -40,6 +40,12 @@ IMPORTS_LINES = [
 # Shared globals dict for all custom python blocks in local mode
 _LOCAL_SHARED_GLOBALS = {}
 
+from inference.core.workflows.execution_engine.v1.dynamic_blocks.error_utils import (
+    capture_output,
+    create_dynamic_block_code_error,
+    extract_code_snippet,
+)
+
 
 def assembly_custom_python_block(
     block_type_name: str,
@@ -49,6 +55,7 @@ def assembly_custom_python_block(
     api_key: Optional[str] = None,
     skip_class_eval: Optional[bool] = False,
 ) -> Type[WorkflowBlock]:
+
     code_module = create_dynamic_module(
         block_type_name=block_type_name,
         python_code=python_code,
@@ -56,6 +63,7 @@ def assembly_custom_python_block(
         api_key=api_key,
         skip_class_eval=skip_class_eval,
     )
+
     if not hasattr(code_module, python_code.run_function_name):
         raise DynamicBlockError(
             public_message=f"Cannot find function: {python_code.run_function_name} in declared code for "
@@ -97,20 +105,19 @@ def assembly_custom_python_block(
                     "`ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS=True`",
                     context="workflow_execution | step_execution | dynamic_step",
                 )
+            import_lines_count = len(_get_python_code_imports(python_code).splitlines())
             try:
-                return run_function(self, *args, **kwargs)
+                with capture_output() as (stdout_buf, stderr_buf):
+                    return run_function(self, *args, **kwargs)
             except Exception as error:
-                tb = traceback.extract_tb(error.__traceback__)
-                if tb:
-                    frame = tb[-1]
-                    line_number = frame.lineno - len(
-                        _get_python_code_imports(python_code).splitlines()
-                    )
-                    function_name = frame.name
-                    message = f"Error in line {line_number}, in {function_name}: {error.__class__.__name__}: {error}"
-                else:
-                    message = f"{error.__class__.__name__}: {error}"
-                raise Exception(message) from error
+                raise create_dynamic_block_code_error(
+                    error=error,
+                    user_code=python_code.run_function_code or "",
+                    import_lines_count=import_lines_count,
+                    stdout=stdout_buf.getvalue() or None,
+                    stderr=stderr_buf.getvalue() or None,
+                    block_type_name=block_type_name,
+                ) from error
 
     if python_code.init_function_code is not None and not hasattr(
         code_module, python_code.init_function_name
@@ -213,9 +220,23 @@ def create_dynamic_module(
             exec(code, dynamic_module.__dict__)
             return dynamic_module
         except Exception as error:
-            raise DynamicBlockError(
-                public_message=f"Error of type `{error.__class__.__name__}` encountered while attempting to "
-                f"create Python module with code for block: {block_type_name}. Error message: {error}. Full code:\n{code}",
-                context="workflow_compilation | dynamic_block_compilation | dynamic_module_creation",
+            error_line = getattr(error, "lineno", None)
+            code_snippet = None
+            if error_line and python_code.run_function_code:
+                import_lines_offset = len(
+                    _get_python_code_imports(python_code).splitlines()
+                )
+                error_line -= import_lines_offset
+                snippet = extract_code_snippet(
+                    python_code.run_function_code, error_line
+                )
+                code_snippet = snippet.lstrip("\n") if snippet else None
+
+            raise DynamicBlockCodeError(
+                public_message=f"{error.__class__.__name__}: {error}",
+                context="dynamic_block_code_compilation",
                 inner_error=error,
+                block_type_name=block_type_name,
+                error_line=error_line,
+                code_snippet=code_snippet,
             ) from error
