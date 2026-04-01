@@ -43,7 +43,6 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 
-
 VALID_EVENT_TYPES = [
     "quality_check",
     "inventory_count",
