@@ -722,13 +722,17 @@ def _convert_classification_to_vision_events_format(
     # Check for "predicted_classes" (standard classification output)
     predicted_classes = prediction.get("predicted_classes")
     if isinstance(predicted_classes, list):
-        for class_name in predicted_classes:
-            conf = 0.0
-            # Try to get confidence from predictions dict
-            preds = prediction.get("predictions", {})
-            if isinstance(preds, dict) and class_name in preds:
-                conf = float(preds[class_name].get("confidence", 0.0))
-            classifications.append({"class": str(class_name), "confidence": conf})
+        # Fetch predictions once to avoid repeated lookup in the loop
+        preds = prediction.get("predictions")
+        if isinstance(preds, dict):
+            for class_name in predicted_classes:
+                conf = 0.0
+                if class_name in preds:
+                    conf = float(preds[class_name].get("confidence", 0.0))
+                classifications.append({"class": str(class_name), "confidence": conf})
+        else:
+            for class_name in predicted_classes:
+                classifications.append({"class": str(class_name), "confidence": 0.0})
         if classifications:
             return classifications
 
