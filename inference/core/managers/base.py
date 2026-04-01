@@ -102,19 +102,11 @@ class ModelManager:
             f"ModelManager - Adding model with model_id={model_id}, model_id_alias={model_id_alias}"
         )
         resolved_identifier = model_id if model_id_alias is None else model_id_alias
-        # Track all request paths / aliases that map to this model
-        if resolved_identifier not in self._model_request_aliases:
-            self._model_request_aliases[resolved_identifier] = set()
-        if model_id != resolved_identifier:
-            self._model_request_aliases[resolved_identifier].add(model_id)
-        if model_id_alias is not None and model_id_alias != resolved_identifier:
-            self._model_request_aliases[resolved_identifier].add(model_id_alias)
-        # Auto-record HTTP request path from context (set by middleware)
-        req_path = current_request_path.get(None)
-        if req_path:
-            if resolved_identifier not in self._model_request_paths:
-                self._model_request_paths[resolved_identifier] = set()
-            self._model_request_paths[resolved_identifier].add(req_path)
+        self.record_request_metadata(
+            model_id=resolved_identifier,
+            original_model_id=model_id,
+            model_id_alias=model_id_alias,
+        )
         ids_collector = request_model_ids.get(None)
         if ids_collector is not None:
             ids_collector.add(resolved_identifier)
@@ -194,6 +186,33 @@ class ModelManager:
                 record_error(error)
                 self._dispose_model_lock(model_id=resolved_identifier)
                 raise error
+
+    def record_request_metadata(
+        self,
+        model_id: str,
+        original_model_id: Optional[str] = None,
+        model_id_alias: Optional[str] = None,
+    ) -> None:
+        """Record request path and aliases for an already-loaded model.
+
+        Decorators call this when they short-circuit ``add_model()`` for warm
+        models so registry metadata stays in sync with the base manager path.
+        """
+        resolved_identifier = model_id
+        if resolved_identifier not in self._model_request_aliases:
+            self._model_request_aliases[resolved_identifier] = set()
+        if (
+            original_model_id is not None
+            and original_model_id != resolved_identifier
+        ):
+            self._model_request_aliases[resolved_identifier].add(original_model_id)
+        if model_id_alias is not None and model_id_alias != resolved_identifier:
+            self._model_request_aliases[resolved_identifier].add(model_id_alias)
+        req_path = current_request_path.get(None)
+        if req_path:
+            if resolved_identifier not in self._model_request_paths:
+                self._model_request_paths[resolved_identifier] = set()
+            self._model_request_paths[resolved_identifier].add(req_path)
 
     def check_for_model(self, model_id: str) -> None:
         """Checks whether the model with the given ID is in the manager.

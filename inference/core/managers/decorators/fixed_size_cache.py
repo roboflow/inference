@@ -89,6 +89,11 @@ class WithFixedSizeCache(ModelManagerDecorator):
                 f"Detected {queue_id} in WithFixedSizeCache models queue -> marking as most recently used."
             )
             self._refresh_model_position_in_a_queue(model_id=queue_id)
+            self.model_manager.record_request_metadata(
+                model_id=queue_id,
+                original_model_id=model_id,
+                model_id_alias=model_id_alias,
+            )
             return None
 
         logger.debug(f"Current capacity of ModelManager: {len(self)}/{self.max_size}")
