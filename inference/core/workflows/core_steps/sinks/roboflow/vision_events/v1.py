@@ -573,40 +573,32 @@ def _execute_vision_event(
                     prediction
                 )
 
-        # Step 2: Upload images and build images array
-        images_payload: List[dict] = []
-        # Track which image entry should carry annotations. Prefer input_image,
-        # fall back to output_image so predictions are never silently dropped.
-        annotation_target: Optional[Dict[str, Any]] = None
+        # Step 2: Upload images and build a single image entry
+        # sourceId = output/display image, inputSourceId = original input image
+        image_entry: Dict[str, Any] = {}
 
         if output_image is not None:
             output_source_id, _ = _upload_image(api_base_url, api_key, output_image)
-            output_entry: Dict[str, Any] = {
-                "label": "output",
-                "sourceId": output_source_id,
-            }
-            images_payload.append(output_entry)
-            annotation_target = output_entry
+            image_entry["sourceId"] = output_source_id
 
         if input_image is not None:
             input_source_id, _ = _upload_image(api_base_url, api_key, input_image)
-            input_image_entry: Dict[str, Any] = {
-                "label": "input",
-                "sourceId": input_source_id,
-                "inputSourceId": input_source_id,
-            }
-            images_payload.append(input_image_entry)
-            annotation_target = input_image_entry
+            image_entry["inputSourceId"] = input_source_id
+            # If no output image was provided, use input as the display image
+            if "sourceId" not in image_entry:
+                image_entry["sourceId"] = input_source_id
 
-        if annotation_target is not None:
+        if image_entry:
             if object_detections:
-                annotation_target["objectDetections"] = object_detections
+                image_entry["objectDetections"] = object_detections
             if classifications:
-                annotation_target["classifications"] = classifications
+                image_entry["classifications"] = classifications
             if instance_segmentations:
-                annotation_target["instanceSegmentations"] = instance_segmentations
+                image_entry["instanceSegmentations"] = instance_segmentations
             if keypoints_detections:
-                annotation_target["keypoints"] = keypoints_detections
+                image_entry["keypoints"] = keypoints_detections
+
+        images_payload: List[dict] = [image_entry] if image_entry else []
 
         # Step 3: Build and send event
         payload = _build_event_payload(
