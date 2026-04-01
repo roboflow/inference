@@ -342,7 +342,6 @@ def test_build_event_payload_all_fields() -> None:
         images=[{"label": "input", "sourceId": "src-1"}],
         event_data={"result": "pass"},
         custom_metadata={"camera_id": "cam-01"},
-
     )
 
     assert payload["eventType"] == "quality_check"
@@ -437,7 +436,6 @@ def test_run_missing_api_key() -> None:
             event_type="custom",
             solution="test",
             custom_metadata={},
-
             fire_and_forget=False,
             disable_sink=False,
         )
@@ -456,7 +454,6 @@ def test_run_disabled() -> None:
         event_type="custom",
         solution="test",
         custom_metadata={},
-
         fire_and_forget=False,
         disable_sink=True,
     )
@@ -483,7 +480,6 @@ def test_run_fire_and_forget_background_tasks(mock_execute: MagicMock) -> None:
         event_type="custom",
         solution="test",
         custom_metadata={},
-
         fire_and_forget=True,
         disable_sink=False,
     )
@@ -510,7 +506,6 @@ def test_run_fire_and_forget_thread_pool(mock_execute: MagicMock) -> None:
         event_type="custom",
         solution="test",
         custom_metadata={},
-
         fire_and_forget=True,
         disable_sink=False,
     )
@@ -537,7 +532,6 @@ def test_run_synchronous(mock_execute: MagicMock) -> None:
         event_type="custom",
         solution="test",
         custom_metadata={},
-
         fire_and_forget=False,
         disable_sink=False,
     )
