@@ -144,6 +144,7 @@ nav:
         - Data Representations: workflows/internal_data_types.md
         - Versioning: workflows/versioning.md
         - Testing: workflows/testing.md
+        - Workflow Profiling: workflows/workflow_profiling.md
         - Schema API: workflows/schema_api.md
         - Changelog: workflows/execution_engine_changelog.md
       - Benchmarks: workflows/benchmarks.md
