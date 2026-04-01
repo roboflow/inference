@@ -217,7 +217,7 @@ def safe_execute_step(
         if step_error_handler:
             step_error_handler(step_name, error)
         logger.exception(f"Execution of step {step_selector} encountered error.")
-        error_traceback = getattr(error, "traceback", None) or "".join(
+        error_traceback = "".join(
             traceback.format_exception(type(error), error, error.__traceback__)
         )
         block_traceback = BlockTraceback(

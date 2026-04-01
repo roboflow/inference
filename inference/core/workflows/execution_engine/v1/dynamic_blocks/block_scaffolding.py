@@ -117,6 +117,7 @@ def assembly_custom_python_block(
                     import_lines_count=import_lines_count,
                     stdout=stdout_buf.getvalue() or None,
                     stderr=stderr_buf.getvalue() or None,
+                    block_type_name=block_type_name,
                 ) from error
 
     if python_code.init_function_code is not None and not hasattr(
