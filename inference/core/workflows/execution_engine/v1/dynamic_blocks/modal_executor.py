@@ -21,12 +21,12 @@ from inference.core.env import (
 )
 from inference.core.logger import logger
 from inference.core.workflows.errors import DynamicBlockCodeError, DynamicBlockError
+from inference.core.workflows.execution_engine.v1.dynamic_blocks.entities import (
+    PythonCode,
+)
 from inference.core.workflows.execution_engine.v1.dynamic_blocks.error_utils import (
     build_traceback_string,
     extract_code_snippet,
-)
-from inference.core.workflows.execution_engine.v1.dynamic_blocks.entities import (
-    PythonCode,
 )
 from inference.core.workflows.prototypes.block import BlockResult
 
