@@ -750,7 +750,6 @@ def _make_segment_request(api_key: str, image_id: str):
 def run_phase5(
     api_key: str,
     tracker: VRAMTracker,
-    threshold_mb: float,
     num_embeddings: int,
     embedding_cache_size: int,
     verbose: bool,
@@ -784,16 +783,30 @@ def run_phase5(
     print_step(
         f"Model default cache sizes: embedding={actual_embed_size}, logits={actual_logits_size}"
     )
-    model.embedding_cache_size = embedding_cache_size
-    model.low_res_logits_cache_size = 1
-    # Clear any existing cache entries from model init
-    model.embedding_cache.clear()
-    model.image_size_cache.clear()
-    model.embedding_cache_keys.clear()
-    model.low_res_logits_cache.clear()
-    model.low_res_logits_cache_keys.clear()
+    if actual_embed_size != embedding_cache_size:
+        print_step(
+            f"  WARNING: SAM3_MAX_EMBEDDING_CACHE_SIZE env var did NOT take effect! "
+            f"Default={actual_embed_size}, expected={embedding_cache_size}. "
+            f"Env vars must be set BEFORE the inference process starts."
+        )
+    if embedding_cache_size < 0:
+        # Negative value = use model defaults (for diagnosing production)
+        print_step(f"  Using model defaults (--embedding-cache-size=-1)")
+    else:
+        model.embedding_cache_size = embedding_cache_size
+        model.low_res_logits_cache_size = 1
+        # Clear any existing cache entries from model init
+        model.embedding_cache.clear()
+        model.image_size_cache.clear()
+        model.embedding_cache_keys.clear()
+        model.low_res_logits_cache.clear()
+        model.low_res_logits_cache_keys.clear()
+        print_step(
+            f"  Overridden to: embedding_cache_size={embedding_cache_size}, logits_cache_size=1"
+        )
     print_step(
-        f"Overridden to: embedding_cache_size={embedding_cache_size}, logits_cache_size=1"
+        f"  Each cached embedding uses ~176 MB VRAM. "
+        f"Max VRAM for cache alone: ~{model.embedding_cache_size * 176} MB"
     )
     model_loaded = tracker.snapshot("p5_model_loaded")
     measurements.append(tracker.log[-1])
@@ -901,23 +914,37 @@ def run_phase5(
     post_cleanup = tracker.snapshot("p5_post_cleanup")
     measurements.append(tracker.log[-1])
 
-    total_leaked_mb = embed_leak  # Embed-only is the primary signal
     cleanup_delta = (post_cleanup - measurements[0].vram_bytes) / MB
-    passed = total_leaked_mb <= threshold_mb
+
+    # The real leak signal is per_embed_mb: if each new unique image permanently
+    # adds VRAM (e.g. >10 MB/img over 20 images), that's a leak. Small deltas
+    # (<10 MB/img) that stabilize are just PyTorch allocator overhead.
+    # Also check cache size — if it grew beyond the configured limit, eviction is broken.
+    cache_size_ok = len(getattr(model, "embedding_cache", {})) <= max(
+        1, model.embedding_cache_size
+    )
+    growing_leak = per_embed_mb > 10.0 and num_embeddings >= 10
+    passed = not growing_leak and cache_size_ok
 
     print_step(f"VRAM after full cleanup: {tracker.fmt(post_cleanup)} (delta from model load: {cleanup_delta:.1f} MB)")
+    if not cache_size_ok:
+        print_step(
+            f"  CRITICAL: embedding cache grew beyond limit! "
+            f"Eviction is broken (safe_remove_from_dict catches ValueError instead of KeyError)"
+        )
 
     return PhaseResult(
         name="Phase 5 (SAM3 Diagnostic)",
         passed=passed,
         baseline_mb=baseline_a / MB,
         final_mb=embed_final / MB,
-        leaked_mb=total_leaked_mb,
+        leaked_mb=embed_leak,
         details=(
-            f"embed_only={embed_leak:.0f} MB over {num_embeddings} imgs "
-            f"({per_embed_mb:.1f} MB/img), "
-            f"segment={seg_leak:.0f} MB over {num_segments} imgs, "
+            f"embed_only={embed_leak:.0f} MB ({per_embed_mb:.1f} MB/img) "
+            f"{'GROWING' if growing_leak else 'stable'}, "
+            f"segment={seg_leak:.0f} MB, "
             f"repeat={repeat_leak:.0f} MB, "
+            f"cache_eviction={'OK' if cache_size_ok else 'BROKEN'}, "
             f"post_cleanup={cleanup_delta:.1f} MB"
         ),
         measurements=measurements,
@@ -1090,7 +1117,7 @@ def parse_args() -> argparse.Namespace:
         "--embedding-cache-size",
         type=int,
         default=1,
-        help="SAM3 embedding cache size for Phase 5 — mirrors production SAM3_MAX_EMBEDDING_CACHE_SIZE (default: 1)",
+        help="SAM3 embedding cache size for Phase 5. Use -1 to test with model defaults (default: 1)",
     )
     parser.add_argument(
         "--verbose",
@@ -1173,7 +1200,6 @@ def main() -> None:
             run_phase5(
                 args.api_key,
                 tracker,
-                args.threshold_mb,
                 args.num_embeddings,
                 args.embedding_cache_size,
                 args.verbose,
