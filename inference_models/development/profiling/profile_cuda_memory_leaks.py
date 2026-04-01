@@ -758,11 +758,6 @@ def run_phase5(
     print_header("Phase 5: SAM3 deep diagnostic")
     measurements: List[VRAMMeasurement] = []
 
-    # Override SAM3 cache sizes for this test
-    os.environ["SAM3_MAX_EMBEDDING_CACHE_SIZE"] = str(embedding_cache_size)
-    # Also limit logits cache to isolate its effect
-    os.environ["SAM3_MAX_LOGITS_CACHE_SIZE"] = "1"
-
     manager = create_base_model_manager()
 
     print_step(f"Loading {SAM3_MODEL_ID}...")
@@ -780,6 +775,26 @@ def run_phase5(
         )
 
     model = manager[SAM3_MODEL_ID]
+
+    # Override cache sizes directly on the model instance.
+    # Setting os.environ is too late — SAM3_MAX_EMBEDDING_CACHE_SIZE is read
+    # at import time of inference.core.env and baked into the __init__ default.
+    actual_embed_size = getattr(model, "embedding_cache_size", "?")
+    actual_logits_size = getattr(model, "low_res_logits_cache_size", "?")
+    print_step(
+        f"Model default cache sizes: embedding={actual_embed_size}, logits={actual_logits_size}"
+    )
+    model.embedding_cache_size = embedding_cache_size
+    model.low_res_logits_cache_size = 1
+    # Clear any existing cache entries from model init
+    model.embedding_cache.clear()
+    model.image_size_cache.clear()
+    model.embedding_cache_keys.clear()
+    model.low_res_logits_cache.clear()
+    model.low_res_logits_cache_keys.clear()
+    print_step(
+        f"Overridden to: embedding_cache_size={embedding_cache_size}, logits_cache_size=1"
+    )
     model_loaded = tracker.snapshot("p5_model_loaded")
     measurements.append(tracker.log[-1])
     print_step(f"Model loaded VRAM: {tracker.fmt(model_loaded)}")
