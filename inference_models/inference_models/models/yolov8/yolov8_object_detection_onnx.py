@@ -18,6 +18,7 @@ from inference_models.configuration import (
     INFERENCE_MODELS_YOLO_ULTRALYTICS_DECLARED_FUSED_NMS_INPUT_NAMES,
 )
 from inference_models.entities import ColorFormat
+from inference_models.logger import LOGGER
 from inference_models.errors import (
     CorruptedModelPackageError,
     EnvironmentConfigurationError,
@@ -36,7 +37,6 @@ from inference_models.models.common.roboflow.model_packages import (
     parse_inference_config,
 )
 from inference_models.models.common.roboflow.post_processing import (
-    post_process_nms_fused_model_output,
     rescale_detections,
     run_nms_for_object_detection,
 )
@@ -141,14 +141,45 @@ class YOLOv8ForObjectDetectionOnnx(
         input_names = [input.name for input in onnx_graph_inputs]
 
         if inference_config.post_processing.fused:
-            if input_names != INFERENCE_MODELS_YOLO_ULTRALYTICS_DECLARED_FUSED_NMS_INPUT_NAMES:
+            expected_fused_inputs = (
+                INFERENCE_MODELS_YOLO_ULTRALYTICS_DECLARED_FUSED_NMS_INPUT_NAMES
+            )
+            expected_fused_input_set = set(expected_fused_inputs)
+            if (
+                INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_IMAGES_INPUT_NAME
+                not in input_names
+            ):
                 raise CorruptedModelPackageError(
                     message=(
-                        f"Fused NMS YOLOv8 ONNX model must declare input names exactly as: "
-                        f"{INFERENCE_MODELS_YOLO_ULTRALYTICS_DECLARED_FUSED_NMS_INPUT_NAMES}. "
+                        f"Fused NMS YOLOv8 ONNX model must declare the images input "
+                        f"({INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_IMAGES_INPUT_NAME!r}). "
                         f"Got: {input_names}"
                     ),
                     help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
+                )
+
+            unexpected_inputs = [
+                n for n in input_names if n not in expected_fused_input_set
+            ]
+            if unexpected_inputs:
+                raise CorruptedModelPackageError(
+                    message=(
+                        f"Fused NMS YOLOv8 ONNX model has unexpected inputs {unexpected_inputs}. "
+                        f"Expected each name to be one of: {expected_fused_inputs}"
+                    ),
+                    help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
+                )
+
+            missing_fused_inputs = [
+                n for n in expected_fused_inputs if n not in input_names
+            ]
+            if missing_fused_inputs:
+                LOGGER.warning(
+                    "Fused NMS ONNX graph omits inputs %s; they will not be passed at "
+                    "inference time and ONNX Runtime will use graph initializer defaults for those parameters. "
+                    "Python arguments matching omitted inputs (e.g. confidence, iou_threshold, max_detections) "
+                    "will not affect the fused NMS stage.",
+                    missing_fused_inputs,
                 )
 
         return cls(
@@ -207,9 +238,9 @@ class YOLOv8ForObjectDetectionOnnx(
     def forward(
         self,
         pre_processed_images: torch.Tensor,
-        confidence: float = INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_CONFIDENCE,
-        iou_threshold: float = INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_IOU_THRESHOLD,
-        max_detections: int = INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_MAX_DETECTIONS,
+        confidence: Optional[float] = None,
+        iou_threshold: Optional[float] = None,
+        max_detections: Optional[int] = None,
         **kwargs,
     ) -> torch.Tensor:
         with self._session_thread_lock:
@@ -220,26 +251,20 @@ class YOLOv8ForObjectDetectionOnnx(
             }
 
             if self._inference_config.post_processing.fused:
-                input_builders[INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_CONFIDENCE_INPUT_NAME] = lambda: torch.tensor(
-                    float(confidence), dtype=torch.float32, device=device
-                )
-                input_builders[INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_IOU_THRESHOLD_INPUT_NAME] = lambda: torch.tensor(
-                    float(iou_threshold), dtype=torch.float32, device=device
-                )
-                input_builders[INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_MAX_DETECTIONS_INPUT_NAME] = lambda: torch.tensor(
-                    int(max_detections), dtype=torch.int32, device=device
-                )
+                if confidence is not None:
+                    input_builders[INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_CONFIDENCE_INPUT_NAME] = lambda: torch.tensor(
+                        float(confidence), dtype=torch.float32, device=device
+                    )
+                if iou_threshold is not None:
+                    input_builders[INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_IOU_THRESHOLD_INPUT_NAME] = lambda: torch.tensor(
+                        float(iou_threshold), dtype=torch.float32, device=device
+                    )
+                if max_detections is not None:
+                    input_builders[INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_MAX_DETECTIONS_INPUT_NAME] = lambda: torch.tensor(
+                        int(max_detections), dtype=torch.int32, device=device
+                    )
 
-            try:
-                inputs = {name: input_builders[name]() for name in self._input_names}
-            except KeyError as e:
-                raise CorruptedModelPackageError(
-                    message=(
-                        f"Unknown ONNX input name declared by model: {e.args[0]}. "
-                        f"Available runtime builders: {list(input_builders.keys())}."
-                    ),
-                    help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
-                )
+            inputs = {name: builder_fn() for name, builder_fn in input_builders.items()}
 
             return run_onnx_session_with_batch_size_limit(
                 session=self._session,
