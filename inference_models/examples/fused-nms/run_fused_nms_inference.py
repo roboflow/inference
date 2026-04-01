@@ -1,12 +1,57 @@
+import json
 import statistics
 import time
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 import click
 import cv2
+import supervision as sv
 
 from inference_models import AutoModel
+
+
+def _detections_to_json_dict(detections: sv.Detections) -> dict[str, Any]:
+    return {
+        "xyxy": detections.xyxy.tolist(),
+        "mask": detections.mask.tolist() if detections.mask is not None else None,
+        "confidence": (
+            detections.confidence.tolist()
+            if detections.confidence is not None
+            else None
+        ),
+        "class_id": (
+            detections.class_id.tolist() if detections.class_id is not None else None
+        ),
+    }
+
+
+def _latency_report_dict(
+    *,
+    image_path: Path,
+    model_path: Path,
+    warmup_runs: int,
+    latencies_ms: list[float],
+) -> dict[str, Any]:
+    n = len(latencies_ms)
+    return {
+        "image_path": str(image_path.resolve()),
+        "model_path": str(model_path.resolve()),
+        "warmup_runs": warmup_runs,
+        "timed_runs": n,
+        "unit": "ms",
+        "latencies_ms": latencies_ms,
+        "mean_ms": statistics.mean(latencies_ms) if n else None,
+        "median_ms": statistics.median(latencies_ms) if n else None,
+        "min_ms": min(latencies_ms) if n else None,
+        "max_ms": max(latencies_ms) if n else None,
+        "std_ms": statistics.stdev(latencies_ms) if n > 1 else None,
+    }
+
+
+def _write_json(path: Path, payload: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2) + "\n")
 
 
 @click.command()
@@ -40,8 +85,8 @@ from inference_models import AutoModel
 @click.option(
     "-n",
     "--benchmark-iters",
-    type=click.IntRange(min=0),
-    default=0,
+    type=click.IntRange(min=1),
+    default=1,
     show_default=True,
     help=(
         "Number of timed inference runs for benchmarking (mean/median/std in ms). "
@@ -53,11 +98,18 @@ from inference_models import AutoModel
     type=click.IntRange(min=0),
     default=5,
     show_default=True,
-    help="Untimed warmup runs before timed iterations (only used when -n > 0).",
+    help="Untimed warmup runs before timed iterations.",
+)
+@click.option(
+    "--target-dir",
+    type=click.Path(path_type=Path, file_okay=False),
+    required=True,
+    help="Directory for latency.json and prediction.json (created if missing).",
 )
 def main(
     image_path: Path,
     model_path: Path,
+    target_dir: Path,
     confidence: Optional[float] = None,
     iou_threshold: Optional[float] = None,
     max_detections: Optional[int] = None,
@@ -101,51 +153,51 @@ def main(
                 "max_dynamic_batch_size is not set in the model config."
             )
 
-    if benchmark_iters > 0:
-        if warmup > 0:
-            click.echo(f"Warmup: {warmup} untimed run(s)...")
-            for _ in range(warmup):
-                model(image, **nms_params)
+    latencies_ms: list[float] = []
 
-        click.echo(f"Benchmark: {benchmark_iters} timed run(s)...")
+    if warmup > 0:
+        click.echo(f"Warmup: {warmup} untimed runs...")
+        for _ in range(warmup):
+            model(image, **nms_params)
 
-        latencies_s: list[float] = []
-        predictions = None
-        for _ in range(benchmark_iters):
-            t0 = time.perf_counter()
-            predictions = model(image, **nms_params)
-            latencies_s.append(time.perf_counter() - t0)
+    click.echo(f"Benchmarking: {benchmark_iters} timed runs...")
 
-        latencies_ms = [t * 1000.0 for t in latencies_s]
-        mean_ms = statistics.mean(latencies_ms)
-        median_ms = statistics.median(latencies_ms)
-
-        if len(latencies_ms) > 1:
-            stdev_str = f"{statistics.stdev(latencies_ms):.4f}"
-        else:
-            stdev_str = "n/a (use -n 2 or more for std)"
-            
-        click.echo(
-            f"Inference latency (ms): mean={mean_ms:.4f}, median={median_ms:.4f}, "
-            f"std={stdev_str}"
-        )
-    else:
-        click.echo("Running inference...")
+    predictions = None
+    for _ in range(benchmark_iters):
+        t0 = time.perf_counter()
         predictions = model(image, **nms_params)
+        latencies_ms.append((time.perf_counter() - t0) * 1000.0)
 
     assert predictions is not None
+
+    click.echo("Writing reports ...")
+
     detections = predictions[0].to_supervision()
+    pred_payload: dict[str, Any] = {
+        "image_path": str(image_path.resolve()),
+        "detections": _detections_to_json_dict(detections),
+    }
 
-    click.echo(f"Detected {len(detections)} objects")
-    for idx, (xyxy, class_id, conf) in enumerate(
-        zip(detections.xyxy, detections.class_id, detections.confidence), start=1
-    ):
-        x1, y1, x2, y2 = [int(v) for v in xyxy.tolist()]
-        click.echo(
-            f"[{idx}] class_id={int(class_id)} confidence={float(conf):.4f} "
-            f"bbox=({x1}, {y1}, {x2}, {y2})"
-        )
+    target_dir.mkdir(parents=True, exist_ok=True)
+    latency_path = target_dir / "latency.json"
+    prediction_path = target_dir / "prediction.json"
+    nms_params_path = target_dir / "nms_params.json"
+    inference_config_path = target_dir / "inference_config.json"
 
+    _write_json(
+        latency_path,
+        _latency_report_dict(
+            image_path=image_path,
+            model_path=model_path,
+            warmup_runs=warmup,
+            latencies_ms=latencies_ms,
+        ),
+    )
+    _write_json(prediction_path, pred_payload)
+    _write_json(nms_params_path, nms_params)
+    _write_json(inference_config_path, model._inference_config.model_dump_json())
+
+    click.echo("Done!")
 
 if __name__ == "__main__":
     main()
