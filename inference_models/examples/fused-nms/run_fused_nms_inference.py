@@ -45,12 +45,21 @@ def main(
     if image is None:
         raise click.ClickException(f"Could not load image from: {image_path}")
 
+    nms_params = {
+        "confidence": confidence,
+        "iou_threshold": iou_threshold,
+        "max_detections": max_detections,
+    }
+
+    nms_params = {name: value for name, value in nms_params.items() if value is not None}
+    if nms_params:
+        click.echo(f"User provided NMS parameters: {nms_params}")
+
     click.echo(f"Loading model: {model_path}")
     model = AutoModel.from_pretrained(
         model_path,
-        confidence=confidence,
-        iou_threshold=iou_threshold,
-        max_detections=max_detections,
+        onnx_execution_providers=["CPUExecutionProvider"],
+        device="cpu",
     )
 
     click.echo(f"Fused NMS available: {model._inference_config.post_processing.fused}")
@@ -70,7 +79,7 @@ def main(
             )
 
     click.echo("Running inference...")
-    predictions = model(image, confidence=confidence)
+    predictions = model(image, **nms_params)
     detections = predictions[0].to_supervision()
 
     click.echo(f"Detected {len(detections)} objects")
