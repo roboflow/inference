@@ -586,6 +586,7 @@ def _execute_vision_event(
             image_entry["inputSourceId"] = input_source_id
 
         if image_entry:
+            image_entry["label"] = "workflow"
             if object_detections:
                 image_entry["objectDetections"] = object_detections
             if classifications:
