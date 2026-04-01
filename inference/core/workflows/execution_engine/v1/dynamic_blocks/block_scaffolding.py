@@ -96,7 +96,6 @@ def assembly_custom_python_block(
                 inputs=kwargs,
                 workspace_id=workspace_id,
             )
-            # TODO: also in modal!
         else:
             # Local execution - check if allowed
             if not ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS:

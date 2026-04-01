@@ -344,6 +344,7 @@ class ModalExecutor:
                 # the core executor and be handled by its own HTTP handler.
                 raise DynamicBlockCodeError(
                     public_message=message,
+                    block_type_name=block_type_name,
                     error_line=line_number,
                     code_snippet=code_snippet,
                     traceback_str=traceback_str,
