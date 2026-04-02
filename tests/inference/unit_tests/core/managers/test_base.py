@@ -364,10 +364,12 @@ def test_model_manager_describe_models() -> None:
     model_1.batch_size = 12
     model_1.img_size_w = 640
     model_1.img_size_h = 480
+    model_1._vram_bytes = 1024000
     model_2.task_type = "instance-segmentation"
     model_2.batch_size = 1
     model_2.img_size_w = 480
     model_2.img_size_h = 480
+    model_2._vram_bytes = 2048000
     model_manager._models = {"some/1": model_1, "some/2": model_2}
 
     # when
@@ -381,6 +383,7 @@ def test_model_manager_describe_models() -> None:
             batch_size=12,
             input_width=640,
             input_height=480,
+            vram_bytes=1024000,
         ),
         ModelDescription(
             model_id="some/2",
@@ -388,6 +391,7 @@ def test_model_manager_describe_models() -> None:
             batch_size=1,
             input_width=480,
             input_height=480,
+            vram_bytes=2048000,
         ),
     ]
 
