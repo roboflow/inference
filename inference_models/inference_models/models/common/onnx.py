@@ -198,8 +198,10 @@ def run_onnx_session_with_batch_size_limit(
     Args:
         session: ONNX Runtime inference session.
 
-        inputs: Dictionary mapping input names to PyTorch tensors. All tensors
-            must have the same batch size (first dimension).
+        inputs: Dictionary mapping input names to PyTorch tensors. Tensors that
+            participate in the main batch must share the same size on dimension 0.
+            Tensors with dimension 0 equal to 1 are treated as broadcast scalars
+            and are not split across chunks.
 
         output_shape_mapping: Optional dictionary mapping output names to their
             expected shapes. Used for pre-allocating output buffers. If None,
@@ -217,7 +219,8 @@ def run_onnx_session_with_batch_size_limit(
         the model's output specification.
 
     Raises:
-        ModelRuntimeError: If input tensors have different batch sizes.
+        ModelInputError: If dimension-0 sizes are incompatible (for example two
+            different batch sizes both greater than 1).
 
     Examples:
         Run inference with batch size limit:
@@ -257,7 +260,7 @@ def run_onnx_session_with_batch_size_limit(
         - Automatically handles batch splitting and result concatenation
         - Pads the last chunk if min_batch_size is specified
         - Uses `run_onnx_session_via_iobinding()` internally for efficiency
-        - All input tensors must have the same batch size
+        - Broadcast inputs with batch dimension 1 are supported alongside batched tensors
 
     See Also:
         - `run_onnx_session_via_iobinding()`: Lower-level ONNX execution
@@ -269,20 +272,24 @@ def run_onnx_session_with_batch_size_limit(
             inputs=inputs,
             output_shape_mapping=output_shape_mapping,
         )
-    input_batch_sizes = set()
-    for input_tensor in inputs.values():
-        input_batch_sizes.add(input_tensor.shape[0])
-    if len(input_batch_sizes) != 1:
+
+    batch_input_sizes = [tensor.shape[0] for tensor in inputs.values() if tensor.numel() != 1]
+    batch_size = max(batch_input_sizes)
+    is_incompatible_batch_size_set = [
+        size for size in batch_input_sizes if size != batch_size
+    ]
+    if is_incompatible_batch_size_set:
         raise ModelInputError(
-            message="When running forward pass through ONNX model detected inputs with different batch sizes. "
-            "This is the error with the model you run. If the model was trained or exported "
-            "on Roboflow platform - contact us to get help. Otherwise, verify your model package or "
-            "implementation of the model class.",
+            message="When running forward pass through ONNX model detected inputs with incompatible sizes on "
+            "dimension 0. Expected each tensor to have either size 1 (scalar/broadcast inputs) or the same "
+            f"primary batch size ({batch_size}). Got distinct sizes: {sorted(set(batch_input_sizes))!r}. "
+            "If the model was trained or exported on Roboflow platform, contact us for help. Otherwise, "
+            "verify your model package or implementation of the model class.",
             help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
         )
-    input_batch_size = input_batch_sizes.pop()
-    if input_batch_size <= max_batch_size and (
-        min_batch_size is None or input_batch_size >= min_batch_size
+
+    if batch_size <= max_batch_size and (
+        min_batch_size is None or batch_size >= min_batch_size
     ):
         # no point iterating
         return run_onnx_session_via_iobinding(
@@ -293,25 +300,28 @@ def run_onnx_session_with_batch_size_limit(
     all_results = []
     for _ in session.get_outputs():
         all_results.append([])
-    for i in range(0, input_batch_size, max_batch_size):
+    for i in range(0, batch_size, max_batch_size):
         batch_inputs = {}
         reminder = 0
         for name, value in inputs.items():
-            batched_value = value[i : i + max_batch_size]
-            if min_batch_size is not None:
-                reminder = min_batch_size - batched_value.shape[0]
-            if reminder > 0:
-                batched_value = torch.cat(
-                    (
-                        batched_value,
-                        torch.zeros(
-                            (reminder,) + batched_value.shape[1:],
-                            dtype=batched_value.dtype,
-                            device=batched_value.device,
+            if value.shape[0] == batch_size:
+                batched_value = value[i : i + max_batch_size]
+                if min_batch_size is not None:
+                    reminder = min_batch_size - batched_value.shape[0]
+                if reminder > 0:
+                    batched_value = torch.cat(
+                        (
+                            batched_value,
+                            torch.zeros(
+                                (reminder,) + batched_value.shape[1:],
+                                dtype=batched_value.dtype,
+                                device=batched_value.device,
+                            ),
                         ),
-                    ),
-                    dim=0,
-                )
+                        dim=0,
+                    )
+            else:
+                batched_value = value
             batched_value = batched_value.contiguous()
             batch_inputs[name] = batched_value
         batch_output_shape_mapping = None
