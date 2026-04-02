@@ -1,9 +1,30 @@
 from pathlib import Path
+from typing import Optional
 
 import click
 import cv2
-from typing import Optional
+
 from inference_models import AutoModel
+
+
+def _onnx_ep_preset_to_providers_and_device(
+    preset: str,
+) -> tuple[list[str], str]:
+    """Map CLI preset to ONNX Runtime provider chain and PyTorch device string."""
+    if preset == "cpu":
+        return (["CPUExecutionProvider"], "cpu")
+    if preset == "cuda":
+        return (["CUDAExecutionProvider", "CPUExecutionProvider"], "cuda")
+    if preset == "tensorrt":
+        return (
+            [
+                "TensorrtExecutionProvider",
+                "CUDAExecutionProvider",
+                "CPUExecutionProvider",
+            ],
+            "cuda",
+        )
+    raise click.ClickException(f"Unknown onnx-execution-providers preset: {preset!r}")
 
 
 @click.command()
@@ -34,12 +55,26 @@ from inference_models import AutoModel
     type=int,
     help="Maximum number of detections used by post-processing.",
 )
+@click.option(
+    "--onnx-execution-providers",
+    "onnx_ep_preset",
+    type=click.Choice(["cpu", "cuda", "tensorrt"], case_sensitive=False),
+    default="cpu",
+    show_default=True,
+    help=(
+        "ONNX Runtime execution provider chain: "
+        "cpu (CPUExecutionProvider); "
+        "cuda (CUDAExecutionProvider then CPUExecutionProvider); "
+        "tensorrt (TensorrtExecutionProvider, CUDA, then CPU fallbacks)."
+    ),
+)
 def main(
     image_path: Path,
     model_path: Path,
     confidence: Optional[float] = None,
     iou_threshold: Optional[float] = None,
     max_detections: Optional[int] = None,
+    onnx_ep_preset: str = "cpu",
 ) -> None:
     image = cv2.imread(str(image_path))
     if image is None:
@@ -55,11 +90,17 @@ def main(
     if nms_params:
         click.echo(f"User provided NMS parameters: {nms_params}")
 
-    click.echo(f"Loading model: {model_path}")
+    onnx_ep_preset = onnx_ep_preset.lower()
+    onnx_providers, device_str = _onnx_ep_preset_to_providers_and_device(onnx_ep_preset)
+
+    click.echo(
+        f"Loading model: {model_path} "
+        f"(onnx_execution_providers={onnx_providers!r}, device={device_str!r})"
+    )
     model = AutoModel.from_pretrained(
         model_path,
-        onnx_execution_providers=["CPUExecutionProvider"],
-        device="cpu",
+        onnx_execution_providers=list(onnx_providers),
+        device=device_str,
     )
 
     click.echo(f"Fused NMS available: {model._inference_config.post_processing.fused}")
