@@ -70,6 +70,10 @@ class FakeBackend:
 
     # Observability
     @property
+    def device(self) -> str:
+        return "cpu"
+
+    @property
     def state(self) -> str:
         return self._state
 
@@ -80,10 +84,6 @@ class FakeBackend:
     @property
     def is_accepting(self) -> bool:
         return self._state == "loaded"
-
-    @property
-    def gpu_exec_slots(self) -> int:
-        return 1
 
     @property
     def queue_depth(self) -> int:
@@ -311,17 +311,16 @@ class TestModelManagerInference:
 class TestModelManagerObservability:
 
     def test_stats_empty(self):
-        mm = ModelManager(gpu_exec_slots=4)
+        mm = ModelManager()
         s = mm.stats()
 
-        assert s["gpu_exec_slots_total"] == 4
-        assert s["gpu_exec_slots_used"] == 0
         assert s["models_loaded"] == []
         assert s["models_sleeping"] == []
         assert s["models"] == []
+        assert isinstance(s["gpus"], list)
 
     def test_stats_with_models(self):
-        mm = ModelManager(gpu_exec_slots=4)
+        mm = ModelManager()
         backends = {}
         _patch_create_backend(mm, backends)
 
@@ -331,7 +330,6 @@ class TestModelManagerObservability:
 
         s = mm.stats()
 
-        assert s["gpu_exec_slots_used"] == 2  # 2 loaded models, 1 slot each
         assert set(s["models_loaded"]) == {"model-a", "model-b"}
         assert len(s["models"]) == 2
 
@@ -431,20 +429,20 @@ class TestModelManagerBackendCreation:
         mm.load(
             "model-a", api_key="test-key",
             backend="direct",
+            device="cuda:1",
             batch_max_size=16,
             batch_max_delay_ms=50.0,
-            gpu_exec_slots=2,
         )
 
         mock_create.assert_called_once_with(
             model_id="model-a",
             api_key="test-key",
             backend="direct",
+            device="cuda:1",
             use_gpu=None,
             use_cuda_ipc=None,
             batch_max_size=16,
             batch_max_delay_ms=50.0,
-            gpu_exec_slots=2,
         )
 
     @patch("inference_models.model_manager.ModelManager._create_backend")
