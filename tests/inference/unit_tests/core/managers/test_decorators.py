@@ -3,6 +3,9 @@ from unittest.mock import MagicMock
 from inference.core.managers.base import ModelManager
 from inference.core.managers.decorators.base import ModelManagerDecorator
 from inference.core.managers.decorators.fixed_size_cache import WithFixedSizeCache
+from inference.core.managers.decorators.locked_load import (
+    LockedLoadModelManagerDecorator,
+)
 from inference.core.managers.model_load_collector import (
     RequestModelIds,
     current_request_path,
@@ -59,3 +62,26 @@ def test_fixed_size_cache_records_request_metadata_for_warm_model() -> None:
     assert description.model_id == "sam3/sam3_interactive"
     assert description.request_aliases == ["sam3/sam3_final"]
     assert description.request_paths == ["/sam3/embed_image"]
+
+
+def test_nested_decorators_record_request_metadata_for_warm_model() -> None:
+    base_manager = ModelManager(model_registry=MagicMock())
+    base_manager._models = {"some/1": MagicMock()}
+    decorator = WithFixedSizeCache(
+        LockedLoadModelManagerDecorator(base_manager), max_size=8
+    )
+    path_token = current_request_path.set("/infer/object_detection")
+    ids = RequestModelIds()
+    ids_token = request_model_ids.set(ids)
+
+    try:
+        decorator.add_model(model_id="some/1", api_key="key")
+    finally:
+        request_model_ids.reset(ids_token)
+        current_request_path.reset(path_token)
+
+    [description] = base_manager.describe_models()
+    assert description.model_id == "some/1"
+    assert description.request_aliases == []
+    assert description.request_paths == ["/infer/object_detection"]
+    assert ids.get_ids() == {"some/1"}
