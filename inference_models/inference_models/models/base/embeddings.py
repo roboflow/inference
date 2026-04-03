@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import List, Literal, Union
+from typing import List, Literal, Optional, Union
 
 import numpy as np
 import torch
@@ -14,6 +14,11 @@ class TextImageEmbeddingModel(ABC):
         cls, model_name_or_path: str, **kwargs
     ) -> "TextImageEmbeddingModel":
         pass
+
+    @property
+    def max_batch_size(self) -> Optional[int]:
+        """Maximum batch size the model supports, or ``None`` if unlimited."""
+        return getattr(self, "_max_batch_size", None)
 
     def compare_embeddings(
         self,

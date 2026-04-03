@@ -56,6 +56,7 @@ class ResNetForClassificationTorch(ClassificationModel[torch.Tensor, torch.Tenso
         device: torch.device = DEFAULT_DEVICE,
         **kwargs,
     ) -> "ResNetForClassificationTorch":
+        load_weights = kwargs.pop("load_weights", True)
         model_package_content = get_model_package_contents(
             model_package_dir=model_name_or_path,
             elements=[
@@ -109,23 +110,26 @@ class ResNetForClassificationTorch(ClassificationModel[torch.Tensor, torch.Tenso
                 message="Expected softmax to be the post-processing",
                 help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
-        backbone = timm.create_model(
-            model_name,
-            pretrained=False,
-            num_classes=num_classes,
-        ).to(device)
-        state_dict = torch.load(
-            model_package_content["weights.pth"],
-            weights_only=True,
-            map_location=device,
-        )
-        backbone.load_state_dict(state_dict)
-        model = ResNetClassifier(
-            backbone=backbone,
-            softmax_fused=inference_config.post_processing.fused,
-        ).to(device)
+        if load_weights:
+            backbone = timm.create_model(
+                model_name,
+                pretrained=False,
+                num_classes=num_classes,
+            ).to(device)
+            state_dict = torch.load(
+                model_package_content["weights.pth"],
+                weights_only=True,
+                map_location=device,
+            )
+            backbone.load_state_dict(state_dict)
+            model = ResNetClassifier(
+                backbone=backbone,
+                softmax_fused=inference_config.post_processing.fused,
+            ).to(device)
+        else:
+            model = None
         return cls(
-            model=model.eval(),
+            model=model.eval() if model is not None else None,
             inference_config=inference_config,
             class_names=class_names,
             device=device,
@@ -207,6 +211,7 @@ class ResNetForMultiLabelClassificationTorch(
         recommended_parameters: Optional[RecommendedParameters] = None,
         **kwargs,
     ) -> "ResNetForMultiLabelClassificationTorch":
+        load_weights = kwargs.pop("load_weights", True)
         model_package_content = get_model_package_contents(
             model_package_dir=model_name_or_path,
             elements=[
@@ -260,23 +265,26 @@ class ResNetForMultiLabelClassificationTorch(
                 message="Expected sigmoid to be the post-processing",
                 help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
-        backbone = timm.create_model(
-            model_name,
-            pretrained=False,
-            num_classes=num_classes,
-        ).to(device)
-        state_dict = torch.load(
-            model_package_content["weights.pth"],
-            weights_only=True,
-            map_location=device,
-        )
-        backbone.load_state_dict(state_dict)
-        model = ResNetMultiLabelClassifier(
-            backbone=backbone,
-            sigmoid_fused=inference_config.post_processing.fused,
-        ).to(device)
+        if load_weights:
+            backbone = timm.create_model(
+                model_name,
+                pretrained=False,
+                num_classes=num_classes,
+            ).to(device)
+            state_dict = torch.load(
+                model_package_content["weights.pth"],
+                weights_only=True,
+                map_location=device,
+            )
+            backbone.load_state_dict(state_dict)
+            model = ResNetMultiLabelClassifier(
+                backbone=backbone,
+                sigmoid_fused=inference_config.post_processing.fused,
+            ).to(device)
+        else:
+            model = None
         return cls(
-            model=model.eval(),
+            model=model.eval() if model is not None else None,
             inference_config=inference_config,
             class_names=class_names,
             device=device,

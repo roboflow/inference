@@ -25,10 +25,14 @@ class DepthAnythingV2HF(
         local_files_only: bool = True,
         **kwargs,
     ) -> "DepthAnythingV2HF":
-        model = AutoModelForDepthEstimation.from_pretrained(
-            model_name_or_path,
-            local_files_only=local_files_only,
-        ).to(device)
+        load_weights = kwargs.pop("load_weights", True)
+        if load_weights:
+            model = AutoModelForDepthEstimation.from_pretrained(
+                model_name_or_path,
+                local_files_only=local_files_only,
+            ).to(device)
+        else:
+            model = None
         processor = AutoImageProcessor.from_pretrained(
             model_name_or_path, local_files_only=local_files_only, use_fast=True
         )

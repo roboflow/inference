@@ -65,6 +65,7 @@ class VITForClassificationHF(ClassificationModel[torch.Tensor, torch.Tensor]):
         local_files_only: bool = True,
         **kwargs,
     ) -> "VITForClassificationHF":
+        load_weights = kwargs.pop("load_weights", True)
         model_package_content = get_model_package_contents(
             model_package_dir=model_name_or_path,
             elements=[
@@ -114,26 +115,29 @@ class VITForClassificationHF(ClassificationModel[torch.Tensor, torch.Tensor]):
                 message="Expected Softmax to be the post-processing",
                 help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
-        backbone = ViTModel.from_pretrained(
-            os.path.join(model_name_or_path, "vit"),
-            local_files_only=local_files_only,
-        ).to(device)
-        classifier = nn.Linear(backbone.config.hidden_size, num_classes).to(device)
-        classifier_state_dict = torch.load(
-            model_package_content["classifier_layer_weights.pth"],
-            weights_only=True,
-            map_location=device,
-        )
-        classifier.load_state_dict(classifier_state_dict)
-        model = (
-            VITClassifier(
-                backbone=backbone,
-                classifier=classifier,
-                softmax_fused=inference_config.post_processing.fused,
+        if load_weights:
+            backbone = ViTModel.from_pretrained(
+                os.path.join(model_name_or_path, "vit"),
+                local_files_only=local_files_only,
+            ).to(device)
+            classifier = nn.Linear(backbone.config.hidden_size, num_classes).to(device)
+            classifier_state_dict = torch.load(
+                model_package_content["classifier_layer_weights.pth"],
+                weights_only=True,
+                map_location=device,
             )
-            .to(device)
-            .eval()
-        )
+            classifier.load_state_dict(classifier_state_dict)
+            model = (
+                VITClassifier(
+                    backbone=backbone,
+                    classifier=classifier,
+                    softmax_fused=inference_config.post_processing.fused,
+                )
+                .to(device)
+                .eval()
+            )
+        else:
+            model = None
         return cls(
             model=model,
             inference_config=inference_config,
@@ -224,6 +228,7 @@ class VITForMultiLabelClassificationHF(
         local_files_only: bool = True,
         **kwargs,
     ) -> "VITForMultiLabelClassificationHF":
+        load_weights = kwargs.pop("load_weights", True)
         model_package_content = get_model_package_contents(
             model_package_dir=model_name_or_path,
             elements=[
@@ -273,26 +278,29 @@ class VITForMultiLabelClassificationHF(
                 message="Expected sigmoid to be the post-processing",
                 help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
-        backbone = ViTModel.from_pretrained(
-            os.path.join(model_name_or_path, "vit"),
-            local_files_only=local_files_only,
-        ).to(device)
-        classifier = nn.Linear(backbone.config.hidden_size, num_classes).to(device)
-        classifier_state_dict = torch.load(
-            model_package_content["classifier_layer_weights.pth"],
-            weights_only=True,
-            map_location=device,
-        )
-        classifier.load_state_dict(classifier_state_dict)
-        model = (
-            VITMultiLabelClassifier(
-                backbone=backbone,
-                classifier=classifier,
-                sigmoid_fused=inference_config.post_processing.fused,
+        if load_weights:
+            backbone = ViTModel.from_pretrained(
+                os.path.join(model_name_or_path, "vit"),
+                local_files_only=local_files_only,
+            ).to(device)
+            classifier = nn.Linear(backbone.config.hidden_size, num_classes).to(device)
+            classifier_state_dict = torch.load(
+                model_package_content["classifier_layer_weights.pth"],
+                weights_only=True,
+                map_location=device,
             )
-            .to(device)
-            .eval()
-        )
+            classifier.load_state_dict(classifier_state_dict)
+            model = (
+                VITMultiLabelClassifier(
+                    backbone=backbone,
+                    classifier=classifier,
+                    sigmoid_fused=inference_config.post_processing.fused,
+                )
+                .to(device)
+                .eval()
+            )
+        else:
+            model = None
         return cls(
             model=model,
             inference_config=inference_config,

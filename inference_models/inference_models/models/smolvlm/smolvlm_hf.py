@@ -64,6 +64,7 @@ class SmolVLMHF:
         disable_quantization: bool = False,
         **kwargs,
     ) -> "SmolVLMHF":
+        load_weights = kwargs.pop("load_weights", True)
         torch_dtype = torch.float16 if device.type == "cuda" else torch.float32
         inference_config_path = os.path.join(
             model_name_or_path, "inference_config.json"
@@ -93,20 +94,23 @@ class SmolVLMHF:
                 bnb_4bit_quant_type="nf4",
             )
         if os.path.exists(adapter_config_path):
-
-            base_model_path = os.path.join(model_name_or_path, "base")
-            model = AutoModelForImageTextToText.from_pretrained(
-                base_model_path,
-                dtype=torch_dtype,
-                trust_remote_code=trust_remote_code,
-                local_files_only=local_files_only,
-                quantization_config=quantization_config,
-                attn_implementation=attn_implementation,
-            )
-            model = PeftModel.from_pretrained(model, model_name_or_path)
-            if quantization_config is None:
-                model.merge_and_unload()
-            model.to(device)
+            if load_weights:
+                base_model_path = os.path.join(model_name_or_path, "base")
+                model = AutoModelForImageTextToText.from_pretrained(
+                    base_model_path,
+                    dtype=torch_dtype,
+                    trust_remote_code=trust_remote_code,
+                    local_files_only=local_files_only,
+                    quantization_config=quantization_config,
+                    attn_implementation=attn_implementation,
+                )
+                model = PeftModel.from_pretrained(model, model_name_or_path)
+                if quantization_config is None:
+                    model.merge_and_unload()
+                model.to(device)
+            else:
+                base_model_path = os.path.join(model_name_or_path, "base")
+                model = None
 
             processor = AutoProcessor.from_pretrained(
                 base_model_path,
@@ -116,15 +120,18 @@ class SmolVLMHF:
                 use_fast=True,
             )
         else:
-            model = AutoModelForImageTextToText.from_pretrained(
-                model_name_or_path,
-                dtype=torch_dtype,
-                device_map=device,
-                trust_remote_code=trust_remote_code,
-                local_files_only=local_files_only,
-                quantization_config=quantization_config,
-                attn_implementation=attn_implementation,
-            ).eval()
+            if load_weights:
+                model = AutoModelForImageTextToText.from_pretrained(
+                    model_name_or_path,
+                    dtype=torch_dtype,
+                    device_map=device,
+                    trust_remote_code=trust_remote_code,
+                    local_files_only=local_files_only,
+                    quantization_config=quantization_config,
+                    attn_implementation=attn_implementation,
+                ).eval()
+            else:
+                model = None
             processor = AutoProcessor.from_pretrained(
                 model_name_or_path,
                 padding_side="left",
