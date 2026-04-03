@@ -44,18 +44,13 @@ class ModelManager:
     def __init__(
         self,
         *,
-        gpu_exec_slots: int = 4,
         max_pinned_memory_mb: int = 0,
     ) -> None:
         """
         Args:
-            gpu_exec_slots: Total GPU execution slots for this pod. Controls
-                how many concurrent forward() calls can run across all backends.
-                Each backend consumes a configurable number of slots.
             max_pinned_memory_mb: Maximum CPU pinned memory for sleeping models.
                 0 = no sleeping tier (models go straight from loaded to unloaded).
         """
-        self._gpu_exec_slots_total = gpu_exec_slots
         self._max_pinned_memory_bytes = max_pinned_memory_mb * 1024 * 1024
 
         self._backends: Dict[str, Backend] = {}
@@ -63,7 +58,7 @@ class ModelManager:
 
         # Shared thread pool for DirectBackends and infer_async
         self._executor = ThreadPoolExecutor(
-            max_workers=max(gpu_exec_slots * 2, 4),
+            max_workers=8,
             thread_name_prefix="mm-worker",
         )
 
@@ -80,17 +75,24 @@ class ModelManager:
         api_key: str,
         *,
         backend: Literal["direct", "subprocess"] = "direct",
+        device: Optional[str] = None,
         use_gpu: Optional[bool] = None,
         use_cuda_ipc: Optional[bool] = None,
         batch_max_size: int = 0,
         batch_max_delay_ms: float = 10.0,
         warmup_iters: int = 0,
-        gpu_exec_slots: int = 1,
         **kwargs,
     ) -> None:
         """Load a model and create its backend.
 
         Blocks until the model is loaded, warmed up, and ready to serve.
+
+        Args:
+            device: Device to run the model on (e.g. ``"cpu"``,
+                ``"cuda:0"``, ``"cuda:1"``). For multi-GPU pods, this
+                selects which GPU the model runs on. ``None`` uses the
+                default (CUDA if available for DirectBackend, ``"cuda:0"``
+                for SubprocessBackend).
 
         Raises:
             ValueError: If model_id is already loaded.
@@ -101,19 +103,19 @@ class ModelManager:
                 raise ValueError(f"Model '{model_id}' is already loaded")
 
             logger.info(
-                "Loading model '%s' with backend=%s, batch_max_size=%d",
-                model_id, backend, batch_max_size,
+                "Loading model '%s' with backend=%s, device=%s, batch_max_size=%d",
+                model_id, backend, device, batch_max_size,
             )
 
             b = self._create_backend(
                 model_id=model_id,
                 api_key=api_key,
                 backend=backend,
+                device=device,
                 use_gpu=use_gpu,
                 use_cuda_ipc=use_cuda_ipc,
                 batch_max_size=batch_max_size,
                 batch_max_delay_ms=batch_max_delay_ms,
-                gpu_exec_slots=gpu_exec_slots,
                 **kwargs,
             )
             self._backends[model_id] = b
@@ -122,7 +124,9 @@ class ModelManager:
         if warmup_iters > 0:
             self._warmup(model_id, warmup_iters)
 
-        logger.info("Model '%s' loaded (state=%s)", model_id, b.state)
+        logger.info(
+            "Model '%s' loaded (state=%s, device=%s)", model_id, b.state, b.device,
+        )
 
     def _create_backend(
         self,
@@ -281,23 +285,17 @@ class ModelManager:
 
         Non-blocking — never contends with inference.
         """
-        gpu_mem = self._gpu_memory_info()
+        gpu_info = self._gpu_memory_info()
         models = []
-        gpu_exec_slots_used = 0
 
         for model_id, backend in self._backends.items():
             s = backend.stats()
             s["model_id"] = model_id
             models.append(s)
-            if backend.state == "loaded":
-                gpu_exec_slots_used += backend.gpu_exec_slots
 
         return {
-            "gpu_memory_used_mb": gpu_mem["used_mb"],
-            "gpu_memory_total_mb": gpu_mem["total_mb"],
+            "gpus": gpu_info,
             "ram_pinned_used_mb": sum(self._pinned_bytes.values()) / 1024 / 1024,
-            "gpu_exec_slots_used": gpu_exec_slots_used,
-            "gpu_exec_slots_total": self._gpu_exec_slots_total,
             "models_loaded": self.loaded_models,
             "models_sleeping": self.sleeping_models,
             "models": models,
@@ -366,15 +364,27 @@ class ModelManager:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _gpu_memory_info() -> Dict[str, float]:
-        """Get GPU memory usage. Returns zeros if CUDA is unavailable."""
+    def _gpu_memory_info() -> List[Dict[str, Any]]:
+        """Get per-GPU memory usage. Returns empty list if CUDA unavailable."""
         try:
             import torch
 
             if torch.cuda.is_available():
-                used = torch.cuda.memory_allocated() / 1024 / 1024
-                total = torch.cuda.get_device_properties(0).total_mem / 1024 / 1024
-                return {"used_mb": round(used, 1), "total_mb": round(total, 1)}
+                gpus = []
+                for i in range(torch.cuda.device_count()):
+                    props = torch.cuda.get_device_properties(i)
+                    gpus.append({
+                        "device": f"cuda:{i}",
+                        "name": props.name,
+                        "total_mb": round(props.total_mem / 1024 / 1024, 1),
+                        "allocated_mb": round(
+                            torch.cuda.memory_allocated(i) / 1024 / 1024, 1,
+                        ),
+                        "reserved_mb": round(
+                            torch.cuda.memory_reserved(i) / 1024 / 1024, 1,
+                        ),
+                    })
+                return gpus
         except Exception:
             pass
-        return {"used_mb": 0.0, "total_mb": 0.0}
+        return []
