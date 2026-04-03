@@ -70,6 +70,7 @@ class MoonDream2HF:
         device: torch.device = DEFAULT_DEVICE,
         **kwargs,
     ) -> "MoonDream2HF":
+        load_weights = kwargs.pop("load_weights", True)
         if torch.mps.is_available():
             raise ModelRuntimeError(
                 message=f"This model cannot run on Apple device with MPS unit - original implementation contains bug "
@@ -95,8 +96,11 @@ class MoonDream2HF:
             self.post_init()
 
         model_class.__init__ = _patched_init
-        model = model_class.from_pretrained(model_name_or_path).to(device)
-        _recompute_non_persistent_buffers(model_name_or_path, model)
+        if load_weights:
+            model = model_class.from_pretrained(model_name_or_path).to(device)
+            _recompute_non_persistent_buffers(model_name_or_path, model)
+        else:
+            model = None
         return cls(model=model, device=device)
 
     def __init__(self, model, device: torch.device):

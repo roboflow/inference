@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import heapq
+import logging
 import threading
 import time
 from concurrent.futures import Future
 from typing import Any, Callable, Dict, List, Tuple
+
+logger = logging.getLogger(__name__)
 
 
 class _PendingItem:
@@ -83,6 +86,10 @@ class BatchCollector:
             target=self._dispatch_loop, daemon=True, name="batch-collector"
         )
         self._thread.start()
+        logger.info(
+            "BatchCollector started | max_size=%d | max_delay=%.1fms",
+            max_size, max_delay_s * 1000,
+        )
 
     # ------------------------------------------------------------------
     # Public API

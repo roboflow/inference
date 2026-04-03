@@ -81,6 +81,7 @@ class YOLOACTForInstanceSegmentationOnnx(
         recommended_parameters: Optional[RecommendedParameters] = None,
         **kwargs,
     ) -> "YOLOACTForInstanceSegmentationOnnx":
+        load_weights = kwargs.pop("load_weights", True)
         if onnx_execution_providers is None:
             onnx_execution_providers = get_selected_onnx_execution_providers()
         if not onnx_execution_providers:
@@ -128,20 +129,26 @@ class YOLOACTForInstanceSegmentationOnnx(
                 )
             },
         )
-        session = onnxruntime.InferenceSession(
-            path_or_bytes=model_package_content["weights.onnx"],
-            providers=onnx_execution_providers,
-        )
-        input_batch_size = session.get_inputs()[0].shape[0]
-        if input_batch_size != 1:
-            raise ModelRuntimeError(
-                message="Implementation of YOLOACTForInstanceSegmentationOnnx is adjusted to work correctly with "
-                "onnx models accepting inputs with `batch_size=1`. It can be extended if needed, but we've "
-                "not heard such request so far. If you find that a valuable feature - let us know via "
-                "https://github.com/roboflow/inference/issues",
-                help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
+        if load_weights:
+            session = onnxruntime.InferenceSession(
+                path_or_bytes=model_package_content["weights.onnx"],
+                providers=onnx_execution_providers,
             )
-        input_name = session.get_inputs()[0].name
+        else:
+            session = None
+        if session:
+            input_batch_size = session.get_inputs()[0].shape[0]
+            if input_batch_size != 1:
+                raise ModelRuntimeError(
+                    message="Implementation of YOLOACTForInstanceSegmentationOnnx is adjusted to work correctly with "
+                    "onnx models accepting inputs with `batch_size=1`. It can be extended if needed, but we've "
+                    "not heard such request so far. If you find that a valuable feature - let us know via "
+                    "https://github.com/roboflow/inference/issues",
+                    help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
+                )
+            input_name = session.get_inputs()[0].name
+        else:
+            input_name = None
         return cls(
             session=session,
             input_name=input_name,

@@ -55,6 +55,7 @@ class DocTR(StructuredOCRModel[List[np.ndarray], ImageDimensions, Document]):
         recognition_max_batch_size: int = 128,
         **kwargs,
     ) -> "StructuredOCRModel":
+        load_weights = kwargs.pop("load_weights", True)
         model_package_content = get_model_package_contents(
             model_package_dir=model_name_or_path,
             elements=["detection_weights.pt", "recognition_weights.pt", "config.json"],
@@ -70,38 +71,41 @@ class DocTR(StructuredOCRModel[List[np.ndarray], ImageDimensions, Document]):
                 message=f"{config.rec_model} model denoted in configuration not supported as DocTR recognition model.",
                 help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
-        det_model = detection_predictor(
-            arch=config.det_model,
-            pretrained=False,
-            assume_straight_pages=assume_straight_pages,
-            preserve_aspect_ratio=preserve_aspect_ratio,
-            batch_size=detection_max_batch_size,
-            pretrained_backbone=False,
-        )
-        det_model.model.to(device)
-        detector_weights = torch.load(
-            model_package_content["detection_weights.pt"],
-            weights_only=True,
-            map_location=device,
-        )
-        det_model.model.load_state_dict(detector_weights)
-        rec_model = recognition_predictor(
-            arch=config.rec_model,
-            pretrained=False,
-            batch_size=recognition_max_batch_size,
-            pretrained_backbone=False,
-        )
-        rec_model.model.to(device)
-        rec_weights = torch.load(
-            model_package_content["recognition_weights.pt"],
-            weights_only=True,
-            map_location=device,
-        )
-        rec_model.model.load_state_dict(rec_weights)
-        model = ocr_predictor(
-            det_arch=det_model.model,
-            reco_arch=rec_model.model,
-        ).to(device=device)
+        if load_weights:
+            det_model = detection_predictor(
+                arch=config.det_model,
+                pretrained=False,
+                assume_straight_pages=assume_straight_pages,
+                preserve_aspect_ratio=preserve_aspect_ratio,
+                batch_size=detection_max_batch_size,
+                pretrained_backbone=False,
+            )
+            det_model.model.to(device)
+            detector_weights = torch.load(
+                model_package_content["detection_weights.pt"],
+                weights_only=True,
+                map_location=device,
+            )
+            det_model.model.load_state_dict(detector_weights)
+            rec_model = recognition_predictor(
+                arch=config.rec_model,
+                pretrained=False,
+                batch_size=recognition_max_batch_size,
+                pretrained_backbone=False,
+            )
+            rec_model.model.to(device)
+            rec_weights = torch.load(
+                model_package_content["recognition_weights.pt"],
+                weights_only=True,
+                map_location=device,
+            )
+            rec_model.model.load_state_dict(rec_weights)
+            model = ocr_predictor(
+                det_arch=det_model.model,
+                reco_arch=rec_model.model,
+            ).to(device=device)
+        else:
+            model = None
         return cls(model=model, device=device)
 
     def __init__(

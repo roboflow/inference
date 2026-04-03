@@ -46,20 +46,22 @@ class MediaPipeFaceDetector(
         recommended_parameters: Optional[RecommendedParameters] = None,
         **kwargs,
     ) -> "MediaPipeFaceDetector":
+        load_weights = kwargs.pop("load_weights", True)
         model_package_content = get_model_package_contents(
             model_package_dir=model_name_or_path,
             elements=["mediapipe_face_detector.tflite"],
         )
-        face_detector = mp.tasks.vision.FaceDetector.create_from_options(
-            mp.tasks.vision.FaceDetectorOptions(
-                base_options=mp.tasks.BaseOptions(
-                    model_asset_path=model_package_content[
-                        "mediapipe_face_detector.tflite"
-                    ]
-                ),
-                running_mode=mp.tasks.vision.RunningMode.IMAGE,
+        if load_weights:
+            face_detector = mp.tasks.vision.FaceDetector.create_from_options(
+                mp.tasks.vision.FaceDetectorOptions(
+                    base_options=mp.tasks.BaseOptions(
+                        model_asset_path=model_package_content[
+                            "mediapipe_face_detector.tflite"
+                        ]
+                    ),
+                    running_mode=mp.tasks.vision.RunningMode.IMAGE,
+                )
             )
-        )
         return cls(
             face_detector=face_detector,
             recommended_parameters=recommended_parameters,

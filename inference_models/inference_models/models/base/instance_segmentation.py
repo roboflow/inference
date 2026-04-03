@@ -108,6 +108,11 @@ class InstanceSegmentationModel(
     def supported_mask_formats(self) -> Set[InstanceSegmentationMaskFormat]:
         pass
 
+    @property
+    def max_batch_size(self) -> Optional[int]:
+        """Maximum batch size the model supports, or ``None`` if unlimited."""
+        return getattr(self, "_max_batch_size", None)
+
     def infer(
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],

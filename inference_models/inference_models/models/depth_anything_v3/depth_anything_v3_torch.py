@@ -126,6 +126,7 @@ class DepthAnythingV3Torch(
         local_files_only: bool = True,
         **kwargs,
     ) -> "DepthAnythingV3Torch":
+        load_weights = kwargs.pop("load_weights", True)
         if device.type == "cpu":
             warnings.warn(
                 "Running DepthAnythingV3 on CPU. This may be slow. "
@@ -145,39 +146,43 @@ class DepthAnythingV3Torch(
         )
 
         config = parse_config(model_package["config.json"])
-        model = DepthAnything3Net(**config)
 
-        state_dict = load_safetensors(model_package["model.safetensors"])
-        state_dict = convert_state_dict(state_dict)
+        if load_weights:
+            model = DepthAnything3Net(**config)
 
-        # Filter out expected missing keys:
-        # - cam_enc, cam_dec: Camera encoder/decoder (not used for depth-only)
-        # - gs_head, gs_adapter: Gaussian splatting head (not used)
-        # - output_conv2_aux: Auxiliary ray prediction heads (not used for depth-only)
-        expected_missing = [
-            "cam_enc",
-            "cam_dec",
-            "gs_head",
-            "gs_adapter",
-            "output_conv2_aux",
-        ]
-        missing, unexpected = model.load_state_dict(state_dict, strict=False)
-        unexpected_filtered = [
-            k for k in unexpected if not any(skip in k for skip in expected_missing)
-        ]
-        missing_filtered = [
-            k for k in missing if not any(skip in k for skip in expected_missing)
-        ]
+            state_dict = load_safetensors(model_package["model.safetensors"])
+            state_dict = convert_state_dict(state_dict)
 
-        if missing_filtered:
-            warnings.warn(f"Missing keys when loading weights: {missing_filtered}")
-        if unexpected_filtered:
-            warnings.warn(
-                f"Unexpected keys when loading weights: {unexpected_filtered}"
-            )
+            # Filter out expected missing keys:
+            # - cam_enc, cam_dec: Camera encoder/decoder (not used for depth-only)
+            # - gs_head, gs_adapter: Gaussian splatting head (not used)
+            # - output_conv2_aux: Auxiliary ray prediction heads (not used for depth-only)
+            expected_missing = [
+                "cam_enc",
+                "cam_dec",
+                "gs_head",
+                "gs_adapter",
+                "output_conv2_aux",
+            ]
+            missing, unexpected = model.load_state_dict(state_dict, strict=False)
+            unexpected_filtered = [
+                k for k in unexpected if not any(skip in k for skip in expected_missing)
+            ]
+            missing_filtered = [
+                k for k in missing if not any(skip in k for skip in expected_missing)
+            ]
 
-        model = model.to(device, dtype=dtype)
-        model.eval()
+            if missing_filtered:
+                warnings.warn(f"Missing keys when loading weights: {missing_filtered}")
+            if unexpected_filtered:
+                warnings.warn(
+                    f"Unexpected keys when loading weights: {unexpected_filtered}"
+                )
+
+            model = model.to(device, dtype=dtype)
+            model.eval()
+        else:
+            model = None
 
         processor = AutoImageProcessor.from_pretrained(
             model_name_or_path,

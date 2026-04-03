@@ -57,22 +57,26 @@ class GlmOcrHF:
         quantization_config: Any = None,
         **kwargs,
     ) -> "GlmOcrHF":
+        load_weights = kwargs.pop("load_weights", True)
         dtype = cls.default_dtype
         attn_implementation = _get_glm_ocr_attn_implementation(device)
 
-        model = (
-            AutoModelForImageTextToText.from_pretrained(
-                model_name_or_path,
-                device_map=device,
-                torch_dtype=dtype,
-                trust_remote_code=trust_remote_code,
-                local_files_only=local_files_only,
-                quantization_config=quantization_config,
-                attn_implementation=attn_implementation,
+        if load_weights:
+            model = (
+                AutoModelForImageTextToText.from_pretrained(
+                    model_name_or_path,
+                    device_map=device,
+                    torch_dtype=dtype,
+                    trust_remote_code=trust_remote_code,
+                    local_files_only=local_files_only,
+                    quantization_config=quantization_config,
+                    attn_implementation=attn_implementation,
+                )
+                .eval()
+                .to(dtype)
             )
-            .eval()
-            .to(dtype)
-        )
+        else:
+            model = None
 
         processor = AutoProcessor.from_pretrained(
             model_name_or_path,
