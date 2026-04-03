@@ -4,6 +4,7 @@ from typing import Any, Dict, Optional, Tuple, Union
 from cachetools.func import ttl_cache
 
 from inference.core.cache import cache
+from inference.core.cache.lru_cache import LRUCache
 from inference.core.devices.utils import GLOBAL_DEVICE_ID
 from inference.core.entities.types import (
     DatasetID,
@@ -19,6 +20,7 @@ from inference.core.env import (
     MODELS_CACHE_AUTH_CACHE_MAX_SIZE,
     MODELS_CACHE_AUTH_CACHE_TTL,
     MODELS_CACHE_AUTH_ENABLED,
+    USE_INFERENCE_MODELS,
 )
 from inference.core.exceptions import (
     MissingApiKeyError,
@@ -34,6 +36,7 @@ from inference.core.roboflow_api import (
     MODEL_TYPE_KEY,
     PROJECT_TASK_TYPE_KEY,
     ModelEndpointType,
+    get_model_metadata_from_inference_models_registry,
     get_roboflow_dataset_type,
     get_roboflow_instant_model_data,
     get_roboflow_model_data,
@@ -63,9 +66,14 @@ GENERIC_MODELS = {
     "depth-anything-v3": ("depth-estimation", "depth-anything-v3"),
     "moondream2": ("lmm", "moondream2"),
     "perception_encoder": ("embed", "perception_encoder"),
+    "qwen3_5-0.8b": ("lmm", "qwen3_5-0.8b"),
+    "qwen3_5-2b": ("lmm", "qwen3_5-2b"),
 }
 
 STUB_VERSION_ID = "0"
+
+# In-process cache for model metadata to avoid Redis lock contention on every request.
+_in_process_metadata_cache = LRUCache(capacity=1000)
 
 
 class RoboflowModelRegistry(ModelRegistry):
@@ -127,8 +135,15 @@ def _check_if_api_key_has_access_to_model(
                 countinference=countinference,
                 service_secret=service_secret,
             )
-        else:
+        elif not USE_INFERENCE_MODELS:
             get_roboflow_instant_model_data(
+                api_key=api_key,
+                model_id=model_id,
+                countinference=countinference,
+                service_secret=service_secret,
+            )
+        else:
+            get_model_metadata_from_inference_models_registry(
                 api_key=api_key,
                 model_id=model_id,
                 countinference=countinference,
@@ -163,10 +178,6 @@ def get_model_type(
 
     model_id = resolve_roboflow_model_alias(model_id=model_id)
     dataset_id, version_id = get_model_id_chunks(model_id=model_id)
-    print(
-        f"Resolved model_id: {model_id}, dataset_id: {dataset_id}, version_id: {version_id}"
-    )
-
     # first check if the model id as a whole is in the GENERIC_MODELS dictionary
     if model_id in GENERIC_MODELS:
         logger.debug(f"Loading generic model: {model_id}.")
@@ -222,8 +233,16 @@ def get_model_type(
             device_id=GLOBAL_DEVICE_ID,
         ).get("ort")
         project_task_type = api_data.get("type", "object-detection")
-    else:
+    elif not USE_INFERENCE_MODELS:
         api_data = get_roboflow_instant_model_data(
+            api_key=api_key,
+            model_id=model_id,
+            countinference=countinference,
+            service_secret=service_secret,
+        )
+        project_task_type = api_data.get("taskType", "object-detection")
+    else:
+        api_data = get_model_metadata_from_inference_models_registry(
             api_key=api_key,
             model_id=model_id,
             countinference=countinference,
@@ -239,6 +258,7 @@ def get_model_type(
         # some very old model versions do not have modelType reported - and API respond in a generic way -
         # then we shall attempt using default model for given task type
         model_type = MODEL_TYPE_DEFAULTS.get(project_task_type)
+
     if model_type is None or project_task_type is None:
         raise ModelArtefactError("Error loading model artifacts from Roboflow API.")
     save_model_metadata_in_cache(
@@ -255,16 +275,25 @@ def get_model_metadata_from_cache(
     dataset_id: Union[DatasetID, ModelID],
     version_id: Optional[VersionID],
 ) -> Optional[Tuple[TaskType, ModelType]]:
+    cache_key = (dataset_id, version_id)
+    cached = _in_process_metadata_cache.get(cache_key)
+    if cached is not None:
+        return cached
     if LAMBDA:
-        return _get_model_metadata_from_cache(
+        result = _get_model_metadata_from_cache(
             dataset_id=dataset_id, version_id=version_id
         )
-    with cache.lock(
-        f"lock:metadata:{dataset_id}:{version_id}", expire=CACHE_METADATA_LOCK_TIMEOUT
-    ):
-        return _get_model_metadata_from_cache(
-            dataset_id=dataset_id, version_id=version_id
-        )
+    else:
+        with cache.lock(
+            f"lock:metadata:{dataset_id}:{version_id}",
+            expire=CACHE_METADATA_LOCK_TIMEOUT,
+        ):
+            result = _get_model_metadata_from_cache(
+                dataset_id=dataset_id, version_id=version_id
+            )
+    if result is not None:
+        _in_process_metadata_cache.set(cache_key, result)
+    return result
 
 
 def _get_model_metadata_from_cache(
@@ -315,17 +344,20 @@ def save_model_metadata_in_cache(
             project_task_type=project_task_type,
             model_type=model_type,
         )
-        return None
-    with cache.lock(
-        f"lock:metadata:{dataset_id}:{version_id}", expire=CACHE_METADATA_LOCK_TIMEOUT
-    ):
-        _save_model_metadata_in_cache(
-            dataset_id=dataset_id,
-            version_id=version_id,
-            project_task_type=project_task_type,
-            model_type=model_type,
-        )
-        return None
+    else:
+        with cache.lock(
+            f"lock:metadata:{dataset_id}:{version_id}",
+            expire=CACHE_METADATA_LOCK_TIMEOUT,
+        ):
+            _save_model_metadata_in_cache(
+                dataset_id=dataset_id,
+                version_id=version_id,
+                project_task_type=project_task_type,
+                model_type=model_type,
+            )
+    _in_process_metadata_cache.set(
+        (dataset_id, version_id), (project_task_type, model_type)
+    )
 
 
 def _save_model_metadata_in_cache(

@@ -1,11 +1,16 @@
+import threading
 from threading import Lock
 from typing import List, Optional, Tuple, Union
 
 import numpy as np
 import torch
 
-from inference_models import Detections, ObjectDetectionModel
-from inference_models.configuration import DEFAULT_DEVICE
+from inference_models import Detections, ObjectDetectionModel, PreProcessingOverrides
+from inference_models.configuration import (
+    DEFAULT_DEVICE,
+    INFERENCE_MODELS_YOLOV10_DEFAULT_CONFIDENCE,
+    INFERENCE_MODELS_YOLOV10_DEFAULT_MAX_DETECTIONS,
+)
 from inference_models.entities import ColorFormat
 from inference_models.errors import (
     CorruptedModelPackageError,
@@ -33,31 +38,37 @@ from inference_models.models.common.roboflow.pre_processing import (
     pre_process_network_input,
 )
 from inference_models.models.common.trt import (
-    get_engine_inputs_and_outputs,
+    TRTCudaGraphCache,
+    establish_trt_cuda_graph_cache,
+    get_trt_engine_inputs_and_outputs,
     infer_from_trt_engine,
-    load_model,
+    load_trt_model,
 )
 
 try:
     import tensorrt as trt
 except ImportError as import_error:
     raise MissingDependencyError(
-        message=f"Could not import YOLOv10 model with TRT backend - this error means that some additional dependencies "
-        f"are not installed in the environment. If you run the `inference-models` library directly in your Python "
-        f"program, make sure the following extras of the package are installed: `trt10` - installation can only "
-        f"succeed for Linux and Windows machines with Cuda 12 installed. Jetson devices, should have TRT 10.x "
-        f"installed for all builds with Jetpack 6. "
-        f"If you see this error using Roboflow infrastructure, make sure the service you use does support the model. "
-        f"You can also contact Roboflow to get support.",
-        help_url="https://todo",
+        message="Running YOLOv10 model with TRT backend on GPU requires pycuda installation, which is brought with "
+        "`trt-*` extras of `inference-models` library. If you see this error running locally, "
+        "please follow our installation guide: https://inference-models.roboflow.com/getting-started/installation/"
+        " If you see this error using Roboflow infrastructure, make sure the service you use does support the "
+        f"model, You can also contact Roboflow to get support. Additionally - if AutoModel.from_pretrained(...) "
+        f"automatically selects model package which does not match your environment - that's a serious problem and "
+        f"we will really appreciate letting us know - https://github.com/roboflow/inference/issues",
+        help_url="https://inference-models.roboflow.com/errors/runtime-environment/#missingdependencyerror",
     ) from import_error
 
 try:
     import pycuda.driver as cuda
 except ImportError as import_error:
     raise MissingDependencyError(
-        message="TODO",
-        help_url="https://todo",
+        message="Running YOLOv10 model with TRT backend on GPU requires pycuda installation, which is brought with "
+        "`trt-*` extras of `inference-models` library. If you see this error running locally, "
+        "please follow our installation guide: https://inference-models.roboflow.com/getting-started/installation/"
+        " If you see this error using Roboflow infrastructure, make sure the service you use does support the "
+        f"model, You can also contact Roboflow to get support.",
+        help_url="https://inference-models.roboflow.com/errors/runtime-environment/#missingdependencyerror",
     ) from import_error
 
 
@@ -71,12 +82,14 @@ class YOLOv10ForObjectDetectionTRT(
         model_name_or_path: str,
         device: torch.device = DEFAULT_DEVICE,
         engine_host_code_allowed: bool = False,
+        trt_cuda_graph_cache: Optional[TRTCudaGraphCache] = None,
+        default_trt_cuda_graph_cache_size: int = 8,
         **kwargs,
     ) -> "YOLOv10ForObjectDetectionTRT":
         if device.type != "cuda":
             raise ModelRuntimeError(
-                message="TRT engine only runs on CUDA device - {device} device detected.",
-                help_url="https://todo",
+                message=f"TRT engine only runs on CUDA device - {device} device detected.",
+                help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
             )
         model_package_content = get_model_package_contents(
             model_package_dir=model_name_or_path,
@@ -98,6 +111,17 @@ class YOLOv10ForObjectDetectionTRT(
                 ResizeMode.CENTER_CROP,
                 ResizeMode.LETTERBOX_REFLECT_EDGES,
             },
+            implicit_resize_mode_substitutions={
+                ResizeMode.FIT_LONGER_EDGE: (
+                    ResizeMode.LETTERBOX,
+                    127,
+                    "YOLOv10 Object Detection model running with TRT backend was trained with "
+                    "`fit-longer-edge` input resize mode. This transform cannot be applied properly for "
+                    "models with input dimensions fixed during weights export. To ensure interoperability, `letterbox` "
+                    "resize mode with gray edges will be used instead. If model was trained on Roboflow platform, "
+                    "we recommend using preprocessing method different that `fit-longer-edge`.",
+                )
+            },
         )
         trt_config = parse_trt_config(
             config_path=model_package_content["trt_config.json"]
@@ -105,22 +129,26 @@ class YOLOv10ForObjectDetectionTRT(
         cuda.init()
         cuda_device = cuda.Device(device.index or 0)
         with use_primary_cuda_context(cuda_device=cuda_device) as cuda_context:
-            engine = load_model(
+            engine = load_trt_model(
                 model_path=model_package_content["engine.plan"],
                 engine_host_code_allowed=engine_host_code_allowed,
             )
             execution_context = engine.create_execution_context()
-        inputs, outputs = get_engine_inputs_and_outputs(engine=engine)
+        inputs, outputs = get_trt_engine_inputs_and_outputs(engine=engine)
         if len(inputs) != 1:
             raise CorruptedModelPackageError(
                 message=f"Implementation assume single model input, found: {len(inputs)}.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
         if len(outputs) != 1:
             raise CorruptedModelPackageError(
                 message=f"Implementation assume single model output, found: {len(outputs)}.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
+        trt_cuda_graph_cache = establish_trt_cuda_graph_cache(
+            default_cuda_graph_cache_size=default_trt_cuda_graph_cache_size,
+            cuda_graph_cache=trt_cuda_graph_cache,
+        )
         return cls(
             engine=engine,
             input_name=inputs[0],
@@ -131,6 +159,7 @@ class YOLOv10ForObjectDetectionTRT(
             device=device,
             cuda_context=cuda_context,
             execution_context=execution_context,
+            trt_cuda_graph_cache=trt_cuda_graph_cache,
         )
 
     def __init__(
@@ -144,6 +173,7 @@ class YOLOv10ForObjectDetectionTRT(
         device: torch.device,
         cuda_context: cuda.Context,
         execution_context: trt.IExecutionContext,
+        trt_cuda_graph_cache: Optional[TRTCudaGraphCache],
     ):
         self._engine = engine
         self._input_name = input_name
@@ -154,7 +184,10 @@ class YOLOv10ForObjectDetectionTRT(
         self._device = device
         self._cuda_context = cuda_context
         self._execution_context = execution_context
+        self._trt_cuda_graph_cache = trt_cuda_graph_cache
         self._session_thread_lock = Lock()
+        self._inference_stream = torch.cuda.Stream(device=self._device)
+        self._thread_local_storage = threading.local()
 
     @property
     def class_names(self) -> List[str]:
@@ -164,17 +197,28 @@ class YOLOv10ForObjectDetectionTRT(
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         input_color_format: Optional[ColorFormat] = None,
+        pre_processing_overrides: Optional[PreProcessingOverrides] = None,
         **kwargs,
     ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
-        return pre_process_network_input(
-            images=images,
-            image_pre_processing=self._inference_config.image_pre_processing,
-            network_input=self._inference_config.network_input,
-            target_device=self._device,
-            input_color_format=input_color_format,
-        )
+        with torch.cuda.stream(self._pre_process_stream):
+            pre_processed_images, pre_processing_meta = pre_process_network_input(
+                images=images,
+                image_pre_processing=self._inference_config.image_pre_processing,
+                network_input=self._inference_config.network_input,
+                target_device=self._device,
+                input_color_format=input_color_format,
+                pre_processing_overrides=pre_processing_overrides,
+            )
+        self._pre_process_stream.synchronize()
+        return pre_processed_images, pre_processing_meta
 
-    def forward(self, pre_processed_images: torch.Tensor, **kwargs) -> torch.Tensor:
+    def forward(
+        self,
+        pre_processed_images: torch.Tensor,
+        disable_cuda_graphs: bool = False,
+        **kwargs,
+    ) -> torch.Tensor:
+        cache = self._trt_cuda_graph_cache if not disable_cuda_graphs else None
         with self._session_thread_lock:
             with use_cuda_context(context=self._cuda_context):
                 return infer_from_trt_engine(
@@ -185,31 +229,50 @@ class YOLOv10ForObjectDetectionTRT(
                     device=self._device,
                     input_name=self._input_name,
                     outputs=self._output_names,
+                    stream=self._inference_stream,
+                    trt_cuda_graph_cache=cache,
                 )[0]
 
     def post_process(
         self,
         model_results: torch.Tensor,
         pre_processing_meta: List[PreProcessingMetadata],
-        conf_thresh: float = 0.25,
-        iou_thresh: float = 0.45,
-        max_detections: int = 100,
-        class_agnostic: bool = False,
+        confidence: float = INFERENCE_MODELS_YOLOV10_DEFAULT_CONFIDENCE,
+        max_detections: int = INFERENCE_MODELS_YOLOV10_DEFAULT_MAX_DETECTIONS,
         **kwargs,
     ) -> List[Detections]:
-        results = []
-        for image_result, metadata in zip(model_results, pre_processing_meta):
-            mask = image_result[:, 4] > conf_thresh
-            filtered = image_result[mask][:max_detections]
-            rescaled = rescale_image_detections(
-                image_detections=filtered,
-                image_metadata=metadata,
-            )
-            results.append(
-                Detections(
-                    xyxy=rescaled[:, :4].round().int(),
-                    class_id=rescaled[:, 5].int(),
-                    confidence=rescaled[:, 4],
+        with torch.cuda.stream(self._post_process_stream):
+            model_results.record_stream(self._post_process_stream)
+            results = []
+            for image_result, metadata in zip(model_results, pre_processing_meta):
+                mask = image_result[:, 4] > confidence
+                filtered = image_result[mask][:max_detections]
+                rescaled = rescale_image_detections(
+                    image_detections=filtered,
+                    image_metadata=metadata,
                 )
-            )
+                results.append(
+                    Detections(
+                        xyxy=rescaled[:, :4].round().int(),
+                        class_id=rescaled[:, 5].int(),
+                        confidence=rescaled[:, 4],
+                    )
+                )
+        self._post_process_stream.synchronize()
         return results
+
+    @property
+    def _pre_process_stream(self) -> torch.cuda.Stream:
+        if not hasattr(self._thread_local_storage, "pre_process_stream"):
+            self._thread_local_storage.pre_process_stream = torch.cuda.Stream(
+                device=self._device
+            )
+        return self._thread_local_storage.pre_process_stream
+
+    @property
+    def _post_process_stream(self) -> torch.cuda.Stream:
+        if not hasattr(self._thread_local_storage, "post_process_stream"):
+            self._thread_local_storage.post_process_stream = torch.cuda.Stream(
+                device=self._device
+            )
+        return self._thread_local_storage.post_process_stream

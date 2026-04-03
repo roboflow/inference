@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 from typing import Dict, Optional, Set, Tuple, Union
 
-from inference_models.errors import ModelImplementationLoaderError
+from inference_models.errors import ModelImplementationNotFoundError
 from inference_models.models.auto_loaders.entities import (
     BackendType,
     ModelArchitecture,
@@ -29,6 +29,7 @@ INTERACTIVE_INSTANCE_SEGMENTATION_TASK = "interactive-instance-segmentation"
 class RegistryEntry:
     model_class: LazyClass
     supported_model_features: Optional[Set[str]] = field(default=None)
+    required_model_features: Optional[Set[str]] = field(default=None)
 
 
 REGISTERED_MODELS: Dict[
@@ -46,25 +47,13 @@ REGISTERED_MODELS: Dict[
         module_name="inference_models.models.yolov5.yolov5_object_detection_onnx",
         class_name="YOLOv5ForObjectDetectionOnnx",
     ),
-    ("yolov5", OBJECT_DETECTION_TASK, BackendType.TRT): LazyClass(
-        module_name="inference_models.models.yolov5.yolov5_object_detection_trt",
-        class_name="YOLOv5ForObjectDetectionTRT",
-    ),
     ("yolov5", INSTANCE_SEGMENTATION_TASK, BackendType.ONNX): LazyClass(
         module_name="inference_models.models.yolov5.yolov5_instance_segmentation_onnx",
         class_name="YOLOv5ForInstanceSegmentationOnnx",
     ),
-    ("yolov5", INSTANCE_SEGMENTATION_TASK, BackendType.TRT): LazyClass(
-        module_name="inference_models.models.yolov5.yolov5_instance_segmentation_trt",
-        class_name="YOLOv5ForInstanceSegmentationTRT",
-    ),
     ("yolov7", INSTANCE_SEGMENTATION_TASK, BackendType.ONNX): LazyClass(
         module_name="inference_models.models.yolov7.yolov7_instance_segmentation_onnx",
         class_name="YOLOv7ForInstanceSegmentationOnnx",
-    ),
-    ("yolov7", INSTANCE_SEGMENTATION_TASK, BackendType.TRT): LazyClass(
-        module_name="inference_models.models.yolov7.yolov7_instance_segmentation_trt",
-        class_name="YOLOv7ForInstanceSegmentationTRT",
     ),
     ("yolov8", CLASSIFICATION_TASK, BackendType.ONNX): RegistryEntry(
         model_class=LazyClass(
@@ -230,6 +219,46 @@ REGISTERED_MODELS: Dict[
         module_name="inference_models.models.yolov12.yolov12_trt",
         class_name="YOLOv12ForObjectDetectionTRT",
     ),
+    ("yolo26", OBJECT_DETECTION_TASK, BackendType.ONNX): LazyClass(
+        module_name="inference_models.models.yolo26.yolo26_object_detection_onnx",
+        class_name="YOLO26ForObjectDetectionOnnx",
+    ),
+    ("yolo26", OBJECT_DETECTION_TASK, BackendType.TORCH_SCRIPT): LazyClass(
+        module_name="inference_models.models.yolo26.yolo26_object_detection_torch_script",
+        class_name="YOLO26ForObjectDetectionTorchScript",
+    ),
+    ("yolo26", OBJECT_DETECTION_TASK, BackendType.TRT): LazyClass(
+        module_name="inference_models.models.yolo26.yolo26_object_detection_trt",
+        class_name="YOLO26ForObjectDetectionTRT",
+    ),
+    ("yolo26", KEYPOINT_DETECTION_TASK, BackendType.ONNX): LazyClass(
+        module_name="inference_models.models.yolo26.yolo26_key_points_detection_onnx",
+        class_name="YOLO26ForKeyPointsDetectionOnnx",
+    ),
+    ("yolo26", KEYPOINT_DETECTION_TASK, BackendType.TORCH_SCRIPT): LazyClass(
+        module_name="inference_models.models.yolo26.yolo26_key_points_detection_torch_script",
+        class_name="YOLO26ForKeyPointsDetectionTorchScript",
+    ),
+    ("yolo26", KEYPOINT_DETECTION_TASK, BackendType.TRT): LazyClass(
+        module_name="inference_models.models.yolo26.yolo26_key_points_detection_trt",
+        class_name="YOLO26ForKeyPointsDetectionTRT",
+    ),
+    ("yolo26", INSTANCE_SEGMENTATION_TASK, BackendType.ONNX): LazyClass(
+        module_name="inference_models.models.yolo26.yolo26_instance_segmentation_onnx",
+        class_name="YOLO26ForInstanceSegmentationOnnx",
+    ),
+    ("yolo26", INSTANCE_SEGMENTATION_TASK, BackendType.TORCH_SCRIPT): LazyClass(
+        module_name="inference_models.models.yolo26.yolo26_instance_segmentation_torch_script",
+        class_name="YOLO26ForInstanceSegmentationTorchScript",
+    ),
+    ("yolo26", INSTANCE_SEGMENTATION_TASK, BackendType.TRT): LazyClass(
+        module_name="inference_models.models.yolo26.yolo26_instance_segmentation_trt",
+        class_name="YOLO26ForInstanceSegmentationTRT",
+    ),
+    ("yololite", OBJECT_DETECTION_TASK, BackendType.ONNX): LazyClass(
+        module_name="inference_models.models.yololite.yololite_object_detection_onnx",
+        class_name="YOLOLiteForObjectDetectionOnnx",
+    ),
     ("paligemma-2", VLM_TASK, BackendType.HF): LazyClass(
         module_name="inference_models.models.paligemma.paligemma_hf",
         class_name="PaliGemmaHF",
@@ -249,6 +278,10 @@ REGISTERED_MODELS: Dict[
     ("qwen3vl", VLM_TASK, BackendType.HF): LazyClass(
         module_name="inference_models.models.qwen3vl.qwen3vl_hf",
         class_name="Qwen3VLHF",
+    ),
+    ("qwen3_5", VLM_TASK, BackendType.HF): LazyClass(
+        module_name="inference_models.models.qwen3_5.qwen3_5_hf",
+        class_name="Qwen35HF",
     ),
     ("florence-2", VLM_TASK, BackendType.HF): LazyClass(
         module_name="inference_models.models.florence2.florence2_hf",
@@ -274,9 +307,19 @@ REGISTERED_MODELS: Dict[
         module_name="inference_models.models.rfdetr.rfdetr_object_detection_pytorch",
         class_name="RFDetrForObjectDetectionTorch",
     ),
-    ("rfdetr", OBJECT_DETECTION_TASK, BackendType.ONNX): LazyClass(
-        module_name="inference_models.models.rfdetr.rfdetr_object_detection_onnx",
-        class_name="RFDetrForObjectDetectionONNX",
+    ("rfdetr", OBJECT_DETECTION_TASK, BackendType.ONNX): RegistryEntry(
+        model_class=LazyClass(
+            module_name="inference_models.models.rfdetr.rfdetr_object_detection_onnx",
+            class_name="RFDetrForObjectDetectionONNX",
+        ),
+        supported_model_features={
+            "resolution",
+            "patch_size",
+            "num_windows",
+            "dec_layers",
+            "num_queries",
+            "num_select",
+        },
     ),
     ("rfdetr", INSTANCE_SEGMENTATION_TASK, BackendType.TORCH): LazyClass(
         module_name="inference_models.models.rfdetr.rfdetr_instance_segmentation_pytorch",
@@ -293,6 +336,10 @@ REGISTERED_MODELS: Dict[
     ("moondream2", VLM_TASK, BackendType.HF): LazyClass(
         module_name="inference_models.models.moondream2.moondream2_hf",
         class_name="MoonDream2HF",
+    ),
+    ("glm-ocr", VLM_TASK, BackendType.HF): LazyClass(
+        module_name="inference_models.models.glm_ocr.glm_ocr_hf",
+        class_name="GlmOcrHF",
     ),
     ("vit", CLASSIFICATION_TASK, BackendType.ONNX): LazyClass(
         module_name="inference_models.models.vit.vit_classification_onnx",
@@ -362,10 +409,6 @@ REGISTERED_MODELS: Dict[
         module_name="inference_models.models.yolact.yolact_instance_segmentation_onnx",
         class_name="YOLOACTForInstanceSegmentationOnnx",
     ),
-    ("yolact", INSTANCE_SEGMENTATION_TASK, BackendType.TRT): LazyClass(
-        module_name="inference_models.models.yolact.yolact_instance_segmentation_trt",
-        class_name="YOLOACTForInstanceSegmentationTRT",
-    ),
     ("depth-anything-v2", DEPTH_ESTIMATION_TASK, BackendType.HF): LazyClass(
         module_name="inference_models.models.depth_anything_v2.depth_anything_v2_hf",
         class_name="DepthAnythingV2HF",
@@ -374,8 +417,12 @@ REGISTERED_MODELS: Dict[
         module_name="inference_models.models.depth_anything_v3.depth_anything_v3_torch",
         class_name="DepthAnythingV3Torch",
     ),
-    ("doctr", STRUCTURED_OCR_TASK, BackendType.TORCH): LazyClass(
-        module_name="inference_models.models.doctr.doctr_torch", class_name="DocTR"
+    ("doctr", STRUCTURED_OCR_TASK, BackendType.TORCH): RegistryEntry(
+        model_class=LazyClass(
+            module_name="inference_models.models.doctr.doctr_torch", class_name="DocTR"
+        ),
+        supported_model_features={"doctr_vocab_127"},
+        required_model_features={"doctr_vocab_127"},
     ),
     ("easy-ocr", STRUCTURED_OCR_TASK, BackendType.TORCH): LazyClass(
         module_name="inference_models.models.easy_ocr.easy_ocr_torch",
@@ -476,10 +523,10 @@ def resolve_model_class(
         backend=backend,
         model_features=model_features,
     ):
-        raise ModelImplementationLoaderError(
+        raise ModelImplementationNotFoundError(
             message=f"Did not find implementation for model with architecture: {model_architecture}, "
             f"task type: {task_type} backend: {backend} and model features: {model_features}",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/model-loading/#modelimplementationnotfounderror",
         )
     matched_model = REGISTERED_MODELS[(model_architecture, task_type, backend)]
     if isinstance(matched_model, RegistryEntry):
@@ -496,10 +543,24 @@ def model_implementation_exists(
     lookup_key = (model_architecture, task_type, backend)
     if lookup_key not in REGISTERED_MODELS:
         return False
-    if not model_features:
-        return True
     matched_model = REGISTERED_MODELS[(model_architecture, task_type, backend)]
-    if not isinstance(matched_model, RegistryEntry):
-        # features requested, but no supported features manifested
+    if isinstance(matched_model, RegistryEntry):
+        # Check if implementation requires features that package doesn't have
+        if matched_model.required_model_features:
+            package_features = model_features or set()
+            if not all(
+                f in package_features for f in matched_model.required_model_features
+            ):
+                return False
+        # Check if package has features that implementation doesn't support
+        if model_features:
+            if not matched_model.supported_model_features:
+                return False
+            if not all(
+                f in matched_model.supported_model_features for f in model_features
+            ):
+                return False
+    elif model_features:
+        # LazyClass (not RegistryEntry) - features requested but no supported features manifested
         return False
-    return all(f in matched_model.supported_model_features for f in model_features)
+    return True

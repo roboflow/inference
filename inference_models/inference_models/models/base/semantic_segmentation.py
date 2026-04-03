@@ -1,9 +1,8 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Generic, List, Optional, Tuple, Union
+from typing import Generic, List, Optional, Union
 
 import numpy as np
-import supervision as sv
 import torch
 
 from inference_models.models.base.types import (

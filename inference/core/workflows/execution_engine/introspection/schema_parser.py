@@ -1,6 +1,7 @@
 import itertools
 from collections import OrderedDict, defaultdict
 from dataclasses import replace
+from functools import lru_cache
 from typing import Dict, Optional, Set, Type
 
 from inference.core.workflows.execution_engine.entities.types import (
@@ -52,10 +53,21 @@ ONE_OF_KEY = "oneOf"
 OBJECT_TYPE = "object"
 
 
+def clear_cache() -> None:
+    """Clear the parse_block_manifest cache."""
+    parse_block_manifest.cache_clear()
+
+
+@lru_cache(maxsize=10000)
 def parse_block_manifest(
     manifest_type: Type[WorkflowBlockManifest],
 ) -> BlockManifestMetadata:
-    schema = manifest_type.model_json_schema()
+    # Import here to avoid circular dependency
+    from inference.core.workflows.execution_engine.introspection.blocks_loader import (
+        _cached_model_json_schema,
+    )
+
+    schema = _cached_model_json_schema(manifest_type)
     inputs_dimensionality_offsets = manifest_type.get_input_dimensionality_offsets()
     dimensionality_reference_property = (
         manifest_type.get_dimensionality_reference_property()

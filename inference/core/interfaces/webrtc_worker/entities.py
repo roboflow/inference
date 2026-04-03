@@ -49,6 +49,9 @@ class WebRTCWorkerRequest(BaseModel):
     # must be valid region: https://modal.com/docs/guide/region-selection#region-options
     requested_region: Optional[str] = None
 
+    workspace_id: Optional[str] = None
+    session_id: Optional[str] = None
+
 
 class WebRTCVideoMetadata(BaseModel):
     frame_id: int
@@ -57,6 +60,8 @@ class WebRTCVideoMetadata(BaseModel):
     time_base: Optional[float] = None
     declared_fps: Optional[float] = None
     measured_fps: Optional[float] = None
+    width: Optional[int] = None
+    height: Optional[int] = None
 
 
 class WebRTCOutput(BaseModel):
@@ -72,6 +77,7 @@ class WebRTCOutput(BaseModel):
     video_metadata: Optional[WebRTCVideoMetadata] = None
     errors: List[str] = Field(default_factory=list)
     processing_complete: bool = False  # Signals end of video file processing
+    termination_reason: Optional[str] = None
 
 
 class WebRTCWorkerResult(BaseModel):
@@ -81,6 +87,15 @@ class WebRTCWorkerResult(BaseModel):
     error_message: Optional[str] = None
     error_context: Optional[str] = None
     inner_error: Optional[str] = None
+    inner_error_type: Optional[str] = None
+    blocks_errors: Optional[List[Dict[str, Any]]] = None
+
+
+class WebRTCSessionHeartbeatRequest(BaseModel):
+    """Request body for WebRTC session heartbeat and end endpoints."""
+
+    session_id: str
+    api_key: str
 
 
 class StreamOutputMode(str, Enum):

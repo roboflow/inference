@@ -1,0 +1,302 @@
+{
+    "version": "1.0",
+    "inputs": [
+        {
+            "type": "InferenceImage",
+            "name": "image"
+        }
+    ],
+    "steps": [
+        {
+            "type": "roboflow_core/roboflow_object_detection_model@v1",
+            "name": "model",
+            "images": "$inputs.image",
+            "model_id": "vehicle-detection-bz0yu/4",
+            "iou_threshold": 0.5,
+            "confidence": 0.5
+        },
+        {
+            "type": "roboflow_core/bounding_box_visualization@v1",
+            "name": "bounding_box_visualization",
+            "image": "$inputs.image",
+            "predictions": "$steps.model.predictions"
+        },
+        {
+            "type": "roboflow_core/dynamic_crop@v1",
+            "name": "dynamic_crop",
+            "images": "$inputs.image",
+            "predictions": "$steps.detection_offset.predictions"
+        },
+        {
+            "type": "roboflow_core/roboflow_object_detection_model@v2",
+            "name": "LP-det",
+            "images": "$steps.dynamic_crop.crops",
+            "model_id": "license-plate-w8chc/1"
+        },
+        {
+            "type": "roboflow_core/detections_list_rollup@v1",
+            "name": "detections_list_roll_up",
+            "child_detections": "$steps.dimension_collapse.output",
+            "parent_detection": "$steps.detection_offset.predictions"
+        },
+        {
+            "type": "roboflow_core/dimension_collapse@v1",
+            "name": "dimension_collapse",
+            "data": "$steps.detections_classes_replacement.predictions"
+        },
+        {
+            "type": "roboflow_core/bounding_box_visualization@v1",
+            "name": "bounding_box_visualization_1",
+            "image": "$inputs.image",
+            "predictions": "$steps.detections_list_roll_up.rolled_up_detections",
+            "thickness": 4
+        },
+        {
+            "type": "roboflow_core/detection_offset@v1",
+            "name": "detection_offset",
+            "predictions": "$steps.model.predictions",
+            "offset_width": 10,
+            "offset_height": 10
+        },
+        {
+            "type": "roboflow_core/dynamic_crop@v1",
+            "name": "dynamic_crop_1",
+            "images": "$steps.dynamic_crop.crops",
+            "predictions": "$steps.LP-det.predictions"
+        },
+        {
+            "type": "roboflow_core/google_gemini@v3",
+            "name": "google_gemini",
+            "images": "$steps.dynamic_crop_1.crops",
+            "task_type": "unconstrained",
+            "prompt": "Return license plate, reply with just the license plate number like \"A123123\"",
+            "model_version": "gemini-3-flash-preview",
+            "thinking_level": "low",
+            "temperature": 0
+        },
+        {
+            "type": "roboflow_core/detections_classes_replacement@v1",
+            "name": "detections_classes_replacement",
+            "object_detection_predictions": "$steps.LP-det.predictions",
+            "classification_predictions": "$steps.google_gemini.output"
+        },
+        {
+            "type": "roboflow_core/label_visualization@v1",
+            "name": "label_visualization",
+            "image": "$steps.bounding_box_visualization_1.image",
+            "predictions": "$steps.detections_list_roll_up.rolled_up_detections",
+            "text": "Class",
+            "text_scale": 1.5
+        }
+    ],
+    "outputs": [
+        {
+            "type": "JsonField",
+            "name": "rollup",
+            "coordinates_system": "own",
+            "selector": "$steps.detections_list_roll_up.rolled_up_detections"
+        },
+        {
+            "type": "JsonField",
+            "name": "output_1",
+            "coordinates_system": "own",
+            "selector": "$steps.bounding_box_visualization_1.image"
+        },
+        {
+            "type": "JsonField",
+            "name": "lp_crops",
+            "coordinates_system": "own",
+            "selector": "$steps.dynamic_crop_1.crops"
+        },
+        {
+            "type": "JsonField",
+            "name": "gemini_out",
+            "coordinates_system": "own",
+            "selector": "$steps.google_gemini.output"
+        },
+        {
+            "type": "JsonField",
+            "name": "output_2",
+            "coordinates_system": "own",
+            "selector": "$steps.label_visualization.image"
+        }
+    ],
+    "metadata": {
+        "ui": {
+            "nodes": {
+                "$inputs": {
+                    "x": 1080,
+                    "y": 0
+                },
+                "$steps.model": {
+                    "x": 1071,
+                    "y": 253
+                },
+                "$outputs": {
+                    "x": 965.1116113056082,
+                    "y": 1391.9582944809908
+                },
+                "$steps.bounding_box_visualization": {
+                    "x": 676,
+                    "y": 395
+                },
+                "$steps.dynamic_crop": {
+                    "x": 1311,
+                    "y": 514
+                },
+                "$steps.detections_list_roll_up": {
+                    "x": 1548.0174202931748,
+                    "y": 1276.1706202001033
+                },
+                "$steps.dimension_collapse": {
+                    "x": 1548.5189522922442,
+                    "y": 1161.152236211272
+                },
+                "$steps.bounding_box_visualization_1": {
+                    "x": 1065.5076599953468,
+                    "y": 949.1715838957599
+                },
+                "$steps.detection_offset": {
+                    "x": 1074,
+                    "y": 387
+                },
+                "$steps.LP-det": {
+                    "x": 1316,
+                    "y": 637
+                },
+                "$steps.dynamic_crop_1": {
+                    "x": 1552,
+                    "y": 781
+                },
+                "$steps.google_gemini": {
+                    "x": 1560,
+                    "y": 900
+                },
+                "$steps.detections_classes_replacement": {
+                    "x": 1585.2553546387462,
+                    "y": 1043.8370746309556
+                },
+                "$steps.label_visualization": {
+                    "x": 1062.5113776797948,
+                    "y": 1079.1583911316018
+                }
+            },
+            "edges": [
+                {
+                    "source": "$inputs",
+                    "target": "$steps.model",
+                    "inputProperty": "images",
+                    "sourceSelector": "image"
+                },
+                {
+                    "source": "$inputs",
+                    "target": "$steps.bounding_box_visualization",
+                    "inputProperty": "image",
+                    "sourceSelector": "image"
+                },
+                {
+                    "source": "$steps.model",
+                    "target": "$steps.bounding_box_visualization",
+                    "inputProperty": "predictions",
+                    "sourceSelector": "predictions"
+                },
+                {
+                    "source": "$steps.model",
+                    "target": "$steps.detection_offset",
+                    "inputProperty": "predictions",
+                    "sourceSelector": "predictions"
+                },
+                {
+                    "source": "$inputs",
+                    "target": "$steps.dynamic_crop",
+                    "inputProperty": "images",
+                    "sourceSelector": "image"
+                },
+                {
+                    "source": "$steps.detection_offset",
+                    "target": "$steps.dynamic_crop",
+                    "inputProperty": "predictions",
+                    "sourceSelector": "predictions"
+                },
+                {
+                    "source": "$steps.dynamic_crop",
+                    "target": "$steps.LP-det",
+                    "inputProperty": "images",
+                    "sourceSelector": "crops"
+                },
+                {
+                    "source": "$steps.dynamic_crop",
+                    "target": "$steps.dynamic_crop_1",
+                    "inputProperty": "images",
+                    "sourceSelector": "crops"
+                },
+                {
+                    "source": "$steps.LP-det",
+                    "target": "$steps.dynamic_crop_1",
+                    "inputProperty": "predictions",
+                    "sourceSelector": "predictions"
+                },
+                {
+                    "source": "$steps.dynamic_crop_1",
+                    "target": "$steps.google_gemini",
+                    "inputProperty": "images",
+                    "sourceSelector": "crops"
+                },
+                {
+                    "source": "$steps.detection_offset",
+                    "target": "$steps.detections_list_roll_up",
+                    "inputProperty": "parent_detection",
+                    "sourceSelector": "predictions"
+                },
+                {
+                    "source": "$steps.dimension_collapse",
+                    "target": "$steps.detections_list_roll_up",
+                    "inputProperty": "child_detections",
+                    "sourceSelector": "output"
+                },
+                {
+                    "source": "$inputs",
+                    "target": "$steps.bounding_box_visualization_1",
+                    "inputProperty": "image",
+                    "sourceSelector": "image"
+                },
+                {
+                    "source": "$steps.detections_list_roll_up",
+                    "target": "$steps.bounding_box_visualization_1",
+                    "inputProperty": "predictions",
+                    "sourceSelector": "rolled_up_detections"
+                },
+                {
+                    "source": "$steps.detections_list_roll_up",
+                    "target": "$outputs",
+                    "sourceSelector": "rolled_up_detections"
+                },
+                {
+                    "source": "$steps.google_gemini",
+                    "target": "$outputs"
+                },
+                {
+                    "source": "$steps.LP-det",
+                    "target": "$steps.detections_classes_replacement"
+                },
+                {
+                    "source": "$steps.google_gemini",
+                    "target": "$steps.detections_classes_replacement"
+                },
+                {
+                    "source": "$steps.detections_classes_replacement",
+                    "target": "$steps.dimension_collapse"
+                },
+                {
+                    "source": "$steps.bounding_box_visualization_1",
+                    "target": "$steps.label_visualization"
+                },
+                {
+                    "source": "$steps.label_visualization",
+                    "target": "$outputs"
+                }
+            ],
+            "groups": []
+        }
+    }
+}

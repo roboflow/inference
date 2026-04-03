@@ -16,8 +16,8 @@ class GazeDetectionPrediction(BaseModel):
 
     face: FaceDetectionPrediction
 
-    yaw: float = Field(description="Yaw (radian) of the detected face")
-    pitch: float = Field(description="Pitch (radian) of the detected face")
+    yaw: Optional[float] = Field(description="Yaw (radian) of the detected face")
+    pitch: Optional[float] = Field(description="Pitch (radian) of the detected face")
 
 
 class GazeDetectionInferenceResponse(BaseModel):

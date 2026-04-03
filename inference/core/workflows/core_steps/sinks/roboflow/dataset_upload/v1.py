@@ -22,7 +22,7 @@ from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from functools import partial
-from typing import List, Literal, Optional, Tuple, Type, Union
+from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
 from uuid import uuid4
 
 import supervision as sv
@@ -69,6 +69,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     Selector,
 )
 from inference.core.workflows.prototypes.block import (
+    AirGappedAvailability,
     BlockResult,
     WorkflowBlock,
     WorkflowBlockManifest,
@@ -238,10 +239,19 @@ class BlockManifest(WorkflowBlockManifest):
         description="Frequency at which new labeling batches are automatically created for uploaded images. Options: 'never' (all images go to the same batch), 'daily' (new batch each day), 'weekly' (new batch each week), 'monthly' (new batch each month). Batch timestamps are appended to the labeling_batch_prefix to create unique batch names. Automatically organizing uploads into time-based batches simplifies dataset management and makes it easier to track and review collected data over time.",
         examples=["never", "daily"],
     )
+    image_name: Optional[Union[str, Selector(kind=[STRING_KIND])]] = Field(
+        default=None,
+        description="Optional custom name for the uploaded image. If provided, this name will be used instead of an auto-generated UUID. This is useful when you want to preserve the original filename or use a meaningful identifier (e.g., serial number, timestamp) for the image in the Roboflow dataset. The name should not include file extension. If not provided, a UUID will be generated automatically.",
+        examples=["serial_12345", "camera1_frame_001", "$inputs.filename"],
+    )
+
+    @classmethod
+    def get_air_gapped_availability(cls) -> AirGappedAvailability:
+        return AirGappedAvailability(available=False, reason="requires_internet")
 
     @classmethod
     def get_parameters_accepting_batches(cls) -> List[str]:
-        return ["images", "predictions"]
+        return ["images", "predictions", "image_name"]
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
@@ -294,6 +304,7 @@ class RoboflowDatasetUploadBlockV1(WorkflowBlock):
         fire_and_forget: bool,
         labeling_batch_prefix: str,
         labeling_batches_recreation_frequency: BatchCreationFrequency,
+        image_name: Optional[Batch[Optional[str]]] = None,
     ) -> BlockResult:
         if self._api_key is None:
             raise ValueError(
@@ -312,7 +323,8 @@ class RoboflowDatasetUploadBlockV1(WorkflowBlock):
             ]
         result = []
         predictions = [None] * len(images) if predictions is None else predictions
-        for image, prediction in zip(images, predictions):
+        image_names = [None] * len(images) if image_name is None else image_name
+        for image, prediction, img_name in zip(images, predictions, image_names):
             error_status, message = register_datapoint_at_roboflow(
                 image=image,
                 prediction=prediction,
@@ -332,6 +344,7 @@ class RoboflowDatasetUploadBlockV1(WorkflowBlock):
                 background_tasks=self._background_tasks,
                 thread_pool_executor=self._thread_pool_executor,
                 api_key=self._api_key,
+                image_name=img_name,
             )
             result.append({"error_status": error_status, "message": message})
         return result
@@ -356,6 +369,8 @@ def register_datapoint_at_roboflow(
     background_tasks: Optional[BackgroundTasks],
     thread_pool_executor: Optional[ThreadPoolExecutor],
     api_key: str,
+    image_name: Optional[str] = None,
+    metadata: Optional[Dict[str, Any]] = None,
 ) -> Tuple[bool, str]:
     registration_task = partial(
         execute_registration,
@@ -374,6 +389,8 @@ def register_datapoint_at_roboflow(
         new_labeling_batch_frequency=new_labeling_batch_frequency,
         cache=cache,
         api_key=api_key,
+        image_name=image_name,
+        metadata=metadata,
     )
     if fire_and_forget and background_tasks:
         background_tasks.add_task(registration_task)
@@ -400,6 +417,8 @@ def execute_registration(
     new_labeling_batch_frequency: BatchCreationFrequency,
     cache: BaseCache,
     api_key: str,
+    image_name: Optional[str] = None,
+    metadata: Optional[Dict[str, Any]] = None,
 ) -> Tuple[bool, str]:
     matching_strategies_limits = OrderedDict(
         {
@@ -427,7 +446,7 @@ def execute_registration(
         return False, "Registration skipped due to usage quota exceeded"
     credit_to_be_returned = False
     try:
-        local_image_id = str(uuid4())
+        local_image_id = image_name if image_name else str(uuid4())
         encoded_image, scaling_factor = prepare_image_to_registration(
             image=image.numpy_image,
             desired_size=ImageDimensions(
@@ -451,6 +470,7 @@ def execute_registration(
             api_key=api_key,
             batch_name=batch_name,
             tags=registration_tags,
+            metadata=metadata,
         )
         if status == DUPLICATED_STATUS:
             credit_to_be_returned = True
@@ -529,6 +549,7 @@ def register_datapoint(
     api_key: str,
     batch_name: str,
     tags: List[str],
+    metadata: Optional[Dict[str, Any]] = None,
 ) -> str:
     inference_id = None
     if isinstance(prediction, dict):
@@ -548,6 +569,7 @@ def register_datapoint(
         batch_name=batch_name,
         tags=tags,
         inference_id=inference_id,
+        metadata=metadata,
     )
     if roboflow_image_id is None:
         return DUPLICATED_STATUS
@@ -574,6 +596,7 @@ def safe_register_image_at_roboflow(
     batch_name: str,
     tags: List[str],
     inference_id: Optional[str],
+    metadata: Optional[Dict[str, Any]] = None,
 ) -> Optional[str]:
     registration_response = register_image_at_roboflow(
         api_key=api_key,
@@ -583,6 +606,7 @@ def safe_register_image_at_roboflow(
         batch_name=batch_name,
         tags=tags,
         inference_id=inference_id,
+        metadata=metadata,
     )
     image_duplicated = registration_response.get("duplicate", False)
     if image_duplicated:
@@ -598,8 +622,8 @@ def is_prediction_registration_forbidden(
         return True
     if isinstance(prediction, sv.Detections) and len(prediction) == 0:
         return True
-    if isinstance(prediction, dict) and all(
-        k not in prediction for k in ["top", "predicted_classes"]
+    if isinstance(prediction, dict) and (
+        "top" not in prediction and "predicted_classes" not in prediction
     ):
         return True
     return False

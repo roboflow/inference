@@ -30,12 +30,25 @@ from inference.core.workflows.execution_engine.entities.types import (
     Selector,
 )
 from inference.core.workflows.prototypes.block import (
+    AirGappedAvailability,
     BlockResult,
     WorkflowBlock,
     WorkflowBlockManifest,
 )
 
 CLAUDE_MODELS = [
+    {
+        "id": "claude-opus-4-6",
+        "name": "Claude Opus 4.6",
+        "exact_version": "claude-opus-4-6",
+        "max_output_tokens": 128000,
+    },
+    {
+        "id": "claude-sonnet-4-6",
+        "name": "Claude Sonnet 4.6",
+        "exact_version": "claude-sonnet-4-6",
+        "max_output_tokens": 64000,
+    },
     {
         "id": "claude-sonnet-4-5",
         "name": "Claude Sonnet 4.5",
@@ -291,6 +304,10 @@ class BlockManifest(WorkflowBlockManifest):
                     f"`thinking_budget_tokens` ({budget_tokens}) must be less than `max_tokens` ({max_tokens})"
                 )
         return self
+
+    @classmethod
+    def get_air_gapped_availability(cls) -> AirGappedAvailability:
+        return AirGappedAvailability(available=False, reason="requires_internet")
 
     @classmethod
     def get_parameters_accepting_batches(cls) -> List[str]:

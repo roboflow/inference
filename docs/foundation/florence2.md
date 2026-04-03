@@ -18,6 +18,15 @@ You can use Inference for all the Florence-2 tasks above.
 
 The text in the parentheses are the task prompts you will need to use each task.
 
+### Execution Modes
+
+Florence-2 supports both local and remote execution modes when used in workflows:
+
+- **Local execution**: The model runs directly on your inference server (GPU recommended)
+- **Remote execution**: The model can be invoked via HTTP API on a remote inference server
+
+When using Florence-2 in a workflow, you can specify the execution mode to control where inference happens.
+
 ### How to Use Florence-2
 
 ??? Note "Install `inference`"
@@ -25,13 +34,13 @@ The text in the parentheses are the task prompts you will need to use each task.
     To install `inference` with Florence 2 support use the following command on CPU machine:
 
     ```bash
-    pip install inference[transformers]
+    pip install "inference[transformers]"
     ```
 
     or the following one for GPU machine:
 
     ```bash
-    pip install inference-gpu[transformers]
+    pip install "inference-gpu[transformers]"
     ```
 
 Create a new Python file called `app.py` and add the following code:

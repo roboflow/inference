@@ -3,6 +3,7 @@ import os
 from typing import Literal, Optional, Tuple
 
 import tensorrt as trt
+
 from inference_models.logger import LOGGER
 from inference_models.models.common.trt import InferenceTRTLogger
 

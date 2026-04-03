@@ -146,16 +146,20 @@ def assembly_dynamic_block_manifest(
         inputs=manifest_description.inputs,
         kinds_lookup=kinds_lookup,
     )
+    json_schema_extra = {
+        "name": build_human_friendly_block_name(
+            fully_qualified_name=manifest_description.block_type
+        ),
+        "short_description": manifest_description.description,
+    }
+    if manifest_description.ui_manifest:
+        json_schema_extra["ui_manifest"] = manifest_description.ui_manifest
+
     manifest_class = create_model(
         f"DynamicBlockManifest[{unique_identifier}]",
         __config__=ConfigDict(
             extra="allow",
-            json_schema_extra={
-                "name": build_human_friendly_block_name(
-                    fully_qualified_name=manifest_description.block_type
-                ),
-                "short_description": manifest_description.description,
-            },
+            json_schema_extra=json_schema_extra,
         ),
         name=(str, ...),
         type=(Literal[manifest_description.block_type], ...),

@@ -1,4 +1,5 @@
 import asyncio
+import contextvars
 import logging
 from concurrent.futures import ThreadPoolExecutor
 from enum import Enum
@@ -16,13 +17,19 @@ from aiohttp import (
 )
 from requests import Response, Timeout
 
-from inference_sdk.config import EXECUTION_ID_HEADER, execution_id
+from inference_sdk.config import (
+    EXECUTION_ID_HEADER,
+    PROCESSING_TIME_HEADER,
+    execution_id,
+    remote_processing_times,
+)
 from inference_sdk.http.errors import RetryError
 from inference_sdk.http.utils.iterables import make_batches
 from inference_sdk.http.utils.request_building import RequestData
 from inference_sdk.http.utils.requests import api_key_safe_raise_for_status
 
 RETRYABLE_STATUS_CODES = {429, 503, 504}
+UNKNOWN_MODEL_ID = "unknown"
 
 
 class RequestMethod(Enum):
@@ -57,15 +64,59 @@ def execute_requests_packages(
         batch_size=max_concurrent_requests,
     )
     results = []
+    all_request_data = []
     for requests_data_package in requests_data_packages:
         responses = make_parallel_requests(
             requests_data=requests_data_package,
             request_method=request_method,
         )
         results.extend(responses)
+        all_request_data.extend(requests_data_package)
+    _collect_remote_processing_times(results, all_request_data)
     for response in results:
         api_key_safe_raise_for_status(response=response)
     return results
+
+
+def _extract_model_id_from_request_data(request_data: RequestData) -> str:
+    if request_data.payload and isinstance(request_data.payload, dict):
+        model_id = request_data.payload.get("model_id")
+        if model_id:
+            return str(model_id)
+    try:
+        from urllib.parse import urlparse
+
+        path = urlparse(request_data.url).path
+        return path.strip("/")
+    except Exception:
+        return UNKNOWN_MODEL_ID
+
+
+def _collect_remote_processing_times(
+    responses: List[Response],
+    requests_data: List[RequestData],
+) -> None:
+    collector = remote_processing_times.get()
+    if collector is None:
+        return
+    if len(responses) != len(requests_data):
+        logging.warning(
+            "Response count (%d) does not match request count (%d); "
+            "only pairing the first %d entries",
+            len(responses),
+            len(requests_data),
+            min(len(responses), len(requests_data)),
+        )
+    for response, request_data in zip(responses, requests_data):
+        pt = response.headers.get(PROCESSING_TIME_HEADER)
+        if pt is not None:
+            model_id = _extract_model_id_from_request_data(request_data)
+            try:
+                collector.add(float(pt), model_id=model_id)
+            except (ValueError, TypeError):
+                logging.warning(
+                    "Malformed %s header value: %r", PROCESSING_TIME_HEADER, pt
+                )
 
 
 def make_parallel_requests(
@@ -81,10 +132,29 @@ def make_parallel_requests(
     Returns:
         The list of responses.
     """
+    # Capture the current contextvars snapshot so OTel trace context
+    # propagates into the thread pool workers. Must capture here (caller
+    # thread) not inside the worker — workers run in fresh threads that
+    # don't inherit the caller's context.
+    parent_ctx = contextvars.copy_context()
     workers = len(requests_data)
     make_request_closure = partial(make_request, request_method=request_method)
+
+    def _run_in_parent_context(rd: RequestData) -> Response:
+        # Restore all context vars from the parent thread snapshot.
+        # We iterate and set each var individually since Context.run()
+        # is not reentrant.
+        tokens = []
+        for var in parent_ctx:
+            tokens.append((var, var.set(parent_ctx[var])))
+        try:
+            return make_request_closure(rd)
+        finally:
+            for var, tok in tokens:
+                var.reset(tok)
+
     with ThreadPoolExecutor(max_workers=workers) as executor:
-        return list(executor.map(make_request_closure, requests_data))
+        return list(executor.map(_run_in_parent_context, requests_data))
 
 
 @backoff.on_predicate(

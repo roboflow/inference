@@ -1,4 +1,5 @@
 import os
+import platform
 import uuid
 import warnings
 from typing import Optional
@@ -6,7 +7,11 @@ from typing import Optional
 from dotenv import load_dotenv
 
 from inference.core.utils.environment import safe_split_value, str2bool
-from inference.core.warnings import InferenceDeprecationWarning, ModelDependencyMissing
+from inference.core.warnings import (
+    InferenceDeprecationWarning,
+    InferenceModelsStackMissing,
+    ModelDependencyMissing,
+)
 
 load_dotenv(os.getcwd() + "/.env")
 
@@ -169,6 +174,13 @@ if SAM3_EXEC_MODE not in ["local", "remote"]:
     raise ValueError(
         f"Invalid SAM3 execution mode in ENVIRONMENT var SAM3_EXEC_MODE (local or remote): {SAM3_EXEC_MODE}"
     )
+# Whether fine-tuned SAM3 models (non-sam3/ prefix) are allowed.
+# Defaults to False when SAM3_EXEC_MODE=remote (backward compat with existing proxy deployments),
+# True otherwise (self-hosted users can use fine-tuned models).
+_sam3_fine_tuned_default = "False" if SAM3_EXEC_MODE == "remote" else "True"
+SAM3_FINE_TUNED_MODELS_ENABLED = str2bool(
+    os.getenv("SAM3_FINE_TUNED_MODELS_ENABLED", _sam3_fine_tuned_default)
+)
 
 # Flag to enable GAZE core model, default is True
 CORE_MODEL_GAZE_ENABLED = str2bool(os.getenv("CORE_MODEL_GAZE_ENABLED", True))
@@ -193,6 +205,8 @@ QWEN_2_5_ENABLED = str2bool(os.getenv("QWEN_2_5_ENABLED", True))
 
 QWEN_3_ENABLED = str2bool(os.getenv("QWEN_3_ENABLED", True))
 
+QWEN_3_5_ENABLED = str2bool(os.getenv("QWEN_3_5_ENABLED", True))
+
 DEPTH_ESTIMATION_ENABLED = str2bool(os.getenv("DEPTH_ESTIMATION_ENABLED", True))
 
 SMOLVLM2_ENABLED = str2bool(os.getenv("SMOLVLM2_ENABLED", True))
@@ -205,15 +219,31 @@ FLORENCE2_ENABLED = str2bool(os.getenv("FLORENCE2_ENABLED", True))
 
 SAM3_3D_OBJECTS_ENABLED = str2bool(os.getenv("SAM3_3D_OBJECTS_ENABLED", False))
 
+GLM_OCR_ENABLED = str2bool(os.getenv("GLM_OCR_ENABLED", True))
+
 # Flag to enable YOLO-World core model, default is True
 CORE_MODEL_YOLO_WORLD_ENABLED = str2bool(
     os.getenv("CORE_MODEL_YOLO_WORLD_ENABLED", True)
 )
 
 # Enable experimental RFDETR backend (inference_models) rollout, default is True
-USE_INFERENCE_EXP_MODELS = str2bool(os.getenv("USE_INFERENCE_EXP_MODELS", "False"))
-ALLOW_INFERENCE_EXP_UNTRUSTED_MODELS = str2bool(
-    os.getenv("ALLOW_INFERENCE_EXP_UNTRUSTED_MODELS", "False")
+_PLATFORM_SPECIFIC_USE_INFERENCE_MODELS_DEFAULT = (
+    "False" if platform.system() == "Windows" else "True"
+)
+USE_INFERENCE_MODELS = str2bool(
+    os.getenv("USE_INFERENCE_MODELS", _PLATFORM_SPECIFIC_USE_INFERENCE_MODELS_DEFAULT)
+)
+ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES = str2bool(
+    os.getenv("ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES", "False")
+)
+ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES = str2bool(
+    os.getenv("ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES", "False")
+)
+MAX_INFERENCE_MODELS_CACHE_SIZE_MB = int(
+    os.getenv("MAX_INFERENCE_MODELS_CACHE_SIZE_MB", "-1")
+)
+INFERENCE_MODELS_CACHE_WATCHDOG_INTERVAL_MINUTES = int(
+    os.getenv("INFERENCE_MODELS_CACHE_WATCHDOG_INTERVAL_MINUTES", "60")
 )
 
 # ID of host device, default is None
@@ -226,6 +256,16 @@ USE_PYTORCH_FOR_PREPROCESSING = str2bool(
 
 # Flag to disable inference cache, default is False
 DISABLE_INFERENCE_CACHE = str2bool(os.getenv("DISABLE_INFERENCE_CACHE", False))
+
+# Cache backend used by inference model-monitoring pingback data.
+# "default" follows the normal cache selection (Redis when configured,
+# otherwise MemoryCache). "memory" forces process-local buffering to keep
+# Redis off the inference hot path.
+MODEL_MONITORING_CACHE_BACKEND = os.getenv(
+    "MODEL_MONITORING_CACHE_BACKEND", "default"
+).lower()
+if MODEL_MONITORING_CACHE_BACKEND not in {"default", "memory"}:
+    raise ValueError("MODEL_MONITORING_CACHE_BACKEND must be one of: default, memory")
 
 # Flag to disable auto-orientation preprocessing, default is False
 DISABLE_PREPROC_AUTO_ORIENT = str2bool(os.getenv("DISABLE_PREPROC_AUTO_ORIENT", False))
@@ -256,6 +296,14 @@ ELASTICACHE_ENDPOINT = os.environ.get(
 ENABLE_BYTE_TRACK = str2bool(os.getenv("ENABLE_BYTE_TRACK", False))
 
 ENABLE_PROMETHEUS = str2bool(os.getenv("ENABLE_PROMETHEUS", False))
+
+# Controls whether video source URLs (e.g. RTSP endpoints) are included as
+# Prometheus label values.  Credentials and query parameters are always
+# stripped, but the host/IP and path remain visible.  Set to "false" to omit
+# source labels entirely if internal network topology is sensitive.
+METRICS_INCLUDE_SOURCE_LABELS = str2bool(
+    os.getenv("METRICS_INCLUDE_SOURCE_LABELS", True)
+)
 
 # Flag to enforce FPS, default is False
 ENFORCE_FPS = str2bool(os.getenv("ENFORCE_FPS", False))
@@ -289,10 +337,26 @@ LAMBDA = str2bool(os.getenv("LAMBDA", False))
 # Whether is's GCP serverless service
 GCP_SERVERLESS = str2bool(os.getenv("GCP_SERVERLESS", "False"))
 
+# This variable affects extra headers passed to new weights provider created for
+# `inference-models` - only effective when `USE_INFERENCE_MODELS` is True and
+# makes the weights provider to reject request for model weights that are coming to
+# internal services and requires rejection when account exceeds limits
+ENFORCE_CREDITS_VERIFICATION = str2bool(
+    os.getenv("ENFORCE_CREDITS_VERIFICATION", "False")
+)
+
+WORKFLOWS_REMOTE_EXECUTION_TIME_FORWARDING = str2bool(
+    os.getenv("WORKFLOWS_REMOTE_EXECUTION_TIME_FORWARDING", "True")
+)
+
 GET_MODEL_REGISTRY_ENABLED = str2bool(os.getenv("GET_MODEL_REGISTRY_ENABLED", "True"))
 
 # Flag to enable API logging, default is False
 API_LOGGING_ENABLED = str2bool(os.getenv("API_LOGGING_ENABLED", "False"))
+
+# Flag to enable structured access logging (JSON access logs replacing uvicorn's
+# default access log). Requires API_LOGGING_ENABLED=True. Default is False.
+STRUCTURED_API_LOGGING = str2bool(os.getenv("STRUCTURED_API_LOGGING", "False"))
 
 # Header where correlaction ID for logging is stored
 CORRELATION_ID_HEADER = os.getenv("CORRELATION_ID_HEADER", "X-Request-ID")
@@ -306,7 +370,7 @@ LEGACY_ROUTE_ENABLED = str2bool(os.getenv("LEGACY_ROUTE_ENABLED", True))
 # License server, default is None
 LICENSE_SERVER = os.getenv("LICENSE_SERVER", None)
 
-# Log level, default is "INFO"
+# Log level, default is "WARNING"
 LOG_LEVEL = os.getenv("LOG_LEVEL", "WARNING")
 
 # Maximum number of active models, default is 8
@@ -343,6 +407,19 @@ MODELS_CACHE_AUTH_CACHE_MAX_SIZE = int(
     os.getenv("MODELS_CACHE_AUTH_CACHE_MAX_SIZE", 100_000_000)
 )
 
+# --- OpenTelemetry tracing ---
+OTEL_TRACING_ENABLED = str2bool(os.getenv("OTEL_TRACING_ENABLED", "False"))
+OTEL_SERVICE_NAME = os.getenv("OTEL_SERVICE_NAME", "inference-server")
+OTEL_EXPORTER_PROTOCOL = os.getenv("OTEL_EXPORTER_PROTOCOL", "grpc")  # "grpc" or "http"
+OTEL_EXPORTER_ENDPOINT = os.getenv("OTEL_EXPORTER_ENDPOINT", "localhost:4317")
+OTEL_SAMPLING_RATE = float(os.getenv("OTEL_SAMPLING_RATE", "1.0"))
+OTEL_TRACE_EXPORT_INTERVAL_MS = int(os.getenv("OTEL_TRACE_EXPORT_INTERVAL_MS", "5000"))
+OTEL_METRICS_ENABLED = str2bool(os.getenv("OTEL_METRICS_ENABLED", "True"))
+OTEL_METRIC_EXPORTER_ENDPOINT = os.getenv("OTEL_METRIC_EXPORTER_ENDPOINT", "")
+OTEL_METRIC_EXPORT_INTERVAL_MS = int(
+    os.getenv("OTEL_METRIC_EXPORT_INTERVAL_MS", "10000")
+)
+
 # Metrics enabled flag, default is True
 METRICS_ENABLED = str2bool(os.getenv("METRICS_ENABLED", True))
 if LAMBDA or GCP_SERVERLESS:
@@ -356,6 +433,7 @@ METRICS_URL = os.getenv("METRICS_URL", f"{API_BASE_URL}/inference-stats")
 
 # Model cache directory, default is "/tmp/cache"
 MODEL_CACHE_DIR = os.getenv("MODEL_CACHE_DIR", "/tmp/cache")
+INFERENCE_DEBUG_OUTPUT_DIR = os.environ.get("INFERENCE_DEBUG_OUTPUT_DIR")
 
 # Model ID, default is None
 MODEL_ID = os.getenv("MODEL_ID")
@@ -532,6 +610,14 @@ HOSTED_INSTANCE_SEGMENTATION_URL = os.getenv(
         else "https://lambda-instance-segmentation.staging.roboflow.com"
     ),
 )
+HOSTED_SEMANTIC_SEGMENTATION_URL = os.getenv(
+    "HOSTED_SEMANTIC_SEGMENTATION_URL",
+    (
+        "https://segment.roboflow.com"
+        if PROJECT == "roboflow-platform"
+        else "https://lambda-semantic-segmentation.staging.roboflow.com"
+    ),
+)
 HOSTED_CLASSIFICATION_URL = os.getenv(
     "HOSTED_CLASSIFICATION_URL",
     (
@@ -594,6 +680,7 @@ INFERENCE_WARNINGS_DISABLED = str2bool(
 
 if INFERENCE_WARNINGS_DISABLED:
     warnings.simplefilter("ignore", InferenceDeprecationWarning)
+    warnings.simplefilter("ignore", InferenceModelsStackMissing)
 
 HUGGINGFACE_TOKEN = os.getenv("HUGGINGFACE_TOKEN")
 DEVICE = os.getenv("DEVICE")
@@ -617,6 +704,9 @@ WORKFLOWS_DEFINITION_CACHE_EXPIRY = int(
 USE_FILE_CACHE_FOR_WORKFLOWS_DEFINITIONS = str2bool(
     os.getenv("USE_FILE_CACHE_FOR_WORKFLOWS_DEFINITIONS", "True")
 )
+SINGLE_TENANT_WORKFLOW_CACHE = str2bool(
+    os.getenv("SINGLE_TENANT_WORKFLOW_CACHE", "False")
+)
 ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE = str2bool(
     os.getenv("ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE", "True")
 )
@@ -636,6 +726,19 @@ ROBOFLOW_INTERNAL_SERVICE_NAME = os.getenv("ROBOFLOW_INTERNAL_SERVICE_NAME")
 # Preload Models
 PRELOAD_MODELS = (
     os.getenv("PRELOAD_MODELS").split(",") if os.getenv("PRELOAD_MODELS") else None
+)
+
+# API key used exclusively for model preloading. Use this instead of API_KEY on
+# user-facing deployments where setting API_KEY globally would affect per-request
+# auth, billing attribution, and model-access fallback behaviour.
+# Falls back to API_KEY if not set.
+PRELOAD_API_KEY = os.getenv("PRELOAD_API_KEY") or API_KEY
+
+# Models that must always be loaded at startup and never evicted from cache.
+# Unlike PRELOAD_MODELS, this bypasses the LAMBDA/GCP_SERVERLESS gate.
+# Comma-separated list of model IDs.
+PINNED_MODELS = (
+    os.getenv("PINNED_MODELS").split(",") if os.getenv("PINNED_MODELS") else None
 )
 
 LOAD_ENTERPRISE_BLOCKS = str2bool(os.getenv("LOAD_ENTERPRISE_BLOCKS", "False"))
@@ -786,11 +889,36 @@ WEBRTC_MODAL_PUBLIC_STUN_SERVERS = os.getenv(
 WEBRTC_MODAL_USAGE_QUOTA_ENABLED = str2bool(
     os.getenv("WEBRTC_MODAL_USAGE_QUOTA_ENABLED", "False")
 )
+
+#
+# Workspace stream quota
+#
+# Redis-base rate limiting that disables more than N concurrent
+# connections from a single workspace
+WEBRTC_WORKSPACE_STREAM_QUOTA_ENABLED = str2bool(
+    os.getenv("WEBRTC_WORKSPACE_STREAM_QUOTA_ENABLED", "False")
+)
+WEBRTC_WORKSPACE_STREAM_QUOTA = int(os.getenv("WEBRTC_WORKSPACE_STREAM_QUOTA", "10"))
+# TTL in seconds for active stream entries (auto-expire if no explicit cleanup)
+WEBRTC_WORKSPACE_STREAM_TTL_SECONDS = int(
+    os.getenv("WEBRTC_WORKSPACE_STREAM_TTL_SECONDS", "60")
+)
+# URL for Modal to send session heartbeats to keep session alive
+# Example: "https://serverless.roboflow.com/webrtc/session/heartbeat"
+WEBRTC_SESSION_HEARTBEAT_URL = os.getenv(
+    "WEBRTC_SESSION_HEARTBEAT_URL",
+    None,
+)
+# How often Modal sends session heartbeats (in seconds)
+WEBRTC_SESSION_HEARTBEAT_INTERVAL_SECONDS = int(
+    os.getenv("WEBRTC_SESSION_HEARTBEAT_INTERVAL_SECONDS", "30")
+)
+
 WEBRTC_DATA_CHANNEL_BUFFER_DRAINING_DELAY = float(
     os.getenv("WEBRTC_DATA_CHANNEL_BUFFER_DRAINING_DELAY", "0.1")
 )
 WEBRTC_DATA_CHANNEL_BUFFER_SIZE_LIMIT = int(
-    os.getenv("WEBRTC_DATA_CHANNEL_BUFFER_SIZE_LIMIT", str(1024 * 1024))  # 1MB
+    os.getenv("WEBRTC_DATA_CHANNEL_BUFFER_SIZE_LIMIT", str(1024 * 1024 * 32))  # 32MB
 )
 
 # Maximum number of frames the server is allowed to be ahead of the last client ACK
@@ -799,12 +927,23 @@ WEBRTC_DATA_CHANNEL_BUFFER_SIZE_LIMIT = int(
 # Example: if ack=1 and window=4, server may produce/send up to frame 5.
 try:
     WEBRTC_DATA_CHANNEL_ACK_WINDOW = int(
-        os.getenv("WEBRTC_DATA_CHANNEL_ACK_WINDOW", "20")
+        os.getenv("WEBRTC_DATA_CHANNEL_ACK_WINDOW", "1")
     )
 except (ValueError, TypeError):
-    WEBRTC_DATA_CHANNEL_ACK_WINDOW = 20
+    WEBRTC_DATA_CHANNEL_ACK_WINDOW = 1
+
 if WEBRTC_DATA_CHANNEL_ACK_WINDOW < 0:
     WEBRTC_DATA_CHANNEL_ACK_WINDOW = 0
+
+WEBRTC_GZIP_PREVIEW_FRAME_COMPRESSION = str2bool(
+    os.getenv("WEBRTC_GZIP_PREVIEW_FRAME_COMPRESSION", "True")
+)
+
+# JPEG quality for WebRTC preview frames
+# (1-100, higher means better quality, but larger payload size and we might time out)
+WEBRTC_PREVIEW_FRAME_JPEG_QUALITY = int(
+    os.getenv("WEBRTC_PREVIEW_FRAME_JPEG_QUALITY", "80")
+)
 
 HTTP_API_SHARED_WORKFLOWS_THREAD_POOL_ENABLED = str2bool(
     os.getenv("HTTP_API_SHARED_WORKFLOWS_THREAD_POOL_ENABLED", "True")
@@ -812,3 +951,51 @@ HTTP_API_SHARED_WORKFLOWS_THREAD_POOL_ENABLED = str2bool(
 HTTP_API_SHARED_WORKFLOWS_THREAD_POOL_WORKERS = int(
     os.getenv("HTTP_API_SHARED_WORKFLOWS_THREAD_POOL_WORKERS", "16")
 )
+
+# Workflow block filtering configuration
+# Comma-separated list of block type categories to disable (e.g., "sink,model")
+WORKFLOW_DISABLED_BLOCK_TYPES = os.getenv("WORKFLOW_DISABLED_BLOCK_TYPES", "")
+if WORKFLOW_DISABLED_BLOCK_TYPES:
+    WORKFLOW_DISABLED_BLOCK_TYPES = [
+        t.strip().lower() for t in WORKFLOW_DISABLED_BLOCK_TYPES.split(",") if t.strip()
+    ]
+else:
+    WORKFLOW_DISABLED_BLOCK_TYPES = []
+
+# Comma-separated list of block identifier patterns to disable
+WORKFLOW_DISABLED_BLOCK_PATTERNS = os.getenv("WORKFLOW_DISABLED_BLOCK_PATTERNS", "")
+if WORKFLOW_DISABLED_BLOCK_PATTERNS:
+    WORKFLOW_DISABLED_BLOCK_PATTERNS = [
+        p.strip().lower()
+        for p in WORKFLOW_DISABLED_BLOCK_PATTERNS.split(",")
+        if p.strip()
+    ]
+else:
+    WORKFLOW_DISABLED_BLOCK_PATTERNS = []
+
+VALID_INFERENCE_MODELS_BACKENDS = {
+    "torch",
+    "torch-script",
+    "onnx",
+    "trt",
+    "hugging-face",
+    "ultralytics",
+    "mediapipe",
+    "custom",
+}
+# env variables to control inference-models auto-loader
+DISABLED_INFERENCE_MODELS_BACKENDS = os.getenv("DISABLED_INFERENCE_MODELS_BACKENDS")
+if DISABLED_INFERENCE_MODELS_BACKENDS is not None:
+    DISABLED_INFERENCE_MODELS_BACKENDS = set(
+        DISABLED_INFERENCE_MODELS_BACKENDS.split(",")
+    )
+    if any(
+        v not in VALID_INFERENCE_MODELS_BACKENDS
+        for v in DISABLED_INFERENCE_MODELS_BACKENDS
+    ):
+        raise ValueError(
+            "Invalid value of `DISABLED_INFERENCE_MODELS_BACKENDS` variable - each enlisted backend must "
+            f"be within {VALID_INFERENCE_MODELS_BACKENDS}"
+        )
+else:
+    DISABLED_INFERENCE_MODELS_BACKENDS = set()

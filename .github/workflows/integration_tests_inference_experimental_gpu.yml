@@ -27,17 +27,18 @@ on:
 
 jobs:
   integration-tests-inference-models-gpu:
-    name: ${{ matrix.extras.marker }}:${{ matrix.python-version }}
+    name: ${{ matrix.extras.marker }}:${{ matrix.python-version }}:cuda-graphs:${{ matrix.extras.enable_auto_cuda_graphs_for_trt }}
     runs-on: Roboflow-GPU-VM-Runner
     timeout-minutes: 30
     strategy:
       matrix:
         python-version: ["3.12"]
         extras:
-          - { install: "onnx-cu12,mediapipe", marker: "onnx_extras", workers: "auto" }
-          - { install: "trt10", marker: "trt_extras", workers: "auto" }
-          - { install: "torch-cu124,mediapipe", marker: "torch_models", workers: "1" }
-          - { install: "torch-cu124", marker: "hf_vlm_models", workers: "1" }
+          - { install: "torch-cu124,onnx-cu12,mediapipe", marker: "onnx_extras", workers: "auto", enable_auto_cuda_graphs_for_trt: "false" }
+          - { install: "trt10,torch-cu124", marker: "trt_extras", workers: "auto", enable_auto_cuda_graphs_for_trt: "false" }
+          - { install: "trt10,torch-cu124", marker: "trt_extras", workers: "auto", enable_auto_cuda_graphs_for_trt: "true" }
+          - { install: "torch-cu124,mediapipe", marker: "torch_models", workers: "1", "enable_auto_cuda_graphs_for_trt": "false" }
+          - { install: "torch-cu124", marker: "hf_vlm_models", workers: "1", "enable_auto_cuda_graphs_for_trt": "false" }
     steps:
       - name: 🛎️ Checkout
         if: ${{ (github.event.inputs.extras == '' || github.event.inputs.extras == matrix.extras.marker) && (github.event.inputs.python_version == '' || github.event.inputs.python_version == matrix.python-version) }}
@@ -95,10 +96,16 @@ jobs:
           python -m pip install uv
           python -m uv venv
           python -m uv pip install -e .[test,${{ matrix.extras.install }}] --python .venv
+      - name: 🪛 Display GPU
+        if: ${{ (github.event.inputs.extras == '' || github.event.inputs.extras == matrix.extras.marker) && (github.event.inputs.python_version == '' || github.event.inputs.python_version == matrix.python-version) }}
+        working-directory: inference_models
+        run: |
+          source .venv/bin/activate
+          python -c "import torch; print(torch.cuda.get_device_name(0))"
       - name: 🧪 Run tests marked `${{ matrix.extras.marker }}`
         if: ${{ (github.event.inputs.extras == '' || github.event.inputs.extras == matrix.extras.marker) && (github.event.inputs.python_version == '' || github.event.inputs.python_version == matrix.python-version) }}
         working-directory: inference_models
         timeout-minutes: 25
         run: |
           source .venv/bin/activate
-          python -m pytest -n ${{ matrix.extras.workers }} -m "${{ matrix.extras.marker }} and not cpu_only" tests/integration_tests
+          ENABLE_AUTO_CUDA_GRAPHS_FOR_TRT_BACKEND=${{ matrix.extras.enable_auto_cuda_graphs_for_trt }} python -m pytest -n ${{ matrix.extras.workers }} -m "${{ matrix.extras.marker }} and not cpu_only" tests/integration_tests

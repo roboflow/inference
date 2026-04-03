@@ -1,4 +1,5 @@
 import os
+from threading import Lock
 from typing import List, Optional, Tuple, Union
 
 import numpy as np
@@ -11,6 +12,8 @@ from transformers import (
 )
 from transformers.utils import is_flash_attn_2_available
 
+from inference_models import PreProcessingOverrides
+
 
 def _get_paligemma_attn_implementation(device: torch.device) -> str:
     """Use flash_attention_2 if available, otherwise eager.
@@ -22,13 +25,27 @@ def _get_paligemma_attn_implementation(device: torch.device) -> str:
         try:
             import flash_attn  # noqa: F401
 
-            return "flash_attention_2"
+            if _is_model_running_against_ampere_plus_aarch(device=device):
+                return "flash_attention_2"
+            return "eager"
         except ImportError:
             pass
     return "eager"
 
 
-from inference_models.configuration import DEFAULT_DEVICE
+def _is_model_running_against_ampere_plus_aarch(device: torch.device) -> bool:
+    if device.type != "cuda":
+        return False
+    major, _ = torch.cuda.get_device_capability(device=device)
+    return major >= 8
+
+
+from inference_models.configuration import (
+    DEFAULT_DEVICE,
+    INFERENCE_MODELS_PALIGEMMA_DEFAULT_DO_SAMPLE,
+    INFERENCE_MODELS_PALIGEMMA_DEFAULT_MAX_NEW_TOKENS,
+    INFERENCE_MODELS_PALIGEMMA_DEFAULT_SKIP_SPECIAL_TOKENS,
+)
 from inference_models.entities import ColorFormat
 from inference_models.models.common.roboflow.model_packages import (
     InferenceConfig,
@@ -66,6 +83,7 @@ class PaliGemmaHF:
                     ResizeMode.LETTERBOX,
                     ResizeMode.CENTER_CROP,
                     ResizeMode.LETTERBOX_REFLECT_EDGES,
+                    ResizeMode.FIT_LONGER_EDGE,
                 },
             )
         if (
@@ -138,19 +156,24 @@ class PaliGemmaHF:
         self._inference_config = inference_config
         self._device = device
         self._torch_dtype = torch_dtype
+        self._lock = Lock()
 
     def prompt(
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         prompt: str,
         input_color_format: Optional[ColorFormat] = None,
-        max_new_tokens: int = 400,
-        do_sample: bool = False,
-        skip_special_tokens: bool = True,
+        max_new_tokens: int = INFERENCE_MODELS_PALIGEMMA_DEFAULT_MAX_NEW_TOKENS,
+        do_sample: bool = INFERENCE_MODELS_PALIGEMMA_DEFAULT_DO_SAMPLE,
+        skip_special_tokens: bool = INFERENCE_MODELS_PALIGEMMA_DEFAULT_SKIP_SPECIAL_TOKENS,
+        pre_processing_overrides: Optional[PreProcessingOverrides] = None,
         **kwargs,
     ) -> List[str]:
         inputs = self.pre_process_generation(
-            images=images, prompt=prompt, input_color_format=input_color_format
+            images=images,
+            prompt=prompt,
+            input_color_format=input_color_format,
+            pre_processing_overrides=pre_processing_overrides,
         )
         generated_ids = self.generate(
             inputs=inputs,
@@ -168,6 +191,7 @@ class PaliGemmaHF:
         prompt: str,
         input_color_format: Optional[ColorFormat] = None,
         image_size: Optional[Tuple[int, int]] = None,
+        pre_processing_overrides: Optional[PreProcessingOverrides] = None,
         **kwargs,
     ) -> dict:
         def _to_tensor(image: Union[np.ndarray, torch.Tensor]) -> torch.Tensor:
@@ -195,6 +219,7 @@ class PaliGemmaHF:
                 target_device=self._device,
                 input_color_format=input_color_format,
                 image_size_wh=image_size,
+                pre_processing_overrides=pre_processing_overrides,
             )[0]
             image_list = [e[0] for e in torch.split(images, 1, dim=0)]
         num_images = len(image_list)
@@ -208,11 +233,11 @@ class PaliGemmaHF:
     def generate(
         self,
         inputs: dict,
-        max_new_tokens: int = 400,
-        do_sample: bool = False,
+        max_new_tokens: int = INFERENCE_MODELS_PALIGEMMA_DEFAULT_MAX_NEW_TOKENS,
+        do_sample: bool = INFERENCE_MODELS_PALIGEMMA_DEFAULT_DO_SAMPLE,
         **kwargs,
     ) -> torch.Tensor:
-        with torch.inference_mode():
+        with self._lock, torch.inference_mode():
             generation = self._model.generate(
                 **inputs, max_new_tokens=max_new_tokens, do_sample=do_sample
             )

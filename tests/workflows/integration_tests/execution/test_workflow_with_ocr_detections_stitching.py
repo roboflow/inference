@@ -29,9 +29,10 @@ WORKFLOW_STITCHING_OCR_DETECTIONS = {
             "confidence": "$inputs.confidence",
         },
         {
-            "type": "roboflow_core/stitch_ocr_detections@v1",
+            "type": "roboflow_core/stitch_ocr_detections@v2",
             "name": "detections_stitch",
             "predictions": "$steps.ocr_detection.predictions",
+            "stitching_algorithm": "tolerance",
             "reading_direction": "left_to_right",
             "tolerance": "$inputs.tolerance",
         },

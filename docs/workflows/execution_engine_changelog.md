@@ -2,6 +2,80 @@
 
 Below you can find the changelog for Execution Engine.
 
+## Execution Engine `v1.8.0` | inference `v1.1.1`
+
+!!! Note "Additive change + one breaking change due to bug fix with minimal expected impact"
+
+    This release extends the Execution Engine so that steps gated by control flow (e.g. after a
+    `ContinueIf` block) can run even when they have **no data-derived lineage** — i.e. when they
+    do not receive batch-oriented inputs from upstream steps. Lineage and execution dimensionality
+    can now be derived from control flow predecessor steps. Existing workflows are unaffected.
+    
+    One breaking change introduced is due to the bug fix that affects `Batch.remove_by_indices` with nested batches (see below); impact is
+    expected to be minimal.
+
+**What changed**
+
+* **Control flow lineage** — The compiler now tracks lineage that comes from control flow steps
+  (e.g. branches after `ContinueIf`). A new notion of **control flow lineage support** is used when
+  a step has no batch-oriented data inputs but is preceded by control flow steps: the step’s
+  execution slices and batch structure are taken from those control flow predecessors.
+
+* **Loosened compatibility check** — Previously, `verify_compatibility_of_input_data_lineage_with_control_flow_lineage`
+  raised `ControlFlowDefinitionError` for any step that had control flow predecessors but no
+  data-derived lineage, so such steps could not be compiled. That check is now relaxed: when a step
+  has no input data lineage, compatibility is not enforced and the step’s lineage is derived from
+  the control flow predecessor step lineage instead. The strict check still runs when the step
+  *does* have data-derived lineage, to ensure control flow and data lineage remain compatible.
+
+* **New step patterns** — Steps that are triggered only by control flow and do not consume
+  batch data now run correctly. For example, you can send email notifications (or run other
+  side-effect steps) after a `ContinueIf` without wiring any data into parameters like
+  `message_parameters`; the step will execute once per control flow branch with lineage and
+  dimensionality taken from the controlling step.
+
+* **`Batch.remove_by_indices` with nested batches (behavioral fix)** — When removing indices
+  via `Batch.remove_by_indices`, nested `Batch` elements are now recursively filtered by the
+  same index set. As a result, entries at removed indices (including `None` values) are now
+  correctly dropped from nested batches as well. Previously, only the top-level batch was
+  filtered; nested batches were left unchanged.
+  
+  By default for a `WorkflowBlock`, `accepts_empty_values()`is `False`. While
+  this was bypassed, blocks consuming such inputs where outright failing as for example `StitchDetectionsBatchBlock`:
+
+    ```python
+    def run(
+        self,
+        images: Batch[WorkflowImageData],
+        images_predictions: Batch[Batch[sv.Detections]],
+    ) -> BlockResult:
+        result = []
+        for image, image_predictions in zip(images, images_predictions):
+            image_predictions = [deepcopy(p) for p in image_predictions if len(p)]
+            for p in image_predictions:
+                coords = p["parent_coordinates"][0]
+        ...
+    ```
+
+  The only core block that this change affects is the `DimensionCollapseBlockV1` block,
+  As it was wrapping individual inputs in a batch without filtering for None values.
+
+  ```python
+  class DimensionCollapseBlockV1(WorkflowBlock):
+
+    @classmethod
+    def get_manifest(cls) -> Type[WorkflowBlockManifest]:
+        return BlockManifest
+
+    def run(self, data: Batch[Any]) -> BlockResult:
+        return {"output": [e for e in data]}
+  ```
+  
+  When using the output from this block downstream applications could either outright fail or
+  silently process None values, unless they filtered those values themselves.
+
+  Given that above we reckon the impact will be minimal.
+
 ## Execution Engine `v1.7.0` | inference `v0.59.0`
 
 !!! warning "Breaking change regarding step errors in workflows"

@@ -1,7 +1,7 @@
 import importlib
 import os
 import sys
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 
 class LazyClass:
@@ -15,6 +15,20 @@ class LazyClass:
         if self._symbol is None:
             module = importlib.import_module(self._module_name)
             self._symbol = getattr(module, self._class_name)
+        return self._symbol
+
+
+class LazyFunction:
+
+    def __init__(self, module_name: str, function_name: str):
+        self._module_name = module_name
+        self._function_name = function_name
+        self._symbol: Optional[callable] = None
+
+    def resolve(self) -> Callable[..., Any]:
+        if self._symbol is None:
+            module = importlib.import_module(self._module_name)
+            self._symbol = getattr(module, self._function_name)
         return self._symbol
 
 
@@ -38,6 +52,10 @@ def import_class_from_file(
 
         # Manually set the __package__ attribute to the parent package
         module.__package__ = os.path.basename(module_dir)
+
+        # Register in sys.modules so that transformers 5.x can look up the module
+        # (e.g. PreTrainedModel._can_set_experts_implementation uses sys.modules[cls.__module__]).
+        sys.modules[module_name] = module
 
         spec.loader.exec_module(module)
         cls = getattr(module, class_name)

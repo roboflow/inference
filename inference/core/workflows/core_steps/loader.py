@@ -7,6 +7,8 @@ from inference.core.env import (
     API_KEY,
     SAM3_3D_OBJECTS_ENABLED,
     WORKFLOW_BLOCKS_WRITE_DIRECTORY,
+    WORKFLOW_DISABLED_BLOCK_PATTERNS,
+    WORKFLOW_DISABLED_BLOCK_TYPES,
     WORKFLOWS_STEP_EXECUTION_MODE,
 )
 from inference.core.workflows.core_steps.analytics.data_aggregator.v1 import (
@@ -69,6 +71,9 @@ from inference.core.workflows.core_steps.classical_cv.image_blur.v1 import (
 )
 from inference.core.workflows.core_steps.classical_cv.image_preprocessing.v1 import (
     ImagePreprocessingBlockV1,
+)
+from inference.core.workflows.core_steps.classical_cv.mask_area_measurement.v1 import (
+    MaskAreaMeasurementBlockV1,
 )
 from inference.core.workflows.core_steps.classical_cv.morphological_transformation.v1 import (
     MorphologicalTransformationBlockV1,
@@ -213,6 +218,9 @@ from inference.core.workflows.core_steps.models.foundation.florence2.v2 import (
     Florence2BlockV2,
 )
 from inference.core.workflows.core_steps.models.foundation.gaze.v1 import GazeBlockV1
+from inference.core.workflows.core_steps.models.foundation.glm_ocr.v1 import (
+    GLMOCRBlockV1,
+)
 from inference.core.workflows.core_steps.models.foundation.google_gemini.v1 import (
     GoogleGeminiBlockV1,
 )
@@ -250,6 +258,9 @@ from inference.core.workflows.core_steps.models.foundation.openai.v4 import (
 )
 from inference.core.workflows.core_steps.models.foundation.perception_encoder.v1 import (
     PerceptionEncoderModelBlockV1,
+)
+from inference.core.workflows.core_steps.models.foundation.qwen3_5vl.v1 import (
+    Qwen35VLBlockV1,
 )
 from inference.core.workflows.core_steps.models.foundation.qwen3vl.v1 import (
     Qwen3VLBlockV1,
@@ -323,6 +334,9 @@ from inference.core.workflows.core_steps.models.roboflow.object_detection.v1 imp
 from inference.core.workflows.core_steps.models.roboflow.object_detection.v2 import (
     RoboflowObjectDetectionModelBlockV2,
 )
+from inference.core.workflows.core_steps.models.roboflow.semantic_segmentation.v1 import (
+    RoboflowSemanticSegmentationModelBlockV1,
+)
 from inference.core.workflows.core_steps.models.third_party.barcode_detection.v1 import (
     BarcodeDetectorBlockV1,
 )
@@ -358,6 +372,10 @@ from inference.core.workflows.core_steps.sinks.roboflow.dataset_upload.v2 import
 from inference.core.workflows.core_steps.sinks.roboflow.model_monitoring_inference_aggregator.v1 import (
     ModelMonitoringInferenceAggregatorBlockV1,
 )
+from inference.core.workflows.core_steps.sinks.roboflow.vision_events.v1 import (
+    RoboflowVisionEventsBlockV1,
+)
+from inference.core.workflows.core_steps.sinks.s3.v1 import S3SinkBlockV1
 from inference.core.workflows.core_steps.sinks.slack.notification.v1 import (
     SlackNotificationBlockV1,
 )
@@ -368,6 +386,15 @@ from inference.core.workflows.core_steps.sinks.twilio.sms.v2 import (
     TwilioSMSNotificationBlockV2,
 )
 from inference.core.workflows.core_steps.sinks.webhook.v1 import WebhookSinkBlockV1
+from inference.core.workflows.core_steps.trackers.bytetrack.v1 import (
+    ByteTrackBlockV1 as TrackerByteTrackBlockV1,
+)
+from inference.core.workflows.core_steps.trackers.ocsort.v1 import (
+    OCSORTBlockV1 as TrackerOCSORTBlockV1,
+)
+from inference.core.workflows.core_steps.trackers.sort.v1 import (
+    SORTBlockV1 as TrackerSORTBlockV1,
+)
 from inference.core.workflows.core_steps.transformations.absolute_static_crop.v1 import (
     AbsoluteStaticCropBlockV1,
 )
@@ -431,6 +458,9 @@ from inference.core.workflows.core_steps.transformations.stitch_images.v1 import
 from inference.core.workflows.core_steps.transformations.stitch_ocr_detections.v1 import (
     StitchOCRDetectionsBlockV1,
 )
+from inference.core.workflows.core_steps.transformations.stitch_ocr_detections.v2 import (
+    StitchOCRDetectionsBlockV2,
+)
 
 # Visualizers
 from inference.core.workflows.core_steps.visualizations.background_color.v1 import (
@@ -469,6 +499,12 @@ from inference.core.workflows.core_steps.visualizations.grid.v1 import (
 from inference.core.workflows.core_steps.visualizations.halo.v1 import (
     HaloVisualizationBlockV1,
 )
+from inference.core.workflows.core_steps.visualizations.halo.v2 import (
+    HaloVisualizationBlockV2,
+)
+from inference.core.workflows.core_steps.visualizations.heatmap.v1 import (
+    HeatmapVisualizationBlockV1,
+)
 from inference.core.workflows.core_steps.visualizations.icon.v1 import (
     IconVisualizationBlockV1,
 )
@@ -492,6 +528,9 @@ from inference.core.workflows.core_steps.visualizations.pixelate.v1 import (
 )
 from inference.core.workflows.core_steps.visualizations.polygon.v1 import (
     PolygonVisualizationBlockV1,
+)
+from inference.core.workflows.core_steps.visualizations.polygon.v2 import (
+    PolygonVisualizationBlockV2,
 )
 from inference.core.workflows.core_steps.visualizations.polygon_zone.v1 import (
     PolygonZoneVisualizationBlockV1,
@@ -540,7 +579,9 @@ from inference.core.workflows.execution_engine.entities.types import (
     ROBOFLOW_MANAGED_KEY,
     ROBOFLOW_MODEL_ID_KIND,
     ROBOFLOW_PROJECT_KIND,
+    ROBOFLOW_SOLUTION_KIND,
     SECRET_KIND,
+    SEMANTIC_SEGMENTATION_PREDICTION_KIND,
     SERIALISED_PAYLOADS_KIND,
     STRING_KIND,
     TIMESTAMP_KIND,
@@ -570,6 +611,7 @@ KINDS_SERIALIZERS = {
     INSTANCE_SEGMENTATION_PREDICTION_KIND.name: serialise_sv_detections,
     RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND.name: serialise_rle_sv_detections,
     KEYPOINT_DETECTION_PREDICTION_KIND.name: serialise_sv_detections,
+    SEMANTIC_SEGMENTATION_PREDICTION_KIND.name: serialise_rle_sv_detections,
     QR_CODE_DETECTION_KIND.name: serialise_sv_detections,
     BAR_CODE_DETECTION_KIND.name: serialise_sv_detections,
     SECRET_KIND.name: serialize_secret,
@@ -588,6 +630,7 @@ KINDS_DESERIALIZERS = {
     NUMPY_ARRAY_KIND.name: deserialize_numpy_array,
     ROBOFLOW_MODEL_ID_KIND.name: deserialize_string_kind,
     ROBOFLOW_PROJECT_KIND.name: deserialize_string_kind,
+    ROBOFLOW_SOLUTION_KIND.name: deserialize_string_kind,
     ROBOFLOW_API_KEY_KIND.name: deserialize_optional_string_kind,
     ROBOFLOW_MANAGED_KEY.name: deserialize_optional_string_kind,
     FLOAT_ZERO_TO_ONE_KIND.name: deserialize_float_zero_to_one_kind,
@@ -598,6 +641,7 @@ KINDS_DESERIALIZERS = {
     TOP_CLASS_KIND.name: deserialize_string_kind,
     FLOAT_KIND.name: deserialize_float_kind,
     DICTIONARY_KIND.name: deserialize_dictionary_kind,
+    SEMANTIC_SEGMENTATION_PREDICTION_KIND.name: deserialize_rle_detections_kind,
     CLASSIFICATION_PREDICTION_KIND.name: deserialize_classification_prediction_kind,
     POINT_KIND.name: deserialize_point_kind,
     ZONE_KIND.name: deserialize_zone_kind,
@@ -609,6 +653,53 @@ KINDS_DESERIALIZERS = {
     INFERENCE_ID_KIND.name: deserialize_string_kind,
     TIMESTAMP_KIND.name: deserialize_timestamp,
 }
+
+
+def _should_filter_block(block_class: Type[WorkflowBlock]) -> bool:
+    """
+    Check if a block should be filtered out based on configuration.
+
+    Returns True if the block should be filtered (removed), False if it should be kept.
+    """
+    if not WORKFLOW_DISABLED_BLOCK_TYPES and not WORKFLOW_DISABLED_BLOCK_PATTERNS:
+        return False
+
+    try:
+        # Get block manifest to check block type
+        manifest_class = block_class.get_manifest()
+        schema = manifest_class.model_json_schema()
+        # Note: Pydantic puts json_schema_extra values at top level of schema
+        block_type = schema.get("block_type", "")
+
+        # Check if block type category is disabled
+        if block_type and block_type.lower() in WORKFLOW_DISABLED_BLOCK_TYPES:
+            return True
+
+        # Get the block identifier for pattern matching
+        # We'll check multiple identifiers to be thorough:
+        # 1. The block class name
+        # 2. The full module path
+        # 3. The block name from schema if available
+        block_class_name = block_class.__name__.lower()
+        block_module = block_class.__module__.lower()
+        block_name = schema.get("name", "").lower()
+
+        # Check patterns against various identifiers
+        for pattern in WORKFLOW_DISABLED_BLOCK_PATTERNS:
+            pattern_lower = pattern.lower()
+            if (
+                pattern_lower in block_class_name
+                or pattern_lower in block_module
+                or pattern_lower in block_name
+            ):
+                return True
+
+    except Exception:
+        # If we can't determine block info, don't filter it
+        # This ensures we don't accidentally filter blocks due to errors
+        pass
+
+    return False
 
 
 def load_blocks() -> List[Type[WorkflowBlock]]:
@@ -676,11 +767,13 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         GoogleVisionOCRBlockV1,
         GridVisualizationBlockV1,
         HaloVisualizationBlockV1,
+        HaloVisualizationBlockV2,
         IconVisualizationBlockV1,
         ImageBlurBlockV1,
         ImageContoursDetectionBlockV1,
         ImagePreprocessingBlockV1,
         ImageSlicerBlockV1,
+        HeatmapVisualizationBlockV1,
         ImageThresholdBlockV1,
         MotionDetectionBlockV1,
         BackgroundSubtractionBlockV1,
@@ -705,6 +798,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         PixelateVisualizationBlockV1,
         PixelationCountBlockV1,
         PolygonVisualizationBlockV1,
+        PolygonVisualizationBlockV2,
         PolygonZoneVisualizationBlockV1,
         QRCodeDetectorBlockV1,
         RoboflowClassificationModelBlockV1,
@@ -728,6 +822,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         StabilityAIOutpaintingBlockV1,
         StabilizeTrackedDetectionsBlockV1,
         StitchImagesBlockV1,
+        StitchOCRDetectionsBlockV2,
         StitchOCRDetectionsBlockV1,
         TemplateMatchingBlockV1,
         TimeInZoneBlockV1,
@@ -745,12 +840,17 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         EmailNotificationBlockV1,
         EmailNotificationBlockV2,
         LocalFileSinkBlockV1,
+        S3SinkBlockV1,
         TraceVisualizationBlockV1,
         ReferencePathVisualizationBlockV1,
         ByteTrackerBlockV3,
+        TrackerByteTrackBlockV1,
+        TrackerSORTBlockV1,
+        TrackerOCSORTBlockV1,
         WebhookSinkBlockV1,
         VelocityBlockV1,
         RoboflowInstanceSegmentationModelBlockV2,
+        RoboflowSemanticSegmentationModelBlockV1,
         RoboflowKeypointDetectionModelBlockV2,
         RoboflowClassificationModelBlockV2,
         RoboflowMultiLabelClassificationModelBlockV2,
@@ -768,16 +868,26 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         ImageSlicerBlockV2,
         Qwen25VLBlockV1,
         Qwen3VLBlockV1,
+        Qwen35VLBlockV1,
         SmolVLM2BlockV1,
         Moondream2BlockV1,
         OverlapBlockV1,
         ONVIFSinkBlockV1,
+        RoboflowVisionEventsBlockV1,
+        GLMOCRBlockV1,
         EasyOCRBlockV1,
         QRCodeGeneratorBlockV1,
         DetectionsCombineBlockV1,
+        MaskAreaMeasurementBlockV1,
     ]
     if SAM3_3D_OBJECTS_ENABLED:
         blocks.append(SegmentAnything3_3D_ObjectsBlockV1)
+
+    # Filter blocks if any disable configuration is set
+    if WORKFLOW_DISABLED_BLOCK_TYPES or WORKFLOW_DISABLED_BLOCK_PATTERNS:
+        filtered_blocks = [block for block in blocks if not _should_filter_block(block)]
+        return filtered_blocks
+
     return blocks
 
 
@@ -788,6 +898,7 @@ def load_kinds() -> List[Kind]:
         VIDEO_METADATA_KIND,
         ROBOFLOW_MODEL_ID_KIND,
         ROBOFLOW_PROJECT_KIND,
+        ROBOFLOW_SOLUTION_KIND,
         ROBOFLOW_API_KEY_KIND,
         FLOAT_ZERO_TO_ONE_KIND,
         LIST_OF_VALUES_KIND,
@@ -805,6 +916,7 @@ def load_kinds() -> List[Kind]:
         OBJECT_DETECTION_PREDICTION_KIND,
         INSTANCE_SEGMENTATION_PREDICTION_KIND,
         KEYPOINT_DETECTION_PREDICTION_KIND,
+        SEMANTIC_SEGMENTATION_PREDICTION_KIND,
         RGB_COLOR_KIND,
         IMAGE_KEYPOINTS_KIND,
         CONTOURS_KIND,

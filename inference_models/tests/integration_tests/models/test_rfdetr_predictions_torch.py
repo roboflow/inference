@@ -19,7 +19,7 @@ def test_rfdetr_base_og_with_numpy(
     )
 
     # when
-    predictions = model(dog_image_numpy)
+    predictions = model(dog_image_numpy, confidence=0.5)
 
     # then
     assert torch.allclose(
@@ -54,7 +54,7 @@ def test_torch_package_with_stretch_resize_and_contrast_stretching_numpy(
     )
 
     # when
-    predictions = model(coins_counting_image_numpy)
+    predictions = model(coins_counting_image_numpy, confidence=0.5)
 
     # then
     assert torch.allclose(
@@ -111,7 +111,9 @@ def test_torch_package_with_stretch_resize_and_contrast_stretching_numpy_batch(
     )
 
     # when
-    predictions = model([coins_counting_image_numpy, coins_counting_image_numpy])
+    predictions = model(
+        [coins_counting_image_numpy, coins_counting_image_numpy], confidence=0.5
+    )
 
     # then
     assert torch.allclose(
@@ -192,7 +194,7 @@ def test_torch_package_with_stretch_resize_and_contrast_stretching_torch(
     )
 
     # when
-    predictions = model(coins_counting_image_torch)
+    predictions = model(coins_counting_image_torch, confidence=0.5)
 
     # then
     assert torch.allclose(
@@ -250,7 +252,8 @@ def test_torch_package_with_stretch_resize_and_contrast_stretching_torch_batch(
 
     # when
     predictions = model(
-        torch.stack([coins_counting_image_torch, coins_counting_image_torch], dim=0)
+        torch.stack([coins_counting_image_torch, coins_counting_image_torch], dim=0),
+        confidence=0.5,
     )
 
     # then
@@ -332,7 +335,9 @@ def test_torch_package_with_stretch_resize_and_contrast_stretching_torch_list(
     )
 
     # when
-    predictions = model([coins_counting_image_torch, coins_counting_image_torch])
+    predictions = model(
+        [coins_counting_image_torch, coins_counting_image_torch], confidence=0.5
+    )
 
     # then
     assert torch.allclose(
@@ -414,7 +419,7 @@ def test_torch_package_with_static_crop_letterbox_numpy(
     )
 
     # when
-    predictions = model(coins_counting_image_numpy)
+    predictions = model(coins_counting_image_numpy, confidence=0.5)
 
     # then
     assert torch.allclose(
@@ -456,7 +461,9 @@ def test_torch_package_with_static_crop_letterbox_numpy_batch(
     )
 
     # when
-    predictions = model([coins_counting_image_numpy, coins_counting_image_numpy])
+    predictions = model(
+        [coins_counting_image_numpy, coins_counting_image_numpy], confidence=0.5
+    )
 
     # then
     assert torch.allclose(
@@ -511,7 +518,7 @@ def test_torch_package_with_static_crop_letterbox_torch(
     )
 
     # when
-    predictions = model(coins_counting_image_torch)
+    predictions = model(coins_counting_image_torch, confidence=0.5)
 
     # then
     assert torch.allclose(
@@ -558,7 +565,9 @@ def test_torch_package_with_static_crop_letterbox_torch_batch(
     )
 
     # when
-    predictions = model(torch.stack([coins_counting_image_torch] * 2, dim=0))
+    predictions = model(
+        torch.stack([coins_counting_image_torch] * 2, dim=0), confidence=0.5
+    )
 
     # then
     assert torch.allclose(
@@ -621,7 +630,9 @@ def test_torch_package_with_static_crop_letterbox_torch_list(
     )
 
     # when
-    predictions = model([coins_counting_image_torch, coins_counting_image_torch])
+    predictions = model(
+        [coins_counting_image_torch, coins_counting_image_torch], confidence=0.5
+    )
 
     # then
     assert torch.allclose(
@@ -683,7 +694,7 @@ def test_torch_package_with_center_crop_numpy(
     )
 
     # when
-    predictions = model(coins_counting_image_numpy, threshold=0.55)
+    predictions = model(coins_counting_image_numpy, confidence=0.55)
 
     # then
     assert torch.allclose(
@@ -719,7 +730,7 @@ def test_torch_package_with_center_crop_batch_numpy(
 
     # when
     predictions = model(
-        [coins_counting_image_numpy, coins_counting_image_numpy], threshold=0.55
+        [coins_counting_image_numpy, coins_counting_image_numpy], confidence=0.55
     )
 
     # then
@@ -769,7 +780,7 @@ def test_torch_package_with_center_crop_torch(
     )
 
     # when
-    predictions = model(coins_counting_image_torch, threshold=0.55)
+    predictions = model(coins_counting_image_torch, confidence=0.55)
 
     # then
     assert torch.allclose(
@@ -806,7 +817,7 @@ def test_torch_package_with_center_crop_batch_torch(
     # when
     predictions = model(
         torch.stack([coins_counting_image_torch, coins_counting_image_torch], dim=0),
-        threshold=0.55,
+        confidence=0.55,
     )
 
     # then
@@ -857,7 +868,7 @@ def test_torch_package_with_center_crop_list_of_torch(
 
     # when
     predictions = model(
-        [coins_counting_image_torch, coins_counting_image_torch], threshold=0.55
+        [coins_counting_image_torch, coins_counting_image_torch], confidence=0.55
     )
 
     # then
@@ -907,7 +918,9 @@ def test_torch_package_with_center_crop_numpy_custom_image_size(
     )
 
     # when
-    predictions = model(coins_counting_image_numpy, image_size=(300, 300))
+    predictions = model(
+        coins_counting_image_numpy, image_size=(300, 300), confidence=0.5
+    )
 
     # then
     assert torch.allclose(
@@ -940,7 +953,9 @@ def test_torch_package_with_center_crop_torch_custom_image_size(
     )
 
     # when
-    predictions = model(coins_counting_image_torch, image_size=(300, 300))
+    predictions = model(
+        coins_counting_image_torch, image_size=(300, 300), confidence=0.5
+    )
 
     # then
     assert torch.allclose(
@@ -973,7 +988,7 @@ def test_torch_package_with_static_crop_and_center_crop_numpy(
     )
 
     # when
-    predictions = model(coins_counting_image_numpy)
+    predictions = model(coins_counting_image_numpy, confidence=0.5)
 
     # then
     assert torch.allclose(
@@ -1008,7 +1023,9 @@ def test_torch_package_with_static_crop_and_center_crop_numpy_when_image_smaller
     )
 
     # when
-    predictions = model(coins_counting_image_numpy[2000:2300, 1250:1450])
+    predictions = model(
+        coins_counting_image_numpy[2000:2300, 1250:1450], confidence=0.5
+    )
 
     # then
     assert torch.allclose(
@@ -1041,7 +1058,9 @@ def test_torch_package_with_static_crop_and_center_crop_batch_numpy(
     )
 
     # when
-    predictions = model([coins_counting_image_numpy, coins_counting_image_numpy])
+    predictions = model(
+        [coins_counting_image_numpy, coins_counting_image_numpy], confidence=0.5
+    )
 
     # then
     assert torch.allclose(
@@ -1090,7 +1109,7 @@ def test_torch_package_with_static_crop_and_center_crop_torch(
     )
 
     # when
-    predictions = model(coins_counting_image_torch)
+    predictions = model(coins_counting_image_torch, confidence=0.5)
 
     # then
     assert torch.allclose(
@@ -1126,7 +1145,8 @@ def test_torch_package_with_static_crop_and_center_crop_batch_torch(
 
     # when
     predictions = model(
-        torch.stack([coins_counting_image_torch, coins_counting_image_torch], dim=0)
+        torch.stack([coins_counting_image_torch, coins_counting_image_torch], dim=0),
+        confidence=0.5,
     )
 
     # then
@@ -1162,3 +1182,215 @@ def test_torch_package_with_static_crop_and_center_crop_batch_torch(
         expected_xyxy.cpu(),
         atol=2,
     )
+
+
+_NONSQUARE_LETTERBOX_TORCH_EXPECTED_CONFIDENCE_NUMPY = torch.tensor(
+    [
+        0.9050897359848022,
+        0.899582028388977,
+        0.8740837574005127,
+        0.8738183379173279,
+        0.8695905804634094,
+        0.8626149892807007,
+        0.857352614402771,
+        0.8490833640098572,
+        0.8326076865196228,
+    ]
+)
+_NONSQUARE_LETTERBOX_TORCH_EXPECTED_CONFIDENCE_TORCH = torch.tensor(
+    [
+        0.9052708148956299,
+        0.8990932106971741,
+        0.8747126460075378,
+        0.8731882572174072,
+        0.869288444519043,
+        0.8626760244369507,
+        0.8570082783699036,
+        0.8495123386383057,
+        0.8324254751205444,
+    ]
+)
+_NONSQUARE_LETTERBOX_TORCH_EXPECTED_CLASS_ID = torch.tensor(
+    [0, 2, 0, 0, 0, 0, 2, 0, 2], dtype=torch.int32
+)
+_NONSQUARE_LETTERBOX_TORCH_EXPECTED_XYXY_NUMPY = torch.tensor(
+    [
+        [1464, 2300, 1636, 2479],
+        [1706, 2574, 1898, 2769],
+        [1501, 1881, 1722, 2104],
+        [1178, 2627, 1368, 2854],
+        [1089, 2357, 1254, 2529],
+        [930, 1844, 1101, 2014],
+        [1739, 2296, 1920, 2480],
+        [2688, 809, 2850, 977],
+        [1255, 2064, 1425, 2238],
+    ],
+    dtype=torch.int32,
+)
+_NONSQUARE_LETTERBOX_TORCH_EXPECTED_XYXY_TORCH = torch.tensor(
+    [
+        [1464, 2300, 1636, 2479],
+        [1706, 2574, 1898, 2769],
+        [1501, 1881, 1722, 2104],
+        [1178, 2627, 1368, 2854],
+        [1089, 2357, 1254, 2529],
+        [930, 1844, 1101, 2014],
+        [1739, 2296, 1920, 2480],
+        [2688, 809, 2850, 977],
+        [1256, 2064, 1425, 2238],
+    ],
+    dtype=torch.int32,
+)
+
+
+@pytest.mark.slow
+@pytest.mark.torch_models
+def test_torch_package_with_nonsquare_letterbox_numpy(
+    coin_counting_rfdetr_nano_torch_static_bs_nonsquare_letterbox_package: str,
+    coins_counting_image_numpy: np.ndarray,
+) -> None:
+    # given
+    model = RFDetrForObjectDetectionTorch.from_pretrained(
+        model_name_or_path=coin_counting_rfdetr_nano_torch_static_bs_nonsquare_letterbox_package,
+    )
+
+    # when
+    predictions = model(coins_counting_image_numpy, confidence=0.5)
+
+    # then
+    assert torch.allclose(
+        predictions[0].confidence.cpu(),
+        _NONSQUARE_LETTERBOX_TORCH_EXPECTED_CONFIDENCE_NUMPY,
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0].class_id.cpu(), _NONSQUARE_LETTERBOX_TORCH_EXPECTED_CLASS_ID
+    )
+    assert torch.allclose(
+        predictions[0].xyxy.cpu(),
+        _NONSQUARE_LETTERBOX_TORCH_EXPECTED_XYXY_NUMPY,
+        atol=2,
+    )
+
+
+@pytest.mark.slow
+@pytest.mark.torch_models
+def test_torch_package_with_nonsquare_letterbox_numpy_batch(
+    coin_counting_rfdetr_nano_torch_static_bs_nonsquare_letterbox_package: str,
+    coins_counting_image_numpy: np.ndarray,
+) -> None:
+    # given
+    model = RFDetrForObjectDetectionTorch.from_pretrained(
+        model_name_or_path=coin_counting_rfdetr_nano_torch_static_bs_nonsquare_letterbox_package,
+    )
+
+    # when
+    predictions = model(
+        [coins_counting_image_numpy, coins_counting_image_numpy], confidence=0.5
+    )
+
+    # then
+    for pred in predictions:
+        assert torch.allclose(
+            pred.confidence.cpu(),
+            _NONSQUARE_LETTERBOX_TORCH_EXPECTED_CONFIDENCE_NUMPY,
+            atol=0.01,
+        )
+        assert torch.allclose(
+            pred.class_id.cpu(), _NONSQUARE_LETTERBOX_TORCH_EXPECTED_CLASS_ID
+        )
+        assert torch.allclose(
+            pred.xyxy.cpu(), _NONSQUARE_LETTERBOX_TORCH_EXPECTED_XYXY_NUMPY, atol=2
+        )
+
+
+@pytest.mark.slow
+@pytest.mark.torch_models
+def test_torch_package_with_nonsquare_letterbox_torch(
+    coin_counting_rfdetr_nano_torch_static_bs_nonsquare_letterbox_package: str,
+    coins_counting_image_torch: torch.Tensor,
+) -> None:
+    # given
+    model = RFDetrForObjectDetectionTorch.from_pretrained(
+        model_name_or_path=coin_counting_rfdetr_nano_torch_static_bs_nonsquare_letterbox_package,
+    )
+
+    # when
+    predictions = model(coins_counting_image_torch, confidence=0.5)
+
+    # then
+    assert torch.allclose(
+        predictions[0].confidence.cpu(),
+        _NONSQUARE_LETTERBOX_TORCH_EXPECTED_CONFIDENCE_TORCH,
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0].class_id.cpu(), _NONSQUARE_LETTERBOX_TORCH_EXPECTED_CLASS_ID
+    )
+    assert torch.allclose(
+        predictions[0].xyxy.cpu(),
+        _NONSQUARE_LETTERBOX_TORCH_EXPECTED_XYXY_TORCH,
+        atol=2,
+    )
+
+
+@pytest.mark.slow
+@pytest.mark.torch_models
+def test_torch_package_with_nonsquare_letterbox_torch_batch(
+    coin_counting_rfdetr_nano_torch_static_bs_nonsquare_letterbox_package: str,
+    coins_counting_image_torch: torch.Tensor,
+) -> None:
+    # given
+    model = RFDetrForObjectDetectionTorch.from_pretrained(
+        model_name_or_path=coin_counting_rfdetr_nano_torch_static_bs_nonsquare_letterbox_package,
+    )
+
+    # when
+    predictions = model(
+        torch.stack([coins_counting_image_torch] * 2, dim=0), confidence=0.5
+    )
+
+    # then
+    for pred in predictions:
+        assert torch.allclose(
+            pred.confidence.cpu(),
+            _NONSQUARE_LETTERBOX_TORCH_EXPECTED_CONFIDENCE_TORCH,
+            atol=0.01,
+        )
+        assert torch.allclose(
+            pred.class_id.cpu(), _NONSQUARE_LETTERBOX_TORCH_EXPECTED_CLASS_ID
+        )
+        assert torch.allclose(
+            pred.xyxy.cpu(), _NONSQUARE_LETTERBOX_TORCH_EXPECTED_XYXY_TORCH, atol=2
+        )
+
+
+@pytest.mark.slow
+@pytest.mark.torch_models
+def test_torch_package_with_nonsquare_letterbox_torch_list(
+    coin_counting_rfdetr_nano_torch_static_bs_nonsquare_letterbox_package: str,
+    coins_counting_image_torch: torch.Tensor,
+) -> None:
+    # given
+    model = RFDetrForObjectDetectionTorch.from_pretrained(
+        model_name_or_path=coin_counting_rfdetr_nano_torch_static_bs_nonsquare_letterbox_package,
+    )
+
+    # when
+    predictions = model(
+        [coins_counting_image_torch, coins_counting_image_torch], confidence=0.5
+    )
+
+    # then
+    for pred in predictions:
+        assert torch.allclose(
+            pred.confidence.cpu(),
+            _NONSQUARE_LETTERBOX_TORCH_EXPECTED_CONFIDENCE_TORCH,
+            atol=0.01,
+        )
+        assert torch.allclose(
+            pred.class_id.cpu(), _NONSQUARE_LETTERBOX_TORCH_EXPECTED_CLASS_ID
+        )
+        assert torch.allclose(
+            pred.xyxy.cpu(), _NONSQUARE_LETTERBOX_TORCH_EXPECTED_XYXY_TORCH, atol=2
+        )

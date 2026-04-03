@@ -84,7 +84,7 @@ runs:
           # Logic for release events
           if [ "$EVENT_NAME" == "release" ]; then
             IMAGE_TAGS="$BASE_IMAGE:$NORMALIZED_RELEASE"
-            if [ "$VERSION" == "$NORMALIZED_RELEASE" ] && [ "$NORMALIZED_RELEASE" == "$NORMALIZED_LATEST_RELEASE" ]; then
+            if [ "$VERSION" == "$NORMALIZED_RELEASE" ] && [ "$NORMALIZED_RELEASE" == "$NORMALIZED_LATEST_RELEASE" ] && [[ "$NORMALIZED_RELEASE" != *rc* ]]; then
               IMAGE_TAGS="$IMAGE_TAGS,$BASE_IMAGE:latest"
             fi
           fi

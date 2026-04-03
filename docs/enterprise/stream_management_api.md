@@ -1,7 +1,15 @@
 # Stream Management
 
-> [!IMPORTANT] 
-> We require a Roboflow Enterprise License to use this in production. See inference/enterpise/LICENSE.txt for details.
+!!! warning "Discontinued Feature"
+
+    This feature has been integrated into the core `inference-server`. To enable it, 
+    start the server with the environment variable `ENABLE_STREAM_API=True`. 
+    Note that API endpoints have changed, so client code will need to be updated — 
+    however, the core capabilities remain the same.
+
+!!! warning "Enterprise Feature"
+
+    We require a Roboflow Enterprise License to use this in production. See [LICENSE.txt](https://github.com/roboflow/inference/blob/main/enterprise/LICENSE.txt) for details.
 
 
 ## Overview
@@ -272,7 +280,7 @@ Message must be a valid JSON after decoding and represent valid command.
   }
 }
 ```
-{% include 'model_id.md' %}
+--8<-- "include/model_id.md"
 
 #### `terminate` command
 

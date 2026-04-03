@@ -54,7 +54,11 @@ pip install inference
 By default, it runs on the CPU. Instead, you may install the GPU module with the following command:
 
 ```bash
-pip install inference-gpu
+pip install --extra-index-url https://download.pytorch.org/whl/cu124  inference-gpu
+# please adjust the --extra-index-url to CUDA version installed in your OS
+# https://download.pytorch.org/whl/cu<major><minor>, for instance https://download.pytorch.org/whl/cu130 for CUDA 13.0
+# alternativelly use
+uv pip install inference-gpu
 ```
 
 ### API Keys

@@ -6,6 +6,7 @@ import numpy as np
 from fastapi import FastAPI, File, Form, Request, Response
 from starlette.responses import JSONResponse
 
+from inference.core import logger
 from inference.core.utils.image_utils import load_image_bgr
 
 logging.getLogger().setLevel(logging.INFO)
@@ -42,7 +43,11 @@ async def handle_multipart_request_with_get(
     image: Annotated[bytes, File()],
     form_field: Annotated[str, Form()],
 ) -> Response:
-    decoded_image = cv2.imdecode(np.fromstring(image, dtype=np.uint8), cv2.IMREAD_UNCHANGED)
+    try:
+        decoded_image = cv2.imdecode(np.frombuffer(image, dtype=np.uint8), cv2.IMREAD_UNCHANGED)
+    except Exception:
+        logger.warning("Failed to decode image using np.frombuffer, please update numpy version")
+        decoded_image = cv2.imdecode(np.fromstring(image, dtype=np.uint8), cv2.IMREAD_UNCHANGED)
     logging.info(f"Received image of size: {decoded_image.shape}")
     logging.info(f"Form data: {form_field}")
     return JSONResponse(content={"status": "ok"})
@@ -53,7 +58,11 @@ async def handle_multipart_request_with_post(
     image: Annotated[bytes, File()],
     form_field: Annotated[str, Form()],
 ) -> Response:
-    decoded_image = cv2.imdecode(np.fromstring(image, dtype=np.uint8), cv2.IMREAD_UNCHANGED)
+    try:
+        decoded_image = cv2.imdecode(np.frombuffer(image, dtype=np.uint8), cv2.IMREAD_UNCHANGED)
+    except Exception:
+        logger.warning("Failed to decode image using np.frombuffer, please update numpy version")
+        decoded_image = cv2.imdecode(np.fromstring(image, dtype=np.uint8), cv2.IMREAD_UNCHANGED)
     logging.info(f"Received image of size: {decoded_image.shape}")
     logging.info(f"Form data: {form_field}")
     return JSONResponse(content={"status": "ok"})
@@ -64,7 +73,11 @@ async def handle_multipart_request_with_put(
     image: Annotated[bytes, File()],
     form_field: Annotated[str, Form()],
 ) -> Response:
-    decoded_image = cv2.imdecode(np.fromstring(image, dtype=np.uint8), cv2.IMREAD_UNCHANGED)
+    try:
+        decoded_image = cv2.imdecode(np.frombuffer(image, dtype=np.uint8), cv2.IMREAD_UNCHANGED)
+    except Exception:
+        logger.warning("Failed to decode image using np.frombuffer, please update numpy version")
+        decoded_image = cv2.imdecode(np.fromstring(image, dtype=np.uint8), cv2.IMREAD_UNCHANGED)
     logging.info(f"Received image of size: {decoded_image.shape}")
     logging.info(f"Form data: {form_field}")
     return JSONResponse(content={"status": "ok"})

@@ -1,9 +1,9 @@
 [project]
 name = "inference-models"
-version = "0.18.4"
+version = "0.24.2"
 description = "The new inference engine for Computer Vision models"
 readme = "README.md"
-requires-python = ">=3.9,<3.13"
+requires-python = ">=3.10,<3.13"
 dependencies = [
   "numpy",
   "torch>=2.0.0,<3.0.0",
@@ -12,19 +12,19 @@ dependencies = [
   "requests>=2.32.0,<3.0.0",
   "supervision>=0.26.0",
   "backoff~=2.2.0",
-  "transformers>=4.56.0,<5.0.0",
+  "transformers>=5.2.0,<5.3.0",
   "timm>=1.0.0,<2.0.0",
   "accelerate>=1.0.0,<2.0.0",
   "einops>=0.7.0,<1.0.0",
-  "peft>=0.11.1,<0.18.0",
+  "peft>=0.18.1",
   "num2words~=0.5.14",
-  "bitsandbytes>=0.42.0,<0.48.0; sys_platform != 'darwin'",
+  "bitsandbytes>=0.46.1,<0.48.0; sys_platform != 'darwin'",
   "pyvips>=2.2.3,<3.0.0",
   "rf-clip==1.1",
-  "python-doctr[torch]>=0.10.0,<=0.11.0",
+  "python-doctr[torch]>=1.0.0",
   "packaging>=24.0.0",
   "rich>=13.0.0,<15.0.0",
-  "pydantic>=2.0.0,<3.0.0",
+  "pydantic>=2.11.7,<3.0.0",
   "filelock>=3.12.0,<4.0.0",
   "rich>=14.1.0,<15.0.0",
   "segmentation-models-pytorch>=0.5.0,<1.0.0",
@@ -35,8 +35,7 @@ dependencies = [
   "tldextract~=5.1.2",
   "pybase64~=1.0.0",
   "rf-segment-anything==1.0",
-  "rf-sam-2==1.0.2",
-  "argon2-cffi>=25.1.0,<26.0.0",
+  "rf-sam-2==1.0.3",
 ]
 
 [project.optional-dependencies]
@@ -63,6 +62,11 @@ torch-cu128 = [
   "torch>=2.0.0,<3.0.0",
   "torchvision",
   "pycuda>=2025.0.0,<2026.0.0; platform_system != 'darwin' and python_version >= '3.10'",
+]
+torch-cu130 = [
+  "torch>=2.0.0,<3.0.0",
+  "torchvision",
+  "pycuda>=2025.0.0,<=2026.1.0; platform_system != 'darwin' and python_version >= '3.10'",
 ]
 torch-jp6-cu126 = [
   "numpy<2.0.0",
@@ -101,6 +105,17 @@ test = [
   "pytest-timeout",
   "requests-mock>=1.12.1"
 ]
+docs = [
+  "mkdocs-material[imaging]>=9.5.5",
+  "mkdocstrings>=0.25.2,<0.31.0",
+  "mkdocstrings-python>=1.10.9, <2.0.0",
+  "mike>=2.0.0",
+  "mkdocs-jupyter>=0.24.3",
+  "mkdocs-git-committers-plugin-2>=2.4.1; python_version >= '3.9' and python_version < '4'",
+  "mkdocs-git-revision-date-localized-plugin>=1.2.4",
+  "mkdocs-literate-nav~=0.6.2",
+  "mkdocs-gen-files~=0.6.0"
+]
 
 [tool.uv.sources]
 torch = [
@@ -131,6 +146,16 @@ explicit = true
 [[tool.uv.index]]
 name = "torch-cu124"
 url = "https://download.pytorch.org/whl/cu124"
+explicit = true
+
+[[tool.uv.index]]
+name = "torch-cu126"
+url = "https://download.pytorch.org/whl/cu126"
+explicit = true
+
+[[tool.uv.index]]
+name = "torch-cu130"
+url = "https://download.pytorch.org/whl/cu130"
 explicit = true
 
 [[tool.uv.index]]
@@ -203,6 +228,7 @@ conflicts = [
     { extra = "torch-cu124" },
     { extra = "torch-cu126" },
     { extra = "torch-cu128" },
+    { extra = "torch-cu130" },
     { extra = "torch-jp6-cu126" },
   ],
   [
@@ -215,5 +241,6 @@ conflicts = [
 
 [tool.setuptools.package-data]
 inference_models = [
-  "models/rfdetr/dinov2_configs/*.json"
+  "models/rfdetr/dinov2_configs/*.json",
+  "models/perception_encoder/vision_encoder/bpe_simple_vocab_16e6.txt.gz"
 ]

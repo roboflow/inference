@@ -30,12 +30,28 @@ from inference.core.workflows.execution_engine.entities.types import (
     Selector,
 )
 from inference.core.workflows.prototypes.block import (
+    AirGappedAvailability,
     BlockResult,
     WorkflowBlock,
     WorkflowBlockManifest,
 )
 
 OPENAI_MODELS = [
+    {
+        "id": "gpt-5.4",
+        "name": "GPT-5.4",
+        "reasoning_effort_values": ["none", "low", "medium", "high", "xhigh"],
+    },
+    {
+        "id": "gpt-5.4-mini",
+        "name": "GPT-5.4 mini",
+        "reasoning_effort_values": ["none", "low", "medium", "high", "xhigh"],
+    },
+    {
+        "id": "gpt-5.4-nano",
+        "name": "GPT-5.4 nano",
+        "reasoning_effort_values": ["none", "low", "medium", "high", "xhigh"],
+    },
     {
         "id": "gpt-5.2",
         "name": "GPT-5.2",
@@ -314,6 +330,10 @@ class BlockManifest(WorkflowBlockManifest):
                 f"`output_structure` parameter required to be set for task `{self.task_type}`"
             )
         return self
+
+    @classmethod
+    def get_air_gapped_availability(cls) -> AirGappedAvailability:
+        return AirGappedAvailability(available=False, reason="requires_internet")
 
     @classmethod
     def get_parameters_accepting_batches(cls) -> List[str]:

@@ -10,6 +10,7 @@ import backoff
 import requests
 from filelock import FileLock
 from requests import Response, Timeout
+from requests.exceptions import ChunkedEncodingError
 from rich.progress import (
     BarColumn,
     DownloadColumn,
@@ -22,6 +23,7 @@ from inference_models.configuration import (
     API_CALLS_MAX_TRIES,
     API_CALLS_TIMEOUT,
     DISABLE_INTERACTIVE_PROGRESS_BARS,
+    FILE_LOCK_ACQUIRE_TIMEOUT,
     IDEMPOTENT_API_REQUEST_CODES_TO_RETRY,
 )
 from inference_models.errors import (
@@ -64,20 +66,115 @@ def download_files_to_directory(
     request_timeout: Optional[int] = None,
     max_parallel_downloads: int = 8,
     max_threads_per_download: int = 8,
-    file_lock_acquire_timeout: int = 10,
+    file_lock_acquire_timeout: int = FILE_LOCK_ACQUIRE_TIMEOUT,
     verify_hash_while_download: bool = True,
     download_files_without_hash: bool = False,
     name_after: Literal["file_handle", "md5_hash"] = "file_handle",
     on_file_created: Optional[Callable[[str], None]] = None,
     on_file_renamed: Optional[Callable[[str, str], None]] = None,
 ) -> Dict[str, str]:
+    """Download multiple files to a directory with parallel downloads and hash verification.
+
+    Downloads files from URLs to a target directory with support for parallel downloads,
+    automatic retries, hash verification, and progress tracking. Skips files that already
+    exist in the target directory.
+
+    Args:
+        target_dir: Absolute path to the directory where files should be downloaded.
+            Will be created if it doesn't exist.
+
+        files_specs: List of tuples, each containing:
+            - file_handle (str): Logical name for the file (used as filename by default)
+            - download_url (str): URL to download the file from
+            - md5_hash (Optional[str]): Expected MD5 hash for verification (None if unknown)
+
+        verbose: Show progress bars during download. Default: True.
+
+        response_codes_to_retry: HTTP status codes that should trigger a retry.
+            Default: Uses library defaults (typically 429, 500, 502, 503, 504).
+
+        request_timeout: Timeout in seconds for HTTP requests. Default: Uses library default.
+
+        max_parallel_downloads: Maximum number of files to download simultaneously.
+            Default: 8.
+
+        max_threads_per_download: Maximum number of threads to use for downloading a
+            single large file. Default: 8.
+
+        file_lock_acquire_timeout: Timeout in seconds for acquiring file locks during
+            concurrent downloads. Default: 10.
+
+        verify_hash_while_download: Verify MD5 hash during download. Default: True.
+
+        download_files_without_hash: Allow downloading files without MD5 hashes.
+            **Security risk**. Default: False.
+
+        name_after: How to name downloaded files. Options:
+            - "file_handle": Use the file_handle from files_specs
+            - "md5_hash": Use the MD5 hash as filename
+            Default: "file_handle".
+
+        on_file_created: Optional callback called when a file is created.
+            Receives the file path as argument.
+
+        on_file_renamed: Optional callback called when a file is renamed.
+            Receives old and new paths as arguments.
+
+    Returns:
+        Dictionary mapping file handles to their absolute paths in the target directory.
+
+    Raises:
+        UntrustedFileError: If `download_files_without_hash=False` and files without
+            hashes are encountered.
+        FileHashSumMissmatch: If downloaded file's hash doesn't match expected hash.
+        RetryError: If download fails after all retry attempts.
+        InvalidParameterError: If `name_after` has an invalid value.
+
+    Examples:
+        Download model files:
+
+        >>> from inference_models.developer_tools import download_files_to_directory
+        >>>
+        >>> files_to_download = [
+        ...     ("model.onnx", "https://example.com/model.onnx", "abc123..."),
+        ...     ("config.json", "https://example.com/config.json", "def456..."),
+        ... ]
+        >>>
+        >>> file_paths = download_files_to_directory(
+        ...     target_dir="/path/to/cache",
+        ...     files_specs=files_to_download,
+        ...     verbose=True
+        ... )
+        >>>
+        >>> print(file_paths["model.onnx"])  # /path/to/cache/model.onnx
+        >>> print(file_paths["config.json"])  # /path/to/cache/config.json
+
+        Download without hash verification (not recommended):
+
+        >>> files_to_download = [
+        ...     ("weights.pt", "https://example.com/weights.pt", None),
+        ... ]
+        >>>
+        >>> file_paths = download_files_to_directory(
+        ...     target_dir="/path/to/cache",
+        ...     files_specs=files_to_download,
+        ...     download_files_without_hash=True,  # Allow files without hashes
+        ...     verify_hash_while_download=False
+        ... )
+
+    Note:
+        - Files are downloaded in parallel for better performance
+        - Large files (>32MB) are downloaded using multiple threads
+        - Existing files are skipped automatically
+        - Progress bars are disabled if DISABLE_INTERACTIVE_PROGRESS_BARS env var is set
+    """
     if name_after not in {"file_handle", "md5_hash"}:
         raise InvalidParameterError(
             message="Function download_files_to_directory(...) was called with "
             f"invalid value of parameter `name_after` - received value `{name_after}`. "
             f"This is a bug in `inference-models` - submit new issue under "
             f"https://github.com/roboflow/inference/issues/",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/input-validation/#invalidparametererror",
         )
     if DISABLE_INTERACTIVE_PROGRESS_BARS:
         verbose = False
@@ -104,7 +201,7 @@ def download_files_to_directory(
                 f"without MD5 hash sum to verify the download content. The download method was used with "
                 f"`download_files_without_hash=False` - which prevents from downloading such files. If you see "
                 f"this error while using hosted Roboflow serving option - contact us to get support.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/file-download/#untrustedfileerror",
             )
     os.makedirs(target_dir, exist_ok=True)
     progress = Progress(
@@ -162,7 +259,7 @@ def construct_files_path_mapping(
                 "If you see this error using hosted Roboflow solution - contact us to get "
                 "help. Running locally, verify the download code and raise an issue if you see "
                 "a bug: https://github.com/roboflow/inference/issues/",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/file-download/#untrustedfileerror",
             )
         if name_after == "md5_hash":
             target_path = os.path.join(target_dir, content_hash)
@@ -206,6 +303,12 @@ def safe_download_file(
     )
     try:
         with FileLock(lock_path, timeout=file_lock_acquire_timeout):
+            if os.path.isfile(target_file_path):
+                LOGGER.debug(
+                    f"File {target_file_path} already exists after acquiring lock, "
+                    f"skipping download."
+                )
+                return
             safe_execute_download(
                 download_url=download_url,
                 tmp_download_file=tmp_download_file,
@@ -306,7 +409,7 @@ def safe_execute_download(
             on_hash_calculation_started=on_hash_calculation_started,
             on_hash_chunk_calculated=on_hash_chunk_calculated,
         )
-    os.rename(tmp_download_file, target_file_path)
+    os.replace(tmp_download_file, target_file_path)
     if on_file_renamed:
         on_file_renamed(tmp_download_file, target_file_path)
 
@@ -336,12 +439,13 @@ def check_range_download_option(
         response = requests.head(url, timeout=timeout)
     except (OSError, Timeout, requests.exceptions.ConnectionError):
         raise RetryError(
-            message=f"Connectivity error for URL: {url}", help_url="https://todo"
+            message=f"Connectivity error for URL: {url}",
+            help_url="https://inference-models.roboflow.com/errors/file-download/#retryerror",
         )
     if response.status_code in response_codes_to_retry:
         raise RetryError(
             message=f"Remote server returned response code {response.status_code} for URL {url}",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/file-download/#retryerror",
         )
     response.raise_for_status()
     accept_ranges = response.headers.get("accept-ranges", "none")
@@ -372,12 +476,13 @@ def get_content_length(
         response = requests.head(url, timeout=timeout)
     except (OSError, Timeout, requests.exceptions.ConnectionError):
         raise RetryError(
-            message=f"Connectivity error for URL: {url}", help_url="https://todo"
+            message=f"Connectivity error for URL: {url}",
+            help_url="https://inference-models.roboflow.com/errors/file-download/#retryerror",
         )
     if response.status_code in response_codes_to_retry:
         raise RetryError(
             message=f"Remote server returned response code {response.status_code} for URL {url}",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/file-download/#retryerror",
         )
     response.raise_for_status()
     content_length = response.headers.get("content-length")
@@ -460,7 +565,7 @@ def verify_hash_sum_of_local_file(
         raise FileHashSumMissmatch(
             f"Could not confirm the validity of file content for url: {url}. "
             f"Expected MD5: {expected_md5_hash}, calculated hash: {computed_hash.hexdigest()}",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/file-download/#filehashsummissmatch",
         )
 
 
@@ -487,7 +592,7 @@ def generate_chunks_boundaries(
     backoff.constant,
     exception=RetryError,
     max_tries=API_CALLS_MAX_TRIES,
-    interval=1,
+    interval=10,
 )
 def download_chunk(
     url: str,
@@ -507,13 +612,13 @@ def download_chunk(
             if response.status_code in response_codes_to_retry:
                 raise RetryError(
                     message=f"File hosting returned {response.status_code}",
-                    help_url="https://todo",
+                    help_url="hhttps://inference-models.roboflow.com/errors/file-download/#retryerror",
                 )
             response.raise_for_status()
             if response.status_code != 206:
                 raise RetryError(
                     message=f"Server does not support range requests (returned {response.status_code} instead of 206)",
-                    help_url="https://todo",
+                    help_url="https://inference-models.roboflow.com/errors/file-download/#retryerror",
                 )
             _handle_stream_download(
                 response=response,
@@ -523,18 +628,26 @@ def download_chunk(
                 file_open_mode="r+b",
                 offset=start,
             )
-    except (ConnectionError, Timeout, requests.exceptions.ConnectionError):
+    except (
+        ConnectionError,
+        Timeout,
+        requests.exceptions.ConnectionError,
+        ChunkedEncodingError,
+    ) as error:
+        LOGGER.warning(
+            f"Download chunk failed ({type(error).__name__}: {error}), retrying in 10s..."
+        )
         raise RetryError(
             message=f"Connectivity error",
-            help_url="https://todo",
-        )
+            help_url="https://inference-models.roboflow.com/errors/file-download/#retryerror",
+        ) from error
 
 
 @backoff.on_exception(
     backoff.constant,
     exception=RetryError,
     max_tries=API_CALLS_MAX_TRIES,
-    interval=1,
+    interval=10,
 )
 def stream_download(
     url: str,
@@ -558,7 +671,7 @@ def stream_download(
             if response.status_code in response_codes_to_retry:
                 raise RetryError(
                     message=f"File hosting returned {response.status_code}",
-                    help_url="https://todo",
+                    help_url="https://inference-models.roboflow.com/errors/file-download/#retryerror",
                 )
             response.raise_for_status()
             _handle_stream_download(
@@ -569,18 +682,26 @@ def stream_download(
                 content_storage=computed_hash,
                 on_file_created=on_file_created,
             )
-    except (ConnectionError, Timeout, requests.exceptions.ConnectionError):
+    except (
+        ConnectionError,
+        Timeout,
+        requests.exceptions.ConnectionError,
+        ChunkedEncodingError,
+    ) as error:
+        LOGGER.warning(
+            f"Download failed ({type(error).__name__}: {error}), retrying in 10s..."
+        )
         raise RetryError(
             message=f"Connectivity error",
-            help_url="https://todo",
-        )
+            help_url="https://inference-models.roboflow.com/errors/file-download/#retryerror",
+        ) from error
     if not verify_hash_while_download:
         return None
     if computed_hash.hexdigest() != md5_hash:
         raise FileHashSumMissmatch(
             f"Could not confirm the validity of file content for url: {url}. Expected MD5: {md5_hash}, "
             f"calculated hash: {computed_hash.hexdigest()}",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/file-download/#filehashsummissmatch",
         )
     return None
 

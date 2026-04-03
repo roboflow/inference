@@ -217,7 +217,7 @@ class DocTR(RoboflowCoreModel):
 
 
 class DocTRRec(RoboflowCoreModel):
-    def __init__(self, *args, model_id: str = "doctr_rec/crnn_vgg16_bn", **kwargs):
+    def __init__(self, *args, model_id: str = "doctr_rec/crnn_vgg16_bn_v2", **kwargs):
         """Initializes the DocTR model.
 
         Args:
@@ -248,7 +248,7 @@ class DocTRDet(RoboflowCoreModel):
         ort_session: ONNX runtime inference session.
     """
 
-    def __init__(self, *args, model_id: str = "doctr_det/db_resnet50", **kwargs):
+    def __init__(self, *args, model_id: str = "doctr_det/db_resnet50_v2", **kwargs):
         """Initializes the DocTR model.
 
         Args:

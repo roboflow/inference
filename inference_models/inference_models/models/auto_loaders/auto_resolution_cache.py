@@ -29,6 +29,7 @@ class AutoResolutionCacheEntry(BaseModel):
     backend_type: Optional[BackendType]
     model_dependencies: Optional[List[ModelDependency]] = Field(default=None)
     created_at: datetime
+    model_features: Optional[dict] = Field(default=None)
 
 
 class AutoResolutionCache(ABC):
@@ -124,6 +125,6 @@ class BaseAutoLoadMetadataCache(AutoResolutionCache):
 
 
 def generate_auto_resolution_cache_path(auto_negotiation_hash: str) -> str:
-    return os.path.join(
+    return os.path.abspath(os.path.join(
         INFERENCE_HOME, "auto-resolution-cache", f"{auto_negotiation_hash}.json"
-    )
+    ))

@@ -73,7 +73,7 @@ class Sam2ImageEmbeddingsInMemoryCache(Sam2ImageEmbeddingsCache):
                 message=f"In memory cache size for SAM2 embeddings was set to invalid value. "
                 f"If you are running inference locally - adjust settings of your deployment. If you see this "
                 f"error running on Roboflow platform - contact us to get help.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/runtime-environment/#environmentconfigurationerror",
             )
         if self._size_limit is None or self._size_limit < 1:
             return None
@@ -146,7 +146,7 @@ class Sam2LowResolutionMasksInMemoryCache(Sam2LowResolutionMasksCache):
                 message=f"In memory cache size for SAM embeddings was set to invalid value. "
                 f"If you are running inference locally - adjust settings of your deployment. If you see this "
                 f"error running on Roboflow platform - contact us to get help.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/runtime-environment/#environmentconfigurationerror",
             )
         if self._size_limit is None or self._size_limit < 1:
             return None

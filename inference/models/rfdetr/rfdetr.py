@@ -12,6 +12,7 @@ from inference.core.entities.requests.inference import InferenceRequestImage
 from inference.core.entities.responses.inference import InferenceResponseImage
 from inference.core.env import (
     DISABLE_PREPROC_AUTO_ORIENT,
+    DISK_CACHE_CLEANUP,
     FIX_BATCH_SIZE,
     MAX_BATCH_SIZE,
     ONNXRUNTIME_EXECUTION_PROVIDERS,
@@ -21,7 +22,7 @@ from inference.core.env import (
     USE_PYTORCH_FOR_PREPROCESSING,
 )
 from inference.core.exceptions import (
-    CannotInitialiseModelError,
+    CannotInitialiseModelDueToInputSizeError,
     ModelArtefactError,
     OnnxProviderNotAvailable,
 )
@@ -157,6 +158,11 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
                 preprocessed_image[:, :, 2] - self.preprocess_means[2]
             ) / self.preprocess_stds[2]
 
+        if self._needs_nonsquare_preproc:
+            intermediate_size = (self._preproc_resize_w, self._preproc_resize_h)
+        else:
+            intermediate_size = None
+
         if self.resize_method == "Stretch to":
             if isinstance(preprocessed_image, np.ndarray):
                 preprocessed_image = preprocessed_image.astype(np.float32)
@@ -179,20 +185,40 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
 
         elif self.resize_method == "Fit (black edges) in":
             resized = letterbox_image(
-                preprocessed_image, (self.img_size_w, self.img_size_h)
+                preprocessed_image,
+                intermediate_size or (self.img_size_w, self.img_size_h),
             )
         elif self.resize_method == "Fit (white edges) in":
             resized = letterbox_image(
                 preprocessed_image,
-                (self.img_size_w, self.img_size_h),
+                intermediate_size or (self.img_size_w, self.img_size_h),
                 color=(255, 255, 255),
             )
         elif self.resize_method == "Fit (grey edges) in":
             resized = letterbox_image(
                 preprocessed_image,
-                (self.img_size_w, self.img_size_h),
+                intermediate_size or (self.img_size_w, self.img_size_h),
                 color=(114, 114, 114),
             )
+
+        if intermediate_size is not None:
+            if isinstance(resized, np.ndarray):
+                resized = cv2.resize(
+                    resized.astype(np.float32),
+                    (self.img_size_w, self.img_size_h),
+                )
+            elif USE_PYTORCH_FOR_PREPROCESSING:
+                resized = torch.nn.functional.interpolate(
+                    resized,
+                    size=(self.img_size_h, self.img_size_w),
+                    mode="bilinear",
+                )
+            else:
+                raise ValueError(
+                    f"Received an image of unknown type, {type(resized)}; "
+                    "This is most likely a bug. Contact Roboflow team through github issues "
+                    "(https://github.com/roboflow/inference/issues) providing full context of the problem"
+                )
 
         if is_bgr:
             if isinstance(resized, np.ndarray):
@@ -315,12 +341,15 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
             logits_flat = logits_sigmoid[batch_idx].reshape(-1)
 
             # Use argpartition for better performance when max_detections is smaller than logits_flat
-            partition_indices = np.argpartition(-logits_flat, max_detections)[
-                :max_detections
-            ]
-            sorted_indices = partition_indices[
-                np.argsort(-logits_flat[partition_indices])
-            ]
+            if len(logits_flat) > max_detections:
+                partition_indices = np.argpartition(-logits_flat, max_detections)[
+                    :max_detections
+                ]
+                sorted_indices = partition_indices[
+                    np.argsort(-logits_flat[partition_indices])
+                ]
+            else:
+                sorted_indices = np.argsort(-logits_flat)
             topk_scores = logits_flat[sorted_indices]
 
             conf_mask = topk_scores > confidence
@@ -350,7 +379,10 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
                 scale_fct = np.array([orig_w, orig_h, orig_w, orig_h], dtype=np.float32)
                 boxes_xyxy *= scale_fct
             else:
-                input_h, input_w = self.img_size_h, self.img_size_w
+                if self._needs_nonsquare_preproc:
+                    input_h, input_w = self._preproc_resize_h, self._preproc_resize_w
+                else:
+                    input_h, input_w = self.img_size_h, self.img_size_w
 
                 scale = min(input_w / orig_w, input_h / orig_h)
                 scaled_w = int(orig_w * scale)
@@ -418,7 +450,9 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
                 input_resolution,
                 RFDETR_ONNX_MAX_RESOLUTION,
             )
-            raise CannotInitialiseModelError(f"Resolution too high for RFDETR")
+            raise CannotInitialiseModelDueToInputSizeError(
+                f"Resolution too high for RFDETR"
+            )
 
         logger.debug("Creating inference session")
         if self.load_weights or not self.has_model_metadata:
@@ -468,7 +502,7 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
                     sess_options=session_options,
                 )
             except Exception as e:
-                self.clear_cache()
+                self.clear_cache(delete_from_disk=DISK_CACHE_CLEANUP)
                 raise ModelArtefactError(
                     f"Unable to load ONNX session. Cause: {e}"
                 ) from e
@@ -527,6 +561,26 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
                 self.batching_enabled = False
                 logger.debug(
                     f"Model {self.endpoint} is loaded with dynamic batching disabled"
+                )
+
+        self._needs_nonsquare_preproc = False
+        if self.preproc.get("resize"):
+            preproc_w = int(self.preproc["resize"].get("width", self.img_size_w))
+            preproc_h = int(self.preproc["resize"].get("height", self.img_size_h))
+            self._needs_nonsquare_preproc = (
+                self.resize_method != "Stretch to"
+                and preproc_w != preproc_h
+                and self.img_size_h == self.img_size_w
+            )
+            if self._needs_nonsquare_preproc:
+                self._preproc_resize_w = preproc_w
+                self._preproc_resize_h = preproc_h
+                logger.debug(
+                    "Non-square preprocessing detected: resize to %dx%d then stretch to %dx%d",
+                    preproc_w,
+                    preproc_h,
+                    self.img_size_w,
+                    self.img_size_h,
                 )
 
         if ROBOFLOW_BACKGROUND_CLASS in self.class_names:
@@ -601,12 +655,15 @@ class RFDETRInstanceSegmentation(
             logits_flat = logits_sigmoid[batch_idx].reshape(-1)
 
             # Use argpartition for better performance when max_detections is smaller than logits_flat
-            partition_indices = np.argpartition(-logits_flat, max_detections)[
-                :max_detections
-            ]
-            sorted_indices = partition_indices[
-                np.argsort(-logits_flat[partition_indices])
-            ]
+            if len(logits_flat) > max_detections:
+                partition_indices = np.argpartition(-logits_flat, max_detections)[
+                    :max_detections
+                ]
+                sorted_indices = partition_indices[
+                    np.argsort(-logits_flat[partition_indices])
+                ]
+            else:
+                sorted_indices = np.argsort(-logits_flat)
             topk_scores = logits_flat[sorted_indices]
 
             conf_mask = topk_scores > confidence
@@ -637,7 +694,10 @@ class RFDETRInstanceSegmentation(
                 scale_fct = np.array([orig_w, orig_h, orig_w, orig_h], dtype=np.float32)
                 boxes_xyxy *= scale_fct
             else:
-                input_h, input_w = self.img_size_h, self.img_size_w
+                if self._needs_nonsquare_preproc:
+                    input_h, input_w = self._preproc_resize_h, self._preproc_resize_w
+                else:
+                    input_h, input_w = self.img_size_h, self.img_size_w
 
                 scale = min(input_w / orig_w, input_h / orig_h)
                 scaled_w = int(orig_w * scale)
@@ -689,7 +749,31 @@ class RFDETRInstanceSegmentation(
                     if pred_class_name not in class_filter_local:
                         continue
                 mask = selected_masks[i]
-                # Per-mask optional upscaling for better polygon quality without retaining all high-res masks
+
+                if self.resize_method != "Stretch to":
+                    if self._needs_nonsquare_preproc:
+                        input_h, input_w = (
+                            self._preproc_resize_h,
+                            self._preproc_resize_w,
+                        )
+                    else:
+                        input_h, input_w = self.img_size_h, self.img_size_w
+                    mask_h, mask_w = mask.shape[0], mask.shape[1]
+
+                    letterbox_scale = min(input_w / orig_w, input_h / orig_h)
+                    scaled_w = int(orig_w * letterbox_scale)
+                    scaled_h = int(orig_h * letterbox_scale)
+
+                    pad_x_input = (input_w - scaled_w) / 2
+                    pad_y_input = (input_h - scaled_h) / 2
+
+                    crop_x1 = int(round(pad_x_input * mask_w / input_w))
+                    crop_y1 = int(round(pad_y_input * mask_h / input_h))
+                    crop_x2 = int(round((pad_x_input + scaled_w) * mask_w / input_w))
+                    crop_y2 = int(round((pad_y_input + scaled_h) * mask_h / input_h))
+
+                    mask = mask[crop_y1:crop_y2, crop_x1:crop_x2]
+
                 mask_decode_mode = kwargs.get("mask_decode_mode", "accurate")
                 if mask_decode_mode == "accurate":
                     target_res = (orig_w, orig_h)
@@ -719,22 +803,17 @@ class RFDETRInstanceSegmentation(
                             target_res,
                             interpolation=cv2.INTER_LINEAR,
                         )
-                # Ensure binary for polygonization
+
                 mask_bin = (mask > 0).astype(np.uint8)
                 points = mask2poly(mask_bin)
-                # Scale polygon points back to original image coordinates if needed
+
+                # After letterbox cropping, both paths reduce to a simple
+                # linear rescale from prediction dims to original dims.
                 new_points = []
                 prediction_h, prediction_w = mask_bin.shape[0], mask_bin.shape[1]
                 for point in points:
-                    if self.resize_method == "Stretch to":
-                        new_x = point[0] * (orig_w / prediction_w)
-                        new_y = point[1] * (orig_h / prediction_h)
-                    else:
-                        scale = max(orig_w / prediction_w, orig_h / prediction_h)
-                        pad_x = (orig_w - prediction_w * scale) / 2
-                        pad_y = (orig_h - prediction_h * scale) / 2
-                        new_x = point[0] * scale + pad_x
-                        new_y = point[1] * scale + pad_y
+                    new_x = point[0] * (orig_w / prediction_w)
+                    new_y = point[1] * (orig_h / prediction_h)
                     new_points.append(np.array([new_x, new_y]))
                 outputs_polygons.append(new_points)
                 outputs_predictions.append(list(pred))

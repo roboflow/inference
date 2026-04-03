@@ -1,13 +1,18 @@
-from typing import Optional, Union
+from typing import Optional, TypeVar, Union
 
 import cv2
 import numpy as np
-from supervision import Color, Detections
-from supervision.annotators.base import BaseAnnotator, ImageType
-from supervision.annotators.utils import ColorLookup, resolve_color
-from supervision.detection.utils.converters import mask_to_polygons
-from supervision.draw.color import ColorPalette
-from supervision.draw.utils import draw_polygon
+from PIL import Image
+from supervision import (
+    Color,
+    ColorLookup,
+    ColorPalette,
+    Detections,
+    draw_polygon,
+    mask_to_polygons,
+)
+from supervision.annotators.base import BaseAnnotator
+from supervision.annotators.utils import resolve_color
 
 try:
     from supervision.utils.conversion import ensure_cv2_image_for_annotation
@@ -15,6 +20,9 @@ except ImportError:
     from supervision.utils.conversion import (
         ensure_cv2_image_for_class_method as ensure_cv2_image_for_annotation,
     )
+
+
+ImageType = TypeVar("ImageType", np.ndarray, Image.Image)
 
 
 class PolygonAnnotator(BaseAnnotator):

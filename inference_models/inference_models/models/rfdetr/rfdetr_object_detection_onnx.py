@@ -4,8 +4,11 @@ from typing import List, Optional, Tuple, Union
 import numpy as np
 import torch
 
-from inference_models import Detections, ObjectDetectionModel
-from inference_models.configuration import DEFAULT_DEVICE
+from inference_models import Detections, ObjectDetectionModel, PreProcessingOverrides
+from inference_models.configuration import (
+    DEFAULT_DEVICE,
+    INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE,
+)
 from inference_models.entities import ColorFormat
 from inference_models.errors import (
     EnvironmentConfigurationError,
@@ -13,8 +16,8 @@ from inference_models.errors import (
 )
 from inference_models.models.common.model_packages import get_model_package_contents
 from inference_models.models.common.onnx import (
-    run_session_with_batch_size_limit,
-    set_execution_provider_defaults,
+    run_onnx_session_with_batch_size_limit,
+    set_onnx_execution_provider_defaults,
 )
 from inference_models.models.common.roboflow.model_packages import (
     InferenceConfig,
@@ -26,13 +29,11 @@ from inference_models.models.common.roboflow.model_packages import (
 from inference_models.models.common.roboflow.post_processing import (
     rescale_image_detections,
 )
-from inference_models.models.common.roboflow.pre_processing import (
-    pre_process_network_input,
-)
 from inference_models.models.rfdetr.class_remapping import (
     ClassesReMapping,
     prepare_class_remapping,
 )
+from inference_models.models.rfdetr.pre_processing import pre_process_network_input
 from inference_models.utils.onnx_introspection import (
     get_selected_onnx_execution_providers,
 )
@@ -41,16 +42,15 @@ try:
     import onnxruntime
 except ImportError as import_error:
     raise MissingDependencyError(
-        message=f"Could not import YOLOv8 model with ONNX backend - this error means that some additional dependencies "
-        f"are not installed in the environment. If you run the `inference-models` library directly in your Python "
-        f"program, make sure the following extras of the package are installed: \n"
-        f"\t* `onnx-cpu` - when you wish to use library with CPU support only\n"
-        f"\t* `onnx-cu12` - for running on GPU with Cuda 12 installed\n"
-        f"\t* `onnx-cu118` - for running on GPU with Cuda 11.8 installed\n"
-        f"\t* `onnx-jp6-cu126` - for running on Jetson with Jetpack 6\n"
-        f"If you see this error using Roboflow infrastructure, make sure the service you use does support the model. "
-        f"You can also contact Roboflow to get support.",
-        help_url="https://todo",
+        message="Running RFDETR model with ONNX backend requires pycuda installation, which is brought with "
+        "`onnx-*` extras of `inference-models` library. If you see this error running locally, "
+        "please follow our installation guide: https://inference-models.roboflow.com/getting-started/installation/"
+        " If you see this error using Roboflow infrastructure, make sure the service you use does support the "
+        f"model, You can also contact Roboflow to get support."
+        "Additionally - if AutoModel.from_pretrained(...) "
+        f"automatically selects model package which does not match your environment - that's a serious problem and "
+        f"we will really appreciate letting us know - https://github.com/roboflow/inference/issues",
+        help_url="https://inference-models.roboflow.com/errors/runtime-environment/#missingdependencyerror",
     ) from import_error
 
 
@@ -69,6 +69,7 @@ class RFDetrForObjectDetectionONNX(
         onnx_execution_providers: Optional[List[Union[str, tuple]]] = None,
         default_onnx_trt_options: bool = True,
         device: torch.device = DEFAULT_DEVICE,
+        rf_detr_max_input_resolution: Optional[Union[int, Tuple[int, int]]] = None,
         **kwargs,
     ) -> "RFDetrForObjectDetectionONNX":
         if onnx_execution_providers is None:
@@ -79,9 +80,9 @@ class RFDetrForObjectDetectionONNX(
                 f"be specified - explicitly in `from_pretrained(...)` method or via env variable "
                 f"`ONNXRUNTIME_EXECUTION_PROVIDERS`. If you run model locally - adjust your setup, otherwise "
                 f"contact the platform support.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/runtime-environment/#environmentconfigurationerror",
             )
-        onnx_execution_providers = set_execution_provider_defaults(
+        onnx_execution_providers = set_onnx_execution_provider_defaults(
             providers=onnx_execution_providers,
             model_package_path=model_name_or_path,
             device=device,
@@ -106,6 +107,18 @@ class RFDetrForObjectDetectionONNX(
                 ResizeMode.CENTER_CROP,
                 ResizeMode.LETTERBOX_REFLECT_EDGES,
             },
+            implicit_resize_mode_substitutions={
+                ResizeMode.FIT_LONGER_EDGE: (
+                    ResizeMode.STRETCH_TO,
+                    None,
+                    "RFDetr Object Detection model running with ONNX backend was trained with "
+                    "`fit-longer-edge` input resize mode. This transform cannot be applied properly for "
+                    "RFDetr models. To ensure interoperability, `stretch` "
+                    "resize mode will be used instead. If model was trained on Roboflow platform, "
+                    "we recommend using preprocessing method different that `fit-longer-edge`.",
+                )
+            },
+            max_allowed_input_size=rf_detr_max_input_resolution,
         )
         classes_re_mapping = None
         if inference_config.class_names_operations:
@@ -164,6 +177,7 @@ class RFDetrForObjectDetectionONNX(
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         input_color_format: Optional[ColorFormat] = None,
+        pre_processing_overrides: Optional[PreProcessingOverrides] = None,
         **kwargs,
     ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
         return pre_process_network_input(
@@ -172,13 +186,14 @@ class RFDetrForObjectDetectionONNX(
             network_input=self._inference_config.network_input,
             target_device=self._device,
             input_color_format=input_color_format,
+            pre_processing_overrides=pre_processing_overrides,
         )
 
     def forward(
         self, pre_processed_images: torch.Tensor, **kwargs
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         with self._session_thread_lock:
-            bboxes, logits = run_session_with_batch_size_limit(
+            bboxes, logits = run_onnx_session_with_batch_size_limit(
                 session=self._session,
                 inputs={self._input_name: pre_processed_images},
                 min_batch_size=self._min_batch_size,
@@ -190,7 +205,7 @@ class RFDetrForObjectDetectionONNX(
         self,
         model_results: Tuple[torch.Tensor, torch.Tensor],
         pre_processing_meta: List[PreProcessingMetadata],
-        threshold: float = 0.5,
+        confidence: float = INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE,
         **kwargs,
     ) -> List[Detections]:
         bboxes, logits = model_results
@@ -199,12 +214,14 @@ class RFDetrForObjectDetectionONNX(
         for image_bboxes, image_logits, image_meta in zip(
             bboxes, logits_sigmoid, pre_processing_meta
         ):
-            confidence, top_classes = image_logits.max(dim=1)
-            confidence_mask = confidence > threshold
-            confidence = confidence[confidence_mask]
+            predicted_confidence, top_classes = image_logits.max(dim=1)
+            confidence_mask = predicted_confidence > confidence
+            predicted_confidence = predicted_confidence[confidence_mask]
             top_classes = top_classes[confidence_mask]
             selected_boxes = image_bboxes[confidence_mask]
-            confidence, sorted_indices = torch.sort(confidence, descending=True)
+            predicted_confidence, sorted_indices = torch.sort(
+                predicted_confidence, descending=True
+            )
             top_classes = top_classes[sorted_indices]
             selected_boxes = selected_boxes[sorted_indices]
             if self._classes_re_mapping is not None:
@@ -215,29 +232,32 @@ class RFDetrForObjectDetectionONNX(
                     top_classes[remapping_mask]
                 ]
                 selected_boxes = selected_boxes[remapping_mask]
-                confidence = confidence[remapping_mask]
+                predicted_confidence = predicted_confidence[remapping_mask]
             cxcy = selected_boxes[:, :2]
             wh = selected_boxes[:, 2:]
             xy_min = cxcy - 0.5 * wh
             xy_max = cxcy + 0.5 * wh
             selected_boxes_xyxy_pct = torch.cat([xy_min, xy_max], dim=-1)
-            inference_size_hwhw = torch.tensor(
+            denorm_size = (
+                image_meta.nonsquare_intermediate_size or image_meta.inference_size
+            )
+            inference_size_whwh = torch.tensor(
                 [
-                    image_meta.inference_size.height,
-                    image_meta.inference_size.width,
-                    image_meta.inference_size.height,
-                    image_meta.inference_size.width,
+                    denorm_size.width,
+                    denorm_size.height,
+                    denorm_size.width,
+                    denorm_size.height,
                 ],
                 device=self._device,
             )
-            selected_boxes_xyxy = selected_boxes_xyxy_pct * inference_size_hwhw
+            selected_boxes_xyxy = selected_boxes_xyxy_pct * inference_size_whwh
             selected_boxes_xyxy = rescale_image_detections(
                 image_detections=selected_boxes_xyxy,
                 image_metadata=image_meta,
             )
             detections = Detections(
                 xyxy=selected_boxes_xyxy.round().int(),
-                confidence=confidence,
+                confidence=predicted_confidence,
                 class_id=top_classes.int(),
             )
             results.append(detections)

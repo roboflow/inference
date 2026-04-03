@@ -58,7 +58,7 @@ def test_parse_comma_separated_values_when_multiple_stripped_value_provided() ->
 
 def test_str2bool_when_values_is_bool() -> None:
     # when
-    result = str2bool(value=False)
+    result = str2bool(value=False, variable_name="some")
 
     # then
     assert result is False
@@ -67,19 +67,19 @@ def test_str2bool_when_values_is_bool() -> None:
 def test_str2bool_when_value_type_is_invalid() -> None:
     # when
     with pytest.raises(InvalidEnvVariable):
-        _ = str2bool(value=3.7)
+        _ = str2bool(value=3.7, variable_name="some")
 
 
 def test_str2bool_when_value_content_is_invalid() -> None:
     # when
     with pytest.raises(InvalidEnvVariable):
-        _ = str2bool(value="invalid")
+        _ = str2bool(value="invalid", variable_name="some")
 
 
 @pytest.mark.parametrize("value", ["true", "TruE", "True"])
 def test_str2bool_when_value_should_be_true(value: Any) -> None:
     # when
-    result = str2bool(value=value)
+    result = str2bool(value=value, variable_name="some")
 
     # then
     assert result is True
@@ -88,7 +88,7 @@ def test_str2bool_when_value_should_be_true(value: Any) -> None:
 @pytest.mark.parametrize("value", ["False", "false", "FalSe"])
 def test_str2bool_when_value_should_be_false(value: Any) -> None:
     # when
-    result = str2bool(value=value)
+    result = str2bool(value=value, variable_name="some")
 
     # then
     assert result is False

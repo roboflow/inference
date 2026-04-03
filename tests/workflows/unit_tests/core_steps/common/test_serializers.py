@@ -208,10 +208,16 @@ def test_serialise_image() -> None:
     # then
     assert result["type"] == "base64", "Type of image must point base64"
     decoded = base64.b64decode(result["value"])
-    recovered_image = cv2.imdecode(
-        np.fromstring(decoded, dtype=np.uint8),
-        cv2.IMREAD_UNCHANGED,
-    )
+    try:
+        recovered_image = cv2.imdecode(
+            np.frombuffer(decoded, dtype=np.uint8),
+            cv2.IMREAD_UNCHANGED,
+        )
+    except Exception:
+        recovered_image = cv2.imdecode(
+            np.fromstring(decoded, dtype=np.uint8),
+            cv2.IMREAD_UNCHANGED,
+        )
     assert (
         recovered_image == np_image
     ).all(), "Recovered image should be equal to input image"
@@ -233,10 +239,16 @@ def test_serialize_wildcard_kind_when_workflow_image_data_is_given() -> None:
         result["type"] == "base64"
     ), "Type of third element must be changed into base64"
     decoded = base64.b64decode(result["value"])
-    recovered_image = cv2.imdecode(
-        np.fromstring(decoded, dtype=np.uint8),
-        cv2.IMREAD_UNCHANGED,
-    )
+    try:
+        recovered_image = cv2.imdecode(
+            np.frombuffer(decoded, dtype=np.uint8),
+            cv2.IMREAD_UNCHANGED,
+        )
+    except Exception:
+        recovered_image = cv2.imdecode(
+            np.fromstring(decoded, dtype=np.uint8),
+            cv2.IMREAD_UNCHANGED,
+        )
     assert (
         recovered_image == np_image
     ).all(), "Recovered image should be equal to input image"
@@ -265,10 +277,16 @@ def test_serialize_wildcard_kind_when_dictionary_is_given() -> None:
         result["c"]["type"] == "base64"
     ), "Type of third element must be changed into base64"
     decoded = base64.b64decode(result["c"]["value"])
-    recovered_image = cv2.imdecode(
-        np.fromstring(decoded, dtype=np.uint8),
-        cv2.IMREAD_UNCHANGED,
-    )
+    try:
+        recovered_image = cv2.imdecode(
+            np.frombuffer(decoded, dtype=np.uint8),
+            cv2.IMREAD_UNCHANGED,
+        )
+    except Exception:
+        recovered_image = cv2.imdecode(
+            np.fromstring(decoded, dtype=np.uint8),
+            cv2.IMREAD_UNCHANGED,
+        )
     assert (
         recovered_image == np_image
     ).all(), "Recovered image should be equal to input image"
@@ -318,10 +336,16 @@ def test_serialize_wildcard_kind_when_list_is_given() -> None:
         result[2]["type"] == "base64"
     ), "Type of third element must be changed into base64"
     decoded = base64.b64decode(result[2]["value"])
-    recovered_image = cv2.imdecode(
-        np.fromstring(decoded, dtype=np.uint8),
-        cv2.IMREAD_UNCHANGED,
-    )
+    try:
+        recovered_image = cv2.imdecode(
+            np.frombuffer(decoded, dtype=np.uint8),
+            cv2.IMREAD_UNCHANGED,
+        )
+    except Exception:
+        recovered_image = cv2.imdecode(
+            np.fromstring(decoded, dtype=np.uint8),
+            cv2.IMREAD_UNCHANGED,
+        )
     assert (
         recovered_image == np_image
     ).all(), "Recovered image should be equal to input image"
@@ -358,10 +382,16 @@ def test_serialize_wildcard_kind_when_compound_input_is_given() -> None:
         result[2]["type"] == "base64"
     ), "Type of third element must be changed into base64"
     decoded = base64.b64decode(result[2]["value"])
-    recovered_image = cv2.imdecode(
-        np.fromstring(decoded, dtype=np.uint8),
-        cv2.IMREAD_UNCHANGED,
-    )
+    try:
+        recovered_image = cv2.imdecode(
+            np.frombuffer(decoded, dtype=np.uint8),
+            cv2.IMREAD_UNCHANGED,
+        )
+    except Exception:
+        recovered_image = cv2.imdecode(
+            np.fromstring(decoded, dtype=np.uint8),
+            cv2.IMREAD_UNCHANGED,
+        )
     assert (
         recovered_image == np_image
     ).all(), "Recovered image should be equal to input image"
@@ -374,10 +404,16 @@ def test_serialize_wildcard_kind_when_compound_input_is_given() -> None:
         "video_metadata" in nested_dict["nested"][0]
     ), "Expected video metadata attached"
     decoded = base64.b64decode(nested_dict["nested"][0]["value"])
-    recovered_image = cv2.imdecode(
-        np.fromstring(decoded, dtype=np.uint8),
-        cv2.IMREAD_UNCHANGED,
-    )
+    try:
+        recovered_image = cv2.imdecode(
+            np.frombuffer(decoded, dtype=np.uint8),
+            cv2.IMREAD_UNCHANGED,
+        )
+    except Exception:
+        recovered_image = cv2.imdecode(
+            np.fromstring(decoded, dtype=np.uint8),
+            cv2.IMREAD_UNCHANGED,
+        )
     assert (
         recovered_image == np_image
     ).all(), "Recovered image should be equal to input image"

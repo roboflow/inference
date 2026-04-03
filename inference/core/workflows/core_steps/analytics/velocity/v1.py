@@ -18,6 +18,7 @@ from inference.core.workflows.execution_engine.entities.base import (
 from inference.core.workflows.execution_engine.entities.types import (
     FLOAT_KIND,
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
+    KEYPOINT_DETECTION_PREDICTION_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
     Selector,
     StepOutputSelector,
@@ -127,6 +128,7 @@ class VelocityManifest(WorkflowBlockManifest):
     )
     detections: StepOutputSelector(
         kind=[
+            KEYPOINT_DETECTION_PREDICTION_KIND,
             OBJECT_DETECTION_PREDICTION_KIND,
             INSTANCE_SEGMENTATION_PREDICTION_KIND,
         ]
@@ -151,6 +153,7 @@ class VelocityManifest(WorkflowBlockManifest):
             OutputDefinition(
                 name=OUTPUT_KEY,
                 kind=[
+                    KEYPOINT_DETECTION_PREDICTION_KIND,
                     OBJECT_DETECTION_PREDICTION_KIND,
                     INSTANCE_SEGMENTATION_PREDICTION_KIND,
                 ],

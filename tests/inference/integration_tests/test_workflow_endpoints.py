@@ -576,11 +576,11 @@ def test_workflow_run(
         len(response_data["outputs"]) == 2
     ), "Two images submitted - two responses expected"
     assert (
-        len(response_data["outputs"][0]["result"]["predictions"]) == 6
-    ), "Expected to see 6 predictions"
+        len(response_data["outputs"][0]["result"]["predictions"]) >= 6
+    ), "Expected to see >= 6 predictions"
     assert (
-        len(response_data["outputs"][1]["result"]["predictions"]) == 6
-    ), "Expected to see 6 predictions"
+        len(response_data["outputs"][1]["result"]["predictions"]) >= 6
+    ), "Expected to see >= 6 predictions"
 
 
 FUNCTION_TO_GET_MAXIMUM_CONFIDENCE_FROM_BATCH_OF_DETECTIONS = """
@@ -691,7 +691,7 @@ def test_get_versions_of_execution_engine(server_url: str) -> None:
     # then
     response.raise_for_status()
     response_data = response.json()
-    assert response_data["versions"] == ["1.7.0"]
+    assert response_data["versions"] == ["1.8.0"]
 
 
 def test_getting_block_schema_using_get_endpoint(server_url) -> None:

@@ -29,6 +29,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     Selector,
 )
 from inference.core.workflows.prototypes.block import (
+    AirGappedAvailability,
     BlockResult,
     WorkflowBlock,
     WorkflowBlockManifest,
@@ -46,6 +47,11 @@ MODEL_ALIASES = {
 }
 
 GEMINI_MODELS = [
+    {
+        "id": "gemini-3.1-pro-preview",
+        "name": "Gemini 3.1 Pro",
+        "supports_thinking_level": True,
+    },
     {
         "id": "gemini-3-pro-preview",
         "name": "Gemini 3 Pro",
@@ -281,6 +287,10 @@ class BlockManifest(WorkflowBlockManifest):
         "If not given - block defaults to value configured globally in Workflows Execution Engine. "
         "Please restrict if you hit Google Gemini API limits.",
     )
+
+    @classmethod
+    def get_air_gapped_availability(cls) -> AirGappedAvailability:
+        return AirGappedAvailability(available=False, reason="requires_internet")
 
     @field_validator("model_version", mode="before")
     @classmethod

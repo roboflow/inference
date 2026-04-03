@@ -152,7 +152,7 @@ RELEVANT_TASKS_METADATA = {
 class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
-            "name": "VLM as Detector",
+            "name": "VLM As Detector",
             "version": "v1",
             "short_description": SHORT_DESCRIPTION,
             "long_description": LONG_DESCRIPTION,

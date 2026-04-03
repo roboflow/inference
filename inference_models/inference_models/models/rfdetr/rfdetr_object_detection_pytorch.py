@@ -1,16 +1,23 @@
 import os.path
 from copy import deepcopy
+from threading import RLock
 from typing import List, Optional, Tuple, Union
 
 import numpy as np
 import torch
 
-from inference_models import Detections, ObjectDetectionModel
-from inference_models.configuration import DEFAULT_DEVICE
+from inference_models import Detections, ObjectDetectionModel, PreProcessingOverrides
+from inference_models.configuration import (
+    DEFAULT_DEVICE,
+    INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE,
+)
 from inference_models.entities import ColorFormat
 from inference_models.errors import (
     CorruptedModelPackageError,
-    ModelLoadingError,
+    InvalidModelInitParameterError,
+    MissingModelInitParameterError,
+    ModelInputError,
+    ModelPackageRestrictedError,
     ModelRuntimeError,
 )
 from inference_models.logger import LOGGER
@@ -26,9 +33,6 @@ from inference_models.models.common.roboflow.model_packages import (
     parse_class_names_file,
     parse_inference_config,
 )
-from inference_models.models.common.roboflow.pre_processing import (
-    pre_process_network_input,
-)
 from inference_models.models.rfdetr.class_remapping import (
     ClassesReMapping,
     prepare_class_remapping,
@@ -36,13 +40,16 @@ from inference_models.models.rfdetr.class_remapping import (
 from inference_models.models.rfdetr.common import parse_model_type
 from inference_models.models.rfdetr.default_labels import resolve_labels
 from inference_models.models.rfdetr.post_processor import PostProcess
+from inference_models.models.rfdetr.pre_processing import pre_process_network_input
 from inference_models.models.rfdetr.rfdetr_base_pytorch import (
     LWDETR,
+    RFDETR2XLargeConfig,
     RFDETRBaseConfig,
     RFDETRLargeConfig,
     RFDETRMediumConfig,
     RFDETRNanoConfig,
     RFDETRSmallConfig,
+    RFDETRXLargeConfig,
     build_model,
 )
 
@@ -57,6 +64,8 @@ CONFIG_FOR_MODEL_TYPE = {
     "rfdetr-medium": RFDETRMediumConfig,
     "rfdetr-base": RFDETRBaseConfig,
     "rfdetr-large": RFDETRLargeConfig,
+    "rfdetr-xlarge": RFDETRXLargeConfig,
+    "rfdetr-2xlarge": RFDETR2XLargeConfig,
 }
 
 RESIZE_MODES_TO_REVERT_PADDING = {
@@ -77,6 +86,7 @@ class RFDetrForObjectDetectionTorch(
         model_type: Optional[str] = None,
         labels: Optional[Union[str, List[str]]] = None,
         resolution: Optional[int] = None,
+        rf_detr_max_input_resolution: Optional[Union[int, Tuple[int, int]]] = None,
         **kwargs,
     ) -> "RFDetrForObjectDetectionTorch":
         if os.path.isfile(model_name_or_path):
@@ -85,6 +95,7 @@ class RFDetrForObjectDetectionTorch(
                 model_type=model_type,
                 labels=labels,
                 resolution=resolution,
+                rf_detr_max_input_resolution=rf_detr_max_input_resolution,
             )
         model_package_content = get_model_package_contents(
             model_package_dir=model_name_or_path,
@@ -106,6 +117,18 @@ class RFDetrForObjectDetectionTorch(
                 ResizeMode.CENTER_CROP,
                 ResizeMode.LETTERBOX_REFLECT_EDGES,
             },
+            implicit_resize_mode_substitutions={
+                ResizeMode.FIT_LONGER_EDGE: (
+                    ResizeMode.STRETCH_TO,
+                    None,
+                    "RFDetr Object Detection model running with Torch backend was trained with "
+                    "`fit-longer-edge` input resize mode. This transform cannot be applied properly for "
+                    "RFDetr models. To ensure interoperability, `stretch` "
+                    "resize mode will be used instead. If model was trained on Roboflow platform, "
+                    "we recommend using preprocessing method different that `fit-longer-edge`.",
+                )
+            },
+            max_allowed_input_size=rf_detr_max_input_resolution,
         )
         classes_re_mapping = None
         if inference_config.class_names_operations:
@@ -126,7 +149,7 @@ class RFDetrForObjectDetectionTorch(
             raise CorruptedModelPackageError(
                 message=f"Model package describes model_type as '{model_type}' which is not supported. "
                 f"Supported model types: {list(CONFIG_FOR_MODEL_TYPE.keys())}.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
         model_config = CONFIG_FOR_MODEL_TYPE[model_type](device=device)
         checkpoint_num_classes = weights_dict["class_embed.bias"].shape[0]
@@ -156,16 +179,17 @@ class RFDetrForObjectDetectionTorch(
         labels: Optional[Union[str, List[str]]] = None,
         resolution: Optional[int] = None,
         device: torch.device = DEFAULT_DEVICE,
+        rf_detr_max_input_resolution: Optional[Union[int, Tuple[int, int]]] = None,
     ):
         if model_type is None:
-            raise ModelLoadingError(
+            raise MissingModelInitParameterError(
                 message="While loading RFDetr model (using torch backend) could not determine `model_type`. "
                 "If you used `RFDetrForObjectDetectionTorch` directly imported in your code, please pass "
                 f"one of the value: {CONFIG_FOR_MODEL_TYPE.keys()} as the parameter. If you see this "
                 f"error, while using `AutoModel.from_pretrained(...)` or thrown from managed Roboflow service, "
                 f"this is a bug - raise the issue: https://github.com/roboflow/inference/issue providing "
                 f"full context.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#missingmodelinitparametererror",
             )
         weights_dict = torch.load(
             checkpoint_path,
@@ -173,22 +197,40 @@ class RFDetrForObjectDetectionTorch(
             weights_only=False,
         )["model"]
         if model_type not in CONFIG_FOR_MODEL_TYPE:
-            raise ModelLoadingError(
+            raise InvalidModelInitParameterError(
                 message=f"Model package describes model_type as '{model_type}' which is not supported. "
                 f"Supported model types: {list(CONFIG_FOR_MODEL_TYPE.keys())}.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#invalidmodelinitparametererror",
             )
         model_config = CONFIG_FOR_MODEL_TYPE[model_type](device=device)
         divisibility = model_config.num_windows * model_config.patch_size
         if resolution is not None:
             if resolution < 0 or resolution % divisibility != 0:
-                raise ModelLoadingError(
+                raise InvalidModelInitParameterError(
                     message=f"Attempted to load RFDetr model (using torch backend) with `resolution` parameter which "
                     f"is invalid - the model required positive value divisible by 56. Make sure you used "
                     f"proper value, corresponding to the one used to train the model.",
-                    help_url="https://todo",
+                    help_url="https://inference-models.roboflow.com/errors/model-loading/#invalidmodelinitparametererror",
                 )
             model_config.resolution = resolution
+        if rf_detr_max_input_resolution is not None:
+            if isinstance(rf_detr_max_input_resolution, int):
+                rf_detr_max_input_resolution = (
+                    rf_detr_max_input_resolution,
+                    rf_detr_max_input_resolution,
+                )
+            if (
+                model_config.resolution > rf_detr_max_input_resolution[0]
+                or model_config.resolution > rf_detr_max_input_resolution[1]
+            ):
+                raise ModelPackageRestrictedError(
+                    message="Configuration of runtime environment prevents packages with input size larger than "
+                    f"{rf_detr_max_input_resolution} from being loaded. Package attempted to be loaded define "
+                    f"input size ({model_config.resolution}, {model_config.resolution}). "
+                    f"Running locally, verify configuration of your environment. If you see this error running "
+                    f"on Roboflow platform - contact support.",
+                    help_url="https://inference-models.roboflow.com/errors/model-loading/#modelpackagerestrictederror",
+                )
         inference_config = InferenceConfig(
             network_input=NetworkInputDefinition(
                 training_input_size=TrainingInputSize(
@@ -217,10 +259,10 @@ class RFDetrForObjectDetectionTorch(
         else:
             class_names = labels
         if checkpoint_num_classes != len(class_names):
-            raise ModelLoadingError(
+            raise InvalidModelInitParameterError(
                 message=f"Checkpoint pointed to load RFDetr defines {checkpoint_num_classes} output classes, but "
                 f"loaded labels define {len(class_names)} classes - fix the value of `labels` parameter.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#invalidmodelinitparametererror",
             )
         model.load_state_dict(weights_dict)
         model = model.eval().to(device)
@@ -257,6 +299,7 @@ class RFDetrForObjectDetectionTorch(
         self._optimized_has_been_compiled = False
         self._optimized_batch_size = None
         self._optimized_dtype = None
+        self._lock = RLock()
 
     @property
     def class_names(self) -> List[str]:
@@ -268,38 +311,41 @@ class RFDetrForObjectDetectionTorch(
         batch_size: int = 1,
         dtype: torch.dtype = torch.float32,
     ) -> None:
-        self.remove_optimized_model()
-        self._inference_model = deepcopy(self._model)
-        self._inference_model.eval()
-        self._inference_model.export()
-        self._inference_model = self._inference_model.to(dtype=dtype)
-        self._optimized_dtype = dtype
-        if compile:
-            self._inference_model = torch.jit.trace(
-                self._inference_model,
-                torch.randn(
-                    batch_size,
-                    3,
-                    self._resolution,
-                    self._resolution,
-                    device=self._device,
-                    dtype=dtype,
-                ),
-            )
-            self._optimized_has_been_compiled = True
-            self._optimized_batch_size = batch_size
+        with self._lock:
+            self.remove_optimized_model()
+            self._inference_model = deepcopy(self._model)
+            self._inference_model.eval()
+            self._inference_model.export()
+            self._inference_model = self._inference_model.to(dtype=dtype)
+            self._optimized_dtype = dtype
+            if compile:
+                self._inference_model = torch.jit.trace(
+                    self._inference_model,
+                    torch.randn(
+                        batch_size,
+                        3,
+                        self._resolution,
+                        self._resolution,
+                        device=self._device,
+                        dtype=dtype,
+                    ),
+                )
+                self._optimized_has_been_compiled = True
+                self._optimized_batch_size = batch_size
 
     def remove_optimized_model(self) -> None:
-        self._has_warned_about_not_being_optimized_for_inference = False
-        self._inference_model = None
-        self._optimized_has_been_compiled = False
-        self._optimized_batch_size = None
+        with self._lock:
+            self._has_warned_about_not_being_optimized_for_inference = False
+            self._inference_model = None
+            self._optimized_has_been_compiled = False
+            self._optimized_batch_size = None
 
     def pre_process(
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         input_color_format: Optional[ColorFormat] = None,
         image_size: Optional[Tuple[int, int]] = None,
+        pre_processing_overrides: Optional[PreProcessingOverrides] = None,
         **kwargs,
     ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
         return pre_process_network_input(
@@ -309,6 +355,7 @@ class RFDetrForObjectDetectionTorch(
             target_device=self._device,
             input_color_format=input_color_format,
             image_size_wh=image_size,
+            pre_processing_overrides=pre_processing_overrides,
         )
 
     def forward(self, pre_processed_images: torch.Tensor, **kwargs) -> dict:
@@ -326,23 +373,23 @@ class RFDetrForObjectDetectionTorch(
             if (self._resolution, self._resolution) != tuple(
                 pre_processed_images.shape[2:]
             ):
-                raise ModelRuntimeError(
+                raise ModelInputError(
                     message=f"Resolution mismatch. Model was optimized for resolution {self._resolution}, "
                     f"but got {tuple(pre_processed_images.shape[2:])}. "
                     "You can explicitly remove the optimized model by calling model.remove_optimized_model().",
-                    help_url="https://todo",
+                    help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
                 )
             if self._optimized_has_been_compiled:
                 if self._optimized_batch_size != pre_processed_images.shape[0]:
-                    raise ModelRuntimeError(
+                    raise ModelInputError(
                         message="Batch size mismatch. Optimized model was compiled for batch size "
                         f"{self._optimized_batch_size}, but got {pre_processed_images.shape[0]}. "
                         "You can explicitly remove the optimized model by calling model.remove_optimized_model(). "
                         "Alternatively, you can recompile the optimized model for a different batch size "
                         "by calling model.optimize_for_inference(batch_size=<new_batch_size>).",
-                        help_url="https://todo",
+                        help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
                     )
-        with torch.inference_mode():
+        with self._lock, torch.inference_mode():
             if self._inference_model:
                 predictions = self._inference_model(
                     pre_processed_images.to(dtype=self._optimized_dtype)
@@ -360,7 +407,7 @@ class RFDetrForObjectDetectionTorch(
         self,
         model_results: dict,
         pre_processing_meta: List[PreProcessingMetadata],
-        threshold: float = 0.5,
+        confidence: float = INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE,
         **kwargs,
     ) -> List[Detections]:
         if (
@@ -371,10 +418,14 @@ class RFDetrForObjectDetectionTorch(
             for out_box_tensor, image_metadata in zip(
                 model_results["pred_boxes"], pre_processing_meta
             ):
+                unpad_ref = (
+                    image_metadata.nonsquare_intermediate_size
+                    or image_metadata.inference_size
+                )
                 box_center_offsets = torch.as_tensor(  # bboxes in format cxcywh now, so only cx, cy to be pushed
                     [
-                        image_metadata.pad_left / image_metadata.inference_size.width,
-                        image_metadata.pad_top / image_metadata.inference_size.height,
+                        image_metadata.pad_left / unpad_ref.width,
+                        image_metadata.pad_top / unpad_ref.height,
                         0.0,
                         0.0,
                     ],
@@ -383,10 +434,10 @@ class RFDetrForObjectDetectionTorch(
                 )
                 ox_padding = (
                     image_metadata.pad_left + image_metadata.pad_right
-                ) / image_metadata.inference_size.width
+                ) / unpad_ref.width
                 oy_padding = (
                     image_metadata.pad_top + image_metadata.pad_bottom
-                ) / image_metadata.inference_size.height
+                ) / unpad_ref.height
                 box_wh_offsets = torch.as_tensor(  # bboxes in format cxcywh now, so only cx, cy to be pushed
                     [
                         1.0 - ox_padding,
@@ -427,7 +478,7 @@ class RFDetrForObjectDetectionTorch(
                 scores = scores[remapping_mask]
                 labels = self._classes_re_mapping.class_mapping[labels[remapping_mask]]
                 boxes = boxes[remapping_mask]
-            keep = scores > threshold
+            keep = scores > confidence
             scores = scores[keep]
             labels = labels[keep]
             boxes = boxes[keep]

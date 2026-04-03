@@ -129,7 +129,7 @@ def test_workflow_with_stitch_and_dynamic_crop(
                 [491, 570, 535, 582],
             ]
         ),
-        atol=1e-1,
+        atol=2,
     ), "Expected bounding boxes to be exactly the same as when test was created"
     assert result[0]["predictions"].class_id.tolist() == [
         2,

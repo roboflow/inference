@@ -59,7 +59,7 @@ Text content can be parameterized with workflow execution outcomes using the sam
 as Email and SMS notification blocks:
 
 ```
-text = "Detected {{ $parameters.count }} objects of class {{ $parameters.class_name }}"
+text = "Detected {{ '{{' }} $parameters.count {{ '}}' }} objects of class {{ '{{' }} $parameters.class_name {{ '}}' }}"
 ```
 
 Parameters are provided via the `text_parameters` field:
@@ -135,9 +135,9 @@ class BlockManifest(WorkflowBlockManifest):
     )
 
     text: str = Field(
-        description="The text content to display. Supports parameter interpolation using {{ $parameters.name }} syntax.",
+        description="The text content to display. Supports parameter interpolation using {{ '{{' }} $parameters.name {{ '}}' }} syntax.",
         examples=[
-            "Detection count: {{ $parameters.count }}",
+            "Detection count: {{ '{{' }} $parameters.count {{ '}}' }}",
             "Hello World",
         ],
         json_schema_extra={

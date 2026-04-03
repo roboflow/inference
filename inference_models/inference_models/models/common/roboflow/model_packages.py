@@ -1,12 +1,15 @@
 from collections import namedtuple
 from dataclasses import dataclass
 from enum import Enum
-from typing import Annotated, List, Literal, Optional, Set, Tuple, Union
+from typing import Annotated, Dict, List, Literal, Optional, Set, Tuple, Union
 
 from pydantic import BaseModel, BeforeValidator, Field, ValidationError
 
-from inference_models.entities import ImageDimensions
-from inference_models.errors import CorruptedModelPackageError
+from inference_models.errors import (
+    CorruptedModelPackageError,
+    ModelPackageRestrictedError,
+)
+from inference_models.logger import LOGGER
 from inference_models.utils.file_system import read_json, stream_file_lines
 
 
@@ -21,7 +24,7 @@ def parse_class_names_file(class_names_path: str) -> List[str]:
             message=f"Could not decode file which is supposed to provide list of model class names. Error: {error}."
             f"If you created model package manually, please verify its consistency in docs. In case that the "
             f"weights are hosted on the Roboflow platform - contact support.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
         ) from error
 
 
@@ -52,7 +55,9 @@ PreProcessingMetadata = namedtuple(
         "scale_width",
         "scale_height",
         "static_crop_offset",
+        "nonsquare_intermediate_size",
     ],
+    defaults=[None],
 )
 
 
@@ -106,7 +111,7 @@ def parse_key_points_metadata(
             f"{error}. In case that the package is "
             f"hosted on the Roboflow platform - contact support. If you created model package manually, please "
             f"verify its consistency in docs.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
         ) from error
 
 
@@ -187,7 +192,7 @@ def parse_trt_config(config_path: str) -> TRTConfig:
             f"{error}. In case that the package is "
             f"hosted on the Roboflow platform - contact support. If you created model package manually, please "
             f"verify its consistency in docs.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
         ) from error
 
 
@@ -257,6 +262,7 @@ Number = Union[int, float]
 
 class NetworkInputDefinition(BaseModel):
     training_input_size: TrainingInputSize
+    dataset_version_resize_dimensions: Optional[TrainingInputSize] = Field(default=None)
     dynamic_spatial_size_supported: bool
     dynamic_spatial_size_mode: Optional[Union[DivisiblePadding, AnySizePadding]] = (
         Field(discriminator="type", default=None)
@@ -327,6 +333,10 @@ class InferenceConfig(BaseModel):
 def parse_inference_config(
     config_path: str,
     allowed_resize_modes: Set[ResizeMode],
+    implicit_resize_mode_substitutions: Optional[
+        Dict[ResizeMode, Tuple[ResizeMode, Optional[int], Optional[str]]]
+    ] = None,
+    max_allowed_input_size: Optional[Union[int, Tuple[int, int]]] = None,
 ) -> InferenceConfig:
     try:
         decoded_config = read_json(path=config_path)
@@ -340,15 +350,25 @@ def parse_inference_config(
             f"{error}. In case that the package is "
             f"hosted on the Roboflow platform - contact support. If you created model package manually, please "
             f"verify its consistency in docs.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
         ) from error
     try:
         parsed_config = InferenceConfig.model_validate(decoded_config)
     except ValidationError as error:
         raise CorruptedModelPackageError(
             message=f"Could not parse the inference config from the model package.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
         ) from error
+    if implicit_resize_mode_substitutions is None:
+        implicit_resize_mode_substitutions = {}
+    if parsed_config.network_input.resize_mode in implicit_resize_mode_substitutions:
+        substitution, padding, reason = implicit_resize_mode_substitutions[
+            parsed_config.network_input.resize_mode
+        ]
+        if reason is not None:
+            LOGGER.warning(reason)
+        parsed_config.network_input.resize_mode = substitution
+        parsed_config.network_input.padding_value = padding
     if parsed_config.network_input.resize_mode not in allowed_resize_modes:
         allowed_resize_modes_str = ", ".join([e.value for e in allowed_resize_modes])
         raise CorruptedModelPackageError(
@@ -356,6 +376,22 @@ def parse_inference_config(
             f"{parsed_config.network_input.resize_mode} which is not supported by the model implementation. "
             f"Config defines: {parsed_config.network_input.resize_mode.value}, but the allowed values are: "
             f"{allowed_resize_modes_str}.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
         )
+    if max_allowed_input_size is not None:
+        if isinstance(max_allowed_input_size, int):
+            max_allowed_input_size = (max_allowed_input_size, max_allowed_input_size)
+        training_input_size = parsed_config.network_input.training_input_size
+        if (
+            training_input_size.height > max_allowed_input_size[0]
+            or training_input_size.width > max_allowed_input_size[1]
+        ):
+            raise ModelPackageRestrictedError(
+                message="Configuration of runtime environment prevents packages with input size larger than "
+                f"{max_allowed_input_size} from being loaded. Package attempted to be loaded define "
+                f"input size ({training_input_size.height}, {training_input_size.width}). "
+                f"Running locally, verify configuration of your environment. If you see this error running "
+                f"on Roboflow platform - contact support.",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#modelpackagerestrictederror",
+            )
     return parsed_config

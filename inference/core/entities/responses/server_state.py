@@ -40,6 +40,18 @@ class ModelDescriptionEntity(BaseModel):
         None,
         description="Image input width accepted by the model (if registered).",
     )
+    vram_bytes: Optional[int] = Field(
+        None,
+        description="Estimated GPU VRAM consumed by this model in bytes (measured during load).",
+    )
+    request_aliases: List[str] = Field(
+        default_factory=list,
+        description="Other model IDs that resolved to this model.",
+    )
+    request_paths: List[str] = Field(
+        default_factory=list,
+        description="HTTP request paths that triggered inference on this model (e.g. /door-glyph-locator/10, /infer/object_detection).",
+    )
 
     @classmethod
     def from_model_description(
@@ -57,6 +69,9 @@ class ModelDescriptionEntity(BaseModel):
             batch_size=batch_size,
             input_height=model_description.input_height,
             input_width=model_description.input_width,
+            vram_bytes=model_description.vram_bytes,
+            request_aliases=model_description.request_aliases,
+            request_paths=model_description.request_paths,
         )
 
 
@@ -64,16 +79,49 @@ class ModelsDescriptions(BaseModel):
     models: List[ModelDescriptionEntity] = Field(
         description="List of models that are loaded by model manager.",
     )
+    total_vram_bytes: Optional[int] = Field(
+        None,
+        description="Total estimated VRAM consumed by all loaded models in bytes.",
+    )
+    gpu_memory_used: Optional[int] = Field(
+        None,
+        description="Current GPU memory in use in bytes (device-level, includes all runtimes).",
+    )
+    gpu_memory_total: Optional[int] = Field(
+        None,
+        description="Total GPU memory available in bytes.",
+    )
 
     @classmethod
     def from_models_descriptions(
         cls, models_descriptions: List[ModelDescription]
     ) -> "ModelsDescriptions":
+        model_entities = [
+            ModelDescriptionEntity.from_model_description(
+                model_description=model_description
+            )
+            for model_description in models_descriptions
+        ]
+        vram_values = [m.vram_bytes for m in model_entities if m.vram_bytes is not None]
+        total_vram = sum(vram_values) if vram_values else None
+        gpu_used, gpu_total = _get_gpu_memory_stats()
         return cls(
-            models=[
-                ModelDescriptionEntity.from_model_description(
-                    model_description=model_description
-                )
-                for model_description in models_descriptions
-            ]
+            models=model_entities,
+            total_vram_bytes=total_vram,
+            gpu_memory_used=gpu_used,
+            gpu_memory_total=gpu_total,
         )
+
+
+def _get_gpu_memory_stats() -> tuple:
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            free, total = torch.cuda.mem_get_info()
+            return total - free, total
+    except ImportError:
+        pass
+    except Exception:
+        pass
+    return None, None

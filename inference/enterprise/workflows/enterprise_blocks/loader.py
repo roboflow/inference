@@ -1,6 +1,9 @@
 from typing import List, Type
 
 from inference.core.workflows.prototypes.block import WorkflowBlock
+from inference.enterprise.workflows.enterprise_blocks.sinks.event_writer.v1 import (
+    EventWriterSinkBlockV1,
+)
 from inference.enterprise.workflows.enterprise_blocks.sinks.microsoft_sql_server.v1 import (
     MicrosoftSQLServerSinkBlockV1,
 )
@@ -25,4 +28,5 @@ def load_enterprise_blocks() -> List[Type[WorkflowBlock]]:
         PLCBlockV1,
         ModbusTCPBlockV1,
         MicrosoftSQLServerSinkBlockV1,
+        EventWriterSinkBlockV1,
     ]

@@ -4,8 +4,20 @@ from typing import List, Optional, Tuple, Union
 import numpy as np
 import torch
 
-from inference_models import Detections, KeyPoints, KeyPointsDetectionModel
-from inference_models.configuration import DEFAULT_DEVICE
+from inference_models import (
+    Detections,
+    KeyPoints,
+    KeyPointsDetectionModel,
+    PreProcessingOverrides,
+)
+from inference_models.configuration import (
+    DEFAULT_DEVICE,
+    INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_CLASS_AGNOSTIC_NMS,
+    INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_CONFIDENCE,
+    INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_IOU_THRESHOLD,
+    INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_KEY_POINTS_THRESHOLD,
+    INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_MAX_DETECTIONS,
+)
 from inference_models.entities import ColorFormat
 from inference_models.errors import (
     CorruptedModelPackageError,
@@ -14,8 +26,8 @@ from inference_models.errors import (
 )
 from inference_models.models.common.model_packages import get_model_package_contents
 from inference_models.models.common.onnx import (
-    run_session_with_batch_size_limit,
-    set_execution_provider_defaults,
+    run_onnx_session_with_batch_size_limit,
+    set_onnx_execution_provider_defaults,
 )
 from inference_models.models.common.roboflow.model_packages import (
     InferenceConfig,
@@ -41,16 +53,15 @@ try:
     import onnxruntime
 except ImportError as import_error:
     raise MissingDependencyError(
-        message=f"Could not import YOLOv8 model with ONNX backend - this error means that some additional dependencies "
-        f"are not installed in the environment. If you run the `inference-models` library directly in your Python "
-        f"program, make sure the following extras of the package are installed: \n"
-        f"\t* `onnx-cpu` - when you wish to use library with CPU support only\n"
-        f"\t* `onnx-cu12` - for running on GPU with Cuda 12 installed\n"
-        f"\t* `onnx-cu118` - for running on GPU with Cuda 11.8 installed\n"
-        f"\t* `onnx-jp6-cu126` - for running on Jetson with Jetpack 6\n"
-        f"If you see this error using Roboflow infrastructure, make sure the service you use does support the model. "
-        f"You can also contact Roboflow to get support.",
-        help_url="https://todo",
+        message="Running YOLOv8 model with ONNX backend requires pycuda installation, which is brought with "
+        "`onnx-*` extras of `inference-models` library. If you see this error running locally, "
+        "please follow our installation guide: https://inference-models.roboflow.com/getting-started/installation/"
+        " If you see this error using Roboflow infrastructure, make sure the service you use does support the "
+        f"model, You can also contact Roboflow to get support."
+        "Additionally - if AutoModel.from_pretrained(...) "
+        f"automatically selects model package which does not match your environment - that's a serious problem and "
+        f"we will really appreciate letting us know - https://github.com/roboflow/inference/issues",
+        help_url="https://inference-models.roboflow.com/errors/runtime-environment/#missingdependencyerror",
     ) from import_error
 
 
@@ -75,9 +86,9 @@ class YOLOv8ForKeyPointsDetectionOnnx(
                 f"be specified - explicitly in `from_pretrained(...)` method or via env variable "
                 f"`ONNXRUNTIME_EXECUTION_PROVIDERS`. If you run model locally - adjust your setup, otherwise "
                 f"contact the platform support.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/runtime-environment/#environmentconfigurationerror",
             )
-        onnx_execution_providers = set_execution_provider_defaults(
+        onnx_execution_providers = set_onnx_execution_provider_defaults(
             providers=onnx_execution_providers,
             model_package_path=model_name_or_path,
             device=device,
@@ -103,11 +114,22 @@ class YOLOv8ForKeyPointsDetectionOnnx(
                 ResizeMode.CENTER_CROP,
                 ResizeMode.LETTERBOX_REFLECT_EDGES,
             },
+            implicit_resize_mode_substitutions={
+                ResizeMode.FIT_LONGER_EDGE: (
+                    ResizeMode.LETTERBOX,
+                    127,
+                    "YOLOv8 Key Points detection model running with ONNX backend was trained with "
+                    "`fit-longer-edge` input resize mode. This transform cannot be applied properly for "
+                    "models with input dimensions fixed during weights export. To ensure interoperability, `letterbox` "
+                    "resize mode with gray edges will be used instead. If model was trained on Roboflow platform, "
+                    "we recommend using preprocessing method different that `fit-longer-edge`.",
+                )
+            },
         )
         if inference_config.post_processing.type != "nms":
             raise CorruptedModelPackageError(
                 message="Expected NMS to be the post-processing",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
         parsed_key_points_metadata, skeletons = parse_key_points_metadata(
             key_points_metadata_path=model_package_content["keypoints_metadata.json"]
@@ -175,6 +197,7 @@ class YOLOv8ForKeyPointsDetectionOnnx(
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         input_color_format: Optional[ColorFormat] = None,
         image_size: Optional[Tuple[int, int]] = None,
+        pre_processing_overrides: Optional[PreProcessingOverrides] = None,
         **kwargs,
     ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
         return pre_process_network_input(
@@ -184,11 +207,12 @@ class YOLOv8ForKeyPointsDetectionOnnx(
             target_device=self._device,
             input_color_format=input_color_format,
             image_size_wh=image_size,
+            pre_processing_overrides=pre_processing_overrides,
         )
 
     def forward(self, pre_processed_images: torch.Tensor, **kwargs) -> torch.Tensor:
         with self._session_thread_lock:
-            return run_session_with_batch_size_limit(
+            return run_onnx_session_with_batch_size_limit(
                 session=self._session,
                 inputs={self._input_name: pre_processed_images},
                 min_batch_size=self._input_batch_size,
@@ -199,26 +223,26 @@ class YOLOv8ForKeyPointsDetectionOnnx(
         self,
         model_results: torch.Tensor,
         pre_processing_meta: List[PreProcessingMetadata],
-        conf_thresh: float = 0.25,
-        iou_thresh: float = 0.45,
-        max_detections: int = 100,
-        class_agnostic: bool = False,
-        key_points_threshold: float = 0.3,
+        confidence: float = INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_CONFIDENCE,
+        iou_threshold: float = INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_IOU_THRESHOLD,
+        max_detections: int = INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_MAX_DETECTIONS,
+        class_agnostic_nms: bool = INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_CLASS_AGNOSTIC_NMS,
+        key_points_threshold: float = INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_KEY_POINTS_THRESHOLD,
         **kwargs,
     ) -> Tuple[List[KeyPoints], Optional[List[Detections]]]:
         if self._inference_config.post_processing.fused:
             nms_results = post_process_nms_fused_model_output(
-                output=model_results, conf_thresh=conf_thresh
+                output=model_results, conf_thresh=confidence
             )
         else:
             nms_results = run_nms_for_key_points_detection(
                 output=model_results,
                 num_classes=len(self._class_names),
                 key_points_slots_in_prediction=self._key_points_slots_in_prediction,
-                conf_thresh=conf_thresh,
-                iou_thresh=iou_thresh,
+                conf_thresh=confidence,
+                iou_thresh=iou_threshold,
                 max_detections=max_detections,
-                class_agnostic=class_agnostic,
+                class_agnostic=class_agnostic_nms,
             )
         rescaled_results = rescale_key_points_detections(
             detections=nms_results,
@@ -240,24 +264,30 @@ class YOLOv8ForKeyPointsDetectionOnnx(
                 result.shape[0], self._key_points_slots_in_prediction, 3
             )
             xy = key_points_reshaped[:, :, :2]
-            confidence = key_points_reshaped[:, :, 2]
+            predicted_key_points_confidence = key_points_reshaped[:, :, 2]
             key_points_classes_for_instance_class = (
                 (self._key_points_classes_for_instances[class_id])
                 .unsqueeze(1)
                 .to(device=result.device)
             )
-            instances_class_mask = (
+            invalid_slot_keypoints = (
                 torch.arange(self._key_points_slots_in_prediction, device=result.device)
                 .unsqueeze(0)
                 .repeat(result.shape[0], 1)
-                < key_points_classes_for_instance_class
+                >= key_points_classes_for_instance_class
             )
 
-            confidence_mask = confidence < key_points_threshold
-            mask = instances_class_mask & confidence_mask
+            keypoints_below_threshold = (
+                predicted_key_points_confidence < key_points_threshold
+            )
+            mask = invalid_slot_keypoints | keypoints_below_threshold
             xy[mask] = 0.0
-            confidence[mask] = 0.0
+            predicted_key_points_confidence[mask] = 0.0
             all_key_points.append(
-                KeyPoints(xy=xy.round().int(), class_id=class_id, confidence=confidence)
+                KeyPoints(
+                    xy=xy.round().int(),
+                    class_id=class_id,
+                    confidence=predicted_key_points_confidence,
+                )
             )
         return all_key_points, detections

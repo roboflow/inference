@@ -1,15 +1,38 @@
+import os
+import traceback
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from functools import partial
 from typing import Any, Callable, Dict, List, Optional, Set
+from uuid import uuid4
+
+import cv2
+import numpy as np
 
 try:
-    from inference_sdk.config import execution_id
+    from inference_sdk.config import (
+        apply_duration_minimum,
+        execution_id,
+        remote_processing_times,
+    )
 except ImportError:
+    apply_duration_minimum = None
     execution_id = None
+    remote_processing_times = None
 
 from inference.core import logger
-from inference.core.workflows.errors import StepExecutionError, WorkflowError
+from inference.core.env import INFERENCE_DEBUG_OUTPUT_DIR
+from inference.core.telemetry import (
+    attach_context,
+    capture_context,
+    detach_context,
+    start_span,
+)
+from inference.core.workflows.errors import (
+    BlockTraceback,
+    StepExecutionError,
+    WorkflowError,
+)
 from inference.core.workflows.execution_engine.profiling.core import (
     NullWorkflowsProfiler,
     WorkflowsProfiler,
@@ -37,12 +60,60 @@ from inference.core.workflows.prototypes.block import WorkflowBlock
 from inference.usage_tracking.collector import usage_collector
 
 
+def _store_crash_info(
+    image: np.ndarray,
+    exception: Optional[Exception] = None,
+) -> None:
+    if image is None or not INFERENCE_DEBUG_OUTPUT_DIR:
+        logger.error("Failed attempt to store crash info")
+        return
+    try:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        file_name = f"image_{timestamp}_{uuid4().hex[:5]}"
+        os.makedirs(INFERENCE_DEBUG_OUTPUT_DIR, exist_ok=True)
+        if exception is not None:
+            traceback_str = traceback.format_exc()
+            with open(
+                os.path.join(INFERENCE_DEBUG_OUTPUT_DIR, f"{file_name}.txt"), "w"
+            ) as f:
+                f.write(str(exception))
+                f.write("\n")
+                f.write(traceback_str)
+        image_path = os.path.join(INFERENCE_DEBUG_OUTPUT_DIR, f"{file_name}.jpg")
+        cv2.imwrite(image_path, image)
+    except Exception as e:
+        logger.error(f"Failed to store crash info: {e}")
+
+
 @usage_collector("workflows")
 @execution_phase(
     name="workflow_execution",
     categories=["execution_engine_operation"],
 )
 def run_workflow(
+    workflow: CompiledWorkflow,
+    runtime_parameters: Dict[str, Any],
+    max_concurrent_steps: int,
+    kinds_serializers: Optional[Dict[str, Callable[[Any], Any]]],
+    serialize_results: bool = False,
+    profiler: Optional[WorkflowsProfiler] = None,
+    executor: Optional[ThreadPoolExecutor] = None,
+    step_error_handler: Optional[Callable[[Exception], None]] = None,
+) -> List[Dict[str, Any]]:
+    with start_span("workflow.run"):
+        return _run_workflow(
+            workflow=workflow,
+            runtime_parameters=runtime_parameters,
+            max_concurrent_steps=max_concurrent_steps,
+            kinds_serializers=kinds_serializers,
+            serialize_results=serialize_results,
+            profiler=profiler,
+            executor=executor,
+            step_error_handler=step_error_handler,
+        )
+
+
+def _run_workflow(
     workflow: CompiledWorkflow,
     runtime_parameters: Dict[str, Any],
     max_concurrent_steps: int,
@@ -102,6 +173,16 @@ def execute_steps(
         workflow_execution_id = execution_id.get()
     else:
         workflow_execution_id = None
+    if remote_processing_times is not None:
+        processing_time_collector = remote_processing_times.get()
+    else:
+        processing_time_collector = None
+    if apply_duration_minimum is not None:
+        duration_minimum_value = apply_duration_minimum.get()
+    else:
+        duration_minimum_value = None
+    # Capture OTel context so it can be re-attached inside worker threads
+    otel_ctx = capture_context()
     logger.debug(f"Executing steps: {next_steps}.")
     steps_functions = [
         partial(
@@ -111,7 +192,10 @@ def execute_steps(
             execution_data_manager=execution_data_manager,
             profiler=profiler,
             workflow_execution_id=workflow_execution_id,
+            processing_time_collector=processing_time_collector,
+            duration_minimum_value=duration_minimum_value,
             step_error_handler=step_error_handler,
+            otel_ctx=otel_ctx,
         )
         for step_selector in next_steps
     ]
@@ -131,39 +215,67 @@ def safe_execute_step(
     execution_data_manager: ExecutionDataManager,
     profiler: Optional[WorkflowsProfiler] = None,
     workflow_execution_id: Optional[str] = None,
+    processing_time_collector=None,
+    duration_minimum_value=None,
     step_error_handler: Optional[Callable[[str, Exception], None]] = None,
+    otel_ctx=None,
 ) -> None:
     if execution_id is not None:
         execution_id.set(workflow_execution_id)
+    if remote_processing_times is not None and processing_time_collector is not None:
+        remote_processing_times.set(processing_time_collector)
+    if apply_duration_minimum is not None and duration_minimum_value is not None:
+        apply_duration_minimum.set(duration_minimum_value)
+    # Re-attach OTel context in worker thread so trace propagation works.
+    # Must detach when done — threads are reused in the pool, and leaked
+    # contexts cause incorrect span parenting on subsequent tasks.
+    _otel_token = attach_context(otel_ctx)
     if profiler is None:
         profiler = NullWorkflowsProfiler.init()
+    step_name = get_last_chunk_of_selector(selector=step_selector)
     try:
-        logger.debug(
-            f"started execution of: {step_selector} - {datetime.now().isoformat()}"
-        )
-        run_step(
-            step_selector=step_selector,
-            workflow=workflow,
-            execution_data_manager=execution_data_manager,
-            profiler=profiler,
-        )
-        logger.debug(
-            f"finished execution of: {step_selector} - {datetime.now().isoformat()}"
-        )
-    except WorkflowError as error:
-        raise error
-    except Exception as error:
-        step_name = get_last_chunk_of_selector(selector=step_selector)
-        if step_error_handler:
-            step_error_handler(step_name, error)
-        logger.exception(f"Execution of step {step_selector} encountered error.")
-        raise StepExecutionError(
-            block_id=step_name,
-            block_type=workflow.steps[step_name].manifest.type,
-            public_message=str(error),
-            context="workflow_execution | step_execution",
-            inner_error=str(error),
-        ) from error
+        with start_span("workflow.step", {"workflow.step": step_name}):
+            try:
+                logger.debug(
+                    f"started execution of: {step_selector} - {datetime.now().isoformat()}"
+                )
+                run_step(
+                    step_selector=step_selector,
+                    workflow=workflow,
+                    execution_data_manager=execution_data_manager,
+                    profiler=profiler,
+                )
+                logger.debug(
+                    f"finished execution of: {step_selector} - {datetime.now().isoformat()}"
+                )
+            except WorkflowError:
+                raise
+            except Exception as error:
+                if step_error_handler:
+                    step_error_handler(step_name, error)
+                logger.exception(
+                    f"Execution of step {step_selector} encountered error."
+                )
+                error_traceback = "".join(
+                    traceback.format_exception(type(error), error, error.__traceback__)
+                )
+                block_traceback = BlockTraceback(
+                    traceback=error_traceback,
+                    error_line=getattr(error, "error_line", None),
+                    code_snippet=getattr(error, "code_snippet", None),
+                    stdout=getattr(error, "stdout", None),
+                    stderr=getattr(error, "stderr", None),
+                )
+                raise StepExecutionError(
+                    block_id=step_name,
+                    block_type=workflow.steps[step_name].manifest.type,
+                    block_traceback=block_traceback,
+                    public_message=str(error),
+                    context="workflow_execution | step_execution",
+                    inner_error=error,
+                ) from error
+    finally:
+        detach_context(_otel_token)
 
 
 def run_step(
@@ -243,7 +355,17 @@ def run_simd_step_in_batch_mode(
             # no inputs - discarded either by conditional exec or by not accepting empty
             outputs = []
         else:
-            outputs = step_instance.run(**step_input.parameters)
+            try:
+                outputs = step_instance.run(**step_input.parameters)
+            except Exception as exc:
+                if INFERENCE_DEBUG_OUTPUT_DIR:
+                    _store_crash_info(
+                        image=execution_data_manager._runtime_parameters["image"][
+                            0
+                        ].numpy_image,
+                        exception=exc,
+                    )
+                raise exc
     with profiler.profile_execution_phase(
         name="step_output_registration",
         categories=["execution_engine_operation"],

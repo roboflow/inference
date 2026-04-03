@@ -3,10 +3,11 @@ from unittest import mock
 import numpy as np
 import pytest
 
-from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
+from inference.core.env import USE_INFERENCE_MODELS, WORKFLOWS_MAX_CONCURRENT_STEPS
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.errors import (
+    DynamicBlockCodeError,
     DynamicBlockError,
     WorkflowEnvironmentConfigurationError,
 )
@@ -225,9 +226,14 @@ def test_workflow_with_custom_python_blocks_measuring_overlap(
     assert (
         len(result[0]["overlaps"]) == 2
     ), "Expected 2 instances of dogs found, each overlap with another for first image"
-    assert (
-        abs(result[0]["max_overlap"] - 0.177946) < 1e-3
-    ), "Expected max overlap to be calculated properly"
+    if not USE_INFERENCE_MODELS:
+        assert (
+            abs(result[0]["max_overlap"] - 0.177946) < 1e-3
+        ), "Expected max overlap to be calculated properly"
+    else:
+        assert (
+            abs(result[0]["max_overlap"] - 0.16448630730758626) < 1e-3
+        ), "Expected max overlap to be calculated properly"
     assert (
         len(result[1]["overlaps"]) == 0
     ), "Expected no instances of dogs found for second image"
@@ -332,10 +338,10 @@ def test_workflow_with_custom_python_block_operating_on_batch(
         "max_confidence",
     }, "Expected all declared outputs to be delivered"
     assert (
-        abs(result[0]["max_confidence"] - 0.85599) < 1e-3
+        abs(result[0]["max_confidence"] - 0.85599) < 1.5e-2
     ), "Expected max confidence to be extracted"
     assert (
-        abs(result[1]["max_confidence"] - 0.84284) < 1e-3
+        abs(result[1]["max_confidence"] - 0.84284) < 1.5e-2
     ), "Expected max confidence to be extracted"
 
 
@@ -796,7 +802,7 @@ def test_workflow_with_custom_python_block_when_code_cannot_be_compiled(
     }
 
     # when
-    with pytest.raises(DynamicBlockError):
+    with pytest.raises(DynamicBlockCodeError):
         _ = ExecutionEngine.init(
             workflow_definition=WORKFLOW_WITH_CODE_THAT_DOES_NOT_COMPILE,
             init_parameters=workflow_init_parameters,

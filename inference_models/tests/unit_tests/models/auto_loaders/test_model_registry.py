@@ -3,7 +3,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from inference_models.errors import ModelImplementationLoaderError
+from inference_models.errors import ModelImplementationNotFoundError
 from inference_models.models.auto_loaders import models_registry
 from inference_models.models.auto_loaders.entities import BackendType
 from inference_models.models.auto_loaders.models_registry import (
@@ -39,7 +39,7 @@ def test_model_implementation_exists_when_model_does_not_exists() -> None:
 
 def test_resolve_model_class_when_implementation_does_not_exist() -> None:
     # when
-    with pytest.raises(ModelImplementationLoaderError):
+    with pytest.raises(ModelImplementationNotFoundError):
         _ = resolve_model_class(
             model_architecture="yolov8",
             task_type="invalid",
@@ -129,7 +129,7 @@ def test_resolve_model_class_when_class_not_found_as_registry_entry_when_feature
     None
 ):
     # when
-    with pytest.raises(ModelImplementationLoaderError):
+    with pytest.raises(ModelImplementationNotFoundError):
         _ = resolve_model_class(
             model_architecture="rfdetr",
             task_type="object-detection",

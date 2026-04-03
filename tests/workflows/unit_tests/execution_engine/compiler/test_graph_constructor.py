@@ -471,7 +471,7 @@ def test_execution_graph_construction_when_fusion_of_two_branches_is_present() -
     ), "Expected to see connection between fusion step and predictions output"
 
 
-def test_execution_graph_construction_when_there_is_flow_control_step() -> None:
+def test_execution_graph_construction_when_there_is_control_flow_step() -> None:
     # given
     workflow_definition = ParsedWorkflowDefinition(
         version="1.0",

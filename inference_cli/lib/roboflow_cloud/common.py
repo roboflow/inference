@@ -1,5 +1,5 @@
 import json
-from typing import List, Optional, Union
+from typing import List, Optional
 
 import backoff
 import requests
@@ -36,10 +36,19 @@ def get_workspace(api_key: str) -> str:
             params={"api_key": api_key},
             timeout=REQUEST_TIMEOUT,
         )
-    except (ConnectionError, Timeout):
+    except (ConnectionError, requests.exceptions.ConnectionError) as e:
         raise RetryError(
             f"Connectivity error. Try reaching Roboflow API in browser: {API_BASE_URL}"
-        )
+        ) from e
+    except Timeout as e:
+        raise RetryError(
+            f"Timeout error. Could not complete `get_workspace(...)` operation "
+            f"within {REQUEST_TIMEOUT} seconds. That may be caused by several reasons - including "
+            f"network connectivity issues on your end or slow responses on Roboflow API side. Verify "
+            f"connectivity and try again. You may also set `ROBOFLOW_API_REQUEST_TIMEOUT` env "
+            f"variable to larger value (in seconds) via `export ROBOFLOW_API_REQUEST_TIMEOUT=120` for example to "
+            f"set timeout to 2 minutes. If the problem persists - contact Roboflow support."
+        ) from e
     handle_response_errors(response=response, operation_name="list batches")
     try:
         return response.json()["workspace"]

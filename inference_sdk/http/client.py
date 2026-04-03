@@ -1,3 +1,4 @@
+import logging
 from contextlib import contextmanager
 from typing import (
     TYPE_CHECKING,
@@ -17,7 +18,12 @@ import requests
 from aiohttp import ClientConnectionError, ClientResponseError
 from requests import HTTPError, Response
 
-from inference_sdk.config import EXECUTION_ID_HEADER, execution_id
+from inference_sdk.config import (
+    EXECUTION_ID_HEADER,
+    PROCESSING_TIME_HEADER,
+    execution_id,
+    remote_processing_times,
+)
 from inference_sdk.http.entities import (
     ALL_ROBOFLOW_API_URLS,
     CLASSIFICATION_TASK,
@@ -48,6 +54,7 @@ from inference_sdk.http.utils.aliases import (
     resolve_roboflow_model_alias,
 )
 from inference_sdk.http.utils.executors import (
+    UNKNOWN_MODEL_ID,
     RequestMethod,
     execute_requests_packages,
     execute_requests_packages_async,
@@ -103,6 +110,27 @@ BufferConsumptionStrategy = Literal["LAZY", "EAGER"]
 
 if TYPE_CHECKING:
     from inference_sdk.webrtc.client import WebRTCClient
+
+
+logger = logging.getLogger(__name__)
+
+
+def _collect_processing_time_from_response(
+    response: requests.Response,
+    model_id: str = UNKNOWN_MODEL_ID,
+) -> None:
+    collector = remote_processing_times.get()
+    if collector is None:
+        return
+    pt = response.headers.get(PROCESSING_TIME_HEADER)
+    if pt is not None:
+        try:
+            collector.add(float(pt), model_id=model_id)
+        except (ValueError, TypeError):
+            logger.warning(
+                "Malformed %s header value; could not parse as float",
+                PROCESSING_TIME_HEADER,
+            )
 
 
 def wrap_errors(function: callable) -> callable:
@@ -1337,11 +1365,13 @@ class InferenceHTTPClient:
         execution_id_value = execution_id.get()
         if execution_id_value is not None:
             headers[EXECUTION_ID_HEADER] = execution_id_value
-
         response = requests.post(
             self.__wrap_url_with_api_key(f"{self.__api_url}/clip/embed_text"),
             json=payload,
             headers=headers,
+        )
+        _collect_processing_time_from_response(
+            response, model_id=clip_version or "clip"
         )
         api_key_safe_raise_for_status(response=response)
         return unwrap_single_element_list(sequence=response.json())
@@ -1440,11 +1470,13 @@ class InferenceHTTPClient:
         execution_id_value = execution_id.get()
         if execution_id_value is not None:
             headers[EXECUTION_ID_HEADER] = execution_id_value
-
         response = requests.post(
             self.__wrap_url_with_api_key(f"{self.__api_url}/clip/compare"),
             json=payload,
             headers=headers,
+        )
+        _collect_processing_time_from_response(
+            response, model_id=clip_version or "clip"
         )
         api_key_safe_raise_for_status(response=response)
         return response.json()
@@ -1548,7 +1580,6 @@ class InferenceHTTPClient:
         execution_id_value = execution_id.get()
         if execution_id_value is not None:
             headers[EXECUTION_ID_HEADER] = execution_id_value
-
         response = requests.post(
             self.__wrap_url_with_api_key(
                 f"{self.__api_url}/perception_encoder/embed_text"
@@ -1556,8 +1587,606 @@ class InferenceHTTPClient:
             json=payload,
             headers=headers,
         )
+        _collect_processing_time_from_response(
+            response,
+            model_id=perception_encoder_version or "perception_encoder",
+        )
         api_key_safe_raise_for_status(response=response)
         return unwrap_single_element_list(sequence=response.json())
+
+    @wrap_errors
+    def infer_lmm(
+        self,
+        inference_input: Union[ImagesReference, List[ImagesReference]],
+        model_id: str,
+        prompt: Optional[str] = None,
+        model_id_in_path: bool = False,
+    ) -> Union[dict, List[dict]]:
+        """Run inference using a Large Multimodal Model (LMM).
+
+        This method supports various vision-language models including Florence-2,
+        Moondream2, SmolVLM, Qwen2.5-VL, Qwen3-VL, and PaliGemma.
+
+        Args:
+            inference_input (Union[ImagesReference, List[ImagesReference]]): Input image(s)
+                for inference. Can be file paths, URLs, base64 strings, numpy arrays, or PIL images.
+            model_id (str): The identifier of the LMM model to use. Examples include:
+                - "florence-2-base", "florence-2-large" for Florence-2
+                - "moondream2/moondream2_2b_jul24" for Moondream2
+                - "smolvlm2/smolvlm-2.2b-instruct" for SmolVLM
+                - "qwen25-vl-7b" for Qwen2.5-VL
+                - "qwen3vl-2b-instruct" for Qwen3-VL
+            prompt (Optional[str], optional): Text prompt to guide the model. Defaults to None.
+            model_id_in_path (bool, optional): If True, includes model_id in the URL path
+                (e.g., /infer/lmm/florence-2-base) which enables path-based routing.
+                If False (default), model_id is only sent in the request body.
+
+        Returns:
+            Union[dict, List[dict]]: Inference results containing the model response.
+                The structure depends on the specific model used.
+
+        Raises:
+            HTTPCallErrorError: If there is an error in the HTTP call.
+            HTTPClientError: If there is an error with the server connection.
+        """
+        extra_payload = {"model_id": model_id}
+        if prompt is not None:
+            extra_payload["prompt"] = prompt
+
+        if model_id_in_path:
+            endpoint = f"/infer/lmm/{model_id}"
+        else:
+            endpoint = "/infer/lmm"
+
+        result = self._post_images(
+            inference_input=inference_input,
+            endpoint=endpoint,
+            extra_payload=extra_payload,
+        )
+        return result
+
+    @wrap_errors_async
+    async def infer_lmm_async(
+        self,
+        inference_input: Union[ImagesReference, List[ImagesReference]],
+        model_id: str,
+        prompt: Optional[str] = None,
+        model_id_in_path: bool = False,
+    ) -> Union[dict, List[dict]]:
+        """Run inference using a Large Multimodal Model (LMM) asynchronously.
+
+        This method supports various vision-language models including Florence-2,
+        Moondream2, SmolVLM, Qwen2.5-VL, Qwen3-VL, and PaliGemma.
+
+        Args:
+            inference_input (Union[ImagesReference, List[ImagesReference]]): Input image(s)
+                for inference. Can be file paths, URLs, base64 strings, numpy arrays, or PIL images.
+            model_id (str): The identifier of the LMM model to use.
+            prompt (Optional[str], optional): Text prompt to guide the model. Defaults to None.
+            model_id_in_path (bool, optional): If True, includes model_id in the URL path
+                (e.g., /infer/lmm/florence-2-base) which enables path-based routing.
+                If False (default), model_id is only sent in the request body.
+
+        Returns:
+            Union[dict, List[dict]]: Inference results containing the model response.
+
+        Raises:
+            HTTPCallErrorError: If there is an error in the HTTP call.
+            HTTPClientError: If there is an error with the server connection.
+        """
+        extra_payload = {"model_id": model_id}
+        if prompt is not None:
+            extra_payload["prompt"] = prompt
+
+        if model_id_in_path:
+            endpoint = f"/infer/lmm/{model_id}"
+        else:
+            endpoint = "/infer/lmm"
+
+        result = await self._post_images_async(
+            inference_input=inference_input,
+            endpoint=endpoint,
+            extra_payload=extra_payload,
+        )
+        return result
+
+    @wrap_errors
+    def depth_estimation(
+        self,
+        inference_input: Union[ImagesReference, List[ImagesReference]],
+        model_id: str = "depth-anything-v3/small",
+    ) -> Union[dict, List[dict]]:
+        """Run depth estimation on input image(s).
+
+        This method estimates depth maps from images using models like Depth Anything.
+
+        Args:
+            inference_input (Union[ImagesReference, List[ImagesReference]]): Input image(s)
+                for depth estimation. Can be file paths, URLs, base64 strings, numpy arrays,
+                or PIL images.
+            model_id (str, optional): The depth estimation model to use. Defaults to
+                "depth-anything-v3/small". Supported models include:
+                - "depth-anything-v2/small"
+                - "depth-anything-v3/small"
+                - "depth-anything-v3/base"
+
+        Returns:
+            Union[dict, List[dict]]: Depth estimation results containing:
+                - normalized_depth: The normalized depth map as a list
+                - image: Hex-encoded visualization of the depth map
+
+        Raises:
+            HTTPCallErrorError: If there is an error in the HTTP call.
+            HTTPClientError: If there is an error with the server connection.
+        """
+        extra_payload = {"model_id": model_id}
+        result = self._post_images(
+            inference_input=inference_input,
+            endpoint="/infer/depth-estimation",
+            extra_payload=extra_payload,
+        )
+        return result
+
+    @wrap_errors_async
+    async def depth_estimation_async(
+        self,
+        inference_input: Union[ImagesReference, List[ImagesReference]],
+        model_id: str = "depth-anything-v3/small",
+    ) -> Union[dict, List[dict]]:
+        """Run depth estimation on input image(s) asynchronously.
+
+        Args:
+            inference_input (Union[ImagesReference, List[ImagesReference]]): Input image(s)
+                for depth estimation.
+            model_id (str, optional): The depth estimation model to use. Defaults to
+                "depth-anything-v3/small".
+
+        Returns:
+            Union[dict, List[dict]]: Depth estimation results.
+
+        Raises:
+            HTTPCallErrorError: If there is an error in the HTTP call.
+            HTTPClientError: If there is an error with the server connection.
+        """
+        extra_payload = {"model_id": model_id}
+        result = await self._post_images_async(
+            inference_input=inference_input,
+            endpoint="/infer/depth-estimation",
+            extra_payload=extra_payload,
+        )
+        return result
+
+    @wrap_errors
+    def sam2_segment_image(
+        self,
+        inference_input: Union[ImagesReference, List[ImagesReference]],
+        prompts: Optional[List[dict]] = None,
+        sam2_version_id: str = "hiera_tiny",
+        multimask_output: bool = True,
+        mask_input_format: str = "json",
+    ) -> Union[dict, List[dict]]:
+        """Run Segment Anything 2 (SAM2) segmentation on input image(s).
+
+        This method performs instance segmentation using SAM2, which can segment
+        objects based on point or box prompts.
+
+        Args:
+            inference_input (Union[ImagesReference, List[ImagesReference]]): Input image(s)
+                for segmentation. Can be file paths, URLs, base64 strings, numpy arrays,
+                or PIL images.
+            prompts (Optional[List[dict]], optional): List of prompt dictionaries. Each prompt
+                can contain:
+                - "box": {"x": float, "y": float, "width": float, "height": float}
+                - "points": [{"x": float, "y": float, "positive": bool}, ...]
+                Defaults to None (automatic segmentation).
+            sam2_version_id (str, optional): Version of SAM2 model to use. Options are
+                "hiera_large", "hiera_small", "hiera_tiny", "hiera_b_plus".
+                Defaults to "hiera_tiny".
+            multimask_output (bool, optional): Whether to output multiple masks per prompt.
+                Defaults to True.
+            mask_input_format (str, optional): Format for mask output. Defaults to "json".
+
+        Returns:
+            Union[dict, List[dict]]: Segmentation results containing predictions with masks,
+                confidence scores, and bounding boxes.
+
+        Raises:
+            HTTPCallErrorError: If there is an error in the HTTP call.
+            HTTPClientError: If there is an error with the server connection.
+        """
+        extra_payload = {
+            "sam2_version_id": sam2_version_id,
+            "multimask_output": multimask_output,
+            "format": mask_input_format,
+        }
+        if prompts is not None:
+            extra_payload["prompts"] = {"prompts": prompts}
+        result = self._post_images(
+            inference_input=inference_input,
+            endpoint="/sam2/segment_image",
+            extra_payload=extra_payload,
+        )
+        return result
+
+    @wrap_errors_async
+    async def sam2_segment_image_async(
+        self,
+        inference_input: Union[ImagesReference, List[ImagesReference]],
+        prompts: Optional[List[dict]] = None,
+        sam2_version_id: str = "hiera_tiny",
+        multimask_output: bool = True,
+        mask_input_format: str = "json",
+    ) -> Union[dict, List[dict]]:
+        """Run Segment Anything 2 (SAM2) segmentation on input image(s) asynchronously.
+
+        Args:
+            inference_input (Union[ImagesReference, List[ImagesReference]]): Input image(s)
+                for segmentation.
+            prompts (Optional[List[dict]], optional): List of prompt dictionaries.
+                Defaults to None.
+            sam2_version_id (str, optional): Version of SAM2 model. Defaults to "hiera_tiny".
+            multimask_output (bool, optional): Whether to output multiple masks. Defaults to True.
+            mask_input_format (str, optional): Format for mask output. Defaults to "json".
+
+        Returns:
+            Union[dict, List[dict]]: Segmentation results.
+
+        Raises:
+            HTTPCallErrorError: If there is an error in the HTTP call.
+            HTTPClientError: If there is an error with the server connection.
+        """
+        extra_payload = {
+            "sam2_version_id": sam2_version_id,
+            "multimask_output": multimask_output,
+            "format": mask_input_format,
+        }
+        if prompts is not None:
+            extra_payload["prompts"] = {"prompts": prompts}
+        result = await self._post_images_async(
+            inference_input=inference_input,
+            endpoint="/sam2/segment_image",
+            extra_payload=extra_payload,
+        )
+        return result
+
+    @wrap_errors
+    def sam3_3d_infer(
+        self,
+        inference_input: ImagesReference,
+        mask_input: Any,
+        model_id: str = "sam3-3d-objects",
+        *,
+        output_meshes: bool = True,
+        output_scene: bool = True,
+        with_mesh_postprocess: bool = True,
+        with_texture_baking: bool = True,
+        use_distillations: bool = False,
+    ) -> dict:
+        """Generate 3D meshes and Gaussian splatting from a 2D image with mask prompts.
+
+        This method uses SAM3 3D to generate 3D representations from 2D images
+        with mask prompts.
+
+        Args:
+            inference_input (ImagesReference): Input image for 3D generation.
+                Can be a file path, URL, base64 string, numpy array, or PIL image.
+            mask_input (Any): Mask input in any supported format:
+                - Polygon coordinates: [x1, y1, x2, y2, ...]
+                - Binary mask (as numpy array or base64)
+                - RLE dictionary
+                - List of any of the above for multiple masks
+            model_id (str, optional): The SAM3 3D model to use. Defaults to "sam3-3d-objects".
+            output_meshes (bool, optional): SAM3 3D always outputs object gaussians, and can
+                optionally output object meshes if output_meshes is True. Defaults to True.
+            output_scene (bool, optional): Output the combined scene reconstruction in
+                addition to individual object reconstructions. Defaults to True.
+            with_mesh_postprocess (bool, optional): Enable mesh postprocessing. Defaults to True.
+            with_texture_baking (bool, optional): Enable texture baking for meshes. Defaults to True.
+            use_distillations (bool, optional): Use the distilled versions of the model components.
+
+        Returns:
+            dict: Response containing base64-encoded 3D outputs:
+                - mesh_glb: Scene mesh in GLB format (base64 encoded) if output_meshes=True, otherwise None.
+                - gaussian_ply: Combined Gaussian splatting in PLY format (base64 encoded)
+                - objects: List of individual objects, each containing:
+                    - mesh_glb: Object mesh (base64) if output_scene=True and output_meshes=True, otherwise None.
+                    - gaussian_ply: Object Gaussian (base64) if output_scene=True, otherwise None.
+                    - metadata: {"rotation": [...], "translation": [...], "scale": [...]}
+                - time: Inference time in seconds
+
+        Raises:
+            HTTPCallErrorError: If there is an error in the HTTP call.
+            HTTPClientError: If there is an error with the server connection.
+        """
+        encoded_inference_inputs = load_static_inference_input(
+            inference_input=inference_input,
+        )
+        payload = self.__initialise_payload()
+        payload["model_id"] = model_id
+        payload["mask_input"] = mask_input
+        payload["output_meshes"] = output_meshes
+        payload["output_scene"] = output_scene
+        payload["with_mesh_postprocess"] = with_mesh_postprocess
+        payload["with_texture_baking"] = with_texture_baking
+        payload["use_distillations"] = use_distillations
+
+        url = self.__wrap_url_with_api_key(f"{self.__api_url}/sam3_3d/infer")
+        requests_data = prepare_requests_data(
+            url=url,
+            encoded_inference_inputs=encoded_inference_inputs,
+            headers=DEFAULT_HEADERS,
+            parameters=None,
+            payload=payload,
+            max_batch_size=1,
+            image_placement=ImagePlacement.JSON,
+        )
+        responses = execute_requests_packages(
+            requests_data=requests_data,
+            request_method=RequestMethod.POST,
+            max_concurrent_requests=self.__inference_configuration.max_concurrent_requests,
+        )
+        return responses[0].json()
+
+    @wrap_errors_async
+    async def sam3_3d_infer_async(
+        self,
+        inference_input: ImagesReference,
+        mask_input: Any,
+        model_id: str = "sam3-3d-objects",
+        *,
+        output_meshes: bool = True,
+        output_scene: bool = True,
+        with_mesh_postprocess: bool = True,
+        with_texture_baking: bool = True,
+        use_distillations: bool = False,
+    ) -> dict:
+        """Generate 3D meshes and Gaussian splatting from a 2D image asynchronously.
+
+        Args:
+            inference_input (ImagesReference): Input image for 3D generation.
+            mask_input (Any): Mask input in any supported format.
+            model_id (str, optional): The SAM3 3D model to use. Defaults to "sam3-3d-objects".
+            output_meshes (bool, optional): SAM3 3D always outputs object gaussians, and can
+                optionally output object meshes if output_meshes is True. Defaults to True.
+            output_scene (bool, optional): Output the combined scene reconstruction in
+                addition to individual object reconstructions. Defaults to True.
+            with_mesh_postprocess (bool, optional): Enable mesh postprocessing. Defaults to True.
+            with_texture_baking (bool, optional): Enable texture baking for meshes. Defaults to True.
+            use_distillations (bool, optional): Use the distilled versions of the model components.
+
+        Returns:
+            dict: Response containing base64-encoded 3D outputs:
+                - mesh_glb: Scene mesh in GLB format (base64 encoded) if output_meshes=True, otherwise None.
+                - gaussian_ply: Combined Gaussian splatting in PLY format (base64 encoded)
+                - objects: List of individual objects, each containing:
+                    - mesh_glb: Object mesh (base64) if output_scene=True and output_meshes=True, otherwise None.
+                    - gaussian_ply: Object Gaussian (base64) if output_scene=True, otherwise None.
+                    - metadata: {"rotation": [...], "translation": [...], "scale": [...]}
+                - time: Inference time in seconds
+
+        Raises:
+            HTTPCallErrorError: If there is an error in the HTTP call.
+            HTTPClientError: If there is an error with the server connection.
+        """
+        encoded_inference_inputs = await load_static_inference_input_async(
+            inference_input=inference_input,
+        )
+        payload = self.__initialise_payload()
+        payload["model_id"] = model_id
+        payload["mask_input"] = mask_input
+        payload["output_meshes"] = output_meshes
+        payload["output_scene"] = output_scene
+        payload["with_mesh_postprocess"] = with_mesh_postprocess
+        payload["with_texture_baking"] = with_texture_baking
+        payload["use_distillations"] = use_distillations
+
+        url = self.__wrap_url_with_api_key(f"{self.__api_url}/sam3_3d/infer")
+        requests_data = prepare_requests_data(
+            url=url,
+            encoded_inference_inputs=encoded_inference_inputs,
+            headers=DEFAULT_HEADERS,
+            parameters=None,
+            payload=payload,
+            max_batch_size=1,
+            image_placement=ImagePlacement.JSON,
+        )
+        responses = await execute_requests_packages_async(
+            requests_data=requests_data,
+            request_method=RequestMethod.POST,
+            max_concurrent_requests=self.__inference_configuration.max_concurrent_requests,
+        )
+        return responses[0]
+
+    @wrap_errors
+    def sam3_concept_segment(
+        self,
+        inference_input: Union[ImagesReference, List[ImagesReference]],
+        prompts: List[dict],
+        model_id: str = "sam3/sam3_final",
+        output_prob_thresh: float = 0.5,
+        nms_iou_threshold: Optional[float] = None,
+        format: str = "polygon",
+    ) -> Union[dict, List[dict]]:
+        """Run SAM3 promptable concept segmentation (PCS) on input image(s).
+
+        Performs zero-shot instance segmentation using text or visual prompts.
+
+        Args:
+            inference_input: Input image(s) for segmentation.
+            prompts: List of prompt dicts, each with keys like "type", "text",
+                "output_prob_thresh", "boxes", "box_labels".
+            model_id: SAM3 model to use. Defaults to "sam3/sam3_final".
+            output_prob_thresh: Global confidence threshold. Defaults to 0.5.
+            nms_iou_threshold: IoU threshold for cross-prompt NMS. None disables NMS.
+            format: Output mask format, "polygon" or "rle". Defaults to "polygon".
+
+        Returns:
+            Segmentation results with prompt_results containing predictions.
+        """
+        extra_payload = {
+            "model_id": model_id,
+            "prompts": prompts,
+            "output_prob_thresh": output_prob_thresh,
+            "format": format,
+        }
+        if nms_iou_threshold is not None:
+            extra_payload["nms_iou_threshold"] = nms_iou_threshold
+        return self._post_images(
+            inference_input=inference_input,
+            endpoint="/sam3/concept_segment",
+            extra_payload=extra_payload,
+        )
+
+    @wrap_errors_async
+    async def sam3_concept_segment_async(
+        self,
+        inference_input: Union[ImagesReference, List[ImagesReference]],
+        prompts: List[dict],
+        model_id: str = "sam3/sam3_final",
+        output_prob_thresh: float = 0.5,
+        nms_iou_threshold: Optional[float] = None,
+        format: str = "polygon",
+    ) -> Union[dict, List[dict]]:
+        """Run SAM3 promptable concept segmentation (PCS) asynchronously.
+
+        Args:
+            inference_input: Input image(s) for segmentation.
+            prompts: List of prompt dicts.
+            model_id: SAM3 model to use. Defaults to "sam3/sam3_final".
+            output_prob_thresh: Global confidence threshold. Defaults to 0.5.
+            nms_iou_threshold: IoU threshold for cross-prompt NMS. None disables NMS.
+            format: Output mask format, "polygon" or "rle". Defaults to "polygon".
+
+        Returns:
+            Segmentation results with prompt_results containing predictions.
+        """
+        extra_payload = {
+            "model_id": model_id,
+            "prompts": prompts,
+            "output_prob_thresh": output_prob_thresh,
+            "format": format,
+        }
+        if nms_iou_threshold is not None:
+            extra_payload["nms_iou_threshold"] = nms_iou_threshold
+        return await self._post_images_async(
+            inference_input=inference_input,
+            endpoint="/sam3/concept_segment",
+            extra_payload=extra_payload,
+        )
+
+    @wrap_errors
+    def sam3_visual_segment(
+        self,
+        inference_input: Union[ImagesReference, List[ImagesReference]],
+        prompts: Optional[List[dict]] = None,
+        multimask_output: bool = True,
+        mask_input_format: str = "json",
+    ) -> Union[dict, List[dict]]:
+        """Run SAM3 promptable visual segmentation (PVS) on input image(s).
+
+        Performs instance segmentation using point or box prompts.
+
+        Args:
+            inference_input: Input image(s) for segmentation.
+            prompts: List of prompt dicts with "box" and/or "points" keys.
+                Defaults to None (automatic segmentation).
+            multimask_output: Whether to output multiple masks per prompt.
+                Defaults to True.
+            mask_input_format: Format for mask output. Defaults to "json".
+
+        Returns:
+            Segmentation results containing predictions with masks.
+        """
+        extra_payload = {
+            "multimask_output": multimask_output,
+            "format": mask_input_format,
+        }
+        if prompts is not None:
+            extra_payload["prompts"] = {"prompts": prompts}
+        return self._post_images(
+            inference_input=inference_input,
+            endpoint="/sam3/visual_segment",
+            extra_payload=extra_payload,
+        )
+
+    @wrap_errors_async
+    async def sam3_visual_segment_async(
+        self,
+        inference_input: Union[ImagesReference, List[ImagesReference]],
+        prompts: Optional[List[dict]] = None,
+        multimask_output: bool = True,
+        mask_input_format: str = "json",
+    ) -> Union[dict, List[dict]]:
+        """Run SAM3 promptable visual segmentation (PVS) asynchronously.
+
+        Args:
+            inference_input: Input image(s) for segmentation.
+            prompts: List of prompt dicts. Defaults to None.
+            multimask_output: Whether to output multiple masks. Defaults to True.
+            mask_input_format: Format for mask output. Defaults to "json".
+
+        Returns:
+            Segmentation results containing predictions with masks.
+        """
+        extra_payload = {
+            "multimask_output": multimask_output,
+            "format": mask_input_format,
+        }
+        if prompts is not None:
+            extra_payload["prompts"] = {"prompts": prompts}
+        return await self._post_images_async(
+            inference_input=inference_input,
+            endpoint="/sam3/visual_segment",
+            extra_payload=extra_payload,
+        )
+
+    @wrap_errors
+    def sam3_embed_image(
+        self,
+        inference_input: Union[ImagesReference, List[ImagesReference]],
+        image_id: Optional[str] = None,
+    ) -> Union[dict, List[dict]]:
+        """Generate SAM3 image embeddings.
+
+        Args:
+            inference_input: Input image(s) to embed.
+            image_id: Optional cache ID for embeddings. Defaults to None.
+
+        Returns:
+            Embedding results with image_id and processing time.
+        """
+        extra_payload = {}
+        if image_id is not None:
+            extra_payload["image_id"] = image_id
+        return self._post_images(
+            inference_input=inference_input,
+            endpoint="/sam3/embed_image",
+            extra_payload=extra_payload if extra_payload else None,
+        )
+
+    @wrap_errors_async
+    async def sam3_embed_image_async(
+        self,
+        inference_input: Union[ImagesReference, List[ImagesReference]],
+        image_id: Optional[str] = None,
+    ) -> Union[dict, List[dict]]:
+        """Generate SAM3 image embeddings asynchronously.
+
+        Args:
+            inference_input: Input image(s) to embed.
+            image_id: Optional cache ID for embeddings. Defaults to None.
+
+        Returns:
+            Embedding results with image_id and processing time.
+        """
+        extra_payload = {}
+        if image_id is not None:
+            extra_payload["image_id"] = image_id
+        return await self._post_images_async(
+            inference_input=inference_input,
+            endpoint="/sam3/embed_image",
+            extra_payload=extra_payload if extra_payload else None,
+        )
 
     @deprecated(
         reason="Please use run_workflow(...) method. This method will be removed end of Q2 2024"
@@ -1573,6 +2202,7 @@ class InferenceHTTPClient:
         excluded_fields: Optional[List[str]] = None,
         use_cache: bool = True,
         enable_profiling: bool = False,
+        workflow_version_id: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Run inference using a workflow specification.
 
@@ -1615,6 +2245,7 @@ class InferenceHTTPClient:
             legacy_endpoints=True,
             use_cache=use_cache,
             enable_profiling=enable_profiling,
+            workflow_version_id=workflow_version_id,
         )
 
     @wrap_errors
@@ -1628,6 +2259,7 @@ class InferenceHTTPClient:
         excluded_fields: Optional[List[str]] = None,
         use_cache: bool = True,
         enable_profiling: bool = False,
+        workflow_version_id: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Run inference using a workflow specification.
 
@@ -1678,6 +2310,7 @@ class InferenceHTTPClient:
             legacy_endpoints=False,
             use_cache=use_cache,
             enable_profiling=enable_profiling,
+            workflow_version_id=workflow_version_id,
         )
 
     def _run_workflow(
@@ -1691,6 +2324,7 @@ class InferenceHTTPClient:
         legacy_endpoints: bool = False,
         use_cache: bool = True,
         enable_profiling: bool = False,
+        workflow_version_id: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         response = self._execute_workflow_request(
             workspace_name=workspace_name,
@@ -1702,6 +2336,7 @@ class InferenceHTTPClient:
             legacy_endpoints=legacy_endpoints,
             use_cache=use_cache,
             enable_profiling=enable_profiling,
+            workflow_version_id=workflow_version_id,
         )
         response_data = response.json()
         workflow_outputs = response_data["outputs"]
@@ -1727,6 +2362,7 @@ class InferenceHTTPClient:
         legacy_endpoints: bool = False,
         use_cache: bool = True,
         enable_profiling: bool = False,
+        workflow_version_id: Optional[str] = None,
     ) -> Response:
         named_workflow_specified = (workspace_name is not None) and (
             workflow_id is not None
@@ -1767,6 +2403,8 @@ class InferenceHTTPClient:
             else:
                 url = f"{self.__api_url}/workflows/run"
         else:
+            if workflow_version_id is not None:
+                payload["workflow_version_id"] = workflow_version_id
             if legacy_endpoints:
                 url = f"{self.__api_url}/infer/workflows/{workspace_name}/{workflow_id}"
             else:

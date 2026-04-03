@@ -1,4 +1,5 @@
-from typing import Dict, List, Optional, Type, Union
+from functools import lru_cache
+from typing import Dict, List, Optional, Tuple, Type, Union
 
 import pydantic
 from pydantic import BaseModel, Field, create_model
@@ -8,6 +9,7 @@ from inference.core.entities.responses.workflows import WorkflowsBlocksSchemaDes
 from inference.core.workflows.errors import WorkflowBlockError, WorkflowSyntaxError
 from inference.core.workflows.execution_engine.entities.base import InputType, JsonField
 from inference.core.workflows.execution_engine.introspection.blocks_loader import (
+    _get_env_configuration_state,
     load_workflow_blocks,
 )
 from inference.core.workflows.execution_engine.profiling.core import (
@@ -126,10 +128,28 @@ def build_workflow_definition_entity(
     return entity
 
 
-def get_workflow_schema_description() -> WorkflowsBlocksSchemaDescription:
+@lru_cache(maxsize=8)
+def _cached_workflow_schema(
+    env_state: Tuple[Tuple[str, ...], bool] = None,
+) -> dict:
+    """Cached schema generation - called only when blocks don't change.
+
+    Args:
+        env_state: Tuple of (plugins, enterprise_blocks_flag) for cache invalidation
+    """
     available_blocks = load_workflow_blocks()
     workflow_definition_class = build_workflow_definition_entity(
         available_blocks=available_blocks
     )
-    schema = workflow_definition_class.model_json_schema()
+    return workflow_definition_class.model_json_schema()
+
+
+def clear_cache() -> None:
+    """Clear the workflow schema cache."""
+    _cached_workflow_schema.cache_clear()
+
+
+def get_workflow_schema_description() -> WorkflowsBlocksSchemaDescription:
+    env_state = _get_env_configuration_state()
+    schema = _cached_workflow_schema(env_state=env_state)
     return WorkflowsBlocksSchemaDescription(schema=schema)

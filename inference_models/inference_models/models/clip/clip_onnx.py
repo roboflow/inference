@@ -15,8 +15,8 @@ from inference_models.models.base.embeddings import TextImageEmbeddingModel
 from inference_models.models.clip.preprocessing import create_clip_preprocessor
 from inference_models.models.common.model_packages import get_model_package_contents
 from inference_models.models.common.onnx import (
-    run_session_with_batch_size_limit,
-    set_execution_provider_defaults,
+    run_onnx_session_with_batch_size_limit,
+    set_onnx_execution_provider_defaults,
 )
 from inference_models.utils.onnx_introspection import (
     get_selected_onnx_execution_providers,
@@ -26,16 +26,15 @@ try:
     import onnxruntime
 except ImportError as import_error:
     raise MissingDependencyError(
-        message=f"Could not import CLIP model with ONNX backend - this error means that some additional dependencies "
-        f"are not installed in the environment. If you run the `inference-models` library directly in your Python "
-        f"program, make sure the following extras of the package are installed: \n"
-        f"\t* `onnx-cpu` - when you wish to use library with CPU support only\n"
-        f"\t* `onnx-cu12` - for running on GPU with Cuda 12 installed\n"
-        f"\t* `onnx-cu118` - for running on GPU with Cuda 11.8 installed\n"
-        f"\t* `onnx-jp6-cu126` - for running on Jetson with Jetpack 6\n"
-        f"If you see this error using Roboflow infrastructure, make sure the service you use does support the model. "
-        f"You can also contact Roboflow to get support.",
-        help_url="https://todo",
+        message="Running model CLIP with ONNX backend requires onnxruntime installation, which is brought with "
+        "`onnx-*` extras of `inference-models` library. If you see this error running locally, "
+        "please follow our installation guide: https://inference-models.roboflow.com/getting-started/installation/"
+        " If you see this error using Roboflow infrastructure, make sure the service you use does support the "
+        f"model, You can also contact Roboflow to get support."
+        "Additionally - if AutoModel.from_pretrained(...) "
+        f"automatically selects model package which does not match your environment - that's a serious problem and "
+        f"we will really appreciate letting us know - https://github.com/roboflow/inference/issues",
+        help_url="https://inference-models.roboflow.com/errors/runtime-environment/#missingdependencyerror",
     ) from import_error
 
 
@@ -63,9 +62,9 @@ class ClipOnnx(TextImageEmbeddingModel):
                 f"be specified - explicitly in `from_pretrained(...)` method or via env variable "
                 f"`ONNXRUNTIME_EXECUTION_PROVIDERS`. If you run model locally - adjust your setup, otherwise "
                 f"contact the platform support.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/runtime-environment/#environmentconfigurationerror",
             )
-        onnx_execution_providers = set_execution_provider_defaults(
+        onnx_execution_providers = set_onnx_execution_provider_defaults(
             providers=onnx_execution_providers,
             model_package_path=model_name_or_path,
             device=device,
@@ -130,7 +129,7 @@ class ClipOnnx(TextImageEmbeddingModel):
             images, input_color_format, self._device
         )
         with self._visual_session_thread_lock:
-            return run_session_with_batch_size_limit(
+            return run_onnx_session_with_batch_size_limit(
                 session=self._visual_onnx_session,
                 inputs={self._visual_input_name: pre_processed_images},
                 max_batch_size=self._max_batch_size,
@@ -141,7 +140,7 @@ class ClipOnnx(TextImageEmbeddingModel):
             texts = [texts]
         tokenized_batch = clip.tokenize(texts)
         with self._textual_session_thread_lock:
-            return run_session_with_batch_size_limit(
+            return run_onnx_session_with_batch_size_limit(
                 session=self._textual_onnx_session,
                 inputs={self._textual_input_name: tokenized_batch},
                 max_batch_size=self._max_batch_size,

@@ -23,6 +23,7 @@ from inference.core.env import (
     ROBOFLOW_INTERNAL_SERVICE_SECRET,
     WEBRTC_DATA_CHANNEL_ACK_WINDOW,
     WEBRTC_DATA_CHANNEL_BUFFER_SIZE_LIMIT,
+    WEBRTC_GZIP_PREVIEW_FRAME_COMPRESSION,
     WEBRTC_MODAL_APP_NAME,
     WEBRTC_MODAL_FUNCTION_BUFFER_CONTAINERS,
     WEBRTC_MODAL_FUNCTION_ENABLE_MEMORY_SNAPSHOT,
@@ -49,6 +50,8 @@ from inference.core.env import (
     WEBRTC_MODAL_TOKEN_SECRET,
     WEBRTC_MODAL_USAGE_QUOTA_ENABLED,
     WEBRTC_MODAL_WATCHDOG_TIMEMOUT,
+    WEBRTC_SESSION_HEARTBEAT_INTERVAL_SECONDS,
+    WEBRTC_SESSION_HEARTBEAT_URL,
     WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE,
 )
 from inference.core.exceptions import (
@@ -120,7 +123,10 @@ if modal is not None:
         video_processing_image = modal.Image.from_registry(
             f"{WEBRTC_MODAL_IMAGE_NAME}:{docker_tag}"
         )
-    video_processing_image = video_processing_image.pip_install("modal").entrypoint([])
+
+    video_processing_image = (
+        video_processing_image.apt_install("ffmpeg").pip_install("modal").entrypoint([])
+    )
 
     # https://modal.com/docs/reference/modal.Volume
     rfcache_volume = modal.Volume.from_name("rfcache", create_if_missing=True)
@@ -162,6 +168,9 @@ if modal is not None:
             "ONNXRUNTIME_EXECUTION_PROVIDERS": "[CUDAExecutionProvider,CPUExecutionProvider]",
             "PROJECT": PROJECT,
             "PYTHONASYNCIODEBUG": str(os.getenv("PYTHONASYNCIODEBUG", "0")),
+            "ROBOFLOW_ENVIRONMENT": (
+                "prod" if PROJECT == "roboflow-platform" else "staging"
+            ),
             "ROBOFLOW_INTERNAL_SERVICE_NAME": WEBRTC_MODAL_ROBOFLOW_INTERNAL_SERVICE_NAME,
             "ROBOFLOW_INTERNAL_SERVICE_SECRET": ROBOFLOW_INTERNAL_SERVICE_SECRET,
             "WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE": WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE,
@@ -203,6 +212,15 @@ if modal is not None:
             "WEBRTC_MODAL_SHUTDOWN_RESERVE": str(WEBRTC_MODAL_SHUTDOWN_RESERVE),
             "WEBRTC_MODAL_USAGE_QUOTA_ENABLED": str(WEBRTC_MODAL_USAGE_QUOTA_ENABLED),
             "WEBRTC_MODAL_WATCHDOG_TIMEMOUT": str(WEBRTC_MODAL_WATCHDOG_TIMEMOUT),
+            "WEBRTC_GZIP_PREVIEW_FRAME_COMPRESSION": str(
+                WEBRTC_GZIP_PREVIEW_FRAME_COMPRESSION
+            ),
+            "WEBRTC_SESSION_HEARTBEAT_URL": (
+                WEBRTC_SESSION_HEARTBEAT_URL if WEBRTC_SESSION_HEARTBEAT_URL else ""
+            ),
+            "WEBRTC_SESSION_HEARTBEAT_INTERVAL_SECONDS": str(
+                WEBRTC_SESSION_HEARTBEAT_INTERVAL_SECONDS
+            ),
         },
         "volumes": {MODEL_CACHE_DIR: rfcache_volume},
     }
@@ -223,6 +241,7 @@ if modal is not None:
                 send_answer=send_answer,
                 model_manager=model_manager,
                 heartbeat_callback=watchdog.heartbeat,
+                connection_established_callback=watchdog.mark_connection_established,
             )
         )
 
@@ -269,10 +288,23 @@ if modal is not None:
             webrtc_request: WebRTCWorkerRequest,
             q: modal.Queue,
         ):
+            _workspace_id = get_roboflow_workspace(api_key=webrtc_request.api_key)
+
+            workflow_id = webrtc_request.workflow_configuration.workflow_id
+            if not workflow_id:
+                if webrtc_request.workflow_configuration.workflow_specification:
+                    workflow_id = usage_collector._calculate_resource_hash(
+                        resource_details=webrtc_request.workflow_configuration.workflow_specification
+                    )
+                else:
+                    workflow_id = "unknown"
+
             self._function_call_number_on_container += 1
             logger.info("*** Spawning %s:", self.__class__.__name__)
             logger.info("Running on %s", self._gpu)
             logger.info("Inference tag: %s", docker_tag)
+            logger.info("Workspace ID: %s", _workspace_id)
+            logger.info("Workflow ID: %s", workflow_id)
             logger.info(
                 "Preloaded models: %s",
                 (
@@ -368,6 +400,9 @@ if modal is not None:
             watchdog = Watchdog(
                 api_key=webrtc_request.api_key,
                 timeout_seconds=WEBRTC_MODAL_WATCHDOG_TIMEMOUT,
+                workspace_id=getattr(webrtc_request, "workspace_id", None),
+                session_id=getattr(webrtc_request, "session_id", None),
+                heartbeat_url=WEBRTC_SESSION_HEARTBEAT_URL,
             )
 
             try:
@@ -393,18 +428,8 @@ if modal is not None:
                 "WebRTC session stopped at %s",
                 _exec_session_stopped.isoformat(),
             )
-            if watchdog.total_heartbeats == 0:
-                raise Exception(
-                    "WebRTC worker was terminated before processing a single frame"
-                )
-            workflow_id = webrtc_request.workflow_configuration.workflow_id
-            if not workflow_id:
-                if webrtc_request.workflow_configuration.workflow_specification:
-                    workflow_id = usage_collector._calculate_resource_hash(
-                        resource_details=webrtc_request.workflow_configuration.workflow_specification
-                    )
-                else:
-                    workflow_id = "unknown"
+
+            no_frames_processed = watchdog.total_heartbeats == 0
 
             # requested plan is guaranteed to be set due to validation in spawn_rtc_peer_connection_modal
             webrtc_plan = webrtc_request.requested_plan
@@ -428,11 +453,25 @@ if modal is not None:
                     "is_preview": webrtc_request.is_preview,
                 },
                 execution_duration=(
-                    _exec_session_stopped - _exec_session_started
-                ).total_seconds(),
+                    (_exec_session_stopped - _exec_session_started).total_seconds()
+                    if watchdog.connection_established
+                    else 0
+                ),
             )
             usage_collector.push_usage_payloads()
             logger.info("Function completed")
+
+            if no_frames_processed:
+                if watchdog.connection_established:
+                    raise Exception(
+                        "WebRTC connection was established but no frames were processed. "
+                        "This typically indicates an invalid RTSP stream URL or corrupted video file."
+                    )
+                else:
+                    raise Exception(
+                        "WebRTC connection could not be established. "
+                        "No frames were processed."
+                    )
 
         @modal.exit()
         def stop(self):
@@ -566,12 +605,11 @@ if modal is not None:
             workspace_id = get_roboflow_workspace(api_key=webrtc_request.api_key)
             webrtc_request.workflow_configuration.workspace_name = workspace_id
         if not webrtc_request.workflow_configuration.workflow_specification:
-            webrtc_request.workflow_configuration.workflow_specification = (
-                get_workflow_specification(
-                    api_key=webrtc_request.api_key,
-                    workspace_id=webrtc_request.workflow_configuration.workspace_name,
-                    workflow_id=webrtc_request.workflow_configuration.workflow_id,
-                )
+            webrtc_request.workflow_configuration.workflow_specification = get_workflow_specification(
+                api_key=webrtc_request.api_key,
+                workspace_id=webrtc_request.workflow_configuration.workspace_name,
+                workflow_id=webrtc_request.workflow_configuration.workflow_id,
+                workflow_version_id=webrtc_request.workflow_configuration.workflow_version_id,
             )
         tags = {"tag": docker_tag}
         if workspace_id:

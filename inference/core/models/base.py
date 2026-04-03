@@ -7,6 +7,7 @@ from inference.core import logger
 from inference.core.entities.requests.inference import InferenceRequest
 from inference.core.entities.responses.inference import InferenceResponse
 from inference.core.models.types import PreprocessReturnMetadata
+from inference.core.telemetry import set_span_attribute, start_span
 from inference.usage_tracking.collector import usage_collector
 
 
@@ -22,12 +23,19 @@ class BaseInference:
         - image:
             can be a BGR numpy array, filepath, InferenceRequestImage, PIL Image, byte-string, etc.
         """
-        preproc_image, returned_metadata = self.preprocess(image, **kwargs)
-        logger.debug(
-            f"Preprocessed input shape: {getattr(preproc_image, 'shape', None)}"
-        )
-        predicted_arrays = self.predict(preproc_image, **kwargs)
-        postprocessed = self.postprocess(predicted_arrays, returned_metadata, **kwargs)
+        with start_span("model.preprocess"):
+            preproc_image, returned_metadata = self.preprocess(image, **kwargs)
+            logger.debug(
+                f"Preprocessed input shape: {getattr(preproc_image, 'shape', None)}"
+            )
+            if hasattr(preproc_image, "shape"):
+                set_span_attribute("model.input_shape", str(preproc_image.shape))
+        with start_span("model.predict"):
+            predicted_arrays = self.predict(preproc_image, **kwargs)
+        with start_span("model.postprocess"):
+            postprocessed = self.postprocess(
+                predicted_arrays, returned_metadata, **kwargs
+            )
 
         return postprocessed
 

@@ -1,10 +1,18 @@
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
 
 from inference.core.exceptions import InferenceModelNotFound
+from inference.core.managers import base as base_module
 from inference.core.managers.base import ModelManager
 from inference.core.managers.entities import ModelDescription
+from inference.core.managers.model_load_collector import (
+    ModelLoadCollector,
+    RequestModelIds,
+    model_load_info,
+    request_model_ids,
+)
 
 
 def test_add_model_when_model_already_loaded() -> None:
@@ -100,6 +108,56 @@ async def test_infer_from_request_when_model_is_available_but_exception_raised()
     # then
     assert thrown_exception.value is error
     model_manager._models["some/1"].infer_from_request.assert_called_once_with(request)
+
+
+def test_infer_from_request_sync_caches_results_in_model_monitoring_cache(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    model_registry = MagicMock()
+    model_manager = ModelManager(model_registry=model_registry)
+    model = MagicMock()
+    model_manager._models = {"some/1": model}
+    request = SimpleNamespace(api_key="some_api_key", disable_model_monitoring=False)
+    cached_item = {"request": {"model_id": "some/1"}, "response": {"time": 0.1}}
+    cache_mock = MagicMock()
+
+    monkeypatch.setattr(
+        base_module.model_monitoring_cache_module,
+        "model_monitoring_cache",
+        cache_mock,
+    )
+    monkeypatch.setattr(
+        base_module,
+        "to_cachable_inference_item",
+        lambda _request, _response: cached_item,
+    )
+
+    model_manager.infer_from_request_sync(model_id="some/1", request=request)
+
+    assert any(
+        call.args[0].startswith("inference:") for call in cache_mock.zadd.call_args_list
+    )
+
+
+def test_infer_from_request_sync_skips_model_monitoring_cache_when_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    model_registry = MagicMock()
+    model_manager = ModelManager(model_registry=model_registry)
+    model = MagicMock()
+    model_manager._models = {"some/1": model}
+    request = SimpleNamespace(api_key="some_api_key", disable_model_monitoring=True)
+    cache_mock = MagicMock()
+
+    monkeypatch.setattr(
+        base_module.model_monitoring_cache_module,
+        "model_monitoring_cache",
+        cache_mock,
+    )
+
+    model_manager.infer_from_request_sync(model_id="some/1", request=request)
+
+    cache_mock.zadd.assert_not_called()
 
 
 def test_make_response_when_model_available() -> None:
@@ -358,10 +416,12 @@ def test_model_manager_describe_models() -> None:
     model_1.batch_size = 12
     model_1.img_size_w = 640
     model_1.img_size_h = 480
+    model_1._vram_bytes = 1024000
     model_2.task_type = "instance-segmentation"
     model_2.batch_size = 1
     model_2.img_size_w = 480
     model_2.img_size_h = 480
+    model_2._vram_bytes = 2048000
     model_manager._models = {"some/1": model_1, "some/2": model_2}
 
     # when
@@ -375,6 +435,7 @@ def test_model_manager_describe_models() -> None:
             batch_size=12,
             input_width=640,
             input_height=480,
+            vram_bytes=1024000,
         ),
         ModelDescription(
             model_id="some/2",
@@ -382,5 +443,158 @@ def test_model_manager_describe_models() -> None:
             batch_size=1,
             input_width=480,
             input_height=480,
+            vram_bytes=2048000,
         ),
     ]
+
+
+def test_add_model_records_cold_start_when_collector_set() -> None:
+    # given
+    model_registry = MagicMock()
+    model_manager = ModelManager(model_registry=model_registry)
+    collector = ModelLoadCollector()
+    token = model_load_info.set(collector)
+
+    try:
+        # when
+        model_manager.add_model(model_id="some/1", api_key="some_api_key")
+    finally:
+        model_load_info.reset(token)
+
+    # then
+    assert "some/1" in model_manager.models()
+    assert collector.has_data() is True
+    total, detail = collector.summarize()
+    assert total > 0
+
+
+def test_add_model_does_not_record_when_model_already_loaded() -> None:
+    # given
+    model_registry = MagicMock()
+    model_manager = ModelManager(model_registry=model_registry)
+    model_manager._models = {"some/1": "A"}
+    collector = ModelLoadCollector()
+    token = model_load_info.set(collector)
+
+    try:
+        # when
+        model_manager.add_model(model_id="some/1", api_key="some_api_key")
+    finally:
+        model_load_info.reset(token)
+
+    # then - model was warm, collector should be empty
+    assert collector.has_data() is False
+
+
+def test_add_model_does_not_record_when_no_collector_set() -> None:
+    # given - model_load_info defaults to None (no HTTP context)
+    model_registry = MagicMock()
+    model_manager = ModelManager(model_registry=model_registry)
+
+    # when - should not raise even though no collector is set
+    model_manager.add_model(model_id="some/1", api_key="some_api_key")
+
+    # then
+    assert "some/1" in model_manager.models()
+
+
+def test_add_model_records_multiple_cold_starts() -> None:
+    # given
+    model_registry = MagicMock()
+    model_manager = ModelManager(model_registry=model_registry)
+    collector = ModelLoadCollector()
+    token = model_load_info.set(collector)
+
+    try:
+        # when
+        model_manager.add_model(model_id="model-a/1", api_key="key")
+        model_manager.add_model(model_id="model-b/2", api_key="key")
+    finally:
+        model_load_info.reset(token)
+
+    # then
+    total, detail = collector.summarize()
+    import json
+
+    parsed = json.loads(detail)
+    assert len(parsed) == 2
+    assert {e["m"] for e in parsed} == {"model-a/1", "model-b/2"}
+    assert all(e["t"] > 0 for e in parsed)
+
+
+def test_add_model_records_cold_start_only_for_new_models() -> None:
+    # given
+    model_registry = MagicMock()
+    model_manager = ModelManager(model_registry=model_registry)
+    model_manager._models = {"existing/1": "A"}
+    collector = ModelLoadCollector()
+    token = model_load_info.set(collector)
+
+    try:
+        # when - one warm, one cold
+        model_manager.add_model(model_id="existing/1", api_key="key")
+        model_manager.add_model(model_id="new-model/1", api_key="key")
+    finally:
+        model_load_info.reset(token)
+
+    # then - only the new model should be recorded
+    import json
+
+    total, detail = collector.summarize()
+    parsed = json.loads(detail)
+    assert len(parsed) == 1
+    assert parsed[0]["m"] == "new-model/1"
+
+
+def test_add_model_records_model_id_when_ids_collector_set() -> None:
+    # given
+    model_registry = MagicMock()
+    model_manager = ModelManager(model_registry=model_registry)
+    ids = RequestModelIds()
+    token = request_model_ids.set(ids)
+
+    try:
+        # when
+        model_manager.add_model(model_id="some/1", api_key="key")
+    finally:
+        request_model_ids.reset(token)
+
+    # then
+    assert ids.get_ids() == {"some/1"}
+
+
+def test_add_model_records_model_id_for_warm_model() -> None:
+    # given
+    model_registry = MagicMock()
+    model_manager = ModelManager(model_registry=model_registry)
+    model_manager._models = {"some/1": "A"}
+    ids = RequestModelIds()
+    token = request_model_ids.set(ids)
+
+    try:
+        # when - model already loaded (warm)
+        model_manager.add_model(model_id="some/1", api_key="key")
+    finally:
+        request_model_ids.reset(token)
+
+    # then - model ID should still be recorded
+    assert ids.get_ids() == {"some/1"}
+
+
+def test_add_model_records_all_model_ids() -> None:
+    # given
+    model_registry = MagicMock()
+    model_manager = ModelManager(model_registry=model_registry)
+    model_manager._models = {"warm/1": "A"}
+    ids = RequestModelIds()
+    token = request_model_ids.set(ids)
+
+    try:
+        # when - one warm, one cold
+        model_manager.add_model(model_id="warm/1", api_key="key")
+        model_manager.add_model(model_id="cold/1", api_key="key")
+    finally:
+        request_model_ids.reset(token)
+
+    # then
+    assert ids.get_ids() == {"warm/1", "cold/1"}

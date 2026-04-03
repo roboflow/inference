@@ -61,6 +61,16 @@ SNAKE_IMAGE_PATH = os.path.join(ASSETS_DIR, "snake.jpg")
 TRUCK_IMAGE_URL = "https://media.roboflow.com/inference/example-input-images/truck.jpg"
 TRUCK_IMAGE_PATH = os.path.join(ASSETS_DIR, "truck.jpg")
 
+SUNFLOWERS_IMAGE_URL = (
+    "https://storage.googleapis.com/roboflow-tests-assets/test-images/sunflowers.jpg"
+)
+SUNFLOWERS_IMAGE_PATH = os.path.join(ASSETS_DIR, "sunflowers.jpg")
+
+BASKETBALL_IMAGE_URL = (
+    "https://storage.googleapis.com/roboflow-tests-assets/test-images/basketball.jpg"
+)
+BASKETBALL_IMAGE_PATH = os.path.join(ASSETS_DIR, "basketball.jpg")
+
 
 def _download_if_not_exists(file_path: str, url: str, lock_timeout: int = 180) -> None:
     os.makedirs(os.path.dirname(file_path), exist_ok=True)
@@ -270,3 +280,31 @@ def snake_image_numpy() -> np.ndarray:
 def snake_image_torch() -> torch.Tensor:
     _download_if_not_exists(file_path=SNAKE_IMAGE_PATH, url=SNAKE_IMAGE_URL)
     return torchvision.io.read_image(SNAKE_IMAGE_PATH)
+
+
+@pytest.fixture(scope="function")
+def sunflowers_image_numpy() -> np.ndarray:
+    _download_if_not_exists(file_path=SUNFLOWERS_IMAGE_PATH, url=SUNFLOWERS_IMAGE_URL)
+    image = cv2.imread(SUNFLOWERS_IMAGE_PATH)
+    assert image is not None, "Could not load test image"
+    return image
+
+
+@pytest.fixture(scope="function")
+def sunflowers_image_torch() -> torch.Tensor:
+    _download_if_not_exists(file_path=SUNFLOWERS_IMAGE_PATH, url=SUNFLOWERS_IMAGE_URL)
+    return torchvision.io.read_image(SUNFLOWERS_IMAGE_PATH)
+
+
+@pytest.fixture(scope="function")
+def basketball_image_numpy() -> np.ndarray:
+    _download_if_not_exists(file_path=BASKETBALL_IMAGE_PATH, url=BASKETBALL_IMAGE_URL)
+    image = cv2.imread(BASKETBALL_IMAGE_PATH)
+    assert image is not None, "Could not load test image"
+    return image
+
+
+@pytest.fixture(scope="function")
+def basketball_image_torch() -> torch.Tensor:
+    _download_if_not_exists(file_path=BASKETBALL_IMAGE_PATH, url=BASKETBALL_IMAGE_URL)
+    return torchvision.io.read_image(BASKETBALL_IMAGE_PATH)

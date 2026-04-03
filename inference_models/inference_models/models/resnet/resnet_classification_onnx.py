@@ -9,8 +9,12 @@ from inference_models import (
     ClassificationPrediction,
     MultiLabelClassificationModel,
     MultiLabelClassificationPrediction,
+    PreProcessingOverrides,
 )
-from inference_models.configuration import DEFAULT_DEVICE
+from inference_models.configuration import (
+    DEFAULT_DEVICE,
+    INFERENCE_MODELS_RESNET_DEFAULT_CONFIDENCE,
+)
 from inference_models.entities import ColorFormat
 from inference_models.errors import (
     CorruptedModelPackageError,
@@ -20,8 +24,8 @@ from inference_models.errors import (
 from inference_models.models.base.types import PreprocessedInputs
 from inference_models.models.common.model_packages import get_model_package_contents
 from inference_models.models.common.onnx import (
-    run_session_with_batch_size_limit,
-    set_execution_provider_defaults,
+    run_onnx_session_with_batch_size_limit,
+    set_onnx_execution_provider_defaults,
 )
 from inference_models.models.common.roboflow.model_packages import (
     InferenceConfig,
@@ -40,16 +44,15 @@ try:
     import onnxruntime
 except ImportError as import_error:
     raise MissingDependencyError(
-        message=f"Could not import ResNet model with ONNX backend - this error means that some additional dependencies "
-        f"are not installed in the environment. If you run the `inference-models` library directly in your Python "
-        f"program, make sure the following extras of the package are installed: \n"
-        f"\t* `onnx-cpu` - when you wish to use library with CPU support only\n"
-        f"\t* `onnx-cu12` - for running on GPU with Cuda 12 installed\n"
-        f"\t* `onnx-cu118` - for running on GPU with Cuda 11.8 installed\n"
-        f"\t* `onnx-jp6-cu126` - for running on Jetson with Jetpack 6\n"
-        f"If you see this error using Roboflow infrastructure, make sure the service you use does support the model. "
-        f"You can also contact Roboflow to get support.",
-        help_url="https://todo",
+        message="Running ResNet model with ONNX backend requires pycuda installation, which is brought with "
+        "`onnx-*` extras of `inference-models` library. If you see this error running locally, "
+        "please follow our installation guide: https://inference-models.roboflow.com/getting-started/installation/"
+        " If you see this error using Roboflow infrastructure, make sure the service you use does support the "
+        f"model, You can also contact Roboflow to get support."
+        "Additionally - if AutoModel.from_pretrained(...) "
+        f"automatically selects model package which does not match your environment - that's a serious problem and "
+        f"we will really appreciate letting us know - https://github.com/roboflow/inference/issues",
+        help_url="https://inference-models.roboflow.com/errors/runtime-environment/#missingdependencyerror",
     ) from import_error
 
 
@@ -72,9 +75,9 @@ class ResNetForClassificationOnnx(ClassificationModel[torch.Tensor, torch.Tensor
                 f"be specified - explicitly in `from_pretrained(...)` method or via env variable "
                 f"`ONNXRUNTIME_EXECUTION_PROVIDERS`. If you run model locally - adjust your setup, otherwise "
                 f"contact the platform support.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/runtime-environment/#environmentconfigurationerror",
             )
-        onnx_execution_providers = set_execution_provider_defaults(
+        onnx_execution_providers = set_onnx_execution_provider_defaults(
             providers=onnx_execution_providers,
             model_package_path=model_name_or_path,
             device=device,
@@ -99,11 +102,22 @@ class ResNetForClassificationOnnx(ClassificationModel[torch.Tensor, torch.Tensor
                 ResizeMode.CENTER_CROP,
                 ResizeMode.LETTERBOX_REFLECT_EDGES,
             },
+            implicit_resize_mode_substitutions={
+                ResizeMode.FIT_LONGER_EDGE: (
+                    ResizeMode.STRETCH_TO,
+                    None,
+                    "ResNetForClassification model running with ONNX backend was trained with "
+                    "`fit-longer-edge` input resize mode. This transform cannot be applied properly for "
+                    "models with input dimensions fixed during weights export. To ensure interoperability, `stretch` "
+                    "resize mode will be used instead. If model was trained on Roboflow platform, "
+                    "we recommend using preprocessing method different that `fit-longer-edge`.",
+                )
+            },
         )
         if inference_config.post_processing.type != "softmax":
             raise CorruptedModelPackageError(
                 message="Expected Softmax to be the post-processing",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
         session = onnxruntime.InferenceSession(
             path_or_bytes=model_package_content["weights.onnx"],
@@ -149,6 +163,7 @@ class ResNetForClassificationOnnx(ClassificationModel[torch.Tensor, torch.Tensor
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         input_color_format: Optional[ColorFormat] = None,
         image_size: Optional[Tuple[int, int]] = None,
+        pre_processing_overrides: Optional[PreProcessingOverrides] = None,
         **kwargs,
     ) -> torch.Tensor:
         return pre_process_network_input(
@@ -158,13 +173,14 @@ class ResNetForClassificationOnnx(ClassificationModel[torch.Tensor, torch.Tensor
             target_device=self._device,
             input_color_format=input_color_format,
             image_size_wh=image_size,
+            pre_processing_overrides=pre_processing_overrides,
         )[0]
 
     def forward(
         self, pre_processed_images: PreprocessedInputs, **kwargs
     ) -> torch.Tensor:
         with self._session_thread_lock:
-            return run_session_with_batch_size_limit(
+            return run_onnx_session_with_batch_size_limit(
                 session=self._session,
                 inputs={self._input_name: pre_processed_images},
                 min_batch_size=self._input_batch_size,
@@ -207,9 +223,9 @@ class ResNetForMultiLabelClassificationOnnx(
                 f"be specified - explicitly in `from_pretrained(...)` method or via env variable "
                 f"`ONNXRUNTIME_EXECUTION_PROVIDERS`. If you run model locally - adjust your setup, otherwise "
                 f"contact the platform support.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/runtime-environment/#environmentconfigurationerror",
             )
-        onnx_execution_providers = set_execution_provider_defaults(
+        onnx_execution_providers = set_onnx_execution_provider_defaults(
             providers=onnx_execution_providers,
             model_package_path=model_name_or_path,
             device=device,
@@ -234,11 +250,22 @@ class ResNetForMultiLabelClassificationOnnx(
                 ResizeMode.CENTER_CROP,
                 ResizeMode.LETTERBOX_REFLECT_EDGES,
             },
+            implicit_resize_mode_substitutions={
+                ResizeMode.FIT_LONGER_EDGE: (
+                    ResizeMode.STRETCH_TO,
+                    None,
+                    "ResNetForMultiLabelClassification model running with ONNX backend was trained with "
+                    "`fit-longer-edge` input resize mode. This transform cannot be applied properly for "
+                    "models with input dimensions fixed during weights export. To ensure interoperability, `stretch` "
+                    "resize mode will be used instead. If model was trained on Roboflow platform, "
+                    "we recommend using preprocessing method different that `fit-longer-edge`.",
+                )
+            },
         )
         if inference_config.post_processing.type != "sigmoid":
             raise CorruptedModelPackageError(
                 message="Expected sigmoid to be the post-processing",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
         session = onnxruntime.InferenceSession(
             path_or_bytes=model_package_content["weights.onnx"],
@@ -284,6 +311,7 @@ class ResNetForMultiLabelClassificationOnnx(
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         input_color_format: Optional[ColorFormat] = None,
         image_size: Optional[Tuple[int, int]] = None,
+        pre_processing_overrides: Optional[PreProcessingOverrides] = None,
         **kwargs,
     ) -> torch.Tensor:
         return pre_process_network_input(
@@ -293,13 +321,14 @@ class ResNetForMultiLabelClassificationOnnx(
             target_device=self._device,
             input_color_format=input_color_format,
             image_size_wh=image_size,
+            pre_processing_overrides=pre_processing_overrides,
         )[0]
 
     def forward(
         self, pre_processed_images: PreprocessedInputs, **kwargs
     ) -> torch.Tensor:
         with self._session_thread_lock:
-            return run_session_with_batch_size_limit(
+            return run_onnx_session_with_batch_size_limit(
                 session=self._session,
                 inputs={self._input_name: pre_processed_images},
                 min_batch_size=self._input_batch_size,
@@ -309,7 +338,7 @@ class ResNetForMultiLabelClassificationOnnx(
     def post_process(
         self,
         model_results: torch.Tensor,
-        confidence: float = 0.5,
+        confidence: float = INFERENCE_MODELS_RESNET_DEFAULT_CONFIDENCE,
         **kwargs,
     ) -> List[MultiLabelClassificationPrediction]:
         if self._inference_config.post_processing.fused:

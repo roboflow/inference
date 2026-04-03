@@ -3,8 +3,11 @@ import os
 from pathlib import Path
 
 import requests
-from batch_regression_test import INFER_RESPONSE_FUNCTIONS
 from PIL import Image
+
+from .batch_regression_test import INFER_RESPONSE_FUNCTIONS
+
+TESTS_FILE = "batch_tests.json" if os.getenv("USE_INFERENCE_MODELS", "false").lower() != "true" else "batch_tests_inference_models.json"
 
 PORT = os.getenv("PORT", 9001)
 BASE_URL = os.getenv("BASE_URL", "http://localhost")
@@ -15,7 +18,7 @@ def main():
 
     # Load tests.json
     with open(
-        os.path.join(Path(__file__).resolve().parent, "batch_tests.json"), "r"
+        os.path.join(Path(__file__).resolve().parent, TESTS_FILE), "r"
     ) as f:
         tests = json.load(f)
 
@@ -50,7 +53,7 @@ def main():
 
     # Save the response to a file
     with open(
-        os.path.join(Path(__file__).resolve().parent, "batch_tests.json"), "w"
+        os.path.join(Path(__file__).resolve().parent, TESTS_FILE), "w"
     ) as f:
         json.dump(tests, f, indent=4)
 

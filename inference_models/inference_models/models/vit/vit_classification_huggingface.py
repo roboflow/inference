@@ -1,4 +1,5 @@
 import os
+from threading import Lock
 from typing import List, Optional, Union
 
 import numpy as np
@@ -11,8 +12,12 @@ from inference_models import (
     ClassificationPrediction,
     MultiLabelClassificationModel,
     MultiLabelClassificationPrediction,
+    PreProcessingOverrides,
 )
-from inference_models.configuration import DEFAULT_DEVICE
+from inference_models.configuration import (
+    DEFAULT_DEVICE,
+    INFERENCE_MODELS_VIT_CLASSIFIER_DEFAULT_CONFIDENCE,
+)
 from inference_models.entities import ColorFormat
 from inference_models.errors import CorruptedModelPackageError
 from inference_models.models.common.model_packages import get_model_package_contents
@@ -77,24 +82,34 @@ class VITForClassificationHF(ClassificationModel[torch.Tensor, torch.Tensor]):
                 ResizeMode.LETTERBOX,
                 ResizeMode.CENTER_CROP,
                 ResizeMode.LETTERBOX_REFLECT_EDGES,
-                ResizeMode.FIT_LONGER_EDGE,
+            },
+            implicit_resize_mode_substitutions={
+                ResizeMode.FIT_LONGER_EDGE: (
+                    ResizeMode.STRETCH_TO,
+                    None,
+                    "VIT Classification model running with HF backend was trained with "
+                    "`fit-longer-edge` input resize mode. This transform cannot be applied properly for "
+                    "models with input dimensions fixed during training. To ensure interoperability, `stretch` "
+                    "resize mode will be used instead. If model was trained on Roboflow platform, "
+                    "we recommend using preprocessing method different that `fit-longer-edge`.",
+                )
             },
         )
         if inference_config.model_initialization is None:
             raise CorruptedModelPackageError(
                 message="Expected model initialization parameters not provided in inference config.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
         num_classes = inference_config.model_initialization.get("num_classes")
         if not isinstance(num_classes, int):
             raise CorruptedModelPackageError(
                 message="Expected model initialization parameter `num_classes` not provided or in invalid format.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
         if inference_config.post_processing.type != "softmax":
             raise CorruptedModelPackageError(
                 message="Expected Softmax to be the post-processing",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
         backbone = ViTModel.from_pretrained(os.path.join(model_name_or_path, "vit")).to(
             device
@@ -133,6 +148,7 @@ class VITForClassificationHF(ClassificationModel[torch.Tensor, torch.Tensor]):
         self._inference_config = inference_config
         self._class_names = class_names
         self._device = device
+        self._lock = Lock()
 
     @property
     def class_names(self) -> List[str]:
@@ -142,6 +158,7 @@ class VITForClassificationHF(ClassificationModel[torch.Tensor, torch.Tensor]):
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         input_color_format: Optional[ColorFormat] = None,
+        pre_processing_overrides: Optional[PreProcessingOverrides] = None,
         **kwargs,
     ) -> torch.Tensor:
         return pre_process_network_input(
@@ -150,10 +167,11 @@ class VITForClassificationHF(ClassificationModel[torch.Tensor, torch.Tensor]):
             network_input=self._inference_config.network_input,
             target_device=self._device,
             input_color_format=input_color_format,
+            pre_processing_overrides=pre_processing_overrides,
         )[0]
 
     def forward(self, pre_processed_images: torch.Tensor, **kwargs) -> torch.Tensor:
-        with torch.inference_mode():
+        with self._lock, torch.inference_mode():
             return self._model(pre_processed_images)
 
     def post_process(
@@ -220,24 +238,34 @@ class VITForMultiLabelClassificationHF(
                 ResizeMode.LETTERBOX,
                 ResizeMode.CENTER_CROP,
                 ResizeMode.LETTERBOX_REFLECT_EDGES,
-                ResizeMode.FIT_LONGER_EDGE,
+            },
+            implicit_resize_mode_substitutions={
+                ResizeMode.FIT_LONGER_EDGE: (
+                    ResizeMode.STRETCH_TO,
+                    None,
+                    "VIT Multi-Label Classification model running with HF backend was trained with "
+                    "`fit-longer-edge` input resize mode. This transform cannot be applied properly for "
+                    "models with input dimensions fixed during training. To ensure interoperability, `stretch` "
+                    "resize mode will be used instead. If model was trained on Roboflow platform, "
+                    "we recommend using preprocessing method different that `fit-longer-edge`.",
+                )
             },
         )
         if inference_config.model_initialization is None:
             raise CorruptedModelPackageError(
                 message="Expected model initialization parameters not provided in inference config.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
         num_classes = inference_config.model_initialization.get("num_classes")
         if not isinstance(num_classes, int):
             raise CorruptedModelPackageError(
                 message="Expected model initialization parameter `num_classes` not provided or in invalid format.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
         if inference_config.post_processing.type != "sigmoid":
             raise CorruptedModelPackageError(
                 message="Expected sigmoid to be the post-processing",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
         backbone = ViTModel.from_pretrained(os.path.join(model_name_or_path, "vit")).to(
             device
@@ -285,6 +313,7 @@ class VITForMultiLabelClassificationHF(
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         input_color_format: Optional[ColorFormat] = None,
+        pre_processing_overrides: Optional[PreProcessingOverrides] = None,
         **kwargs,
     ) -> torch.Tensor:
         return pre_process_network_input(
@@ -293,6 +322,7 @@ class VITForMultiLabelClassificationHF(
             network_input=self._inference_config.network_input,
             target_device=self._device,
             input_color_format=input_color_format,
+            pre_processing_overrides=pre_processing_overrides,
         )[0]
 
     def forward(self, pre_processed_images: torch.Tensor, **kwargs) -> torch.Tensor:
@@ -302,7 +332,7 @@ class VITForMultiLabelClassificationHF(
     def post_process(
         self,
         model_results: torch.Tensor,
-        confidence: float = 0.5,
+        confidence: float = INFERENCE_MODELS_VIT_CLASSIFIER_DEFAULT_CONFIDENCE,
         **kwargs,
     ) -> List[MultiLabelClassificationPrediction]:
         results = []

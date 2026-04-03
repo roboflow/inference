@@ -78,6 +78,11 @@ class MachineSize(str, Enum):
     XL = "xl"
 
 
+class InferenceBackend(str, Enum):
+    OLD_INFERENCE = "old-inference"
+    INFERENCE_MODELS = "inference-models"
+
+
 class ComputeConfigurationV2(BaseModel):
     type: Literal["compute-configuration-v2"] = Field(
         default="compute-configuration-v2"
@@ -146,11 +151,15 @@ class WorkflowProcessingJobV1(BaseModel):
         serialization_alias="notificationsURL",
         default=None,
     )
+    inference_backend: Optional[InferenceBackend] = Field(
+        serialization_alias="inferenceBackend", default=None
+    )
 
 
 class CompilationDevice(str, Enum):
     NVIDIA_L4 = "nvidia-l4"
     NVIDIA_T4 = "nvidia-t4"
+    NVIDIA_L40S = "nvidia-l40s"
 
 
 class TRTCompilationJobV1(BaseModel):

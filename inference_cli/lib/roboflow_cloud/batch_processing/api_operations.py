@@ -22,6 +22,7 @@ from inference_cli.lib.roboflow_cloud.batch_processing.entities import (
     CompilationDevice,
     ComputeConfigurationV2,
     GetJobMetadataResponse,
+    InferenceBackend,
     JobLog,
     JobLogsResponse,
     JobMetadata,
@@ -167,10 +168,19 @@ def get_batch_jobs_listing_page(
             params=params,
             timeout=REQUEST_TIMEOUT,
         )
-    except (ConnectionError, Timeout):
+    except (ConnectionError, requests.exceptions.ConnectionError) as e:
         raise RetryError(
             f"Connectivity error. Try reaching Roboflow API in browser: {API_BASE_URL}"
-        )
+        ) from e
+    except Timeout as e:
+        raise RetryError(
+            f"Timeout error. Could not complete `get_batch_jobs_listing_page(...)` operation "
+            f"within {REQUEST_TIMEOUT} seconds. That may be caused by several reasons - including "
+            f"network connectivity issues on your end or slow responses on Roboflow API side. Verify "
+            f"connectivity and try again. You may also set `ROBOFLOW_API_REQUEST_TIMEOUT` env variable to larger "
+            f"value (in seconds) via `export ROBOFLOW_API_REQUEST_TIMEOUT=120` for example to set timeout to 2 "
+            f"minutes. If the problem persists - contact Roboflow support."
+        ) from e
     handle_response_errors(response=response, operation_name="list jobs")
     try:
         return ListBatchJobsResponse.model_validate(response.json())
@@ -353,10 +363,19 @@ def get_batch_job_metadata(workspace: str, job_id: str, api_key: str) -> JobMeta
             params=params,
             timeout=REQUEST_TIMEOUT,
         )
-    except (ConnectionError, Timeout):
+    except (ConnectionError, requests.exceptions.ConnectionError) as e:
         raise RetryError(
             f"Connectivity error. Try reaching Roboflow API in browser: {API_BASE_URL}"
-        )
+        ) from e
+    except Timeout as e:
+        raise RetryError(
+            f"Timeout error. Could not complete `get_batch_job_metadata(...)` operation "
+            f"within {REQUEST_TIMEOUT} seconds. That may be caused by several reasons - including "
+            f"network connectivity issues on your end or slow responses on Roboflow API side. Verify "
+            f"connectivity and try again. You may also set `ROBOFLOW_API_REQUEST_TIMEOUT` env variable to larger "
+            f"value (in seconds) via `export ROBOFLOW_API_REQUEST_TIMEOUT=120` for example to set timeout to 2 "
+            f"minutes. If the problem persists - contact Roboflow support."
+        ) from e
     handle_response_errors(response=response, operation_name="get job metadata")
     try:
         return GetJobMetadataResponse.model_validate(response.json()).job
@@ -380,6 +399,8 @@ def trigger_job_with_workflows_images_processing(
     job_id: Optional[str],
     notifications_url: Optional[str],
     api_key: str,
+    inference_backend: Optional[InferenceBackend] = None,
+    job_name: Optional[str] = None,
 ) -> str:
     workspace = get_workspace(api_key=api_key)
     compute_configuration = ComputeConfigurationV2(
@@ -412,12 +433,14 @@ def trigger_job_with_workflows_images_processing(
         max_parallel_tasks=max_parallel_tasks,
         processing_specification=processing_specification,
         notifications_url=notifications_url,
+        inference_backend=inference_backend,
     )
     create_batch_job(
         workspace=workspace,
         job_id=job_id,
         job_configuration=job_configuration,
         api_key=api_key,
+        job_name=job_name,
     )
     return job_id
 
@@ -439,6 +462,8 @@ def trigger_job_with_workflows_videos_processing(
     job_id: Optional[str],
     notifications_url: Optional[str],
     api_key: str,
+    inference_backend: Optional[InferenceBackend] = None,
+    job_name: Optional[str] = None,
 ) -> str:
     workspace = get_workspace(api_key=api_key)
     compute_configuration = ComputeConfigurationV2(
@@ -472,12 +497,14 @@ def trigger_job_with_workflows_videos_processing(
         max_parallel_tasks=max_parallel_tasks,
         processing_specification=processing_specification,
         notifications_url=notifications_url,
+        inference_backend=inference_backend,
     )
     create_batch_job(
         workspace=workspace,
         job_id=job_id,
         job_configuration=job_configuration,
         api_key=api_key,
+        job_name=job_name,
     )
     return job_id
 
@@ -488,6 +515,7 @@ def trigger_trt_compilation_job(
     compilation_devices: Optional[List[CompilationDevice]],
     notifications_url: Optional[str],
     api_key: str,
+    job_name: Optional[str] = None,
 ) -> str:
     if not job_id:
         job_id = f"trt-{_generate_random_string(length=12)}"
@@ -505,6 +533,7 @@ def trigger_trt_compilation_job(
         job_id=job_id,
         job_configuration=compilation_specification,
         api_key=api_key,
+        job_name=job_name,
     )
     return job_id
 
@@ -520,8 +549,11 @@ def create_batch_job(
     job_id: str,
     job_configuration: Union[WorkflowProcessingJobV1, TRTCompilationJobV1],
     api_key: str,
+    job_name: Optional[str] = None,
 ) -> None:
     params = {"api_key": api_key}
+    if job_name:
+        params["name"] = job_name
     try:
         response = requests.post(
             f"{API_BASE_URL}/batch-processing/v1/external/{workspace}/jobs/{job_id}",
@@ -529,10 +561,19 @@ def create_batch_job(
             timeout=REQUEST_TIMEOUT,
             json=job_configuration.model_dump(by_alias=True, exclude_none=True),
         )
-    except (ConnectionError, Timeout):
+    except (ConnectionError, requests.exceptions.ConnectionError) as e:
         raise RetryError(
             f"Connectivity error. Try reaching Roboflow API in browser: {API_BASE_URL}"
-        )
+        ) from e
+    except Timeout as e:
+        raise RetryError(
+            f"Timeout error. Could not complete `create_batch_job(...)` operation "
+            f"within {REQUEST_TIMEOUT} seconds. That may be caused by several reasons - including "
+            f"network connectivity issues on your end or slow responses on Roboflow API side. Verify "
+            f"connectivity and try again. You may also set `ROBOFLOW_API_REQUEST_TIMEOUT` env variable to larger "
+            f"value (in seconds) via `export ROBOFLOW_API_REQUEST_TIMEOUT=120` for example to set timeout to 2 "
+            f"minutes. If the problem persists - contact Roboflow support."
+        ) from e
     handle_response_errors(response=response, operation_name="create job")
     return None
 
@@ -557,10 +598,19 @@ def list_job_stages(
             params=params,
             timeout=REQUEST_TIMEOUT,
         )
-    except (ConnectionError, Timeout):
+    except (ConnectionError, requests.exceptions.ConnectionError) as e:
         raise RetryError(
             f"Connectivity error. Try reaching Roboflow API in browser: {API_BASE_URL}"
-        )
+        ) from e
+    except Timeout as e:
+        raise RetryError(
+            f"Timeout error. Could not complete `list_job_stages(...)` operation "
+            f"within {REQUEST_TIMEOUT} seconds. That may be caused by several reasons - including "
+            f"network connectivity issues on your end or slow responses on Roboflow API side. Verify "
+            f"connectivity and try again. You may also set `ROBOFLOW_API_REQUEST_TIMEOUT` env variable to larger "
+            f"value (in seconds) via `export ROBOFLOW_API_REQUEST_TIMEOUT=120` for example to set timeout to 2 "
+            f"minutes. If the problem persists - contact Roboflow support."
+        ) from e
     handle_response_errors(response=response, operation_name="list job stages")
     try:
         return ListJobStagesResponse.model_validate(response.json()).stages
@@ -632,10 +682,19 @@ def get_job_stage_tasks_listing_page(
             params=params,
             timeout=REQUEST_TIMEOUT,
         )
-    except (ConnectionError, Timeout):
+    except (ConnectionError, requests.exceptions.ConnectionError) as e:
         raise RetryError(
             f"Connectivity error. Try reaching Roboflow API in browser: {API_BASE_URL}"
-        )
+        ) from e
+    except Timeout as e:
+        raise RetryError(
+            f"Timeout error. Could not complete `get_job_stage_tasks_listing_page(...)` operation "
+            f"within {REQUEST_TIMEOUT} seconds. This operation is backend-heavy, but problem may be caused by several "
+            f"reasons - including network connectivity issues on your end (or, of course, slow responses on Roboflow "
+            f"API side). Verify connectivity and try again. You may also set `ROBOFLOW_API_REQUEST_TIMEOUT` env variable "
+            f"to larger value (in seconds) via `export ROBOFLOW_API_REQUEST_TIMEOUT=120` for example to set "
+            f"timeout to 2 minutes. If the problem persists - contact Roboflow support."
+        ) from e
     handle_response_errors(response=response, operation_name="list job stage tasks")
     try:
         return ListJobStageTasksResponse.model_validate(response.json())
@@ -672,10 +731,19 @@ def send_abort_job_request(
             params=params,
             timeout=REQUEST_TIMEOUT,
         )
-    except (ConnectionError, Timeout):
+    except (ConnectionError, requests.exceptions.ConnectionError) as e:
         raise RetryError(
             f"Connectivity error. Try reaching Roboflow API in browser: {API_BASE_URL}"
-        )
+        ) from e
+    except Timeout as e:
+        raise RetryError(
+            f"Timeout error. Could not complete `send_abort_job_request(...)` operation "
+            f"within {REQUEST_TIMEOUT} seconds. That may be caused by several reasons - including "
+            f"network connectivity issues on your end or slow responses on Roboflow API side. Verify "
+            f"connectivity and try again. You may also set `ROBOFLOW_API_REQUEST_TIMEOUT` env variable to larger "
+            f"value (in seconds) via `export ROBOFLOW_API_REQUEST_TIMEOUT=120` for example to set timeout to 2 "
+            f"minutes. If the problem persists - contact Roboflow support."
+        ) from e
     handle_response_errors(response=response, operation_name="abort job")
     return response.json()
 
@@ -739,10 +807,19 @@ def send_restart_job_request(
             timeout=REQUEST_TIMEOUT,
             json=payload if len(payload) > 1 else None,
         )
-    except (ConnectionError, Timeout):
+    except (ConnectionError, requests.exceptions.ConnectionError) as e:
         raise RetryError(
             f"Connectivity error. Try reaching Roboflow API in browser: {API_BASE_URL}"
-        )
+        ) from e
+    except Timeout as e:
+        raise RetryError(
+            f"Timeout error. Could not complete `send_restart_job_request(...)` operation "
+            f"within {REQUEST_TIMEOUT} seconds. That may be caused by several reasons - including "
+            f"network connectivity issues on your end or slow responses on Roboflow API side. Verify "
+            f"connectivity and try again. You may also set `ROBOFLOW_API_REQUEST_TIMEOUT` env variable to larger "
+            f"value (in seconds) via `export ROBOFLOW_API_REQUEST_TIMEOUT=120` for example to set timeout to 2 "
+            f"minutes. If the problem persists - contact Roboflow support."
+        ) from e
     handle_response_errors(response=response, operation_name="restart job")
     return response.json()
 
@@ -814,10 +891,19 @@ def get_one_page_of_logs(
             params=params,
             timeout=REQUEST_TIMEOUT,
         )
-    except (ConnectionError, Timeout):
+    except (ConnectionError, requests.exceptions.ConnectionError) as e:
         raise RetryError(
             f"Connectivity error. Try reaching Roboflow API in browser: {API_BASE_URL}"
-        )
+        ) from e
+    except Timeout as e:
+        raise RetryError(
+            f"Timeout error. Could not complete `get_one_page_of_logs(...)` operation "
+            f"within {REQUEST_TIMEOUT} seconds. This operation is backend-heavy, but problem may be caused by several "
+            f"reasons - including network connectivity issues on your end (or, of course, slow responses on Roboflow "
+            f"API side). Verify connectivity and try again. You may also set `ROBOFLOW_API_REQUEST_TIMEOUT` env "
+            f"variable to larger value (in seconds) via `export ROBOFLOW_API_REQUEST_TIMEOUT=120` for example to set timeout to 2 "
+            f"minutes. If the problem persists - contact Roboflow support."
+        ) from e
     handle_response_errors(response=response, operation_name="get job logs")
     try:
         return JobLogsResponse.model_validate(response.json())
