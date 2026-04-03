@@ -18,6 +18,7 @@ Configuration flags:
 from __future__ import annotations
 
 import json
+import logging
 import os
 import threading
 import time
@@ -30,6 +31,8 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 
 from inference_models.backends.base import Backend
+
+logger = logging.getLogger(__name__)
 
 
 def _cuda_available() -> bool:
@@ -309,6 +312,8 @@ def _worker_main(
     sock = None
     zmq_ctx = None
 
+    _log = logging.getLogger(f"{__name__}.worker")
+
     try:
         # ── CUDA init ────────────────────────────────────────────────
         device = "cpu"
@@ -317,6 +322,7 @@ def _worker_main(
             dev = torch.device(target)
             torch.cuda.set_device(dev)
             device = str(dev)
+        _log.info("Worker(%s): CUDA init done, device=%s", model_id, device)
 
         # ── CUDA IPC: receive GPU input buffers from main ────────────
         cuda_buffers = None
@@ -332,8 +338,14 @@ def _worker_main(
             ]
 
         # ── Load model on the target device ──────────────────────────
+        _log.info("Worker(%s): loading model with weights on %s", model_id, device)
         model = AutoModel.from_pretrained(
             model_id, api_key=api_key, device=device, **model_kwargs,
+        )
+        _log.info(
+            "Worker(%s): model loaded | type=%s | max_batch=%s",
+            model_id, type(model).__name__,
+            getattr(model, "max_batch_size", None),
         )
 
         # ── Open SHM ────────────────────────────────────────────────
@@ -347,6 +359,10 @@ def _worker_main(
         result_shm = [shared_memory.SharedMemory(name=n) for n in result_shm_names]
 
         # ── Signal ready ────────────────────────────────────────────
+        _log.info(
+            "Worker(%s): ready | shm_pinned=%s | cuda_ipc=%s",
+            model_id, shm_pinned, use_cuda_ipc,
+        )
         setup_pipe.send("READY")
 
         # ── Connect ZMQ ─────────────────────────────────────────────
@@ -500,7 +516,7 @@ class SubprocessBackend(Backend):
         import zmq
 
         self._model_id = model_id
-        self._batch_max_size = batch_max_size
+        self._batch_max_size_requested = batch_max_size
         self._batch_max_delay_ms = batch_max_delay_ms
         self._state_value: str = "loading"
 
@@ -526,11 +542,39 @@ class SubprocessBackend(Backend):
         else:
             self._device_str = "cpu"
 
-        # ── Load model on CPU for pre/post processing ────────────────
+        # ── Load model on CPU for pre/post processing (no weights) ───
         from inference_models.models.auto_loaders.core import AutoModel
 
+        transport = (
+            "cuda_ipc" if self._use_cuda_ipc
+            else ("gpu_shm" if self._use_gpu else "cpu_shm")
+        )
+        logger.info(
+            "SubprocessBackend(%s): loading pre/post config (no weights) "
+            "| worker_device=%s | transport=%s",
+            model_id, self._device_str, transport,
+        )
         self._model = AutoModel.from_pretrained(
-            model_id, api_key=api_key, device="cpu", **kwargs,
+            model_id, api_key=api_key, device="cpu", load_weights=False,
+            **kwargs,
+        )
+
+        # Clamp batch size to model's limit
+        model_max = getattr(self._model, "max_batch_size", None)
+        if batch_max_size > 0 and model_max is not None:
+            self._batch_max_size = min(batch_max_size, model_max)
+        else:
+            self._batch_max_size = batch_max_size
+
+        model_type = type(self._model).__name__
+        class_count = len(self.class_names) if self.class_names else 0
+        logger.info(
+            "SubprocessBackend(%s): config loaded | model_type=%s | "
+            "class_names=%d | model_max_batch=%s | effective_batch=%s | "
+            "shm_slots=%d | input_buf=%dMB | result_buf=%dMB",
+            model_id, model_type, class_count,
+            model_max, self._batch_max_size or "off",
+            num_buffer_slots, input_buffer_mb, result_buffer_mb,
         )
 
         # ── SHM buffer pool ──────────────────────────────────────────
@@ -617,6 +661,10 @@ class SubprocessBackend(Backend):
 
         self._pipe = parent_pipe
         self._last_worker_activity = time.monotonic()
+        logger.info(
+            "SubprocessBackend(%s): worker ready (pid=%d, device=%s)",
+            model_id, self._worker.pid, self._device_str,
+        )
 
         # ── Stats ────────────────────────────────────────────────────
         self._inference_count = 0
@@ -625,8 +673,9 @@ class SubprocessBackend(Backend):
         self._latencies: deque[float] = deque(maxlen=1000)
 
         # ── Batching ─────────────────────────────────────────────────
+        # Batching (<=1 means no batching — skip collector overhead)
         self._batch_collector = (
-            self._create_batch_collector() if batch_max_size > 0 else None
+            self._create_batch_collector() if self._batch_max_size > 1 else None
         )
 
         self._state_value = "loaded"
@@ -829,7 +878,7 @@ class SubprocessBackend(Backend):
         with self._zmq_lock:
             while True:
                 try:
-                    frames = self._zmq_sock.recv_multipart(flags=zmq.NOBLOCK)
+                    self._zmq_sock.recv_multipart(flags=zmq.NOBLOCK)
                     self._last_worker_activity = time.monotonic()
                 except zmq.Again:
                     break
@@ -866,7 +915,7 @@ class SubprocessBackend(Backend):
 
     @property
     def max_batch_size(self) -> Optional[int]:
-        return getattr(self._model, "_max_batch_size", None)
+        return getattr(self._model, "max_batch_size", None)
 
     @property
     def queue_depth(self) -> int:

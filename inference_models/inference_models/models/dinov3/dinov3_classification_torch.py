@@ -72,6 +72,7 @@ class DinoV3ForClassificationTorch(ClassificationModel[torch.Tensor, torch.Tenso
         device: torch.device = DEFAULT_DEVICE,
         **kwargs,
     ) -> "DinoV3ForClassificationTorch":
+        load_weights = kwargs.pop("load_weights", True)
         model_package_content = get_model_package_contents(
             model_package_dir=model_name_or_path,
             elements=[
@@ -132,14 +133,17 @@ class DinoV3ForClassificationTorch(ClassificationModel[torch.Tensor, torch.Tenso
             )
 
         # Create model and load weights
-        model = DinoV3Model(num_classes=num_classes, model_name=model_name)
-        state_dict = torch.load(
-            model_package_content["weights.pth"],
-            map_location=device,
-            weights_only=True,
-        )
-        model.load_state_dict(state_dict)
-        model = model.to(device).eval()
+        if load_weights:
+            model = DinoV3Model(num_classes=num_classes, model_name=model_name)
+            state_dict = torch.load(
+                model_package_content["weights.pth"],
+                map_location=device,
+                weights_only=True,
+            )
+            model.load_state_dict(state_dict)
+            model = model.to(device).eval()
+        else:
+            model = None
 
         return cls(
             model=model,
@@ -217,6 +221,7 @@ class DinoV3ForMultiLabelClassificationTorch(
         recommended_parameters: Optional[RecommendedParameters] = None,
         **kwargs,
     ) -> "DinoV3ForMultiLabelClassificationTorch":
+        load_weights = kwargs.pop("load_weights", True)
         model_package_content = get_model_package_contents(
             model_package_dir=model_name_or_path,
             elements=[
@@ -277,14 +282,17 @@ class DinoV3ForMultiLabelClassificationTorch(
             )
 
         # Create model and load weights
-        model = DinoV3Model(num_classes=num_classes, model_name=model_name)
-        state_dict = torch.load(
-            model_package_content["weights.pth"],
-            map_location=device,
-            weights_only=True,
-        )
-        model.load_state_dict(state_dict)
-        model = model.to(device).eval()
+        if load_weights:
+            model = DinoV3Model(num_classes=num_classes, model_name=model_name)
+            state_dict = torch.load(
+                model_package_content["weights.pth"],
+                map_location=device,
+                weights_only=True,
+            )
+            model.load_state_dict(state_dict)
+            model = model.to(device).eval()
+        else:
+            model = None
 
         return cls(
             model=model,

@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Generic, List, Tuple, Union
+from typing import Generic, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
@@ -21,6 +21,11 @@ class DepthEstimationModel(
         cls, model_name_or_path: str, **kwargs
     ) -> "DepthEstimationModel":
         pass
+
+    @property
+    def max_batch_size(self) -> Optional[int]:
+        """Maximum batch size the model supports, or ``None`` if unlimited."""
+        return getattr(self, "_max_batch_size", None)
 
     def infer(
         self,

@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Generic, List, Tuple, Union
+from typing import Generic, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
@@ -25,6 +25,11 @@ class StructuredOCRModel(
     @abstractmethod
     def class_names(self) -> List[str]:
         pass
+
+    @property
+    def max_batch_size(self) -> Optional[int]:
+        """Maximum batch size the model supports, or ``None`` if unlimited."""
+        return getattr(self, "_max_batch_size", None)
 
     def infer(
         self,
@@ -71,6 +76,11 @@ class TextOnlyOCRModel(ABC, Generic[PreprocessedInputs, RawPrediction]):
     @abstractmethod
     def from_pretrained(cls, model_name_or_path: str, **kwargs) -> "TextOnlyOCRModel":
         pass
+
+    @property
+    def max_batch_size(self) -> Optional[int]:
+        """Maximum batch size the model supports, or ``None`` if unlimited."""
+        return getattr(self, "_max_batch_size", None)
 
     def infer(
         self,

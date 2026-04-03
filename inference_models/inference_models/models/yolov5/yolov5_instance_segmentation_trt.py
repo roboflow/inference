@@ -104,6 +104,7 @@ class YOLOv5ForInstanceSegmentationTRT(
         recommended_parameters: Optional[RecommendedParameters] = None,
         **kwargs,
     ) -> "YOLOv5ForInstanceSegmentationTRT":
+        load_weights = kwargs.pop("load_weights", True)
         if device.type != "cuda":
             raise ModelRuntimeError(
                 message=f"TRT engine only runs on CUDA device - {device} device detected.",
@@ -147,11 +148,15 @@ class YOLOv5ForInstanceSegmentationTRT(
         cuda.init()
         cuda_device = cuda.Device(device.index or 0)
         with use_primary_cuda_context(cuda_device=cuda_device) as cuda_context:
-            engine = load_trt_model(
-                model_path=model_package_content["engine.plan"],
-                engine_host_code_allowed=engine_host_code_allowed,
-            )
-            execution_context = engine.create_execution_context()
+            if load_weights:
+                engine = load_trt_model(
+                    model_path=model_package_content["engine.plan"],
+                    engine_host_code_allowed=engine_host_code_allowed,
+                )
+                execution_context = engine.create_execution_context()
+            else:
+                engine = None
+                execution_context = None
         inputs, outputs = get_trt_engine_inputs_and_outputs(engine=engine)
         if len(inputs) != 1:
             raise CorruptedModelPackageError(

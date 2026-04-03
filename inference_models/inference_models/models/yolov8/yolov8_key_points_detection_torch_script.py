@@ -57,6 +57,7 @@ class YOLOv8ForKeyPointsDetectionTorchScript(
         torchscript_state_global_lock: Optional[Lock] = None,
         **kwargs,
     ) -> "YOLOv8ForKeyPointsDetectionTorchScript":
+        load_weights = kwargs.pop("load_weights", True)
         model_package_content = get_model_package_contents(
             model_package_dir=model_name_or_path,
             elements=[
@@ -105,7 +106,7 @@ class YOLOv8ForKeyPointsDetectionTorchScript(
         with torchscript_global_lock(torchscript_state_global_lock):
             model = torch.jit.load(
                 model_package_content["weights.torchscript"], map_location=device
-            ).eval()
+            ).eval() if load_weights else None
         return cls(
             model=model,
             class_names=class_names,

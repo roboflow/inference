@@ -65,6 +65,7 @@ class Qwen3VLHF:
         disable_quantization: bool = False,
         **kwargs,
     ) -> "Qwen3VLHF":
+        load_weights = kwargs.pop("load_weights", True)
         adapter_config_path = os.path.join(model_name_or_path, "adapter_config.json")
         inference_config_path = os.path.join(
             model_name_or_path, "inference_config.json"
@@ -86,35 +87,38 @@ class Qwen3VLHF:
 
         attn_implementation = _get_qwen3vl_attn_implementation(device)
 
-        if os.path.exists(adapter_config_path):
-            # Has adapter - load base model then apply LoRA
-            base_model_path = os.path.join(model_name_or_path, "base")
-            base_model = Qwen3VLForConditionalGeneration.from_pretrained(
-                base_model_path,
-                device_map=device,
-                trust_remote_code=trust_remote_code,
-                local_files_only=local_files_only,
-                quantization_config=quantization_config,
-                attn_implementation=attn_implementation,
-            )
-            # Apply LoRA, eval, convert to dtype
-            model = (
-                PeftModel.from_pretrained(base_model, model_name_or_path)
-                .eval()
-                .to(dtype)
-            )
-            model = model.merge_and_unload()
+        if load_weights:
+            if os.path.exists(adapter_config_path):
+                # Has adapter - load base model then apply LoRA
+                base_model_path = os.path.join(model_name_or_path, "base")
+                base_model = Qwen3VLForConditionalGeneration.from_pretrained(
+                    base_model_path,
+                    device_map=device,
+                    trust_remote_code=trust_remote_code,
+                    local_files_only=local_files_only,
+                    quantization_config=quantization_config,
+                    attn_implementation=attn_implementation,
+                )
+                # Apply LoRA, eval, convert to dtype
+                model = (
+                    PeftModel.from_pretrained(base_model, model_name_or_path)
+                    .eval()
+                    .to(dtype)
+                )
+                model = model.merge_and_unload()
+            else:
+                # No adapter - just load base model, eval, convert to dtype
+                base_model = Qwen3VLForConditionalGeneration.from_pretrained(
+                    model_name_or_path,
+                    device_map=device,
+                    trust_remote_code=trust_remote_code,
+                    local_files_only=local_files_only,
+                    quantization_config=quantization_config,
+                    attn_implementation=attn_implementation,
+                )
+                model = base_model.eval().to(dtype)
         else:
-            # No adapter - just load base model, eval, convert to dtype
-            base_model = Qwen3VLForConditionalGeneration.from_pretrained(
-                model_name_or_path,
-                device_map=device,
-                trust_remote_code=trust_remote_code,
-                local_files_only=local_files_only,
-                quantization_config=quantization_config,
-                attn_implementation=attn_implementation,
-            )
-            model = base_model.eval().to(dtype)
+            model = None
 
         # Load processor with chat_template if available
         # Check both root and base/ directory for chat_template.json

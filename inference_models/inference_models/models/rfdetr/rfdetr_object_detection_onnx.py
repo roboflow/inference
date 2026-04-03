@@ -75,6 +75,7 @@ class RFDetrForObjectDetectionONNX(
         recommended_parameters: Optional[RecommendedParameters] = None,
         **kwargs,
     ) -> "RFDetrForObjectDetectionONNX":
+        load_weights = kwargs.pop("load_weights", True)
         if onnx_execution_providers is None:
             onnx_execution_providers = get_selected_onnx_execution_providers()
         if not onnx_execution_providers:
@@ -123,22 +124,29 @@ class RFDetrForObjectDetectionONNX(
             },
             max_allowed_input_size=rf_detr_max_input_resolution,
         )
-        session = onnxruntime.InferenceSession(
-            path_or_bytes=model_package_content["weights.onnx"],
-            providers=onnx_execution_providers,
-        )
-        device = align_device_with_onnx_session(session=session, device=device)
-        classes_re_mapping = None
-        if inference_config.class_names_operations:
-            class_names, classes_re_mapping = prepare_class_remapping(
-                class_names=class_names,
-                class_names_operations=inference_config.class_names_operations,
-                device=device,
+        if load_weights:
+            session = onnxruntime.InferenceSession(
+                path_or_bytes=model_package_content["weights.onnx"],
+                providers=onnx_execution_providers,
             )
-        input_batch_size = session.get_inputs()[0].shape[0]
-        if isinstance(input_batch_size, str):
+        else:
+            session = None
+        if session:
+            device = align_device_with_onnx_session(session=session, device=device)
+            classes_re_mapping = None
+            if inference_config.class_names_operations:
+                class_names, classes_re_mapping = prepare_class_remapping(
+                    class_names=class_names,
+                    class_names_operations=inference_config.class_names_operations,
+                    device=device,
+                )
+            input_batch_size = session.get_inputs()[0].shape[0]
+            if isinstance(input_batch_size, str):
+                input_batch_size = None
+            input_name = session.get_inputs()[0].name
+        else:
             input_batch_size = None
-        input_name = session.get_inputs()[0].name
+            input_name = None
         return cls(
             session=session,
             input_name=input_name,

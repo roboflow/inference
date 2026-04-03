@@ -7,7 +7,11 @@ from collections import deque
 from concurrent.futures import Future, ThreadPoolExecutor
 from typing import Any, Dict, List, Optional, Tuple
 
+import logging
+
 from inference_models.backends.base import Backend
+
+logger = logging.getLogger(__name__)
 
 
 class DirectBackend(Backend):
@@ -57,18 +61,28 @@ class DirectBackend(Backend):
         self._model_id = model_id
         self._device_str = device  # resolved after load
         self._executor = executor
-        self._batch_max_size = batch_max_size
         self._batch_max_delay_ms = batch_max_delay_ms
         self._state_value: str = "loading"
 
         load_kwargs = dict(kwargs)
         if device is not None:
             load_kwargs["device"] = device
+        logger.info(
+            "DirectBackend(%s): loading model (requested device=%s)",
+            model_id, device or "default",
+        )
         self._model = AutoModel.from_pretrained(model_id, api_key=api_key, **load_kwargs)
         self._state_value = "loaded"
 
         # Resolve actual device from model parameters
         self._device_str = self._detect_device()
+
+        # Clamp batch size to model's limit
+        model_max = getattr(self._model, "max_batch_size", None)
+        if batch_max_size > 0 and model_max is not None:
+            self._batch_max_size = min(batch_max_size, model_max)
+        else:
+            self._batch_max_size = batch_max_size
 
         # Device tracking for sleep/wake
         self._sleep_device = None
@@ -79,8 +93,21 @@ class DirectBackend(Backend):
         self._last_inference_ts = 0.0
         self._latencies: deque[float] = deque(maxlen=1000)
 
-        # Batching
-        self._batch_collector = self._create_batch_collector() if batch_max_size > 0 else None
+        # Batching (<=1 means no batching — skip collector overhead)
+        self._batch_collector = self._create_batch_collector() if self._batch_max_size > 1 else None
+
+        # Log summary
+        model_type = type(self._model).__name__
+        class_count = len(self.class_names) if self.class_names else 0
+        logger.info(
+            "DirectBackend(%s): ready | model_type=%s | device=%s | "
+            "class_names=%d | model_max_batch=%s | effective_batch=%s | "
+            "batch_delay=%.1fms | executor=%s",
+            model_id, model_type, self._device_str,
+            class_count, model_max, self._batch_max_size or "off",
+            batch_max_delay_ms,
+            "shared" if executor else "none",
+        )
 
     def _detect_device(self) -> str:
         """Inspect model parameters to find actual device."""
@@ -269,7 +296,7 @@ class DirectBackend(Backend):
         self._state_value = "loaded"
 
         # Restart BatchCollector if batching was configured
-        if self._batch_max_size > 0 and self._batch_collector is None:
+        if self._batch_max_size > 1 and self._batch_collector is None:
             self._batch_collector = self._create_batch_collector()
 
     # ------------------------------------------------------------------
@@ -298,7 +325,7 @@ class DirectBackend(Backend):
 
     @property
     def max_batch_size(self) -> Optional[int]:
-        return getattr(self._model, "_max_batch_size", None)
+        return getattr(self._model, "max_batch_size", None)
 
     @property
     def queue_depth(self) -> int:

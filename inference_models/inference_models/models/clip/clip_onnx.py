@@ -56,6 +56,7 @@ class ClipOnnx(TextImageEmbeddingModel):
         max_batch_size: int = 32,
         **kwargs,
     ) -> "ClipOnnx":
+        load_weights = kwargs.pop("load_weights", True)
         if onnx_execution_providers is None:
             onnx_execution_providers = get_selected_onnx_execution_providers()
         if not onnx_execution_providers:
@@ -79,20 +80,24 @@ class ClipOnnx(TextImageEmbeddingModel):
                 "visual.onnx",
             ],
         )
-        visual_onnx_session = onnxruntime.InferenceSession(
-            path_or_bytes=model_package_content["visual.onnx"],
-            providers=onnx_execution_providers,
-        )
-        textual_onnx_session = onnxruntime.InferenceSession(
-            path_or_bytes=model_package_content["textual.onnx"],
-            providers=onnx_execution_providers,
-        )
+        if load_weights:
+            visual_onnx_session = onnxruntime.InferenceSession(
+                path_or_bytes=model_package_content["visual.onnx"],
+                providers=onnx_execution_providers,
+            )
+            textual_onnx_session = onnxruntime.InferenceSession(
+                path_or_bytes=model_package_content["textual.onnx"],
+                providers=onnx_execution_providers,
+            )
+        else:
+            visual_onnx_session = None
+            textual_onnx_session = None
         device = align_device_with_onnx_session(
             session=visual_onnx_session, device=device
         )
-        image_size = visual_onnx_session.get_inputs()[0].shape[2]
-        visual_input_name = visual_onnx_session.get_inputs()[0].name
-        textual_input_name = textual_onnx_session.get_inputs()[0].name
+        image_size = visual_onnx_session.get_inputs()[0].shape[2] if visual_onnx_session else None
+        visual_input_name = visual_onnx_session.get_inputs()[0].name if visual_onnx_session else None
+        textual_input_name = textual_onnx_session.get_inputs()[0].name if textual_onnx_session else None
         return cls(
             visual_onnx_session=visual_onnx_session,
             textual_onnx_session=textual_onnx_session,

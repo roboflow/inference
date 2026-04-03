@@ -36,6 +36,7 @@ class RoboflowInstantHF(ObjectDetectionModel):
         recommended_parameters: Optional[RecommendedParameters] = None,
         **kwargs,
     ) -> "ObjectDetectionModel":
+        load_weights = kwargs.pop("load_weights", True)
         model_package_content = get_model_package_contents(
             model_package_dir=model_name_or_path,
             elements=["weights.pt"],
@@ -48,38 +49,43 @@ class RoboflowInstantHF(ObjectDetectionModel):
                 os.path.join(
                     model_name_or_path, "model_dependencies", "feature_extractor"
                 ),
+                load_weights=load_weights,
                 **kwargs,
             )
-        try:
-            weights_dict = torch.load(
-                model_package_content["weights.pt"],
-                map_location=device,
-                weights_only=True,
-            )
-        except UnpicklingError as error:
-            raise CorruptedModelPackageError(
-                message="Could not deserialize RF Instant model weights. Contact Roboflow to get help.",
-                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
-            ) from error
-        if "class_names" not in weights_dict or "train_data_dict" not in weights_dict:
-            raise CorruptedModelPackageError(
-                message="Corrupted weights of Roboflow Instant model detected. Contact Roboflow to get help.",
-                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
-            )
-        class_names = weights_dict["class_names"]
-        train_data_dict = weights_dict["train_data_dict"]
-        try:
-            reference_examples_embeddings = (
-                ReferenceExamplesEmbeddings.from_class_embeddings_dict(
-                    class_embeddings=train_data_dict,
-                    device=device,
+        if load_weights:
+            try:
+                weights_dict = torch.load(
+                    model_package_content["weights.pt"],
+                    map_location=device,
+                    weights_only=True,
                 )
-            )
-        except Exception as error:
-            raise CorruptedModelPackageError(
-                message="Could not decode RF Instant model weights. Contact Roboflow to get help.",
-                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
-            ) from error
+            except UnpicklingError as error:
+                raise CorruptedModelPackageError(
+                    message="Could not deserialize RF Instant model weights. Contact Roboflow to get help.",
+                    help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
+                ) from error
+            if "class_names" not in weights_dict or "train_data_dict" not in weights_dict:
+                raise CorruptedModelPackageError(
+                    message="Corrupted weights of Roboflow Instant model detected. Contact Roboflow to get help.",
+                    help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
+                )
+            class_names = weights_dict["class_names"]
+            train_data_dict = weights_dict["train_data_dict"]
+            try:
+                reference_examples_embeddings = (
+                    ReferenceExamplesEmbeddings.from_class_embeddings_dict(
+                        class_embeddings=train_data_dict,
+                        device=device,
+                    )
+                )
+            except Exception as error:
+                raise CorruptedModelPackageError(
+                    message="Could not decode RF Instant model weights. Contact Roboflow to get help.",
+                    help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
+                ) from error
+        else:
+            class_names = []
+            reference_examples_embeddings = None
         return cls(
             feature_extractor=feature_extractor,
             class_names=class_names,

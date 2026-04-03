@@ -71,6 +71,7 @@ class DinoV3ForClassificationOnnx(ClassificationModel[torch.Tensor, torch.Tensor
         device: torch.device = DEFAULT_DEVICE,
         **kwargs,
     ) -> "DinoV3ForClassificationOnnx":
+        load_weights = kwargs.pop("load_weights", True)
         if onnx_execution_providers is None:
             onnx_execution_providers = get_selected_onnx_execution_providers()  # type: ignore
         if not onnx_execution_providers:
@@ -128,16 +129,23 @@ class DinoV3ForClassificationOnnx(ClassificationModel[torch.Tensor, torch.Tensor
                 help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
 
-        session = onnxruntime.InferenceSession(
-            path_or_bytes=model_package_content[weights_file],
-            providers=onnx_execution_providers,
-        )
-        device = align_device_with_onnx_session(session=session, device=device)
-        input_shape = session.get_inputs()[0].shape
-        input_batch_size = input_shape[0]
-        if isinstance(input_batch_size, str):
+        if load_weights:
+            session = onnxruntime.InferenceSession(
+                path_or_bytes=model_package_content[weights_file],
+                providers=onnx_execution_providers,
+            )
+        else:
+            session = None
+        if session:
+            device = align_device_with_onnx_session(session=session, device=device)
+            input_shape = session.get_inputs()[0].shape
+            input_batch_size = input_shape[0]
+            if isinstance(input_batch_size, str):
+                input_batch_size = None
+            input_name = session.get_inputs()[0].name
+        else:
             input_batch_size = None
-        input_name = session.get_inputs()[0].name
+            input_name = None
 
         return cls(
             session=session,
@@ -255,6 +263,7 @@ class DinoV3ForMultiLabelClassificationOnnx(
         recommended_parameters: Optional[RecommendedParameters] = None,
         **kwargs,
     ) -> "DinoV3ForMultiLabelClassificationOnnx":
+        load_weights = kwargs.pop("load_weights", True)
         if onnx_execution_providers is None:
             onnx_execution_providers = get_selected_onnx_execution_providers()  # type: ignore
         if not onnx_execution_providers:
@@ -312,16 +321,23 @@ class DinoV3ForMultiLabelClassificationOnnx(
                 help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
 
-        session = onnxruntime.InferenceSession(
-            path_or_bytes=model_package_content[weights_file],
-            providers=onnx_execution_providers,
-        )
-        device = align_device_with_onnx_session(session=session, device=device)
-        input_shape = session.get_inputs()[0].shape
-        input_batch_size = input_shape[0]
-        if isinstance(input_batch_size, str):
+        if load_weights:
+            session = onnxruntime.InferenceSession(
+                path_or_bytes=model_package_content[weights_file],
+                providers=onnx_execution_providers,
+            )
+        else:
+            session = None
+        if session:
+            device = align_device_with_onnx_session(session=session, device=device)
+            input_shape = session.get_inputs()[0].shape
+            input_batch_size = input_shape[0]
+            if isinstance(input_batch_size, str):
+                input_batch_size = None
+            input_name = session.get_inputs()[0].name
+        else:
             input_batch_size = None
-        input_name = session.get_inputs()[0].name
+            input_name = None
 
         return cls(
             session=session,

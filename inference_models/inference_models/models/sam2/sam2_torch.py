@@ -62,6 +62,7 @@ class SAM2Torch:
         sam2_allow_client_generated_hash_ids: bool = False,
         **kwargs,
     ) -> "SAM2Torch":
+        load_weights = kwargs.pop("load_weights", True)
         if sam2_image_embeddings_cache is None:
             sam2_image_embeddings_cache = Sam2ImageEmbeddingsCacheNullObject()
         if sam2_low_resolution_masks_cache is None:
@@ -93,16 +94,20 @@ class SAM2Torch:
                 help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
         model_config = f"{version}.yaml"
-        sam2_model = build_sam2(
-            model_config, model_package_content["model.pt"], device=device
-        )
-        transforms = SAM2Transforms(
-            resolution=sam2_model.image_size,
-            mask_threshold=0.0,
-            max_hole_area=0.0,
-            max_sprinkle_area=0.0,
-            disable_torch_jit=disable_sam2_torch_jit_transforms,
-        )
+        if load_weights:
+            sam2_model = build_sam2(
+                model_config, model_package_content["model.pt"], device=device
+            )
+            transforms = SAM2Transforms(
+                resolution=sam2_model.image_size,
+                mask_threshold=0.0,
+                max_hole_area=0.0,
+                max_sprinkle_area=0.0,
+                disable_torch_jit=disable_sam2_torch_jit_transforms,
+            )
+        else:
+            sam2_model = None
+            transforms = None
         return cls(
             model=sam2_model,
             transform=transforms,
