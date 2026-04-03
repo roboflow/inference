@@ -1,4 +1,4 @@
-from typing import List, Literal, Optional, Type, Union
+from typing import Dict, List, Literal, Optional, Type, Union
 
 import numpy as np
 import requests
@@ -44,6 +44,7 @@ from inference.core.workflows.execution_engine.entities.base import (
 )
 from inference.core.workflows.execution_engine.entities.types import (
     BOOLEAN_KIND,
+    DICTIONARY_KIND,
     FLOAT_KIND,
     IMAGE_KIND,
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
@@ -122,6 +123,14 @@ class BlockManifest(WorkflowBlockManifest):
         default=None,
         description="List of classes to recognise",
         examples=[["car", "person"], "$inputs.classes"],
+    )
+    class_mapping: Optional[Union[Dict[str, str], Selector(kind=[DICTIONARY_KIND])]] = (
+        Field(
+            default=None,
+            title="Class Mapping",
+            description="Maps class names in predictions to different output names. Applied after inference, e.g. {'cat': 'gato'} renames 'cat' predictions to 'gato'.",
+            examples=[{"cat": "gato", "dog": "perro"}],
+        )
     )
     confidence: Union[Selector(kind=[FLOAT_KIND]), float] = Field(
         default=0.5,
@@ -238,6 +247,7 @@ class SegmentAnything3BlockV3(WorkflowBlock):
         model_id: str,
         class_names: Optional[Union[List[str], str]],
         confidence: float,
+        class_mapping: Optional[Dict[str, str]] = None,
         per_class_confidence: Optional[List[float]] = None,
         apply_nms: bool = True,
         nms_iou_threshold: float = 0.9,
@@ -253,7 +263,7 @@ class SegmentAnything3BlockV3(WorkflowBlock):
 
         if SAM3_EXEC_MODE == "remote":
             logger.debug("Running SAM3 v3 via inference proxy (SAM3_EXEC_MODE=remote)")
-            return self.run_via_request(
+            result = self.run_via_request(
                 images=images,
                 class_names=class_names,
                 confidence=confidence,
@@ -264,7 +274,7 @@ class SegmentAnything3BlockV3(WorkflowBlock):
             )
         elif self._step_execution_mode is StepExecutionMode.LOCAL:
             logger.debug(f"Running SAM3 v3 locally with output_format={output_format}")
-            return self.run_locally(
+            result = self.run_locally(
                 images=images,
                 model_id=model_id,
                 class_names=class_names,
@@ -276,7 +286,7 @@ class SegmentAnything3BlockV3(WorkflowBlock):
             )
         elif self._step_execution_mode is StepExecutionMode.REMOTE:
             logger.debug("Running SAM3 v3 remotely via SDK")
-            return self.run_remotely(
+            result = self.run_remotely(
                 images=images,
                 model_id=model_id,
                 class_names=class_names,
@@ -290,6 +300,10 @@ class SegmentAnything3BlockV3(WorkflowBlock):
             raise ValueError(
                 f"Unknown step execution mode: {self._step_execution_mode}"
             )
+
+        if class_mapping:
+            result = self._apply_class_mapping(result, class_mapping)
+        return result
 
     def run_locally(
         self,
@@ -811,6 +825,29 @@ class SegmentAnything3BlockV3(WorkflowBlock):
                 rle_masks = detection.data[RLE_MASK_KEY_IN_SV_DETECTIONS]
                 detection.mask = self.decode_rle_masks(rle_masks)
         return predictions
+
+    @staticmethod
+    def _apply_class_mapping(
+        result: BlockResult,
+        class_mapping: Dict[str, str],
+    ) -> BlockResult:
+        """Remap prediction class names using the provided mapping."""
+        for item in result:
+            if not isinstance(item, dict) or "predictions" not in item:
+                continue
+            detections = item["predictions"]
+            if (
+                not isinstance(detections, sv.Detections)
+                or "class_name" not in detections.data
+            ):
+                continue
+            detections.data["class_name"] = np.array(
+                [
+                    class_mapping.get(name, name)
+                    for name in detections.data["class_name"]
+                ]
+            )
+        return result
 
     def _post_process_result(
         self,
