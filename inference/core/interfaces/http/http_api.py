@@ -264,6 +264,7 @@ from inference.core.managers.metrics import get_container_stats
 from inference.core.managers.model_load_collector import (
     ModelLoadCollector,
     RequestModelIds,
+    current_request_path,
     model_load_info,
     request_model_ids,
     request_workflow_id,
@@ -459,6 +460,14 @@ class HttpInterface(BaseInterface):
         # so the FastAPI instrumentor wraps at the outermost ASGI layer.
         if OTEL_TRACING_ENABLED:
             setup_telemetry(app)
+
+        @app.middleware("http")
+        async def set_request_path_context(request: Request, call_next):
+            token = current_request_path.set(request.url.path)
+            try:
+                return await call_next(request)
+            finally:
+                current_request_path.reset(token)
 
         @app.on_event("shutdown")
         async def on_shutdown():
@@ -858,6 +867,7 @@ class HttpInterface(BaseInterface):
 
         def process_inference_request(
             inference_request: InferenceRequest,
+            api_key: Optional[str] = None,
             countinference: Optional[bool] = None,
             service_secret: Optional[str] = None,
             **kwargs,
@@ -872,17 +882,33 @@ class HttpInterface(BaseInterface):
             Returns:
                 InferenceResponse: The response containing the inference results.
             """
+            if api_key is not None:
+                inference_request.api_key = api_key
+            requested_model_id = inference_request.model_id
             de_aliased_model_id = resolve_roboflow_model_alias(
-                model_id=inference_request.model_id
+                model_id=requested_model_id
+            )
+            model_id_alias = (
+                requested_model_id
+                if de_aliased_model_id != requested_model_id
+                else None
             )
             self.model_manager.add_model(
                 de_aliased_model_id,
                 inference_request.api_key,
+                model_id_alias=model_id_alias,
                 countinference=countinference,
                 service_secret=service_secret,
             )
+            inference_model_id = (
+                requested_model_id
+                if model_id_alias is not None
+                else de_aliased_model_id
+            )
             resp = self.model_manager.infer_from_request_sync(
-                de_aliased_model_id, inference_request, **kwargs
+                inference_model_id,
+                inference_request,
+                **kwargs,
             )
             return orjson_response(resp)
 
@@ -1436,6 +1462,10 @@ class HttpInterface(BaseInterface):
             @usage_collector("request")
             def infer_lmm(
                 inference_request: LMMInferenceRequest,
+                api_key: Optional[str] = Query(
+                    None,
+                    description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
+                ),
                 countinference: Optional[bool] = None,
                 service_secret: Optional[str] = None,
             ):
@@ -1450,6 +1480,7 @@ class HttpInterface(BaseInterface):
                 logger.debug(f"Reached /infer/lmm")
                 return process_inference_request(
                     inference_request,
+                    api_key=api_key,
                     countinference=countinference,
                     service_secret=service_secret,
                 )
@@ -1470,6 +1501,10 @@ class HttpInterface(BaseInterface):
             def infer_lmm_with_model_id(
                 model_id: str,
                 inference_request: LMMInferenceRequest,
+                api_key: Optional[str] = Query(
+                    None,
+                    description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
+                ),
                 countinference: Optional[bool] = None,
                 service_secret: Optional[str] = None,
             ):
@@ -1505,6 +1540,7 @@ class HttpInterface(BaseInterface):
 
                 return process_inference_request(
                     inference_request,
+                    api_key=api_key,
                     countinference=countinference,
                     service_secret=service_secret,
                 )

@@ -7,6 +7,7 @@ from inference.core.entities.requests.inference import InferenceRequest
 from inference.core.entities.responses.inference import InferenceResponse
 from inference.core.env import API_KEY
 from inference.core.managers.base import Model, ModelManager
+from inference.core.managers.model_load_collector import request_model_ids
 from inference.core.models.types import PreprocessReturnMetadata
 from inference.core.roboflow_api import ModelEndpointType
 
@@ -67,6 +68,14 @@ class ModelManagerDecorator(ModelManager):
             endpoint_type (ModelEndpointType, optional): The endpoint type to use for the model.
         """
         if model_id in self:
+            self.model_manager.record_request_metadata(
+                model_id=model_id,
+                original_model_id=model_id,
+                model_id_alias=model_id_alias,
+            )
+            ids_collector = request_model_ids.get(None)
+            if ids_collector is not None:
+                ids_collector.add(model_id)
             return
         self.model_manager.add_model(
             model_id,
@@ -75,6 +84,18 @@ class ModelManagerDecorator(ModelManager):
             endpoint_type=endpoint_type,
             countinference=countinference,
             service_secret=service_secret,
+        )
+
+    def record_request_metadata(
+        self,
+        model_id: str,
+        original_model_id: Optional[str] = None,
+        model_id_alias: Optional[str] = None,
+    ) -> None:
+        self.model_manager.record_request_metadata(
+            model_id=model_id,
+            original_model_id=original_model_id,
+            model_id_alias=model_id_alias,
         )
 
     async def infer_from_request(
