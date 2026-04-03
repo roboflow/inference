@@ -30,8 +30,8 @@ class DirectBackend(Backend):
         model_id: str,
         api_key: str,
         *,
+        device: Optional[str] = None,
         executor: Optional[ThreadPoolExecutor] = None,
-        gpu_exec_slots: int = 1,
         batch_max_size: int = 0,
         batch_max_delay_ms: float = 10.0,
         **kwargs,
@@ -39,13 +39,14 @@ class DirectBackend(Backend):
         """Load the model in the current process.
 
         Args:
+            device: Device to load the model on (e.g. ``"cpu"``,
+                      ``"cuda:0"``, ``"cuda:1"``). ``None`` uses the
+                      library default (CUDA if available, else CPU).
             executor: Shared thread-pool executor for ``submit()`` when
                       batching is disabled. Owned by ModelManager, not by
                       this backend. Ignored when batching is enabled (the
                       BatchCollector dispatch thread handles execution).
                       None is fine if only synchronous usage is needed.
-            gpu_exec_slots: How many GPU execution slots this backend
-                      consumes during forward.
             batch_max_size: Maximum batch size. 0 = no batching (each
                       ``submit()`` runs the pipeline immediately).
             batch_max_delay_ms: Maximum time (ms) to wait for a full batch
@@ -54,14 +55,20 @@ class DirectBackend(Backend):
         from inference_models.models.auto_loaders.core import AutoModel
 
         self._model_id = model_id
+        self._device_str = device  # resolved after load
         self._executor = executor
-        self._gpu_exec_slots_count = gpu_exec_slots
         self._batch_max_size = batch_max_size
         self._batch_max_delay_ms = batch_max_delay_ms
         self._state_value: str = "loading"
 
-        self._model = AutoModel.from_pretrained(model_id, api_key=api_key, **kwargs)
+        load_kwargs = dict(kwargs)
+        if device is not None:
+            load_kwargs["device"] = device
+        self._model = AutoModel.from_pretrained(model_id, api_key=api_key, **load_kwargs)
         self._state_value = "loaded"
+
+        # Resolve actual device from model parameters
+        self._device_str = self._detect_device()
 
         # Device tracking for sleep/wake
         self._sleep_device = None
@@ -74,6 +81,18 @@ class DirectBackend(Backend):
 
         # Batching
         self._batch_collector = self._create_batch_collector() if batch_max_size > 0 else None
+
+    def _detect_device(self) -> str:
+        """Inspect model parameters to find actual device."""
+        if self._model is None:
+            return self._device_str or "cpu"
+        params = list(self._model.parameters()) if hasattr(self._model, "parameters") else []
+        if params:
+            return str(params[0].device)
+        buffers = list(self._model.buffers()) if hasattr(self._model, "buffers") else []
+        if buffers:
+            return str(buffers[0].device)
+        return self._device_str or "cpu"
 
     def _create_batch_collector(self):
         from inference_models.backends.batch_collector import BatchCollector
@@ -235,7 +254,7 @@ class DirectBackend(Backend):
             )
         import torch
 
-        device = self._sleep_device or torch.device("cuda")
+        device = self._sleep_device or torch.device(self._device_str or "cuda")
         params = list(self._model.parameters()) if hasattr(self._model, "parameters") else []
         buffers = list(self._model.buffers()) if hasattr(self._model, "buffers") else []
         for p in params:
@@ -245,6 +264,7 @@ class DirectBackend(Backend):
                 b.data = b.data.to(device, non_blocking=True)
         if torch.cuda.is_available():
             torch.cuda.synchronize(device)
+        self._device_str = str(device)
         self._sleep_device = None
         self._state_value = "loaded"
 
@@ -255,6 +275,12 @@ class DirectBackend(Backend):
     # ------------------------------------------------------------------
     # Observability
     # ------------------------------------------------------------------
+
+    @property
+    def device(self) -> str:
+        if self._state_value == "sleeping":
+            return "cpu"
+        return self._device_str or "cpu"
 
     @property
     def state(self) -> str:
@@ -279,10 +305,6 @@ class DirectBackend(Backend):
         if self._batch_collector is not None:
             return self._batch_collector.queue_depth
         return 0
-
-    @property
-    def gpu_exec_slots(self) -> int:
-        return self._gpu_exec_slots_count
 
     def stats(self) -> Dict[str, Any]:
         sorted_lats = sorted(self._latencies) if self._latencies else []
@@ -311,7 +333,6 @@ class DirectBackend(Backend):
             "latency_p99_ms": _pct(99),
             "gpu_memory_mb": 0.0,  # TODO: per-model GPU memory tracking
             "cpu_pinned_memory_mb": 0.0,  # TODO: track from sleep()
-            "gpu_exec_slots": self._gpu_exec_slots_count,
             "inference_count": self._inference_count,
             "error_count": self._error_count,
             "last_inference_ts": self._last_inference_ts,

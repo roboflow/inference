@@ -194,6 +194,17 @@ class Backend(ABC):
 
     @property
     @abstractmethod
+    def device(self) -> str:
+        """Device this backend runs forward() on.
+
+        Returns a string like ``"cpu"``, ``"cuda:0"``, ``"cuda:1"``.
+        Used by ModelManager to track which backends are on which GPU
+        and to report per-device memory usage.
+        """
+        ...
+
+    @property
+    @abstractmethod
     def state(self) -> str:
         """Current state: 'loading', 'loaded', 'sleeping', 'unhealthy'."""
         ...
@@ -231,12 +242,6 @@ class Backend(ABC):
         """Number of pending requests in the admission queue."""
         ...
 
-    @property
-    @abstractmethod
-    def gpu_exec_slots(self) -> int:
-        """How many GPU execution slots this backend consumes during forward."""
-        ...
-
     @abstractmethod
     def stats(self) -> Dict[str, Any]:
         """Runtime statistics for observability and heartbeat reporting.
@@ -246,7 +251,7 @@ class Backend(ABC):
             queue_depth, queue_depth_by_priority,
             max_batch_size, current_batch_fill_pct, batch_delay_ms,
             throughput_fps, latency_p50_ms, latency_p99_ms,
-            gpu_memory_mb, cpu_pinned_memory_mb, gpu_exec_slots,
+            gpu_memory_mb, cpu_pinned_memory_mb,
             inference_count, error_count, last_inference_ts
 
         Must be non-blocking — never contends with inference.

@@ -286,11 +286,17 @@ def _worker_main(
     input_shm_names: Optional[List[str]],
     result_shm_names: List[str],
     model_kwargs: dict,
+    gpu_device: Optional[str] = None,
 ) -> None:
     """Worker subprocess entry point.
 
     Loads the model, opens buffers, and enters a ZMQ forward() loop.
     Only calls model.forward() — pre/post-processing happens in the caller.
+
+    Args:
+        gpu_device: CUDA device string (e.g. ``"cuda:0"``, ``"cuda:1"``).
+            ``None`` defaults to ``"cuda"`` (device 0) when ``use_gpu``
+            is True.
     """
     import torch
     import zmq
@@ -307,8 +313,10 @@ def _worker_main(
         # ── CUDA init ────────────────────────────────────────────────
         device = "cpu"
         if use_gpu and torch.cuda.is_available():
-            torch.cuda.set_device(0)
-            device = "cuda"
+            target = gpu_device or "cuda:0"
+            dev = torch.device(target)
+            torch.cuda.set_device(dev)
+            device = str(dev)
 
         # ── CUDA IPC: receive GPU input buffers from main ────────────
         cuda_buffers = None
@@ -333,7 +341,7 @@ def _worker_main(
         if input_shm_names:
             input_shm = [shared_memory.SharedMemory(name=n) for n in input_shm_names]
             # Pin input SHM for GPU DMA when CUDA is available
-            if device == "cuda":
+            if device.startswith("cuda"):
                 pinned_ok = all(_pin_shm_buffer(s.buf) for s in input_shm)
                 shm_pinned = pinned_ok
         result_shm = [shared_memory.SharedMemory(name=n) for n in result_shm_names]
@@ -462,9 +470,9 @@ class SubprocessBackend(Backend):
         model_id: str,
         api_key: str,
         *,
+        device: Optional[str] = None,
         use_gpu: Optional[bool] = None,
         use_cuda_ipc: Optional[bool] = None,
-        gpu_exec_slots: int = 1,
         batch_max_size: int = 0,
         batch_max_delay_ms: float = 10.0,
         num_buffer_slots: int = 4,
@@ -474,12 +482,15 @@ class SubprocessBackend(Backend):
     ) -> None:
         """
         Args:
+            device: CUDA device for the worker (e.g. ``"cuda:0"``,
+                ``"cuda:1"``). When set, implies ``use_gpu=True``.
+                ``None`` defaults to ``"cuda:0"`` when CUDA is available.
             use_gpu: Worker uses GPU for forward(). Default: True if CUDA
-                available.
+                available. Overridden to True when ``device`` is a CUDA
+                device.
             use_cuda_ipc: Use CUDA IPC for input transport (requires
                 use_gpu=True and caller CUDA context). Default: True if
                 CUDA available.
-            gpu_exec_slots: GPU execution slots consumed during forward.
             batch_max_size: Maximum batch size. 0 = no batching.
             batch_max_delay_ms: Max ms to wait for a full batch.
             num_buffer_slots: Number of paired (input+result) SHM slots.
@@ -489,13 +500,17 @@ class SubprocessBackend(Backend):
         import zmq
 
         self._model_id = model_id
-        self._gpu_exec_slots_count = gpu_exec_slots
         self._batch_max_size = batch_max_size
         self._batch_max_delay_ms = batch_max_delay_ms
         self._state_value: str = "loading"
 
-        # ── Resolve transport ────────────────────────────────────────
+        # ── Resolve device + transport ───────────────────────────────
         has_cuda = _cuda_available()
+
+        # device="cuda:1" implies use_gpu=True
+        if device is not None and device.startswith("cuda"):
+            use_gpu = True
+
         self._use_gpu = use_gpu if use_gpu is not None else has_cuda
         self._use_cuda_ipc = (
             use_cuda_ipc
@@ -504,6 +519,12 @@ class SubprocessBackend(Backend):
         )
         if self._use_cuda_ipc and not self._use_gpu:
             raise ValueError("use_cuda_ipc=True requires use_gpu=True")
+
+        # Resolve device string: "cuda:0", "cuda:1", or "cpu"
+        if self._use_gpu:
+            self._device_str = device if device and device.startswith("cuda") else "cuda:0"
+        else:
+            self._device_str = "cpu"
 
         # ── Load model on CPU for pre/post processing ────────────────
         from inference_models.models.auto_loaders.core import AutoModel
@@ -523,9 +544,10 @@ class SubprocessBackend(Backend):
         if self._use_cuda_ipc:
             import torch
 
+            ipc_device = torch.device(self._device_str)
             max_elements = input_bytes // 4  # flat float32
             self._cuda_input_buffers = [
-                torch.empty(max_elements, dtype=torch.float32, device="cuda")
+                torch.empty(max_elements, dtype=torch.float32, device=ipc_device)
                 for _ in range(num_buffer_slots)
             ]
             self._cuda_events = [
@@ -566,6 +588,7 @@ class SubprocessBackend(Backend):
                 ),
                 result_shm_names=self._pool.result_names,
                 model_kwargs=kwargs,
+                gpu_device=self._device_str if self._use_gpu else None,
             ),
             daemon=True,
         )
@@ -818,6 +841,10 @@ class SubprocessBackend(Backend):
         return idle < _WORKER_HEARTBEAT_TIMEOUT_S
 
     @property
+    def device(self) -> str:
+        return self._device_str
+
+    @property
     def state(self) -> str:
         if self._model is None or not self._worker.is_alive():
             return "unhealthy"
@@ -847,10 +874,6 @@ class SubprocessBackend(Backend):
             return self._batch_collector.queue_depth
         return 0
 
-    @property
-    def gpu_exec_slots(self) -> int:
-        return self._gpu_exec_slots_count
-
     def stats(self) -> Dict[str, Any]:
         sorted_lats = sorted(self._latencies) if self._latencies else []
         bc = self._batch_collector.stats() if self._batch_collector else {}
@@ -870,6 +893,7 @@ class SubprocessBackend(Backend):
         return {
             "model_id": self._model_id,
             "backend_type": "subprocess",
+            "device": self._device_str,
             "transport": transport,
             "state": self.state,
             "is_accepting": self.is_accepting,
@@ -885,7 +909,6 @@ class SubprocessBackend(Backend):
             "latency_p99_ms": _pct(99),
             "gpu_memory_mb": 0.0,
             "cpu_pinned_memory_mb": 0.0,
-            "gpu_exec_slots": self._gpu_exec_slots_count,
             "inference_count": self._inference_count,
             "error_count": self._error_count,
             "last_inference_ts": self._last_inference_ts,
