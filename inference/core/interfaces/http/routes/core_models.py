@@ -69,6 +69,7 @@ from inference.core.env import (
     GCP_SERVERLESS,
     LAMBDA,
     SAM3_EXEC_MODE,
+    SAM3_FINE_TUNED_MODELS_ENABLED,
 )
 from inference.core.interfaces.http.error_handlers import with_route_exceptions
 from inference.core.interfaces.http.orjson_utils import (
@@ -855,6 +856,13 @@ def create_core_models_router(model_manager: ModelManager) -> APIRouter:
             countinference: Optional[bool] = None,
             service_secret: Optional[str] = None,
         ):
+        if not SAM3_FINE_TUNED_MODELS_ENABLED:
+                    if not inference_request.model_id.startswith("sam3/"):
+                        raise HTTPException(
+                            status_code=501,
+                            detail="Fine-tuned SAM3 models are not supported on this deployment. Please use a workflow or self-host the server.",
+                        )
+
             if SAM3_EXEC_MODE == "remote":
                 if not inference_request.model_id.startswith("sam3/"):
                     raise HTTPException(
@@ -1238,7 +1246,7 @@ def create_core_models_router(model_manager: ModelManager) -> APIRouter:
     if DEPTH_ESTIMATION_ENABLED:
 
         @router.post(
-            "/infer/depth-estimation",
+            "/core/depth-estimation",
             response_model=DepthEstimationResponse,
             summary="Depth Estimation",
             description="Run the depth estimation model to generate a depth map.",

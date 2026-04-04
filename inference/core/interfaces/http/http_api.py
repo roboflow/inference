@@ -5,7 +5,6 @@ import re
 from concurrent.futures import CancelledError, Future, ThreadPoolExecutor
 from functools import partial
 from threading import Lock, Thread
-from time import sleep
 from typing import Annotated, Any, Dict, List, Optional, Tuple, Union
 from uuid import uuid4
 
@@ -21,7 +20,7 @@ from fastapi import (
     Query,
     Request,
 )
-from fastapi.responses import JSONResponse, RedirectResponse, Response
+from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi_cprofile.profiler import CProfileMiddleware
 from pydantic import ValidationError
@@ -46,7 +45,6 @@ from inference.core.entities.requests.inference import (
     InferenceRequest,
     InstanceSegmentationInferenceRequest,
     KeypointsDetectionInferenceRequest,
-    LMMInferenceRequest,
     ObjectDetectionInferenceRequest,
     SemanticSegmentationInferenceRequest,
 )
@@ -91,13 +89,11 @@ from inference.core.entities.responses.inference import (
     InferenceResponse,
     InstanceSegmentationInferenceResponse,
     KeypointsDetectionInferenceResponse,
-    LMMInferenceResponse,
     MultiLabelClassificationInferenceResponse,
     ObjectDetectionInferenceResponse,
     SemanticSegmentationInferenceResponse,
     StubResponse,
 )
-from inference.core.entities.responses.notebooks import NotebookStartResponse
 from inference.core.entities.responses.ocr import OCRInferenceResponse
 from inference.core.entities.responses.perception_encoder import (
     PerceptionEncoderCompareResponse,
@@ -161,10 +157,6 @@ from inference.core.env import (
     LAMBDA,
     LMM_ENABLED,
     METRICS_ENABLED,
-    MOONDREAM2_ENABLED,
-    NOTEBOOK_ENABLED,
-    NOTEBOOK_PASSWORD,
-    NOTEBOOK_PORT,
     PINNED_MODELS,
     PRELOAD_API_KEY,
     PRELOAD_MODELS,
@@ -191,13 +183,14 @@ from inference.core.exceptions import (
 from inference.core.interfaces.base import BaseInterface
 from inference.core.interfaces.http.error_handlers import (
     with_route_exceptions,
-    with_route_exceptions_async,
 )
 from inference.core.interfaces.http.routes.info import create_info_router
 from inference.core.interfaces.http.routes.inference import create_inference_router
 from inference.core.interfaces.http.routes.models import create_models_router
 from inference.core.interfaces.http.routes.core_models import create_core_models_router
 from inference.core.interfaces.http.routes.stream import create_stream_router
+from inference.core.interfaces.http.routes.webrtc import create_webrtc_worker_router
+from inference.core.interfaces.http.routes.notebook import create_notebook_router
 from inference.core.interfaces.http.routes.workflows import create_workflows_router
 from inference.core.interfaces.http.routes.legacy import create_legacy_router
 from inference.core.interfaces.http.handlers.workflows import (
@@ -212,12 +205,9 @@ from inference.core.interfaces.http.orjson_utils import (
     orjson_response_keeping_parent_id,
 )
 from inference.core.interfaces.stream_manager.api.entities import (
-    CommandContext,
     CommandResponse,
     ConsumePipelineResponse,
     InferencePipelineStatusResponse,
-    InitializeWebRTCPipelineResponse,
-    InitializeWebRTCResponse,
     ListPipelinesResponse,
 )
 from inference.core.interfaces.stream_manager.api.stream_manager_client import (
@@ -229,11 +219,6 @@ from inference.core.interfaces.stream_manager.manager_app.entities import (
     InitialiseWebRTCPipelinePayload,
     OperationStatus,
 )
-from inference.core.interfaces.webrtc_worker import start_worker
-from inference.core.interfaces.webrtc_worker.entities import (
-    WebRTCWorkerRequest,
-    WebRTCWorkerResult,
-)
 from inference.core.managers.base import ModelManager
 from inference.core.managers.metrics import get_container_stats
 from inference.core.managers.prometheus import InferenceInstrumentator
@@ -244,7 +229,6 @@ from inference.core.roboflow_api import (
     get_workflow_specification,
 )
 from inference.core.utils.container import is_docker_socket_mounted
-from inference.core.utils.notebooks import start_notebook
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.errors import WorkflowError, WorkflowSyntaxError
 from inference.core.workflows.execution_engine.core import (
@@ -732,102 +716,12 @@ class HttpInterface(BaseInterface):
 
             app.include_router(
                 create_models_router(model_manager=self.model_manager)
-            )
+                )
 
         # these NEW endpoints need authentication protection
         if not LAMBDA and not GCP_SERVERLESS:
 
             app.include_router(create_inference_router(model_manager=self.model_manager))
-
-            if LMM_ENABLED or MOONDREAM2_ENABLED:
-
-                @app.post(
-                    "/infer/lmm",
-                    response_model=Union[
-                        LMMInferenceResponse,
-                        List[LMMInferenceResponse],
-                        StubResponse,
-                    ],
-                    summary="Large multi-modal model infer",
-                    description="Run inference with the specified large multi-modal model",
-                    response_model_exclude_none=True,
-                )
-                @with_route_exceptions
-                @usage_collector("request")
-                def infer_lmm(
-                    inference_request: LMMInferenceRequest,
-                    countinference: Optional[bool] = None,
-                    service_secret: Optional[str] = None,
-                ):
-                    """Run inference with the specified large multi-modal model.
-
-                    Args:
-                        inference_request (LMMInferenceRequest): The request containing the necessary details for LMM inference.
-
-                    Returns:
-                        Union[LMMInferenceResponse, List[LMMInferenceResponse]]: The response containing the inference results.
-                    """
-                    logger.debug(f"Reached /infer/lmm")
-                    return process_inference_request(
-                        inference_request,
-                        countinference=countinference,
-                        service_secret=service_secret,
-                    )
-
-                @app.post(
-                    "/infer/lmm/{model_id:path}",
-                    response_model=Union[
-                        LMMInferenceResponse,
-                        List[LMMInferenceResponse],
-                        StubResponse,
-                    ],
-                    summary="Large multi-modal model infer with model ID in path",
-                    description="Run inference with the specified large multi-modal model. Model ID is specified in the URL path (can contain slashes).",
-                    response_model_exclude_none=True,
-                )
-                @with_route_exceptions
-                @usage_collector("request")
-                def infer_lmm_with_model_id(
-                    model_id: str,
-                    inference_request: LMMInferenceRequest,
-                    countinference: Optional[bool] = None,
-                    service_secret: Optional[str] = None,
-                ):
-                    """Run inference with the specified large multi-modal model.
-
-                    The model_id can be specified in the URL path. If model_id is also provided
-                    in the request body, it must match the path parameter.
-
-                    Args:
-                        model_id (str): The model identifier from the URL path.
-                        inference_request (LMMInferenceRequest): The request containing the necessary details for LMM inference.
-
-                    Returns:
-                        Union[LMMInferenceResponse, List[LMMInferenceResponse]]: The response containing the inference results.
-
-                    Raises:
-                        HTTPException: If model_id in path and request body don't match.
-                    """
-                    logger.debug(f"Reached /infer/lmm/{model_id}")
-
-                    # Validate model_id consistency between path and request body
-                    if (
-                        inference_request.model_id is not None
-                        and inference_request.model_id != model_id
-                    ):
-                        raise HTTPException(
-                            status_code=400,
-                            detail=f"Model ID mismatch: path specifies '{model_id}' but request body specifies '{inference_request.model_id}'",
-                        )
-
-                    # Set the model_id from path if not in request body
-                    inference_request.model_id = model_id
-
-                    return process_inference_request(
-                        inference_request,
-                        countinference=countinference,
-                        service_secret=service_secret,
-                    )
 
         if not DISABLE_WORKFLOW_ENDPOINTS:
             app.include_router(
@@ -839,70 +733,12 @@ class HttpInterface(BaseInterface):
 
         if WEBRTC_WORKER_ENABLED:
 
-            @app.post(
-                "/initialise_webrtc_worker",
-                response_model=InitializeWebRTCResponse,
-                summary="[EXPERIMENTAL] Establishes WebRTC peer connection and processes video stream in spawned process or modal function",
-                description="[EXPERIMENTAL] Establishes WebRTC peer connection and processes video stream in spawned process or modal function",
-            )
-            @with_route_exceptions_async
-            async def initialise_webrtc_worker(
-                request: WebRTCWorkerRequest,
-                r: Request,
-            ) -> InitializeWebRTCResponse:
-                if str(r.headers.get("origin")).lower() == BUILDER_ORIGIN.lower():
-                    if re.search(
-                        r"^https://[^.]+\.roboflow\.[^./]+/", str(r.url).lower()
-                    ):
-                        request.is_preview = True
-
-                logger.debug("Received initialise_webrtc_worker request")
-                worker_result: WebRTCWorkerResult = await start_worker(
-                    webrtc_request=request,
-                )
-                if worker_result.exception_type is not None:
-                    if worker_result.exception_type == "WorkflowSyntaxError":
-                        raise WorkflowSyntaxError(
-                            public_message=worker_result.error_message,
-                            context=worker_result.error_context,
-                            inner_error=worker_result.inner_error,
-                        )
-                    if worker_result.exception_type == "WorkflowError":
-                        raise WorkflowError(
-                            public_message=worker_result.error_message,
-                            context=worker_result.error_context,
-                        )
-                    expected_exceptions = {
-                        "Exception": Exception,
-                        "KeyError": KeyError,
-                        "MissingApiKeyError": MissingApiKeyError,
-                        "NotImplementedError": NotImplementedError,
-                        "RoboflowAPINotAuthorizedError": RoboflowAPINotAuthorizedError,
-                        "RoboflowAPINotNotFoundError": RoboflowAPINotNotFoundError,
-                        "ValidationError": ValidationError,
-                        "WebRTCConfigurationError": WebRTCConfigurationError,
-                    }
-                    exc = expected_exceptions.get(
-                        worker_result.exception_type, Exception
-                    )(worker_result.error_message)
-                    logger.error(
-                        f"Initialise webrtc worker failed with %s: %s",
-                        worker_result.exception_type,
-                        worker_result.error_message,
-                    )
-                    raise exc
-                logger.debug("Returning initialise_webrtc_worker response")
-                return InitializeWebRTCResponse(
-                    context=CommandContext(),
-                    status=OperationStatus.SUCCESS,
-                    sdp=worker_result.answer.sdp,
-                    type=worker_result.answer.type,
-                )
+            app.include_router(create_webrtc_worker_router())
 
         if ENABLE_STREAM_API:
             app.include_router(
                 create_stream_router(stream_manager_client=self.stream_manager_client)
-            )
+                )
 
         # Enable preloading models at startup
         if (
@@ -1022,43 +858,7 @@ class HttpInterface(BaseInterface):
 
         if not (LAMBDA or GCP_SERVERLESS):
 
-            @app.get(
-                "/notebook/start",
-                summary="Jupyter Lab Server Start",
-                description="Starts a jupyter lab server for running development code",
-            )
-            @with_route_exceptions
-            def notebook_start(browserless: bool = False):
-                """Starts a jupyter lab server for running development code.
-
-                Args:
-                    inference_request (NotebookStartRequest): The request containing the necessary details for starting a jupyter lab server.
-                    background_tasks: (BackgroundTasks) pool of fastapi background tasks
-
-                Returns:
-                    NotebookStartResponse: The response containing the URL of the jupyter lab server.
-                """
-                logger.debug(f"Reached /notebook/start")
-                if NOTEBOOK_ENABLED:
-                    start_notebook()
-                    if browserless:
-                        return {
-                            "success": True,
-                            "message": f"Jupyter Lab server started at http://localhost:{NOTEBOOK_PORT}?token={NOTEBOOK_PASSWORD}",
-                        }
-                    else:
-                        sleep(2)
-                        return RedirectResponse(
-                            f"http://localhost:{NOTEBOOK_PORT}/lab/tree/quickstart.ipynb?token={NOTEBOOK_PASSWORD}"
-                        )
-                else:
-                    if browserless:
-                        return {
-                            "success": False,
-                            "message": "Notebook server is not enabled. Enable notebooks via the NOTEBOOK_ENABLED environment variable.",
-                        }
-                    else:
-                        return RedirectResponse(f"/notebook-instructions.html")
+            app.include_router(create_notebook_router())
 
         if ENABLE_BUILDER:
             from inference.core.interfaces.http.builder.routes import (
@@ -1083,7 +883,7 @@ class HttpInterface(BaseInterface):
         # Legacy router: infer route when LEGACY_ROUTE_ENABLED; clear_cache/start when not (LAMBDA or GCP_SERVERLESS)
         app.include_router(
             create_legacy_router(model_manager=self.model_manager)
-        )
+                )
 
         if not ENABLE_DASHBOARD:
 

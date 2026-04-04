@@ -11,6 +11,7 @@ from inference.core.entities.requests.workflows import (
     DescribeBlocksRequest,
     PredefinedWorkflowDescribeInterfaceRequest,
     PredefinedWorkflowInferenceRequest,
+    WorkflowInferenceRequest,
     WorkflowSpecificationDescribeInterfaceRequest,
     WorkflowSpecificationInferenceRequest,
 )
@@ -68,7 +69,7 @@ def create_workflows_router(
     router = APIRouter()
 
     def process_workflow_inference_request(
-        workflow_request,
+        workflow_request: WorkflowInferenceRequest,
         workflow_specification: dict,
         background_tasks: Optional[BackgroundTasks],
         profiler: WorkflowsProfiler,

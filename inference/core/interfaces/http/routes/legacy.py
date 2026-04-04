@@ -1,3 +1,5 @@
+"""Legacy inference and upload-style HTTP routes."""
+
 import base64
 from typing import Annotated, Any, Optional, Union
 

@@ -1,3 +1,5 @@
+"""Health, readiness, and device stats HTTP routes."""
+
 from fastapi import APIRouter, Depends
 from typing import Any, Optional
 from starlette.responses import JSONResponse
@@ -53,3 +55,4 @@ def create_health_router(model_init_state: Optional[Any] = None) -> APIRouter:
         return {"status": "healthy"}
 
     return router
+    

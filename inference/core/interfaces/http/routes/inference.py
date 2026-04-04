@@ -1,6 +1,8 @@
+"""Roboflow trained-model inference HTTP routes (/infer/*)."""
+
 from typing import List, Optional, Union
 
-from fastapi import APIRouter, BackgroundTasks
+from fastapi import APIRouter, BackgroundTasks, Query, Request, HTTPException
 
 from inference.core import logger
 from inference.core.entities.requests.inference import (
@@ -10,6 +12,8 @@ from inference.core.entities.requests.inference import (
     InstanceSegmentationInferenceRequest,
     KeypointsDetectionInferenceRequest,
     ObjectDetectionInferenceRequest,
+    LMMInferenceRequest,
+    SemanticSegmentationInferenceRequest,
 )
 from inference.core.entities.responses.inference import (
     ClassificationInferenceResponse,
@@ -20,12 +24,14 @@ from inference.core.entities.responses.inference import (
     ObjectDetectionInferenceResponse,
     MultiLabelClassificationInferenceResponse,
     StubResponse,
+    LMMInferenceResponse,
+    SemanticSegmentationInferenceResponse,
 )
-from inference.core.env import DEPTH_ESTIMATION_ENABLED
+from inference.core.env import DEPTH_ESTIMATION_ENABLED, LMM_ENABLED, MOONDREAM2_ENABLED
 from inference.core.interfaces.http.error_handlers import with_route_exceptions
 from inference.core.interfaces.http.orjson_utils import orjson_response
 from inference.core.managers.base import ModelManager
-from inference.core.utils.model_alias import resolve_roboflow_model_alias
+from inference.models.aliases import resolve_roboflow_model_alias
 from inference.usage_tracking.collector import usage_collector
 
 
@@ -109,14 +115,14 @@ def create_inference_router(
 
     @router.post(
         "/infer/semantic_segmentation",
-        response_model=Union[InstanceSegmentationInferenceResponse, StubResponse],
+        response_model=Union[SemanticSegmentationInferenceResponse, StubResponse],
         summary="Semantic segmentation infer",
         description="Run inference with the specified semantic segmentation model",
     )
     @with_route_exceptions
     @usage_collector("request")
     def infer_semantic_segmentation(
-        inference_request,
+        inference_request: SemanticSegmentationInferenceRequest,
         background_tasks: BackgroundTasks,
         countinference: Optional[bool] = None,
         service_secret: Optional[str] = None,
@@ -176,6 +182,95 @@ def create_inference_router(
             countinference=countinference,
             service_secret=service_secret,
         )
+
+    if LMM_ENABLED or MOONDREAM2_ENABLED:
+        @router.post(
+            "/infer/lmm",
+            response_model=Union[
+                LMMInferenceResponse,
+                List[LMMInferenceResponse],
+                StubResponse,
+            ],
+            summary="Large multi-modal model infer",
+            description="Run inference with the specified large multi-modal model",
+            response_model_exclude_none=True,
+        )
+        @with_route_exceptions
+        @usage_collector("request")
+        def infer_lmm(
+            inference_request: LMMInferenceRequest,
+            countinference: Optional[bool] = None,
+            service_secret: Optional[str] = None,
+        ):
+            """Run inference with the specified large multi-modal model.
+
+            Args:
+                inference_request (LMMInferenceRequest): The request containing the necessary details for LMM inference.
+
+            Returns:
+                Union[LMMInferenceResponse, List[LMMInferenceResponse]]: The response containing the inference results.
+            """
+            logger.debug(f"Reached /infer/lmm")
+            return process_inference_request(
+                inference_request,
+                countinference=countinference,
+                service_secret=service_secret,
+            )
+
+        @router.post(
+            "/infer/lmm/{model_id:path}",
+            response_model=Union[
+                LMMInferenceResponse,
+                List[LMMInferenceResponse],
+                StubResponse,
+            ],
+            summary="Large multi-modal model infer with model ID in path",
+            description="Run inference with the specified large multi-modal model. Model ID is specified in the URL path (can contain slashes).",
+            response_model_exclude_none=True,
+        )
+        @with_route_exceptions
+        @usage_collector("request")
+        def infer_lmm_with_model_id(
+            model_id: str,
+            inference_request: LMMInferenceRequest,
+            countinference: Optional[bool] = None,
+            service_secret: Optional[str] = None,
+        ):
+            """Run inference with the specified large multi-modal model.
+
+            The model_id can be specified in the URL path. If model_id is also provided
+            in the request body, it must match the path parameter.
+
+            Args:
+                model_id (str): The model identifier from the URL path.
+                inference_request (LMMInferenceRequest): The request containing the necessary details for LMM inference.
+
+            Returns:
+                Union[LMMInferenceResponse, List[LMMInferenceResponse]]: The response containing the inference results.
+
+            Raises:
+                HTTPException: If model_id in path and request body don't match.
+            """
+            logger.debug(f"Reached /infer/lmm/{model_id}")
+
+            # Validate model_id consistency between path and request body
+            if (
+                inference_request.model_id is not None
+                and inference_request.model_id != model_id
+            ):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Model ID mismatch: path specifies '{model_id}' but request body specifies '{inference_request.model_id}'",
+                )
+
+            # Set the model_id from path if not in request body
+            inference_request.model_id = model_id
+
+            return process_inference_request(
+                inference_request,
+                countinference=countinference,
+                service_secret=service_secret,
+            )
 
     if DEPTH_ESTIMATION_ENABLED:
 

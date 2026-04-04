@@ -1,8 +1,10 @@
+"""Server info and version HTTP routes (/info, server identity)."""
+
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
 
-rom inference.core.version import __version__
+from inference.core.version import __version__
 from inference.core.devices.utils import GLOBAL_INFERENCE_SERVER_ID
 from inference.core.entities.responses.server_state import ServerVersionInfo
 

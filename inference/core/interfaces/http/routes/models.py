@@ -1,3 +1,5 @@
+"""Model registry and server-state HTTP routes (list models, add/clear)."""
+
 from typing import Optional
 
 from fastapi import APIRouter
@@ -15,8 +17,7 @@ from inference.core.env import (
 )
 from inference.core.interfaces.http.error_handlers import with_route_exceptions
 from inference.core.managers.base import ModelManager
-from inference.core.utils.model_alias import resolve_roboflow_model_alias
-
+from inference.models.aliases import resolve_roboflow_model_alias
 
 def create_models_router(model_manager: ModelManager) -> APIRouter:
     router = APIRouter()
