@@ -74,6 +74,7 @@ class ModelManager:
         model_id: str,
         api_key: str,
         *,
+        model_id_or_path: Optional[str] = None,
         backend: Literal["direct", "subprocess"] = "direct",
         device: Optional[str] = None,
         use_gpu: Optional[bool] = None,
@@ -88,6 +89,15 @@ class ModelManager:
         Blocks until the model is loaded, warmed up, and ready to serve.
 
         Args:
+            model_id: Unique key for routing (``infer_sync(model_id, ...)``,
+                ``submit(model_id, ...)``). Also used as the model to load
+                unless ``model_id_or_path`` is set.
+            model_id_or_path: What to pass to ``AutoModel.from_pretrained``.
+                Defaults to ``model_id``. Set this to load multiple
+                instances of the same model under different routing keys::
+
+                    mm.load("yolov8n-0", key, model_id_or_path="yolov8n-640")
+                    mm.load("yolov8n-1", key, model_id_or_path="yolov8n-640")
             device: Device to run the model on (e.g. ``"cpu"``,
                 ``"cuda:0"``, ``"cuda:1"``). For multi-GPU pods, this
                 selects which GPU the model runs on. ``None`` uses the
@@ -98,17 +108,19 @@ class ModelManager:
             ValueError: If model_id is already loaded.
             RuntimeError: If loading fails (bad weights, OOM, download error).
         """
+        load_target = model_id_or_path or model_id
+
         with self._lifecycle_lock:
             if model_id in self._backends:
                 raise ValueError(f"Model '{model_id}' is already loaded")
 
             logger.info(
-                "Loading model '%s' with backend=%s, device=%s, batch_max_size=%d",
-                model_id, backend, device, batch_max_size,
+                "Loading '%s' (model=%s) with backend=%s, device=%s, batch_max_size=%d",
+                model_id, load_target, backend, device, batch_max_size,
             )
 
             b = self._create_backend(
-                model_id=model_id,
+                model_id=load_target,
                 api_key=api_key,
                 backend=backend,
                 device=device,

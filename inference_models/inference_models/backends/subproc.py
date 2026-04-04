@@ -494,6 +494,7 @@ class SubprocessBackend(Backend):
         num_buffer_slots: int = 4,
         input_buffer_mb: int = 32,
         result_buffer_mb: int = 128,
+        worker_start_timeout: float = 120.0,
         **kwargs,
     ) -> None:
         """
@@ -512,6 +513,8 @@ class SubprocessBackend(Backend):
             num_buffer_slots: Number of paired (input+result) SHM slots.
             input_buffer_mb: Size of each input SHM slot in MB.
             result_buffer_mb: Size of each result SHM slot in MB.
+            worker_start_timeout: Seconds to wait for worker to load
+                model and signal ready. Raises RuntimeError on timeout.
         """
         import zmq
 
@@ -649,7 +652,15 @@ class SubprocessBackend(Backend):
                 }
             )
 
-        # Wait for worker to load model and signal ready
+        # Wait for worker to load model and signal ready (with timeout)
+        if not parent_pipe.poll(timeout=worker_start_timeout):
+            self._worker.kill()
+            self._worker.join(timeout=5)
+            self._pool.close()
+            raise RuntimeError(
+                f"Worker failed to start: timed out after {worker_start_timeout}s "
+                f"waiting for READY (model loading too slow or worker crashed)"
+            )
         msg = parent_pipe.recv()
         if isinstance(msg, str) and msg.startswith("ERROR"):
             self._worker.join(timeout=10)
@@ -847,7 +858,7 @@ class SubprocessBackend(Backend):
             if self._worker.is_alive():
                 self._worker.kill()
 
-        self._zmq_sock.close()
+        self._zmq_sock.close(linger=0)
         self._zmq_ctx.term()
         self._pool.close()
         self._cuda_input_buffers = None
