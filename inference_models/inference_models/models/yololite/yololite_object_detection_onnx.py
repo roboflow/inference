@@ -199,7 +199,8 @@ class YOLOLiteForObjectDetectionOnnx(
         class_agnostic_nms: bool = INFERENCE_MODELS_YOLOLITE_DEFAULT_CLASS_AGNOSTIC_NMS,
         **kwargs,
     ) -> List[Detections]:
-        if self._inference_config.post_processing.fused:
+        # Backward compatibility: earlier model packages have no post_processing config — always unfused 3-tensor output
+        if self._inference_config.post_processing and self._inference_config.post_processing.fused:
             nms_results = self._post_process_fused(model_results, confidence)
         else:
             nms_results = self._post_process_unfused(
