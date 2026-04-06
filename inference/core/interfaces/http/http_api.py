@@ -2211,11 +2211,11 @@ class HttpInterface(BaseInterface):
             if is_healthy:
                 return {"status": "healthy"}
             else:
+                logger.error("CUDA health check failed: %s", error)
                 return JSONResponse(
                     content={
                         "status": "unhealthy",
                         "reason": "cuda_error",
-                        "detail": error,
                     },
                     status_code=503,
                 )
