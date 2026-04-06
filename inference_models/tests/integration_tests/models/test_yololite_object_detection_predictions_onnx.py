@@ -26,6 +26,9 @@ def test_static_non_fused_numpy(
 
     assert len(predictions) == 1
     assert predictions[0].xyxy.shape[1] == 4
+    assert predictions[0].xyxy.dtype == torch.int32
+    assert predictions[0].class_id.dtype == torch.int32
+    assert predictions[0].confidence.dtype == torch.float32
     assert len(predictions[0].confidence) > 0
     assert torch.all(predictions[0].confidence >= 0.25)
     assert torch.all(predictions[0].confidence <= 1.0)
@@ -189,6 +192,8 @@ def test_fused_nms_numpy(
     assert len(predictions) == 1
     assert predictions[0].xyxy.shape[1] == 4
     assert predictions[0].xyxy.dtype == torch.int32
+    assert predictions[0].class_id.dtype == torch.int32
+    assert predictions[0].confidence.dtype == torch.float32
     assert len(predictions[0].confidence) > 0
     assert torch.all(predictions[0].confidence >= 0.25)
     assert torch.all(predictions[0].confidence <= 1.0)
