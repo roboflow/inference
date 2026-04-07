@@ -138,6 +138,7 @@ nav:
         - Workflow Execution: workflows/workflow_execution.md
         - Kinds: workflows/kinds/
         - Compiler: workflows/workflows_compiler.md
+        - Sub-workflow design: workflows/subworkflow_design.md
         - Execution Engine: workflows/workflows_execution_engine.md
         - Block Creation: workflows/create_workflow_block.md
         - Block Bundling: workflows/blocks_bundling.md

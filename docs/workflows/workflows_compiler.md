@@ -338,3 +338,8 @@ provided parameters.
 
 This mechanism allows flexibility, as some block parameters can have default values while others must be 
 provided explicitly. Additionally, it lets certain parameters be shared across different plugins.
+
+## Sub-workflow composition (planned)
+
+Nested workflow references will add a **composition graph** validation pass (acyclicity, max depth) separate from
+the per-workflow step DAG. See [Sub-workflow design](./subworkflow_design.md).
