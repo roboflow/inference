@@ -221,9 +221,10 @@ class LocalStreamSource(StreamSource):
 
     async def configure_peer_connection(self, pc: RTCPeerConnection) -> None:
         """Create MediaPlayer for stream and add video track to peer connection."""
-        # Determine format and options based on URL scheme
+
         if self.url.startswith(("rtsp://", "rtsps://")):
-            self._player = MediaPlayer(
+            self._player = await asyncio.to_thread(
+                MediaPlayer,
                 self.url,
                 format="rtsp",
                 options={
@@ -233,8 +234,13 @@ class LocalStreamSource(StreamSource):
                 },
             )
         else:
-            # RTMP - use default format detection
-            self._player = MediaPlayer(self.url)
+            self._player = await asyncio.to_thread(
+                MediaPlayer,
+                self.url,
+                options={
+                    "rw_timeout": "5000000",  # 5s socket timeout
+                },
+            )
 
         if self._player.video is None:
             raise RuntimeError(f"No video track available from stream: {self.url}")
