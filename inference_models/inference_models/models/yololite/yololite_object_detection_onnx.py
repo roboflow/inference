@@ -30,6 +30,7 @@ from inference_models.models.common.roboflow.model_packages import (
     parse_inference_config,
 )
 from inference_models.models.common.roboflow.post_processing import (
+    post_process_nms_fused_model_output,
     rescale_detections,
     run_nms_for_object_detection,
 )
@@ -198,38 +199,13 @@ class YOLOLiteForObjectDetectionOnnx(
         class_agnostic_nms: bool = INFERENCE_MODELS_YOLOLITE_DEFAULT_CLASS_AGNOSTIC_NMS,
         **kwargs,
     ) -> List[Detections]:
-        # YOLOLite decoded export outputs 3 tensors:
-        #   boxes_xyxy:  [B, N, 4]  - decoded bounding boxes in xyxy pixel coords
-        #   obj_logits:  [B, N, 1]  - objectness logits (pre-sigmoid)
-        #   cls_logits:  [B, N, C]  - class logits (pre-sigmoid)
-        boxes_xyxy, obj_logits, cls_logits = (
-            model_results[0],
-            model_results[1],
-            model_results[2],
-        )
-
-        # Apply sigmoid to convert logits to probabilities
-        obj_conf = torch.sigmoid(obj_logits)  # [B, N, 1]
-        cls_conf = torch.sigmoid(cls_logits)  # [B, N, C]
-
-        # Combined score: objectness * class confidence
-        combined_scores = obj_conf * cls_conf  # [B, N, C]
-
-        # Reshape to [B, 4+C, N] format expected by run_nms_for_object_detection:
-        #   channels 0-3: box coords (xyxy)
-        #   channels 4+:  class scores
-        boxes_t = boxes_xyxy.permute(0, 2, 1)  # [B, 4, N]
-        scores_t = combined_scores.permute(0, 2, 1)  # [B, C, N]
-        nms_input = torch.cat([boxes_t, scores_t], dim=1)  # [B, 4+C, N]
-
-        nms_results = run_nms_for_object_detection(
-            output=nms_input,
-            conf_thresh=confidence,
-            iou_thresh=iou_threshold,
-            max_detections=max_detections,
-            class_agnostic=class_agnostic_nms,
-            box_format="xyxy",
-        )
+        # Backward compatibility: earlier model packages have no post_processing config — always unfused 3-tensor output
+        if self._inference_config.post_processing and self._inference_config.post_processing.fused:
+            nms_results = self._post_process_fused(model_results, confidence)
+        else:
+            nms_results = self._post_process_unfused(
+                model_results, confidence, iou_threshold, max_detections, class_agnostic_nms,
+            )
         rescaled_results = rescale_detections(
             detections=nms_results,
             images_metadata=pre_processing_meta,
@@ -244,3 +220,41 @@ class YOLOLiteForObjectDetectionOnnx(
                 )
             )
         return results
+
+    def _post_process_fused(
+        self,
+        model_results: Tuple[torch.Tensor, ...],
+        confidence: float,
+    ) -> List[torch.Tensor]:
+        # Single output tensor [B, max_det, 6]: x1, y1, x2, y2, conf, class_id
+        output = model_results[0]
+        return post_process_nms_fused_model_output(output=output, conf_thresh=confidence)
+
+    def _post_process_unfused(
+        self,
+        model_results: Tuple[torch.Tensor, ...],
+        confidence: float,
+        iou_threshold: float,
+        max_detections: int,
+        class_agnostic_nms: bool,
+    ) -> List[torch.Tensor]:
+        # Decoded outputs without fused NMS: boxes_xyxy [B,N,4], obj_logits [B,N,1], cls_logits [B,N,C]
+        boxes_xyxy, obj_logits, cls_logits = (
+            model_results[0], model_results[1], model_results[2],
+        )
+        obj_conf = torch.sigmoid(obj_logits)
+        cls_conf = torch.sigmoid(cls_logits)
+        combined_scores = obj_conf * cls_conf
+
+        boxes_t = boxes_xyxy.permute(0, 2, 1)
+        scores_t = combined_scores.permute(0, 2, 1)
+        nms_input = torch.cat([boxes_t, scores_t], dim=1)
+
+        return run_nms_for_object_detection(
+            output=nms_input,
+            conf_thresh=confidence,
+            iou_thresh=iou_threshold,
+            max_detections=max_detections,
+            class_agnostic=class_agnostic_nms,
+            box_format="xyxy",
+        )
