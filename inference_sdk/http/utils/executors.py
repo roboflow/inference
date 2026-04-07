@@ -1,10 +1,11 @@
 import asyncio
 import contextvars
+import json
 import logging
 from concurrent.futures import ThreadPoolExecutor
 from enum import Enum
 from functools import partial
-from typing import List, Tuple, Union
+from typing import List, Optional, Tuple, Union
 
 import aiohttp
 import backoff
@@ -30,6 +31,10 @@ from inference_sdk.http.utils.requests import api_key_safe_raise_for_status
 
 RETRYABLE_STATUS_CODES = {429, 503, 504}
 UNKNOWN_MODEL_ID = "unknown"
+MODEL_COLD_START_HEADER = "X-Model-Cold-Start"
+MODEL_LOAD_TIME_HEADER = "X-Model-Load-Time"
+MODEL_LOAD_DETAILS_HEADER = "X-Model-Load-Details"
+MODEL_ID_HEADER = "X-Model-Id"
 
 
 class RequestMethod(Enum):
@@ -92,6 +97,46 @@ def _extract_model_id_from_request_data(request_data: RequestData) -> str:
         return UNKNOWN_MODEL_ID
 
 
+def _extract_model_ids_from_response(
+    response: Response, request_data: RequestData
+) -> List[str]:
+    model_ids_header = response.headers.get(MODEL_ID_HEADER)
+    if model_ids_header:
+        return [
+            model_id.strip()
+            for model_id in model_ids_header.split(",")
+            if model_id.strip()
+        ]
+    if request_data.payload and isinstance(request_data.payload, dict):
+        model_id = request_data.payload.get("model_id")
+        if model_id:
+            return [str(model_id)]
+    return []
+
+
+def _parse_model_load_details(
+    details_header: str,
+) -> Optional[List[Tuple[Optional[str], float]]]:
+    try:
+        parsed = json.loads(details_header)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(parsed, list):
+        return None
+    result = []
+    for entry in parsed:
+        if not isinstance(entry, dict) or "t" not in entry:
+            return None
+        try:
+            load_time = float(entry["t"])
+        except (TypeError, ValueError):
+            return None
+        model_id = entry.get("m")
+        model_id = str(model_id) if model_id not in (None, "") else None
+        result.append((model_id, load_time))
+    return result
+
+
 def _collect_remote_processing_times(
     responses: List[Response],
     requests_data: List[RequestData],
@@ -117,6 +162,44 @@ def _collect_remote_processing_times(
                 logging.warning(
                     "Malformed %s header value: %r", PROCESSING_TIME_HEADER, pt
                 )
+        model_ids = _extract_model_ids_from_response(
+            response=response, request_data=request_data
+        )
+        collector.add_model_ids(model_ids=model_ids)
+        if response.headers.get(MODEL_COLD_START_HEADER, "").lower() != "true":
+            continue
+        details_header = response.headers.get(MODEL_LOAD_DETAILS_HEADER)
+        if details_header:
+            parsed_details = _parse_model_load_details(details_header)
+            if parsed_details is None:
+                logging.warning(
+                    "Malformed %s header value: %r",
+                    MODEL_LOAD_DETAILS_HEADER,
+                    details_header,
+                )
+            else:
+                for entry_model_id, load_time in parsed_details:
+                    collector.record_cold_start(
+                        load_time=load_time,
+                        model_id=entry_model_id,
+                    )
+                continue
+        load_time = 0.0
+        load_time_header = response.headers.get(MODEL_LOAD_TIME_HEADER)
+        if load_time_header is not None:
+            try:
+                load_time = float(load_time_header)
+            except (ValueError, TypeError):
+                logging.warning(
+                    "Malformed %s header value: %r",
+                    MODEL_LOAD_TIME_HEADER,
+                    load_time_header,
+                )
+        synthesized_model_id = model_ids[0] if len(model_ids) == 1 else None
+        collector.record_cold_start(
+            load_time=load_time,
+            model_id=synthesized_model_id,
+        )
 
 
 def make_parallel_requests(
