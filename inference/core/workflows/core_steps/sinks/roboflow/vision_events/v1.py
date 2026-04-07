@@ -111,8 +111,6 @@ dashboard.
 **API Key Required**: This block requires a valid Roboflow API key with `vision-events:write`
 scope. The API key must be configured in your environment or workflow configuration.
 
-**Enterprise Plan**: Vision Events requires an Enterprise plan.
-
 ## Common Use Cases
 
 - **Quality Control**: Automatically log inspection results with images and detection overlays
@@ -137,7 +135,6 @@ class BlockManifest(WorkflowBlockManifest):
                 "blockPriority": 1,
                 "popular": False,
                 "requires_rf_key": True,
-                "enterprise_only": True,
             },
         }
     )

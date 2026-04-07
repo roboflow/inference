@@ -257,6 +257,16 @@ USE_PYTORCH_FOR_PREPROCESSING = str2bool(
 # Flag to disable inference cache, default is False
 DISABLE_INFERENCE_CACHE = str2bool(os.getenv("DISABLE_INFERENCE_CACHE", False))
 
+# Cache backend used by inference model-monitoring pingback data.
+# "default" follows the normal cache selection (Redis when configured,
+# otherwise MemoryCache). "memory" forces process-local buffering to keep
+# Redis off the inference hot path.
+MODEL_MONITORING_CACHE_BACKEND = os.getenv(
+    "MODEL_MONITORING_CACHE_BACKEND", "default"
+).lower()
+if MODEL_MONITORING_CACHE_BACKEND not in {"default", "memory"}:
+    raise ValueError("MODEL_MONITORING_CACHE_BACKEND must be one of: default, memory")
+
 # Flag to disable auto-orientation preprocessing, default is False
 DISABLE_PREPROC_AUTO_ORIENT = str2bool(os.getenv("DISABLE_PREPROC_AUTO_ORIENT", False))
 

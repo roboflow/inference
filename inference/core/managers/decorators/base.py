@@ -86,6 +86,18 @@ class ModelManagerDecorator(ModelManager):
             service_secret=service_secret,
         )
 
+    def record_request_metadata(
+        self,
+        model_id: str,
+        original_model_id: Optional[str] = None,
+        model_id_alias: Optional[str] = None,
+    ) -> None:
+        self.model_manager.record_request_metadata(
+            model_id=model_id,
+            original_model_id=original_model_id,
+            model_id_alias=model_id_alias,
+        )
+
     async def infer_from_request(
         self, model_id: str, request: InferenceRequest, **kwargs
     ) -> InferenceResponse:
