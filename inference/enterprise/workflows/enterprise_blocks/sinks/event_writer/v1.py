@@ -124,7 +124,7 @@ class BlockManifest(WorkflowBlockManifest):
             "license": "Roboflow Enterprise License",
             "block_type": "sink",
             "ui_manifest": {
-                "section": "industrial",
+                "section": "data_storage",
                 "icon": "fal fa-calendar-check",
                 "blockPriority": 5,
                 "enterprise_only": True,
