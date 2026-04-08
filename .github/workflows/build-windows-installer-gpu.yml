@@ -390,7 +390,6 @@ jobs:
           if-no-files-found: error # Fail the step if the installer directory is not found or empty
 
       - name: Compress Installer
-        if: github.event_name == 'release'
         run: |
           Compress-Archive -Path ./app_bundles/windows/installer/inference-${{ steps.determine_version.outputs.installer_version_out }}-installer.exe -DestinationPath ./app_bundles/windows/installer/inference-${{ steps.determine_version.outputs.installer_version_out }}-installer.zip
           Get-Item ./app_bundles/windows/installer/inference-${{ steps.determine_version.outputs.installer_version_out }}-installer.zip | Select-Object Name, @{N='SizeMB';E={[math]::Round($_.Length/1MB,2)}}
