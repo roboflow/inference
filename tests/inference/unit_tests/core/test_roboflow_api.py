@@ -32,6 +32,7 @@ from inference.core.exceptions import (
 )
 from inference.core.roboflow_api import (
     ModelEndpointType,
+    ServerlessUsageCheckResponse,
     annotate_image_at_roboflow,
     build_roboflow_api_headers,
     delete_cached_workflow_response_if_exists,
@@ -45,6 +46,7 @@ from inference.core.roboflow_api import (
     get_roboflow_model_type,
     get_roboflow_workspace,
     get_roboflow_workspace_async,
+    get_serverless_usage_check_async,
     get_workflow_specification,
     raise_from_lambda,
     register_image_at_roboflow,
@@ -464,6 +466,77 @@ async def test_get_roboflow_workspace_async_when_response_is_valid() -> None:
         assert result == "my_workspace"
         registered_requests = request_mock.requests[
             ("GET", URL(f"{API_BASE_URL}/?api_key=my_api_key&nocache=true"))
+        ]
+        assert registered_requests[0].kwargs["headers"] == {
+            "extra": "header",
+            roboflow_api.ROBOFLOW_INFERENCE_VERSION_HEADER: __version__,
+            roboflow_api.ALLOW_CHUNKED_RESPONSE_HEADER: "true",
+        }
+
+
+@pytest.mark.asyncio
+async def test_get_serverless_usage_check_async_when_unauthorized_key_used() -> None:
+    with aioresponses() as request_mock:
+        request_mock.get(
+            f"{API_BASE_URL}/serverless/usage-check?api_key=my_api_key&nocache=true",
+            status=401,
+        )
+
+        result = await get_serverless_usage_check_async(api_key="my_api_key")
+
+        assert result == ServerlessUsageCheckResponse(status_code=401)
+
+
+@pytest.mark.asyncio
+async def test_get_serverless_usage_check_async_when_workspace_is_billing_restricted() -> (
+    None
+):
+    with aioresponses() as request_mock:
+        request_mock.get(
+            f"{API_BASE_URL}/serverless/usage-check?api_key=my_api_key&nocache=true",
+            payload={
+                "workspaceId": "my-workspace",
+                "underCap": False,
+                "error": "Workspace billing is restricted.",
+            },
+            status=402,
+        )
+
+        result = await get_serverless_usage_check_async(api_key="my_api_key")
+
+        assert result == ServerlessUsageCheckResponse(
+            status_code=402,
+            workspace_id="my-workspace",
+            under_cap=False,
+            error="Workspace billing is restricted.",
+        )
+
+
+@mock.patch.object(
+    roboflow_api, "ROBOFLOW_API_EXTRA_HEADERS", json.dumps({"extra": "header"})
+)
+@pytest.mark.asyncio
+async def test_get_serverless_usage_check_async_when_response_is_valid() -> None:
+    with aioresponses() as request_mock:
+        request_mock.get(
+            f"{API_BASE_URL}/serverless/usage-check?api_key=my_api_key&nocache=true",
+            payload={"workspaceId": "my_workspace", "underCap": True},
+        )
+
+        result = await get_serverless_usage_check_async(api_key="my_api_key")
+
+        assert result == ServerlessUsageCheckResponse(
+            status_code=200,
+            workspace_id="my_workspace",
+            under_cap=True,
+        )
+        registered_requests = request_mock.requests[
+            (
+                "GET",
+                URL(
+                    f"{API_BASE_URL}/serverless/usage-check?api_key=my_api_key&nocache=true"
+                ),
+            )
         ]
         assert registered_requests[0].kwargs["headers"] == {
             "extra": "header",
