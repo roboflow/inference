@@ -391,7 +391,7 @@ jobs:
 
       - name: Compress Installer
         run: |
-          Compress-Archive -Path ./app_bundles/windows/installer/inference-${{ steps.determine_version.outputs.installer_version_out }}-installer.exe -DestinationPath ./app_bundles/windows/installer/inference-${{ steps.determine_version.outputs.installer_version_out }}-installer.zip
+          7z a -tzip ./app_bundles/windows/installer/inference-${{ steps.determine_version.outputs.installer_version_out }}-installer.zip ./app_bundles/windows/installer/inference-${{ steps.determine_version.outputs.installer_version_out }}-installer.exe 
           Get-Item ./app_bundles/windows/installer/inference-${{ steps.determine_version.outputs.installer_version_out }}-installer.zip | Select-Object Name, @{N='SizeMB';E={[math]::Round($_.Length/1MB,2)}}
 
 
