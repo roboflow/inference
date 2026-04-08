@@ -664,9 +664,7 @@ class HttpInterface(BaseInterface):
                 api_key = json_params.get("api_key", api_key)
 
                 if api_key is None:
-                    return _authorization_error_response(
-                        401, "Unauthorized api_key"
-                    )
+                    return _authorization_error_response(401, "Unauthorized api_key")
 
                 cache_entry = cached_api_keys.get(api_key)
                 workspace_id = None
