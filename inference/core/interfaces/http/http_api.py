@@ -31,8 +31,8 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from inference.core import logger
 from inference.core.constants import (
-    MODEL_COLD_START_HEADER,
     MODEL_COLD_START_COUNT_HEADER,
+    MODEL_COLD_START_HEADER,
     MODEL_ID_HEADER,
     MODEL_LOAD_DETAILS_HEADER,
     MODEL_LOAD_TIME_HEADER,
@@ -230,9 +230,9 @@ from inference.core.interfaces.http.orjson_utils import (
     orjson_response_keeping_parent_id,
 )
 from inference.core.interfaces.http.request_metrics import (
-    GCPServerlessMiddleware,
     REMOTE_PROCESSING_TIME_HEADER,
     REMOTE_PROCESSING_TIMES_HEADER,
+    GCPServerlessMiddleware,
     build_model_response_headers,
 )
 from inference.core.interfaces.stream_manager.api.entities import (

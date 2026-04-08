@@ -41,9 +41,7 @@ class RemoteProcessingTimeCollector:
 
     def add_model_ids(self, model_ids: Iterable[str]) -> None:
         filtered_ids = {
-            model_id
-            for model_id in model_ids
-            if model_id not in (None, "", "unknown")
+            model_id for model_id in model_ids if model_id not in (None, "", "unknown")
         }
         if not filtered_ids:
             return
