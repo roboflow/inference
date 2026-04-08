@@ -364,17 +364,13 @@ def get_block_families_by_section(block_families):
     for family_name, members in block_families.items():
         if not members:
             section = "custom"
-            additional_sections = []
         else:
             block_name =  members[0].block_schema.get("name", "Missing Name")
             ui_manifest = members[0].block_schema.get("ui_manifest", {})
             section =  ui_manifest.get("section", "custom")
             if not section:
                 section = "custom"
-            additional_sections = ui_manifest.get("additional_sections", [])
         blocks_by_section[section].append(family_name)
-        for extra in additional_sections:
-            blocks_by_section[extra].append(family_name)
 
     return blocks_by_section
 
