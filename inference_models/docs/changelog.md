@@ -1,5 +1,21 @@
 # Changelog
 
+## `0.24.3`
+
+### Added
+
+- Configurable `mask_binarization_threshold` for YOLO model family to tune how segmentation masks 
+are generated in post-processing phase, when predicted mask `protos` must be turned into 
+final predictions. Empirical results show that adjusting the threshold may generally prevent 
+edges of predicted masks from spread to surrounding areas 
+
+### Changed
+
+- Changed instance-segmentation mask binarization threshold for YOLO model family to align with old 
+`inference` - new default is `0.5`, instead of previous one `0.0`.
+
+---
+
 ## `0.24.2`
 
 ### Fixed

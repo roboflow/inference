@@ -16,6 +16,7 @@ from inference_models.configuration import (
     INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_CONFIDENCE,
     INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_IOU_THRESHOLD,
     INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_MAX_DETECTIONS,
+    INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_MASK_BINARIZATION_THRESHOLD,
 )
 from inference_models.entities import ColorFormat
 from inference_models.errors import CorruptedModelPackageError
@@ -170,6 +171,7 @@ class YOLOv8ForInstanceSegmentationTorchScript(
         iou_threshold: float = INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_IOU_THRESHOLD,
         max_detections: int = INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_MAX_DETECTIONS,
         class_agnostic_nms: bool = INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_CLASS_AGNOSTIC_NMS,
+        mask_binarization_threshold: float = INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_MASK_BINARIZATION_THRESHOLD,
         **kwargs,
     ) -> List[InstanceDetections]:
         instances, protos = model_results
@@ -212,6 +214,7 @@ class YOLOv8ForInstanceSegmentationTorchScript(
                 size_after_pre_processing=image_meta.size_after_pre_processing,
                 inference_size=image_meta.inference_size,
                 static_crop_offset=image_meta.static_crop_offset,
+                binarization_threshold=mask_binarization_threshold,
             )
             final_results.append(
                 InstanceDetections(
