@@ -1,8 +1,10 @@
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
 
 from inference.core.exceptions import InferenceModelNotFound
+from inference.core.managers import base as base_module
 from inference.core.managers.base import ModelManager
 from inference.core.managers.entities import ModelDescription
 from inference.core.managers.model_load_collector import (
@@ -106,6 +108,56 @@ async def test_infer_from_request_when_model_is_available_but_exception_raised()
     # then
     assert thrown_exception.value is error
     model_manager._models["some/1"].infer_from_request.assert_called_once_with(request)
+
+
+def test_infer_from_request_sync_caches_results_in_model_monitoring_cache(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    model_registry = MagicMock()
+    model_manager = ModelManager(model_registry=model_registry)
+    model = MagicMock()
+    model_manager._models = {"some/1": model}
+    request = SimpleNamespace(api_key="some_api_key", disable_model_monitoring=False)
+    cached_item = {"request": {"model_id": "some/1"}, "response": {"time": 0.1}}
+    cache_mock = MagicMock()
+
+    monkeypatch.setattr(
+        base_module.model_monitoring_cache_module,
+        "model_monitoring_cache",
+        cache_mock,
+    )
+    monkeypatch.setattr(
+        base_module,
+        "to_cachable_inference_item",
+        lambda _request, _response: cached_item,
+    )
+
+    model_manager.infer_from_request_sync(model_id="some/1", request=request)
+
+    assert any(
+        call.args[0].startswith("inference:") for call in cache_mock.zadd.call_args_list
+    )
+
+
+def test_infer_from_request_sync_skips_model_monitoring_cache_when_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    model_registry = MagicMock()
+    model_manager = ModelManager(model_registry=model_registry)
+    model = MagicMock()
+    model_manager._models = {"some/1": model}
+    request = SimpleNamespace(api_key="some_api_key", disable_model_monitoring=True)
+    cache_mock = MagicMock()
+
+    monkeypatch.setattr(
+        base_module.model_monitoring_cache_module,
+        "model_monitoring_cache",
+        cache_mock,
+    )
+
+    model_manager.infer_from_request_sync(model_id="some/1", request=request)
+
+    cache_mock.zadd.assert_not_called()
 
 
 def test_make_response_when_model_available() -> None:
@@ -364,10 +416,12 @@ def test_model_manager_describe_models() -> None:
     model_1.batch_size = 12
     model_1.img_size_w = 640
     model_1.img_size_h = 480
+    model_1._vram_bytes = 1024000
     model_2.task_type = "instance-segmentation"
     model_2.batch_size = 1
     model_2.img_size_w = 480
     model_2.img_size_h = 480
+    model_2._vram_bytes = 2048000
     model_manager._models = {"some/1": model_1, "some/2": model_2}
 
     # when
@@ -381,6 +435,7 @@ def test_model_manager_describe_models() -> None:
             batch_size=12,
             input_width=640,
             input_height=480,
+            vram_bytes=1024000,
         ),
         ModelDescription(
             model_id="some/2",
@@ -388,6 +443,7 @@ def test_model_manager_describe_models() -> None:
             batch_size=1,
             input_width=480,
             input_height=480,
+            vram_bytes=2048000,
         ),
     ]
 

@@ -1,8 +1,12 @@
 # About
 
-The `inference` Python package is the core library that powers Roboflow's computer vision deployment stack. It provides model loading, pre/post-processing, GPU/CPU optimization, and [Workflows](../workflows/about.md) execution — all callable directly from Python.
+The `inference` Python package is the core library that powers Roboflow's computer vision deployment stack. It provides model loading, pre/post-processing, GPU/CPU optimization, and [Workflows](../workflows/about.md) execution, callable directly from Python.
 
 The [Inference Server](../quickstart/docker.md) wraps this package and exposes it over HTTP (distributed as a Docker image with all dependencies installed), but you can also use `inference` directly in your own scripts and applications.
+
+## Multi-Backend Support
+
+Inference 1.0 supports multiple inference runtime backends: ONNX, TensorRT, Hugging Face, and PyTorch. It automatically selects the fastest available backend for your hardware. For example, if you have an NVIDIA GPU or running on Jetson device and a TensorRT engine is available for the model on your platform, Inference will use TensorRT by default.
 
 ## Installation
 

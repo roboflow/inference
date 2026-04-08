@@ -66,6 +66,55 @@ def test_cache_entry_registration_for_base_cache(
 @pytest.mark.torch_models
 @pytest.mark.cpu_only
 @mock.patch.object(auto_resolution_cache, "generate_auto_resolution_cache_path")
+def test_cache_entry_registration_for_base_cache_with_model_features(
+    generate_auto_resolution_cache_path_mock: MagicMock,
+    empty_local_dir: str,
+) -> None:
+    # given
+    generate_auto_resolution_cache_path_mock.side_effect = (
+        lambda auto_negotiation_hash: os.path.join(
+            empty_local_dir, f"{auto_negotiation_hash}.json"
+        )
+    )
+    cache_entry = AutoResolutionCacheEntry(
+        model_id="my-model",
+        model_package_id="my-package",
+        resolved_files=["a", "b", "c"],
+        model_architecture="yolov8",
+        task_type="object-detection",
+        backend_type=BackendType.ONNX,
+        created_at=datetime.now(),
+        model_features={"some": "value"},
+    )
+    on_file_created, on_file_deleted = MagicMock(), MagicMock()
+    cache = BaseAutoLoadMetadataCache(
+        file_lock_acquire_timeout=10,
+        on_file_created=on_file_created,
+        on_file_deleted=on_file_deleted,
+    )
+
+    # when
+    cache.register(
+        auto_negotiation_hash="my-hash",
+        cache_entry=cache_entry,
+    )
+
+    # then
+    expected_cache_path = os.path.join(empty_local_dir, "my-hash.json")
+    on_file_created.assert_called_once_with(
+        expected_cache_path, "my-model", "my-package"
+    )
+    on_file_deleted.assert_not_called()
+    assert os.path.exists(expected_cache_path)
+    with open(expected_cache_path) as f:
+        cache_contents = json.load(f)
+    retrieved_entry = AutoResolutionCacheEntry.model_validate(cache_contents)
+    assert cache_entry == retrieved_entry
+
+
+@pytest.mark.torch_models
+@pytest.mark.cpu_only
+@mock.patch.object(auto_resolution_cache, "generate_auto_resolution_cache_path")
 def test_cache_entry_retrieval_when_cache_file_does_not_exist(
     generate_auto_resolution_cache_path_mock: MagicMock,
     empty_local_dir: str,

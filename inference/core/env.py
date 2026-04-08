@@ -1,4 +1,5 @@
 import os
+import platform
 import uuid
 import warnings
 from typing import Optional
@@ -218,18 +219,31 @@ FLORENCE2_ENABLED = str2bool(os.getenv("FLORENCE2_ENABLED", True))
 
 SAM3_3D_OBJECTS_ENABLED = str2bool(os.getenv("SAM3_3D_OBJECTS_ENABLED", False))
 
+GLM_OCR_ENABLED = str2bool(os.getenv("GLM_OCR_ENABLED", True))
+
 # Flag to enable YOLO-World core model, default is True
 CORE_MODEL_YOLO_WORLD_ENABLED = str2bool(
     os.getenv("CORE_MODEL_YOLO_WORLD_ENABLED", True)
 )
 
 # Enable experimental RFDETR backend (inference_models) rollout, default is True
-USE_INFERENCE_MODELS = str2bool(os.getenv("USE_INFERENCE_MODELS", "False"))
+_PLATFORM_SPECIFIC_USE_INFERENCE_MODELS_DEFAULT = (
+    "False" if platform.system() == "Windows" else "True"
+)
+USE_INFERENCE_MODELS = str2bool(
+    os.getenv("USE_INFERENCE_MODELS", _PLATFORM_SPECIFIC_USE_INFERENCE_MODELS_DEFAULT)
+)
 ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES = str2bool(
     os.getenv("ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES", "False")
 )
 ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES = str2bool(
     os.getenv("ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES", "False")
+)
+MAX_INFERENCE_MODELS_CACHE_SIZE_MB = int(
+    os.getenv("MAX_INFERENCE_MODELS_CACHE_SIZE_MB", "-1")
+)
+INFERENCE_MODELS_CACHE_WATCHDOG_INTERVAL_MINUTES = int(
+    os.getenv("INFERENCE_MODELS_CACHE_WATCHDOG_INTERVAL_MINUTES", "60")
 )
 
 # ID of host device, default is None
@@ -242,6 +256,16 @@ USE_PYTORCH_FOR_PREPROCESSING = str2bool(
 
 # Flag to disable inference cache, default is False
 DISABLE_INFERENCE_CACHE = str2bool(os.getenv("DISABLE_INFERENCE_CACHE", False))
+
+# Cache backend used by inference model-monitoring pingback data.
+# "default" follows the normal cache selection (Redis when configured,
+# otherwise MemoryCache). "memory" forces process-local buffering to keep
+# Redis off the inference hot path.
+MODEL_MONITORING_CACHE_BACKEND = os.getenv(
+    "MODEL_MONITORING_CACHE_BACKEND", "default"
+).lower()
+if MODEL_MONITORING_CACHE_BACKEND not in {"default", "memory"}:
+    raise ValueError("MODEL_MONITORING_CACHE_BACKEND must be one of: default, memory")
 
 # Flag to disable auto-orientation preprocessing, default is False
 DISABLE_PREPROC_AUTO_ORIENT = str2bool(os.getenv("DISABLE_PREPROC_AUTO_ORIENT", False))
@@ -381,6 +405,19 @@ MODELS_CACHE_AUTH_CACHE_TTL = int(os.getenv("MODELS_CACHE_AUTH_CACHE_TTL", 15 * 
 # Models cache auth cache max size, default is 100_000_000 (0 DOES NOT MAKE IT UNLIMITED)
 MODELS_CACHE_AUTH_CACHE_MAX_SIZE = int(
     os.getenv("MODELS_CACHE_AUTH_CACHE_MAX_SIZE", 100_000_000)
+)
+
+# --- OpenTelemetry tracing ---
+OTEL_TRACING_ENABLED = str2bool(os.getenv("OTEL_TRACING_ENABLED", "False"))
+OTEL_SERVICE_NAME = os.getenv("OTEL_SERVICE_NAME", "inference-server")
+OTEL_EXPORTER_PROTOCOL = os.getenv("OTEL_EXPORTER_PROTOCOL", "grpc")  # "grpc" or "http"
+OTEL_EXPORTER_ENDPOINT = os.getenv("OTEL_EXPORTER_ENDPOINT", "localhost:4317")
+OTEL_SAMPLING_RATE = float(os.getenv("OTEL_SAMPLING_RATE", "1.0"))
+OTEL_TRACE_EXPORT_INTERVAL_MS = int(os.getenv("OTEL_TRACE_EXPORT_INTERVAL_MS", "5000"))
+OTEL_METRICS_ENABLED = str2bool(os.getenv("OTEL_METRICS_ENABLED", "True"))
+OTEL_METRIC_EXPORTER_ENDPOINT = os.getenv("OTEL_METRIC_EXPORTER_ENDPOINT", "")
+OTEL_METRIC_EXPORT_INTERVAL_MS = int(
+    os.getenv("OTEL_METRIC_EXPORT_INTERVAL_MS", "10000")
 )
 
 # Metrics enabled flag, default is True
@@ -571,6 +608,14 @@ HOSTED_INSTANCE_SEGMENTATION_URL = os.getenv(
         "https://outline.roboflow.com"
         if PROJECT == "roboflow-platform"
         else "https://lambda-instance-segmentation.staging.roboflow.com"
+    ),
+)
+HOSTED_SEMANTIC_SEGMENTATION_URL = os.getenv(
+    "HOSTED_SEMANTIC_SEGMENTATION_URL",
+    (
+        "https://segment.roboflow.com"
+        if PROJECT == "roboflow-platform"
+        else "https://lambda-semantic-segmentation.staging.roboflow.com"
     ),
 )
 HOSTED_CLASSIFICATION_URL = os.getenv(
@@ -844,6 +889,31 @@ WEBRTC_MODAL_PUBLIC_STUN_SERVERS = os.getenv(
 WEBRTC_MODAL_USAGE_QUOTA_ENABLED = str2bool(
     os.getenv("WEBRTC_MODAL_USAGE_QUOTA_ENABLED", "False")
 )
+
+#
+# Workspace stream quota
+#
+# Redis-base rate limiting that disables more than N concurrent
+# connections from a single workspace
+WEBRTC_WORKSPACE_STREAM_QUOTA_ENABLED = str2bool(
+    os.getenv("WEBRTC_WORKSPACE_STREAM_QUOTA_ENABLED", "False")
+)
+WEBRTC_WORKSPACE_STREAM_QUOTA = int(os.getenv("WEBRTC_WORKSPACE_STREAM_QUOTA", "10"))
+# TTL in seconds for active stream entries (auto-expire if no explicit cleanup)
+WEBRTC_WORKSPACE_STREAM_TTL_SECONDS = int(
+    os.getenv("WEBRTC_WORKSPACE_STREAM_TTL_SECONDS", "60")
+)
+# URL for Modal to send session heartbeats to keep session alive
+# Example: "https://serverless.roboflow.com/webrtc/session/heartbeat"
+WEBRTC_SESSION_HEARTBEAT_URL = os.getenv(
+    "WEBRTC_SESSION_HEARTBEAT_URL",
+    None,
+)
+# How often Modal sends session heartbeats (in seconds)
+WEBRTC_SESSION_HEARTBEAT_INTERVAL_SECONDS = int(
+    os.getenv("WEBRTC_SESSION_HEARTBEAT_INTERVAL_SECONDS", "30")
+)
+
 WEBRTC_DATA_CHANNEL_BUFFER_DRAINING_DELAY = float(
     os.getenv("WEBRTC_DATA_CHANNEL_BUFFER_DRAINING_DELAY", "0.1")
 )

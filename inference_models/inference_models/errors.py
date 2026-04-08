@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import List, Optional
 
 
 class BaseInferenceModelsError(Exception):
@@ -106,7 +106,19 @@ class ModelLoadingError(BaseInferenceModelsError):
 
 
 class ModelPackageAlternativesExhaustedError(ModelLoadingError):
-    pass
+
+    def __init__(
+        self,
+        message: str,
+        help_url: Optional[str] = None,
+        alternatives_errors: Optional[List[Exception]] = None,
+    ):
+        super().__init__(message, help_url)
+        self._alternatives_errors = alternatives_errors
+
+    @property
+    def alternatives_errors(self) -> Optional[List[Exception]]:
+        return self._alternatives_errors
 
 
 class MissingModelInitParameterError(ModelLoadingError):
@@ -134,6 +146,10 @@ class ModelImplementationNotFoundError(ModelLoadingError):
 
 
 class CorruptedModelPackageError(ModelLoadingError):
+    pass
+
+
+class ModelPackageRestrictedError(ModelLoadingError):
     pass
 
 

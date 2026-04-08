@@ -265,26 +265,26 @@ def test_add_inference_keypoints_to_sv_detections() -> None:
         result["keypoints_class_name"][0] == np.array(["a", "b"])
     ).all(), "There are two keypoints for first object, with classes a and b"
     assert (
-        result["keypoints_class_name"][1] == np.array([])
-    ).all(), "There are no keypoints for second object"
+        result["keypoints_class_name"][1] == np.array(["", ""])
+    ).all(), "No keypoints for second object, padded with empty strings"
     assert (
         result["keypoints_class_id"][0] == np.array([1, 0])
     ).all(), "There are two keypoints for first object, with ids 1 and 0"
     assert (
-        result["keypoints_class_id"][1] == np.array([])
-    ).all(), "There are no keypoints for second object"
+        result["keypoints_class_id"][1] == np.array([0, 0])
+    ).all(), "No keypoints for second object, padded with zeros"
     assert (
         result["keypoints_confidence"][0] == np.array([0.3, 0.4], dtype=np.float32)
     ).all(), "There are two keypoints for first object, with confidences 0.3 and 0.4"
     assert (
-        result["keypoints_confidence"][1] == np.array([])
-    ).all(), "There are no keypoints for second object"
+        result["keypoints_confidence"][1] == np.array([0.0, 0.0], dtype=np.float32)
+    ).all(), "No keypoints for second object, padded with zeros"
     assert (
         result["keypoints_xy"][0] == np.array([[10, 20], [20, 30]])
     ).all(), "There are two keypoints for first object, with specific coordinates"
     assert (
-        result["keypoints_xy"][1] == np.array([])
-    ).all(), "There are no keypoints for second object"
+        result["keypoints_xy"][1] == np.array([[0, 0], [0, 0]])
+    ).all(), "No keypoints for second object, padded with zeros"
 
 
 def test_add_inference_keypoints_to_sv_detections_when_mismatched_data_provided() -> (

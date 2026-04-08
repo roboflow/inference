@@ -32,6 +32,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     Selector,
 )
 from inference.core.workflows.prototypes.block import (
+    AirGappedAvailability,
     BlockResult,
     WorkflowBlock,
     WorkflowBlockManifest,
@@ -94,7 +95,7 @@ class BlockManifest(WorkflowBlockManifest):
     )
     openai_model: Union[
         Selector(kind=[STRING_KIND]),
-        Literal["gpt-4o", "gpt-4o-mini", "gpt-5.4"],
+        Literal["gpt-4o", "gpt-4o-mini", "gpt-5.4", "gpt-5.4-mini", "gpt-5.4-nano"],
     ] = Field(
         default="gpt-4o",
         description="Model to be used",
@@ -120,6 +121,10 @@ class BlockManifest(WorkflowBlockManifest):
         description="Maximum number of tokens the model can generate in it's response.",
         examples=[450],
     )
+
+    @classmethod
+    def get_air_gapped_availability(cls) -> AirGappedAvailability:
+        return AirGappedAvailability(available=False, reason="requires_internet")
 
     @classmethod
     def get_parameters_accepting_batches(cls) -> List[str]:

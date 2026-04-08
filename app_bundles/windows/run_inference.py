@@ -164,7 +164,7 @@ if __name__ == "__main__":
 
     async def _serve_with_banner():
         port = int(os.environ.get("PORT", "9001"))
-        url = f"http://localhost:{port}/"
+        url = f"http://127.0.0.1:{port}/"
         
         # Configure access log filtering
         access_logger = logging.getLogger("uvicorn.access")
@@ -199,7 +199,7 @@ if __name__ == "__main__":
             "─────────────────────────────────────────────────────────── \n"
             "                                                           \n"
             "  Roboflow Inference is ready                              \n"
-            f"  Dashboard: {url:<44} │\n"
+            f"  Dashboard: {url:<44} (since IPv6 is attempted first when making requests, please use this address instead of localhost)\n"
             "                                                           \n"
             "───────────────────────────────────────────────────────────\n"
         )

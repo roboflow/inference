@@ -7,9 +7,7 @@ These tests ensure that generated Markdown docs do not contain raw
 
 from jinja2 import Environment
 
-from development.docs.build_block_docs import (
-    _escape_jinja2_expressions,
-)
+from development.docs.build_block_docs import _escape_jinja2_expressions
 
 jinja_env = Environment()
 

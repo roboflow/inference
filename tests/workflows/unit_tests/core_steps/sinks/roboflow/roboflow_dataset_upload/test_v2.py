@@ -596,5 +596,11 @@ def test_run_sink_with_metadata_parameter(
 
     # Verify metadata was passed to both calls
     calls = register_datapoint_at_roboflow_mock.call_args_list
-    assert calls[0].kwargs["metadata"] == {"camera_id": "cam_01", "location": "warehouse_a"}
-    assert calls[1].kwargs["metadata"] == {"camera_id": "cam_01", "location": "warehouse_a"}
+    assert calls[0].kwargs["metadata"] == {
+        "camera_id": "cam_01",
+        "location": "warehouse_a",
+    }
+    assert calls[1].kwargs["metadata"] == {
+        "camera_id": "cam_01",
+        "location": "warehouse_a",
+    }

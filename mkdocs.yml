@@ -104,6 +104,7 @@ nav:
           - Depth Estimation (Depth Anything V2 Small): foundation/depth_estimation.md
           - Florence-2: foundation/florence2.md
           - TrOCR (OCR): foundation/trocr.md
+          - GLM-OCR (OCR): foundation/glm_ocr.md
           - Grounding DINO (Object Detection): foundation/grounding_dino.md
           - L2CS-Net (Gaze Detection): foundation/gaze.md
           - Moondream2: foundation/moondream2.md
@@ -132,11 +133,6 @@ nav:
         - Video Processing: workflows/video_processing/overview.md
       - Examples: workflows/gallery/
       - Block Gallery: workflows/blocks/
-      - Batch Processing:
-          - User Guide: workflows/batch_processing/about.md
-          - Integration: workflows/batch_processing/integration.md
-          - Debugging: workflows/batch_processing/known_issues.md
-          - API Reference: workflows/batch_processing/api_reference.md
       - Developer Guide:
         - Workflows Definitions: workflows/definitions.md
         - Workflow Execution: workflows/workflow_execution.md
@@ -148,10 +144,14 @@ nav:
         - Data Representations: workflows/internal_data_types.md
         - Versioning: workflows/versioning.md
         - Testing: workflows/testing.md
+        - Workflow Profiling: workflows/workflow_profiling.md
         - Schema API: workflows/schema_api.md
         - Changelog: workflows/execution_engine_changelog.md
       - Benchmarks: workflows/benchmarks.md
+      - Community Plugins: workflows/community_plugins.md
+      - "Deploy a Workflow »": "https://docs.roboflow.com/workflows/deploy-a-workflow"
   - Reference:
+      - Overview: reference/overview.md
       - Inference SDK:
           - About: inference_helpers/inference_sdk.md
           - Configuration: inference_helpers/inference_sdk/configuration.md

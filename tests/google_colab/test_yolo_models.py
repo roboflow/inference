@@ -105,7 +105,7 @@ def test_yolov10n_object_detection_inference(reference_image: np.ndarray) -> Non
     model = get_model("yolov10n-640")
 
     # when
-    result_raw = model.infer(reference_image)[0]
+    result_raw = model.infer(reference_image, confidence=0.2)[0]
     result = sv.Detections.from_inference(result_raw)
 
     # then

@@ -7,6 +7,7 @@ from inference.core.env import USE_INFERENCE_MODELS, WORKFLOWS_MAX_CONCURRENT_ST
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.errors import (
+    DynamicBlockCodeError,
     DynamicBlockError,
     WorkflowEnvironmentConfigurationError,
 )
@@ -801,7 +802,7 @@ def test_workflow_with_custom_python_block_when_code_cannot_be_compiled(
     }
 
     # when
-    with pytest.raises(DynamicBlockError):
+    with pytest.raises(DynamicBlockCodeError):
         _ = ExecutionEngine.init(
             workflow_definition=WORKFLOW_WITH_CODE_THAT_DOES_NOT_COMPILE,
             init_parameters=workflow_init_parameters,
