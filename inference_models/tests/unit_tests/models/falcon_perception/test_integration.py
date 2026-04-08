@@ -37,6 +37,8 @@ def small_config():
     return FalconPerceptionConfig(
         hidden_dim=64,
         num_heads=4,
+        num_kv_heads=2,
+        head_dim=16,
         num_layers=2,
         ffn_hidden_dim=128,
         vocab_size=256,

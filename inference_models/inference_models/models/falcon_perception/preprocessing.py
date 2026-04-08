@@ -16,9 +16,9 @@ from tokenizers import Tokenizer
 
 from inference_models.models.falcon_perception.config import FalconPerceptionConfig
 
-# ImageNet normalization
-IMAGENET_MEAN = [0.485, 0.456, 0.406]
-IMAGENET_STD = [0.229, 0.224, 0.225]
+# Falcon Perception uses 0.5/0.5 normalization (not ImageNet stats)
+DEFAULT_IMAGE_MEAN = [0.5, 0.5, 0.5]
+DEFAULT_IMAGE_STD = [0.5, 0.5, 0.5]
 
 
 @dataclass
@@ -151,20 +151,30 @@ def pad_to_patch_multiple(
     return image, pad_h, pad_w
 
 
-def normalize_image(image: np.ndarray) -> torch.Tensor:
-    """Normalize image to ImageNet stats and convert to tensor.
+def normalize_image(
+    image: np.ndarray,
+    mean: tuple = None,
+    std: tuple = None,
+) -> torch.Tensor:
+    """Normalize image and convert to tensor.
 
     Args:
         image: (H, W, 3) uint8 RGB image.
+        mean: Per-channel mean (default: 0.5, 0.5, 0.5).
+        std: Per-channel std (default: 0.5, 0.5, 0.5).
 
     Returns:
         (3, H, W) float32 tensor, normalized.
     """
+    if mean is None:
+        mean = DEFAULT_IMAGE_MEAN
+    if std is None:
+        std = DEFAULT_IMAGE_STD
     tensor = torch.from_numpy(image).float() / 255.0
     tensor = tensor.permute(2, 0, 1)  # (3, H, W)
-    mean = torch.tensor(IMAGENET_MEAN, dtype=torch.float32).view(3, 1, 1)
-    std = torch.tensor(IMAGENET_STD, dtype=torch.float32).view(3, 1, 1)
-    return (tensor - mean) / std
+    mean_t = torch.tensor(list(mean), dtype=torch.float32).view(3, 1, 1)
+    std_t = torch.tensor(list(std), dtype=torch.float32).view(3, 1, 1)
+    return (tensor - mean_t) / std_t
 
 
 def preprocess_image(
@@ -187,7 +197,7 @@ def preprocess_image(
     original_h, original_w = image.shape[:2]
     resized, new_h, new_w = resize_image_preserve_aspect(image, config.max_image_size)
     padded, pad_h, pad_w = pad_to_patch_multiple(resized, config.patch_size)
-    pixel_values = normalize_image(padded)
+    pixel_values = normalize_image(padded, mean=config.image_mean, std=config.image_std)
 
     h_patches = (new_h + pad_h) // config.patch_size
     w_patches = (new_w + pad_w) // config.patch_size

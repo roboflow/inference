@@ -25,6 +25,8 @@ def small_config():
     return FalconPerceptionConfig(
         hidden_dim=64,
         num_heads=4,
+        num_kv_heads=2,
+        head_dim=16,
         num_layers=2,
         ffn_hidden_dim=128,
         vocab_size=256,
@@ -77,18 +79,17 @@ class TestGoldenGateRoPE:
             device=torch.device("cpu"),
             dtype=torch.float32,
         )
-        head_dim = small_config.hidden_dim // small_config.num_heads
-        assert cos.shape == (1, 20, head_dim)
-        assert sin.shape == (1, 20, head_dim)
+        assert cos.shape == (1, 20, small_config.head_dim)
+        assert sin.shape == (1, 20, small_config.head_dim)
 
 
 class TestHybridAttention:
     def test_output_shape(self, small_config):
         attn = HybridAttention(small_config)
         x = torch.randn(2, 10, small_config.hidden_dim)
-        head_dim = small_config.hidden_dim // small_config.num_heads
-        cos = torch.ones(1, 10, head_dim)
-        sin = torch.zeros(1, 10, head_dim)
+        hd = small_config.head_dim
+        cos = torch.ones(1, 10, hd)
+        sin = torch.zeros(1, 10, hd)
         mask = torch.ones(2, 1, 10, 10, dtype=torch.bool)
         out, kv_cache = attn(x, cos, sin, mask)
         assert out.shape == x.shape
@@ -97,9 +98,9 @@ class TestHybridAttention:
     def test_kv_cache_extension(self, small_config):
         attn = HybridAttention(small_config)
         x = torch.randn(1, 5, small_config.hidden_dim)
-        head_dim = small_config.hidden_dim // small_config.num_heads
-        cos = torch.ones(1, 5, head_dim)
-        sin = torch.zeros(1, 5, head_dim)
+        hd = small_config.head_dim
+        cos = torch.ones(1, 5, hd)
+        sin = torch.zeros(1, 5, hd)
         mask = torch.ones(1, 1, 5, 5, dtype=torch.bool)
 
         _, kv_cache = attn(x, cos, sin, mask)
@@ -107,8 +108,8 @@ class TestHybridAttention:
 
         # Extend with 1 more token
         x2 = torch.randn(1, 1, small_config.hidden_dim)
-        cos2 = torch.ones(1, 1, head_dim)
-        sin2 = torch.zeros(1, 1, head_dim)
+        cos2 = torch.ones(1, 1, hd)
+        sin2 = torch.zeros(1, 1, hd)
         mask2 = torch.ones(1, 1, 1, 6, dtype=torch.bool)
         _, kv_cache2 = attn(x2, cos2, sin2, mask2, kv_cache)
         assert kv_cache2[0].shape[2] == 6
@@ -118,9 +119,9 @@ class TestTransformerBlock:
     def test_output_shape(self, small_config):
         block = TransformerBlock(small_config)
         x = torch.randn(2, 10, small_config.hidden_dim)
-        head_dim = small_config.hidden_dim // small_config.num_heads
-        cos = torch.ones(1, 10, head_dim)
-        sin = torch.zeros(1, 10, head_dim)
+        hd = small_config.head_dim
+        cos = torch.ones(1, 10, hd)
+        sin = torch.zeros(1, 10, hd)
         mask = torch.ones(2, 1, 10, 10, dtype=torch.bool)
         out, _ = block(x, cos, sin, mask)
         assert out.shape == x.shape
@@ -202,9 +203,9 @@ class TestFalconPerceptionModel:
         model = FalconPerceptionModel(small_config)
         model.eval()
         hidden = torch.randn(1, 10, small_config.hidden_dim)
-        head_dim = small_config.hidden_dim // small_config.num_heads
-        cos = torch.ones(1, 10, head_dim)
-        sin = torch.zeros(1, 10, head_dim)
+        hd = small_config.head_dim
+        cos = torch.ones(1, 10, hd)
+        sin = torch.zeros(1, 10, hd)
         mask = torch.ones(1, 1, 10, 10, dtype=torch.bool)
 
         with torch.inference_mode():

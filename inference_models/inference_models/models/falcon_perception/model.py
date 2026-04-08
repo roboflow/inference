@@ -57,11 +57,13 @@ class GoldenGateRoPE(nn.Module):
 
     def __init__(self, config: FalconPerceptionConfig):
         super().__init__()
-        self.head_dim = config.hidden_dim // config.num_heads
+        self.head_dim = config.head_dim
         self.rope_theta = config.rope_theta
         self.alpha = config.gg_rope_alpha
 
-        # Split head_dim into 3 parts: 1D sequence + 2D spatial (h, w)
+        # Reference: first half of head_dim gets 1D temporal RoPE,
+        # second half gets 2D golden-gate spatial RoPE.
+        # We split into 3 parts for simplicity: 1D seq + 2D spatial (h, w)
         self.seq_dim = self.head_dim // 4
         self.spatial_dim = self.head_dim // 4  # per spatial axis
         # Remaining dims get no RoPE (passthrough)
@@ -166,33 +168,68 @@ class RMSNorm(nn.Module):
 
 
 class FeedForward(nn.Module):
-    """SwiGLU feed-forward network."""
+    """Squared-ReLU gated feed-forward network.
+
+    Gate and up projections are interleaved as [g0,u0,g1,u1,...] in the
+    reference implementation. Here we use separate projections for clarity.
+    Output = down_proj(relu(gate)^2 * up)
+    """
 
     def __init__(self, config: FalconPerceptionConfig):
         super().__init__()
-        self.w1 = nn.Linear(config.hidden_dim, config.ffn_hidden_dim, bias=False)
-        self.w2 = nn.Linear(config.ffn_hidden_dim, config.hidden_dim, bias=False)
-        self.w3 = nn.Linear(config.hidden_dim, config.ffn_hidden_dim, bias=False)
+        self.gate_proj = nn.Linear(config.hidden_dim, config.ffn_hidden_dim, bias=False)
+        self.up_proj = nn.Linear(config.hidden_dim, config.ffn_hidden_dim, bias=False)
+        self.down_proj = nn.Linear(config.ffn_hidden_dim, config.hidden_dim, bias=False)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.w2(F.silu(self.w1(x)) * self.w3(x))
+        gate = F.relu(self.gate_proj(x))
+        return self.down_proj(gate * gate * self.up_proj(x))
+
+
+def repeat_kv(x: torch.Tensor, n_rep: int) -> torch.Tensor:
+    """Repeat KV heads to match the number of query heads (for GQA).
+
+    Args:
+        x: (B, n_kv_heads, L, head_dim)
+        n_rep: Number of times to repeat each KV head.
+
+    Returns:
+        (B, n_kv_heads * n_rep, L, head_dim)
+    """
+    if n_rep == 1:
+        return x
+    B, n_kv_heads, L, head_dim = x.shape
+    x = x[:, :, None, :, :].expand(B, n_kv_heads, n_rep, L, head_dim)
+    return x.reshape(B, n_kv_heads * n_rep, L, head_dim)
 
 
 class HybridAttention(nn.Module):
-    """Multi-head attention with hybrid masking.
+    """Multi-head attention with hybrid masking and Grouped Query Attention.
 
     Image tokens attend bidirectionally to all tokens.
     Text/task tokens attend causally (only to previous tokens).
+    Uses GQA: fewer KV heads than query heads (default 8 vs 16).
+    Applies QK-norm (RMSNorm) to queries and keys before attention.
     """
 
     def __init__(self, config: FalconPerceptionConfig):
         super().__init__()
         self.num_heads = config.num_heads
-        self.head_dim = config.hidden_dim // config.num_heads
-        self.q_proj = nn.Linear(config.hidden_dim, config.hidden_dim, bias=False)
-        self.k_proj = nn.Linear(config.hidden_dim, config.hidden_dim, bias=False)
-        self.v_proj = nn.Linear(config.hidden_dim, config.hidden_dim, bias=False)
-        self.o_proj = nn.Linear(config.hidden_dim, config.hidden_dim, bias=False)
+        self.num_kv_heads = config.num_kv_heads
+        self.head_dim = config.head_dim
+        self.n_rep = self.num_heads // self.num_kv_heads
+
+        q_dim = self.num_heads * self.head_dim
+        kv_dim = self.num_kv_heads * self.head_dim
+
+        self.q_proj = nn.Linear(config.hidden_dim, q_dim, bias=False)
+        self.k_proj = nn.Linear(config.hidden_dim, kv_dim, bias=False)
+        self.v_proj = nn.Linear(config.hidden_dim, kv_dim, bias=False)
+        self.o_proj = nn.Linear(q_dim, config.hidden_dim, bias=False)
+
+        # QK-norm: RMS normalization on Q and K for training stability
+        self.q_norm = RMSNorm(self.head_dim, config.layer_norm_eps)
+        self.k_norm = RMSNorm(self.head_dim, config.layer_norm_eps)
 
     def forward(
         self,
@@ -204,13 +241,18 @@ class HybridAttention(nn.Module):
     ) -> Tuple[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
         B, L, _ = x.shape
         q = self.q_proj(x).view(B, L, self.num_heads, self.head_dim).transpose(1, 2)
-        k = self.k_proj(x).view(B, L, self.num_heads, self.head_dim).transpose(1, 2)
-        v = self.v_proj(x).view(B, L, self.num_heads, self.head_dim).transpose(1, 2)
+        k = self.k_proj(x).view(B, L, self.num_kv_heads, self.head_dim).transpose(1, 2)
+        v = self.v_proj(x).view(B, L, self.num_kv_heads, self.head_dim).transpose(1, 2)
+
+        # QK-norm
+        q = self.q_norm(q)
+        k = self.k_norm(k)
 
         # Apply RoPE
         cos_q = cos[:, -L:, :].unsqueeze(1)
         sin_q = sin[:, -L:, :].unsqueeze(1)
         q = apply_rotary_embedding(q, cos_q, sin_q)
+        # For GQA, RoPE is applied per KV head (same cos/sin, fewer heads)
         k = apply_rotary_embedding(k, cos_q, sin_q)
 
         # KV cache for autoregressive decoding
@@ -219,9 +261,13 @@ class HybridAttention(nn.Module):
             v = torch.cat([kv_cache[1], v], dim=2)
         new_kv_cache = (k, v)
 
+        # Expand KV heads to match query heads (GQA)
+        k_expanded = repeat_kv(k, self.n_rep)
+        v_expanded = repeat_kv(v, self.n_rep)
+
         # Scaled dot-product attention with mask
         scale = math.sqrt(self.head_dim)
-        attn_weights = torch.matmul(q, k.transpose(-2, -1)) / scale
+        attn_weights = torch.matmul(q, k_expanded.transpose(-2, -1)) / scale
 
         if attention_mask is not None:
             # attention_mask: (B, 1, L_q, L_kv) where False means masked
@@ -230,7 +276,7 @@ class HybridAttention(nn.Module):
         attn_weights = F.softmax(attn_weights, dim=-1, dtype=torch.float32).to(
             q.dtype
         )
-        attn_output = torch.matmul(attn_weights, v)
+        attn_output = torch.matmul(attn_weights, v_expanded)
         attn_output = attn_output.transpose(1, 2).contiguous().view(B, L, -1)
         return self.o_proj(attn_output), new_kv_cache
 
@@ -258,34 +304,43 @@ class TransformerBlock(nn.Module):
         return x, new_kv_cache
 
 
-class CoordinateHead(nn.Module):
+class BboxDecoder(nn.Module):
+    """Two-layer MLP with squared-ReLU activation for bbox bin prediction.
+
+    Matches the reference BboxDecoder: hidden_dim -> ffn -> relu^2 -> out_dim.
+    Output is split in half for the two axes (x/y or w/h).
+    """
+
+    def __init__(self, config: FalconPerceptionConfig, out_bins: int):
+        super().__init__()
+        total_out = out_bins * 2  # Combined x+y or w+h
+        ffn_dim = config.hidden_dim * 2
+        self.fc1 = nn.Linear(config.hidden_dim, ffn_dim, bias=False)
+        self.fc2 = nn.Linear(ffn_dim, total_out, bias=False)
+        self.out_bins = out_bins
+
+    def forward(
+        self, hidden_state: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Returns logits for both axes. Input: (B, D), Output: (B, bins), (B, bins)."""
+        h = F.relu(self.fc1(hidden_state))
+        h = h * h  # squared ReLU
+        logits = self.fc2(h)
+        return logits[..., : self.out_bins], logits[..., self.out_bins :]
+
+
+class CoordinateHead(BboxDecoder):
     """Predicts center (x, y) as two 1024-bin discrete classifications."""
 
     def __init__(self, config: FalconPerceptionConfig):
-        super().__init__()
-        self.x_head = nn.Linear(config.hidden_dim, config.coord_bins)
-        self.y_head = nn.Linear(config.hidden_dim, config.coord_bins)
-
-    def forward(
-        self, hidden_state: torch.Tensor
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
-        """Returns logits for x and y bins. Input: (B, D), Output: (B, bins) each."""
-        return self.x_head(hidden_state), self.y_head(hidden_state)
+        super().__init__(config, config.coord_bins)
 
 
-class SizeHead(nn.Module):
+class SizeHead(BboxDecoder):
     """Predicts width/height as two 1024-bin discrete classifications (log-scale)."""
 
     def __init__(self, config: FalconPerceptionConfig):
-        super().__init__()
-        self.w_head = nn.Linear(config.hidden_dim, config.size_bins)
-        self.h_head = nn.Linear(config.hidden_dim, config.size_bins)
-
-    def forward(
-        self, hidden_state: torch.Tensor
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
-        """Returns logits for w and h bins. Input: (B, D), Output: (B, bins) each."""
-        return self.w_head(hidden_state), self.h_head(hidden_state)
+        super().__init__(config, config.size_bins)
 
 
 class AnyUpBlock(nn.Module):
