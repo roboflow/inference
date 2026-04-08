@@ -113,7 +113,7 @@ def test_serverless_auth_middleware_allows_authorized_key_and_caches(
         monkeypatch=monkeypatch,
         usage_check_result=ServerlessUsageCheckResponse(
             status_code=200,
-            workspace_id="workspace-1",
+            workspace_id="rf-inference-benchmark",
             under_cap=True,
         ),
     )
@@ -132,8 +132,8 @@ def test_serverless_auth_middleware_allows_authorized_key_and_caches(
 
     assert first_response.status_code == 200
     assert second_response.status_code == 200
-    assert first_response.headers[WORKSPACE_ID_HEADER] == "workspace-1"
-    assert second_response.headers[WORKSPACE_ID_HEADER] == "workspace-1"
+    assert first_response.headers[WORKSPACE_ID_HEADER] == "rf-inference-benchmark"
+    assert second_response.headers[WORKSPACE_ID_HEADER] == "rf-inference-benchmark"
     assert usage_check_mock.await_count == 1
 
 
@@ -174,7 +174,7 @@ def test_serverless_auth_middleware_caches_payment_required_response(
         monkeypatch=monkeypatch,
         usage_check_result=ServerlessUsageCheckResponse(
             status_code=402,
-            workspace_id="workspace-1",
+            workspace_id="rf-inference-benchmark",
             under_cap=False,
             error="Workspace is billing-restricted.",
         ),

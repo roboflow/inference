@@ -342,9 +342,12 @@ async def get_serverless_usage_check_async(
                     return ServerlessUsageCheckResponse(status_code=401)
                 if response.status == 402:
                     response_payload = await response.json()
+                    workspace = response_payload.get("workspace") or response_payload.get(
+                        "workspaceId"
+                    )
                     return ServerlessUsageCheckResponse(
                         status_code=402,
-                        workspace_id=response_payload.get("workspaceId"),
+                        workspace_id=workspace,
                         under_cap=response_payload.get("underCap"),
                         error=response_payload.get("error"),
                     )
@@ -357,7 +360,9 @@ async def get_serverless_usage_check_async(
                         ) from error
                     raise error
                 response_payload = await response.json()
-                workspace_id = response_payload.get("workspaceId")
+                workspace_id = response_payload.get("workspace") or response_payload.get(
+                    "workspaceId"
+                )
                 if workspace_id is None or response_payload.get("underCap") is not True:
                     raise WorkspaceLoadError(
                         "Unexpected serverless usage-check response received from Roboflow API."

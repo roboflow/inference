@@ -495,7 +495,8 @@ async def test_get_serverless_usage_check_async_when_workspace_is_billing_restri
         request_mock.get(
             f"{API_BASE_URL}/serverless/usage-check?api_key=my_api_key&nocache=true",
             payload={
-                "workspaceId": "my-workspace",
+                "workspaceId": "workspace-db-id",
+                "workspace": "my-workspace",
                 "underCap": False,
                 "error": "Workspace billing is restricted.",
             },
@@ -520,7 +521,11 @@ async def test_get_serverless_usage_check_async_when_response_is_valid() -> None
     with aioresponses() as request_mock:
         request_mock.get(
             f"{API_BASE_URL}/serverless/usage-check?api_key=my_api_key&nocache=true",
-            payload={"workspaceId": "my_workspace", "underCap": True},
+            payload={
+                "workspaceId": "workspace-db-id",
+                "workspace": "my_workspace",
+                "underCap": True,
+            },
         )
 
         result = await get_serverless_usage_check_async(api_key="my_api_key")
