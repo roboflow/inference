@@ -3,8 +3,8 @@ import concurrent
 import logging
 import os
 import re
-from dataclasses import dataclass
 from concurrent.futures import CancelledError, Future, ThreadPoolExecutor
+from dataclasses import dataclass
 from functools import partial
 from threading import Lock, Thread
 from time import sleep
