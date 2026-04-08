@@ -95,6 +95,26 @@ ALL_DATA_SCHEMAS_RELEVANT = {
 
 
 class BlockManifest(WorkflowBlockManifest):
+    """Manifest for the Event Writer sink block.
+
+    Sends structured events to the Event Ingestion Service via its v2 API
+    (``POST /v2/events``). Each event includes an event schema, schema-specific
+    data, one image entry with optional annotations, and optional flat
+    key-value custom metadata.
+
+    Supported event schemas:
+
+    - ``quality_check``: pass/fail inspection results with an optional external ID.
+    - ``inventory_count``: item counts at a location with item type and external ID.
+    - ``safety_alert``: safety incidents with alert type, severity
+      (low/medium/high), description, and external ID.
+    - ``custom``: free-form events with an arbitrary value string and external ID.
+
+    Authentication is controlled by the ``EVENT_INGESTION_API_KEY`` environment
+    variable on the inference server. When set, requests include an
+    ``X-API-Key`` header.
+    """
+
     model_config = ConfigDict(
         json_schema_extra={
             "name": "Event Writer",
@@ -294,6 +314,31 @@ class BlockManifest(WorkflowBlockManifest):
 
 
 class EventWriterSinkBlockV1(WorkflowBlock):
+    """Event Writer sink block for sending structured events to the Event Ingestion Service.
+
+    The block builds a v2 event payload containing the selected event schema,
+    schema-specific data fields, one image entry (with optional input image and
+    model-prediction annotations), and optional custom metadata. It then POSTs
+    the payload to ``{event_ingestion_url}/v2/events``.
+
+    Two execution modes are available:
+
+    - **Fire-and-forget** (``fire_and_forget=True``, default): the HTTP request
+      runs in a background task so the workflow continues immediately. The
+      ``event_id`` output will be empty.
+    - **Synchronous** (``fire_and_forget=False``): the block waits for the
+      response and returns the created ``event_id``.
+
+    The service may return a 529 status when the device is under backpressure
+    (local storage full, waiting for cloud uploads). Use the Rate Limiter block
+    upstream to control send frequency.
+
+    Outputs:
+
+    - ``error_status`` (bool): True when the request failed.
+    - ``event_id`` (str): UUID of the created event (empty in fire-and-forget mode).
+    - ``message`` (str): Human-readable status or error description.
+    """
 
     def __init__(
         self,
@@ -336,6 +381,47 @@ class EventWriterSinkBlockV1(WorkflowBlock):
         instance_segmentations: Optional[Any] = None,
         keypoint_detections: Optional[Any] = None,
     ) -> BlockResult:
+        """Build and send a v2 event to the Event Ingestion Service.
+
+        Args:
+            event_ingestion_url: Base URL of the Event Ingestion Service
+                (e.g. ``http://localhost:8001``).
+            event_schema: One of ``quality_check``, ``inventory_count``,
+                ``safety_alert``, or ``custom``.
+            output_image: The output/visualization image sent as the primary
+                display image (``base64Image``).
+            fire_and_forget: When True the request is dispatched in the
+                background and ``event_id`` will be empty.
+            disable_sink: When True the block is skipped entirely.
+            request_timeout: HTTP request timeout in seconds.
+            input_image: Optional original input image sent as
+                ``inputBase64Image`` for annotation overlay.
+            image_label: Optional label for the image entry.
+            custom_metadata: Flat key-value metadata (max 100 keys, values
+                must be str/int/float/bool, string values max 1000 chars).
+            qc_result: ``pass`` or ``fail`` (quality_check schema).
+            external_id: Correlation identifier for external systems
+                (max 1000 chars, used by all schemas).
+            location: Location identifier (inventory_count schema).
+            item_count: Number of items counted (inventory_count schema).
+            item_type: Type of item counted (inventory_count schema).
+            alert_type: Alert type identifier, alphanumeric with underscores
+                and hyphens (safety_alert schema).
+            severity: ``low``, ``medium``, or ``high`` (safety_alert schema).
+            alert_description: Description of the alert, max 10000 chars
+                (safety_alert schema).
+            custom_value: Arbitrary value, max 10000 chars (custom schema).
+            object_detections: Supervision Detections to attach as object
+                detection annotations (center-based absolute pixel coords).
+            classifications: Classification predictions to attach.
+            instance_segmentations: Supervision Detections with masks to
+                attach as instance segmentation annotations.
+            keypoint_detections: Keypoint detection predictions to attach.
+
+        Returns:
+            dict: A dictionary with ``error_status`` (bool), ``event_id``
+            (str), and ``message`` (str).
+        """
         if disable_sink:
             return {
                 "error_status": False,
