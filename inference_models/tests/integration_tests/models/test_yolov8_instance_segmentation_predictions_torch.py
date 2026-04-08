@@ -27,6 +27,7 @@ def test_torchscript_package_with_static_batch_size_and_stretch_numpy(
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -69,6 +70,7 @@ def test_torchscript_package_with_static_batch_size_and_stretch_batch_numpy(
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -128,6 +130,7 @@ def test_torchscript_package_with_static_batch_size_and_stretch_torch(
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -170,6 +173,7 @@ def test_torchscript_package_with_static_batch_size_and_stretch_batch_torch(
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -229,6 +233,7 @@ def test_torchscript_package_with_static_batch_size_and_stretch_list_torch(
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -288,6 +293,7 @@ def test_torchscript_package_with_static_batch_size_and_stretch_fused_nms_numpy(
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -330,6 +336,7 @@ def test_torchscript_package_with_static_batch_size_and_stretch_fused_nms_batch_
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -389,6 +396,7 @@ def test_torchscript_package_with_static_batch_size_and_stretch_fused_nms_torch(
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -431,6 +439,7 @@ def test_torchscript_package_with_static_batch_size_and_stretch_fused_nms_batch_
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -490,6 +499,7 @@ def test_torchscript_package_with_static_batch_size_and_stretch_fused_nms_list_t
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -549,6 +559,7 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_nump
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -591,6 +602,7 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_batc
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -650,6 +662,7 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_stretch_torc
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -692,6 +705,7 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_stretch_batc
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -751,6 +765,7 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_stretch_list
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -810,6 +825,7 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_fuse
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -852,6 +868,7 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_fuse
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -911,6 +928,7 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_stretch_fuse
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -953,6 +971,7 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_stretch_fuse
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -1012,6 +1031,7 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_stretch_fuse
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -1071,6 +1091,7 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_nump
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -1113,6 +1134,7 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_batc
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -1172,6 +1194,7 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_stretch_torc
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -1214,6 +1237,7 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_stretch_batc
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -1273,6 +1297,7 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_stretch_list
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -1332,6 +1357,7 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_fuse
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -1374,6 +1400,7 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_fuse
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -1433,6 +1460,7 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_stretch_fuse
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -1475,6 +1503,7 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_stretch_fuse
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -1534,6 +1563,7 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_stretch_fuse
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -1593,6 +1623,7 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_center_crop_
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -1635,6 +1666,7 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_center_crop_
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -1694,6 +1726,7 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_center_crop_
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -1736,6 +1769,7 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_center_crop_
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -1795,6 +1829,7 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_center_crop_
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -1854,6 +1889,7 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_numpy(
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -1896,6 +1932,7 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_batch_numpy(
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -1955,6 +1992,7 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_torch(
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -1997,6 +2035,7 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_batch_torch(
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -2056,6 +2095,7 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_list_torch(
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -2115,6 +2155,7 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_letterbox_cr
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -2159,6 +2200,7 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_letterbox_ba
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -2220,6 +2262,7 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_letterbox_cr
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -2264,6 +2307,7 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_letterbox_ba
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -2325,6 +2369,7 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_letterbox_li
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then

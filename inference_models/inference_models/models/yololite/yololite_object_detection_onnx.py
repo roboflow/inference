@@ -200,11 +200,18 @@ class YOLOLiteForObjectDetectionOnnx(
         **kwargs,
     ) -> List[Detections]:
         # Backward compatibility: earlier model packages have no post_processing config — always unfused 3-tensor output
-        if self._inference_config.post_processing and self._inference_config.post_processing.fused:
+        if (
+            self._inference_config.post_processing
+            and self._inference_config.post_processing.fused
+        ):
             nms_results = self._post_process_fused(model_results, confidence)
         else:
             nms_results = self._post_process_unfused(
-                model_results, confidence, iou_threshold, max_detections, class_agnostic_nms,
+                model_results,
+                confidence,
+                iou_threshold,
+                max_detections,
+                class_agnostic_nms,
             )
         rescaled_results = rescale_detections(
             detections=nms_results,
@@ -228,7 +235,9 @@ class YOLOLiteForObjectDetectionOnnx(
     ) -> List[torch.Tensor]:
         # Single output tensor [B, max_det, 6]: x1, y1, x2, y2, conf, class_id
         output = model_results[0]
-        return post_process_nms_fused_model_output(output=output, conf_thresh=confidence)
+        return post_process_nms_fused_model_output(
+            output=output, conf_thresh=confidence
+        )
 
     def _post_process_unfused(
         self,
@@ -240,7 +249,9 @@ class YOLOLiteForObjectDetectionOnnx(
     ) -> List[torch.Tensor]:
         # Decoded outputs without fused NMS: boxes_xyxy [B,N,4], obj_logits [B,N,1], cls_logits [B,N,C]
         boxes_xyxy, obj_logits, cls_logits = (
-            model_results[0], model_results[1], model_results[2],
+            model_results[0],
+            model_results[1],
+            model_results[2],
         )
         obj_conf = torch.sigmoid(obj_logits)
         cls_conf = torch.sigmoid(cls_logits)

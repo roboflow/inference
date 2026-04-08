@@ -26,6 +26,7 @@ def test_onnx_package_with_dynamic_batch_size_and_stretch_numpy(
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -73,6 +74,7 @@ def test_onnx_package_with_dynamic_batch_size_and_stretch_numpy_custom_size(
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -120,6 +122,7 @@ def test_onnx_package_with_dynamic_batch_size_and_stretch_torch_custom_size(
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -166,6 +169,7 @@ def test_onnx_package_with_dynamic_batch_size_and_stretch_batch_numpy(
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -229,6 +233,7 @@ def test_onnx_package_with_dynamic_batch_size_and_stretch_torch(
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -275,6 +280,7 @@ def test_onnx_package_with_dynamic_batch_size_and_stretch_batch_torch(
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -338,6 +344,7 @@ def test_onnx_package_with_dynamic_batch_size_and_stretch_list_torch(
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -401,6 +408,7 @@ def test_onnx_package_with_dynamic_batch_size_and_stretch_fused_nms_numpy(
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -447,6 +455,7 @@ def test_onnx_package_with_dynamic_batch_size_and_stretch_fused_nms_batch_numpy(
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -510,6 +519,7 @@ def test_onnx_package_with_dynamic_batch_size_and_stretch_fused_nms_torch(
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -556,6 +566,7 @@ def test_onnx_package_with_dynamic_batch_size_and_stretch_fused_nms_batch_torch(
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -619,6 +630,7 @@ def test_onnx_package_with_dynamic_batch_size_and_stretch_fused_nms_list_torch(
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -682,6 +694,7 @@ def test_onnx_package_with_static_batch_size_and_stretch_numpy(
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -728,6 +741,7 @@ def test_onnx_package_with_static_batch_size_and_stretch_batch_numpy(
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -791,6 +805,7 @@ def test_onnx_package_with_static_batch_size_and_stretch_torch(
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -837,6 +852,7 @@ def test_onnx_package_with_static_batch_size_and_stretch_batch_torch(
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -900,6 +916,7 @@ def test_onnx_package_with_static_batch_size_and_stretch_list_torch(
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -963,6 +980,7 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_numpy(
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -1010,6 +1028,7 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_numpy_cust
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -1057,6 +1076,7 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_torch_cust
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -1103,6 +1123,7 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_batch_nump
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -1166,6 +1187,7 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_torch(
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -1212,6 +1234,7 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_batch_torc
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -1275,6 +1298,7 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_list_torch
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -1338,6 +1362,7 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_fused_nms_
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -1385,6 +1410,7 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_fused_nms_
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -1432,6 +1458,7 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_fused_nms_
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -1478,6 +1505,7 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_fused_nms_
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -1541,6 +1569,7 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_fused_nms_
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -1587,6 +1616,7 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_fused_nms_
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -1650,6 +1680,7 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_fused_nms_
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -1713,6 +1744,7 @@ def test_onnx_package_with_static_batch_size_and_static_crop_stretch_numpy(
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -1759,6 +1791,7 @@ def test_onnx_package_with_static_batch_size_and_static_crop_stretch_batch_numpy
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -1822,6 +1855,7 @@ def test_onnx_package_with_static_batch_size_and_static_crop_stretch_torch(
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -1868,6 +1902,7 @@ def test_onnx_package_with_static_batch_size_and_static_crop_stretch_batch_torch
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -1931,6 +1966,7 @@ def test_onnx_package_with_static_batch_size_and_static_crop_stretch_list_torch(
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -1994,6 +2030,7 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_numpy(
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -2041,6 +2078,7 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_numpy_
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -2088,6 +2126,7 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_torch_
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -2134,6 +2173,7 @@ def test_onnx_package_with_dynamic_batch_size_and_tatic_crop_center_crop_batch_n
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -2197,6 +2237,7 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_torch(
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -2243,6 +2284,7 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_batch_
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -2306,6 +2348,7 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_list_t
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -2369,6 +2412,7 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_fused_
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -2416,6 +2460,7 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_fused_
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -2463,6 +2508,7 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_fused_
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -2509,6 +2555,7 @@ def test_onnx_package_with_dynamic_batch_size_and_tatic_crop_center_crop_fused_n
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -2572,6 +2619,7 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_fused_
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -2618,6 +2666,7 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_fused_
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -2681,6 +2730,7 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_fused_
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -2744,6 +2794,7 @@ def test_onnx_package_with_static_batch_size_and_static_crop_center_crop_numpy(
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -2790,6 +2841,7 @@ def test_onnx_package_with_static_batch_size_and_static_crop_center_crop_batch_n
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -2853,6 +2905,7 @@ def test_onnx_package_with_static_batch_size_and_static_crop_center_crop_torch(
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -2899,6 +2952,7 @@ def test_onnx_package_with_static_batch_size_and_static_crop_center_crop_batch_t
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -2962,6 +3016,7 @@ def test_onnx_package_with_static_batch_size_and_static_crop_center_crop_list_to
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -3025,6 +3080,7 @@ def test_onnx_package_with_dynamic_batch_size_and_center_crop_numpy(
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -3071,6 +3127,7 @@ def test_onnx_package_with_dynamic_batch_size_and_center_crop_batch_numpy(
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -3134,6 +3191,7 @@ def test_onnx_package_with_dynamic_batch_size_and_center_crop_torch(
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -3180,6 +3238,7 @@ def test_onnx_package_with_dynamic_batch_size_and_center_crop_batch_torch(
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -3243,6 +3302,7 @@ def test_onnx_package_with_dynamic_batch_size_and_center_crop_list_torch(
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -3306,6 +3366,7 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_letterbox_numpy(
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -3354,6 +3415,7 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_letterbox_batch_nu
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -3419,6 +3481,7 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_letterbox_torch(
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -3467,6 +3530,7 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_letterbox_batch_to
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then
@@ -3532,6 +3596,7 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_letterbox_list_tor
         iou_threshold=0.45,
         max_detections=100,
         class_agnostic_nms=False,
+        mask_binarization_threshold=0.0,
     )
 
     # then

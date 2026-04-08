@@ -20,7 +20,7 @@ def test_trt_package_numpy(
     )
 
     # when
-    predictions = model(asl_image_numpy)
+    predictions = model(asl_image_numpy, mask_binarization_threshold=0.0)
 
     # then
     assert torch.allclose(
@@ -61,7 +61,9 @@ def test_trt_package_batch_numpy(
     )
 
     # when
-    predictions = model([asl_image_numpy, asl_image_numpy])
+    predictions = model(
+        [asl_image_numpy, asl_image_numpy], mask_binarization_threshold=0.0
+    )
 
     # then
     assert torch.allclose(
@@ -121,7 +123,7 @@ def test_trt_package_torch(
     )
 
     # when
-    predictions = model(asl_image_torch)
+    predictions = model(asl_image_torch, mask_binarization_threshold=0.0)
 
     # then
     assert torch.allclose(
@@ -163,7 +165,7 @@ def test_trt_package_torch_multiple_predictions_in_row(
 
     # when
     for _ in range(8):
-        predictions = model(asl_image_torch)
+        predictions = model(asl_image_torch, mask_binarization_threshold=0.0)
 
         # then
         assert torch.allclose(
@@ -204,7 +206,9 @@ def test_trt_package_torch_list(
     )
 
     # when
-    predictions = model([asl_image_torch, asl_image_torch])
+    predictions = model(
+        [asl_image_torch, asl_image_torch], mask_binarization_threshold=0.0
+    )
 
     # then
     assert torch.allclose(
@@ -264,7 +268,10 @@ def test_trt_package_torch_batch(
     )
 
     # when
-    predictions = model(torch.stack([asl_image_torch, asl_image_torch], dim=0))
+    predictions = model(
+        torch.stack([asl_image_torch, asl_image_torch], dim=0),
+        mask_binarization_threshold=0.0,
+    )
 
     # then
     assert torch.allclose(
