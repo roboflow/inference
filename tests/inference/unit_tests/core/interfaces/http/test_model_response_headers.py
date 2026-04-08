@@ -53,7 +53,7 @@ def test_build_model_response_headers_merges_local_and_remote_models() -> None:
     ]
 
 
-def test_build_model_response_headers_omits_details_when_only_partial_remote_detail_known() -> None:
+def test_build_model_response_headers_omits_partial_remote_details() -> None:
     # when
     result = build_model_response_headers(
         local_model_ids=set(),

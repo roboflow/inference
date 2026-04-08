@@ -32,6 +32,7 @@ from inference_sdk.http.utils.requests import api_key_safe_raise_for_status
 RETRYABLE_STATUS_CODES = {429, 503, 504}
 UNKNOWN_MODEL_ID = "unknown"
 MODEL_COLD_START_HEADER = "X-Model-Cold-Start"
+MODEL_COLD_START_COUNT_HEADER = "X-Model-Cold-Start-Count"
 MODEL_LOAD_TIME_HEADER = "X-Model-Load-Time"
 MODEL_LOAD_DETAILS_HEADER = "X-Model-Load-Details"
 MODEL_ID_HEADER = "X-Model-Id"
@@ -137,6 +138,29 @@ def _parse_model_load_details(
     return result
 
 
+def _extract_cold_start_count_from_response(response: Response) -> int:
+    count_header = response.headers.get(MODEL_COLD_START_COUNT_HEADER)
+    if count_header is None:
+        return 1
+    try:
+        count = int(count_header)
+    except (TypeError, ValueError):
+        logging.warning(
+            "Malformed %s header value: %r",
+            MODEL_COLD_START_COUNT_HEADER,
+            count_header,
+        )
+        return 1
+    if count < 1:
+        logging.warning(
+            "Unexpected %s header value for cold start response: %r",
+            MODEL_COLD_START_COUNT_HEADER,
+            count_header,
+        )
+        return 1
+    return count
+
+
 def _collect_remote_processing_times(
     responses: List[Response],
     requests_data: List[RequestData],
@@ -198,6 +222,7 @@ def _collect_remote_processing_times(
         synthesized_model_id = model_ids[0] if len(model_ids) == 1 else None
         collector.record_cold_start(
             load_time=load_time,
+            count=_extract_cold_start_count_from_response(response=response),
             model_id=synthesized_model_id,
         )
 
@@ -447,7 +472,10 @@ def send_post_request(
         raise error
     if enable_retries and response.status_code in RETRYABLE_STATUS_CODES:
         raise RetryError(
-            f"Transient error in HTTP request - response with status code: {response.status_code} received.",
+            (
+                "Transient error in HTTP request - response with status code: "
+                f"{response.status_code} received."
+            ),
             status_code=response.status_code,
         )
     api_key_safe_raise_for_status(response=response)

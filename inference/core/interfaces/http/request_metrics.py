@@ -106,8 +106,7 @@ class GCPServerlessMiddleware(BaseHTTPMiddleware):
             apply_duration_minimum.set(not is_verified_internal)
         collector = None
         if (
-            WORKFLOWS_REMOTE_EXECUTION_TIME_FORWARDING
-            and remote_processing_times is not None
+            remote_processing_times is not None
             and RemoteProcessingTimeCollector is not None
         ):
             collector = RemoteProcessingTimeCollector()
@@ -117,7 +116,11 @@ class GCPServerlessMiddleware(BaseHTTPMiddleware):
         response = await call_next(request)
         t2 = time.time()
         response.headers[PROCESSING_TIME_HEADER] = str(t2 - t1)
-        if collector is not None and collector.has_data():
+        if (
+            WORKFLOWS_REMOTE_EXECUTION_TIME_FORWARDING
+            and collector is not None
+            and collector.has_data()
+        ):
             total, detail = collector.snapshot_summary()
             response.headers[REMOTE_PROCESSING_TIME_HEADER] = str(total)
             if detail is not None:
