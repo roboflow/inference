@@ -5,8 +5,8 @@ for different video streaming sources (webcam, RTSP, video files, manual frames)
 """
 
 import asyncio
-import time
 import threading
+import time
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any, Callable, Dict, Optional, Tuple
 
