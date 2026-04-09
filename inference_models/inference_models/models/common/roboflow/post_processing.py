@@ -305,7 +305,7 @@ def preprocess_segmentation_masks(
     protos: torch.Tensor,
     masks_in: torch.Tensor,
 ) -> torch.Tensor:
-    return torch.einsum("chw,nc->nhw", protos, masks_in)
+    return torch.nn.functional.sigmoid(torch.einsum("chw,nc->nhw", protos, masks_in))
 
 
 def crop_masks_to_boxes(
@@ -314,7 +314,7 @@ def crop_masks_to_boxes(
     scaling: float = 0.25,
 ) -> torch.Tensor:
     n, h, w = masks.shape
-    scaled_boxes = boxes * scaling
+    scaled_boxes = torch.round(boxes * scaling)
     x1, y1, x2, y2 = (
         scaled_boxes[:, 0][:, None, None],
         scaled_boxes[:, 1][:, None, None],
