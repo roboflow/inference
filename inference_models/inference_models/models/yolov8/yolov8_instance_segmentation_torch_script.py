@@ -29,6 +29,7 @@ from inference_models.models.common.roboflow.model_packages import (
     parse_class_names_file,
     parse_inference_config,
 )
+from inference_models.models.base.confidence_filter import ConfidenceFilter
 from inference_models.models.common.roboflow.post_processing import (
     align_instance_segmentation_results,
     crop_masks_to_boxes,
@@ -104,6 +105,7 @@ class YOLOv8ForInstanceSegmentationTorchScript(
             class_names=class_names,
             inference_config=inference_config,
             device=device,
+            recommended_parameters=kwargs.get("recommended_parameters"),
         )
 
     def __init__(
@@ -112,12 +114,14 @@ class YOLOv8ForInstanceSegmentationTorchScript(
         inference_config: InferenceConfig,
         class_names: List[str],
         device: torch.device,
+        recommended_parameters=None,
     ):
         self._model = model
         self._inference_config = inference_config
         self._class_names = class_names
         self._device = device
         self._lock = Lock()
+        self.recommended_parameters = recommended_parameters
 
     @property
     def class_names(self) -> List[str]:
@@ -176,6 +180,8 @@ class YOLOv8ForInstanceSegmentationTorchScript(
         masks_binarization_threshold: float = INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_MASKS_BINARIZATION_THRESHOLD,
         **kwargs,
     ) -> List[InstanceDetections]:
+        confidence_filter = ConfidenceFilter(confidence, self.recommended_parameters)
+        confidence = confidence_filter.floor
         instances, protos = model_results
         if self._inference_config.post_processing.fused:
             nms_results = post_process_nms_fused_model_output(
@@ -228,4 +234,6 @@ class YOLOv8ForInstanceSegmentationTorchScript(
                     mask=aligned_masks,
                 )
             )
+        if confidence_filter.has_per_class_refinement:
+            final_results = confidence_filter.filter_instance_detections(final_results, self.class_names)
         return final_results

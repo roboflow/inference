@@ -26,9 +26,11 @@ from inference_models.models.common.roboflow.model_packages import (
     parse_class_names_file,
     parse_inference_config,
 )
+from inference_models.models.base.confidence_filter import ConfidenceFilter
 from inference_models.models.common.roboflow.pre_processing import (
     pre_process_network_input,
 )
+from inference_models.weights_providers.entities import RecommendedParameters
 
 
 class DinoV3Model(nn.Module):
@@ -288,6 +290,7 @@ class DinoV3ForMultiLabelClassificationTorch(
             inference_config=inference_config,
             class_names=class_names,
             device=device,
+            recommended_parameters=kwargs.get("recommended_parameters"),
         )
 
     def __init__(
@@ -296,11 +299,13 @@ class DinoV3ForMultiLabelClassificationTorch(
         inference_config: InferenceConfig,
         class_names: List[str],
         device: torch.device,
+        recommended_parameters: Optional[RecommendedParameters] = None,
     ):
         self._model = model
         self._inference_config = inference_config
         self._class_names = class_names
         self._device = device
+        self.recommended_parameters = recommended_parameters
 
     @property
     def class_names(self) -> List[str]:
@@ -332,6 +337,8 @@ class DinoV3ForMultiLabelClassificationTorch(
         confidence: float = INFERENCE_MODELS_DINOV3_DEFAULT_CONFIDENCE,
         **kwargs,
     ) -> List[MultiLabelClassificationPrediction]:
+        confidence_filter = ConfidenceFilter(confidence, self.recommended_parameters)
+        confidence = confidence_filter.floor
         if (
             self._inference_config.post_processing
             and self._inference_config.post_processing.fused
@@ -350,4 +357,6 @@ class DinoV3ForMultiLabelClassificationTorch(
                     confidence=batch_element_confidence,
                 )
             )
+        if confidence_filter.has_per_class_refinement:
+            results = confidence_filter.filter_multilabel_predictions(results, self.class_names)
         return results

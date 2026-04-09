@@ -23,6 +23,7 @@ from inference_models.models.common.roboflow.model_packages import (
     parse_class_names_file,
     parse_inference_config,
 )
+from inference_models.models.base.confidence_filter import ConfidenceFilter
 from inference_models.models.common.roboflow.post_processing import (
     align_instance_segmentation_results,
     crop_masks_to_boxes,
@@ -92,6 +93,7 @@ class YOLO26ForInstanceSegmentationTorchScript(
             class_names=class_names,
             inference_config=inference_config,
             device=device,
+            recommended_parameters=kwargs.get("recommended_parameters"),
         )
 
     def __init__(
@@ -100,12 +102,14 @@ class YOLO26ForInstanceSegmentationTorchScript(
         inference_config: InferenceConfig,
         class_names: List[str],
         device: torch.device,
+        recommended_parameters=None,
     ):
         self._model = model
         self._inference_config = inference_config
         self._class_names = class_names
         self._device = device
         self._lock = Lock()
+        self.recommended_parameters = recommended_parameters
 
     @property
     def class_names(self) -> List[str]:
@@ -159,6 +163,8 @@ class YOLO26ForInstanceSegmentationTorchScript(
         confidence: float = INFERENCE_MODELS_YOLO26_DEFAULT_CONFIDENCE,
         **kwargs,
     ) -> List[InstanceDetections]:
+        confidence_filter = ConfidenceFilter(confidence, self.recommended_parameters)
+        confidence = confidence_filter.floor
         instances, protos = model_results
         filtered_results = post_process_nms_fused_model_output(
             output=instances, conf_thresh=confidence
@@ -199,4 +205,6 @@ class YOLO26ForInstanceSegmentationTorchScript(
                     mask=aligned_masks,
                 )
             )
+        if confidence_filter.has_per_class_refinement:
+            final_results = confidence_filter.filter_instance_detections(final_results, self.class_names)
         return final_results

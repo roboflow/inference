@@ -41,6 +41,7 @@ from inference_models.models.rfdetr.common import parse_model_type
 from inference_models.models.rfdetr.default_labels import resolve_labels
 from inference_models.models.rfdetr.post_processor import PostProcess
 from inference_models.models.rfdetr.pre_processing import pre_process_network_input
+from inference_models.models.base.confidence_filter import ConfidenceFilter
 from inference_models.models.rfdetr.rfdetr_base_pytorch import (
     LWDETR,
     RFDETR2XLargeConfig,
@@ -169,6 +170,7 @@ class RFDetrForObjectDetectionTorch(
             inference_config=inference_config,
             post_processor=post_processor,
             resolution=model_config.resolution,
+            recommended_parameters=kwargs.get("recommended_parameters"),
         )
 
     @classmethod
@@ -286,6 +288,7 @@ class RFDetrForObjectDetectionTorch(
         device: torch.device,
         post_processor: PostProcess,
         resolution: int,
+        recommended_parameters=None,
     ):
         self._model = model
         self._inference_config = inference_config
@@ -300,6 +303,7 @@ class RFDetrForObjectDetectionTorch(
         self._optimized_batch_size = None
         self._optimized_dtype = None
         self._lock = RLock()
+        self.recommended_parameters = recommended_parameters
 
     @property
     def class_names(self) -> List[str]:
@@ -410,6 +414,8 @@ class RFDetrForObjectDetectionTorch(
         confidence: float = INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE,
         **kwargs,
     ) -> List[Detections]:
+        confidence_filter = ConfidenceFilter(confidence, self.recommended_parameters)
+        confidence = confidence_filter.floor
         if (
             self._inference_config.network_input.resize_mode
             in RESIZE_MODES_TO_REVERT_PADDING
@@ -518,4 +524,6 @@ class RFDetrForObjectDetectionTorch(
                 class_id=labels.int(),
             )
             detections_list.append(detections)
+        if confidence_filter.has_per_class_refinement:
+            detections_list = confidence_filter.filter_detections(detections_list, self.class_names)
         return detections_list

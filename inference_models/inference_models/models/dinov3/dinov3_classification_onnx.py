@@ -36,9 +36,11 @@ from inference_models.models.common.roboflow.model_packages import (
 from inference_models.models.common.roboflow.pre_processing import (
     pre_process_network_input,
 )
+from inference_models.models.base.confidence_filter import ConfidenceFilter
 from inference_models.utils.onnx_introspection import (
     get_selected_onnx_execution_providers,
 )
+from inference_models.weights_providers.entities import RecommendedParameters
 
 try:
     import onnxruntime
@@ -298,6 +300,7 @@ class DinoV3ForMultiLabelClassificationOnnx(
             class_names=class_names,
             device=device,
             input_batch_size=input_batch_size,
+            recommended_parameters=kwargs.get("recommended_parameters"),
         )
 
     def __init__(
@@ -308,6 +311,7 @@ class DinoV3ForMultiLabelClassificationOnnx(
         class_names: List[str],
         device: torch.device,
         input_batch_size: Optional[int],
+        recommended_parameters: Optional[RecommendedParameters] = None,
     ):
         self._session = session
         self._input_name = input_name
@@ -316,6 +320,7 @@ class DinoV3ForMultiLabelClassificationOnnx(
         self._device = device
         self._input_batch_size = input_batch_size
         self._session_thread_lock = Lock()
+        self.recommended_parameters = recommended_parameters
 
     @property
     def class_names(self) -> List[str]:
@@ -354,6 +359,8 @@ class DinoV3ForMultiLabelClassificationOnnx(
         confidence: float = INFERENCE_MODELS_DINOV3_DEFAULT_CONFIDENCE,
         **kwargs,
     ) -> List[MultiLabelClassificationPrediction]:
+        confidence_filter = ConfidenceFilter(confidence, self.recommended_parameters)
+        confidence = confidence_filter.floor
         if (
             self._inference_config.post_processing
             and self._inference_config.post_processing.fused
@@ -372,4 +379,6 @@ class DinoV3ForMultiLabelClassificationOnnx(
                     confidence=batch_element_confidence,
                 )
             )
+        if confidence_filter.has_per_class_refinement:
+            results = confidence_filter.filter_multilabel_predictions(results, self.class_names)
         return results

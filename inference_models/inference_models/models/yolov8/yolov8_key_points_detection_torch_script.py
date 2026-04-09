@@ -30,6 +30,7 @@ from inference_models.models.common.roboflow.model_packages import (
     parse_inference_config,
     parse_key_points_metadata,
 )
+from inference_models.models.base.confidence_filter import ConfidenceFilter
 from inference_models.models.common.roboflow.post_processing import (
     post_process_nms_fused_model_output,
     rescale_key_points_detections,
@@ -107,6 +108,7 @@ class YOLOv8ForKeyPointsDetectionTorchScript(
             device=device,
             parsed_key_points_metadata=parsed_key_points_metadata,
             skeletons=skeletons,
+            recommended_parameters=kwargs.get("recommended_parameters"),
         )
 
     def __init__(
@@ -117,6 +119,7 @@ class YOLOv8ForKeyPointsDetectionTorchScript(
         device: torch.device,
         parsed_key_points_metadata: List[List[str]],
         skeletons: List[List[Tuple[int, int]]],
+        recommended_parameters=None,
     ):
         self._model = model
         self._inference_config = inference_config
@@ -124,6 +127,7 @@ class YOLOv8ForKeyPointsDetectionTorchScript(
         self._skeletons = skeletons
         self._device = device
         self._parsed_key_points_metadata = parsed_key_points_metadata
+        self.recommended_parameters = recommended_parameters
         self._key_points_classes_for_instances = torch.tensor(
             [len(e) for e in self._parsed_key_points_metadata], device=device
         )
@@ -189,6 +193,8 @@ class YOLOv8ForKeyPointsDetectionTorchScript(
         key_points_threshold: float = INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_KEY_POINTS_THRESHOLD,
         **kwargs,
     ) -> Tuple[List[KeyPoints], Optional[List[Detections]]]:
+        confidence_filter = ConfidenceFilter(confidence, self.recommended_parameters)
+        confidence = confidence_filter.floor
         if self._inference_config.post_processing.fused:
             nms_results = post_process_nms_fused_model_output(
                 output=model_results, conf_thresh=confidence
@@ -248,5 +254,9 @@ class YOLOv8ForKeyPointsDetectionTorchScript(
                     class_id=class_id,
                     confidence=predicted_key_points_confidence,
                 )
+            )
+        if confidence_filter.has_per_class_refinement and detections is not None:
+            all_key_points, detections = confidence_filter.filter_keypoints_and_detections(
+                all_key_points, detections, self.class_names
             )
         return all_key_points, detections

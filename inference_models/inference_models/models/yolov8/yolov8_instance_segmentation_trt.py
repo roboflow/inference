@@ -39,6 +39,7 @@ from inference_models.models.common.roboflow.model_packages import (
     parse_inference_config,
     parse_trt_config,
 )
+from inference_models.models.base.confidence_filter import ConfidenceFilter
 from inference_models.models.common.roboflow.post_processing import (
     align_instance_segmentation_results,
     crop_masks_to_boxes,
@@ -185,6 +186,7 @@ class YOLOv8ForInstanceSegmentationTRT(
             execution_context=execution_context,
             cuda_context=cuda_context,
             trt_cuda_graph_cache=trt_cuda_graph_cache,
+            recommended_parameters=kwargs.get("recommended_parameters"),
         )
 
     def __init__(
@@ -199,6 +201,7 @@ class YOLOv8ForInstanceSegmentationTRT(
         cuda_context: cuda.Context,
         execution_context: trt.IExecutionContext,
         trt_cuda_graph_cache: Optional[TRTCudaGraphCache],
+        recommended_parameters=None,
     ):
         self._engine = engine
         self._input_name = input_name
@@ -213,6 +216,7 @@ class YOLOv8ForInstanceSegmentationTRT(
         self._inference_stream = torch.cuda.Stream(device=self._device)
         self._thread_local_storage = threading.local()
         self._trt_cuda_graph_cache = trt_cuda_graph_cache
+        self.recommended_parameters = recommended_parameters
 
     @property
     def class_names(self) -> List[str]:
@@ -271,6 +275,8 @@ class YOLOv8ForInstanceSegmentationTRT(
         masks_binarization_threshold: float = INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_MASKS_BINARIZATION_THRESHOLD,
         **kwargs,
     ) -> List[InstanceDetections]:
+        confidence_filter = ConfidenceFilter(confidence, self.recommended_parameters)
+        confidence = confidence_filter.floor
         with torch.cuda.stream(self._post_process_stream):
             for result_element in model_results:
                 result_element.record_stream(self._post_process_stream)
@@ -329,6 +335,8 @@ class YOLOv8ForInstanceSegmentationTRT(
                     )
                 )
         self._post_process_stream.synchronize()
+        if confidence_filter.has_per_class_refinement:
+            final_results = confidence_filter.filter_instance_detections(final_results, self.class_names)
         return final_results
 
     @property

@@ -1,6 +1,6 @@
 from io import BytesIO
 from time import perf_counter
-from typing import Any, List, Tuple, Union
+from typing import Any, List, Optional, Tuple, Union
 
 import numpy as np
 
@@ -299,7 +299,7 @@ class ClassificationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
         self,
         predictions,
         img_dims,
-        confidence: float = 0.5,
+        confidence: Optional[float] = 0.5,
         **kwargs,
     ) -> Union[ClassificationInferenceResponse, List[ClassificationInferenceResponse]]:
         """
@@ -320,6 +320,8 @@ class ClassificationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
             - Predictions below the confidence threshold are filtered out.
         """
         responses = []
+        if confidence is None:
+            confidence = 0.5
         confidence_threshold = float(confidence)
         for ind, prediction in enumerate(predictions):
             if self.multiclass:

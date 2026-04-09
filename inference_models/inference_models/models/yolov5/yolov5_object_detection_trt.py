@@ -33,6 +33,7 @@ from inference_models.models.common.roboflow.model_packages import (
     parse_inference_config,
     parse_trt_config,
 )
+from inference_models.models.base.confidence_filter import ConfidenceFilter
 from inference_models.models.common.roboflow.post_processing import rescale_detections
 from inference_models.models.common.roboflow.pre_processing import (
     pre_process_network_input,
@@ -162,6 +163,7 @@ class YOLOv5ForObjectDetectionTRT(
             cuda_context=cuda_context,
             execution_context=execution_context,
             trt_cuda_graph_cache=trt_cuda_graph_cache,
+            recommended_parameters=kwargs.get("recommended_parameters"),
         )
 
     def __init__(
@@ -176,6 +178,7 @@ class YOLOv5ForObjectDetectionTRT(
         cuda_context: cuda.Context,
         execution_context: trt.IExecutionContext,
         trt_cuda_graph_cache: Optional[TRTCudaGraphCache],
+        recommended_parameters: Optional["RecommendedParameters"] = None,
     ):
         self._engine = engine
         self._input_name = input_name
@@ -190,6 +193,7 @@ class YOLOv5ForObjectDetectionTRT(
         self._session_thread_lock = Lock()
         self._inference_stream = torch.cuda.Stream(device=self._device)
         self._thread_local_storage = threading.local()
+        self.recommended_parameters = recommended_parameters
 
     @property
     def class_names(self) -> List[str]:
@@ -245,6 +249,8 @@ class YOLOv5ForObjectDetectionTRT(
         class_agnostic_nms: bool = INFERENCE_MODELS_YOLOV5_DEFAULT_CLASS_AGNOSTIC_NMS,
         **kwargs,
     ) -> List[Detections]:
+        confidence_filter = ConfidenceFilter(confidence, self.recommended_parameters)
+        confidence = confidence_filter.floor
         with torch.cuda.stream(self._post_process_stream):
             model_results.record_stream(self._post_process_stream)
             nms_results = run_nms_yolov5(
@@ -268,6 +274,8 @@ class YOLOv5ForObjectDetectionTRT(
                     )
                 )
         self._post_process_stream.synchronize()
+        if confidence_filter.has_per_class_refinement:
+            results = confidence_filter.filter_detections(results, self.class_names)
         return results
 
     @property

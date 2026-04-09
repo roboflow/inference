@@ -48,6 +48,7 @@ from inference_models.models.rfdetr.common import (
 from inference_models.models.rfdetr.default_labels import resolve_labels
 from inference_models.models.rfdetr.post_processor import PostProcess
 from inference_models.models.rfdetr.pre_processing import pre_process_network_input
+from inference_models.models.base.confidence_filter import ConfidenceFilter
 from inference_models.models.rfdetr.rfdetr_base_pytorch import (
     LWDETR,
     RFDETRSeg2XLargeConfig,
@@ -176,6 +177,7 @@ class RFDetrForInstanceSegmentationTorch(
             inference_config=inference_config,
             post_processor=post_processor,
             resolution=model_config.resolution,
+            recommended_parameters=kwargs.get("recommended_parameters"),
         )
 
     @classmethod
@@ -293,6 +295,7 @@ class RFDetrForInstanceSegmentationTorch(
         device: torch.device,
         post_processor: PostProcess,
         resolution: int,
+        recommended_parameters=None,
     ):
         self._model = model
         self._inference_config = inference_config
@@ -307,6 +310,7 @@ class RFDetrForInstanceSegmentationTorch(
         self._optimized_batch_size = None
         self._optimized_dtype = None
         self._lock = RLock()
+        self.recommended_parameters = recommended_parameters
 
     @property
     def class_names(self) -> List[str]:
@@ -418,12 +422,14 @@ class RFDetrForInstanceSegmentationTorch(
         confidence: float = INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE,
         **kwargs,
     ) -> List[InstanceDetections]:
+        confidence_filter = ConfidenceFilter(confidence, self.recommended_parameters)
+        confidence = confidence_filter.floor
         bboxes, logits, masks = (
             model_results["pred_boxes"],
             model_results["pred_logits"],
             model_results["pred_masks"],
         )
-        return post_process_instance_segmentation_results(
+        results = post_process_instance_segmentation_results(
             bboxes=bboxes,
             logits=logits,
             masks=masks,
@@ -431,3 +437,6 @@ class RFDetrForInstanceSegmentationTorch(
             threshold=confidence,
             classes_re_mapping=self._classes_re_mapping,
         )
+        if confidence_filter.has_per_class_refinement:
+            results = confidence_filter.filter_instance_detections(results, self.class_names)
+        return results

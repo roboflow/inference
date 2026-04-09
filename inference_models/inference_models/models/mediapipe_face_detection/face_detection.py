@@ -14,6 +14,7 @@ from inference_models.errors import (
     ModelInputError,
     ModelRuntimeError,
 )
+from inference_models.models.base.confidence_filter import ConfidenceFilter
 from inference_models.models.common.model_packages import get_model_package_contents
 
 try:
@@ -57,11 +58,19 @@ class MediaPipeFaceDetector(
                 running_mode=mp.tasks.vision.RunningMode.IMAGE,
             )
         )
-        return cls(face_detector=face_detector)
+        return cls(
+            face_detector=face_detector,
+            recommended_parameters=kwargs.get("recommended_parameters"),
+        )
 
-    def __init__(self, face_detector: mp.tasks.vision.FaceDetector):
+    def __init__(
+        self,
+        face_detector: mp.tasks.vision.FaceDetector,
+        recommended_parameters=None,
+    ):
         self._face_detector = face_detector
         self._thread_lock = Lock()
+        self.recommended_parameters = recommended_parameters
 
     @property
     def class_names(self) -> List[str]:
@@ -172,6 +181,8 @@ class MediaPipeFaceDetector(
         confidence: float = INFERENCE_MODELS_MEDIAPIPE_FACE_DETECTOR_DEFAULT_CONFIDENCE,
         **kwargs,
     ) -> Tuple[List[KeyPoints], List[Detections]]:
+        confidence_filter = ConfidenceFilter(confidence, self.recommended_parameters)
+        confidence = confidence_filter.floor
         final_key_points, final_detections = [], []
         for image_results, image_dimensions in zip(model_results, pre_processing_meta):
             detections_xyxy, detections_class_id, detections_confidence = [], [], []
@@ -216,4 +227,8 @@ class MediaPipeFaceDetector(
             )
             final_key_points.append(key_points)
             final_detections.append(detections)
+        if confidence_filter.has_per_class_refinement and final_detections is not None:
+            final_key_points, final_detections = confidence_filter.filter_keypoints_and_detections(
+                final_key_points, final_detections, self.class_names
+            )
         return final_key_points, final_detections

@@ -39,6 +39,8 @@ from inference_models.models.common.roboflow.model_packages import (
 from inference_models.models.common.roboflow.pre_processing import (
     pre_process_network_input,
 )
+from inference_models.models.base.confidence_filter import ConfidenceFilter
+from inference_models.weights_providers.entities import RecommendedParameters
 from inference_models.models.common.trt import (
     TRTCudaGraphCache,
     establish_trt_cuda_graph_cache,
@@ -368,6 +370,7 @@ class ResNetForMultiLabelClassificationTRT(
             cuda_context=cuda_context,
             execution_context=execution_context,
             trt_cuda_graph_cache=trt_cuda_graph_cache,
+            recommended_parameters=kwargs.get("recommended_parameters"),
         )
 
     def __init__(
@@ -382,6 +385,7 @@ class ResNetForMultiLabelClassificationTRT(
         cuda_context: cuda.Context,
         execution_context: trt.IExecutionContext,
         trt_cuda_graph_cache: Optional[TRTCudaGraphCache],
+        recommended_parameters: Optional[RecommendedParameters] = None,
     ):
         self._engine = engine
         self._input_name = input_name
@@ -396,6 +400,7 @@ class ResNetForMultiLabelClassificationTRT(
         self._lock = Lock()
         self._inference_stream = torch.cuda.Stream(device=self._device)
         self._thread_local_storage = threading.local()
+        self.recommended_parameters = recommended_parameters
 
     @property
     def class_names(self) -> List[str]:
@@ -449,6 +454,8 @@ class ResNetForMultiLabelClassificationTRT(
         confidence: float = INFERENCE_MODELS_RESNET_DEFAULT_CONFIDENCE,
         **kwargs,
     ) -> List[MultiLabelClassificationPrediction]:
+        confidence_filter = ConfidenceFilter(confidence, self.recommended_parameters)
+        confidence = confidence_filter.floor
         with torch.cuda.stream(self._post_process_stream):
             model_results.record_stream(self._post_process_stream)
             if self._inference_config.post_processing.fused:
@@ -467,6 +474,8 @@ class ResNetForMultiLabelClassificationTRT(
                     )
                 )
         self._post_process_stream.synchronize()
+        if confidence_filter.has_per_class_refinement:
+            results = confidence_filter.filter_multilabel_predictions(results, self.class_names)
         return results
 
     @property
