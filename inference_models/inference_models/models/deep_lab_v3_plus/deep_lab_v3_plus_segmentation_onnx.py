@@ -34,6 +34,8 @@ from inference_models.models.common.roboflow.model_packages import (
 from inference_models.models.common.roboflow.pre_processing import (
     pre_process_network_input,
 )
+from inference_models.models.base.confidence_filter import ConfidenceFilter
+from inference_models.weights_providers.entities import RecommendedParameters
 from inference_models.utils.onnx_introspection import (
     get_selected_onnx_execution_providers,
 )
@@ -128,6 +130,7 @@ class DeepLabV3PlusForSemanticSegmentationOnnx(
             background_class_id=background_class_id,
             device=device,
             input_batch_size=input_batch_size,
+            recommended_parameters=kwargs.get("recommended_parameters"),
         )
 
     def __init__(
@@ -139,6 +142,7 @@ class DeepLabV3PlusForSemanticSegmentationOnnx(
         background_class_id: int,
         device: torch.device,
         input_batch_size: Optional[int],
+        recommended_parameters: Optional[RecommendedParameters] = None,
     ):
         self._session = session
         self._input_name = input_name
@@ -148,6 +152,7 @@ class DeepLabV3PlusForSemanticSegmentationOnnx(
         self._device = device
         self._input_batch_size = input_batch_size
         self._session_thread_lock = Lock()
+        self.recommended_parameters = recommended_parameters
 
     @property
     def class_names(self) -> List[str]:
@@ -187,6 +192,8 @@ class DeepLabV3PlusForSemanticSegmentationOnnx(
         confidence: float = INFERENCE_MODELS_DEEP_LAB_V3_PLUS_DEFAULT_CONFIDENCE,
         **kwargs,
     ) -> List[SemanticSegmentationResult]:
+        confidence_filter = ConfidenceFilter(confidence, self.recommended_parameters)
+        confidence = confidence_filter.floor
         results = []
         for image_results, image_metadata in zip(model_results, pre_processing_meta):
             inference_size = image_metadata.inference_size
@@ -294,5 +301,9 @@ class DeepLabV3PlusForSemanticSegmentationOnnx(
                     segmentation_map=image_class_ids,
                     confidence=image_confidence,
                 )
+            )
+        if confidence_filter.has_per_class_refinement:
+            results = confidence_filter.filter_segmentation_results(
+                results, self.class_names, self._background_class_id
             )
         return results

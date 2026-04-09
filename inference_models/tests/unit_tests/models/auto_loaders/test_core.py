@@ -25,11 +25,13 @@ from inference_models.models.auto_loaders.core import (
     generate_model_package_cache_path,
     load_class_from_path,
     parse_model_config,
+    resolve_recommended_parameters,
 )
 from inference_models.models.auto_loaders.entities import (
-    BackendType,
     InferenceModelConfig,
 )
+from inference_models.models.auto_loaders.entities import BackendType
+from inference_models.weights_providers.entities import RecommendedParameters
 
 
 def test_load_class_from_path_when_valid_python_module_provided(
@@ -258,6 +260,106 @@ def test_dump_auto_resolution_cache_when_cache_enabled(
             model_features={"some": "value"},
         ),
     )
+
+
+@mock.patch.object(core, "datetime")
+def test_dump_auto_resolution_cache_persists_recommended_parameters(
+    datetime_mock: MagicMock,
+) -> None:
+    # When recommended_parameters is provided at load time, the cache entry must
+    # store it so subsequent cache hits get the same value without re-fetching
+    # model metadata from the weights provider.
+
+    now = datetime.now()
+    auto_resolution_cache = MagicMock()
+    datetime_mock.now.return_value = now
+    recommended_parameters = RecommendedParameters(confidence=0.42)
+
+    dump_auto_resolution_cache(
+        use_auto_resolution_cache=True,
+        auto_resolution_cache=auto_resolution_cache,
+        auto_negotiation_hash="my-hash",
+        model_id="my-model",
+        model_package_id="my-package",
+        model_architecture="yolov8",
+        task_type="object-detection",
+        backend_type=BackendType.ONNX,
+        resolved_files={"some/file.txt"},
+        model_dependencies=None,
+        model_features=None,
+        recommended_parameters=recommended_parameters,
+    )
+
+    auto_resolution_cache.register.assert_called_once_with(
+        auto_negotiation_hash="my-hash",
+        cache_entry=AutoResolutionCacheEntry(
+            model_id="my-model",
+            model_package_id="my-package",
+            resolved_files={"some/file.txt"},
+            model_architecture="yolov8",
+            task_type="object-detection",
+            backend_type=BackendType.ONNX,
+            created_at=now,
+            model_features=None,
+            recommended_parameters=recommended_parameters,
+        ),
+    )
+
+
+@mock.patch.object(core, "datetime")
+def test_dump_auto_resolution_cache_omits_recommended_parameters_when_none(
+    datetime_mock: MagicMock,
+) -> None:
+    # The default for the kwarg is None, and that should round-trip cleanly through
+    # the cache entry. This guards the backward-compat path: model loads that don't
+    # have recommended_parameters work exactly as before.
+    now = datetime.now()
+    auto_resolution_cache = MagicMock()
+    datetime_mock.now.return_value = now
+
+    dump_auto_resolution_cache(
+        use_auto_resolution_cache=True,
+        auto_resolution_cache=auto_resolution_cache,
+        auto_negotiation_hash="my-hash",
+        model_id="my-model",
+        model_package_id="my-package",
+        model_architecture="yolov8",
+        task_type="object-detection",
+        backend_type=BackendType.ONNX,
+        resolved_files={"some/file.txt"},
+        model_dependencies=None,
+        model_features=None,
+    )
+
+    auto_resolution_cache.register.assert_called_once_with(
+        auto_negotiation_hash="my-hash",
+        cache_entry=AutoResolutionCacheEntry(
+            model_id="my-model",
+            model_package_id="my-package",
+            resolved_files={"some/file.txt"},
+            model_architecture="yolov8",
+            task_type="object-detection",
+            backend_type=BackendType.ONNX,
+            created_at=now,
+            model_features=None,
+            recommended_parameters=None,
+        ),
+    )
+
+
+def test_resolve_recommended_parameters_package_overrides_model() -> None:
+    package_params = RecommendedParameters(confidence=0.8)
+    model_params = RecommendedParameters(confidence=0.4)
+    assert resolve_recommended_parameters(package_params, model_params) is package_params
+
+
+def test_resolve_recommended_parameters_falls_back_to_model() -> None:
+    model_params = RecommendedParameters(confidence=0.4)
+    assert resolve_recommended_parameters(None, model_params) is model_params
+
+
+def test_resolve_recommended_parameters_none_when_both_absent() -> None:
+    assert resolve_recommended_parameters(None, None) is None
 
 
 def test_dump_model_config_for_offline_use_when_file_exists(

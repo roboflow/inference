@@ -34,6 +34,7 @@ from inference_models.models.rfdetr.class_remapping import (
     prepare_class_remapping,
 )
 from inference_models.models.rfdetr.pre_processing import pre_process_network_input
+from inference_models.models.base.confidence_filter import ConfidenceFilter
 from inference_models.utils.onnx_introspection import (
     get_selected_onnx_execution_providers,
 )
@@ -143,6 +144,7 @@ class RFDetrForObjectDetectionONNX(
             inference_config=inference_config,
             device=device,
             input_batch_size=input_batch_size,
+            recommended_parameters=kwargs.get("recommended_parameters"),
         )
 
     def __init__(
@@ -154,6 +156,7 @@ class RFDetrForObjectDetectionONNX(
         inference_config: InferenceConfig,
         device: torch.device,
         input_batch_size: Optional[int],
+        recommended_parameters=None,
     ):
         self._session = session
         self._input_name = input_name
@@ -168,6 +171,7 @@ class RFDetrForObjectDetectionONNX(
             else inference_config.forward_pass.max_dynamic_batch_size
         )
         self._session_thread_lock = threading.Lock()
+        self.recommended_parameters = recommended_parameters
 
     @property
     def class_names(self) -> List[str]:
@@ -208,6 +212,8 @@ class RFDetrForObjectDetectionONNX(
         confidence: float = INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE,
         **kwargs,
     ) -> List[Detections]:
+        confidence_filter = ConfidenceFilter(confidence, self.recommended_parameters)
+        confidence = confidence_filter.floor
         bboxes, logits = model_results
         logits_sigmoid = torch.nn.functional.sigmoid(logits)
         results = []
@@ -261,4 +267,6 @@ class RFDetrForObjectDetectionONNX(
                 class_id=top_classes.int(),
             )
             results.append(detections)
+        if confidence_filter.has_per_class_refinement:
+            results = confidence_filter.filter_detections(results, self.class_names)
         return results

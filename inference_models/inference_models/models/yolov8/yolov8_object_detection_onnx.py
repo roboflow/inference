@@ -30,6 +30,7 @@ from inference_models.models.common.roboflow.model_packages import (
     parse_class_names_file,
     parse_inference_config,
 )
+from inference_models.models.base.confidence_filter import ConfidenceFilter
 from inference_models.models.common.roboflow.post_processing import (
     post_process_nms_fused_model_output,
     rescale_detections,
@@ -138,6 +139,7 @@ class YOLOv8ForObjectDetectionOnnx(
             inference_config=inference_config,
             device=device,
             input_batch_size=input_batch_size,
+            recommended_parameters=kwargs.get("recommended_parameters"),
         )
 
     def __init__(
@@ -148,6 +150,7 @@ class YOLOv8ForObjectDetectionOnnx(
         class_names: List[str],
         device: torch.device,
         input_batch_size: Optional[int],
+        recommended_parameters=None,
     ):
         self._session = session
         self._input_name = input_name
@@ -161,6 +164,7 @@ class YOLOv8ForObjectDetectionOnnx(
             else inference_config.forward_pass.max_dynamic_batch_size
         )
         self._session_thread_lock = Lock()
+        self.recommended_parameters = recommended_parameters
 
     @property
     def class_names(self) -> List[str]:
@@ -203,6 +207,8 @@ class YOLOv8ForObjectDetectionOnnx(
         class_agnostic_nms: bool = INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_CLASS_AGNOSTIC_NMS,
         **kwargs,
     ) -> List[Detections]:
+        confidence_filter = ConfidenceFilter(confidence, self.recommended_parameters)
+        confidence = confidence_filter.floor
         if self._inference_config.post_processing.fused:
             nms_results = post_process_nms_fused_model_output(
                 output=model_results, conf_thresh=confidence
@@ -228,4 +234,6 @@ class YOLOv8ForObjectDetectionOnnx(
                     confidence=result[:, 4],
                 )
             )
+        if confidence_filter.has_per_class_refinement:
+            results = confidence_filter.filter_detections(results, self.class_names)
         return results

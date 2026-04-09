@@ -14,6 +14,7 @@ from inference_models.configuration import (
 )
 from inference_models.entities import ImageDimensions
 from inference_models.errors import CorruptedModelPackageError
+from inference_models.models.base.confidence_filter import ConfidenceFilter
 from inference_models.models.auto_loaders.entities import AnyModel
 from inference_models.models.common.model_packages import get_model_package_contents
 from inference_models.models.owlv2.entities import (
@@ -81,6 +82,7 @@ class RoboflowInstantHF(ObjectDetectionModel):
             feature_extractor=feature_extractor,
             class_names=class_names,
             reference_examples_embeddings=reference_examples_embeddings,
+            recommended_parameters=kwargs.get("recommended_parameters"),
         )
 
     def __init__(
@@ -88,10 +90,12 @@ class RoboflowInstantHF(ObjectDetectionModel):
         feature_extractor: OWLv2HF,
         class_names: List[str],
         reference_examples_embeddings: ReferenceExamplesEmbeddings,
+        recommended_parameters=None,
     ):
         self._feature_extractor = feature_extractor
         self._class_names = class_names
         self._reference_examples_embeddings = reference_examples_embeddings
+        self.recommended_parameters = recommended_parameters
 
     @property
     def class_names(self) -> List[str]:
@@ -127,11 +131,13 @@ class RoboflowInstantHF(ObjectDetectionModel):
         self,
         model_results: List[Tuple[torch.Tensor, torch.Tensor, torch.Tensor]],
         pre_processing_meta: List[ImageDimensions],
+        confidence: float = INFERENCE_MODELS_ROBOFLOW_INSTANT_DEFAULT_CONFIDENCE,
         max_detections: int = INFERENCE_MODELS_ROBOFLOW_INSTANT_MAX_DETECTIONS,
         iou_threshold: float = INFERENCE_MODELS_ROBOFLOW_INSTANT_DEFAULT_IOU_THRESHOLD,
         **kwargs,
     ) -> List[Detections]:
-        return (
+        confidence_filter = ConfidenceFilter(confidence, self.recommended_parameters)
+        results = (
             self._feature_extractor.post_process_predictions_for_precomputed_embeddings(
                 predictions=model_results,
                 images_dimensions=pre_processing_meta,
@@ -139,3 +145,6 @@ class RoboflowInstantHF(ObjectDetectionModel):
                 iou_threshold=iou_threshold,
             )
         )
+        if confidence_filter.has_per_class_refinement:
+            results = confidence_filter.filter_detections(results, self.class_names)
+        return results

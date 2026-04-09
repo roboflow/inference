@@ -28,6 +28,7 @@ from inference_models.models.common.roboflow.model_packages import (
     parse_class_names_file,
     parse_inference_config,
 )
+from inference_models.models.base.confidence_filter import ConfidenceFilter
 from inference_models.models.common.roboflow.post_processing import (
     rescale_image_detections,
 )
@@ -129,6 +130,7 @@ class YOLOv10ForObjectDetectionOnnx(
             inference_config=inference_config,
             device=device,
             input_batch_size=input_batch_size,
+            recommended_parameters=kwargs.get("recommended_parameters"),
         )
 
     def __init__(
@@ -139,6 +141,7 @@ class YOLOv10ForObjectDetectionOnnx(
         class_names: List[str],
         device: torch.device,
         input_batch_size: Optional[int],
+        recommended_parameters: Optional["RecommendedParameters"] = None,
     ):
         self._session = session
         self._input_name = input_name
@@ -147,6 +150,7 @@ class YOLOv10ForObjectDetectionOnnx(
         self._device = device
         self._input_batch_size = input_batch_size
         self._session_thread_lock = Lock()
+        self.recommended_parameters = recommended_parameters
 
     @property
     def class_names(self) -> List[str]:
@@ -185,6 +189,8 @@ class YOLOv10ForObjectDetectionOnnx(
         max_detections: int = INFERENCE_MODELS_YOLOV10_DEFAULT_MAX_DETECTIONS,
         **kwargs,
     ) -> List[Detections]:
+        confidence_filter = ConfidenceFilter(confidence, self.recommended_parameters)
+        confidence = confidence_filter.floor
         results = []
         for image_result, metadata in zip(model_results, pre_processing_meta):
             mask = image_result[:, 4] > confidence
@@ -200,4 +206,6 @@ class YOLOv10ForObjectDetectionOnnx(
                     confidence=rescaled[:, 4],
                 )
             )
+        if confidence_filter.has_per_class_refinement:
+            results = confidence_filter.filter_detections(results, self.class_names)
         return results

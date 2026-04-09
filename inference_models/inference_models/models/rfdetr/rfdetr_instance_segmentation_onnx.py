@@ -38,6 +38,7 @@ from inference_models.models.rfdetr.common import (
     post_process_instance_segmentation_results,
 )
 from inference_models.models.rfdetr.pre_processing import pre_process_network_input
+from inference_models.models.base.confidence_filter import ConfidenceFilter
 from inference_models.utils.onnx_introspection import (
     get_selected_onnx_execution_providers,
 )
@@ -147,6 +148,7 @@ class RFDetrForInstanceSegmentationOnnx(
             inference_config=inference_config,
             device=device,
             input_batch_size=input_batch_size,
+            recommended_parameters=kwargs.get("recommended_parameters"),
         )
 
     def __init__(
@@ -158,6 +160,7 @@ class RFDetrForInstanceSegmentationOnnx(
         inference_config: InferenceConfig,
         device: torch.device,
         input_batch_size: Optional[int],
+        recommended_parameters=None,
     ):
         self._session = session
         self._input_name = input_name
@@ -172,6 +175,7 @@ class RFDetrForInstanceSegmentationOnnx(
             else inference_config.forward_pass.max_dynamic_batch_size
         )
         self._session_thread_lock = threading.Lock()
+        self.recommended_parameters = recommended_parameters
 
     @property
     def class_names(self) -> List[str]:
@@ -214,8 +218,10 @@ class RFDetrForInstanceSegmentationOnnx(
         confidence: float = INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE,
         **kwargs,
     ) -> List[InstanceDetections]:
+        confidence_filter = ConfidenceFilter(confidence, self.recommended_parameters)
+        confidence = confidence_filter.floor
         bboxes, logits, masks = model_results
-        return post_process_instance_segmentation_results(
+        results = post_process_instance_segmentation_results(
             bboxes=bboxes,
             logits=logits,
             masks=masks,
@@ -223,3 +229,6 @@ class RFDetrForInstanceSegmentationOnnx(
             threshold=confidence,
             classes_re_mapping=self._classes_re_mapping,
         )
+        if confidence_filter.has_per_class_refinement:
+            results = confidence_filter.filter_instance_detections(results, self.class_names)
+        return results

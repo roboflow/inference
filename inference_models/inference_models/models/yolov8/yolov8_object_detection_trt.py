@@ -32,6 +32,7 @@ from inference_models.models.common.roboflow.model_packages import (
     parse_inference_config,
     parse_trt_config,
 )
+from inference_models.models.base.confidence_filter import ConfidenceFilter
 from inference_models.models.common.roboflow.post_processing import (
     post_process_nms_fused_model_output,
     rescale_detections,
@@ -169,6 +170,7 @@ class YOLOv8ForObjectDetectionTRT(
             cuda_context=cuda_context,
             execution_context=execution_context,
             trt_cuda_graph_cache=trt_cuda_graph_cache,
+            recommended_parameters=kwargs.get("recommended_parameters"),
         )
 
     def __init__(
@@ -183,6 +185,7 @@ class YOLOv8ForObjectDetectionTRT(
         cuda_context: cuda.Context,
         execution_context: trt.IExecutionContext,
         trt_cuda_graph_cache: Optional[TRTCudaGraphCache],
+        recommended_parameters=None,
     ):
         self._engine = engine
         self._input_name = input_name
@@ -197,6 +200,7 @@ class YOLOv8ForObjectDetectionTRT(
         self._lock = threading.Lock()
         self._inference_stream = torch.cuda.Stream(device=self._device)
         self._thread_local_storage = threading.local()
+        self.recommended_parameters = recommended_parameters
 
     @property
     def class_names(self) -> List[str]:
@@ -252,6 +256,8 @@ class YOLOv8ForObjectDetectionTRT(
         class_agnostic_nms: bool = INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_CLASS_AGNOSTIC_NMS,
         **kwargs,
     ) -> List[Detections]:
+        confidence_filter = ConfidenceFilter(confidence, self.recommended_parameters)
+        confidence = confidence_filter.floor
         with torch.cuda.stream(self._post_process_stream):
             model_results.record_stream(self._post_process_stream)
             if self._inference_config.post_processing.fused:
@@ -280,6 +286,8 @@ class YOLOv8ForObjectDetectionTRT(
                     )
                 )
         self._post_process_stream.synchronize()
+        if confidence_filter.has_per_class_refinement:
+            results = confidence_filter.filter_detections(results, self.class_names)
         return results
 
     @property

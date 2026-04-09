@@ -34,6 +34,8 @@ from inference_models.models.common.roboflow.model_packages import (
     parse_inference_config,
     parse_trt_config,
 )
+from inference_models.models.base.confidence_filter import ConfidenceFilter
+from inference_models.weights_providers.entities import RecommendedParameters
 from inference_models.models.common.roboflow.pre_processing import (
     pre_process_network_input,
 )
@@ -166,6 +168,7 @@ class DeepLabV3PlusForSemanticSegmentationTRT(
             cuda_context=cuda_context,
             execution_context=execution_context,
             trt_cuda_graph_cache=trt_cuda_graph_cache,
+            recommended_parameters=kwargs.get("recommended_parameters"),
         )
 
     def __init__(
@@ -181,6 +184,7 @@ class DeepLabV3PlusForSemanticSegmentationTRT(
         cuda_context: cuda.Context,
         execution_context: trt.IExecutionContext,
         trt_cuda_graph_cache: Optional[TRTCudaGraphCache],
+        recommended_parameters: Optional[RecommendedParameters] = None,
     ):
         self._engine = engine
         self._input_name = input_name
@@ -196,6 +200,7 @@ class DeepLabV3PlusForSemanticSegmentationTRT(
         self._lock = Lock()
         self._inference_stream = torch.cuda.Stream(device=self._device)
         self._thread_local_storage = threading.local()
+        self.recommended_parameters = recommended_parameters
 
     @property
     def class_names(self) -> List[str]:
@@ -248,6 +253,8 @@ class DeepLabV3PlusForSemanticSegmentationTRT(
         confidence: float = INFERENCE_MODELS_DEEP_LAB_V3_PLUS_DEFAULT_CONFIDENCE,
         **kwargs,
     ) -> List[SemanticSegmentationResult]:
+        confidence_filter = ConfidenceFilter(confidence, self.recommended_parameters)
+        confidence = confidence_filter.floor
         with torch.cuda.stream(self._post_process_stream):
             model_results.record_stream(self._post_process_stream)
             results = []
@@ -361,6 +368,10 @@ class DeepLabV3PlusForSemanticSegmentationTRT(
                     )
                 )
         self._post_process_stream.synchronize()
+        if confidence_filter.has_per_class_refinement:
+            results = confidence_filter.filter_segmentation_results(
+                results, self.class_names, self._background_class_id
+            )
         return results
 
     @property

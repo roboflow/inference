@@ -77,11 +77,15 @@ class BlockManifest(WorkflowBlockManifest):
     images: Selector(kind=[IMAGE_KIND]) = ImageInputField
     model_id: Union[Selector(kind=[ROBOFLOW_MODEL_ID_KIND]), str] = RoboflowModelField
     confidence: Union[
-        FloatZeroToOne,
+        Optional[FloatZeroToOne],
         Selector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
     ] = Field(
-        default=0.4,
-        description="Confidence threshold for predictions.",
+        default=None,
+        description=(
+            "Confidence threshold for predictions. If omitted, the inference "
+            "server uses the model's F1-optimal threshold from model evaluation "
+            "when available, otherwise falls back to 0.5."
+        ),
         examples=[0.3, "$inputs.confidence_threshold"],
     )
     disable_active_learning: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(

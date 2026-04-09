@@ -42,6 +42,7 @@ from inference_models.models.common.roboflow.post_processing import (
 from inference_models.models.common.roboflow.pre_processing import (
     pre_process_network_input,
 )
+from inference_models.models.base.confidence_filter import ConfidenceFilter
 from inference_models.utils.onnx_introspection import (
     get_selected_onnx_execution_providers,
 )
@@ -146,6 +147,7 @@ class YOLOACTForInstanceSegmentationOnnx(
             class_names=class_names,
             inference_config=inference_config,
             device=device,
+            recommended_parameters=kwargs.get("recommended_parameters"),
         )
 
     def __init__(
@@ -155,6 +157,7 @@ class YOLOACTForInstanceSegmentationOnnx(
         inference_config: InferenceConfig,
         class_names: List[str],
         device: torch.device,
+        recommended_parameters=None,
     ):
         self._session = session
         self._input_name = input_name
@@ -162,6 +165,7 @@ class YOLOACTForInstanceSegmentationOnnx(
         self._class_names = class_names
         self._device = device
         self._session_thread_lock = Lock()
+        self.recommended_parameters = recommended_parameters
 
     @property
     def class_names(self) -> List[str]:
@@ -226,6 +230,8 @@ class YOLOACTForInstanceSegmentationOnnx(
         class_agnostic_nms: bool = INFERENCE_MODELS_YOLACT_DEFAULT_CLASS_AGNOSTIC_NMS,
         **kwargs,
     ) -> List[InstanceDetections]:
+        confidence_filter = ConfidenceFilter(confidence, self.recommended_parameters)
+        confidence = confidence_filter.floor
         all_loc_data, all_conf_data, all_mask_data, all_prior_data, all_proto_data = (
             model_results
         )
@@ -296,6 +302,8 @@ class YOLOACTForInstanceSegmentationOnnx(
                     mask=aligned_masks,
                 )
             )
+        if confidence_filter.has_per_class_refinement:
+            final_results = confidence_filter.filter_instance_detections(final_results, self.class_names)
         return final_results
 
 
