@@ -230,7 +230,8 @@ class LocalStreamSource(StreamSource):
                 options={
                     "rtsp_transport": "tcp",
                     "rtsp_flags": "prefer_tcp",
-                    "stimeout": "5000000",  # 5s socket timeout
+                    "stimeout": "5000000",  # 5s RTSP socket timeout
+                    "timeout": "5000000",  # 5s TCP connection timeout
                 },
             )
         else:
