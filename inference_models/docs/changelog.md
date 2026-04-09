@@ -1,5 +1,19 @@
 # Changelog
 
+## `0.24.3`
+
+### Changed
+
+- Added `sigmoid` smoothing for instance-segmentation masks in YOLOv8, YOLOv11, YOLOv12 models family
+
+!!! warning "Instance-segmentation masks will change"
+
+    Due to smoothing, there is slight change to segmentation masks expected - mainly regarding edges 
+    of predictions which should be smoother now. Change is dictated by alignment to old `inference` versions
+    behaviour, effectively drifting from `ultralytics` post-processing.
+
+---
+
 ## `0.24.2`
 
 ### Fixed

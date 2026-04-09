@@ -193,6 +193,7 @@ class YOLOv8ForInstanceSegmentationTorchScript(
                 protos=image_protos,
                 masks_in=image_bboxes[:, 6:],
             )
+            pre_processed_masks = torch.nn.functional.sigmoid(pre_processed_masks)
             cropped_masks = crop_masks_to_boxes(
                 image_bboxes[:, :4], pre_processed_masks
             )
@@ -212,6 +213,7 @@ class YOLOv8ForInstanceSegmentationTorchScript(
                 size_after_pre_processing=image_meta.size_after_pre_processing,
                 inference_size=image_meta.inference_size,
                 static_crop_offset=image_meta.static_crop_offset,
+                binarization_threshold=0.5,
             )
             final_results.append(
                 InstanceDetections(
