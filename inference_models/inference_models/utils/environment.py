@@ -72,6 +72,39 @@ def get_comma_separated_list_of_integers_from_env(
         )
 
 
+def get_comma_separated_list_of_strings_from_env(
+    variable_name: str,
+    default: Optional[List[str]] = None,
+) -> List[str]:
+    value = os.getenv(variable_name)
+    if value is None:
+        if default is None:
+            raise InvalidEnvVariable(
+                message=f"Environment variable {variable_name} is required",
+                help_url="https://inference-models.roboflow.com/errors/runtime-environment/#invalidenvvariable",
+            )
+        return default
+    try:
+        return [v.strip() for v in parse_comma_separated_values(value)]
+    except ValueError:
+        raise InvalidEnvVariable(
+            message=f"Expected a environment variable `{variable_name}` to be comma separated list of strings but got '{value}'",
+            help_url="https://inference-models.roboflow.com/errors/runtime-environment/#invalidenvvariable",
+        )
+
+
+def get_string_from_env(variable_name: str, default: Optional[str] = None) -> str:
+    value = os.getenv(variable_name)
+    if value is None:
+        if default is None:
+            raise InvalidEnvVariable(
+                message=f"Environment variable {variable_name} is required",
+                help_url="https://inference-models.roboflow.com/errors/runtime-environment/#invalidenvvariable",
+            )
+        return default
+    return value.strip()
+
+
 def parse_comma_separated_values(values: str) -> List[str]:
     if not values:
         return []

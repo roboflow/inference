@@ -11,8 +11,14 @@ from inference_models.configuration import (
     INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_CONFIDENCE,
     INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_IOU_THRESHOLD,
     INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_MAX_DETECTIONS,
+    INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_IMAGES_INPUT_NAME,
+    INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_CONFIDENCE_INPUT_NAME,
+    INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_IOU_THRESHOLD_INPUT_NAME,
+    INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_MAX_DETECTIONS_INPUT_NAME,
+    INFERENCE_MODELS_YOLO_ULTRALYTICS_DECLARED_FUSED_NMS_INPUT_NAMES,
 )
 from inference_models.entities import ColorFormat
+from inference_models.logger import LOGGER
 from inference_models.errors import (
     CorruptedModelPackageError,
     EnvironmentConfigurationError,
@@ -127,13 +133,61 @@ class YOLOv8ForObjectDetectionOnnx(
             path_or_bytes=model_package_content["weights.onnx"],
             providers=onnx_execution_providers,
         )
-        input_batch_size = session.get_inputs()[0].shape[0]
+        onnx_graph_inputs = session.get_inputs()
+        input_names = [input.name for input in onnx_graph_inputs]
+
+        if inference_config.post_processing.fused:
+            expected_fused_nms_inputs = (
+                INFERENCE_MODELS_YOLO_ULTRALYTICS_DECLARED_FUSED_NMS_INPUT_NAMES
+            )
+            expected_fused_nms_input_set = set(expected_fused_nms_inputs)
+            if (
+                INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_IMAGES_INPUT_NAME
+                not in input_names
+            ):
+                raise CorruptedModelPackageError(
+                    message=(
+                        f"Fused NMS YOLOv8 ONNX model must declare the images input "
+                        f"({INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_IMAGES_INPUT_NAME!r}). "
+                        f"Got: {input_names}"
+                    ),
+                    help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
+                )
+
+            unexpected_inputs = [
+                name for name in input_names if name not in expected_fused_nms_input_set
+            ]
+            if unexpected_inputs:
+                raise CorruptedModelPackageError(
+                    message=(
+                        f"Fused NMS YOLOv8 ONNX model has unexpected inputs {unexpected_inputs}. "
+                        f"Expected each name to be one of: {expected_fused_nms_input_set}"
+                    ),
+                    help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
+                )
+
+            missing_inputs = [
+                name for name in expected_fused_nms_inputs if name not in input_names
+            ]
+            if missing_inputs:
+                LOGGER.warning(
+                    "Fused NMS ONNX graph omits inputs %s; they will not be passed at "
+                    "inference time and ONNX Runtime will use graph initializer defaults for those parameters. "
+                    "Python arguments matching omitted inputs (e.g. confidence, iou_threshold, max_detections) "
+                    "will not affect the fused NMS stage.",
+                    missing_inputs,
+                )
+        
+        images_input = [graph_input for graph_input in onnx_graph_inputs if graph_input.name == INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_IMAGES_INPUT_NAME][0]
+        input_batch_size = images_input.shape[0]
+        
+        # Dynamic batch size export results in "batch" string as dimension 0 representation
         if isinstance(input_batch_size, str):
             input_batch_size = None
-        input_name = session.get_inputs()[0].name
+
         return cls(
             session=session,
-            input_name=input_name,
+            input_names=input_names,
             class_names=class_names,
             inference_config=inference_config,
             device=device,
@@ -143,14 +197,14 @@ class YOLOv8ForObjectDetectionOnnx(
     def __init__(
         self,
         session: onnxruntime.InferenceSession,
-        input_name: str,
+        input_names: List[str],
         inference_config: InferenceConfig,
         class_names: List[str],
         device: torch.device,
         input_batch_size: Optional[int],
     ):
         self._session = session
-        self._input_name = input_name
+        self._input_names = input_names
         self._inference_config = inference_config
         self._class_names = class_names
         self._device = device
@@ -184,11 +238,40 @@ class YOLOv8ForObjectDetectionOnnx(
             pre_processing_overrides=pre_processing_overrides,
         )
 
-    def forward(self, pre_processed_images: torch.Tensor, **kwargs) -> torch.Tensor:
+    def forward(
+        self,
+        pre_processed_images: torch.Tensor,
+        confidence: Optional[float] = INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_CONFIDENCE,
+        iou_threshold: Optional[float] = INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_IOU_THRESHOLD,
+        max_detections: Optional[int] = INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_MAX_DETECTIONS,
+        **kwargs,
+    ) -> torch.Tensor:
         with self._session_thread_lock:
+            device = pre_processed_images.device
+
+            input_builders = {
+                INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_IMAGES_INPUT_NAME: lambda: pre_processed_images,
+            }
+
+            if self._inference_config.post_processing.fused:
+                if INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_CONFIDENCE_INPUT_NAME in self._input_names:
+                    input_builders[INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_CONFIDENCE_INPUT_NAME] = lambda: torch.tensor(
+                        float(confidence), dtype=torch.float32, device=device
+                    )
+                if INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_IOU_THRESHOLD_INPUT_NAME in self._input_names:
+                    input_builders[INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_IOU_THRESHOLD_INPUT_NAME] = lambda: torch.tensor(
+                        [float(iou_threshold)], dtype=torch.float32, device=device
+                    )
+                if INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_MAX_DETECTIONS_INPUT_NAME in self._input_names:
+                    input_builders[INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_MAX_DETECTIONS_INPUT_NAME] = lambda: torch.tensor(
+                        [int(max_detections)], dtype=torch.int64, device=device
+                    )
+
+            inputs = {name: builder_fn() for name, builder_fn in input_builders.items()}
+
             return run_onnx_session_with_batch_size_limit(
                 session=self._session,
-                inputs={self._input_name: pre_processed_images},
+                inputs=inputs,
                 min_batch_size=self._min_batch_size,
                 max_batch_size=self._max_batch_size,
             )[0]
