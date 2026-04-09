@@ -1,15 +1,15 @@
 """
 Pluggable execution backends for nested workflows.
 
-The execution engine dispatches sub-workflow steps to a :class:`SubworkflowRunner`
-implementation supplied via ``init_parameters`` (design target; wiring is future work).
-
-Blocks must not instantiate the execution engine; see docs/workflows/subworkflow_design.md.
+The execution engine dispatches use_subworkflow steps to a SubworkflowRunner
+(see ``workflows_core.subworkflow_runner`` init parameter).
 """
+
+from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from enum import Enum
-from typing import Any, Dict, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Dict, Optional
 
 if TYPE_CHECKING:
     from inference.core.workflows.execution_engine.v1.compiler.entities import (
@@ -52,12 +52,7 @@ class SubworkflowRunner(ABC):
 
 
 class LocalSubworkflowRunner(SubworkflowRunner):
-    """
-    In-process nested execution (stub).
-
-    Full implementation will delegate to the same executor path as the root workflow
-    without embedding that logic inside the ``use_subworkflow`` block class.
-    """
+    """In-process nested execution via the v1 workflow executor."""
 
     def run(
         self,
@@ -72,7 +67,21 @@ class LocalSubworkflowRunner(SubworkflowRunner):
                 f"{self.__class__.__name__} only supports "
                 f"{SubworkflowExecutionMode.LOCAL.value!r} for now."
             )
-        raise NotImplementedError(
-            "LocalSubworkflowRunner.run is a placeholder; wire _run_workflow / "
-            "ExecutionEngine execution here without calling from the block class."
+
+        from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
+        from inference.core.workflows.execution_engine.v1.executor.core import (
+            run_workflow,
+        )
+
+        pc = parent_context or {}
+
+        return run_workflow(
+            workflow=compiled_child,
+            runtime_parameters=runtime_parameters,
+            max_concurrent_steps=pc.get("max_concurrent_steps", WORKFLOWS_MAX_CONCURRENT_STEPS),
+            kinds_serializers=pc.get("kinds_serializers"),
+            serialize_results=False,
+            profiler=pc.get("profiler"),
+            executor=pc.get("executor"),
+            step_error_handler=pc.get("step_error_handler"),
         )
