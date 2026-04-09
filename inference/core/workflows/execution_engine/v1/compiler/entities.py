@@ -40,6 +40,16 @@ class ParsedWorkflowDefinition:
 
 
 @dataclass(frozen=True)
+class GraphCompilationResult:
+    execution_graph: nx.DiGraph
+    parsed_workflow_definition: ParsedWorkflowDefinition
+    available_blocks: List[BlockSpecification]
+    initializers: Dict[str, Union[Any, Callable[[None], Any]]]
+    kinds_serializers: Dict[str, Callable[[Any], Any]]
+    kinds_deserializers: Dict[str, Callable[[str, Any], Any]]
+
+
+@dataclass(frozen=True)
 class InputSubstitution:
     input_parameter_name: str
     step_manifest: WorkflowBlockManifest
@@ -60,6 +70,7 @@ class CompiledWorkflow:
     kinds_deserializers: Dict[str, Callable[[str, Any], Any]] = field(
         default_factory=dict
     )
+    nested_workflows: Dict[str, "CompiledWorkflow"] = field(default_factory=dict)
 
 
 class NodeCategory(Enum):

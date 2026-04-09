@@ -1,9 +1,7 @@
 import json
-from dataclasses import dataclass
 from functools import partial
 from typing import Any, Callable, Dict, List, Optional, Union
 
-import networkx as nx
 from packaging.version import Version
 
 from inference.core.workflows.execution_engine.entities.base import WorkflowParameter
@@ -23,6 +21,7 @@ from inference.core.workflows.execution_engine.v1.compiler.cache import (
 from inference.core.workflows.execution_engine.v1.compiler.entities import (
     BlockSpecification,
     CompiledWorkflow,
+    GraphCompilationResult,
     InputSubstitution,
     ParsedWorkflowDefinition,
 )
@@ -41,6 +40,13 @@ from inference.core.workflows.execution_engine.v1.compiler.utils import (
 from inference.core.workflows.execution_engine.v1.compiler.validator import (
     validate_workflow_specification,
 )
+from inference.core.workflows.execution_engine.v1.subworkflow.compiler_bridge import (
+    resolve_subworkflow_steps_in_parsed_definition,
+    validate_subworkflow_composition_from_workflow_dict,
+)
+from inference.core.workflows.execution_engine.v1.subworkflow.constants import (
+    USE_SUBWORKFLOW_BLOCK_TYPE,
+)
 from inference.core.workflows.execution_engine.v1.debugger.core import (
     dump_execution_graph,
 )
@@ -49,16 +55,6 @@ from inference.core.workflows.execution_engine.v1.dynamic_blocks.block_assembler
     ensure_dynamic_blocks_allowed,
 )
 from inference.core.workflows.prototypes.block import WorkflowBlockManifest
-
-
-@dataclass(frozen=True)
-class GraphCompilationResult:
-    execution_graph: nx.DiGraph
-    parsed_workflow_definition: ParsedWorkflowDefinition
-    available_blocks: List[BlockSpecification]
-    initializers: Dict[str, Union[Any, Callable[[None], Any]]]
-    kinds_serializers: Dict[str, Callable[[Any], Any]]
-    kinds_deserializers: Dict[str, Callable[[str, Any], Any]]
 
 
 COMPILATION_CACHE = BasicWorkflowsCache[GraphCompilationResult](
@@ -101,6 +97,12 @@ def compile_workflow(
     )
     steps_by_name = {step.manifest.name: step for step in steps}
     dump_execution_graph(execution_graph=graph_compilation_results.execution_graph)
+    nested_workflows = _compile_nested_workflows(
+        parsed=graph_compilation_results.parsed_workflow_definition,
+        init_parameters=init_parameters,
+        execution_engine_version=execution_engine_version,
+        profiler=profiler,
+    )
     return CompiledWorkflow(
         workflow_definition=graph_compilation_results.parsed_workflow_definition,
         workflow_json=workflow_definition,
@@ -110,7 +112,27 @@ def compile_workflow(
         input_substitutions=input_substitutions,
         kinds_serializers=graph_compilation_results.kinds_serializers,
         kinds_deserializers=graph_compilation_results.kinds_deserializers,
+        nested_workflows=nested_workflows,
     )
+
+
+def _compile_nested_workflows(
+    parsed: ParsedWorkflowDefinition,
+    init_parameters: Dict[str, Union[Any, Callable[[None], Any]]],
+    execution_engine_version: Optional[Version],
+    profiler: Optional[WorkflowsProfiler],
+) -> Dict[str, CompiledWorkflow]:
+    nested: Dict[str, CompiledWorkflow] = {}
+    for sm in parsed.steps:
+        if getattr(sm, "type", None) != USE_SUBWORKFLOW_BLOCK_TYPE:
+            continue
+        nested[sm.name] = compile_workflow(
+            workflow_definition=sm.embedded_workflow,
+            init_parameters=init_parameters,
+            execution_engine_version=execution_engine_version,
+            profiler=profiler,
+        )
+    return nested
 
 
 def compile_workflow_graph(
@@ -154,6 +176,16 @@ def compile_workflow_graph(
     )
     validate_workflow_specification(
         workflow_definition=parsed_workflow_definition,
+        profiler=profiler,
+    )
+    validate_subworkflow_composition_from_workflow_dict(workflow_definition)
+    parsed_workflow_definition = resolve_subworkflow_steps_in_parsed_definition(
+        parsed=parsed_workflow_definition,
+        raw_workflow_definition=workflow_definition,
+        compile_workflow_graph_fn=compile_workflow_graph,
+        available_blocks=available_blocks,
+        execution_engine_version=execution_engine_version,
+        init_parameters=init_parameters,
         profiler=profiler,
     )
     execution_graph = prepare_execution_graph(
