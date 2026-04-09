@@ -5,6 +5,8 @@ for different video streaming sources (webcam, RTSP, video files, manual frames)
 """
 
 import asyncio
+import time
+import threading
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any, Callable, Dict, Optional, Tuple
 
@@ -12,6 +14,7 @@ import cv2
 import numpy as np
 from aiortc import RTCPeerConnection, VideoStreamTrack
 from aiortc.contrib.media import MediaPlayer
+from aiortc.mediastreams import VIDEO_CLOCK_RATE, VIDEO_PTIME, VIDEO_TIME_BASE
 from av import VideoFrame
 
 from inference_sdk.http.errors import InvalidParameterError
@@ -182,6 +185,51 @@ class WebcamSource(StreamSource):
             self._track.release()
 
 
+class _PacedTrack(VideoStreamTrack):
+    """Wraps a source track and paces frame delivery like VideoStreamTrack.
+
+    MediaPlayer's PlayerStreamTrack does NOT pace RTSP frames (RTSP is in
+    REAL_TIME_FORMATS so _throttle_playback is False).  This means frames
+    are pulled from FFmpeg and forwarded to the RTP sender as fast as
+    possible, causing packet bursts that overflow the receiver's jitter
+    buffer.
+
+    This wrapper adds the same ~33 ms sleep between frames that the base
+    VideoStreamTrack uses, preventing bursts.
+    """
+
+    def __init__(self, source):  # noqa: ANN001
+        super().__init__()
+        self._source = source
+        self._start_time: float = 0.0
+        self._pts = 0
+
+    async def recv(self) -> VideoFrame:
+        from aiortc.mediastreams import MediaStreamError
+
+        if self.readyState != "live":
+            raise MediaStreamError
+
+        frame = await self._source.recv()
+
+        # Pace delivery: sleep until the next frame slot (~33 ms apart)
+        if self._pts == 0:
+            self._start_time = time.time()
+        else:
+            wait = self._start_time + (self._pts / VIDEO_CLOCK_RATE) - time.time()
+            if wait > 0:
+                await asyncio.sleep(wait)
+
+        frame.pts = self._pts
+        frame.time_base = VIDEO_TIME_BASE
+        self._pts += int(VIDEO_PTIME * VIDEO_CLOCK_RATE)
+        return frame
+
+    def stop(self) -> None:
+        super().stop()
+        self._source.stop()
+
+
 class LocalStreamSource(StreamSource):
     """Stream source for locally captured RTSP/RTMP camera streams.
 
@@ -246,15 +294,22 @@ class LocalStreamSource(StreamSource):
         if self._player.video is None:
             raise RuntimeError(f"No video track available from stream: {self.url}")
 
-        # Add the video track to send to server
-        pc.addTrack(self._player.video)
+        # Wrap in a pacing track — MediaPlayer does not pace RTSP frames
+        # (RTSP is in REAL_TIME_FORMATS so _throttle_playback is False).
+        # Without pacing the RTP sender bursts all packets at once,
+        # overflowing the receiver's jitter buffer → truncated VP8 frames.
+        self._paced_track = _PacedTrack(self._player.video)
+        pc.addTrack(self._paced_track)
 
     def get_initialization_params(self, config: "StreamConfig") -> Dict[str, Any]:
         """Return empty params - stream is captured locally, not by server."""
         return {}
 
     async def cleanup(self) -> None:
-        """Stop the MediaPlayer."""
+        """Stop the paced track and MediaPlayer."""
+        if hasattr(self, "_paced_track") and self._paced_track:
+            self._paced_track.stop()
+            self._paced_track = None
         if self._player:
             if self._player.video:
                 self._player.video.stop()
