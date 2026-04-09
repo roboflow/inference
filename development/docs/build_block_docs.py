@@ -249,6 +249,11 @@ BLOCK_SECTIONS = [
             "title": "Advanced",
             "id": "advanced",
             "colorScheme": "orange"
+        },
+        {
+            "title": "Industrial",
+            "id": "industrial",
+            "colorScheme": "gray"
         }
     ]
 
