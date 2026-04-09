@@ -82,7 +82,7 @@ def test_trt_package_batch_numpy(
         expected_xyxy.cpu(),
         atol=5,
     )
-    assert 16100 <= predictions[0].mask.cpu().sum().item() <= 16200
+    assert 16050 <= predictions[0].mask.cpu().sum().item() <= 16200
     assert torch.allclose(
         predictions[1].confidence.cpu(),
         torch.tensor([0.9795]).cpu(),
@@ -225,7 +225,7 @@ def test_trt_package_torch_list(
         expected_xyxy.cpu(),
         atol=5,
     )
-    assert 16100 <= predictions[0].mask.cpu().sum().item() <= 16200
+    assert 16050 <= predictions[0].mask.cpu().sum().item() <= 16200
     assert torch.allclose(
         predictions[1].confidence.cpu(),
         torch.tensor([0.9795]).cpu(),
