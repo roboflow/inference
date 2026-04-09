@@ -2,7 +2,6 @@ import numpy as np
 import pytest
 import torch
 
-
 # ── Static non-fused (batch=1) ──────────────────────────────────────────────
 
 
@@ -20,9 +19,7 @@ def test_static_non_fused_numpy(
         model_name_or_path=coin_counting_yololite_edge_n_onnx_static_bs_stretch_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
-    predictions = model(
-        coins_counting_image_numpy, confidence=0.25, iou_threshold=0.45
-    )
+    predictions = model(coins_counting_image_numpy, confidence=0.25, iou_threshold=0.45)
 
     assert len(predictions) == 1
     assert predictions[0].xyxy.shape[1] == 4
@@ -114,9 +111,7 @@ def test_dynamic_non_fused_torch(
         model_name_or_path=coin_counting_yololite_edge_n_onnx_dynamic_bs_stretch_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
-    predictions = model(
-        coins_counting_image_torch, confidence=0.25, iou_threshold=0.45
-    )
+    predictions = model(coins_counting_image_torch, confidence=0.25, iou_threshold=0.45)
 
     assert len(predictions) == 1
     assert predictions[0].xyxy.shape[1] == 4
@@ -159,11 +154,15 @@ def test_dynamic_non_fused_class_agnostic_nms(
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
     standard = model(
-        coins_counting_image_numpy, confidence=0.25, iou_threshold=0.45,
+        coins_counting_image_numpy,
+        confidence=0.25,
+        iou_threshold=0.45,
         class_agnostic_nms=False,
     )
     agnostic = model(
-        coins_counting_image_numpy, confidence=0.25, iou_threshold=0.45,
+        coins_counting_image_numpy,
+        confidence=0.25,
+        iou_threshold=0.45,
         class_agnostic_nms=True,
     )
 
@@ -214,7 +213,8 @@ def test_fused_nms_batch_numpy(
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
     predictions = model(
-        [coins_counting_image_numpy, coins_counting_image_numpy], confidence=0.25,
+        [coins_counting_image_numpy, coins_counting_image_numpy],
+        confidence=0.25,
     )
 
     assert len(predictions) == 2
