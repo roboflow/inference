@@ -134,6 +134,9 @@ from inference.core.workflows.core_steps.common.serializers import (
 from inference.core.workflows.core_steps.flow_control.continue_if.v1 import (
     ContinueIfBlockV1,
 )
+from inference.core.workflows.core_steps.flow_control.use_subworkflow.v1 import (
+    UseSubworkflowBlockV1,
+)
 from inference.core.workflows.core_steps.flow_control.delta_filter.v1 import (
     DeltaFilterBlockV1,
 )
@@ -714,6 +717,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         DetectionsTransformationBlockV1,
         RoboflowDatasetUploadBlockV1,
         ContinueIfBlockV1,
+        UseSubworkflowBlockV1,
         RateLimiterBlockV1,
         PerspectiveCorrectionBlockV1,
         DeltaFilterBlockV1,
