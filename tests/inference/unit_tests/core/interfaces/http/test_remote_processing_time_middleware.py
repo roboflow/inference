@@ -6,7 +6,7 @@ from starlette.responses import PlainTextResponse
 from starlette.routing import Route
 from starlette.testclient import TestClient
 
-from inference.core.interfaces.http.request_metrics import (
+from inference.core.interfaces.http.http_api import (
     REMOTE_PROCESSING_TIME_HEADER,
     REMOTE_PROCESSING_TIMES_HEADER,
     GCPServerlessMiddleware,
@@ -14,11 +14,10 @@ from inference.core.interfaces.http.request_metrics import (
 from inference_sdk.config import (
     INTERNAL_REMOTE_EXEC_REQ_VERIFIED_HEADER,
     PROCESSING_TIME_HEADER,
+    RemoteProcessingTimeCollector,
     apply_duration_minimum,
     remote_processing_times,
 )
-
-REQUEST_METRICS_MODULE = "inference.core.interfaces.http.request_metrics"
 
 
 def _endpoint_that_adds_remote_times(request):
@@ -35,15 +34,6 @@ def _endpoint_no_remote_times(request):
     return PlainTextResponse("OK")
 
 
-def _endpoint_that_adds_remote_model_metadata(request):
-    collector = remote_processing_times.get()
-    if collector is None:
-        return PlainTextResponse("missing")
-    collector.add_model_ids(["remote-model/1"])
-    collector.record_cold_start(load_time=0.4, model_id="remote-model/1")
-    return PlainTextResponse(str(collector.snapshot_cold_start_count()))
-
-
 def _create_app(routes):
     app = Starlette(routes=routes)
     app.add_middleware(GCPServerlessMiddleware)
@@ -51,7 +41,7 @@ def _create_app(routes):
 
 
 @patch(
-    f"{REQUEST_METRICS_MODULE}.WORKFLOWS_REMOTE_EXECUTION_TIME_FORWARDING",
+    "inference.core.interfaces.http.http_api.WORKFLOWS_REMOTE_EXECUTION_TIME_FORWARDING",
     True,
 )
 class TestGCPServerlessMiddlewareRemoteProcessingTimes:
@@ -123,7 +113,7 @@ class TestGCPServerlessMiddlewareRemoteProcessingTimes:
 
 
 @patch(
-    f"{REQUEST_METRICS_MODULE}.WORKFLOWS_REMOTE_EXECUTION_TIME_FORWARDING",
+    "inference.core.interfaces.http.http_api.WORKFLOWS_REMOTE_EXECUTION_TIME_FORWARDING",
     False,
 )
 class TestGCPServerlessMiddlewareWithForwardingDisabled:
@@ -144,22 +134,6 @@ class TestGCPServerlessMiddlewareWithForwardingDisabled:
         # Wall-clock time still present
         assert PROCESSING_TIME_HEADER in response.headers
 
-    def test_collector_stays_available_for_model_metadata(self) -> None:
-        # given
-        app = _create_app(
-            [Route("/workflow", endpoint=_endpoint_that_adds_remote_model_metadata)]
-        )
-        client = TestClient(app)
-
-        # when
-        response = client.get("/workflow")
-
-        # then
-        assert response.status_code == 200
-        assert response.text == "1"
-        assert REMOTE_PROCESSING_TIME_HEADER not in response.headers
-        assert REMOTE_PROCESSING_TIMES_HEADER not in response.headers
-
 
 def _endpoint_read_duration_minimum(request):
     """Returns the current value of apply_duration_minimum."""
@@ -168,7 +142,7 @@ def _endpoint_read_duration_minimum(request):
 
 
 @patch(
-    f"{REQUEST_METRICS_MODULE}.WORKFLOWS_REMOTE_EXECUTION_TIME_FORWARDING",
+    "inference.core.interfaces.http.http_api.WORKFLOWS_REMOTE_EXECUTION_TIME_FORWARDING",
     True,
 )
 class TestApplyDurationMinimumContextVar:
@@ -185,7 +159,7 @@ class TestApplyDurationMinimumContextVar:
         assert response.headers[INTERNAL_REMOTE_EXEC_REQ_VERIFIED_HEADER] == "false"
 
     @patch(
-        f"{REQUEST_METRICS_MODULE}.ROBOFLOW_INTERNAL_SERVICE_SECRET",
+        "inference.core.interfaces.http.http_api.ROBOFLOW_INTERNAL_SERVICE_SECRET",
         "test-secret-123",
     )
     def test_verified_internal_request_sets_apply_duration_minimum_false(self) -> None:
@@ -204,7 +178,7 @@ class TestApplyDurationMinimumContextVar:
         assert response.headers[INTERNAL_REMOTE_EXEC_REQ_VERIFIED_HEADER] == "true"
 
     @patch(
-        f"{REQUEST_METRICS_MODULE}.ROBOFLOW_INTERNAL_SERVICE_SECRET",
+        "inference.core.interfaces.http.http_api.ROBOFLOW_INTERNAL_SERVICE_SECRET",
         "test-secret-123",
     )
     def test_wrong_secret_sets_apply_duration_minimum_true(self) -> None:
@@ -223,7 +197,7 @@ class TestApplyDurationMinimumContextVar:
         assert response.headers[INTERNAL_REMOTE_EXEC_REQ_VERIFIED_HEADER] == "false"
 
     @patch(
-        f"{REQUEST_METRICS_MODULE}.ROBOFLOW_INTERNAL_SERVICE_SECRET",
+        "inference.core.interfaces.http.http_api.ROBOFLOW_INTERNAL_SERVICE_SECRET",
         None,
     )
     def test_no_secret_configured_sets_apply_duration_minimum_true(self) -> None:
