@@ -1601,6 +1601,8 @@ class InferenceHTTPClient:
         model_id: str,
         prompt: Optional[str] = None,
         model_id_in_path: bool = False,
+        max_new_tokens: Optional[int] = None,
+        enable_thinking: Optional[bool] = None,
     ) -> Union[dict, List[dict]]:
         """Run inference using a Large Multimodal Model (LMM).
 
@@ -1620,6 +1622,10 @@ class InferenceHTTPClient:
             model_id_in_path (bool, optional): If True, includes model_id in the URL path
                 (e.g., /infer/lmm/florence-2-base) which enables path-based routing.
                 If False (default), model_id is only sent in the request body.
+            max_new_tokens (Optional[int], optional): Maximum number of tokens to generate.
+                If not provided, the server-side model default is used.
+            enable_thinking (Optional[bool], optional): Enables reasoning mode for models
+                that support it. If not provided, the server-side model default is used.
 
         Returns:
             Union[dict, List[dict]]: Inference results containing the model response.
@@ -1632,6 +1638,10 @@ class InferenceHTTPClient:
         extra_payload = {"model_id": model_id}
         if prompt is not None:
             extra_payload["prompt"] = prompt
+        if max_new_tokens is not None:
+            extra_payload["max_new_tokens"] = max_new_tokens
+        if enable_thinking is not None:
+            extra_payload["enable_thinking"] = enable_thinking
 
         if model_id_in_path:
             endpoint = f"/infer/lmm/{model_id}"
@@ -1652,6 +1662,8 @@ class InferenceHTTPClient:
         model_id: str,
         prompt: Optional[str] = None,
         model_id_in_path: bool = False,
+        max_new_tokens: Optional[int] = None,
+        enable_thinking: Optional[bool] = None,
     ) -> Union[dict, List[dict]]:
         """Run inference using a Large Multimodal Model (LMM) asynchronously.
 
@@ -1666,6 +1678,10 @@ class InferenceHTTPClient:
             model_id_in_path (bool, optional): If True, includes model_id in the URL path
                 (e.g., /infer/lmm/florence-2-base) which enables path-based routing.
                 If False (default), model_id is only sent in the request body.
+            max_new_tokens (Optional[int], optional): Maximum number of tokens to generate.
+                If not provided, the server-side model default is used.
+            enable_thinking (Optional[bool], optional): Enables reasoning mode for models
+                that support it. If not provided, the server-side model default is used.
 
         Returns:
             Union[dict, List[dict]]: Inference results containing the model response.
@@ -1677,6 +1693,10 @@ class InferenceHTTPClient:
         extra_payload = {"model_id": model_id}
         if prompt is not None:
             extra_payload["prompt"] = prompt
+        if max_new_tokens is not None:
+            extra_payload["max_new_tokens"] = max_new_tokens
+        if enable_thinking is not None:
+            extra_payload["enable_thinking"] = enable_thinking
 
         if model_id_in_path:
             endpoint = f"/infer/lmm/{model_id}"

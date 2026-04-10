@@ -1,4 +1,4 @@
-"""Unit tests for VLM blocks remote execution (Florence2, Moondream2, SmolVLM, Qwen)."""
+"""Unit tests for VLM blocks remote execution."""
 
 from unittest.mock import MagicMock, patch
 
@@ -171,6 +171,48 @@ class TestSmolVLMRemote:
         mock_client.infer_lmm.assert_called_once()
 
 
+class TestGLMOCRRemote:
+    """Tests for GLM-OCR remote execution."""
+
+    @patch(
+        "inference.core.workflows.core_steps.models.foundation.glm_ocr.v1.InferenceHTTPClient"
+    )
+    def test_run_remotely_forwards_max_new_tokens(
+        self, mock_client_cls, mock_model_manager, mock_workflow_image_data
+    ):
+        from inference.core.workflows.core_steps.models.foundation.glm_ocr.v1 import (
+            GLMOCRBlockV1,
+        )
+
+        mock_client = MagicMock()
+        mock_client.infer_lmm.return_value = {"response": "recognized text"}
+        mock_client_cls.return_value = mock_client
+
+        block = GLMOCRBlockV1(
+            model_manager=mock_model_manager,
+            api_key="test_api_key",
+            step_execution_mode=StepExecutionMode.REMOTE,
+        )
+
+        result = block.run(
+            images=[mock_workflow_image_data],
+            model_version="glm-ocr",
+            task_type="text-recognition",
+            prompt=None,
+            max_new_tokens=4096,
+        )
+
+        assert len(result) == 1
+        assert result[0]["parsed_output"] == "recognized text"
+        mock_client.infer_lmm.assert_called_once_with(
+            inference_input=mock_workflow_image_data.base64_image,
+            model_id="glm-ocr",
+            prompt="Text Recognition:",
+            model_id_in_path=True,
+            max_new_tokens=4096,
+        )
+
+
 class TestQwen25VLRemote:
     """Tests for Qwen2.5-VL remote execution."""
 
@@ -204,6 +246,50 @@ class TestQwen25VLRemote:
         assert len(result) == 1
         assert "parsed_output" in result[0]
         mock_client.infer_lmm.assert_called_once()
+
+
+class TestQwen35VLRemote:
+    """Tests for Qwen3.5-VL remote execution."""
+
+    @patch(
+        "inference.core.workflows.core_steps.models.foundation.qwen3_5vl.v1.InferenceHTTPClient"
+    )
+    def test_run_remotely_forwards_generation_parameters(
+        self, mock_client_cls, mock_model_manager, mock_workflow_image_data
+    ):
+        from inference.core.workflows.core_steps.models.foundation.qwen3_5vl.v1 import (
+            Qwen35VLBlockV1,
+        )
+
+        mock_client = MagicMock()
+        mock_client.infer_lmm.return_value = {"response": "This is a test response."}
+        mock_client_cls.return_value = mock_client
+
+        block = Qwen35VLBlockV1(
+            model_manager=mock_model_manager,
+            api_key="test_api_key",
+            step_execution_mode=StepExecutionMode.REMOTE,
+        )
+
+        result = block.run(
+            images=[mock_workflow_image_data],
+            model_version="qwen3_5-2b",
+            prompt="Describe this image",
+            system_prompt="You are helpful.",
+            enable_thinking=True,
+            max_new_tokens=1024,
+        )
+
+        assert len(result) == 1
+        assert "parsed_output" in result[0]
+        mock_client.infer_lmm.assert_called_once_with(
+            inference_input=mock_workflow_image_data.base64_image,
+            model_id="qwen3_5-2b",
+            prompt="Describe this image<system_prompt>You are helpful.",
+            model_id_in_path=True,
+            enable_thinking=True,
+            max_new_tokens=1024,
+        )
 
 
 class TestQwen3VLRemote:

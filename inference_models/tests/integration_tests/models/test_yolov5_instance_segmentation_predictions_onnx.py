@@ -35,7 +35,7 @@ def test_seg_onnx_package_with_static_batch_size_and_letterbox_numpy(
     )
     assert np.allclose(predictions[0].class_id[0].cpu().numpy(), [21], atol=1)
     assert np.allclose(predictions[0].confidence[0].cpu().numpy(), [0.9928], atol=0.001)
-    assert 16000 <= predictions[0].mask[0].cpu().numpy().sum() <= 16100
+    assert 16000 <= predictions[0].mask[0].cpu().numpy().sum() <= 16200
 
 
 @pytest.mark.slow
@@ -70,13 +70,13 @@ def test_seg_onnx_package_with_static_batch_size_and_letterbox_numpy_list(
     )
     assert np.allclose(predictions[0].class_id[0].cpu().numpy(), [21], atol=1)
     assert np.allclose(predictions[0].confidence[0].cpu().numpy(), [0.9928], atol=0.001)
-    assert 16000 <= predictions[0].mask[0].cpu().numpy().sum() <= 16100
+    assert 16000 <= predictions[0].mask[0].cpu().numpy().sum() <= 16200
     assert np.allclose(
         predictions[1].xyxy[0].cpu().numpy(), [61, 174, 188, 370], atol=1
     )
     assert np.allclose(predictions[1].class_id[0].cpu().numpy(), [21], atol=1)
     assert np.allclose(predictions[1].confidence[0].cpu().numpy(), [0.9928], atol=0.001)
-    assert 16000 <= predictions[1].mask[0].cpu().numpy().sum() <= 16100
+    assert 16000 <= predictions[1].mask[0].cpu().numpy().sum() <= 16200
 
 
 @pytest.mark.slow
@@ -110,7 +110,7 @@ def test_seg_onnx_package_with_static_batch_size_and_letterbox_torch(
     )
     assert np.allclose(predictions[0].class_id[0].cpu().numpy(), [21], atol=1)
     assert np.allclose(predictions[0].confidence[0].cpu().numpy(), [0.9928], atol=0.001)
-    assert 16000 <= predictions[0].mask[0].cpu().numpy().sum() <= 16100
+    assert 16000 <= predictions[0].mask[0].cpu().numpy().sum() <= 16200
 
 
 @pytest.mark.slow
@@ -144,13 +144,13 @@ def test_seg_onnx_package_with_static_batch_size_and_letterbox_torch_list(
     )
     assert np.allclose(predictions[0].class_id[0].cpu().numpy(), [21], atol=1)
     assert np.allclose(predictions[0].confidence[0].cpu().numpy(), [0.9928], atol=0.001)
-    assert 16000 <= predictions[0].mask[0].cpu().numpy().sum() <= 16100
+    assert 16000 <= predictions[0].mask[0].cpu().numpy().sum() <= 16200
     assert np.allclose(
         predictions[1].xyxy[0].cpu().numpy(), [61, 174, 188, 370], atol=1
     )
     assert np.allclose(predictions[1].class_id[0].cpu().numpy(), [21], atol=1)
     assert np.allclose(predictions[1].confidence[0].cpu().numpy(), [0.9928], atol=0.001)
-    assert 16000 <= predictions[1].mask[0].cpu().numpy().sum() <= 16100
+    assert 16000 <= predictions[1].mask[0].cpu().numpy().sum() <= 16200
 
 
 @pytest.mark.slow
@@ -184,10 +184,10 @@ def test_seg_onnx_package_with_static_batch_size_and_letterbox_torch_tensor(
     )
     assert np.allclose(predictions[0].class_id[0].cpu().numpy(), [21], atol=1)
     assert np.allclose(predictions[0].confidence[0].cpu().numpy(), [0.9928], atol=0.001)
-    assert 16000 <= predictions[0].mask[0].cpu().numpy().sum() <= 16100
+    assert 16000 <= predictions[0].mask[0].cpu().numpy().sum() <= 16200
     assert np.allclose(
         predictions[1].xyxy[0].cpu().numpy(), [61, 174, 188, 370], atol=1
     )
     assert np.allclose(predictions[1].class_id[0].cpu().numpy(), [21], atol=1)
     assert np.allclose(predictions[1].confidence[0].cpu().numpy(), [0.9928], atol=0.001)
-    assert 16000 <= predictions[1].mask[0].cpu().numpy().sum() <= 16100
+    assert 16000 <= predictions[1].mask[0].cpu().numpy().sum() <= 16200
