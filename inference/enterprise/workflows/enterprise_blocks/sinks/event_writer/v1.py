@@ -95,6 +95,14 @@ ALL_DATA_SCHEMAS_RELEVANT = {
 
 
 class BlockManifest(WorkflowBlockManifest):
+    """Manifest for the Event Writer sink block.
+
+    Sends structured events to the Event Ingestion Service via its v2 API.
+    Each event includes a schema (quality_check, inventory_count, safety_alert,
+    or custom), schema-specific data, one image entry with optional annotations,
+    and optional flat key-value custom metadata.
+    """
+
     model_config = ConfigDict(
         json_schema_extra={
             "name": "Event Writer",
@@ -294,6 +302,13 @@ class BlockManifest(WorkflowBlockManifest):
 
 
 class EventWriterSinkBlockV1(WorkflowBlock):
+    """Sends structured events to the Event Ingestion Service via its v2 API.
+
+    Supports fire-and-forget (default) or synchronous execution modes.
+    In fire-and-forget mode the HTTP request runs in the background and
+    ``event_id`` will be empty. In synchronous mode the block waits for
+    the response and returns the created ``event_id``.
+    """
 
     def __init__(
         self,
@@ -336,6 +351,19 @@ class EventWriterSinkBlockV1(WorkflowBlock):
         instance_segmentations: Optional[Any] = None,
         keypoint_detections: Optional[Any] = None,
     ) -> BlockResult:
+        """Build and send a v2 event to the Event Ingestion Service.
+
+        Args:
+            event_ingestion_url (str): Base URL of the Event Ingestion Service.
+            event_schema (str): One of 'quality_check', 'inventory_count', 'safety_alert', or 'custom'.
+            output_image (WorkflowImageData): The output/visualization image sent as the primary display image.
+            fire_and_forget (bool): When True the request runs in the background and event_id will be empty.
+            disable_sink (bool): When True the block is skipped entirely.
+            request_timeout (int): HTTP request timeout in seconds.
+
+        Returns:
+            dict: A dictionary with ``error_status`` (bool), ``event_id`` (str), and ``message`` (str).
+        """
         if disable_sink:
             return {
                 "error_status": False,

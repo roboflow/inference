@@ -106,6 +106,10 @@ class BlockManifest(WorkflowBlockManifest):
             },
         },
     )
+    max_new_tokens: Optional[int] = Field(
+        default=None,
+        description="Maximum number of tokens to generate. If not set, the model default will be used.",
+    )
 
     model_config = ConfigDict(
         json_schema_extra={
@@ -199,6 +203,7 @@ class GLMOCRBlockV1(WorkflowBlock):
         model_version: str,
         task_type: str,
         prompt: Optional[str],
+        max_new_tokens: Optional[int] = None,
     ) -> BlockResult:
         resolved_prompt = _resolve_prompt(task_type, prompt)
         if self._step_execution_mode == StepExecutionMode.LOCAL:
@@ -206,12 +211,14 @@ class GLMOCRBlockV1(WorkflowBlock):
                 images=images,
                 model_version=model_version,
                 prompt=resolved_prompt,
+                max_new_tokens=max_new_tokens,
             )
         elif self._step_execution_mode == StepExecutionMode.REMOTE:
             return self.run_remotely(
                 images=images,
                 model_version=model_version,
                 prompt=resolved_prompt,
+                max_new_tokens=max_new_tokens,
             )
         else:
             raise ValueError(
@@ -223,6 +230,7 @@ class GLMOCRBlockV1(WorkflowBlock):
         images: Batch[WorkflowImageData],
         model_version: str,
         prompt: str,
+        max_new_tokens: Optional[int] = None,
     ) -> BlockResult:
         api_url = (
             LOCAL_INFERENCE_API_URL
@@ -243,6 +251,7 @@ class GLMOCRBlockV1(WorkflowBlock):
                 model_id=model_version,
                 prompt=prompt,
                 model_id_in_path=True,
+                max_new_tokens=max_new_tokens,
             )
             response_text = result.get("response", result)
             predictions.append({"parsed_output": response_text})
@@ -254,6 +263,7 @@ class GLMOCRBlockV1(WorkflowBlock):
         images: Batch[WorkflowImageData],
         model_version: str,
         prompt: str,
+        max_new_tokens: Optional[int] = None,
     ) -> BlockResult:
         inference_images = [
             i.to_inference_format(numpy_preferred=False) for i in images
@@ -263,13 +273,16 @@ class GLMOCRBlockV1(WorkflowBlock):
 
         predictions = []
         for image in inference_images:
-            request = LMMInferenceRequest(
+            request_kwargs = dict(
                 api_key=self._api_key,
                 model_id=model_version,
                 image=image,
                 source="workflow-execution",
                 prompt=prompt,
             )
+            if max_new_tokens is not None:
+                request_kwargs["max_new_tokens"] = max_new_tokens
+            request = LMMInferenceRequest(**request_kwargs)
             prediction = self._model_manager.infer_from_request_sync(
                 model_id=model_version, request=request
             )
