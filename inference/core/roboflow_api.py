@@ -53,7 +53,7 @@ from inference.core.env import (
     TRANSIENT_ROBOFLOW_API_ERRORS_RETRIES,
     TRANSIENT_ROBOFLOW_API_ERRORS_RETRY_INTERVAL,
     USE_FILE_CACHE_FOR_WORKFLOWS_DEFINITIONS,
-    WORKFLOWS_DEFINITION_CACHE_EXPIRY,
+    WORKFLOWS_DEFINITION_CACHE_EXPIRY, ROBOFLOW_INTERNAL_SERVICE_SECRET,
 )
 from inference.core.exceptions import (
     MalformedRoboflowAPIResponseError,
@@ -595,6 +595,10 @@ def get_model_metadata_from_inference_models_registry(
         )
         if not skip:
             headers[ENFORCE_CREDITS_VERIFICATION_HEADER] = "true"
+    if ROBOFLOW_INTERNAL_SERVICE_SECRET:
+        headers["X-Roboflow-Internal-Service-Secret"] = (
+            ROBOFLOW_INTERNAL_SERVICE_SECRET
+        )
     api_url = _add_params_to_url(
         url=f"{API_BASE_URL}/models/v1/external/weights",
         params=query,
@@ -1226,6 +1230,10 @@ def get_extra_weights_provider_headers(
         )
         if not skip:
             headers[ENFORCE_CREDITS_VERIFICATION_HEADER] = "true"
+    if ROBOFLOW_INTERNAL_SERVICE_SECRET:
+        headers["X-Roboflow-Internal-Service-Secret"] = (
+            ROBOFLOW_INTERNAL_SERVICE_SECRET
+        )
     return build_roboflow_api_headers(explicit_headers=headers)
 
 
