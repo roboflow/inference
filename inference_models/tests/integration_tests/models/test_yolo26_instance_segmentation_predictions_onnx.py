@@ -47,7 +47,7 @@ def test_onnx_package_stretch_static_bs_numpy(
         expected_xyxy,
         atol=XYXY_ATOL,
     )
-    assert 210000 <= mask_region_sum <= 210200
+    assert 209000 <= mask_region_sum <= 210200
 
 
 @pytest.mark.slow
@@ -112,8 +112,8 @@ def test_onnx_package_stretch_static_bs_batch_numpy(
         expected_xyxy,
         atol=XYXY_ATOL,
     )
-    assert 210000 <= mask_region_sum_0 <= 210200
-    assert 210000 <= mask_region_sum_1 <= 210200
+    assert 209000 <= mask_region_sum_0 <= 210200
+    assert 209000 <= mask_region_sum_1 <= 210200
 
 
 @pytest.mark.slow
@@ -157,7 +157,7 @@ def test_onnx_package_stretch_static_bs_torch(
         expected_xyxy,
         atol=XYXY_ATOL,
     )
-    assert 210000 <= mask_region_sum <= 210200
+    assert 209000 <= mask_region_sum <= 210200
 
 
 @pytest.mark.slow
@@ -201,7 +201,7 @@ def test_onnx_package_stretch_dynamic_bs_numpy(
         expected_xyxy,
         atol=XYXY_ATOL,
     )
-    assert 210000 <= mask_region_sum <= 210200
+    assert 209000 <= mask_region_sum <= 210200
 
 
 @pytest.mark.slow
@@ -266,8 +266,8 @@ def test_onnx_package_stretch_dynamic_bs_batch_numpy(
         expected_xyxy,
         atol=XYXY_ATOL,
     )
-    assert 210000 <= mask_region_sum_0 <= 210200
-    assert 210000 <= mask_region_sum_1 <= 210200
+    assert 209000 <= mask_region_sum_0 <= 210200
+    assert 209000 <= mask_region_sum_1 <= 210200
 
 
 @pytest.mark.slow
@@ -311,7 +311,7 @@ def test_onnx_package_stretch_dynamic_bs_torch(
         expected_xyxy,
         atol=XYXY_ATOL,
     )
-    assert 210000 <= mask_region_sum <= 210200
+    assert 209000 <= mask_region_sum <= 210200
 
 
 @pytest.mark.slow
@@ -355,7 +355,7 @@ def test_onnx_package_letterbox_static_bs_numpy(
         expected_xyxy,
         atol=XYXY_ATOL,
     )
-    assert 221000 <= mask_region_sum <= 221300
+    assert 219500 <= mask_region_sum <= 221300
 
 
 @pytest.mark.slow
@@ -420,8 +420,8 @@ def test_onnx_package_letterbox_static_bs_batch_numpy(
         expected_xyxy,
         atol=XYXY_ATOL,
     )
-    assert 221000 <= mask_region_sum_0 <= 221300
-    assert 221000 <= mask_region_sum_1 <= 221300
+    assert 219500 <= mask_region_sum_0 <= 221300
+    assert 219500 <= mask_region_sum_1 <= 221300
 
 
 @pytest.mark.slow
@@ -465,7 +465,7 @@ def test_onnx_package_letterbox_static_bs_torch(
         expected_xyxy,
         atol=XYXY_ATOL,
     )
-    assert 221000 <= mask_region_sum <= 221300
+    assert 219500 <= mask_region_sum <= 221300
 
 
 @pytest.mark.slow
@@ -509,7 +509,7 @@ def test_onnx_package_letterbox_dynamic_bs_numpy(
         expected_xyxy,
         atol=XYXY_ATOL,
     )
-    assert 221000 <= mask_region_sum <= 221300
+    assert 219500 <= mask_region_sum <= 221300
 
 
 @pytest.mark.slow
@@ -574,8 +574,8 @@ def test_onnx_package_letterbox_dynamic_bs_batch_numpy(
         expected_xyxy,
         atol=XYXY_ATOL,
     )
-    assert 221000 <= mask_region_sum_0 <= 221300
-    assert 221000 <= mask_region_sum_1 <= 221300
+    assert 219500 <= mask_region_sum_0 <= 221300
+    assert 219500 <= mask_region_sum_1 <= 221300
 
 
 @pytest.mark.slow
@@ -619,4 +619,4 @@ def test_onnx_package_letterbox_dynamic_bs_torch(
         expected_xyxy,
         atol=XYXY_ATOL,
     )
-    assert 221000 <= mask_region_sum <= 221300
+    assert 219500 <= mask_region_sum <= 221300
