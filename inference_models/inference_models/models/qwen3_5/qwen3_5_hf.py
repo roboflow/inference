@@ -6,7 +6,6 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import numpy as np
 import torch
 from peft import PeftModel
-from PIL import Image
 from transformers import (
     AutoProcessor,
     BitsAndBytesConfig,
@@ -39,9 +38,9 @@ class Qwen35HF:
         local_files_only: bool = True,
         quantization_config: Optional[BitsAndBytesConfig] = None,
         disable_quantization: bool = False,
-        use_vllm: bool = False,
         **kwargs,
     ) -> "Qwen35HF":
+        adapter_config_path = os.path.join(model_name_or_path, "adapter_config.json")
         inference_config_path = os.path.join(
             model_name_or_path, "inference_config.json"
         )
@@ -57,36 +56,6 @@ class Qwen35HF:
                     ResizeMode.FIT_LONGER_EDGE,
                 },
             )
-
-        if use_vllm:
-            try:
-                from vllm import LLM
-            except ImportError:
-                raise ImportError(
-                    "vLLM is required for use_vllm=True. "
-                    "Install with: pip install vllm"
-                )
-            vllm_engine = LLM(
-                model=model_name_or_path,
-                dtype="bfloat16",
-                trust_remote_code=trust_remote_code,
-            )
-            processor = AutoProcessor.from_pretrained(
-                model_name_or_path,
-                trust_remote_code=trust_remote_code,
-                local_files_only=local_files_only,
-                min_pixels=16 * 32 * 32,
-                max_pixels=512 * 32 * 32,
-            )
-            return cls(
-                model=None,
-                processor=processor,
-                inference_config=inference_config,
-                device=device,
-                vllm_engine=vllm_engine,
-            )
-
-        adapter_config_path = os.path.join(model_name_or_path, "adapter_config.json")
 
         attn_implementation = _get_qwen3vl_attn_implementation(device)
 
@@ -163,44 +132,17 @@ class Qwen35HF:
 
     def __init__(
         self,
-        model: Optional[Qwen3_5ForConditionalGeneration],
+        model: Qwen3_5ForConditionalGeneration,
         processor: AutoProcessor,
         inference_config: Optional[InferenceConfig],
         device: torch.device,
-        vllm_engine=None,
     ):
         self._model = model
         self._processor = processor
         self._inference_config = inference_config
         self._device = device
-        self._vllm_engine = vllm_engine
-        self._use_vllm = vllm_engine is not None
         self.default_system_prompt = "You are a helpful assistant."
         self._lock = Lock()
-
-    def _parse_prompt(self, prompt: Optional[str]) -> Tuple[str, str]:
-        if prompt is None:
-            return "Describe what's in this image.", self.default_system_prompt
-        split_prompt = prompt.split("<system_prompt>")
-        if len(split_prompt) == 1:
-            return (
-                split_prompt[0] or "Describe what's in this image.",
-                self.default_system_prompt,
-            )
-        return (
-            split_prompt[0] or "Describe what's in this image.",
-            split_prompt[1] or self.default_system_prompt,
-        )
-
-    @staticmethod
-    def _to_pil(images) -> Image.Image:
-        if isinstance(images, torch.Tensor):
-            images = images.cpu().numpy()
-        if isinstance(images, np.ndarray):
-            if images.dtype != np.uint8:
-                images = (images * 255).astype(np.uint8)
-            return Image.fromarray(images)
-        return images
 
     def prompt(
         self,
@@ -213,13 +155,6 @@ class Qwen35HF:
         enable_thinking: bool = False,
         **kwargs,
     ) -> Union[List[str], List[Dict[str, str]]]:
-        if self._use_vllm:
-            return self._prompt_vllm(
-                images=images,
-                prompt=prompt,
-                max_new_tokens=max_new_tokens,
-                do_sample=do_sample,
-            )
         inputs = self.pre_process_generation(
             images=images,
             prompt=prompt,
@@ -237,52 +172,6 @@ class Qwen35HF:
             enable_thinking=enable_thinking,
         )
 
-    def _prompt_vllm(
-        self,
-        images,
-        prompt: Optional[str],
-        max_new_tokens: int,
-        do_sample: bool,
-    ) -> List[str]:
-        from vllm import SamplingParams
-
-        prompt_text, system_prompt = self._parse_prompt(prompt)
-
-        conversation = [
-            {
-                "role": "system",
-                "content": [{"type": "text", "text": system_prompt}],
-            },
-            {
-                "role": "user",
-                "content": [
-                    {"type": "image", "image": images},
-                    {"type": "text", "text": prompt_text},
-                ],
-            },
-        ]
-
-        text = self._processor.apply_chat_template(
-            [conversation],
-            tokenize=False,
-            add_generation_prompt=True,
-        )
-        if isinstance(text, list):
-            text = text[0]
-
-        pil_image = self._to_pil(images)
-
-        sampling_params = SamplingParams(
-            max_tokens=max_new_tokens,
-            temperature=0.0 if not do_sample else 0.7,
-        )
-        outputs = self._vllm_engine.generate(
-            {"prompt": text, "multi_modal_data": {"image": pil_image}},
-            sampling_params=sampling_params,
-        )
-
-        return [output.outputs[0].text for output in outputs]
-
     def pre_process_generation(
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
@@ -292,7 +181,18 @@ class Qwen35HF:
         enable_thinking: bool = False,
         **kwargs,
     ) -> dict:
-        prompt_text, system_prompt = self._parse_prompt(prompt)
+        # Handle prompt and system prompt parsing logic from original implementation
+        if prompt is None:
+            prompt = "Describe what's in this image."
+            system_prompt = self.default_system_prompt
+        else:
+            split_prompt = prompt.split("<system_prompt>")
+            if len(split_prompt) == 1:
+                prompt = split_prompt[0] or "Describe what's in this image."
+                system_prompt = self.default_system_prompt
+            else:
+                prompt = split_prompt[0] or "Describe what's in this image."
+                system_prompt = split_prompt[1] or self.default_system_prompt
 
         # Construct conversation following qwen3vl inference pattern
         # Pass the actual image in the conversation for proper vision token handling
@@ -305,7 +205,7 @@ class Qwen35HF:
                 "role": "user",
                 "content": [
                     {"type": "image", "image": images},
-                    {"type": "text", "text": prompt_text},
+                    {"type": "text", "text": prompt},
                 ],
             },
         ]
