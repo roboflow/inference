@@ -8,10 +8,11 @@ Performance notes
 -----------------
 - A persistent ``requests.Session`` is reused across frames to keep the
   TCP+TLS connection alive (saves ~80-120 ms per frame).
-- Request bodies are gzip-compressed to reduce transfer time.
-- The user's code is sent only on the first call; subsequent frames for the
-  same block send a short ``code_hash`` instead, letting the webexec endpoint
-  skip re-receiving identical code.
+- Request bodies are gzip-compressed (level 1) to cut transfer size.
+  The webexec endpoint in ``modal/modal_app.py`` decompresses via
+  ``Request.body()`` + ``gzip.decompress()``.
+- Images are re-encoded at ``WEBEXEC_JPEG_QUALITY`` (default 75) to shrink
+  the base64 payload by ~60-70 % compared to quality 95.
 """
 
 import base64
@@ -224,21 +225,17 @@ class ModalExecutor:
 
     Optimizations over a naive per-frame ``requests.post``:
     * **Persistent session** – reuses TCP + TLS connection across frames.
-    * **Gzip compression** – request bodies are gzip-compressed, cutting
-      transfer size 5-10x for base64-heavy payloads.
-    * **Code caching** – after the first frame the code is replaced by a
-      short SHA-256 hash (``code_hash``).  The webexec endpoint must
-      recognise this field and serve the request from its own code cache.
-      If the endpoint does not support ``code_hash`` yet the full code is
-      sent every time (graceful fallback).
+    * **Lower JPEG quality** – images are re-encoded at ``WEBEXEC_JPEG_QUALITY``
+      (default 75 vs 95) to shrink payloads significantly.
+    * **Executor caching** – a single instance is kept per workspace in
+      ``block_scaffolding._MODAL_EXECUTOR_CACHE`` so the session survives
+      across frames.
     """
 
     def __init__(self, workspace_id: Optional[str] = None):
         self.workspace_id = workspace_id or MODAL_ANONYMOUS_WORKSPACE_NAME
         self._base_url: Optional[str] = None
         self._session: Optional[requests.Session] = None
-        self._sent_code_hashes: set = set()
-        self._endpoint_supports_code_hash: bool = True
 
     def _get_session(self) -> requests.Session:
         if self._session is None:
@@ -271,15 +268,6 @@ class ModalExecutor:
 
         return f"{self._base_url}?workspace_id={workspace_id}"
 
-    @staticmethod
-    def _code_hash(python_code: PythonCode) -> str:
-        raw = (
-            (python_code.run_function_code or "")
-            + "\0"
-            + (python_code.init_function_code or "")
-        )
-        return hashlib.sha256(raw.encode("utf-8")).hexdigest()
-
     def execute_remote(
         self,
         block_type_name: str,
@@ -300,19 +288,12 @@ class ModalExecutor:
 
             inputs_json = serialize_for_modal_remote_execution(inputs)
 
-            code_h = self._code_hash(python_code)
-            already_sent = code_h in self._sent_code_hashes
-
             request_payload: Dict[str, Any] = {
+                "code_str": python_code.run_function_code,
                 "imports": python_code.imports or [],
                 "run_function_name": python_code.run_function_name,
                 "inputs_json": inputs_json,
             }
-
-            if already_sent and self._endpoint_supports_code_hash:
-                request_payload["code_hash"] = code_h
-            else:
-                request_payload["code_str"] = python_code.run_function_code
 
             if (
                 not workspace
@@ -341,30 +322,14 @@ class ModalExecutor:
                 headers={
                     "Content-Type": "application/json",
                     "Content-Encoding": "gzip",
-                    "Accept-Encoding": "gzip",
                 },
             )
 
             if response.status_code != 200:
-                if (
-                    already_sent
-                    and self._endpoint_supports_code_hash
-                    and response.status_code in (400, 422)
-                ):
-                    self._endpoint_supports_code_hash = False
-                    self._sent_code_hashes.clear()
-                    return self.execute_remote(
-                        block_type_name=block_type_name,
-                        python_code=python_code,
-                        inputs=inputs,
-                        workspace_id=workspace_id,
-                    )
                 raise DynamicBlockError(
                     public_message=f"Modal endpoint returned status {response.status_code}: {response.text}",
                     context="modal_executor | http_request",
                 )
-
-            self._sent_code_hashes.add(code_h)
 
             result = response.json()
 

@@ -8,12 +8,15 @@ as a dependency for the main inference package.
 
 from typing import Any, Dict
 import base64
+import gzip
 import hashlib
 import inspect
+import json
 import os
 import traceback
 
 import modal
+from starlette.requests import Request
 
 from inference.core.workflows.execution_engine.v1.dynamic_blocks.error_utils import (
     capture_output,
@@ -95,32 +98,29 @@ class Executor:
         return hashlib.md5(content.encode()).hexdigest()
 
     @modal.fastapi_endpoint(method="POST", requires_proxy_auth=True)
-    def execute_block(self, request: Dict[str, Any]) -> Dict[str, Any]:
+    async def execute_block(self, raw_request: Request) -> Dict[str, Any]:
         """Execute the custom block with the given inputs via web endpoint.
 
-        Args:
-            request: JSON request containing:
-                - code_str: The Python code to execute
-                - imports: List of import statements
-                - run_function_name: Name of the function to call
-                - inputs_json: JSON string of inputs
+        Accepts plain JSON or gzip-compressed JSON (Content-Encoding: gzip).
 
         Returns:
             Dictionary with results or error information
         """
-        import json
         from datetime import datetime
 
         import numpy as np
 
-        # Import deserializers at the top level so they're available for decode_inputs
         from inference.core.workflows.core_steps.common.deserializers import (
             deserialize_image_kind,
             deserialize_detections_kind,
             deserialize_video_metadata_kind,
         )
 
-        # Extract parameters from request
+        body = await raw_request.body()
+        if raw_request.headers.get("content-encoding") == "gzip":
+            body = gzip.decompress(body)
+        request = json.loads(body)
+
         code_str = request.get("code_str", "")
         imports = request.get("imports", [])
         run_function_name = request.get("run_function_name", "")
