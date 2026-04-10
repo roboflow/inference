@@ -138,6 +138,11 @@ class DirectBackend(Backend):
     # ------------------------------------------------------------------
 
     def pre_process(self, *args, **kwargs) -> Tuple[Any, Any]:
+        # Decode compressed bytes (JPEG/PNG) to numpy, matching SubprocessBackend behavior
+        if args and isinstance(args[0], (bytes, bytearray)):
+            import imagecodecs
+
+            args = (imagecodecs.imread(args[0]),) + args[1:]
         result = self._model.pre_process(*args, **kwargs)
         # Models with metadata return (tensor, meta).
         # Models without metadata (e.g. Classification) return just tensor.
