@@ -74,8 +74,6 @@ else:
             print(f"PYINSTALLER HOOK (OSX): Added file model: {p.stem}")
 
     print(f"PYINSTALLER HOOK (OSX): Identified model_names: {model_names}")
-    hiddenimports = []
-    datas = []
     for mod in model_names:
         print(f"PYINSTALLER HOOK (OSX): Collecting submodules and data for: {mod}")
         hiddenimports += collect_submodules(mod)
