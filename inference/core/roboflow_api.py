@@ -47,6 +47,7 @@ from inference.core.env import (
     ROBOFLOW_API_EXTRA_HEADERS,
     ROBOFLOW_API_REQUEST_TIMEOUT,
     ROBOFLOW_API_VERIFY_SSL,
+    ROBOFLOW_INTERNAL_SERVICE_SECRET,
     ROBOFLOW_SERVICE_SECRET,
     SINGLE_TENANT_WORKFLOW_CACHE,
     TRANSIENT_ROBOFLOW_API_ERRORS,
@@ -595,6 +596,8 @@ def get_model_metadata_from_inference_models_registry(
         )
         if not skip:
             headers[ENFORCE_CREDITS_VERIFICATION_HEADER] = "true"
+    if ROBOFLOW_INTERNAL_SERVICE_SECRET:
+        headers["X-Roboflow-Internal-Service-Secret"] = ROBOFLOW_INTERNAL_SERVICE_SECRET
     api_url = _add_params_to_url(
         url=f"{API_BASE_URL}/models/v1/external/weights",
         params=query,
@@ -1226,6 +1229,8 @@ def get_extra_weights_provider_headers(
         )
         if not skip:
             headers[ENFORCE_CREDITS_VERIFICATION_HEADER] = "true"
+    if ROBOFLOW_INTERNAL_SERVICE_SECRET:
+        headers["X-Roboflow-Internal-Service-Secret"] = ROBOFLOW_INTERNAL_SERVICE_SECRET
     return build_roboflow_api_headers(explicit_headers=headers)
 
 

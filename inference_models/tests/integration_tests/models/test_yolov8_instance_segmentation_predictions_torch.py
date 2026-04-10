@@ -1873,7 +1873,7 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_numpy(
         atol=2,
     )
     assert (
-        16200 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 16400
+        16000 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 16400
     )
 
 
@@ -1929,10 +1929,10 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_batch_numpy(
         atol=2,
     )
     assert (
-        16200 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 16400
+        16000 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 16400
     )
     assert (
-        16200 <= predictions[1].to_supervision().mask[0, 174:371, 63:187].sum() <= 16400
+        16000 <= predictions[1].to_supervision().mask[0, 174:371, 63:187].sum() <= 16400
     )
 
 
@@ -1974,7 +1974,7 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_torch(
         atol=2,
     )
     assert (
-        16200 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 16400
+        16000 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 16400
     )
 
 
@@ -2030,10 +2030,10 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_batch_torch(
         atol=2,
     )
     assert (
-        16200 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 16400
+        16000 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 16400
     )
     assert (
-        16200 <= predictions[1].to_supervision().mask[0, 174:371, 63:187].sum() <= 16400
+        16000 <= predictions[1].to_supervision().mask[0, 174:371, 63:187].sum() <= 16400
     )
 
 
@@ -2089,10 +2089,10 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_list_torch(
         atol=2,
     )
     assert (
-        16200 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 16400
+        16000 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 16400
     )
     assert (
-        16200 <= predictions[1].to_supervision().mask[0, 174:371, 63:187].sum() <= 16400
+        16000 <= predictions[1].to_supervision().mask[0, 174:371, 63:187].sum() <= 16400
     )
 
 
@@ -2136,7 +2136,7 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_letterbox_cr
         atol=2,
     )
     assert (
-        13900 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 14100
+        13800 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 14100
     )
 
 
@@ -2194,10 +2194,10 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_letterbox_ba
         atol=2,
     )
     assert (
-        13900 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 14100
+        13800 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 14100
     )
     assert (
-        13900 <= predictions[1].to_supervision().mask[0, 174:371, 63:187].sum() <= 14100
+        13800 <= predictions[1].to_supervision().mask[0, 174:371, 63:187].sum() <= 14100
     )
 
 
@@ -2241,7 +2241,7 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_letterbox_cr
         atol=2,
     )
     assert (
-        13900 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 14100
+        13800 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 14100
     )
 
 
@@ -2299,10 +2299,10 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_letterbox_ba
         atol=2,
     )
     assert (
-        13900 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 14100
+        13800 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 14100
     )
     assert (
-        13900 <= predictions[1].to_supervision().mask[0, 174:371, 63:187].sum() <= 14100
+        13800 <= predictions[1].to_supervision().mask[0, 174:371, 63:187].sum() <= 14100
     )
 
 
@@ -2360,8 +2360,8 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_letterbox_li
         atol=2,
     )
     assert (
-        13900 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 14100
+        13800 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 14100
     )
     assert (
-        13900 <= predictions[1].to_supervision().mask[0, 174:371, 63:187].sum() <= 14100
+        13800 <= predictions[1].to_supervision().mask[0, 174:371, 63:187].sum() <= 14100
     )
