@@ -5,7 +5,7 @@ import logging
 import threading
 import time
 from concurrent.futures import Future
-from typing import Any, Callable, Dict, List, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -13,16 +13,18 @@ logger = logging.getLogger(__name__)
 class _PendingItem:
     """A single pre-processed item waiting to be batched."""
 
-    __slots__ = ("priority", "seq", "tensor", "meta", "future")
+    __slots__ = ("priority", "seq", "tensor", "meta", "future", "nbytes")
 
     def __init__(
-        self, priority: int, seq: int, tensor: Any, meta: Any, future: Future
+        self, priority: int, seq: int, tensor: Any, meta: Any, future: Future,
+        nbytes: int = 0,
     ) -> None:
         self.priority = priority
         self.seq = seq
         self.tensor = tensor
         self.meta = meta
         self.future = future
+        self.nbytes = nbytes
 
     def __lt__(self, other: _PendingItem) -> bool:
         # Higher priority first, then FIFO within same priority
@@ -35,8 +37,8 @@ class BatchCollector:
     """Accumulates pre-processed items and dispatches them as batches.
 
     Thread-safe. Accepts items from multiple concurrent ``submit()`` calls
-    via ``add()``, groups them by batch size and delay, then dispatches
-    through::
+    via ``add()``, groups them by batch size, delay, and byte budget, then
+    dispatches through::
 
         collate → forward → uncollate → post_process
 
@@ -46,9 +48,9 @@ class BatchCollector:
 
     1. Wait for at least one item.
     2. Start delay timer.
-    3. Collect until batch is full **or** delay expires (whichever first).
+    3. Collect until batch is full, delay expires, or byte budget exceeded.
     4. Pop up to ``max_size`` items (highest priority first, FIFO within
-       same priority).
+       same priority), respecting ``max_bytes``.
     5. Run the pipeline, resolve futures.
     6. Go to 1.
 
@@ -58,19 +60,21 @@ class BatchCollector:
     def __init__(
         self,
         *,
-        collate_fn: Callable[[List[Tuple[Any, Any]]], Any],
         forward_fn: Callable[..., Any],
-        uncollate_fn: Callable[[Any, int], List[Any]],
-        post_process_fn: Callable[[Any, Any], Any],
+        collate_fn: Optional[Callable[[List[Tuple[Any, Any]]], Any]] = None,
+        uncollate_fn: Optional[Callable[[Any, int], List[Any]]] = None,
+        post_process_fn: Optional[Callable[[Any, Any], Any]] = None,
         max_size: int,
         max_delay_s: float,
+        max_bytes: int = 0,
     ) -> None:
-        self._collate = collate_fn
+        self._collate = collate_fn or (lambda items: items)
         self._forward = forward_fn
-        self._uncollate = uncollate_fn
-        self._post_process = post_process_fn
+        self._uncollate = uncollate_fn or (lambda results, count: results)
+        self._post_process = post_process_fn or (lambda result, meta: result)
         self._max_size = max_size
         self._max_delay_s = max_delay_s
+        self._max_bytes = max_bytes
 
         self._heap: List[_PendingItem] = []
         self._seq = 0
@@ -87,22 +91,30 @@ class BatchCollector:
         )
         self._thread.start()
         logger.info(
-            "BatchCollector started | max_size=%d | max_delay=%.1fms",
+            "BatchCollector started | max_size=%d | max_delay=%.1fms | max_bytes=%s",
             max_size, max_delay_s * 1000,
+            f"{max_bytes}" if max_bytes > 0 else "unlimited",
         )
 
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
 
-    def add(self, tensor: Any, meta: Any, priority: int = 0) -> Future:
-        """Add a pre-processed item. Returns a Future for the post-processed result."""
+    def add(
+        self, tensor: Any, meta: Any, priority: int = 0, nbytes: int = 0,
+    ) -> Future:
+        """Add a pre-processed item. Returns a Future for the post-processed result.
+
+        Args:
+            nbytes: Size of the item in bytes (for byte-budget batching).
+                When 0, the item doesn't count toward the byte budget.
+        """
         future: Future = Future()
         with self._cond:
             if not self._running:
                 future.set_exception(RuntimeError("BatchCollector is stopped"))
                 return future
-            item = _PendingItem(priority, self._seq, tensor, meta, future)
+            item = _PendingItem(priority, self._seq, tensor, meta, future, nbytes)
             self._seq += 1
             heapq.heappush(self._heap, item)
             self._cond.notify()
@@ -179,8 +191,20 @@ class BatchCollector:
                         break
                     self._cond.wait(timeout=remaining)
 
-                batch_size = min(len(self._heap), self._max_size)
-                batch = [heapq.heappop(self._heap) for _ in range(batch_size)]
+                # Pop items, respecting byte budget
+                batch: list[_PendingItem] = []
+                batch_bytes = 0
+                max_pop = min(len(self._heap), self._max_size)
+                for _ in range(max_pop):
+                    item = self._heap[0]  # peek
+                    if (
+                        self._max_bytes > 0
+                        and batch
+                        and batch_bytes + item.nbytes > self._max_bytes
+                    ):
+                        break  # this item starts the next batch
+                    batch.append(heapq.heappop(self._heap))
+                    batch_bytes += item.nbytes
 
             if batch:
                 actual_delay = time.monotonic() - batch_start
