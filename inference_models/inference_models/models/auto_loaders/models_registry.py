@@ -511,6 +511,22 @@ REGISTERED_MODELS: Dict[
         module_name="inference_models.models.sam2.sam2_torch",
         class_name="SAM2Torch",
     ),
+    (
+        "falcon-perception",
+        OPEN_VOCABULARY_OBJECT_DETECTION_TASK,
+        BackendType.TORCH,
+    ): LazyClass(
+        module_name="inference_models.models.falcon_perception.falcon_perception_torch",
+        class_name="FalconPerceptionForObjectDetectionTorch",
+    ),
+    (
+        "falcon-perception",
+        INSTANCE_SEGMENTATION_TASK,
+        BackendType.TORCH,
+    ): LazyClass(
+        module_name="inference_models.models.falcon_perception.falcon_perception_torch",
+        class_name="FalconPerceptionForInstanceSegmentationTorch",
+    ),
 }
 
 
