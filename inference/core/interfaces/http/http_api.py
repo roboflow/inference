@@ -4,6 +4,7 @@ import logging
 import os
 import re
 from concurrent.futures import CancelledError, Future, ThreadPoolExecutor
+from dataclasses import dataclass
 from functools import partial
 from threading import Lock, Thread
 from time import sleep
@@ -281,6 +282,7 @@ from inference.core.roboflow_api import (
     build_roboflow_api_headers,
     get_roboflow_workspace,
     get_roboflow_workspace_async,
+    get_serverless_usage_check_async,
     get_workflow_specification,
 )
 from inference.core.telemetry import setup_telemetry, shutdown_telemetry, start_span
@@ -336,6 +338,62 @@ class LambdaMiddleware(BaseHTTPMiddleware):
         response = await call_next(request)
         logger.info("Lambda is terminating, handle unsent usage payloads.")
         await usage_collector.async_push_usage_payloads()
+        return response
+
+
+REMOTE_PROCESSING_TIME_HEADER = "X-Remote-Processing-Time"
+REMOTE_PROCESSING_TIMES_HEADER = "X-Remote-Processing-Times"
+AUTH_CACHE_TTL_SECONDS = 3600
+SHORT_AUTH_CACHE_TTL_SECONDS = 60
+
+
+@dataclass(frozen=True)
+class AuthorizationCacheEntry:
+    expires_at: float
+    workspace_id: Optional[str]
+    status_code: int = 200
+    message: Optional[str] = None
+
+
+class GCPServerlessMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        if execution_id is not None:
+            execution_id_value = request.headers.get(EXECUTION_ID_HEADER)
+            if not execution_id_value:
+                execution_id_value = f"{time.time_ns()}_{uuid4().hex[:4]}"
+            execution_id.set(execution_id_value)
+        is_verified_internal = False
+        if apply_duration_minimum is not None:
+            is_verified_internal = bool(
+                ROBOFLOW_INTERNAL_SERVICE_SECRET
+                and INTERNAL_REMOTE_EXEC_REQ_HEADER
+                and request.headers.get(INTERNAL_REMOTE_EXEC_REQ_HEADER)
+                == ROBOFLOW_INTERNAL_SERVICE_SECRET
+            )
+            apply_duration_minimum.set(not is_verified_internal)
+        collector = None
+        if (
+            WORKFLOWS_REMOTE_EXECUTION_TIME_FORWARDING
+            and remote_processing_times is not None
+            and RemoteProcessingTimeCollector is not None
+        ):
+            collector = RemoteProcessingTimeCollector()
+            remote_processing_times.set(collector)
+        t1 = time.time()
+        response = await call_next(request)
+        t2 = time.time()
+        response.headers[PROCESSING_TIME_HEADER] = str(t2 - t1)
+        if collector is not None and collector.has_data():
+            total, detail = collector.summarize()
+            response.headers[REMOTE_PROCESSING_TIME_HEADER] = str(total)
+            if detail is not None:
+                response.headers[REMOTE_PROCESSING_TIMES_HEADER] = detail
+        if execution_id is not None:
+            response.headers[EXECUTION_ID_HEADER] = execution_id_value
+        if INTERNAL_REMOTE_EXEC_REQ_VERIFIED_HEADER is not None:
+            response.headers[INTERNAL_REMOTE_EXEC_REQ_VERIFIED_HEADER] = str(
+                is_verified_internal
+            ).lower()
         return response
 
 
@@ -529,7 +587,7 @@ class HttpInterface(BaseInterface):
                 )
                 return JSONResponse(status_code=200, content=container_stats)
 
-        cached_api_keys = dict()
+        cached_api_keys: Dict[str, AuthorizationCacheEntry] = {}
 
         if GCP_SERVERLESS:
 
@@ -575,11 +633,11 @@ class HttpInterface(BaseInterface):
                 if skip_check:
                     return await call_next(request)
 
-                def _unauthorized_response(msg):
+                def _authorization_error_response(status_code: int, msg: str):
                     return JSONResponse(
-                        status_code=401,
+                        status_code=status_code,
                         content={
-                            "status": 401,
+                            "status": status_code,
                             "message": msg,
                         },
                     )
@@ -600,23 +658,58 @@ class HttpInterface(BaseInterface):
                 api_key = json_params.get("api_key", api_key)
 
                 if api_key is None:
-                    return _unauthorized_response("Unauthorized api_key")
+                    return _authorization_error_response(401, "Unauthorized api_key")
 
                 cache_entry = cached_api_keys.get(api_key)
                 workspace_id = None
-                if cache_entry and cache_entry[0] >= time.time():
-                    workspace_id = cache_entry[1]
-                else:
-                    try:
-                        workspace_id = await get_roboflow_workspace_async(
-                            api_key=api_key
+                if cache_entry and cache_entry.expires_at >= time.time():
+                    if cache_entry.status_code != 200:
+                        return _authorization_error_response(
+                            cache_entry.status_code,
+                            cache_entry.message or "Unauthorized api_key",
                         )
-                        cached_api_keys[api_key] = (
-                            time.time() + 3600,
-                            workspace_id,
-                        )  # expired after 1 hour
-                    except (RoboflowAPINotAuthorizedError, WorkspaceLoadError):
-                        return _unauthorized_response("Unauthorized api_key")
+                    workspace_id = cache_entry.workspace_id
+                else:
+                    usage_check_result = await get_serverless_usage_check_async(
+                        api_key=api_key
+                    )
+                    if usage_check_result.status_code == 200:
+                        workspace_id = usage_check_result.workspace_id
+                        cached_api_keys[api_key] = AuthorizationCacheEntry(
+                            expires_at=time.time() + AUTH_CACHE_TTL_SECONDS,
+                            workspace_id=workspace_id,
+                        )
+                    elif usage_check_result.status_code == 401:
+                        cached_api_keys[api_key] = AuthorizationCacheEntry(
+                            expires_at=time.time() + SHORT_AUTH_CACHE_TTL_SECONDS,
+                            workspace_id=None,
+                            status_code=401,
+                            message=(
+                                "Unauthorized api_key. This key is not authorized "
+                                "for serverless inference."
+                            ),
+                        )
+                        return _authorization_error_response(
+                            401,
+                            cached_api_keys[api_key].message,
+                        )
+                    elif usage_check_result.status_code == 402:
+                        message = (
+                            "This workspace cannot currently spend credits for serverless inference. "
+                            "Verify billing or credit cap settings."
+                        )
+                        if usage_check_result.error:
+                            message = f"{message} {usage_check_result.error}"
+                        cached_api_keys[api_key] = AuthorizationCacheEntry(
+                            expires_at=time.time() + SHORT_AUTH_CACHE_TTL_SECONDS,
+                            workspace_id=usage_check_result.workspace_id,
+                            status_code=402,
+                            message=message,
+                        )
+                        return _authorization_error_response(
+                            402,
+                            cached_api_keys[api_key].message,
+                        )
 
                 response = await call_next(request)
                 if workspace_id:
@@ -677,8 +770,10 @@ class HttpInterface(BaseInterface):
 
                 cache_entry = cached_api_keys.get(api_key)
                 workspace_id = None
-                if cache_entry and cache_entry[0] >= time.time():
-                    workspace_id = cache_entry[1]
+                if cache_entry and cache_entry.expires_at >= time.time():
+                    if cache_entry.status_code != 200:
+                        return _unauthorized_response("Unauthorized api_key")
+                    workspace_id = cache_entry.workspace_id
                 else:
                     try:
                         if api_key is None:
@@ -691,10 +786,10 @@ class HttpInterface(BaseInterface):
                         if workspace_id != DEDICATED_DEPLOYMENT_WORKSPACE_URL:
                             return _unauthorized_response("Unauthorized api_key")
 
-                        cached_api_keys[api_key] = (
-                            time.time() + 3600,
-                            workspace_id,
-                        )  # expired after 1 hour
+                        cached_api_keys[api_key] = AuthorizationCacheEntry(
+                            expires_at=time.time() + AUTH_CACHE_TTL_SECONDS,
+                            workspace_id=workspace_id,
+                        )
                     except (RoboflowAPINotAuthorizedError, WorkspaceLoadError):
                         return _unauthorized_response("Unauthorized api_key")
 
