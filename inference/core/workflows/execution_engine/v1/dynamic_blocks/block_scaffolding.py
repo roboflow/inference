@@ -40,6 +40,10 @@ IMPORTS_LINES = [
 # Shared globals dict for all custom python blocks in local mode
 _LOCAL_SHARED_GLOBALS = {}
 
+# Cache of ModalExecutor instances keyed by workspace_id so that the
+# persistent HTTP session and code-hash set survive across frames.
+_MODAL_EXECUTOR_CACHE: Dict[str, Any] = {}
+
 from inference.core.workflows.execution_engine.v1.dynamic_blocks.error_utils import (
     capture_output,
     create_dynamic_block_code_error,
@@ -73,23 +77,23 @@ def assembly_custom_python_block(
     run_function = getattr(code_module, python_code.run_function_name)
 
     def run(self, *args, **kwargs) -> BlockResult:
-        # Check if we're using Modal remote execution
         if WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE == "modal":
-            # Remote execution via Modal - allowed even if local execution is disabled
             from inference.core.workflows.execution_engine.v1.dynamic_blocks.modal_executor import (
                 ModalExecutor,
             )
 
-            try:  # Get workspace_id from context if available
+            try:
                 workspace_id = get_roboflow_workspace(self._api_key)
             except WorkspaceLoadError:
                 workspace_id = None
 
-            # Fall back to "anonymous" for non-authenticated users
             if not workspace_id:
                 workspace_id = MODAL_ANONYMOUS_WORKSPACE_NAME
 
-            executor = ModalExecutor(workspace_id)
+            if workspace_id not in _MODAL_EXECUTOR_CACHE:
+                _MODAL_EXECUTOR_CACHE[workspace_id] = ModalExecutor(workspace_id)
+            executor = _MODAL_EXECUTOR_CACHE[workspace_id]
+
             return executor.execute_remote(
                 block_type_name=block_type_name,
                 python_code=python_code,

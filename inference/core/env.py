@@ -654,6 +654,11 @@ WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE = os.getenv(
     "WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE", "local"
 ).lower()  # "local" or "modal"
 
+# JPEG quality used when serializing images for the webexec round-trip.
+# Default 95 matches WorkflowImageData.base64_image; lower values (e.g. 50-75)
+# shrink payloads significantly for WebRTC preview with minimal visual impact.
+WEBEXEC_JPEG_QUALITY = int(os.getenv("WEBEXEC_JPEG_QUALITY", "75"))
+
 # Strip quotes from Modal credentials in case users include them
 _modal_token_id = os.getenv("MODAL_TOKEN_ID")
 _modal_token_secret = os.getenv("MODAL_TOKEN_SECRET")
