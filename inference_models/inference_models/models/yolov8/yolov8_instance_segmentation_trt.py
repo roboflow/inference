@@ -15,6 +15,8 @@ from inference_models.configuration import (
     INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_CLASS_AGNOSTIC_NMS,
     INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_CONFIDENCE,
     INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_IOU_THRESHOLD,
+    INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_MASKS_BINARIZATION_THRESHOLD,
+    INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_MASKS_SMOOTHING_ENABLED,
     INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_MAX_DETECTIONS,
 )
 from inference_models.entities import ColorFormat
@@ -265,6 +267,8 @@ class YOLOv8ForInstanceSegmentationTRT(
         iou_threshold: float = INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_IOU_THRESHOLD,
         max_detections: int = INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_MAX_DETECTIONS,
         class_agnostic_nms: bool = INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_CLASS_AGNOSTIC_NMS,
+        masks_smoothing_enabled: bool = INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_MASKS_SMOOTHING_ENABLED,
+        masks_binarization_threshold: float = INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_MASKS_BINARIZATION_THRESHOLD,
         **kwargs,
     ) -> List[InstanceDetections]:
         with torch.cuda.stream(self._post_process_stream):
@@ -291,7 +295,10 @@ class YOLOv8ForInstanceSegmentationTRT(
                     protos=image_protos,
                     masks_in=image_bboxes[:, 6:],
                 )
-                pre_processed_masks = torch.nn.functional.sigmoid(pre_processed_masks)
+                if masks_smoothing_enabled:
+                    pre_processed_masks = torch.nn.functional.sigmoid(
+                        pre_processed_masks
+                    )
                 cropped_masks = crop_masks_to_boxes(
                     image_bboxes[:, :4], pre_processed_masks
                 )
@@ -311,7 +318,7 @@ class YOLOv8ForInstanceSegmentationTRT(
                     size_after_pre_processing=image_meta.size_after_pre_processing,
                     inference_size=image_meta.inference_size,
                     static_crop_offset=image_meta.static_crop_offset,
-                    binarization_threshold=0.5,
+                    binarization_threshold=masks_binarization_threshold,
                 )
                 final_results.append(
                     InstanceDetections(

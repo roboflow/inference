@@ -4,7 +4,13 @@
 
 ### Changed
 
-- Added `sigmoid` smoothing for instance-segmentation masks in YOLOv8, YOLOv11, YOLOv12 models family
+- Added `sigmoid` smoothing for instance-segmentation masks in YOLOv8, YOLOv11, YOLOv12 models family.
+Smoothing can be enabled / disabled via `masks_smoothing_enabled` parameter of `post_process(...)` method
+(which can be passed as `**kwarg` to `forward(...)`) with default set with 
+`INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_MASKS_SMOOTHING_ENABLED` (set to `True`). Additionally, the binarization 
+threshold for masks can be controlled via `masks_binarization_threshold` parameter - default to be 
+controlled with `INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_MASKS_BINARIZATION_THRESHOLD` (set to `0.5` or `0.0` 
+depending on `INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_MASKS_SMOOTHING_ENABLED`).
 
 !!! warning "Instance-segmentation masks will change"
 
