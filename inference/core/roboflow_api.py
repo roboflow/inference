@@ -7,6 +7,7 @@ import os
 import re
 import time
 import urllib.parse
+from dataclasses import dataclass
 from enum import Enum
 from hashlib import sha256
 from json import JSONDecodeError
@@ -102,6 +103,14 @@ NOT_FOUND_ERROR_MESSAGE = (
 
 ROBOFLOW_INFERENCE_VERSION_HEADER = "X-Roboflow-Inference-Version"
 ALLOW_CHUNKED_RESPONSE_HEADER = "X-Allow-Chunked"
+
+
+@dataclass(frozen=True)
+class ServerlessUsageCheckResponse:
+    status_code: int
+    workspace_id: Optional[WorkspaceID] = None
+    under_cap: Optional[bool] = None
+    error: Optional[str] = None
 
 
 def raise_from_lambda(
@@ -302,6 +311,67 @@ async def get_roboflow_workspace_async(api_key: str) -> WorkspaceID:
                         "Empty workspace encountered, check your API key."
                     )
                 return workspace_id
+    except (aiohttp.ClientConnectionError, ConnectionError) as error:
+        if RETRY_CONNECTION_ERRORS_TO_ROBOFLOW_API:
+            raise RetryRequestError(
+                message="Connectivity error", inner_error=error
+            ) from error
+        raise error
+
+
+@wrap_roboflow_api_errors_async()
+@backoff.on_exception(
+    backoff.constant,
+    exception=RetryRequestError,
+    max_tries=TRANSIENT_ROBOFLOW_API_ERRORS_RETRIES,
+    interval=TRANSIENT_ROBOFLOW_API_ERRORS_RETRY_INTERVAL,
+)
+async def get_serverless_usage_check_async(
+    api_key: str,
+) -> ServerlessUsageCheckResponse:
+    try:
+        headers = build_roboflow_api_headers()
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                f"{API_BASE_URL}/serverless/usage-check",
+                params={"api_key": api_key, "nocache": "true"},
+                headers=headers,
+                timeout=ROBOFLOW_API_REQUEST_TIMEOUT,
+            ) as response:
+                if response.status == 401:
+                    return ServerlessUsageCheckResponse(status_code=401)
+                if response.status == 402:
+                    response_payload = await response.json()
+                    workspace = response_payload.get(
+                        "workspace"
+                    ) or response_payload.get("workspaceId")
+                    return ServerlessUsageCheckResponse(
+                        status_code=402,
+                        workspace_id=workspace,
+                        under_cap=response_payload.get("underCap"),
+                        error=response_payload.get("error"),
+                    )
+                try:
+                    api_key_safe_raise_for_status_aiohttp(response=response)
+                except Exception as error:
+                    if response.status in TRANSIENT_ROBOFLOW_API_ERRORS:
+                        raise RetryRequestError(
+                            message=str(error), inner_error=error
+                        ) from error
+                    raise error
+                response_payload = await response.json()
+                workspace_id = response_payload.get(
+                    "workspace"
+                ) or response_payload.get("workspaceId")
+                if workspace_id is None or response_payload.get("underCap") is not True:
+                    raise WorkspaceLoadError(
+                        "Unexpected serverless usage-check response received from Roboflow API."
+                    )
+                return ServerlessUsageCheckResponse(
+                    status_code=200,
+                    workspace_id=workspace_id,
+                    under_cap=True,
+                )
     except (aiohttp.ClientConnectionError, ConnectionError) as error:
         if RETRY_CONNECTION_ERRORS_TO_ROBOFLOW_API:
             raise RetryRequestError(
