@@ -3755,6 +3755,39 @@ def test_infer_from_workflow_when_no_parameters_given(
     }, "Request payload must contain api key and inputs"
 
 
+@mock.patch.object(client, "load_static_inference_input")
+def test_infer_lmm_when_generation_parameters_given(
+    load_static_inference_input_mock: MagicMock,
+    requests_mock: Mocker,
+) -> None:
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    load_static_inference_input_mock.return_value = [("base64_image", 0.5)]
+    requests_mock.post(
+        f"{api_url}/infer/lmm/glm-ocr",
+        json={"response": "recognized text"},
+    )
+
+    result = http_client.infer_lmm(
+        inference_input="/some/image.jpg",
+        model_id="glm-ocr",
+        prompt="Text Recognition:",
+        model_id_in_path=True,
+        max_new_tokens=4096,
+        enable_thinking=True,
+    )
+
+    assert result == {"response": "recognized text"}
+    assert requests_mock.request_history[0].json() == {
+        "api_key": "my-api-key",
+        "image": {"type": "base64", "value": "base64_image"},
+        "model_id": "glm-ocr",
+        "prompt": "Text Recognition:",
+        "max_new_tokens": 4096,
+        "enable_thinking": True,
+    }
+
+
 @mock.patch.object(client, "load_nested_batches_of_inference_input")
 @pytest.mark.parametrize(
     "legacy_endpoints, endpoint_to_use, parameter_name",

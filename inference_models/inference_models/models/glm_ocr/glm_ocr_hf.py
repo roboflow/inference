@@ -3,7 +3,7 @@ This is inference-models wrapper for the model originally published in https://g
 """
 
 from threading import Lock
-from typing import Any, List, Union
+from typing import Any, List, Optional, Union
 
 import numpy as np
 import torch
@@ -99,7 +99,7 @@ class GlmOcrHF:
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         input_color_format: ColorFormat = None,
-        max_new_tokens: int = INFERENCE_MODELS_GLM_OCR_DEFAULT_MAX_NEW_TOKENS,
+        max_new_tokens: Optional[int] = INFERENCE_MODELS_GLM_OCR_DEFAULT_MAX_NEW_TOKENS,
         do_sample: bool = INFERENCE_MODELS_GLM_OCR_DEFAULT_DO_SAMPLE,
         skip_special_tokens: bool = True,
         **kwargs,
@@ -118,7 +118,7 @@ class GlmOcrHF:
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         input_color_format: ColorFormat = None,
-        max_new_tokens: int = INFERENCE_MODELS_GLM_OCR_DEFAULT_MAX_NEW_TOKENS,
+        max_new_tokens: Optional[int] = INFERENCE_MODELS_GLM_OCR_DEFAULT_MAX_NEW_TOKENS,
         do_sample: bool = INFERENCE_MODELS_GLM_OCR_DEFAULT_DO_SAMPLE,
         skip_special_tokens: bool = True,
         **kwargs,
@@ -137,7 +137,7 @@ class GlmOcrHF:
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         input_color_format: ColorFormat = None,
-        max_new_tokens: int = INFERENCE_MODELS_GLM_OCR_DEFAULT_MAX_NEW_TOKENS,
+        max_new_tokens: Optional[int] = INFERENCE_MODELS_GLM_OCR_DEFAULT_MAX_NEW_TOKENS,
         do_sample: bool = INFERENCE_MODELS_GLM_OCR_DEFAULT_DO_SAMPLE,
         skip_special_tokens: bool = True,
         **kwargs,
@@ -157,7 +157,7 @@ class GlmOcrHF:
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         prompt: str = None,
         input_color_format: ColorFormat = None,
-        max_new_tokens: int = INFERENCE_MODELS_GLM_OCR_DEFAULT_MAX_NEW_TOKENS,
+        max_new_tokens: Optional[int] = INFERENCE_MODELS_GLM_OCR_DEFAULT_MAX_NEW_TOKENS,
         do_sample: bool = INFERENCE_MODELS_GLM_OCR_DEFAULT_DO_SAMPLE,
         skip_special_tokens: bool = True,
         **kwargs,
@@ -211,10 +211,12 @@ class GlmOcrHF:
     def generate(
         self,
         inputs: dict,
-        max_new_tokens: int = INFERENCE_MODELS_GLM_OCR_DEFAULT_MAX_NEW_TOKENS,
+        max_new_tokens: Optional[int] = INFERENCE_MODELS_GLM_OCR_DEFAULT_MAX_NEW_TOKENS,
         do_sample: bool = INFERENCE_MODELS_GLM_OCR_DEFAULT_DO_SAMPLE,
         **kwargs,
     ) -> torch.Tensor:
+        if max_new_tokens is None:
+            max_new_tokens = INFERENCE_MODELS_GLM_OCR_DEFAULT_MAX_NEW_TOKENS
         input_len = inputs["input_ids"].shape[-1]
 
         with self._lock, torch.inference_mode():
