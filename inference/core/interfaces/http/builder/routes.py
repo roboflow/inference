@@ -112,6 +112,12 @@ async def builder_edit(workflow_id: str):
 # ----------------------
 
 
+@router.get("/api/csrf")
+@with_route_exceptions_async
+async def get_csrf_token():
+    return {"csrf": csrf}
+
+
 @router.get("/api", dependencies=[Depends(verify_csrf_token)])
 @with_route_exceptions_async
 async def get_all_workflows():
