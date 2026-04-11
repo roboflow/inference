@@ -63,40 +63,6 @@ from inference_models.models.base.semantic_segmentation import (
 from inference_models.models.base.types import PreprocessingMetadata
 
 
-def _resolve_cached_model_path(model_id: str) -> str:
-    """If the model is already in the inference-models local cache, return the
-    package directory path so ``AutoModel.from_pretrained`` can load directly
-    from disk without calling the Roboflow API.  Returns the original
-    *model_id* unchanged when no local cache hit is found.
-    """
-    try:
-        from inference.core.cache.air_gapped import (
-            _get_inference_models_home,
-            _slugify_model_id,
-        )
-        from inference.core.env import MODEL_CACHE_DIR
-
-        slug = _slugify_model_id(model_id)
-        bases = [MODEL_CACHE_DIR]
-        inference_home = _get_inference_models_home()
-        if inference_home is not None and inference_home != MODEL_CACHE_DIR:
-            bases.append(inference_home)
-
-        for base in bases:
-            import os
-
-            slug_dir = os.path.join(base, "models-cache", slug)
-            if not os.path.isdir(slug_dir):
-                continue
-            for package_id in os.listdir(slug_dir):
-                package_dir = os.path.join(slug_dir, package_id)
-                if os.path.isfile(os.path.join(package_dir, "model_config.json")):
-                    return package_dir
-    except Exception:
-        pass
-    return model_id
-
-
 DEFAULT_COLOR_PALETTE = [
     "#A351FB",
     "#FF4040",
@@ -143,7 +109,7 @@ class InferenceModelsObjectDetectionAdapter(Model):
             )
         )
         self._model: ObjectDetectionModel = AutoModel.from_pretrained(
-            model_id_or_path=_resolve_cached_model_path(model_id),
+            model_id_or_path=model_id,
             api_key=self.api_key,
             allow_untrusted_packages=ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES,
             allow_direct_local_storage_loading=ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES,
@@ -294,7 +260,7 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
             )
         )
         self._model: InstanceSegmentationModel = AutoModel.from_pretrained(
-            model_id_or_path=_resolve_cached_model_path(model_id),
+            model_id_or_path=model_id,
             api_key=self.api_key,
             allow_untrusted_packages=ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES,
             allow_direct_local_storage_loading=ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES,
@@ -452,7 +418,7 @@ class InferenceModelsKeyPointsDetectionAdapter(Model):
             )
         )
         self._model: KeyPointsDetectionModel = AutoModel.from_pretrained(
-            model_id_or_path=_resolve_cached_model_path(model_id),
+            model_id_or_path=model_id,
             api_key=self.api_key,
             allow_untrusted_packages=ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES,
             allow_direct_local_storage_loading=ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES,
@@ -662,7 +628,7 @@ class InferenceModelsClassificationAdapter(Model):
         )
         self._model: Union[ClassificationModel, MultiLabelClassificationModel] = (
             AutoModel.from_pretrained(
-                model_id_or_path=_resolve_cached_model_path(model_id),
+                model_id_or_path=model_id,
                 api_key=self.api_key,
                 allow_untrusted_packages=ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES,
                 allow_direct_local_storage_loading=ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES,
@@ -948,7 +914,7 @@ class InferenceModelsSemanticSegmentationAdapter(Model):
             )
         )
         self._model: SemanticSegmentationModel = AutoModel.from_pretrained(
-            model_id_or_path=_resolve_cached_model_path(model_id),
+            model_id_or_path=model_id,
             api_key=self.api_key,
             allow_untrusted_packages=ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES,
             allow_direct_local_storage_loading=ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES,
