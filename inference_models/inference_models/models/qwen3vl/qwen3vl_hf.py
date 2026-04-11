@@ -26,62 +26,12 @@ from inference_models.models.common.roboflow.model_packages import (
 )
 
 
-_FLASH_ATTN_SMOKE_TEST_SCRIPT = """\
-import sys
-try:
-    import torch
-    from flash_attn import flash_attn_func
-    device = torch.device(sys.argv[1])
-    q = torch.randn(1, 1, 1, 32, dtype=torch.bfloat16, device=device)
-    k = torch.randn(1, 1, 1, 32, dtype=torch.bfloat16, device=device)
-    v = torch.randn(1, 1, 1, 32, dtype=torch.bfloat16, device=device)
-    flash_attn_func(q, k, v)
-    torch.cuda.synchronize(device)
-    sys.exit(0)
-except Exception:
-    sys.exit(1)
-"""
-
-
-def _flash_attn_smoke_test(device: torch.device) -> bool:
-    """Run a tiny flash-attn forward pass in a subprocess to verify CUDA kernels work.
-
-    flash-attn compiles kernels against a specific CUDA toolkit version and can
-    cause illegal-memory-access errors when the runtime CUDA/driver version is
-    incompatible.  Running the test in a separate process ensures that if the
-    kernels crash, the parent's CUDA context is not poisoned.
-    """
-    import subprocess
-    import sys
-
-    try:
-        result = subprocess.run(
-            [sys.executable, "-c", _FLASH_ATTN_SMOKE_TEST_SCRIPT, str(device)],
-            timeout=30,
-            capture_output=True,
-        )
-        return result.returncode == 0
-    except Exception:
-        return False
-
 
 def _get_qwen3vl_attn_implementation(device: torch.device) -> str:
     """Use flash_attention_2 if available, otherwise eager.
 
     SDPA has dtype mismatch issues with some transformers versions.
     """
-    if is_flash_attn_2_available() and device and "cuda" in str(device):
-        # Verify flash_attn can actually be imported (not just installed)
-        try:
-            import flash_attn  # noqa: F401
-
-            if _is_model_running_against_ampere_plus_aarch(device=device):
-                if _flash_attn_smoke_test(device):
-                    return "flash_attention_2"
-                return "eager"
-            return "eager"
-        except ImportError:
-            pass
     return "eager"
 
 
