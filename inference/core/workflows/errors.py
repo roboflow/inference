@@ -3,12 +3,21 @@ from typing import List, Optional
 from pydantic import BaseModel, Field
 
 
+class BlockTraceback(BaseModel):
+    traceback: Optional[str] = None
+    error_line: Optional[int] = None
+    code_snippet: Optional[str] = None
+    stdout: Optional[str] = None
+    stderr: Optional[str] = None
+
+
 class WorkflowBlockError(BaseModel):
     block_id: Optional[str] = None
     block_type: Optional[str] = None
     block_details: Optional[str] = None
     property_name: Optional[str] = None
     property_details: Optional[str] = None
+    block_traceback: Optional[BlockTraceback] = None
 
 
 class WorkflowError(Exception):
@@ -152,6 +161,45 @@ class WorkflowExecutionEngineError(WorkflowError):
     pass
 
 
+class DynamicBlockCodeError(WorkflowExecutionEngineError):
+    """Exception for dynamic block code execution errors (errors provoked by user's code)."""
+
+    def __init__(
+        self,
+        public_message: str,
+        context: str = "dynamic_block_code_execution",
+        inner_error: Optional[Exception] = None,
+        block_type_name: Optional[str] = None,
+        error_line: Optional[int] = None,
+        code_snippet: Optional[str] = None,
+        traceback_str: Optional[str] = None,
+        stdout: Optional[str] = None,
+        stderr: Optional[str] = None,
+    ):
+        super().__init__(
+            public_message=public_message, context=context, inner_error=inner_error
+        )
+        self.block_type_name = block_type_name
+        self.error_line = error_line
+        self.code_snippet = code_snippet
+        self.traceback_str = traceback_str
+        self.stdout = stdout
+        self.stderr = stderr
+
+    @property
+    def block_traceback(self) -> Optional[BlockTraceback]:
+        """Construct BlockTraceback from error fields if any are present."""
+        if not any([self.error_line, self.traceback_str, self.stdout, self.stderr]):
+            return None
+        return BlockTraceback(
+            error_line=self.error_line,
+            code_snippet=self.code_snippet,
+            traceback=self.traceback_str,
+            stdout=self.stdout,
+            stderr=self.stderr,
+        )
+
+
 class NotSupportedExecutionEngineError(WorkflowExecutionEngineError):
     pass
 
@@ -165,12 +213,14 @@ class StepExecutionError(WorkflowExecutionEngineError):
         self,
         block_id: str,
         block_type: str,
+        block_traceback: Optional[BlockTraceback] = None,
         *args,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
         self.block_id = block_id
         self.block_type = block_type
+        self.block_traceback = block_traceback
 
 
 class ClientCausedStepExecutionError(WorkflowExecutionEngineError):

@@ -1,4 +1,4 @@
-print ("importing inference")
+print("importing inference")
 
 from functools import partial
 from multiprocessing import Process

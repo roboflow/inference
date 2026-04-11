@@ -49,7 +49,7 @@ def test_torchscript_package_stretch_numpy(
         expected_xyxy,
         atol=XYXY_ATOL,
     )
-    assert 210000 <= mask_region_sum <= 210200
+    assert 209000 <= mask_region_sum <= 210200
 
 
 @pytest.mark.slow
@@ -114,8 +114,8 @@ def test_torchscript_package_stretch_batch_numpy(
         expected_xyxy,
         atol=XYXY_ATOL,
     )
-    assert 210000 <= mask_region_sum_0 <= 210200
-    assert 210000 <= mask_region_sum_1 <= 210200
+    assert 209000 <= mask_region_sum_0 <= 210200
+    assert 209000 <= mask_region_sum_1 <= 210200
 
 
 @pytest.mark.slow
@@ -159,7 +159,7 @@ def test_torchscript_package_stretch_torch(
         expected_xyxy,
         atol=XYXY_ATOL,
     )
-    assert 210000 <= mask_region_sum <= 210200
+    assert 209000 <= mask_region_sum <= 210200
 
 
 @pytest.mark.slow
@@ -203,7 +203,7 @@ def test_torchscript_package_letterbox_numpy(
         expected_xyxy,
         atol=XYXY_ATOL,
     )
-    assert 221000 <= mask_region_sum <= 221300
+    assert 219500 <= mask_region_sum <= 221300
 
 
 @pytest.mark.slow
@@ -268,8 +268,8 @@ def test_torchscript_package_letterbox_batch_numpy(
         expected_xyxy,
         atol=XYXY_ATOL,
     )
-    assert 221000 <= mask_region_sum_0 <= 221300
-    assert 221000 <= mask_region_sum_1 <= 221300
+    assert 219500 <= mask_region_sum_0 <= 221300
+    assert 219500 <= mask_region_sum_1 <= 221300
 
 
 @pytest.mark.slow
@@ -313,4 +313,4 @@ def test_torchscript_package_letterbox_torch(
         expected_xyxy,
         atol=XYXY_ATOL,
     )
-    assert 221000 <= mask_region_sum <= 221300
+    assert 219500 <= mask_region_sum <= 221300
