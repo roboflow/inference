@@ -62,7 +62,6 @@ from inference_models.models.base.semantic_segmentation import (
 )
 from inference_models.models.base.types import PreprocessingMetadata
 
-
 DEFAULT_COLOR_PALETTE = [
     "#A351FB",
     "#FF4040",

@@ -8,7 +8,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -300,36 +299,6 @@ class TestFoundationModelListFormat:
             result = get_cached_foundation_models(blocks=[block])
 
 
-# ── Cross-validation: _slugify_model_id must match inference_models ──────────
-
-_SLUGIFY_TEST_IDS = [
-    "clip/ViT-B-16",
-    "coco/40",
-    "rfdetr-medium",
-    "sam3/sam3_final",
-    "florence-pretrains/3",
-    "depth-anything-v3/small",
-    "smolvlm2/smolvlm-2.2b-instruct",
-    "qwen-pretrains/1",
-    "a" * 100,  # long model id
-    "special!!!chars###here",
-]
-
-
-@pytest.mark.parametrize("model_id", _SLUGIFY_TEST_IDS)
-def test_slugify_matches_inference_models(model_id: str):
-    """Ensure _slugify_model_id stays in sync with the canonical implementation."""
-    try:
-        from inference_models.models.auto_loaders.core import (
-            slugify_model_id_to_os_safe_format,
-        )
-    except ImportError:
-        pytest.skip("inference_models not installed")
-
-    from inference.core.cache.air_gapped import _slugify_model_id
-
-    assert _slugify_model_id(model_id) == slugify_model_id_to_os_safe_format(model_id)
-
 # ---------------------------------------------------------------------------
 # scan_cached_models — model_config.json (inference-models cache layout)
 # ---------------------------------------------------------------------------
@@ -426,3 +395,60 @@ class TestScanModelConfigJson:
         result = scan_cached_models(cache)
 
         assert len(result) == 0
+
+
+# ---------------------------------------------------------------------------
+# is_model_cached — inference-models layout delegation
+# ---------------------------------------------------------------------------
+
+
+class TestIsModelCachedInferenceModels:
+    """is_model_cached delegates to find_cached_model_package_dir for the
+    inference-models cache layout."""
+
+    def test_returns_true_when_package_dir_found(self, tmp_path):
+        from inference.core.cache.air_gapped import is_model_cached
+
+        cache = str(tmp_path)
+        fake_find = MagicMock(return_value="/some/cached/dir")
+        fake_module = MagicMock()
+        fake_module.find_cached_model_package_dir = fake_find
+
+        with patch("inference.core.cache.air_gapped.MODEL_CACHE_DIR", cache), patch(
+            "inference.core.cache.air_gapped.USE_INFERENCE_MODELS", True
+        ), patch.dict(
+            "sys.modules",
+            {"inference_models.models.auto_loaders.core": fake_module},
+        ):
+            assert is_model_cached("my-model") is True
+        fake_find.assert_called_once_with("my-model")
+
+    def test_returns_false_when_no_cache_hit(self):
+        from inference.core.cache.air_gapped import is_model_cached
+
+        fake_find = MagicMock(return_value=None)
+        fake_module = MagicMock()
+        fake_module.find_cached_model_package_dir = fake_find
+
+        with patch(
+            "inference.core.cache.air_gapped.MODEL_CACHE_DIR", "/nonexistent"
+        ), patch(
+            "inference.core.cache.air_gapped.USE_INFERENCE_MODELS", True
+        ), patch.dict(
+            "sys.modules",
+            {"inference_models.models.auto_loaders.core": fake_module},
+        ):
+            assert is_model_cached("no-such-model") is False
+
+    def test_returns_false_when_inference_models_not_installed(self):
+        from inference.core.cache.air_gapped import is_model_cached
+
+        with patch(
+            "inference.core.cache.air_gapped.MODEL_CACHE_DIR", "/nonexistent"
+        ), patch(
+            "inference.core.cache.air_gapped.USE_INFERENCE_MODELS", True
+        ), patch.dict(
+            "sys.modules",
+            {"inference_models.models.auto_loaders.core": None},
+        ):
+            assert is_model_cached("some-model") is False

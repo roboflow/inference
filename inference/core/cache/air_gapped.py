@@ -4,11 +4,9 @@ Used by the air-gapped workflow builder to enumerate what is available for
 offline workflow construction.
 """
 
-import hashlib
 import json
 import logging
 import os
-import re
 from typing import Any, Dict, List, Optional
 
 from inference.core.env import MODEL_CACHE_DIR, USE_INFERENCE_MODELS
@@ -18,22 +16,6 @@ logger = logging.getLogger(__name__)
 
 # Directories directly under MODEL_CACHE_DIR that are not model trees.
 _SKIP_TOP_LEVEL = {"workflow", "_file_locks"}
-
-
-def _slugify_model_id(model_id: str) -> str:
-    """Reproduce the slug used by inference-models for cache directory names.
-
-    Must stay in sync with
-    ``inference_models.models.auto_loaders.core.slugify_model_id_to_os_safe_format``.
-    """
-    slug = re.sub(r"[^A-Za-z0-9_-]+", "-", model_id)
-    slug = re.sub(r"[_-]{2,}", "-", slug)
-    if not slug:
-        slug = "special-char-only-model-id"
-    if len(slug) > 48:
-        slug = slug[:48]
-    digest = hashlib.blake2s(model_id.encode("utf-8"), digest_size=4).hexdigest()
-    return f"{slug}-{digest}"
 
 
 def _has_non_hidden_children(path: str) -> bool:
@@ -76,12 +58,14 @@ def is_model_cached(model_id: str) -> bool:
     if os.path.isdir(traditional_path) and _has_non_hidden_children(traditional_path):
         return True
 
-    slug = _slugify_model_id(model_id)
-    models_cache_path = os.path.join(MODEL_CACHE_DIR, "models-cache", slug)
-    if os.path.isdir(models_cache_path) and _has_non_hidden_children(models_cache_path):
-        return True
+    try:
+        from inference_models.models.auto_loaders.core import (
+            find_cached_model_package_dir,
+        )
 
-    return False
+        return find_cached_model_package_dir(model_id) is not None
+    except ImportError:
+        return False
 
 
 def has_cached_model_variant(model_variants: Optional[List[str]]) -> bool:
@@ -156,7 +140,11 @@ def scan_cached_models(cache_dir: str) -> List[Dict[str, Any]]:
             try:
                 with open(config_path, "r") as fh:
                     cfg = json.load(fh)
-                if isinstance(cfg, dict) and cfg.get("task_type") and cfg.get("model_id"):
+                if (
+                    isinstance(cfg, dict)
+                    and cfg.get("task_type")
+                    and cfg.get("model_id")
+                ):
                     metadata = cfg
                     use_stored_model_id = True
             except (json.JSONDecodeError, OSError):

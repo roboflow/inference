@@ -27,6 +27,7 @@ from inference_models.errors import (
     MissingModelInitParameterError,
     ModelPackageAlternativesExhaustedError,
     NoModelPackagesAvailableError,
+    RetryError,
     UnauthorizedModelAccessError,
 )
 from inference_models.logger import LOGGER, verbose_info
@@ -827,6 +828,21 @@ class AutoModel:
                     model_id=model_id_or_path, api_key=api_key
                 )
                 raise error
+            except RetryError:
+                cached_package_dir = find_cached_model_package_dir(
+                    model_id=model_id_or_path
+                )
+                if cached_package_dir is None:
+                    raise
+                LOGGER.info(
+                    f"Network unavailable for model {model_id_or_path}, "
+                    f"loading from cached package at {cached_package_dir}"
+                )
+                return attempt_loading_model_from_local_storage(
+                    model_dir_or_weights_path=cached_package_dir,
+                    allow_local_code_packages=allow_local_code_packages,
+                    model_init_kwargs=model_init_kwargs,
+                )
             # here we verify if de-aliasing or access confirmation from auth master changed something
             model_from_access_manager = model_access_manager.retrieve_model_instance(
                 model_id=model_id_or_path,
@@ -1518,6 +1534,26 @@ def generate_model_package_cache_path(model_id: str, package_id: str) -> str:
     return os.path.abspath(
         os.path.join(INFERENCE_HOME, "models-cache", model_id_slug, package_id)
     )
+
+
+def find_cached_model_package_dir(model_id: str) -> Optional[str]:
+    """Return the path to a locally-cached model package for *model_id*, or ``None``.
+
+    Scans ``{INFERENCE_HOME}/models-cache/{slug}/`` for any package directory
+    that contains a valid ``model_config.json``.  This is used as a fallback
+    when the weights-provider API is unreachable (offline / air-gapped).
+    """
+    slug = slugify_model_id_to_os_safe_format(model_id=model_id)
+    slug_dir = os.path.abspath(os.path.join(INFERENCE_HOME, "models-cache", slug))
+    if not os.path.isdir(slug_dir):
+        return None
+    for entry in os.listdir(slug_dir):
+        package_dir = os.path.join(slug_dir, entry)
+        if not os.path.isdir(package_dir):
+            continue
+        if os.path.isfile(os.path.join(package_dir, MODEL_CONFIG_FILE_NAME)):
+            return package_dir
+    return None
 
 
 def ensure_package_id_is_os_safe(model_id: str, package_id: str) -> None:
