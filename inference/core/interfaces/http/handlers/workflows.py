@@ -1,6 +1,5 @@
 # TODO - for everyone: start migrating other handlers to bring relief to http_api.py
 import copy
-import logging
 from typing import Any, Dict, List, Optional, Set, Union
 
 from packaging.specifiers import SpecifierSet
@@ -45,8 +44,6 @@ from inference.core.workflows.execution_engine.v1.introspection.types_discovery 
     discover_kinds_typing_hints,
 )
 from inference.core.workflows.prototypes.block import BlockAirGappedInfo
-
-logger = logging.getLogger(__name__)
 
 
 def handle_describe_workflows_blocks_request(
