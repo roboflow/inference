@@ -35,7 +35,7 @@ router = APIRouter()
 # ----------------------------------------------------------------
 csrf_file = workflow_local_dir / ".csrf"
 if csrf_file.exists():
-    csrf = csrf_file.read_text()
+    csrf = csrf_file.read_text().strip()
 else:
     csrf = os.urandom(16).hex()
     csrf_file.write_text(csrf)
