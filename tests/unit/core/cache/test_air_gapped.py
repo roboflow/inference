@@ -329,3 +329,100 @@ def test_slugify_matches_inference_models(model_id: str):
     from inference.core.cache.air_gapped import _slugify_model_id
 
     assert _slugify_model_id(model_id) == slugify_model_id_to_os_safe_format(model_id)
+
+# ---------------------------------------------------------------------------
+# scan_cached_models — model_config.json (inference-models cache layout)
+# ---------------------------------------------------------------------------
+
+
+def _write_model_config_json(
+    cache_dir: str,
+    slug_dir: str,
+    package_id: str,
+    config: dict,
+) -> None:
+    """Write a ``model_config.json`` inside the inference-models cache layout."""
+    package_dir = os.path.join(cache_dir, "models-cache", slug_dir, package_id)
+    os.makedirs(package_dir, exist_ok=True)
+    with open(os.path.join(package_dir, "model_config.json"), "w") as fh:
+        json.dump(config, fh)
+
+
+class TestScanModelConfigJson:
+    """model_config.json written by dump_model_config_for_offline_use."""
+
+    def test_uses_canonical_model_id_from_config(self, tmp_path):
+        """When model_config.json has model_id, use it instead of directory path."""
+        from inference.core.cache.air_gapped import scan_cached_models
+
+        cache = str(tmp_path)
+        _write_model_config_json(
+            cache,
+            slug_dir="coco-22-abcd1234",
+            package_id="pkg-001",
+            config={
+                "model_id": "coco/22",
+                "task_type": "object-detection",
+                "model_architecture": "yolov10b",
+                "backend_type": "onnxruntime",
+            },
+        )
+
+        result = scan_cached_models(cache)
+
+        assert len(result) == 1
+        m = result[0]
+        assert m["model_id"] == "coco/22"
+        assert m["task_type"] == "object-detection"
+        assert m["model_architecture"] == "yolov10b"
+        assert m["is_foundation"] is False
+
+    def test_deduplicates_by_model_id(self, tmp_path):
+        """Two cache entries with the same canonical model_id produce one result."""
+        from inference.core.cache.air_gapped import scan_cached_models
+
+        cache = str(tmp_path)
+        # Same model in inference-models layout
+        _write_model_config_json(
+            cache,
+            slug_dir="coco-22-abcd1234",
+            package_id="pkg-001",
+            config={
+                "model_id": "coco/22",
+                "task_type": "object-detection",
+                "model_architecture": "yolov10b",
+                "backend_type": "onnxruntime",
+            },
+        )
+        # Same model also present in traditional layout
+        _write_model_type_json(
+            cache,
+            "coco/22",
+            {"project_task_type": "object-detection", "model_type": "yolov10b"},
+        )
+
+        result = scan_cached_models(cache)
+
+        assert len(result) == 1
+        assert result[0]["model_id"] == "coco/22"
+
+    def test_skips_config_without_model_id(self, tmp_path):
+        """model_config.json missing model_id falls back to model_type.json."""
+        from inference.core.cache.air_gapped import scan_cached_models
+
+        cache = str(tmp_path)
+        # model_config.json without model_id — should not be picked up
+        _write_model_config_json(
+            cache,
+            slug_dir="some-slug-abcd1234",
+            package_id="pkg-001",
+            config={
+                "task_type": "object-detection",
+                "model_architecture": "yolov8n",
+                "backend_type": "onnxruntime",
+            },
+        )
+
+        result = scan_cached_models(cache)
+
+        assert len(result) == 0

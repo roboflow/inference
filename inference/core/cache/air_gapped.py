@@ -107,23 +107,29 @@ def _load_blocks() -> list:
 
 
 def scan_cached_models(cache_dir: str) -> List[Dict[str, Any]]:
-    """Walk *cache_dir* looking for ``model_type.json`` marker files.
+    """Walk *cache_dir* looking for cached model metadata files.
 
-    Each marker is written by the model registry when a model is first
-    downloaded.  The file contains at least ``project_task_type`` and
-    ``model_type`` keys.
+    Scans two cache layouts:
+
+    1. **Traditional** — ``model_type.json`` marker files written by the model
+       registry.  The model ID is derived from the directory path.
+    2. **inference-models** — ``model_config.json`` files written by
+       ``dump_model_config_for_offline_use``.  The canonical ``model_id`` is
+       read from the file, which ensures alias resolution works correctly
+       (the directory name is an opaque slug in this layout).
 
     Returns a list of dicts with the following shape::
 
         {
-            "model_id": "workspace/project/3",
-            "name": "workspace/project/3",
+            "model_id": "coco/22",
+            "name": "coco/22",
             "task_type": "object-detection",
             "model_architecture": "yolov8n",
             "is_foundation": False,
         }
     """
     results: List[Dict[str, Any]] = []
+    seen_ids: set = set()
     if not os.path.isdir(cache_dir):
         return results
 
@@ -134,36 +140,68 @@ def scan_cached_models(cache_dir: str) -> List[Dict[str, Any]]:
             dirs[:] = [d for d in dirs if d not in _SKIP_TOP_LEVEL]
             continue
 
-        if "model_type.json" not in files:
+        has_model_type = "model_type.json" in files
+        has_model_config = "model_config.json" in files
+
+        if not has_model_type and not has_model_config:
             continue
 
-        model_type_path = os.path.join(root, "model_type.json")
-        try:
-            with open(model_type_path, "r") as fh:
-                metadata = json.load(fh)
-        except (json.JSONDecodeError, OSError) as exc:
-            logger.warning(
-                "Skipping unreadable model_type.json at %s: %s",
-                model_type_path,
-                exc,
-            )
-            continue
+        metadata: Optional[dict] = None
+        use_stored_model_id = False
+
+        # Prefer model_config.json when present — it contains the canonical
+        # model_id that matches REGISTERED_ALIASES.
+        if has_model_config:
+            config_path = os.path.join(root, "model_config.json")
+            try:
+                with open(config_path, "r") as fh:
+                    cfg = json.load(fh)
+                if isinstance(cfg, dict) and cfg.get("task_type") and cfg.get("model_id"):
+                    metadata = cfg
+                    use_stored_model_id = True
+            except (json.JSONDecodeError, OSError):
+                pass
+
+        # Fall back to model_type.json for the traditional layout.
+        if metadata is None and has_model_type:
+            model_type_path = os.path.join(root, "model_type.json")
+            try:
+                with open(model_type_path, "r") as fh:
+                    metadata = json.load(fh)
+            except (json.JSONDecodeError, OSError) as exc:
+                logger.warning(
+                    "Skipping unreadable model_type.json at %s: %s",
+                    model_type_path,
+                    exc,
+                )
+                continue
 
         if not isinstance(metadata, dict):
             continue
 
-        # Support both traditional keys and inference-models metadata keys.
-        task_type = metadata.get(PROJECT_TASK_TYPE_KEY) or metadata.get("taskType", "")
-        model_architecture = metadata.get(MODEL_TYPE_KEY) or metadata.get(
-            "modelArchitecture", ""
+        task_type = (
+            metadata.get("task_type")
+            or metadata.get(PROJECT_TASK_TYPE_KEY)
+            or metadata.get("taskType", "")
+        )
+        model_architecture = (
+            metadata.get("model_architecture")
+            or metadata.get(MODEL_TYPE_KEY)
+            or metadata.get("modelArchitecture", "")
         )
 
         if not task_type:
             continue
 
-        model_id = os.path.relpath(root, cache_dir)
-        # Normalise path separators on Windows.
-        model_id = model_id.replace(os.sep, "/")
+        if use_stored_model_id:
+            model_id = metadata["model_id"]
+        else:
+            model_id = os.path.relpath(root, cache_dir)
+            model_id = model_id.replace(os.sep, "/")
+
+        if model_id in seen_ids:
+            continue
+        seen_ids.add(model_id)
 
         results.append(
             {
