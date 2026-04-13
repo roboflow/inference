@@ -176,6 +176,20 @@ ROBOFLOW_PROJECT_KIND = Kind(
     internal_data_type="str",
 )
 
+ROBOFLOW_SOLUTION_KIND_DOCS = """
+This kind represents a Roboflow Vision Events use case identifier. Use cases are used to
+namespace and organize vision events within a workspace. In the workflow builder UI, this
+is presented as a "Use Case" selector where users can pick an existing use case or create
+a new one.
+"""
+ROBOFLOW_SOLUTION_KIND = Kind(
+    name="roboflow_solution",
+    description="Roboflow Vision Events use case identifier",
+    docs=ROBOFLOW_SOLUTION_KIND_DOCS,
+    serialised_data_type="str",
+    internal_data_type="str",
+)
+
 ROBOFLOW_API_KEY_KIND_DOCS = """
 This kind represents API key that grants access to Roboflow platform.
 To learn more about Roboflow API keys visit [this](https://docs.roboflow.com/api-reference/authentication)

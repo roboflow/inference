@@ -69,3 +69,10 @@ request_model_ids: contextvars.ContextVar[Optional[RequestModelIds]] = (
 request_workflow_id: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
     "request_workflow_id", default=None
 )
+
+# Set by HTTP middleware; read by ModelManager.add_model to track which
+# request paths trigger model loads.  Defaults to None so non-HTTP usage
+# (SDK, tests, scripts) silently skips path tracking.
+current_request_path: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
+    "current_request_path", default=None
+)

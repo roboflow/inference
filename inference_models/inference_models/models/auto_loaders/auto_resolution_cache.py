@@ -125,6 +125,8 @@ class BaseAutoLoadMetadataCache(AutoResolutionCache):
 
 
 def generate_auto_resolution_cache_path(auto_negotiation_hash: str) -> str:
-    return os.path.join(
-        INFERENCE_HOME, "auto-resolution-cache", f"{auto_negotiation_hash}.json"
+    return os.path.abspath(
+        os.path.join(
+            INFERENCE_HOME, "auto-resolution-cache", f"{auto_negotiation_hash}.json"
+        )
     )

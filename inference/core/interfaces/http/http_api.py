@@ -4,6 +4,7 @@ import logging
 import os
 import re
 from concurrent.futures import CancelledError, Future, ThreadPoolExecutor
+from dataclasses import dataclass
 from functools import partial
 from threading import Lock, Thread
 from time import sleep
@@ -264,6 +265,7 @@ from inference.core.managers.metrics import get_container_stats
 from inference.core.managers.model_load_collector import (
     ModelLoadCollector,
     RequestModelIds,
+    current_request_path,
     model_load_info,
     request_model_ids,
     request_workflow_id,
@@ -273,13 +275,18 @@ from inference.core.roboflow_api import (
     build_roboflow_api_headers,
     get_roboflow_workspace,
     get_roboflow_workspace_async,
+    get_serverless_usage_check_async,
     get_workflow_specification,
 )
 from inference.core.telemetry import setup_telemetry, shutdown_telemetry, start_span
 from inference.core.utils.container import is_docker_socket_mounted
 from inference.core.utils.notebooks import start_notebook
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
-from inference.core.workflows.errors import WorkflowError, WorkflowSyntaxError
+from inference.core.workflows.errors import (
+    WorkflowBlockError,
+    WorkflowError,
+    WorkflowSyntaxError,
+)
 from inference.core.workflows.execution_engine.core import (
     ExecutionEngine,
     get_available_versions,
@@ -343,6 +350,16 @@ class LambdaMiddleware(BaseHTTPMiddleware):
 
 REMOTE_PROCESSING_TIME_HEADER = "X-Remote-Processing-Time"
 REMOTE_PROCESSING_TIMES_HEADER = "X-Remote-Processing-Times"
+AUTH_CACHE_TTL_SECONDS = 3600
+SHORT_AUTH_CACHE_TTL_SECONDS = 60
+
+
+@dataclass(frozen=True)
+class AuthorizationCacheEntry:
+    expires_at: float
+    workspace_id: Optional[str]
+    status_code: int = 200
+    message: Optional[str] = None
 
 
 class GCPServerlessMiddleware(BaseHTTPMiddleware):
@@ -456,6 +473,14 @@ class HttpInterface(BaseInterface):
         if OTEL_TRACING_ENABLED:
             setup_telemetry(app)
 
+        @app.middleware("http")
+        async def set_request_path_context(request: Request, call_next):
+            token = current_request_path.set(request.url.path)
+            try:
+                return await call_next(request)
+            finally:
+                current_request_path.reset(token)
+
         @app.on_event("shutdown")
         async def on_shutdown():
             logger.info("Shutting down %s", description)
@@ -568,7 +593,7 @@ class HttpInterface(BaseInterface):
                 )
                 return JSONResponse(status_code=200, content=container_stats)
 
-        cached_api_keys = dict()
+        cached_api_keys: Dict[str, AuthorizationCacheEntry] = {}
 
         if GCP_SERVERLESS:
 
@@ -614,11 +639,11 @@ class HttpInterface(BaseInterface):
                 if skip_check:
                     return await call_next(request)
 
-                def _unauthorized_response(msg):
+                def _authorization_error_response(status_code: int, msg: str):
                     return JSONResponse(
-                        status_code=401,
+                        status_code=status_code,
                         content={
-                            "status": 401,
+                            "status": status_code,
                             "message": msg,
                         },
                     )
@@ -639,23 +664,58 @@ class HttpInterface(BaseInterface):
                 api_key = json_params.get("api_key", api_key)
 
                 if api_key is None:
-                    return _unauthorized_response("Unauthorized api_key")
+                    return _authorization_error_response(401, "Unauthorized api_key")
 
                 cache_entry = cached_api_keys.get(api_key)
                 workspace_id = None
-                if cache_entry and cache_entry[0] >= time.time():
-                    workspace_id = cache_entry[1]
-                else:
-                    try:
-                        workspace_id = await get_roboflow_workspace_async(
-                            api_key=api_key
+                if cache_entry and cache_entry.expires_at >= time.time():
+                    if cache_entry.status_code != 200:
+                        return _authorization_error_response(
+                            cache_entry.status_code,
+                            cache_entry.message or "Unauthorized api_key",
                         )
-                        cached_api_keys[api_key] = (
-                            time.time() + 3600,
-                            workspace_id,
-                        )  # expired after 1 hour
-                    except (RoboflowAPINotAuthorizedError, WorkspaceLoadError):
-                        return _unauthorized_response("Unauthorized api_key")
+                    workspace_id = cache_entry.workspace_id
+                else:
+                    usage_check_result = await get_serverless_usage_check_async(
+                        api_key=api_key
+                    )
+                    if usage_check_result.status_code == 200:
+                        workspace_id = usage_check_result.workspace_id
+                        cached_api_keys[api_key] = AuthorizationCacheEntry(
+                            expires_at=time.time() + AUTH_CACHE_TTL_SECONDS,
+                            workspace_id=workspace_id,
+                        )
+                    elif usage_check_result.status_code == 401:
+                        cached_api_keys[api_key] = AuthorizationCacheEntry(
+                            expires_at=time.time() + SHORT_AUTH_CACHE_TTL_SECONDS,
+                            workspace_id=None,
+                            status_code=401,
+                            message=(
+                                "Unauthorized api_key. This key is not authorized "
+                                "for serverless inference."
+                            ),
+                        )
+                        return _authorization_error_response(
+                            401,
+                            cached_api_keys[api_key].message,
+                        )
+                    elif usage_check_result.status_code == 402:
+                        message = (
+                            "This workspace cannot currently spend credits for serverless inference. "
+                            "Verify billing or credit cap settings."
+                        )
+                        if usage_check_result.error:
+                            message = f"{message} {usage_check_result.error}"
+                        cached_api_keys[api_key] = AuthorizationCacheEntry(
+                            expires_at=time.time() + SHORT_AUTH_CACHE_TTL_SECONDS,
+                            workspace_id=usage_check_result.workspace_id,
+                            status_code=402,
+                            message=message,
+                        )
+                        return _authorization_error_response(
+                            402,
+                            cached_api_keys[api_key].message,
+                        )
 
                 response = await call_next(request)
                 if workspace_id:
@@ -716,8 +776,10 @@ class HttpInterface(BaseInterface):
 
                 cache_entry = cached_api_keys.get(api_key)
                 workspace_id = None
-                if cache_entry and cache_entry[0] >= time.time():
-                    workspace_id = cache_entry[1]
+                if cache_entry and cache_entry.expires_at >= time.time():
+                    if cache_entry.status_code != 200:
+                        return _unauthorized_response("Unauthorized api_key")
+                    workspace_id = cache_entry.workspace_id
                 else:
                     try:
                         if api_key is None:
@@ -730,10 +792,10 @@ class HttpInterface(BaseInterface):
                         if workspace_id != DEDICATED_DEPLOYMENT_WORKSPACE_URL:
                             return _unauthorized_response("Unauthorized api_key")
 
-                        cached_api_keys[api_key] = (
-                            time.time() + 3600,
-                            workspace_id,
-                        )  # expired after 1 hour
+                        cached_api_keys[api_key] = AuthorizationCacheEntry(
+                            expires_at=time.time() + AUTH_CACHE_TTL_SECONDS,
+                            workspace_id=workspace_id,
+                        )
                     except (RoboflowAPINotAuthorizedError, WorkspaceLoadError):
                         return _unauthorized_response("Unauthorized api_key")
 
@@ -854,6 +916,7 @@ class HttpInterface(BaseInterface):
 
         def process_inference_request(
             inference_request: InferenceRequest,
+            api_key: Optional[str] = None,
             countinference: Optional[bool] = None,
             service_secret: Optional[str] = None,
             **kwargs,
@@ -868,17 +931,33 @@ class HttpInterface(BaseInterface):
             Returns:
                 InferenceResponse: The response containing the inference results.
             """
+            if api_key is not None:
+                inference_request.api_key = api_key
+            requested_model_id = inference_request.model_id
             de_aliased_model_id = resolve_roboflow_model_alias(
-                model_id=inference_request.model_id
+                model_id=requested_model_id
+            )
+            model_id_alias = (
+                requested_model_id
+                if de_aliased_model_id != requested_model_id
+                else None
             )
             self.model_manager.add_model(
                 de_aliased_model_id,
                 inference_request.api_key,
+                model_id_alias=model_id_alias,
                 countinference=countinference,
                 service_secret=service_secret,
             )
+            inference_model_id = (
+                requested_model_id
+                if model_id_alias is not None
+                else de_aliased_model_id
+            )
             resp = self.model_manager.infer_from_request_sync(
-                de_aliased_model_id, inference_request, **kwargs
+                inference_model_id,
+                inference_request,
+                **kwargs,
             )
             return orjson_response(resp)
 
@@ -1432,6 +1511,10 @@ class HttpInterface(BaseInterface):
             @usage_collector("request")
             def infer_lmm(
                 inference_request: LMMInferenceRequest,
+                api_key: Optional[str] = Query(
+                    None,
+                    description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
+                ),
                 countinference: Optional[bool] = None,
                 service_secret: Optional[str] = None,
             ):
@@ -1446,6 +1529,7 @@ class HttpInterface(BaseInterface):
                 logger.debug(f"Reached /infer/lmm")
                 return process_inference_request(
                     inference_request,
+                    api_key=api_key,
                     countinference=countinference,
                     service_secret=service_secret,
                 )
@@ -1466,6 +1550,10 @@ class HttpInterface(BaseInterface):
             def infer_lmm_with_model_id(
                 model_id: str,
                 inference_request: LMMInferenceRequest,
+                api_key: Optional[str] = Query(
+                    None,
+                    description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
+                ),
                 countinference: Optional[bool] = None,
                 service_secret: Optional[str] = None,
             ):
@@ -1501,6 +1589,7 @@ class HttpInterface(BaseInterface):
 
                 return process_inference_request(
                     inference_request,
+                    api_key=api_key,
                     countinference=countinference,
                     service_secret=service_secret,
                 )
@@ -1800,10 +1889,30 @@ class HttpInterface(BaseInterface):
                 )
                 if worker_result.exception_type is not None:
                     if worker_result.exception_type == "WorkflowSyntaxError":
+                        # Reconstruct exception from serialized worker result.
+                        # We dynamically create an exception class to preserve
+                        # the original type name (e.g., "ValidationError") for
+                        # the inner_error_type property, since exceptions can't
+                        # be pickled across the worker process boundary.
+                        inner_error = None
+                        if worker_result.inner_error and worker_result.inner_error_type:
+                            inner_error = type(
+                                worker_result.inner_error_type,
+                                (Exception,),
+                                {},
+                            )(worker_result.inner_error)
+
+                        blocks_errors = None
+                        if worker_result.blocks_errors:
+                            blocks_errors = [
+                                WorkflowBlockError(**be)
+                                for be in worker_result.blocks_errors
+                            ]
                         raise WorkflowSyntaxError(
                             public_message=worker_result.error_message,
                             context=worker_result.error_context,
-                            inner_error=worker_result.inner_error,
+                            inner_error=inner_error,
+                            blocks_errors=blocks_errors,
                         )
                     if worker_result.exception_type == "WorkflowError":
                         raise WorkflowError(
@@ -2140,8 +2249,25 @@ class HttpInterface(BaseInterface):
 
         @app.get("/healthz", status_code=200)
         def healthz():
-            """Health endpoint for Kubernetes liveness probe."""
-            return {"status": "healthy"}
+            """Health endpoint for Kubernetes liveness probe.
+
+            Verifies CUDA context health when running on GPU. Returns 503 if
+            CUDA is corrupted (unrecoverable - requires process restart).
+            """
+            from inference.core.utils.cuda_health import check_cuda_health
+
+            is_healthy, error = check_cuda_health()
+            if is_healthy:
+                return {"status": "healthy"}
+            else:
+                logger.error("CUDA health check failed: %s", error)
+                return JSONResponse(
+                    content={
+                        "status": "unhealthy",
+                        "reason": "cuda_error",
+                    },
+                    status_code=503,
+                )
 
         if CORE_MODELS_ENABLED:
             if CORE_MODEL_CLIP_ENABLED:

@@ -9,6 +9,13 @@ from inference.core.workflows.execution_engine.entities.base import (
     WorkflowImageData,
 )
 
+
+def manifest_accepted_kind_names(manifest_cls, field_name="predictions"):
+    """Extract accepted kind names from a manifest's Selector field via JSON schema."""
+    schema = manifest_cls.model_json_schema()
+    kind_entries = schema["properties"][field_name].get("kind", [])
+    return {entry["name"] for entry in kind_entries}
+
 FRAME1_XYXY = np.array(
     [[10, 10, 20, 20], [21, 10, 31, 20], [31, 10, 41, 20], [100, 100, 110, 110]]
 )

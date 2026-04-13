@@ -17,7 +17,10 @@ from inference.core.workflows.execution_engine.entities.base import (
     WorkflowImageData,
 )
 from inference.core.workflows.execution_engine.entities.types import (
+    INSTANCE_SEGMENTATION_PREDICTION_KIND,
+    KEYPOINT_DETECTION_PREDICTION_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
+    RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -26,6 +29,16 @@ from inference.core.workflows.prototypes.block import (
 )
 
 OUTPUT_KEY: str = "tracked_detections"
+
+#: Detection kinds accepted as tracker input and declared on tracker output.
+#: Trackers only use bounding boxes for association and preserve all other
+#: fields (masks, keypoints, custom data) via ``sv.Detections`` indexing.
+TRACKER_PREDICTION_KINDS = [
+    OBJECT_DETECTION_PREDICTION_KIND,
+    INSTANCE_SEGMENTATION_PREDICTION_KIND,
+    KEYPOINT_DETECTION_PREDICTION_KIND,
+    RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
+]
 
 
 class InstanceCache:
@@ -132,12 +145,18 @@ class TrackerBlockBase(WorkflowBlock):
 
 
 def tracker_describe_outputs() -> List[OutputDefinition]:
-    """Output definitions shared by all tracker blocks."""
+    """Output definitions shared by all tracker blocks.
+
+    Trackers preserve all detection fields (masks, keypoints, custom data) —
+    they only use bounding boxes for association then index back into the
+    original ``sv.Detections``.  The output kinds therefore mirror the input
+    kinds accepted by every tracker manifest.
+    """
     return [
-        OutputDefinition(name=OUTPUT_KEY, kind=[OBJECT_DETECTION_PREDICTION_KIND]),
-        OutputDefinition(name="new_instances", kind=[OBJECT_DETECTION_PREDICTION_KIND]),
+        OutputDefinition(name=OUTPUT_KEY, kind=TRACKER_PREDICTION_KINDS),
+        OutputDefinition(name="new_instances", kind=TRACKER_PREDICTION_KINDS),
         OutputDefinition(
             name="already_seen_instances",
-            kind=[OBJECT_DETECTION_PREDICTION_KIND],
+            kind=TRACKER_PREDICTION_KINDS,
         ),
     ]
