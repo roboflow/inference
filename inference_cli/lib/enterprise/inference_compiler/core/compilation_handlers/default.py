@@ -67,6 +67,10 @@ def compile_and_register_default_model(
     if model_metadata.task_type == KEYPOINT_DETECTION_TASK_TYPE:
         expected_files.append(KEYPOINTS_METADATA_FILE)
     if package_with_dynamic_batch_size is not None:
+        print_to_console(
+            message="Detected model package with dynamic input dimensions - downloading...",
+            console=console,
+        )
         package_files = download_model_package(
             model_architecture=model_metadata.model_architecture,
             task_type=model_metadata.task_type,
@@ -76,6 +80,10 @@ def compile_and_register_default_model(
             verify_model=compilation_config.verify_model,
         )
     else:
+        print_to_console(
+            message="Detected model package with static input dimensions - downloading...",
+            console=console,
+        )
         package_files = download_model_package(
             model_architecture=model_metadata.model_architecture,
             task_type=model_metadata.task_type,
@@ -84,6 +92,7 @@ def compile_and_register_default_model(
             expected_files=expected_files,
             verify_model=compilation_config.verify_model,
         )
+    print_to_console(message="Artefacts downloaded.", console=console)
     training_size = get_training_input_size(
         inference_config_path=package_files[INFERENCE_CONFIG_FILE]
     )
