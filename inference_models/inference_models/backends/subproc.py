@@ -122,6 +122,7 @@ def _worker_main(
     result_shm_name: str,
     model_kwargs: dict,
     gpu_device: Optional[str] = None,
+    decoder_name: str = "cv2",
 ) -> None:
     """Worker subprocess entry point.
 
@@ -145,7 +146,7 @@ def _worker_main(
 
     try:
         device = gpu_device if use_gpu and gpu_device else ("cuda:0" if use_gpu else "cpu")
-        _log.info("Worker(%s): loading model on %s", model_id, device)
+        _log.info("Worker(%s): loading model on %s (decoder=%s)", model_id, device, decoder_name)
         model = AutoModel.from_pretrained(
             model_id, api_key=api_key, device=device, **model_kwargs,
         )
@@ -154,6 +155,10 @@ def _worker_main(
             model_id, type(model).__name__,
             getattr(model, "max_batch_size", None),
         )
+
+        # ── Decoder ─────────────────────────────────────────────────
+        from inference_models.backends.decode import make_decoder
+        decode_fn = make_decoder(decoder_name, device=device)
 
         # ── Open SHM ────────────────────────────────────────────────
         input_shms = [shared_memory.SharedMemory(name=n) for n in input_shm_names]
@@ -199,7 +204,7 @@ def _worker_main(
             buf_idx = req["buf"]
 
             try:
-                _process_batch(model, req, input_shms[buf_idx], result_shm, sock)
+                _process_batch(model, req, input_shms[buf_idx], result_shm, sock, decode_fn)
             except Exception as e:
                 _log.exception("Worker(%s): batch error", model_id)
                 try:
@@ -234,16 +239,7 @@ def _worker_main(
             zmq_ctx.term()
 
 
-def _decode_raw(raw):
-    """Decode compressed bytes to numpy image, or pass through numpy arrays."""
-    if isinstance(raw, bytes):
-        import imagecodecs
-
-        return imagecodecs.imread(raw)
-    return raw
-
-
-def _process_batch(model, req, input_shm, result_shm, sock):
+def _process_batch(model, req, input_shm, result_shm, sock, decode_fn):
     """Run the full pipeline on a batch of raw inputs.
 
     Reads inputs from the specified input SHM buffer at offsets described
@@ -254,7 +250,9 @@ def _process_batch(model, req, input_shm, result_shm, sock):
     images = []
     for item in items:
         raw = _read_input_from_shm(input_shm.buf[item["offset"]:], item)
-        images.append(_decode_raw(raw))
+        if isinstance(raw, bytes):
+            raw = decode_fn(raw)
+        images.append(raw)
 
     if len(images) == 1:
         results = model.infer(images[0])
@@ -299,6 +297,7 @@ class SubprocessBackend(Backend):
         *,
         device: Optional[str] = None,
         use_gpu: Optional[bool] = None,
+        decoder: str = "cv2",
         batch_max_size: int = 0,
         batch_max_delay_ms: float = 10.0,
         num_input_buffers: int = 3,
@@ -310,6 +309,7 @@ class SubprocessBackend(Backend):
         import zmq
 
         self._model_id = model_id
+        self._decoder_name = decoder
         self._batch_max_size_requested = batch_max_size
         self._batch_max_delay_ms = batch_max_delay_ms
         self._state_value: str = "loading"
@@ -345,9 +345,9 @@ class SubprocessBackend(Backend):
         self._zmq_lock = threading.Lock()
 
         logger.info(
-            "SubprocessBackend(%s): device=%s | batch=%s | "
+            "SubprocessBackend(%s): device=%s | decoder=%s | batch=%s | "
             "input_bufs=%d×%dMB | result_buf=%dMB",
-            model_id, self._device_str,
+            model_id, self._device_str, decoder,
             batch_max_size or "off",
             num_input_buffers, input_buffer_mb, result_buffer_mb,
         )
@@ -379,6 +379,7 @@ class SubprocessBackend(Backend):
                 result_shm_name=self._result_shm.name,
                 model_kwargs=kwargs,
                 gpu_device=self._device_str if self._use_gpu else None,
+                decoder_name=decoder,
             ),
             daemon=True,
         )
