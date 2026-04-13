@@ -205,7 +205,7 @@ def run_compilation_in_container(
     container = docker_client.containers.run(
         image=image,
         command=command.split(" "),
-        environment="bash",
+        entrypoint="bash",
         privileged=privileged,
         detach=True,
         device_requests=device_requests,
