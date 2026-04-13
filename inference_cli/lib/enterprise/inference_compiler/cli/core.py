@@ -139,6 +139,7 @@ def compilation_to_run_in_container(
         return False
     try:
         import inference_models
+
     except Exception as error:
         console.print(
             "Inference compiler running in `auto` mode could not import `inference-models`, which is required "
@@ -146,7 +147,12 @@ def compilation_to_run_in_container(
         )
         return True
     try:
-        import tensorrt
+        from inference_models.runtime_introspection.core import x_ray_runtime_environment
+
+        x_ray_result = x_ray_runtime_environment()
+
+        assert x_ray_result.trt_version is not None, "TensorRT library not detected"
+        assert x_ray_result.trt_python_package_available, "TensorRT Python package not detected"
     except Exception as error:
         console.print(
             "Inference compiler running in `auto` mode could not import `tensorrt`, which is required "
