@@ -202,6 +202,7 @@ def run_compilation_in_container(
         trt_same_cc_compatible=trt_same_cc_compatible,
     )
     docker_client = docker.from_env()
+    print("command: ", command)
     container = docker_client.containers.run(
         image=image,
         command=command.split(" "),
