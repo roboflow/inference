@@ -205,7 +205,7 @@ def run_compilation_in_container(
     print("command: ", command)
     container = docker_client.containers.run(
         image=image,
-        command=command.split(" "),
+        command=["-c", command],
         entrypoint="bash",
         privileged=privileged,
         detach=True,
