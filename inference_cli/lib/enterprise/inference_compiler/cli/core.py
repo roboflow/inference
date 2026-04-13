@@ -91,7 +91,7 @@ def compile_model(
         typer.Option(
             "--env-file-path",
             help="Path to key-value .env file to inject into compilation container (if you run in Python package, "
-                 "just export variables to env)",
+            "just export variables to env)",
         ),
     ] = None,
 ) -> None:
@@ -157,12 +157,16 @@ def compilation_to_run_in_container(
         )
         return True
     try:
-        from inference_models.runtime_introspection.core import x_ray_runtime_environment
+        from inference_models.runtime_introspection.core import (
+            x_ray_runtime_environment,
+        )
 
         x_ray_result = x_ray_runtime_environment()
 
         assert x_ray_result.trt_version is not None, "TensorRT library not detected"
-        assert x_ray_result.trt_python_package_available, "TensorRT Python package not detected"
+        assert (
+            x_ray_result.trt_python_package_available
+        ), "TensorRT Python package not detected"
     except Exception as error:
         console.print(
             "Inference compiler running in `auto` mode could not import `tensorrt`, which is required "
@@ -259,9 +263,13 @@ def build_container_command(
     if api_key:
         command += f" --api-key {api_key}"
     if trt_forward_compatible:
-        command += f" --trt-forward-compatible {stringify_boolean(trt_forward_compatible)}"
+        command += (
+            f" --trt-forward-compatible {stringify_boolean(trt_forward_compatible)}"
+        )
     if trt_same_cc_compatible:
-        command += f" --trt-same-cc-compatible {stringify_boolean(trt_same_cc_compatible)}"
+        command += (
+            f" --trt-same-cc-compatible {stringify_boolean(trt_same_cc_compatible)}"
+        )
     return command
 
 

@@ -71,6 +71,7 @@ def safe_negotiate_model_packages(
             requested_backends=requested_backends,
             requested_quantization=requested_quantization,
             allow_untrusted_packages=allow_untrusted_packages,
+            verbose=True,
         )
         package_with_static_batch_size = select_package_with_static_batch_size(
             model_packages=matching_model_packages
