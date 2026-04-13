@@ -221,7 +221,6 @@ def run_compilation_in_container(
         environment_values = read_env_file(path=env_file_path)
         environment = [f"{key}={value}" for key, value in environment_values.items()]
     docker_client = docker.from_env()
-    print("command: ", command)
     container = docker_client.containers.run(
         image=image,
         command=["-c", command],
@@ -245,7 +244,6 @@ def run_compilation_in_container(
     )
     for line in container.logs(stream=True, follow=True):
         console.print(line.decode("utf-8"), end="")
-    # Once logs end, the container has stopped. Fetch exit code:
     result = container.wait()
     exit_code = result["StatusCode"]
     console.print(f"\nTRT compilation container exited with code {exit_code}")
