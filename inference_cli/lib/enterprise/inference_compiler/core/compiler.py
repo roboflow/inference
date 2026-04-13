@@ -132,6 +132,7 @@ def compile_model(
         models_service_client=models_service_client,
         trt_forward_compatible=trt_forward_compatible,
         trt_same_cc_compatible=trt_same_cc_compatible,
+        console=console,
     )
 
 
