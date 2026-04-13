@@ -220,10 +220,11 @@ def compile_and_register_default_model_trt_variant(
             same_compute_compatibility=same_compute_compatibility,
             console=console,
         )
-    except AlreadyCompiledError:
+    except AlreadyCompiledError as e:
         print_to_console(
             message="Model package already registered - skipping", console=console
         )
+        raise e
         return None
     if verify_model is not None:
         print_to_console(message="Verification of the artefacts...", console=console)
