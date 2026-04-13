@@ -94,7 +94,7 @@ class BlockManifest(WorkflowBlockManifest):
             "server uses the model's F1-optimal threshold from model evaluation "
             "when available, otherwise falls back to 0.4."
         ),
-        examples=[0.3, "$inputs.confidence_threshold"],
+        examples=[0.4, "$inputs.confidence_threshold"],
     )
     class_filter: Union[Optional[List[str]], Selector(kind=[LIST_OF_VALUES_KIND])] = (
         Field(
