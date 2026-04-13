@@ -235,7 +235,7 @@ def execute_compilation(
         machine_type = TRTMachineType.JETSON
         machine_specs = JetsonMachineSpecsV1(
             type="jetson-machine-specs-v1",
-            l4t_version=runtime_xray.l4t_version,
+            l4t_version=str(runtime_xray.l4t_version),
             device_name=runtime_xray.jetson_type or "unknown",
             driver_version=str(runtime_xray.driver_version),
         )
