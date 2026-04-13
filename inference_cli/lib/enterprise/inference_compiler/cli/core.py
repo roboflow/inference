@@ -6,6 +6,7 @@ from rich.console import Console
 
 from inference_cli.lib.container_adapter import get_image, pull_image
 from inference_cli.lib.env import ROBOFLOW_API_KEY
+from inference_cli.lib.utils import read_env_file
 
 inference_compiler_app = typer.Typer(name="Inference compiler")
 
@@ -85,6 +86,14 @@ def compile_model(
             help="Flag to allow using local images (if set False image is always attempted to be pulled)",
         ),
     ] = False,
+    env_file_path: Annotated[
+        Optional[str],
+        typer.Option(
+            "--env-file-path",
+            help="Path to key-value .env file to inject into compilation container (if you run in Python package, "
+                 "just export variables to env)",
+        ),
+    ] = None,
 ) -> None:
     console = Console()
     console.print(
@@ -109,6 +118,7 @@ def compile_model(
                 console=console,
                 image=image,
                 use_local_images=use_local_images,
+                env_file_path=env_file_path,
             )
         else:
             run_compilation_in_python(
@@ -170,6 +180,7 @@ def run_compilation_in_container(
     console: Optional[Console] = None,
     image: Optional[str] = None,
     use_local_images: bool = False,
+    env_file_path: Optional[str] = None,
 ) -> None:
     import docker
 
@@ -201,6 +212,10 @@ def run_compilation_in_container(
         trt_forward_compatible=trt_forward_compatible,
         trt_same_cc_compatible=trt_same_cc_compatible,
     )
+    environment = []
+    if env_file_path is not None:
+        environment_values = read_env_file(path=env_file_path)
+        environment = [f"{key}={value}" for key, value in environment_values.items()]
     docker_client = docker.from_env()
     print("command: ", command)
     container = docker_client.containers.run(
@@ -221,6 +236,7 @@ def run_compilation_in_container(
         volumes={"/tmp": {"bind": "/tmp", "mode": "rw"}},
         network_mode="bridge",
         ipc_mode="private" if not is_jetson else None,
+        environment=environment,
         **docker_run_kwargs,
     )
     for line in container.logs(stream=True, follow=True):
