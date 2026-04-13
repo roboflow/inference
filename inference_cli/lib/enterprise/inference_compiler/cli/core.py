@@ -238,7 +238,7 @@ def build_container_command(
     trt_same_cc_compatible: bool = False,
 ) -> str:
     command = (
-        f"inference enterprise inference-compile compile-model --model-id {model_id}"
+        f"inference enterprise inference-compiler compile-model --model-id {model_id}"
     )
     if api_key:
         command += f" --api-key {api_key}"
