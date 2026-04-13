@@ -242,8 +242,10 @@ def build_container_command(
     )
     if api_key:
         command += f" --api-key {api_key}"
-    command += f" --trt-forward-compatible {stringify_boolean(trt_forward_compatible)}"
-    command += f" --trt-same-cc {stringify_boolean(trt_same_cc_compatible)}"
+    if trt_forward_compatible:
+        command += f" --trt-forward-compatible {stringify_boolean(trt_forward_compatible)}"
+    if trt_same_cc_compatible:
+        command += f" --trt-same-cc-compatible {stringify_boolean(trt_same_cc_compatible)}"
     return command
 
 
