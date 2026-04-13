@@ -188,6 +188,7 @@ def compile_and_register_default_model_trt_variant(
     verify_model: Optional[Callable[[str], None]] = None,
     console: Optional[Console] = None,
 ) -> None:
+    print("A", flush=True)
     print_to_console(
         message=f"Building TRT engine - precision={precision}", console=console
     )
@@ -200,7 +201,8 @@ def compile_and_register_default_model_trt_variant(
         ]
         if KEYPOINTS_METADATA_FILE in local_files:
             file_handles_to_register.append(KEYPOINTS_METADATA_FILE)
-        model_architecture: str
+        print("B", flush=True)
+
         engine_path, trt_config, registration_response = execute_compilation(
             models_service_client=models_service_client,
             model_id=model_metadata.model_id,
@@ -220,11 +222,12 @@ def compile_and_register_default_model_trt_variant(
             same_compute_compatibility=same_compute_compatibility,
             console=console,
         )
-    except AlreadyCompiledError as e:
+        print("C", flush=True)
+    except AlreadyCompiledError:
+        print("D", flush=True)
         print_to_console(
             message="Model package already registered - skipping", console=console
         )
-        raise e
         return None
     if verify_model is not None:
         print_to_console(message="Verification of the artefacts...", console=console)
@@ -238,6 +241,7 @@ def compile_and_register_default_model_trt_variant(
             verify_model=verify_model,
             keypoints_metadata_path=local_files.get(KEYPOINTS_METADATA_FILE),
         )
+    print("E", flush=True)
     register_default_model_package_artefacts(
         registration_response=registration_response,
         trt_config=trt_config,
@@ -248,6 +252,7 @@ def compile_and_register_default_model_trt_variant(
         compilation_directory=compilation_directory,
         models_service_client=models_service_client,
     )
+    print("F", flush=True)
     print_to_console(
         message="Successfully trained and registered model package", console=console
     )
