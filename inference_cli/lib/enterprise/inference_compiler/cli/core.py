@@ -202,9 +202,10 @@ def run_compilation_in_container(
         trt_same_cc_compatible=trt_same_cc_compatible,
     )
     docker_client = docker.from_env()
-    docker_client.containers.run(
+    container = docker_client.containers.run(
         image=image,
         command=command.split(" "),
+        environment="bash",
         privileged=privileged,
         detach=True,
         device_requests=device_requests,
@@ -221,6 +222,12 @@ def run_compilation_in_container(
         ipc_mode="private" if not is_jetson else None,
         **docker_run_kwargs,
     )
+    for line in container.logs(stream=True, follow=True):
+        console.print(line.decode("utf-8"), end="")
+    # Once logs end, the container has stopped. Fetch exit code:
+    result = container.wait()
+    exit_code = result["StatusCode"]
+    console.print(f"\nTRT compilation container exited with code {exit_code}")
 
 
 def build_container_command(
