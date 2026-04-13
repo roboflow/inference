@@ -1,5 +1,5 @@
 from enum import Enum
-from typing import Callable, Literal, Optional
+from typing import Callable, Literal, Optional, Union
 
 from pydantic import BaseModel, Field
 
@@ -151,7 +151,7 @@ class TRTModelPackageV1(BaseModel):
     machine_type: TRTMachineType = Field(
         alias="machineType", default=TRTMachineType.GPU_SERVER
     )
-    machine_specs: GPUServerSpecsV1 = Field(alias="machineSpecs")
+    machine_specs: Union[GPUServerSpecsV1, JetsonMachineSpecsV1] = Field(alias="machineSpecs", discriminator="type")
 
     class Config:
         populate_by_name = True
