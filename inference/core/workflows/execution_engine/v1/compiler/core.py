@@ -47,15 +47,15 @@ from inference.core.workflows.execution_engine.v1.dynamic_blocks.block_assembler
     compile_dynamic_blocks,
     ensure_dynamic_blocks_allowed,
 )
-from inference.core.workflows.execution_engine.v1.subworkflow.compiler_bridge import (
-    resolve_subworkflow_steps_in_parsed_definition,
-    validate_subworkflow_composition_from_workflow_dict,
+from inference.core.workflows.execution_engine.v1.inner_workflow.compiler_bridge import (
+    resolve_inner_workflow_steps_in_parsed_definition,
+    validate_inner_workflow_composition_from_workflow_dict,
 )
-from inference.core.workflows.execution_engine.v1.subworkflow.constants import (
-    USE_SUBWORKFLOW_BLOCK_TYPE,
+from inference.core.workflows.execution_engine.v1.inner_workflow.constants import (
+    USE_INNER_WORKFLOW_BLOCK_TYPE,
 )
-from inference.core.workflows.execution_engine.v1.subworkflow.reference_resolution import (
-    normalize_use_subworkflow_references_in_definition,
+from inference.core.workflows.execution_engine.v1.inner_workflow.reference_resolution import (
+    normalize_inner_workflow_references_in_definition,
 )
 from inference.core.workflows.prototypes.block import WorkflowBlockManifest
 
@@ -99,7 +99,7 @@ def compile_workflow(
     )
     steps_by_name = {step.manifest.name: step for step in steps}
     dump_execution_graph(execution_graph=graph_compilation_results.execution_graph)
-    nested_workflows = _compile_nested_workflows(
+    inner_workflows = _compile_inner_workflows(
         parsed=graph_compilation_results.parsed_workflow_definition,
         init_parameters=init_parameters,
         execution_engine_version=execution_engine_version,
@@ -114,27 +114,27 @@ def compile_workflow(
         input_substitutions=input_substitutions,
         kinds_serializers=graph_compilation_results.kinds_serializers,
         kinds_deserializers=graph_compilation_results.kinds_deserializers,
-        nested_workflows=nested_workflows,
+        inner_workflows=inner_workflows,
     )
 
 
-def _compile_nested_workflows(
+def _compile_inner_workflows(
     parsed: ParsedWorkflowDefinition,
     init_parameters: Dict[str, Union[Any, Callable[[None], Any]]],
     execution_engine_version: Optional[Version],
     profiler: Optional[WorkflowsProfiler],
 ) -> Dict[str, CompiledWorkflow]:
-    nested: Dict[str, CompiledWorkflow] = {}
+    inner: Dict[str, CompiledWorkflow] = {}
     for sm in parsed.steps:
-        if getattr(sm, "type", None) != USE_SUBWORKFLOW_BLOCK_TYPE:
+        if getattr(sm, "type", None) != USE_INNER_WORKFLOW_BLOCK_TYPE:
             continue
-        nested[sm.name] = compile_workflow(
+        inner[sm.name] = compile_workflow(
             workflow_definition=sm.embedded_workflow,
             init_parameters=init_parameters,
             execution_engine_version=execution_engine_version,
             profiler=profiler,
         )
-    return nested
+    return inner
 
 
 def compile_workflow_graph(
@@ -156,7 +156,7 @@ def compile_workflow_graph(
             dynamic_blocks_definitions=dynamic_blocks_definitions
         )
         return cached_value
-    workflow_for_compile = normalize_use_subworkflow_references_in_definition(
+    workflow_for_compile = normalize_inner_workflow_references_in_definition(
         workflow_definition=workflow_definition,
         init_parameters=init_parameters,
     )
@@ -184,8 +184,8 @@ def compile_workflow_graph(
         workflow_definition=parsed_workflow_definition,
         profiler=profiler,
     )
-    validate_subworkflow_composition_from_workflow_dict(workflow_for_compile)
-    parsed_workflow_definition = resolve_subworkflow_steps_in_parsed_definition(
+    validate_inner_workflow_composition_from_workflow_dict(workflow_for_compile)
+    parsed_workflow_definition = resolve_inner_workflow_steps_in_parsed_definition(
         parsed=parsed_workflow_definition,
         raw_workflow_definition=workflow_for_compile,
         compile_workflow_graph_fn=compile_workflow_graph,

@@ -9,19 +9,25 @@ import copy
 from typing import Any, Callable, Dict, Optional, Tuple
 
 from inference.core.workflows.errors import WorkflowDefinitionError
-from inference.core.workflows.execution_engine.v1.subworkflow.constants import (
-    USE_SUBWORKFLOW_BLOCK_TYPE,
+from inference.core.workflows.execution_engine.v1.inner_workflow.constants import (
+    USE_INNER_WORKFLOW_BLOCK_TYPE,
 )
 
-WORKFLOWS_CORE_SUBWORKFLOW_SPEC_RESOLVER = "workflows_core.subworkflow_spec_resolver"
+WORKFLOWS_CORE_INNER_WORKFLOW_SPEC_RESOLVER = (
+    "workflows_core.inner_workflow_spec_resolver"
+)
+# Legacy init parameter key (still honored by :func:`get_inner_workflow_spec_resolver`).
+LEGACY_WORKFLOWS_CORE_SUBWORKFLOW_SPEC_RESOLVER = (
+    "workflows_core.subworkflow_spec_resolver"
+)
 
-SubworkflowSpecResolver = Callable[
+InnerWorkflowSpecResolver = Callable[
     [str, str, Optional[str], Dict[str, Any]],
     Dict[str, Any],
 ]
 
 
-def default_subworkflow_spec_resolver(
+def default_inner_workflow_spec_resolver(
     workspace_id: str,
     workflow_id: str,
     workflow_version_id: Optional[str],
@@ -35,10 +41,12 @@ def default_subworkflow_spec_resolver(
             public_message=(
                 "Resolving a `use_subworkflow` step by workflow id requires a Roboflow API key. "
                 "Set `workflows_core.api_key` in workflow init_parameters, inject "
-                "`workflows_core.subworkflow_spec_resolver`, or use `embedded_workflow_workspace_id` "
-                '`"local"` with a matching on-disk workflow definition.'
+                "`workflows_core.inner_workflow_spec_resolver` (or legacy "
+                "`workflows_core.subworkflow_spec_resolver`), or use "
+                '`embedded_workflow_workspace_id` `"local"` with a matching on-disk workflow '
+                "definition."
             ),
-            context="workflow_compilation | subworkflow_spec_resolution",
+            context="workflow_compilation | inner_workflow_spec_resolution",
         )
     return get_workflow_specification(
         api_key=api_key,
@@ -48,13 +56,15 @@ def default_subworkflow_spec_resolver(
     )
 
 
-def get_subworkflow_spec_resolver(
+def get_inner_workflow_spec_resolver(
     init_parameters: Dict[str, Any],
-) -> SubworkflowSpecResolver:
-    resolver = init_parameters.get(WORKFLOWS_CORE_SUBWORKFLOW_SPEC_RESOLVER)
+) -> InnerWorkflowSpecResolver:
+    resolver = init_parameters.get(WORKFLOWS_CORE_INNER_WORKFLOW_SPEC_RESOLVER)
+    if resolver is None:
+        resolver = init_parameters.get(LEGACY_WORKFLOWS_CORE_SUBWORKFLOW_SPEC_RESOLVER)
     if resolver is not None:
         return resolver
-    return default_subworkflow_spec_resolver
+    return default_inner_workflow_spec_resolver
 
 
 def _strip_optional_str(value: Any) -> Optional[str]:
@@ -66,18 +76,18 @@ def _strip_optional_str(value: Any) -> Optional[str]:
     return str(value)
 
 
-def _use_subworkflow_step_has_reference(step: Dict[str, Any]) -> bool:
+def _inner_workflow_step_has_reference(step: Dict[str, Any]) -> bool:
     ws = _strip_optional_str(step.get("embedded_workflow_workspace_id"))
     wf = _strip_optional_str(step.get("embedded_workflow_id"))
     return ws is not None and wf is not None
 
 
-def _use_subworkflow_step_has_nonempty_embedded(step: Dict[str, Any]) -> bool:
+def _inner_workflow_step_has_nonempty_embedded(step: Dict[str, Any]) -> bool:
     emb = step.get("embedded_workflow")
     return isinstance(emb, dict) and len(emb) > 0
 
 
-def workflow_definition_contains_unresolved_subworkflow_reference(
+def workflow_definition_contains_unresolved_inner_workflow_reference(
     workflow_definition: Dict[str, Any],
 ) -> bool:
     """True if any ``use_subworkflow`` step (at any depth) still needs reference resolution."""
@@ -86,9 +96,9 @@ def workflow_definition_contains_unresolved_subworkflow_reference(
         for step in wf.get("steps", []) or []:
             if not isinstance(step, dict):
                 continue
-            if step.get("type") != USE_SUBWORKFLOW_BLOCK_TYPE:
+            if step.get("type") != USE_INNER_WORKFLOW_BLOCK_TYPE:
                 continue
-            if _use_subworkflow_step_has_reference(step):
+            if _inner_workflow_step_has_reference(step):
                 return True
             emb = step.get("embedded_workflow")
             if isinstance(emb, dict) and visit(emb):
@@ -112,20 +122,20 @@ def _strip_reference_fields_from_step(step: Dict[str, Any]) -> None:
     step.pop("embedded_workflow_version_id", None)
 
 
-def _normalize_use_subworkflow_refs_in_workflow_dict(
+def _normalize_inner_workflow_refs_in_workflow_dict(
     workflow_dict: Dict[str, Any],
     init_parameters: Dict[str, Any],
-    resolver: SubworkflowSpecResolver,
+    resolver: InnerWorkflowSpecResolver,
     fetch_memo: Dict[Tuple[str, str, Optional[str]], Dict[str, Any]],
 ) -> None:
     for step in workflow_dict.get("steps", []) or []:
         if not isinstance(step, dict):
             continue
-        if step.get("type") != USE_SUBWORKFLOW_BLOCK_TYPE:
+        if step.get("type") != USE_INNER_WORKFLOW_BLOCK_TYPE:
             continue
 
-        has_ref = _use_subworkflow_step_has_reference(step)
-        has_embedded = _use_subworkflow_step_has_nonempty_embedded(step)
+        has_ref = _inner_workflow_step_has_reference(step)
+        has_embedded = _inner_workflow_step_has_nonempty_embedded(step)
 
         if has_ref and has_embedded:
             step_name = step.get("name", "<unknown>")
@@ -135,7 +145,7 @@ def _normalize_use_subworkflow_refs_in_workflow_dict(
                     f"and reference fields (`embedded_workflow_workspace_id` / "
                     f"`embedded_workflow_id`)."
                 ),
-                context="workflow_compilation | subworkflow_spec_resolution",
+                context="workflow_compilation | inner_workflow_spec_resolution",
             )
 
         if has_ref:
@@ -167,17 +177,17 @@ def _normalize_use_subworkflow_refs_in_workflow_dict(
                     f"`embedded_workflow` object or reference fields "
                     f"`embedded_workflow_workspace_id` and `embedded_workflow_id`."
                 ),
-                context="workflow_compilation | subworkflow_spec_resolution",
+                context="workflow_compilation | inner_workflow_spec_resolution",
             )
 
         embedded = step.get("embedded_workflow")
         if isinstance(embedded, dict):
-            _normalize_use_subworkflow_refs_in_workflow_dict(
+            _normalize_inner_workflow_refs_in_workflow_dict(
                 embedded, init_parameters, resolver, fetch_memo
             )
 
 
-def normalize_use_subworkflow_references_in_definition(
+def normalize_inner_workflow_references_in_definition(
     workflow_definition: Dict[str, Any],
     init_parameters: Dict[str, Any],
 ) -> Dict[str, Any]:
@@ -185,15 +195,15 @@ def normalize_use_subworkflow_references_in_definition(
     Return a workflow definition suitable for parsing: all ``use_subworkflow`` reference fields
     are resolved to inline ``embedded_workflow`` (recursively). The input dict is never mutated.
     """
-    if not workflow_definition_contains_unresolved_subworkflow_reference(
+    if not workflow_definition_contains_unresolved_inner_workflow_reference(
         workflow_definition
     ):
         return workflow_definition
 
     result = copy.deepcopy(workflow_definition)
-    resolver = get_subworkflow_spec_resolver(init_parameters)
+    resolver = get_inner_workflow_spec_resolver(init_parameters)
     fetch_memo: Dict[Tuple[str, str, Optional[str]], Dict[str, Any]] = {}
-    _normalize_use_subworkflow_refs_in_workflow_dict(
+    _normalize_inner_workflow_refs_in_workflow_dict(
         result, init_parameters, resolver, fetch_memo
     )
     return result

@@ -2,18 +2,18 @@
 Compile-time validation of workflow *composition* (which workflow references which).
 
 This is separate from the per-workflow execution DAG: the step graph must remain acyclic,
-while this module validates the *meta-graph* of nested workflow references (e.g. use_subworkflow).
+while this module validates the *meta-graph* of nested workflow references (e.g. ``use_subworkflow``).
 
-See docs/workflows/subworkflow_design.md.
+See docs/workflows/inner_workflow_design.md.
 """
 
 from typing import Collection, Hashable, Iterable, List, Tuple
 
 import networkx as nx
 
-from inference.core.workflows.execution_engine.v1.subworkflow.errors import (
-    SubworkflowCompositionCycleError,
-    SubworkflowNestingDepthError,
+from inference.core.workflows.execution_engine.v1.inner_workflow.errors import (
+    InnerWorkflowCompositionCycleError,
+    InnerWorkflowNestingDepthError,
 )
 
 
@@ -22,7 +22,7 @@ def build_composition_digraph(
 ) -> nx.DiGraph:
     """
     Build a directed graph where an edge (parent, child) means
-    "parent's definition directly embeds or references child as a sub-workflow".
+    "parent's definition directly embeds or references child as an inner workflow".
     """
     graph = nx.DiGraph()
     for parent, child in containment_edges:
@@ -31,7 +31,7 @@ def build_composition_digraph(
 
 
 def assert_composition_acyclic(graph: nx.DiGraph) -> None:
-    """Raise SubworkflowCompositionCycleError if the composition graph is not a DAG."""
+    """Raise InnerWorkflowCompositionCycleError if the composition graph is not a DAG."""
     if graph.number_of_nodes() == 0:
         return
     if nx.is_directed_acyclic_graph(graph):
@@ -41,8 +41,8 @@ def assert_composition_acyclic(graph: nx.DiGraph) -> None:
         cycle_nodes = [u for u, _ in cycle_edges] + [cycle_edges[-1][1]]
     except nx.NetworkXNoCycle:
         cycle_nodes = []
-    raise SubworkflowCompositionCycleError(
-        "Sub-workflow composition graph contains a cycle. "
+    raise InnerWorkflowCompositionCycleError(
+        "Inner workflow composition graph contains a cycle. "
         f"Involved nodes (partial): {cycle_nodes!r}"
     )
 
@@ -73,7 +73,7 @@ def max_nesting_depth_from_root(graph: nx.DiGraph, root: Hashable) -> int:
     return depth_from(root)
 
 
-def validate_subworkflow_composition(
+def validate_inner_workflow_composition(
     *,
     containment_edges: Collection[Tuple[Hashable, Hashable]],
     root_workflow_id: Hashable,
@@ -84,7 +84,7 @@ def validate_subworkflow_composition(
 
     Args:
         containment_edges: (parent_workflow_id, child_workflow_id) for each direct
-            sub-workflow reference.
+            inner-workflow reference.
         root_workflow_id: Identity of the workflow being compiled (opaque string or tuple).
         max_nesting_depth: Maximum allowed value from :func:`max_nesting_depth_from_root`.
     """
@@ -92,8 +92,8 @@ def validate_subworkflow_composition(
     assert_composition_acyclic(graph)
     depth = max_nesting_depth_from_root(graph, root_workflow_id)
     if depth > max_nesting_depth:
-        raise SubworkflowNestingDepthError(
-            f"Sub-workflow nesting depth from root {root_workflow_id!r} is {depth}, "
+        raise InnerWorkflowNestingDepthError(
+            f"Inner workflow nesting depth from root {root_workflow_id!r} is {depth}, "
             f"which exceeds the limit of {max_nesting_depth}."
         )
 

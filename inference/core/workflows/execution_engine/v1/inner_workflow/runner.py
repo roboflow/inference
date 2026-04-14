@@ -1,8 +1,9 @@
 """
-Pluggable execution backends for nested workflows.
+Pluggable execution backends for nested (inner) workflows.
 
-The execution engine dispatches use_subworkflow steps to a SubworkflowRunner
-(see ``workflows_core.subworkflow_runner`` init parameter).
+The execution engine dispatches ``roboflow_core/use_subworkflow@v1`` steps to an InnerWorkflowRunner
+(see ``workflows_core.inner_workflow_runner`` init parameter; legacy ``workflows_core.subworkflow_runner``
+is still read as a fallback).
 """
 
 from __future__ import annotations
@@ -17,7 +18,7 @@ if TYPE_CHECKING:
     )
 
 
-class SubworkflowExecutionMode(str, Enum):
+class InnerWorkflowExecutionMode(str, Enum):
     """How a nested workflow run should be carried out."""
 
     LOCAL = "local"
@@ -25,7 +26,7 @@ class SubworkflowExecutionMode(str, Enum):
     REMOTE_ASYNC = "remote_async"
 
 
-class SubworkflowRunner(ABC):
+class InnerWorkflowRunner(ABC):
     """
     Engine-level strategy for executing a compiled child workflow.
 
@@ -39,7 +40,7 @@ class SubworkflowRunner(ABC):
         *,
         compiled_child: "CompiledWorkflow",
         runtime_parameters: Dict[str, Any],
-        mode: SubworkflowExecutionMode,
+        mode: InnerWorkflowExecutionMode,
         parent_context: Optional[Dict[str, Any]] = None,
     ) -> Any:
         """
@@ -51,7 +52,7 @@ class SubworkflowRunner(ABC):
         raise NotImplementedError
 
 
-class LocalSubworkflowRunner(SubworkflowRunner):
+class LocalInnerWorkflowRunner(InnerWorkflowRunner):
     """In-process nested execution via the v1 workflow executor."""
 
     def run(
@@ -59,13 +60,13 @@ class LocalSubworkflowRunner(SubworkflowRunner):
         *,
         compiled_child: "CompiledWorkflow",
         runtime_parameters: Dict[str, Any],
-        mode: SubworkflowExecutionMode,
+        mode: InnerWorkflowExecutionMode,
         parent_context: Optional[Dict[str, Any]] = None,
     ) -> Any:
-        if mode is not SubworkflowExecutionMode.LOCAL:
+        if mode is not InnerWorkflowExecutionMode.LOCAL:
             raise NotImplementedError(
                 f"{self.__class__.__name__} only supports "
-                f"{SubworkflowExecutionMode.LOCAL.value!r} for now."
+                f"{InnerWorkflowExecutionMode.LOCAL.value!r} for now."
             )
 
         from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
@@ -100,7 +101,9 @@ class LocalSubworkflowRunner(SubworkflowRunner):
         return run_workflow(
             workflow=compiled_child,
             runtime_parameters=assembled,
-            max_concurrent_steps=pc.get("max_concurrent_steps", WORKFLOWS_MAX_CONCURRENT_STEPS),
+            max_concurrent_steps=pc.get(
+                "max_concurrent_steps", WORKFLOWS_MAX_CONCURRENT_STEPS
+            ),
             kinds_serializers=pc.get("kinds_serializers"),
             serialize_results=False,
             profiler=profiler,

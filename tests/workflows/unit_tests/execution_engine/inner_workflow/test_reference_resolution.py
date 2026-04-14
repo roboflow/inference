@@ -5,13 +5,13 @@ from typing import Any, Dict, Optional
 import pytest
 
 from inference.core.workflows.errors import WorkflowDefinitionError
-from inference.core.workflows.execution_engine.v1.subworkflow.constants import (
-    USE_SUBWORKFLOW_BLOCK_TYPE,
+from inference.core.workflows.execution_engine.v1.inner_workflow.constants import (
+    USE_INNER_WORKFLOW_BLOCK_TYPE,
 )
-from inference.core.workflows.execution_engine.v1.subworkflow.reference_resolution import (
-    WORKFLOWS_CORE_SUBWORKFLOW_SPEC_RESOLVER,
-    normalize_use_subworkflow_references_in_definition,
-    workflow_definition_contains_unresolved_subworkflow_reference,
+from inference.core.workflows.execution_engine.v1.inner_workflow.reference_resolution import (
+    WORKFLOWS_CORE_INNER_WORKFLOW_SPEC_RESOLVER,
+    normalize_inner_workflow_references_in_definition,
+    workflow_definition_contains_unresolved_inner_workflow_reference,
 )
 
 
@@ -61,7 +61,7 @@ def test_normalize_replaces_reference_with_embedded() -> None:
         "inputs": [],
         "steps": [
             {
-                "type": USE_SUBWORKFLOW_BLOCK_TYPE,
+                "type": USE_INNER_WORKFLOW_BLOCK_TYPE,
                 "name": "nested",
                 "embedded_workflow_workspace_id": "my-ws",
                 "embedded_workflow_id": "wf-1",
@@ -72,10 +72,10 @@ def test_normalize_replaces_reference_with_embedded() -> None:
         "outputs": [],
     }
     init_parameters = {
-        WORKFLOWS_CORE_SUBWORKFLOW_SPEC_RESOLVER: resolver,
+        WORKFLOWS_CORE_INNER_WORKFLOW_SPEC_RESOLVER: resolver,
         "marker": 1,
     }
-    out = normalize_use_subworkflow_references_in_definition(raw, init_parameters)
+    out = normalize_inner_workflow_references_in_definition(raw, init_parameters)
 
     assert raw["steps"][0].get("embedded_workflow") is None
     assert out["steps"][0]["embedded_workflow"] == _echo_spec()
@@ -100,14 +100,14 @@ def test_normalize_deduplicates_identical_references() -> None:
         "inputs": [],
         "steps": [
             {
-                "type": USE_SUBWORKFLOW_BLOCK_TYPE,
+                "type": USE_INNER_WORKFLOW_BLOCK_TYPE,
                 "name": "a",
                 "embedded_workflow_workspace_id": "ws",
                 "embedded_workflow_id": "same",
                 "parameter_bindings": {"child_msg": "$inputs.p"},
             },
             {
-                "type": USE_SUBWORKFLOW_BLOCK_TYPE,
+                "type": USE_INNER_WORKFLOW_BLOCK_TYPE,
                 "name": "b",
                 "embedded_workflow_workspace_id": "ws",
                 "embedded_workflow_id": "same",
@@ -116,9 +116,9 @@ def test_normalize_deduplicates_identical_references() -> None:
         ],
         "outputs": [],
     }
-    out = normalize_use_subworkflow_references_in_definition(
+    out = normalize_inner_workflow_references_in_definition(
         raw,
-        {WORKFLOWS_CORE_SUBWORKFLOW_SPEC_RESOLVER: resolver},
+        {WORKFLOWS_CORE_INNER_WORKFLOW_SPEC_RESOLVER: resolver},
     )
     assert len(calls) == 1
     assert out["steps"][0]["embedded_workflow"] == out["steps"][1]["embedded_workflow"]
@@ -141,14 +141,14 @@ def test_normalize_resolves_reference_inside_inline_embedded_workflow() -> None:
         "inputs": [],
         "steps": [
             {
-                "type": USE_SUBWORKFLOW_BLOCK_TYPE,
+                "type": USE_INNER_WORKFLOW_BLOCK_TYPE,
                 "name": "outer",
                 "embedded_workflow": {
                     "version": "1.0",
                     "inputs": [{"type": "WorkflowParameter", "name": "wrapper_msg"}],
                     "steps": [
                         {
-                            "type": USE_SUBWORKFLOW_BLOCK_TYPE,
+                            "type": USE_INNER_WORKFLOW_BLOCK_TYPE,
                             "name": "inner",
                             "embedded_workflow_workspace_id": "ws",
                             "embedded_workflow_id": "inner-id",
@@ -164,9 +164,9 @@ def test_normalize_resolves_reference_inside_inline_embedded_workflow() -> None:
         ],
         "outputs": [],
     }
-    out = normalize_use_subworkflow_references_in_definition(
+    out = normalize_inner_workflow_references_in_definition(
         raw,
-        {WORKFLOWS_CORE_SUBWORKFLOW_SPEC_RESOLVER: resolver},
+        {WORKFLOWS_CORE_INNER_WORKFLOW_SPEC_RESOLVER: resolver},
     )
     assert calls == ["inner-id"]
     inner = out["steps"][0]["embedded_workflow"]["steps"][0]
@@ -188,7 +188,7 @@ def test_mutual_exclusion_embedded_and_reference() -> None:
         "inputs": [],
         "steps": [
             {
-                "type": USE_SUBWORKFLOW_BLOCK_TYPE,
+                "type": USE_INNER_WORKFLOW_BLOCK_TYPE,
                 "name": "bad",
                 "embedded_workflow": _echo_spec(),
                 "embedded_workflow_workspace_id": "ws",
@@ -199,9 +199,9 @@ def test_mutual_exclusion_embedded_and_reference() -> None:
         "outputs": [],
     }
     with pytest.raises(WorkflowDefinitionError):
-        normalize_use_subworkflow_references_in_definition(
+        normalize_inner_workflow_references_in_definition(
             raw,
-            {WORKFLOWS_CORE_SUBWORKFLOW_SPEC_RESOLVER: resolver},
+            {WORKFLOWS_CORE_INNER_WORKFLOW_SPEC_RESOLVER: resolver},
         )
 
 
@@ -211,7 +211,7 @@ def test_contains_unresolved_reference_false_for_inline_only() -> None:
         "inputs": [],
         "steps": [
             {
-                "type": USE_SUBWORKFLOW_BLOCK_TYPE,
+                "type": USE_INNER_WORKFLOW_BLOCK_TYPE,
                 "name": "n",
                 "embedded_workflow": _echo_spec(),
                 "parameter_bindings": {},
@@ -219,7 +219,7 @@ def test_contains_unresolved_reference_false_for_inline_only() -> None:
         ],
         "outputs": [],
     }
-    assert not workflow_definition_contains_unresolved_subworkflow_reference(raw)
+    assert not workflow_definition_contains_unresolved_inner_workflow_reference(raw)
 
 
 def test_normalize_returns_same_object_when_no_reference() -> None:
@@ -229,5 +229,5 @@ def test_normalize_returns_same_object_when_no_reference() -> None:
         "steps": [],
         "outputs": [],
     }
-    out = normalize_use_subworkflow_references_in_definition(raw, {})
+    out = normalize_inner_workflow_references_in_definition(raw, {})
     assert out is raw

@@ -56,10 +56,10 @@ from inference.core.workflows.execution_engine.v1.executor.output_constructor im
 from inference.core.workflows.execution_engine.v1.executor.utils import (
     run_steps_in_parallel,
 )
-from inference.core.workflows.execution_engine.v1.subworkflow.step_execution import (
-    is_use_subworkflow_step,
-    run_use_subworkflow_non_simd,
-    run_use_subworkflow_simd,
+from inference.core.workflows.execution_engine.v1.inner_workflow.step_execution import (
+    is_inner_workflow_step,
+    run_inner_workflow_non_simd,
+    run_inner_workflow_simd,
 )
 from inference.core.workflows.prototypes.block import WorkflowBlock
 from inference.usage_tracking.collector import usage_collector
@@ -316,7 +316,7 @@ def run_simd_step(
     step_error_handler: Optional[Callable[[str, Exception], None]] = None,
 ) -> None:
     step_name = get_last_chunk_of_selector(selector=step_selector)
-    if is_use_subworkflow_step(workflow, step_name):
+    if is_inner_workflow_step(workflow, step_name):
         if profiler is None:
             profiler = NullWorkflowsProfiler.init()
         with profiler.profile_execution_phase(
@@ -325,7 +325,7 @@ def run_simd_step(
             metadata={"step": step_selector},
         ):
             execution_data_manager.get_simd_step_input(step_selector=step_selector)
-        return run_use_subworkflow_simd(
+        return run_inner_workflow_simd(
             step_selector=step_selector,
             workflow=workflow,
             execution_data_manager=execution_data_manager,
@@ -464,10 +464,10 @@ def run_non_simd_step(
         # discarded by conditional execution or empty value from upstream step
         return None
     step_name = get_last_chunk_of_selector(selector=step_selector)
-    if is_use_subworkflow_step(workflow, step_name):
+    if is_inner_workflow_step(workflow, step_name):
         if profiler is None:
             profiler = NullWorkflowsProfiler.init()
-        return run_use_subworkflow_non_simd(
+        return run_inner_workflow_non_simd(
             step_selector=step_selector,
             workflow=workflow,
             execution_data_manager=execution_data_manager,

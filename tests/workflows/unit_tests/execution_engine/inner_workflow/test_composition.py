@@ -1,13 +1,13 @@
 import pytest
 
-from inference.core.workflows.execution_engine.v1.subworkflow import (
-    SubworkflowCompositionCycleError,
-    SubworkflowNestingDepthError,
+from inference.core.workflows.execution_engine.v1.inner_workflow import (
+    InnerWorkflowCompositionCycleError,
+    InnerWorkflowNestingDepthError,
     assert_composition_acyclic,
     build_composition_digraph,
     find_composition_cycles,
     max_nesting_depth_from_root,
-    validate_subworkflow_composition,
+    validate_inner_workflow_composition,
 )
 
 
@@ -25,7 +25,7 @@ def test_assert_composition_acyclic_accepts_dag() -> None:
 def test_assert_composition_acyclic_rejects_cycle() -> None:
     edges = [("A", "B"), ("B", "C"), ("C", "A")]
     g = build_composition_digraph(edges)
-    with pytest.raises(SubworkflowCompositionCycleError):
+    with pytest.raises(InnerWorkflowCompositionCycleError):
         assert_composition_acyclic(g)
 
 
@@ -55,26 +55,26 @@ def test_max_nesting_depth_from_root_diamond() -> None:
     assert max_nesting_depth_from_root(g, "R") == 2
 
 
-def test_validate_subworkflow_composition_ok() -> None:
-    validate_subworkflow_composition(
+def test_validate_inner_workflow_composition_ok() -> None:
+    validate_inner_workflow_composition(
         containment_edges=[("R", "A"), ("A", "B")],
         root_workflow_id="R",
         max_nesting_depth=2,
     )
 
 
-def test_validate_subworkflow_composition_depth_exceeded() -> None:
-    with pytest.raises(SubworkflowNestingDepthError):
-        validate_subworkflow_composition(
+def test_validate_inner_workflow_composition_depth_exceeded() -> None:
+    with pytest.raises(InnerWorkflowNestingDepthError):
+        validate_inner_workflow_composition(
             containment_edges=[("R", "A"), ("A", "B")],
             root_workflow_id="R",
             max_nesting_depth=1,
         )
 
 
-def test_validate_subworkflow_composition_cycle() -> None:
-    with pytest.raises(SubworkflowCompositionCycleError):
-        validate_subworkflow_composition(
+def test_validate_inner_workflow_composition_cycle() -> None:
+    with pytest.raises(InnerWorkflowCompositionCycleError):
+        validate_inner_workflow_composition(
             containment_edges=[("R", "A"), ("A", "B"), ("B", "A")],
             root_workflow_id="R",
             max_nesting_depth=10,

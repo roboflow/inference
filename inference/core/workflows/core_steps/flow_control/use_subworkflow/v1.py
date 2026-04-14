@@ -20,12 +20,13 @@ Execute a **nested workflow** while mapping parent data into the child's inputs 
 
 Provide either a full inline definition in `embedded_workflow`, or resolve a saved workflow using
 `embedded_workflow_workspace_id` and `embedded_workflow_id` (optional `embedded_workflow_version_id`).
-Reference fields are expanded at compile time via `workflows_core.subworkflow_spec_resolver`
-(default: Roboflow API using `workflows_core.api_key`, or local definitions when workspace is
-`"local"`).
+Reference fields are expanded at compile time via `workflows_core.inner_workflow_spec_resolver`
+(legacy: `workflows_core.subworkflow_spec_resolver`; default: Roboflow API using
+`workflows_core.api_key`, or local definitions when workspace is `"local"`).
 
 Compilation validates composition (acyclicity, max depth) and child input names; execution uses a
-pluggable `SubworkflowRunner` (see `workflows_core.subworkflow_runner` init parameter).
+pluggable `InnerWorkflowRunner` (see `workflows_core.inner_workflow_runner`; legacy:
+`workflows_core.subworkflow_runner`).
 
 The block's `run()` method is not used at runtime; do not call it directly.
 """
@@ -132,7 +133,7 @@ class BlockManifest(WorkflowBlockManifest):
 
 
 class UseSubworkflowBlockV1(WorkflowBlock):
-    """Placeholder block; execution engine runs nested workflows via SubworkflowRunner."""
+    """Placeholder block; execution engine runs inner workflows via InnerWorkflowRunner."""
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -140,6 +141,6 @@ class UseSubworkflowBlockV1(WorkflowBlock):
 
     def run(self, *args, **kwargs) -> BlockResult:
         raise RuntimeError(
-            "use_subworkflow steps are executed by the execution engine via SubworkflowRunner; "
+            "use_subworkflow steps are executed by the execution engine via InnerWorkflowRunner; "
             "block.run() must not be called."
         )

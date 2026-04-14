@@ -9,8 +9,8 @@ from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.execution_engine.core import ExecutionEngine
-from inference.core.workflows.execution_engine.v1.subworkflow.reference_resolution import (
-    WORKFLOWS_CORE_SUBWORKFLOW_SPEC_RESOLVER,
+from inference.core.workflows.execution_engine.v1.inner_workflow.reference_resolution import (
+    WORKFLOWS_CORE_INNER_WORKFLOW_SPEC_RESOLVER,
 )
 
 
@@ -178,7 +178,7 @@ def test_use_subworkflow_resolves_saved_workflow_by_id_via_custom_resolver(
             "workflows_core.model_manager": model_manager,
             "workflows_core.api_key": None,
             "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
-            WORKFLOWS_CORE_SUBWORKFLOW_SPEC_RESOLVER: resolver,
+            WORKFLOWS_CORE_INNER_WORKFLOW_SPEC_RESOLVER: resolver,
         },
         max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
     )

@@ -1,36 +1,41 @@
 """
-Execution-engine handling for use_subworkflow steps (delegates to SubworkflowRunner).
+Execution-engine handling for ``roboflow_core/use_subworkflow@v1`` (inner workflow) steps.
 """
 
 from __future__ import annotations
 
 from typing import Any, Callable, Dict, List, Optional
 
-from inference.core.workflows.errors import ExecutionEngineRuntimeError
 from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
+from inference.core.workflows.errors import ExecutionEngineRuntimeError
 from inference.core.workflows.execution_engine.profiling.core import WorkflowsProfiler
-from inference.core.workflows.execution_engine.v1.compiler.entities import CompiledWorkflow
+from inference.core.workflows.execution_engine.v1.compiler.entities import (
+    CompiledWorkflow,
+)
 from inference.core.workflows.execution_engine.v1.compiler.utils import (
     get_last_chunk_of_selector,
 )
 from inference.core.workflows.execution_engine.v1.executor.execution_data_manager.manager import (
     ExecutionDataManager,
 )
-from inference.core.workflows.execution_engine.v1.subworkflow.constants import (
-    USE_SUBWORKFLOW_BLOCK_TYPE,
+from inference.core.workflows.execution_engine.v1.inner_workflow.constants import (
+    USE_INNER_WORKFLOW_BLOCK_TYPE,
 )
-from inference.core.workflows.execution_engine.v1.subworkflow.runner import (
-    LocalSubworkflowRunner,
-    SubworkflowExecutionMode,
-    SubworkflowRunner,
+from inference.core.workflows.execution_engine.v1.inner_workflow.runner import (
+    InnerWorkflowExecutionMode,
+    InnerWorkflowRunner,
+    LocalInnerWorkflowRunner,
 )
 
+_INNER_WORKFLOW_RUNNER_KEY = "workflows_core.inner_workflow_runner"
+_LEGACY_SUBWORKFLOW_RUNNER_KEY = "workflows_core.subworkflow_runner"
 
-def is_use_subworkflow_step(workflow: CompiledWorkflow, step_name: str) -> bool:
+
+def is_inner_workflow_step(workflow: CompiledWorkflow, step_name: str) -> bool:
     step = workflow.steps.get(step_name)
     if step is None:
         return False
-    return step.manifest.type == USE_SUBWORKFLOW_BLOCK_TYPE
+    return step.manifest.type == USE_INNER_WORKFLOW_BLOCK_TYPE
 
 
 def _child_runtime_parameters(
@@ -44,10 +49,12 @@ def _child_runtime_parameters(
     return dict(bindings)
 
 
-def _pick_runner(workflow: CompiledWorkflow) -> SubworkflowRunner:
-    runner = workflow.init_parameters.get("workflows_core.subworkflow_runner")
+def _pick_runner(workflow: CompiledWorkflow) -> InnerWorkflowRunner:
+    runner = workflow.init_parameters.get(_INNER_WORKFLOW_RUNNER_KEY)
     if runner is None:
-        return LocalSubworkflowRunner()
+        runner = workflow.init_parameters.get(_LEGACY_SUBWORKFLOW_RUNNER_KEY)
+    if runner is None:
+        return LocalInnerWorkflowRunner()
     return runner
 
 
@@ -68,7 +75,7 @@ def _parent_run_context(
     }
 
 
-def _shape_use_subworkflow_child_result_for_simd_registration(
+def _shape_inner_workflow_child_result_for_simd_registration(
     collapsed: Dict[str, Any],
     *,
     nested_output_dimensionality_lift: int,
@@ -99,27 +106,27 @@ def _collapse_child_run_result(raw: Any) -> Dict[str, Any]:
     if isinstance(raw, list):
         if len(raw) == 0:
             raise ExecutionEngineRuntimeError(
-                public_message="Nested workflow returned no output batches.",
-                context="workflow_execution | use_subworkflow",
+                public_message="Inner workflow returned no output batches.",
+                context="workflow_execution | inner_workflow",
             )
         if len(raw) != 1:
             raise ExecutionEngineRuntimeError(
                 public_message=(
-                    "Nested workflow returned multiple output batches for a single parent slice; "
+                    "Inner workflow returned multiple output batches for a single parent slice; "
                     "ensure the child is invoked with a single batch per parent element."
                 ),
-                context="workflow_execution | use_subworkflow",
+                context="workflow_execution | inner_workflow",
             )
         return raw[0]
     if isinstance(raw, dict):
         return raw
     raise ExecutionEngineRuntimeError(
-        public_message=f"Unexpected nested workflow result type: {type(raw)}",
-        context="workflow_execution | use_subworkflow",
+        public_message=f"Unexpected inner workflow result type: {type(raw)}",
+        context="workflow_execution | inner_workflow",
     )
 
 
-def run_use_subworkflow_simd(
+def run_inner_workflow_simd(
     *,
     step_selector: str,
     workflow: CompiledWorkflow,
@@ -130,10 +137,10 @@ def run_use_subworkflow_simd(
     step_error_handler: Optional[Callable[[str, Exception], None]],
 ) -> None:
     step_name = get_last_chunk_of_selector(selector=step_selector)
-    child = workflow.nested_workflows.get(step_name)
+    child = workflow.inner_workflows.get(step_name)
     if child is None:
         raise RuntimeError(
-            f"Missing nested workflow compilation for use_subworkflow step `{step_name}`."
+            f"Missing inner workflow compilation for use_subworkflow step `{step_name}`."
         )
     runner = _pick_runner(workflow)
     parent_ctx = _parent_run_context(
@@ -146,7 +153,9 @@ def run_use_subworkflow_simd(
     indices: List = []
     results: List = []
     nested_lift = int(
-        getattr(workflow.steps[step_name].manifest, "nested_output_dimensionality_lift", 0)
+        getattr(
+            workflow.steps[step_name].manifest, "nested_output_dimensionality_lift", 0
+        )
         or 0
     )
     with profiler.profile_execution_phase(
@@ -166,11 +175,11 @@ def run_use_subworkflow_simd(
                 batch_result = runner.run(
                     compiled_child=child,
                     runtime_parameters=child_runtime,
-                    mode=SubworkflowExecutionMode.LOCAL,
+                    mode=InnerWorkflowExecutionMode.LOCAL,
                     parent_context=parent_ctx,
                 )
             collapsed = _collapse_child_run_result(batch_result)
-            shaped = _shape_use_subworkflow_child_result_for_simd_registration(
+            shaped = _shape_inner_workflow_child_result_for_simd_registration(
                 collapsed,
                 nested_output_dimensionality_lift=nested_lift,
             )
@@ -188,7 +197,7 @@ def run_use_subworkflow_simd(
         )
 
 
-def run_use_subworkflow_non_simd(
+def run_inner_workflow_non_simd(
     *,
     step_selector: str,
     workflow: CompiledWorkflow,
@@ -200,10 +209,10 @@ def run_use_subworkflow_non_simd(
     step_error_handler: Optional[Callable[[str, Exception], None]],
 ) -> None:
     step_name = get_last_chunk_of_selector(selector=step_selector)
-    child = workflow.nested_workflows.get(step_name)
+    child = workflow.inner_workflows.get(step_name)
     if child is None:
         raise RuntimeError(
-            f"Missing nested workflow compilation for use_subworkflow step `{step_name}`."
+            f"Missing inner workflow compilation for use_subworkflow step `{step_name}`."
         )
     runner = _pick_runner(workflow)
     parent_ctx = _parent_run_context(
@@ -222,7 +231,7 @@ def run_use_subworkflow_non_simd(
         batch_result = runner.run(
             compiled_child=child,
             runtime_parameters=child_runtime,
-            mode=SubworkflowExecutionMode.LOCAL,
+            mode=InnerWorkflowExecutionMode.LOCAL,
             parent_context=parent_ctx,
         )
     with profiler.profile_execution_phase(
