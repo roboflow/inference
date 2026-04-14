@@ -43,7 +43,7 @@ def _echo_spec() -> Dict[str, Any]:
     }
 
 
-def test_normalize_replaces_reference_with_embedded() -> None:
+def test_normalize_replaces_reference_with_inline_workflow() -> None:
     calls: list[tuple[str, str, Optional[str]]] = []
 
     def resolver(
@@ -63,9 +63,9 @@ def test_normalize_replaces_reference_with_embedded() -> None:
             {
                 "type": USE_INNER_WORKFLOW_BLOCK_TYPE,
                 "name": "nested",
-                "embedded_workflow_workspace_id": "my-ws",
-                "embedded_workflow_id": "wf-1",
-                "embedded_workflow_version_id": "v9",
+                "workflow_workspace_id": "my-ws",
+                "workflow_id": "wf-1",
+                "workflow_version_id": "v9",
                 "parameter_bindings": {"child_msg": "$inputs.p"},
             },
         ],
@@ -77,9 +77,9 @@ def test_normalize_replaces_reference_with_embedded() -> None:
     }
     out = normalize_inner_workflow_references_in_definition(raw, init_parameters)
 
-    assert raw["steps"][0].get("embedded_workflow") is None
-    assert out["steps"][0]["embedded_workflow"] == _echo_spec()
-    assert "embedded_workflow_workspace_id" not in out["steps"][0]
+    assert raw["steps"][0].get("workflow") is None
+    assert out["steps"][0]["workflow"] == _echo_spec()
+    assert "workflow_workspace_id" not in out["steps"][0]
     assert calls == [("my-ws", "wf-1", "v9")]
 
 
@@ -102,15 +102,15 @@ def test_normalize_deduplicates_identical_references() -> None:
             {
                 "type": USE_INNER_WORKFLOW_BLOCK_TYPE,
                 "name": "a",
-                "embedded_workflow_workspace_id": "ws",
-                "embedded_workflow_id": "same",
+                "workflow_workspace_id": "ws",
+                "workflow_id": "same",
                 "parameter_bindings": {"child_msg": "$inputs.p"},
             },
             {
                 "type": USE_INNER_WORKFLOW_BLOCK_TYPE,
                 "name": "b",
-                "embedded_workflow_workspace_id": "ws",
-                "embedded_workflow_id": "same",
+                "workflow_workspace_id": "ws",
+                "workflow_id": "same",
                 "parameter_bindings": {"child_msg": "$inputs.p"},
             },
         ],
@@ -121,10 +121,10 @@ def test_normalize_deduplicates_identical_references() -> None:
         {WORKFLOWS_CORE_INNER_WORKFLOW_SPEC_RESOLVER: resolver},
     )
     assert len(calls) == 1
-    assert out["steps"][0]["embedded_workflow"] == out["steps"][1]["embedded_workflow"]
+    assert out["steps"][0]["workflow"] == out["steps"][1]["workflow"]
 
 
-def test_normalize_resolves_reference_inside_inline_embedded_workflow() -> None:
+def test_normalize_resolves_reference_inside_inline_workflow() -> None:
     calls: list[str] = []
 
     def resolver(
@@ -143,15 +143,15 @@ def test_normalize_resolves_reference_inside_inline_embedded_workflow() -> None:
             {
                 "type": USE_INNER_WORKFLOW_BLOCK_TYPE,
                 "name": "outer",
-                "embedded_workflow": {
+                "workflow": {
                     "version": "1.0",
                     "inputs": [{"type": "WorkflowParameter", "name": "wrapper_msg"}],
                     "steps": [
                         {
                             "type": USE_INNER_WORKFLOW_BLOCK_TYPE,
                             "name": "inner",
-                            "embedded_workflow_workspace_id": "ws",
-                            "embedded_workflow_id": "inner-id",
+                            "workflow_workspace_id": "ws",
+                            "workflow_id": "inner-id",
                             "parameter_bindings": {
                                 "child_msg": "$inputs.wrapper_msg",
                             },
@@ -169,12 +169,12 @@ def test_normalize_resolves_reference_inside_inline_embedded_workflow() -> None:
         {WORKFLOWS_CORE_INNER_WORKFLOW_SPEC_RESOLVER: resolver},
     )
     assert calls == ["inner-id"]
-    inner = out["steps"][0]["embedded_workflow"]["steps"][0]
-    assert inner["embedded_workflow"] == _echo_spec()
-    assert "embedded_workflow_workspace_id" not in inner
+    inner = out["steps"][0]["workflow"]["steps"][0]
+    assert inner["workflow"] == _echo_spec()
+    assert "workflow_workspace_id" not in inner
 
 
-def test_mutual_exclusion_embedded_and_reference() -> None:
+def test_mutual_exclusion_workflow_and_reference() -> None:
     def resolver(
         workspace_id: str,
         workflow_id: str,
@@ -190,9 +190,9 @@ def test_mutual_exclusion_embedded_and_reference() -> None:
             {
                 "type": USE_INNER_WORKFLOW_BLOCK_TYPE,
                 "name": "bad",
-                "embedded_workflow": _echo_spec(),
-                "embedded_workflow_workspace_id": "ws",
-                "embedded_workflow_id": "id",
+                "workflow": _echo_spec(),
+                "workflow_workspace_id": "ws",
+                "workflow_id": "id",
                 "parameter_bindings": {"child_msg": "$inputs.p"},
             },
         ],
@@ -213,7 +213,7 @@ def test_contains_unresolved_reference_false_for_inline_only() -> None:
             {
                 "type": USE_INNER_WORKFLOW_BLOCK_TYPE,
                 "name": "n",
-                "embedded_workflow": _echo_spec(),
+                "workflow": _echo_spec(),
                 "parameter_bindings": {},
             },
         ],

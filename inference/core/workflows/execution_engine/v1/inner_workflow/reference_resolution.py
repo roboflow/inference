@@ -1,6 +1,6 @@
 """
 Resolve ``roboflow_core/inner_workflow@v1`` steps that reference a saved workflow by id into inline
-``embedded_workflow`` definitions before parsing / composition validation.
+``workflow`` definitions before parsing / composition validation.
 """
 
 from __future__ import annotations
@@ -38,7 +38,7 @@ def default_inner_workflow_spec_resolver(
                 "Resolving an `inner_workflow` step by workflow id requires a Roboflow API key. "
                 "Set `workflows_core.api_key` in workflow init_parameters, inject "
                 "`workflows_core.inner_workflow_spec_resolver`, or use "
-                '`embedded_workflow_workspace_id` `"local"` with a matching on-disk workflow '
+                '`workflow_workspace_id` `"local"` with a matching on-disk workflow '
                 "definition."
             ),
             context="workflow_compilation | inner_workflow_spec_resolution",
@@ -70,14 +70,14 @@ def _strip_optional_str(value: Any) -> Optional[str]:
 
 
 def _inner_workflow_step_has_reference(step: Dict[str, Any]) -> bool:
-    ws = _strip_optional_str(step.get("embedded_workflow_workspace_id"))
-    wf = _strip_optional_str(step.get("embedded_workflow_id"))
+    ws = _strip_optional_str(step.get("workflow_workspace_id"))
+    wf = _strip_optional_str(step.get("workflow_id"))
     return ws is not None and wf is not None
 
 
-def _inner_workflow_step_has_nonempty_embedded(step: Dict[str, Any]) -> bool:
-    emb = step.get("embedded_workflow")
-    return isinstance(emb, dict) and len(emb) > 0
+def _inner_workflow_step_has_nonempty_workflow(step: Dict[str, Any]) -> bool:
+    wf = step.get("workflow")
+    return isinstance(wf, dict) and len(wf) > 0
 
 
 def workflow_definition_contains_unresolved_inner_workflow_reference(
@@ -93,8 +93,8 @@ def workflow_definition_contains_unresolved_inner_workflow_reference(
                 continue
             if _inner_workflow_step_has_reference(step):
                 return True
-            emb = step.get("embedded_workflow")
-            if isinstance(emb, dict) and visit(emb):
+            child = step.get("workflow")
+            if isinstance(child, dict) and visit(child):
                 return True
         return False
 
@@ -103,16 +103,16 @@ def workflow_definition_contains_unresolved_inner_workflow_reference(
 
 def _reference_cache_key(
     workspace_id: str,
-    workflow_id: str,
+    saved_workflow_id: str,
     workflow_version_id: Optional[str],
 ) -> Tuple[str, str, Optional[str]]:
-    return (workspace_id, workflow_id, workflow_version_id)
+    return (workspace_id, saved_workflow_id, workflow_version_id)
 
 
 def _strip_reference_fields_from_step(step: Dict[str, Any]) -> None:
-    step.pop("embedded_workflow_workspace_id", None)
-    step.pop("embedded_workflow_id", None)
-    step.pop("embedded_workflow_version_id", None)
+    step.pop("workflow_workspace_id", None)
+    step.pop("workflow_id", None)
+    step.pop("workflow_version_id", None)
 
 
 def _normalize_inner_workflow_refs_in_workflow_dict(
@@ -128,55 +128,53 @@ def _normalize_inner_workflow_refs_in_workflow_dict(
             continue
 
         has_ref = _inner_workflow_step_has_reference(step)
-        has_embedded = _inner_workflow_step_has_nonempty_embedded(step)
+        has_inline = _inner_workflow_step_has_nonempty_workflow(step)
 
-        if has_ref and has_embedded:
+        if has_ref and has_inline:
             step_name = step.get("name", "<unknown>")
             raise WorkflowDefinitionError(
                 public_message=(
-                    f"inner_workflow step `{step_name}` must not set both `embedded_workflow` "
-                    f"and reference fields (`embedded_workflow_workspace_id` / "
-                    f"`embedded_workflow_id`)."
+                    f"inner_workflow step `{step_name}` must not set both `workflow` "
+                    f"and reference fields (`workflow_workspace_id` / `workflow_id`)."
                 ),
                 context="workflow_compilation | inner_workflow_spec_resolution",
             )
 
         if has_ref:
-            workspace_id = _strip_optional_str(step["embedded_workflow_workspace_id"])
-            workflow_id = _strip_optional_str(step["embedded_workflow_id"])
-            version_raw = step.get("embedded_workflow_version_id")
+            workspace_id = _strip_optional_str(step["workflow_workspace_id"])
+            saved_workflow_id = _strip_optional_str(step["workflow_id"])
+            version_raw = step.get("workflow_version_id")
             workflow_version_id = (
                 None if version_raw is None else _strip_optional_str(version_raw)
             )
 
-            assert workspace_id is not None and workflow_id is not None
+            assert workspace_id is not None and saved_workflow_id is not None
             cache_key = _reference_cache_key(
-                workspace_id, workflow_id, workflow_version_id
+                workspace_id, saved_workflow_id, workflow_version_id
             )
             if cache_key not in fetch_memo:
                 fetch_memo[cache_key] = resolver(
                     workspace_id,
-                    workflow_id,
+                    saved_workflow_id,
                     workflow_version_id,
                     init_parameters,
                 )
-            step["embedded_workflow"] = copy.deepcopy(fetch_memo[cache_key])
+            step["workflow"] = copy.deepcopy(fetch_memo[cache_key])
             _strip_reference_fields_from_step(step)
-        elif not has_embedded:
+        elif not has_inline:
             step_name = step.get("name", "<unknown>")
             raise WorkflowDefinitionError(
                 public_message=(
-                    f"inner_workflow step `{step_name}` requires a non-empty "
-                    f"`embedded_workflow` object or reference fields "
-                    f"`embedded_workflow_workspace_id` and `embedded_workflow_id`."
+                    f"inner_workflow step `{step_name}` requires a non-empty `workflow` object or "
+                    f"reference fields `workflow_workspace_id` and `workflow_id`."
                 ),
                 context="workflow_compilation | inner_workflow_spec_resolution",
             )
 
-        embedded = step.get("embedded_workflow")
-        if isinstance(embedded, dict):
+        child_wf = step.get("workflow")
+        if isinstance(child_wf, dict):
             _normalize_inner_workflow_refs_in_workflow_dict(
-                embedded, init_parameters, resolver, fetch_memo
+                child_wf, init_parameters, resolver, fetch_memo
             )
 
 
@@ -186,7 +184,7 @@ def normalize_inner_workflow_references_in_definition(
 ) -> Dict[str, Any]:
     """
     Return a workflow definition suitable for parsing: all ``inner_workflow`` reference fields
-    are resolved to inline ``embedded_workflow`` (recursively). The input dict is never mutated.
+    are resolved to inline ``workflow`` (recursively). The input dict is never mutated.
     """
     if not workflow_definition_contains_unresolved_inner_workflow_reference(
         workflow_definition

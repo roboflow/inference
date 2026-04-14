@@ -129,7 +129,7 @@ def _compile_inner_workflows(
         if getattr(sm, "type", None) != USE_INNER_WORKFLOW_BLOCK_TYPE:
             continue
         inner[sm.name] = compile_workflow(
-            workflow_definition=sm.embedded_workflow,
+            workflow_definition=sm.workflow,
             init_parameters=init_parameters,
             execution_engine_version=execution_engine_version,
             profiler=profiler,

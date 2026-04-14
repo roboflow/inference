@@ -104,7 +104,7 @@ def test_inner_workflow_maps_parent_input_to_child_output(
             {
                 "type": "roboflow_core/inner_workflow@v1",
                 "name": "nested",
-                "embedded_workflow": embedded,
+                "workflow": embedded,
                 "parameter_bindings": {
                     "child_msg": "$inputs.parent_msg",
                 },
@@ -157,8 +157,8 @@ def test_inner_workflow_resolves_saved_workflow_by_id_via_custom_resolver(
             {
                 "type": "roboflow_core/inner_workflow@v1",
                 "name": "nested_by_ref",
-                "embedded_workflow_workspace_id": "stub-ws",
-                "embedded_workflow_id": "stub-id",
+                "workflow_workspace_id": "stub-ws",
+                "workflow_id": "stub-id",
                 "parameter_bindings": {
                     "child_msg": "$inputs.parent_msg",
                 },
@@ -209,7 +209,7 @@ def test_stacked_inner_workflow_runs_at_depth_two(
             {
                 "type": "roboflow_core/inner_workflow@v1",
                 "name": "inner_nested",
-                "embedded_workflow": inner,
+                "workflow": inner,
                 "parameter_bindings": {
                     "child_msg": "$inputs.wrapper_msg",
                 },
@@ -236,7 +236,7 @@ def test_stacked_inner_workflow_runs_at_depth_two(
             {
                 "type": "roboflow_core/inner_workflow@v1",
                 "name": "outer_nested",
-                "embedded_workflow": middle,
+                "workflow": middle,
                 "parameter_bindings": {
                     "wrapper_msg": "$inputs.root_msg",
                 },
@@ -282,7 +282,7 @@ def test_inner_workflow_receives_parameter_from_upstream_parent_step(
             {
                 "type": "roboflow_core/inner_workflow@v1",
                 "name": "nested",
-                "embedded_workflow": embedded,
+                "workflow": embedded,
                 "parameter_bindings": {
                     "child_msg": "$steps.prepare.output",
                 },
@@ -327,7 +327,7 @@ def test_inner_workflow_with_list_valued_workflow_parameter(
             {
                 "type": "roboflow_core/inner_workflow@v1",
                 "name": "nested",
-                "embedded_workflow": embedded,
+                "workflow": embedded,
                 "parameter_bindings": {
                     "child_msg": "$inputs.parent_msg",
                 },
@@ -379,7 +379,7 @@ def test_inner_workflow_with_batch_workflow_batch_input(
             {
                 "type": "roboflow_core/inner_workflow@v1",
                 "name": "nested",
-                "embedded_workflow": embedded,
+                "workflow": embedded,
                 "parameter_bindings": {
                     "child_msg": "$inputs.parent_msg",
                 },
@@ -409,7 +409,7 @@ def test_inner_workflow_child_runs_dynamic_crop_on_parent_detections(
 ) -> None:
     """
     Parent runs mocked OD (three boxes, classes ``x``, ``y``, ``z``) and passes the image plus
-    ``general_detection.predictions`` into an embedded workflow. The child runs ``dynamic_crop`` and
+    ``general_detection.predictions`` into a child workflow. The child runs ``dynamic_crop`` and
     exposes per-crop translated ``sv.Detections`` (class, confidence, ``detection_id``, valid ``xyxy``).
     """
     import supervision as sv
@@ -483,7 +483,7 @@ def test_inner_workflow_child_runs_dynamic_crop_on_parent_detections(
             {
                 "type": "roboflow_core/inner_workflow@v1",
                 "name": "nested",
-                "embedded_workflow": embedded,
+                "workflow": embedded,
                 "parameter_bindings": {
                     "image": "$inputs.image",
                     "predictions": "$steps.general_detection.predictions",
@@ -621,7 +621,7 @@ def test_inner_workflow_parent_detection_offset_after_nested_crop(
             {
                 "type": "roboflow_core/inner_workflow@v1",
                 "name": "nested",
-                "embedded_workflow": embedded,
+                "workflow": embedded,
                 "parameter_bindings": {
                     "image": "$inputs.image",
                     "predictions": "$steps.general_detection.predictions",
@@ -871,7 +871,7 @@ def test_inner_workflow_after_continue_if_with_crop_batch_lineage(
             {
                 "type": "roboflow_core/inner_workflow@v1",
                 "name": "nested_inner_workflow",
-                "embedded_workflow": embedded,
+                "workflow": embedded,
                 "parameter_bindings": {
                     "child_msg": "$inputs.crop_label",
                 },
@@ -948,7 +948,7 @@ def test_parent_combines_outputs_from_two_parallel_inner_workflows(
             {
                 "type": "roboflow_core/inner_workflow@v1",
                 "name": "branch_a",
-                "embedded_workflow": embedded,
+                "workflow": embedded,
                 "parameter_bindings": {
                     "child_msg": "$inputs.msg_a",
                 },
@@ -956,7 +956,7 @@ def test_parent_combines_outputs_from_two_parallel_inner_workflows(
             {
                 "type": "roboflow_core/inner_workflow@v1",
                 "name": "branch_b",
-                "embedded_workflow": embedded,
+                "workflow": embedded,
                 "parameter_bindings": {
                     "child_msg": "$inputs.msg_b",
                 },

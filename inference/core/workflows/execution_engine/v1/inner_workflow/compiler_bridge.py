@@ -45,12 +45,12 @@ def collect_composition_edges_from_workflow_dict(
         for step in wf.get("steps", []):
             if step.get("type") != USE_INNER_WORKFLOW_BLOCK_TYPE:
                 continue
-            embedded = step.get("embedded_workflow")
-            if not isinstance(embedded, dict):
+            child_wf = step.get("workflow")
+            if not isinstance(child_wf, dict):
                 continue
-            child_fp = workflow_identity_fingerprint(embedded)
+            child_fp = workflow_identity_fingerprint(child_wf)
             edges.append((fp, child_fp))
-            visit(embedded)
+            visit(child_wf)
 
     visit(workflow_dict)
     return edges
@@ -126,12 +126,12 @@ def kinds_for_workflow_output_selector(
     )
 
 
-def max_projection_output_lift_from_embedded_workflow(
+def max_projection_output_lift_from_child_workflow(
     child_graph: GraphCompilationResult,
 ) -> int:
     """
     Largest positive ``get_output_dimensionality_offset()`` among child steps referenced
-    by the embedded workflow's JsonField outputs (e.g. ``dynamic_crop`` -> 1).
+    by the child workflow's JsonField outputs (e.g. ``dynamic_crop`` -> 1).
     """
     from inference.core.workflows.execution_engine.v1.compiler.entities import StepNode
     from inference.core.workflows.execution_engine.v1.compiler.graph_constructor import (
@@ -163,7 +163,7 @@ def max_projection_output_lift_from_embedded_workflow(
     return lift
 
 
-def derive_resolved_outputs_for_embedded_workflow(
+def derive_resolved_outputs_for_child_workflow(
     child_graph: GraphCompilationResult,
 ) -> List[OutputDefinition]:
     parsed = child_graph.parsed_workflow_definition
@@ -186,7 +186,7 @@ def validate_parameter_bindings_against_child(
         raise WorkflowDefinitionError(
             public_message=(
                 f"inner_workflow step `{step_name}` parameter_bindings keys {sorted(got)} "
-                f"do not match embedded workflow inputs {sorted(expected)}."
+                f"do not match child workflow inputs {sorted(expected)}."
             ),
             context="workflow_compilation | inner_workflow_parameter_bindings",
         )
@@ -203,7 +203,7 @@ def resolve_inner_workflow_steps_in_parsed_definition(
     profiler: Any,
 ) -> ParsedWorkflowDefinition:
     """
-    For each ``inner_workflow`` step, compile the embedded workflow (for cache + output kinds)
+    For each ``inner_workflow`` step, compile the child workflow (for cache + output kinds)
     and attach resolved_child_outputs on the manifest copy.
     """
     from inference.core.workflows.execution_engine.v1.compiler.entities import (
@@ -215,14 +215,14 @@ def resolve_inner_workflow_steps_in_parsed_definition(
         if getattr(step, "type", None) != USE_INNER_WORKFLOW_BLOCK_TYPE:
             new_steps.append(step)
             continue
-        embedded = step.embedded_workflow
-        if not isinstance(embedded, dict):
+        child_wf = step.workflow
+        if not isinstance(child_wf, dict):
             raise WorkflowDefinitionError(
-                public_message=f"inner_workflow step `{step.name}` requires embedded_workflow object.",
+                public_message=f"inner_workflow step `{step.name}` requires `workflow` object.",
                 context="workflow_compilation | inner_workflow_resolution",
             )
         child_result = compile_workflow_graph_fn(
-            workflow_definition=embedded,
+            workflow_definition=child_wf,
             execution_engine_version=execution_engine_version,
             profiler=profiler,
             init_parameters=init_parameters,
@@ -232,8 +232,8 @@ def resolve_inner_workflow_steps_in_parsed_definition(
             child_parsed=child_result.parsed_workflow_definition,
             step_name=step.name,
         )
-        resolved = derive_resolved_outputs_for_embedded_workflow(child_result)
-        lift = max_projection_output_lift_from_embedded_workflow(child_result)
+        resolved = derive_resolved_outputs_for_child_workflow(child_result)
+        lift = max_projection_output_lift_from_child_workflow(child_result)
         new_steps.append(
             step.model_copy(
                 update={
