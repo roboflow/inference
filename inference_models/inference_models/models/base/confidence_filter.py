@@ -6,14 +6,21 @@ Concrete models that opt in to recommended_parameters use `ConfidenceFilter`
 and the `filter_*` helpers at the end of their `post_process` methods.
 """
 
-from __future__ import annotations
-
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
 import torch
 
 from inference_models.configuration import INFERENCE_MODELS_DEFAULT_CONFIDENCE
 from inference_models.logger import LOGGER
+from inference_models.models.base.classification import (
+    MultiLabelClassificationPrediction,
+)
+from inference_models.models.base.instance_segmentation import InstanceDetections
+from inference_models.models.base.keypoints_detection import KeyPoints
+from inference_models.models.base.object_detection import Detections
+from inference_models.models.base.semantic_segmentation import (
+    SemanticSegmentationResult,
+)
 from inference_models.weights_providers.entities import RecommendedParameters
 
 
@@ -163,13 +170,10 @@ class ConfidenceFilter:
 
     # ------------------------------------------------------------------
     # Per-task-type filtering.  Concrete models call these at the end of
-    # their post_process when has_per_class_refinement is True.  Imports
-    # are deferred to avoid loading task-type modules at import time.
+    # their post_process when has_per_class_refinement is True.
     # ------------------------------------------------------------------
 
     def filter_detections(self, detections_list, class_names):
-        from inference_models.models.base.object_detection import Detections
-
         result = []
         for detections in detections_list:
             keep = self.build_keep_mask(
@@ -194,10 +198,6 @@ class ConfidenceFilter:
         return result
 
     def filter_instance_detections(self, detections_list, class_names):
-        from inference_models.models.base.instance_segmentation import (
-            InstanceDetections,
-        )
-
         result = []
         for detections in detections_list:
             keep = self.build_keep_mask(
@@ -225,9 +225,6 @@ class ConfidenceFilter:
     def filter_keypoints_and_detections(
         self, keypoints_list, detections_list, class_names
     ):
-        from inference_models.models.base.keypoints_detection import KeyPoints
-        from inference_models.models.base.object_detection import Detections
-
         filtered_keypoints = []
         filtered_detections = []
         for kp, det in zip(keypoints_list, detections_list):
@@ -263,10 +260,6 @@ class ConfidenceFilter:
         return filtered_keypoints, filtered_detections
 
     def filter_multilabel_predictions(self, predictions, class_names):
-        from inference_models.models.base.classification import (
-            MultiLabelClassificationPrediction,
-        )
-
         result = []
         for prediction in predictions:
             if prediction.class_ids.numel() == 0:
@@ -300,10 +293,6 @@ class ConfidenceFilter:
     def filter_segmentation_results(
         self, results, class_names, background_class_id
     ):
-        from inference_models.models.base.semantic_segmentation import (
-            SemanticSegmentationResult,
-        )
-
         thresholds = self.per_class_thresholds(class_names)
         filtered = []
         for result in results:
