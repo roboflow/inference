@@ -21,8 +21,8 @@ Execute a **nested workflow** while mapping parent data into the child's inputs 
 Provide either a full inline definition in `embedded_workflow`, or resolve a saved workflow using
 `embedded_workflow_workspace_id` and `embedded_workflow_id` (optional `embedded_workflow_version_id`).
 Reference fields are expanded at compile time via `workflows_core.inner_workflow_spec_resolver`
-(legacy: `workflows_core.subworkflow_spec_resolver`; default: Roboflow API using
-`workflows_core.api_key`, or local definitions when workspace is `"local"`).
+(default: Roboflow API using `workflows_core.api_key`, or local definitions when workspace is
+`"local"`).
 
 Compilation validates composition (acyclicity, max depth) and child input names; execution uses a
 pluggable `InnerWorkflowRunner` (see `workflows_core.inner_workflow_runner`; legacy:

@@ -16,10 +16,6 @@ from inference.core.workflows.execution_engine.v1.inner_workflow.constants impor
 WORKFLOWS_CORE_INNER_WORKFLOW_SPEC_RESOLVER = (
     "workflows_core.inner_workflow_spec_resolver"
 )
-# Legacy init parameter key (still honored by :func:`get_inner_workflow_spec_resolver`).
-LEGACY_WORKFLOWS_CORE_SUBWORKFLOW_SPEC_RESOLVER = (
-    "workflows_core.subworkflow_spec_resolver"
-)
 
 InnerWorkflowSpecResolver = Callable[
     [str, str, Optional[str], Dict[str, Any]],
@@ -41,8 +37,7 @@ def default_inner_workflow_spec_resolver(
             public_message=(
                 "Resolving a `use_subworkflow` step by workflow id requires a Roboflow API key. "
                 "Set `workflows_core.api_key` in workflow init_parameters, inject "
-                "`workflows_core.inner_workflow_spec_resolver` (or legacy "
-                "`workflows_core.subworkflow_spec_resolver`), or use "
+                "`workflows_core.inner_workflow_spec_resolver`, or use "
                 '`embedded_workflow_workspace_id` `"local"` with a matching on-disk workflow '
                 "definition."
             ),
@@ -60,8 +55,6 @@ def get_inner_workflow_spec_resolver(
     init_parameters: Dict[str, Any],
 ) -> InnerWorkflowSpecResolver:
     resolver = init_parameters.get(WORKFLOWS_CORE_INNER_WORKFLOW_SPEC_RESOLVER)
-    if resolver is None:
-        resolver = init_parameters.get(LEGACY_WORKFLOWS_CORE_SUBWORKFLOW_SPEC_RESOLVER)
     if resolver is not None:
         return resolver
     return default_inner_workflow_spec_resolver
