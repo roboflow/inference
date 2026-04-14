@@ -68,6 +68,33 @@ def _parent_run_context(
     }
 
 
+def _shape_use_subworkflow_child_result_for_simd_registration(
+    collapsed: Dict[str, Any],
+    *,
+    nested_output_dimensionality_lift: int,
+) -> Any:
+    """
+    When the compiler recorded a positive ``nested_output_dimensionality_lift`` (child
+    exposes an expanded batch axis, e.g. ``dynamic_crop``), reshape a single dict whose
+    values are lists of ``sv.Detections`` into a list of per-slice dicts for
+    ``flatten_nested_output``. Otherwise return the collapsed dict unchanged.
+    """
+    import supervision as sv
+
+    if nested_output_dimensionality_lift <= 0:
+        return collapsed
+    if len(collapsed) != 1:
+        return [collapsed]
+    key, value = next(iter(collapsed.items()))
+    if (
+        isinstance(value, list)
+        and value
+        and all(isinstance(v, sv.Detections) for v in value)
+    ):
+        return [{key: v} for v in value]
+    return [collapsed]
+
+
 def _collapse_child_run_result(raw: Any) -> Dict[str, Any]:
     if isinstance(raw, list):
         if len(raw) == 0:
@@ -118,6 +145,10 @@ def run_use_subworkflow_simd(
     )
     indices: List = []
     results: List = []
+    nested_lift = int(
+        getattr(workflow.steps[step_name].manifest, "nested_output_dimensionality_lift", 0)
+        or 0
+    )
     with profiler.profile_execution_phase(
         name="iterative_step_code_execution",
         categories=["workflow_execution_operation", "workflow_block_operation"],
@@ -138,7 +169,12 @@ def run_use_subworkflow_simd(
                     mode=SubworkflowExecutionMode.LOCAL,
                     parent_context=parent_ctx,
                 )
-            results.append(_collapse_child_run_result(batch_result))
+            collapsed = _collapse_child_run_result(batch_result)
+            shaped = _shape_use_subworkflow_child_result_for_simd_registration(
+                collapsed,
+                nested_output_dimensionality_lift=nested_lift,
+            )
+            results.append(shaped)
             indices.append(input_definition.index)
     with profiler.profile_execution_phase(
         name="step_output_registration",

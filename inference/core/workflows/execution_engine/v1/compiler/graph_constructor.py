@@ -86,6 +86,9 @@ from inference.core.workflows.execution_engine.v1.compiler.utils import (
     is_step_selector,
     node_as,
 )
+from inference.core.workflows.execution_engine.v1.subworkflow.constants import (
+    USE_SUBWORKFLOW_BLOCK_TYPE,
+)
 from inference.core.workflows.prototypes.block import WorkflowBlockManifest
 
 NODE_DEFINITION_KEY = "definition"
@@ -738,6 +741,10 @@ def denote_data_flow_for_step(
     )
     dimensionality_reference_property = manifest.get_dimensionality_reference_property()
     output_dimensionality_offset = manifest.get_output_dimensionality_offset()
+    if manifest.type == USE_SUBWORKFLOW_BLOCK_TYPE:
+        lift = int(getattr(manifest, "nested_output_dimensionality_lift", 0) or 0)
+        if lift > output_dimensionality_offset:
+            output_dimensionality_offset = lift
     verify_step_input_dimensionality_offsets(
         step_name=step_name,
         input_dimensionality_offsets=input_dimensionality_offsets,
@@ -778,7 +785,7 @@ def denote_data_flow_for_step(
     ]
     step_node_data.batch_oriented_parameters = parameters_with_batch_inputs
     if not all_data_derived_lineages and not all_control_flow_lineages:
-        if manifest.get_output_dimensionality_offset() > 0:
+        if output_dimensionality_offset > 0:
             # brave decision to open a Pandora box
             data_lineage = [node]
         else:

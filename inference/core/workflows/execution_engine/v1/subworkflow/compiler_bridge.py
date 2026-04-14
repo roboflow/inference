@@ -129,6 +129,43 @@ def kinds_for_workflow_output_selector(
     )
 
 
+def max_projection_output_lift_from_embedded_workflow(
+    child_graph: GraphCompilationResult,
+) -> int:
+    """
+    Largest positive ``get_output_dimensionality_offset()`` among child steps referenced
+    by the embedded workflow's JsonField outputs (e.g. ``dynamic_crop`` -> 1).
+    """
+    from inference.core.workflows.execution_engine.v1.compiler.graph_constructor import (
+        NODE_COMPILATION_OUTPUT_PROPERTY,
+    )
+    from inference.core.workflows.execution_engine.v1.compiler.entities import StepNode
+    from inference.core.workflows.execution_engine.v1.compiler.utils import (
+        construct_step_selector,
+    )
+
+    lift = 0
+    graph = child_graph.execution_graph
+    for jf in child_graph.parsed_workflow_definition.outputs:
+        sel = jf.selector
+        if not isinstance(sel, str) or not sel.startswith("$steps."):
+            continue
+        rest = sel[len("$steps.") :]
+        step_name, _, prop = rest.partition(".")
+        if not step_name or not prop:
+            continue
+        step_selector = construct_step_selector(step_name=step_name)
+        if step_selector not in graph.nodes:
+            continue
+        comp = graph.nodes[step_selector].get(NODE_COMPILATION_OUTPUT_PROPERTY)
+        if not isinstance(comp, StepNode):
+            continue
+        o = comp.step_manifest.get_output_dimensionality_offset()
+        if o > lift:
+            lift = o
+    return lift
+
+
 def derive_resolved_outputs_for_embedded_workflow(
     child_graph: GraphCompilationResult,
 ) -> List[OutputDefinition]:
@@ -199,9 +236,13 @@ def resolve_subworkflow_steps_in_parsed_definition(
             step_name=step.name,
         )
         resolved = derive_resolved_outputs_for_embedded_workflow(child_result)
+        lift = max_projection_output_lift_from_embedded_workflow(child_result)
         new_steps.append(
             step.model_copy(
-                update={"resolved_child_outputs": resolved},
+                update={
+                    "resolved_child_outputs": resolved,
+                    "nested_output_dimensionality_lift": lift,
+                },
             ),
         )
     return PWD(

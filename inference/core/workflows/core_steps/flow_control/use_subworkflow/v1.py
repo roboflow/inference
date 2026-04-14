@@ -58,6 +58,14 @@ class BlockManifest(WorkflowBlockManifest):
         description="Set by the compiler when resolving embedded workflows.",
         repr=False,
     )
+    nested_output_dimensionality_lift: int = Field(
+        default=0,
+        exclude=True,
+        description=(
+            "Compiler-only: max ``get_output_dimensionality_offset()`` among child steps "
+            "referenced by embedded workflow JsonField outputs (drives parent batch lineage)."
+        ),
+    )
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:

@@ -69,19 +69,41 @@ class LocalSubworkflowRunner(SubworkflowRunner):
             )
 
         from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
+        from inference.core.workflows.execution_engine.profiling.core import (
+            NullWorkflowsProfiler,
+        )
         from inference.core.workflows.execution_engine.v1.executor.core import (
             run_workflow,
         )
+        from inference.core.workflows.execution_engine.v1.executor.runtime_input_assembler import (
+            assemble_runtime_parameters,
+        )
+        from inference.core.workflows.execution_engine.v1.executor.runtime_input_validator import (
+            validate_runtime_input,
+        )
 
         pc = parent_context or {}
+        profiler = pc.get("profiler") or NullWorkflowsProfiler.init()
+        assembled = assemble_runtime_parameters(
+            runtime_parameters=dict(runtime_parameters),
+            defined_inputs=compiled_child.workflow_definition.inputs,
+            kinds_deserializers=compiled_child.kinds_deserializers,
+            prevent_local_images_loading=pc.get("prevent_local_images_loading", False),
+            profiler=profiler,
+        )
+        validate_runtime_input(
+            runtime_parameters=assembled,
+            input_substitutions=compiled_child.input_substitutions,
+            profiler=profiler,
+        )
 
         return run_workflow(
             workflow=compiled_child,
-            runtime_parameters=runtime_parameters,
+            runtime_parameters=assembled,
             max_concurrent_steps=pc.get("max_concurrent_steps", WORKFLOWS_MAX_CONCURRENT_STEPS),
             kinds_serializers=pc.get("kinds_serializers"),
             serialize_results=False,
-            profiler=pc.get("profiler"),
+            profiler=profiler,
             executor=pc.get("executor"),
             step_error_handler=pc.get("step_error_handler"),
         )
