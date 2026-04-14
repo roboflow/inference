@@ -20,7 +20,7 @@ SHORT_DESCRIPTION = (
 LONG_DESCRIPTION = """
 Execute a **nested workflow** while mapping parent data into the child's inputs via `parameter_bindings`.
 
-Provide either a full inline definition in `workflow`, or resolve a saved workflow using
+Provide either a full inline definition in `workflow_definition`, or resolve a saved workflow using
 `workflow_workspace_id` and `workflow_id` (optional `workflow_version_id`).
 Reference fields are expanded at compile time via `workflows_core.inner_workflow_spec_resolver`
 (default: Roboflow API using `workflows_core.api_key`, or local definitions when workspace is
@@ -50,7 +50,7 @@ class BlockManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["roboflow_core/inner_workflow@v1"]
-    workflow: Optional[Dict[str, Any]] = Field(
+    workflow_definition: Optional[Dict[str, Any]] = Field(
         default=None,
         description=(
             "Full nested workflow definition (same JSON shape as a root workflow: version, inputs, "
@@ -62,7 +62,8 @@ class BlockManifest(WorkflowBlockManifest):
         default=None,
         description=(
             'Workspace id for a saved workflow to load (Roboflow slug or `"local"` for on-disk '
-            "definitions). Use with `workflow_id`; mutually exclusive with a non-empty `workflow`."
+            "definitions). Use with `workflow_id`; mutually exclusive with a non-empty "
+            "`workflow_definition`."
         ),
     )
     workflow_id: Optional[str] = Field(
@@ -95,20 +96,22 @@ class BlockManifest(WorkflowBlockManifest):
 
     @model_validator(mode="after")
     def validate_workflow_or_reference(self) -> "BlockManifest":
-        has_inline = isinstance(self.workflow, dict) and len(self.workflow) > 0
+        has_inline = isinstance(self.workflow_definition, dict) and len(
+            self.workflow_definition
+        ) > 0
         ws = (self.workflow_workspace_id or "").strip()
         wf = (self.workflow_id or "").strip()
         has_ref = bool(ws and wf)
 
         if has_inline and has_ref:
             raise ValueError(
-                "Provide either `workflow` or workflow reference fields "
+                "Provide either `workflow_definition` or workflow reference fields "
                 "(`workflow_workspace_id` and `workflow_id`), not both."
             )
         if has_inline or has_ref:
             return self
         raise ValueError(
-            "inner_workflow requires a non-empty `workflow` object or both "
+            "inner_workflow requires a non-empty `workflow_definition` object or both "
             "`workflow_workspace_id` and `workflow_id`."
         )
 

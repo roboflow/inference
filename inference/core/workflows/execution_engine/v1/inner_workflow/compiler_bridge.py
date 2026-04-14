@@ -45,7 +45,7 @@ def collect_composition_edges_from_workflow_dict(
         for step in wf.get("steps", []):
             if step.get("type") != USE_INNER_WORKFLOW_BLOCK_TYPE:
                 continue
-            child_wf = step.get("workflow")
+            child_wf = step.get("workflow_definition")
             if not isinstance(child_wf, dict):
                 continue
             child_fp = workflow_identity_fingerprint(child_wf)
@@ -215,10 +215,10 @@ def resolve_inner_workflow_steps_in_parsed_definition(
         if getattr(step, "type", None) != USE_INNER_WORKFLOW_BLOCK_TYPE:
             new_steps.append(step)
             continue
-        child_wf = step.workflow
+        child_wf = step.workflow_definition
         if not isinstance(child_wf, dict):
             raise WorkflowDefinitionError(
-                public_message=f"inner_workflow step `{step.name}` requires `workflow` object.",
+                public_message=f"inner_workflow step `{step.name}` requires `workflow_definition` object.",
                 context="workflow_compilation | inner_workflow_resolution",
             )
         child_result = compile_workflow_graph_fn(

@@ -77,8 +77,8 @@ def test_normalize_replaces_reference_with_inline_workflow() -> None:
     }
     out = normalize_inner_workflow_references_in_definition(raw, init_parameters)
 
-    assert raw["steps"][0].get("workflow") is None
-    assert out["steps"][0]["workflow"] == _echo_spec()
+    assert raw["steps"][0].get("workflow_definition") is None
+    assert out["steps"][0]["workflow_definition"] == _echo_spec()
     assert "workflow_workspace_id" not in out["steps"][0]
     assert calls == [("my-ws", "wf-1", "v9")]
 
@@ -121,7 +121,7 @@ def test_normalize_deduplicates_identical_references() -> None:
         {WORKFLOWS_CORE_INNER_WORKFLOW_SPEC_RESOLVER: resolver},
     )
     assert len(calls) == 1
-    assert out["steps"][0]["workflow"] == out["steps"][1]["workflow"]
+    assert out["steps"][0]["workflow_definition"] == out["steps"][1]["workflow_definition"]
 
 
 def test_normalize_resolves_reference_inside_inline_workflow() -> None:
@@ -143,7 +143,7 @@ def test_normalize_resolves_reference_inside_inline_workflow() -> None:
             {
                 "type": USE_INNER_WORKFLOW_BLOCK_TYPE,
                 "name": "outer",
-                "workflow": {
+                "workflow_definition": {
                     "version": "1.0",
                     "inputs": [{"type": "WorkflowParameter", "name": "wrapper_msg"}],
                     "steps": [
@@ -169,8 +169,8 @@ def test_normalize_resolves_reference_inside_inline_workflow() -> None:
         {WORKFLOWS_CORE_INNER_WORKFLOW_SPEC_RESOLVER: resolver},
     )
     assert calls == ["inner-id"]
-    inner = out["steps"][0]["workflow"]["steps"][0]
-    assert inner["workflow"] == _echo_spec()
+    inner = out["steps"][0]["workflow_definition"]["steps"][0]
+    assert inner["workflow_definition"] == _echo_spec()
     assert "workflow_workspace_id" not in inner
 
 
@@ -190,7 +190,7 @@ def test_mutual_exclusion_workflow_and_reference() -> None:
             {
                 "type": USE_INNER_WORKFLOW_BLOCK_TYPE,
                 "name": "bad",
-                "workflow": _echo_spec(),
+                "workflow_definition": _echo_spec(),
                 "workflow_workspace_id": "ws",
                 "workflow_id": "id",
                 "parameter_bindings": {"child_msg": "$inputs.p"},
@@ -213,7 +213,7 @@ def test_contains_unresolved_reference_false_for_inline_only() -> None:
             {
                 "type": USE_INNER_WORKFLOW_BLOCK_TYPE,
                 "name": "n",
-                "workflow": _echo_spec(),
+                "workflow_definition": _echo_spec(),
                 "parameter_bindings": {},
             },
         ],

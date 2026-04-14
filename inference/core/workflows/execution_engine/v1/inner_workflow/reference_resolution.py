@@ -1,6 +1,6 @@
 """
 Resolve ``roboflow_core/inner_workflow@v1`` steps that reference a saved workflow by id into inline
-``workflow`` definitions before parsing / composition validation.
+``workflow_definition`` payloads before parsing / composition validation.
 """
 
 from __future__ import annotations
@@ -75,8 +75,10 @@ def _inner_workflow_step_has_reference(step: Dict[str, Any]) -> bool:
     return ws is not None and wf is not None
 
 
-def _inner_workflow_step_has_nonempty_workflow(step: Dict[str, Any]) -> bool:
-    wf = step.get("workflow")
+def _inner_workflow_step_has_nonempty_workflow_definition(
+    step: Dict[str, Any],
+) -> bool:
+    wf = step.get("workflow_definition")
     return isinstance(wf, dict) and len(wf) > 0
 
 
@@ -93,7 +95,7 @@ def workflow_definition_contains_unresolved_inner_workflow_reference(
                 continue
             if _inner_workflow_step_has_reference(step):
                 return True
-            child = step.get("workflow")
+            child = step.get("workflow_definition")
             if isinstance(child, dict) and visit(child):
                 return True
         return False
@@ -128,13 +130,13 @@ def _normalize_inner_workflow_refs_in_workflow_dict(
             continue
 
         has_ref = _inner_workflow_step_has_reference(step)
-        has_inline = _inner_workflow_step_has_nonempty_workflow(step)
+        has_inline = _inner_workflow_step_has_nonempty_workflow_definition(step)
 
         if has_ref and has_inline:
             step_name = step.get("name", "<unknown>")
             raise WorkflowDefinitionError(
                 public_message=(
-                    f"inner_workflow step `{step_name}` must not set both `workflow` "
+                    f"inner_workflow step `{step_name}` must not set both `workflow_definition` "
                     f"and reference fields (`workflow_workspace_id` / `workflow_id`)."
                 ),
                 context="workflow_compilation | inner_workflow_spec_resolution",
@@ -159,19 +161,19 @@ def _normalize_inner_workflow_refs_in_workflow_dict(
                     workflow_version_id,
                     init_parameters,
                 )
-            step["workflow"] = copy.deepcopy(fetch_memo[cache_key])
+            step["workflow_definition"] = copy.deepcopy(fetch_memo[cache_key])
             _strip_reference_fields_from_step(step)
         elif not has_inline:
             step_name = step.get("name", "<unknown>")
             raise WorkflowDefinitionError(
                 public_message=(
-                    f"inner_workflow step `{step_name}` requires a non-empty `workflow` object or "
+                    f"inner_workflow step `{step_name}` requires a non-empty `workflow_definition` object or "
                     f"reference fields `workflow_workspace_id` and `workflow_id`."
                 ),
                 context="workflow_compilation | inner_workflow_spec_resolution",
             )
 
-        child_wf = step.get("workflow")
+        child_wf = step.get("workflow_definition")
         if isinstance(child_wf, dict):
             _normalize_inner_workflow_refs_in_workflow_dict(
                 child_wf, init_parameters, resolver, fetch_memo
@@ -184,7 +186,7 @@ def normalize_inner_workflow_references_in_definition(
 ) -> Dict[str, Any]:
     """
     Return a workflow definition suitable for parsing: all ``inner_workflow`` reference fields
-    are resolved to inline ``workflow`` (recursively). The input dict is never mutated.
+    are resolved to inline ``workflow_definition`` (recursively). The input dict is never mutated.
     """
     if not workflow_definition_contains_unresolved_inner_workflow_reference(
         workflow_definition
