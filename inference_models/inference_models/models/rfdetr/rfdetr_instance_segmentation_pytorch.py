@@ -421,7 +421,7 @@ class RFDetrForInstanceSegmentationTorch(
         self,
         model_results: dict,
         pre_processing_meta: List[PreProcessingMetadata],
-        confidence: float = INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE,
+        confidence: Optional[float] = None,
         **kwargs,
     ) -> List[InstanceDetections]:
         confidence_filter = ConfidenceFilter(

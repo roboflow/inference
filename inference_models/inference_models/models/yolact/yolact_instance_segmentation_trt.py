@@ -281,7 +281,7 @@ class YOLOACTForInstanceSegmentationTRT(
             torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor
         ],
         pre_processing_meta: List[PreProcessingMetadata],
-        confidence: float = INFERENCE_MODELS_YOLACT_DEFAULT_CONFIDENCE,
+        confidence: Optional[float] = None,
         iou_threshold: float = INFERENCE_MODELS_YOLACT_DEFAULT_IOU_THRESHOLD,
         max_detections: int = INFERENCE_MODELS_YOLACT_DEFAULT_MAX_DETECTIONS,
         class_agnostic_nms: bool = INFERENCE_MODELS_YOLACT_DEFAULT_CLASS_AGNOSTIC_NMS,

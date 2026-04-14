@@ -149,7 +149,7 @@ class YOLO26ForObjectDetectionTorchScript(
         self,
         model_results: torch.Tensor,
         pre_processing_meta: List[PreProcessingMetadata],
-        confidence: float = INFERENCE_MODELS_YOLO26_DEFAULT_CONFIDENCE,
+        confidence: Optional[float] = None,
         **kwargs,
     ) -> List[Detections]:
         confidence_filter = ConfidenceFilter(

@@ -338,7 +338,7 @@ class VITForMultiLabelClassificationHF(
     def post_process(
         self,
         model_results: torch.Tensor,
-        confidence: float = INFERENCE_MODELS_VIT_CLASSIFIER_DEFAULT_CONFIDENCE,
+        confidence: Optional[float] = None,
         **kwargs,
     ) -> List[MultiLabelClassificationPrediction]:
         confidence_filter = ConfidenceFilter(
