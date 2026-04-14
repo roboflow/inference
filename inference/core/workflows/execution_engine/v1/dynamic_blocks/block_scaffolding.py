@@ -79,7 +79,7 @@ def assembly_custom_python_block(
     def run(self, *args, **kwargs) -> BlockResult:
         if WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE == "modal":
             from inference.core.workflows.execution_engine.v1.dynamic_blocks.modal_executor import (
-                ModalExecutor,
+                get_modal_executor,
             )
 
             try:
@@ -91,7 +91,7 @@ def assembly_custom_python_block(
                 workspace_id = MODAL_ANONYMOUS_WORKSPACE_NAME
 
             if workspace_id not in _MODAL_EXECUTOR_CACHE:
-                _MODAL_EXECUTOR_CACHE[workspace_id] = ModalExecutor(workspace_id)
+                _MODAL_EXECUTOR_CACHE[workspace_id] = get_modal_executor(workspace_id)
             executor = _MODAL_EXECUTOR_CACHE[workspace_id]
 
             return executor.execute_remote(

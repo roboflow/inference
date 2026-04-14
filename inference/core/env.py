@@ -659,6 +659,11 @@ WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE = os.getenv(
 # shrink payloads significantly for WebRTC preview with minimal visual impact.
 WEBEXEC_JPEG_QUALITY = int(os.getenv("WEBEXEC_JPEG_QUALITY", "75"))
 
+# Transport protocol for webexec communication: "http" (default) or "websocket".
+# "websocket" uses a persistent WebSocket connection with msgpack binary frames,
+# eliminating per-request HTTP overhead and base64 encoding.
+WEBEXEC_TRANSPORT = os.getenv("WEBEXEC_TRANSPORT", "http").lower().strip()
+
 # Strip quotes from Modal credentials in case users include them
 _modal_token_id = os.getenv("MODAL_TOKEN_ID")
 _modal_token_secret = os.getenv("MODAL_TOKEN_SECRET")

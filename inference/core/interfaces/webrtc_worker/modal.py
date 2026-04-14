@@ -125,7 +125,9 @@ if modal is not None:
         )
 
     video_processing_image = (
-        video_processing_image.apt_install("ffmpeg").pip_install("modal").entrypoint([])
+        video_processing_image.apt_install("ffmpeg")
+        .pip_install("modal", "msgpack", "websocket-client")
+        .entrypoint([])
     )
 
     # https://modal.com/docs/reference/modal.Volume
@@ -174,6 +176,7 @@ if modal is not None:
             "ROBOFLOW_INTERNAL_SERVICE_NAME": WEBRTC_MODAL_ROBOFLOW_INTERNAL_SERVICE_NAME,
             "ROBOFLOW_INTERNAL_SERVICE_SECRET": ROBOFLOW_INTERNAL_SERVICE_SECRET,
             "WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE": WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE,
+            "WEBEXEC_TRANSPORT": os.getenv("WEBEXEC_TRANSPORT", "http"),
             "TELEMETRY_USE_PERSISTENT_QUEUE": "False",
             "TELEMETRY_API_PLAN_CACHE_TTL_SECONDS": str(
                 os.getenv("TELEMETRY_API_PLAN_CACHE_TTL_SECONDS", 60)

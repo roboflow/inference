@@ -56,7 +56,7 @@ def get_inference_image():
             "wget",
         )
         .pip_install(inference_version)
-        .pip_install("fastapi[standard]")  # Add FastAPI for web endpoints
+        .pip_install("fastapi[standard]", "msgpack")
     )
     return image
 
@@ -64,12 +64,13 @@ def get_inference_image():
 @app.cls(
     image=get_inference_image(),
     restrict_modal_access=True,  # Restrict Modal access for security
-    timeout=20,
+    timeout=700,
     enable_memory_snapshot=True,  # Enable memory snapshotting for faster cold starts
     scaledown_window=60,
     cloud="aws",
     region="us-east-1",
     buffer_containers=1,
+    allow_concurrent_inputs=10,
 )
 class Executor:
     """Parameterized Modal class for executing custom Python blocks via web endpoint."""
@@ -391,3 +392,60 @@ from datetime import datetime
                 "error": str(e),
                 "error_type": type(e).__name__,
             }
+
+    # ------------------------------------------------------------------
+    # Transport 2: WebSocket + msgpack binary frames (opt-in)
+    # ------------------------------------------------------------------
+
+    @modal.asgi_app()
+    def wsapp(self):
+        """Expose a FastAPI sub-application with a WebSocket route.
+
+        Each binary frame is a msgpack dict with the same fields as the HTTP
+        request (``code_str``, ``imports``, ``run_function_name``, ``inputs``).
+
+        Images arrive as raw JPEG ``bytes`` (no base64), keyed under
+        ``_jpeg_bytes`` inside image dicts.  The response is also msgpack.
+        """
+        import msgpack
+        from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+        from modal_ws_helpers import (
+            run_user_code_ws,
+            deserialize_msgpack_inputs,
+            serialize_msgpack_result,
+        )
+
+        ws_app = FastAPI()
+
+        executor_self = self
+
+        @ws_app.websocket("/ws")
+        async def ws_execute(websocket: WebSocket):
+            await websocket.accept()
+            try:
+                while True:
+                    raw = await websocket.receive_bytes()
+                    request = msgpack.unpackb(raw, raw=False)
+
+                    code_str = request.get("code_str", "")
+                    imports = request.get("imports", [])
+                    run_function_name = request.get("run_function_name", "")
+                    inputs_raw = request.get("inputs", {})
+
+                    inputs = deserialize_msgpack_inputs(inputs_raw)
+                    resp = run_user_code_ws(
+                        executor_self,
+                        code_str,
+                        imports,
+                        run_function_name,
+                        inputs,
+                    )
+
+                    if resp.get("success"):
+                        resp["result"] = serialize_msgpack_result(resp["result"])
+
+                    await websocket.send_bytes(msgpack.packb(resp, use_bin_type=True))
+            except WebSocketDisconnect:
+                pass
+
+        return ws_app

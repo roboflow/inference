@@ -4,15 +4,20 @@ Modal executor for Custom Python Blocks in Workflows using Web Endpoints.
 This module handles the execution of untrusted user code in Modal sandboxes
 using web endpoints for better security and no size limitations.
 
+Two transport modes are available, controlled by ``WEBEXEC_TRANSPORT``:
+
+* **http** (default) — JSON POST with gzip compression and persistent
+  ``requests.Session``.
+* **websocket** — persistent WebSocket connection with msgpack binary frames.
+  Eliminates per-request HTTP overhead and base64 image encoding.
+
 Performance notes
 -----------------
-- A persistent ``requests.Session`` is reused across frames to keep the
-  TCP+TLS connection alive (saves ~80-120 ms per frame).
-- Request bodies are gzip-compressed (level 1) to cut transfer size.
-  The webexec endpoint in ``modal/modal_app.py`` decompresses via
-  ``Request.body()`` + ``gzip.decompress()``.
-- Images are re-encoded at ``WEBEXEC_JPEG_QUALITY`` (default 75) to shrink
-  the base64 payload by ~60-70 % compared to quality 95.
+- A persistent ``requests.Session`` (http) or ``websocket`` (ws) connection
+  is reused across frames.
+- Images are re-encoded at ``WEBEXEC_JPEG_QUALITY`` (default 75).
+- In websocket mode, images are sent as raw JPEG bytes inside msgpack
+  (no base64), saving ~33 % payload size and CPU.
 """
 
 import base64
@@ -20,6 +25,7 @@ import gzip
 import hashlib
 import json
 import os
+import time as _time
 from typing import Any, Dict, Optional
 
 import numpy as np
@@ -463,3 +469,320 @@ def validate_syntax():
             public_message=f"Code validation failed: {str(e)}",
             context="modal_executor | code_validation",
         )
+
+
+# ======================================================================
+# WebSocket + msgpack transport (optional, enabled via WEBEXEC_TRANSPORT)
+# ======================================================================
+
+
+def _serialize_image_for_msgpack(image: Any) -> dict:
+    """Encode a WorkflowImageData as a dict with raw JPEG bytes (no base64)."""
+    from inference.core.env import WEBEXEC_JPEG_QUALITY
+    from inference.core.utils.image_utils import encode_image_to_jpeg_bytes
+    from inference.core.workflows.execution_engine.entities.base import ParentOrigin
+
+    jpeg_bytes: bytes = encode_image_to_jpeg_bytes(
+        image.numpy_image,
+        jpeg_quality=WEBEXEC_JPEG_QUALITY,
+    )
+
+    result: Dict[str, Any] = {
+        "_type": "workflow_image",
+        "_jpeg_bytes": jpeg_bytes,
+        "parent_id": image.parent_metadata.parent_id,
+    }
+    if image.video_metadata:
+        result["video_metadata"] = {
+            "_type": "video_metadata",
+            **image.video_metadata.dict(),
+        }
+
+    parent_metadata = image.parent_metadata
+    root_metadata = image.workflow_root_ancestor_metadata
+    if parent_metadata.parent_id != root_metadata.parent_id:
+        result["parent_origin"] = ParentOrigin.from_origin_coordinates_system(
+            parent_metadata.origin_coordinates
+        ).model_dump()
+        result["root_parent_id"] = root_metadata.parent_id
+        result["root_parent_origin"] = ParentOrigin.from_origin_coordinates_system(
+            root_metadata.origin_coordinates
+        ).model_dump()
+
+    return result
+
+
+def serialize_inputs_for_msgpack(inputs: Dict[str, Any]) -> Dict[str, Any]:
+    """Convert workflow inputs to a msgpack-friendly dict.
+
+    Images become ``{"_type": "workflow_image", "_jpeg_bytes": <bytes>, ...}``.
+    Detections and other tagged types keep their ``_type`` markers but remain
+    plain dicts/lists so msgpack can handle them.
+    """
+    import supervision as sv
+
+    from inference.core.workflows.core_steps.common.serializers import (
+        serialise_sv_detections,
+        serialize_video_metadata_kind,
+    )
+    from inference.core.workflows.execution_engine.entities.base import (
+        VideoMetadata,
+        WorkflowImageData,
+    )
+
+    def _pack(value: Any) -> Any:
+        if isinstance(value, sv.Detections):
+            d = serialise_sv_detections(detections=value)
+            d["_type"] = "sv_detections"
+            return d
+        if isinstance(value, WorkflowImageData):
+            return _serialize_image_for_msgpack(value)
+        if isinstance(value, VideoMetadata):
+            d = serialize_video_metadata_kind(value)
+            d["_type"] = "video_metadata"
+            return d
+        if isinstance(value, datetime):
+            return {"_type": "datetime", "value": value.isoformat()}
+        if isinstance(value, np.ndarray):
+            return {
+                "_type": "ndarray",
+                "value": value.tolist(),
+                "dtype": str(value.dtype),
+                "shape": list(value.shape),
+            }
+        if isinstance(value, bytes):
+            return value
+        if isinstance(value, dict):
+            return {k: _pack(v) for k, v in value.items()}
+        if isinstance(value, (list, tuple)):
+            return [_pack(v) for v in value]
+        return value
+
+    return {k: _pack(v) for k, v in inputs.items()}
+
+
+def _deserialize_msgpack_result(result: Any) -> Any:
+    """Inverse of ``_serialize_msgpack_result`` on the server side."""
+    if isinstance(result, dict):
+        _type = result.get("_type")
+        if _type == "datetime":
+            return datetime.fromisoformat(result["value"])
+        if _type == "ndarray":
+            return np.array(result["value"], dtype=result["dtype"]).reshape(
+                result["shape"]
+            )
+        return {k: _deserialize_msgpack_result(v) for k, v in result.items()}
+    if isinstance(result, list):
+        return [_deserialize_msgpack_result(v) for v in result]
+    return result
+
+
+class WebSocketModalExecutor:
+    """Executes Custom Python Blocks via a persistent WebSocket + msgpack.
+
+    Falls back to HTTP (``ModalExecutor``) if the WebSocket connection
+    cannot be established.
+    """
+
+    def __init__(self, workspace_id: Optional[str] = None):
+        self.workspace_id = workspace_id or MODAL_ANONYMOUS_WORKSPACE_NAME
+        self._ws: Any = None
+        self._ws_url: Optional[str] = None
+
+    def _get_ws_url(self) -> str:
+        if self._ws_url is not None:
+            return self._ws_url
+
+        env_url = os.environ.get("MODAL_WEB_ENDPOINT_URL", "")
+        if env_url:
+            base = env_url.rstrip("/")
+        else:
+            workspace = MODAL_WORKSPACE_NAME
+            label = "webexec-executor-wsapp"
+            if len(label) > 56:
+                h = hashlib.sha256(label.encode()).hexdigest()[:6]
+                label = f"{label[:56]}-{h}"
+            base = f"https://{workspace}--{label}.modal.run"
+
+        ws_base = base.replace("https://", "wss://").replace("http://", "ws://")
+        self._ws_url = f"{ws_base}/ws"
+        return self._ws_url
+
+    def _connect(self) -> None:
+        import websocket as ws_lib
+
+        url = self._get_ws_url()
+        headers = {
+            "Modal-Key": MODAL_TOKEN_ID,
+            "Modal-Secret": MODAL_TOKEN_SECRET,
+        }
+        logger.info("[webexec-ws] Connecting to %s", url)
+        self._ws = ws_lib.create_connection(
+            url,
+            header=[f"{k}: {v}" for k, v in headers.items()],
+            timeout=30,
+        )
+        logger.info("[webexec-ws] Connected")
+
+    def _ensure_connection(self) -> None:
+        if self._ws is not None:
+            try:
+                self._ws.ping()
+                return
+            except Exception:
+                logger.warning("[webexec-ws] Connection lost, reconnecting")
+                self._ws = None
+        self._connect()
+
+    def execute_remote(
+        self,
+        block_type_name: str,
+        python_code: PythonCode,
+        inputs: Dict[str, Any],
+        workspace_id: Optional[str] = None,
+    ) -> BlockResult:
+        if not MODAL_AVAILABLE:
+            raise DynamicBlockError(
+                public_message="Modal credentials not configured. Please set MODAL_TOKEN_ID and MODAL_TOKEN_SECRET environment variables.",
+                context="modal_executor | credentials_check",
+            )
+
+        workspace = workspace_id or self.workspace_id
+        if not workspace or workspace in (
+            "anonymous",
+            "unauthorized",
+            MODAL_ANONYMOUS_WORKSPACE_NAME,
+        ):
+            from inference.core.env import MODAL_ALLOW_ANONYMOUS_EXECUTION
+
+            if not MODAL_ALLOW_ANONYMOUS_EXECUTION:
+                raise DynamicBlockError(
+                    public_message="Modal validation requires an API key when anonymous execution is disabled.",
+                    context="modal_executor | validation_authentication",
+                )
+
+        try:
+            import msgpack
+        except ImportError:
+            raise DynamicBlockError(
+                public_message="WEBEXEC_TRANSPORT is set to 'websocket' but msgpack is not installed. "
+                "Install it with: pip install msgpack",
+                context="modal_executor | missing_dependency",
+            )
+
+        try:
+            import websocket as _ws_lib  # noqa: F401
+        except ImportError:
+            raise DynamicBlockError(
+                public_message="WEBEXEC_TRANSPORT is set to 'websocket' but websocket-client is not installed. "
+                "Install it with: pip install websocket-client",
+                context="modal_executor | missing_dependency",
+            )
+
+        return self._execute_ws(
+            block_type_name,
+            python_code,
+            inputs,
+            workspace,
+            msgpack,
+        )
+
+    def _execute_ws(
+        self,
+        block_type_name: str,
+        python_code: PythonCode,
+        inputs: Dict[str, Any],
+        workspace: str,
+        msgpack: Any,
+    ) -> BlockResult:
+        t0 = _time.monotonic()
+
+        packed_inputs = serialize_inputs_for_msgpack(inputs)
+        t_ser = _time.monotonic()
+
+        payload = {
+            "code_str": python_code.run_function_code,
+            "imports": python_code.imports or [],
+            "run_function_name": python_code.run_function_name,
+            "inputs": packed_inputs,
+        }
+        frame_bytes = msgpack.packb(payload, use_bin_type=True)
+        t_pack = _time.monotonic()
+
+        try:
+            self._ensure_connection()
+            self._ws.send_binary(frame_bytes)
+            resp_bytes = self._ws.recv()
+        except Exception:
+            self._ws = None
+            raise
+
+        t_rtt = _time.monotonic()
+
+        result = msgpack.unpackb(resp_bytes, raw=False)
+        t_done = _time.monotonic()
+
+        logger.info(
+            "[webexec-ws-timing] serialize=%.0fms pack=%.0fms rtt=%.0fms unpack=%.0fms total=%.0fms bytes=%d",
+            (t_ser - t0) * 1000,
+            (t_pack - t_ser) * 1000,
+            (t_rtt - t_pack) * 1000,
+            (t_done - t_rtt) * 1000,
+            (t_done - t0) * 1000,
+            len(frame_bytes),
+        )
+
+        if not result.get("success", False):
+            self._raise_code_error(result, block_type_name, python_code)
+
+        return _deserialize_msgpack_result(result.get("result", {}))
+
+    @staticmethod
+    def _raise_code_error(
+        result: dict,
+        block_type_name: str,
+        python_code: PythonCode,
+    ) -> None:
+        error_msg = result.get("error", "Unknown error")
+        error_type = result.get("error_type", "RuntimeError")
+        line_number = result.get("line_number")
+        function_name = result.get("function_name") or "run"
+        code = python_code.run_function_code
+
+        message = (
+            f"Error in line {line_number}, in {function_name}: {error_type}: {error_msg}"
+            if line_number
+            else f"{error_type}: {error_msg}"
+        )
+
+        code_snippet = None
+        traceback_str = None
+        if line_number and code:
+            snippet = extract_code_snippet(code, line_number)
+            code_snippet = snippet.lstrip("\n") if snippet else None
+            traceback_str = build_traceback_string(
+                code,
+                line_number,
+                function_name,
+                error_type,
+                error_msg,
+            )
+
+        raise DynamicBlockCodeError(
+            public_message=message,
+            block_type_name=block_type_name,
+            error_line=line_number,
+            code_snippet=code_snippet,
+            traceback_str=traceback_str,
+            stdout=result.get("stdout"),
+            stderr=result.get("stderr"),
+        )
+
+
+def get_modal_executor(workspace_id: Optional[str] = None) -> "ModalExecutor":
+    """Factory: returns the right executor based on ``WEBEXEC_TRANSPORT``."""
+    from inference.core.env import WEBEXEC_TRANSPORT
+
+    if WEBEXEC_TRANSPORT == "websocket":
+        return WebSocketModalExecutor(workspace_id)  # type: ignore[return-value]
+    return ModalExecutor(workspace_id)
