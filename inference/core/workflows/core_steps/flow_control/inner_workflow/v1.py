@@ -35,7 +35,7 @@ The block's `run()` method is not used at runtime; do not call it directly.
 class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
-            "name": "Use Sub-workflow",
+            "name": "Inner Workflow",
             "version": "v1",
             "short_description": SHORT_DESCRIPTION,
             "long_description": LONG_DESCRIPTION,
@@ -48,7 +48,7 @@ class BlockManifest(WorkflowBlockManifest):
             },
         }
     )
-    type: Literal["roboflow_core/use_subworkflow@v1"]
+    type: Literal["roboflow_core/inner_workflow@v1"]
     embedded_workflow: Optional[Dict[str, Any]] = Field(
         default=None,
         description=(
@@ -110,7 +110,7 @@ class BlockManifest(WorkflowBlockManifest):
         if has_inline or has_ref:
             return self
         raise ValueError(
-            "use_subworkflow requires a non-empty `embedded_workflow` object or both "
+            "inner_workflow requires a non-empty `embedded_workflow` object or both "
             "`embedded_workflow_workspace_id` and `embedded_workflow_id`."
         )
 
@@ -132,7 +132,7 @@ class BlockManifest(WorkflowBlockManifest):
         return ">=1.4.0,<2.0.0"
 
 
-class UseSubworkflowBlockV1(WorkflowBlock):
+class InnerWorkflowBlockV1(WorkflowBlock):
     """Placeholder block; execution engine runs inner workflows via InnerWorkflowRunner."""
 
     @classmethod
@@ -141,6 +141,6 @@ class UseSubworkflowBlockV1(WorkflowBlock):
 
     def run(self, *args, **kwargs) -> BlockResult:
         raise RuntimeError(
-            "use_subworkflow steps are executed by the execution engine via InnerWorkflowRunner; "
+            "inner_workflow steps are executed by the execution engine via InnerWorkflowRunner; "
             "block.run() must not be called."
         )

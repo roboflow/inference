@@ -185,7 +185,7 @@ def validate_parameter_bindings_against_child(
     if got != expected:
         raise WorkflowDefinitionError(
             public_message=(
-                f"use_subworkflow step `{step_name}` parameter_bindings keys {sorted(got)} "
+                f"inner_workflow step `{step_name}` parameter_bindings keys {sorted(got)} "
                 f"do not match embedded workflow inputs {sorted(expected)}."
             ),
             context="workflow_compilation | inner_workflow_parameter_bindings",
@@ -203,7 +203,7 @@ def resolve_inner_workflow_steps_in_parsed_definition(
     profiler: Any,
 ) -> ParsedWorkflowDefinition:
     """
-    For each ``use_subworkflow`` step, compile the embedded workflow (for cache + output kinds)
+    For each ``inner_workflow`` step, compile the embedded workflow (for cache + output kinds)
     and attach resolved_child_outputs on the manifest copy.
     """
     from inference.core.workflows.execution_engine.v1.compiler.entities import (
@@ -218,7 +218,7 @@ def resolve_inner_workflow_steps_in_parsed_definition(
         embedded = step.embedded_workflow
         if not isinstance(embedded, dict):
             raise WorkflowDefinitionError(
-                public_message=f"use_subworkflow step `{step.name}` requires embedded_workflow object.",
+                public_message=f"inner_workflow step `{step.name}` requires embedded_workflow object.",
                 context="workflow_compilation | inner_workflow_resolution",
             )
         child_result = compile_workflow_graph_fn(

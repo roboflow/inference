@@ -1,5 +1,5 @@
 """
-Execution-engine handling for ``roboflow_core/use_subworkflow@v1`` (inner workflow) steps.
+Execution-engine handling for ``roboflow_core/inner_workflow@v1`` steps.
 """
 
 from __future__ import annotations
@@ -44,7 +44,7 @@ def _child_runtime_parameters(
     bindings = assembled_step_parameters.get("parameter_bindings")
     if not isinstance(bindings, dict):
         raise RuntimeError(
-            "use_subworkflow expected parameter_bindings dict in assembled step parameters."
+            "inner_workflow expected parameter_bindings dict in assembled step parameters."
         )
     return dict(bindings)
 
@@ -140,7 +140,7 @@ def run_inner_workflow_simd(
     child = workflow.inner_workflows.get(step_name)
     if child is None:
         raise RuntimeError(
-            f"Missing inner workflow compilation for use_subworkflow step `{step_name}`."
+            f"Missing inner workflow compilation for inner_workflow step `{step_name}`."
         )
     runner = _pick_runner(workflow)
     parent_ctx = _parent_run_context(
@@ -212,7 +212,7 @@ def run_inner_workflow_non_simd(
     child = workflow.inner_workflows.get(step_name)
     if child is None:
         raise RuntimeError(
-            f"Missing inner workflow compilation for use_subworkflow step `{step_name}`."
+            f"Missing inner workflow compilation for inner_workflow step `{step_name}`."
         )
     runner = _pick_runner(workflow)
     parent_ctx = _parent_run_context(

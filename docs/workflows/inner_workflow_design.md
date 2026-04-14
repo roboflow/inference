@@ -1,6 +1,6 @@
 # Inner workflow composition (design)
 
-This document describes **nested / inner workflows** (`roboflow_core/use_subworkflow@v1` steps). It aligns
+This document describes **nested / inner workflows** (`roboflow_core/inner_workflow@v1` steps). It aligns
 implementation with the Workflows Execution Engine **v1** compiler and executor; nothing here is a
 user-facing product promise until the feature ships.
 
@@ -10,7 +10,7 @@ user-facing product promise until the feature ships.
 - Keep the **per-workflow step graph** a **DAG** (as today): an inner workflow is **one step** from the parent’s perspective.
 - Enforce **composition** rules at **compile time** where the child definition is known: **no cycles** in the
   meta-graph of “workflow A references workflow B”, and a bounded **nesting depth**.
-- Keep the **`use_subworkflow` block** a **declarative manifest** (selectors, ids, optional execution mode).
+- Keep the **`inner_workflow` block** a **declarative manifest** (selectors, ids, optional execution mode).
   **Blocks must not** depend on execution-engine internals (no `ExecutionEngine.init` inside the block).
 - Allow **multiple execution backends** later: **local** (in-process), **remote synchronous**, **remote fire-and-forget**,
   selected by engine policy and/or `init_parameters`, not by ad hoc code in the block.
@@ -65,7 +65,7 @@ version ids) when static, so cached graphs stay correct.
 
 Inner-workflow steps are **not** executed by block code that constructs an engine. Instead:
 
-- The **executor** (or a small **step handler**) recognizes the `use_subworkflow` step type.
+- The **executor** (or a small **step handler**) recognizes the `roboflow_core/inner_workflow@v1` step type.
 - It invokes an **`InnerWorkflowRunner`** implementation provided through **`init_parameters`** (e.g.
   `workflows_core.inner_workflow_runner`; legacy `workflows_core.subworkflow_runner` is still honored), with:
   - **`compiled_child`**: result of nested compilation (type `CompiledWorkflow`).
@@ -77,7 +77,7 @@ OSS ships **`LocalInnerWorkflowRunner`** wired to the internal executor path. **
 
 ## Block surface (minimal)
 
-The `use_subworkflow` block should expose only:
+The `inner_workflow` block should expose only:
 
 - Reference to the child (id/version and/or inline handle).
 - **Input bindings**: same mechanism as other blocks (manifest fields with selectors to parent inputs/steps).

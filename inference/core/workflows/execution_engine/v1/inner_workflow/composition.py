@@ -2,7 +2,7 @@
 Compile-time validation of workflow *composition* (which workflow references which).
 
 This is separate from the per-workflow execution DAG: the step graph must remain acyclic,
-while this module validates the *meta-graph* of nested workflow references (e.g. ``use_subworkflow``).
+while this module validates the *meta-graph* of nested workflow references (e.g. ``inner_workflow``).
 
 See docs/workflows/inner_workflow_design.md.
 """

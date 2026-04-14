@@ -1,4 +1,4 @@
-"""Tests for ``use_subworkflow`` reference resolution before compilation."""
+"""Tests for ``roboflow_core/inner_workflow@v1`` reference resolution before compilation."""
 
 from typing import Any, Dict, Optional
 

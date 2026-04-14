@@ -1,5 +1,5 @@
 """
-End-to-end tests for roboflow_core/use_subworkflow@v1 (nested workflow execution).
+End-to-end tests for roboflow_core/inner_workflow@v1 (nested workflow execution).
 """
 
 from typing import Any, Dict, Optional
@@ -102,7 +102,7 @@ def test_workflow_with_use_subworkflow_maps_parent_input_to_child_output(
         ],
         "steps": [
             {
-                "type": "roboflow_core/use_subworkflow@v1",
+                "type": "roboflow_core/inner_workflow@v1",
                 "name": "nested",
                 "embedded_workflow": embedded,
                 "parameter_bindings": {
@@ -155,7 +155,7 @@ def test_use_subworkflow_resolves_saved_workflow_by_id_via_custom_resolver(
         ],
         "steps": [
             {
-                "type": "roboflow_core/use_subworkflow@v1",
+                "type": "roboflow_core/inner_workflow@v1",
                 "name": "nested_by_ref",
                 "embedded_workflow_workspace_id": "stub-ws",
                 "embedded_workflow_id": "stub-id",
@@ -194,7 +194,7 @@ def test_use_subworkflow_resolves_saved_workflow_by_id_via_custom_resolver(
 def test_workflow_with_stacked_use_subworkflow_runs_at_depth_two(
     model_manager: ModelManager,
 ) -> None:
-    """Parent use_subworkflow wraps a child workflow that itself contains use_subworkflow."""
+    """Parent inner_workflow wraps a child workflow that itself contains inner_workflow."""
     inner = _echo_child_workflow()
     middle = {
         "version": "1.0",
@@ -207,7 +207,7 @@ def test_workflow_with_stacked_use_subworkflow_runs_at_depth_two(
         ],
         "steps": [
             {
-                "type": "roboflow_core/use_subworkflow@v1",
+                "type": "roboflow_core/inner_workflow@v1",
                 "name": "inner_nested",
                 "embedded_workflow": inner,
                 "parameter_bindings": {
@@ -234,7 +234,7 @@ def test_workflow_with_stacked_use_subworkflow_runs_at_depth_two(
         ],
         "steps": [
             {
-                "type": "roboflow_core/use_subworkflow@v1",
+                "type": "roboflow_core/inner_workflow@v1",
                 "name": "outer_nested",
                 "embedded_workflow": middle,
                 "parameter_bindings": {
@@ -280,7 +280,7 @@ def test_use_subworkflow_receives_parameter_from_upstream_parent_step(
                 "default": "unset",
             },
             {
-                "type": "roboflow_core/use_subworkflow@v1",
+                "type": "roboflow_core/inner_workflow@v1",
                 "name": "nested",
                 "embedded_workflow": embedded,
                 "parameter_bindings": {
@@ -325,7 +325,7 @@ def test_use_subworkflow_with_list_valued_workflow_parameter(
         ],
         "steps": [
             {
-                "type": "roboflow_core/use_subworkflow@v1",
+                "type": "roboflow_core/inner_workflow@v1",
                 "name": "nested",
                 "embedded_workflow": embedded,
                 "parameter_bindings": {
@@ -377,7 +377,7 @@ def test_use_subworkflow_with_batch_workflow_batch_input(
         ],
         "steps": [
             {
-                "type": "roboflow_core/use_subworkflow@v1",
+                "type": "roboflow_core/inner_workflow@v1",
                 "name": "nested",
                 "embedded_workflow": embedded,
                 "parameter_bindings": {
@@ -481,7 +481,7 @@ def test_use_subworkflow_child_runs_dynamic_crop_on_parent_detections(
                 "model_id": "yolov8n-640",
             },
             {
-                "type": "roboflow_core/use_subworkflow@v1",
+                "type": "roboflow_core/inner_workflow@v1",
                 "name": "nested",
                 "embedded_workflow": embedded,
                 "parameter_bindings": {
@@ -619,7 +619,7 @@ def test_use_subworkflow_parent_detection_offset_after_nested_crop(
                 "model_id": "yolov8n-640",
             },
             {
-                "type": "roboflow_core/use_subworkflow@v1",
+                "type": "roboflow_core/inner_workflow@v1",
                 "name": "nested",
                 "embedded_workflow": embedded,
                 "parameter_bindings": {
@@ -721,11 +721,11 @@ def test_use_subworkflow_after_continue_if_with_crop_batch_lineage(
 ) -> None:
     """
     Same crop-level batch and confidence gate as ``test_workflow_with_two_stage_models_and_flow_control``,
-    but the gated step is ``use_subworkflow`` echoing a value derived from ``crop_label``.
+    but the gated step is ``inner_workflow`` echoing a value derived from ``crop_label``.
 
     Object detection and classification are mocked so the test does not call Roboflow inference.
 
-    With a list-valued ``WorkflowParameter`` for ``crop_label``, SIMD ``use_subworkflow`` still passes the
+    With a list-valued ``WorkflowParameter`` for ``crop_label``, SIMD ``inner_workflow`` still passes the
     full list into each nested run; only the first crop passes ``continue_if``, so the nested echo runs
     once with that list while the second crop slot is ``None`` in the aggregated output.
     """
@@ -869,7 +869,7 @@ def test_use_subworkflow_after_continue_if_with_crop_batch_lineage(
                 "next_steps": ["$steps.nested_subworkflow"],
             },
             {
-                "type": "roboflow_core/use_subworkflow@v1",
+                "type": "roboflow_core/inner_workflow@v1",
                 "name": "nested_subworkflow",
                 "embedded_workflow": embedded,
                 "parameter_bindings": {
@@ -928,7 +928,7 @@ def test_use_subworkflow_after_continue_if_with_crop_batch_lineage(
 def test_parent_combines_outputs_from_two_parallel_use_subworkflows(
     model_manager: ModelManager,
 ) -> None:
-    """Two sibling ``use_subworkflow`` steps each map a parent input into the same child shape."""
+    """Two sibling ``inner_workflow`` steps each map a parent input into the same child shape."""
     embedded = _echo_child_workflow()
     workflow_definition = {
         "version": "1.0",
@@ -946,7 +946,7 @@ def test_parent_combines_outputs_from_two_parallel_use_subworkflows(
         ],
         "steps": [
             {
-                "type": "roboflow_core/use_subworkflow@v1",
+                "type": "roboflow_core/inner_workflow@v1",
                 "name": "branch_a",
                 "embedded_workflow": embedded,
                 "parameter_bindings": {
@@ -954,7 +954,7 @@ def test_parent_combines_outputs_from_two_parallel_use_subworkflows(
                 },
             },
             {
-                "type": "roboflow_core/use_subworkflow@v1",
+                "type": "roboflow_core/inner_workflow@v1",
                 "name": "branch_b",
                 "embedded_workflow": embedded,
                 "parameter_bindings": {

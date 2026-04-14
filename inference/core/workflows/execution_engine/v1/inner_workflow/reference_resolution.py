@@ -1,5 +1,5 @@
 """
-Resolve ``use_subworkflow`` steps that reference a saved workflow by id into inline
+Resolve ``roboflow_core/inner_workflow@v1`` steps that reference a saved workflow by id into inline
 ``embedded_workflow`` definitions before parsing / composition validation.
 """
 
@@ -35,7 +35,7 @@ def default_inner_workflow_spec_resolver(
     if workspace_id != "local" and not api_key:
         raise WorkflowDefinitionError(
             public_message=(
-                "Resolving a `use_subworkflow` step by workflow id requires a Roboflow API key. "
+                "Resolving an `inner_workflow` step by workflow id requires a Roboflow API key. "
                 "Set `workflows_core.api_key` in workflow init_parameters, inject "
                 "`workflows_core.inner_workflow_spec_resolver`, or use "
                 '`embedded_workflow_workspace_id` `"local"` with a matching on-disk workflow '
@@ -83,7 +83,7 @@ def _inner_workflow_step_has_nonempty_embedded(step: Dict[str, Any]) -> bool:
 def workflow_definition_contains_unresolved_inner_workflow_reference(
     workflow_definition: Dict[str, Any],
 ) -> bool:
-    """True if any ``use_subworkflow`` step (at any depth) still needs reference resolution."""
+    """True if any ``inner_workflow`` step (at any depth) still needs reference resolution."""
 
     def visit(wf: Dict[str, Any]) -> bool:
         for step in wf.get("steps", []) or []:
@@ -134,7 +134,7 @@ def _normalize_inner_workflow_refs_in_workflow_dict(
             step_name = step.get("name", "<unknown>")
             raise WorkflowDefinitionError(
                 public_message=(
-                    f"use_subworkflow step `{step_name}` must not set both `embedded_workflow` "
+                    f"inner_workflow step `{step_name}` must not set both `embedded_workflow` "
                     f"and reference fields (`embedded_workflow_workspace_id` / "
                     f"`embedded_workflow_id`)."
                 ),
@@ -166,7 +166,7 @@ def _normalize_inner_workflow_refs_in_workflow_dict(
             step_name = step.get("name", "<unknown>")
             raise WorkflowDefinitionError(
                 public_message=(
-                    f"use_subworkflow step `{step_name}` requires a non-empty "
+                    f"inner_workflow step `{step_name}` requires a non-empty "
                     f"`embedded_workflow` object or reference fields "
                     f"`embedded_workflow_workspace_id` and `embedded_workflow_id`."
                 ),
@@ -185,7 +185,7 @@ def normalize_inner_workflow_references_in_definition(
     init_parameters: Dict[str, Any],
 ) -> Dict[str, Any]:
     """
-    Return a workflow definition suitable for parsing: all ``use_subworkflow`` reference fields
+    Return a workflow definition suitable for parsing: all ``inner_workflow`` reference fields
     are resolved to inline ``embedded_workflow`` (recursively). The input dict is never mutated.
     """
     if not workflow_definition_contains_unresolved_inner_workflow_reference(
