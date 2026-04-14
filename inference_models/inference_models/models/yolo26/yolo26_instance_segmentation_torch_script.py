@@ -34,6 +34,7 @@ from inference_models.models.common.roboflow.pre_processing import (
     pre_process_network_input,
 )
 from inference_models.models.common.torch import generate_batch_chunks
+from inference_models.weights_providers.entities import RecommendedParameters
 
 
 class YOLO26ForInstanceSegmentationTorchScript(
@@ -47,6 +48,7 @@ class YOLO26ForInstanceSegmentationTorchScript(
         cls,
         model_name_or_path: str,
         device: torch.device = DEFAULT_DEVICE,
+        recommended_parameters: Optional[RecommendedParameters] = None,
         **kwargs,
     ) -> "YOLO26ForInstanceSegmentationTorchScript":
         model_package_content = get_model_package_contents(
@@ -93,7 +95,7 @@ class YOLO26ForInstanceSegmentationTorchScript(
             class_names=class_names,
             inference_config=inference_config,
             device=device,
-            recommended_parameters=kwargs.get("recommended_parameters"),
+            recommended_parameters=recommended_parameters,
         )
 
     def __init__(

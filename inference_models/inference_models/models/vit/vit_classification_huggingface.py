@@ -218,6 +218,7 @@ class VITForMultiLabelClassificationHF(
         model_name_or_path: str,
         default_onnx_trt_options: bool = True,
         device: torch.device = DEFAULT_DEVICE,
+        recommended_parameters: Optional[RecommendedParameters] = None,
         **kwargs,
     ) -> "VITForMultiLabelClassificationHF":
         model_package_content = get_model_package_contents(
@@ -293,7 +294,7 @@ class VITForMultiLabelClassificationHF(
             inference_config=inference_config,
             class_names=class_names,
             device=device,
-            recommended_parameters=kwargs.get("recommended_parameters"),
+            recommended_parameters=recommended_parameters,
         )
 
     def __init__(

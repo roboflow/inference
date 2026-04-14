@@ -60,6 +60,7 @@ from inference_models.models.rfdetr.rfdetr_base_pytorch import (
     RFDETRSegXLargeConfig,
     build_model,
 )
+from inference_models.weights_providers.entities import RecommendedParameters
 
 try:
     torch.set_float32_matmul_precision("high")
@@ -95,6 +96,7 @@ class RFDetrForInstanceSegmentationTorch(
         labels: Optional[Union[str, List[str]]] = None,
         resolution: Optional[int] = None,
         rf_detr_max_input_resolution: Optional[Union[int, Tuple[int, int]]] = None,
+        recommended_parameters: Optional[RecommendedParameters] = None,
         **kwargs,
     ) -> "RFDetrForInstanceSegmentationTorch":
         if os.path.isfile(model_name_or_path):
@@ -177,7 +179,7 @@ class RFDetrForInstanceSegmentationTorch(
             inference_config=inference_config,
             post_processor=post_processor,
             resolution=model_config.resolution,
-            recommended_parameters=kwargs.get("recommended_parameters"),
+            recommended_parameters=recommended_parameters,
         )
 
     @classmethod

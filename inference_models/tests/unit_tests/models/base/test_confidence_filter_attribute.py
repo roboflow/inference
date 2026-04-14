@@ -5,7 +5,7 @@ and store it as an instance attribute (defaulting to None). The auto-loader
 passes the value at construction time; ABCs do NOT declare the attribute.
 """
 
-from typing import List
+from typing import List, Optional
 
 import pytest
 
@@ -32,8 +32,13 @@ class _StubOD(ObjectDetectionModel):
         self.recommended_parameters = recommended_parameters
 
     @classmethod
-    def from_pretrained(cls, model_name_or_path, **kwargs):
-        return cls(recommended_parameters=kwargs.get("recommended_parameters"))
+    def from_pretrained(
+        cls,
+        model_name_or_path,
+        recommended_parameters: Optional[RecommendedParameters] = None,
+        **kwargs,
+    ):
+        return cls(recommended_parameters=recommended_parameters)
 
     @property
     def class_names(self) -> List[str]:
@@ -54,8 +59,13 @@ class _StubIS(InstanceSegmentationModel):
         self.recommended_parameters = recommended_parameters
 
     @classmethod
-    def from_pretrained(cls, model_name_or_path, **kwargs):
-        return cls(recommended_parameters=kwargs.get("recommended_parameters"))
+    def from_pretrained(
+        cls,
+        model_name_or_path,
+        recommended_parameters: Optional[RecommendedParameters] = None,
+        **kwargs,
+    ):
+        return cls(recommended_parameters=recommended_parameters)
 
     @property
     def class_names(self) -> List[str]:
@@ -76,8 +86,13 @@ class _StubKP(KeyPointsDetectionModel):
         self.recommended_parameters = recommended_parameters
 
     @classmethod
-    def from_pretrained(cls, model_name_or_path, **kwargs):
-        return cls(recommended_parameters=kwargs.get("recommended_parameters"))
+    def from_pretrained(
+        cls,
+        model_name_or_path,
+        recommended_parameters: Optional[RecommendedParameters] = None,
+        **kwargs,
+    ):
+        return cls(recommended_parameters=recommended_parameters)
 
     @property
     def class_names(self) -> List[str]:
@@ -106,8 +121,13 @@ class _StubML(MultiLabelClassificationModel):
         self.recommended_parameters = recommended_parameters
 
     @classmethod
-    def from_pretrained(cls, model_name_or_path, **kwargs):
-        return cls(recommended_parameters=kwargs.get("recommended_parameters"))
+    def from_pretrained(
+        cls,
+        model_name_or_path,
+        recommended_parameters: Optional[RecommendedParameters] = None,
+        **kwargs,
+    ):
+        return cls(recommended_parameters=recommended_parameters)
 
     @property
     def class_names(self) -> List[str]:
@@ -128,8 +148,13 @@ class _StubSS(SemanticSegmentationModel):
         self.recommended_parameters = recommended_parameters
 
     @classmethod
-    def from_pretrained(cls, model_name_or_path, **kwargs):
-        return cls(recommended_parameters=kwargs.get("recommended_parameters"))
+    def from_pretrained(
+        cls,
+        model_name_or_path,
+        recommended_parameters: Optional[RecommendedParameters] = None,
+        **kwargs,
+    ):
+        return cls(recommended_parameters=recommended_parameters)
 
     @property
     def class_names(self) -> List[str]:
