@@ -397,6 +397,190 @@ from datetime import datetime
     # Transport 2: WebSocket + msgpack binary frames (opt-in)
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _run_user_code_ws(
+        executor: Any,
+        code_str: str,
+        imports: list,
+        run_function_name: str,
+        inputs: dict,
+    ) -> Dict[str, Any]:
+        """Execute user code for the WebSocket transport."""
+        code_hash = executor._get_code_hash(code_str, imports)
+
+        if code_hash not in executor._code_namespaces:
+            executor._code_namespaces[code_hash] = {
+                "__name__": "__main__",
+                "globals": executor._shared_globals,
+            }
+            import_code = "\n".join(imports) if imports else ""
+            full_imports = f"""
+from typing import Any, List, Dict, Set, Optional
+import supervision as sv
+import numpy as np
+import math
+import time
+import json
+import os
+import requests
+import cv2
+import shapely
+from inference.core.workflows.execution_engine.entities.base import Batch, WorkflowImageData
+from inference.core.workflows.prototypes.block import BlockResult
+
+{import_code}
+
+from datetime import datetime
+"""
+            try:
+                exec(full_imports, executor._code_namespaces[code_hash])
+                exec(code_str, executor._code_namespaces[code_hash])
+            except Exception as e:
+                del executor._code_namespaces[code_hash]
+                return {
+                    "success": False,
+                    "error": f"Code initialization failed: {str(e)}",
+                    "error_type": type(e).__name__,
+                }
+
+        namespace = executor._code_namespaces[code_hash]
+
+        if run_function_name not in namespace:
+            return {
+                "success": False,
+                "error": f"Function '{run_function_name}' not found in code",
+                "error_type": "NameError",
+            }
+
+        user_function = namespace[run_function_name]
+        sig = inspect.signature(user_function)
+        params = list(sig.parameters.keys())
+
+        try:
+            with capture_output() as (stdout_buf, stderr_buf):
+                if params and params[0] == "self":
+
+                    class BlockSelf:
+                        pass
+
+                    block_self = BlockSelf()
+                    result = user_function(block_self, **inputs)
+                else:
+                    result = user_function(**inputs)
+
+            return {"success": True, "result": result}
+        except Exception as e:
+            resp: Dict[str, Any] = {
+                "success": False,
+                "error": str(e),
+                "error_type": type(e).__name__,
+                "stdout": stdout_buf.getvalue() or None,
+                "stderr": stderr_buf.getvalue() or None,
+            }
+            tb = traceback.extract_tb(e.__traceback__)
+            if tb:
+                frame = tb[-1]
+                resp["line_number"] = frame.lineno
+                resp["function_name"] = frame.name
+            return resp
+
+    @staticmethod
+    def _deserialize_msgpack_inputs(inputs_raw: dict) -> dict:
+        """Convert msgpack-decoded input dict into Python objects."""
+        import cv2
+        import numpy as np
+
+        from inference.core.workflows.core_steps.common.deserializers import (
+            deserialize_detections_kind,
+            deserialize_image_kind,
+            deserialize_video_metadata_kind,
+        )
+
+        def _decode(obj):
+            if isinstance(obj, dict):
+                _type = obj.get("_type")
+
+                if _type == "workflow_image" and "_jpeg_bytes" in obj:
+                    jpeg = obj["_jpeg_bytes"]
+                    arr = np.frombuffer(jpeg, dtype=np.uint8)
+                    numpy_image = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+                    from inference.core.workflows.execution_engine.entities.base import (
+                        ImageParentMetadata,
+                        WorkflowImageData,
+                    )
+
+                    video_metadata = None
+                    if obj.get("video_metadata"):
+                        video_metadata = _decode(obj["video_metadata"])
+
+                    parent_id = obj.get("parent_id", "webexec")
+                    return WorkflowImageData(
+                        parent_metadata=ImageParentMetadata(parent_id=parent_id),
+                        numpy_image=numpy_image,
+                        video_metadata=video_metadata,
+                    )
+
+                if _type == "sv_detections":
+                    decoded = {k: _decode(v) for k, v in obj.items() if k != "_type"}
+                    return deserialize_detections_kind("input", decoded)
+                if _type == "video_metadata":
+                    decoded = {k: _decode(v) for k, v in obj.items() if k != "_type"}
+                    return deserialize_video_metadata_kind("input", decoded)
+                if _type == "workflow_image":
+                    decoded = {k: _decode(v) for k, v in obj.items() if k != "_type"}
+                    return deserialize_image_kind("input", decoded)
+                if _type == "datetime":
+                    from datetime import datetime
+
+                    return datetime.fromisoformat(obj["value"])
+                if _type == "ndarray":
+                    return np.array(obj["value"], dtype=obj["dtype"]).reshape(
+                        obj["shape"]
+                    )
+                if _type == "bytes":
+                    return (
+                        base64.b64decode(obj["value"])
+                        if isinstance(obj["value"], str)
+                        else obj["value"]
+                    )
+
+                return {k: _decode(v) for k, v in obj.items()}
+            if isinstance(obj, list):
+                return [_decode(v) for v in obj]
+            return obj
+
+        return {k: _decode(v) for k, v in inputs_raw.items()}
+
+    @staticmethod
+    def _serialize_msgpack_result(result: Any) -> Any:
+        """Serialize a user-code return value for msgpack transport."""
+        import numpy as np
+        from datetime import datetime
+
+        def _encode(obj):
+            if obj is None or isinstance(obj, (bool, int, float, str, bytes)):
+                return obj
+            if isinstance(obj, datetime):
+                return {"_type": "datetime", "value": obj.isoformat()}
+            if isinstance(obj, np.ndarray):
+                return {
+                    "_type": "ndarray",
+                    "value": obj.tolist(),
+                    "dtype": str(obj.dtype),
+                    "shape": list(obj.shape),
+                }
+            if isinstance(obj, np.integer):
+                return int(obj)
+            if isinstance(obj, np.floating):
+                return float(obj)
+            if isinstance(obj, dict):
+                return {k: _encode(v) for k, v in obj.items()}
+            if isinstance(obj, (list, tuple)):
+                return [_encode(v) for v in obj]
+            return str(obj)
+
+        return _encode(result)
+
     @modal.asgi_app()
     def wsapp(self):
         """Expose a FastAPI sub-application with a WebSocket route.
@@ -409,11 +593,6 @@ from datetime import datetime
         """
         import msgpack
         from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-        from modal_ws_helpers import (
-            run_user_code_ws,
-            deserialize_msgpack_inputs,
-            serialize_msgpack_result,
-        )
 
         ws_app = FastAPI()
 
@@ -432,8 +611,8 @@ from datetime import datetime
                     run_function_name = request.get("run_function_name", "")
                     inputs_raw = request.get("inputs", {})
 
-                    inputs = deserialize_msgpack_inputs(inputs_raw)
-                    resp = run_user_code_ws(
+                    inputs = Executor._deserialize_msgpack_inputs(inputs_raw)
+                    resp = Executor._run_user_code_ws(
                         executor_self,
                         code_str,
                         imports,
@@ -442,7 +621,9 @@ from datetime import datetime
                     )
 
                     if resp.get("success"):
-                        resp["result"] = serialize_msgpack_result(resp["result"])
+                        resp["result"] = Executor._serialize_msgpack_result(
+                            resp["result"]
+                        )
 
                     await websocket.send_bytes(msgpack.packb(resp, use_bin_type=True))
             except WebSocketDisconnect:
