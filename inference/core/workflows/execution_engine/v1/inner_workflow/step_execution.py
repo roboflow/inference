@@ -28,7 +28,6 @@ from inference.core.workflows.execution_engine.v1.inner_workflow.runner import (
 )
 
 _INNER_WORKFLOW_RUNNER_KEY = "workflows_core.inner_workflow_runner"
-_LEGACY_SUBWORKFLOW_RUNNER_KEY = "workflows_core.subworkflow_runner"
 
 
 def is_inner_workflow_step(workflow: CompiledWorkflow, step_name: str) -> bool:
@@ -51,8 +50,6 @@ def _child_runtime_parameters(
 
 def _pick_runner(workflow: CompiledWorkflow) -> InnerWorkflowRunner:
     runner = workflow.init_parameters.get(_INNER_WORKFLOW_RUNNER_KEY)
-    if runner is None:
-        runner = workflow.init_parameters.get(_LEGACY_SUBWORKFLOW_RUNNER_KEY)
     if runner is None:
         return LocalInnerWorkflowRunner()
     return runner

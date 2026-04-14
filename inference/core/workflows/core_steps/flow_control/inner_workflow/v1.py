@@ -25,8 +25,7 @@ Reference fields are expanded at compile time via `workflows_core.inner_workflow
 `"local"`).
 
 Compilation validates composition (acyclicity, max depth) and child input names; execution uses a
-pluggable `InnerWorkflowRunner` (see `workflows_core.inner_workflow_runner`; legacy:
-`workflows_core.subworkflow_runner`).
+pluggable `InnerWorkflowRunner` (see `workflows_core.inner_workflow_runner`).
 
 The block's `run()` method is not used at runtime; do not call it directly.
 """

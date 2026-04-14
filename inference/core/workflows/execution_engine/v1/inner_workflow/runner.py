@@ -2,8 +2,7 @@
 Pluggable execution backends for nested (inner) workflows.
 
 The execution engine dispatches ``roboflow_core/inner_workflow@v1`` steps to an InnerWorkflowRunner
-(see ``workflows_core.inner_workflow_runner`` init parameter; legacy ``workflows_core.subworkflow_runner``
-is still read as a fallback).
+(see ``workflows_core.inner_workflow_runner`` init parameter).
 """
 
 from __future__ import annotations

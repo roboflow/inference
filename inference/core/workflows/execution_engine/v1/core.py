@@ -75,10 +75,7 @@ class ExecutionEngineV1(BaseExecutionEngine):
 
         if profiler is None:
             profiler = NullWorkflowsProfiler.init()
-        if (
-            "workflows_core.inner_workflow_runner" not in init_parameters
-            and "workflows_core.subworkflow_runner" not in init_parameters
-        ):
+        if "workflows_core.inner_workflow_runner" not in init_parameters:
             from inference.core.workflows.execution_engine.v1.inner_workflow.runner import (
                 LocalInnerWorkflowRunner,
             )

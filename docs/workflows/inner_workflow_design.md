@@ -35,7 +35,7 @@ compile-time error when all members are statically resolved.
 
 **Nesting depth** (from a **root** workflow under compilation): length of the longest path of containment edges
 starting at that root. A configurable **`max_nesting_depth`** rejects overly deep trees (env:
-`WORKFLOWS_MAX_INNER_WORKFLOW_DEPTH`, with legacy fallback `WORKFLOWS_MAX_SUBWORKFLOW_DEPTH`).
+`WORKFLOWS_MAX_INNER_WORKFLOW_DEPTH`).
 
 ### Selector depth (parent JSON)
 
@@ -67,7 +67,7 @@ Inner-workflow steps are **not** executed by block code that constructs an engin
 
 - The **executor** (or a small **step handler**) recognizes the `roboflow_core/inner_workflow@v1` step type.
 - It invokes an **`InnerWorkflowRunner`** implementation provided through **`init_parameters`** (e.g.
-  `workflows_core.inner_workflow_runner`; legacy `workflows_core.subworkflow_runner` is still honored), with:
+  `workflows_core.inner_workflow_runner`), with:
   - **`compiled_child`**: result of nested compilation (type `CompiledWorkflow`).
   - **`runtime_parameters`**: built from the same input assembly rules as other steps (mapped from parent lineage).
   - **`InnerWorkflowExecutionMode`**: `local` | `remote_sync` | `remote_async` (manifest preference + policy).
