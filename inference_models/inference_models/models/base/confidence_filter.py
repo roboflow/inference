@@ -13,6 +13,7 @@ from typing import Dict, List, Optional, Tuple
 import torch
 
 from inference_models.configuration import INFERENCE_MODELS_DEFAULT_CONFIDENCE
+from inference_models.logger import LOGGER
 from inference_models.weights_providers.entities import RecommendedParameters
 
 
@@ -49,6 +50,10 @@ class ConfidenceFilter:
             self._floor = user_confidence
             self._per_class: Optional[Dict[str, float]] = None
             self._fallback = user_confidence
+            LOGGER.debug(
+                "ConfidenceFilter: tier 1 (user override), floor=%.4f, fallback=%.4f, per_class=%s",
+                self._floor, self._fallback, self._per_class,
+            )
             return
 
         global_optimal = (
@@ -75,6 +80,10 @@ class ConfidenceFilter:
             # Floor must be ≤ every threshold any class might use, so the
             # model doesn't NMS-drop boxes we'd accept after refinement.
             self._floor = min(min(per_class.values()), self._fallback)
+            LOGGER.debug(
+                "ConfidenceFilter: tier 2 (per-class), floor=%.4f, fallback=%.4f, per_class=%s",
+                self._floor, self._fallback, self._per_class,
+            )
             return
 
         # Tier 3: only global optimal.
@@ -82,12 +91,20 @@ class ConfidenceFilter:
             self._floor = global_optimal
             self._per_class = None
             self._fallback = global_optimal
+            LOGGER.debug(
+                "ConfidenceFilter: tier 3 (global optimal), floor=%.4f, fallback=%.4f, per_class=%s",
+                self._floor, self._fallback, self._per_class,
+            )
             return
 
         # Tier 4: hardcoded default.
         self._floor = INFERENCE_MODELS_DEFAULT_CONFIDENCE
         self._per_class = None
         self._fallback = INFERENCE_MODELS_DEFAULT_CONFIDENCE
+        LOGGER.debug(
+            "ConfidenceFilter: tier 4 (hardcoded default), floor=%.4f, fallback=%.4f, per_class=%s",
+            self._floor, self._fallback, self._per_class,
+        )
 
     @property
     def floor(self) -> float:
