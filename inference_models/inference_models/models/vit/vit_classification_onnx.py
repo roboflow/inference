@@ -36,7 +36,7 @@ from inference_models.models.common.roboflow.model_packages import (
 from inference_models.models.common.roboflow.pre_processing import (
     pre_process_network_input,
 )
-from inference_models.models.base.confidence_filter import ConfidenceFilter
+from inference_models.models.common.roboflow.post_processing import ConfidenceFilter
 from inference_models.utils.onnx_introspection import (
     get_selected_onnx_execution_providers,
 )
@@ -343,7 +343,11 @@ class VITForMultiLabelClassificationOnnx(
         confidence: float = INFERENCE_MODELS_VIT_CLASSIFIER_DEFAULT_CONFIDENCE,
         **kwargs,
     ) -> List[MultiLabelClassificationPrediction]:
-        confidence_filter = ConfidenceFilter(confidence, self.recommended_parameters)
+        confidence_filter = ConfidenceFilter(
+            confidence,
+            self.recommended_parameters,
+            INFERENCE_MODELS_VIT_CLASSIFIER_DEFAULT_CONFIDENCE,
+        )
         confidence = confidence_filter.floor
         if self._inference_config.post_processing.fused:
             model_results = model_results
@@ -354,12 +358,13 @@ class VITForMultiLabelClassificationOnnx(
             predicted_classes = torch.argwhere(
                 batch_element_confidence >= confidence
             ).squeeze(dim=-1)
-            results.append(
-                MultiLabelClassificationPrediction(
-                    class_ids=predicted_classes,
-                    confidence=batch_element_confidence,
-                )
+            prediction = MultiLabelClassificationPrediction(
+                class_ids=predicted_classes,
+                confidence=batch_element_confidence,
             )
-        if confidence_filter.has_per_class_refinement:
-            results = confidence_filter.filter_multilabel_predictions(results, self.class_names)
+            if confidence_filter.has_per_class_refinement:
+                prediction = confidence_filter.refine_multilabel_prediction(
+                    prediction, self.class_names
+                )
+            results.append(prediction)
         return results

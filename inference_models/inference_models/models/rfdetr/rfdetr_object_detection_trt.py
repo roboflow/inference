@@ -30,6 +30,7 @@ from inference_models.models.common.roboflow.model_packages import (
     parse_trt_config,
 )
 from inference_models.models.common.roboflow.post_processing import (
+    ConfidenceFilter,
     rescale_image_detections,
 )
 from inference_models.models.common.trt import (
@@ -44,7 +45,6 @@ from inference_models.models.rfdetr.class_remapping import (
     prepare_class_remapping,
 )
 from inference_models.models.rfdetr.pre_processing import pre_process_network_input
-from inference_models.models.base.confidence_filter import ConfidenceFilter
 from inference_models.weights_providers.entities import RecommendedParameters
 
 try:
@@ -268,7 +268,11 @@ class RFDetrForObjectDetectionTRT(
         confidence: float = INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE,
         **kwargs,
     ) -> List[Detections]:
-        confidence_filter = ConfidenceFilter(confidence, self.recommended_parameters)
+        confidence_filter = ConfidenceFilter(
+            confidence,
+            self.recommended_parameters,
+            INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE,
+        )
         confidence = confidence_filter.floor
         with torch.cuda.stream(self._post_process_stream):
             for result_element in model_results:
@@ -325,10 +329,12 @@ class RFDetrForObjectDetectionTRT(
                     confidence=predicted_confidence,
                     class_id=top_classes.int(),
                 )
+                if confidence_filter.has_per_class_refinement:
+                    detections = confidence_filter.refine_detections(
+                        detections, self.class_names
+                    )
                 results.append(detections)
         self._post_process_stream.synchronize()
-        if confidence_filter.has_per_class_refinement:
-            results = confidence_filter.filter_detections(results, self.class_names)
         return results
 
     @property

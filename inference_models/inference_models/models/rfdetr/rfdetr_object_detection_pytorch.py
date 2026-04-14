@@ -41,7 +41,7 @@ from inference_models.models.rfdetr.common import parse_model_type
 from inference_models.models.rfdetr.default_labels import resolve_labels
 from inference_models.models.rfdetr.post_processor import PostProcess
 from inference_models.models.rfdetr.pre_processing import pre_process_network_input
-from inference_models.models.base.confidence_filter import ConfidenceFilter
+from inference_models.models.common.roboflow.post_processing import ConfidenceFilter
 from inference_models.models.rfdetr.rfdetr_base_pytorch import (
     LWDETR,
     RFDETR2XLargeConfig,
@@ -416,7 +416,11 @@ class RFDetrForObjectDetectionTorch(
         confidence: float = INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE,
         **kwargs,
     ) -> List[Detections]:
-        confidence_filter = ConfidenceFilter(confidence, self.recommended_parameters)
+        confidence_filter = ConfidenceFilter(
+            confidence,
+            self.recommended_parameters,
+            INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE,
+        )
         confidence = confidence_filter.floor
         if (
             self._inference_config.network_input.resize_mode
@@ -525,7 +529,9 @@ class RFDetrForObjectDetectionTorch(
                 confidence=scores,
                 class_id=labels.int(),
             )
+            if confidence_filter.has_per_class_refinement:
+                detections = confidence_filter.refine_detections(
+                    detections, self.class_names
+                )
             detections_list.append(detections)
-        if confidence_filter.has_per_class_refinement:
-            detections_list = confidence_filter.filter_detections(detections_list, self.class_names)
         return detections_list

@@ -23,8 +23,8 @@ from inference_models.models.common.roboflow.model_packages import (
     parse_class_names_file,
     parse_inference_config,
 )
-from inference_models.models.base.confidence_filter import ConfidenceFilter
 from inference_models.models.common.roboflow.post_processing import (
+    ConfidenceFilter,
     post_process_nms_fused_model_output,
     rescale_detections,
     run_nms_for_object_detection,
@@ -165,7 +165,11 @@ class YOLOv8ForObjectDetectionTorchScript(
         class_agnostic_nms: bool = INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_CLASS_AGNOSTIC_NMS,
         **kwargs,
     ) -> List[Detections]:
-        confidence_filter = ConfidenceFilter(confidence, self.recommended_parameters)
+        confidence_filter = ConfidenceFilter(
+            confidence,
+            self.recommended_parameters,
+            INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_CONFIDENCE,
+        )
         confidence = confidence_filter.floor
         if self._inference_config.post_processing.fused:
             nms_results = post_process_nms_fused_model_output(
@@ -185,13 +189,14 @@ class YOLOv8ForObjectDetectionTorchScript(
         )
         results = []
         for result in rescaled_results:
-            results.append(
-                Detections(
-                    xyxy=result[:, :4].round().int(),
-                    class_id=result[:, 5].int(),
-                    confidence=result[:, 4],
-                )
+            detections = Detections(
+                xyxy=result[:, :4].round().int(),
+                class_id=result[:, 5].int(),
+                confidence=result[:, 4],
             )
-        if confidence_filter.has_per_class_refinement:
-            results = confidence_filter.filter_detections(results, self.class_names)
+            if confidence_filter.has_per_class_refinement:
+                detections = confidence_filter.refine_detections(
+                    detections, self.class_names
+                )
+            results.append(detections)
         return results

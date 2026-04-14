@@ -30,8 +30,8 @@ from inference_models.models.common.roboflow.model_packages import (
     parse_class_names_file,
     parse_inference_config,
 )
-from inference_models.models.base.confidence_filter import ConfidenceFilter
 from inference_models.models.common.roboflow.post_processing import (
+    ConfidenceFilter,
     align_instance_segmentation_results,
     crop_masks_to_boxes,
     post_process_nms_fused_model_output,
@@ -202,7 +202,11 @@ class YOLO26ForInstanceSegmentationOnnx(
         confidence: float = INFERENCE_MODELS_YOLO26_DEFAULT_CONFIDENCE,
         **kwargs,
     ) -> List[InstanceDetections]:
-        confidence_filter = ConfidenceFilter(confidence, self.recommended_parameters)
+        confidence_filter = ConfidenceFilter(
+            confidence,
+            self.recommended_parameters,
+            INFERENCE_MODELS_YOLO26_DEFAULT_CONFIDENCE,
+        )
         confidence = confidence_filter.floor
         instances, protos = model_results
         filtered_results = post_process_nms_fused_model_output(
@@ -236,14 +240,15 @@ class YOLO26ForInstanceSegmentationOnnx(
                 inference_size=image_meta.inference_size,
                 static_crop_offset=image_meta.static_crop_offset,
             )
-            final_results.append(
-                InstanceDetections(
-                    xyxy=aligned_boxes[:, :4].round().int(),
-                    class_id=aligned_boxes[:, 5].int(),
-                    confidence=aligned_boxes[:, 4],
-                    mask=aligned_masks,
-                )
+            instance_detections = InstanceDetections(
+                xyxy=aligned_boxes[:, :4].round().int(),
+                class_id=aligned_boxes[:, 5].int(),
+                confidence=aligned_boxes[:, 4],
+                mask=aligned_masks,
             )
-        if confidence_filter.has_per_class_refinement:
-            final_results = confidence_filter.filter_instance_detections(final_results, self.class_names)
+            if confidence_filter.has_per_class_refinement:
+                instance_detections = confidence_filter.refine_instance_detections(
+                    instance_detections, self.class_names
+                )
+            final_results.append(instance_detections)
         return final_results

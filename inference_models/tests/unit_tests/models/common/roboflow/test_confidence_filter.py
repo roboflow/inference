@@ -5,12 +5,10 @@ Tests for ConfidenceFilter — built once per inference call from
 wrappers use during postprocess.
 """
 
-from unittest import mock
-
 import torch
 
 from inference_models.configuration import INFERENCE_MODELS_DEFAULT_CONFIDENCE
-from inference_models.models.base.confidence_filter import ConfidenceFilter
+from inference_models.models.common.roboflow.post_processing import ConfidenceFilter
 from inference_models.weights_providers.entities import RecommendedParameters
 
 
@@ -29,6 +27,7 @@ class TestTier1UserOverride:
             recommended_parameters=_rd(
                 confidence=0.42, per_class={"cat": 0.6, "dog": 0.3}
             ),
+            default_confidence=INFERENCE_MODELS_DEFAULT_CONFIDENCE,
         )
 
         assert cf.floor == 0.7
@@ -44,12 +43,17 @@ class TestTier1UserOverride:
         cf = ConfidenceFilter(
             user_confidence=0.0,
             recommended_parameters=_rd(confidence=0.42, per_class={"cat": 0.6}),
+            default_confidence=INFERENCE_MODELS_DEFAULT_CONFIDENCE,
         )
 
         assert cf.floor == 0.0
 
     def test_user_value_honored_when_no_recommended_parameters(self) -> None:
-        cf = ConfidenceFilter(user_confidence=0.6, recommended_parameters=None)
+        cf = ConfidenceFilter(
+            user_confidence=0.6,
+            recommended_parameters=None,
+            default_confidence=INFERENCE_MODELS_DEFAULT_CONFIDENCE,
+        )
 
         assert cf.floor == 0.6
         assert cf.passes("any-class", 0.6) is True
@@ -64,6 +68,7 @@ class TestTier2PerClass:
             recommended_parameters=_rd(
                 confidence=0.5, per_class={"cat": 0.6, "dog": 0.4}
             ),
+            default_confidence=INFERENCE_MODELS_DEFAULT_CONFIDENCE,
         )
 
         assert cf.floor == 0.4
@@ -75,6 +80,7 @@ class TestTier2PerClass:
             recommended_parameters=_rd(
                 confidence=0.5, per_class={"cat": 0.6, "dog": 0.4}
             ),
+            default_confidence=INFERENCE_MODELS_DEFAULT_CONFIDENCE,
         )
 
         assert cf.passes("cat", 0.6) is True
@@ -90,6 +96,7 @@ class TestTier2PerClass:
             recommended_parameters=_rd(
                 confidence=0.5, per_class={"cat": 0.6, "dog": 0.4}
             ),
+            default_confidence=INFERENCE_MODELS_DEFAULT_CONFIDENCE,
         )
 
         assert cf.passes("fish", 0.5) is True
@@ -100,6 +107,7 @@ class TestTier2PerClass:
         cf = ConfidenceFilter(
             user_confidence=None,
             recommended_parameters=_rd(per_class={"cat": 0.6}),
+            default_confidence=INFERENCE_MODELS_DEFAULT_CONFIDENCE,
         )
 
         assert cf.floor == min(0.6, INFERENCE_MODELS_DEFAULT_CONFIDENCE)
@@ -112,7 +120,9 @@ class TestTier2PerClass:
 class TestTier3GlobalOnly:
     def test_global_optimal_used_when_no_per_class(self) -> None:
         cf = ConfidenceFilter(
-            user_confidence=None, recommended_parameters=_rd(confidence=0.42)
+            user_confidence=None,
+            recommended_parameters=_rd(confidence=0.42),
+            default_confidence=INFERENCE_MODELS_DEFAULT_CONFIDENCE,
         )
 
         assert cf.floor == 0.42
@@ -124,6 +134,7 @@ class TestTier3GlobalOnly:
         cf = ConfidenceFilter(
             user_confidence=None,
             recommended_parameters=_rd(confidence=0.42, per_class={}),
+            default_confidence=INFERENCE_MODELS_DEFAULT_CONFIDENCE,
         )
 
         assert cf.floor == 0.42
@@ -132,35 +143,64 @@ class TestTier3GlobalOnly:
 
 class TestTier4HardcodedDefault:
     def test_default_used_when_no_recommended_parameters(self) -> None:
-        cf = ConfidenceFilter(user_confidence=None, recommended_parameters=None)
+        cf = ConfidenceFilter(
+            user_confidence=None,
+            recommended_parameters=None,
+            default_confidence=INFERENCE_MODELS_DEFAULT_CONFIDENCE,
+        )
 
         assert cf.floor == INFERENCE_MODELS_DEFAULT_CONFIDENCE
 
     def test_default_used_when_recommended_parameters_is_all_none(self) -> None:
         # Explicit RecommendedParameters with no fields set → still tier 4.
         cf = ConfidenceFilter(
-            user_confidence=None, recommended_parameters=RecommendedParameters()
+            user_confidence=None,
+            recommended_parameters=RecommendedParameters(),
+            default_confidence=INFERENCE_MODELS_DEFAULT_CONFIDENCE,
         )
 
         assert cf.floor == INFERENCE_MODELS_DEFAULT_CONFIDENCE
 
     def test_default_constructor_is_no_op(self) -> None:
-        # No args at all → tier 4. Used as a quick "no filter" stand-in.
-        cf = ConfidenceFilter()
+        # No recommended_parameters or user value → tier 4. Used as a quick
+        # "no filter" stand-in.
+        cf = ConfidenceFilter(
+            user_confidence=None,
+            recommended_parameters=None,
+            default_confidence=INFERENCE_MODELS_DEFAULT_CONFIDENCE,
+        )
 
         assert cf.floor == INFERENCE_MODELS_DEFAULT_CONFIDENCE
         assert cf.has_per_class_refinement is False
 
-    @mock.patch(
-        "inference_models.models.base.confidence_filter.INFERENCE_MODELS_DEFAULT_CONFIDENCE",
-        0.123,
-    )
-    def test_fallback_reads_current_value_of_default_constant(self) -> None:
-        # Env-var overrides at startup change the constant — the filter must
-        # read it at call time, not bake it in at import.
-        cf = ConfidenceFilter(user_confidence=None, recommended_parameters=None)
+    def test_custom_default_confidence_used_as_tier_4_floor(self) -> None:
+        # When no user value and no recommended_parameters, the model-specific
+        # default_confidence arg controls the tier-4 floor.
+        cf = ConfidenceFilter(
+            user_confidence=None,
+            recommended_parameters=None,
+            default_confidence=0.25,  # e.g., YOLO26's default
+        )
+        assert cf.floor == 0.25
+        assert cf.passes("any-class", 0.25) is True
 
-        assert cf.floor == 0.123
+    def test_different_default_confidence_values_produce_different_floors(self) -> None:
+        # Passing different default_confidence values produces different floor
+        # values — this replaces the old mock.patch-based test, since the
+        # constant is no longer read inside ConfidenceFilter.
+        cf_low = ConfidenceFilter(
+            user_confidence=None,
+            recommended_parameters=None,
+            default_confidence=0.1,
+        )
+        cf_high = ConfidenceFilter(
+            user_confidence=None,
+            recommended_parameters=None,
+            default_confidence=0.9,
+        )
+
+        assert cf_low.floor == 0.1
+        assert cf_high.floor == 0.9
 
 
 class TestInteractions:
@@ -169,6 +209,7 @@ class TestInteractions:
         cf = ConfidenceFilter(
             user_confidence=None,
             recommended_parameters=_rd(confidence=0.5, per_class={"cat": 0.9}),
+            default_confidence=INFERENCE_MODELS_DEFAULT_CONFIDENCE,
         )
 
         assert cf.passes("cat", 0.7) is False
@@ -181,6 +222,7 @@ class TestInteractions:
         cf = ConfidenceFilter(
             user_confidence=None,
             recommended_parameters=_rd(confidence=0.5, per_class=per_class),
+            default_confidence=INFERENCE_MODELS_DEFAULT_CONFIDENCE,
         )
 
         per_class["cat"] = 0.9
@@ -207,6 +249,7 @@ class TestPerClassThresholds:
             recommended_parameters=_rd(
                 confidence=0.5, per_class={"cat": 0.6, "dog": 0.4}
             ),
+            default_confidence=INFERENCE_MODELS_DEFAULT_CONFIDENCE,
         )
 
         result = cf.per_class_thresholds(["cat", "dog", "fish"])
@@ -218,7 +261,11 @@ class TestPerClassThresholds:
         # All non-refinement tiers (1, 3, 4) collapse to the same shape:
         # the floor repeated for every class. Caller can use the same
         # indexed lookup pattern regardless of tier.
-        cf = ConfidenceFilter()
+        cf = ConfidenceFilter(
+            user_confidence=None,
+            recommended_parameters=None,
+            default_confidence=INFERENCE_MODELS_DEFAULT_CONFIDENCE,
+        )
 
         result = cf.per_class_thresholds(["cat", "dog"])
 
@@ -231,7 +278,9 @@ class TestBuildKeepMask:
 
     def test_returns_all_true_when_no_per_class_refinement(self) -> None:
         cf = ConfidenceFilter(
-            user_confidence=None, recommended_parameters=_rd(confidence=0.5)
+            user_confidence=None,
+            recommended_parameters=_rd(confidence=0.5),
+            default_confidence=INFERENCE_MODELS_DEFAULT_CONFIDENCE,
         )
 
         mask = cf.build_keep_mask(
@@ -246,6 +295,7 @@ class TestBuildKeepMask:
         cf = ConfidenceFilter(
             user_confidence=None,
             recommended_parameters=_rd(per_class={"cat": 0.6, "dog": 0.4}),
+            default_confidence=INFERENCE_MODELS_DEFAULT_CONFIDENCE,
         )
 
         mask = cf.build_keep_mask(
@@ -263,6 +313,7 @@ class TestBuildKeepMask:
         cf = ConfidenceFilter(
             user_confidence=None,
             recommended_parameters=_rd(confidence=0.5, per_class={"cat": 0.9}),
+            default_confidence=INFERENCE_MODELS_DEFAULT_CONFIDENCE,
         )
 
         mask = cf.build_keep_mask(

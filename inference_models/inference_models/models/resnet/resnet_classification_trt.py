@@ -39,7 +39,7 @@ from inference_models.models.common.roboflow.model_packages import (
 from inference_models.models.common.roboflow.pre_processing import (
     pre_process_network_input,
 )
-from inference_models.models.base.confidence_filter import ConfidenceFilter
+from inference_models.models.common.roboflow.post_processing import ConfidenceFilter
 from inference_models.weights_providers.entities import RecommendedParameters
 from inference_models.models.common.trt import (
     TRTCudaGraphCache,
@@ -455,7 +455,11 @@ class ResNetForMultiLabelClassificationTRT(
         confidence: float = INFERENCE_MODELS_RESNET_DEFAULT_CONFIDENCE,
         **kwargs,
     ) -> List[MultiLabelClassificationPrediction]:
-        confidence_filter = ConfidenceFilter(confidence, self.recommended_parameters)
+        confidence_filter = ConfidenceFilter(
+            confidence,
+            self.recommended_parameters,
+            INFERENCE_MODELS_RESNET_DEFAULT_CONFIDENCE,
+        )
         confidence = confidence_filter.floor
         with torch.cuda.stream(self._post_process_stream):
             model_results.record_stream(self._post_process_stream)
@@ -468,15 +472,16 @@ class ResNetForMultiLabelClassificationTRT(
                 predicted_classes = torch.argwhere(
                     batch_element_confidence >= confidence
                 ).squeeze(dim=-1)
-                results.append(
-                    MultiLabelClassificationPrediction(
-                        class_ids=predicted_classes,
-                        confidence=batch_element_confidence,
-                    )
+                prediction = MultiLabelClassificationPrediction(
+                    class_ids=predicted_classes,
+                    confidence=batch_element_confidence,
                 )
+                if confidence_filter.has_per_class_refinement:
+                    prediction = confidence_filter.refine_multilabel_prediction(
+                        prediction, self.class_names
+                    )
+                results.append(prediction)
         self._post_process_stream.synchronize()
-        if confidence_filter.has_per_class_refinement:
-            results = confidence_filter.filter_multilabel_predictions(results, self.class_names)
         return results
 
     @property
