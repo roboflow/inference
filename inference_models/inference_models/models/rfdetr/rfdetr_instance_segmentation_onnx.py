@@ -38,7 +38,7 @@ from inference_models.models.rfdetr.common import (
     post_process_instance_segmentation_results,
 )
 from inference_models.models.rfdetr.pre_processing import pre_process_network_input
-from inference_models.models.base.confidence_filter import ConfidenceFilter
+from inference_models.models.common.roboflow.post_processing import ConfidenceFilter
 from inference_models.utils.onnx_introspection import (
     get_selected_onnx_execution_providers,
 )
@@ -220,7 +220,11 @@ class RFDetrForInstanceSegmentationOnnx(
         confidence: float = INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE,
         **kwargs,
     ) -> List[InstanceDetections]:
-        confidence_filter = ConfidenceFilter(confidence, self.recommended_parameters)
+        confidence_filter = ConfidenceFilter(
+            confidence,
+            self.recommended_parameters,
+            INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE,
+        )
         confidence = confidence_filter.floor
         bboxes, logits, masks = model_results
         results = post_process_instance_segmentation_results(
@@ -232,5 +236,8 @@ class RFDetrForInstanceSegmentationOnnx(
             classes_re_mapping=self._classes_re_mapping,
         )
         if confidence_filter.has_per_class_refinement:
-            results = confidence_filter.filter_instance_detections(results, self.class_names)
+            results = [
+                confidence_filter.refine_instance_detections(r, self.class_names)
+                for r in results
+            ]
         return results

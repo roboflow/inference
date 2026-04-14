@@ -24,7 +24,7 @@ from inference_models.models.common.roboflow.model_packages import (
     parse_class_names_file,
     parse_inference_config,
 )
-from inference_models.models.base.confidence_filter import ConfidenceFilter
+from inference_models.models.common.roboflow.post_processing import ConfidenceFilter
 from inference_models.weights_providers.entities import RecommendedParameters
 from inference_models.models.common.roboflow.pre_processing import (
     pre_process_network_input,
@@ -168,7 +168,11 @@ class DeepLabV3PlusForSemanticSegmentationTorch(
         confidence: float = INFERENCE_MODELS_DEEP_LAB_V3_PLUS_DEFAULT_CONFIDENCE,
         **kwargs,
     ) -> List[SemanticSegmentationResult]:
-        confidence_filter = ConfidenceFilter(confidence, self.recommended_parameters)
+        confidence_filter = ConfidenceFilter(
+            confidence,
+            self.recommended_parameters,
+            INFERENCE_MODELS_DEEP_LAB_V3_PLUS_DEFAULT_CONFIDENCE,
+        )
         confidence = confidence_filter.floor
         results = []
         for image_results, image_metadata in zip(model_results, pre_processing_meta):
@@ -272,14 +276,13 @@ class DeepLabV3PlusForSemanticSegmentationTorch(
                 ] = image_class_ids
                 image_class_ids = original_size_confidence_class_id_canvas
                 image_confidence = original_size_confidence_canvas
-            results.append(
-                SemanticSegmentationResult(
-                    segmentation_map=image_class_ids,
-                    confidence=image_confidence,
+            result = SemanticSegmentationResult(
+                segmentation_map=image_class_ids,
+                confidence=image_confidence,
+            )
+            if confidence_filter.has_per_class_refinement:
+                result = confidence_filter.refine_segmentation_result(
+                    result, self.class_names, self._background_class_id
                 )
-            )
-        if confidence_filter.has_per_class_refinement:
-            results = confidence_filter.filter_segmentation_results(
-                results, self.class_names, self._background_class_id
-            )
+            results.append(result)
         return results

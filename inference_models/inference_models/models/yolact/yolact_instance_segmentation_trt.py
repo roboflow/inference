@@ -39,13 +39,13 @@ from inference_models.models.common.roboflow.model_packages import (
     parse_trt_config,
 )
 from inference_models.models.common.roboflow.post_processing import (
+    ConfidenceFilter,
     align_instance_segmentation_results,
     crop_masks_to_boxes,
 )
 from inference_models.models.common.roboflow.pre_processing import (
     pre_process_network_input,
 )
-from inference_models.models.base.confidence_filter import ConfidenceFilter
 from inference_models.models.common.trt import (
     TRTCudaGraphCache,
     establish_trt_cuda_graph_cache,
@@ -287,7 +287,11 @@ class YOLOACTForInstanceSegmentationTRT(
         class_agnostic_nms: bool = INFERENCE_MODELS_YOLACT_DEFAULT_CLASS_AGNOSTIC_NMS,
         **kwargs,
     ) -> List[InstanceDetections]:
-        confidence_filter = ConfidenceFilter(confidence, self.recommended_parameters)
+        confidence_filter = ConfidenceFilter(
+            confidence,
+            self.recommended_parameters,
+            INFERENCE_MODELS_YOLACT_DEFAULT_CONFIDENCE,
+        )
         confidence = confidence_filter.floor
         with torch.cuda.stream(self._post_process_stream):
             for result_element in model_results:
@@ -363,17 +367,20 @@ class YOLOACTForInstanceSegmentationTRT(
                     static_crop_offset=image_meta.static_crop_offset,
                     binarization_threshold=0.5,
                 )
-                final_results.append(
-                    InstanceDetections(
-                        xyxy=aligned_boxes[:, :4].round().int(),
-                        class_id=aligned_boxes[:, 5].int(),
-                        confidence=aligned_boxes[:, 4],
-                        mask=aligned_masks,
-                    )
+                instance_detections = InstanceDetections(
+                    xyxy=aligned_boxes[:, :4].round().int(),
+                    class_id=aligned_boxes[:, 5].int(),
+                    confidence=aligned_boxes[:, 4],
+                    mask=aligned_masks,
                 )
+                if confidence_filter.has_per_class_refinement:
+                    instance_detections = (
+                        confidence_filter.refine_instance_detections(
+                            instance_detections, self.class_names
+                        )
+                    )
+                final_results.append(instance_detections)
         self._post_process_stream.synchronize()
-        if confidence_filter.has_per_class_refinement:
-            final_results = confidence_filter.filter_instance_detections(final_results, self.class_names)
         return final_results
 
     @property

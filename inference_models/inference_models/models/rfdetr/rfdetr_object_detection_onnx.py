@@ -27,6 +27,7 @@ from inference_models.models.common.roboflow.model_packages import (
     parse_inference_config,
 )
 from inference_models.models.common.roboflow.post_processing import (
+    ConfidenceFilter,
     rescale_image_detections,
 )
 from inference_models.models.rfdetr.class_remapping import (
@@ -34,7 +35,6 @@ from inference_models.models.rfdetr.class_remapping import (
     prepare_class_remapping,
 )
 from inference_models.models.rfdetr.pre_processing import pre_process_network_input
-from inference_models.models.base.confidence_filter import ConfidenceFilter
 from inference_models.utils.onnx_introspection import (
     get_selected_onnx_execution_providers,
 )
@@ -214,7 +214,11 @@ class RFDetrForObjectDetectionONNX(
         confidence: float = INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE,
         **kwargs,
     ) -> List[Detections]:
-        confidence_filter = ConfidenceFilter(confidence, self.recommended_parameters)
+        confidence_filter = ConfidenceFilter(
+            confidence,
+            self.recommended_parameters,
+            INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE,
+        )
         confidence = confidence_filter.floor
         bboxes, logits = model_results
         logits_sigmoid = torch.nn.functional.sigmoid(logits)
@@ -268,7 +272,9 @@ class RFDetrForObjectDetectionONNX(
                 confidence=predicted_confidence,
                 class_id=top_classes.int(),
             )
+            if confidence_filter.has_per_class_refinement:
+                detections = confidence_filter.refine_detections(
+                    detections, self.class_names
+                )
             results.append(detections)
-        if confidence_filter.has_per_class_refinement:
-            results = confidence_filter.filter_detections(results, self.class_names)
         return results

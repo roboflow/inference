@@ -35,7 +35,8 @@ from inference_models.models.base.semantic_segmentation import (
     SemanticSegmentationModel,
     SemanticSegmentationResult,
 )
-from inference_models.models.base.confidence_filter import ConfidenceFilter
+from inference_models.configuration import INFERENCE_MODELS_DEFAULT_CONFIDENCE
+from inference_models.models.common.roboflow.post_processing import ConfidenceFilter
 from inference_models.weights_providers.entities import RecommendedParameters
 
 
@@ -65,12 +66,17 @@ class _RecordingObjectDetectionModel(ObjectDetectionModel):
 
     def post_process(self, model_results, pre_processing_meta, **kwargs):
         confidence_filter = ConfidenceFilter(
-            kwargs.get("confidence"), self.recommended_parameters
+            kwargs.get("confidence"),
+            self.recommended_parameters,
+            default_confidence=INFERENCE_MODELS_DEFAULT_CONFIDENCE,
         )
         self.captured_confidence = confidence_filter.floor
         result = [self._stub_output]
         if confidence_filter.has_per_class_refinement:
-            result = confidence_filter.filter_detections(result, self.class_names)
+            result = [
+                confidence_filter.refine_detections(r, self.class_names)
+                for r in result
+            ]
         return result
 
 
@@ -96,14 +102,17 @@ class _RecordingInstanceSegmentationModel(InstanceSegmentationModel):
 
     def post_process(self, model_results, pre_processing_meta, **kwargs):
         confidence_filter = ConfidenceFilter(
-            kwargs.get("confidence"), self.recommended_parameters
+            kwargs.get("confidence"),
+            self.recommended_parameters,
+            default_confidence=INFERENCE_MODELS_DEFAULT_CONFIDENCE,
         )
         self.captured_confidence = confidence_filter.floor
         result = [self._stub_output]
         if confidence_filter.has_per_class_refinement:
-            result = confidence_filter.filter_instance_detections(
-                    result, self.class_names
-                )
+            result = [
+                confidence_filter.refine_instance_detections(r, self.class_names)
+                for r in result
+            ]
         return result
 
 
@@ -137,14 +146,21 @@ class _RecordingKeypointsDetectionModel(KeyPointsDetectionModel):
 
     def post_process(self, model_results, pre_processing_meta, **kwargs):
         confidence_filter = ConfidenceFilter(
-            kwargs.get("confidence"), self.recommended_parameters
+            kwargs.get("confidence"),
+            self.recommended_parameters,
+            default_confidence=INFERENCE_MODELS_DEFAULT_CONFIDENCE,
         )
         self.captured_confidence = confidence_filter.floor
         kp_list, det_list = self._stub_output
         if confidence_filter.has_per_class_refinement and det_list:
-            kp_list, det_list = confidence_filter.filter_keypoints_and_detections(
-                    kp_list, det_list, self.class_names
+            refined = [
+                confidence_filter.refine_keypoints_and_detections(
+                    kp, det, self.class_names
                 )
+                for kp, det in zip(kp_list, det_list)
+            ]
+            kp_list = [r[0] for r in refined]
+            det_list = [r[1] for r in refined]
         return kp_list, det_list
 
 
@@ -170,14 +186,17 @@ class _RecordingMultiLabelClassificationModel(MultiLabelClassificationModel):
 
     def post_process(self, model_results, **kwargs):
         confidence_filter = ConfidenceFilter(
-            kwargs.get("confidence"), self.recommended_parameters
+            kwargs.get("confidence"),
+            self.recommended_parameters,
+            default_confidence=INFERENCE_MODELS_DEFAULT_CONFIDENCE,
         )
         self.captured_confidence = confidence_filter.floor
         result = self._stub_output
         if confidence_filter.has_per_class_refinement:
-            result = confidence_filter.filter_multilabel_predictions(
-                    result, self.class_names
-                )
+            result = [
+                confidence_filter.refine_multilabel_prediction(p, self.class_names)
+                for p in result
+            ]
         return result
 
 
@@ -206,14 +225,19 @@ class _RecordingSemanticSegmentationModel(SemanticSegmentationModel):
 
     def post_process(self, model_results, pre_processing_meta, **kwargs):
         confidence_filter = ConfidenceFilter(
-            kwargs.get("confidence"), self.recommended_parameters
+            kwargs.get("confidence"),
+            self.recommended_parameters,
+            default_confidence=INFERENCE_MODELS_DEFAULT_CONFIDENCE,
         )
         self.captured_confidence = confidence_filter.floor
         result = [self._stub_output]
         if confidence_filter.has_per_class_refinement:
-            result = confidence_filter.filter_segmentation_results(
-                    result, self.class_names, self._background_class_id
+            result = [
+                confidence_filter.refine_segmentation_result(
+                    r, self.class_names, self._background_class_id
                 )
+                for r in result
+            ]
         return result
 
 

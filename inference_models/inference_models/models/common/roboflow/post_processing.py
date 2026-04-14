@@ -1,14 +1,25 @@
-from typing import List, Literal, Tuple
+from typing import Dict, List, Literal, Optional, Tuple
 
 import torch
 import torchvision
 from torchvision.transforms import functional
 
 from inference_models.entities import ImageDimensions
+from inference_models.logger import LOGGER
+from inference_models.models.base.classification import (
+    MultiLabelClassificationPrediction,
+)
+from inference_models.models.base.instance_segmentation import InstanceDetections
+from inference_models.models.base.keypoints_detection import KeyPoints
+from inference_models.models.base.object_detection import Detections
+from inference_models.models.base.semantic_segmentation import (
+    SemanticSegmentationResult,
+)
 from inference_models.models.common.roboflow.model_packages import (
     PreProcessingMetadata,
     StaticCropOffset,
 )
+from inference_models.weights_providers.entities import RecommendedParameters
 
 
 def run_nms_for_object_detection(
@@ -434,3 +445,282 @@ def align_instance_segmentation_results(
         image_bboxes[:, :4].add_(static_crop_offsets)
         masks = mask_canvas
     return image_bboxes, masks
+
+
+class ConfidenceFilter:
+    """
+    Resolves the 4-tier priority chain (highest to lowest) for confidence
+    thresholding, honoring per-model defaults and model-eval-derived
+    `recommendedParameters`:
+
+      1. Explicit user value — single global threshold for everything
+      2. Per-class optimal — per-class filter with the global optimal (or
+         model's hardcoded default) as fallback for classes not in the map
+      3. Global optimal — single threshold for everything
+      4. Model's hardcoded default — single threshold for everything
+
+    Exposes:
+      - `floor`: the lowest threshold to give the underlying model so its NMS
+        doesn't drop boxes we still want to consider for per-class refinement.
+      - `passes(class_name, confidence)`: per-detection refinement check.
+      - `build_keep_mask(class_ids, confidences, class_names)`: vectorized
+        mask for parallel-array detection shapes (OD/IS/KP).
+      - `per_class_thresholds(class_names)`: lookup table for shapes that
+        index by class_id (e.g. semantic segmentation per-pixel).
+      - `has_per_class_refinement`: short-circuit hint when there's nothing
+        to refine on top of the floor.
+      - `refine_*(...)`: per-image refinement methods to call inline inside
+        each concrete model's existing per-image loop.
+    """
+
+    def __init__(
+        self,
+        user_confidence: Optional[float],
+        recommended_parameters: Optional[RecommendedParameters],
+        default_confidence: float,
+    ):
+        # Tier 1: explicit user value wins outright. No per-class refinement
+        # needed because the floor IS the final threshold.
+        if user_confidence is not None:
+            self._floor = user_confidence
+            self._per_class: Optional[Dict[str, float]] = None
+            self._fallback = user_confidence
+            LOGGER.debug(
+                "ConfidenceFilter: tier 1 (user override), floor=%.4f, fallback=%.4f, per_class=%s",
+                self._floor, self._fallback, self._per_class,
+            )
+            return
+
+        global_optimal = (
+            recommended_parameters.confidence
+            if recommended_parameters is not None
+            else None
+        )
+        per_class = (
+            recommended_parameters.per_class_confidence
+            if recommended_parameters is not None
+            else None
+        )
+
+        # Tier 2: per-class data present.
+        if per_class:
+            # Classes outside the per-class map fall back to the global
+            # optimal, or the model's default if no global was set.
+            self._fallback = (
+                global_optimal
+                if global_optimal is not None
+                else default_confidence
+            )
+            self._per_class = dict(per_class)
+            # Floor must be ≤ every threshold any class might use, so the
+            # model doesn't NMS-drop boxes we'd accept after refinement.
+            self._floor = min(min(per_class.values()), self._fallback)
+            LOGGER.debug(
+                "ConfidenceFilter: tier 2 (per-class), floor=%.4f, fallback=%.4f, per_class=%s",
+                self._floor, self._fallback, self._per_class,
+            )
+            return
+
+        # Tier 3: only global optimal.
+        if global_optimal is not None:
+            self._floor = global_optimal
+            self._per_class = None
+            self._fallback = global_optimal
+            LOGGER.debug(
+                "ConfidenceFilter: tier 3 (global optimal), floor=%.4f, fallback=%.4f, per_class=%s",
+                self._floor, self._fallback, self._per_class,
+            )
+            return
+
+        # Tier 4: model's default.
+        self._floor = default_confidence
+        self._per_class = None
+        self._fallback = default_confidence
+        LOGGER.debug(
+            "ConfidenceFilter: tier 4 (model default), floor=%.4f, fallback=%.4f, per_class=%s",
+            self._floor, self._fallback, self._per_class,
+        )
+
+    @property
+    def floor(self) -> float:
+        return self._floor
+
+    @property
+    def has_per_class_refinement(self) -> bool:
+        """True iff `passes` / `build_keep_mask` may return a non-trivial
+        result. Concrete models should short-circuit the per-image refine
+        call when this is False."""
+        return self._per_class is not None
+
+    def passes(self, class_name: str, confidence: float) -> bool:
+        """Per-detection refinement check. Returns True for tiers without
+        per-class data because the model already filtered at the floor."""
+        if not self.has_per_class_refinement:
+            return True
+        return confidence >= self._per_class.get(class_name, self._fallback)
+
+    def build_keep_mask(
+        self,
+        class_ids: torch.Tensor,
+        confidences: torch.Tensor,
+        class_names: List[str],
+    ) -> torch.Tensor:
+        """Per-detection mask for the OD/IS/KP shape where `class_ids` and
+        `confidences` are parallel arrays. Caller is responsible for short-
+        circuiting via `has_per_class_refinement` when applicable; this method
+        also handles the no-refinement case (returns all-True)."""
+        n = len(class_ids)
+        if not self.has_per_class_refinement:
+            return torch.ones(n, dtype=torch.bool)
+
+        keep = torch.zeros(n, dtype=torch.bool)
+        cid_list = class_ids.tolist()
+        conf_list = confidences.tolist()
+        for i, (cid, conf) in enumerate(zip(cid_list, conf_list)):
+            name = (
+                class_names[cid] if 0 <= cid < len(class_names) else str(cid)
+            )
+            if self.passes(name, conf):
+                keep[i] = True
+        return keep
+
+    def per_class_thresholds(self, class_names: List[str]) -> List[float]:
+        """Per-class thresholds aligned to `class_names`, for shapes that
+        index by class_id (e.g. semantic segmentation per-pixel). For tiers
+        without per-class data, every entry is the floor."""
+        if not self.has_per_class_refinement:
+            return [self._floor] * len(class_names)
+        return [
+            self._per_class.get(name, self._fallback) for name in class_names
+        ]
+
+    # ------------------------------------------------------------------
+    # Per-image refinement. Concrete models call these inside their
+    # existing per-image loop when has_per_class_refinement is True.
+    # ------------------------------------------------------------------
+
+    def refine_detections(
+        self, detections: Detections, class_names: List[str]
+    ) -> Detections:
+        keep = self.build_keep_mask(
+            detections.class_id, detections.confidence, class_names
+        )
+        if bool(keep.all()):
+            return detections
+        bboxes_metadata = detections.bboxes_metadata
+        if bboxes_metadata is not None:
+            keep_indices = keep.nonzero(as_tuple=True)[0].tolist()
+            bboxes_metadata = [bboxes_metadata[i] for i in keep_indices]
+        return Detections(
+            xyxy=detections.xyxy[keep],
+            class_id=detections.class_id[keep],
+            confidence=detections.confidence[keep],
+            image_metadata=detections.image_metadata,
+            bboxes_metadata=bboxes_metadata,
+        )
+
+    def refine_instance_detections(
+        self, detections: InstanceDetections, class_names: List[str]
+    ) -> InstanceDetections:
+        keep = self.build_keep_mask(
+            detections.class_id, detections.confidence, class_names
+        )
+        if bool(keep.all()):
+            return detections
+        bboxes_metadata = detections.bboxes_metadata
+        if bboxes_metadata is not None:
+            keep_indices = keep.nonzero(as_tuple=True)[0].tolist()
+            bboxes_metadata = [bboxes_metadata[i] for i in keep_indices]
+        return InstanceDetections(
+            xyxy=detections.xyxy[keep],
+            class_id=detections.class_id[keep],
+            confidence=detections.confidence[keep],
+            mask=detections.mask[keep],
+            image_metadata=detections.image_metadata,
+            bboxes_metadata=bboxes_metadata,
+        )
+
+    def refine_keypoints_and_detections(
+        self,
+        keypoints: KeyPoints,
+        detections: Detections,
+        class_names: List[str],
+    ) -> Tuple[KeyPoints, Detections]:
+        keep = self.build_keep_mask(
+            detections.class_id, detections.confidence, class_names
+        )
+        if bool(keep.all()):
+            return keypoints, detections
+        refined_detections = Detections(
+            xyxy=detections.xyxy[keep],
+            class_id=detections.class_id[keep],
+            confidence=detections.confidence[keep],
+            image_metadata=detections.image_metadata,
+            bboxes_metadata=detections.bboxes_metadata,
+        )
+        kp_metadata = keypoints.key_points_metadata
+        if kp_metadata is not None:
+            keep_indices = keep.nonzero(as_tuple=True)[0].tolist()
+            kp_metadata = [kp_metadata[i] for i in keep_indices]
+        refined_keypoints = KeyPoints(
+            xy=keypoints.xy[keep],
+            class_id=keypoints.class_id[keep],
+            confidence=keypoints.confidence[keep],
+            image_metadata=keypoints.image_metadata,
+            key_points_metadata=kp_metadata,
+        )
+        return refined_keypoints, refined_detections
+
+    def refine_multilabel_prediction(
+        self,
+        prediction: MultiLabelClassificationPrediction,
+        class_names: List[str],
+    ) -> MultiLabelClassificationPrediction:
+        if prediction.class_ids.numel() == 0:
+            return prediction
+        class_ids_list = prediction.class_ids.tolist()
+        kept_indices = [
+            cid
+            for cid in class_ids_list
+            if self.passes(
+                class_names[cid] if 0 <= cid < len(class_names) else str(cid),
+                float(prediction.confidence[cid]),
+            )
+        ]
+        if len(kept_indices) == len(class_ids_list):
+            return prediction
+        return MultiLabelClassificationPrediction(
+            class_ids=torch.tensor(
+                kept_indices, dtype=prediction.class_ids.dtype
+            ),
+            confidence=prediction.confidence,
+            image_metadata=prediction.image_metadata,
+        )
+
+    def refine_segmentation_result(
+        self,
+        result: SemanticSegmentationResult,
+        class_names: List[str],
+        background_class_id: int,
+    ) -> SemanticSegmentationResult:
+        thresholds = self.per_class_thresholds(class_names)
+        threshold_tensor = torch.tensor(
+            thresholds,
+            dtype=result.confidence.dtype,
+            device=result.confidence.device,
+        )
+        per_pixel_thresholds = threshold_tensor[
+            result.segmentation_map.long()
+        ]
+        keep = result.confidence >= per_pixel_thresholds
+        if bool(keep.all()):
+            return result
+        new_segmentation_map = result.segmentation_map.clone()
+        new_confidence = result.confidence.clone()
+        new_segmentation_map[~keep] = background_class_id
+        new_confidence[~keep] = 0.0
+        return SemanticSegmentationResult(
+            segmentation_map=new_segmentation_map,
+            confidence=new_confidence,
+            image_metadata=result.image_metadata,
+        )

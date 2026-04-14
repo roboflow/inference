@@ -19,8 +19,8 @@ from inference_models.models.common.roboflow.model_packages import (
     parse_class_names_file,
     parse_inference_config,
 )
-from inference_models.models.base.confidence_filter import ConfidenceFilter
 from inference_models.models.common.roboflow.post_processing import (
+    ConfidenceFilter,
     post_process_nms_fused_model_output,
     rescale_detections,
 )
@@ -152,7 +152,11 @@ class YOLO26ForObjectDetectionTorchScript(
         confidence: float = INFERENCE_MODELS_YOLO26_DEFAULT_CONFIDENCE,
         **kwargs,
     ) -> List[Detections]:
-        confidence_filter = ConfidenceFilter(confidence, self.recommended_parameters)
+        confidence_filter = ConfidenceFilter(
+            confidence,
+            self.recommended_parameters,
+            INFERENCE_MODELS_YOLO26_DEFAULT_CONFIDENCE,
+        )
         confidence = confidence_filter.floor
         filtered_results = post_process_nms_fused_model_output(
             output=model_results, conf_thresh=confidence
@@ -163,13 +167,14 @@ class YOLO26ForObjectDetectionTorchScript(
         )
         results = []
         for result in rescaled_results:
-            results.append(
-                Detections(
-                    xyxy=result[:, :4].round().int(),
-                    class_id=result[:, 5].int(),
-                    confidence=result[:, 4],
-                )
+            detections = Detections(
+                xyxy=result[:, :4].round().int(),
+                class_id=result[:, 5].int(),
+                confidence=result[:, 4],
             )
-        if confidence_filter.has_per_class_refinement:
-            results = confidence_filter.filter_detections(results, self.class_names)
+            if confidence_filter.has_per_class_refinement:
+                detections = confidence_filter.refine_detections(
+                    detections, self.class_names
+                )
+            results.append(detections)
         return results

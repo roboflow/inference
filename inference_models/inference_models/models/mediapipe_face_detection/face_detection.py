@@ -14,8 +14,8 @@ from inference_models.errors import (
     ModelInputError,
     ModelRuntimeError,
 )
-from inference_models.models.base.confidence_filter import ConfidenceFilter
 from inference_models.models.common.model_packages import get_model_package_contents
+from inference_models.models.common.roboflow.post_processing import ConfidenceFilter
 from inference_models.weights_providers.entities import RecommendedParameters
 
 try:
@@ -183,7 +183,11 @@ class MediaPipeFaceDetector(
         confidence: float = INFERENCE_MODELS_MEDIAPIPE_FACE_DETECTOR_DEFAULT_CONFIDENCE,
         **kwargs,
     ) -> Tuple[List[KeyPoints], List[Detections]]:
-        confidence_filter = ConfidenceFilter(confidence, self.recommended_parameters)
+        confidence_filter = ConfidenceFilter(
+            confidence,
+            self.recommended_parameters,
+            INFERENCE_MODELS_MEDIAPIPE_FACE_DETECTOR_DEFAULT_CONFIDENCE,
+        )
         confidence = confidence_filter.floor
         final_key_points, final_detections = [], []
         for image_results, image_dimensions in zip(model_results, pre_processing_meta):
@@ -227,10 +231,12 @@ class MediaPipeFaceDetector(
                 class_id=torch.tensor(key_points_class_id).int(),
                 confidence=torch.tensor(key_points_confidence),
             )
+            if confidence_filter.has_per_class_refinement:
+                key_points, detections = (
+                    confidence_filter.refine_keypoints_and_detections(
+                        key_points, detections, self.class_names
+                    )
+                )
             final_key_points.append(key_points)
             final_detections.append(detections)
-        if confidence_filter.has_per_class_refinement and final_detections is not None:
-            final_key_points, final_detections = confidence_filter.filter_keypoints_and_detections(
-                final_key_points, final_detections, self.class_names
-            )
         return final_key_points, final_detections

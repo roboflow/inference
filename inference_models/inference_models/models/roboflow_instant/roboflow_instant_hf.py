@@ -14,8 +14,8 @@ from inference_models.configuration import (
 )
 from inference_models.entities import ImageDimensions
 from inference_models.errors import CorruptedModelPackageError
-from inference_models.models.base.confidence_filter import ConfidenceFilter
 from inference_models.models.auto_loaders.entities import AnyModel
+from inference_models.models.common.roboflow.post_processing import ConfidenceFilter
 from inference_models.models.common.model_packages import get_model_package_contents
 from inference_models.models.owlv2.entities import (
     ImageEmbeddings,
@@ -138,7 +138,11 @@ class RoboflowInstantHF(ObjectDetectionModel):
         iou_threshold: float = INFERENCE_MODELS_ROBOFLOW_INSTANT_DEFAULT_IOU_THRESHOLD,
         **kwargs,
     ) -> List[Detections]:
-        confidence_filter = ConfidenceFilter(confidence, self.recommended_parameters)
+        confidence_filter = ConfidenceFilter(
+            confidence,
+            self.recommended_parameters,
+            INFERENCE_MODELS_ROBOFLOW_INSTANT_DEFAULT_CONFIDENCE,
+        )
         results = (
             self._feature_extractor.post_process_predictions_for_precomputed_embeddings(
                 predictions=model_results,
@@ -148,5 +152,8 @@ class RoboflowInstantHF(ObjectDetectionModel):
             )
         )
         if confidence_filter.has_per_class_refinement:
-            results = confidence_filter.filter_detections(results, self.class_names)
+            results = [
+                confidence_filter.refine_detections(r, self.class_names)
+                for r in results
+            ]
         return results

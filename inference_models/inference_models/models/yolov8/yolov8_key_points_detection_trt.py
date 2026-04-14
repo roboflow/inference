@@ -40,8 +40,8 @@ from inference_models.models.common.roboflow.model_packages import (
     parse_key_points_metadata,
     parse_trt_config,
 )
-from inference_models.models.base.confidence_filter import ConfidenceFilter
 from inference_models.models.common.roboflow.post_processing import (
+    ConfidenceFilter,
     post_process_nms_fused_model_output,
     rescale_key_points_detections,
     run_nms_for_key_points_detection,
@@ -291,7 +291,11 @@ class YOLOv8ForKeyPointsDetectionTRT(
         key_points_threshold: float = INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_KEY_POINTS_THRESHOLD,
         **kwargs,
     ) -> Tuple[List[KeyPoints], Optional[List[Detections]]]:
-        confidence_filter = ConfidenceFilter(confidence, self.recommended_parameters)
+        confidence_filter = ConfidenceFilter(
+            confidence,
+            self.recommended_parameters,
+            INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_CONFIDENCE,
+        )
         confidence = confidence_filter.floor
         with torch.cuda.stream(self._post_process_stream):
             model_results.record_stream(self._post_process_stream)
@@ -318,12 +322,10 @@ class YOLOv8ForKeyPointsDetectionTRT(
             detections, all_key_points = [], []
             for result in rescaled_results:
                 class_id = result[:, 5].int()
-                detections.append(
-                    Detections(
-                        xyxy=result[:, :4].round().int(),
-                        class_id=class_id,
-                        confidence=result[:, 4],
-                    )
+                image_detections = Detections(
+                    xyxy=result[:, :4].round().int(),
+                    class_id=class_id,
+                    confidence=result[:, 4],
                 )
                 key_points_reshaped = result[:, 6:].view(
                     result.shape[0], self._key_points_slots_in_prediction, 3
@@ -350,18 +352,20 @@ class YOLOv8ForKeyPointsDetectionTRT(
                 mask = invalid_slot_keypoints | keypoints_below_threshold
                 xy[mask] = 0.0
                 predicted_key_points_confidence[mask] = 0.0
-                all_key_points.append(
-                    KeyPoints(
-                        xy=xy.round().int(),
-                        class_id=class_id,
-                        confidence=predicted_key_points_confidence,
-                    )
+                image_key_points = KeyPoints(
+                    xy=xy.round().int(),
+                    class_id=class_id,
+                    confidence=predicted_key_points_confidence,
                 )
+                if confidence_filter.has_per_class_refinement:
+                    image_key_points, image_detections = (
+                        confidence_filter.refine_keypoints_and_detections(
+                            image_key_points, image_detections, self.class_names
+                        )
+                    )
+                detections.append(image_detections)
+                all_key_points.append(image_key_points)
         self._post_process_stream.synchronize()
-        if confidence_filter.has_per_class_refinement and detections is not None:
-            all_key_points, detections = confidence_filter.filter_keypoints_and_detections(
-                all_key_points, detections, self.class_names
-            )
         return all_key_points, detections
 
     @property
