@@ -90,7 +90,7 @@ def _child_dynamic_crop_from_parent_detections() -> dict:
 def test_inner_workflow_maps_parent_input_to_child_output(
     model_manager: ModelManager,
 ) -> None:
-    embedded = _echo_child_workflow()
+    inner = _echo_child_workflow()
     workflow_definition = {
         "version": "1.0",
         "inputs": [
@@ -104,7 +104,7 @@ def test_inner_workflow_maps_parent_input_to_child_output(
             {
                 "type": "roboflow_core/inner_workflow@v1",
                 "name": "nested",
-                "workflow_definition": embedded,
+                "workflow_definition": inner,
                 "parameter_bindings": {
                     "child_msg": "$inputs.parent_msg",
                 },
@@ -262,7 +262,7 @@ def test_inner_workflow_receives_parameter_from_upstream_parent_step(
     model_manager: ModelManager,
 ) -> None:
     """Bindings may reference ``$steps.<name>.<output>`` from a step that ran before the nest."""
-    embedded = _echo_child_workflow()
+    inner = _echo_child_workflow()
     workflow_definition = {
         "version": "1.0",
         "inputs": [
@@ -282,7 +282,7 @@ def test_inner_workflow_receives_parameter_from_upstream_parent_step(
             {
                 "type": "roboflow_core/inner_workflow@v1",
                 "name": "nested",
-                "workflow_definition": embedded,
+                "workflow_definition": inner,
                 "parameter_bindings": {
                     "child_msg": "$steps.prepare.output",
                 },
@@ -313,7 +313,7 @@ def test_inner_workflow_with_list_valued_workflow_parameter(
     workflow receives that list as a single ``child_msg``, and the parent returns one result
     dict whose ``from_child`` is that list.
     """
-    embedded = _echo_child_workflow()
+    inner = _echo_child_workflow()
     workflow_definition = {
         "version": "1.0",
         "inputs": [
@@ -327,7 +327,7 @@ def test_inner_workflow_with_list_valued_workflow_parameter(
             {
                 "type": "roboflow_core/inner_workflow@v1",
                 "name": "nested",
-                "workflow_definition": embedded,
+                "workflow_definition": inner,
                 "parameter_bindings": {
                     "child_msg": "$inputs.parent_msg",
                 },
@@ -364,7 +364,7 @@ def test_inner_workflow_with_batch_workflow_batch_input(
     workflow, so you get three top-level dicts with string ``from_child`` values, not one dict
     whose ``from_child`` is a list of three strings.
     """
-    embedded = _echo_child_workflow()
+    inner = _echo_child_workflow()
     workflow_definition = {
         "version": "1.0",
         "inputs": [
@@ -379,7 +379,7 @@ def test_inner_workflow_with_batch_workflow_batch_input(
             {
                 "type": "roboflow_core/inner_workflow@v1",
                 "name": "nested",
-                "workflow_definition": embedded,
+                "workflow_definition": inner,
                 "parameter_bindings": {
                     "child_msg": "$inputs.parent_msg",
                 },
@@ -469,7 +469,7 @@ def test_inner_workflow_child_runs_dynamic_crop_on_parent_detections(
 
     infer_mock = mock.MagicMock(side_effect=infer_from_request_sync)
 
-    embedded = _child_dynamic_crop_from_parent_detections()
+    inner = _child_dynamic_crop_from_parent_detections()
     workflow_definition = {
         "version": "1.0",
         "inputs": [{"type": "WorkflowImage", "name": "image"}],
@@ -483,7 +483,7 @@ def test_inner_workflow_child_runs_dynamic_crop_on_parent_detections(
             {
                 "type": "roboflow_core/inner_workflow@v1",
                 "name": "nested",
-                "workflow_definition": embedded,
+                "workflow_definition": inner,
                 "parameter_bindings": {
                     "image": "$inputs.image",
                     "predictions": "$steps.general_detection.predictions",
@@ -608,7 +608,10 @@ def test_inner_workflow_parent_detection_offset_after_nested_crop(
 
     infer_mock = mock.MagicMock(side_effect=infer_from_request_sync)
 
-    embedded = _child_dynamic_crop_from_parent_detections()
+    inner = _child_dynamic_crop_from_parent_detections()
+
+    offset_x = 10
+    offset_y = 10
 
     def _parent_workflow(*, apply_detection_offset: bool) -> dict:
         steps: list = [
@@ -621,7 +624,7 @@ def test_inner_workflow_parent_detection_offset_after_nested_crop(
             {
                 "type": "roboflow_core/inner_workflow@v1",
                 "name": "nested",
-                "workflow_definition": embedded,
+                "workflow_definition": inner,
                 "parameter_bindings": {
                     "image": "$inputs.image",
                     "predictions": "$steps.general_detection.predictions",
@@ -634,8 +637,8 @@ def test_inner_workflow_parent_detection_offset_after_nested_crop(
                     "type": "roboflow_core/detection_offset@v1",
                     "name": "padded",
                     "predictions": "$steps.nested.crop_predictions",
-                    "offset_width": 10,
-                    "offset_height": 10,
+                    "offset_width": offset_x,
+                    "offset_height": offset_y,
                     "units": "Pixels",
                 }
             )
@@ -682,8 +685,7 @@ def test_inner_workflow_parent_detection_offset_after_nested_crop(
     after = res_off[0]["padded_preds"]
     assert len(before) == len(after) == 3
 
-    ow, oh = 10, 10
-    dx, dy = ow // 2, oh // 2
+    dx, dy = offset_x // 2, offset_y // 2
     for det_b, det_a in zip(before, after):
         assert isinstance(det_b, sv.Detections) and isinstance(det_a, sv.Detections)
         assert len(det_b) == len(det_a) == 1
@@ -812,7 +814,7 @@ def test_inner_workflow_after_continue_if_with_crop_batch_lineage(
 
     infer_mock = mock.MagicMock(side_effect=infer_from_request_sync)
 
-    embedded = _echo_child_workflow()
+    inner = _echo_child_workflow()
     workflow_definition = {
         "version": "1.0",
         "inputs": [
@@ -871,7 +873,7 @@ def test_inner_workflow_after_continue_if_with_crop_batch_lineage(
             {
                 "type": "roboflow_core/inner_workflow@v1",
                 "name": "nested_inner_workflow",
-                "workflow_definition": embedded,
+                "workflow_definition": inner,
                 "parameter_bindings": {
                     "child_msg": "$inputs.crop_label",
                 },
@@ -929,7 +931,7 @@ def test_parent_combines_outputs_from_two_parallel_inner_workflows(
     model_manager: ModelManager,
 ) -> None:
     """Two sibling ``inner_workflow`` steps each map a parent input into the same child shape."""
-    embedded = _echo_child_workflow()
+    inner = _echo_child_workflow()
     workflow_definition = {
         "version": "1.0",
         "inputs": [
@@ -948,7 +950,7 @@ def test_parent_combines_outputs_from_two_parallel_inner_workflows(
             {
                 "type": "roboflow_core/inner_workflow@v1",
                 "name": "branch_a",
-                "workflow_definition": embedded,
+                "workflow_definition": inner,
                 "parameter_bindings": {
                     "child_msg": "$inputs.msg_a",
                 },
@@ -956,7 +958,7 @@ def test_parent_combines_outputs_from_two_parallel_inner_workflows(
             {
                 "type": "roboflow_core/inner_workflow@v1",
                 "name": "branch_b",
-                "workflow_definition": embedded,
+                "workflow_definition": inner,
                 "parameter_bindings": {
                     "child_msg": "$inputs.msg_b",
                 },
