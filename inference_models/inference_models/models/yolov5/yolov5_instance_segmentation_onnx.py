@@ -46,6 +46,7 @@ from inference_models.models.yolov5.nms import run_yolov5_nms_for_instance_segme
 from inference_models.utils.onnx_introspection import (
     get_selected_onnx_execution_providers,
 )
+from inference_models.weights_providers.entities import RecommendedParameters
 
 try:
     import onnxruntime
@@ -76,6 +77,7 @@ class YOLOv5ForInstanceSegmentationOnnx(
         onnx_execution_providers: Optional[List[Union[str, tuple]]] = None,
         default_onnx_trt_options: bool = True,
         device: torch.device = DEFAULT_DEVICE,
+        recommended_parameters: Optional[RecommendedParameters] = None,
         **kwargs,
     ) -> "YOLOv5ForInstanceSegmentationOnnx":
         if onnx_execution_providers is None:
@@ -140,7 +142,7 @@ class YOLOv5ForInstanceSegmentationOnnx(
             inference_config=inference_config,
             device=device,
             input_batch_size=input_batch_size,
-            recommended_parameters=kwargs.get("recommended_parameters"),
+            recommended_parameters=recommended_parameters,
         )
 
     def __init__(

@@ -45,6 +45,7 @@ from inference_models.models.rfdetr.class_remapping import (
 )
 from inference_models.models.rfdetr.pre_processing import pre_process_network_input
 from inference_models.models.base.confidence_filter import ConfidenceFilter
+from inference_models.weights_providers.entities import RecommendedParameters
 
 try:
     import tensorrt as trt
@@ -90,6 +91,7 @@ class RFDetrForObjectDetectionTRT(
         trt_cuda_graph_cache: Optional[TRTCudaGraphCache] = None,
         default_trt_cuda_graph_cache_size: int = 8,
         rf_detr_max_input_resolution: Optional[Union[int, Tuple[int, int]]] = None,
+        recommended_parameters: Optional[RecommendedParameters] = None,
         **kwargs,
     ) -> "RFDetrForObjectDetectionTRT":
         if device.type != "cuda":
@@ -180,7 +182,7 @@ class RFDetrForObjectDetectionTRT(
             cuda_context=cuda_context,
             execution_context=execution_context,
             trt_cuda_graph_cache=trt_cuda_graph_cache,
-            recommended_parameters=kwargs.get("recommended_parameters"),
+            recommended_parameters=recommended_parameters,
         )
 
     def __init__(

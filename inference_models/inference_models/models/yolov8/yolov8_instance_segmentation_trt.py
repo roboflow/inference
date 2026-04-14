@@ -57,6 +57,7 @@ from inference_models.models.common.trt import (
     infer_from_trt_engine,
     load_trt_model,
 )
+from inference_models.weights_providers.entities import RecommendedParameters
 
 try:
     import tensorrt as trt
@@ -100,6 +101,7 @@ class YOLOv8ForInstanceSegmentationTRT(
         engine_host_code_allowed: bool = False,
         trt_cuda_graph_cache: Optional[TRTCudaGraphCache] = None,
         default_trt_cuda_graph_cache_size: int = 8,
+        recommended_parameters: Optional[RecommendedParameters] = None,
         **kwargs,
     ) -> "YOLOv8ForInstanceSegmentationTRT":
         if device.type != "cuda":
@@ -186,7 +188,7 @@ class YOLOv8ForInstanceSegmentationTRT(
             execution_context=execution_context,
             cuda_context=cuda_context,
             trt_cuda_graph_cache=trt_cuda_graph_cache,
-            recommended_parameters=kwargs.get("recommended_parameters"),
+            recommended_parameters=recommended_parameters,
         )
 
     def __init__(

@@ -46,6 +46,7 @@ from inference_models.models.base.confidence_filter import ConfidenceFilter
 from inference_models.utils.onnx_introspection import (
     get_selected_onnx_execution_providers,
 )
+from inference_models.weights_providers.entities import RecommendedParameters
 
 try:
     import onnxruntime
@@ -78,6 +79,7 @@ class YOLOACTForInstanceSegmentationOnnx(
         onnx_execution_providers: Optional[List[Union[str, tuple]]] = None,
         default_onnx_trt_options: bool = True,
         device: torch.device = DEFAULT_DEVICE,
+        recommended_parameters: Optional[RecommendedParameters] = None,
         **kwargs,
     ) -> "YOLOACTForInstanceSegmentationOnnx":
         if onnx_execution_providers is None:
@@ -147,7 +149,7 @@ class YOLOACTForInstanceSegmentationOnnx(
             class_names=class_names,
             inference_config=inference_config,
             device=device,
-            recommended_parameters=kwargs.get("recommended_parameters"),
+            recommended_parameters=recommended_parameters,
         )
 
     def __init__(

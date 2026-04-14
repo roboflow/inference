@@ -22,6 +22,7 @@ from inference_models.models.owlv2.entities import (
     ReferenceExamplesEmbeddings,
 )
 from inference_models.models.owlv2.owlv2_hf import OWLv2HF
+from inference_models.weights_providers.entities import RecommendedParameters
 
 
 class RoboflowInstantHF(ObjectDetectionModel):
@@ -32,6 +33,7 @@ class RoboflowInstantHF(ObjectDetectionModel):
         model_name_or_path: str,
         device: torch.device = DEFAULT_DEVICE,
         model_dependencies: Optional[Dict[str, AnyModel]] = None,
+        recommended_parameters: Optional[RecommendedParameters] = None,
         **kwargs,
     ) -> "ObjectDetectionModel":
         model_package_content = get_model_package_contents(
@@ -82,7 +84,7 @@ class RoboflowInstantHF(ObjectDetectionModel):
             feature_extractor=feature_extractor,
             class_names=class_names,
             reference_examples_embeddings=reference_examples_embeddings,
-            recommended_parameters=kwargs.get("recommended_parameters"),
+            recommended_parameters=recommended_parameters,
         )
 
     def __init__(

@@ -49,6 +49,7 @@ from inference_models.models.common.roboflow.pre_processing import (
 from inference_models.utils.onnx_introspection import (
     get_selected_onnx_execution_providers,
 )
+from inference_models.weights_providers.entities import RecommendedParameters
 
 try:
     import onnxruntime
@@ -77,6 +78,7 @@ class YOLOv8ForKeyPointsDetectionOnnx(
         onnx_execution_providers: Optional[List[Union[str, tuple]]] = None,
         default_onnx_trt_options: bool = True,
         device: torch.device = DEFAULT_DEVICE,
+        recommended_parameters: Optional[RecommendedParameters] = None,
         **kwargs,
     ) -> "YOLOv8ForKeyPointsDetectionOnnx":
         if onnx_execution_providers is None:
@@ -152,7 +154,7 @@ class YOLOv8ForKeyPointsDetectionOnnx(
             input_batch_size=input_batch_size,
             parsed_key_points_metadata=parsed_key_points_metadata,
             skeletons=skeletons,
-            recommended_parameters=kwargs.get("recommended_parameters"),
+            recommended_parameters=recommended_parameters,
         )
 
     def __init__(

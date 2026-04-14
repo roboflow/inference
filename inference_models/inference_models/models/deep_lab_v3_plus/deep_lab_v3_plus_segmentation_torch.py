@@ -40,6 +40,7 @@ class DeepLabV3PlusForSemanticSegmentationTorch(
         cls,
         model_name_or_path: str,
         device: torch.device = DEFAULT_DEVICE,
+        recommended_parameters: Optional[RecommendedParameters] = None,
         **kwargs,
     ) -> "DeepLabV3PlusForSemanticSegmentationTorch":
         model_package_content = get_model_package_contents(
@@ -114,7 +115,7 @@ class DeepLabV3PlusForSemanticSegmentationTorch(
             class_names=class_names,
             background_class_id=background_class_id,
             device=device,
-            recommended_parameters=kwargs.get("recommended_parameters"),
+            recommended_parameters=recommended_parameters,
         )
 
     def __init__(

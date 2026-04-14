@@ -38,6 +38,7 @@ from inference_models.models.base.confidence_filter import ConfidenceFilter
 from inference_models.utils.onnx_introspection import (
     get_selected_onnx_execution_providers,
 )
+from inference_models.weights_providers.entities import RecommendedParameters
 
 try:
     import onnxruntime
@@ -71,6 +72,7 @@ class RFDetrForObjectDetectionONNX(
         default_onnx_trt_options: bool = True,
         device: torch.device = DEFAULT_DEVICE,
         rf_detr_max_input_resolution: Optional[Union[int, Tuple[int, int]]] = None,
+        recommended_parameters: Optional[RecommendedParameters] = None,
         **kwargs,
     ) -> "RFDetrForObjectDetectionONNX":
         if onnx_execution_providers is None:
@@ -144,7 +146,7 @@ class RFDetrForObjectDetectionONNX(
             inference_config=inference_config,
             device=device,
             input_batch_size=input_batch_size,
-            recommended_parameters=kwargs.get("recommended_parameters"),
+            recommended_parameters=recommended_parameters,
         )
 
     def __init__(

@@ -224,6 +224,7 @@ class DinoV3ForMultiLabelClassificationOnnx(
         onnx_execution_providers: Optional[List[Union[str, tuple]]] = None,
         default_onnx_trt_options: bool = True,
         device: torch.device = DEFAULT_DEVICE,
+        recommended_parameters: Optional[RecommendedParameters] = None,
         **kwargs,
     ) -> "DinoV3ForMultiLabelClassificationOnnx":
         if onnx_execution_providers is None:
@@ -300,7 +301,7 @@ class DinoV3ForMultiLabelClassificationOnnx(
             class_names=class_names,
             device=device,
             input_batch_size=input_batch_size,
-            recommended_parameters=kwargs.get("recommended_parameters"),
+            recommended_parameters=recommended_parameters,
         )
 
     def __init__(

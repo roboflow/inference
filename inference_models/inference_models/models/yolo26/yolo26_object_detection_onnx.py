@@ -37,6 +37,7 @@ from inference_models.models.common.roboflow.pre_processing import (
 from inference_models.utils.onnx_introspection import (
     get_selected_onnx_execution_providers,
 )
+from inference_models.weights_providers.entities import RecommendedParameters
 
 try:
     import onnxruntime
@@ -65,6 +66,7 @@ class YOLO26ForObjectDetectionOnnx(
         onnx_execution_providers: Optional[List[Union[str, tuple]]] = None,
         default_onnx_trt_options: bool = True,
         device: torch.device = DEFAULT_DEVICE,
+        recommended_parameters: Optional[RecommendedParameters] = None,
         **kwargs,
     ) -> "YOLO26ForObjectDetectionOnnx":
         if onnx_execution_providers is None:
@@ -129,7 +131,7 @@ class YOLO26ForObjectDetectionOnnx(
             inference_config=inference_config,
             device=device,
             input_batch_size=input_batch_size,
-            recommended_parameters=kwargs.get("recommended_parameters"),
+            recommended_parameters=recommended_parameters,
         )
 
     def __init__(

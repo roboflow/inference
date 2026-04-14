@@ -16,6 +16,7 @@ from inference_models.errors import (
 )
 from inference_models.models.base.confidence_filter import ConfidenceFilter
 from inference_models.models.common.model_packages import get_model_package_contents
+from inference_models.weights_providers.entities import RecommendedParameters
 
 try:
     import mediapipe as mp
@@ -42,6 +43,7 @@ class MediaPipeFaceDetector(
     def from_pretrained(
         cls,
         model_name_or_path: str,
+        recommended_parameters: Optional[RecommendedParameters] = None,
         **kwargs,
     ) -> "MediaPipeFaceDetector":
         model_package_content = get_model_package_contents(
@@ -60,7 +62,7 @@ class MediaPipeFaceDetector(
         )
         return cls(
             face_detector=face_detector,
-            recommended_parameters=kwargs.get("recommended_parameters"),
+            recommended_parameters=recommended_parameters,
         )
 
     def __init__(
