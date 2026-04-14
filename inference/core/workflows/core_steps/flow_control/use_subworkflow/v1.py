@@ -1,11 +1,11 @@
 from typing import Any, Dict, List, Literal, Optional, Type
 
-from pydantic import ConfigDict, Field
+from pydantic import ConfigDict, Field, model_validator
 
 from inference.core.workflows.execution_engine.entities.base import OutputDefinition
 from inference.core.workflows.execution_engine.entities.types import (
-    Selector,
     WILDCARD_KIND,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -13,15 +13,19 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 
-SHORT_DESCRIPTION = (
-    "Run an embedded workflow definition with parameters mapped from the parent workflow."
-)
+SHORT_DESCRIPTION = "Run an embedded workflow definition with parameters mapped from the parent workflow."
 
 LONG_DESCRIPTION = """
-Execute a **nested workflow** defined inline (`embedded_workflow`) while mapping parent data into the
-child's inputs via `parameter_bindings`. Compilation validates composition (acyclicity, max depth) and
-child input names; execution is handled by the execution engine using a pluggable `SubworkflowRunner`
-(see `workflows_core.subworkflow_runner` init parameter).
+Execute a **nested workflow** while mapping parent data into the child's inputs via `parameter_bindings`.
+
+Provide either a full inline definition in `embedded_workflow`, or resolve a saved workflow using
+`embedded_workflow_workspace_id` and `embedded_workflow_id` (optional `embedded_workflow_version_id`).
+Reference fields are expanded at compile time via `workflows_core.subworkflow_spec_resolver`
+(default: Roboflow API using `workflows_core.api_key`, or local definitions when workspace is
+`"local"`).
+
+Compilation validates composition (acyclicity, max depth) and child input names; execution uses a
+pluggable `SubworkflowRunner` (see `workflows_core.subworkflow_runner` init parameter).
 
 The block's `run()` method is not used at runtime; do not call it directly.
 """
@@ -44,8 +48,29 @@ class BlockManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["roboflow_core/use_subworkflow@v1"]
-    embedded_workflow: Dict[str, Any] = Field(
-        description="Full nested workflow definition (same JSON shape as a root workflow: version, inputs, steps, outputs).",
+    embedded_workflow: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description=(
+            "Full nested workflow definition (same JSON shape as a root workflow: version, inputs, "
+            "steps, outputs). Required unless `embedded_workflow_workspace_id` and "
+            "`embedded_workflow_id` are set; mutually exclusive with those reference fields."
+        ),
+    )
+    embedded_workflow_workspace_id: Optional[str] = Field(
+        default=None,
+        description=(
+            'Workspace id for a saved workflow to embed (Roboflow slug or `"local"` for on-disk '
+            "definitions). Use with `embedded_workflow_id`; mutually exclusive with a non-empty "
+            "`embedded_workflow`."
+        ),
+    )
+    embedded_workflow_id: Optional[str] = Field(
+        default=None,
+        description="Saved workflow id to fetch and embed. Use with `embedded_workflow_workspace_id`.",
+    )
+    embedded_workflow_version_id: Optional[str] = Field(
+        default=None,
+        description="Optional pinned workflow version when resolving by id.",
     )
     parameter_bindings: Dict[str, Selector()] = Field(
         description="Maps each **child** workflow input name to a selector (or literal coerced by the engine) from the parent.",
@@ -66,6 +91,27 @@ class BlockManifest(WorkflowBlockManifest):
             "referenced by embedded workflow JsonField outputs (drives parent batch lineage)."
         ),
     )
+
+    @model_validator(mode="after")
+    def validate_embedded_or_reference(self) -> "BlockManifest":
+        has_inline = (
+            isinstance(self.embedded_workflow, dict) and len(self.embedded_workflow) > 0
+        )
+        ws = (self.embedded_workflow_workspace_id or "").strip()
+        wf = (self.embedded_workflow_id or "").strip()
+        has_ref = bool(ws and wf)
+
+        if has_inline and has_ref:
+            raise ValueError(
+                "Provide either `embedded_workflow` or workflow reference fields "
+                "(`embedded_workflow_workspace_id` and `embedded_workflow_id`), not both."
+            )
+        if has_inline or has_ref:
+            return self
+        raise ValueError(
+            "use_subworkflow requires a non-empty `embedded_workflow` object or both "
+            "`embedded_workflow_workspace_id` and `embedded_workflow_id`."
+        )
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:

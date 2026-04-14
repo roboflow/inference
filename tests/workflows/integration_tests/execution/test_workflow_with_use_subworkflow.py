@@ -2,13 +2,16 @@
 End-to-end tests for roboflow_core/use_subworkflow@v1 (nested workflow execution).
 """
 
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 from unittest import mock
 
 from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.execution_engine.core import ExecutionEngine
+from inference.core.workflows.execution_engine.v1.subworkflow.reference_resolution import (
+    WORKFLOWS_CORE_SUBWORKFLOW_SPEC_RESOLVER,
+)
 
 
 def _execution_engine(
@@ -123,6 +126,69 @@ def test_workflow_with_use_subworkflow_maps_parent_input_to_child_output(
 
     assert len(result) == 1
     assert result[0] == {"from_child": "hello-from-parent"}
+
+
+def test_use_subworkflow_resolves_saved_workflow_by_id_via_custom_resolver(
+    model_manager: ModelManager,
+) -> None:
+    """Reference fields are expanded at compile time using an injected resolver."""
+
+    def resolver(
+        workspace_id: str,
+        workflow_id: str,
+        workflow_version_id: Optional[str],
+        init_parameters: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        assert workspace_id == "stub-ws"
+        assert workflow_id == "stub-id"
+        assert workflow_version_id is None
+        return _echo_child_workflow()
+
+    workflow_definition = {
+        "version": "1.0",
+        "inputs": [
+            {
+                "type": "WorkflowParameter",
+                "name": "parent_msg",
+                "default_value": "unused-default",
+            },
+        ],
+        "steps": [
+            {
+                "type": "roboflow_core/use_subworkflow@v1",
+                "name": "nested_by_ref",
+                "embedded_workflow_workspace_id": "stub-ws",
+                "embedded_workflow_id": "stub-id",
+                "parameter_bindings": {
+                    "child_msg": "$inputs.parent_msg",
+                },
+            },
+        ],
+        "outputs": [
+            {
+                "type": "JsonField",
+                "name": "from_child",
+                "selector": "$steps.nested_by_ref.echo",
+            },
+        ],
+    }
+    engine = ExecutionEngine.init(
+        workflow_definition=workflow_definition,
+        init_parameters={
+            "workflows_core.model_manager": model_manager,
+            "workflows_core.api_key": None,
+            "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+            WORKFLOWS_CORE_SUBWORKFLOW_SPEC_RESOLVER: resolver,
+        },
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    result = engine.run(
+        runtime_parameters={"parent_msg": "hello-from-ref"},
+    )
+
+    assert len(result) == 1
+    assert result[0] == {"from_child": "hello-from-ref"}
 
 
 def test_workflow_with_stacked_use_subworkflow_runs_at_depth_two(
@@ -348,7 +414,9 @@ def test_use_subworkflow_child_runs_dynamic_crop_on_parent_detections(
     """
     import supervision as sv
 
-    from inference.core.entities.requests.inference import ObjectDetectionInferenceRequest
+    from inference.core.entities.requests.inference import (
+        ObjectDetectionInferenceRequest,
+    )
     from inference.core.entities.responses.inference import (
         InferenceResponseImage,
         ObjectDetectionInferenceResponse,
@@ -485,7 +553,9 @@ def test_use_subworkflow_parent_detection_offset_after_nested_crop(
     import numpy as np
     import supervision as sv
 
-    from inference.core.entities.requests.inference import ObjectDetectionInferenceRequest
+    from inference.core.entities.requests.inference import (
+        ObjectDetectionInferenceRequest,
+    )
     from inference.core.entities.responses.inference import (
         InferenceResponseImage,
         ObjectDetectionInferenceResponse,
@@ -636,9 +706,7 @@ def test_use_subworkflow_parent_detection_offset_after_nested_crop(
             atol=1e-3,
         )
 
-        assert str(det_a.data["detection_id"][0]) != str(
-            det_b.data["detection_id"][0]
-        )
+        assert str(det_a.data["detection_id"][0]) != str(det_b.data["detection_id"][0])
         assert len(str(det_a.data["detection_id"][0])) == 36
         assert det_a.data["class_name"][0] == det_b.data["class_name"][0]
         assert det_a.class_id[0] == det_b.class_id[0]

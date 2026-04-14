@@ -40,13 +40,6 @@ from inference.core.workflows.execution_engine.v1.compiler.utils import (
 from inference.core.workflows.execution_engine.v1.compiler.validator import (
     validate_workflow_specification,
 )
-from inference.core.workflows.execution_engine.v1.subworkflow.compiler_bridge import (
-    resolve_subworkflow_steps_in_parsed_definition,
-    validate_subworkflow_composition_from_workflow_dict,
-)
-from inference.core.workflows.execution_engine.v1.subworkflow.constants import (
-    USE_SUBWORKFLOW_BLOCK_TYPE,
-)
 from inference.core.workflows.execution_engine.v1.debugger.core import (
     dump_execution_graph,
 )
@@ -54,8 +47,17 @@ from inference.core.workflows.execution_engine.v1.dynamic_blocks.block_assembler
     compile_dynamic_blocks,
     ensure_dynamic_blocks_allowed,
 )
+from inference.core.workflows.execution_engine.v1.subworkflow.compiler_bridge import (
+    resolve_subworkflow_steps_in_parsed_definition,
+    validate_subworkflow_composition_from_workflow_dict,
+)
+from inference.core.workflows.execution_engine.v1.subworkflow.constants import (
+    USE_SUBWORKFLOW_BLOCK_TYPE,
+)
+from inference.core.workflows.execution_engine.v1.subworkflow.reference_resolution import (
+    normalize_use_subworkflow_references_in_definition,
+)
 from inference.core.workflows.prototypes.block import WorkflowBlockManifest
-
 
 COMPILATION_CACHE = BasicWorkflowsCache[GraphCompilationResult](
     cache_size=256,
@@ -154,6 +156,10 @@ def compile_workflow_graph(
             dynamic_blocks_definitions=dynamic_blocks_definitions
         )
         return cached_value
+    workflow_for_compile = normalize_use_subworkflow_references_in_definition(
+        workflow_definition=workflow_definition,
+        init_parameters=init_parameters,
+    )
     statically_defined_blocks = load_workflow_blocks(
         execution_engine_version=execution_engine_version,
         profiler=profiler,
@@ -162,7 +168,7 @@ def compile_workflow_graph(
     kinds_serializers = load_kinds_serializers(profiler=profiler)
     kinds_deserializers = load_kinds_deserializers(profiler=profiler)
     dynamic_blocks = compile_dynamic_blocks(
-        dynamic_blocks_definitions=workflow_definition.get(
+        dynamic_blocks_definitions=workflow_for_compile.get(
             "dynamic_blocks_definitions", []
         ),
         profiler=profiler,
@@ -170,7 +176,7 @@ def compile_workflow_graph(
     )
     available_blocks = statically_defined_blocks + dynamic_blocks
     parsed_workflow_definition = parse_workflow_definition(
-        raw_workflow_definition=workflow_definition,
+        raw_workflow_definition=workflow_for_compile,
         available_blocks=available_blocks,
         profiler=profiler,
     )
@@ -178,10 +184,10 @@ def compile_workflow_graph(
         workflow_definition=parsed_workflow_definition,
         profiler=profiler,
     )
-    validate_subworkflow_composition_from_workflow_dict(workflow_definition)
+    validate_subworkflow_composition_from_workflow_dict(workflow_for_compile)
     parsed_workflow_definition = resolve_subworkflow_steps_in_parsed_definition(
         parsed=parsed_workflow_definition,
-        raw_workflow_definition=workflow_definition,
+        raw_workflow_definition=workflow_for_compile,
         compile_workflow_graph_fn=compile_workflow_graph,
         available_blocks=available_blocks,
         execution_engine_version=execution_engine_version,
