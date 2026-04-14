@@ -33,7 +33,6 @@ class AutoResolutionCacheEntry(BaseModel):
     model_dependencies: Optional[List[ModelDependency]] = Field(default=None)
     created_at: datetime
     model_features: Optional[dict] = Field(default=None)
-    # Cached so auto-load cache hits don't need to re-fetch model metadata.
     recommended_parameters: Optional[RecommendedParameters] = Field(default=None)
 
 
