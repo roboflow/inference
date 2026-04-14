@@ -63,6 +63,12 @@ REGISTERED_COMPILATION_HANDLERS = {
             verify_model=verify_auto_model,
         ),
     ),
+    "yolo26": partial(
+        compile_and_register_default_model,
+        compilation_config=CompilationConfig.for_yolo_models(
+            verify_model=verify_auto_model,
+        ),
+    ),
     "rfdetr": partial(
         compile_and_register_default_model,
         compilation_config=CompilationConfig.for_rfdetr_models(
