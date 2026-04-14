@@ -698,7 +698,7 @@ class InferenceModelsClassificationAdapter(Model):
             post_processed_predictions,
             image_sizes=returned_metadata,
             class_names=self.class_names,
-            confidence_threshold=kwargs.get("confidence", 0.5),
+            confidence_threshold=kwargs.get("confidence") or 0.5,
         )
 
     def clear_cache(self, delete_from_disk: bool = True) -> None:

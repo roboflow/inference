@@ -573,16 +573,26 @@ class ConfidenceFilter:
         if not self.has_per_class_refinement:
             return torch.ones(n, dtype=torch.bool)
 
-        keep = torch.zeros(n, dtype=torch.bool)
-        cid_list = class_ids.tolist()
-        conf_list = confidences.tolist()
-        for i, (cid, conf) in enumerate(zip(cid_list, conf_list)):
-            name = (
-                class_names[cid] if 0 <= cid < len(class_names) else str(cid)
-            )
-            if self.passes(name, conf):
-                keep[i] = True
-        return keep
+        # Vectorized: look up each detection's per-class threshold via
+        # class_id indexing, then compare against confidence in one shot.
+        # Out-of-range class_ids fall back to `_fallback` via the same
+        # pattern per_class_thresholds uses.
+        thresholds_per_class = torch.tensor(
+            self.per_class_thresholds(class_names),
+            dtype=confidences.dtype,
+            device=confidences.device,
+        )
+        # Guard against class_ids outside [0, len(class_names)) — clamp to
+        # a valid index and apply fallback for those positions separately.
+        class_ids_long = class_ids.long()
+        in_range = (class_ids_long >= 0) & (class_ids_long < len(class_names))
+        safe_idx = class_ids_long.clamp(0, max(len(class_names) - 1, 0))
+        per_detection_thresholds = torch.where(
+            in_range,
+            thresholds_per_class[safe_idx] if len(class_names) > 0 else torch.full_like(confidences, self._fallback),
+            torch.full_like(confidences, self._fallback),
+        )
+        return confidences >= per_detection_thresholds
 
     def per_class_thresholds(self, class_names: List[str]) -> List[float]:
         """Per-class thresholds aligned to `class_names`, for shapes that
