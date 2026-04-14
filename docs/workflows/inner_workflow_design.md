@@ -95,6 +95,7 @@ No imports from `execution_engine.v1.executor` or `compiler.core` inside the blo
 | `inference/core/workflows/execution_engine/v1/inner_workflow/runner.py` | `InnerWorkflowRunner`, `InnerWorkflowExecutionMode`, `LocalInnerWorkflowRunner`. |
 | `inference/core/workflows/execution_engine/v1/inner_workflow/errors.py` | `InnerWorkflowCompositionCycleError`, `InnerWorkflowNestingDepthError`. |
 | `tests/workflows/unit_tests/execution_engine/inner_workflow/test_composition.py` | Unit tests for composition validation. |
+| `tests/workflows/integration_tests/execution/test_workflow_with_inner_workflow.py` | End-to-end tests for `roboflow_core/inner_workflow@v1`. |
 
 ## See also
 

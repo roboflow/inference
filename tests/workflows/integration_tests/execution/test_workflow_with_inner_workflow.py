@@ -87,7 +87,7 @@ def _child_dynamic_crop_from_parent_detections() -> dict:
     }
 
 
-def test_workflow_with_use_subworkflow_maps_parent_input_to_child_output(
+def test_inner_workflow_maps_parent_input_to_child_output(
     model_manager: ModelManager,
 ) -> None:
     embedded = _echo_child_workflow()
@@ -128,7 +128,7 @@ def test_workflow_with_use_subworkflow_maps_parent_input_to_child_output(
     assert result[0] == {"from_child": "hello-from-parent"}
 
 
-def test_use_subworkflow_resolves_saved_workflow_by_id_via_custom_resolver(
+def test_inner_workflow_resolves_saved_workflow_by_id_via_custom_resolver(
     model_manager: ModelManager,
 ) -> None:
     """Reference fields are expanded at compile time using an injected resolver."""
@@ -191,7 +191,7 @@ def test_use_subworkflow_resolves_saved_workflow_by_id_via_custom_resolver(
     assert result[0] == {"from_child": "hello-from-ref"}
 
 
-def test_workflow_with_stacked_use_subworkflow_runs_at_depth_two(
+def test_stacked_inner_workflow_runs_at_depth_two(
     model_manager: ModelManager,
 ) -> None:
     """Parent inner_workflow wraps a child workflow that itself contains inner_workflow."""
@@ -258,7 +258,7 @@ def test_workflow_with_stacked_use_subworkflow_runs_at_depth_two(
     assert result[0] == {"final": "depth-two-value"}
 
 
-def test_use_subworkflow_receives_parameter_from_upstream_parent_step(
+def test_inner_workflow_receives_parameter_from_upstream_parent_step(
     model_manager: ModelManager,
 ) -> None:
     """Bindings may reference ``$steps.<name>.<output>`` from a step that ran before the nest."""
@@ -304,7 +304,7 @@ def test_use_subworkflow_receives_parameter_from_upstream_parent_step(
     assert result[0] == {"from_child": "value-from-prepare-step"}
 
 
-def test_use_subworkflow_with_list_valued_workflow_parameter(
+def test_inner_workflow_with_list_valued_workflow_parameter(
     model_manager: ModelManager,
 ) -> None:
     """
@@ -351,11 +351,11 @@ def test_use_subworkflow_with_list_valued_workflow_parameter(
     assert result[0]["from_child"] == ["alpha", "beta", "gamma"]
 
 
-def test_use_subworkflow_with_batch_workflow_batch_input(
+def test_inner_workflow_with_batch_workflow_batch_input(
     model_manager: ModelManager,
 ) -> None:
     """
-    Same runtime payload as ``test_use_subworkflow_with_list_valued_workflow_parameter`` (a flat list
+    Same runtime payload as ``test_inner_workflow_with_list_valued_workflow_parameter`` (a flat list
     of strings under ``parent_msg``), but the input is declared ``WorkflowBatchInput`` with
     ``kind`` ``string`` and ``dimensionality`` 1.
 
@@ -403,7 +403,7 @@ def test_use_subworkflow_with_batch_workflow_batch_input(
     assert [row["from_child"] for row in result] == ["alpha", "beta", "gamma"]
 
 
-def test_use_subworkflow_child_runs_dynamic_crop_on_parent_detections(
+def test_inner_workflow_child_runs_dynamic_crop_on_parent_detections(
     model_manager: ModelManager,
     dogs_image,
 ) -> None:
@@ -539,13 +539,13 @@ def test_use_subworkflow_child_runs_dynamic_crop_on_parent_detections(
         assert xyxy[2] > xyxy[0] and xyxy[3] > xyxy[1]
 
 
-def test_use_subworkflow_parent_detection_offset_after_nested_crop(
+def test_inner_workflow_parent_detection_offset_after_nested_crop(
     model_manager: ModelManager,
     dogs_image,
 ) -> None:
     """
     Same mocked three-box OD and nested ``dynamic_crop`` child as
-    ``test_use_subworkflow_child_runs_dynamic_crop_on_parent_detections``. The parent then runs
+    ``test_inner_workflow_child_runs_dynamic_crop_on_parent_detections``. The parent then runs
     ``roboflow_core/detection_offset@v1`` on ``$steps.nested.crop_predictions`` (10 px width/height, pixels).
     We assert boxes match the pixel-offset formula vs crop-only baselines, class metadata is unchanged, and new
     ``detection_id`` values are issued (see ``detection_offset`` TODO on parent coordinates).
@@ -715,7 +715,7 @@ def test_use_subworkflow_parent_detection_offset_after_nested_crop(
         )
 
 
-def test_use_subworkflow_after_continue_if_with_crop_batch_lineage(
+def test_inner_workflow_after_continue_if_with_crop_batch_lineage(
     model_manager: ModelManager,
     dogs_image,
 ) -> None:
@@ -866,11 +866,11 @@ def test_use_subworkflow_after_continue_if_with_crop_batch_lineage(
                 "evaluation_parameters": {
                     "predictions": "$steps.breds_classification.predictions",
                 },
-                "next_steps": ["$steps.nested_subworkflow"],
+                "next_steps": ["$steps.nested_inner_workflow"],
             },
             {
                 "type": "roboflow_core/inner_workflow@v1",
-                "name": "nested_subworkflow",
+                "name": "nested_inner_workflow",
                 "embedded_workflow": embedded,
                 "parameter_bindings": {
                     "child_msg": "$inputs.crop_label",
@@ -881,7 +881,7 @@ def test_use_subworkflow_after_continue_if_with_crop_batch_lineage(
             {
                 "type": "JsonField",
                 "name": "from_child",
-                "selector": "$steps.nested_subworkflow.echo",
+                "selector": "$steps.nested_inner_workflow.echo",
             },
         ],
     }
@@ -925,7 +925,7 @@ def test_use_subworkflow_after_continue_if_with_crop_batch_lineage(
     assert result[0]["from_child"] == [["passed-crop", "skipped-crop"], None]
 
 
-def test_parent_combines_outputs_from_two_parallel_use_subworkflows(
+def test_parent_combines_outputs_from_two_parallel_inner_workflows(
     model_manager: ModelManager,
 ) -> None:
     """Two sibling ``inner_workflow`` steps each map a parent input into the same child shape."""
