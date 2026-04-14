@@ -91,7 +91,7 @@ class BlockManifest(WorkflowBlockManifest):
         description=(
             "Confidence threshold for predictions. If omitted, the inference "
             "server uses the model's F1-optimal threshold from model evaluation "
-            "when available, otherwise falls back to 0.4."
+            "when available, otherwise falls back to the model's default."
         ),
         examples=[0.4, "$inputs.confidence_threshold"],
     )

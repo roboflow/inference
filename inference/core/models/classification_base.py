@@ -299,7 +299,7 @@ class ClassificationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
         self,
         predictions,
         img_dims,
-        confidence: Optional[float] = 0.5,
+        confidence: Optional[float] = None,
         **kwargs,
     ) -> Union[ClassificationInferenceResponse, List[ClassificationInferenceResponse]]:
         """

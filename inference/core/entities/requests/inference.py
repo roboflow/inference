@@ -151,8 +151,8 @@ class ObjectDetectionInferenceRequest(CVInferenceRequest):
         description=(
             "The confidence threshold used to filter out predictions. If omitted, "
             "the server uses the model's F1-optimal threshold from model evaluation "
-            "when available, otherwise falls back to 0.4. Pass an explicit value to "
-            "override both."
+            "when available, otherwise falls back to the model's default. Pass an "
+            "explicit value to override both."
         ),
     )
     fix_batch_size: Optional[bool] = Field(
