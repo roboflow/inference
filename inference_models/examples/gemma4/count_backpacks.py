@@ -6,12 +6,9 @@ asks a focused counting question.
 
 Run from the ``inference_models`` package root::
 
-    export ROBOFLOW_API_KEY=your_key
     uv run python examples/gemma4/run_gemma4_local.py
 
-For offline use with a local Hugging Face snapshot, set ``GEMMA4_MODEL_PATH`` to a
-directory that contains weights and ``model_config.json`` (see
-``examples/gemma4/model_config.example.json``). An API key is not required in that mode.
+Optional: set ``GEMMA4_MODEL_ID`` to override the default Roboflow registry id.
 """
 
 from __future__ import annotations
@@ -58,33 +55,12 @@ def _load_image_rgb(url: str) -> np.ndarray:
 
 
 def main() -> None:
-    local_path = os.environ.get("GEMMA4_MODEL_PATH")
-    api_key = os.environ.get("ROBOFLOW_API_KEY")
-
-    if local_path:
-        load_target = local_path
-        load_kw: dict = {
-            "device": DEFAULT_DEVICE,
-            "backend": "hugging-face",
-        }
-        print(f"Loading local package from {load_target!r} …")
-    else:
-        if not api_key:
-            print(
-                "Missing ROBOFLOW_API_KEY. Set it to load the hosted model, or set "
-                "GEMMA4_MODEL_PATH to a local directory with model_config.json and HF weights.",
-                file=sys.stderr,
-            )
-            sys.exit(1)
-        load_target = os.environ.get("GEMMA4_MODEL_ID", DEFAULT_MODEL_ID)
-        load_kw = {
-            "api_key": api_key,
-            "device": DEFAULT_DEVICE,
-            "backend": "hugging-face",
-        }
-        print(f"Loading hosted model {load_target!r} …")
-
-    model = AutoModel.from_pretrained(load_target, **load_kw)
+    load_kw = {
+        "device": DEFAULT_DEVICE,
+        "backend": "hugging-face",
+    }
+    print(f"Loading hosted model {DEFAULT_MODEL_ID!r} …")
+    model = AutoModel.from_pretrained(DEFAULT_MODEL_ID, **load_kw)
 
     print(f"Fetching image {IMAGE_URL!r} …")
     image_rgb = _load_image_rgb(IMAGE_URL)
