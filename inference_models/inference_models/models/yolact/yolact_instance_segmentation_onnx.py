@@ -338,16 +338,13 @@ def run_nms_for_instance_segmentation(
     scores = output[:, :, 4:-32]  # (N, 19248, num_classes)
     masks = output[:, :, -32:]
     results = []
-    per_class_thresh = (
-        conf_thresh.to(output.device) if isinstance(conf_thresh, torch.Tensor) else None
-    )
     for b in range(bs):
         bboxes = boxes[b]  # (19248, 4)
         class_scores = scores[b]  # (19248, 80)
         box_masks = masks[b]
         class_conf, class_ids = class_scores.max(1)  # (8400,), (8400,)
-        if per_class_thresh is not None:
-            mask = class_conf > per_class_thresh[class_ids]
+        if isinstance(conf_thresh, torch.Tensor):
+            mask = class_conf > conf_thresh.to(output.device)[class_ids]
         else:
             mask = class_conf > conf_thresh
         if mask.sum() == 0:

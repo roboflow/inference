@@ -16,14 +16,11 @@ def run_nms_yolov5(
     top_classes_conf = output[:, 4, :]
     scores = output[:, 5:, :]
     results = []
-    per_class_thresh = (
-        conf_thresh.to(output.device) if isinstance(conf_thresh, torch.Tensor) else None
-    )
     for b in range(bs):
         class_scores = scores[b]
         class_conf, class_ids = class_scores.max(0)
-        if per_class_thresh is not None:
-            mask = top_classes_conf[b] > per_class_thresh[class_ids]
+        if isinstance(conf_thresh, torch.Tensor):
+            mask = top_classes_conf[b] > conf_thresh.to(output.device)[class_ids]
         else:
             mask = top_classes_conf[b] > conf_thresh
         if not torch.any(mask):
@@ -68,17 +65,20 @@ def run_yolov5_nms_for_instance_segmentation(
     scores = output[:, 4:-32, :]
     masks = output[:, -32:, :]
     results = []
-    per_class_thresh = (
-        conf_thresh.to(output.device) if isinstance(conf_thresh, torch.Tensor) else None
-    )
 
     for b in range(bs):
         bboxes = boxes[b].T
         class_scores = scores[b].T
         box_masks = masks[b].T
         class_conf, class_ids = class_scores.max(1)
-        if per_class_thresh is not None:
-            mask = top_classes_conf[b] > per_class_thresh[class_ids]
+        if isinstance(conf_thresh, torch.Tensor):
+            # class_ids are slice-indexed: 0 is objectness, k>=1 is class_{k-1}.
+            # Keep objectness-dominated rows (no real class to threshold) and
+            # filter class-dominated rows against the real class's threshold.
+            thresh = conf_thresh.to(output.device)
+            real_class = (class_ids - 1).clamp(min=0, max=thresh.shape[0] - 1)
+            is_obj = class_ids == 0
+            mask = is_obj | (top_classes_conf[b] > thresh[real_class])
         else:
             mask = top_classes_conf[b] > conf_thresh
         if mask.sum() == 0:

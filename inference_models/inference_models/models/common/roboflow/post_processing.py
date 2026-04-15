@@ -25,14 +25,11 @@ def run_nms_for_object_detection(
     boxes = output[:, :4, :]
     scores = output[:, 4:, :]
     results = []
-    per_class_thresh = (
-        conf_thresh.to(output.device) if isinstance(conf_thresh, torch.Tensor) else None
-    )
     for b in range(bs):
         class_scores = scores[b]
         class_conf, class_ids = class_scores.max(0)
-        if per_class_thresh is not None:
-            mask = class_conf > per_class_thresh[class_ids]
+        if isinstance(conf_thresh, torch.Tensor):
+            mask = class_conf > conf_thresh.to(output.device)[class_ids]
         else:
             mask = class_conf > conf_thresh
         if not torch.any(mask):
@@ -74,15 +71,12 @@ def post_process_nms_fused_model_output(
 ) -> List[torch.Tensor]:
     bs = output.shape[0]
     nms_results = []
-    per_class_thresh = (
-        conf_thresh.to(output.device) if isinstance(conf_thresh, torch.Tensor) else None
-    )
     for batch_element_id in range(bs):
         batch_element_result = output[batch_element_id]
-        if per_class_thresh is not None:
+        if isinstance(conf_thresh, torch.Tensor):
             class_ids = batch_element_result[:, 5].long()
             batch_element_result = batch_element_result[
-                batch_element_result[:, 4] >= per_class_thresh[class_ids]
+                batch_element_result[:, 4] >= conf_thresh.to(output.device)[class_ids]
             ]
         else:
             batch_element_result = batch_element_result[
@@ -105,17 +99,14 @@ def run_nms_for_instance_segmentation(
     scores = output[:, 4:-32, :]  # (N, 80, 8400)
     masks = output[:, -32:, :]
     results = []
-    per_class_thresh = (
-        conf_thresh.to(output.device) if isinstance(conf_thresh, torch.Tensor) else None
-    )
 
     for b in range(bs):
         bboxes = boxes[b].T  # (8400, 4)
         class_scores = scores[b].T  # (8400, 80)
         box_masks = masks[b].T
         class_conf, class_ids = class_scores.max(1)  # (8400,), (8400,)
-        if per_class_thresh is not None:
-            mask = class_conf > per_class_thresh[class_ids]
+        if isinstance(conf_thresh, torch.Tensor):
+            mask = class_conf > conf_thresh.to(output.device)[class_ids]
         else:
             mask = class_conf > conf_thresh
         if mask.sum() == 0:
@@ -164,14 +155,11 @@ def run_nms_for_key_points_detection(
     scores = output[:, 4 : 4 + num_classes, :]
     key_points = output[:, 4 + num_classes :, :]
     results = []
-    per_class_thresh = (
-        conf_thresh.to(output.device) if isinstance(conf_thresh, torch.Tensor) else None
-    )
     for b in range(bs):
         class_scores = scores[b]
         class_conf, class_ids = class_scores.max(0)
-        if per_class_thresh is not None:
-            mask = class_conf > per_class_thresh[class_ids]
+        if isinstance(conf_thresh, torch.Tensor):
+            mask = class_conf > conf_thresh.to(output.device)[class_ids]
         else:
             mask = class_conf > conf_thresh
         if not torch.any(mask):

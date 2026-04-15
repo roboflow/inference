@@ -295,6 +295,12 @@ class RFDetrForObjectDetectionTRT(
                     ]
                     predicted_confidence = predicted_confidence[remapping_mask]
                     image_bboxes = image_bboxes[remapping_mask]
+                else:
+                    # drop DETR no-object rows
+                    named = top_classes < len(self.class_names)
+                    predicted_confidence = predicted_confidence[named]
+                    top_classes = top_classes[named]
+                    image_bboxes = image_bboxes[named]
                 confidence_mask = predicted_confidence > thresholds[top_classes.long()]
                 predicted_confidence = predicted_confidence[confidence_mask]
                 top_classes = top_classes[confidence_mask]

@@ -66,6 +66,13 @@ def post_process_instance_segmentation_results(
             confidence = confidence[remapping_mask]
             image_bboxes = image_bboxes[remapping_mask]
             image_masks = image_masks[remapping_mask]
+        else:
+            # drop DETR no-object rows
+            named = top_classes < threshold.shape[0]
+            confidence = confidence[named]
+            top_classes = top_classes[named]
+            image_bboxes = image_bboxes[named]
+            image_masks = image_masks[named]
         confidence_mask = confidence > threshold[top_classes.long()]
         confidence = confidence[confidence_mask]
         top_classes = top_classes[confidence_mask]
