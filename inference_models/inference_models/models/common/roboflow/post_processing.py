@@ -453,25 +453,14 @@ def align_instance_segmentation_results(
 
 
 class ConfidenceFilter:
-    """
-    Resolves the 4-tier priority chain (highest to lowest) for confidence
-    thresholding, honoring per-model defaults and model-eval-derived
-    `recommendedParameters`:
+    """Resolves per-class confidence thresholds via a 4-tier priority chain
+    (highest to lowest):
 
-      1. Explicit user value — single global threshold for everything
-      2. Per-class optimal — per-class filter with the global optimal (or
-         model's hardcoded default) as fallback for classes not in the map
-      3. Global optimal — single threshold for everything
-      4. Model's hardcoded default — single threshold for everything
-
-    Exposes:
-      - `floor`: the lowest threshold across all classes.
-      - `per_class_thresholds(class_names)`: thresholds aligned to
-        `class_names` (for tiers without per-class data, every entry is the
-        floor).
-
-    Application of thresholds is the caller's responsibility — the filter
-    intentionally owns no knowledge of domain output types.
+      1. Explicit user value
+      2. `recommendedParameters.per_class_confidence` (with global optimal or
+         model default as fallback for unlisted classes)
+      3. `recommendedParameters.confidence` (global optimal)
+      4. Model's hardcoded default
     """
 
     def __init__(
@@ -481,37 +470,48 @@ class ConfidenceFilter:
         recommended_parameters: Optional[RecommendedParameters],
         default_confidence: float,
     ):
-        self._per_class_map = self._resolve_per_class_map(
+        self._class_to_threshold_map = self._resolve_class_to_threshold_map(
             user_confidence, recommended_parameters
         )
-        self._fallback = self._resolve_fallback(
+        self._fallback_threshold = self._resolve_fallback_threshold(
             user_confidence, recommended_parameters, default_confidence
         )
         LOGGER.debug(
-            "ConfidenceFilter: fallback=%.4f, per_class=%s",
-            self._fallback, self._per_class_map,
+            "ConfidenceFilter: user_confidence=%s, recommended_parameters=%s, "
+            "default_confidence=%.4f -> class_to_threshold_map=%s, "
+            "fallback_threshold=%.4f",
+            user_confidence,
+            recommended_parameters,
+            default_confidence,
+            self._class_to_threshold_map,
+            self._fallback_threshold,
         )
 
     def per_class_thresholds(self, class_names: List[str]) -> torch.Tensor:
-        if self._per_class_map is None:
-            return torch.full((len(class_names),), self._fallback)
+        """Thresholds aligned to `class_names` (CPU tensor). Tiers without
+        per-class data return the fallback repeated."""
+        if self._class_to_threshold_map is None:
+            return torch.full((len(class_names),), self._fallback_threshold)
         return torch.tensor(
-            [self._per_class_map.get(name, self._fallback) for name in class_names]
+            [self._class_to_threshold_map.get(name, self._fallback_threshold) for name in class_names]
         )
 
     @staticmethod
-    def _resolve_per_class_map(
+    def _resolve_class_to_threshold_map(
         user_confidence: Optional[float],
         recommended_parameters: Optional[RecommendedParameters],
     ) -> Optional[Dict[str, float]]:
         if user_confidence is not None:
             return None
-        if recommended_parameters is None:
-            return None
-        return recommended_parameters.per_class_confidence or None
+        if (
+            recommended_parameters is not None
+            and recommended_parameters.confidence is not None
+        ):
+            return recommended_parameters.per_class_confidence
+        return None
 
     @staticmethod
-    def _resolve_fallback(
+    def _resolve_fallback_threshold(
         user_confidence: Optional[float],
         recommended_parameters: Optional[RecommendedParameters],
         default_confidence: float,
