@@ -589,7 +589,7 @@ class WebSocketModalExecutor:
         self._ws: Any = None
         self._ws_url: Optional[str] = None
 
-    def _get_ws_url(self) -> str:
+    def _get_ws_url(self, workspace_id: str) -> str:
         if self._ws_url is not None:
             return self._ws_url
 
@@ -605,13 +605,13 @@ class WebSocketModalExecutor:
             base = f"https://{workspace}--{label}.modal.run"
 
         ws_base = base.replace("https://", "wss://").replace("http://", "ws://")
-        self._ws_url = f"{ws_base}/ws"
+        self._ws_url = f"{ws_base}/ws?workspace_id={workspace_id}"
         return self._ws_url
 
-    def _connect(self) -> None:
+    def _connect(self, workspace_id: str) -> None:
         import websocket as ws_lib
 
-        url = self._get_ws_url()
+        url = self._get_ws_url(workspace_id)
         headers = {
             "Modal-Key": MODAL_TOKEN_ID,
             "Modal-Secret": MODAL_TOKEN_SECRET,
@@ -624,7 +624,7 @@ class WebSocketModalExecutor:
         )
         logger.info("[webexec-ws] Connected")
 
-    def _ensure_connection(self) -> None:
+    def _ensure_connection(self, workspace_id: str) -> None:
         if self._ws is not None:
             try:
                 self._ws.ping()
@@ -632,7 +632,7 @@ class WebSocketModalExecutor:
             except Exception:
                 logger.warning("[webexec-ws] Connection lost, reconnecting")
                 self._ws = None
-        self._connect()
+        self._connect(workspace_id)
 
     def execute_remote(
         self,
@@ -710,7 +710,7 @@ class WebSocketModalExecutor:
         t_pack = _time.monotonic()
 
         try:
-            self._ensure_connection()
+            self._ensure_connection(workspace)
             self._ws.send_binary(frame_bytes)
             resp_bytes = self._ws.recv()
         except Exception:
@@ -780,7 +780,7 @@ class WebSocketModalExecutor:
 
 
 def get_modal_executor(workspace_id: Optional[str] = None) -> "ModalExecutor":
-    """Factory: returns the right executor based on ``WEBEXEC_TRANSPORT``."""
+    """Returns the right executor based on ``WEBEXEC_TRANSPORT``."""
     from inference.core.env import WEBEXEC_TRANSPORT
 
     if WEBEXEC_TRANSPORT == "websocket":
