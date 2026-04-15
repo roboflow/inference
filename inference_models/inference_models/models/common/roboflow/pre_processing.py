@@ -1037,6 +1037,11 @@ CONTRAST_ADJUSTMENT_METHODS_FOR_NUMPY = {
 }
 
 
+_stretch_pinned_buffer: Optional[torch.Tensor] = None
+_stretch_norm_mean: Optional[torch.Tensor] = None
+_stretch_norm_std: Optional[torch.Tensor] = None
+
+
 def handle_numpy_input_preparation_with_stretch(
     image: np.ndarray,
     network_input: NetworkInputDefinition,
@@ -1049,22 +1054,64 @@ def handle_numpy_input_preparation_with_stretch(
     size_after_pre_processing = ImageDimensions(
         height=image.shape[0], width=image.shape[1]
     )
-    resized_image = cv2.resize(image, (target_size.width, target_size.height))
-    tensor = torch.from_numpy(resized_image).to(device=target_device)
-    tensor = torch.unsqueeze(tensor, 0)
-    tensor = tensor.permute(0, 3, 1, 2)
-    if input_color_mode != network_input.color_mode:
-        tensor = tensor[:, [2, 1, 0], :, :]
-    if network_input.scaling_factor is not None:
-        tensor = tensor / network_input.scaling_factor
-    if network_input.normalization:
-        if not tensor.is_floating_point():
-            tensor = tensor.to(dtype=torch.float32)
-        tensor = functional.normalize(
-            tensor,
-            mean=network_input.normalization[0],
-            std=network_input.normalization[1],
-        )
+    if target_device.type == "cuda":
+        # Optimized CUDA path: cv2 resize on CPU (fast), pinned-memory H2D
+        # transfer (avoids pageable staging), and inline normalization
+        # (avoids torchvision functional.normalize boolean GPU->CPU roundtrip).
+        resized_image = cv2.resize(image, (target_size.width, target_size.height))
+        # Reuse a pinned-memory buffer to avoid repeated allocation
+        global _stretch_pinned_buffer
+        needed_shape = (target_size.height, target_size.width, 3)
+        if (
+            _stretch_pinned_buffer is None
+            or _stretch_pinned_buffer.shape != needed_shape
+        ):
+            _stretch_pinned_buffer = torch.empty(
+                needed_shape, dtype=torch.uint8, pin_memory=True
+            )
+        _stretch_pinned_buffer.numpy()[:] = resized_image
+        tensor = _stretch_pinned_buffer.to(device=target_device, non_blocking=True)
+        # HWC -> NCHW
+        tensor = tensor.permute(2, 0, 1).unsqueeze(0).float()
+        if input_color_mode != network_input.color_mode:
+            tensor = tensor[:, [2, 1, 0], :, :]
+        if network_input.scaling_factor is not None:
+            tensor = tensor / network_input.scaling_factor
+        if network_input.normalization:
+            # Cache mean/std tensors on GPU to avoid per-call allocation
+            global _stretch_norm_mean, _stretch_norm_std
+            if (
+                _stretch_norm_mean is None
+                or _stretch_norm_mean.device != target_device
+            ):
+                _stretch_norm_mean = torch.tensor(
+                    network_input.normalization[0],
+                    dtype=torch.float32,
+                    device=target_device,
+                ).view(1, -1, 1, 1)
+                _stretch_norm_std = torch.tensor(
+                    network_input.normalization[1],
+                    dtype=torch.float32,
+                    device=target_device,
+                ).view(1, -1, 1, 1)
+            tensor = (tensor - _stretch_norm_mean) / _stretch_norm_std
+    else:
+        resized_image = cv2.resize(image, (target_size.width, target_size.height))
+        tensor = torch.from_numpy(resized_image).to(device=target_device)
+        tensor = torch.unsqueeze(tensor, 0)
+        tensor = tensor.permute(0, 3, 1, 2)
+        if input_color_mode != network_input.color_mode:
+            tensor = tensor[:, [2, 1, 0], :, :]
+        if network_input.scaling_factor is not None:
+            tensor = tensor / network_input.scaling_factor
+        if network_input.normalization:
+            if not tensor.is_floating_point():
+                tensor = tensor.to(dtype=torch.float32)
+            tensor = functional.normalize(
+                tensor,
+                mean=network_input.normalization[0],
+                std=network_input.normalization[1],
+            )
     image_metadata = PreProcessingMetadata(
         pad_left=0,
         pad_top=0,
