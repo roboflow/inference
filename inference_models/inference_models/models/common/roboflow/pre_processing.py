@@ -1040,6 +1040,7 @@ CONTRAST_ADJUSTMENT_METHODS_FOR_NUMPY = {
 _stretch_pinned_buffer: Optional[torch.Tensor] = None
 _stretch_norm_mean: Optional[torch.Tensor] = None
 _stretch_norm_std: Optional[torch.Tensor] = None
+_stretch_channel_swap_index: Optional[torch.Tensor] = None
 
 
 def handle_numpy_input_preparation_with_stretch(
@@ -1074,7 +1075,10 @@ def handle_numpy_input_preparation_with_stretch(
         # HWC -> NCHW
         tensor = tensor.permute(2, 0, 1).unsqueeze(0).float()
         if input_color_mode != network_input.color_mode:
-            tensor = tensor[:, [2, 1, 0], :, :]
+            global _stretch_channel_swap_index
+            if _stretch_channel_swap_index is None or not _stretch_channel_swap_index.is_cuda:
+                _stretch_channel_swap_index = torch.tensor([2, 1, 0], device=target_device)
+            tensor = tensor[:, _stretch_channel_swap_index, :, :]
         if network_input.scaling_factor is not None:
             tensor = tensor / network_input.scaling_factor
         if network_input.normalization:
@@ -1082,7 +1086,7 @@ def handle_numpy_input_preparation_with_stretch(
             global _stretch_norm_mean, _stretch_norm_std
             if (
                 _stretch_norm_mean is None
-                or _stretch_norm_mean.device != target_device
+                or not _stretch_norm_mean.is_cuda
             ):
                 _stretch_norm_mean = torch.tensor(
                     network_input.normalization[0],
