@@ -15,14 +15,11 @@ def run_yolonas_nms_for_object_detection(
     boxes = output[:, :, :4]
     scores = output[:, :, 4:]
     results = []
-    per_class_thresh = (
-        conf_thresh.to(output.device) if isinstance(conf_thresh, torch.Tensor) else None
-    )
     for b in range(bs):
         class_scores = scores[b]  # (8400, cls_num)
         class_conf, class_ids = torch.max(class_scores, dim=-1)
-        if per_class_thresh is not None:
-            mask = class_conf > per_class_thresh[class_ids]
+        if isinstance(conf_thresh, torch.Tensor):
+            mask = class_conf > conf_thresh.to(output.device)[class_ids]
         else:
             mask = class_conf > conf_thresh
         if not torch.any(mask):

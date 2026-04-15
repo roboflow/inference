@@ -42,7 +42,9 @@ from inference_models.models.common.roboflow.post_processing import (
     align_instance_segmentation_results,
     crop_masks_to_boxes,
     preprocess_segmentation_masks,
-    run_nms_for_instance_segmentation,
+)
+from inference_models.models.yolov5.nms import (
+    run_yolov5_nms_for_instance_segmentation,
 )
 from inference_models.models.common.roboflow.pre_processing import (
     pre_process_network_input,
@@ -273,7 +275,7 @@ class YOLOv7ForInstanceSegmentationTRT(
             for result_element in model_results:
                 result_element.record_stream(self._post_process_stream)
             instances, protos = model_results
-            nms_results = run_nms_for_instance_segmentation(
+            nms_results = run_yolov5_nms_for_instance_segmentation(
                 output=instances.permute(0, 2, 1),
                 conf_thresh=confidence,
                 iou_thresh=iou_threshold,

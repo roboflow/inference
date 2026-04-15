@@ -493,6 +493,12 @@ class RFDetrForObjectDetectionTorch(
                 labels = self._classes_re_mapping.class_mapping[labels[remapping_mask]]
                 boxes = boxes[remapping_mask]
             score_thresholds = thresholds.to(dtype=scores.dtype)
+            if self._classes_re_mapping is None:
+                # drop DETR no-object rows
+                named = labels < score_thresholds.shape[0]
+                scores = scores[named]
+                labels = labels[named]
+                boxes = boxes[named]
             keep = scores > score_thresholds[labels.long()]
             scores = scores[keep]
             labels = labels[keep]
