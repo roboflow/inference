@@ -534,3 +534,76 @@ def test_run_synchronous(mock_execute: MagicMock) -> None:
     mock_execute.assert_called_once()
     assert result["error_status"] is False
     assert result["message"] == "Vision event sent successfully"
+
+
+# === Non-SIMD / Compilation Regression Tests (ENT-1126) ===
+
+
+def test_manifest_is_not_simd() -> None:
+    """Block must be non-SIMD so the engine broadcasts scalar params per image."""
+    assert BlockManifest.accepts_batch_input() is False
+
+
+def test_batch_selector_on_scalar_field_passes_compile_check() -> None:
+    """Regression test for ENT-1126.
+
+    Exercises ``verify_declared_batch_compatibility_against_actual_inputs``
+    (graph_constructor.py:1659), the exact compile-time check that rejected
+    batch-oriented selectors on ``item_count`` when the block was SIMD.
+
+    A StepNode backed by our manifest with a batch-oriented input on
+    ``item_count`` must NOT raise ``ExecutionGraphStructureError``.
+    """
+    from inference.core.workflows.errors import ExecutionGraphStructureError
+    from inference.core.workflows.execution_engine.v1.compiler.entities import (
+        DynamicStepInputDefinition,
+        NodeInputCategory,
+        ParameterSpecification,
+        StepNode,
+    )
+    from inference.core.workflows.execution_engine.v1.compiler.graph_constructor import (
+        verify_declared_batch_compatibility_against_actual_inputs,
+    )
+
+    manifest = BlockManifest(
+        type="roboflow_core/roboflow_vision_events@v1",
+        name="vision_events",
+        event_type="inventory_count",
+        solution="test-solution",
+        item_count="$steps.counter.count",
+    )
+
+    step_node = StepNode(
+        node_category="step_node",
+        name="vision_events",
+        selector="$steps.vision_events",
+        data_lineage=[],
+        step_manifest=manifest,
+        input_data={
+            "item_count": DynamicStepInputDefinition(
+                parameter_specification=ParameterSpecification(
+                    parameter_name="item_count",
+                    nested_element_key=None,
+                    nested_element_index=None,
+                ),
+                category=NodeInputCategory.BATCH_STEP_OUTPUT,
+                data_lineage=["<workflow_input>"],
+                selector="$steps.counter.count",
+            ),
+        },
+        batch_oriented_parameters=set(),
+    )
+
+    # batch_compatibility_of_properties says item_count is NOT batch-compatible
+    batch_compat = {"item_count": {False}}
+
+    # Must not raise. Before the fix (when accepts_batch_input() was True),
+    # this exact call raised ExecutionGraphStructureError because a
+    # batch-oriented selector was plugged into a non-batch parameter.
+    result = verify_declared_batch_compatibility_against_actual_inputs(
+        node="$steps.vision_events",
+        step_node_data=step_node,
+        input_data=step_node.input_data,
+        batch_compatibility_of_properties=batch_compat,
+    )
+    assert isinstance(result, set)
