@@ -269,22 +269,33 @@ class RFDetrForObjectDetectionTRT(
         **kwargs,
     ) -> List[Detections]:
         confidence_filter = ConfidenceFilter(
-            confidence,
-            self.recommended_parameters,
-            INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE,
+            user_confidence=confidence,
+            recommended_parameters=self.recommended_parameters,
+            default_confidence=INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE,
         )
-        confidence = confidence_filter.floor
         with torch.cuda.stream(self._post_process_stream):
             for result_element in model_results:
                 result_element.record_stream(self._post_process_stream)
             bboxes, logits = model_results
             logits_sigmoid = torch.nn.functional.sigmoid(logits)
+            thresholds = confidence_filter.per_class_thresholds(self.class_names).to(
+                dtype=logits_sigmoid.dtype, device=logits_sigmoid.device,
+            )
             results = []
             for image_bboxes, image_logits, image_meta in zip(
                 bboxes, logits_sigmoid, pre_processing_meta
             ):
                 predicted_confidence, top_classes = image_logits.max(dim=1)
-                confidence_mask = predicted_confidence > confidence
+                if self._classes_re_mapping is not None:
+                    remapping_mask = torch.isin(
+                        top_classes, self._classes_re_mapping.remaining_class_ids
+                    )
+                    top_classes = self._classes_re_mapping.class_mapping[
+                        top_classes[remapping_mask]
+                    ]
+                    predicted_confidence = predicted_confidence[remapping_mask]
+                    image_bboxes = image_bboxes[remapping_mask]
+                confidence_mask = predicted_confidence > thresholds[top_classes.long()]
                 predicted_confidence = predicted_confidence[confidence_mask]
                 top_classes = top_classes[confidence_mask]
                 selected_boxes = image_bboxes[confidence_mask]
@@ -293,15 +304,6 @@ class RFDetrForObjectDetectionTRT(
                 )
                 top_classes = top_classes[sorted_indices]
                 selected_boxes = selected_boxes[sorted_indices]
-                if self._classes_re_mapping is not None:
-                    remapping_mask = torch.isin(
-                        top_classes, self._classes_re_mapping.remaining_class_ids
-                    )
-                    top_classes = self._classes_re_mapping.class_mapping[
-                        top_classes[remapping_mask]
-                    ]
-                    selected_boxes = selected_boxes[remapping_mask]
-                    predicted_confidence = predicted_confidence[remapping_mask]
                 cxcy = selected_boxes[:, :2]
                 wh = selected_boxes[:, 2:]
                 xy_min = cxcy - 0.5 * wh
@@ -329,10 +331,6 @@ class RFDetrForObjectDetectionTRT(
                     confidence=predicted_confidence,
                     class_id=top_classes.int(),
                 )
-                if confidence_filter.has_per_class_refinement:
-                    detections = confidence_filter.refine_detections(
-                        detections, self.class_names
-                    )
                 results.append(detections)
         self._post_process_stream.synchronize()
         return results

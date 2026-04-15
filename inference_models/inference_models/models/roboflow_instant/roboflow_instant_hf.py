@@ -139,9 +139,9 @@ class RoboflowInstantHF(ObjectDetectionModel):
         **kwargs,
     ) -> List[Detections]:
         confidence_filter = ConfidenceFilter(
-            confidence,
-            self.recommended_parameters,
-            INFERENCE_MODELS_ROBOFLOW_INSTANT_DEFAULT_CONFIDENCE,
+            user_confidence=confidence,
+            recommended_parameters=self.recommended_parameters,
+            default_confidence=INFERENCE_MODELS_ROBOFLOW_INSTANT_DEFAULT_CONFIDENCE,
         )
         results = (
             self._feature_extractor.post_process_predictions_for_precomputed_embeddings(
@@ -151,9 +151,19 @@ class RoboflowInstantHF(ObjectDetectionModel):
                 iou_threshold=iou_threshold,
             )
         )
-        if confidence_filter.has_per_class_refinement:
-            results = [
-                confidence_filter.refine_detections(r, self.class_names)
-                for r in results
-            ]
+        thresholds_cpu = confidence_filter.per_class_thresholds(self.class_names)
+        refined = []
+        for r in results:
+            thresholds = thresholds_cpu.to(
+                dtype=r.confidence.dtype, device=r.confidence.device
+            )
+            keep = r.confidence >= thresholds[r.class_id.long()]
+            refined.append(
+                Detections(
+                    xyxy=r.xyxy[keep],
+                    class_id=r.class_id[keep],
+                    confidence=r.confidence[keep],
+                )
+            )
+        results = refined
         return results

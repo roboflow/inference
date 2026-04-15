@@ -220,11 +220,11 @@ class YOLOv8ForInstanceSegmentationOnnx(
         **kwargs,
     ) -> List[InstanceDetections]:
         confidence_filter = ConfidenceFilter(
-            confidence,
-            self.recommended_parameters,
-            INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_CONFIDENCE,
+            user_confidence=confidence,
+            recommended_parameters=self.recommended_parameters,
+            default_confidence=INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_CONFIDENCE,
         )
-        confidence = confidence_filter.floor
+        confidence = confidence_filter.per_class_thresholds(self.class_names)
         instances, protos = model_results
         if self._inference_config.post_processing.fused:
             nms_results = post_process_nms_fused_model_output(
@@ -275,9 +275,5 @@ class YOLOv8ForInstanceSegmentationOnnx(
                 confidence=aligned_boxes[:, 4],
                 mask=aligned_masks,
             )
-            if confidence_filter.has_per_class_refinement:
-                instance_detections = confidence_filter.refine_instance_detections(
-                    instance_detections, self.class_names
-                )
             final_results.append(instance_detections)
         return final_results

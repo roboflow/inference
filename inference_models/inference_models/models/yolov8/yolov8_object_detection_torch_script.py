@@ -166,11 +166,11 @@ class YOLOv8ForObjectDetectionTorchScript(
         **kwargs,
     ) -> List[Detections]:
         confidence_filter = ConfidenceFilter(
-            confidence,
-            self.recommended_parameters,
-            INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_CONFIDENCE,
+            user_confidence=confidence,
+            recommended_parameters=self.recommended_parameters,
+            default_confidence=INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_CONFIDENCE,
         )
-        confidence = confidence_filter.floor
+        confidence = confidence_filter.per_class_thresholds(self.class_names)
         if self._inference_config.post_processing.fused:
             nms_results = post_process_nms_fused_model_output(
                 output=model_results, conf_thresh=confidence
@@ -194,9 +194,5 @@ class YOLOv8ForObjectDetectionTorchScript(
                 class_id=result[:, 5].int(),
                 confidence=result[:, 4],
             )
-            if confidence_filter.has_per_class_refinement:
-                detections = confidence_filter.refine_detections(
-                    detections, self.class_names
-                )
             results.append(detections)
         return results

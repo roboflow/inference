@@ -184,11 +184,12 @@ class MediaPipeFaceDetector(
         **kwargs,
     ) -> Tuple[List[KeyPoints], List[Detections]]:
         confidence_filter = ConfidenceFilter(
-            confidence,
-            self.recommended_parameters,
-            INFERENCE_MODELS_MEDIAPIPE_FACE_DETECTOR_DEFAULT_CONFIDENCE,
+            user_confidence=confidence,
+            recommended_parameters=self.recommended_parameters,
+            default_confidence=INFERENCE_MODELS_MEDIAPIPE_FACE_DETECTOR_DEFAULT_CONFIDENCE,
         )
-        confidence = confidence_filter.floor
+        thresholds = confidence_filter.per_class_thresholds(self.class_names)
+        confidence = float(thresholds[0].item())
         final_key_points, final_detections = [], []
         for image_results, image_dimensions in zip(model_results, pre_processing_meta):
             detections_xyxy, detections_class_id, detections_confidence = [], [], []
@@ -231,12 +232,6 @@ class MediaPipeFaceDetector(
                 class_id=torch.tensor(key_points_class_id).int(),
                 confidence=torch.tensor(key_points_confidence),
             )
-            if confidence_filter.has_per_class_refinement:
-                key_points, detections = (
-                    confidence_filter.refine_keypoints_and_detections(
-                        key_points, detections, self.class_names
-                    )
-                )
             final_key_points.append(key_points)
             final_detections.append(detections)
         return final_key_points, final_detections

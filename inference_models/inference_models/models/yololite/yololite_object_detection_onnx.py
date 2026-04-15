@@ -206,11 +206,11 @@ class YOLOLiteForObjectDetectionOnnx(
         **kwargs,
     ) -> List[Detections]:
         confidence_filter = ConfidenceFilter(
-            confidence,
-            self.recommended_parameters,
-            INFERENCE_MODELS_YOLOLITE_DEFAULT_CONFIDENCE,
+            user_confidence=confidence,
+            recommended_parameters=self.recommended_parameters,
+            default_confidence=INFERENCE_MODELS_YOLOLITE_DEFAULT_CONFIDENCE,
         )
-        confidence = confidence_filter.floor
+        confidence = confidence_filter.per_class_thresholds(self.class_names)
         # Backward compatibility: earlier model packages have no post_processing config — always unfused 3-tensor output
         if (
             self._inference_config.post_processing
@@ -236,17 +236,13 @@ class YOLOLiteForObjectDetectionOnnx(
                 class_id=result[:, 5].int(),
                 confidence=result[:, 4],
             )
-            if confidence_filter.has_per_class_refinement:
-                detections = confidence_filter.refine_detections(
-                    detections, self.class_names
-                )
             results.append(detections)
         return results
 
     def _post_process_fused(
         self,
         model_results: Tuple[torch.Tensor, ...],
-        confidence: float,
+        confidence: Union[float, torch.Tensor],
     ) -> List[torch.Tensor]:
         # Single output tensor [B, max_det, 6]: x1, y1, x2, y2, conf, class_id
         output = model_results[0]
@@ -257,7 +253,7 @@ class YOLOLiteForObjectDetectionOnnx(
     def _post_process_unfused(
         self,
         model_results: Tuple[torch.Tensor, ...],
-        confidence: float,
+        confidence: Union[float, torch.Tensor],
         iou_threshold: float,
         max_detections: int,
         class_agnostic_nms: bool,

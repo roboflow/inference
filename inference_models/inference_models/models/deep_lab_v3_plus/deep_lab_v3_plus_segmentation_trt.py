@@ -255,11 +255,10 @@ class DeepLabV3PlusForSemanticSegmentationTRT(
         **kwargs,
     ) -> List[SemanticSegmentationResult]:
         confidence_filter = ConfidenceFilter(
-            confidence,
-            self.recommended_parameters,
-            INFERENCE_MODELS_DEEP_LAB_V3_PLUS_DEFAULT_CONFIDENCE,
+            user_confidence=confidence,
+            recommended_parameters=self.recommended_parameters,
+            default_confidence=INFERENCE_MODELS_DEEP_LAB_V3_PLUS_DEFAULT_CONFIDENCE,
         )
-        confidence = confidence_filter.floor
         with torch.cuda.stream(self._post_process_stream):
             model_results.record_stream(self._post_process_stream)
             results = []
@@ -326,9 +325,6 @@ class DeepLabV3PlusForSemanticSegmentationTRT(
                     )
                 image_results = torch.nn.functional.softmax(image_results, dim=0)
                 image_confidence, image_class_ids = torch.max(image_results, dim=0)
-                below_threshold = image_confidence < confidence
-                image_confidence[below_threshold] = 0.0
-                image_class_ids[below_threshold] = self._background_class_id
                 if (
                     image_metadata.static_crop_offset.offset_x > 0
                     or image_metadata.static_crop_offset.offset_y > 0
@@ -370,10 +366,20 @@ class DeepLabV3PlusForSemanticSegmentationTRT(
                     segmentation_map=image_class_ids,
                     confidence=image_confidence,
                 )
-                if confidence_filter.has_per_class_refinement:
-                    result = confidence_filter.refine_segmentation_result(
-                        result, self.class_names, self._background_class_id
-                    )
+                thresholds = confidence_filter.per_class_thresholds(self.class_names).to(
+                    dtype=result.confidence.dtype,
+                    device=result.confidence.device,
+                )
+                per_pixel = thresholds[result.segmentation_map.long()]
+                below = result.confidence < per_pixel
+                seg_map = result.segmentation_map.clone()
+                conf = result.confidence.clone()
+                seg_map[below] = self._background_class_id
+                conf[below] = 0.0
+                result = SemanticSegmentationResult(
+                    segmentation_map=seg_map,
+                    confidence=conf,
+                )
                 results.append(result)
         self._post_process_stream.synchronize()
         return results
