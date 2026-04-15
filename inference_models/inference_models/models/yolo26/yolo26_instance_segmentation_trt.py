@@ -302,13 +302,14 @@ class YOLO26ForInstanceSegmentationTRT(
                     inference_size=image_meta.inference_size,
                     static_crop_offset=image_meta.static_crop_offset,
                 )
-                instance_detections = InstanceDetections(
-                    xyxy=aligned_boxes[:, :4].round().int(),
-                    class_id=aligned_boxes[:, 5].int(),
-                    confidence=aligned_boxes[:, 4],
-                    mask=aligned_masks,
+                final_results.append(
+                    InstanceDetections(
+                        xyxy=aligned_boxes[:, :4].round().int(),
+                        class_id=aligned_boxes[:, 5].int(),
+                        confidence=aligned_boxes[:, 4],
+                        mask=aligned_masks,
+                    )
                 )
-                final_results.append(instance_detections)
         self._post_process_stream.synchronize()
         return final_results
 

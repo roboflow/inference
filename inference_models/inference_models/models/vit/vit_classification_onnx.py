@@ -360,9 +360,10 @@ class VITForMultiLabelClassificationOnnx(
             predicted_classes = torch.argwhere(
                 batch_element_confidence >= thresholds
             ).squeeze(dim=-1)
-            prediction = MultiLabelClassificationPrediction(
-                class_ids=predicted_classes,
-                confidence=batch_element_confidence,
+            results.append(
+                MultiLabelClassificationPrediction(
+                    class_ids=predicted_classes,
+                    confidence=batch_element_confidence,
+                )
             )
-            results.append(prediction)
         return results

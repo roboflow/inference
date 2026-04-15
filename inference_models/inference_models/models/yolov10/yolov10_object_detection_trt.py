@@ -265,12 +265,13 @@ class YOLOv10ForObjectDetectionTRT(
                     image_detections=filtered,
                     image_metadata=metadata,
                 )
-                detections = Detections(
-                    xyxy=rescaled[:, :4].round().int(),
-                    class_id=rescaled[:, 5].int(),
-                    confidence=rescaled[:, 4],
+                results.append(
+                    Detections(
+                        xyxy=rescaled[:, :4].round().int(),
+                        class_id=rescaled[:, 5].int(),
+                        confidence=rescaled[:, 4],
+                    )
                 )
-                results.append(detections)
         self._post_process_stream.synchronize()
         return results
 

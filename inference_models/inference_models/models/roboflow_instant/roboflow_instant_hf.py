@@ -165,5 +165,4 @@ class RoboflowInstantHF(ObjectDetectionModel):
                     confidence=r.confidence[keep],
                 )
             )
-        results = refined
-        return results
+        return refined

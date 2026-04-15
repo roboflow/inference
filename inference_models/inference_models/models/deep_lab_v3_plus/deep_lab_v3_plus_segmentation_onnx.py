@@ -311,9 +311,10 @@ class DeepLabV3PlusForSemanticSegmentationOnnx(
             conf = result.confidence.clone()
             seg_map[below] = self._background_class_id
             conf[below] = 0.0
-            result = SemanticSegmentationResult(
-                segmentation_map=seg_map,
-                confidence=conf,
+            results.append(
+                SemanticSegmentationResult(
+                    segmentation_map=seg_map,
+                    confidence=conf,
+                )
             )
-            results.append(result)
         return results

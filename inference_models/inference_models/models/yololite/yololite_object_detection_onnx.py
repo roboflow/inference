@@ -231,12 +231,13 @@ class YOLOLiteForObjectDetectionOnnx(
         )
         results = []
         for result in rescaled_results:
-            detections = Detections(
-                xyxy=result[:, :4].round().int(),
-                class_id=result[:, 5].int(),
-                confidence=result[:, 4],
+            results.append(
+                Detections(
+                    xyxy=result[:, :4].round().int(),
+                    class_id=result[:, 5].int(),
+                    confidence=result[:, 4],
+                )
             )
-            results.append(detections)
         return results
 
     def _post_process_fused(

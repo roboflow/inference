@@ -299,10 +299,12 @@ class YOLO26ForKeyPointsDetectionTRT(
             detections, all_key_points = [], []
             for result in rescaled_results:
                 class_id = result[:, 5].int()
-                image_detections = Detections(
-                    xyxy=result[:, :4].round().int(),
-                    class_id=class_id,
-                    confidence=result[:, 4],
+                detections.append(
+                    Detections(
+                        xyxy=result[:, :4].round().int(),
+                        class_id=class_id,
+                        confidence=result[:, 4],
+                    )
                 )
                 key_points_reshaped = result[:, 6:].view(
                     result.shape[0], self._key_points_slots_in_prediction, 3
@@ -326,11 +328,11 @@ class YOLO26ForKeyPointsDetectionTRT(
                 mask = invalid_slot_keypoints | keypoints_below_threshold
                 xy[mask] = 0.0
                 kp_confidence[mask] = 0.0
-                image_key_points = KeyPoints(
-                    xy=xy.round().int(), class_id=class_id, confidence=kp_confidence
+                all_key_points.append(
+                    KeyPoints(
+                        xy=xy.round().int(), class_id=class_id, confidence=kp_confidence
+                    )
                 )
-                detections.append(image_detections)
-                all_key_points.append(image_key_points)
         self._post_process_stream.synchronize()
         return all_key_points, detections
 
