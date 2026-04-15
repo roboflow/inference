@@ -453,10 +453,9 @@ def test_run_disabled() -> None:
         fire_and_forget=False,
         disable_sink=True,
     )
-    assert isinstance(result, list)
-    assert len(result) == 1
-    assert result[0]["error_status"] is False
-    assert "disabled" in result[0]["message"].lower()
+    assert isinstance(result, dict)
+    assert result["error_status"] is False
+    assert "disabled" in result["message"].lower()
 
 
 @patch(
@@ -481,8 +480,8 @@ def test_run_fire_and_forget_background_tasks(mock_execute: MagicMock) -> None:
     )
 
     background_tasks.add_task.assert_called_once()
-    assert result[0]["error_status"] is False
-    assert "background" in result[0]["message"].lower()
+    assert result["error_status"] is False
+    assert "background" in result["message"].lower()
 
 
 @patch(
@@ -507,8 +506,8 @@ def test_run_fire_and_forget_thread_pool(mock_execute: MagicMock) -> None:
     )
 
     thread_pool.submit.assert_called_once()
-    assert result[0]["error_status"] is False
-    assert "background" in result[0]["message"].lower()
+    assert result["error_status"] is False
+    assert "background" in result["message"].lower()
 
 
 @patch(
@@ -533,5 +532,5 @@ def test_run_synchronous(mock_execute: MagicMock) -> None:
     )
 
     mock_execute.assert_called_once()
-    assert result[0]["error_status"] is False
-    assert result[0]["message"] == "Vision event sent successfully"
+    assert result["error_status"] is False
+    assert result["message"] == "Vision event sent successfully"
