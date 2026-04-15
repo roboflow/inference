@@ -275,10 +275,11 @@ class RFDetrForObjectDetectionONNX(
                 image_detections=selected_boxes_xyxy,
                 image_metadata=image_meta,
             )
-            detections = Detections(
-                xyxy=selected_boxes_xyxy.round().int(),
-                confidence=predicted_confidence,
-                class_id=top_classes.int(),
+            results.append(
+                Detections(
+                    xyxy=selected_boxes_xyxy.round().int(),
+                    confidence=predicted_confidence,
+                    class_id=top_classes.int(),
+                )
             )
-            results.append(detections)
         return results

@@ -533,10 +533,11 @@ class RFDetrForObjectDetectionTorch(
                     device=boxes.device,
                 )
                 boxes[:, :4].add_(static_crop_offsets)
-            detections = Detections(
-                xyxy=boxes.round().int(),
-                confidence=scores,
-                class_id=labels.int(),
+            detections_list.append(
+                Detections(
+                    xyxy=boxes.round().int(),
+                    confidence=scores,
+                    class_id=labels.int(),
+                )
             )
-            detections_list.append(detections)
         return detections_list

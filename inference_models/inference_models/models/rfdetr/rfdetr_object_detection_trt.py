@@ -332,12 +332,13 @@ class RFDetrForObjectDetectionTRT(
                     image_detections=selected_boxes_xyxy,
                     image_metadata=image_meta,
                 )
-                detections = Detections(
-                    xyxy=selected_boxes_xyxy.round().int(),
-                    confidence=predicted_confidence,
-                    class_id=top_classes.int(),
+                results.append(
+                    Detections(
+                        xyxy=selected_boxes_xyxy.round().int(),
+                        confidence=predicted_confidence,
+                        class_id=top_classes.int(),
+                    )
                 )
-                results.append(detections)
         self._post_process_stream.synchronize()
         return results
 
