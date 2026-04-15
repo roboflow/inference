@@ -417,11 +417,13 @@ class RFDetrForObjectDetectionTorch(
         **kwargs,
     ) -> List[Detections]:
         confidence_filter = ConfidenceFilter(
-            confidence,
-            self.recommended_parameters,
-            INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE,
+            user_confidence=confidence,
+            recommended_parameters=self.recommended_parameters,
+            default_confidence=INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE,
         )
-        confidence = confidence_filter.floor
+        thresholds = confidence_filter.per_class_thresholds(self.class_names).to(
+            device=self._device,
+        )
         if (
             self._inference_config.network_input.resize_mode
             in RESIZE_MODES_TO_REVERT_PADDING
@@ -490,7 +492,8 @@ class RFDetrForObjectDetectionTorch(
                 scores = scores[remapping_mask]
                 labels = self._classes_re_mapping.class_mapping[labels[remapping_mask]]
                 boxes = boxes[remapping_mask]
-            keep = scores > confidence
+            score_thresholds = thresholds.to(dtype=scores.dtype)
+            keep = scores > score_thresholds[labels.long()]
             scores = scores[keep]
             labels = labels[keep]
             boxes = boxes[keep]
@@ -529,9 +532,5 @@ class RFDetrForObjectDetectionTorch(
                 confidence=scores,
                 class_id=labels.int(),
             )
-            if confidence_filter.has_per_class_refinement:
-                detections = confidence_filter.refine_detections(
-                    detections, self.class_names
-                )
             detections_list.append(detections)
         return detections_list

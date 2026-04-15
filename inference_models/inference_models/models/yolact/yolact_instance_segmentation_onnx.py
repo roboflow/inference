@@ -233,11 +233,11 @@ class YOLOACTForInstanceSegmentationOnnx(
         **kwargs,
     ) -> List[InstanceDetections]:
         confidence_filter = ConfidenceFilter(
-            confidence,
-            self.recommended_parameters,
-            INFERENCE_MODELS_YOLACT_DEFAULT_CONFIDENCE,
+            user_confidence=confidence,
+            recommended_parameters=self.recommended_parameters,
+            default_confidence=INFERENCE_MODELS_YOLACT_DEFAULT_CONFIDENCE,
         )
-        confidence = confidence_filter.floor
+        confidence = confidence_filter.per_class_thresholds(self.class_names)
         all_loc_data, all_conf_data, all_mask_data, all_prior_data, all_proto_data = (
             model_results
         )
@@ -306,12 +306,6 @@ class YOLOACTForInstanceSegmentationOnnx(
                 confidence=aligned_boxes[:, 4],
                 mask=aligned_masks,
             )
-            if confidence_filter.has_per_class_refinement:
-                instance_detections = (
-                    confidence_filter.refine_instance_detections(
-                        instance_detections, self.class_names
-                    )
-                )
             final_results.append(instance_detections)
         return final_results
 
@@ -334,7 +328,7 @@ def decode_predicted_bboxes(
 
 def run_nms_for_instance_segmentation(
     output: torch.Tensor,
-    conf_thresh: float = 0.25,
+    conf_thresh: Union[float, torch.Tensor] = 0.25,
     iou_thresh: float = 0.45,
     max_detections: int = 100,
     class_agnostic: bool = False,
@@ -344,12 +338,18 @@ def run_nms_for_instance_segmentation(
     scores = output[:, :, 4:-32]  # (N, 19248, num_classes)
     masks = output[:, :, -32:]
     results = []
+    per_class_thresh = (
+        conf_thresh.to(output.device) if isinstance(conf_thresh, torch.Tensor) else None
+    )
     for b in range(bs):
         bboxes = boxes[b]  # (19248, 4)
         class_scores = scores[b]  # (19248, 80)
         box_masks = masks[b]
         class_conf, class_ids = class_scores.max(1)  # (8400,), (8400,)
-        mask = class_conf > conf_thresh
+        if per_class_thresh is not None:
+            mask = class_conf > per_class_thresh[class_ids]
+        else:
+            mask = class_conf > conf_thresh
         if mask.sum() == 0:
             results.append(torch.zeros((0, 38), device=output.device))
             continue

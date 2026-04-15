@@ -264,11 +264,11 @@ class YOLOv7ForInstanceSegmentationTRT(
         **kwargs,
     ) -> List[InstanceDetections]:
         confidence_filter = ConfidenceFilter(
-            confidence,
-            self.recommended_parameters,
-            INFERENCE_MODELS_YOLOV7_DEFAULT_CONFIDENCE,
+            user_confidence=confidence,
+            recommended_parameters=self.recommended_parameters,
+            default_confidence=INFERENCE_MODELS_YOLOV7_DEFAULT_CONFIDENCE,
         )
-        confidence = confidence_filter.floor
+        confidence = confidence_filter.per_class_thresholds(self.class_names)
         with torch.cuda.stream(self._post_process_stream):
             for result_element in model_results:
                 result_element.record_stream(self._post_process_stream)
@@ -314,10 +314,6 @@ class YOLOv7ForInstanceSegmentationTRT(
                     confidence=aligned_boxes[:, 4],
                     mask=aligned_masks,
                 )
-                if confidence_filter.has_per_class_refinement:
-                    instance_detections = confidence_filter.refine_instance_detections(
-                        instance_detections, self.class_names
-                    )
                 final_results.append(instance_detections)
         self._post_process_stream.synchronize()
         return final_results

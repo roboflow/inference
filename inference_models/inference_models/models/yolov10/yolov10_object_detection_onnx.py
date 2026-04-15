@@ -192,14 +192,16 @@ class YOLOv10ForObjectDetectionOnnx(
         **kwargs,
     ) -> List[Detections]:
         confidence_filter = ConfidenceFilter(
-            confidence,
-            self.recommended_parameters,
-            INFERENCE_MODELS_YOLOV10_DEFAULT_CONFIDENCE,
+            user_confidence=confidence,
+            recommended_parameters=self.recommended_parameters,
+            default_confidence=INFERENCE_MODELS_YOLOV10_DEFAULT_CONFIDENCE,
         )
-        confidence = confidence_filter.floor
+        thresholds = confidence_filter.per_class_thresholds(self.class_names).to(
+            dtype=model_results.dtype, device=model_results.device,
+        )
         results = []
         for image_result, metadata in zip(model_results, pre_processing_meta):
-            mask = image_result[:, 4] > confidence
+            mask = image_result[:, 4] > thresholds[image_result[:, 5].long()]
             filtered = image_result[mask][:max_detections]
             rescaled = rescale_image_detections(
                 image_detections=filtered,
@@ -210,9 +212,5 @@ class YOLOv10ForObjectDetectionOnnx(
                 class_id=rescaled[:, 5].int(),
                 confidence=rescaled[:, 4],
             )
-            if confidence_filter.has_per_class_refinement:
-                detections = confidence_filter.refine_detections(
-                    detections, self.class_names
-                )
             results.append(detections)
         return results

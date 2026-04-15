@@ -361,11 +361,13 @@ class DinoV3ForMultiLabelClassificationOnnx(
         **kwargs,
     ) -> List[MultiLabelClassificationPrediction]:
         confidence_filter = ConfidenceFilter(
-            confidence,
-            self.recommended_parameters,
-            INFERENCE_MODELS_DINOV3_DEFAULT_CONFIDENCE,
+            user_confidence=confidence,
+            recommended_parameters=self.recommended_parameters,
+            default_confidence=INFERENCE_MODELS_DINOV3_DEFAULT_CONFIDENCE,
         )
-        confidence = confidence_filter.floor
+        thresholds = confidence_filter.per_class_thresholds(self.class_names).to(
+            dtype=model_results.dtype, device=model_results.device,
+        )
         if (
             self._inference_config.post_processing
             and self._inference_config.post_processing.fused
@@ -376,15 +378,11 @@ class DinoV3ForMultiLabelClassificationOnnx(
         results = []
         for batch_element_confidence in model_results:
             predicted_classes = torch.argwhere(
-                batch_element_confidence >= confidence
+                batch_element_confidence >= thresholds
             ).squeeze(dim=-1)
             prediction = MultiLabelClassificationPrediction(
                 class_ids=predicted_classes,
                 confidence=batch_element_confidence,
             )
-            if confidence_filter.has_per_class_refinement:
-                prediction = confidence_filter.refine_multilabel_prediction(
-                    prediction, self.class_names
-                )
             results.append(prediction)
         return results

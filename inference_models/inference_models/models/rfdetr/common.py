@@ -1,4 +1,4 @@
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Union
 
 import torch
 from torchvision.transforms import functional
@@ -47,17 +47,26 @@ def post_process_instance_segmentation_results(
     logits: torch.Tensor,
     masks: torch.Tensor,
     pre_processing_meta: List[PreProcessingMetadata],
-    threshold: float,
+    threshold: torch.Tensor,
     classes_re_mapping: Optional[ClassesReMapping],
 ) -> List[InstanceDetections]:
     logits_sigmoid = torch.nn.functional.sigmoid(logits)
     results = []
     device = bboxes.device
+    threshold = threshold.to(device=device, dtype=logits_sigmoid.dtype)
     for image_bboxes, image_logits, image_masks, image_meta in zip(
         bboxes, logits_sigmoid, masks, pre_processing_meta
     ):
         confidence, top_classes = image_logits.max(dim=1)
-        confidence_mask = confidence > threshold
+        if classes_re_mapping is not None:
+            remapping_mask = torch.isin(
+                top_classes, classes_re_mapping.remaining_class_ids
+            )
+            top_classes = classes_re_mapping.class_mapping[top_classes[remapping_mask]]
+            confidence = confidence[remapping_mask]
+            image_bboxes = image_bboxes[remapping_mask]
+            image_masks = image_masks[remapping_mask]
+        confidence_mask = confidence > threshold[top_classes.long()]
         confidence = confidence[confidence_mask]
         top_classes = top_classes[confidence_mask]
         selected_boxes = image_bboxes[confidence_mask]
@@ -66,14 +75,6 @@ def post_process_instance_segmentation_results(
         top_classes = top_classes[sorted_indices]
         selected_boxes = selected_boxes[sorted_indices]
         selected_masks = selected_masks[sorted_indices]
-        if classes_re_mapping is not None:
-            remapping_mask = torch.isin(
-                top_classes, classes_re_mapping.remaining_class_ids
-            )
-            top_classes = classes_re_mapping.class_mapping[top_classes[remapping_mask]]
-            selected_boxes = selected_boxes[remapping_mask]
-            confidence = confidence[remapping_mask]
-            selected_masks = selected_masks[remapping_mask]
         cxcy = selected_boxes[:, :2]
         wh = selected_boxes[:, 2:]
         xy_min = cxcy - 0.5 * wh

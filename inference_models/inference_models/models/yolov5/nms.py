@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Union
 
 import torch
 import torchvision
@@ -6,7 +6,7 @@ import torchvision
 
 def run_nms_yolov5(
     output: torch.Tensor,
-    conf_thresh: float = 0.25,
+    conf_thresh: Union[float, torch.Tensor] = 0.25,
     iou_thresh: float = 0.45,
     max_detections: int = 100,
     class_agnostic: bool = False,
@@ -16,10 +16,16 @@ def run_nms_yolov5(
     top_classes_conf = output[:, 4, :]
     scores = output[:, 5:, :]
     results = []
+    per_class_thresh = (
+        conf_thresh.to(output.device) if isinstance(conf_thresh, torch.Tensor) else None
+    )
     for b in range(bs):
         class_scores = scores[b]
         class_conf, class_ids = class_scores.max(0)
-        mask = top_classes_conf[b] > conf_thresh
+        if per_class_thresh is not None:
+            mask = top_classes_conf[b] > per_class_thresh[class_ids]
+        else:
+            mask = top_classes_conf[b] > conf_thresh
         if not torch.any(mask):
             results.append(torch.zeros((0, 6), device=output.device))
             continue
@@ -51,7 +57,7 @@ def run_nms_yolov5(
 
 def run_yolov5_nms_for_instance_segmentation(
     output: torch.Tensor,
-    conf_thresh: float = 0.25,
+    conf_thresh: Union[float, torch.Tensor] = 0.25,
     iou_thresh: float = 0.45,
     max_detections: int = 100,
     class_agnostic: bool = False,
@@ -62,13 +68,19 @@ def run_yolov5_nms_for_instance_segmentation(
     scores = output[:, 4:-32, :]
     masks = output[:, -32:, :]
     results = []
+    per_class_thresh = (
+        conf_thresh.to(output.device) if isinstance(conf_thresh, torch.Tensor) else None
+    )
 
     for b in range(bs):
         bboxes = boxes[b].T
         class_scores = scores[b].T
         box_masks = masks[b].T
         class_conf, class_ids = class_scores.max(1)
-        mask = top_classes_conf[b] > conf_thresh
+        if per_class_thresh is not None:
+            mask = top_classes_conf[b] > per_class_thresh[class_ids]
+        else:
+            mask = top_classes_conf[b] > conf_thresh
         if mask.sum() == 0:
             results.append(torch.zeros((0, 38), device=output.device))
             continue

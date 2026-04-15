@@ -254,11 +254,11 @@ class YOLOv5ForObjectDetectionTRT(
         **kwargs,
     ) -> List[Detections]:
         confidence_filter = ConfidenceFilter(
-            confidence,
-            self.recommended_parameters,
-            INFERENCE_MODELS_YOLOV5_DEFAULT_CONFIDENCE,
+            user_confidence=confidence,
+            recommended_parameters=self.recommended_parameters,
+            default_confidence=INFERENCE_MODELS_YOLOV5_DEFAULT_CONFIDENCE,
         )
-        confidence = confidence_filter.floor
+        confidence = confidence_filter.per_class_thresholds(self.class_names)
         with torch.cuda.stream(self._post_process_stream):
             model_results.record_stream(self._post_process_stream)
             nms_results = run_nms_yolov5(
@@ -279,10 +279,6 @@ class YOLOv5ForObjectDetectionTRT(
                     class_id=result[:, 5].int(),
                     confidence=result[:, 4],
                 )
-                if confidence_filter.has_per_class_refinement:
-                    detections = confidence_filter.refine_detections(
-                        detections, self.class_names
-                    )
                 results.append(detections)
         self._post_process_stream.synchronize()
         return results

@@ -208,11 +208,11 @@ class YOLOv7ForInstanceSegmentationOnnx(
         **kwargs,
     ) -> List[InstanceDetections]:
         confidence_filter = ConfidenceFilter(
-            confidence,
-            self.recommended_parameters,
-            INFERENCE_MODELS_YOLOV7_DEFAULT_CONFIDENCE,
+            user_confidence=confidence,
+            recommended_parameters=self.recommended_parameters,
+            default_confidence=INFERENCE_MODELS_YOLOV7_DEFAULT_CONFIDENCE,
         )
-        confidence = confidence_filter.floor
+        confidence = confidence_filter.per_class_thresholds(self.class_names)
         instances, protos = model_results
         nms_results = run_nms_for_instance_segmentation(
             output=instances.permute(0, 2, 1),
@@ -255,9 +255,5 @@ class YOLOv7ForInstanceSegmentationOnnx(
                 confidence=aligned_boxes[:, 4],
                 mask=aligned_masks,
             )
-            if confidence_filter.has_per_class_refinement:
-                instance_detections = confidence_filter.refine_instance_detections(
-                    instance_detections, self.class_names
-                )
             final_results.append(instance_detections)
         return final_results

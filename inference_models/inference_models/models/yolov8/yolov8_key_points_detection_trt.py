@@ -292,11 +292,11 @@ class YOLOv8ForKeyPointsDetectionTRT(
         **kwargs,
     ) -> Tuple[List[KeyPoints], Optional[List[Detections]]]:
         confidence_filter = ConfidenceFilter(
-            confidence,
-            self.recommended_parameters,
-            INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_CONFIDENCE,
+            user_confidence=confidence,
+            recommended_parameters=self.recommended_parameters,
+            default_confidence=INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_CONFIDENCE,
         )
-        confidence = confidence_filter.floor
+        confidence = confidence_filter.per_class_thresholds(self.class_names)
         with torch.cuda.stream(self._post_process_stream):
             model_results.record_stream(self._post_process_stream)
             if self._inference_config.post_processing.fused:
@@ -357,12 +357,6 @@ class YOLOv8ForKeyPointsDetectionTRT(
                     class_id=class_id,
                     confidence=predicted_key_points_confidence,
                 )
-                if confidence_filter.has_per_class_refinement:
-                    image_key_points, image_detections = (
-                        confidence_filter.refine_keypoints_and_detections(
-                            image_key_points, image_detections, self.class_names
-                        )
-                    )
                 detections.append(image_detections)
                 all_key_points.append(image_key_points)
         self._post_process_stream.synchronize()

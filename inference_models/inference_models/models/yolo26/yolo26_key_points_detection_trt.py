@@ -280,11 +280,11 @@ class YOLO26ForKeyPointsDetectionTRT(
         **kwargs,
     ) -> Tuple[List[KeyPoints], Optional[List[Detections]]]:
         confidence_filter = ConfidenceFilter(
-            confidence,
-            self.recommended_parameters,
-            INFERENCE_MODELS_YOLO26_DEFAULT_CONFIDENCE,
+            user_confidence=confidence,
+            recommended_parameters=self.recommended_parameters,
+            default_confidence=INFERENCE_MODELS_YOLO26_DEFAULT_CONFIDENCE,
         )
-        confidence = confidence_filter.floor
+        confidence = confidence_filter.per_class_thresholds(self.class_names)
         with torch.cuda.stream(self._post_process_stream):
             model_results.record_stream(self._post_process_stream)
             filtered_results = post_process_nms_fused_model_output(
@@ -329,12 +329,6 @@ class YOLO26ForKeyPointsDetectionTRT(
                 image_key_points = KeyPoints(
                     xy=xy.round().int(), class_id=class_id, confidence=kp_confidence
                 )
-                if confidence_filter.has_per_class_refinement:
-                    image_key_points, image_detections = (
-                        confidence_filter.refine_keypoints_and_detections(
-                            image_key_points, image_detections, self.class_names
-                        )
-                    )
                 detections.append(image_detections)
                 all_key_points.append(image_key_points)
         self._post_process_stream.synchronize()
