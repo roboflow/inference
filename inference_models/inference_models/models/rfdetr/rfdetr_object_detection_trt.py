@@ -29,9 +29,6 @@ from inference_models.models.common.roboflow.model_packages import (
     parse_inference_config,
     parse_trt_config,
 )
-from inference_models.models.common.roboflow.post_processing import (
-    rescale_image_detections,
-)
 from inference_models.models.common.trt import (
     TRTCudaGraphCache,
     establish_trt_cuda_graph_cache,
@@ -44,6 +41,7 @@ from inference_models.models.rfdetr.class_remapping import (
     prepare_class_remapping,
 )
 from inference_models.models.rfdetr.pre_processing import pre_process_network_input
+from inference_models.models.rfdetr.triton_postprocess import launch_fused_postprocess
 
 try:
     import tensorrt as trt
@@ -262,64 +260,87 @@ class RFDetrForObjectDetectionTRT(
         confidence: float = INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE,
         **kwargs,
     ) -> List[Detections]:
+        bboxes, logits = model_results
+        batch_size = logits.shape[0]
+        num_queries = logits.shape[1]
+        num_classes = logits.shape[2]
+        # Single Triton kernel per image: sigmoid + max + box transform,
+        # writing directly to a pinned CPU buffer over PCIe. This fuses
+        # compute + D2H into one kernel launch with zero gap.
+        cpu_buf = self._get_postprocess_cpu_buffer(num_queries, batch_size)
+        kernel_args = []
+        for i, image_meta in enumerate(pre_processing_meta):
+            denorm_size = (
+                image_meta.nonsquare_intermediate_size
+                or image_meta.inference_size
+            )
+            kernel_args.append((
+                logits[i], bboxes[i], cpu_buf[i], num_classes,
+                float(denorm_size.width), float(denorm_size.height),
+                1.0 / image_meta.scale_width, 1.0 / image_meta.scale_height,
+                float(image_meta.pad_left), float(image_meta.pad_top),
+                float(image_meta.static_crop_offset.offset_x),
+                float(image_meta.static_crop_offset.offset_y),
+            ))
         with torch.cuda.stream(self._post_process_stream):
             for result_element in model_results:
                 result_element.record_stream(self._post_process_stream)
-            bboxes, logits = model_results
-            logits_sigmoid = torch.nn.functional.sigmoid(logits)
-            results = []
-            for image_bboxes, image_logits, image_meta in zip(
-                bboxes, logits_sigmoid, pre_processing_meta
-            ):
-                predicted_confidence, top_classes = image_logits.max(dim=1)
-                confidence_mask = predicted_confidence > confidence
-                predicted_confidence = predicted_confidence[confidence_mask]
-                top_classes = top_classes[confidence_mask]
-                selected_boxes = image_bboxes[confidence_mask]
-                predicted_confidence, sorted_indices = torch.sort(
-                    predicted_confidence, descending=True
-                )
-                top_classes = top_classes[sorted_indices]
-                selected_boxes = selected_boxes[sorted_indices]
-                if self._classes_re_mapping is not None:
-                    remapping_mask = torch.isin(
-                        top_classes, self._classes_re_mapping.remaining_class_ids
-                    )
-                    top_classes = self._classes_re_mapping.class_mapping[
-                        top_classes[remapping_mask]
-                    ]
-                    selected_boxes = selected_boxes[remapping_mask]
-                    predicted_confidence = predicted_confidence[remapping_mask]
-                cxcy = selected_boxes[:, :2]
-                wh = selected_boxes[:, 2:]
-                xy_min = cxcy - 0.5 * wh
-                xy_max = cxcy + 0.5 * wh
-                selected_boxes_xyxy_pct = torch.cat([xy_min, xy_max], dim=-1)
-                denorm_size = (
-                    image_meta.nonsquare_intermediate_size or image_meta.inference_size
-                )
-                inference_size_whwh = torch.tensor(
-                    [
-                        denorm_size.width,
-                        denorm_size.height,
-                        denorm_size.width,
-                        denorm_size.height,
-                    ],
-                    device=self._device,
-                )
-                selected_boxes_xyxy = selected_boxes_xyxy_pct * inference_size_whwh
-                selected_boxes_xyxy = rescale_image_detections(
-                    image_detections=selected_boxes_xyxy,
-                    image_metadata=image_meta,
-                )
-                detections = Detections(
-                    xyxy=selected_boxes_xyxy.round().int(),
-                    confidence=predicted_confidence,
-                    class_id=top_classes.int(),
-                )
-                results.append(detections)
+            for args in kernel_args:
+                launch_fused_postprocess(*args)
         self._post_process_stream.synchronize()
+        output_cpu = cpu_buf[:batch_size]
+        # CPU phase: threshold + sort + class remap on ≤300 elements.
+        results = []
+        for i, image_meta in enumerate(pre_processing_meta):
+            row = output_cpu[i]  # [num_queries, 6]
+            conf = row[:, 0]
+            cls_ids = row[:, 1]
+            xyxy = row[:, 2:6]
+            keep = conf > confidence
+            if not keep.any():
+                results.append(Detections(
+                    xyxy=torch.empty((0, 4), dtype=torch.int32),
+                    confidence=torch.empty((0,)),
+                    class_id=torch.empty((0,), dtype=torch.int32),
+                ))
+                continue
+            conf_k = conf[keep]
+            cls_k = cls_ids[keep]
+            xyxy_k = xyxy[keep]
+            order = conf_k.argsort(descending=True)
+            predicted_confidence = conf_k[order]
+            top_classes = cls_k[order]
+            selected_xyxy = xyxy_k[order]
+            if self._classes_re_mapping is not None:
+                remapping_mask = torch.isin(
+                    top_classes.int(),
+                    self._classes_re_mapping.remaining_class_ids.cpu(),
+                )
+                top_classes = self._classes_re_mapping.class_mapping.cpu()[
+                    top_classes[remapping_mask].int()
+                ]
+                selected_xyxy = selected_xyxy[remapping_mask]
+                predicted_confidence = predicted_confidence[remapping_mask]
+            results.append(Detections(
+                xyxy=selected_xyxy.round().to(torch.int32),
+                confidence=predicted_confidence,
+                class_id=top_classes.to(torch.int32),
+            ))
         return results
+
+    def _get_postprocess_cpu_buffer(
+        self, num_queries: int, batch_size: int
+    ) -> torch.Tensor:
+        """Return a pre-allocated pinned CPU buffer for D2H copy."""
+        storage = self._thread_local_storage
+        buf = getattr(storage, "postprocess_cpu_buf", None)
+        if buf is None or buf.shape[0] < batch_size or buf.shape[1] < num_queries:
+            storage.postprocess_cpu_buf = torch.empty(
+                (max(batch_size, 1), num_queries, 6),
+                dtype=torch.float32,
+                pin_memory=True,
+            )
+        return storage.postprocess_cpu_buf
 
     @property
     def _pre_process_stream(self) -> torch.cuda.Stream:
