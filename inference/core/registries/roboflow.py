@@ -276,7 +276,7 @@ def _get_model_auth_result_from_shared_cache(cache_key: str) -> Optional[bool]:
     except Exception as error:
         logger.warning(
             "Failed to read shared model auth cache for key=%s. Cause: %s",
-            cache_key,
+            "<redacted>",
             error,
         )
         return None
@@ -294,7 +294,7 @@ def _save_model_auth_result_to_shared_cache(cache_key: str, authorized: bool) ->
     except Exception as error:
         logger.warning(
             "Failed to write shared model auth cache for key=%s. Cause: %s",
-            cache_key,
+            "<redacted>",
             error,
         )
         return None
