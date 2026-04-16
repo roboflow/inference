@@ -986,12 +986,19 @@ async def init_rtc_peer_connection_with_loop(
     except WorkflowSyntaxError as error:
         if heartbeat_callback:
             heartbeat_callback()
+        blocks_errors_serialized = None
+        if error.blocks_errors:
+            blocks_errors_serialized = [
+                block_error.model_dump() for block_error in error.blocks_errors
+            ]
         send_answer(
             WebRTCWorkerResult(
                 exception_type=WorkflowSyntaxError.__name__,
-                error_message=str(error),
+                error_message=error.public_message,
                 error_context=str(error.context),
-                inner_error=str(error.inner_error),
+                inner_error=str(error.inner_error) if error.inner_error else None,
+                inner_error_type=error.inner_error_type,
+                blocks_errors=blocks_errors_serialized,
             )
         )
         return

@@ -182,6 +182,8 @@ class Qwen35VLBlockV1(WorkflowBlock):
                 model_version=model_version,
                 prompt=prompt,
                 system_prompt=system_prompt,
+                enable_thinking=enable_thinking,
+                max_new_tokens=max_new_tokens,
             )
         else:
             raise ValueError(
@@ -194,6 +196,8 @@ class Qwen35VLBlockV1(WorkflowBlock):
         model_version: str,
         prompt: Optional[str],
         system_prompt: Optional[str],
+        enable_thinking: bool = False,
+        max_new_tokens: Optional[int] = None,
     ) -> BlockResult:
         api_url = (
             LOCAL_INFERENCE_API_URL
@@ -221,6 +225,8 @@ class Qwen35VLBlockV1(WorkflowBlock):
                 model_id=model_version,
                 prompt=combined_prompt,
                 model_id_in_path=True,
+                enable_thinking=enable_thinking,
+                max_new_tokens=max_new_tokens,
             )
             response_text = result.get("response", result)
             predictions.append({"parsed_output": response_text, "thinking": ""})

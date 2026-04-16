@@ -7,6 +7,15 @@ You can now run Roboflow Inference Server on your Windows machine using our nati
 Simply download the latest windows installer from the latest release on Github.  
 ➡️ **[View Latest Release and Download Installers on Github](https://github.com/roboflow/inference/releases)**
 
+!!! Note "`inference-models` backend"
+
+    When used with `inference-models` backend, Inference Server must be running with elevated 
+    Admin Rights, due to cache management with symlinks. Alternative approach assumes enabling 
+    [Developer Mode](https://learn.microsoft.com/en-us/windows/advanced-settings/developer-mode).
+
+    Running with `inference-models` backend is opt-in, via environment flag: `$env:USE_INFERENCE_MODELS = "True"`
+
+
 ### Windows Installation Steps 
  - [Download the latest installer](https://github.com/roboflow/inference/releases) and run it to install Roboflow Inference
  - When the install is finished it will offer to launch the Inference server after the setup completes

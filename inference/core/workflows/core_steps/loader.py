@@ -372,6 +372,9 @@ from inference.core.workflows.core_steps.sinks.roboflow.dataset_upload.v2 import
 from inference.core.workflows.core_steps.sinks.roboflow.model_monitoring_inference_aggregator.v1 import (
     ModelMonitoringInferenceAggregatorBlockV1,
 )
+from inference.core.workflows.core_steps.sinks.roboflow.vision_events.v1 import (
+    RoboflowVisionEventsBlockV1,
+)
 from inference.core.workflows.core_steps.sinks.s3.v1 import S3SinkBlockV1
 from inference.core.workflows.core_steps.sinks.slack.notification.v1 import (
     SlackNotificationBlockV1,
@@ -576,6 +579,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     ROBOFLOW_MANAGED_KEY,
     ROBOFLOW_MODEL_ID_KIND,
     ROBOFLOW_PROJECT_KIND,
+    ROBOFLOW_SOLUTION_KIND,
     SECRET_KIND,
     SEMANTIC_SEGMENTATION_PREDICTION_KIND,
     SERIALISED_PAYLOADS_KIND,
@@ -626,6 +630,7 @@ KINDS_DESERIALIZERS = {
     NUMPY_ARRAY_KIND.name: deserialize_numpy_array,
     ROBOFLOW_MODEL_ID_KIND.name: deserialize_string_kind,
     ROBOFLOW_PROJECT_KIND.name: deserialize_string_kind,
+    ROBOFLOW_SOLUTION_KIND.name: deserialize_string_kind,
     ROBOFLOW_API_KEY_KIND.name: deserialize_optional_string_kind,
     ROBOFLOW_MANAGED_KEY.name: deserialize_optional_string_kind,
     FLOAT_ZERO_TO_ONE_KIND.name: deserialize_float_zero_to_one_kind,
@@ -868,6 +873,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         Moondream2BlockV1,
         OverlapBlockV1,
         ONVIFSinkBlockV1,
+        RoboflowVisionEventsBlockV1,
         GLMOCRBlockV1,
         EasyOCRBlockV1,
         QRCodeGeneratorBlockV1,
@@ -892,6 +898,7 @@ def load_kinds() -> List[Kind]:
         VIDEO_METADATA_KIND,
         ROBOFLOW_MODEL_ID_KIND,
         ROBOFLOW_PROJECT_KIND,
+        ROBOFLOW_SOLUTION_KIND,
         ROBOFLOW_API_KEY_KIND,
         FLOAT_ZERO_TO_ONE_KIND,
         LIST_OF_VALUES_KIND,

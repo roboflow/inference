@@ -54,6 +54,7 @@ from inference.core.workflows.core_steps.common.query_language.errors import (
 )
 from inference.core.workflows.errors import (
     ClientCausedStepExecutionError,
+    DynamicBlockCodeError,
     DynamicBlockError,
     ExecutionGraphStructureError,
     InvalidReferenceTargetError,
@@ -86,6 +87,41 @@ from inference_models.errors import (
     UnauthorizedModelAccessError,
     UntrustedFileError,
 )
+
+
+def _build_execution_error_response(
+    error: "DynamicBlockCodeError | StepExecutionError",
+) -> "WorkflowErrorResponse":
+    """Build a WorkflowErrorResponse for execution errors."""
+    if isinstance(error, DynamicBlockCodeError):
+        block_id = error.block_type_name or "Dynamic Block"
+        block_type = error.block_type_name
+        property_name = "Python code"
+        property_details = error.public_message
+    elif isinstance(error, StepExecutionError):
+        block_id = error.block_id
+        block_type = error.block_type
+        property_name = None
+        property_details = str(error.inner_error)
+    else:
+        raise ValueError(f"Unsupported error type: {type(error)}")
+
+    return WorkflowErrorResponse(
+        message=error.public_message,
+        error_type=error.__class__.__name__,
+        context=error.context,
+        inner_error_type=error.inner_error_type,
+        inner_error_message=str(error.inner_error) if error.inner_error else None,
+        blocks_errors=[
+            WorkflowBlockError(
+                block_id=block_id,
+                block_type=block_type,
+                property_name=property_name,
+                property_details=property_details,
+                block_traceback=error.block_traceback,
+            ),
+        ],
+    )
 
 
 def with_route_exceptions(route):
@@ -179,6 +215,10 @@ def with_route_exceptions(route):
                 inner_error_message=str(error.inner_error),
                 blocks_errors=error.blocks_errors,
             )
+            resp = JSONResponse(status_code=400, content=content.model_dump())
+        except DynamicBlockCodeError as error:
+            logger.exception("%s: %s", type(error).__name__, error)
+            content = _build_execution_error_response(error)
             resp = JSONResponse(status_code=400, content=content.model_dump())
         except (
             WorkflowDefinitionError,
@@ -450,19 +490,7 @@ def with_route_exceptions(route):
             )
         except StepExecutionError as error:
             logger.exception("%s: %s", type(error).__name__, error)
-            content = WorkflowErrorResponse(
-                message=str(error.public_message),
-                error_type=error.__class__.__name__,
-                context=str(error.context),
-                inner_error_type=str(error.inner_error_type),
-                inner_error_message=str(error.inner_error),
-                blocks_errors=[
-                    WorkflowBlockError(
-                        block_id=error.block_id,
-                        block_type=error.block_type,
-                    ),
-                ],
-            )
+            content = _build_execution_error_response(error)
             resp = JSONResponse(
                 status_code=500,
                 content=content.model_dump(),
@@ -619,6 +647,10 @@ def with_route_exceptions_async(route):
                 blocks_errors=error.blocks_errors,
             )
             resp = JSONResponse(status_code=400, content=content.model_dump())
+        except DynamicBlockCodeError as error:
+            logger.exception("%s: %s", type(error).__name__, error)
+            content = _build_execution_error_response(error)
+            resp = JSONResponse(status_code=400, content=content.model_dump())
         except (
             WorkflowDefinitionError,
             ReferenceTypeError,
@@ -889,19 +921,7 @@ def with_route_exceptions_async(route):
             )
         except StepExecutionError as error:
             logger.exception("%s: %s", type(error).__name__, error)
-            content = WorkflowErrorResponse(
-                message=str(error.public_message),
-                error_type=error.__class__.__name__,
-                context=str(error.context),
-                inner_error_type=str(error.inner_error_type),
-                inner_error_message=str(error.inner_error),
-                blocks_errors=[
-                    WorkflowBlockError(
-                        block_id=error.block_id,
-                        block_type=error.block_type,
-                    ),
-                ],
-            )
+            content = _build_execution_error_response(error)
             resp = JSONResponse(
                 status_code=500,
                 content=content.model_dump(),
