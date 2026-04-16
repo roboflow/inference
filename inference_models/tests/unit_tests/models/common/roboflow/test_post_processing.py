@@ -154,7 +154,7 @@ class TestConfidenceFilter:
 
     def test_user_value_overrides_recommended_parameters(self) -> None:
         cf = ConfidenceFilter(
-            user_confidence=0.7,
+            confidence=0.7,
             recommended_parameters=self._rd(
                 confidence=0.42, per_class={"cat": 0.6, "dog": 0.3}
             ),
@@ -166,7 +166,7 @@ class TestConfidenceFilter:
 
     def test_explicit_zero_user_value_is_honored(self) -> None:
         cf = ConfidenceFilter(
-            user_confidence=0.0,
+            confidence=0.0,
             recommended_parameters=self._rd(confidence=0.42, per_class={"cat": 0.6}),
             default_confidence=INFERENCE_MODELS_DEFAULT_CONFIDENCE,
         )
@@ -174,7 +174,7 @@ class TestConfidenceFilter:
 
     def test_per_class_thresholds_align_to_class_names(self) -> None:
         cf = ConfidenceFilter(
-            user_confidence=None,
+            confidence="best",
             recommended_parameters=self._rd(
                 confidence=0.5, per_class={"cat": 0.6, "dog": 0.4}
             ),
@@ -187,7 +187,7 @@ class TestConfidenceFilter:
 
     def test_unknown_class_falls_back_to_global_optimal(self) -> None:
         cf = ConfidenceFilter(
-            user_confidence=None,
+            confidence="best",
             recommended_parameters=self._rd(
                 confidence=0.5, per_class={"cat": 0.6}
             ),
@@ -197,7 +197,7 @@ class TestConfidenceFilter:
 
     def test_unknown_class_falls_back_to_default_when_no_global(self) -> None:
         cf = ConfidenceFilter(
-            user_confidence=None,
+            confidence="best",
             recommended_parameters=self._rd(per_class={"cat": 0.6}),
             default_confidence=INFERENCE_MODELS_DEFAULT_CONFIDENCE,
         )
@@ -207,7 +207,7 @@ class TestConfidenceFilter:
 
     def test_per_class_overrides_global_optimal(self) -> None:
         cf = ConfidenceFilter(
-            user_confidence=None,
+            confidence="best",
             recommended_parameters=self._rd(
                 confidence=0.5, per_class={"cat": 0.9}
             ),
@@ -217,7 +217,7 @@ class TestConfidenceFilter:
 
     def test_global_optimal_used_when_no_per_class(self) -> None:
         cf = ConfidenceFilter(
-            user_confidence=None,
+            confidence="best",
             recommended_parameters=self._rd(confidence=0.42),
             default_confidence=INFERENCE_MODELS_DEFAULT_CONFIDENCE,
         )
@@ -225,7 +225,7 @@ class TestConfidenceFilter:
 
     def test_empty_per_class_treated_as_no_per_class(self) -> None:
         cf = ConfidenceFilter(
-            user_confidence=None,
+            confidence="best",
             recommended_parameters=self._rd(confidence=0.42, per_class={}),
             default_confidence=INFERENCE_MODELS_DEFAULT_CONFIDENCE,
         )
@@ -233,7 +233,7 @@ class TestConfidenceFilter:
 
     def test_default_used_when_no_recommended_parameters(self) -> None:
         cf = ConfidenceFilter(
-            user_confidence=None,
+            confidence="best",
             recommended_parameters=None,
             default_confidence=0.25,
         )
@@ -243,7 +243,7 @@ class TestConfidenceFilter:
 
     def test_default_used_when_recommended_parameters_is_all_none(self) -> None:
         cf = ConfidenceFilter(
-            user_confidence=None,
+            confidence="best",
             recommended_parameters=RecommendedParameters(),
             default_confidence=0.25,
         )
@@ -251,7 +251,7 @@ class TestConfidenceFilter:
 
     def test_per_class_thresholds_returns_float_tensor(self) -> None:
         cf = ConfidenceFilter(
-            user_confidence=None,
+            confidence="best",
             recommended_parameters=self._rd(
                 confidence=0.5, per_class={"cat": 0.6, "dog": 0.4}
             ),
@@ -264,8 +264,32 @@ class TestConfidenceFilter:
 
     def test_per_class_thresholds_empty_class_names_returns_empty_tensor(self) -> None:
         cf = ConfidenceFilter(
-            user_confidence=None,
+            confidence="best",
             recommended_parameters=None,
             default_confidence=0.5,
         )
         assert cf.per_class_thresholds([]).shape == (0,)
+
+    def test_default_string_skips_recommended_parameters(self) -> None:
+        cf = ConfidenceFilter(
+            confidence="default",
+            recommended_parameters=self._rd(
+                confidence=0.5, per_class={"cat": 0.6}
+            ),
+            default_confidence=0.25,
+        )
+        assert cf.per_class_thresholds(["cat", "dog"]).tolist() == pytest.approx(
+            [0.25, 0.25]
+        )
+
+    def test_rejects_invalid_string(self) -> None:
+        with pytest.raises(Exception):
+            ConfidenceFilter(confidence="high", recommended_parameters=None)
+
+    def test_rejects_float_above_one(self) -> None:
+        with pytest.raises(Exception):
+            ConfidenceFilter(confidence=5.0, recommended_parameters=None)
+
+    def test_rejects_negative_float(self) -> None:
+        with pytest.raises(Exception):
+            ConfidenceFilter(confidence=-0.1, recommended_parameters=None)

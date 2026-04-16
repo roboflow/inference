@@ -1,9 +1,12 @@
-from typing import Any, ClassVar, List, Optional, Union
+from typing import Annotated, Any, ClassVar, List, Literal, Optional, Union
 from uuid import uuid4
 
+from annotated_types import Ge, Le
 from pydantic import BaseModel, ConfigDict, Field, validator
 
 from inference.core.entities.common import ApiKey, ModelID, ModelType
+
+Confidence = Union[Annotated[float, Ge(0), Le(1)], Literal["best", "default"]]
 
 
 class BaseRequest(BaseModel):
@@ -145,14 +148,12 @@ class ObjectDetectionInferenceRequest(CVInferenceRequest):
         examples=[["class-1", "class-2", "class-n"]],
         description="If provided, only predictions for the listed classes will be returned",
     )
-    confidence: Optional[float] = Field(
-        default=None,
-        examples=[0.5],
+    confidence: Confidence = Field(
+        default="best",
+        examples=[0.5, "best", "default"],
         description=(
-            "The confidence threshold used to filter out predictions. If omitted, "
-            "the server uses the model's F1-optimal threshold from model evaluation "
-            "when available, otherwise falls back to the model's default. Pass an "
-            "explicit value to override both."
+            'Confidence threshold. "best" uses model-eval thresholds, '
+            '"default" uses the model built-in, or pass a float.'
         ),
     )
     fix_batch_size: Optional[bool] = Field(
@@ -250,10 +251,13 @@ class ClassificationInferenceRequest(CVInferenceRequest):
         kwargs["model_type"] = "classification"
         super().__init__(**kwargs)
 
-    confidence: Optional[float] = Field(
-        default=0.4,
-        examples=[0.5],
-        description="The confidence threshold used to filter out predictions",
+    confidence: Confidence = Field(
+        default="best",
+        examples=[0.5, "best", "default"],
+        description=(
+            'Confidence threshold. "best" uses model-eval thresholds, '
+            '"default" uses the model built-in, or pass a float.'
+        ),
     )
     visualization_stroke_width: Optional[int] = Field(
         default=1,
