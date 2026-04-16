@@ -49,7 +49,7 @@ class InstanceSegmentationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceMo
         self,
         image: Any,
         class_agnostic_nms: bool = False,
-        confidence: Optional[float] = DEFAULT_CONFIDENCE,
+        confidence: float = DEFAULT_CONFIDENCE,
         disable_preproc_auto_orient: bool = False,
         disable_preproc_contrast: bool = False,
         disable_preproc_grayscale: bool = False,
@@ -94,8 +94,6 @@ class InstanceSegmentationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceMo
             - Applies non-maximum suppression to the predictions.
             - Decodes the masks according to the specified mode.
         """
-        if confidence is None:
-            confidence = DEFAULT_CONFIDENCE
         return super().infer(
             image,
             class_agnostic_nms=class_agnostic_nms,
