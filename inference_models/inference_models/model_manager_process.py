@@ -199,11 +199,11 @@ def _collect_gpu_stats(
 
 
 # ---------------------------------------------------------------------------
-# FlavorState — per model flavor lifecycle
+# ModelState — per model flavor lifecycle
 # ---------------------------------------------------------------------------
 
 @dataclass
-class FlavorState:
+class ModelState:
     """Tracks load lifecycle for one model flavor."""
     loaded:   bool = False
     loading:  bool = False
@@ -271,14 +271,14 @@ class ModelManagerProcess:
         # req_id → (uvicorn_identity, slot_id, flavor)
         self._pending: dict[int, tuple[bytes, int, str]] = {}
 
-        # flavor → FlavorState
-        self._flavors: dict[str, FlavorState] = {}
+        # flavor → ModelState
+        self._models: dict[str, ModelState] = {}
 
-        # flavor → BackendLike (registered by register_backend or _load_flavor)
+        # model_id → BackendLike (registered by register_backend or _load_model)
         self._backends: dict[str, BackendLike] = {}
 
         # flavor → monotonic timestamp of last T_SUBMIT (LRU eviction)
-        self._flavor_access: dict[str, float] = {}
+        self._model_access: dict[str, float] = {}
 
         # Latest monitoring snapshot (updated by _monitoring_loop)
         self._stats_snapshot: dict[str, Any] = {}
@@ -294,20 +294,20 @@ class ModelManagerProcess:
         """SHM pool name — valid after run() has started."""
         return self._pool.name if self._pool else None
 
-    def register_backend(self, flavor: str, backend: BackendLike) -> None:
-        """Mark flavor loaded and register its backend.
+    def register_backend(self, model_id: str, backend: BackendLike) -> None:
+        """Mark model_id loaded and register its backend.
 
         Called by ModelManager (or tests) after a model is ready.
         Thread-safe: may be called from any thread before or during run().
         """
-        self._backends[flavor] = backend
-        fs = self._flavors.setdefault(flavor, FlavorState())
+        self._backends[model_id] = backend
+        fs = self._models.setdefault(model_id, ModelState())
         fs.loading  = False
         fs.loaded   = True
         fs.sleeping = False
 
         if self._loop is not None and fs.load_waiters:
-            self._loop.call_soon_threadsafe(self._flush_load_waiters, flavor)
+            self._loop.call_soon_threadsafe(self._flush_load_waiters, model_id)
 
     def on_result(self, req_id: int, slot_id: int, result_sz: int) -> None:
         """Called by SubprocessBackend recv thread when a slot completes.
@@ -474,7 +474,9 @@ class ModelManagerProcess:
 
     # ------------------------------------------------------------------
     # T_ENSURE_LOADED  →  T_MODEL_READY | T_LOAD_TIMEOUT
-    # wire: Q I H N H M  req_id(8) wait_ms(4) flavor_len(2) flavor(N) key_len(2) key(M)
+    # wire: Q I H N H M H D
+    #   req_id(8) wait_ms(4) model_id_len(2) model_id(N)
+    #   key_len(2) key(M) device_len(2) device(D)
     # ------------------------------------------------------------------
 
     async def _handle_ensure_loaded(
@@ -483,36 +485,42 @@ class ModelManagerProcess:
         if not data or len(data[0]) < 14:
             return
         frame = data[0]
-        req_id, wait_ms, flavor_len = struct.unpack_from(">QIH", frame)
+        req_id, wait_ms, mid_len = struct.unpack_from(">QIH", frame)
         off      = 14
-        flavor   = frame[off: off + flavor_len].decode(errors="replace")
-        off     += flavor_len
+        model_id = frame[off: off + mid_len].decode(errors="replace")
+        off     += mid_len
         api_key  = ""
         if len(frame) >= off + 2:
             klen    = struct.unpack_from(">H", frame, off)[0]
             api_key = frame[off + 2: off + 2 + klen].decode(errors="replace")
+            off    += 2 + klen
+        device   = ""
+        if len(frame) >= off + 2:
+            dlen   = struct.unpack_from(">H", frame, off)[0]
+            device = frame[off + 2: off + 2 + dlen].decode(errors="replace")
         deadline = time.monotonic() + wait_ms / 1000.0
 
-        fs = self._flavors.get(flavor)
+        fs = self._models.get(model_id)
         if fs is not None and fs.loaded:
             await self._send(identity, T_MODEL_READY, struct.pack(">Q", req_id))
             return
 
         if fs is None:
-            fs = FlavorState()
-            self._flavors[flavor] = fs
+            fs = ModelState()
+            self._models[model_id] = fs
 
         fs.load_waiters.append((identity, req_id, deadline))
 
         if not fs.loading:
             fs.loading = True
             asyncio.create_task(
-                self._load_flavor(flavor, api_key=api_key), name=f"mmp-load-{flavor}"
+                self._load_model(model_id, api_key=api_key, device=device),
+                name=f"mmp-load-{model_id}",
             )
 
     # ------------------------------------------------------------------
     # T_ALLOC  →  T_ALLOC_OK | T_ERROR
-    # wire: Q H N   req_id(8) flavor_len(2) flavor(N)
+    # wire: Q H N   req_id(8) mid_len(2) flavor(N)
     # ------------------------------------------------------------------
 
     async def _handle_alloc(
@@ -521,8 +529,8 @@ class ModelManagerProcess:
         if not data or len(data[0]) < 10:
             return
         frame = data[0]
-        req_id, flavor_len = struct.unpack_from(">QH", frame)
-        flavor = frame[10: 10 + flavor_len].decode(errors="replace")
+        req_id, mid_len = struct.unpack_from(">QH", frame)
+        model_id = frame[10: 10 + mid_len].decode(errors="replace")
 
         try:
             slot_id = self._pool.alloc_slot(timeout=0)
@@ -532,23 +540,23 @@ class ModelManagerProcess:
             return
 
         self._pool.mark_allocated(slot_id, req_id)
-        self._pending[req_id] = (identity, slot_id, flavor)
+        self._pending[req_id] = (identity, slot_id, model_id)
         await self._send(identity, T_ALLOC_OK, struct.pack(">QI", req_id, slot_id))
 
     # ------------------------------------------------------------------
     # T_SUBMIT  (no reply — result delivered via on_result callback)
-    # wire: Q I I H N   req_id(8) slot_id(4) input_sz(4) flavor_len(2) flavor(N)
+    # wire: Q I I H N   req_id(8) slot_id(4) input_sz(4) mid_len(2) flavor(N)
     # ------------------------------------------------------------------
 
     async def _handle_submit(self, data: list[bytes]) -> None:
         if not data or len(data[0]) < 18:
             return
         frame = data[0]
-        req_id, slot_id, input_sz, flavor_len = struct.unpack_from(">QIIH", frame)
-        flavor = frame[18: 18 + flavor_len].decode(errors="replace")
+        req_id, slot_id, input_sz, mid_len = struct.unpack_from(">QIIH", frame)
+        model_id = frame[18: 18 + mid_len].decode(errors="replace")
 
         self._pool.mark_written(slot_id, input_sz)
-        self._forward_to_backend(flavor, slot_id, req_id)
+        self._forward_to_backend(model_id, slot_id, req_id)
 
     # ------------------------------------------------------------------
     # T_FREE
@@ -566,114 +574,114 @@ class ModelManagerProcess:
 
     # ------------------------------------------------------------------
     # T_LOAD (admin) — trigger model load + reply T_OK immediately
-    # wire: Q H N H N   req_id(8) flavor_len(2) flavor(N) api_key_len(2) api_key(M)
+    # wire: Q H N H N   req_id(8) mid_len(2) flavor(N) api_key_len(2) api_key(M)
     # ------------------------------------------------------------------
 
     async def _handle_load(self, identity: bytes, data: list[bytes]) -> None:
         if not data or len(data[0]) < 10:
             return
         frame = data[0]
-        req_id, flavor_len = struct.unpack_from(">QH", frame)
+        req_id, mid_len = struct.unpack_from(">QH", frame)
         off    = 10
-        flavor = frame[off: off + flavor_len].decode(errors="replace")
-        off   += flavor_len
+        model_id = frame[off: off + mid_len].decode(errors="replace")
+        off   += mid_len
         api_key = ""
         if len(frame) >= off + 2:
             klen    = struct.unpack_from(">H", frame, off)[0]
             api_key = frame[off + 2: off + 2 + klen].decode(errors="replace")
 
-        fs = self._flavors.setdefault(flavor, FlavorState())
+        fs = self._models.setdefault(model_id, ModelState())
         if not fs.loaded and not fs.loading:
             fs.loading = True
             asyncio.create_task(
-                self._load_flavor(flavor, api_key=api_key),
-                name=f"mmp-load-{flavor}",
+                self._load_model(model_id, api_key=api_key),
+                name=f"mmp-load-{model_id}",
             )
         await self._send(identity, T_OK, struct.pack(">Q", req_id))
 
     # ------------------------------------------------------------------
     # T_UNLOAD (admin)
-    # wire: Q H N   req_id(8) flavor_len(2) flavor(N)
+    # wire: Q H N   req_id(8) mid_len(2) flavor(N)
     # ------------------------------------------------------------------
 
     async def _handle_unload(self, identity: bytes, data: list[bytes]) -> None:
         if not data or len(data[0]) < 10:
             return
         frame = data[0]
-        req_id, flavor_len = struct.unpack_from(">QH", frame)
-        flavor = frame[10: 10 + flavor_len].decode(errors="replace")
+        req_id, mid_len = struct.unpack_from(">QH", frame)
+        model_id = frame[10: 10 + mid_len].decode(errors="replace")
 
         loop = asyncio.get_running_loop()
         try:
             if self._manager is not None:
                 await loop.run_in_executor(
-                    None, lambda: self._manager.unload(flavor)
+                    None, lambda: self._manager.unload(model_id)
                 )
-            fs = self._flavors.get(flavor)
+            fs = self._models.get(model_id)
             if fs:
                 fs.loaded   = False
                 fs.sleeping = False
                 fs.loading  = False
-            self._backends.pop(flavor, None)
+            self._backends.pop(model_id, None)
             await self._send(identity, T_OK, struct.pack(">Q", req_id))
         except Exception:
-            logger.exception("MMP: T_UNLOAD '%s' failed", flavor)
+            logger.exception("MMP: T_UNLOAD '%s' failed", model_id)
             await self._send(identity, T_ERROR,
                              struct.pack(">QB", req_id, _ERR_NOT_LOADED))
 
     # ------------------------------------------------------------------
     # T_SLEEP (admin) — offload VRAM, keep weights on CPU
-    # wire: Q H N   req_id(8) flavor_len(2) flavor(N)
+    # wire: Q H N   req_id(8) mid_len(2) flavor(N)
     # ------------------------------------------------------------------
 
     async def _handle_sleep(self, identity: bytes, data: list[bytes]) -> None:
         if not data or len(data[0]) < 10:
             return
         frame = data[0]
-        req_id, flavor_len = struct.unpack_from(">QH", frame)
-        flavor = frame[10: 10 + flavor_len].decode(errors="replace")
+        req_id, mid_len = struct.unpack_from(">QH", frame)
+        model_id = frame[10: 10 + mid_len].decode(errors="replace")
 
         loop = asyncio.get_running_loop()
         try:
             if self._manager is not None:
                 await loop.run_in_executor(
-                    None, lambda: self._manager.sleep(flavor)
+                    None, lambda: self._manager.sleep(model_id)
                 )
-            fs = self._flavors.get(flavor)
+            fs = self._models.get(model_id)
             if fs:
                 fs.loaded   = False
                 fs.sleeping = True
             await self._send(identity, T_OK, struct.pack(">Q", req_id))
         except Exception:
-            logger.exception("MMP: T_SLEEP '%s' failed", flavor)
+            logger.exception("MMP: T_SLEEP '%s' failed", model_id)
             await self._send(identity, T_ERROR,
                              struct.pack(">QB", req_id, _ERR_NOT_LOADED))
 
     # ------------------------------------------------------------------
     # T_WAKE (admin) — restore weights to VRAM
-    # wire: Q H N   req_id(8) flavor_len(2) flavor(N)
+    # wire: Q H N   req_id(8) mid_len(2) flavor(N)
     # ------------------------------------------------------------------
 
     async def _handle_wake(self, identity: bytes, data: list[bytes]) -> None:
         if not data or len(data[0]) < 10:
             return
         frame = data[0]
-        req_id, flavor_len = struct.unpack_from(">QH", frame)
-        flavor = frame[10: 10 + flavor_len].decode(errors="replace")
+        req_id, mid_len = struct.unpack_from(">QH", frame)
+        model_id = frame[10: 10 + mid_len].decode(errors="replace")
 
         loop = asyncio.get_running_loop()
         try:
             if self._manager is not None:
                 await loop.run_in_executor(
-                    None, lambda: self._manager.wake(flavor)
+                    None, lambda: self._manager.wake(model_id)
                 )
-            fs = self._flavors.get(flavor)
+            fs = self._models.get(model_id)
             if fs:
                 fs.loaded   = True
                 fs.sleeping = False
             await self._send(identity, T_OK, struct.pack(">Q", req_id))
         except Exception:
-            logger.exception("MMP: T_WAKE '%s' failed", flavor)
+            logger.exception("MMP: T_WAKE '%s' failed", model_id)
             await self._send(identity, T_ERROR,
                              struct.pack(">QB", req_id, _ERR_NOT_LOADED))
 
@@ -696,8 +704,8 @@ class ModelManagerProcess:
                 snapshot.update(self._manager.stats())
             except Exception:
                 pass
-        flavor_stats: dict[str, Any] = {}
-        for f, fs in self._flavors.items():
+        model_stats: dict[str, Any] = {}
+        for f, fs in self._models.items():
             entry: dict[str, Any] = {
                 "loaded":   fs.loaded,
                 "sleeping": fs.sleeping,
@@ -711,13 +719,13 @@ class ModelManagerProcess:
                     entry["worker_pid"]   = getattr(backend, "worker_pid", None)
                 except Exception:
                     pass
-            flavor_stats[f] = entry
+            model_stats[f] = entry
 
         snapshot.update({
             "mmp_free_slots":  self._pool.free_count if self._pool else 0,
             "mmp_total_slots": self._n_slots,
             "mmp_pending":     len(self._pending),
-            "mmp_flavors":     flavor_stats,
+            "mmp_models":     model_stats,
         })
         payload = json.dumps(snapshot, default=str).encode()
         await self._send(
@@ -730,18 +738,18 @@ class ModelManagerProcess:
     # ------------------------------------------------------------------
 
     def _forward_to_backend(
-        self, flavor: str, slot_id: int, req_id: int
+        self, model_id: str, slot_id: int, req_id: int
     ) -> None:
-        self._flavor_access[flavor] = time.monotonic()   # LRU update
-        backend = self._backends.get(flavor)
+        self._model_access[model_id] = time.monotonic()   # LRU update
+        backend = self._backends.get(model_id)
         if backend is None:
-            logger.warning("MMP: no backend for '%s', req_id=%d", flavor, req_id)
+            logger.warning("MMP: no backend for '%s', req_id=%d", model_id, req_id)
             self._on_result_on_loop(req_id, slot_id, 0)
             return
         try:
             backend.signal_slot(slot_id, req_id)
         except Exception:
-            logger.exception("MMP: signal_slot raised for '%s'", flavor)
+            logger.exception("MMP: signal_slot raised for '%s'", model_id)
             self._on_result_on_loop(req_id, slot_id, 0)
 
     # ------------------------------------------------------------------
@@ -791,75 +799,85 @@ class ModelManagerProcess:
     # Cold path — load / wake
     # ------------------------------------------------------------------
 
-    async def _load_flavor(self, flavor: str, api_key: str = "") -> None:
-        """Load flavor via ModelManager, falling back to stub on failure/no manager.
+    async def _load_model(
+        self, model_id: str, api_key: str = "", device: str = ""
+    ) -> None:
+        """Load model via ModelManager, falling back to stub on failure/no manager.
 
-        Stub mode: marks flavor loaded immediately (no real model).
+        model_id is the full routing key (may include ":instance" suffix).
+        model_id_or_path strips the suffix to fetch the correct weights.
+        device selects which GPU to use (forwarded to manager.load).
+
+        Stub mode: marks model_id loaded immediately (no real model).
         T_ENSURE_LOADED waiters get T_MODEL_READY, but T_SUBMIT will return
         T_ERROR because no backend is registered.
         """
         loop = asyncio.get_running_loop()
-        fs   = self._flavors.get(flavor)
+        fs   = self._models.get(model_id)
 
         # Sleeping → wake instead of reload
         if fs is not None and fs.sleeping:
-            await self._wake_flavor(flavor)
+            await self._wake_model(model_id)
             return
 
         if self._manager is not None:
-            effective_key = api_key
-            logger.info("MMP: loading '%s' via ModelManager", flavor)
+            # Strip ":instance" suffix to get the actual model weights identifier
+            model_id_or_path = model_id.rsplit(":", 1)[0]
+            logger.info(
+                "MMP: loading '%s' (weights=%s device=%s) via ModelManager",
+                model_id, model_id_or_path, device or "default",
+            )
             try:
                 await loop.run_in_executor(
                     None,
                     lambda: self._manager.load(
-                        flavor, effective_key, backend="subprocess"
+                        model_id,
+                        api_key,
+                        model_id_or_path=model_id_or_path,
+                        backend="subprocess",
+                        device=device or None,
                     ),
                 )
-                backend = self._manager.get_backend(flavor)
+                backend = self._manager.get_backend(model_id)
                 if backend is not None and hasattr(backend, "signal_slot"):
-                    # register_backend marks loaded + flushes waiters
-                    self.register_backend(flavor, backend)
+                    self.register_backend(model_id, backend)
                     return
-                # Loaded but no signal_slot yet (Phase 6 will add it)
-                # Fall through to stub-mark-loaded below so waiters unblock.
             except Exception:
                 logger.info(
                     "MMP: manager.load('%s') raised — stub-loading without backend",
-                    flavor,
+                    model_id,
                 )
 
         # Stub: mark loaded, flush waiters; no backend registered
-        logger.info("MMP: '%s' stub-loaded (no real model)", flavor)
+        logger.info("MMP: '%s' stub-loaded (no real model)", model_id)
         if fs is None:
-            fs = self._flavors.setdefault(flavor, FlavorState())
+            fs = self._models.setdefault(model_id, ModelState())
         fs.loading = False
         fs.loaded  = True
-        self._flush_load_waiters(flavor)
+        self._flush_load_waiters(model_id)
 
-    async def _wake_flavor(self, flavor: str) -> None:
-        """Wake a sleeping flavor via ModelManager."""
+    async def _wake_model(self, model_id: str) -> None:
+        """Wake a sleeping model via ModelManager."""
         loop = asyncio.get_running_loop()
-        logger.info("MMP: waking '%s'", flavor)
+        logger.info("MMP: waking '%s'", model_id)
         try:
             if self._manager is not None:
                 await loop.run_in_executor(
-                    None, lambda: self._manager.wake(flavor)
+                    None, lambda: self._manager.wake(model_id)
                 )
-            fs = self._flavors.get(flavor)
+            fs = self._models.get(model_id)
             if fs:
                 fs.sleeping = False
                 fs.loading  = False
                 fs.loaded   = True
-                # Re-register backend if signal_slot is now available
                 if self._manager is not None:
-                    backend = self._manager.get_backend(flavor)
+                    backend = self._manager.get_backend(model_id)
                     if backend is not None and hasattr(backend, "signal_slot"):
-                        self._backends[flavor] = backend
-                self._flush_load_waiters(flavor)
+                        self._backends[model_id] = backend
+                self._flush_load_waiters(model_id)
         except Exception:
-            logger.exception("MMP: failed to wake '%s'", flavor)
-            fs = self._flavors.get(flavor)
+            logger.exception("MMP: failed to wake '%s'", model_id)
+            fs = self._models.get(model_id)
             if fs:
                 waiters, fs.load_waiters = fs.load_waiters, []
                 fs.loading = False
@@ -869,12 +887,12 @@ class ModelManagerProcess:
                                    struct.pack(">QB", req_id, _ERR_LOAD_FAILED))
                     )
 
-    def _flush_load_waiters(self, flavor: str) -> None:
-        """Notify all T_ENSURE_LOADED waiters for this flavor.
+    def _flush_load_waiters(self, model_id: str) -> None:
+        """Notify all T_ENSURE_LOADED waiters for this model_id.
 
         Must be called on the event loop thread.
         """
-        fs = self._flavors.get(flavor)
+        fs = self._models.get(model_id)
         if not fs:
             return
         waiters, fs.load_waiters = fs.load_waiters, []
@@ -949,7 +967,7 @@ class ModelManagerProcess:
         gpu_frac = _gpu_used_fraction()
         if gpu_frac < self._evict_threshold:
             return
-        lru = self._lru_evictable_flavor()
+        lru = self._lru_evictable_model()
         if lru is None:
             return
         logger.warning(
@@ -958,23 +976,23 @@ class ModelManagerProcess:
         )
         try:
             self._manager.sleep(lru)
-            fs = self._flavors.get(lru)
+            fs = self._models.get(lru)
             if fs:
                 fs.loaded   = False
                 fs.sleeping = True
         except Exception:
             logger.warning("MMP: eviction of '%s' failed", lru, exc_info=True)
 
-    def _lru_evictable_flavor(self) -> Optional[str]:
+    def _lru_evictable_model(self) -> Optional[str]:
         """LRU flavor that is loaded, not sleeping, and not currently in-flight."""
-        in_flight = {flavor for _, _, flavor in self._pending.values()}
+        in_flight = {mid for _, _, mid in self._pending.values()}
         candidates = [
-            f for f, fs in self._flavors.items()
+            f for f, fs in self._models.items()
             if fs.loaded and not fs.sleeping and f not in in_flight
         ]
         if not candidates:
             return None
-        return min(candidates, key=lambda f: self._flavor_access.get(f, 0.0))
+        return min(candidates, key=lambda f: self._model_access.get(f, 0.0))
 
     # ------------------------------------------------------------------
     # Monitoring loop
@@ -1011,10 +1029,10 @@ class ModelManagerProcess:
 
         # Build pid→flavor map from registered backends for per-model GPU attribution
         pid_to_flavor: dict[int, str] = {}
-        for flavor, backend in list(self._backends.items()):
+        for model_id, backend in list(self._backends.items()):
             pid = getattr(backend, "worker_pid", None)
             if pid is not None:
-                pid_to_flavor[pid] = flavor
+                pid_to_flavor[pid] = model_id
 
         gpu_stats = _collect_gpu_stats(pid_to_flavor)
         s.update(gpu_stats)

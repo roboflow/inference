@@ -119,7 +119,7 @@ _T_LOAD_TIMEOUT  = b'\x0B'
 #   _T_RESULT_READY:  Q I I    req_id(8) slot_id(4) result_sz(4)
 #   _T_FREE:          I        slot_id(4)
 #   _T_ERROR:         Q B      req_id(8) error_code(1)
-#   _T_ENSURE_LOADED: Q I H N H M  req_id(8) wait_ms(4) flavor_len(2) flavor(N) key_len(2) key(M)
+#   _T_ENSURE_LOADED: Q I H N H M H D  req_id(8) wait_ms(4) model_id_len(2) model_id(N) key_len(2) key(M) device_len(2) device(D)
 #   _T_MODEL_READY:   Q        req_id(8)
 #   _T_LOAD_TIMEOUT:  Q I      req_id(8) retry_after_s(4)
 
@@ -239,28 +239,45 @@ def _drop_future(req_id: int) -> None:
 # Protocol helpers
 # ---------------------------------------------------------------------------
 
-async def _ensure_loaded(model_id: str, api_key: str = "") -> tuple:
+def _routing_key(model_id: str, instance: str) -> str:
+    """Compose MMP routing key from model_id and optional instance suffix."""
+    return f"{model_id}:{instance}" if instance else model_id
+
+
+async def _ensure_loaded(
+    model_id: str,
+    instance: str = "",
+    api_key:  str = "",
+    device:   str = "",
+) -> tuple:
     """Ask MMP to ensure model is loaded.
 
+    model_id + instance together identify the backend (routing key = model_id:instance).
+    device is a hint for cold-path loading (which GPU to use).
+
     Warm path (model already loaded): MMP replies T_MODEL_READY instantly.
-    Cold path: MMP loads the model using api_key (falls back to server default);
-    replies when ready or wait_ms exceeded.
+    Cold path: MMP loads the model; replies when ready or wait_ms exceeded.
 
     Returns one of:
         ("model_ready",)
         ("load_timeout", retry_after_s)
         ("error", code)
     """
-    req_id  = _new_req_id()
-    flavor  = model_id.encode()
-    key     = api_key.encode()
-    wait_ms = int(_LOAD_WAIT_S * 1000)
-    # wire: Q I H N H M  — req_id(8) wait_ms(4) flavor_len(2) flavor(N) key_len(2) key(M)
+    req_id    = _new_req_id()
+    mid_bytes = _routing_key(model_id, instance).encode()
+    key_bytes = api_key.encode()
+    dev_bytes = device.encode()
+    wait_ms   = int(_LOAD_WAIT_S * 1000)
+    # wire: Q I H N H M H D
+    #   req_id(8) wait_ms(4) model_id_len(2) model_id(N)
+    #   key_len(2) key(M) device_len(2) device(D)
     payload = (
-        struct.pack(">QIH", req_id, wait_ms, len(flavor))
-        + flavor
-        + struct.pack(">H", len(key))
-        + key
+        struct.pack(">QIH", req_id, wait_ms, len(mid_bytes))
+        + mid_bytes
+        + struct.pack(">H", len(key_bytes))
+        + key_bytes
+        + struct.pack(">H", len(dev_bytes))
+        + dev_bytes
     )
     fut = _make_future(req_id)
     await _sock.send_multipart([_T_ENSURE_LOADED, payload])
@@ -272,15 +289,15 @@ async def _ensure_loaded(model_id: str, api_key: str = "") -> tuple:
         return ("load_timeout", int(_LOAD_WAIT_S))
 
 
-async def _alloc_slot(model_id: str) -> int:
+async def _alloc_slot(model_id: str, instance: str = "") -> int:
     """Claim a SHM slot from MMP. Returns slot_id.
 
     Raises asyncio.TimeoutError if no slot granted within ALLOC_TIMEOUT_S.
     Raises RuntimeError if MMP replies with an error.
     """
     req_id  = _new_req_id()
-    flavor  = model_id.encode()
-    payload = struct.pack(">QH", req_id, len(flavor)) + flavor
+    mid     = _routing_key(model_id, instance).encode()
+    payload = struct.pack(">QH", req_id, len(mid)) + mid
     fut     = _make_future(req_id)
     await _sock.send_multipart([_T_ALLOC, payload])
     try:
@@ -296,6 +313,7 @@ async def _alloc_slot(model_id: str) -> int:
 async def _submit_and_wait(
     slot_id:  int,
     model_id: str,
+    instance: str,
     input_sz: int,
     params:   dict,
 ) -> tuple:
@@ -308,8 +326,8 @@ async def _submit_and_wait(
     Raises asyncio.TimeoutError if no result within INFER_TIMEOUT_S.
     """
     req_id      = _new_req_id()
-    flavor      = model_id.encode()
-    header      = struct.pack(">QIIH", req_id, slot_id, input_sz, len(flavor)) + flavor
+    mid         = _routing_key(model_id, instance).encode()
+    header      = struct.pack(">QIIH", req_id, slot_id, input_sz, len(mid)) + mid
     params_json = json.dumps(params).encode() if params else b"{}"
     fut         = _make_future(req_id)
     await _sock.send_multipart([_T_SUBMIT, header, params_json])
@@ -349,6 +367,11 @@ async def infer(request: Request) -> Response:
 
     Query params:
         model_id    Required. May contain '/' — URL-encode as %2F.
+        api_key     Required. Roboflow API key.
+        instance    Optional. Differentiates multiple workers of the same model
+                    (e.g. "0", "1", "gpu0"). Routed as model_id:instance internally.
+        device      Optional. Device hint for cold-path load (e.g. "cuda:0", "cuda:1").
+                    No effect if model is already loaded.
         *           Any additional params forwarded opaquely to the backend.
 
     Body:
@@ -357,11 +380,15 @@ async def infer(request: Request) -> Response:
     params   = dict(request.query_params)
     model_id = params.pop("model_id", "")
     api_key  = params.pop("api_key", "")
+    instance = params.pop("instance", "")
+    device   = params.pop("device", "")
     if not model_id:
         return Response(status_code=400, content=b"model_id query param required")
+    if not api_key:
+        return Response(status_code=400, content=b"api_key query param required")
 
     # 1. Ensure model is loaded (instant on warm path)
-    status = await _ensure_loaded(model_id, api_key)
+    status = await _ensure_loaded(model_id, instance, api_key, device)
     if status[0] == "load_timeout":
         return Response(
             status_code=503,
@@ -373,7 +400,7 @@ async def infer(request: Request) -> Response:
 
     # 2. Claim a SHM slot
     try:
-        slot_id = await _alloc_slot(model_id)
+        slot_id = await _alloc_slot(model_id, instance)
     except asyncio.TimeoutError:
         return Response(
             status_code=503,
@@ -399,7 +426,7 @@ async def infer(request: Request) -> Response:
         if pos == 0:
             return Response(status_code=400, content=b"empty body")
 
-        result = await _submit_and_wait(slot_id, model_id, pos, params)
+        result = await _submit_and_wait(slot_id, model_id, instance, pos, params)
 
         if result[0] == "error":
             return Response(status_code=500, content=b"inference failed")
