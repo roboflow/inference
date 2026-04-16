@@ -32,7 +32,7 @@ import uuid
 from collections import deque
 from concurrent.futures import Future
 from multiprocessing import shared_memory
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 import numpy as np
 
@@ -353,13 +353,21 @@ class SubprocessBackend(Backend):
         )
 
         # ── ZMQ ─────────────────────────────────────────────────────
+        from inference_models.backends.utils.transport import default_transport
+
         self._zmq_ctx = zmq.Context()
         self._zmq_sock = self._zmq_ctx.socket(zmq.PAIR)
         self._zmq_sock.setsockopt(zmq.LINGER, 0)
-        self._zmq_addr = (
-            f"ipc:///tmp/inference_sp_{os.getpid()}_{uuid.uuid4().hex[:8]}"
-        )
+
+        _transport = os.environ.get("INFERENCE_ZMQ_TRANSPORT", default_transport())
+        _sock_id = f"sp_{os.getpid()}_{uuid.uuid4().hex[:8]}"
+        if _transport == "ipc":
+            self._zmq_addr = f"ipc:///tmp/inference_{_sock_id}.ipc"
+        else:
+            self._zmq_addr = "tcp://127.0.0.1:*"
         self._zmq_sock.bind(self._zmq_addr)
+        if _transport != "ipc":
+            self._zmq_addr = self._zmq_sock.getsockopt_string(zmq.LAST_ENDPOINT)
 
         # ── Spawn worker ────────────────────────────────────────────
         import multiprocessing as mp
@@ -530,38 +538,16 @@ class SubprocessBackend(Backend):
         return results
 
     # ------------------------------------------------------------------
-    # Pipeline stages (caller-side stubs — real work is in the worker)
-    # ------------------------------------------------------------------
-
-    def pre_process(self, *args, **kwargs) -> Tuple[Any, Any]:
-        return (args[0] if args else None, kwargs if kwargs else None)
-
-    def post_process(self, raw_output: Any, meta: Any, **kwargs) -> Any:
-        return raw_output
-
-    def collate(self, items: List[Tuple[Any, Any]]) -> Any:
-        return items
-
-    def uncollate(self, batched_output: Any, count: int) -> List[Any]:
-        if isinstance(batched_output, list):
-            return batched_output
-        return [batched_output] * count
-
-    def forward_sync(self, raw_items: Any, **kwargs) -> Any:
-        return self._send_batch_to_worker(raw_items)
-
-    # ------------------------------------------------------------------
     # Submission
     # ------------------------------------------------------------------
 
-    def submit(self, pre_processed: Tuple[Any, Any], *, priority: int = 0) -> Future:
+    def submit(self, raw_input: Any, *, priority: int = 0, **kwargs) -> Future:
         if not self.is_accepting:
             raise RuntimeError(
                 f"SubprocessBackend('{self._model_id}') is not accepting "
                 f"requests (state={self.state})"
             )
 
-        raw_input, kwargs = pre_processed
         nbytes = _input_nbytes(raw_input)
 
         if nbytes > self._input_buffer_bytes:
@@ -609,17 +595,15 @@ class SubprocessBackend(Backend):
     # Convenience
     # ------------------------------------------------------------------
 
-    def infer_sync(self, *args, **kwargs) -> Any:
-        pre_processed = self.pre_process(*args, **kwargs)
-        future = self.submit(pre_processed)
-        return future.result()
+    def infer_sync(self, raw_input: Any, **kwargs) -> Any:
+        return self.submit(raw_input, **kwargs).result()
 
-    async def infer_async(self, *args, **kwargs) -> Any:
+    async def infer_async(self, raw_input: Any, **kwargs) -> Any:
         import asyncio
 
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(
-            None, lambda: self.infer_sync(*args, **kwargs)
+            None, lambda: self.infer_sync(raw_input, **kwargs)
         )
 
     # ------------------------------------------------------------------

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import logging
 import threading
 from concurrent.futures import Future, ThreadPoolExecutor
@@ -245,48 +244,32 @@ class ModelManager:
     # Inference
     # ------------------------------------------------------------------
 
-    def infer_sync(self, model_id: str, *args, **kwargs) -> Any:
+    def infer_sync(self, model_id: str, raw_input: Any, **kwargs) -> Any:
         """Run inference synchronously. Blocks until result is ready.
 
         Raises:
             KeyError: If model_id is not loaded.
         """
         backend = self._get_backend(model_id)
-        return backend.infer_sync(*args, **kwargs)
+        return backend.infer_sync(raw_input, **kwargs)
 
-    async def infer_async(self, model_id: str, *args, **kwargs) -> Any:
+    async def infer_async(self, model_id: str, raw_input: Any, **kwargs) -> Any:
         """Run inference asynchronously.
 
         Raises:
             KeyError: If model_id is not loaded.
         """
         backend = self._get_backend(model_id)
-        loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(
-            self._executor,
-            lambda: backend.infer_sync(*args, **kwargs),
-        )
+        return await backend.infer_async(raw_input, **kwargs)
 
-    def submit(self, model_id: str, pre_processed: Any, *, priority: int = 0) -> Future:
-        """Submit a pre-processed item for inference.
-
-        Call ``backend.pre_process()`` first, then pass the result here.
-        Returns a Future that resolves to the final post-processed result.
+    def submit(self, model_id: str, raw_input: Any, *, priority: int = 0, **kwargs) -> Future:
+        """Submit a raw input for inference. Returns a Future immediately.
 
         Raises:
             KeyError: If model_id is not loaded.
         """
         backend = self._get_backend(model_id)
-        return backend.submit(pre_processed, priority=priority)
-
-    def pre_process(self, model_id: str, *args, **kwargs) -> Any:
-        """Run pre-processing for a model. Returns (tensor, meta).
-
-        Useful when callers want to pre-process + submit separately
-        (e.g. to submit multiple items concurrently).
-        """
-        backend = self._get_backend(model_id)
-        return backend.pre_process(*args, **kwargs)
+        return backend.submit(raw_input, priority=priority, **kwargs)
 
     # ------------------------------------------------------------------
     # Observability
