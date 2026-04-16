@@ -247,6 +247,8 @@ def run_compilation_in_container(
     result = container.wait()
     exit_code = result["StatusCode"]
     console.print(f"\nTRT compilation container exited with code {exit_code}")
+    if exit_code != 0:
+        typer.Exit(code=result["StatusCode"])
 
 
 def build_container_command(
@@ -256,17 +258,17 @@ def build_container_command(
     trt_same_cc_compatible: bool = False,
 ) -> str:
     command = (
-        f"inference enterprise inference-compiler compile-model --model-id {model_id}"
+        f'inference enterprise inference-compiler compile-model --model-id "{model_id}"'
     )
     if api_key:
         command += f" --api-key {api_key}"
     if trt_forward_compatible:
         command += (
-            f" --trt-forward-compatible {stringify_boolean(trt_forward_compatible)}"
+            f' --trt-forward-compatible "{stringify_boolean(trt_forward_compatible)}"'
         )
     if trt_same_cc_compatible:
         command += (
-            f" --trt-same-cc-compatible {stringify_boolean(trt_same_cc_compatible)}"
+            f' --trt-same-cc-compatible "{stringify_boolean(trt_same_cc_compatible)}"'
         )
     return command
 
