@@ -7,6 +7,7 @@ from torchvision.transforms import functional
 
 from inference_models import ColorFormat, SemanticSegmentationModel
 from inference_models.configuration import (
+    Confidence,
     DEFAULT_DEVICE,
     INFERENCE_MODELS_DEEP_LAB_V3_PLUS_DEFAULT_CONFIDENCE,
 )
@@ -251,11 +252,11 @@ class DeepLabV3PlusForSemanticSegmentationTRT(
         self,
         model_results: torch.Tensor,
         pre_processing_meta: PreprocessedInputs,
-        confidence: Optional[float] = None,
+        confidence: Confidence = "best",
         **kwargs,
     ) -> List[SemanticSegmentationResult]:
         confidence_filter = ConfidenceFilter(
-            user_confidence=confidence,
+            confidence=confidence,
             recommended_parameters=self.recommended_parameters,
             default_confidence=INFERENCE_MODELS_DEEP_LAB_V3_PLUS_DEFAULT_CONFIDENCE,
         )

@@ -7,6 +7,7 @@ import torch
 
 from inference_models import Detections, ObjectDetectionModel, PreProcessingOverrides
 from inference_models.configuration import (
+    Confidence,
     DEFAULT_DEVICE,
     INFERENCE_MODELS_YOLOV10_DEFAULT_CONFIDENCE,
     INFERENCE_MODELS_YOLOV10_DEFAULT_MAX_DETECTIONS,
@@ -243,12 +244,12 @@ class YOLOv10ForObjectDetectionTRT(
         self,
         model_results: torch.Tensor,
         pre_processing_meta: List[PreProcessingMetadata],
-        confidence: Optional[float] = None,
+        confidence: Confidence = "best",
         max_detections: int = INFERENCE_MODELS_YOLOV10_DEFAULT_MAX_DETECTIONS,
         **kwargs,
     ) -> List[Detections]:
         confidence_filter = ConfidenceFilter(
-            user_confidence=confidence,
+            confidence=confidence,
             recommended_parameters=self.recommended_parameters,
             default_confidence=INFERENCE_MODELS_YOLOV10_DEFAULT_CONFIDENCE,
         )

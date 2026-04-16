@@ -6,6 +6,7 @@ import torch
 
 from inference_models import Detections, ObjectDetectionModel, PreProcessingOverrides
 from inference_models.configuration import (
+    Confidence,
     DEFAULT_DEVICE,
     INFERENCE_MODELS_YOLO26_DEFAULT_CONFIDENCE,
 )
@@ -193,11 +194,11 @@ class YOLO26ForObjectDetectionOnnx(
         self,
         model_results: torch.Tensor,
         pre_processing_meta: List[PreProcessingMetadata],
-        confidence: Optional[float] = None,
+        confidence: Confidence = "best",
         **kwargs,
     ) -> List[Detections]:
         confidence_filter = ConfidenceFilter(
-            user_confidence=confidence,
+            confidence=confidence,
             recommended_parameters=self.recommended_parameters,
             default_confidence=INFERENCE_MODELS_YOLO26_DEFAULT_CONFIDENCE,
         )

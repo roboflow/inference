@@ -13,6 +13,7 @@ from inference_models import (
     MultiLabelClassificationPrediction,
 )
 from inference_models.configuration import (
+    Confidence,
     DEFAULT_DEVICE,
     INFERENCE_MODELS_DINOV3_DEFAULT_CONFIDENCE,
 )
@@ -335,11 +336,11 @@ class DinoV3ForMultiLabelClassificationTorch(
     def post_process(
         self,
         model_results: torch.Tensor,
-        confidence: Optional[float] = None,
+        confidence: Confidence = "best",
         **kwargs,
     ) -> List[MultiLabelClassificationPrediction]:
         confidence_filter = ConfidenceFilter(
-            user_confidence=confidence,
+            confidence=confidence,
             recommended_parameters=self.recommended_parameters,
             default_confidence=INFERENCE_MODELS_DINOV3_DEFAULT_CONFIDENCE,
         )

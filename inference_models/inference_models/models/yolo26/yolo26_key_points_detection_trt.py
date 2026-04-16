@@ -12,6 +12,7 @@ from inference_models import (
     PreProcessingOverrides,
 )
 from inference_models.configuration import (
+    Confidence,
     DEFAULT_DEVICE,
     INFERENCE_MODELS_YOLO26_DEFAULT_CONFIDENCE,
     INFERENCE_MODELS_YOLO26_DEFAULT_KEY_POINTS_THRESHOLD,
@@ -275,12 +276,12 @@ class YOLO26ForKeyPointsDetectionTRT(
         self,
         model_results: torch.Tensor,
         pre_processing_meta: List[PreProcessingMetadata],
-        confidence: Optional[float] = None,
+        confidence: Confidence = "best",
         key_points_threshold: float = INFERENCE_MODELS_YOLO26_DEFAULT_KEY_POINTS_THRESHOLD,
         **kwargs,
     ) -> Tuple[List[KeyPoints], Optional[List[Detections]]]:
         confidence_filter = ConfidenceFilter(
-            user_confidence=confidence,
+            confidence=confidence,
             recommended_parameters=self.recommended_parameters,
             default_confidence=INFERENCE_MODELS_YOLO26_DEFAULT_CONFIDENCE,
         )

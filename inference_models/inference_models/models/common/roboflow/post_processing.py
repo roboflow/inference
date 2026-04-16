@@ -1,8 +1,14 @@
 from typing import Dict, List, Literal, Optional, Tuple, Union
+from pydantic import TypeAdapter
 
 import torch
 import torchvision
 from torchvision.transforms import functional
+
+from inference_models.configuration import (
+    Confidence,
+    INFERENCE_MODELS_DEFAULT_CONFIDENCE,
+)
 
 from inference_models.entities import ImageDimensions
 from inference_models.logger import LOGGER
@@ -11,6 +17,8 @@ from inference_models.models.common.roboflow.model_packages import (
     StaticCropOffset,
 )
 from inference_models.weights_providers.entities import RecommendedParameters
+
+_confidence_validator = TypeAdapter(Confidence)
 
 
 def run_nms_for_object_detection(
@@ -453,34 +461,34 @@ def align_instance_segmentation_results(
 
 
 class ConfidenceFilter:
-    """Resolves per-class confidence thresholds via a 4-tier priority chain
-    (highest to lowest):
+    """Resolves per-class confidence thresholds.
 
-      1. Explicit user value
-      2. `recommendedParameters.per_class_confidence` (with global optimal or
-         model default as fallback for unlisted classes)
-      3. `recommendedParameters.confidence` (global optimal)
-      4. Model's hardcoded default
+    ``confidence`` selects the mode:
+
+      - ``"best"`` — per-class → global → model default.
+      - ``"default"`` — skip recommended_parameters, use model default.
+      - ``float`` — uniform user override for all classes.
     """
 
     def __init__(
         self,
         *,
-        user_confidence: Optional[float],
-        recommended_parameters: Optional[RecommendedParameters],
-        default_confidence: float,
+        confidence: Confidence = "best",
+        recommended_parameters: Optional[RecommendedParameters] = None,
+        default_confidence: float = INFERENCE_MODELS_DEFAULT_CONFIDENCE,
     ):
+        confidence = _confidence_validator.validate_python(confidence)
         self._class_to_threshold_map = self._resolve_class_to_threshold_map(
-            user_confidence, recommended_parameters
+            confidence, recommended_parameters
         )
         self._fallback_threshold = self._resolve_fallback_threshold(
-            user_confidence, recommended_parameters, default_confidence
+            confidence, recommended_parameters, default_confidence
         )
         LOGGER.debug(
-            "ConfidenceFilter: user_confidence=%s, recommended_parameters=%s, "
+            "ConfidenceFilter: confidence=%s, recommended_parameters=%s, "
             "default_confidence=%.4f -> class_to_threshold_map=%s, "
             "fallback_threshold=%.4f",
-            user_confidence,
+            confidence,
             recommended_parameters,
             default_confidence,
             self._class_to_threshold_map,
@@ -488,8 +496,7 @@ class ConfidenceFilter:
         )
 
     def per_class_thresholds(self, class_names: List[str]) -> torch.Tensor:
-        """Thresholds aligned to `class_names` (CPU tensor). Tiers without
-        per-class data return the fallback repeated."""
+        """Thresholds aligned to `class_names` (CPU tensor)."""
         if self._class_to_threshold_map is None:
             return torch.full((len(class_names),), self._fallback_threshold)
         return torch.tensor(
@@ -498,10 +505,10 @@ class ConfidenceFilter:
 
     @staticmethod
     def _resolve_class_to_threshold_map(
-        user_confidence: Optional[float],
+        confidence: Confidence,
         recommended_parameters: Optional[RecommendedParameters],
     ) -> Optional[Dict[str, float]]:
-        if user_confidence is not None:
+        if confidence != "best":
             return None
         if (
             recommended_parameters is not None
@@ -512,12 +519,14 @@ class ConfidenceFilter:
 
     @staticmethod
     def _resolve_fallback_threshold(
-        user_confidence: Optional[float],
+        confidence: Confidence,
         recommended_parameters: Optional[RecommendedParameters],
         default_confidence: float,
     ) -> float:
-        if user_confidence is not None:
-            return user_confidence
+        if isinstance(confidence, float):
+            return confidence
+        if confidence == "default":
+            return default_confidence
         if (
             recommended_parameters is not None
             and recommended_parameters.confidence is not None

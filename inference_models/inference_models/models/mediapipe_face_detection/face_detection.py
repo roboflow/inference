@@ -6,6 +6,7 @@ import torch
 
 from inference_models import Detections, KeyPoints, KeyPointsDetectionModel
 from inference_models.configuration import (
+    Confidence,
     INFERENCE_MODELS_MEDIAPIPE_FACE_DETECTOR_DEFAULT_CONFIDENCE,
 )
 from inference_models.entities import ColorFormat, ImageDimensions
@@ -180,11 +181,11 @@ class MediaPipeFaceDetector(
         self,
         model_results: List[List[Detection]],
         pre_processing_meta: List[ImageDimensions],
-        confidence: Optional[float] = None,
+        confidence: Confidence = "best",
         **kwargs,
     ) -> Tuple[List[KeyPoints], List[Detections]]:
         confidence_filter = ConfidenceFilter(
-            user_confidence=confidence,
+            confidence=confidence,
             recommended_parameters=self.recommended_parameters,
             default_confidence=INFERENCE_MODELS_MEDIAPIPE_FACE_DETECTOR_DEFAULT_CONFIDENCE,
         )
