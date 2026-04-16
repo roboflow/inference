@@ -513,6 +513,9 @@ class SubprocessBackend(Backend):
             # Poll with 10ms timeout so outbound queue drains promptly
             events = dict(poller.poll(timeout=10))
             if self._zmq_sock not in events:
+                if not self._worker.is_alive():
+                    self._handle_worker_death()
+                    return
                 continue
 
             try:
@@ -528,6 +531,44 @@ class SubprocessBackend(Backend):
             elif msg == _MSG_RESULT and len(frames) > 1 and len(frames[1]) == 16:
                 req_id, slot_id, result_sz = struct.unpack(">QII", frames[1])
                 self._handle_result(req_id, slot_id, result_sz)
+
+    def _handle_worker_death(self) -> None:
+        """Called from recv thread when worker process exits unexpectedly."""
+        logger.error(
+            "SubprocessBackend(%s): worker died (pid=%s exitcode=%s)",
+            self._model_id,
+            self._worker.pid,
+            self._worker.exitcode,
+        )
+        self._state_value = "unhealthy"
+
+        with self._slot_lock:
+            pending = list(self._slot_futures.items())
+            self._slot_futures.clear()
+
+        for slot_id, (req_id, future) in pending:
+            # Standalone: reject the future and free the slot
+            if self._own_pool:
+                if not future.done():
+                    future.set_exception(
+                        RuntimeError(
+                            f"SubprocessBackend({self._model_id!r}): worker died"
+                        )
+                    )
+                try:
+                    self._pool.free_slot(slot_id)
+                except Exception:
+                    pass
+            # Orchestrated: notify MMP (result_sz=0 → T_ERROR routed to uvicorn)
+            if self._on_result_callback is not None:
+                try:
+                    self._on_result_callback(req_id, slot_id, 0)
+                except Exception:
+                    logger.exception(
+                        "SubprocessBackend(%s): on_result_callback raised "
+                        "during worker-death cleanup",
+                        self._model_id,
+                    )
 
     def _handle_result(self, req_id: int, slot_id: int, result_sz: int) -> None:
         """Called from recv thread on each T_RESULT."""

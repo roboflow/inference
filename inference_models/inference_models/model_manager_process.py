@@ -682,11 +682,18 @@ class ModelManagerProcess:
             self._pool.free_slot(slot_id)
             return
         self._pool.mark_done(slot_id, result_sz)
-        await self._send(
+        sent = await self._send(
             identity, T_RESULT_READY,
             struct.pack(">QII", req_id, slot_id, result_sz),
         )
-        # Slot freed when uvicorn sends T_FREE
+        if not sent:
+            # Peer disconnected — result will never be read; free slot now
+            # (backend already finished; we just drop the result silently)
+            logger.debug(
+                "MMP: peer gone for req_id=%d slot=%d — freeing slot",
+                req_id, slot_id,
+            )
+            self._pool.free_slot(slot_id)
 
     # ------------------------------------------------------------------
     # Cold path — load / wake
@@ -808,10 +815,19 @@ class ModelManagerProcess:
         stale = self._pool.stale_slots(self._stale_slot_max_age_s)
         if not stale:
             return
-        logger.warning("MMP: reaping %d stale slot(s): %s", len(stale), stale)
-        slot_to_req = {s: r for r, (_, s, _) in self._pending.items()}
+        now_ns        = time.monotonic_ns()
+        slot_to_req   = {s: r for r, (_, s, _) in self._pending.items()}
         for slot_id in stale:
             req_id = slot_to_req.get(slot_id)
+            try:
+                hdr   = self._pool.read_header(slot_id)
+                age_s = (now_ns - hdr.timestamp_ns) / 1e9 if hdr.timestamp_ns else 0.0
+            except Exception:
+                age_s = 0.0
+            logger.warning(
+                "MMP: reaping stale slot slot_id=%d age_s=%.1f req_id=%s",
+                slot_id, age_s, req_id,
+            )
             if req_id is not None:
                 pending = self._pending.pop(req_id, None)
                 if pending:
@@ -909,11 +925,14 @@ class ModelManagerProcess:
 
     async def _send(
         self, identity: bytes, msg_type: bytes, payload: bytes
-    ) -> None:
+    ) -> bool:
+        """Send a message. Returns True on success, False on ZMQ error."""
         try:
             await self._router.send_multipart([identity, msg_type, payload])
+            return True
         except zmq.ZMQError as exc:
             logger.warning("MMP: send failed to %r: %s", identity, exc)
+            return False
 
 
 # ---------------------------------------------------------------------------
