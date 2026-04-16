@@ -259,18 +259,28 @@ def _process_slots(
         is_npy.append(bytes(mv[:6]) == _NP_MAGIC)
 
     images: list[Any] = [None] * len(batch)
+    decode_errors: list[bool] = [False] * len(batch)
 
     # .npy slots — standalone mode (numpy arrays serialised via np.save)
     for i, (mv, npy) in enumerate(zip(mvs, is_npy)):
         if npy:
-            images[i] = np.load(io.BytesIO(bytes(mv)), allow_pickle=False)
+            try:
+                images[i] = np.load(io.BytesIO(bytes(mv)), allow_pickle=False)
+            except Exception:
+                log.exception("Worker: failed to load .npy slot %d", batch[i][0])
+                decode_errors[i] = True
 
     # Raw image bytes (JPEG + non-JPEG) — single batch_decode_fn call
     raw_indices = [i for i, npy in enumerate(is_npy) if not npy]
     if raw_indices:
-        raw_decoded = batch_decode_fn([mvs[i] for i in raw_indices])
-        for i, img in zip(raw_indices, raw_decoded):
-            images[i] = img
+        try:
+            raw_decoded = batch_decode_fn([mvs[i] for i in raw_indices])
+            for i, img in zip(raw_indices, raw_decoded):
+                images[i] = img
+        except Exception:
+            log.exception("Worker: batch decode failed for %d slot(s)", len(raw_indices))
+            for i in raw_indices:
+                decode_errors[i] = True
 
     # Release memoryviews
     for mv in mvs:
@@ -279,15 +289,35 @@ def _process_slots(
         except Exception:
             pass
 
+    # Short-circuit slots that failed to decode — send error without calling infer
+    error_indices = {i for i, err in enumerate(decode_errors) if err}
+    if error_indices:
+        for i in error_indices:
+            slot_id, req_id = batch[i]
+            pool.mark_error(slot_id)
+            try:
+                sock.send_multipart([_MSG_RESULT, struct.pack(">QII", req_id, slot_id, 0)])
+            except zmq.ZMQError:
+                return
+        if len(error_indices) == len(batch):
+            return
+        # Filter to only successfully decoded slots for infer
+        good = [(i, batch[i], images[i]) for i in range(len(batch)) if i not in error_indices]
+        good_batch  = [b for _, b, _ in good]
+        good_images = [img for _, _, img in good]
+    else:
+        good_batch  = batch
+        good_images = images
+
     results: list[Any]
     try:
-        raw_out = model.infer(images[0]) if len(images) == 1 else model.infer(images)
+        raw_out = model.infer(good_images[0]) if len(good_images) == 1 else model.infer(good_images)
         results = raw_out if isinstance(raw_out, list) else [raw_out]
     except Exception:
         log.exception("Worker: model.infer() failed")
-        results = [None] * len(batch)
+        results = [None] * len(good_batch)
 
-    for (slot_id, req_id), result in zip(batch, results):
+    for (slot_id, req_id), result in zip(good_batch, results):
         if result is None:
             pool.mark_error(slot_id)
             try:
