@@ -1,293 +1,304 @@
-"""SubprocessBackend — full inference pipeline runs in a worker subprocess.
-
-The worker does decode → pre_process → forward → post_process.
-The caller sends raw input (compressed bytes or numpy array) over POSIX
-shared memory.  The worker returns pickled final results over SHM.
-
-Triple-buffered input transport (configurable via ``num_input_buffers``):
-  N input SHM blocks allow the caller to prepare the next batch while
-  the worker processes the current one.  The worker reads numpy arrays
-  directly from SHM (zero-copy view) — safe because the buffer won't
-  be reused until N-1 more batches cycle through.
-
-Batching: a caller-side BatchCollector groups concurrent requests,
-respecting item count, time delay, and total byte limits (SHM buffer
-capacity).
+"""SubprocessBackend v2 — SHMPool + worker-side greedy batching.
 
 Transport:
-  Input:  raw bytes (e.g. compressed JPEG ~50-200 KB) or numpy → SHM ring
-  Result: pickled post-processed output (few KB) → SHM
-  Signal: ZMQ PAIR carries JSON metadata (buffer index, offsets, shapes)
+  Input:  raw bytes written to SHMPool.input_memoryview(slot_id)
+  Output: pickled Python object in SHMPool.result_memoryview(slot_id)
+  Signal: ZMQ PAIR — parent sends T_SLOT_READY per request;
+          worker sends T_RESULT per completed slot
+
+Thread-safety (ZMQ):
+  ZMQ sockets are not thread-safe.  All socket operations run in _recv_thread.
+  signal_slot() and unload() enqueue work to _outbound (Queue); the recv
+  thread drains _outbound before polling for inbound messages.
+
+Modes:
+  standalone:
+    SubprocessBackend owns the SHMPool.  submit() allocates a slot, writes
+    input, signals the worker, and returns a Future that the recv thread
+    resolves when T_RESULT arrives.  infer_sync() calls Future.result().
+
+  orchestrated (MMP):
+    SubprocessBackend attaches to MMP's existing SHMPool.  MMP calls
+    signal_slot() for each request; the recv thread calls on_result_callback
+    when T_RESULT arrives.  submit()/infer_sync() raise RuntimeError.
+
+Input formats (both modes):
+  - bytes / bytearray / memoryview:  written directly.
+  - numpy ndarray:  serialised with np.save() (magic b'\\x93NUMPY').
+  Worker detects format by inspecting the first 6 bytes of the slot.
 """
 
 from __future__ import annotations
 
-import json
+import io
 import logging
 import os
 import pickle
+import queue
+import struct
 import threading
 import time
 import uuid
 from collections import deque
 from concurrent.futures import Future
-from multiprocessing import shared_memory
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 import numpy as np
 
 from inference_models.backends.base import Backend
+from inference_models.backends.utils.shm_pool import SHMPool
+from inference_models.backends.utils.transport import default_transport
 
 logger = logging.getLogger(__name__)
 
 
-# ─── ZMQ message types ──────────────────────────────────────────────
+# ---------------------------------------------------------------------------
+# PAIR protocol constants (parent ↔ worker)
+# ---------------------------------------------------------------------------
 
-_MSG_INFER = b"I"
-_MSG_RESULT = b"R"
-_MSG_ERROR = b"E"
-_MSG_SHUTDOWN = b"S"
-_MSG_HEARTBEAT = b"H"
+_MSG_SLOT_READY = b"\x01"   # parent→worker: struct.pack(">IQ", slot_id, req_id)  [12 B]
+_MSG_RESULT     = b"\x02"   # worker→parent: struct.pack(">QII", req_id, slot_id, result_sz) [16 B]
+_MSG_HEARTBEAT  = b"\x03"   # worker→parent: keepalive (no payload)
+_MSG_SHUTDOWN   = b"\x04"   # parent→worker: stop gracefully (no payload)
 
-_WORKER_HEARTBEAT_MS = 2000
-_WORKER_HEARTBEAT_TIMEOUT_S = 30.0
+_HEARTBEAT_INTERVAL_S   = 2.0
+_WORKER_HEARTBEAT_TIMEOUT = 30.0   # seconds of silence → unhealthy
 
-
-# ─── SHM helpers ─────────────────────────────────────────────────────
-
-
-def _input_nbytes(raw_input: Any) -> int:
-    """Return the byte size of a raw input for SHM budget tracking."""
-    if isinstance(raw_input, (bytes, bytearray, memoryview)):
-        return len(raw_input)
-    if isinstance(raw_input, np.ndarray):
-        return raw_input.nbytes
-    try:
-        return raw_input.nelement() * raw_input.element_size()
-    except AttributeError:
-        return 0
+_DEFAULT_BATCH_MAX_SIZE    = 8
+_DEFAULT_BATCH_MAX_WAIT_MS = 5.0
 
 
-def _write_input_to_shm(buf: memoryview, raw_input: Any) -> dict:
-    """Write a single input to SHM at the start of *buf*.  Returns metadata."""
-    if isinstance(raw_input, (bytes, bytearray, memoryview)):
-        nbytes = len(raw_input)
-        buf_bytes = buf.cast("B") if buf.format != "B" else buf
-        buf_bytes[:nbytes] = raw_input
-        return {"fmt": "bytes", "n": nbytes}
+# ---------------------------------------------------------------------------
+# Input serialisation helper (parent side)
+# ---------------------------------------------------------------------------
 
-    if not isinstance(raw_input, np.ndarray):
-        import torch
-
-        if isinstance(raw_input, torch.Tensor):
-            raw_input = raw_input.detach().cpu().contiguous().numpy()
-        else:
-            raw_input = np.asarray(raw_input)
-    if not raw_input.flags["C_CONTIGUOUS"]:
-        raw_input = np.ascontiguousarray(raw_input)
-    nbytes = raw_input.nbytes
-    shm_view = np.ndarray(raw_input.shape, dtype=raw_input.dtype, buffer=buf[:nbytes])
-    np.copyto(shm_view, raw_input)
-    return {
-        "fmt": "np", "shape": list(raw_input.shape),
-        "dtype": str(raw_input.dtype), "n": nbytes,
-    }
+_NP_MAGIC = b"\x93NUMPY"   # first 6 bytes of every np.save() file
 
 
-def _read_input_from_shm(buf: memoryview, meta: dict) -> Any:
-    """Read a single input from SHM.
+def _to_bytes(raw_input: Any) -> bytes:
+    """Serialise any input value to bytes for writing to the SHMPool input slot.
 
-    For bytes: returns a copy (needed by image decoders).
-    For numpy: returns a zero-copy view into SHM.  Safe when the caller
-    won't reuse this buffer until the worker finishes (triple-buffering).
+    Returns:
+        bytes, bytearray, memoryview  →  bytes (zero-copy when possible)
+        numpy ndarray                 →  numpy .npy bytes (magic b'\\x93NUMPY')
+        anything else                 →  pickle
     """
-    n = meta["n"]
-    if meta["fmt"] == "bytes":
-        return bytes(buf[:n])
-    shape = tuple(meta["shape"])
-    dtype = np.dtype(meta["dtype"])
-    return np.ndarray(shape, dtype=dtype, buffer=buf[:n])
+    if isinstance(raw_input, (bytes, bytearray)):
+        return bytes(raw_input)
+    if isinstance(raw_input, memoryview):
+        return bytes(raw_input)
+    if isinstance(raw_input, np.ndarray):
+        buf = io.BytesIO()
+        np.save(buf, raw_input, allow_pickle=False)
+        return buf.getvalue()
+    return pickle.dumps(raw_input)
 
 
-# ─── Worker process ─────────────────────────────────────────────────
-
+# ---------------------------------------------------------------------------
+# Worker subprocess
+# ---------------------------------------------------------------------------
 
 def _worker_main(
-    model_id: str,
-    api_key: str,
-    setup_pipe: Any,
-    zmq_addr: str,
-    use_gpu: bool,
-    input_shm_names: List[str],
-    result_shm_name: str,
-    model_kwargs: dict,
-    gpu_device: Optional[str] = None,
-    decoder_name: str = "cv2",
+    model_id:          str,
+    api_key:           str,
+    setup_pipe:        Any,
+    zmq_addr:          str,
+    use_gpu:           bool,
+    gpu_device:        Optional[str],
+    shm_pool_name:     str,
+    n_slots:           int,
+    input_mb:          float,
+    result_mb:         float,
+    batch_max_size:    int,
+    batch_max_wait_ms: float,
+    decoder_name:      str,
+    model_kwargs:      dict,
 ) -> None:
     """Worker subprocess entry point.
 
-    Loads the full model, receives batches of raw inputs over SHM,
-    runs the complete pipeline (decode → pre → forward → post), and
-    returns pickled results over SHM.
+    Loads model, attaches SHMPool, signals READY, then greedy-batches
+    T_SLOT_READY messages and sends T_RESULT per completed slot.
     """
-    import torch
     if os.environ.get("ENABLE_AUTO_CUDA_GRAPHS_FOR_TRT_BACKEND") is None:
         os.environ["ENABLE_AUTO_CUDA_GRAPHS_FOR_TRT_BACKEND"] = "False"
-    import zmq
 
-    from inference_models.models.auto_loaders.core import AutoModel
+    import zmq  # noqa: PLC0415
 
-    model = None
-    input_shms: Optional[list] = None
-    result_shm = None
-    sock = None
-    zmq_ctx = None
+    from inference_models.models.auto_loaders.core import AutoModel  # noqa: PLC0415
+    from inference_models.backends.decode import make_decoder          # noqa: PLC0415
+
     _log = logging.getLogger(f"{__name__}.worker")
+    pool = sock = zmq_ctx = model = None
 
     try:
-        device = gpu_device if use_gpu and gpu_device else ("cuda:0" if use_gpu else "cpu")
-        _log.info("Worker(%s): loading model on %s (decoder=%s)", model_id, device, decoder_name)
-        model = AutoModel.from_pretrained(
-            model_id, api_key=api_key, device=device, **model_kwargs,
-        )
-        _log.info(
-            "Worker(%s): model loaded | type=%s | max_batch=%s",
-            model_id, type(model).__name__,
-            getattr(model, "max_batch_size", None),
-        )
+        device = gpu_device if (use_gpu and gpu_device) else ("cuda:0" if use_gpu else "cpu")
+        _log.info("Worker(%s): loading on %s", model_id, device)
+        model = AutoModel.from_pretrained(model_id, api_key=api_key, device=device,
+                                          **model_kwargs)
+        _log.info("Worker(%s): model ready (%s)", model_id, type(model).__name__)
 
-        # ── Decoder ─────────────────────────────────────────────────
-        from inference_models.backends.decode import make_decoder
         decode_fn = make_decoder(decoder_name, device=device)
+        pool      = SHMPool.attach(shm_pool_name, n_slots=n_slots,
+                                   input_mb=input_mb, result_mb=result_mb)
 
-        # ── Open SHM ────────────────────────────────────────────────
-        input_shms = [shared_memory.SharedMemory(name=n) for n in input_shm_names]
-        result_shm = shared_memory.SharedMemory(name=result_shm_name)
-
-        # ── Signal ready (with model metadata) ──────────────────────
         setup_pipe.send({
-            "status": "READY",
-            "class_names": getattr(model, "class_names", None),
+            "status":        "READY",
+            "class_names":   getattr(model, "class_names", None),
             "max_batch_size": getattr(model, "max_batch_size", None),
         })
 
-        # ── Connect ZMQ ─────────────────────────────────────────────
         zmq_ctx = zmq.Context()
-        sock = zmq_ctx.socket(zmq.PAIR)
+        sock    = zmq_ctx.socket(zmq.PAIR)
         sock.setsockopt(zmq.LINGER, 0)
         sock.connect(zmq_addr)
 
-        # ── Main loop ───────────────────────────────────────────────
-        poller = zmq.Poller()
-        poller.register(sock, zmq.POLLIN)
+        _worker_loop(model, pool, sock, decode_fn,
+                     batch_max_size, batch_max_wait_ms, _log)
 
-        while True:
-            events = dict(poller.poll(timeout=_WORKER_HEARTBEAT_MS))
-            if sock not in events:
-                try:
-                    sock.send(_MSG_HEARTBEAT)
-                except zmq.ZMQError:
-                    break
-                continue
+    except Exception as exc:
+        try:
+            setup_pipe.send({"status": f"ERROR: {exc}"})
+        except Exception:
+            pass
+    finally:
+        if pool:
+            pool.close()
+        if sock:
+            sock.close()
+        if zmq_ctx:
+            zmq_ctx.term()
+        del model
 
+
+def _worker_loop(
+    model,
+    pool:              SHMPool,
+    sock,
+    decode_fn,
+    batch_max_size:    int,
+    batch_max_wait_ms: float,
+    log,
+) -> None:
+    """Greedy batch loop — accumulate T_SLOT_READY, fire on size-or-timeout."""
+    import zmq
+
+    poller = zmq.Poller()
+    poller.register(sock, zmq.POLLIN)
+
+    batch_max_wait_s = batch_max_wait_ms / 1000.0
+    pending: list[tuple[int, int]] = []   # (slot_id, req_id)
+    batch_start   = 0.0
+    last_heartbeat = time.monotonic()
+
+    while True:
+        # Compute poll timeout
+        now = time.monotonic()
+        if pending:
+            wait_left  = batch_start + batch_max_wait_s - now
+            timeout_ms = max(0, int(wait_left * 1000))
+        else:
+            hb_due     = last_heartbeat + _HEARTBEAT_INTERVAL_S
+            timeout_ms = max(1, int((hb_due - now) * 1000))
+
+        events = dict(poller.poll(timeout=timeout_ms))
+
+        if sock in events:
             try:
                 frames = sock.recv_multipart()
             except zmq.ZMQError:
                 break
 
-            if frames[0] == _MSG_SHUTDOWN:
+            msg = frames[0]
+            if msg == _MSG_SHUTDOWN:
                 break
-            if frames[0] != _MSG_INFER:
-                continue
+            elif msg == _MSG_SLOT_READY and len(frames) > 1 and len(frames[1]) == 12:
+                slot_id, req_id = struct.unpack(">IQ", frames[1])
+                if not pending:
+                    batch_start = time.monotonic()
+                pending.append((slot_id, req_id))
+        else:
+            # Timeout while idle → heartbeat
+            if not pending:
+                now = time.monotonic()
+                if now - last_heartbeat >= _HEARTBEAT_INTERVAL_S:
+                    try:
+                        sock.send_multipart([_MSG_HEARTBEAT, b""])
+                    except zmq.ZMQError:
+                        break
+                    last_heartbeat = now
 
-            req = json.loads(frames[1])
-            buf_idx = req["buf"]
+        # Fire batch when ready
+        now = time.monotonic()
+        if pending and (
+            len(pending) >= batch_max_size
+            or (now - batch_start) >= batch_max_wait_s
+        ):
+            _process_slots(model, pool, pending, sock, decode_fn, log)
+            pending.clear()
+            batch_start = 0.0
 
+
+def _process_slots(
+    model,
+    pool:     SHMPool,
+    batch:    list[tuple[int, int]],
+    sock,
+    decode_fn,
+    log,
+) -> None:
+    """Process a batch of (slot_id, req_id), write results to SHM, send T_RESULT."""
+    import zmq
+
+    images: list[Any] = []
+    for slot_id, _req_id in batch:
+        hdr = pool.read_header(slot_id)
+        raw = bytes(pool.input_memoryview(slot_id)[: hdr.input_size])
+        # Numpy .npy magic vs raw image bytes (JPEG/PNG/etc.)
+        if raw[:6] == _NP_MAGIC:
+            img = np.load(io.BytesIO(raw), allow_pickle=False)
+        else:
+            img = decode_fn(raw)
+        images.append(img)
+
+    results: list[Any]
+    try:
+        raw_out = model.infer(images[0]) if len(images) == 1 else model.infer(images)
+        results = raw_out if isinstance(raw_out, list) else [raw_out]
+    except Exception:
+        log.exception("Worker: model.infer() failed")
+        results = [None] * len(batch)
+
+    for (slot_id, req_id), result in zip(batch, results):
+        if result is None:
+            pool.mark_error(slot_id)
             try:
-                _process_batch(model, req, input_shms[buf_idx], result_shm, sock, decode_fn)
-            except Exception as e:
-                _log.exception("Worker(%s): batch error", model_id)
-                try:
-                    sock.send_multipart([
-                        _MSG_ERROR,
-                        json.dumps({"error": f"{type(e).__name__}: {e}"}).encode(),
-                    ])
-                except zmq.ZMQError:
-                    break
+                sock.send_multipart([_MSG_RESULT,
+                                     struct.pack(">QII", req_id, slot_id, 0)])
+            except zmq.ZMQError:
+                return
+            continue
 
-    except Exception as e:
+        data = pickle.dumps(result)
+        mv   = pool.result_memoryview(slot_id)
+        mv[:len(data)] = data
+        mv.release()
+        pool.mark_done(slot_id, len(data))
         try:
-            setup_pipe.send({"status": f"ERROR: {e}"})
-        except Exception:
-            pass
-    finally:
-        if input_shms:
-            for s in input_shms:
-                try:
-                    s.close()
-                except Exception:
-                    pass
-        if result_shm:
-            try:
-                result_shm.close()
-            except Exception:
-                pass
-        del model
-        if sock:
-            sock.close()
-        if zmq_ctx:
-            zmq_ctx.term()
+            sock.send_multipart([_MSG_RESULT,
+                                 struct.pack(">QII", req_id, slot_id, len(data))])
+        except zmq.ZMQError:
+            return
 
 
-def _process_batch(model, req, input_shm, result_shm, sock, decode_fn):
-    """Run the full pipeline on a batch of raw inputs.
-
-    Reads inputs from the specified input SHM buffer at offsets described
-    in req["items"].  Writes pickled results into result SHM.
-    """
-    items = req["items"]
-
-    images = []
-    for item in items:
-        raw = _read_input_from_shm(input_shm.buf[item["offset"]:], item)
-        if isinstance(raw, bytes):
-            raw = decode_fn(raw)
-        images.append(raw)
-
-    if len(images) == 1:
-        results = model.infer(images[0])
-    else:
-        results = model.infer(images)
-
-    if not isinstance(results, list):
-        results = [results]
-    result_items = []
-    offset = 0
-    for final in results:
-        data = pickle.dumps(final)
-        result_shm.buf[offset: offset + len(data)] = data
-        result_items.append({"offset": offset, "n": len(data)})
-        offset += len(data)
-
-    sock.send_multipart(
-        [_MSG_RESULT, json.dumps({"items": result_items}).encode()]
-    )
-
-
-# ─── SubprocessBackend ──────────────────────────────────────────────
-
+# ---------------------------------------------------------------------------
+# SubprocessBackend
+# ---------------------------------------------------------------------------
 
 class SubprocessBackend(Backend):
-    """Full inference pipeline runs in a worker subprocess.
+    """Inference backend running the model in a worker subprocess.
 
-    The worker handles decode, pre_process, forward, and post_process.
-    The caller sends raw input (bytes or numpy) over a ring of SHM
-    input buffers (triple-buffered by default) and receives pickled
-    final results from a single result SHM block.
-
-    When ``batch_max_size > 1`` a caller-side ``BatchCollector`` groups
-    concurrent requests, respecting item count, time delay, and total
-    byte size (SHM buffer capacity).
+    v2 transport: SHMPool for data, ZMQ PAIR for signals.
+    Worker accumulates slot signals and greedy-batches them.
     """
 
     def __init__(
@@ -295,72 +306,65 @@ class SubprocessBackend(Backend):
         model_id: str,
         api_key: str,
         *,
-        device: Optional[str] = None,
-        use_gpu: Optional[bool] = None,
-        decoder: str = "cv2",
-        batch_max_size: int = 0,
-        batch_max_delay_ms: float = 10.0,
-        num_input_buffers: int = 3,
-        input_buffer_mb: int = 32,
-        result_buffer_mb: int = 80,
-        worker_start_timeout: float = 120.0,
+        # SHMPool
+        shm_pool_name:       Optional[str]      = None,
+        n_slots:             int                = 8,
+        input_mb:            float              = 20.0,
+        result_mb:           float              = 4.0,
+        # Worker batching
+        batch_max_size:      int                = _DEFAULT_BATCH_MAX_SIZE,
+        batch_max_delay_ms:  float              = _DEFAULT_BATCH_MAX_WAIT_MS,
+        # Orchestrated-mode callback
+        on_result_callback:  Optional[Callable] = None,
+        # Device
+        device:              Optional[str]      = None,
+        use_gpu:             Optional[bool]     = None,
+        use_cuda_ipc:        Optional[bool]     = None,   # reserved, unused
+        # Misc
+        decoder:             str                = "cv2",
+        worker_start_timeout: float             = 120.0,
         **kwargs,
     ) -> None:
-        import zmq
+        import zmq  # noqa: PLC0415
 
-        self._model_id = model_id
-        self._decoder_name = decoder
-        self._batch_max_size_requested = batch_max_size
-        self._batch_max_delay_ms = batch_max_delay_ms
+        self._model_id    = model_id
         self._state_value: str = "loading"
 
-        # ── Resolve device ──────────────────────────────────────────
+        # ── Device resolution ────────────────────────────────────────
         if device is not None and device.startswith("cuda"):
             use_gpu = True
         if use_gpu is None:
-            use_gpu = device is None or device.startswith("cuda")
-        self._use_gpu = use_gpu
-        if self._use_gpu:
-            self._device_str = (
-                device if device and device.startswith("cuda") else "cuda:0"
-            )
-        else:
-            self._device_str = "cpu"
-
-        # ── SHM: input ring + single result block ───────────────────
-        self._input_buffer_bytes = input_buffer_mb * 1024 * 1024
-        result_bytes = result_buffer_mb * 1024 * 1024
-
-        self._input_shms = [
-            shared_memory.SharedMemory(create=True, size=self._input_buffer_bytes)
-            for _ in range(num_input_buffers)
-        ]
-        self._input_free: deque[int] = deque(range(num_input_buffers))
-        self._input_free_cond = threading.Condition()
-
-        self._result_shm = shared_memory.SharedMemory(
-            create=True, size=result_bytes,
+            use_gpu = (device is None or device.startswith("cuda"))
+        self._use_gpu    = use_gpu
+        self._device_str = (
+            (device if device and device.startswith("cuda") else "cuda:0")
+            if self._use_gpu else "cpu"
         )
-        # Protects ZMQ socket (not thread-safe)
-        self._zmq_lock = threading.Lock()
+
+        # ── SHMPool ─────────────────────────────────────────────────
+        if shm_pool_name is None:
+            self._pool     = SHMPool.create(n_slots, input_mb, result_mb)
+            self._own_pool = True
+        else:
+            self._pool     = SHMPool.attach(shm_pool_name, n_slots=n_slots,
+                                            input_mb=input_mb, result_mb=result_mb)
+            self._own_pool = False
 
         logger.info(
-            "SubprocessBackend(%s): device=%s | decoder=%s | batch=%s | "
-            "input_bufs=%d×%dMB | result_buf=%dMB",
-            model_id, self._device_str, decoder,
-            batch_max_size or "off",
-            num_input_buffers, input_buffer_mb, result_buffer_mb,
+            "SubprocessBackend(%s): device=%s pool=%s slots=%d "
+            "input=%.0fMB result=%.0fMB batch=%d/%.0fms",
+            model_id, self._device_str,
+            "owned" if self._own_pool else f"attached:{shm_pool_name[:8]}…",
+            n_slots, input_mb, result_mb, batch_max_size, batch_max_delay_ms,
         )
 
-        # ── ZMQ ─────────────────────────────────────────────────────
-        from inference_models.backends.utils.transport import default_transport
-
-        self._zmq_ctx = zmq.Context()
+        # ── ZMQ PAIR ─────────────────────────────────────────────────
+        self._zmq_ctx  = zmq.Context()
         self._zmq_sock = self._zmq_ctx.socket(zmq.PAIR)
         self._zmq_sock.setsockopt(zmq.LINGER, 0)
 
         _transport = os.environ.get("INFERENCE_ZMQ_TRANSPORT", default_transport())
-        _sock_id = f"sp_{os.getpid()}_{uuid.uuid4().hex[:8]}"
+        _sock_id   = f"sp_{os.getpid()}_{uuid.uuid4().hex[:8]}"
         if _transport == "ipc":
             self._zmq_addr = f"ipc:///tmp/inference_{_sock_id}.ipc"
         else:
@@ -369,8 +373,8 @@ class SubprocessBackend(Backend):
         if _transport != "ipc":
             self._zmq_addr = self._zmq_sock.getsockopt_string(zmq.LAST_ENDPOINT)
 
-        # ── Spawn worker ────────────────────────────────────────────
-        import multiprocessing as mp
+        # ── Spawn worker ─────────────────────────────────────────────
+        import multiprocessing as mp  # noqa: PLC0415
 
         ctx = mp.get_context("spawn")
         parent_pipe, child_pipe = ctx.Pipe()
@@ -383,224 +387,210 @@ class SubprocessBackend(Backend):
                 setup_pipe=child_pipe,
                 zmq_addr=self._zmq_addr,
                 use_gpu=self._use_gpu,
-                input_shm_names=[s.name for s in self._input_shms],
-                result_shm_name=self._result_shm.name,
-                model_kwargs=kwargs,
                 gpu_device=self._device_str if self._use_gpu else None,
+                shm_pool_name=self._pool.name,
+                n_slots=n_slots,
+                input_mb=input_mb,
+                result_mb=result_mb,
+                batch_max_size=batch_max_size,
+                batch_max_wait_ms=batch_max_delay_ms,
                 decoder_name=decoder,
+                model_kwargs=kwargs,
             ),
             daemon=True,
         )
         self._worker.start()
 
-        # ── Wait for worker ready ───────────────────────────────────
         if not parent_pipe.poll(timeout=worker_start_timeout):
             self._worker.kill()
             self._worker.join(timeout=5)
-            self._cleanup_shm()
+            self._pool.close()
             raise RuntimeError(
-                f"Worker failed to start: timed out after {worker_start_timeout}s"
+                f"SubprocessBackend({model_id!r}): worker timeout "
+                f"after {worker_start_timeout}s"
             )
 
         msg = parent_pipe.recv()
         if not isinstance(msg, dict) or not msg.get("status", "").startswith("READY"):
             err = msg if isinstance(msg, str) else msg.get("status", str(msg))
             self._worker.join(timeout=10)
-            self._cleanup_shm()
-            raise RuntimeError(f"Worker failed to start: {err}")
+            self._pool.close()
+            raise RuntimeError(f"SubprocessBackend({model_id!r}): {err}")
 
-        # ── Store model metadata from worker ────────────────────────
-        self._class_names = msg.get("class_names")
-        self._max_batch_size_model = msg.get("max_batch_size")
-        self._pipe = parent_pipe
-        self._last_worker_activity = time.monotonic()
-
-        # Clamp batch size to model's limit
-        if batch_max_size > 0 and self._max_batch_size_model is not None:
-            self._batch_max_size = min(batch_max_size, self._max_batch_size_model)
-        else:
-            self._batch_max_size = batch_max_size
+        self._class_names           = msg.get("class_names")
+        self._max_batch_size_model  = msg.get("max_batch_size")
+        self._last_worker_activity  = time.monotonic()
 
         logger.info(
-            "SubprocessBackend(%s): worker ready (pid=%d, device=%s, batch=%s)",
+            "SubprocessBackend(%s): worker ready (pid=%d, device=%s)",
             model_id, self._worker.pid, self._device_str,
-            self._batch_max_size or "off",
         )
 
-        # ── Stats ───────────────────────────────────────────────────
-        self._inference_count = 0
-        self._error_count = 0
+        # ── Stats ─────────────────────────────────────────────────────
+        self._inference_count   = 0
+        self._error_count       = 0
         self._last_inference_ts = 0.0
         self._latencies: deque[float] = deque(maxlen=1000)
 
-        # ── Batching ────────────────────────────────────────────────
-        self._batch_collector = (
-            self._create_batch_collector() if self._batch_max_size > 1 else None
+        # ── Recv thread ───────────────────────────────────────────────
+        # All ZMQ socket I/O runs here.  Other threads communicate via _outbound.
+        self._outbound: queue.Queue = queue.Queue()
+        self._slot_futures: Dict[int, tuple] = {}   # slot_id → (req_id, Future)
+        self._slot_lock                       = threading.Lock()
+        self._on_result_callback: Optional[Callable] = on_result_callback
+        self._recv_running = True
+        self._recv_thread  = threading.Thread(
+            target=self._recv_loop,
+            daemon=True,
+            name=f"subproc-recv-{model_id[:20]}",
         )
+        self._recv_thread.start()
+
         self._state_value = "loaded"
 
     # ------------------------------------------------------------------
-    # SHM management
+    # Orchestrated-mode API (called by MMP)
     # ------------------------------------------------------------------
 
-    def _acquire_input_buf(self, timeout: float = 30.0) -> int:
-        """Get a free input buffer index. Blocks if all buffers in-flight."""
-        with self._input_free_cond:
-            deadline = time.monotonic() + timeout
-            while not self._input_free:
-                remaining = deadline - time.monotonic()
-                if remaining <= 0 or not self._input_free_cond.wait(timeout=remaining):
-                    raise TimeoutError("No free input buffer")
-            return self._input_free.popleft()
+    def signal_slot(self, slot_id: int, req_id: int) -> None:
+        """Enqueue T_SLOT_READY for the recv thread to send. Thread-safe."""
+        self._outbound.put((slot_id, req_id))
 
-    def _release_input_buf(self, idx: int) -> None:
-        """Mark an input buffer as free (worker finished reading it)."""
-        with self._input_free_cond:
-            self._input_free.append(idx)
-            self._input_free_cond.notify()
+    def set_on_result_callback(self, callback: Callable[[int, int, int], None]) -> None:
+        """Set MMP callback: called on each T_RESULT from worker."""
+        self._on_result_callback = callback
 
-    def _cleanup_shm(self):
-        for shm in self._input_shms:
+    # ------------------------------------------------------------------
+    # Recv thread — sole owner of _zmq_sock
+    # ------------------------------------------------------------------
+
+    def _recv_loop(self) -> None:
+        import zmq  # noqa: PLC0415
+
+        poller = zmq.Poller()
+        poller.register(self._zmq_sock, zmq.POLLIN)
+
+        while self._recv_running:
+            # Drain outbound queue first
+            while True:
+                try:
+                    item = self._outbound.get_nowait()
+                except queue.Empty:
+                    break
+                if item is None:   # shutdown sentinel
+                    try:
+                        self._zmq_sock.send_multipart([_MSG_SHUTDOWN, b""])
+                    except Exception:
+                        pass
+                    return
+                slot_id, req_id = item
+                try:
+                    self._zmq_sock.send_multipart(
+                        [_MSG_SLOT_READY, struct.pack(">IQ", slot_id, req_id)]
+                    )
+                except zmq.ZMQError:
+                    return
+
+            # Poll with 10ms timeout so outbound queue drains promptly
+            events = dict(poller.poll(timeout=10))
+            if self._zmq_sock not in events:
+                continue
+
             try:
-                shm.close()
-                shm.unlink()
+                frames = self._zmq_sock.recv_multipart()
+            except zmq.ZMQError:
+                break
+
+            self._last_worker_activity = time.monotonic()
+            msg = frames[0]
+
+            if msg == _MSG_HEARTBEAT:
+                pass   # timestamp already updated
+            elif msg == _MSG_RESULT and len(frames) > 1 and len(frames[1]) == 16:
+                req_id, slot_id, result_sz = struct.unpack(">QII", frames[1])
+                self._handle_result(req_id, slot_id, result_sz)
+
+    def _handle_result(self, req_id: int, slot_id: int, result_sz: int) -> None:
+        """Called from recv thread on each T_RESULT."""
+        # Standalone mode: resolve Future for this slot
+        if self._own_pool:
+            with self._slot_lock:
+                entry = self._slot_futures.pop(slot_id, None)
+            if entry:
+                _, future = entry
+                if result_sz > 0:
+                    try:
+                        data   = bytes(self._pool.result_memoryview(slot_id)[:result_sz])
+                        result = pickle.loads(data)
+                        if not future.done():
+                            future.set_result(result)
+                    except Exception as exc:
+                        if not future.done():
+                            future.set_exception(exc)
+                else:
+                    if not future.done():
+                        future.set_exception(RuntimeError("worker inference error"))
+                self._pool.free_slot(slot_id)
+
+        # Orchestrated mode: notify MMP
+        if self._on_result_callback is not None:
+            try:
+                self._on_result_callback(req_id, slot_id, result_sz)
             except Exception:
-                pass
-        try:
-            self._result_shm.close()
-            self._result_shm.unlink()
-        except Exception:
-            pass
+                logger.exception("SubprocessBackend: on_result_callback raised")
 
     # ------------------------------------------------------------------
-    # Batching
-    # ------------------------------------------------------------------
-
-    def _create_batch_collector(self):
-        from inference_models.backends.batch_collector import BatchCollector
-
-        return BatchCollector(
-            forward_fn=self._send_batch_to_worker,
-            max_size=self._batch_max_size,
-            max_delay_s=self._batch_max_delay_ms / 1000,
-            max_bytes=self._input_buffer_bytes,
-        )
-
-    # ------------------------------------------------------------------
-    # Worker communication
-    # ------------------------------------------------------------------
-
-    def _send_batch_to_worker(self, raw_items: list) -> list:
-        """Send a batch of (raw_input, kwargs) to the worker.
-
-        Acquires a free input buffer, packs all inputs sequentially,
-        sends metadata over ZMQ, waits for result, releases buffer.
-        """
-        buf_idx = self._acquire_input_buf()
-        try:
-            # ── Pack inputs into acquired buffer (outside zmq lock) ──
-            buf = self._input_shms[buf_idx].buf
-            items_meta: list[dict] = []
-            offset = 0
-            for raw_input, kwargs in raw_items:
-                meta = _write_input_to_shm(buf[offset:], raw_input)
-                meta["offset"] = offset
-                if kwargs:
-                    meta["kwargs"] = kwargs
-                offset += meta["n"]
-                items_meta.append(meta)
-
-            # ── Send request + wait for response ─────────────────────
-            with self._zmq_lock:
-                self._zmq_sock.send_multipart([
-                    _MSG_INFER,
-                    json.dumps({"buf": buf_idx, "items": items_meta}).encode(),
-                ])
-                while True:
-                    frames = self._zmq_sock.recv_multipart()
-                    self._last_worker_activity = time.monotonic()
-                    if frames[0] != _MSG_HEARTBEAT:
-                        break
-        finally:
-            self._release_input_buf(buf_idx)
-
-        # ── Parse response ──────────────────────────────────────────
-        if frames[0] == _MSG_ERROR:
-            raise RuntimeError(
-                json.loads(frames[1]).get("error", "worker error")
-            )
-
-        resp = json.loads(frames[1])
-        results = []
-        for rm in resp["items"]:
-            data = bytes(self._result_shm.buf[rm["offset"]: rm["offset"] + rm["n"]])
-            results.append(pickle.loads(data))
-        return results
-
-    # ------------------------------------------------------------------
-    # Submission
+    # Standalone inference
     # ------------------------------------------------------------------
 
     def submit(self, raw_input: Any, *, priority: int = 0, **kwargs) -> Future:
+        """Submit a request and return a Future. Standalone mode only."""
+        if not self._own_pool:
+            raise RuntimeError(
+                "submit() is unavailable in orchestrated mode — use signal_slot()"
+            )
         if not self.is_accepting:
             raise RuntimeError(
-                f"SubprocessBackend('{self._model_id}') is not accepting "
-                f"requests (state={self.state})"
+                f"SubprocessBackend('{self._model_id}') not accepting "
+                f"(state={self.state})"
             )
 
-        nbytes = _input_nbytes(raw_input)
-
-        if nbytes > self._input_buffer_bytes:
+        input_bytes = _to_bytes(raw_input)
+        if len(input_bytes) > self._pool.input_slot_bytes:
             raise ValueError(
-                f"Input too large ({nbytes} bytes) for SHM buffer "
-                f"({self._input_buffer_bytes} bytes). "
-                f"Increase input_buffer_mb (currently "
-                f"{self._input_buffer_bytes // (1024 * 1024)}MB)."
+                f"Input {len(input_bytes)} B > slot capacity "
+                f"{self._pool.input_slot_bytes} B — increase input_mb"
             )
 
-        if self._batch_collector is not None:
-            t0 = time.monotonic()
-            future = self._batch_collector.add(
-                raw_input, kwargs, priority=priority, nbytes=nbytes,
-            )
-            future.add_done_callback(lambda f: self._record_inference(t0, f))
-            return future
+        req_id  = uuid.uuid4().int & 0xFFFF_FFFF_FFFF_FFFF
+        slot_id = self._pool.alloc_slot()
+        self._pool.mark_allocated(slot_id, req_id)
+        self._pool.input_memoryview(slot_id)[:len(input_bytes)] = input_bytes
+        self._pool.mark_written(slot_id, len(input_bytes))
 
-        # No batching — single-item request
         future: Future = Future()
         t0 = time.monotonic()
-        try:
-            results = self._send_batch_to_worker([(raw_input, kwargs)])
-            future.set_result(results[0])
-        except Exception as e:
-            future.set_exception(e)
-        finally:
-            elapsed = time.monotonic() - t0
-            self._inference_count += 1
-            self._last_inference_ts = t0
-            self._latencies.append(elapsed)
-            if future.exception() is not None:
-                self._error_count += 1
+        future.add_done_callback(lambda f: self._record_inference(t0, f))
+
+        with self._slot_lock:
+            self._slot_futures[slot_id] = (req_id, future)
+
+        self.signal_slot(slot_id, req_id)
         return future
 
     def _record_inference(self, t0: float, future: Future) -> None:
         elapsed = time.monotonic() - t0
-        self._inference_count += 1
-        self._last_inference_ts = t0
+        self._inference_count   += 1
+        self._last_inference_ts  = t0
         self._latencies.append(elapsed)
         if future.exception() is not None:
             self._error_count += 1
-
-    # ------------------------------------------------------------------
-    # Convenience
-    # ------------------------------------------------------------------
 
     def infer_sync(self, raw_input: Any, **kwargs) -> Any:
         return self.submit(raw_input, **kwargs).result()
 
     async def infer_async(self, raw_input: Any, **kwargs) -> Any:
-        import asyncio
-
+        import asyncio  # noqa: PLC0415
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(
             None, lambda: self.infer_sync(raw_input, **kwargs)
@@ -611,24 +601,30 @@ class SubprocessBackend(Backend):
     # ------------------------------------------------------------------
 
     def unload(self) -> None:
-        if self._batch_collector is not None:
-            self._batch_collector.stop(drain=False)
-            self._batch_collector = None
+        self._state_value = "loading"   # block new submits immediately
 
-        try:
-            with self._zmq_lock:
-                self._zmq_sock.send_multipart([_MSG_SHUTDOWN, b""])
-        except Exception:
-            pass
+        # Signal recv thread: send T_SHUTDOWN to worker, then exit
+        self._recv_running = False
+        self._outbound.put(None)        # None = shutdown sentinel
+        self._recv_thread.join(timeout=5.0)
 
+        # Kill worker if still alive
         if self._worker.is_alive():
             self._worker.join(timeout=5)
-            if self._worker.is_alive():
-                self._worker.kill()
+        if self._worker.is_alive():
+            self._worker.kill()
+
+        # Cancel pending futures (standalone mode)
+        with self._slot_lock:
+            for slot_id, (_, future) in self._slot_futures.items():
+                if not future.done():
+                    future.set_exception(RuntimeError("backend unloaded"))
+            self._slot_futures.clear()
 
         self._zmq_sock.close(linger=0)
         self._zmq_ctx.term()
-        self._cleanup_shm()
+
+        self._pool.close()   # owner unlinks; attached just detaches
 
         if self._zmq_addr.startswith("ipc://"):
             try:
@@ -636,31 +632,19 @@ class SubprocessBackend(Backend):
             except OSError:
                 pass
 
+        logger.info("SubprocessBackend(%s): unloaded", self._model_id)
+
     def sleep(self) -> Optional[int]:
-        return None
+        return None   # Issue #8: not yet implemented
 
     def wake(self) -> None:
-        raise RuntimeError("SubprocessBackend does not support sleep/wake yet")
+        raise RuntimeError(
+            "SubprocessBackend.sleep/wake not yet implemented (Issue #8)"
+        )
 
     # ------------------------------------------------------------------
     # Observability
     # ------------------------------------------------------------------
-
-    def _drain_heartbeats(self) -> None:
-        import zmq
-
-        with self._zmq_lock:
-            while True:
-                try:
-                    self._zmq_sock.recv_multipart(flags=zmq.NOBLOCK)
-                    self._last_worker_activity = time.monotonic()
-                except zmq.Again:
-                    break
-
-    def _worker_responsive(self) -> bool:
-        self._drain_heartbeats()
-        idle = time.monotonic() - self._last_worker_activity
-        return idle < _WORKER_HEARTBEAT_TIMEOUT_S
 
     @property
     def device(self) -> str:
@@ -670,13 +654,14 @@ class SubprocessBackend(Backend):
     def state(self) -> str:
         if not self._worker.is_alive():
             return "unhealthy"
-        if self._state_value == "loaded" and not self._worker_responsive():
+        idle = time.monotonic() - self._last_worker_activity
+        if self._state_value == "loaded" and idle > _WORKER_HEARTBEAT_TIMEOUT:
             return "unhealthy"
         return self._state_value
 
     @property
     def is_healthy(self) -> bool:
-        return self._worker.is_alive() and self._worker_responsive()
+        return self.state == "loaded"
 
     @property
     def is_accepting(self) -> bool:
@@ -688,18 +673,11 @@ class SubprocessBackend(Backend):
 
     @property
     def queue_depth(self) -> int:
-        if self._batch_collector is not None:
-            return self._batch_collector.queue_depth
-        return 0
-
-    @property
-    def input_buffer_capacity(self) -> int:
-        """Capacity of each input SHM buffer in bytes."""
-        return self._input_buffer_bytes
+        with self._slot_lock:
+            return len(self._slot_futures)
 
     def stats(self) -> Dict[str, Any]:
         sorted_lats = sorted(self._latencies) if self._latencies else []
-        bc = self._batch_collector.stats() if self._batch_collector else {}
 
         def _pct(p: float) -> float:
             if not sorted_lats:
@@ -708,30 +686,28 @@ class SubprocessBackend(Backend):
             return sorted_lats[idx] * 1000
 
         return {
-            "model_id": self._model_id,
-            "backend_type": "subprocess",
-            "device": self._device_str,
-            "transport": "shm_ring",
-            "state": self.state,
-            "is_accepting": self.is_accepting,
-            "queue_depth": bc.get("queue_depth", 0),
-            "queue_depth_by_priority": bc.get("queue_depth_by_priority", {}),
-            "max_batch_size": self.max_batch_size,
-            "current_batch_fill_pct": bc.get("avg_batch_fill_pct", 0.0),
-            "batch_delay_ms": bc.get("avg_batch_delay_ms", 0.0),
-            "throughput_fps": (
+            "model_id":             self._model_id,
+            "backend_type":         "subprocess",
+            "device":               self._device_str,
+            "transport":            "shm_pool",
+            "state":                self.state,
+            "is_accepting":         self.is_accepting,
+            "queue_depth":          self.queue_depth,
+            "max_batch_size":       self.max_batch_size,
+            "throughput_fps":       (
                 self._inference_count / sum(sorted_lats) if sorted_lats else 0.0
             ),
-            "latency_p50_ms": _pct(50),
-            "latency_p99_ms": _pct(99),
-            "gpu_memory_mb": 0.0,
+            "latency_p50_ms":       _pct(50),
+            "latency_p99_ms":       _pct(99),
+            "gpu_memory_mb":        0.0,
             "cpu_pinned_memory_mb": 0.0,
-            "inference_count": self._inference_count,
-            "error_count": self._error_count,
-            "last_inference_ts": self._last_inference_ts,
-            "worker_alive": self._worker.is_alive(),
-            "input_buffers": len(self._input_shms),
-            "input_buffer_mb": self._input_buffer_bytes // (1024 * 1024),
+            "inference_count":      self._inference_count,
+            "error_count":          self._error_count,
+            "last_inference_ts":    self._last_inference_ts,
+            "worker_alive":         self._worker.is_alive(),
+            "shm_pool_name":        self._pool.name,
+            "shm_own_pool":         self._own_pool,
+            "shm_free_slots":       self._pool.free_count if self._own_pool else -1,
         }
 
     @property
