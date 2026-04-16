@@ -87,5 +87,5 @@ def test_inlined_echo_steps_match_inner_workflow_result(
     flat_result = flat_engine.run(runtime_parameters=runtime_parameters)
 
     assert nested_result == flat_result
-    assert len(flat_result) == 1
-    assert flat_result[0] == {"from_child": "hello-from-parent"}
+    assert len(nested_result) == 1
+    assert nested_result[0] == {"from_child": "hello-from-parent"}

@@ -34,8 +34,8 @@ def _infer_from_request_sync_factory(h: int, w: int):
                 ObjectDetectionPrediction(
                     x=60,
                     y=60,
-                    width=80,
-                    height=80,
+                    width=60,
+                    height=60,
                     confidence=0.99,
                     class_id=0,
                     detection_id="mock-d0",
@@ -46,7 +46,7 @@ def _infer_from_request_sync_factory(h: int, w: int):
                     y=60,
                     width=80,
                     height=80,
-                    confidence=0.99,
+                    confidence=0.95,
                     class_id=1,
                     detection_id="mock-d1",
                     **{"class": "y"},
@@ -54,9 +54,9 @@ def _infer_from_request_sync_factory(h: int, w: int):
                 ObjectDetectionPrediction(
                     x=450,
                     y=60,
-                    width=80,
-                    height=80,
-                    confidence=0.99,
+                    width=100,
+                    height=100,
+                    confidence=0.90,
                     class_id=2,
                     detection_id="mock-d2",
                     **{"class": "z"},
@@ -128,22 +128,20 @@ def _flat_workflow() -> dict:
 
 def _assert_crop_predictions_equal(crop_preds: list) -> None:
     expected = [
-        ("mock-d0", "x", 0, 0.99),
-        ("mock-d1", "y", 1, 0.99),
-        ("mock-d2", "z", 2, 0.99),
+        ("mock-d0", "x", 0, 0.99, [0, 0, 60, 60]),
+        ("mock-d1", "y", 1, 0.95, [0, 0, 80, 80]),
+        ("mock-d2", "z", 2, 0.90, [0, 0, 100, 100]),
     ]
     assert isinstance(crop_preds, list)
     assert len(crop_preds) == 3
-    for det, (det_id, class_name, class_id, conf) in zip(crop_preds, expected):
+    for det, (det_id, class_name, class_id, conf, expected_xyxy) in zip(crop_preds, expected):
         assert isinstance(det, sv.Detections)
         assert len(det) == 1
         assert det["detection_id"][0] == det_id
         assert det.class_id[0] == class_id
         assert det.confidence[0] == conf
         assert det["class_name"][0] == class_name
-        xyxy = det.xyxy[0]
-        assert xyxy[0] >= 0 and xyxy[1] >= 0
-        assert xyxy[2] > xyxy[0] and xyxy[3] > xyxy[1]
+        np.testing.assert_allclose(det.xyxy[0], expected_xyxy, rtol=0, atol=1e-3)
 
 
 def test_inlined_dynamic_crop_matches_inner_workflow(
@@ -179,5 +177,5 @@ def test_inlined_dynamic_crop_matches_inner_workflow(
         assert len(imgs) == 1
 
     assert nested_result == flat_result
-    assert len(flat_result) == 1
-    _assert_crop_predictions_equal(flat_result[0]["from_child"])
+    assert len(nested_result) == 1
+    _assert_crop_predictions_equal(nested_result[0]["from_child"])

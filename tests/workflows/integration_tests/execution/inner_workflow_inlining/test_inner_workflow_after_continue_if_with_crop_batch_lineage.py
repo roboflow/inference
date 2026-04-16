@@ -24,22 +24,28 @@ from tests.workflows.integration_tests.execution.inner_workflow_inlining._common
     execution_engine,
 )
 
+_CLASSIFICATION_REQUEST_CONFIDENCE_THRESHOLD = 0.2
+_CONTINUE_IF_CONFIDENCE_THRESHOLD = 0.5
+
 
 def _infer_from_request_sync_factory(h: int, w: int):
     def infer_from_request_sync(model_id: str, request):
+        bbox_w, bbox_h = 100, 100
+
         if isinstance(request, ObjectDetectionInferenceRequest):
             assert model_id == "yolov8n-640"
             imgs = request.image if isinstance(request.image, list) else [request.image]
             assert len(imgs) == 1
             assert request.class_filter == ["dog"]
+
             return ObjectDetectionInferenceResponse(
                 image=InferenceResponseImage(width=w, height=h),
                 predictions=[
                     ObjectDetectionPrediction(
                         x=80,
                         y=80,
-                        width=100,
-                        height=100,
+                        width=bbox_w,
+                        height=bbox_h,
                         confidence=0.99,
                         class_id=0,
                         detection_id="mock-d0",
@@ -49,8 +55,8 @@ def _infer_from_request_sync_factory(h: int, w: int):
                     ObjectDetectionPrediction(
                         x=300,
                         y=80,
-                        width=100,
-                        height=100,
+                        width=bbox_w,
+                        height=bbox_h,
                         confidence=0.99,
                         class_id=0,
                         detection_id="mock-d1",
@@ -59,38 +65,40 @@ def _infer_from_request_sync_factory(h: int, w: int):
                     ),
                 ],
             )
+
         if isinstance(request, ClassificationInferenceRequest):
-            assert model_id == "dog-breed-xpaq6/1"
-            assert request.confidence == 0.09
+            assert model_id == "dog-breed/1"
+            assert request.confidence == _CLASSIFICATION_REQUEST_CONFIDENCE_THRESHOLD
             imgs = request.image if isinstance(request.image, list) else [request.image]
             assert len(imgs) == 2
-            crop_w, crop_h = 100, 100
+
             return [
                 ClassificationInferenceResponse(
-                    image=InferenceResponseImage(width=crop_w, height=crop_h),
+                    image=InferenceResponseImage(width=bbox_w, height=bbox_h),
                     predictions=[
                         ClassificationPrediction(
                             class_id=0,
                             confidence=0.9,
-                            **{"class": "passed-crop"},
+                            **{"class": "dog"},
                         ),
                     ],
-                    top="passed-crop",
+                    top="dog",
                     confidence=0.9,
                 ),
                 ClassificationInferenceResponse(
-                    image=InferenceResponseImage(width=crop_w, height=crop_h),
+                    image=InferenceResponseImage(width=bbox_w, height=bbox_h),
                     predictions=[
                         ClassificationPrediction(
                             class_id=1,
-                            confidence=0.1,
-                            **{"class": "skipped-crop"},
+                            confidence=0.4,
+                            **{"class": "dog"},
                         ),
                     ],
-                    top="skipped-crop",
-                    confidence=0.1,
+                    top="dog",
+                    confidence=0.4,
                 ),
             ]
+
         raise AssertionError(f"Unexpected request type: {type(request)!r}")
 
     return infer_from_request_sync
@@ -121,8 +129,8 @@ def _nested_workflow(inner: dict) -> dict:
                 "type": "roboflow_core/roboflow_classification_model@v2",
                 "name": "breds_classification",
                 "image": "$steps.cropping.crops",
-                "model_id": "dog-breed-xpaq6/1",
-                "confidence": 0.09,
+                "model_id": "dog-breed/1",
+                "confidence": _CLASSIFICATION_REQUEST_CONFIDENCE_THRESHOLD,
             },
             {
                 "type": "roboflow_core/continue_if@v1",
@@ -143,7 +151,7 @@ def _nested_workflow(inner: dict) -> dict:
                                 ],
                             },
                             "comparator": {"type": "(Number) >="},
-                            "right_operand": {"type": "StaticOperand", "value": 0.35},
+                            "right_operand": {"type": "StaticOperand", "value": _CONTINUE_IF_CONFIDENCE_THRESHOLD},
                         }
                     ],
                 },
@@ -196,8 +204,8 @@ def _flat_workflow() -> dict:
                 "type": "roboflow_core/roboflow_classification_model@v2",
                 "name": "breds_classification",
                 "image": "$steps.cropping.crops",
-                "model_id": "dog-breed-xpaq6/1",
-                "confidence": 0.09,
+                "model_id": "dog-breed/1",
+                "confidence": _CLASSIFICATION_REQUEST_CONFIDENCE_THRESHOLD,
             },
             {
                 "type": "roboflow_core/continue_if@v1",
@@ -218,18 +226,18 @@ def _flat_workflow() -> dict:
                                 ],
                             },
                             "comparator": {"type": "(Number) >="},
-                            "right_operand": {"type": "StaticOperand", "value": 0.35},
+                            "right_operand": {"type": "StaticOperand", "value": _CONTINUE_IF_CONFIDENCE_THRESHOLD},
                         }
                     ],
                 },
                 "evaluation_parameters": {
                     "predictions": "$steps.breds_classification.predictions",
                 },
-                "next_steps": ["$steps.nested_inner_workflow"],
+                "next_steps": ["$steps.first_non_empty"],
             },
             {
                 "type": "roboflow_core/first_non_empty_or_default@v1",
-                "name": "nested_inner_workflow",
+                "name": "first_non_empty",
                 "data": ["$inputs.crop_label"],
                 "default": "fallback-inner",
             },
@@ -238,7 +246,7 @@ def _flat_workflow() -> dict:
             {
                 "type": "JsonField",
                 "name": "from_child",
-                "selector": "$steps.nested_inner_workflow.output",
+                "selector": "$steps.first_non_empty.output",
             },
         ],
     }
@@ -264,13 +272,13 @@ def test_inlined_continue_if_echo_matches_inner_workflow(
         nested_result = nested_engine.run(
             runtime_parameters={
                 "image": dogs_image,
-                "crop_label": ["passed-crop", "skipped-crop"],
+                "crop_label": "passed",
             },
         )
         flat_result = flat_engine.run(
             runtime_parameters={
                 "image": dogs_image,
-                "crop_label": ["passed-crop", "skipped-crop"],
+                "crop_label": "passed",
             },
         )
 
@@ -284,12 +292,12 @@ def test_inlined_continue_if_echo_matches_inner_workflow(
 
     for idx in (1, 3):
         cls_mid, cls_req = infer_mock.call_args_list[idx].args
-        assert cls_mid == "dog-breed-xpaq6/1"
+        assert cls_mid == "dog-breed/1"
         assert isinstance(cls_req, ClassificationInferenceRequest)
-        assert cls_req.confidence == 0.09
+        assert cls_req.confidence == _CLASSIFICATION_REQUEST_CONFIDENCE_THRESHOLD
         cls_imgs = cls_req.image if isinstance(cls_req.image, list) else [cls_req.image]
         assert len(cls_imgs) == 2
 
     assert nested_result == flat_result
-    assert len(flat_result) == 1
-    assert flat_result[0]["from_child"] == [["passed-crop", "skipped-crop"], None]
+    assert len(nested_result) == 1
+    assert nested_result[0]["from_child"] == ["passed", None]

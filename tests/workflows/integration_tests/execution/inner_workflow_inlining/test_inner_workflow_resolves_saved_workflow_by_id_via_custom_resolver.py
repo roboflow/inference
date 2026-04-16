@@ -32,6 +32,7 @@ def _nested_by_ref_workflow() -> Dict[str, Any]:
                 "name": "nested_by_ref",
                 "workflow_workspace_id": "stub-ws",
                 "workflow_id": "stub-id",
+                "workflow_version_id": "stub-version-id",
                 "parameter_bindings": {
                     "child_msg": "$inputs.parent_msg",
                 },
@@ -86,7 +87,7 @@ def test_inlined_echo_matches_inner_workflow_resolved_by_ref(
     ) -> Dict[str, Any]:
         assert workspace_id == "stub-ws"
         assert workflow_id == "stub-id"
-        assert workflow_version_id is None
+        assert workflow_version_id == "stub-version-id"
         return echo_child_workflow()
 
     nested_engine = execution_engine(

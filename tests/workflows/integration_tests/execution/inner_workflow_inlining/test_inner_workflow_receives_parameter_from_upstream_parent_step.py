@@ -95,5 +95,5 @@ def test_inlined_upstream_binding_matches_inner_workflow(
     flat_result = flat_engine.run(runtime_parameters=runtime_parameters)
 
     assert nested_result == flat_result
-    assert len(flat_result) == 1
-    assert flat_result[0] == {"from_child": "value-from-prepare-step"}
+    assert len(nested_result) == 1
+    assert nested_result[0] == {"from_child": "value-from-prepare-step"}

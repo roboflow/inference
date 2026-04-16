@@ -82,5 +82,5 @@ def test_inlined_list_workflow_parameter_matches_inner_workflow(
     flat_result = flat_engine.run(runtime_parameters=runtime_parameters)
 
     assert nested_result == flat_result
-    assert len(flat_result) == 1
-    assert flat_result[0]["from_child"] == ["alpha", "beta", "gamma"]
+    assert len(nested_result) == 1
+    assert nested_result[0]["from_child"] == ["alpha", "beta", "gamma"]

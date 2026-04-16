@@ -84,5 +84,5 @@ def test_inlined_batch_input_matches_inner_workflow(
     flat_result = flat_engine.run(runtime_parameters=runtime_parameters)
 
     assert nested_result == flat_result
-    assert len(flat_result) == 3
-    assert [row["from_child"] for row in flat_result] == ["alpha", "beta", "gamma"]
+    assert len(nested_result) == 3
+    assert [row["from_child"] for row in nested_result] == ["alpha", "beta", "gamma"]
