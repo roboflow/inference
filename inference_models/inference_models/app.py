@@ -73,6 +73,28 @@ _HEADER_SIZE = 64
 _SLOT_TOTAL  = _HEADER_SIZE + _SHM_INPUT_SIZE + _SHM_RESULT_SIZE
 
 # ---------------------------------------------------------------------------
+# Image magic-byte prefixes (first bytes of each supported format)
+# ---------------------------------------------------------------------------
+
+_IMAGE_MAGICS: tuple[bytes, ...] = (
+    b"\xff\xd8",        # JPEG
+    b"\x89PNG",         # PNG
+    b"RIFF",            # WebP  (RIFF????WEBP — prefix sufficient)
+    b"GIF8",            # GIF
+    b"BM",              # BMP
+    b"II*\x00",         # TIFF little-endian
+    b"MM\x00*",         # TIFF big-endian
+    b"\x93NUMPY",       # numpy .npy (standalone/direct mode)
+)
+_IMAGE_MAGIC_MAX = max(len(m) for m in _IMAGE_MAGICS)
+
+
+def _looks_like_image(data: bytes | memoryview) -> bool:
+    head = bytes(data[:_IMAGE_MAGIC_MAX])
+    return any(head[:len(m)] == m for m in _IMAGE_MAGICS)
+
+
+# ---------------------------------------------------------------------------
 # ZMQ message types (must match model_manager_process.py)
 # ---------------------------------------------------------------------------
 
@@ -369,8 +391,13 @@ async def infer(request: Request) -> Response:
         async for chunk in request.stream():
             if pos + len(chunk) > _SHM_INPUT_SIZE:
                 return Response(status_code=413, content=b"payload exceeds slot capacity")
+            if pos == 0 and not _looks_like_image(chunk):
+                return Response(status_code=415, content=b"body is not a recognized image format")
             _write_input(slot_id, chunk, pos)
             pos += len(chunk)
+
+        if pos == 0:
+            return Response(status_code=400, content=b"empty body")
 
         result = await _submit_and_wait(slot_id, model_id, pos, params)
 
