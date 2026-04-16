@@ -95,7 +95,7 @@ _ERR_NOT_LOADED  = 6
 # ---------------------------------------------------------------------------
 
 def _gpu_used_fraction() -> float:
-    """Fraction of GPU 0 memory in use (0.0–1.0). Returns 0.0 if unavailable."""
+    """Fraction of GPU 0 memory in use (0.0–1.0). Used by eviction loop. Returns 0.0 if unavailable."""
     try:
         import torch
         if torch.cuda.is_available():
@@ -107,7 +107,7 @@ def _gpu_used_fraction() -> float:
     except Exception:
         pass
     try:
-        import pynvml  # type: ignore[import]
+        import pynvml  # nvidia-ml-py (drop-in; install nvidia-ml-py not pynvml)
         pynvml.nvmlInit()
         handle = pynvml.nvmlDeviceGetHandleByIndex(0)
         info   = pynvml.nvmlDeviceGetMemoryInfo(handle)
@@ -116,6 +116,86 @@ def _gpu_used_fraction() -> float:
     except Exception:
         pass
     return 0.0
+
+
+def _collect_gpu_stats(
+    pid_to_flavor: Optional[dict] = None,
+) -> dict:
+    """Collect per-GPU hardware stats and per-model GPU memory.
+
+    Uses nvidia-ml-py (``import pynvml``).  Returns empty dict on any failure
+    (no NVIDIA GPU, driver not loaded, etc.).
+
+    Args:
+        pid_to_flavor: mapping of worker PID → model flavor name.
+            When provided, per-process GPU memory is attributed to flavors via
+            ``nvmlDeviceGetComputeRunningProcesses``.
+
+    Returns dict with keys:
+        ``gpus``                  — list of per-GPU dicts (index, memory, util, temp, power)
+        ``per_model_gpu_mb``      — dict flavor → GPU memory MB (only populated if pid_to_flavor given)
+    """
+    result: dict = {"gpus": [], "per_model_gpu_mb": {}}
+    try:
+        import pynvml  # nvidia-ml-py
+
+        pynvml.nvmlInit()
+        count     = pynvml.nvmlDeviceGetCount()
+        pid_mem_mb: dict[int, float] = {}
+
+        for i in range(count):
+            handle  = pynvml.nvmlDeviceGetHandleByIndex(i)
+            mem     = pynvml.nvmlDeviceGetMemoryInfo(handle)
+
+            util_gpu = util_mem_pct = None
+            try:
+                util     = pynvml.nvmlDeviceGetUtilizationRates(handle)
+                util_gpu = util.gpu
+                util_mem_pct = util.memory
+            except Exception:
+                pass
+
+            temp_c = None
+            try:
+                temp_c = pynvml.nvmlDeviceGetTemperature(
+                    handle, pynvml.NVML_TEMPERATURE_GPU
+                )
+            except Exception:
+                pass
+
+            power_w = None
+            try:
+                power_w = round(pynvml.nvmlDeviceGetPowerUsage(handle) / 1000, 1)
+            except Exception:
+                pass
+
+            # Per-process GPU memory (for per-model attribution)
+            try:
+                for p in pynvml.nvmlDeviceGetComputeRunningProcesses(handle):
+                    pid_mem_mb[p.pid] = p.usedGpuMemory / 1024 / 1024
+            except Exception:
+                pass
+
+            result["gpus"].append({
+                "index":            i,
+                "memory_used_mb":   round(mem.used  / 1024 / 1024, 1),
+                "memory_total_mb":  round(mem.total / 1024 / 1024, 1),
+                "memory_used_pct":  round(mem.used / mem.total * 100, 1) if mem.total else 0.0,
+                "utilization_pct":  util_gpu,
+                "mem_util_pct":     util_mem_pct,
+                "temperature_c":    temp_c,
+                "power_w":          power_w,
+            })
+
+        if pid_to_flavor:
+            for pid, flavor in pid_to_flavor.items():
+                if pid in pid_mem_mb:
+                    result["per_model_gpu_mb"][flavor] = round(pid_mem_mb[pid], 1)
+
+    except Exception:
+        pass
+
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -614,18 +694,28 @@ class ModelManagerProcess:
                 snapshot.update(self._manager.stats())
             except Exception:
                 pass
+        flavor_stats: dict[str, Any] = {}
+        for f, fs in self._flavors.items():
+            entry: dict[str, Any] = {
+                "loaded":   fs.loaded,
+                "sleeping": fs.sleeping,
+                "loading":  fs.loading,
+            }
+            backend = self._backends.get(f)
+            if backend is not None:
+                try:
+                    entry["queue_depth"]  = backend.queue_depth
+                    entry["worker_alive"] = backend.is_healthy
+                    entry["worker_pid"]   = getattr(backend, "worker_pid", None)
+                except Exception:
+                    pass
+            flavor_stats[f] = entry
+
         snapshot.update({
             "mmp_free_slots":  self._pool.free_count if self._pool else 0,
             "mmp_total_slots": self._n_slots,
             "mmp_pending":     len(self._pending),
-            "mmp_flavors": {
-                f: {
-                    "loaded":   fs.loaded,
-                    "sleeping": fs.sleeping,
-                    "loading":  fs.loading,
-                }
-                for f, fs in self._flavors.items()
-            },
+            "mmp_flavors":     flavor_stats,
         })
         payload = json.dumps(snapshot, default=str).encode()
         await self._send(
@@ -900,7 +990,7 @@ class ModelManagerProcess:
                 logger.exception("MMP: monitoring loop error")
 
     def _collect_stats(self) -> dict:
-        """Collect system + manager metrics. Runs in executor (may block)."""
+        """Collect system + manager + GPU metrics. Runs in executor (may block)."""
         s: dict[str, Any] = {"timestamp_s": time.time()}
         if self._manager is not None:
             try:
@@ -911,12 +1001,22 @@ class ModelManagerProcess:
             import psutil  # type: ignore[import]
             proc = psutil.Process()
             s["process_cpu_pct"] = proc.cpu_percent()
-            s["process_rss_mb"]  = proc.memory_info().rss / 1024 / 1024
+            s["process_rss_mb"]  = round(proc.memory_info().rss / 1024 / 1024, 1)
             s["system_cpu_pct"]  = psutil.cpu_percent()
             s["system_ram_pct"]  = psutil.virtual_memory().percent
         except Exception:
             pass
-        s["gpu_used_fraction"] = _gpu_used_fraction()
+
+        # Build pid→flavor map from registered backends for per-model GPU attribution
+        pid_to_flavor: dict[int, str] = {}
+        for flavor, backend in list(self._backends.items()):
+            pid = getattr(backend, "worker_pid", None)
+            if pid is not None:
+                pid_to_flavor[pid] = flavor
+
+        gpu_stats = _collect_gpu_stats(pid_to_flavor)
+        s.update(gpu_stats)
+
         return s
 
     # ------------------------------------------------------------------
