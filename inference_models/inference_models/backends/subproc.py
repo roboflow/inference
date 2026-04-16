@@ -111,7 +111,7 @@ def _worker_main(
     result_mb:         float,
     batch_max_size:    int,
     batch_max_wait_ms: float,
-    decoder_name:      str,
+    use_nvjpeg:        bool,
     model_kwargs:      dict,
 ) -> None:
     """Worker subprocess entry point.
@@ -125,7 +125,7 @@ def _worker_main(
     import zmq  # noqa: PLC0415
 
     from inference_models.models.auto_loaders.core import AutoModel  # noqa: PLC0415
-    from inference_models.backends.decode import make_decoder          # noqa: PLC0415
+    from inference_models.backends.decode import make_batch_decoder    # noqa: PLC0415
 
     _log = logging.getLogger(f"{__name__}.worker")
     pool = sock = zmq_ctx = model = None
@@ -137,8 +137,8 @@ def _worker_main(
                                           **model_kwargs)
         _log.info("Worker(%s): model ready (%s)", model_id, type(model).__name__)
 
-        decode_fn = make_decoder(decoder_name, device=device)
-        pool      = SHMPool.attach(shm_pool_name, n_slots=n_slots,
+        batch_decode_fn = make_batch_decoder(device, use_nvjpeg=use_nvjpeg)
+        pool            = SHMPool.attach(shm_pool_name, n_slots=n_slots,
                                    input_mb=input_mb, result_mb=result_mb)
 
         setup_pipe.send({
@@ -152,7 +152,7 @@ def _worker_main(
         sock.setsockopt(zmq.LINGER, 0)
         sock.connect(zmq_addr)
 
-        _worker_loop(model, pool, sock, decode_fn,
+        _worker_loop(model, pool, sock, batch_decode_fn,
                      batch_max_size, batch_max_wait_ms, _log)
 
     except Exception as exc:
@@ -174,7 +174,7 @@ def _worker_loop(
     model,
     pool:              SHMPool,
     sock,
-    decode_fn,
+    batch_decode_fn,
     batch_max_size:    int,
     batch_max_wait_ms: float,
     log,
@@ -233,32 +233,51 @@ def _worker_loop(
             len(pending) >= batch_max_size
             or (now - batch_start) >= batch_max_wait_s
         ):
-            _process_slots(model, pool, pending, sock, decode_fn, log)
+            _process_slots(model, pool, pending, sock, batch_decode_fn, log)
             pending.clear()
             batch_start = 0.0
 
 
 def _process_slots(
     model,
-    pool:     SHMPool,
-    batch:    list[tuple[int, int]],
+    pool:            SHMPool,
+    batch:           list[tuple[int, int]],
     sock,
-    decode_fn,
+    batch_decode_fn,
     log,
 ) -> None:
     """Process a batch of (slot_id, req_id), write results to SHM, send T_RESULT."""
     import zmq
 
-    images: list[Any] = []
-    for slot_id, _req_id in batch:
+    # Gather memoryviews; classify as .npy (standalone numpy) vs raw bytes
+    mvs:    list[Any]  = []
+    is_npy: list[bool] = []
+    for slot_id, _ in batch:
         hdr = pool.read_header(slot_id)
-        raw = bytes(pool.input_memoryview(slot_id)[: hdr.input_size])
-        # Numpy .npy magic vs raw image bytes (JPEG/PNG/etc.)
-        if raw[:6] == _NP_MAGIC:
-            img = np.load(io.BytesIO(raw), allow_pickle=False)
-        else:
-            img = decode_fn(raw)
-        images.append(img)
+        mv  = pool.input_memoryview(slot_id)[:hdr.input_size]
+        mvs.append(mv)
+        is_npy.append(bytes(mv[:6]) == _NP_MAGIC)
+
+    images: list[Any] = [None] * len(batch)
+
+    # .npy slots — standalone mode (numpy arrays serialised via np.save)
+    for i, (mv, npy) in enumerate(zip(mvs, is_npy)):
+        if npy:
+            images[i] = np.load(io.BytesIO(bytes(mv)), allow_pickle=False)
+
+    # Raw image bytes (JPEG + non-JPEG) — single batch_decode_fn call
+    raw_indices = [i for i, npy in enumerate(is_npy) if not npy]
+    if raw_indices:
+        raw_decoded = batch_decode_fn([mvs[i] for i in raw_indices])
+        for i, img in zip(raw_indices, raw_decoded):
+            images[i] = img
+
+    # Release memoryviews
+    for mv in mvs:
+        try:
+            mv.release()
+        except Exception:
+            pass
 
     results: list[Any]
     try:
@@ -321,7 +340,7 @@ class SubprocessBackend(Backend):
         use_gpu:             Optional[bool]     = None,
         use_cuda_ipc:        Optional[bool]     = None,   # reserved, unused
         # Misc
-        decoder:             str                = "cv2",
+        decoder:             str                = "imagecodecs",
         worker_start_timeout: float             = 120.0,
         **kwargs,
     ) -> None:
@@ -394,7 +413,7 @@ class SubprocessBackend(Backend):
                 result_mb=result_mb,
                 batch_max_size=batch_max_size,
                 batch_max_wait_ms=batch_max_delay_ms,
-                decoder_name=decoder,
+                use_nvjpeg=(decoder == "nvjpeg"),
                 model_kwargs=kwargs,
             ),
             daemon=True,
