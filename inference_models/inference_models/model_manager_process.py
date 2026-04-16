@@ -243,7 +243,6 @@ class ModelManagerProcess:
         evict_threshold:        float = 0.9,
         evict_check_interval_s: float = 5.0,
         monitor_interval_s:     float = 5.0,
-        default_api_key:        str   = "",
         manager: Optional[Any]        = None,
     ) -> None:
         """
@@ -262,9 +261,6 @@ class ModelManagerProcess:
         self._evict_threshold       = evict_threshold
         self._evict_check_interval_s = evict_check_interval_s
         self._monitor_interval_s    = monitor_interval_s
-        self._default_api_key       = (
-            default_api_key or os.environ.get("ROBOFLOW_API_KEY", "")
-        )
         self._manager               = manager
         self._own_manager           = False  # set True only if we created it
 
@@ -478,7 +474,7 @@ class ModelManagerProcess:
 
     # ------------------------------------------------------------------
     # T_ENSURE_LOADED  →  T_MODEL_READY | T_LOAD_TIMEOUT
-    # wire: Q I H N   req_id(8) wait_ms(4) flavor_len(2) flavor(N)
+    # wire: Q I H N H M  req_id(8) wait_ms(4) flavor_len(2) flavor(N) key_len(2) key(M)
     # ------------------------------------------------------------------
 
     async def _handle_ensure_loaded(
@@ -488,7 +484,13 @@ class ModelManagerProcess:
             return
         frame = data[0]
         req_id, wait_ms, flavor_len = struct.unpack_from(">QIH", frame)
-        flavor   = frame[14: 14 + flavor_len].decode(errors="replace")
+        off      = 14
+        flavor   = frame[off: off + flavor_len].decode(errors="replace")
+        off     += flavor_len
+        api_key  = ""
+        if len(frame) >= off + 2:
+            klen    = struct.unpack_from(">H", frame, off)[0]
+            api_key = frame[off + 2: off + 2 + klen].decode(errors="replace")
         deadline = time.monotonic() + wait_ms / 1000.0
 
         fs = self._flavors.get(flavor)
@@ -505,7 +507,7 @@ class ModelManagerProcess:
         if not fs.loading:
             fs.loading = True
             asyncio.create_task(
-                self._load_flavor(flavor), name=f"mmp-load-{flavor}"
+                self._load_flavor(flavor, api_key=api_key), name=f"mmp-load-{flavor}"
             )
 
     # ------------------------------------------------------------------
@@ -805,7 +807,7 @@ class ModelManagerProcess:
             return
 
         if self._manager is not None:
-            effective_key = api_key or self._default_api_key
+            effective_key = api_key
             logger.info("MMP: loading '%s' via ModelManager", flavor)
             try:
                 await loop.run_in_executor(
@@ -1062,8 +1064,6 @@ def main() -> None:
     )
     parser.add_argument("--addr", default=None,
                         help="ZMQ bind address (default: platform auto)")
-    parser.add_argument("--api-key",
-                        default=os.environ.get("ROBOFLOW_API_KEY", ""))
     parser.add_argument("--evict-threshold", type=float, default=0.9)
     args = parser.parse_args()
 
@@ -1074,7 +1074,6 @@ def main() -> None:
         input_mb=args.input_mb,
         result_mb=args.result_mb,
         evict_threshold=args.evict_threshold,
-        default_api_key=args.api_key,
         manager=ModelManager(),
     )
     asyncio.run(mmp.run(addr=args.addr))

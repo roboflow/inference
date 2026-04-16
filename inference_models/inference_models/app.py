@@ -97,7 +97,7 @@ _T_LOAD_TIMEOUT  = b'\x0B'
 #   _T_RESULT_READY:  Q I I    req_id(8) slot_id(4) result_sz(4)
 #   _T_FREE:          I        slot_id(4)
 #   _T_ERROR:         Q B      req_id(8) error_code(1)
-#   _T_ENSURE_LOADED: Q I H N  req_id(8) wait_ms(4) flavor_len(2) flavor(N)
+#   _T_ENSURE_LOADED: Q I H N H M  req_id(8) wait_ms(4) flavor_len(2) flavor(N) key_len(2) key(M)
 #   _T_MODEL_READY:   Q        req_id(8)
 #   _T_LOAD_TIMEOUT:  Q I      req_id(8) retry_after_s(4)
 
@@ -217,11 +217,12 @@ def _drop_future(req_id: int) -> None:
 # Protocol helpers
 # ---------------------------------------------------------------------------
 
-async def _ensure_loaded(model_id: str) -> tuple:
+async def _ensure_loaded(model_id: str, api_key: str = "") -> tuple:
     """Ask MMP to ensure model is loaded.
 
     Warm path (model already loaded): MMP replies T_MODEL_READY instantly.
-    Cold path: MMP loads the model; replies when ready or wait_ms exceeded.
+    Cold path: MMP loads the model using api_key (falls back to server default);
+    replies when ready or wait_ms exceeded.
 
     Returns one of:
         ("model_ready",)
@@ -230,9 +231,16 @@ async def _ensure_loaded(model_id: str) -> tuple:
     """
     req_id  = _new_req_id()
     flavor  = model_id.encode()
+    key     = api_key.encode()
     wait_ms = int(_LOAD_WAIT_S * 1000)
-    payload = struct.pack(">QIH", req_id, wait_ms, len(flavor)) + flavor
-    fut     = _make_future(req_id)
+    # wire: Q I H N H M  — req_id(8) wait_ms(4) flavor_len(2) flavor(N) key_len(2) key(M)
+    payload = (
+        struct.pack(">QIH", req_id, wait_ms, len(flavor))
+        + flavor
+        + struct.pack(">H", len(key))
+        + key
+    )
+    fut = _make_future(req_id)
     await _sock.send_multipart([_T_ENSURE_LOADED, payload])
     try:
         # +1s headroom beyond MMP's own budget
@@ -326,11 +334,12 @@ async def infer(request: Request) -> Response:
     """
     params   = dict(request.query_params)
     model_id = params.pop("model_id", "")
+    api_key  = params.pop("api_key", "")
     if not model_id:
         return Response(status_code=400, content=b"model_id query param required")
 
     # 1. Ensure model is loaded (instant on warm path)
-    status = await _ensure_loaded(model_id)
+    status = await _ensure_loaded(model_id, api_key)
     if status[0] == "load_timeout":
         return Response(
             status_code=503,
