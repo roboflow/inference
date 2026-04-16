@@ -307,6 +307,10 @@ class ModelManager:
     # Queries
     # ------------------------------------------------------------------
 
+    def get_backend(self, model_id: str) -> Optional[Backend]:
+        """Return Backend for model_id, or None if not loaded."""
+        return self._backends.get(model_id)
+
     def _get_backend(self, model_id: str) -> Backend:
         try:
             return self._backends[model_id]
