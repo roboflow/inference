@@ -112,7 +112,7 @@ def launch_orchestrated(
     evict_check_interval_s: float = 5.0,
     stale_reap_interval_s:  float = 10.0,
     stale_slot_max_age_s:   float = 30.0,
-    mmp_start_timeout:      float = 5.0,
+    mmp_start_timeout:      float = 30.0,
 ) -> LaunchHandle:
     """Start a ModelManagerProcess and return a LaunchHandle.
 
