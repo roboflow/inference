@@ -67,10 +67,9 @@ def _flat_workflow() -> Dict[str, Any]:
                 "default": "unset",
             },
             {
-                "type": "roboflow_core/first_non_empty_or_default@v1",
+                "type": "scalar_only_echo",
                 "name": "pick",
-                "data": ["$steps.prepare.output"],
-                "default": "fallback-inner",
+                "value": "$steps.prepare.output",
             },
         ],
         "outputs": [

@@ -29,7 +29,14 @@ def execution_engine(
 
 
 def echo_child_workflow() -> Dict[str, Any]:
-    """Aligned with test_workflow_with_inner_workflow._echo_child_workflow."""
+    """Child workflow that echoes ``child_msg`` via ``ScalarOnlyEchoBlock`` (``scalar_only_echo``).
+
+    Requires the stub plugin from ``stub_plugins.scalar_only_block_plugin`` to be registered
+    (see ``conftest.py`` in this package, or patch ``blocks_loader.get_plugin_modules``).
+
+    For list-valued ``WorkflowParameter`` substitutions into ``child_msg``, use a non-scalar
+    child step instead (see ``test_inner_workflow_with_list_valued_workflow_parameter``).
+    """
     return {
         "version": "1.0",
         "inputs": [
@@ -41,10 +48,9 @@ def echo_child_workflow() -> Dict[str, Any]:
         ],
         "steps": [
             {
-                "type": "roboflow_core/first_non_empty_or_default@v1",
+                "type": "scalar_only_echo",
                 "name": "pick",
-                "data": ["$inputs.child_msg"],
-                "default": "fallback-inner",
+                "value": "$inputs.child_msg",
             },
         ],
         "outputs": [

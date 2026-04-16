@@ -1,5 +1,14 @@
 """
-Equivalence for ``test_inner_workflow_after_continue_if_with_crop_batch_lineage``.
+Equivalence for crop batch lineage when the inner workflow ends with
+``roboflow_core/continue_if@v1`` and the parent runs ``roboflow_core/first_non_empty_or_default@v1``
+after ``roboflow_core/inner_workflow@v1``.
+
+The inner workflow uses a single-source ``first_non_empty_or_default`` only as a
+continue-if-gated emitter (same pattern as ``echo_child_workflow``): nested SIMD validation
+substitutes workflow parameters into step manifests, and ``property_definition.data`` must
+stay a selector string, so it cannot carry a substituted ``crop_label`` literal.
+
+The reference flat workflow keeps ``continue_if`` then ``first_non_empty_or_default`` in one graph.
 """
 
 from unittest import mock
@@ -20,7 +29,6 @@ from inference.core.entities.responses.inference import (
 from inference.core.managers.base import ModelManager
 
 from tests.workflows.integration_tests.execution.inner_workflow_inlining._common import (
-    echo_child_workflow,
     execution_engine,
 )
 
@@ -104,6 +112,72 @@ def _infer_from_request_sync_factory(h: int, w: int):
     return infer_from_request_sync
 
 
+def _inner_continue_if_last() -> dict:
+    """``continue_if`` is the last entry in ``steps``; it gates ``emit_label`` via ``next_steps``."""
+    return {
+        "version": "1.0",
+        "inputs": [
+            {
+                "type": "WorkflowBatchInput",
+                "name": "classification_predictions",
+                "kind": ["classification_prediction"],
+                "dimensionality": 1,
+            },
+            {
+                "type": "WorkflowParameter",
+                "name": "crop_label",
+                "default_value": "",
+            },
+        ],
+        "steps": [
+            {
+                "type": "roboflow_core/continue_if@v1",
+                "name": "continue_if",
+                "condition_statement": {
+                    "type": "StatementGroup",
+                    "statements": [
+                        {
+                            "type": "BinaryStatement",
+                            "left_operand": {
+                                "type": "DynamicOperand",
+                                "operand_name": "predictions",
+                                "operations": [
+                                    {
+                                        "type": "ClassificationPropertyExtract",
+                                        "property_name": "top_class_confidence",
+                                    }
+                                ],
+                            },
+                            "comparator": {"type": "(Number) >="},
+                            "right_operand": {
+                                "type": "StaticOperand",
+                                "value": _CONTINUE_IF_CONFIDENCE_THRESHOLD,
+                            },
+                        }
+                    ],
+                },
+                "evaluation_parameters": {
+                    "predictions": "$inputs.classification_predictions",
+                },
+                "next_steps": ["$steps.emit_label"],
+            },
+            {
+                "type": "roboflow_core/first_non_empty_or_default@v1",
+                "name": "emit_label",
+                "data": ["$inputs.crop_label"],
+                "default": None,
+            },
+        ],
+        "outputs": [
+            {
+                "type": "JsonField",
+                "name": "echo",
+                "selector": "$steps.emit_label.output",
+            },
+        ],
+    }
+
+
 def _nested_workflow(inner: dict) -> dict:
     return {
         "version": "1.0",
@@ -133,47 +207,26 @@ def _nested_workflow(inner: dict) -> dict:
                 "confidence": _CLASSIFICATION_REQUEST_CONFIDENCE_THRESHOLD,
             },
             {
-                "type": "roboflow_core/continue_if@v1",
-                "name": "continue_if",
-                "condition_statement": {
-                    "type": "StatementGroup",
-                    "statements": [
-                        {
-                            "type": "BinaryStatement",
-                            "left_operand": {
-                                "type": "DynamicOperand",
-                                "operand_name": "predictions",
-                                "operations": [
-                                    {
-                                        "type": "ClassificationPropertyExtract",
-                                        "property_name": "top_class_confidence",
-                                    }
-                                ],
-                            },
-                            "comparator": {"type": "(Number) >="},
-                            "right_operand": {"type": "StaticOperand", "value": _CONTINUE_IF_CONFIDENCE_THRESHOLD},
-                        }
-                    ],
-                },
-                "evaluation_parameters": {
-                    "predictions": "$steps.breds_classification.predictions",
-                },
-                "next_steps": ["$steps.nested_inner_workflow"],
-            },
-            {
                 "type": "roboflow_core/inner_workflow@v1",
                 "name": "nested_inner_workflow",
                 "workflow_definition": inner,
                 "parameter_bindings": {
-                    "child_msg": "$inputs.crop_label",
+                    "classification_predictions": "$steps.breds_classification.predictions",
+                    "crop_label": "$inputs.crop_label",
                 },
+            },
+            {
+                "type": "roboflow_core/first_non_empty_or_default@v1",
+                "name": "pick_parent",
+                "data": ["$steps.nested_inner_workflow.echo"],
+                "default": None,
             },
         ],
         "outputs": [
             {
                 "type": "JsonField",
                 "name": "from_child",
-                "selector": "$steps.nested_inner_workflow.echo",
+                "selector": "$steps.pick_parent.output",
             },
         ],
     }
@@ -226,7 +279,10 @@ def _flat_workflow() -> dict:
                                 ],
                             },
                             "comparator": {"type": "(Number) >="},
-                            "right_operand": {"type": "StaticOperand", "value": _CONTINUE_IF_CONFIDENCE_THRESHOLD},
+                            "right_operand": {
+                                "type": "StaticOperand",
+                                "value": _CONTINUE_IF_CONFIDENCE_THRESHOLD,
+                            },
                         }
                     ],
                 },
@@ -236,9 +292,10 @@ def _flat_workflow() -> dict:
                 "next_steps": ["$steps.first_non_empty"],
             },
             {
-                "type": "scalar_only_echo",
+                "type": "roboflow_core/first_non_empty_or_default@v1",
                 "name": "first_non_empty",
-                "value": "$inputs.crop_label",
+                "data": ["$inputs.crop_label"],
+                "default": "fallback-inner",
             },
         ],
         "outputs": [
@@ -251,7 +308,7 @@ def _flat_workflow() -> dict:
     }
 
 
-def test_inlined_continue_if_echo_matches_inner_workflow(
+def test_inlined_continue_if_last_in_inner_matches_flat_workflow(
     model_manager: ModelManager,
     dogs_image: np.ndarray,
 ) -> None:
@@ -259,7 +316,7 @@ def test_inlined_continue_if_echo_matches_inner_workflow(
     infer_mock = mock.MagicMock(
         side_effect=_infer_from_request_sync_factory(h, w),
     )
-    inner = echo_child_workflow()
+    inner = _inner_continue_if_last()
 
     with mock.patch.object(ModelManager, "add_model"), mock.patch.object(
         ModelManager,

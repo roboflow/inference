@@ -77,16 +77,14 @@ def _flat_workflow() -> Dict[str, Any]:
         ],
         "steps": [
             {
-                "type": "roboflow_core/first_non_empty_or_default@v1",
+                "type": "scalar_only_echo",
                 "name": "branch_a",
-                "data": ["$inputs.msg_a"],
-                "default": "fallback-inner",
+                "value": "$inputs.msg_a",
             },
             {
-                "type": "roboflow_core/first_non_empty_or_default@v1",
+                "type": "scalar_only_echo",
                 "name": "branch_b",
-                "data": ["$inputs.msg_b"],
-                "default": "fallback-inner",
+                "value": "$inputs.msg_b",
             },
         ],
         "outputs": [

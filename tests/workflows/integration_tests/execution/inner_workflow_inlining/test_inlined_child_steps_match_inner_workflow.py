@@ -55,10 +55,9 @@ def _flat_parent_workflow_equivalent_to_binding() -> Dict[str, Any]:
         ],
         "steps": [
             {
-                "type": "roboflow_core/first_non_empty_or_default@v1",
+                "type": "scalar_only_echo",
                 "name": "pick",
-                "data": ["$inputs.parent_msg"],
-                "default": "fallback-inner",
+                "value": "$inputs.parent_msg",
             },
         ],
         "outputs": [
