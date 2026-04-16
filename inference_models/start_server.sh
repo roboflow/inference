@@ -6,7 +6,6 @@
 # Usage:
 #   ./start_server.sh                     # defaults
 #   PORT=9443 NUM_WORKERS=8 ./start_server.sh
-#   ROBOFLOW_API_KEY=xxx ./start_server.sh
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
