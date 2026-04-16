@@ -161,3 +161,8 @@ class Backend(ABC):
     def class_names(self) -> Optional[List[str]]:
         """Class names for the loaded model, if available."""
         ...
+
+    @property
+    def worker_pid(self) -> Optional[int]:
+        """OS PID of the worker subprocess, if applicable. None for in-process backends."""
+        return None
