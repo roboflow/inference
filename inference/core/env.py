@@ -399,10 +399,25 @@ MEMORY_CACHE_EXPIRE_INTERVAL = int(os.getenv("MEMORY_CACHE_EXPIRE_INTERVAL", 5))
 # Enable models cache auth
 MODELS_CACHE_AUTH_ENABLED = str2bool(os.getenv("MODELS_CACHE_AUTH_ENABLED", False))
 
-# Models cache auth cache ttl, default is 15 minutes
+# Models cache auth in-process success cache ttl, default is 15 minutes
 MODELS_CACHE_AUTH_CACHE_TTL = int(os.getenv("MODELS_CACHE_AUTH_CACHE_TTL", 15 * 60))
 
-# Models cache auth cache max size, default is 100_000_000 (0 DOES NOT MAKE IT UNLIMITED)
+# Models cache auth shared success cache ttl, default is 1 hour
+MODELS_CACHE_AUTH_SHARED_CACHE_TTL = int(
+    os.getenv("MODELS_CACHE_AUTH_SHARED_CACHE_TTL", 60 * 60)
+)
+
+# Enable models cache auth shared cache, default is False
+MODELS_CACHE_AUTH_SHARED_CACHE_ENABLED = str2bool(
+    os.getenv("MODELS_CACHE_AUTH_SHARED_CACHE_ENABLED", False)
+)
+
+# Models cache auth failure cache ttl, default is 60 seconds
+MODELS_CACHE_AUTH_FAILURE_CACHE_TTL = int(
+    os.getenv("MODELS_CACHE_AUTH_FAILURE_CACHE_TTL", 60)
+)
+
+# Models cache auth in-process cache max size, measured in entry count
 MODELS_CACHE_AUTH_CACHE_MAX_SIZE = int(
     os.getenv("MODELS_CACHE_AUTH_CACHE_MAX_SIZE", 100_000_000)
 )

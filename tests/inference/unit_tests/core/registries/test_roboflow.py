@@ -8,10 +8,17 @@ import pytest
 
 from inference.core.devices.utils import GLOBAL_DEVICE_ID
 from inference.core.entities.types import ModelType, TaskType
-from inference.core.exceptions import MissingApiKeyError, ModelNotRecognisedError
+from inference.core.exceptions import (
+    MissingApiKeyError,
+    ModelNotRecognisedError,
+    RoboflowAPINotAuthorizedError,
+)
 from inference.core.registries import roboflow
 from inference.core.registries.roboflow import (
     RoboflowModelRegistry,
+    _check_if_api_key_has_access_to_model,
+    _construct_model_auth_cache_key,
+    _in_process_model_auth_cache,
     _in_process_metadata_cache,
     get_model_metadata_from_cache,
     get_model_type,
@@ -24,8 +31,10 @@ from inference.core.roboflow_api import ModelEndpointType
 @pytest.fixture(autouse=True)
 def clear_in_process_metadata_cache():
     _in_process_metadata_cache.cache.clear()
+    _in_process_model_auth_cache.cache.clear()
     yield
     _in_process_metadata_cache.cache.clear()
+    _in_process_model_auth_cache.cache.clear()
 
 
 @pytest.mark.parametrize("is_lambda", [False, True])
@@ -235,6 +244,177 @@ def test_get_model_type_when_cache_is_utilised(
         dataset_id="some", version_id="1"
     )
     assert result == ("object-detection", "yolov8n")
+
+
+@mock.patch.object(roboflow, "cache")
+@mock.patch.object(roboflow, "_shared_model_auth_cache_enabled", return_value=True)
+@mock.patch.object(roboflow, "get_roboflow_model_data")
+def test_check_if_api_key_has_access_to_model_when_shared_cache_hit_skips_api_call(
+    get_roboflow_model_data_mock: MagicMock,
+    _shared_model_auth_cache_enabled_mock: MagicMock,
+    cache_mock: MagicMock,
+) -> None:
+    # given
+    cache_key = _construct_model_auth_cache_key(
+        api_key="my_api_key",
+        model_id="some/1",
+        endpoint_type=ModelEndpointType.ORT,
+        countinference=None,
+        service_secret=None,
+    )
+    cache_mock.get.return_value = True
+
+    # when
+    result = _check_if_api_key_has_access_to_model(
+        api_key="my_api_key",
+        model_id="some/1",
+    )
+
+    # then
+    assert result is True
+    cache_mock.get.assert_called_once_with(cache_key)
+    cache_mock.set.assert_not_called()
+    get_roboflow_model_data_mock.assert_not_called()
+
+
+@mock.patch.object(roboflow, "cache")
+@mock.patch.object(roboflow, "_shared_model_auth_cache_enabled", return_value=True)
+@mock.patch.object(roboflow, "get_roboflow_model_data")
+def test_check_if_api_key_has_access_to_model_when_authorized_result_cached_in_shared_cache(
+    get_roboflow_model_data_mock: MagicMock,
+    _shared_model_auth_cache_enabled_mock: MagicMock,
+    cache_mock: MagicMock,
+) -> None:
+    # given
+    cache_mock.get.return_value = None
+    get_roboflow_model_data_mock.return_value = {"ort": {}}
+
+    # when
+    result = _check_if_api_key_has_access_to_model(
+        api_key="my_api_key",
+        model_id="some/1",
+    )
+
+    # then
+    assert result is True
+    cache_key = cache_mock.set.call_args.kwargs["key"]
+    assert "my_api_key" not in cache_key
+    assert "some/1" in cache_key
+    assert "api_key=" in cache_key
+    cache_mock.set.assert_called_once_with(
+        key=cache_key,
+        value=True,
+        expire=roboflow.MODELS_CACHE_AUTH_SHARED_CACHE_TTL,
+    )
+    get_roboflow_model_data_mock.assert_called_once_with(
+        api_key="my_api_key",
+        model_id="some/1",
+        endpoint_type=ModelEndpointType.ORT,
+        device_id=GLOBAL_DEVICE_ID,
+        countinference=None,
+        service_secret=None,
+    )
+
+
+@mock.patch.object(roboflow, "cache")
+@mock.patch.object(roboflow, "_shared_model_auth_cache_enabled", return_value=True)
+@mock.patch.object(roboflow, "get_roboflow_model_data")
+def test_check_if_api_key_has_access_to_model_when_unauthorized_result_cached_with_short_ttl(
+    get_roboflow_model_data_mock: MagicMock,
+    _shared_model_auth_cache_enabled_mock: MagicMock,
+    cache_mock: MagicMock,
+) -> None:
+    # given
+    cache_mock.get.return_value = None
+    get_roboflow_model_data_mock.side_effect = RoboflowAPINotAuthorizedError(
+        "not allowed"
+    )
+
+    # when
+    result = _check_if_api_key_has_access_to_model(
+        api_key="my_api_key",
+        model_id="some/1",
+    )
+
+    # then
+    assert result is False
+    cache_mock.set.assert_called_once()
+    assert cache_mock.set.call_args.kwargs["expire"] == (
+        roboflow.MODELS_CACHE_AUTH_FAILURE_CACHE_TTL
+    )
+
+
+@mock.patch.object(roboflow, "cache")
+@mock.patch.object(roboflow, "_shared_model_auth_cache_enabled", return_value=True)
+@mock.patch.object(roboflow, "get_roboflow_model_data")
+def test_check_if_api_key_has_access_to_model_when_upstream_error_occurs_then_error_is_not_retried(
+    get_roboflow_model_data_mock: MagicMock,
+    _shared_model_auth_cache_enabled_mock: MagicMock,
+    cache_mock: MagicMock,
+) -> None:
+    # given
+    cache_mock.get.return_value = None
+    get_roboflow_model_data_mock.side_effect = RuntimeError("upstream unavailable")
+
+    # when
+    with pytest.raises(RuntimeError, match="upstream unavailable"):
+        _check_if_api_key_has_access_to_model(
+            api_key="my_api_key",
+            model_id="some/1",
+        )
+
+    # then
+    get_roboflow_model_data_mock.assert_called_once()
+    cache_mock.set.assert_not_called()
+
+
+@mock.patch.object(roboflow, "cache")
+@mock.patch.object(roboflow, "_shared_model_auth_cache_enabled", return_value=False)
+@mock.patch.object(roboflow, "get_roboflow_model_data")
+def test_check_if_api_key_has_access_to_model_when_shared_cache_disabled_skips_shared_cache(
+    get_roboflow_model_data_mock: MagicMock,
+    _shared_model_auth_cache_enabled_mock: MagicMock,
+    cache_mock: MagicMock,
+) -> None:
+    # given
+    get_roboflow_model_data_mock.return_value = {"ort": {}}
+
+    # when
+    result = _check_if_api_key_has_access_to_model(
+        api_key="my_api_key",
+        model_id="some/1",
+    )
+
+    # then
+    assert result is True
+    cache_mock.get.assert_not_called()
+    cache_mock.set.assert_not_called()
+    get_roboflow_model_data_mock.assert_called_once()
+
+
+@mock.patch.object(roboflow, "INTERNAL_WEIGHTS_URL_SUFFIX", "serverless")
+@mock.patch.object(roboflow, "ROBOFLOW_SERVICE_SECRET", "shared-secret")
+def test_construct_model_auth_cache_key_when_credit_bypass_context_changes() -> None:
+    # when
+    regular_key = _construct_model_auth_cache_key(
+        api_key="my_api_key",
+        model_id="some/1",
+        endpoint_type=ModelEndpointType.ORT,
+        countinference=True,
+        service_secret=None,
+    )
+    bypass_key = _construct_model_auth_cache_key(
+        api_key="my_api_key",
+        model_id="some/1",
+        endpoint_type=ModelEndpointType.ORT,
+        countinference=False,
+        service_secret="shared-secret",
+    )
+
+    # then
+    assert "my_api_key" not in regular_key
+    assert "shared-secret" not in bypass_key
+    assert regular_key != bypass_key
 
 
 @pytest.mark.parametrize(

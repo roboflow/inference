@@ -1,10 +1,12 @@
 import os
+import time
+from dataclasses import dataclass
+from hashlib import sha256
 from typing import Any, Dict, Optional, Tuple, Union
-
-from cachetools.func import ttl_cache
 
 from inference.core.cache import cache
 from inference.core.cache.lru_cache import LRUCache
+from inference.core.cache.redis import RedisCache
 from inference.core.devices.utils import GLOBAL_DEVICE_ID
 from inference.core.entities.types import (
     DatasetID,
@@ -15,11 +17,16 @@ from inference.core.entities.types import (
 )
 from inference.core.env import (
     CACHE_METADATA_LOCK_TIMEOUT,
+    INTERNAL_WEIGHTS_URL_SUFFIX,
     LAMBDA,
     MODEL_CACHE_DIR,
     MODELS_CACHE_AUTH_CACHE_MAX_SIZE,
     MODELS_CACHE_AUTH_CACHE_TTL,
     MODELS_CACHE_AUTH_ENABLED,
+    MODELS_CACHE_AUTH_FAILURE_CACHE_TTL,
+    MODELS_CACHE_AUTH_SHARED_CACHE_ENABLED,
+    MODELS_CACHE_AUTH_SHARED_CACHE_TTL,
+    ROBOFLOW_SERVICE_SECRET,
     USE_INFERENCE_MODELS,
 )
 from inference.core.exceptions import (
@@ -74,6 +81,22 @@ STUB_VERSION_ID = "0"
 
 # In-process cache for model metadata to avoid Redis lock contention on every request.
 _in_process_metadata_cache = LRUCache(capacity=1000)
+_in_process_model_auth_cache = LRUCache(capacity=MODELS_CACHE_AUTH_CACHE_MAX_SIZE)
+_shared_model_auth_cache_available = MODELS_CACHE_AUTH_SHARED_CACHE_ENABLED and isinstance(
+    cache, RedisCache
+)
+
+if MODELS_CACHE_AUTH_SHARED_CACHE_ENABLED and not _shared_model_auth_cache_available:
+    logger.warning(
+        "MODELS_CACHE_AUTH_SHARED_CACHE_ENABLED is set but Redis cache is unavailable. "
+        "Using in-process model auth cache only."
+    )
+
+
+@dataclass(frozen=True)
+class ModelAuthCacheEntry:
+    authorized: bool
+    expires_at: float
 
 
 class RoboflowModelRegistry(ModelRegistry):
@@ -115,7 +138,6 @@ class RoboflowModelRegistry(ModelRegistry):
         return self.registry_dict[model_type]
 
 
-@ttl_cache(ttl=MODELS_CACHE_AUTH_CACHE_TTL, maxsize=MODELS_CACHE_AUTH_CACHE_MAX_SIZE)
 def _check_if_api_key_has_access_to_model(
     api_key: str,
     model_id: str,
@@ -124,6 +146,76 @@ def _check_if_api_key_has_access_to_model(
     service_secret: Optional[str] = None,
 ) -> bool:
     model_id = resolve_roboflow_model_alias(model_id=model_id)
+    cache_key = _construct_model_auth_cache_key(
+        api_key=api_key,
+        model_id=model_id,
+        endpoint_type=endpoint_type,
+        countinference=countinference,
+        service_secret=service_secret,
+    )
+    cached_result = _get_model_auth_result_from_local_cache(cache_key=cache_key)
+    if cached_result is not None:
+        return cached_result
+    if _shared_model_auth_cache_enabled():
+        cached_result = _get_model_auth_result_from_shared_cache(cache_key=cache_key)
+        if cached_result is not None:
+            _save_model_auth_result_to_local_cache(
+                cache_key=cache_key, authorized=cached_result
+            )
+            return cached_result
+    auth_result = _resolve_model_auth_result(
+        api_key=api_key,
+        model_id=model_id,
+        endpoint_type=endpoint_type,
+        countinference=countinference,
+        service_secret=service_secret,
+    )
+    _save_model_auth_result_to_local_cache(cache_key=cache_key, authorized=auth_result)
+    if _shared_model_auth_cache_enabled():
+        _save_model_auth_result_to_shared_cache(
+            cache_key=cache_key, authorized=auth_result
+        )
+    return auth_result
+
+
+def _construct_model_auth_cache_key(
+    api_key: Optional[str],
+    model_id: str,
+    endpoint_type: ModelEndpointType,
+    countinference: Optional[bool],
+    service_secret: Optional[str],
+) -> str:
+    _, version_id = get_model_id_chunks(model_id=model_id)
+    if version_id is not None:
+        model_source = "versioned"
+    elif USE_INFERENCE_MODELS:
+        model_source = "inference-models-registry"
+    else:
+        model_source = "instant"
+    api_key_fingerprint = sha256(
+        (api_key or "").encode("utf-8"), usedforsecurity=False
+    ).hexdigest()
+    credits_bypass_enabled = (
+        INTERNAL_WEIGHTS_URL_SUFFIX == "serverless"
+        and countinference is False
+        and service_secret is not None
+        and service_secret == ROBOFLOW_SERVICE_SECRET
+    )
+    return (
+        "model_auth:"
+        f"{model_source}:{endpoint_type.value}:{model_id}:"
+        f"countinference={countinference}:credits_bypass={int(credits_bypass_enabled)}:"
+        f"api_key={api_key_fingerprint}"
+    )
+
+
+def _resolve_model_auth_result(
+    api_key: str,
+    model_id: str,
+    endpoint_type: ModelEndpointType,
+    countinference: Optional[bool],
+    service_secret: Optional[str],
+) -> bool:
     _, version_id = get_model_id_chunks(model_id=model_id)
     try:
         if version_id is not None:
@@ -152,6 +244,70 @@ def _check_if_api_key_has_access_to_model(
     except RoboflowAPINotAuthorizedError:
         return False
     return True
+
+
+def _shared_model_auth_cache_enabled() -> bool:
+    return _shared_model_auth_cache_available
+
+
+def _get_model_auth_result_from_local_cache(cache_key: str) -> Optional[bool]:
+    cache_entry = _in_process_model_auth_cache.get(cache_key)
+    if cache_entry is None:
+        return None
+    if cache_entry.expires_at < time.time():
+        _in_process_model_auth_cache.cache.pop(cache_key, None)
+        return None
+    return cache_entry.authorized
+
+
+def _save_model_auth_result_to_local_cache(cache_key: str, authorized: bool) -> None:
+    ttl = _get_model_auth_cache_ttl(authorized=authorized, shared=False)
+    if ttl <= 0:
+        return None
+    _in_process_model_auth_cache.set(
+        cache_key,
+        ModelAuthCacheEntry(authorized=authorized, expires_at=time.time() + ttl),
+    )
+
+
+def _get_model_auth_result_from_shared_cache(cache_key: str) -> Optional[bool]:
+    try:
+        cached_result = cache.get(cache_key)
+    except Exception as error:
+        logger.warning(
+            "Failed to read shared model auth cache for key=%s. Cause: %s",
+            cache_key,
+            error,
+        )
+        return None
+    if cached_result is True or cached_result is False:
+        return cached_result
+    return None
+
+
+def _save_model_auth_result_to_shared_cache(cache_key: str, authorized: bool) -> None:
+    ttl = _get_model_auth_cache_ttl(authorized=authorized, shared=True)
+    if ttl <= 0:
+        return None
+    try:
+        cache.set(key=cache_key, value=authorized, expire=ttl)
+    except Exception as error:
+        logger.warning(
+            "Failed to write shared model auth cache for key=%s. Cause: %s",
+            cache_key,
+            error,
+        )
+        return None
+
+
+def _get_model_auth_cache_ttl(authorized: bool, shared: bool) -> int:
+    if authorized:
+        return (
+            MODELS_CACHE_AUTH_SHARED_CACHE_TTL
+            if shared
+            else MODELS_CACHE_AUTH_CACHE_TTL
+        )
+    return MODELS_CACHE_AUTH_FAILURE_CACHE_TTL
 
 
 def get_model_type(
