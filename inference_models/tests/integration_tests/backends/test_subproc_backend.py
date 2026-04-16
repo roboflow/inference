@@ -46,25 +46,6 @@ class TestSubprocBackendPipeline:
         assert hasattr(result[0], "confidence")
         assert result[0].xyxy.shape[1] == 4
 
-    def test_decomposed_pipeline(
-        self, subproc_backend: SubprocessBackend, dog_image_numpy: np.ndarray
-    ) -> None:
-        # when — pre_process runs in caller (CPU model), forward in worker
-        pre_processed = subproc_backend.pre_process(dog_image_numpy)
-        assert isinstance(pre_processed, tuple)
-        assert len(pre_processed) == 2
-
-        tensor, meta = pre_processed
-        assert isinstance(tensor, torch.Tensor)
-
-        future = subproc_backend.submit(pre_processed)
-        result = future.result(timeout=30)
-
-        # then
-        assert result is not None
-        assert len(result) > 0
-        assert hasattr(result[0], "xyxy")
-
     def test_multiple_sequential_inferences(
         self, subproc_backend: SubprocessBackend, dog_image_numpy: np.ndarray
     ) -> None:
@@ -100,7 +81,7 @@ class TestSubprocBackendObservability:
 
         # then
         assert s["backend_type"] == "subprocess"
-        assert s["transport"] == "cpu_shm"
+        assert s["transport"] == "shm_pool"
         assert s["state"] == "loaded"
         assert s["inference_count"] >= 1
         assert s["error_count"] == 0
@@ -140,14 +121,13 @@ class TestSubprocBackendLifecycle:
         # given
         backend = SubprocessBackend(
             yolov8n_model_path, api_key="",
-            use_gpu=False, use_cuda_ipc=False,
+            use_gpu=False,
         )
-        pre = backend.pre_process(dog_image_numpy)
         backend.unload()
 
         # when / then
         with pytest.raises(RuntimeError, match="not accepting"):
-            backend.submit(pre)
+            backend.submit(dog_image_numpy)
 
 
 @pytest.mark.slow
@@ -163,16 +143,13 @@ class TestSubprocBackendBatching:
             yolov8n_model_path,
             api_key="",
             use_gpu=False,
-            use_cuda_ipc=False,
             batch_max_size=4,
             batch_max_delay_ms=100,
         )
 
         # when
-        pre1 = backend.pre_process(dog_image_numpy)
-        pre2 = backend.pre_process(dog_image_numpy)
-        f1 = backend.submit(pre1)
-        f2 = backend.submit(pre2)
+        f1 = backend.submit(dog_image_numpy)
+        f2 = backend.submit(dog_image_numpy)
         r1 = f1.result(timeout=30)
         r2 = f2.result(timeout=30)
 
