@@ -1,5 +1,16 @@
 # Changelog
 
+## `0.24.4`
+
+### Changed
+
+- Behavior of Roboflow weights provider was changed - instead of throwing error each time **any** known model 
+package is fetched with manifest not passing validation - it warns about this fact and skips the package.
+This change is dictated by potential negative impact on stability which malformed manifests could have, in the face 
+of broader change on Roboflow platform making it possible tp externally register packages - sanitization and 
+validation is enabled on registry API side, but we introduce defensive change here to prevent potential instability.
+
+
 ## `0.24.3`
 
 ### Changed
