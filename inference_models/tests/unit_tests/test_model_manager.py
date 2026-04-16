@@ -42,13 +42,16 @@ class FakeBackend:
         self._inference_count += 1
         return {"prediction": "fake", "model_id": self.model_id}
 
-    def submit(self, pre_processed, *, priority: int = 0) -> Future:
+    def submit(self, raw_input: Any, *, priority: int = 0, **kwargs) -> Future:
         if self._state != "loaded":
             raise RuntimeError("not accepting")
         f: Future = Future()
-        f.set_result(self.post_process(pre_processed, None))
+        f.set_result({"prediction": "fake", "model_id": self.model_id})
         self._inference_count += 1
         return f
+
+    async def infer_async(self, raw_input: Any, **kwargs) -> Any:
+        return self.infer_sync(raw_input, **kwargs)
 
     # Lifecycle
     def unload(self) -> None:
@@ -273,8 +276,7 @@ class TestModelManagerInference:
         _patch_create_backend(mm, backends)
 
         mm.load("model-a", api_key="")
-        pre = mm.pre_process("model-a", "some_image")
-        future = mm.submit("model-a", pre)
+        future = mm.submit("model-a", "some_image")
         result = future.result(timeout=5)
 
         assert result is not None
