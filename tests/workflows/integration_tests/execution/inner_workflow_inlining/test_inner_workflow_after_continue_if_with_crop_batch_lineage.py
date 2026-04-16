@@ -233,11 +233,11 @@ def _flat_workflow() -> dict:
                 "evaluation_parameters": {
                     "predictions": "$steps.breds_classification.predictions",
                 },
-                "next_steps": ["$steps.first_non_empty"],
+                "next_steps": ["$steps.echo"],
             },
             {
                 "type": "scalar_only_echo",
-                "name": "first_non_empty",
+                "name": "echo",
                 "value": "$inputs.crop_label",
             },
         ],
@@ -245,7 +245,7 @@ def _flat_workflow() -> dict:
             {
                 "type": "JsonField",
                 "name": "from_child",
-                "selector": "$steps.first_non_empty.output",
+                "selector": "$steps.echo.output",
             },
         ],
     }
