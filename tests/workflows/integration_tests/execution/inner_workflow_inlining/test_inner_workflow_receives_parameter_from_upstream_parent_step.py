@@ -25,10 +25,9 @@ def _nested_workflow(inner: Dict[str, Any]) -> Dict[str, Any]:
         ],
         "steps": [
             {
-                "type": "roboflow_core/first_non_empty_or_default@v1",
+                "type": "scalar_only_echo",
                 "name": "prepare",
-                "data": ["$inputs.base"],
-                "default": "unset",
+                "value": "$inputs.base",
             },
             {
                 "type": "roboflow_core/inner_workflow@v1",
@@ -61,10 +60,9 @@ def _flat_workflow() -> Dict[str, Any]:
         ],
         "steps": [
             {
-                "type": "roboflow_core/first_non_empty_or_default@v1",
+                "type": "scalar_only_echo",
                 "name": "prepare",
-                "data": ["$inputs.base"],
-                "default": "unset",
+                "value": "$inputs.base",
             },
             {
                 "type": "scalar_only_echo",

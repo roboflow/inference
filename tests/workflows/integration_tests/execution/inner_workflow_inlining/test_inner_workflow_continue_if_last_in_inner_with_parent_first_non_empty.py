@@ -1,14 +1,14 @@
 """
 Equivalence for crop batch lineage when the inner workflow ends with
 ``roboflow_core/continue_if@v1`` and the parent runs ``roboflow_core/first_non_empty_or_default@v1``
-after ``roboflow_core/inner_workflow@v1``.
+after ``roboflow_core/inner_workflow@v1`` (``pick_parent`` only: it merges batched inner ``echo``
+values and still needs ``first_non_empty_or_default``).
 
-The inner workflow uses a single-source ``first_non_empty_or_default`` only as a
-continue-if-gated emitter (same pattern as ``echo_child_workflow``): nested SIMD validation
-substitutes workflow parameters into step manifests, and ``property_definition.data`` must
-stay a selector string, so it cannot carry a substituted ``crop_label`` literal.
+The inner workflow uses ``scalar_only_echo`` as a continue-if-gated emitter (same pattern as
+``echo_child_workflow``): nested SIMD validation substitutes workflow parameters into step
+manifests.
 
-The reference flat workflow keeps ``continue_if`` then ``first_non_empty_or_default`` in one graph.
+The reference flat workflow keeps ``continue_if`` then ``scalar_only_echo`` in one graph.
 """
 
 from unittest import mock
@@ -162,10 +162,9 @@ def _inner_continue_if_last() -> dict:
                 "next_steps": ["$steps.emit_label"],
             },
             {
-                "type": "roboflow_core/first_non_empty_or_default@v1",
+                "type": "scalar_only_echo",
                 "name": "emit_label",
-                "data": ["$inputs.crop_label"],
-                "default": None,
+                "value": "$inputs.crop_label",
             },
         ],
         "outputs": [
@@ -292,10 +291,9 @@ def _flat_workflow() -> dict:
                 "next_steps": ["$steps.first_non_empty"],
             },
             {
-                "type": "roboflow_core/first_non_empty_or_default@v1",
+                "type": "scalar_only_echo",
                 "name": "first_non_empty",
-                "data": ["$inputs.crop_label"],
-                "default": "fallback-inner",
+                "value": "$inputs.crop_label",
             },
         ],
         "outputs": [

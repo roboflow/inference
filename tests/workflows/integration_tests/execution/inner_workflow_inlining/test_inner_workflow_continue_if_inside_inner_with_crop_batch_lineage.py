@@ -1,6 +1,6 @@
 """
 Equivalence like ``test_inner_workflow_after_continue_if_with_crop_batch_lineage``,
-but ``roboflow_core/continue_if@v1`` and ``roboflow_core/first_non_empty_or_default@v1``
+but ``roboflow_core/continue_if@v1`` and the ``scalar_only_echo`` stub
 live in the inner workflow while the parent still runs detection, crop, and classification.
 """
 
@@ -154,10 +154,9 @@ def _inner_continue_if_then_pick() -> dict:
                 "next_steps": ["$steps.first_non_empty"],
             },
             {
-                "type": "roboflow_core/first_non_empty_or_default@v1",
+                "type": "scalar_only_echo",
                 "name": "first_non_empty",
-                "data": ["$inputs.crop_label"],
-                "default": "fallback-inner",
+                "value": "$inputs.crop_label",
             },
         ],
         "outputs": [
@@ -278,10 +277,9 @@ def _flat_workflow() -> dict:
                 "next_steps": ["$steps.first_non_empty"],
             },
             {
-                "type": "roboflow_core/first_non_empty_or_default@v1",
+                "type": "scalar_only_echo",
                 "name": "first_non_empty",
-                "data": ["$inputs.crop_label"],
-                "default": "fallback-inner",
+                "value": "$inputs.crop_label",
             },
         ],
         "outputs": [
