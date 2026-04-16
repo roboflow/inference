@@ -834,7 +834,9 @@ class HttpInterface(BaseInterface):
                         if api_key is None:
                             if auth_span is not None:
                                 auth_span.set_attribute("http.status_code", 401)
-                                auth_span.set_attribute("auth.result", "missing_api_key")
+                                auth_span.set_attribute(
+                                    "auth.result", "missing_api_key"
+                                )
                             return _authorization_error_response(
                                 401, "Unauthorized api_key"
                             )
@@ -879,9 +881,12 @@ class HttpInterface(BaseInterface):
                                     workspace_id = await get_roboflow_workspace_async(
                                         api_key=api_key
                                     )
-                                    cached_api_keys[cache_key] = AuthorizationCacheEntry(
-                                        expires_at=time.time() + AUTH_CACHE_TTL_SECONDS,
-                                        workspace_id=workspace_id,
+                                    cached_api_keys[cache_key] = (
+                                        AuthorizationCacheEntry(
+                                            expires_at=time.time()
+                                            + AUTH_CACHE_TTL_SECONDS,
+                                            workspace_id=workspace_id,
+                                        )
                                     )
                                 except (
                                     RoboflowAPINotAuthorizedError,
