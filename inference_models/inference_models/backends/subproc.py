@@ -771,5 +771,9 @@ class SubprocessBackend(Backend):
         }
 
     @property
+    def worker_pid(self) -> Optional[int]:
+        return self._worker.pid if self._worker.is_alive() else None
+
+    @property
     def class_names(self) -> Optional[List[str]]:
         return self._class_names
