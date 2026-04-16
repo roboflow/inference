@@ -43,7 +43,7 @@ class ObjectDetectionBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
         self,
         image: Any,
         class_agnostic_nms: bool = DEFAULT_CLASS_AGNOSTIC_NMS,
-        confidence: Optional[float] = DEFAULT_CONFIDENCE,
+        confidence: float = DEFAULT_CONFIDENCE,
         disable_preproc_auto_orient: bool = False,
         disable_preproc_contrast: bool = False,
         disable_preproc_grayscale: bool = False,
@@ -81,8 +81,6 @@ class ObjectDetectionBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
         Raises:
             ValueError: If batching is not enabled for the model and more than one image is passed for processing.
         """
-        if confidence is None:
-            confidence = DEFAULT_CONFIDENCE
         return super().infer(
             image,
             class_agnostic_nms=class_agnostic_nms,

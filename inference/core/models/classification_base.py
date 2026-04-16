@@ -299,7 +299,7 @@ class ClassificationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
         self,
         predictions,
         img_dims,
-        confidence: Optional[float] = None,
+        confidence: float = 0.5,
         **kwargs,
     ) -> Union[ClassificationInferenceResponse, List[ClassificationInferenceResponse]]:
         """
@@ -320,8 +320,6 @@ class ClassificationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
             - Predictions below the confidence threshold are filtered out.
         """
         responses = []
-        if confidence is None:
-            confidence = 0.5
         confidence_threshold = float(confidence)
         for ind, prediction in enumerate(predictions):
             if self.multiclass:
