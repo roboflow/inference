@@ -140,8 +140,13 @@ class SHMPool:
         total_bytes  = n_slots * (_HEADER_SIZE + input_bytes + result_bytes)
 
         shm = SharedMemory(name=name, create=True, size=total_bytes)
-        # Zero all headers so status=FREE everywhere
-        shm.buf[:total_bytes] = b"\x00" * total_bytes
+        # Zero only the headers (64B × n_slots) so status=FREE everywhere.
+        # Data areas (input/result) are written by callers before use.
+        # The kernel already zeroes fresh shm pages, but explicit header
+        # zeroing is cheap (n_slots × 64B) and guards against any OS reuse.
+        slot_bytes = _HEADER_SIZE + input_bytes + result_bytes
+        for i in range(n_slots):
+            shm.buf[i * slot_bytes: i * slot_bytes + _HEADER_SIZE] = b"\x00" * _HEADER_SIZE
 
         return cls(shm, n_slots, input_bytes, result_bytes, owner=True)
 
