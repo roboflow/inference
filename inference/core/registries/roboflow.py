@@ -82,8 +82,8 @@ STUB_VERSION_ID = "0"
 # In-process cache for model metadata to avoid Redis lock contention on every request.
 _in_process_metadata_cache = LRUCache(capacity=1000)
 _in_process_model_auth_cache = LRUCache(capacity=MODELS_CACHE_AUTH_CACHE_MAX_SIZE)
-_shared_model_auth_cache_available = MODELS_CACHE_AUTH_SHARED_CACHE_ENABLED and isinstance(
-    cache, RedisCache
+_shared_model_auth_cache_available = (
+    MODELS_CACHE_AUTH_SHARED_CACHE_ENABLED and isinstance(cache, RedisCache)
 )
 
 if MODELS_CACHE_AUTH_SHARED_CACHE_ENABLED and not _shared_model_auth_cache_available:
