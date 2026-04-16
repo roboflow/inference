@@ -27,7 +27,6 @@ Environment variables::
     INFERENCE_INPUT_MB      Bytes per slot input area, MB (default: 25.0)
     INFERENCE_RESULT_MB     Bytes per slot result area, MB (default: 4.0)
 
-    ROBOFLOW_API_KEY        API key forwarded to model loader
     LOG_LEVEL               uvicorn log level (default: warning)
 """
 from __future__ import annotations
@@ -52,7 +51,6 @@ def main() -> None:
     n_slots   = int(os.environ.get("INFERENCE_N_SLOTS",   "256"))
     input_mb  = float(os.environ.get("INFERENCE_INPUT_MB",  "25.0"))
     result_mb = float(os.environ.get("INFERENCE_RESULT_MB",  "4.0"))
-    api_key   = os.environ.get("ROBOFLOW_API_KEY", "")
 
     # ── HTTP / TLS config ──────────────────────────────────────────────────
     host      = os.environ.get("HOST",        "0.0.0.0")
@@ -75,7 +73,6 @@ def main() -> None:
         n_slots=n_slots,
         input_mb=input_mb,
         result_mb=result_mb,
-        default_api_key=api_key,
     )
     logger.info("MMP ready: addr=%s  shm=%s", handle.mmp_addr, handle.shm_name)
 
