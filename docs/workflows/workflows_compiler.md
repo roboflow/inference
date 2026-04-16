@@ -338,8 +338,3 @@ provided parameters.
 
 This mechanism allows flexibility, as some block parameters can have default values while others must be 
 provided explicitly. Additionally, it lets certain parameters be shared across different plugins.
-
-## Inner workflow composition
-
-Nested workflow references add a **composition graph** validation pass (acyclicity, max depth) separate from
-the per-workflow step DAG. See [Inner workflow design](./inner_workflow_design.md).
