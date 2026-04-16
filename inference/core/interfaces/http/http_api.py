@@ -278,7 +278,13 @@ from inference.core.roboflow_api import (
     get_serverless_usage_check_async,
     get_workflow_specification,
 )
-from inference.core.telemetry import setup_telemetry, shutdown_telemetry, start_span
+from inference.core.telemetry import (
+    get_trace_id,
+    record_error,
+    setup_telemetry,
+    shutdown_telemetry,
+    start_span,
+)
 from inference.core.utils.container import is_docker_socket_mounted
 from inference.core.utils.notebooks import start_notebook
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
@@ -360,6 +366,133 @@ class AuthorizationCacheEntry:
     workspace_id: Optional[str]
     status_code: int = 200
     message: Optional[str] = None
+
+
+AuthorizationCacheKey = Tuple[str, bool]
+
+
+def _get_request_param(
+    req_params,
+    json_params: Dict[str, Any],
+    key: str,
+) -> Optional[Any]:
+    return json_params.get(key, req_params.get(key))
+
+
+def _coerce_optional_bool(value: Optional[Any]) -> Optional[bool]:
+    if isinstance(value, bool):
+        return value
+    if not isinstance(value, str):
+        return None
+    normalized_value = value.strip().lower()
+    if normalized_value in {"true", "1", "yes", "on"}:
+        return True
+    if normalized_value in {"false", "0", "no", "off"}:
+        return False
+    return None
+
+
+def _is_non_billable_internal_request(
+    req_params,
+    json_params: Dict[str, Any],
+) -> bool:
+    countinference = _coerce_optional_bool(
+        _get_request_param(
+            req_params=req_params,
+            json_params=json_params,
+            key="countinference",
+        )
+    )
+    service_secret = _get_request_param(
+        req_params=req_params, json_params=json_params, key="service_secret"
+    )
+    return (
+        countinference is False
+        and service_secret is not None
+        and service_secret == ROBOFLOW_SERVICE_SECRET
+    )
+
+
+def _set_request_header(request: Request, header_name: str, header_value: str) -> None:
+    header_key = header_name.lower().encode("latin-1")
+    raw_headers = list(request.scope.get("headers", []))
+    raw_headers = [(key, value) for key, value in raw_headers if key != header_key]
+    raw_headers.append((header_key, header_value.encode("latin-1")))
+    request.scope["headers"] = raw_headers
+
+
+def _set_optional_context_var(context_var: Optional[Any], value: Optional[str]) -> None:
+    if context_var is None or value is None:
+        return
+    try:
+        context_var.set(value)
+    except Exception:
+        pass
+
+
+def _prepare_serverless_observability_context(
+    request: Request,
+) -> Tuple[str, Optional[str]]:
+    request_id = request.headers.get(CORRELATION_ID_HEADER) or uuid4().hex
+    _set_request_header(
+        request=request, header_name=CORRELATION_ID_HEADER, header_value=request_id
+    )
+    correlation_context_var = getattr(asgi_correlation_id, "correlation_id", None)
+    _set_optional_context_var(correlation_context_var, request_id)
+    execution_id_value = None
+    if EXECUTION_ID_HEADER is not None:
+        execution_id_value = request.headers.get(EXECUTION_ID_HEADER)
+        if not execution_id_value:
+            execution_id_value = f"{time.time_ns()}_{uuid4().hex[:4]}"
+        _set_request_header(
+            request=request,
+            header_name=EXECUTION_ID_HEADER,
+            header_value=execution_id_value,
+        )
+        _set_optional_context_var(execution_id, execution_id_value)
+    return request_id, execution_id_value
+
+
+def _attach_observability_headers_to_early_response(
+    response: Response,
+    request_id: str,
+    execution_id_value: Optional[str],
+    processing_time: float,
+    workspace_id: Optional[str] = None,
+) -> None:
+    response.headers[CORRELATION_ID_HEADER] = request_id
+    response.headers[PROCESSING_TIME_HEADER] = str(processing_time)
+    if workspace_id is not None:
+        response.headers[WORKSPACE_ID_HEADER] = workspace_id
+    if EXECUTION_ID_HEADER is not None and execution_id_value is not None:
+        response.headers[EXECUTION_ID_HEADER] = execution_id_value
+    trace_id = get_trace_id()
+    if trace_id is not None:
+        response.headers[TRACE_ID_HEADER] = trace_id
+
+
+def _log_serverless_authorization_denial(
+    request: Request,
+    status_code: int,
+    message: str,
+    request_id: str,
+    execution_id_value: Optional[str],
+    workspace_id: Optional[str],
+    cache_hit: bool,
+) -> None:
+    log_fields = {
+        "method": request.method,
+        "path": request.url.path,
+        "status_code": status_code,
+        "denial_message": message,
+        "request_id": request_id,
+        "cache_hit": cache_hit,
+    }
+    if execution_id_value is not None:
+        log_fields["execution_id"] = execution_id_value
+    if workspace_id is not None:
+        log_fields["workspace_id"] = workspace_id
+    logger.info("Serverless authorization denied", **log_fields)
 
 
 class GCPServerlessMiddleware(BaseHTTPMiddleware):
@@ -593,12 +726,17 @@ class HttpInterface(BaseInterface):
                 )
                 return JSONResponse(status_code=200, content=container_stats)
 
-        cached_api_keys: Dict[str, AuthorizationCacheEntry] = {}
+        cached_api_keys: Dict[AuthorizationCacheKey, AuthorizationCacheEntry] = {}
 
         if GCP_SERVERLESS:
 
             @app.middleware("http")
             async def check_authorization_serverless(request: Request, call_next):
+                request_id, execution_id_value = (
+                    _prepare_serverless_observability_context(request=request)
+                )
+                t1 = time.time()
+
                 # exclusions
                 skip_check = (
                     request.method not in ["GET", "POST"]
@@ -639,83 +777,213 @@ class HttpInterface(BaseInterface):
                 if skip_check:
                     return await call_next(request)
 
-                def _authorization_error_response(status_code: int, msg: str):
-                    return JSONResponse(
+                def _authorization_error_response(
+                    status_code: int,
+                    msg: str,
+                    workspace_id: Optional[str] = None,
+                    cache_hit: bool = False,
+                ):
+                    response = JSONResponse(
                         status_code=status_code,
                         content={
                             "status": status_code,
                             "message": msg,
                         },
                     )
-
-                req_params = request.query_params
-                json_params = dict()
-                api_key = req_params.get("api_key", None)
-                if (
-                    api_key is None
-                    and get_content_type(request) == "application/json"
-                    and int(request.headers.get("content-length", 0)) > 0
-                ):
-                    # have to try catch here, because some legacy endpoints that abuse Content-Type header but dont actually receive json
-                    try:
-                        json_params = await request.json()
-                    except Exception:
-                        pass
-                api_key = json_params.get("api_key", api_key)
-
-                if api_key is None:
-                    return _authorization_error_response(401, "Unauthorized api_key")
-
-                cache_entry = cached_api_keys.get(api_key)
-                workspace_id = None
-                if cache_entry and cache_entry.expires_at >= time.time():
-                    if cache_entry.status_code != 200:
-                        return _authorization_error_response(
-                            cache_entry.status_code,
-                            cache_entry.message or "Unauthorized api_key",
-                        )
-                    workspace_id = cache_entry.workspace_id
-                else:
-                    usage_check_result = await get_serverless_usage_check_async(
-                        api_key=api_key
+                    _attach_observability_headers_to_early_response(
+                        response=response,
+                        request_id=request_id,
+                        execution_id_value=execution_id_value,
+                        processing_time=time.time() - t1,
+                        workspace_id=workspace_id,
                     )
-                    if usage_check_result.status_code == 200:
-                        workspace_id = usage_check_result.workspace_id
-                        cached_api_keys[api_key] = AuthorizationCacheEntry(
-                            expires_at=time.time() + AUTH_CACHE_TTL_SECONDS,
-                            workspace_id=workspace_id,
+                    _log_serverless_authorization_denial(
+                        request=request,
+                        status_code=status_code,
+                        message=msg,
+                        request_id=request_id,
+                        execution_id_value=execution_id_value,
+                        workspace_id=workspace_id,
+                        cache_hit=cache_hit,
+                    )
+                    return response
+
+                try:
+                    with start_span(
+                        "serverless.authorization.check",
+                        attributes={
+                            "http.method": request.method,
+                            "http.target": request.url.path,
+                        },
+                    ) as auth_span:
+                        req_params = request.query_params
+                        json_params = dict()
+                        api_key = req_params.get("api_key", None)
+                        if (
+                            api_key is None
+                            and get_content_type(request) == "application/json"
+                            and int(request.headers.get("content-length", 0)) > 0
+                        ):
+                            # have to try catch here, because some legacy endpoints that abuse Content-Type header but dont actually receive json
+                            try:
+                                json_params = await request.json()
+                            except Exception:
+                                pass
+                        api_key = json_params.get("api_key", api_key)
+
+                        if api_key is None:
+                            if auth_span is not None:
+                                auth_span.set_attribute("http.status_code", 401)
+                                auth_span.set_attribute("auth.result", "missing_api_key")
+                            return _authorization_error_response(
+                                401, "Unauthorized api_key"
+                            )
+
+                        enforce_credits_verification = (
+                            not _is_non_billable_internal_request(
+                                req_params=req_params,
+                                json_params=json_params,
+                            )
                         )
-                    elif usage_check_result.status_code == 401:
-                        cached_api_keys[api_key] = AuthorizationCacheEntry(
-                            expires_at=time.time() + SHORT_AUTH_CACHE_TTL_SECONDS,
-                            workspace_id=None,
-                            status_code=401,
-                            message=(
-                                "Unauthorized api_key. This key is not authorized "
-                                "for serverless inference."
-                            ),
-                        )
-                        return _authorization_error_response(
-                            401,
-                            cached_api_keys[api_key].message,
-                        )
-                    elif usage_check_result.status_code == 402:
-                        message = (
-                            "This workspace cannot currently spend credits for serverless inference. "
-                            "Verify billing or credit cap settings."
-                        )
-                        if usage_check_result.error:
-                            message = f"{message} {usage_check_result.error}"
-                        cached_api_keys[api_key] = AuthorizationCacheEntry(
-                            expires_at=time.time() + SHORT_AUTH_CACHE_TTL_SECONDS,
-                            workspace_id=usage_check_result.workspace_id,
-                            status_code=402,
-                            message=message,
-                        )
-                        return _authorization_error_response(
-                            402,
-                            cached_api_keys[api_key].message,
-                        )
+                        cache_key = (api_key, enforce_credits_verification)
+                        cache_entry = cached_api_keys.get(cache_key)
+                        workspace_id = None
+                        if auth_span is not None:
+                            auth_span.set_attribute(
+                                "auth.enforce_credits_verification",
+                                enforce_credits_verification,
+                            )
+                        if cache_entry and cache_entry.expires_at >= time.time():
+                            if auth_span is not None:
+                                auth_span.set_attribute("auth.cache_hit", True)
+                            if cache_entry.status_code != 200:
+                                if auth_span is not None:
+                                    auth_span.set_attribute(
+                                        "http.status_code", cache_entry.status_code
+                                    )
+                                    auth_span.set_attribute(
+                                        "auth.result", "denied_from_cache"
+                                    )
+                                return _authorization_error_response(
+                                    cache_entry.status_code,
+                                    cache_entry.message or "Unauthorized api_key",
+                                    workspace_id=cache_entry.workspace_id,
+                                    cache_hit=True,
+                                )
+                            workspace_id = cache_entry.workspace_id
+                        else:
+                            if auth_span is not None:
+                                auth_span.set_attribute("auth.cache_hit", False)
+                            if not enforce_credits_verification:
+                                try:
+                                    workspace_id = await get_roboflow_workspace_async(
+                                        api_key=api_key
+                                    )
+                                    cached_api_keys[cache_key] = AuthorizationCacheEntry(
+                                        expires_at=time.time() + AUTH_CACHE_TTL_SECONDS,
+                                        workspace_id=workspace_id,
+                                    )
+                                except (
+                                    RoboflowAPINotAuthorizedError,
+                                    WorkspaceLoadError,
+                                ):
+                                    cached_api_keys[cache_key] = (
+                                        AuthorizationCacheEntry(
+                                            expires_at=time.time()
+                                            + SHORT_AUTH_CACHE_TTL_SECONDS,
+                                            workspace_id=None,
+                                            status_code=401,
+                                            message="Unauthorized api_key",
+                                        )
+                                    )
+                                    if auth_span is not None:
+                                        auth_span.set_attribute("http.status_code", 401)
+                                        auth_span.set_attribute(
+                                            "auth.result", "unauthorized"
+                                        )
+                                    return _authorization_error_response(
+                                        401,
+                                        cached_api_keys[cache_key].message,
+                                        cache_hit=False,
+                                    )
+                            else:
+                                usage_check_result = (
+                                    await get_serverless_usage_check_async(
+                                        api_key=api_key
+                                    )
+                                )
+                                if usage_check_result.status_code == 200:
+                                    workspace_id = usage_check_result.workspace_id
+                                    cached_api_keys[cache_key] = (
+                                        AuthorizationCacheEntry(
+                                            expires_at=time.time()
+                                            + AUTH_CACHE_TTL_SECONDS,
+                                            workspace_id=workspace_id,
+                                        )
+                                    )
+                                elif usage_check_result.status_code == 401:
+                                    cached_api_keys[cache_key] = (
+                                        AuthorizationCacheEntry(
+                                            expires_at=time.time()
+                                            + SHORT_AUTH_CACHE_TTL_SECONDS,
+                                            workspace_id=None,
+                                            status_code=401,
+                                            message=(
+                                                "Unauthorized api_key. This key is not authorized "
+                                                "for serverless inference."
+                                            ),
+                                        )
+                                    )
+                                    if auth_span is not None:
+                                        auth_span.set_attribute("http.status_code", 401)
+                                        auth_span.set_attribute(
+                                            "auth.result",
+                                            "serverless_inference_unauthorized",
+                                        )
+                                    return _authorization_error_response(
+                                        401,
+                                        cached_api_keys[cache_key].message,
+                                        cache_hit=False,
+                                    )
+                                elif usage_check_result.status_code == 402:
+                                    message = (
+                                        "This workspace cannot currently spend credits for serverless inference. "
+                                        "Verify billing or credit cap settings."
+                                    )
+                                    if usage_check_result.error:
+                                        message = (
+                                            f"{message} {usage_check_result.error}"
+                                        )
+                                    cached_api_keys[cache_key] = (
+                                        AuthorizationCacheEntry(
+                                            expires_at=time.time()
+                                            + SHORT_AUTH_CACHE_TTL_SECONDS,
+                                            workspace_id=usage_check_result.workspace_id,
+                                            status_code=402,
+                                            message=message,
+                                        )
+                                    )
+                                    if auth_span is not None:
+                                        auth_span.set_attribute("http.status_code", 402)
+                                        auth_span.set_attribute(
+                                            "auth.result",
+                                            "credits_verification_failed",
+                                        )
+                                    return _authorization_error_response(
+                                        402,
+                                        cached_api_keys[cache_key].message,
+                                        workspace_id=usage_check_result.workspace_id,
+                                        cache_hit=False,
+                                    )
+
+                        if auth_span is not None:
+                            auth_span.set_attribute("http.status_code", 200)
+                            auth_span.set_attribute("auth.result", "authorized")
+                            if workspace_id is not None:
+                                auth_span.set_attribute("workspace.id", workspace_id)
+                except Exception as error:
+                    record_error(error)
+                    raise
 
                 response = await call_next(request)
                 if workspace_id:
