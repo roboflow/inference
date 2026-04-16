@@ -5,7 +5,7 @@ import functools
 import time
 from collections import deque
 from concurrent.futures import Future, ThreadPoolExecutor
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional
 
 import logging
 
@@ -17,12 +17,13 @@ logger = logging.getLogger(__name__)
 class DirectBackend(Backend):
     """Loads and runs a model in the current process.
 
-    All work happens in-process via ``model.infer()`` — no IPC, no worker
-    processes.  When batching is enabled, a BatchCollector groups concurrent
-    requests and calls ``model.infer(images)`` with the batch.
+    All inference happens in-process via ``model.infer()`` — no IPC, no
+    worker processes. When batching is enabled, a BatchCollector groups
+    concurrent requests and calls ``model.infer(images)`` with the batch,
+    achieving a single CUDA sync per batch.
 
-    Preferred for: InferencePipeline, CPU-only / constrained hardware — any
-    scenario where IPC round-trip cost per frame is unacceptable.
+    Preferred for: InferencePipeline, CPU-only / constrained hardware,
+    any scenario where per-frame IPC overhead is unacceptable.
     """
 
     def __init__(
@@ -47,9 +48,8 @@ class DirectBackend(Backend):
         self._batch_max_delay_ms = batch_max_delay_ms
         self._state_value: str = "loading"
 
-        # Decoder
         self._decode: Callable[[bytes], Any] = make_decoder(
-            decoder, device=device or "cuda:0",
+            decoder, device=device or "cpu",
         )
 
         load_kwargs = dict(kwargs)
@@ -78,6 +78,7 @@ class DirectBackend(Backend):
         self._inference_count = 0
         self._error_count = 0
         self._last_inference_ts = 0.0
+        self._start_ts = time.monotonic()
         self._latencies: deque[float] = deque(maxlen=1000)
 
         # Batching
@@ -116,7 +117,7 @@ class DirectBackend(Backend):
         )
 
     # ------------------------------------------------------------------
-    # Core inference — delegates to model.infer()
+    # Core inference
     # ------------------------------------------------------------------
 
     def _decode_input(self, raw_input: Any) -> Any:
@@ -125,7 +126,7 @@ class DirectBackend(Backend):
         return raw_input
 
     def _infer_batch(self, raw_items: list) -> list:
-        """Batch inference via model.infer(). Used by BatchCollector."""
+        """Batch inference via model.infer(). Called by BatchCollector."""
         images = [self._decode_input(inp) for inp, _ in raw_items]
         if len(images) == 1:
             result = self._model.infer(images[0])
@@ -136,45 +137,45 @@ class DirectBackend(Backend):
         return results
 
     # ------------------------------------------------------------------
-    # Pipeline stages (stubs — satisfy Backend ABC, used by submit path)
+    # Inference entry points
     # ------------------------------------------------------------------
 
-    def pre_process(self, *args, **kwargs) -> Tuple[Any, Any]:
-        raw = args[0] if args else None
-        if isinstance(raw, (bytes, bytearray)):
-            raw = self._decode_input(raw)
-        return (raw, kwargs if kwargs else None)
+    def infer_sync(self, raw_input: Any, **kwargs) -> Any:
+        """Run model.infer() synchronously.
 
-    def post_process(self, raw_output: Any, meta: Any, **kwargs) -> Any:
-        return raw_output
+        When batching is enabled, routes through submit() so the
+        BatchCollector can group this call with concurrent ones.
+        """
+        if self._batch_collector is not None:
+            return self.submit(raw_input, **kwargs).result()
 
-    def collate(self, items: List[Tuple[Any, Any]]) -> Any:
-        return items
+        t0 = time.monotonic()
+        image = self._decode_input(raw_input)
+        result = self._model.infer(image)
 
-    def uncollate(self, batched_output: Any, count: int) -> List[Any]:
-        if isinstance(batched_output, list):
-            return batched_output
-        return [batched_output] * count
+        elapsed = time.monotonic() - t0
+        self._inference_count += 1
+        self._last_inference_ts = t0
+        self._latencies.append(elapsed)
+        return result
 
-    def forward_sync(self, batched_input: Any, **kwargs) -> Any:
-        return self._infer_batch(batched_input)
+    async def infer_async(self, raw_input: Any, **kwargs) -> Any:
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(
+            self._executor,  # None falls back to event loop's default executor
+            functools.partial(self.infer_sync, raw_input, **kwargs),
+        )
 
-    # ------------------------------------------------------------------
-    # Submission
-    # ------------------------------------------------------------------
-
-    def submit(self, pre_processed: Tuple[Any, Any], *, priority: int = 0) -> Future:
+    def submit(self, raw_input: Any, *, priority: int = 0, **kwargs) -> Future:
         if not self.is_accepting:
             raise RuntimeError(
                 f"DirectBackend('{self._model_id}') is not accepting "
                 f"requests (state={self.state})"
             )
 
-        raw_input, kwargs = pre_processed
-
         if self._batch_collector is not None:
             t0 = time.monotonic()
-            future = self._batch_collector.add(raw_input, kwargs, priority=priority)
+            future = self._batch_collector.add(raw_input, kwargs or None, priority=priority)
             future.add_done_callback(lambda f: self._record_inference(t0, f))
             return future
 
@@ -210,45 +211,6 @@ class DirectBackend(Backend):
         self._latencies.append(elapsed)
         if future.exception() is not None:
             self._error_count += 1
-
-    # ------------------------------------------------------------------
-    # Convenience
-    # ------------------------------------------------------------------
-
-    def infer_sync(self, *args, **kwargs) -> Any:
-        """Run model.infer() synchronously.
-
-        When batching is enabled, routes through submit() so the
-        BatchCollector can group this call with concurrent ones.
-        """
-        if self._batch_collector is not None:
-            pre_processed = self.pre_process(*args, **kwargs)
-            future = self.submit(pre_processed)
-            return future.result()
-
-        t0 = time.monotonic()
-        raw = args[0] if args else None
-        raw = self._decode_input(raw)
-        result = self._model.infer(raw)
-
-        elapsed = time.monotonic() - t0
-        self._inference_count += 1
-        self._last_inference_ts = t0
-        self._latencies.append(elapsed)
-        return result
-
-    async def infer_async(self, *args, **kwargs) -> Any:
-        if self._executor is None:
-            raise RuntimeError(
-                f"infer_async called on DirectBackend('{self._model_id}') "
-                f"but no executor was provided — use infer_sync or pass an "
-                f"executor at construction"
-            )
-        loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(
-            self._executor,
-            functools.partial(self.infer_sync, *args, **kwargs),
-        )
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -373,7 +335,7 @@ class DirectBackend(Backend):
             "current_batch_fill_pct": bc.get("avg_batch_fill_pct", 0.0),
             "batch_delay_ms": bc.get("avg_batch_delay_ms", 0.0),
             "throughput_fps": (
-                self._inference_count / sum(sorted_lats) if sorted_lats else 0.0
+                self._inference_count / max(time.monotonic() - self._start_ts, 1e-6)
             ),
             "latency_p50_ms": _pct(50),
             "latency_p99_ms": _pct(99),
