@@ -32,7 +32,7 @@ class DirectBackend(Backend):
         api_key: str,
         *,
         device: Optional[str] = None,
-        decoder: str = "cv2",
+        decoder: str = "imagecodecs",
         executor: Optional[ThreadPoolExecutor] = None,
         batch_max_size: int = 0,
         batch_max_delay_ms: float = 10.0,
