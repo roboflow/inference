@@ -333,6 +333,13 @@ def _process_slots(
                 return
             continue
 
+        # Move tensors to CPU before pickle — result travels through SHM (CPU
+        # memory), so serialising with device='cuda' just forces the receiver
+        # to have a GPU for no reason.
+        if hasattr(result, "xyxy"):
+            result.xyxy = result.xyxy.cpu()
+            result.confidence = result.confidence.cpu()
+            result.class_id = result.class_id.cpu()
         data = pickle.dumps(result)
         mv   = pool.result_memoryview(slot_id)
         mv[:len(data)] = data
