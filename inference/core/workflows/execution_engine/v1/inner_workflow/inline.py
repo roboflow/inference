@@ -38,6 +38,11 @@ _INPUT_REF_PATTERN = re.compile(r"^\$inputs\.(?P<name>[A-Za-z0-9_\-]+)$")
 
 
 def _contains_inner_workflow_step(steps: List[Dict[str, Any]]) -> bool:
+    """Return True if any step in ``steps`` is an ``inner_workflow`` block.
+
+    Raises:
+        InnerWorkflowInvalidStepEntryError: If ``steps`` is not a list or any entry is not a dict.
+    """
     if not isinstance(steps, list):
         raise InnerWorkflowInvalidStepEntryError(
             "Invalid workflow steps definition: must be a list of JSON objects (dicts), got "
@@ -59,6 +64,11 @@ def _contains_inner_workflow_step(steps: List[Dict[str, Any]]) -> bool:
 
 
 def _collect_step_names_at_level(steps: Any) -> Set[str]:
+    """Collect string ``name`` fields from each dict step at one workflow level.
+
+    Non-lists or non-dict steps are skipped without error so callers can probe loosely-typed
+    structures; use ``_contains_inner_workflow_step`` when strict validation is required.
+    """
     names: Set[str] = set()
     if not isinstance(steps, list):
         return names
@@ -75,6 +85,11 @@ def _unique_prefixed_step_name(
     inner_step_name: str,
     used: Set[str],
 ) -> str:
+    """Pick a globally unique step name for an inlined child: ``{inner}__{child}`` with optional suffix.
+
+    Reserves the chosen name in ``used`` (mutates the set) so later children do not collide
+    with siblings or existing parent steps.
+    """
     base = f"{inner_name}__{inner_step_name}"
     candidate = base
     suffix = 2
@@ -91,7 +106,14 @@ def _defaults_for_unbound_workflow_parameters(
     inner_inputs: List[Dict[str, Any]],
     bindings: Dict[str, Any],
 ) -> Dict[str, Any]:
-    """Literal defaults for child WorkflowParameter inputs omitted from ``parameter_bindings``."""
+    """Build default values for child parameters that have no ``parameter_bindings`` entry.
+
+    Only considers ``WorkflowParameter`` and ``InferenceParameter`` entries in the child
+    ``inputs`` list that define a non-``None`` ``default_value``. Each value is deep-copied.
+
+    Raises:
+        InnerWorkflowInvalidStepEntryError: If ``inner_inputs`` is not a list or an entry is invalid.
+    """
     result: Dict[str, Any] = {}
 
     if not isinstance(inner_inputs, list):
@@ -185,6 +207,11 @@ def _replace_step_prefixes_in_string(
     *,
     old_to_new: List[Tuple[str, str]],
 ) -> str:
+    """Rewrite dotted step references: ``$steps.<old>.`` → ``$steps.<new>.`` for each mapping pair.
+
+    Pairs are applied in list order; callers typically pass ``old_to_new`` sorted by descending
+    old-name length so longer step ids are substituted before shorter prefixes overlap.
+    """
     out = s
     for old, new in old_to_new:
         out = out.replace(f"$steps.{old}.", f"$steps.{new}.")
@@ -297,6 +324,7 @@ def _rewrite_inner_scalar(
 
 
 def _deep_map_leaves(obj: Any, fn: Callable[[Any], Any]) -> Any:
+    """Recursively walk dicts and lists; apply ``fn`` to every non-container leaf value."""
     if isinstance(obj, dict):
         return {k: _deep_map_leaves(v, fn) for k, v in obj.items()}
     if isinstance(obj, list):
@@ -311,6 +339,15 @@ def _replace_inner_step_control_and_output_refs_in_object(
     output_name_to_selector: Dict[str, str],
     first_inlined_step_name: str,
 ) -> Any:
+    """Recursively rebuild ``obj`` with parent references to a composite ``inner_workflow`` step rewritten.
+
+    For each declared child output name, replaces ``$steps.{inner_step_name}.{out_name}`` with
+    the corresponding inlined selector string. Bare ``$steps.{inner_step_name}`` (no property,
+    not already ``...__``) becomes ``$steps.{first_inlined_step_name}`` so control-flow lists
+    still target a concrete step after the block is removed.
+
+    Non-string leaves are returned unchanged. Dict keys are not passed through ``fn``.
+    """
     if isinstance(obj, dict):
         return {
             k: _replace_inner_step_control_and_output_refs_in_object(
@@ -357,6 +394,21 @@ def _expand_leaf_inner_at_index(
     available_blocks: Any,
     profiler: Optional[WorkflowsProfiler],
 ) -> None:
+    """Inline one leaf ``inner_workflow`` step into the parent ``workflow`` (mutates in place).
+
+    The step at ``workflow["steps"][step_index]`` must be a nested workflow whose own ``steps``
+    contain **no** further ``inner_workflow`` blocks (callers recurse first).
+
+    Parses and validates the child definition, renames child steps to unique parent names,
+    rewrites all string leaves in cloned child steps (inputs and ``$steps`` references), builds
+    a map from child output names to rewritten selectors, patches the entire parent workflow so
+    ``$steps.<inner_name>`` references target real steps, then replaces the composite step with
+    the inlined step list.
+
+    Raises:
+        InnerWorkflowInvalidStepEntryError: Invalid step shape, bindings, empty child steps, or
+            a child output selector that does not rewrite to a string.
+    """
     steps = workflow.get("steps")
 
     inner_step = steps[step_index]
@@ -460,7 +512,7 @@ def _expand_leaf_inner_at_index(
             bindings=bindings,
             input_defaults=inner_input_defaults,
         )
-                        
+
         if not isinstance(rewritten, str):
             raise InnerWorkflowInvalidStepEntryError(
                 f"inner_workflow `{inner_name}` child output `{inner_output_name}` selector must rewrite "
@@ -486,6 +538,17 @@ def _expand_leaf_inner_at_index(
 
 
 def _inline_one_inner_workflow_leaf(workflow: Dict[str, Any], *, available_blocks, profiler) -> bool:
+    """Find the first ``inner_workflow`` step in ``workflow`` and inline one nested layer.
+
+    If that step's nested ``steps`` still contain an ``inner_workflow``, recurses into the
+    nested definition until a leaf inner is found and expanded in the **parent** ``workflow``,
+    then returns ``True``. If there is no ``inner_workflow`` step at this level, returns ``False``.
+
+    Mutates ``workflow`` when a leaf inner is expanded.
+
+    Raises:
+        InnerWorkflowInvalidStepEntryError: Invalid ``steps`` list or inner workflow shape.
+    """
     steps = workflow.get("steps")
 
     if not isinstance(steps, list):
@@ -541,10 +604,21 @@ def inline_inner_workflow_steps(
     available_blocks: Any,
     profiler: Optional[WorkflowsProfiler] = None,
 ) -> Dict[str, Any]:
-    """
-    Return a copy of ``workflow_definition`` with all ``inner_workflow`` steps expanded.
+    """Return a deep copy of ``workflow_definition`` with every ``inner_workflow`` step inlined.
 
-    Composition and reference normalization must already be applied to the input.
+    Repeatedly expands innermost nested workflows until no ``roboflow_core/inner_workflow@v1``
+    steps remain at any depth. The original dict is not modified.
+
+    Args:
+        workflow_definition: Parsed workflow JSON (root ``steps`` list).
+        available_blocks: Block registry passed to the child workflow parser.
+        profiler: Optional compiler profiler.
+
+    Raises:
+        InnerWorkflowInliningStructureError: If inlining cannot make progress (unexpected graph).
+
+    Note:
+        Composition and reference normalization must already be applied to the input.
     """
     root = copy.deepcopy(workflow_definition)
     while _contains_inner_workflow_step(root.get("steps")):
