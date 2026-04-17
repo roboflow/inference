@@ -269,7 +269,7 @@ class RFDetrForInstanceSegmentationTRT(
         self,
         model_results: Tuple[torch.Tensor, torch.Tensor, torch.Tensor],
         pre_processing_meta: List[PreProcessingMetadata],
-        confidence: Confidence = "best",
+        confidence: Confidence = "default",
         **kwargs,
     ) -> List[InstanceDetections]:
         confidence_filter = ConfidenceFilter(

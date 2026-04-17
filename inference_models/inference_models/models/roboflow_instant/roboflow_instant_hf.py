@@ -133,7 +133,7 @@ class RoboflowInstantHF(ObjectDetectionModel):
         self,
         model_results: List[Tuple[torch.Tensor, torch.Tensor, torch.Tensor]],
         pre_processing_meta: List[ImageDimensions],
-        confidence: Confidence = "best",
+        confidence: Confidence = "default",
         max_detections: int = INFERENCE_MODELS_ROBOFLOW_INSTANT_MAX_DETECTIONS,
         iou_threshold: float = INFERENCE_MODELS_ROBOFLOW_INSTANT_DEFAULT_IOU_THRESHOLD,
         **kwargs,

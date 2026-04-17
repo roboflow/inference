@@ -148,7 +148,7 @@ class ObjectDetectionInferenceRequest(CVInferenceRequest):
         description="If provided, only predictions for the listed classes will be returned",
     )
     confidence: Confidence = Field(
-        default="best",
+        default=0.4,
         examples=[0.5, "best", "default"],
         description=(
             'Confidence threshold. "best" uses model-eval thresholds, '
@@ -251,7 +251,7 @@ class ClassificationInferenceRequest(CVInferenceRequest):
         super().__init__(**kwargs)
 
     confidence: Confidence = Field(
-        default="best",
+        default=0.4,
         examples=[0.5, "best", "default"],
         description=(
             'Confidence threshold. "best" uses model-eval thresholds, '

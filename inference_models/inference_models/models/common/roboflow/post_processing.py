@@ -499,7 +499,7 @@ class ConfidenceFilter:
     def __init__(
         self,
         *,
-        confidence: Confidence = "best",
+        confidence: Confidence = "default",
         recommended_parameters: Optional[RecommendedParameters] = None,
         default_confidence: float = INFERENCE_MODELS_DEFAULT_CONFIDENCE,
     ):
