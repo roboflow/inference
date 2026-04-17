@@ -366,14 +366,13 @@ def parse_model_package_metadata(
         return None
     try:
         return MODEL_PACKAGE_PARSERS[manifest_type](metadata, proxy_url_builder)
-    except BaseInferenceModelsError as error:
-        raise error
     except Exception as error:
-        raise ModelMetadataConsistencyError(
-            message="Roboflow API returned model package metadata which cannot be parsed. Contact Roboflow to "
-            f"solve the problem. Error details: {error}. Error type: {error.__class__.__name__}",
-            help_url="https://inference-models.roboflow.com/errors/model-retrieval/#modelmetadataconsistencyerror",
-        ) from error
+        LOGGER.warning(
+            f"Roboflow API returned model package with manifest of type `{manifest_type}` which cannot be parsed. "
+            f"Silently skipping this package in favour of system stability, but Roboflow support should be contacted "
+            f"to validate the issue. Error type: {type(error)}. Model Package ID: \n{metadata.package_id}."
+        )
+        return None
 
 
 class OnnxModelPackageV1(BaseModel):
