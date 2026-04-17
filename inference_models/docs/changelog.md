@@ -1,5 +1,16 @@
 # Changelog
 
+## `0.25.0`
+
+### Added
+
+- `post_process(...)` on object detection, instance segmentation, keypoint detection, classification, and semantic 
+segmentation models now accepts `confidence` as `"best"` (use per-class or global thresholds from 
+`RecommendedParameters` when available), `"default"` (model's built-in default), or a float override. Shared NMS 
+helpers accept a per-class `torch.Tensor` for single-pass per-class filtering.
+
+---
+
 ## `0.24.4`
 
 ### Changed
