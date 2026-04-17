@@ -1,12 +1,11 @@
 from typing import Annotated, Any, ClassVar, List, Literal, Optional, Union
 from uuid import uuid4
 
-from annotated_types import Ge, Le
 from pydantic import BaseModel, ConfigDict, Field, validator
 
 from inference.core.entities.common import ApiKey, ModelID, ModelType
 
-Confidence = Union[Annotated[float, Ge(0), Le(1)], Literal["best", "default"]]
+Confidence = Union[Annotated[float, Field(ge=0, le=1)], Literal["best", "default"]]
 
 
 class BaseRequest(BaseModel):
