@@ -1,11 +1,10 @@
-from typing import Annotated, Any, ClassVar, List, Literal, Optional, Union
+from typing import Any, ClassVar, List, Optional, Union
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, validator
 
 from inference.core.entities.common import ApiKey, ModelID, ModelType
-
-Confidence = Union[Annotated[float, Field(ge=0, le=1)], Literal["best", "default"]]
+from inference_sdk.http.entities import Confidence
 
 
 class BaseRequest(BaseModel):
