@@ -387,8 +387,12 @@ async def infer(request: Request) -> Response:
     if not api_key:
         return Response(status_code=400, content=b"api_key query param required")
 
+    import time as _t
+    _t0 = _t.monotonic()
+
     # 1. Ensure model is loaded (instant on warm path)
     status = await _ensure_loaded(model_id, instance, api_key, device)
+    _t1 = _t.monotonic()
     if status[0] == "load_timeout":
         return Response(
             status_code=503,
@@ -409,6 +413,7 @@ async def infer(request: Request) -> Response:
         )
     except RuntimeError as exc:
         return Response(status_code=503, content=str(exc).encode())
+    _t2 = _t.monotonic()
 
     # 3. Stream body into SHM  4. Submit  5. Read result
     # Slot is always freed in finally — even on early return paths above
@@ -425,8 +430,20 @@ async def infer(request: Request) -> Response:
 
         if pos == 0:
             return Response(status_code=400, content=b"empty body")
+        _t3 = _t.monotonic()
 
         result = await _submit_and_wait(slot_id, model_id, instance, pos, params)
+        _t4 = _t.monotonic()
+
+        print(
+            f"[TIMING] ensure={(_t1-_t0)*1000:.1f}ms "
+            f"alloc={(_t2-_t1)*1000:.1f}ms "
+            f"stream={(_t3-_t2)*1000:.1f}ms "
+            f"infer={(_t4-_t3)*1000:.1f}ms "
+            f"total={(_t4-_t0)*1000:.1f}ms "
+            f"body={pos}B",
+            flush=True,
+        )
 
         if result[0] == "error":
             return Response(status_code=500, content=b"inference failed")

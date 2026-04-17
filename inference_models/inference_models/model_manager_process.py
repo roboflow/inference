@@ -244,6 +244,7 @@ class ModelManagerProcess:
         evict_check_interval_s: float = 5.0,
         monitor_interval_s:     float = 5.0,
         manager: Optional[Any]        = None,
+        decoder: str                  = "imagecodecs",
     ) -> None:
         """
         Args:
@@ -252,10 +253,13 @@ class ModelManagerProcess:
                 are marked loaded immediately without a real model, so
                 T_ENSURE_LOADED waiters get T_MODEL_READY but T_SUBMIT returns
                 T_ERROR (no backend).  Useful for tests and hot-path benchmarks.
+            decoder: Image decoder for SubprocessBackend workers.
+                ``"imagecodecs"`` (default, CPU) or ``"nvjpeg"`` (GPU).
         """
         self._n_slots               = n_slots
         self._input_mb              = input_mb
         self._result_mb             = result_mb
+        self._decoder               = decoder
         self._stale_reap_interval_s = stale_reap_interval_s
         self._stale_slot_max_age_s  = stale_slot_max_age_s
         self._evict_threshold       = evict_threshold
@@ -843,6 +847,7 @@ class ModelManagerProcess:
                         n_slots=self._n_slots,
                         input_mb=self._input_mb,
                         result_mb=self._result_mb,
+                        decoder=self._decoder,
                     ),
                 )
                 backend = self._manager.get_backend(model_id)
