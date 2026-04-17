@@ -27,6 +27,8 @@ Environment variables::
     INFERENCE_INPUT_MB      Bytes per slot input area, MB (default: 25.0)
     INFERENCE_RESULT_MB     Bytes per slot result area, MB (default: 4.0)
 
+    INFERENCE_DECODER       Image decoder for worker subprocesses.
+                            "imagecodecs" (default, CPU) or "nvjpeg" (GPU decode).
     NVIDIA_MPS              Set to "1" to start NVIDIA MPS before launching.
                             MPS daemon is guaranteed to be stopped on exit
                             (even on crash / SIGKILL of this process — via atexit
@@ -105,6 +107,7 @@ def main() -> None:
     n_slots   = int(os.environ.get("INFERENCE_N_SLOTS",   "256"))
     input_mb  = float(os.environ.get("INFERENCE_INPUT_MB",  "25.0"))
     result_mb = float(os.environ.get("INFERENCE_RESULT_MB",  "4.0"))
+    decoder   = os.environ.get("INFERENCE_DECODER", "imagecodecs")
 
     # ── HTTP / TLS config ──────────────────────────────────────────────────
     host      = os.environ.get("HOST",        "0.0.0.0")
@@ -127,6 +130,7 @@ def main() -> None:
         n_slots=n_slots,
         input_mb=input_mb,
         result_mb=result_mb,
+        decoder=decoder,
     )
     logger.info("MMP ready: addr=%s  shm=%s", handle.mmp_addr, handle.shm_name)
 
