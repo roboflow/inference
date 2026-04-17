@@ -128,9 +128,11 @@ def compile_workflow_graph(
             dynamic_blocks_definitions=dynamic_blocks_definitions
         )
         return cached_value
-    raw_workflow_definition: Dict[str, Any] = normalize_inner_workflow_references_in_definition(
-        workflow_definition=workflow_definition,
-        init_parameters=init_parameters,
+    raw_workflow_definition: Dict[str, Any] = (
+        normalize_inner_workflow_references_in_definition(
+            workflow_definition=workflow_definition,
+            init_parameters=init_parameters,
+        )
     )
     statically_defined_blocks = load_workflow_blocks(
         execution_engine_version=execution_engine_version,
@@ -147,7 +149,9 @@ def compile_workflow_graph(
         api_key=init_parameters.get("workflows_core.api_key", None),
     )
     available_blocks = statically_defined_blocks + dynamic_blocks
-    validate_inner_workflow_composition_from_raw_workflow_definition(raw_workflow_definition)
+    validate_inner_workflow_composition_from_raw_workflow_definition(
+        raw_workflow_definition
+    )
     inlined_raw_workflow_definition: Dict[str, Any] = inline_inner_workflow_steps(
         raw_workflow_definition,
         available_blocks=available_blocks,

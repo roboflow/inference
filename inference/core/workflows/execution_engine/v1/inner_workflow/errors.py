@@ -61,16 +61,24 @@ class InnerWorkflowParameterBindingsError(WorkflowCompilerError):
     ) -> None:
         super().__init__(
             public_message,
-            context if context is not None else _INNER_WORKFLOW_PARAMETER_BINDINGS_CONTEXT,
+            (
+                context
+                if context is not None
+                else _INNER_WORKFLOW_PARAMETER_BINDINGS_CONTEXT
+            ),
             inner_error,
         )
 
 
-class InnerWorkflowParameterBindingsUnknownInputError(InnerWorkflowParameterBindingsError):
+class InnerWorkflowParameterBindingsUnknownInputError(
+    InnerWorkflowParameterBindingsError
+):
     """Raised when ``parameter_bindings`` keys are not declared child workflow inputs."""
 
 
-class InnerWorkflowParameterBindingsMissingRequiredError(InnerWorkflowParameterBindingsError):
+class InnerWorkflowParameterBindingsMissingRequiredError(
+    InnerWorkflowParameterBindingsError
+):
     """Raised when required child workflow inputs have no ``parameter_bindings`` entry."""
 
 
@@ -85,6 +93,10 @@ class InnerWorkflowRunNotSupportedError(WorkflowExecutionEngineError):
     ) -> None:
         super().__init__(
             public_message,
-            context if context is not None else _INNER_WORKFLOW_RUN_NOT_SUPPORTED_CONTEXT,
+            (
+                context
+                if context is not None
+                else _INNER_WORKFLOW_RUN_NOT_SUPPORTED_CONTEXT
+            ),
             inner_error,
         )

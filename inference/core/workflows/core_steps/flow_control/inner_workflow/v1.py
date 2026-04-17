@@ -3,12 +3,12 @@ from typing import Any, Dict, List, Literal, Optional, Type
 from pydantic import ConfigDict, Field, model_validator
 
 from inference.core.workflows.execution_engine.entities.base import OutputDefinition
-from inference.core.workflows.execution_engine.v1.inner_workflow.errors import (
-    InnerWorkflowRunNotSupportedError,
-)
 from inference.core.workflows.execution_engine.entities.types import (
     WILDCARD_KIND,
     Selector,
+)
+from inference.core.workflows.execution_engine.v1.inner_workflow.errors import (
+    InnerWorkflowRunNotSupportedError,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -92,9 +92,10 @@ class BlockManifest(WorkflowBlockManifest):
 
     @model_validator(mode="after")
     def validate_workflow_or_reference(self) -> "BlockManifest":
-        has_inline = isinstance(self.workflow_definition, dict) and len(
-            self.workflow_definition
-        ) > 0
+        has_inline = (
+            isinstance(self.workflow_definition, dict)
+            and len(self.workflow_definition) > 0
+        )
 
         workspace_id = (self.workflow_workspace_id or "").strip()
         workflow_id = (self.workflow_id or "").strip()

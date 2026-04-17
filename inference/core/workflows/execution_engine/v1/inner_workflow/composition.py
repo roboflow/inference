@@ -66,7 +66,9 @@ def assert_composition_acyclic(graph: nx.DiGraph) -> None:
 
     cycle_edges = nx.find_cycle(graph)
     last_edge_end_node = cycle_edges[-1][1]
-    cycle_nodes = [edge_start_node for edge_start_node, _ in cycle_edges] + [last_edge_end_node]
+    cycle_nodes = [edge_start_node for edge_start_node, _ in cycle_edges] + [
+        last_edge_end_node
+    ]
 
     raise InnerWorkflowCompositionCycleError(
         "Inner workflow composition graph contains a cycle. "

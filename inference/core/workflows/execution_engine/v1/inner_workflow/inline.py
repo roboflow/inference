@@ -26,7 +26,6 @@ from inference.core.workflows.execution_engine.v1.inner_workflow.errors import (
     InnerWorkflowInvalidStepEntryError,
 )
 
-
 # Requires format: $inputs.<name>
 #
 # Examples:
@@ -487,13 +486,18 @@ def _expand_leaf_inner_at_index(
 
     inner_output_name_to_selector: Dict[str, str] = {}
     for inner_output in inner.get("outputs") or []:
-        if not isinstance(inner_output, dict) or inner_output.get("type") != "JsonField":
+        if (
+            not isinstance(inner_output, dict)
+            or inner_output.get("type") != "JsonField"
+        ):
             # Here we continue as a output definition can hold None values.
             continue
 
         inner_output_name = inner_output.get("name")
         inner_output_selector = inner_output.get("selector")
-        if not isinstance(inner_output_name, str) or not isinstance(inner_output_selector, str):
+        if not isinstance(inner_output_name, str) or not isinstance(
+            inner_output_selector, str
+        ):
             raise InnerWorkflowInvalidStepEntryError(
                 f"inner_workflow `{inner_name}` child output `{inner_output_name}` selector must be a string, got "
                 f"{type(inner_output_selector).__name__}."
@@ -530,7 +534,9 @@ def _expand_leaf_inner_at_index(
     workflow["steps"] = new_steps
 
 
-def _inline_one_inner_workflow_leaf(workflow: Dict[str, Any], *, available_blocks, profiler) -> bool:
+def _inline_one_inner_workflow_leaf(
+    workflow: Dict[str, Any], *, available_blocks, profiler
+) -> bool:
     """Find the first ``inner_workflow`` step in ``workflow`` and inline one nested layer.
 
     If that step's nested ``steps`` still contain an ``inner_workflow``, recurses into the
@@ -575,7 +581,9 @@ def _inline_one_inner_workflow_leaf(workflow: Dict[str, Any], *, available_block
             )
 
         if _contains_inner_workflow_step(inner_steps):
-            if _inline_one_inner_workflow_leaf(inner, available_blocks=available_blocks, profiler=profiler):
+            if _inline_one_inner_workflow_leaf(
+                inner, available_blocks=available_blocks, profiler=profiler
+            ):
                 return True
 
             continue
@@ -615,7 +623,9 @@ def inline_inner_workflow_steps(
     """
     root = copy.deepcopy(workflow_definition)
     while _contains_inner_workflow_step(root.get("steps")):
-        if not _inline_one_inner_workflow_leaf(root, available_blocks=available_blocks, profiler=profiler):
+        if not _inline_one_inner_workflow_leaf(
+            root, available_blocks=available_blocks, profiler=profiler
+        ):
             raise InnerWorkflowInliningStructureError(
                 public_message=(
                     "Could not inline inner_workflow steps (unexpected nested structure). "

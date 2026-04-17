@@ -11,7 +11,10 @@ import json
 from typing import Any, Dict, List, Set, Tuple
 
 from inference.core.env import WORKFLOWS_MAX_INNER_WORKFLOW_DEPTH
-from inference.core.workflows.execution_engine.entities.base import InputType, WorkflowParameter
+from inference.core.workflows.execution_engine.entities.base import (
+    InputType,
+    WorkflowParameter,
+)
 from inference.core.workflows.execution_engine.v1.compiler.entities import (
     ParsedWorkflowDefinition,
 )
@@ -31,7 +34,9 @@ from inference.core.workflows.execution_engine.v1.inner_workflow.errors import (
 def validate_inner_workflow_composition_from_raw_workflow_definition(
     raw_workflow_definition: Dict[str, Any],
 ) -> None:
-    edges = _collect_composition_edges_from_raw_workflow_definition(raw_workflow_definition)
+    edges = _collect_composition_edges_from_raw_workflow_definition(
+        raw_workflow_definition
+    )
     root_workflow_id = _workflow_identity_fingerprint(raw_workflow_definition)
     validate_inner_workflow_composition(
         containment_edges=edges,
@@ -72,9 +77,9 @@ def validate_parameter_bindings_against_child(
 
 def _workflow_identity_fingerprint(raw_workflow_definition: Dict[str, Any]) -> str:
     """Stable opaque id for composition graph nodes."""
-    payload = json.dumps(raw_workflow_definition, sort_keys=True, separators=(",", ":")).encode(
-        "utf-8"
-    )
+    payload = json.dumps(
+        raw_workflow_definition, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")
     return hashlib.sha256(payload).hexdigest()
 
 
