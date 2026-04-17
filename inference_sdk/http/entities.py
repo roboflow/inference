@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 
 import numpy as np
 from dataclasses_json import DataClassJsonMixin
@@ -14,6 +14,7 @@ from inference_sdk.http.errors import ModelTaskTypeNotSupportedError
 from inference_sdk.http.utils.iterables import remove_empty_values
 
 ImagesReference = Union[np.ndarray, Image.Image, str]
+Confidence = Union[float, Literal["best", "default"]]
 
 DEFAULT_IMAGE_EXTENSIONS = ["jpg", "jpeg", "JPG", "JPEG", "png", "PNG"]
 
@@ -112,7 +113,7 @@ class InferenceConfiguration:
         stroke_width: The stroke width for the inference.
     """
 
-    confidence_threshold: Optional[float] = None
+    confidence_threshold: Optional[Confidence] = None
     keypoint_confidence_threshold: Optional[float] = None
     format: Optional[str] = None
     mask_decode_mode: Optional[str] = None
