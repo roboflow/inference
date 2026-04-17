@@ -346,13 +346,13 @@ class VITForMultiLabelClassificationHF(
             recommended_parameters=self.recommended_parameters,
             default_confidence=INFERENCE_MODELS_VIT_CLASSIFIER_DEFAULT_CONFIDENCE,
         )
-        thresholds = confidence_filter.per_class_thresholds(self.class_names).to(
-            dtype=model_results.dtype, device=model_results.device,
-        )
+        threshold = confidence_filter.get_threshold(self.class_names)
+        if isinstance(threshold, torch.Tensor):
+            threshold = threshold.to(dtype=model_results.dtype, device=model_results.device)
         results = []
         for batch_element_confidence in model_results:
             predicted_classes = torch.argwhere(
-                batch_element_confidence >= thresholds
+                batch_element_confidence >= threshold
             ).squeeze(dim=-1)
             results.append(
                 MultiLabelClassificationPrediction(

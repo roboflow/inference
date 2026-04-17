@@ -237,7 +237,7 @@ class YOLOACTForInstanceSegmentationOnnx(
             recommended_parameters=self.recommended_parameters,
             default_confidence=INFERENCE_MODELS_YOLACT_DEFAULT_CONFIDENCE,
         )
-        confidence = confidence_filter.per_class_thresholds(self.class_names)
+        confidence = confidence_filter.get_threshold(self.class_names)
         all_loc_data, all_conf_data, all_mask_data, all_prior_data, all_proto_data = (
             model_results
         )

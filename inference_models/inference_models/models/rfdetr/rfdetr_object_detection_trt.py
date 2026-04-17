@@ -278,9 +278,9 @@ class RFDetrForObjectDetectionTRT(
                 result_element.record_stream(self._post_process_stream)
             bboxes, logits = model_results
             logits_sigmoid = torch.nn.functional.sigmoid(logits)
-            thresholds = confidence_filter.per_class_thresholds(self.class_names).to(
-                dtype=logits_sigmoid.dtype, device=logits_sigmoid.device,
-            )
+            threshold = confidence_filter.get_threshold(self.class_names)
+            if isinstance(threshold, torch.Tensor):
+                threshold = threshold.to(dtype=logits_sigmoid.dtype, device=logits_sigmoid.device)
             results = []
             for image_bboxes, image_logits, image_meta in zip(
                 bboxes, logits_sigmoid, pre_processing_meta
@@ -301,7 +301,7 @@ class RFDetrForObjectDetectionTRT(
                     predicted_confidence = predicted_confidence[named]
                     top_classes = top_classes[named]
                     image_bboxes = image_bboxes[named]
-                confidence_mask = predicted_confidence > thresholds[top_classes.long()]
+                confidence_mask = predicted_confidence > (threshold[top_classes.long()] if isinstance(threshold, torch.Tensor) else threshold)
                 predicted_confidence = predicted_confidence[confidence_mask]
                 top_classes = top_classes[confidence_mask]
                 selected_boxes = image_bboxes[confidence_mask]

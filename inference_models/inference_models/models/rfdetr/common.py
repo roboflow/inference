@@ -47,13 +47,15 @@ def post_process_instance_segmentation_results(
     logits: torch.Tensor,
     masks: torch.Tensor,
     pre_processing_meta: List[PreProcessingMetadata],
-    threshold: torch.Tensor,
+    threshold: Union[float, torch.Tensor],
+    num_classes: int,
     classes_re_mapping: Optional[ClassesReMapping],
 ) -> List[InstanceDetections]:
     logits_sigmoid = torch.nn.functional.sigmoid(logits)
     results = []
     device = bboxes.device
-    threshold = threshold.to(device=device, dtype=logits_sigmoid.dtype)
+    if isinstance(threshold, torch.Tensor):
+        threshold = threshold.to(device=device, dtype=logits_sigmoid.dtype)
     for image_bboxes, image_logits, image_masks, image_meta in zip(
         bboxes, logits_sigmoid, masks, pre_processing_meta
     ):
@@ -68,12 +70,12 @@ def post_process_instance_segmentation_results(
             image_masks = image_masks[remapping_mask]
         else:
             # drop DETR no-object rows
-            named = top_classes < threshold.shape[0]
+            named = top_classes < num_classes
             confidence = confidence[named]
             top_classes = top_classes[named]
             image_bboxes = image_bboxes[named]
             image_masks = image_masks[named]
-        confidence_mask = confidence > threshold[top_classes.long()]
+        confidence_mask = confidence > (threshold[top_classes.long()] if isinstance(threshold, torch.Tensor) else threshold)
         confidence = confidence[confidence_mask]
         top_classes = top_classes[confidence_mask]
         selected_boxes = image_bboxes[confidence_mask]

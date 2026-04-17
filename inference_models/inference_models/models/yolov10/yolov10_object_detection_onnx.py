@@ -196,12 +196,12 @@ class YOLOv10ForObjectDetectionOnnx(
             recommended_parameters=self.recommended_parameters,
             default_confidence=INFERENCE_MODELS_YOLOV10_DEFAULT_CONFIDENCE,
         )
-        thresholds = confidence_filter.per_class_thresholds(self.class_names).to(
-            dtype=model_results.dtype, device=model_results.device,
-        )
+        threshold = confidence_filter.get_threshold(self.class_names)
+        if isinstance(threshold, torch.Tensor):
+            threshold = threshold.to(dtype=model_results.dtype, device=model_results.device)
         results = []
         for image_result, metadata in zip(model_results, pre_processing_meta):
-            mask = image_result[:, 4] > thresholds[image_result[:, 5].long()]
+            mask = image_result[:, 4] > threshold[image_result[:, 5].long()]
             filtered = image_result[mask][:max_detections]
             rescaled = rescale_image_detections(
                 image_detections=filtered,
