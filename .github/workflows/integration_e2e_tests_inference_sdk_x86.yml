@@ -93,6 +93,9 @@ jobs:
                       -r requirements/requirements.sdk.webrtc.txt \
                       -r requirements/requirements.test.unit.txt
 
+      - name: 🔁 Overlay inference_models from local source
+        run: pip install --no-deps ./inference_models
+
       - name: 🧪 E2E Tests - WebRTC SDK (real server)
         timeout-minutes: 15
         run: python -m pytest tests/inference_sdk/e2e_tests -m slow -v --timeout=300
