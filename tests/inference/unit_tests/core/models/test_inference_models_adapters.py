@@ -9,23 +9,15 @@ from inference.core.models.inference_models_adapters import (
 from inference_models import MultiLabelClassificationPrediction
 
 
-def test_prepare_multi_label_response_uses_class_ids_for_predicted_classes() -> None:
-    """The model's `post_process` is the source of truth for which classes
-    are "predicted" (it owns the priority chain user → per-class → global
-    → default). The response builder reads `prediction.class_ids` directly
-    rather than re-thresholding the full confidence vector, so per-class
-    refinement makes it through to the API response.
+def test_prepare_multi_label_response_maps_scores_by_class_index() -> None:
+    """Per-class scores come from the full confidence vector, not zip(class_ids, ...).
 
-    The `confidence` field is the FULL per-class score vector — used to
-    populate the per-class scores dict for UI display, but not as a filter.
+    Models attach a thresholded ``class_ids`` list and a full ``confidence`` vector;
+    indices in ``class_ids`` are not aligned with positions in ``confidence``.
     """
     class_names = ["a", "b", "c", "d"]
     confidence = torch.tensor([0.1, 0.2, 0.85, 0.9])
-    # Note: only "c" is in class_ids even though "d" also has a high score.
-    # This simulates the model's per-class filter dropping "d" because its
-    # per-class threshold (e.g. 0.95) wasn't met. The response must respect
-    # that decision and NOT add "d" to predicted_classes.
-    class_ids = torch.tensor([2], dtype=torch.long)
+    class_ids = torch.tensor([2, 3], dtype=torch.long)
     prediction = MultiLabelClassificationPrediction(
         class_ids=class_ids,
         confidence=confidence,
@@ -35,14 +27,13 @@ def test_prepare_multi_label_response_uses_class_ids_for_predicted_classes() -> 
         post_processed_predictions=[prediction],
         image_sizes=[(10, 20)],
         class_names=class_names,
+        confidence_threshold=0.5,
     )
 
     assert len(results) == 1
     r = results[0]
-    # All classes appear in the per-class scores dict regardless of threshold.
     assert r.predictions["a"].confidence == pytest.approx(0.1)
     assert r.predictions["b"].confidence == pytest.approx(0.2)
     assert r.predictions["c"].confidence == pytest.approx(0.85)
     assert r.predictions["d"].confidence == pytest.approx(0.9)
-    # Only the model's filtered class_ids show up in predicted_classes.
-    assert r.predicted_classes == ["c"]
+    assert set(r.predicted_classes) == {"c", "d"}

@@ -1,10 +1,9 @@
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Dict, List, Optional, Set, Tuple, Union
+from typing import List, Optional, Set, Tuple, Union
 
 from packaging.version import Version
-from pydantic import BaseModel, ConfigDict, Field
-from pydantic.alias_generators import to_camel
+from pydantic import BaseModel, Field
 
 from inference_models.models.auto_loaders.entities import BackendType
 
@@ -91,28 +90,6 @@ class TorchScriptPackageDetails:
     torch_vision_version: Optional[Version] = field(default=None)
 
 
-class RecommendedParameters(BaseModel):
-    """
-    Model-level inference parameters derived from model_eval. Field names
-    mirror the inference parameters they recommend (e.g. `confidence` → the
-    `confidence` request parameter). Unknown keys are dropped for forward
-    compat with future eval outputs.
-    """
-
-    model_config = ConfigDict(
-        frozen=True,
-        extra="ignore",
-        populate_by_name=True,
-        alias_generator=to_camel,
-    )
-
-    confidence: Optional[float] = None
-    # Per-class F1-optimal thresholds keyed by class name. Inference uses these
-    # in preference to `confidence` when available, falling back to `confidence`
-    # for any class not present in the map.
-    per_class_confidence: Optional[Dict[str, float]] = None
-
-
 @dataclass(frozen=True)
 class ModelPackageMetadata:
     package_id: str
@@ -131,7 +108,6 @@ class ModelPackageMetadata:
         Union[ServerEnvironmentRequirements, JetsonEnvironmentRequirements]
     ] = field(default=None)
     model_features: Optional[dict] = field(default=None)
-    recommended_parameters: Optional[RecommendedParameters] = field(default=None)
 
     def get_summary(self) -> str:
         return (
@@ -181,4 +157,3 @@ class ModelMetadata:
     task_type: Optional[str] = field(default=None)
     model_variant: Optional[str] = field(default=None)
     model_dependencies: Optional[List[ModelDependency]] = field(default=None)
-    recommended_parameters: Optional[RecommendedParameters] = field(default=None)

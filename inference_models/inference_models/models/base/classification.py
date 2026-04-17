@@ -17,11 +17,6 @@ class ClassificationPrediction:
 
 class ClassificationModel(ABC, Generic[PreprocessedInputs, RawPrediction]):
 
-    # Single-label classification deliberately opts out of recommendedParameters.
-    # Top-1 always wins regardless of confidence, so per-class refinement isn't
-    # a meaningful semantic for this task type. (Multi-label classification opts
-    # in below — that's where per-class thresholds actually filter the result.)
-
     @classmethod
     @abstractmethod
     def from_pretrained(

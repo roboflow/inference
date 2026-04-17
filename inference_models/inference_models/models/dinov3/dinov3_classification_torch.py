@@ -16,7 +16,7 @@ from inference_models.configuration import (
     DEFAULT_DEVICE,
     INFERENCE_MODELS_DINOV3_DEFAULT_CONFIDENCE,
 )
-from inference_models.entities import Confidence, ColorFormat
+from inference_models.entities import ColorFormat
 from inference_models.errors import CorruptedModelPackageError
 from inference_models.models.auto_loaders.entities import PreProcessingOverrides
 from inference_models.models.common.model_packages import get_model_package_contents
@@ -26,11 +26,9 @@ from inference_models.models.common.roboflow.model_packages import (
     parse_class_names_file,
     parse_inference_config,
 )
-from inference_models.models.common.roboflow.post_processing import ConfidenceFilter
 from inference_models.models.common.roboflow.pre_processing import (
     pre_process_network_input,
 )
-from inference_models.weights_providers.entities import RecommendedParameters
 
 
 class DinoV3Model(nn.Module):
@@ -214,7 +212,6 @@ class DinoV3ForMultiLabelClassificationTorch(
         cls,
         model_name_or_path: str,
         device: torch.device = DEFAULT_DEVICE,
-        recommended_parameters: Optional[RecommendedParameters] = None,
         **kwargs,
     ) -> "DinoV3ForMultiLabelClassificationTorch":
         model_package_content = get_model_package_contents(
@@ -291,7 +288,6 @@ class DinoV3ForMultiLabelClassificationTorch(
             inference_config=inference_config,
             class_names=class_names,
             device=device,
-            recommended_parameters=recommended_parameters,
         )
 
     def __init__(
@@ -300,13 +296,11 @@ class DinoV3ForMultiLabelClassificationTorch(
         inference_config: InferenceConfig,
         class_names: List[str],
         device: torch.device,
-        recommended_parameters: Optional[RecommendedParameters] = None,
     ):
         self._model = model
         self._inference_config = inference_config
         self._class_names = class_names
         self._device = device
-        self.recommended_parameters = recommended_parameters
 
     @property
     def class_names(self) -> List[str]:
@@ -335,17 +329,9 @@ class DinoV3ForMultiLabelClassificationTorch(
     def post_process(
         self,
         model_results: torch.Tensor,
-        confidence: Confidence = "default",
+        confidence: float = INFERENCE_MODELS_DINOV3_DEFAULT_CONFIDENCE,
         **kwargs,
     ) -> List[MultiLabelClassificationPrediction]:
-        confidence_filter = ConfidenceFilter(
-            confidence=confidence,
-            recommended_parameters=self.recommended_parameters,
-            default_confidence=INFERENCE_MODELS_DINOV3_DEFAULT_CONFIDENCE,
-        )
-        threshold = confidence_filter.get_threshold(self.class_names)
-        if isinstance(threshold, torch.Tensor):
-            threshold = threshold.to(dtype=model_results.dtype, device=model_results.device)
         if (
             self._inference_config.post_processing
             and self._inference_config.post_processing.fused
@@ -356,7 +342,7 @@ class DinoV3ForMultiLabelClassificationTorch(
         results = []
         for batch_element_confidence in model_results:
             predicted_classes = torch.argwhere(
-                batch_element_confidence >= threshold
+                batch_element_confidence >= confidence
             ).squeeze(dim=-1)
             results.append(
                 MultiLabelClassificationPrediction(

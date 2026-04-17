@@ -17,15 +17,14 @@ from inference_models.errors import (
     RetryError,
     UnauthorizedModelAccessError,
 )
+from inference_models.models.auto_loaders.entities import BackendType
 from inference_models.weights_providers import roboflow as roboflow_module
 from inference_models.weights_providers.entities import (
-    BackendType,
     FileDownloadSpecs,
     JetsonEnvironmentRequirements,
     ModelPackageMetadata,
     ONNXPackageDetails,
     Quantization,
-    RecommendedParameters,
     ServerEnvironmentRequirements,
     TorchScriptPackageDetails,
     TRTPackageDetails,
@@ -1520,186 +1519,6 @@ def test_get_roboflow_model(requests_mock: Mocker) -> None:
     assert result.model_variant == "yolov8-n"
     assert result.task_type == "object-detection"
     assert len(result.model_packages) == 2
-
-
-def test_get_roboflow_model_propagates_recommended_parameters(
-    requests_mock: Mocker,
-) -> None:
-    # The weights provider returns model-level recommendedParameters; the loader must
-    # parse them and surface them on the resulting ModelMetadata so initialize_model
-    # can later forward them to model instances. This is the end-to-end parse path.
-    requests_mock.get(
-        f"{ROBOFLOW_API_HOST}/models/v1/external/weights",
-        json={
-            "modelMetadata": {
-                "type": "external-model-metadata-v1",
-                "modelId": "my-model",
-                "modelArchitecture": "yolov8",
-                "taskType": "object-detection",
-                "modelPackages": [
-                    {
-                        "type": "external-model-package-v1",
-                        "packageId": "my-package-id",
-                        "packageManifest": {
-                            "type": "onnx-model-package-v1",
-                            "backendType": "onnx",
-                            "quantization": "fp32",
-                            "dynamicBatchSize": True,
-                            "opset": 19,
-                        },
-                        "packageFiles": [
-                            {
-                                "fileHandle": "some",
-                                "downloadUrl": "https://link.com",
-                            }
-                        ],
-                    },
-                ],
-                "recommendedParameters": {"confidence": 0.42},
-            }
-        },
-    )
-
-    result = get_roboflow_model(model_id="my-model", api_key="my-api-key")
-
-    assert result.recommended_parameters == RecommendedParameters(confidence=0.42)
-
-
-def test_get_roboflow_model_when_no_recommended_parameters_returns_none(
-    requests_mock: Mocker,
-) -> None:
-    # Models registered before the recommendedParameters field existed (or models
-    # never evaluated) won't have it in the API response. The field must be None,
-    # not missing — callers do `if metadata.recommended_parameters:` style checks.
-    requests_mock.get(
-        f"{ROBOFLOW_API_HOST}/models/v1/external/weights",
-        json={
-            "modelMetadata": {
-                "type": "external-model-metadata-v1",
-                "modelId": "my-model",
-                "modelArchitecture": "yolov8",
-                "taskType": "object-detection",
-                "modelPackages": [
-                    {
-                        "type": "external-model-package-v1",
-                        "packageId": "my-package-id",
-                        "packageManifest": {
-                            "type": "onnx-model-package-v1",
-                            "backendType": "onnx",
-                            "quantization": "fp32",
-                            "dynamicBatchSize": True,
-                            "opset": 19,
-                        },
-                        "packageFiles": [
-                            {
-                                "fileHandle": "some",
-                                "downloadUrl": "https://link.com",
-                            }
-                        ],
-                    },
-                ],
-            }
-        },
-    )
-
-    result = get_roboflow_model(model_id="my-model", api_key="my-api-key")
-
-    assert result.recommended_parameters is None
-
-
-def test_get_roboflow_model_propagates_per_class_confidence(
-    requests_mock: Mocker,
-) -> None:
-    # Per-class thresholds round-trip from camelCase API payload to snake_case
-    # field on the parsed RecommendedParameters. This is the loader's contract with
-    # TheGOAT — keys are class names, values in [0, 1].
-    requests_mock.get(
-        f"{ROBOFLOW_API_HOST}/models/v1/external/weights",
-        json={
-            "modelMetadata": {
-                "type": "external-model-metadata-v1",
-                "modelId": "my-model",
-                "modelArchitecture": "yolov8",
-                "taskType": "object-detection",
-                "modelPackages": [
-                    {
-                        "type": "external-model-package-v1",
-                        "packageId": "my-package-id",
-                        "packageManifest": {
-                            "type": "onnx-model-package-v1",
-                            "backendType": "onnx",
-                            "quantization": "fp32",
-                            "dynamicBatchSize": True,
-                            "opset": 19,
-                        },
-                        "packageFiles": [
-                            {
-                                "fileHandle": "some",
-                                "downloadUrl": "https://link.com",
-                            }
-                        ],
-                    },
-                ],
-                "recommendedParameters": {
-                    "confidence": 0.42,
-                    "perClassConfidence": {"cat": 0.45, "dog": 0.4},
-                },
-            }
-        },
-    )
-
-    result = get_roboflow_model(model_id="my-model", api_key="my-api-key")
-
-    assert result.recommended_parameters == RecommendedParameters(
-        confidence=0.42,
-        per_class_confidence={"cat": 0.45, "dog": 0.4},
-    )
-
-
-def test_get_roboflow_model_drops_unknown_recommended_parameters_keys(
-    requests_mock: Mocker,
-) -> None:
-    # Forward compatibility: if a future model_eval release adds a new field to
-    # recommendedParameters that this version of inference_models doesn't know about,
-    # the unknown field must be silently dropped — the load must not crash.
-    requests_mock.get(
-        f"{ROBOFLOW_API_HOST}/models/v1/external/weights",
-        json={
-            "modelMetadata": {
-                "type": "external-model-metadata-v1",
-                "modelId": "my-model",
-                "modelArchitecture": "yolov8",
-                "taskType": "object-detection",
-                "modelPackages": [
-                    {
-                        "type": "external-model-package-v1",
-                        "packageId": "my-package-id",
-                        "packageManifest": {
-                            "type": "onnx-model-package-v1",
-                            "backendType": "onnx",
-                            "quantization": "fp32",
-                            "dynamicBatchSize": True,
-                            "opset": 19,
-                        },
-                        "packageFiles": [
-                            {
-                                "fileHandle": "some",
-                                "downloadUrl": "https://link.com",
-                            }
-                        ],
-                    },
-                ],
-                "recommendedParameters": {
-                    "confidence": 0.42,
-                    "futureFieldFromNewerModelEval": "anything",
-                },
-            }
-        },
-    )
-
-    result = get_roboflow_model(model_id="my-model", api_key="my-api-key")
-
-    assert result.recommended_parameters == RecommendedParameters(confidence=0.42)
 
 
 @patch.object(roboflow_module, "ROBOFLOW_LICENSE_SERVER", "license.local")
