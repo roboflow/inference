@@ -1,7 +1,11 @@
 """
 Equivalence like ``test_inner_workflow_after_continue_if_with_crop_batch_lineage``,
-but ``roboflow_core/continue_if@v1`` and the ``scalar_only_echo`` stub
-live in the inner workflow while the parent still runs detection, crop, and classification.
+but ``roboflow_core/continue_if@v1`` lives in the inner workflow while the parent still
+runs detection, crop, and classification.
+
+One test keeps ``scalar_only_echo`` in the child after ``continue_if``; another ends the
+child on ``continue_if`` only and runs ``scalar_only_echo`` in the parent, wiring
+``next_steps`` to ``$steps.echo`` so control flow reaches the outer step after inlining.
 """
 
 from unittest import mock
@@ -169,6 +173,58 @@ def _inner_continue_if_then_pick() -> dict:
     }
 
 
+def _inner_continue_if_only_outer_echo_name_matches_parent() -> dict:
+    """
+    Child ends with ``continue_if`` only; ``next_steps`` names the parent's ``echo`` step
+    (present only after inlining next to the expanded inner graph).
+    """
+    return {
+        "version": "1.0",
+        "inputs": [
+            {
+                "type": "WorkflowBatchInput",
+                "name": "classification_predictions",
+                "kind": ["classification_prediction"],
+                "dimensionality": 1,
+            },
+        ],
+        "steps": [
+            {
+                "type": "roboflow_core/continue_if@v1",
+                "name": "continue_if",
+                "condition_statement": {
+                    "type": "StatementGroup",
+                    "statements": [
+                        {
+                            "type": "BinaryStatement",
+                            "left_operand": {
+                                "type": "DynamicOperand",
+                                "operand_name": "predictions",
+                                "operations": [
+                                    {
+                                        "type": "ClassificationPropertyExtract",
+                                        "property_name": "top_class_confidence",
+                                    }
+                                ],
+                            },
+                            "comparator": {"type": "(Number) >="},
+                            "right_operand": {
+                                "type": "StaticOperand",
+                                "value": _CONTINUE_IF_CONFIDENCE_THRESHOLD,
+                            },
+                        }
+                    ],
+                },
+                "evaluation_parameters": {
+                    "predictions": "$inputs.classification_predictions",
+                },
+                "next_steps": ["$steps.echo"],
+            },
+        ],
+        "outputs": [],
+    }
+
+
 def _nested_workflow(inner: dict) -> dict:
     return {
         "version": "1.0",
@@ -212,6 +268,59 @@ def _nested_workflow(inner: dict) -> dict:
                 "type": "JsonField",
                 "name": "from_child",
                 "selector": "$steps.nested_inner_workflow.echo",
+            },
+        ],
+    }
+
+
+def _nested_workflow_continue_if_inner_echo_outer(inner: dict) -> dict:
+    """Like ``_nested_workflow`` but ``scalar_only_echo`` is a sibling step named ``echo``."""
+    return {
+        "version": "1.0",
+        "inputs": [
+            {"type": "WorkflowImage", "name": "image"},
+            {"type": "WorkflowParameter", "name": "crop_label"},
+        ],
+        "steps": [
+            {
+                "type": "roboflow_core/roboflow_object_detection_model@v2",
+                "name": "general_detection",
+                "image": "$inputs.image",
+                "model_id": "yolov8n-640",
+                "class_filter": ["dog"],
+            },
+            {
+                "type": "roboflow_core/dynamic_crop@v1",
+                "name": "cropping",
+                "image": "$inputs.image",
+                "predictions": "$steps.general_detection.predictions",
+            },
+            {
+                "type": "roboflow_core/roboflow_classification_model@v2",
+                "name": "breds_classification",
+                "image": "$steps.cropping.crops",
+                "model_id": "dog-breed/1",
+                "confidence": _CLASSIFICATION_REQUEST_CONFIDENCE_THRESHOLD,
+            },
+            {
+                "type": "roboflow_core/inner_workflow@v1",
+                "name": "nested_inner_workflow",
+                "workflow_definition": inner,
+                "parameter_bindings": {
+                    "classification_predictions": "$steps.breds_classification.predictions",
+                },
+            },
+            {
+                "type": "scalar_only_echo",
+                "name": "echo",
+                "value": "$inputs.crop_label",
+            },
+        ],
+        "outputs": [
+            {
+                "type": "JsonField",
+                "name": "from_child",
+                "selector": "$steps.echo.output",
             },
         ],
     }
@@ -308,6 +417,60 @@ def test_inlined_continue_if_inside_inner_matches_flat_workflow(
         new=infer_mock,
     ):
         nested_engine = execution_engine(model_manager, _nested_workflow(inner))
+        flat_engine = execution_engine(model_manager, _flat_workflow())
+        nested_result = nested_engine.run(
+            runtime_parameters={
+                "image": dogs_image,
+                "crop_label": "passed",
+            },
+        )
+        flat_result = flat_engine.run(
+            runtime_parameters={
+                "image": dogs_image,
+                "crop_label": "passed",
+            },
+        )
+
+    assert infer_mock.call_count == 4
+    for idx in (0, 2):
+        od_mid, od_req = infer_mock.call_args_list[idx].args
+        assert od_mid == "yolov8n-640"
+        assert isinstance(od_req, ObjectDetectionInferenceRequest)
+        od_imgs = od_req.image if isinstance(od_req.image, list) else [od_req.image]
+        assert len(od_imgs) == 1
+
+    for idx in (1, 3):
+        cls_mid, cls_req = infer_mock.call_args_list[idx].args
+        assert cls_mid == "dog-breed/1"
+        assert isinstance(cls_req, ClassificationInferenceRequest)
+        assert cls_req.confidence == _CLASSIFICATION_REQUEST_CONFIDENCE_THRESHOLD
+        cls_imgs = cls_req.image if isinstance(cls_req.image, list) else [cls_req.image]
+        assert len(cls_imgs) == 2
+
+    assert nested_result == flat_result
+    assert len(nested_result) == 1
+    assert nested_result[0]["from_child"] == ["passed", None]
+
+
+def test_inlined_continue_if_last_in_inner_echo_on_outer_matches_flat_workflow(
+    model_manager: ModelManager,
+    dogs_image: np.ndarray,
+) -> None:
+    h, w = dogs_image.shape[:2]
+    infer_mock = mock.MagicMock(
+        side_effect=_infer_from_request_sync_factory(h, w),
+    )
+    inner = _inner_continue_if_only_outer_echo_name_matches_parent()
+
+    with mock.patch.object(ModelManager, "add_model"), mock.patch.object(
+        ModelManager,
+        "infer_from_request_sync",
+        new=infer_mock,
+    ):
+        nested_engine = execution_engine(
+            model_manager,
+            _nested_workflow_continue_if_inner_echo_outer(inner),
+        )
         flat_engine = execution_engine(model_manager, _flat_workflow())
         nested_result = nested_engine.run(
             runtime_parameters={
