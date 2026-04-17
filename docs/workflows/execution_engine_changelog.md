@@ -2,6 +2,37 @@
 
 Below you can find the changelog for Execution Engine.
 
+## Execution Engine `v1.9.0` | inference `v1.2.0`
+
+!!! Note "New feature: nested workflows via compile-time inlining"
+
+    This release adds the **`roboflow_core/inner_workflow@v1`** block so a workflow can embed another
+    workflow definition (inline JSON or resolved from `workflow_workspace_id` / `workflow_id` /
+    optional `workflow_version_id`). Child inputs are wired from the parent with
+    **`parameter_bindings`** (child `inputs[].name` → parent selectors). At compile time the
+    engine **inlines** nested steps into the parent graph; execution uses the same path as ordinary
+    steps (no separate nested runtime).
+
+**What changed**
+
+* **Inner workflow block** — New flow-control block type `roboflow_core/inner_workflow@v1` registered
+  in `roboflow_core`. Parent outputs may reference child workflow JsonField outputs as
+  `$steps.<inner_step_name>.<child_output_name>` until inlining rewrites selectors.
+
+* **Compile pipeline** — Before parsing the root definition, the compiler: (1) **normalizes**
+  references (default: Roboflow API + `workflows_core.api_key`, or custom
+  `workflows_core.inner_workflow_spec_resolver`), (2) **validates composition** (acyclicity, max
+  nesting depth, max inner-workflow count), (3) **inlines** all inner workflow steps into ordinary
+  steps, then continues with parse, workflow specification validation, and execution graph
+  construction.
+
+* **Limits (environment variables)** — `WORKFLOWS_MAX_INNER_WORKFLOW_DEPTH` (default `4`) caps
+  containment depth from the root; `WORKFLOWS_MAX_INNER_WORKFLOW_COUNT` (default `32`) caps the
+  total number of `inner_workflow` steps in the nested definition.
+
+* **Documentation** — See [Inner workflows (nested definitions)](./inner_workflow_design.md) for usage,
+  bindings, limits, and an example.
+
 ## Execution Engine `v1.8.0` | inference `v1.1.1`
 
 !!! Note "Additive change + one breaking change due to bug fix with minimal expected impact"
