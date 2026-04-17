@@ -1,5 +1,13 @@
 # Changelog
 
+## `0.25.1`
+
+### Fixed
+
+- Fix bug in roboflow_instant_hf scalar confidence path, which was missing a Tensor type check before calling .to(device).
+
+---
+
 ## `0.25.0`
 
 ### Added
