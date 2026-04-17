@@ -14,13 +14,25 @@ from inference.core.workflows.execution_engine.v1.inner_workflow.composition imp
 from inference.core.workflows.execution_engine.v1.inner_workflow.errors import (
     InnerWorkflowCompositionCycleError,
     InnerWorkflowCompositionError,
+    InnerWorkflowInliningStructureError,
+    InnerWorkflowInvalidStepEntryError,
     InnerWorkflowNestingDepthError,
+    InnerWorkflowParameterBindingsError,
+    InnerWorkflowParameterBindingsMissingRequiredError,
+    InnerWorkflowParameterBindingsUnknownInputError,
+    InnerWorkflowRunNotSupportedError,
 )
 
 __all__ = [
     "InnerWorkflowCompositionCycleError",
     "InnerWorkflowCompositionError",
+    "InnerWorkflowInliningStructureError",
+    "InnerWorkflowInvalidStepEntryError",
     "InnerWorkflowNestingDepthError",
+    "InnerWorkflowParameterBindingsError",
+    "InnerWorkflowParameterBindingsMissingRequiredError",
+    "InnerWorkflowParameterBindingsUnknownInputError",
+    "InnerWorkflowRunNotSupportedError",
     "assert_composition_acyclic",
     "build_composition_digraph",
     "find_composition_cycles",

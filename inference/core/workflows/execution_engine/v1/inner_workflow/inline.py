@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import copy
 import re
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
 from inference.core.workflows.errors import WorkflowDefinitionError
 from inference.core.workflows.execution_engine.profiling.core import WorkflowsProfiler
@@ -21,16 +21,40 @@ from inference.core.workflows.execution_engine.v1.inner_workflow.compiler_bridge
 from inference.core.workflows.execution_engine.v1.inner_workflow.constants import (
     USE_INNER_WORKFLOW_BLOCK_TYPE,
 )
+from inference.core.workflows.execution_engine.v1.inner_workflow.errors import (
+    InnerWorkflowInliningStructureError,
+    InnerWorkflowInvalidStepEntryError,
+)
 
+
+# Requires format: $inputs.<name>
+#
+# Examples:
+# $inputs.username
+# $inputs.file_1
+# $inputs.var-name
+# $inputs.ABC123
 _INPUT_REF_PATTERN = re.compile(r"^\$inputs\.(?P<name>[A-Za-z0-9_\-]+)$")
 
 
-def _contains_inner_workflow_step(steps: Any) -> bool:
+def _contains_inner_workflow_step(steps: List[Dict[str, Any]]) -> bool:
     if not isinstance(steps, list):
-        return False
+        raise InnerWorkflowInvalidStepEntryError(
+            "Invalid workflow steps definition: must be a list of JSON objects (dicts), got "
+            f"{type(steps).__name__}."
+        )
+
     for step in steps:
-        if isinstance(step, dict) and step.get("type") == USE_INNER_WORKFLOW_BLOCK_TYPE:
-            return True
+        if not isinstance(step, dict):
+            raise InnerWorkflowInvalidStepEntryError(
+                "Invalid workflow step: must be a JSON object (dict), got "
+                f"{type(step).__name__}."
+            )
+
+        if step.get("type") != USE_INNER_WORKFLOW_BLOCK_TYPE:
+            continue
+
+        return True
     return False
 
 
@@ -46,38 +70,59 @@ def _collect_step_names_at_level(steps: Any) -> Set[str]:
     return names
 
 
-def _unique_prefixed_step_name(inner_name: str, child_step_name: str, used: Set[str]) -> str:
-    base = f"{inner_name}__{child_step_name}"
+def _unique_prefixed_step_name(
+    inner_name: str,
+    inner_step_name: str,
+    used: Set[str],
+) -> str:
+    base = f"{inner_name}__{inner_step_name}"
     candidate = base
     suffix = 2
+
     while candidate in used:
         candidate = f"{base}__{suffix}"
         suffix += 1
+
     used.add(candidate)
     return candidate
 
 
 def _defaults_for_unbound_workflow_parameters(
-    child_inputs: Any, bindings: Dict[str, Any]
+    inner_inputs: List[Dict[str, Any]],
+    bindings: Dict[str, Any],
 ) -> Dict[str, Any]:
     """Literal defaults for child WorkflowParameter inputs omitted from ``parameter_bindings``."""
     result: Dict[str, Any] = {}
-    if not isinstance(child_inputs, list):
-        return result
-    for spec in child_inputs:
+
+    if not isinstance(inner_inputs, list):
+        raise InnerWorkflowInvalidStepEntryError(
+            "inner_workflow step `{inner_name}` requires `inputs` list, got "
+            f"{type(inner_inputs).__name__}."
+        )
+
+    for spec in inner_inputs:
         if not isinstance(spec, dict):
-            continue
+            raise InnerWorkflowInvalidStepEntryError(
+                "inner_workflow step `{inner_name}` `inputs` list entry must be a JSON object (dict), got "
+                f"{type(spec).__name__}."
+            )
+
         if spec.get("type") not in {"WorkflowParameter", "InferenceParameter"}:
             continue
+
         name = spec.get("name")
-        if not isinstance(name, str) or name in bindings:
+        if name in bindings:
             continue
+
         if "default_value" not in spec:
             continue
+
         dv = spec.get("default_value")
         if dv is None:
             continue
+
         result[name] = copy.deepcopy(dv)
+
     return result
 
 
@@ -87,30 +132,92 @@ def _replace_inputs_in_string(
     bindings: Dict[str, str],
     input_defaults: Dict[str, Any],
 ) -> str | Any:
-    m = _INPUT_REF_PATTERN.match(s)
-    if m:
-        name = m.group("name")
+    """Resolve ``$inputs.<name>`` placeholders inside a single string leaf.
+
+    If ``s`` is *exactly* ``$inputs.<name>`` (see ``_INPUT_REF_PATTERN``), the result is the
+    bound value from ``bindings`` or a deep copy of ``input_defaults[name]``. That preserves
+    non-string values (selectors, numbers, etc.) for fields that store a whole reference.
+
+    Otherwise, every occurrence of each literal substring ``$inputs.<key>`` is replaced with
+    ``str(bindings[key])``. Keys are applied longest-first so a name like ``image`` does not
+    corrupt a longer token such as ``$inputs.image_size``.
+
+    Examples:
+        >>> _replace_inputs_in_string(
+        ...     "$inputs.threshold",
+        ...     bindings={"threshold": "0.5"},
+        ...     input_defaults={},
+        ... )
+        '0.5'
+
+        >>> _replace_inputs_in_string(
+        ...     "prefix-$inputs.image_size-suffix",
+        ...     bindings={"image_size": "42", "image": "x"},
+        ...     input_defaults={},
+        ... )
+        'prefix-42-suffix'
+
+        >>> _replace_inputs_in_string(
+        ...     "$inputs.flag",
+        ...     bindings={},
+        ...     input_defaults={"flag": {"nested": True}},
+        ... )
+        {'nested': True}
+    """
+    matched = _INPUT_REF_PATTERN.match(s)
+
+    if matched:
+        name = matched.group("name")
         if name in bindings:
             return bindings[name]
         if name in input_defaults:
             return copy.deepcopy(input_defaults[name])
+
     out = s
     for key in sorted(bindings.keys(), key=len, reverse=True):
         out = out.replace(f"$inputs.{key}", str(bindings[key]))
+
     return out
 
 
-def _replace_step_prefixes_in_string(s: str, old_to_new: List[Tuple[str, str]]) -> str:
+def _replace_step_prefixes_in_string(
+    s: str,
+    *,
+    old_to_new: List[Tuple[str, str]],
+) -> str:
     out = s
     for old, new in old_to_new:
         out = out.replace(f"$steps.{old}.", f"$steps.{new}.")
     return out
 
 
-def _replace_bare_child_step_refs_in_string(s: str, step_pairs: List[Tuple[str, str]]) -> str:
-    """
-    Rewrite ``$steps.child_step`` (no property) used e.g. by ``continue_if.next_steps`` inside the
-    child workflow to ``$steps.{inner}__child_step``.
+def _replace_bare_child_step_refs_in_string(
+    s: str,
+    *,
+    step_pairs: List[Tuple[str, str]],
+) -> str:
+    """Rewrite bare child step tokens ``$steps.<child>`` to inlined names ``$steps.<new>``.
+
+    Some fields (for example ``continue_if.next_steps``) reference a step by id only, without a
+    property segment after the step name. Those strings must be rewritten when the child graph
+    is inlined so they point at ``$steps.{inner_step}__{child_step}``.
+
+    Tokens of the form ``$steps.<child>.<output>`` are left to ``_replace_step_prefixes_in_string``
+    and are not matched here: the pattern requires no ``.`` immediately after the step name and
+    skips names already followed by ``__`` (already prefixed).
+
+    Examples:
+        >>> _replace_bare_child_step_refs_in_string(
+        ...     '["$steps.detect"]',
+        ...     step_pairs=[("detect", "inner__detect")],
+        ... )
+        '["$steps.inner__detect"]'
+
+        >>> _replace_bare_child_step_refs_in_string(
+        ...     "$steps.detect.predictions",
+        ...     step_pairs=[("detect", "inner__detect")],
+        ... )
+        '$steps.detect.predictions'
     """
     out = s
     for old, new in sorted(step_pairs, key=lambda p: len(p[0]), reverse=True):
@@ -119,23 +226,77 @@ def _replace_bare_child_step_refs_in_string(s: str, step_pairs: List[Tuple[str, 
     return out
 
 
-def _rewrite_child_scalar(
+def _rewrite_inner_scalar(
     value: Any,
     *,
     step_pairs: List[Tuple[str, str]],
     bindings: Dict[str, str],
     input_defaults: Dict[str, Any],
 ) -> Any:
+    """Rewrite one JSON scalar from the child workflow for inlining under ``inner_step``.
+
+    Non-strings are returned unchanged. For strings, replacements run in order:
+
+    1. ``_replace_inputs_in_string`` — workflow inputs and defaults.
+    2. If that step produced a non-string (whole ``$inputs.*`` reference), it is returned as-is;
+       dotted step references are not applied to non-strings.
+    3. ``_replace_step_prefixes_in_string`` — ``$steps.<child>.`` → ``$steps.<new>.``.
+    4. ``_replace_bare_child_step_refs_in_string`` — bare ``$steps.<child>`` tokens.
+
+    ``step_pairs`` maps each original child step name to its unique name after inlining
+    (typically ``f"{inner_name}__{child_step}"``).
+
+    Examples:
+        >>> _rewrite_inner_scalar(
+        ...     123,
+        ...     step_pairs=[("a", "inner__a")],
+        ...     bindings={},
+        ...     input_defaults={},
+        ... )
+        123
+
+        >>> _rewrite_inner_scalar(
+        ...     "$steps.detect.predictions",
+        ...     step_pairs=[("detect", "inner__detect")],
+        ...     bindings={},
+        ...     input_defaults={},
+        ... )
+        '$steps.inner__detect.predictions'
+
+        >>> _rewrite_inner_scalar(
+        ...     "$inputs.model_id",
+        ...     step_pairs=[],
+        ...     bindings={"model_id": "my-model"},
+        ...     input_defaults={},
+        ... )
+        'my-model'
+    """
     if not isinstance(value, str):
         return value
-    after_inputs = _replace_inputs_in_string(value, bindings=bindings, input_defaults=input_defaults)
+
+    after_inputs = _replace_inputs_in_string(
+        value,
+        bindings=bindings,
+        input_defaults=input_defaults,
+    )
+
     if not isinstance(after_inputs, str):
         return after_inputs
-    dotted = _replace_step_prefixes_in_string(after_inputs, step_pairs)
-    return _replace_bare_child_step_refs_in_string(dotted, step_pairs)
+
+    dotted = _replace_step_prefixes_in_string(
+        after_inputs,
+        old_to_new=step_pairs,
+    )
+
+    out = _replace_bare_child_step_refs_in_string(
+        dotted,
+        step_pairs=step_pairs,
+    )
+
+    return out
 
 
-def _deep_map_leaves(obj: Any, fn) -> Any:
+def _deep_map_leaves(obj: Any, fn: Callable[[Any], Any]) -> Any:
     if isinstance(obj, dict):
         return {k: _deep_map_leaves(v, fn) for k, v in obj.items()}
     if isinstance(obj, list):
@@ -172,10 +333,12 @@ def _replace_inner_step_control_and_output_refs_in_object(
         ]
     if not isinstance(obj, str):
         return obj
+
     s = obj
     for out_name in sorted(output_name_to_selector.keys(), key=len, reverse=True):
         token = f"$steps.{inner_step_name}.{out_name}"
         s = s.replace(token, output_name_to_selector[out_name])
+
     # Control flow may reference the inner step as a whole, e.g. ``next_steps: ["$steps.inner"]``.
     # Inlined steps are named ``{inner}__{child_step}``; route bare references to the first.
     bare = re.compile(
@@ -195,164 +358,184 @@ def _expand_leaf_inner_at_index(
     profiler: Optional[WorkflowsProfiler],
 ) -> None:
     steps = workflow.get("steps")
-    if not isinstance(steps, list) or step_index >= len(steps):
-        return
-    inner_step = steps[step_index]
-    if not isinstance(inner_step, dict) or inner_step.get("type") != USE_INNER_WORKFLOW_BLOCK_TYPE:
-        raise AssertionError("expected inner_workflow step")
-    inner_name = inner_step.get("name")
-    if not isinstance(inner_name, str) or not inner_name:
-        raise WorkflowDefinitionError(
-            public_message="inner_workflow step requires a non-empty string `name`.",
-            context="workflow_compilation | inner_workflow_inlining",
-        )
-    child = inner_step.get("workflow_definition")
-    if not isinstance(child, dict):
-        raise WorkflowDefinitionError(
-            public_message=f"inner_workflow step `{inner_name}` requires `workflow_definition` object.",
-            context="workflow_compilation | inner_workflow_inlining",
-        )
-    bindings_raw = inner_step.get("parameter_bindings") or {}
-    if not isinstance(bindings_raw, dict):
-        raise WorkflowDefinitionError(
-            public_message=f"inner_workflow step `{inner_name}` requires `parameter_bindings` object.",
-            context="workflow_compilation | inner_workflow_inlining",
-        )
-    bindings = {str(k): str(v) for k, v in bindings_raw.items()}
 
-    child_parsed = parse_workflow_definition(
-        raw_workflow_definition=child,
+    inner_step = steps[step_index]
+    inner_name = inner_step.get("name")
+
+    if not isinstance(inner_name, str) or not inner_name:
+        raise InnerWorkflowInvalidStepEntryError(
+            "inner_workflow step requires a non-empty string `name`.",
+        )
+
+    inner = inner_step.get("workflow_definition")
+    raw_bindings = inner_step.get("parameter_bindings") or {}
+
+    if not isinstance(raw_bindings, dict):
+        raise InnerWorkflowInvalidStepEntryError(
+            f"inner_workflow step `{inner_name}` requires `parameter_bindings` object.",
+        )
+
+    inner_parsed = parse_workflow_definition(
+        raw_workflow_definition=inner,
         available_blocks=available_blocks,
         profiler=profiler,
     )
+
+    bindings = {str(k): str(v) for k, v in raw_bindings.items()}
     validate_parameter_bindings_against_child(
         bindings=bindings,
-        child_parsed=child_parsed,
+        child_parsed=inner_parsed,
         step_name=inner_name,
     )
 
-    input_defaults = _defaults_for_unbound_workflow_parameters(
-        child.get("inputs"),
+    inner_input_defaults = _defaults_for_unbound_workflow_parameters(
+        inner.get("inputs"),
         bindings,
     )
 
     used_names = _collect_step_names_at_level(steps)
     used_names.discard(inner_name)
 
-    child_steps = child.get("steps") or []
-    if not isinstance(child_steps, list):
-        raise WorkflowDefinitionError(
-            public_message=f"inner_workflow `{inner_name}` child workflow_definition.steps must be a list.",
-            context="workflow_compilation | inner_workflow_inlining",
-        )
+    inner_steps = inner.get("steps") or []
 
     old_to_new: List[Tuple[str, str]] = []
-    for cs in child_steps:
-        if not isinstance(cs, dict):
-            continue
-        old = cs.get("name")
-        if not isinstance(old, str) or not old:
-            raise WorkflowDefinitionError(
-                public_message="Each step in an inner workflow must have a non-empty string `name`.",
-                context="workflow_compilation | inner_workflow_inlining",
+    for inner_step in inner_steps:
+        if not isinstance(inner_step, dict):
+            raise InnerWorkflowInvalidStepEntryError(
+                "inner_workflow step `{inner_name}` `steps` list entry must be a JSON object (dict), got "
+                f"{type(inner_step).__name__}."
             )
-        new_name = _unique_prefixed_step_name(inner_name, old, used_names)
-        old_to_new.append((old, new_name))
 
-    step_pairs = sorted(old_to_new, key=lambda p: len(p[0]), reverse=True)
+        old_name = inner_step.get("name")
+        if not isinstance(old_name, str) or not old_name:
+            raise InnerWorkflowInvalidStepEntryError(
+                "inner_workflow step `{inner_name}` `steps` list entry must have a non-empty string `name`."
+            )
 
-    def rewrite_leaf(x: Any) -> Any:
-        return _rewrite_child_scalar(
-            x,
-            step_pairs=step_pairs,
+        new_name = _unique_prefixed_step_name(inner_name, old_name, used_names)
+        old_to_new.append((old_name, new_name))
+
+    old_to_new_sorted = sorted(old_to_new, key=lambda p: len(p[0]), reverse=True)
+
+    def rewrite_leaf(leaf: Any) -> Any:
+        return _rewrite_inner_scalar(
+            leaf,
+            step_pairs=old_to_new_sorted,
             bindings=bindings,
-            input_defaults=input_defaults,
+            input_defaults=inner_input_defaults,
         )
 
     inlined_steps: List[Dict[str, Any]] = []
-    for cs in child_steps:
-        if not isinstance(cs, dict):
-            continue
-        old = cs.get("name")
-        if not isinstance(old, str):
-            continue
-        new_name = next(nn for oo, nn in old_to_new if oo == old)
-        cloned = copy.deepcopy(cs)
+    for inner_step in inner_steps:
+        old_name = inner_step.get("name")
+        new_name = next(nname for oname, nname in old_to_new if oname == old_name)
+        cloned = copy.deepcopy(inner_step)
         cloned["name"] = new_name
         inlined_steps.append(_deep_map_leaves(cloned, rewrite_leaf))
 
     if not inlined_steps:
-        raise WorkflowDefinitionError(
-            public_message=f"inner_workflow `{inner_name}` child has no steps to inline.",
-            context="workflow_compilation | inner_workflow_inlining",
+        raise InnerWorkflowInvalidStepEntryError(
+            f"inner_workflow step `{inner_name}` has no steps to inline.",
         )
+
     first_inlined_step_name = str(inlined_steps[0]["name"])
 
-    output_name_to_selector: Dict[str, str] = {}
-    for out in child.get("outputs") or []:
-        if not isinstance(out, dict) or out.get("type") != "JsonField":
+    inner_output_name_to_selector: Dict[str, str] = {}
+    for inner_output in inner.get("outputs") or []:
+        if not isinstance(inner_output, dict) or inner_output.get("type") != "JsonField":
+            # Here we continue as a output definition can hold None values.
             continue
-        oname = out.get("name")
-        sel = out.get("selector")
-        if not isinstance(oname, str) or not isinstance(sel, str):
-            continue
-        rewritten = _rewrite_child_scalar(
-            sel,
-            step_pairs=step_pairs,
-            bindings=bindings,
-            input_defaults=input_defaults,
-        )
-        if not isinstance(rewritten, str):
-            raise WorkflowDefinitionError(
-                public_message=(
-                    f"inner_workflow `{inner_name}` child output `{oname}` selector must rewrite "
-                    f"to a string selector after inlining."
-                ),
-                context="workflow_compilation | inner_workflow_inlining",
+
+        inner_output_name = inner_output.get("name")
+        inner_output_selector = inner_output.get("selector")
+        if not isinstance(inner_output_name, str) or not isinstance(inner_output_selector, str):
+            raise InnerWorkflowInvalidStepEntryError(
+                f"inner_workflow `{inner_name}` child output `{inner_output_name}` selector must be a string, got "
+                f"{type(inner_output_selector).__name__}."
             )
-        output_name_to_selector[oname] = rewritten
+
+        rewritten = _rewrite_inner_scalar(
+            inner_output_selector,
+            step_pairs=old_to_new_sorted,
+            bindings=bindings,
+            input_defaults=inner_input_defaults,
+        )
+                        
+        if not isinstance(rewritten, str):
+            raise InnerWorkflowInvalidStepEntryError(
+                f"inner_workflow `{inner_name}` child output `{inner_output_name}` selector must rewrite "
+                f"to a string selector after inlining, got {type(rewritten).__name__}."
+            )
+
+        inner_output_name_to_selector[inner_output_name] = rewritten
 
     patched_workflow = _replace_inner_step_control_and_output_refs_in_object(
         workflow,
         inner_step_name=inner_name,
-        output_name_to_selector=output_name_to_selector,
+        output_name_to_selector=inner_output_name_to_selector,
         first_inlined_step_name=first_inlined_step_name,
     )
+
     workflow.clear()
     workflow.update(patched_workflow)
 
     steps = workflow.get("steps")
-    assert isinstance(steps, list)
+
     new_steps = steps[:step_index] + inlined_steps + steps[step_index + 1 :]
     workflow["steps"] = new_steps
 
 
 def _inline_one_inner_workflow_leaf(workflow: Dict[str, Any], *, available_blocks, profiler) -> bool:
     steps = workflow.get("steps")
+
     if not isinstance(steps, list):
-        return False
+        raise InnerWorkflowInvalidStepEntryError(
+            "Invalid workflow steps definition: must be a list of JSON objects (dicts), got "
+            f"{type(steps).__name__}."
+        )
+
     for i, step in enumerate(steps):
-        if not isinstance(step, dict) or step.get("type") != USE_INNER_WORKFLOW_BLOCK_TYPE:
+        if not isinstance(step, dict):
+            raise InnerWorkflowInvalidStepEntryError(
+                "Invalid workflow step: must be a JSON object (dict), got "
+                f"{type(step).__name__}."
+            )
+
+        if step.get("type") != USE_INNER_WORKFLOW_BLOCK_TYPE:
             continue
-        child = step.get("workflow_definition")
-        if not isinstance(child, dict):
-            continue
-        child_steps = child.get("steps") or []
-        if _contains_inner_workflow_step(child_steps):
-            if _inline_one_inner_workflow_leaf(child, available_blocks=available_blocks, profiler=profiler):
+
+        inner = step.get("workflow_definition")
+        if not isinstance(inner, dict):
+            raise InnerWorkflowInvalidStepEntryError(
+                "Invalid workflow step: must be a JSON object (dict), got "
+                f"{type(inner).__name__}."
+            )
+
+        inner_steps = inner.get("steps")
+        if not isinstance(inner_steps, list):
+            raise InnerWorkflowInvalidStepEntryError(
+                "inner_workflow step `{inner_name}` requires `steps` list, got "
+                f"{type(inner_steps).__name__}."
+            )
+
+        if _contains_inner_workflow_step(inner_steps):
+            if _inline_one_inner_workflow_leaf(inner, available_blocks=available_blocks, profiler=profiler):
                 return True
+
             continue
+
         _expand_leaf_inner_at_index(
             workflow,
             i,
             available_blocks=available_blocks,
             profiler=profiler,
         )
+
         return True
     return False
 
 
-def fully_inline_inner_workflow_steps(
+def inline_inner_workflow_steps(
     workflow_definition: Dict[str, Any],
     *,
     available_blocks: Any,
@@ -366,11 +549,10 @@ def fully_inline_inner_workflow_steps(
     root = copy.deepcopy(workflow_definition)
     while _contains_inner_workflow_step(root.get("steps")):
         if not _inline_one_inner_workflow_leaf(root, available_blocks=available_blocks, profiler=profiler):
-            raise WorkflowDefinitionError(
+            raise InnerWorkflowInliningStructureError(
                 public_message=(
                     "Could not inline inner_workflow steps (unexpected nested structure). "
                     "Ensure inner workflow composition is valid."
                 ),
-                context="workflow_compilation | inner_workflow_inlining",
             )
     return root

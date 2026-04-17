@@ -19,7 +19,6 @@ from inference.core.workflows.execution_engine.v1.compiler.cache import (
     BasicWorkflowsCache,
 )
 from inference.core.workflows.execution_engine.v1.compiler.entities import (
-    BlockSpecification,
     CompiledWorkflow,
     GraphCompilationResult,
     InputSubstitution,
@@ -48,10 +47,10 @@ from inference.core.workflows.execution_engine.v1.dynamic_blocks.block_assembler
     ensure_dynamic_blocks_allowed,
 )
 from inference.core.workflows.execution_engine.v1.inner_workflow.compiler_bridge import (
-    validate_inner_workflow_composition_from_workflow_dict,
+    validate_inner_workflow_composition_from_raw_workflow_definition,
 )
 from inference.core.workflows.execution_engine.v1.inner_workflow.inline import (
-    fully_inline_inner_workflow_steps,
+    inline_inner_workflow_steps,
 )
 from inference.core.workflows.execution_engine.v1.inner_workflow.reference_resolution import (
     normalize_inner_workflow_references_in_definition,
@@ -129,7 +128,7 @@ def compile_workflow_graph(
             dynamic_blocks_definitions=dynamic_blocks_definitions
         )
         return cached_value
-    workflow_for_compile = normalize_inner_workflow_references_in_definition(
+    raw_workflow_definition: Dict[str, Any] = normalize_inner_workflow_references_in_definition(
         workflow_definition=workflow_definition,
         init_parameters=init_parameters,
     )
@@ -141,21 +140,21 @@ def compile_workflow_graph(
     kinds_serializers = load_kinds_serializers(profiler=profiler)
     kinds_deserializers = load_kinds_deserializers(profiler=profiler)
     dynamic_blocks = compile_dynamic_blocks(
-        dynamic_blocks_definitions=workflow_for_compile.get(
+        dynamic_blocks_definitions=raw_workflow_definition.get(
             "dynamic_blocks_definitions", []
         ),
         profiler=profiler,
         api_key=init_parameters.get("workflows_core.api_key", None),
     )
     available_blocks = statically_defined_blocks + dynamic_blocks
-    validate_inner_workflow_composition_from_workflow_dict(workflow_for_compile)
-    workflow_inlined = fully_inline_inner_workflow_steps(
-        workflow_for_compile,
+    validate_inner_workflow_composition_from_raw_workflow_definition(raw_workflow_definition)
+    inlined_raw_workflow_definition: Dict[str, Any] = inline_inner_workflow_steps(
+        raw_workflow_definition,
         available_blocks=available_blocks,
         profiler=profiler,
     )
     parsed_workflow_definition = parse_workflow_definition(
-        raw_workflow_definition=workflow_inlined,
+        raw_workflow_definition=inlined_raw_workflow_definition,
         available_blocks=available_blocks,
         profiler=profiler,
     )

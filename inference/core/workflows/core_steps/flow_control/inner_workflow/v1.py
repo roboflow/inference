@@ -3,6 +3,9 @@ from typing import Any, Dict, List, Literal, Optional, Type
 from pydantic import ConfigDict, Field, model_validator
 
 from inference.core.workflows.execution_engine.entities.base import OutputDefinition
+from inference.core.workflows.execution_engine.v1.inner_workflow.errors import (
+    InnerWorkflowRunNotSupportedError,
+)
 from inference.core.workflows.execution_engine.entities.types import (
     WILDCARD_KIND,
     Selector,
@@ -92,17 +95,20 @@ class BlockManifest(WorkflowBlockManifest):
         has_inline = isinstance(self.workflow_definition, dict) and len(
             self.workflow_definition
         ) > 0
-        ws = (self.workflow_workspace_id or "").strip()
-        wf = (self.workflow_id or "").strip()
-        has_ref = bool(ws and wf)
+
+        workspace_id = (self.workflow_workspace_id or "").strip()
+        workflow_id = (self.workflow_id or "").strip()
+        has_ref = bool(workspace_id and workflow_id)
 
         if has_inline and has_ref:
             raise ValueError(
                 "Provide either `workflow_definition` or workflow reference fields "
                 "(`workflow_workspace_id` and `workflow_id`), not both."
             )
+
         if has_inline or has_ref:
             return self
+
         raise ValueError(
             "inner_workflow requires a non-empty `workflow_definition` object or both "
             "`workflow_workspace_id` and `workflow_id`."
@@ -129,6 +135,6 @@ class InnerWorkflowBlockV1(WorkflowBlock):
         return BlockManifest
 
     def run(self, *args, **kwargs) -> BlockResult:
-        raise RuntimeError(
+        raise InnerWorkflowRunNotSupportedError(
             "inner_workflow steps are compiled away into ordinary steps; block.run() must not be called."
         )

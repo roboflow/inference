@@ -1,6 +1,5 @@
 import pytest
 
-from inference.core.workflows.errors import WorkflowDefinitionError
 from inference.core.workflows.execution_engine.entities.base import (
     WorkflowImage,
     WorkflowParameter,
@@ -10,6 +9,10 @@ from inference.core.workflows.execution_engine.v1.compiler.entities import (
 )
 from inference.core.workflows.execution_engine.v1.inner_workflow.compiler_bridge import (
     validate_parameter_bindings_against_child,
+)
+from inference.core.workflows.execution_engine.v1.inner_workflow.errors import (
+    InnerWorkflowParameterBindingsMissingRequiredError,
+    InnerWorkflowParameterBindingsUnknownInputError,
 )
 
 
@@ -84,7 +87,7 @@ def test_rejects_unknown_binding_keys() -> None:
             ),
         ],
     )
-    with pytest.raises(WorkflowDefinitionError, match="unknown"):
+    with pytest.raises(InnerWorkflowParameterBindingsUnknownInputError, match="unknown"):
         validate_parameter_bindings_against_child(
             bindings={"only": "$inputs.a", "extra": "$inputs.b"},
             child_parsed=child,
@@ -109,7 +112,10 @@ def test_rejects_missing_required_workflow_parameter() -> None:
             ),
         ],
     )
-    with pytest.raises(WorkflowDefinitionError, match="missing parameter_bindings"):
+    with pytest.raises(
+        InnerWorkflowParameterBindingsMissingRequiredError,
+        match="missing parameter_bindings",
+    ):
         validate_parameter_bindings_against_child(
             bindings={"a": "$inputs.x"},
             child_parsed=child,
@@ -127,7 +133,10 @@ def test_workflow_image_input_always_requires_binding() -> None:
             ),
         ],
     )
-    with pytest.raises(WorkflowDefinitionError, match="missing parameter_bindings"):
+    with pytest.raises(
+        InnerWorkflowParameterBindingsMissingRequiredError,
+        match="missing parameter_bindings",
+    ):
         validate_parameter_bindings_against_child(
             bindings={},
             child_parsed=child,

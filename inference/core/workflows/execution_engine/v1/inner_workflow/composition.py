@@ -17,6 +17,32 @@ from inference.core.workflows.execution_engine.v1.inner_workflow.errors import (
 )
 
 
+def validate_inner_workflow_composition(
+    *,
+    containment_edges: Collection[Tuple[Hashable, Hashable]],
+    root_workflow_id: Hashable,
+    max_nesting_depth: int,
+) -> None:
+    """
+    Validate that the composition graph is acyclic and within max depth from ``root``.
+
+    Args:
+        containment_edges: (parent_workflow_id, child_workflow_id) for each direct
+            inner-workflow reference.
+        root_workflow_id: Identity of the workflow being compiled (opaque string or tuple).
+        max_nesting_depth: Maximum allowed value from :func:`max_nesting_depth_from_root`.
+    """
+    graph = build_composition_digraph(containment_edges)
+    assert_composition_acyclic(graph)
+
+    depth = max_nesting_depth_from_root(graph, root_workflow_id)
+    if depth > max_nesting_depth:
+        raise InnerWorkflowNestingDepthError(
+            f"Inner workflow nesting depth from root {root_workflow_id!r} is {depth}, "
+            f"which exceeds the limit of {max_nesting_depth}."
+        )
+
+
 def build_composition_digraph(
     containment_edges: Iterable[Tuple[Hashable, Hashable]],
 ) -> nx.DiGraph:
@@ -34,16 +60,17 @@ def assert_composition_acyclic(graph: nx.DiGraph) -> None:
     """Raise InnerWorkflowCompositionCycleError if the composition graph is not a DAG."""
     if graph.number_of_nodes() == 0:
         return
+
     if nx.is_directed_acyclic_graph(graph):
         return
-    try:
-        cycle_edges = nx.find_cycle(graph)
-        cycle_nodes = [u for u, _ in cycle_edges] + [cycle_edges[-1][1]]
-    except nx.NetworkXNoCycle:
-        cycle_nodes = []
+
+    cycle_edges = nx.find_cycle(graph)
+    last_edge_end_node = cycle_edges[-1][1]
+    cycle_nodes = [edge_start_node for edge_start_node, _ in cycle_edges] + [last_edge_end_node]
+
     raise InnerWorkflowCompositionCycleError(
         "Inner workflow composition graph contains a cycle. "
-        f"Involved nodes (partial): {cycle_nodes!r}"
+        f"Involved nodes (partial): {cycle_nodes!r}."
     )
 
 
@@ -62,40 +89,18 @@ def max_nesting_depth_from_root(graph: nx.DiGraph, root: Hashable) -> int:
     def depth_from(node: Hashable) -> int:
         if node in memo:
             return memo[node]
+
         successors = list(graph.successors(node))
         if not successors:
             memo[node] = 0
             return 0
-        best = max(1 + depth_from(s) for s in successors)
-        memo[node] = best
-        return best
+
+        depth = max(1 + depth_from(s) for s in successors)
+        memo[node] = depth
+
+        return depth
 
     return depth_from(root)
-
-
-def validate_inner_workflow_composition(
-    *,
-    containment_edges: Collection[Tuple[Hashable, Hashable]],
-    root_workflow_id: Hashable,
-    max_nesting_depth: int,
-) -> None:
-    """
-    Validate that the composition graph is acyclic and within max depth from ``root``.
-
-    Args:
-        containment_edges: (parent_workflow_id, child_workflow_id) for each direct
-            inner-workflow reference.
-        root_workflow_id: Identity of the workflow being compiled (opaque string or tuple).
-        max_nesting_depth: Maximum allowed value from :func:`max_nesting_depth_from_root`.
-    """
-    graph = build_composition_digraph(containment_edges)
-    assert_composition_acyclic(graph)
-    depth = max_nesting_depth_from_root(graph, root_workflow_id)
-    if depth > max_nesting_depth:
-        raise InnerWorkflowNestingDepthError(
-            f"Inner workflow nesting depth from root {root_workflow_id!r} is {depth}, "
-            f"which exceeds the limit of {max_nesting_depth}."
-        )
 
 
 def find_composition_cycles(

@@ -3,7 +3,7 @@ import traceback
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from functools import partial
-from typing import Any, Callable, Dict, List, Optional, Set
+from typing import Any, Callable, Dict, List, Optional
 from uuid import uuid4
 
 import cv2
@@ -244,7 +244,6 @@ def safe_execute_step(
                     workflow=workflow,
                     execution_data_manager=execution_data_manager,
                     profiler=profiler,
-                    step_error_handler=step_error_handler,
                 )
                 logger.debug(
                     f"finished execution of: {step_selector} - {datetime.now().isoformat()}"
@@ -284,7 +283,6 @@ def run_step(
     workflow: CompiledWorkflow,
     execution_data_manager: ExecutionDataManager,
     profiler: WorkflowsProfiler,
-    step_error_handler: Optional[Callable[[str, Exception], None]] = None,
 ) -> None:
     if execution_data_manager.is_step_simd(step_selector=step_selector):
         return run_simd_step(
@@ -292,14 +290,12 @@ def run_step(
             workflow=workflow,
             execution_data_manager=execution_data_manager,
             profiler=profiler,
-            step_error_handler=step_error_handler,
         )
     return run_non_simd_step(
         step_selector=step_selector,
         workflow=workflow,
         execution_data_manager=execution_data_manager,
         profiler=profiler,
-        step_error_handler=step_error_handler,
     )
 
 
@@ -308,7 +304,6 @@ def run_simd_step(
     workflow: CompiledWorkflow,
     execution_data_manager: ExecutionDataManager,
     profiler: Optional[WorkflowsProfiler] = None,
-    step_error_handler: Optional[Callable[[str, Exception], None]] = None,
 ) -> None:
     step_name = get_last_chunk_of_selector(selector=step_selector)
     step_instance = workflow.steps[step_name].step
@@ -427,7 +422,6 @@ def run_non_simd_step(
     workflow: CompiledWorkflow,
     execution_data_manager: ExecutionDataManager,
     profiler: Optional[WorkflowsProfiler] = None,
-    step_error_handler: Optional[Callable[[str, Exception], None]] = None,
 ) -> None:
     with profiler.profile_execution_phase(
         name="step_input_assembly",
