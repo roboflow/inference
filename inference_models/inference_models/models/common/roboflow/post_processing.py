@@ -1,5 +1,4 @@
 from typing import Dict, List, Literal, Optional, Tuple, Union
-from pydantic import TypeAdapter, ValidationError
 
 import torch
 import torchvision
@@ -7,28 +6,12 @@ from torchvision.transforms import functional
 
 from inference_models.configuration import INFERENCE_MODELS_DEFAULT_CONFIDENCE
 from inference_models.entities import Confidence, ImageDimensions
-from inference_models.errors import ModelInputError
 from inference_models.logger import LOGGER
 from inference_models.models.common.roboflow.model_packages import (
     PreProcessingMetadata,
     StaticCropOffset,
 )
 from inference_models.weights_providers.entities import RecommendedParameters
-
-_confidence_validator = TypeAdapter(Confidence)
-
-
-def _validate_confidence(confidence: Confidence) -> Confidence:
-    try:
-        return _confidence_validator.validate_python(confidence)
-    except ValidationError as error:
-        raise ModelInputError(
-            message=(
-                f"Invalid confidence={confidence!r}. Expected a float in "
-                f"[0, 1] or one of 'best', 'default'."
-            ),
-            help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
-        ) from error
 
 
 def run_nms_for_object_detection(
@@ -503,7 +486,6 @@ class ConfidenceFilter:
         recommended_parameters: Optional[RecommendedParameters] = None,
         default_confidence: float = INFERENCE_MODELS_DEFAULT_CONFIDENCE,
     ):
-        confidence = _validate_confidence(confidence)
         self._class_to_threshold_map = self._resolve_class_to_threshold_map(
             confidence, recommended_parameters
         )
