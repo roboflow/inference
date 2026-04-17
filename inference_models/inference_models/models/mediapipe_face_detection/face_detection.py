@@ -188,8 +188,8 @@ class MediaPipeFaceDetector(
             recommended_parameters=self.recommended_parameters,
             default_confidence=INFERENCE_MODELS_MEDIAPIPE_FACE_DETECTOR_DEFAULT_CONFIDENCE,
         )
-        thresholds = confidence_filter.per_class_thresholds(self.class_names)
-        confidence = float(thresholds[0].item())
+        threshold = confidence_filter.get_threshold(self.class_names)
+        confidence = float(threshold[0].item()) if isinstance(threshold, torch.Tensor) else float(threshold)
         final_key_points, final_detections = [], []
         for image_results, image_dimensions in zip(model_results, pre_processing_meta):
             detections_xyxy, detections_class_id, detections_confidence = [], [], []

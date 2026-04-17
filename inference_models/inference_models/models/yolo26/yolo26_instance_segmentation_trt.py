@@ -266,7 +266,7 @@ class YOLO26ForInstanceSegmentationTRT(
             recommended_parameters=self.recommended_parameters,
             default_confidence=INFERENCE_MODELS_YOLO26_DEFAULT_CONFIDENCE,
         )
-        confidence = confidence_filter.per_class_thresholds(self.class_names)
+        confidence = confidence_filter.get_threshold(self.class_names)
         with torch.cuda.stream(self._post_process_stream):
             for result_element in model_results:
                 result_element.record_stream(self._post_process_stream)

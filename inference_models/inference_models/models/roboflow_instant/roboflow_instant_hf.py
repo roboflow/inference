@@ -151,13 +151,13 @@ class RoboflowInstantHF(ObjectDetectionModel):
                 iou_threshold=iou_threshold,
             )
         )
-        thresholds_cpu = confidence_filter.per_class_thresholds(self.class_names)
+        thresholds_cpu = confidence_filter.get_threshold(self.class_names)
         refined = []
         for r in results:
             thresholds = thresholds_cpu.to(
                 dtype=r.confidence.dtype, device=r.confidence.device
             )
-            keep = r.confidence >= thresholds[r.class_id.long()]
+            keep = r.confidence >= (thresholds[r.class_id.long()] if isinstance(thresholds, torch.Tensor) else thresholds)
             refined.append(
                 Detections(
                     xyxy=r.xyxy[keep],

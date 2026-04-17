@@ -187,7 +187,7 @@ class YOLO26ForKeyPointsDetectionTorchScript(
             recommended_parameters=self.recommended_parameters,
             default_confidence=INFERENCE_MODELS_YOLO26_DEFAULT_CONFIDENCE,
         )
-        confidence = confidence_filter.per_class_thresholds(self.class_names)
+        confidence = confidence_filter.get_threshold(self.class_names)
         filtered_results = post_process_nms_fused_model_output(
             output=model_results, conf_thresh=confidence
         )

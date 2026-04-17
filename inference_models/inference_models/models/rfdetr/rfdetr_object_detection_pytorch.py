@@ -421,9 +421,9 @@ class RFDetrForObjectDetectionTorch(
             recommended_parameters=self.recommended_parameters,
             default_confidence=INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE,
         )
-        thresholds = confidence_filter.per_class_thresholds(self.class_names).to(
-            device=self._device,
-        )
+        threshold = confidence_filter.get_threshold(self.class_names)
+        if isinstance(threshold, torch.Tensor):
+            threshold = threshold.to(device=self._device)
         if (
             self._inference_config.network_input.resize_mode
             in RESIZE_MODES_TO_REVERT_PADDING
@@ -492,14 +492,18 @@ class RFDetrForObjectDetectionTorch(
                 scores = scores[remapping_mask]
                 labels = self._classes_re_mapping.class_mapping[labels[remapping_mask]]
                 boxes = boxes[remapping_mask]
-            score_thresholds = thresholds.to(dtype=scores.dtype)
+            score_thresholds = (
+                threshold.to(dtype=scores.dtype)
+                if isinstance(threshold, torch.Tensor)
+                else threshold
+            )
             if self._classes_re_mapping is None:
                 # drop DETR no-object rows
-                named = labels < score_thresholds.shape[0]
+                named = labels < len(self.class_names)
                 scores = scores[named]
                 labels = labels[named]
                 boxes = boxes[named]
-            keep = scores > score_thresholds[labels.long()]
+            keep = scores > (score_thresholds[labels.long()] if isinstance(score_thresholds, torch.Tensor) else score_thresholds)
             scores = scores[keep]
             labels = labels[keep]
             boxes = boxes[keep]

@@ -286,7 +286,8 @@ class RFDetrForInstanceSegmentationTRT(
                 logits=logits,
                 masks=masks,
                 pre_processing_meta=pre_processing_meta,
-                threshold=confidence_filter.per_class_thresholds(self.class_names),
+                threshold=confidence_filter.get_threshold(self.class_names),
+                num_classes=len(self.class_names),
                 classes_re_mapping=self._classes_re_mapping,
             )
         self._post_process_stream.synchronize()

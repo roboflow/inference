@@ -521,10 +521,18 @@ class ConfidenceFilter:
             self._fallback_threshold,
         )
 
-    def per_class_thresholds(self, class_names: List[str]) -> torch.Tensor:
-        """Thresholds aligned to `class_names` (CPU tensor)."""
+    def get_threshold(
+        self, class_names: List[str]
+    ) -> Union[float, torch.Tensor]:
+        """Return the confidence threshold to apply.
+
+        Returns a scalar float when the same threshold applies to all
+        classes (fast path). Returns a 1-D CPU tensor of shape
+        `(len(class_names),)` indexed by class_id when per-class
+        thresholds are in effect.
+        """
         if self._class_to_threshold_map is None:
-            return torch.full((len(class_names),), self._fallback_threshold)
+            return self._fallback_threshold
         return torch.tensor(
             [self._class_to_threshold_map.get(name, self._fallback_threshold) for name in class_names]
         )
@@ -539,6 +547,7 @@ class ConfidenceFilter:
         if (
             recommended_parameters is not None
             and recommended_parameters.confidence is not None
+            and recommended_parameters.per_class_confidence
         ):
             return recommended_parameters.per_class_confidence
         return None

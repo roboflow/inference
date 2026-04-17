@@ -298,11 +298,10 @@ class DeepLabV3PlusForSemanticSegmentationOnnx(
                 ] = image_class_ids
                 image_class_ids = original_size_confidence_class_id_canvas
                 image_confidence = original_size_confidence_canvas
-            thresholds = confidence_filter.per_class_thresholds(self.class_names).to(
-                dtype=image_confidence.dtype,
-                device=image_confidence.device,
-            )
-            below = image_confidence < thresholds[image_class_ids.long()]
+            threshold = confidence_filter.get_threshold(self.class_names)
+            if isinstance(threshold, torch.Tensor):
+                threshold = threshold.to(dtype=image_confidence.dtype, device=image_confidence.device)
+            below = image_confidence < (threshold[image_class_ids.long()] if isinstance(threshold, torch.Tensor) else threshold)
             image_class_ids = image_class_ids.clone()
             image_confidence = image_confidence.clone()
             image_class_ids[below] = self._background_class_id

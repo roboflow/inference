@@ -211,7 +211,7 @@ class YOLOv5ForInstanceSegmentationOnnx(
             recommended_parameters=self.recommended_parameters,
             default_confidence=INFERENCE_MODELS_YOLOV5_DEFAULT_CONFIDENCE,
         )
-        confidence = confidence_filter.per_class_thresholds(self.class_names)
+        confidence = confidence_filter.get_threshold(self.class_names)
         instances, protos = model_results
         nms_results = run_yolov5_nms_for_instance_segmentation(
             output=instances.permute(0, 2, 1),

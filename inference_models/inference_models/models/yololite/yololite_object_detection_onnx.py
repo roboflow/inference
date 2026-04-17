@@ -210,7 +210,7 @@ class YOLOLiteForObjectDetectionOnnx(
             recommended_parameters=self.recommended_parameters,
             default_confidence=INFERENCE_MODELS_YOLOLITE_DEFAULT_CONFIDENCE,
         )
-        confidence = confidence_filter.per_class_thresholds(self.class_names)
+        confidence = confidence_filter.get_threshold(self.class_names)
         # Backward compatibility: earlier model packages have no post_processing config — always unfused 3-tensor output
         if (
             self._inference_config.post_processing

@@ -1,7 +1,7 @@
 """
 Tests for post_processing helpers:
 
-  - ConfidenceFilter: 4-tier priority chain and `per_class_thresholds()`
+  - ConfidenceFilter: 4-tier priority chain and `get_threshold()`
   - NMS helpers: per-class `conf_thresh` tensor path
 """
 
@@ -161,9 +161,7 @@ class TestConfidenceFilter:
             ),
             default_confidence=INFERENCE_MODELS_DEFAULT_CONFIDENCE,
         )
-        assert cf.per_class_thresholds(["cat", "dog"]).tolist() == pytest.approx(
-            [0.7, 0.7]
-        )
+        assert cf.get_threshold(["cat", "dog"]) == pytest.approx(0.7)
 
     def test_explicit_zero_user_value_is_honored(self) -> None:
         cf = ConfidenceFilter(
@@ -171,9 +169,9 @@ class TestConfidenceFilter:
             recommended_parameters=self._rd(confidence=0.42, per_class={"cat": 0.6}),
             default_confidence=INFERENCE_MODELS_DEFAULT_CONFIDENCE,
         )
-        assert cf.per_class_thresholds(["cat"]).tolist() == pytest.approx([0.0])
+        assert cf.get_threshold(["cat"]) == pytest.approx(0.0)
 
-    def test_per_class_thresholds_align_to_class_names(self) -> None:
+    def test_get_threshold_align_to_class_names(self) -> None:
         cf = ConfidenceFilter(
             confidence="best",
             recommended_parameters=self._rd(
@@ -182,7 +180,7 @@ class TestConfidenceFilter:
             default_confidence=INFERENCE_MODELS_DEFAULT_CONFIDENCE,
         )
         torch.testing.assert_close(
-            cf.per_class_thresholds(["cat", "dog", "fish"]),
+            cf.get_threshold(["cat", "dog", "fish"]),
             torch.tensor([0.6, 0.4, 0.5]),
         )
 
@@ -194,7 +192,7 @@ class TestConfidenceFilter:
             ),
             default_confidence=INFERENCE_MODELS_DEFAULT_CONFIDENCE,
         )
-        assert cf.per_class_thresholds(["fish"]).tolist() == pytest.approx([0.5])
+        assert cf.get_threshold(["fish"]).tolist() == pytest.approx([0.5])
 
     def test_unknown_class_falls_back_to_default_when_no_global(self) -> None:
         cf = ConfidenceFilter(
@@ -202,8 +200,8 @@ class TestConfidenceFilter:
             recommended_parameters=self._rd(per_class={"cat": 0.6}),
             default_confidence=INFERENCE_MODELS_DEFAULT_CONFIDENCE,
         )
-        assert cf.per_class_thresholds(["dog"]).tolist() == pytest.approx(
-            [INFERENCE_MODELS_DEFAULT_CONFIDENCE]
+        assert cf.get_threshold(["dog"]) == pytest.approx(
+            INFERENCE_MODELS_DEFAULT_CONFIDENCE
         )
 
     def test_per_class_overrides_global_optimal(self) -> None:
@@ -214,7 +212,7 @@ class TestConfidenceFilter:
             ),
             default_confidence=INFERENCE_MODELS_DEFAULT_CONFIDENCE,
         )
-        assert cf.per_class_thresholds(["cat"]).tolist() == pytest.approx([0.9])
+        assert cf.get_threshold(["cat"]).tolist() == pytest.approx([0.9])
 
     def test_global_optimal_used_when_no_per_class(self) -> None:
         cf = ConfidenceFilter(
@@ -222,7 +220,7 @@ class TestConfidenceFilter:
             recommended_parameters=self._rd(confidence=0.42),
             default_confidence=INFERENCE_MODELS_DEFAULT_CONFIDENCE,
         )
-        assert cf.per_class_thresholds(["any"]).tolist() == pytest.approx([0.42])
+        assert cf.get_threshold(["any"]) == pytest.approx(0.42)
 
     def test_empty_per_class_treated_as_no_per_class(self) -> None:
         cf = ConfidenceFilter(
@@ -230,7 +228,7 @@ class TestConfidenceFilter:
             recommended_parameters=self._rd(confidence=0.42, per_class={}),
             default_confidence=INFERENCE_MODELS_DEFAULT_CONFIDENCE,
         )
-        assert cf.per_class_thresholds(["any"]).tolist() == pytest.approx([0.42])
+        assert cf.get_threshold(["any"]) == pytest.approx(0.42)
 
     def test_default_used_when_no_recommended_parameters(self) -> None:
         cf = ConfidenceFilter(
@@ -238,9 +236,7 @@ class TestConfidenceFilter:
             recommended_parameters=None,
             default_confidence=0.25,
         )
-        assert cf.per_class_thresholds(["a", "b"]).tolist() == pytest.approx(
-            [0.25, 0.25]
-        )
+        assert cf.get_threshold(["a", "b"]) == pytest.approx(0.25)
 
     def test_default_used_when_recommended_parameters_is_all_none(self) -> None:
         cf = ConfidenceFilter(
@@ -248,9 +244,9 @@ class TestConfidenceFilter:
             recommended_parameters=RecommendedParameters(),
             default_confidence=0.25,
         )
-        assert cf.per_class_thresholds(["a"]).tolist() == pytest.approx([0.25])
+        assert cf.get_threshold(["a"]) == pytest.approx(0.25)
 
-    def test_per_class_thresholds_returns_float_tensor(self) -> None:
+    def test_get_threshold_returns_float_tensor(self) -> None:
         cf = ConfidenceFilter(
             confidence="best",
             recommended_parameters=self._rd(
@@ -258,18 +254,18 @@ class TestConfidenceFilter:
             ),
             default_confidence=INFERENCE_MODELS_DEFAULT_CONFIDENCE,
         )
-        result = cf.per_class_thresholds(["cat", "dog", "fish"])
+        result = cf.get_threshold(["cat", "dog", "fish"])
         assert isinstance(result, torch.Tensor)
         assert result.dtype == torch.float32
         assert result.shape == (3,)
 
-    def test_per_class_thresholds_empty_class_names_returns_empty_tensor(self) -> None:
+    def test_get_threshold_scalar_when_no_per_class(self) -> None:
         cf = ConfidenceFilter(
             confidence="best",
             recommended_parameters=None,
             default_confidence=0.5,
         )
-        assert cf.per_class_thresholds([]).shape == (0,)
+        assert cf.get_threshold([]) == pytest.approx(0.5)
 
     def test_default_string_skips_recommended_parameters(self) -> None:
         cf = ConfidenceFilter(
@@ -279,9 +275,7 @@ class TestConfidenceFilter:
             ),
             default_confidence=0.25,
         )
-        assert cf.per_class_thresholds(["cat", "dog"]).tolist() == pytest.approx(
-            [0.25, 0.25]
-        )
+        assert cf.get_threshold(["cat", "dog"]) == pytest.approx(0.25)
 
     def test_rejects_invalid_string(self) -> None:
         with pytest.raises(ModelInputError):

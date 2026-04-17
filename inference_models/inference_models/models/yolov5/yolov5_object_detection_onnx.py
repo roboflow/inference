@@ -200,7 +200,7 @@ class YOLOv5ForObjectDetectionOnnx(
             recommended_parameters=self.recommended_parameters,
             default_confidence=INFERENCE_MODELS_YOLOV5_DEFAULT_CONFIDENCE,
         )
-        confidence = confidence_filter.per_class_thresholds(self.class_names)
+        confidence = confidence_filter.get_threshold(self.class_names)
         nms_results = run_nms_yolov5(
             output=model_results.permute(0, 2, 1),
             conf_thresh=confidence,
