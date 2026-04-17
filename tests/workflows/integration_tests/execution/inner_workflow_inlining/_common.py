@@ -91,3 +91,28 @@ def child_dynamic_crop_from_parent_detections() -> Dict[str, Any]:
             },
         ],
     }
+
+
+def child_detection_only_for_parent_dynamic_crop() -> Dict[str, Any]:
+    """Inner workflow: OD only; parent runs ``dynamic_crop`` on inner detections."""
+    return {
+        "version": "1.0",
+        "inputs": [
+            {"type": "WorkflowImage", "name": "image"},
+        ],
+        "steps": [
+            {
+                "type": "roboflow_core/roboflow_object_detection_model@v2",
+                "name": "general_detection",
+                "image": "$inputs.image",
+                "model_id": "yolov8n-640",
+            },
+        ],
+        "outputs": [
+            {
+                "type": "JsonField",
+                "name": "detection_predictions",
+                "selector": "$steps.general_detection.predictions",
+            },
+        ],
+    }
