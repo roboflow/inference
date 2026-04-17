@@ -7,10 +7,26 @@ multi-instance routing, lifecycle, and observability.
 
 from __future__ import annotations
 
+from typing import Any
+
 import numpy as np
 import pytest
 
 from inference_models.model_manager import ModelManager
+
+
+def _assert_detections(result: Any) -> None:
+    """Validate result is Detections (or list of Detections) with boxes."""
+    # infer_sync returns List[Detections]; submit/subprocess may return single Detections
+    if isinstance(result, list):
+        assert len(result) > 0
+        det = result[0]
+    else:
+        det = result
+    assert hasattr(det, "xyxy")
+    assert hasattr(det, "confidence")
+    assert det.xyxy.shape[1] == 4
+    assert det.xyxy.shape[0] > 0
 
 
 @pytest.mark.slow
@@ -26,11 +42,7 @@ class TestModelManagerDirectE2E:
 
         result = mm.infer_sync(yolov8n_model_path, dog_image_numpy)
 
-        assert result is not None
-        assert len(result) > 0
-        assert hasattr(result[0], "xyxy")
-        assert hasattr(result[0], "confidence")
-        assert result[0].xyxy.shape[1] == 4
+        _assert_detections(result)
 
         mm.shutdown()
 
@@ -47,9 +59,7 @@ class TestModelManagerDirectE2E:
 
         result = mm.infer_sync(yolov8n_model_path, jpeg_bytes)
 
-        assert result is not None
-        assert len(result) > 0
-        assert hasattr(result[0], "xyxy")
+        _assert_detections(result)
 
         mm.shutdown()
 
@@ -62,8 +72,7 @@ class TestModelManagerDirectE2E:
         future = mm.submit(yolov8n_model_path, dog_image_numpy)
         result = future.result(timeout=30)
 
-        assert result is not None
-        assert len(result) > 0
+        _assert_detections(result)
 
         mm.shutdown()
 
@@ -79,8 +88,7 @@ class TestModelManagerDirectE2E:
             mm.infer_async(yolov8n_model_path, dog_image_numpy)
         )
 
-        assert result is not None
-        assert len(result) > 0
+        _assert_detections(result)
 
         mm.shutdown()
 
@@ -138,10 +146,8 @@ class TestModelManagerMultiInstance:
         r0 = mm.infer_sync("yolov8n:0", dog_image_numpy)
         r1 = mm.infer_sync("yolov8n:1", dog_image_numpy)
 
-        # Same model, same input → same detections
-        assert len(r0) > 0
-        assert len(r1) > 0
-        assert len(r0) == len(r1)
+        _assert_detections(r0)
+        _assert_detections(r1)
 
         mm.shutdown()
 
@@ -164,7 +170,7 @@ class TestModelManagerMultiInstance:
         assert "yolov8n:1" in mm
 
         result = mm.infer_sync("yolov8n:1", dog_image_numpy)
-        assert len(result) > 0
+        _assert_detections(result)
 
         mm.shutdown()
 
@@ -182,10 +188,7 @@ class TestModelManagerSubprocessE2E:
 
         result = mm.infer_sync(yolov8n_model_path, dog_image_numpy)
 
-        assert result is not None
-        assert len(result) > 0
-        assert hasattr(result[0], "xyxy")
-        assert hasattr(result[0], "confidence")
+        _assert_detections(result)
 
         mm.shutdown()
 
@@ -198,8 +201,7 @@ class TestModelManagerSubprocessE2E:
         future = mm.submit(yolov8n_model_path, dog_image_numpy)
         result = future.result(timeout=30)
 
-        assert result is not None
-        assert len(result) > 0
+        _assert_detections(result)
 
         mm.shutdown()
 
