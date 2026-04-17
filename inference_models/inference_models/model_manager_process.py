@@ -301,6 +301,8 @@ class ModelManagerProcess:
         Thread-safe: may be called from any thread before or during run().
         """
         self._backends[model_id] = backend
+        if hasattr(backend, "set_on_result_callback"):
+            backend.set_on_result_callback(self.on_result)
         fs = self._models.setdefault(model_id, ModelState())
         fs.loading  = False
         fs.loaded   = True
@@ -836,6 +838,10 @@ class ModelManagerProcess:
                         model_id_or_path=model_id_or_path,
                         backend="subprocess",
                         device=device or None,
+                        shm_pool_name=self._pool.name,
+                        n_slots=self._n_slots,
+                        input_mb=self._input_mb,
+                        result_mb=self._result_mb,
                     ),
                 )
                 backend = self._manager.get_backend(model_id)
