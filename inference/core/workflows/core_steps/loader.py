@@ -277,6 +277,9 @@ from inference.core.workflows.core_steps.models.foundation.seg_preview.v1 import
 from inference.core.workflows.core_steps.models.foundation.segment_anything2.v1 import (
     SegmentAnything2BlockV1,
 )
+from inference.core.workflows.core_steps.models.foundation.segment_anything2_video.v1 import (
+    SegmentAnything2VideoBlockV1,
+)
 from inference.core.workflows.core_steps.models.foundation.segment_anything3.v1 import (
     SegmentAnything3BlockV1,
 )
@@ -285,6 +288,9 @@ from inference.core.workflows.core_steps.models.foundation.segment_anything3.v2 
 )
 from inference.core.workflows.core_steps.models.foundation.segment_anything3.v3 import (
     SegmentAnything3BlockV3,
+)
+from inference.core.workflows.core_steps.models.foundation.segment_anything3_video.v1 import (
+    SegmentAnything3VideoBlockV1,
 )
 
 if SAM3_3D_OBJECTS_ENABLED:
@@ -817,9 +823,11 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         SIFTComparisonBlockV1,
         SIFTComparisonBlockV2,
         SegmentAnything2BlockV1,
+        SegmentAnything2VideoBlockV1,
         SegmentAnything3BlockV1,
         SegmentAnything3BlockV2,
         SegmentAnything3BlockV3,
+        SegmentAnything3VideoBlockV1,
         SegPreviewBlockV1,
         StabilityAIInpaintingBlockV1,
         StabilityAIImageGenBlockV1,
