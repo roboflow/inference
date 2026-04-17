@@ -339,9 +339,9 @@ async def _submit_and_wait(
 
 
 def _free_slot(slot_id: int) -> None:
-    asyncio.create_task(
-        _sock.send_multipart([_T_FREE, struct.pack(">I", slot_id)])
-    )
+    async def _send():
+        await _sock.send_multipart([_T_FREE, struct.pack(">I", slot_id)])
+    asyncio.create_task(_send())
 
 
 def _write_input(slot_id: int, chunk: bytes | memoryview, offset: int) -> None:
