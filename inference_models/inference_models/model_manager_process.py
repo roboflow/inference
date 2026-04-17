@@ -454,7 +454,7 @@ class ModelManagerProcess:
             elif msg_type == T_ALLOC:
                 await self._handle_alloc(identity, data)
             elif msg_type == T_SUBMIT:
-                await self._handle_submit(data)
+                await self._handle_submit(identity, data)
             elif msg_type == T_FREE:
                 self._handle_free(data)
             elif msg_type == T_LOAD:
@@ -550,13 +550,14 @@ class ModelManagerProcess:
     # wire: Q I I H N   req_id(8) slot_id(4) input_sz(4) mid_len(2) flavor(N)
     # ------------------------------------------------------------------
 
-    async def _handle_submit(self, data: list[bytes]) -> None:
+    async def _handle_submit(self, identity: bytes, data: list[bytes]) -> None:
         if not data or len(data[0]) < 18:
             return
         frame = data[0]
         req_id, slot_id, input_sz, mid_len = struct.unpack_from(">QIIH", frame)
         model_id = frame[18: 18 + mid_len].decode(errors="replace")
 
+        self._pending[req_id] = (identity, slot_id, model_id)
         self._pool.mark_written(slot_id, input_sz)
         self._forward_to_backend(model_id, slot_id, req_id)
 
