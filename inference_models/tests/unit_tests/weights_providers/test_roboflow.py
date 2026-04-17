@@ -112,8 +112,10 @@ def test_parse_mediapipe_model_package_when_package_is_invalid() -> None:
     )
 
     # when
-    with pytest.raises(ModelMetadataConsistencyError):
-        _ = parse_model_package_metadata(metadata=metadata)
+    result = parse_model_package_metadata(metadata=metadata)
+
+    # then
+    assert result is None
 
 
 def test_parse_ultralytics_model_package() -> None:
@@ -200,8 +202,10 @@ def test_parse_hf_model_package_model_package_when_invalid_input_provided() -> N
     )
 
     # when
-    with pytest.raises(ModelMetadataConsistencyError):
-        _ = parse_model_package_metadata(metadata=metadata)
+    result = parse_model_package_metadata(metadata=metadata)
+
+    # then
+    assert result is None
 
 
 def test_parse_torch_model_package_when_batch_size_missmatch_present() -> None:
@@ -223,8 +227,10 @@ def test_parse_torch_model_package_when_batch_size_missmatch_present() -> None:
     )
 
     # when
-    with pytest.raises(ModelMetadataConsistencyError):
-        _ = parse_model_package_metadata(metadata=metadata)
+    result = parse_model_package_metadata(metadata=metadata)
+
+    # then
+    assert result is None
 
 
 def test_parse_torch_model_package_when_invalid_manifest_provided() -> None:
@@ -242,8 +248,10 @@ def test_parse_torch_model_package_when_invalid_manifest_provided() -> None:
     )
 
     # when
-    with pytest.raises(ModelMetadataConsistencyError):
-        _ = parse_model_package_metadata(metadata=metadata)
+    result = parse_model_package_metadata(metadata=metadata)
+
+    # then
+    assert result is None
 
 
 @pytest.mark.parametrize(
@@ -278,8 +286,10 @@ def test_parse_torch_model_package_when_invalid_manifest_provided_regarding_batc
     )
 
     # when
-    with pytest.raises(ModelMetadataConsistencyError):
-        _ = parse_model_package_metadata(metadata=metadata)
+    result = parse_model_package_metadata(metadata=metadata)
+
+    # then
+    assert result is None
 
 
 def test_parse_torch_model_package_when_valid_manifest_provided() -> None:
@@ -334,8 +344,10 @@ def test_parse_trt_model_package_when_invalid_manifest_provided() -> None:
         trustedSource=True,
     )
 
-    with pytest.raises(ModelMetadataConsistencyError):
-        _ = parse_model_package_metadata(metadata=metadata)
+    result = parse_model_package_metadata(metadata=metadata)
+
+    # then
+    assert result is None
 
 
 def test_parse_trt_model_package_when_manifest_with_batch_size_missmatch_provided() -> (
@@ -375,8 +387,10 @@ def test_parse_trt_model_package_when_manifest_with_batch_size_missmatch_provide
     )
 
     # when
-    with pytest.raises(ModelMetadataConsistencyError):
-        _ = parse_model_package_metadata(metadata=metadata)
+    result = parse_model_package_metadata(metadata=metadata)
+
+    # then
+    assert result is None
 
 
 def test_parse_trt_model_package_when_manifest_with_dynamic_batch_size_missmatch_provided() -> (
@@ -416,8 +430,10 @@ def test_parse_trt_model_package_when_manifest_with_dynamic_batch_size_missmatch
     )
 
     # when
-    with pytest.raises(ModelMetadataConsistencyError):
-        _ = parse_model_package_metadata(metadata=metadata)
+    result = parse_model_package_metadata(metadata=metadata)
+
+    # then
+    assert result is None
 
 
 def test_parse_trt_model_package_when_manifest_with_environment_specification_missmatch_for_gpu_server() -> (
@@ -460,8 +476,10 @@ def test_parse_trt_model_package_when_manifest_with_environment_specification_mi
     )
 
     # when
-    with pytest.raises(ModelMetadataConsistencyError):
-        _ = parse_model_package_metadata(metadata=metadata)
+    result = parse_model_package_metadata(metadata=metadata)
+
+    # then
+    assert result is None
 
 
 def test_parse_trt_model_package_when_manifest_with_environment_specification_missmatch_for_jetson() -> (
@@ -503,8 +521,10 @@ def test_parse_trt_model_package_when_manifest_with_environment_specification_mi
     )
 
     # when
-    with pytest.raises(ModelMetadataConsistencyError):
-        _ = parse_model_package_metadata(metadata=metadata)
+    result = parse_model_package_metadata(metadata=metadata)
+
+    # then
+    assert result is None
 
 
 def test_parse_trt_model_package_when_manifest_with_jetson_environment_specification() -> (
@@ -674,8 +694,10 @@ def test_parse_onnx_model_package_when_invalid_manifest_provided() -> None:
     )
 
     # when
-    with pytest.raises(ModelMetadataConsistencyError):
-        _ = parse_model_package_metadata(metadata=metadata)
+    result = parse_model_package_metadata(metadata=metadata)
+
+    # then
+    assert result is None
 
 
 def test_parse_onnx_model_package_when_valid_manifest_with_batch_size_missmatch_provided() -> (
@@ -700,8 +722,11 @@ def test_parse_onnx_model_package_when_valid_manifest_with_batch_size_missmatch_
         trustedSource=True,
     )
 
-    with pytest.raises(ModelMetadataConsistencyError):
-        _ = parse_model_package_metadata(metadata=metadata)
+    # when
+    result = parse_model_package_metadata(metadata=metadata)
+
+    # then
+    assert result is None
 
 
 @pytest.mark.parametrize(
@@ -738,8 +763,10 @@ def test_parse_onnx_model_package_when_invalid_manifest_provided_regarding_batch
     )
 
     # when
-    with pytest.raises(ModelMetadataConsistencyError):
-        _ = parse_model_package_metadata(metadata=metadata)
+    result = parse_model_package_metadata(metadata=metadata)
+
+    # then
+    assert result is None
 
 
 def test_parse_onnx_model_package_when_valid_manifest_provided() -> None:
@@ -803,8 +830,10 @@ def test_parse_torch_script_model_package_when_package_is_manifest_invalid() -> 
     )
 
     # when
-    with pytest.raises(ModelMetadataConsistencyError):
-        _ = parse_model_package_metadata(metadata=metadata)
+    result = parse_model_package_metadata(metadata=metadata)
+
+    # then
+    assert result is None
 
 
 @pytest.mark.parametrize(
@@ -842,8 +871,10 @@ def test_parse_torch_script_model_package_when_package_batch_settings_are_invali
     )
 
     # when
-    with pytest.raises(ModelMetadataConsistencyError):
-        _ = parse_model_package_metadata(metadata=metadata)
+    result = parse_model_package_metadata(metadata=metadata)
+
+    # then
+    assert result is None
 
 
 def test_parse_torch_script_model_package_when_package_is_manifest_valid() -> None:
@@ -979,8 +1010,10 @@ def test_parse_model_package_metadata_when_package_manifest_is_known_but_invalid
     )
 
     # when
-    with pytest.raises(ModelMetadataConsistencyError):
-        _ = parse_model_package_metadata(metadata=metadata)
+    result = parse_model_package_metadata(metadata=metadata)
+
+    # then
+    assert result is None
 
 
 def test_parse_model_package_metadata_when_package_manifest_is_known_and_valid() -> (
