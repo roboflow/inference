@@ -4,7 +4,7 @@
 
 ### Fixed
 
-- Fix bug in roboflow_instant_hf scalar confidence path, which was missing a Tensor type check before calling .to(device).
+- Fix bug in roboflow_instant_hf confidence filter.
 
 ---
 
