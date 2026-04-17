@@ -1,4 +1,4 @@
-zensical
+zensical==0.0.31
 mkdocstrings[python]
 mkdocs-gen-files
 mkdocs-literate-nav
