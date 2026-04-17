@@ -6,6 +6,7 @@ parent runs detection and the child crops; here the inner workflow runs detectio
 parent runs ``roboflow_core/dynamic_crop@v1`` on the inner model's predictions.
 """
 
+from typing import Any
 from unittest import mock
 
 import numpy as np
@@ -63,16 +64,25 @@ def _mock_od_response(h: int, w: int) -> ObjectDetectionInferenceResponse:
     )
 
 
-def _infer_from_request_sync_factory(h: int, w: int):
-    def infer_from_request_sync(
-        model_id: str, request: ObjectDetectionInferenceRequest,
-    ):
-        imgs = request.image if isinstance(request.image, list) else [request.image]
-        assert len(imgs) == 1, f"Mock Expected 1 image, got {len(imgs)}"
+def _hw_from_od_request_image(img: Any) -> tuple[int, int]:
+    if isinstance(img, dict):
+        arr = img["value"]
+    else:
+        arr = img.value
+    assert isinstance(arr, np.ndarray), type(arr)
+    return int(arr.shape[0]), int(arr.shape[1])
 
-        return _mock_od_response(h, w)
 
-    return infer_from_request_sync
+def _mock_infer_object_detection_from_request_sync(
+    model_id: str,
+    request: ObjectDetectionInferenceRequest,
+) -> ObjectDetectionInferenceResponse | list[ObjectDetectionInferenceResponse]:
+    """Return fixed OD predictions; one response per request image (batch or scalar)."""
+    imgs = request.image if isinstance(request.image, list) else [request.image]
+    responses = [_mock_od_response(*_hw_from_od_request_image(im)) for im in imgs]
+    if len(responses) == 1:
+        return responses[0]
+    return responses
 
 
 def _nested_workflow(inner: dict) -> dict:
@@ -155,9 +165,8 @@ def test_inlined_parent_crop_matches_inner_workflow_detection(
     model_manager: ModelManager,
     dogs_image: np.ndarray,
 ) -> None:
-    h, w = dogs_image.shape[:2]
     infer_mock = mock.MagicMock(
-        side_effect=_infer_from_request_sync_factory(h, w),
+        side_effect=_mock_infer_object_detection_from_request_sync,
     )
     inner = child_detection_only_for_parent_dynamic_crop()
 
@@ -186,3 +195,42 @@ def test_inlined_parent_crop_matches_inner_workflow_detection(
     assert nested_result == flat_result
     assert len(nested_result) == 1
     _assert_crop_predictions_equal(nested_result[0]["from_child"])
+
+
+def test_inlined_parent_crop_matches_inner_workflow_detection_runtime_image_list(
+    model_manager: ModelManager,
+    dogs_image: np.ndarray,
+) -> None:
+    """Same equivalence as the single-image case, but ``image`` is a list at runtime (batch)."""
+    infer_mock = mock.MagicMock(
+        side_effect=_mock_infer_object_detection_from_request_sync,
+    )
+    inner = child_detection_only_for_parent_dynamic_crop()
+    images = [dogs_image, dogs_image.copy()]
+
+    with mock.patch.object(ModelManager, "add_model"), mock.patch.object(
+        ModelManager,
+        "infer_from_request_sync",
+        new=infer_mock,
+    ):
+        nested_engine = execution_engine(model_manager, _nested_workflow(inner))
+        flat_engine = execution_engine(model_manager, _flat_workflow())
+        nested_result = nested_engine.run(runtime_parameters={"image": images})
+        flat_result = flat_engine.run(runtime_parameters={"image": images})
+
+    assert infer_mock.call_count == 2
+    for call in infer_mock.call_args_list:
+        call_model_id, call_request = call.args
+        assert call_model_id == "yolov8n-640"
+        assert isinstance(call_request, ObjectDetectionInferenceRequest)
+        imgs = (
+            call_request.image
+            if isinstance(call_request.image, list)
+            else [call_request.image]
+        )
+        assert len(imgs) == 2
+
+    assert nested_result == flat_result
+    assert len(nested_result) == 2
+    for row in nested_result:
+        _assert_crop_predictions_equal(row["from_child"])
