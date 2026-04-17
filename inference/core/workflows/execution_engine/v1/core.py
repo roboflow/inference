@@ -29,7 +29,7 @@ from inference.core.workflows.execution_engine.v1.step_error_handlers import (
     legacy_step_error_handler,
 )
 
-EXECUTION_ENGINE_V1_VERSION = Version("1.8.0")
+EXECUTION_ENGINE_V1_VERSION = Version("1.9.0")
 
 DEFAULT_WORKFLOWS_STEP_ERROR_HANDLER = os.getenv(
     "DEFAULT_WORKFLOWS_STEP_ERROR_HANDLER", "extended_roboflow_errors"
