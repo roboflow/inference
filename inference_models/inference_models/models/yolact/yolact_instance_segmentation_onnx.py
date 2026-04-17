@@ -11,14 +11,13 @@ from inference_models import (
     PreProcessingOverrides,
 )
 from inference_models.configuration import (
-    Confidence,
     DEFAULT_DEVICE,
     INFERENCE_MODELS_YOLACT_DEFAULT_CLASS_AGNOSTIC_NMS,
     INFERENCE_MODELS_YOLACT_DEFAULT_CONFIDENCE,
     INFERENCE_MODELS_YOLACT_DEFAULT_IOU_THRESHOLD,
     INFERENCE_MODELS_YOLACT_DEFAULT_MAX_DETECTIONS,
 )
-from inference_models.entities import ColorFormat
+from inference_models.entities import Confidence, ColorFormat
 from inference_models.errors import (
     EnvironmentConfigurationError,
     MissingDependencyError,
@@ -335,6 +334,10 @@ def run_nms_for_instance_segmentation(
     max_detections: int = 100,
     class_agnostic: bool = False,
 ) -> List[torch.Tensor]:
+    """
+    `conf_thresh`: scalar applies to all classes; 1-D tensor of shape
+    (num_classes,) indexed by class_id for per-class thresholds.
+    """
     bs = output.shape[0]
     boxes = output[:, :, :4]  # (N, 19248, 4)
     scores = output[:, :, 4:-32]  # (N, 19248, num_classes)

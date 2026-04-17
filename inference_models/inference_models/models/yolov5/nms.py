@@ -11,6 +11,10 @@ def run_nms_yolov5(
     max_detections: int = 100,
     class_agnostic: bool = False,
 ) -> List[torch.Tensor]:
+    """
+    `conf_thresh`: scalar applies to all classes; 1-D tensor of shape
+    (num_classes,) indexed by class_id for per-class thresholds.
+    """
     bs = output.shape[0]
     boxes = output[:, :4, :]
     top_classes_conf = output[:, 4, :]
@@ -59,6 +63,12 @@ def run_yolov5_nms_for_instance_segmentation(
     max_detections: int = 100,
     class_agnostic: bool = False,
 ) -> List[torch.Tensor]:
+    """
+    `conf_thresh`: scalar applies to all classes; 1-D tensor of shape
+    (num_classes,) indexed by class_id for per-class thresholds.
+    Objectness-dominated rows (class_id==0 in slice-space) bypass the
+    per-class check and are kept.
+    """
     bs = output.shape[0]
     boxes = output[:, :4, :]
     top_classes_conf = output[:, 4, :]

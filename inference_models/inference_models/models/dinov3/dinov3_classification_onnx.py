@@ -11,11 +11,10 @@ from inference_models import (
     MultiLabelClassificationPrediction,
 )
 from inference_models.configuration import (
-    Confidence,
     DEFAULT_DEVICE,
     INFERENCE_MODELS_DINOV3_DEFAULT_CONFIDENCE,
 )
-from inference_models.entities import ColorFormat
+from inference_models.entities import Confidence, ColorFormat
 from inference_models.errors import (
     CorruptedModelPackageError,
     EnvironmentConfigurationError,

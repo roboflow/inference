@@ -11,6 +11,10 @@ def run_yolonas_nms_for_object_detection(
     max_detections: int = 100,
     class_agnostic: bool = False,
 ) -> List[torch.Tensor]:
+    """
+    `conf_thresh`: scalar applies to all classes; 1-D tensor of shape
+    (num_classes,) indexed by class_id for per-class thresholds.
+    """
     bs = output.shape[0]
     boxes = output[:, :, :4]
     scores = output[:, :, 4:]

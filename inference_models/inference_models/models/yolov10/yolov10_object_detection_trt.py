@@ -7,12 +7,11 @@ import torch
 
 from inference_models import Detections, ObjectDetectionModel, PreProcessingOverrides
 from inference_models.configuration import (
-    Confidence,
     DEFAULT_DEVICE,
     INFERENCE_MODELS_YOLOV10_DEFAULT_CONFIDENCE,
     INFERENCE_MODELS_YOLOV10_DEFAULT_MAX_DETECTIONS,
 )
-from inference_models.entities import ColorFormat
+from inference_models.entities import Confidence, ColorFormat
 from inference_models.errors import (
     CorruptedModelPackageError,
     MissingDependencyError,

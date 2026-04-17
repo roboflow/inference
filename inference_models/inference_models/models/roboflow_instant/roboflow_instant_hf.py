@@ -7,13 +7,12 @@ import torch
 
 from inference_models import Detections, ObjectDetectionModel
 from inference_models.configuration import (
-    Confidence,
     DEFAULT_DEVICE,
     INFERENCE_MODELS_ROBOFLOW_INSTANT_DEFAULT_CONFIDENCE,
     INFERENCE_MODELS_ROBOFLOW_INSTANT_DEFAULT_IOU_THRESHOLD,
     INFERENCE_MODELS_ROBOFLOW_INSTANT_MAX_DETECTIONS,
 )
-from inference_models.entities import ImageDimensions
+from inference_models.entities import Confidence, ImageDimensions
 from inference_models.errors import CorruptedModelPackageError
 from inference_models.models.auto_loaders.entities import AnyModel
 from inference_models.models.common.roboflow.post_processing import ConfidenceFilter
