@@ -137,17 +137,6 @@ def _worker_main(
                                           **model_kwargs)
         _log.info("Worker(%s): model ready (%s)", model_id, type(model).__name__)
 
-        # Warmup: force TRT/CUDA JIT compilation before signalling READY.
-        # TRT engines often spin up background optimization threads after
-        # from_pretrained(); running one dummy inference drains them while
-        # still inside the try/except and before the parent is notified.
-        if hasattr(model, "warmup"):
-            try:
-                model.warmup()
-                _log.info("Worker(%s): warmup done", model_id)
-            except Exception as _w:
-                _log.warning("Worker(%s): warmup failed (non-fatal): %s", model_id, _w)
-
         batch_decode_fn = make_batch_decoder(device, use_nvjpeg=use_nvjpeg)
         pool            = SHMPool.attach(shm_pool_name, n_slots=n_slots,
                                    input_mb=input_mb, result_mb=result_mb)
@@ -271,6 +260,12 @@ def _process_slots(
 
     images: list[Any] = [None] * len(batch)
     decode_errors: list[bool] = [False] * len(batch)
+
+    # Guard: empty slots → mark as decode error immediately
+    for i, mv in enumerate(mvs):
+        if len(mv) == 0:
+            log.error("Worker: slot %d has 0 bytes — skipping", batch[i][0])
+            decode_errors[i] = True
 
     # .npy slots — standalone mode (numpy arrays serialised via np.save)
     for i, (mv, npy) in enumerate(zip(mvs, is_npy)):
