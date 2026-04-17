@@ -40,21 +40,14 @@ _INPUT_REF_PATTERN = re.compile(r"^\$inputs\.(?P<name>[A-Za-z0-9_\-]+)$")
 def _contains_inner_workflow_step(steps: List[Dict[str, Any]]) -> bool:
     """Return True if any step in ``steps`` is an ``inner_workflow`` block.
 
-    Raises:
-        InnerWorkflowInvalidStepEntryError: If ``steps`` is not a list or any entry is not a dict.
+    Returns False if ``steps`` is not a list or any entry is not a dict.
     """
     if not isinstance(steps, list):
-        raise InnerWorkflowInvalidStepEntryError(
-            "Invalid workflow steps definition: must be a list of JSON objects (dicts), got "
-            f"{type(steps).__name__}."
-        )
+        return False
 
     for step in steps:
         if not isinstance(step, dict):
-            raise InnerWorkflowInvalidStepEntryError(
-                "Invalid workflow step: must be a JSON object (dict), got "
-                f"{type(step).__name__}."
-            )
+            return False
 
         if step.get("type") != USE_INNER_WORKFLOW_BLOCK_TYPE:
             continue

@@ -60,14 +60,15 @@ def test_contains_inner_workflow_step_false_when_absent() -> None:
     assert _contains_inner_workflow_step(steps) is False
 
 
-def test_contains_inner_workflow_step_rejects_non_list() -> None:
-    with pytest.raises(InnerWorkflowInvalidStepEntryError, match="must be a list"):
-        _contains_inner_workflow_step("not-a-list")  # type: ignore[arg-type]
+def test_contains_inner_workflow_step_false_for_non_list() -> None:
+    assert _contains_inner_workflow_step("not-a-list") is False  # type: ignore[arg-type]
 
 
-def test_contains_inner_workflow_step_rejects_non_dict_entry() -> None:
-    with pytest.raises(InnerWorkflowInvalidStepEntryError, match="must be a JSON object"):
+def test_contains_inner_workflow_step_false_when_any_step_not_dict() -> None:
+    assert (
         _contains_inner_workflow_step([{"name": "ok", "type": "x"}, None])  # type: ignore[list-item]
+        is False
+    )
 
 
 # --- _collect_step_names_at_level ---
