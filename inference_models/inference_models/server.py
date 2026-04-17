@@ -29,6 +29,8 @@ Environment variables::
 
     INFERENCE_DECODER       Image decoder for worker subprocesses.
                             "imagecodecs" (default, CPU) or "nvjpeg" (GPU decode).
+    INFERENCE_BATCH_MAX_SIZE    Max images per worker batch (default: 0 = use model's max).
+    INFERENCE_BATCH_MAX_WAIT_MS Max ms to wait for a full batch (default: 5.0).
     NVIDIA_MPS              Set to "1" to start NVIDIA MPS before launching.
                             MPS daemon is guaranteed to be stopped on exit
                             (even on crash / SIGKILL of this process — via atexit
@@ -107,7 +109,9 @@ def main() -> None:
     n_slots   = int(os.environ.get("INFERENCE_N_SLOTS",   "256"))
     input_mb  = float(os.environ.get("INFERENCE_INPUT_MB",  "25.0"))
     result_mb = float(os.environ.get("INFERENCE_RESULT_MB",  "4.0"))
-    decoder   = os.environ.get("INFERENCE_DECODER", "imagecodecs")
+    decoder        = os.environ.get("INFERENCE_DECODER", "imagecodecs")
+    batch_max_size = int(os.environ.get("INFERENCE_BATCH_MAX_SIZE", "0"))
+    batch_max_wait = float(os.environ.get("INFERENCE_BATCH_MAX_WAIT_MS", "5.0"))
 
     # ── HTTP / TLS config ──────────────────────────────────────────────────
     host      = os.environ.get("HOST",        "0.0.0.0")
@@ -131,6 +135,8 @@ def main() -> None:
         input_mb=input_mb,
         result_mb=result_mb,
         decoder=decoder,
+        batch_max_size=batch_max_size,
+        batch_max_wait_ms=batch_max_wait,
     )
     logger.info("MMP ready: addr=%s  shm=%s", handle.mmp_addr, handle.shm_name)
 
