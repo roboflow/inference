@@ -10,6 +10,9 @@ This change is dictated by potential negative impact on stability which malforme
 of broader change on Roboflow platform making it possible tp externally register packages - sanitization and 
 validation is enabled on registry API side, but we introduce defensive change here to prevent potential instability.
 
+### Added
+
+- RF-DETR NAS capabilities for Instance Segmentation
 
 ## `0.24.3`
 
