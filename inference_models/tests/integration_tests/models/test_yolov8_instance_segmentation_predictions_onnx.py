@@ -3572,3 +3572,30 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_letterbox_list_tor
     assert (
         13800 <= predictions[1].to_supervision().mask[0, 174:371, 63:187].sum() <= 14100
     )
+
+
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+def test_onnx_per_class_confidence_blocks_specific_class(
+    asl_yolov8n_onnx_seg_dynamic_bs_stretch: str,
+    asl_image_numpy: np.ndarray,
+) -> None:
+    """Baseline (see `test_onnx_package_with_dynamic_batch_size_and_stretch_numpy`
+    above) returns 1 detection of class 20 at conf 0.985. Setting a 0.99
+    per-class threshold on class 20 should leave no detections."""
+    from inference_models.models.yolov8.yolov8_instance_segmentation_onnx import (
+        YOLOv8ForInstanceSegmentationOnnx,
+    )
+    from inference_models.weights_providers.entities import RecommendedParameters
+
+    model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
+        model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_stretch,
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
+    )
+    class_names = list(model.class_names)
+    model.recommended_parameters = RecommendedParameters(
+        confidence=0.25,
+        per_class_confidence={class_names[20]: 0.99},
+    )
+    predictions = model(asl_image_numpy, confidence="best")
+    assert predictions[0].class_id.numel() == 0

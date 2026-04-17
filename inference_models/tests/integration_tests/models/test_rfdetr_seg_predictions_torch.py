@@ -1068,3 +1068,25 @@ def test_package_with_nonsquare_letterbox_against_torch_batch_input(
             <= np.sum(pred.mask.cpu().numpy())
             <= _NONSQUARE_LETTERBOX_SEG_TORCH_EXPECTED_MASK_SUM_TORCH + 500
         )
+
+
+@pytest.mark.slow
+@pytest.mark.torch_models
+def test_torch_per_class_confidence_filters_detections(
+    snake_image_numpy: np.ndarray,
+    snakes_rfdetr_seg_torch_stretch_package: str,
+) -> None:
+    from inference_models.models.rfdetr.rfdetr_instance_segmentation_pytorch import (
+        RFDetrForInstanceSegmentationTorch,
+    )
+    from inference_models.weights_providers.entities import RecommendedParameters
+
+    model = RFDetrForInstanceSegmentationTorch.from_pretrained(
+        model_name_or_path=snakes_rfdetr_seg_torch_stretch_package,
+    )
+    model.recommended_parameters = RecommendedParameters(
+        confidence=0.3,
+        per_class_confidence={name: 1.01 for name in model.class_names},
+    )
+    predictions = model(snake_image_numpy, confidence="best")
+    assert predictions[0].class_id.numel() == 0

@@ -651,3 +651,30 @@ def test_trt_cudagraph_cache_eviction(
     no_graph = model.forward(batch_5, disable_cuda_graphs=True)
     replay = model.forward(batch_5)
     assert torch.allclose(no_graph, replay, atol=1e-6)
+
+
+@pytest.mark.slow
+@pytest.mark.trt_extras
+def test_trt_per_class_confidence_blocks_specific_class(
+    yolov8_coin_counting_trt_package: str,
+    coins_counting_image_numpy: np.ndarray,
+) -> None:
+    """Baseline (see `test_trt_package_numpy` above) returns 10 detections:
+    one class 4, nine class 1. Setting a 1.01 per-class threshold on class 1
+    leaves only the class 4 detection."""
+    from inference_models.models.yolov8.yolov8_object_detection_trt import (
+        YOLOv8ForObjectDetectionTRT,
+    )
+    from inference_models.weights_providers.entities import RecommendedParameters
+
+    model = YOLOv8ForObjectDetectionTRT.from_pretrained(
+        model_name_or_path=yolov8_coin_counting_trt_package,
+        engine_host_code_allowed=True,
+    )
+    class_names = list(model.class_names)
+    model.recommended_parameters = RecommendedParameters(
+        confidence=0.25,
+        per_class_confidence={class_names[1]: 1.01},
+    )
+    predictions = model(coins_counting_image_numpy, confidence="best")
+    assert 1 not in predictions[0].class_id.cpu().tolist()
