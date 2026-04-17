@@ -141,10 +141,17 @@ def _worker_main(
         pool            = SHMPool.attach(shm_pool_name, n_slots=n_slots,
                                    input_mb=input_mb, result_mb=result_mb)
 
+        model_max_bs = getattr(model, "max_batch_size", None)
+        effective_bs = model_max_bs if batch_max_size <= 0 else batch_max_size
+        if model_max_bs is not None and effective_bs > model_max_bs:
+            effective_bs = model_max_bs
+        _log.info("Worker(%s): batch_max_size=%s (model=%s, configured=%s)",
+                  model_id, effective_bs, model_max_bs, batch_max_size)
+
         setup_pipe.send({
             "status":        "READY",
             "class_names":   getattr(model, "class_names", None),
-            "max_batch_size": getattr(model, "max_batch_size", None),
+            "max_batch_size": model_max_bs,
         })
 
         zmq_ctx = zmq.Context()
@@ -153,7 +160,7 @@ def _worker_main(
         sock.connect(zmq_addr)
 
         _worker_loop(model, pool, sock, batch_decode_fn,
-                     batch_max_size, batch_max_wait_ms, _log)
+                     effective_bs or _DEFAULT_BATCH_MAX_SIZE, batch_max_wait_ms, _log)
 
     except Exception as exc:
         try:
