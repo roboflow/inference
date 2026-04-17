@@ -93,6 +93,34 @@ def child_dynamic_crop_from_parent_detections() -> Dict[str, Any]:
     }
 
 
+def child_dimension_collapse_from_parent_detections() -> Dict[str, Any]:
+    """Inner workflow: ``dimension_collapse`` only; parent supplies OD ``predictions``."""
+    return {
+        "version": "1.0",
+        "inputs": [
+            {
+                "type": "WorkflowBatchInput",
+                "name": "predictions",
+                "kind": ["object_detection_prediction"],
+            },
+        ],
+        "steps": [
+            {
+                "type": "roboflow_core/dimension_collapse@v1",
+                "name": "collapse",
+                "data": "$inputs.predictions",
+            },
+        ],
+        "outputs": [
+            {
+                "type": "JsonField",
+                "name": "collapsed",
+                "selector": "$steps.collapse.output",
+            },
+        ],
+    }
+
+
 def child_detection_only_for_parent_dynamic_crop() -> Dict[str, Any]:
     """Inner workflow: OD only; parent runs ``dynamic_crop`` on inner detections."""
     return {
