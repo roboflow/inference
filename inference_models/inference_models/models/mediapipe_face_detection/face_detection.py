@@ -6,10 +6,9 @@ import torch
 
 from inference_models import Detections, KeyPoints, KeyPointsDetectionModel
 from inference_models.configuration import (
-    Confidence,
     INFERENCE_MODELS_MEDIAPIPE_FACE_DETECTOR_DEFAULT_CONFIDENCE,
 )
-from inference_models.entities import ColorFormat, ImageDimensions
+from inference_models.entities import Confidence, ColorFormat, ImageDimensions
 from inference_models.errors import (
     MissingDependencyError,
     ModelInputError,

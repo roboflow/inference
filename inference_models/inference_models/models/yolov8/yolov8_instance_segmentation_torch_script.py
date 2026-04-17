@@ -11,7 +11,6 @@ from inference_models import (
     PreProcessingOverrides,
 )
 from inference_models.configuration import (
-    Confidence,
     DEFAULT_DEVICE,
     INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_CLASS_AGNOSTIC_NMS,
     INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_CONFIDENCE,
@@ -20,7 +19,7 @@ from inference_models.configuration import (
     INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_MASKS_SMOOTHING_ENABLED,
     INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_MAX_DETECTIONS,
 )
-from inference_models.entities import ColorFormat
+from inference_models.entities import Confidence, ColorFormat
 from inference_models.errors import CorruptedModelPackageError
 from inference_models.models.common.model_packages import get_model_package_contents
 from inference_models.models.common.roboflow.model_packages import (

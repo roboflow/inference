@@ -1,16 +1,13 @@
 from typing import Dict, List, Literal, Optional, Tuple, Union
-from pydantic import TypeAdapter
+from pydantic import TypeAdapter, ValidationError
 
 import torch
 import torchvision
 from torchvision.transforms import functional
 
-from inference_models.configuration import (
-    Confidence,
-    INFERENCE_MODELS_DEFAULT_CONFIDENCE,
-)
-
-from inference_models.entities import ImageDimensions
+from inference_models.configuration import INFERENCE_MODELS_DEFAULT_CONFIDENCE
+from inference_models.entities import Confidence, ImageDimensions
+from inference_models.errors import ModelInputError
 from inference_models.logger import LOGGER
 from inference_models.models.common.roboflow.model_packages import (
     PreProcessingMetadata,
@@ -21,6 +18,19 @@ from inference_models.weights_providers.entities import RecommendedParameters
 _confidence_validator = TypeAdapter(Confidence)
 
 
+def _validate_confidence(confidence: Confidence) -> Confidence:
+    try:
+        return _confidence_validator.validate_python(confidence)
+    except ValidationError as error:
+        raise ModelInputError(
+            message=(
+                f"Invalid confidence={confidence!r}. Expected a float in "
+                f"[0, 1] or one of 'best', 'default'."
+            ),
+            help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
+        ) from error
+
+
 def run_nms_for_object_detection(
     output: torch.Tensor,
     conf_thresh: Union[float, torch.Tensor] = 0.25,
@@ -29,6 +39,10 @@ def run_nms_for_object_detection(
     class_agnostic: bool = False,
     box_format: Literal["xywh", "xyxy"] = "xywh",
 ) -> List[torch.Tensor]:
+    """
+    `conf_thresh`: scalar applies to all classes; 1-D tensor of shape
+    (num_classes,) indexed by class_id for per-class thresholds.
+    """
     bs = output.shape[0]
     boxes = output[:, :4, :]
     scores = output[:, 4:, :]
@@ -77,6 +91,10 @@ def post_process_nms_fused_model_output(
     output: torch.Tensor,
     conf_thresh: Union[float, torch.Tensor] = 0.25,
 ) -> List[torch.Tensor]:
+    """
+    `conf_thresh`: scalar applies to all classes; 1-D tensor of shape
+    (num_classes,) indexed by class_id (col 5 of `output`).
+    """
     bs = output.shape[0]
     nms_results = []
     for batch_element_id in range(bs):
@@ -102,6 +120,10 @@ def run_nms_for_instance_segmentation(
     class_agnostic: bool = False,
     box_format: Literal["xywh", "xyxy"] = "xywh",
 ) -> List[torch.Tensor]:
+    """
+    `conf_thresh`: scalar applies to all classes; 1-D tensor of shape
+    (num_classes,) indexed by class_id for per-class thresholds.
+    """
     bs = output.shape[0]
     boxes = output[:, :4, :]  # (N, 4, 8400)
     scores = output[:, 4:-32, :]  # (N, 80, 8400)
@@ -158,6 +180,10 @@ def run_nms_for_key_points_detection(
     max_detections: int = 100,
     class_agnostic: bool = False,
 ) -> List[torch.Tensor]:
+    """
+    `conf_thresh`: scalar applies to all classes; 1-D tensor of shape
+    (num_classes,) indexed by class_id for per-class thresholds.
+    """
     bs = output.shape[0]
     boxes = output[:, :4, :]
     scores = output[:, 4 : 4 + num_classes, :]
@@ -477,7 +503,7 @@ class ConfidenceFilter:
         recommended_parameters: Optional[RecommendedParameters] = None,
         default_confidence: float = INFERENCE_MODELS_DEFAULT_CONFIDENCE,
     ):
-        confidence = _confidence_validator.validate_python(confidence)
+        confidence = _validate_confidence(confidence)
         self._class_to_threshold_map = self._resolve_class_to_threshold_map(
             confidence, recommended_parameters
         )

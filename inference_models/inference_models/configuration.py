@@ -1,10 +1,6 @@
 import os
-from typing import Annotated, Literal, Union
 
 import torch
-from annotated_types import Ge, Le
-
-Confidence = Union[Annotated[float, Ge(0), Le(1)], Literal["best", "default"]]
 
 from inference_models.utils.environment import (
     get_boolean_from_env,

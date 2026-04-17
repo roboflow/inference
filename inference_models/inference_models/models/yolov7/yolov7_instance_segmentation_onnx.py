@@ -10,14 +10,13 @@ from inference_models import (
     PreProcessingOverrides,
 )
 from inference_models.configuration import (
-    Confidence,
     DEFAULT_DEVICE,
     INFERENCE_MODELS_YOLOV7_DEFAULT_CLASS_AGNOSTIC_NMS,
     INFERENCE_MODELS_YOLOV7_DEFAULT_CONFIDENCE,
     INFERENCE_MODELS_YOLOV7_DEFAULT_IOU_THRESHOLD,
     INFERENCE_MODELS_YOLOV7_DEFAULT_MAX_DETECTIONS,
 )
-from inference_models.entities import ColorFormat
+from inference_models.entities import Confidence, ColorFormat
 from inference_models.errors import (
     EnvironmentConfigurationError,
     MissingDependencyError,

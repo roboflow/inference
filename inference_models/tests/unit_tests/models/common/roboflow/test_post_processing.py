@@ -9,6 +9,7 @@ import pytest
 import torch
 
 from inference_models.configuration import INFERENCE_MODELS_DEFAULT_CONFIDENCE
+from inference_models.errors import ModelInputError
 from inference_models.models.common.roboflow.post_processing import (
     ConfidenceFilter,
     post_process_nms_fused_model_output,
@@ -283,13 +284,13 @@ class TestConfidenceFilter:
         )
 
     def test_rejects_invalid_string(self) -> None:
-        with pytest.raises(Exception):
+        with pytest.raises(ModelInputError):
             ConfidenceFilter(confidence="high", recommended_parameters=None)
 
     def test_rejects_float_above_one(self) -> None:
-        with pytest.raises(Exception):
+        with pytest.raises(ModelInputError):
             ConfidenceFilter(confidence=5.0, recommended_parameters=None)
 
     def test_rejects_negative_float(self) -> None:
-        with pytest.raises(Exception):
+        with pytest.raises(ModelInputError):
             ConfidenceFilter(confidence=-0.1, recommended_parameters=None)

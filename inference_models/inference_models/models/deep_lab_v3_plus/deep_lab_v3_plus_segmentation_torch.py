@@ -7,10 +7,10 @@ from torchvision.transforms import functional
 
 from inference_models import ColorFormat, SemanticSegmentationModel
 from inference_models.configuration import (
-    Confidence,
     DEFAULT_DEVICE,
     INFERENCE_MODELS_DEEP_LAB_V3_PLUS_DEFAULT_CONFIDENCE,
 )
+from inference_models.entities import Confidence
 from inference_models.errors import CorruptedModelPackageError
 from inference_models.models.auto_loaders.entities import PreProcessingOverrides
 from inference_models.models.base.semantic_segmentation import (
