@@ -98,9 +98,7 @@ def test_infer_lmm_with_model_id_uses_alias_registry_key(monkeypatch) -> None:
         service_secret=None,
     )
     model_manager.infer_from_request_sync.assert_called_once()
-    assert (
-        model_manager.infer_from_request_sync.call_args.args[0] == "florence-2-base"
-    )
+    assert model_manager.infer_from_request_sync.call_args.args[0] == "florence-2-base"
     inference_request = model_manager.infer_from_request_sync.call_args.args[1]
     assert inference_request.model_id == "florence-2-base"
     assert inference_request.api_key == "query-api-key"
@@ -202,5 +200,38 @@ def test_serverless_auth_middleware_caches_payment_required_response(
     assert second_response.json() == first_response.json()
     assert WORKSPACE_ID_HEADER not in first_response.headers
     assert usage_check_mock.await_count == 1
+    model_manager.add_model.assert_not_called()
+    model_manager.infer_from_request_sync.assert_not_called()
+
+
+def test_serverless_auth_middleware_fails_closed_on_unexpected_upstream_status(
+    monkeypatch,
+) -> None:
+    interface, model_manager, usage_check_mock = _build_serverless_interface(
+        monkeypatch=monkeypatch,
+        usage_check_result=ServerlessUsageCheckResponse(status_code=503),
+    )
+
+    with TestClient(interface.app) as client:
+        first_response = client.post(
+            "/infer/lmm/florence-2-base",
+            params={"api_key": "query-api-key"},
+            json=_make_inference_request(),
+        )
+        second_response = client.post(
+            "/infer/lmm/florence-2-base",
+            params={"api_key": "query-api-key"},
+            json=_make_inference_request(),
+        )
+
+    assert first_response.status_code == 503
+    assert second_response.status_code == 503
+    assert (
+        first_response.json()["message"]
+        == "Authorization service temporarily unavailable. Please retry."
+    )
+    assert WORKSPACE_ID_HEADER not in first_response.headers
+    # Unexpected upstream statuses must not be cached, so every request re-queries.
+    assert usage_check_mock.await_count == 2
     model_manager.add_model.assert_not_called()
     model_manager.infer_from_request_sync.assert_not_called()

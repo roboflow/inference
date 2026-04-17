@@ -716,6 +716,16 @@ class HttpInterface(BaseInterface):
                             402,
                             cached_api_keys[api_key].message,
                         )
+                    else:
+                        logger.warning(
+                            "Unexpected status %s from serverless usage check; "
+                            "failing closed without caching.",
+                            usage_check_result.status_code,
+                        )
+                        return _authorization_error_response(
+                            503,
+                            "Authorization service temporarily unavailable. Please retry.",
+                        )
 
                 response = await call_next(request)
                 if workspace_id:
