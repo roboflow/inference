@@ -166,7 +166,7 @@ class DeepLabV3PlusForSemanticSegmentationTorch(
         self,
         model_results: torch.Tensor,
         pre_processing_meta: List[PreProcessingMetadata],
-        confidence: Confidence = "best",
+        confidence: Confidence = "default",
         **kwargs,
     ) -> List[SemanticSegmentationResult]:
         confidence_filter = ConfidenceFilter(

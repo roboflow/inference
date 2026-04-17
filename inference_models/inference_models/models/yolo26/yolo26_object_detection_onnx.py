@@ -193,7 +193,7 @@ class YOLO26ForObjectDetectionOnnx(
         self,
         model_results: torch.Tensor,
         pre_processing_meta: List[PreProcessingMetadata],
-        confidence: Confidence = "best",
+        confidence: Confidence = "default",
         **kwargs,
     ) -> List[Detections]:
         confidence_filter = ConfidenceFilter(

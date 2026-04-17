@@ -178,7 +178,7 @@ class YOLO26ForKeyPointsDetectionTorchScript(
         self,
         model_results: torch.Tensor,
         pre_processing_meta: List[PreProcessingMetadata],
-        confidence: Confidence = "best",
+        confidence: Confidence = "default",
         key_points_threshold: float = INFERENCE_MODELS_YOLO26_DEFAULT_KEY_POINTS_THRESHOLD,
         **kwargs,
     ) -> Tuple[List[KeyPoints], Optional[List[Detections]]]:

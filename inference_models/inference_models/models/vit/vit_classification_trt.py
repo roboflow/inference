@@ -449,7 +449,7 @@ class VITForMultiLabelClassificationTRT(
     def post_process(
         self,
         model_results: torch.Tensor,
-        confidence: Confidence = "best",
+        confidence: Confidence = "default",
         **kwargs,
     ) -> List[MultiLabelClassificationPrediction]:
         confidence_filter = ConfidenceFilter(

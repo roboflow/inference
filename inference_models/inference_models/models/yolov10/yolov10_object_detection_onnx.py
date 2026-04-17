@@ -187,7 +187,7 @@ class YOLOv10ForObjectDetectionOnnx(
         self,
         model_results: torch.Tensor,
         pre_processing_meta: List[PreProcessingMetadata],
-        confidence: Confidence = "best",
+        confidence: Confidence = "default",
         max_detections: int = INFERENCE_MODELS_YOLOV10_DEFAULT_MAX_DETECTIONS,
         **kwargs,
     ) -> List[Detections]:

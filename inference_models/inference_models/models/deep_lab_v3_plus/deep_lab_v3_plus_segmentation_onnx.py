@@ -191,7 +191,7 @@ class DeepLabV3PlusForSemanticSegmentationOnnx(
         self,
         model_results: RawPrediction,
         pre_processing_meta: PreprocessedInputs,
-        confidence: Confidence = "best",
+        confidence: Confidence = "default",
         **kwargs,
     ) -> List[SemanticSegmentationResult]:
         confidence_filter = ConfidenceFilter(
