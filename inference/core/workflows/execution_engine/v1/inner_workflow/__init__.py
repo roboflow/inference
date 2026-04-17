@@ -21,6 +21,7 @@ from inference.core.workflows.execution_engine.v1.inner_workflow.errors import (
     InnerWorkflowParameterBindingsMissingRequiredError,
     InnerWorkflowParameterBindingsUnknownInputError,
     InnerWorkflowRunNotSupportedError,
+    InnerWorkflowTotalCountError,
 )
 
 __all__ = [
@@ -33,6 +34,7 @@ __all__ = [
     "InnerWorkflowParameterBindingsMissingRequiredError",
     "InnerWorkflowParameterBindingsUnknownInputError",
     "InnerWorkflowRunNotSupportedError",
+    "InnerWorkflowTotalCountError",
     "assert_composition_acyclic",
     "build_composition_digraph",
     "find_composition_cycles",

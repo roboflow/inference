@@ -3,6 +3,7 @@ import pytest
 from inference.core.workflows.execution_engine.v1.inner_workflow import (
     InnerWorkflowCompositionCycleError,
     InnerWorkflowNestingDepthError,
+    InnerWorkflowTotalCountError,
     assert_composition_acyclic,
     build_composition_digraph,
     find_composition_cycles,
@@ -60,6 +61,7 @@ def test_validate_inner_workflow_composition_ok() -> None:
         containment_edges=[("R", "A"), ("A", "B")],
         root_workflow_id="R",
         max_nesting_depth=2,
+        max_inner_workflow_count=10,
     )
 
 
@@ -69,6 +71,17 @@ def test_validate_inner_workflow_composition_depth_exceeded() -> None:
             containment_edges=[("R", "A"), ("A", "B")],
             root_workflow_id="R",
             max_nesting_depth=1,
+            max_inner_workflow_count=10,
+        )
+
+
+def test_validate_inner_workflow_composition_total_count_exceeded() -> None:
+    with pytest.raises(InnerWorkflowTotalCountError):
+        validate_inner_workflow_composition(
+            containment_edges=[("R", "A"), ("R", "B")],
+            root_workflow_id="R",
+            max_nesting_depth=10,
+            max_inner_workflow_count=1,
         )
 
 
@@ -78,4 +91,5 @@ def test_validate_inner_workflow_composition_cycle() -> None:
             containment_edges=[("R", "A"), ("A", "B"), ("B", "A")],
             root_workflow_id="R",
             max_nesting_depth=10,
+            max_inner_workflow_count=10,
         )

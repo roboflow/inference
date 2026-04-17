@@ -14,6 +14,7 @@ import networkx as nx
 from inference.core.workflows.execution_engine.v1.inner_workflow.errors import (
     InnerWorkflowCompositionCycleError,
     InnerWorkflowNestingDepthError,
+    InnerWorkflowTotalCountError,
 )
 
 
@@ -22,15 +23,18 @@ def validate_inner_workflow_composition(
     containment_edges: Collection[Tuple[Hashable, Hashable]],
     root_workflow_id: Hashable,
     max_nesting_depth: int,
+    max_inner_workflow_count: int,
 ) -> None:
     """
     Validate that the composition graph is acyclic and within max depth from ``root``.
 
     Args:
         containment_edges: (parent_workflow_id, child_workflow_id) for each direct
-            inner-workflow reference.
+            inner-workflow reference (one entry per ``inner_workflow`` step in the tree).
         root_workflow_id: Identity of the workflow being compiled (opaque string or tuple).
         max_nesting_depth: Maximum allowed value from :func:`max_nesting_depth_from_root`.
+        max_inner_workflow_count: Maximum allowed number of ``inner_workflow`` steps in the
+            whole nested definition (``len(containment_edges)``).
     """
     graph = build_composition_digraph(containment_edges)
     assert_composition_acyclic(graph)
@@ -40,6 +44,13 @@ def validate_inner_workflow_composition(
         raise InnerWorkflowNestingDepthError(
             f"Inner workflow nesting depth from root {root_workflow_id!r} is {depth}, "
             f"which exceeds the limit of {max_nesting_depth}."
+        )
+
+    total = len(containment_edges)
+    if total > max_inner_workflow_count:
+        raise InnerWorkflowTotalCountError(
+            f"Inner workflow step count is {total}, which exceeds the limit of "
+            f"{max_inner_workflow_count}."
         )
 
 

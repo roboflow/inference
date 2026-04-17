@@ -42,6 +42,10 @@ class InnerWorkflowNestingDepthError(InnerWorkflowCompositionError):
     """Raised when nesting from a root workflow exceeds the configured maximum depth."""
 
 
+class InnerWorkflowTotalCountError(InnerWorkflowCompositionError):
+    """Raised when the number of ``inner_workflow`` steps in the composition tree exceeds the limit."""
+
+
 class InnerWorkflowInvalidStepEntryError(InnerWorkflowCompositionError):
     """Raised when ``steps`` contains an entry that is not a JSON object (mapping)."""
 

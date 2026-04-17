@@ -10,7 +10,10 @@ import hashlib
 import json
 from typing import Any, Dict, List, Set, Tuple
 
-from inference.core.env import WORKFLOWS_MAX_INNER_WORKFLOW_DEPTH
+from inference.core.env import (
+    WORKFLOWS_MAX_INNER_WORKFLOW_COUNT,
+    WORKFLOWS_MAX_INNER_WORKFLOW_DEPTH,
+)
 from inference.core.workflows.execution_engine.entities.base import (
     InputType,
     WorkflowParameter,
@@ -42,6 +45,7 @@ def validate_inner_workflow_composition_from_raw_workflow_definition(
         containment_edges=edges,
         root_workflow_id=root_workflow_id,
         max_nesting_depth=WORKFLOWS_MAX_INNER_WORKFLOW_DEPTH,
+        max_inner_workflow_count=WORKFLOWS_MAX_INNER_WORKFLOW_COUNT,
     )
 
 
