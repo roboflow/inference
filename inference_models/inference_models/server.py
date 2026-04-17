@@ -27,12 +27,20 @@ Environment variables::
     INFERENCE_INPUT_MB      Bytes per slot input area, MB (default: 25.0)
     INFERENCE_RESULT_MB     Bytes per slot result area, MB (default: 4.0)
 
+    NVIDIA_MPS              Set to "1" to start NVIDIA MPS before launching.
+                            MPS daemon is guaranteed to be stopped on exit
+                            (even on crash / SIGKILL of this process — via atexit
+                            + signal handlers).
+
     LOG_LEVEL               uvicorn log level (default: warning)
 """
 from __future__ import annotations
 
+import atexit
 import logging
 import os
+import signal
+import subprocess
 import sys
 
 import uvicorn
@@ -44,8 +52,54 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+# ---------------------------------------------------------------------------
+# NVIDIA MPS management
+# ---------------------------------------------------------------------------
+
+_mps_started = False
+
+
+def _start_mps() -> None:
+    global _mps_started
+    logger.info("Starting NVIDIA MPS daemon…")
+    subprocess.run(["nvidia-cuda-mps-control", "-d"], check=True)
+    _mps_started = True
+    atexit.register(_stop_mps)
+    # Catch common termination signals so MPS is cleaned up even on kill
+    for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+        prev = signal.getsignal(sig)
+        def _handler(s, f, _prev=prev, _sig=sig):
+            _stop_mps()
+            if callable(_prev) and _prev not in (signal.SIG_DFL, signal.SIG_IGN):
+                _prev(s, f)
+            else:
+                sys.exit(128 + _sig)
+        signal.signal(sig, _handler)
+    logger.info("NVIDIA MPS daemon started")
+
+
+def _stop_mps() -> None:
+    global _mps_started
+    if not _mps_started:
+        return
+    _mps_started = False
+    logger.info("Stopping NVIDIA MPS daemon…")
+    try:
+        subprocess.run(
+            ["bash", "-c", "echo quit | nvidia-cuda-mps-control"],
+            timeout=10,
+        )
+        logger.info("NVIDIA MPS daemon stopped")
+    except Exception:
+        logger.warning("Failed to stop MPS daemon cleanly", exc_info=True)
+
+
 def main() -> None:
     from inference_models.launcher import launch_orchestrated
+
+    # ── MPS ────────────────────────────────────────────────────────────────
+    if os.environ.get("NVIDIA_MPS", "").strip() == "1":
+        _start_mps()
 
     # ── MMP config ─────────────────────────────────────────────────────────
     n_slots   = int(os.environ.get("INFERENCE_N_SLOTS",   "256"))
