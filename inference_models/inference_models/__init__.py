@@ -28,7 +28,7 @@ if os.environ.get("PYTORCH_ENABLE_MPS_FALLBACK") is None:
 if os.environ.get("TOKENIZERS_PARALLELISM") is None:
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
-from inference_models.entities import ColorFormat, Confidence
+from inference_models.entities import ColorFormat
 from inference_models.model_pipelines.auto_loaders.core import AutoModelPipeline
 from inference_models.models.auto_loaders.core import AutoModel
 from inference_models.models.auto_loaders.entities import (

@@ -12,7 +12,7 @@ from inference_models.configuration import (
     INFERENCE_MODELS_YOLOV5_DEFAULT_IOU_THRESHOLD,
     INFERENCE_MODELS_YOLOV5_DEFAULT_MAX_DETECTIONS,
 )
-from inference_models.entities import Confidence, ColorFormat
+from inference_models.entities import ColorFormat
 from inference_models.errors import (
     EnvironmentConfigurationError,
     MissingDependencyError,
@@ -29,10 +29,7 @@ from inference_models.models.common.roboflow.model_packages import (
     parse_class_names_file,
     parse_inference_config,
 )
-from inference_models.models.common.roboflow.post_processing import (
-    ConfidenceFilter,
-    rescale_detections,
-)
+from inference_models.models.common.roboflow.post_processing import rescale_detections
 from inference_models.models.common.roboflow.pre_processing import (
     pre_process_network_input,
 )
@@ -40,7 +37,6 @@ from inference_models.models.yolov5.nms import run_nms_yolov5
 from inference_models.utils.onnx_introspection import (
     get_selected_onnx_execution_providers,
 )
-from inference_models.weights_providers.entities import RecommendedParameters
 
 try:
     import onnxruntime
@@ -69,7 +65,6 @@ class YOLOv5ForObjectDetectionOnnx(
         onnx_execution_providers: Optional[List[Union[str, tuple]]] = None,
         default_onnx_trt_options: bool = True,
         device: torch.device = DEFAULT_DEVICE,
-        recommended_parameters: Optional[RecommendedParameters] = None,
         **kwargs,
     ) -> "YOLOv5ForObjectDetectionOnnx":
         if onnx_execution_providers is None:
@@ -134,7 +129,6 @@ class YOLOv5ForObjectDetectionOnnx(
             inference_config=inference_config,
             device=device,
             input_batch_size=input_batch_size,
-            recommended_parameters=recommended_parameters,
         )
 
     def __init__(
@@ -145,7 +139,6 @@ class YOLOv5ForObjectDetectionOnnx(
         class_names: List[str],
         device: torch.device,
         input_batch_size: Optional[int],
-        recommended_parameters: Optional["RecommendedParameters"] = None,
     ):
         self._session = session
         self._input_name = input_name
@@ -154,7 +147,6 @@ class YOLOv5ForObjectDetectionOnnx(
         self._device = device
         self._input_batch_size = input_batch_size
         self._session_thread_lock = Lock()
-        self.recommended_parameters = recommended_parameters
 
     @property
     def class_names(self) -> List[str]:
@@ -189,18 +181,12 @@ class YOLOv5ForObjectDetectionOnnx(
         self,
         model_results: torch.Tensor,
         pre_processing_meta: List[PreProcessingMetadata],
-        confidence: Confidence = "default",
+        confidence: float = INFERENCE_MODELS_YOLOV5_DEFAULT_CONFIDENCE,
         iou_threshold: float = INFERENCE_MODELS_YOLOV5_DEFAULT_IOU_THRESHOLD,
         max_detections: int = INFERENCE_MODELS_YOLOV5_DEFAULT_MAX_DETECTIONS,
         class_agnostic_nms: bool = INFERENCE_MODELS_YOLOV5_DEFAULT_CLASS_AGNOSTIC_NMS,
         **kwargs,
     ) -> List[Detections]:
-        confidence_filter = ConfidenceFilter(
-            confidence=confidence,
-            recommended_parameters=self.recommended_parameters,
-            default_confidence=INFERENCE_MODELS_YOLOV5_DEFAULT_CONFIDENCE,
-        )
-        confidence = confidence_filter.get_threshold(self.class_names)
         nms_results = run_nms_yolov5(
             output=model_results.permute(0, 2, 1),
             conf_thresh=confidence,

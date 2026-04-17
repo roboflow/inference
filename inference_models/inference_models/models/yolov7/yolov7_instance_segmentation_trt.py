@@ -17,7 +17,7 @@ from inference_models.configuration import (
     INFERENCE_MODELS_YOLOV7_DEFAULT_IOU_THRESHOLD,
     INFERENCE_MODELS_YOLOV7_DEFAULT_MAX_DETECTIONS,
 )
-from inference_models.entities import Confidence, ColorFormat
+from inference_models.entities import ColorFormat
 from inference_models.errors import (
     CorruptedModelPackageError,
     MissingDependencyError,
@@ -38,13 +38,10 @@ from inference_models.models.common.roboflow.model_packages import (
     parse_trt_config,
 )
 from inference_models.models.common.roboflow.post_processing import (
-    ConfidenceFilter,
     align_instance_segmentation_results,
     crop_masks_to_boxes,
     preprocess_segmentation_masks,
-)
-from inference_models.models.yolov5.nms import (
-    run_yolov5_nms_for_instance_segmentation,
+    run_nms_for_instance_segmentation,
 )
 from inference_models.models.common.roboflow.pre_processing import (
     pre_process_network_input,
@@ -56,7 +53,6 @@ from inference_models.models.common.trt import (
     infer_from_trt_engine,
     load_trt_model,
 )
-from inference_models.weights_providers.entities import RecommendedParameters
 
 try:
     import tensorrt as trt
@@ -100,7 +96,6 @@ class YOLOv7ForInstanceSegmentationTRT(
         engine_host_code_allowed: bool = False,
         trt_cuda_graph_cache: Optional[TRTCudaGraphCache] = None,
         default_trt_cuda_graph_cache_size: int = 8,
-        recommended_parameters: Optional[RecommendedParameters] = None,
         **kwargs,
     ) -> "YOLOv7ForInstanceSegmentationTRT":
         if device.type != "cuda":
@@ -178,7 +173,6 @@ class YOLOv7ForInstanceSegmentationTRT(
             cuda_context=cuda_context,
             execution_context=execution_context,
             trt_cuda_graph_cache=trt_cuda_graph_cache,
-            recommended_parameters=recommended_parameters,
         )
 
     def __init__(
@@ -193,7 +187,6 @@ class YOLOv7ForInstanceSegmentationTRT(
         cuda_context: cuda.Context,
         execution_context: trt.IExecutionContext,
         trt_cuda_graph_cache: Optional[TRTCudaGraphCache],
-        recommended_parameters=None,
     ):
         self._engine = engine
         self._input_name = input_name
@@ -208,7 +201,6 @@ class YOLOv7ForInstanceSegmentationTRT(
         self._inference_stream = torch.cuda.Stream(device=self._device)
         self._trt_cuda_graph_cache = trt_cuda_graph_cache
         self._thread_local_storage = threading.local()
-        self.recommended_parameters = recommended_parameters
 
     @property
     def class_names(self) -> List[str]:
@@ -259,23 +251,17 @@ class YOLOv7ForInstanceSegmentationTRT(
         self,
         model_results: Tuple[torch.Tensor, torch.Tensor],
         pre_processing_meta: List[PreProcessingMetadata],
-        confidence: Confidence = "default",
+        confidence: float = INFERENCE_MODELS_YOLOV7_DEFAULT_CONFIDENCE,
         iou_threshold: float = INFERENCE_MODELS_YOLOV7_DEFAULT_IOU_THRESHOLD,
         max_detections: int = INFERENCE_MODELS_YOLOV7_DEFAULT_MAX_DETECTIONS,
         class_agnostic_nms: bool = INFERENCE_MODELS_YOLOV7_DEFAULT_CLASS_AGNOSTIC_NMS,
         **kwargs,
     ) -> List[InstanceDetections]:
-        confidence_filter = ConfidenceFilter(
-            confidence=confidence,
-            recommended_parameters=self.recommended_parameters,
-            default_confidence=INFERENCE_MODELS_YOLOV7_DEFAULT_CONFIDENCE,
-        )
-        confidence = confidence_filter.get_threshold(self.class_names)
         with torch.cuda.stream(self._post_process_stream):
             for result_element in model_results:
                 result_element.record_stream(self._post_process_stream)
             instances, protos = model_results
-            nms_results = run_yolov5_nms_for_instance_segmentation(
+            nms_results = run_nms_for_instance_segmentation(
                 output=instances.permute(0, 2, 1),
                 conf_thresh=confidence,
                 iou_thresh=iou_threshold,

@@ -16,7 +16,7 @@ from inference_models.configuration import (
     DEFAULT_DEVICE,
     INFERENCE_MODELS_RESNET_DEFAULT_CONFIDENCE,
 )
-from inference_models.entities import Confidence, ColorFormat
+from inference_models.entities import ColorFormat
 from inference_models.errors import (
     CorruptedModelPackageError,
     MissingDependencyError,
@@ -39,8 +39,6 @@ from inference_models.models.common.roboflow.model_packages import (
 from inference_models.models.common.roboflow.pre_processing import (
     pre_process_network_input,
 )
-from inference_models.models.common.roboflow.post_processing import ConfidenceFilter
-from inference_models.weights_providers.entities import RecommendedParameters
 from inference_models.models.common.trt import (
     TRTCudaGraphCache,
     establish_trt_cuda_graph_cache,
@@ -289,7 +287,6 @@ class ResNetForMultiLabelClassificationTRT(
         engine_host_code_allowed: bool = False,
         trt_cuda_graph_cache: Optional[TRTCudaGraphCache] = None,
         default_trt_cuda_graph_cache_size: int = 8,
-        recommended_parameters: Optional[RecommendedParameters] = None,
         **kwargs,
     ) -> "ResNetForMultiLabelClassificationTRT":
         if device.type != "cuda":
@@ -371,7 +368,6 @@ class ResNetForMultiLabelClassificationTRT(
             cuda_context=cuda_context,
             execution_context=execution_context,
             trt_cuda_graph_cache=trt_cuda_graph_cache,
-            recommended_parameters=recommended_parameters,
         )
 
     def __init__(
@@ -386,7 +382,6 @@ class ResNetForMultiLabelClassificationTRT(
         cuda_context: cuda.Context,
         execution_context: trt.IExecutionContext,
         trt_cuda_graph_cache: Optional[TRTCudaGraphCache],
-        recommended_parameters: Optional[RecommendedParameters] = None,
     ):
         self._engine = engine
         self._input_name = input_name
@@ -401,7 +396,6 @@ class ResNetForMultiLabelClassificationTRT(
         self._lock = Lock()
         self._inference_stream = torch.cuda.Stream(device=self._device)
         self._thread_local_storage = threading.local()
-        self.recommended_parameters = recommended_parameters
 
     @property
     def class_names(self) -> List[str]:
@@ -452,17 +446,9 @@ class ResNetForMultiLabelClassificationTRT(
     def post_process(
         self,
         model_results: torch.Tensor,
-        confidence: Confidence = "default",
+        confidence: float = INFERENCE_MODELS_RESNET_DEFAULT_CONFIDENCE,
         **kwargs,
     ) -> List[MultiLabelClassificationPrediction]:
-        confidence_filter = ConfidenceFilter(
-            confidence=confidence,
-            recommended_parameters=self.recommended_parameters,
-            default_confidence=INFERENCE_MODELS_RESNET_DEFAULT_CONFIDENCE,
-        )
-        threshold = confidence_filter.get_threshold(self.class_names)
-        if isinstance(threshold, torch.Tensor):
-            threshold = threshold.to(dtype=model_results.dtype, device=model_results.device)
         with torch.cuda.stream(self._post_process_stream):
             model_results.record_stream(self._post_process_stream)
             if self._inference_config.post_processing.fused:
@@ -472,7 +458,7 @@ class ResNetForMultiLabelClassificationTRT(
             results = []
             for batch_element_confidence in model_results:
                 predicted_classes = torch.argwhere(
-                    batch_element_confidence >= threshold
+                    batch_element_confidence >= confidence
                 ).squeeze(dim=-1)
                 results.append(
                     MultiLabelClassificationPrediction(

@@ -18,7 +18,7 @@ from inference_models.configuration import (
     INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_MASKS_SMOOTHING_ENABLED,
     INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_MAX_DETECTIONS,
 )
-from inference_models.entities import Confidence, ColorFormat
+from inference_models.entities import ColorFormat
 from inference_models.errors import (
     CorruptedModelPackageError,
     EnvironmentConfigurationError,
@@ -37,7 +37,6 @@ from inference_models.models.common.roboflow.model_packages import (
     parse_inference_config,
 )
 from inference_models.models.common.roboflow.post_processing import (
-    ConfidenceFilter,
     align_instance_segmentation_results,
     crop_masks_to_boxes,
     post_process_nms_fused_model_output,
@@ -50,7 +49,6 @@ from inference_models.models.common.roboflow.pre_processing import (
 from inference_models.utils.onnx_introspection import (
     get_selected_onnx_execution_providers,
 )
-from inference_models.weights_providers.entities import RecommendedParameters
 
 try:
     import onnxruntime
@@ -81,7 +79,6 @@ class YOLOv8ForInstanceSegmentationOnnx(
         onnx_execution_providers: Optional[List[Union[str, tuple]]] = None,
         default_onnx_trt_options: bool = True,
         device: torch.device = DEFAULT_DEVICE,
-        recommended_parameters: Optional[RecommendedParameters] = None,
         **kwargs,
     ) -> "YOLOv8ForInstanceSegmentationOnnx":
         if onnx_execution_providers is None:
@@ -151,7 +148,6 @@ class YOLOv8ForInstanceSegmentationOnnx(
             inference_config=inference_config,
             device=device,
             input_batch_size=input_batch_size,
-            recommended_parameters=recommended_parameters,
         )
 
     def __init__(
@@ -162,7 +158,6 @@ class YOLOv8ForInstanceSegmentationOnnx(
         class_names: List[str],
         device: torch.device,
         input_batch_size: Optional[int],
-        recommended_parameters=None,
     ):
         self._session = session
         self._input_name = input_name
@@ -171,7 +166,6 @@ class YOLOv8ForInstanceSegmentationOnnx(
         self._device = device
         self._input_batch_size = input_batch_size
         self._session_thread_lock = Lock()
-        self.recommended_parameters = recommended_parameters
 
     @property
     def class_names(self) -> List[str]:
@@ -211,7 +205,7 @@ class YOLOv8ForInstanceSegmentationOnnx(
         self,
         model_results: Tuple[torch.Tensor, torch.Tensor],
         pre_processing_meta: List[PreProcessingMetadata],
-        confidence: Confidence = "default",
+        confidence: float = INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_CONFIDENCE,
         iou_threshold: float = INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_IOU_THRESHOLD,
         max_detections: int = INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_MAX_DETECTIONS,
         class_agnostic_nms: bool = INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_CLASS_AGNOSTIC_NMS,
@@ -219,12 +213,6 @@ class YOLOv8ForInstanceSegmentationOnnx(
         masks_binarization_threshold: float = INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_MASKS_BINARIZATION_THRESHOLD,
         **kwargs,
     ) -> List[InstanceDetections]:
-        confidence_filter = ConfidenceFilter(
-            confidence=confidence,
-            recommended_parameters=self.recommended_parameters,
-            default_confidence=INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_CONFIDENCE,
-        )
-        confidence = confidence_filter.get_threshold(self.class_names)
         instances, protos = model_results
         if self._inference_config.post_processing.fused:
             nms_results = post_process_nms_fused_model_output(

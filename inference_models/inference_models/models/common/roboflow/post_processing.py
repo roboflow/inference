@@ -1,42 +1,33 @@
-from typing import Dict, List, Literal, Optional, Tuple, Union
+from typing import List, Literal, Tuple
 
 import torch
 import torchvision
 from torchvision.transforms import functional
 
-from inference_models.configuration import INFERENCE_MODELS_DEFAULT_CONFIDENCE
-from inference_models.entities import Confidence, ImageDimensions
-from inference_models.logger import LOGGER
+from inference_models.entities import ImageDimensions
 from inference_models.models.common.roboflow.model_packages import (
     PreProcessingMetadata,
     StaticCropOffset,
 )
-from inference_models.weights_providers.entities import RecommendedParameters
 
 
 def run_nms_for_object_detection(
     output: torch.Tensor,
-    conf_thresh: Union[float, torch.Tensor] = 0.25,
+    conf_thresh: float = 0.25,
     iou_thresh: float = 0.45,
     max_detections: int = 100,
     class_agnostic: bool = False,
     box_format: Literal["xywh", "xyxy"] = "xywh",
 ) -> List[torch.Tensor]:
-    """
-    `conf_thresh`: scalar applies to all classes; 1-D tensor of shape
-    (num_classes,) indexed by class_id for per-class thresholds.
-    """
     bs = output.shape[0]
     boxes = output[:, :4, :]
     scores = output[:, 4:, :]
     results = []
     for b in range(bs):
-        class_scores = scores[b]
-        class_conf, class_ids = class_scores.max(0)
-        if isinstance(conf_thresh, torch.Tensor):
-            mask = class_conf > conf_thresh.to(output.device)[class_ids]
-        else:
-            mask = class_conf > conf_thresh
+        # Combine transpose & max for efficiency
+        class_scores = scores[b]  # (80, 8400)
+        class_conf, class_ids = class_scores.max(0)  # (8400,), (8400,)
+        mask = class_conf > conf_thresh
         if not torch.any(mask):
             results.append(torch.zeros((0, 6), device=output.device))
             continue
@@ -72,41 +63,27 @@ def run_nms_for_object_detection(
 
 def post_process_nms_fused_model_output(
     output: torch.Tensor,
-    conf_thresh: Union[float, torch.Tensor] = 0.25,
+    conf_thresh: float = 0.25,
 ) -> List[torch.Tensor]:
-    """
-    `conf_thresh`: scalar applies to all classes; 1-D tensor of shape
-    (num_classes,) indexed by class_id (col 5 of `output`).
-    """
     bs = output.shape[0]
     nms_results = []
     for batch_element_id in range(bs):
         batch_element_result = output[batch_element_id]
-        if isinstance(conf_thresh, torch.Tensor):
-            class_ids = batch_element_result[:, 5].long()
-            batch_element_result = batch_element_result[
-                batch_element_result[:, 4] >= conf_thresh.to(output.device)[class_ids]
-            ]
-        else:
-            batch_element_result = batch_element_result[
-                batch_element_result[:, 4] >= conf_thresh
-            ]
+        batch_element_result = batch_element_result[
+            batch_element_result[:, 4] >= conf_thresh
+        ]
         nms_results.append(batch_element_result)
     return nms_results
 
 
 def run_nms_for_instance_segmentation(
     output: torch.Tensor,
-    conf_thresh: Union[float, torch.Tensor] = 0.25,
+    conf_thresh: float = 0.25,
     iou_thresh: float = 0.45,
     max_detections: int = 100,
     class_agnostic: bool = False,
     box_format: Literal["xywh", "xyxy"] = "xywh",
 ) -> List[torch.Tensor]:
-    """
-    `conf_thresh`: scalar applies to all classes; 1-D tensor of shape
-    (num_classes,) indexed by class_id for per-class thresholds.
-    """
     bs = output.shape[0]
     boxes = output[:, :4, :]  # (N, 4, 8400)
     scores = output[:, 4:-32, :]  # (N, 80, 8400)
@@ -118,10 +95,7 @@ def run_nms_for_instance_segmentation(
         class_scores = scores[b].T  # (8400, 80)
         box_masks = masks[b].T
         class_conf, class_ids = class_scores.max(1)  # (8400,), (8400,)
-        if isinstance(conf_thresh, torch.Tensor):
-            mask = class_conf > conf_thresh.to(output.device)[class_ids]
-        else:
-            mask = class_conf > conf_thresh
+        mask = class_conf > conf_thresh
         if mask.sum() == 0:
             results.append(torch.zeros((0, 38), device=output.device))
             continue
@@ -158,15 +132,11 @@ def run_nms_for_key_points_detection(
     output: torch.Tensor,
     num_classes: int,
     key_points_slots_in_prediction: int,
-    conf_thresh: Union[float, torch.Tensor] = 0.25,
+    conf_thresh: float = 0.25,
     iou_thresh: float = 0.45,
     max_detections: int = 100,
     class_agnostic: bool = False,
 ) -> List[torch.Tensor]:
-    """
-    `conf_thresh`: scalar applies to all classes; 1-D tensor of shape
-    (num_classes,) indexed by class_id for per-class thresholds.
-    """
     bs = output.shape[0]
     boxes = output[:, :4, :]
     scores = output[:, 4 : 4 + num_classes, :]
@@ -175,10 +145,7 @@ def run_nms_for_key_points_detection(
     for b in range(bs):
         class_scores = scores[b]
         class_conf, class_ids = class_scores.max(0)
-        if isinstance(conf_thresh, torch.Tensor):
-            mask = class_conf > conf_thresh.to(output.device)[class_ids]
-        else:
-            mask = class_conf > conf_thresh
+        mask = class_conf > conf_thresh
         if not torch.any(mask):
             results.append(
                 torch.zeros(
@@ -467,87 +434,3 @@ def align_instance_segmentation_results(
         image_bboxes[:, :4].add_(static_crop_offsets)
         masks = mask_canvas
     return image_bboxes, masks
-
-
-class ConfidenceFilter:
-    """Resolves per-class confidence thresholds.
-
-    ``confidence`` selects the mode:
-
-      - ``"best"`` — per-class → global → model default.
-      - ``"default"`` — skip recommended_parameters, use model default.
-      - ``float`` — uniform user override for all classes.
-    """
-
-    def __init__(
-        self,
-        *,
-        confidence: Confidence = "default",
-        recommended_parameters: Optional[RecommendedParameters] = None,
-        default_confidence: float = INFERENCE_MODELS_DEFAULT_CONFIDENCE,
-    ):
-        self._class_to_threshold_map = self._resolve_class_to_threshold_map(
-            confidence, recommended_parameters
-        )
-        self._fallback_threshold = self._resolve_fallback_threshold(
-            confidence, recommended_parameters, default_confidence
-        )
-        LOGGER.debug(
-            "ConfidenceFilter: confidence=%s, recommended_parameters=%s, "
-            "default_confidence=%.4f -> class_to_threshold_map=%s, "
-            "fallback_threshold=%.4f",
-            confidence,
-            recommended_parameters,
-            default_confidence,
-            self._class_to_threshold_map,
-            self._fallback_threshold,
-        )
-
-    def get_threshold(
-        self, class_names: List[str]
-    ) -> Union[float, torch.Tensor]:
-        """Return the confidence threshold to apply.
-
-        Returns a scalar float when the same threshold applies to all
-        classes (fast path). Returns a 1-D CPU tensor of shape
-        `(len(class_names),)` indexed by class_id when per-class
-        thresholds are in effect.
-        """
-        if self._class_to_threshold_map is None:
-            return self._fallback_threshold
-        return torch.tensor(
-            [self._class_to_threshold_map.get(name, self._fallback_threshold) for name in class_names]
-        )
-
-    @staticmethod
-    def _resolve_class_to_threshold_map(
-        confidence: Confidence,
-        recommended_parameters: Optional[RecommendedParameters],
-    ) -> Optional[Dict[str, float]]:
-        if confidence != "best":
-            return None
-        if (
-            recommended_parameters is not None
-            and recommended_parameters.confidence is not None
-            and recommended_parameters.per_class_confidence
-        ):
-            return recommended_parameters.per_class_confidence
-        return None
-
-    @staticmethod
-    def _resolve_fallback_threshold(
-        confidence: Confidence,
-        recommended_parameters: Optional[RecommendedParameters],
-        default_confidence: float,
-    ) -> float:
-        if isinstance(confidence, float):
-            return confidence
-        if confidence == "default":
-            return default_confidence
-        if (
-            recommended_parameters is not None
-            and recommended_parameters.confidence is not None
-        ):
-            return recommended_parameters.confidence
-        return default_confidence
-

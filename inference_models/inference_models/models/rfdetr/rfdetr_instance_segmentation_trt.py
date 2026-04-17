@@ -13,7 +13,7 @@ from inference_models.configuration import (
     DEFAULT_DEVICE,
     INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE,
 )
-from inference_models.entities import Confidence, ColorFormat
+from inference_models.entities import ColorFormat
 from inference_models.errors import (
     CorruptedModelPackageError,
     MissingDependencyError,
@@ -48,8 +48,6 @@ from inference_models.models.rfdetr.common import (
     post_process_instance_segmentation_results,
 )
 from inference_models.models.rfdetr.pre_processing import pre_process_network_input
-from inference_models.models.common.roboflow.post_processing import ConfidenceFilter
-from inference_models.weights_providers.entities import RecommendedParameters
 
 try:
     import tensorrt as trt
@@ -98,7 +96,6 @@ class RFDetrForInstanceSegmentationTRT(
         trt_cuda_graph_cache: Optional[TRTCudaGraphCache] = None,
         default_trt_cuda_graph_cache_size: int = 8,
         rf_detr_max_input_resolution: Optional[Union[int, Tuple[int, int]]] = None,
-        recommended_parameters: Optional[RecommendedParameters] = None,
         **kwargs,
     ) -> "RFDetrForInstanceSegmentationTRT":
         if device.type != "cuda":
@@ -184,7 +181,6 @@ class RFDetrForInstanceSegmentationTRT(
             cuda_context=cuda_context,
             execution_context=execution_context,
             trt_cuda_graph_cache=trt_cuda_graph_cache,
-            recommended_parameters=recommended_parameters,
         )
 
     def __init__(
@@ -200,7 +196,6 @@ class RFDetrForInstanceSegmentationTRT(
         cuda_context: cuda.Context,
         execution_context: trt.IExecutionContext,
         trt_cuda_graph_cache: Optional[TRTCudaGraphCache],
-        recommended_parameters=None,
     ):
         self._engine = engine
         self._input_name = input_name
@@ -216,7 +211,6 @@ class RFDetrForInstanceSegmentationTRT(
         self._lock = threading.Lock()
         self._inference_stream = torch.cuda.Stream(device=self._device)
         self._thread_local_storage = threading.local()
-        self.recommended_parameters = recommended_parameters
 
     @property
     def class_names(self) -> List[str]:
@@ -269,14 +263,9 @@ class RFDetrForInstanceSegmentationTRT(
         self,
         model_results: Tuple[torch.Tensor, torch.Tensor, torch.Tensor],
         pre_processing_meta: List[PreProcessingMetadata],
-        confidence: Confidence = "default",
+        confidence: float = INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE,
         **kwargs,
     ) -> List[InstanceDetections]:
-        confidence_filter = ConfidenceFilter(
-            confidence=confidence,
-            recommended_parameters=self.recommended_parameters,
-            default_confidence=INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE,
-        )
         with torch.cuda.stream(self._post_process_stream):
             for result_element in model_results:
                 result_element.record_stream(self._post_process_stream)
@@ -286,8 +275,7 @@ class RFDetrForInstanceSegmentationTRT(
                 logits=logits,
                 masks=masks,
                 pre_processing_meta=pre_processing_meta,
-                threshold=confidence_filter.get_threshold(self.class_names),
-                num_classes=len(self.class_names),
+                threshold=confidence,
                 classes_re_mapping=self._classes_re_mapping,
             )
         self._post_process_stream.synchronize()

@@ -14,7 +14,7 @@ from inference_models.configuration import (
     DEFAULT_DEVICE,
     INFERENCE_MODELS_DINOV3_DEFAULT_CONFIDENCE,
 )
-from inference_models.entities import Confidence, ColorFormat
+from inference_models.entities import ColorFormat
 from inference_models.errors import (
     CorruptedModelPackageError,
     EnvironmentConfigurationError,
@@ -36,11 +36,9 @@ from inference_models.models.common.roboflow.model_packages import (
 from inference_models.models.common.roboflow.pre_processing import (
     pre_process_network_input,
 )
-from inference_models.models.common.roboflow.post_processing import ConfidenceFilter
 from inference_models.utils.onnx_introspection import (
     get_selected_onnx_execution_providers,
 )
-from inference_models.weights_providers.entities import RecommendedParameters
 
 try:
     import onnxruntime
@@ -224,7 +222,6 @@ class DinoV3ForMultiLabelClassificationOnnx(
         onnx_execution_providers: Optional[List[Union[str, tuple]]] = None,
         default_onnx_trt_options: bool = True,
         device: torch.device = DEFAULT_DEVICE,
-        recommended_parameters: Optional[RecommendedParameters] = None,
         **kwargs,
     ) -> "DinoV3ForMultiLabelClassificationOnnx":
         if onnx_execution_providers is None:
@@ -301,7 +298,6 @@ class DinoV3ForMultiLabelClassificationOnnx(
             class_names=class_names,
             device=device,
             input_batch_size=input_batch_size,
-            recommended_parameters=recommended_parameters,
         )
 
     def __init__(
@@ -312,7 +308,6 @@ class DinoV3ForMultiLabelClassificationOnnx(
         class_names: List[str],
         device: torch.device,
         input_batch_size: Optional[int],
-        recommended_parameters: Optional[RecommendedParameters] = None,
     ):
         self._session = session
         self._input_name = input_name
@@ -321,7 +316,6 @@ class DinoV3ForMultiLabelClassificationOnnx(
         self._device = device
         self._input_batch_size = input_batch_size
         self._session_thread_lock = Lock()
-        self.recommended_parameters = recommended_parameters
 
     @property
     def class_names(self) -> List[str]:
@@ -357,17 +351,9 @@ class DinoV3ForMultiLabelClassificationOnnx(
     def post_process(
         self,
         model_results: torch.Tensor,
-        confidence: Confidence = "default",
+        confidence: float = INFERENCE_MODELS_DINOV3_DEFAULT_CONFIDENCE,
         **kwargs,
     ) -> List[MultiLabelClassificationPrediction]:
-        confidence_filter = ConfidenceFilter(
-            confidence=confidence,
-            recommended_parameters=self.recommended_parameters,
-            default_confidence=INFERENCE_MODELS_DINOV3_DEFAULT_CONFIDENCE,
-        )
-        threshold = confidence_filter.get_threshold(self.class_names)
-        if isinstance(threshold, torch.Tensor):
-            threshold = threshold.to(dtype=model_results.dtype, device=model_results.device)
         if (
             self._inference_config.post_processing
             and self._inference_config.post_processing.fused
@@ -378,7 +364,7 @@ class DinoV3ForMultiLabelClassificationOnnx(
         results = []
         for batch_element_confidence in model_results:
             predicted_classes = torch.argwhere(
-                batch_element_confidence >= threshold
+                batch_element_confidence >= confidence
             ).squeeze(dim=-1)
             results.append(
                 MultiLabelClassificationPrediction(

@@ -39,7 +39,6 @@ from inference_models.weights_providers.entities import (
     ModelPackageMetadata,
     ONNXPackageDetails,
     Quantization,
-    RecommendedParameters,
     ServerEnvironmentRequirements,
     TorchScriptPackageDetails,
     TRTPackageDetails,
@@ -69,9 +68,6 @@ class RoboflowModelPackageV1(BaseModel):
     model_features: Optional[dict] = Field(alias="modelFeatures", default=None)
     package_files: List[RoboflowModelPackageFile] = Field(alias="packageFiles")
     trusted_source: bool = Field(alias="trustedSource", default=False)
-    recommended_parameters: Optional[RecommendedParameters] = Field(
-        alias="recommendedParameters", default=None
-    )
 
 
 class RoboflowModelDependencyV1(BaseModel):
@@ -92,9 +88,6 @@ class RoboflowModelMetadata(BaseModel):
     )
     model_packages: List[Union[RoboflowModelPackageV1, dict]] = Field(
         alias="modelPackages",
-    )
-    recommended_parameters: Optional[RecommendedParameters] = Field(
-        alias="recommendedParameters", default=None
     )
     next_page: Optional[str] = Field(alias="nextPage", default=None)
 
@@ -143,7 +136,6 @@ def get_roboflow_model(
         task_type=model_metadata.task_type,
         model_variant=model_metadata.model_variant,
         model_dependencies=model_dependencies,
-        recommended_parameters=model_metadata.recommended_parameters,
     )
 
 
@@ -421,7 +413,6 @@ def parse_onnx_model_package(
         ),
         trusted_source=metadata.trusted_source,
         model_features=metadata.model_features,
-        recommended_parameters=metadata.recommended_parameters,
     )
 
 
@@ -549,7 +540,6 @@ def parse_trt_model_package(
         environment_requirements=environment_requirements,
         trusted_source=metadata.trusted_source,
         model_features=metadata.model_features,
-        recommended_parameters=metadata.recommended_parameters,
     )
 
 
@@ -583,7 +573,6 @@ def parse_torch_model_package(
         package_artefacts=package_artefacts,
         trusted_source=metadata.trusted_source,
         model_features=metadata.model_features,
-        recommended_parameters=metadata.recommended_parameters,
     )
 
 
@@ -609,7 +598,6 @@ def parse_hf_model_package(
         package_artefacts=package_artefacts,
         trusted_source=metadata.trusted_source,
         model_features=metadata.model_features,
-        recommended_parameters=metadata.recommended_parameters,
     )
 
 
@@ -628,7 +616,6 @@ def parse_ultralytics_model_package(
         quantization=Quantization.UNKNOWN,
         trusted_source=metadata.trusted_source,
         model_features=metadata.model_features,
-        recommended_parameters=metadata.recommended_parameters,
     )
 
 
@@ -677,7 +664,6 @@ def parse_torch_script_model_package(
         quantization=parsed_manifest.quantization,
         trusted_source=metadata.trusted_source,
         model_features=metadata.model_features,
-        recommended_parameters=metadata.recommended_parameters,
         torch_script_package_details=torch_script_package_details,
     )
 
@@ -703,7 +689,6 @@ def parse_mediapipe_model_package(
         quantization=Quantization.UNKNOWN,
         trusted_source=metadata.trusted_source,
         model_features=metadata.model_features,
-        recommended_parameters=metadata.recommended_parameters,
     )
 
 

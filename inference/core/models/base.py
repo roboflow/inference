@@ -139,16 +139,7 @@ class Model(BaseInference):
               is also included in the response.
         """
         t1 = perf_counter()
-        kwargs = request.dict()
-        confidence = kwargs.get("confidence")
-        if isinstance(confidence, str):
-            logger.warning(
-                "Legacy inference does not support confidence=%r, "
-                "using model default",
-                confidence,
-            )
-            kwargs.pop("confidence")
-        responses = self.infer(**kwargs, return_image_dims=False)
+        responses = self.infer(**request.dict(), return_image_dims=False)
         for response in responses:
             response.time = perf_counter() - t1
             logger.debug(f"model infer time: {response.time * 1000.0} ms")
