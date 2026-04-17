@@ -1,0 +1,233 @@
+"""End-to-end ModelManager tests with real YOLOv8n model.
+
+Loads model artifact from GCS, runs inference through ModelManager,
+validates predictions. Covers both direct and subprocess backends,
+multi-instance routing, lifecycle, and observability.
+"""
+
+from __future__ import annotations
+
+import numpy as np
+import pytest
+
+from inference_models.model_manager import ModelManager
+
+
+@pytest.mark.slow
+@pytest.mark.torch_models
+class TestModelManagerDirectE2E:
+    """ModelManager + DirectBackend with real model artifact."""
+
+    def test_load_and_infer_numpy(
+        self, yolov8n_model_path: str, dog_image_numpy: np.ndarray
+    ) -> None:
+        mm = ModelManager()
+        mm.load(yolov8n_model_path, api_key="", backend="direct")
+
+        result = mm.infer_sync(yolov8n_model_path, dog_image_numpy)
+
+        assert result is not None
+        assert len(result) > 0
+        assert hasattr(result[0], "xyxy")
+        assert hasattr(result[0], "confidence")
+        assert result[0].xyxy.shape[1] == 4
+
+        mm.shutdown()
+
+    def test_load_and_infer_jpeg_bytes(
+        self, yolov8n_model_path: str, dog_image_numpy: np.ndarray
+    ) -> None:
+        import cv2
+
+        mm = ModelManager()
+        mm.load(yolov8n_model_path, api_key="", backend="direct")
+
+        _, buf = cv2.imencode(".jpg", dog_image_numpy)
+        jpeg_bytes = buf.tobytes()
+
+        result = mm.infer_sync(yolov8n_model_path, jpeg_bytes)
+
+        assert result is not None
+        assert len(result) > 0
+        assert hasattr(result[0], "xyxy")
+
+        mm.shutdown()
+
+    def test_submit_future(
+        self, yolov8n_model_path: str, dog_image_numpy: np.ndarray
+    ) -> None:
+        mm = ModelManager()
+        mm.load(yolov8n_model_path, api_key="", backend="direct")
+
+        future = mm.submit(yolov8n_model_path, dog_image_numpy)
+        result = future.result(timeout=30)
+
+        assert result is not None
+        assert len(result) > 0
+
+        mm.shutdown()
+
+    def test_infer_async(
+        self, yolov8n_model_path: str, dog_image_numpy: np.ndarray
+    ) -> None:
+        import asyncio
+
+        mm = ModelManager()
+        mm.load(yolov8n_model_path, api_key="", backend="direct")
+
+        result = asyncio.get_event_loop().run_until_complete(
+            mm.infer_async(yolov8n_model_path, dog_image_numpy)
+        )
+
+        assert result is not None
+        assert len(result) > 0
+
+        mm.shutdown()
+
+    def test_stats_after_inference(
+        self, yolov8n_model_path: str, dog_image_numpy: np.ndarray
+    ) -> None:
+        mm = ModelManager()
+        mm.load(yolov8n_model_path, api_key="", backend="direct")
+        mm.infer_sync(yolov8n_model_path, dog_image_numpy)
+        mm.infer_sync(yolov8n_model_path, dog_image_numpy)
+
+        s = mm.stats()
+
+        assert len(s["models"]) == 1
+        model_s = s["models"][0]
+        assert model_s["model_id"] == yolov8n_model_path
+        assert model_s["state"] == "loaded"
+        assert model_s["inference_count"] == 2
+
+        mm.shutdown()
+
+    def test_unload_then_infer_raises(
+        self, yolov8n_model_path: str, dog_image_numpy: np.ndarray
+    ) -> None:
+        mm = ModelManager()
+        mm.load(yolov8n_model_path, api_key="", backend="direct")
+        mm.unload(yolov8n_model_path)
+
+        with pytest.raises(KeyError, match="not loaded"):
+            mm.infer_sync(yolov8n_model_path, dog_image_numpy)
+
+
+@pytest.mark.slow
+@pytest.mark.torch_models
+class TestModelManagerMultiInstance:
+    """Multiple instances of same model under different routing keys."""
+
+    def test_two_instances_same_model(
+        self, yolov8n_model_path: str, dog_image_numpy: np.ndarray
+    ) -> None:
+        mm = ModelManager()
+        mm.load(
+            "yolov8n:0", api_key="", backend="direct",
+            model_id_or_path=yolov8n_model_path,
+        )
+        mm.load(
+            "yolov8n:1", api_key="", backend="direct",
+            model_id_or_path=yolov8n_model_path,
+        )
+
+        assert "yolov8n:0" in mm
+        assert "yolov8n:1" in mm
+        assert len(mm) == 2
+
+        r0 = mm.infer_sync("yolov8n:0", dog_image_numpy)
+        r1 = mm.infer_sync("yolov8n:1", dog_image_numpy)
+
+        # Same model, same input → same detections
+        assert len(r0) > 0
+        assert len(r1) > 0
+        assert len(r0) == len(r1)
+
+        mm.shutdown()
+
+    def test_unload_one_instance_keeps_other(
+        self, yolov8n_model_path: str, dog_image_numpy: np.ndarray
+    ) -> None:
+        mm = ModelManager()
+        mm.load(
+            "yolov8n:0", api_key="", backend="direct",
+            model_id_or_path=yolov8n_model_path,
+        )
+        mm.load(
+            "yolov8n:1", api_key="", backend="direct",
+            model_id_or_path=yolov8n_model_path,
+        )
+
+        mm.unload("yolov8n:0")
+
+        assert "yolov8n:0" not in mm
+        assert "yolov8n:1" in mm
+
+        result = mm.infer_sync("yolov8n:1", dog_image_numpy)
+        assert len(result) > 0
+
+        mm.shutdown()
+
+
+@pytest.mark.slow
+@pytest.mark.torch_models
+class TestModelManagerSubprocessE2E:
+    """ModelManager + SubprocessBackend with real model."""
+
+    def test_load_and_infer(
+        self, yolov8n_model_path: str, dog_image_numpy: np.ndarray
+    ) -> None:
+        mm = ModelManager()
+        mm.load(yolov8n_model_path, api_key="", backend="subprocess")
+
+        result = mm.infer_sync(yolov8n_model_path, dog_image_numpy)
+
+        assert result is not None
+        assert len(result) > 0
+        assert hasattr(result[0], "xyxy")
+        assert hasattr(result[0], "confidence")
+
+        mm.shutdown()
+
+    def test_submit_future(
+        self, yolov8n_model_path: str, dog_image_numpy: np.ndarray
+    ) -> None:
+        mm = ModelManager()
+        mm.load(yolov8n_model_path, api_key="", backend="subprocess")
+
+        future = mm.submit(yolov8n_model_path, dog_image_numpy)
+        result = future.result(timeout=30)
+
+        assert result is not None
+        assert len(result) > 0
+
+        mm.shutdown()
+
+    def test_stats_after_inference(
+        self, yolov8n_model_path: str, dog_image_numpy: np.ndarray
+    ) -> None:
+        mm = ModelManager()
+        mm.load(yolov8n_model_path, api_key="", backend="subprocess")
+        mm.infer_sync(yolov8n_model_path, dog_image_numpy)
+
+        s = mm.model_stats(yolov8n_model_path)
+
+        assert s["state"] == "loaded"
+        assert s["inference_count"] == 1
+
+        mm.shutdown()
+
+
+@pytest.mark.slow
+@pytest.mark.torch_models
+class TestModelManagerWarmup:
+    """Warmup runs synthetic inference during load."""
+
+    def test_warmup_iters(self, yolov8n_model_path: str) -> None:
+        mm = ModelManager()
+        mm.load(yolov8n_model_path, api_key="", backend="direct", warmup_iters=2)
+
+        s = mm.model_stats(yolov8n_model_path)
+        assert s["inference_count"] == 2
+
+        mm.shutdown()
