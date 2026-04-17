@@ -114,6 +114,8 @@ def launch_orchestrated(
     stale_slot_max_age_s:   float = 30.0,
     mmp_start_timeout:      float = 30.0,
     decoder:                str   = "imagecodecs",
+    batch_max_size:         int   = 0,
+    batch_max_wait_ms:      float = 5.0,
 ) -> LaunchHandle:
     """Start a ModelManagerProcess and return a LaunchHandle.
 
@@ -145,6 +147,8 @@ def launch_orchestrated(
         stale_reap_interval_s=stale_reap_interval_s,
         stale_slot_max_age_s=stale_slot_max_age_s,
         decoder=decoder,
+        batch_max_size=batch_max_size,
+        batch_max_wait_ms=batch_max_wait_ms,
     )
 
     ready  = threading.Event()

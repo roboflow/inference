@@ -244,7 +244,9 @@ class ModelManagerProcess:
         evict_check_interval_s: float = 5.0,
         monitor_interval_s:     float = 5.0,
         manager: Optional[Any]        = None,
-        decoder: str                  = "imagecodecs",
+        decoder:                str   = "imagecodecs",
+        batch_max_size:         int   = 0,
+        batch_max_wait_ms:      float = 5.0,
     ) -> None:
         """
         Args:
@@ -255,11 +257,15 @@ class ModelManagerProcess:
                 T_ERROR (no backend).  Useful for tests and hot-path benchmarks.
             decoder: Image decoder for SubprocessBackend workers.
                 ``"imagecodecs"`` (default, CPU) or ``"nvjpeg"`` (GPU).
+            batch_max_size: Max images per worker batch (default: 8).
+            batch_max_wait_ms: Max ms to wait for a full batch (default: 5.0).
         """
         self._n_slots               = n_slots
         self._input_mb              = input_mb
         self._result_mb             = result_mb
         self._decoder               = decoder
+        self._batch_max_size        = batch_max_size
+        self._batch_max_wait_ms     = batch_max_wait_ms
         self._stale_reap_interval_s = stale_reap_interval_s
         self._stale_slot_max_age_s  = stale_slot_max_age_s
         self._evict_threshold       = evict_threshold
@@ -848,6 +854,8 @@ class ModelManagerProcess:
                         input_mb=self._input_mb,
                         result_mb=self._result_mb,
                         decoder=self._decoder,
+                        batch_max_size=self._batch_max_size,
+                        batch_max_delay_ms=self._batch_max_wait_ms,
                     ),
                 )
                 backend = self._manager.get_backend(model_id)
