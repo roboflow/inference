@@ -332,7 +332,7 @@ REGISTERED_MODELS: Dict[
         model_class=LazyClass(
             module_name="inference_models.models.rfdetr.rfdetr_instance_segmentation_onnx",
             class_name="RFDetrForInstanceSegmentationOnnx",
-        ),
+        ), 
         supported_model_features={
             "resolution",
             "patch_size",
