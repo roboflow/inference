@@ -4,6 +4,7 @@ from uuid import uuid4
 from pydantic import BaseModel, ConfigDict, Field, validator
 
 from inference.core.entities.common import ApiKey, ModelID, ModelType
+from inference_sdk.http.entities import Confidence
 
 
 class BaseRequest(BaseModel):
@@ -145,10 +146,13 @@ class ObjectDetectionInferenceRequest(CVInferenceRequest):
         examples=[["class-1", "class-2", "class-n"]],
         description="If provided, only predictions for the listed classes will be returned",
     )
-    confidence: Optional[float] = Field(
+    confidence: Confidence = Field(
         default=0.4,
-        examples=[0.5],
-        description="The confidence threshold used to filter out predictions",
+        examples=[0.5, "best", "default"],
+        description=(
+            'Confidence threshold. "best" uses model-eval thresholds, '
+            '"default" uses the model built-in, or pass a float.'
+        ),
     )
     fix_batch_size: Optional[bool] = Field(
         default=False,
@@ -245,10 +249,13 @@ class ClassificationInferenceRequest(CVInferenceRequest):
         kwargs["model_type"] = "classification"
         super().__init__(**kwargs)
 
-    confidence: Optional[float] = Field(
+    confidence: Confidence = Field(
         default=0.4,
-        examples=[0.5],
-        description="The confidence threshold used to filter out predictions",
+        examples=[0.5, "best", "default"],
+        description=(
+            'Confidence threshold. "best" uses model-eval thresholds, '
+            '"default" uses the model built-in, or pass a float.'
+        ),
     )
     visualization_stroke_width: Optional[int] = Field(
         default=1,
