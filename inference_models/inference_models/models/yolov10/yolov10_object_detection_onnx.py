@@ -201,7 +201,7 @@ class YOLOv10ForObjectDetectionOnnx(
             threshold = threshold.to(dtype=model_results.dtype, device=model_results.device)
         results = []
         for image_result, metadata in zip(model_results, pre_processing_meta):
-            mask = image_result[:, 4] > threshold[image_result[:, 5].long()]
+            mask = image_result[:, 4] > (threshold[image_result[:, 5].long()] if isinstance(threshold, torch.Tensor) else threshold)
             filtered = image_result[mask][:max_detections]
             rescaled = rescale_image_detections(
                 image_detections=filtered,
