@@ -1,21 +1,19 @@
 """
-Compile-time helpers for nested workflows (composition validation and output projection).
+Compile-time helpers for nested workflows (composition validation and parameter bindings).
 
-Called from compile_workflow_graph; does not import block implementations.
+``inner_workflow`` steps are expanded into ordinary steps before parsing; see ``inline.py``.
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
-from typing import Any, Dict, List, Set, Tuple, Union
+from typing import Any, Dict, List, Set, Tuple
 
 from inference.core.env import WORKFLOWS_MAX_INNER_WORKFLOW_DEPTH
 from inference.core.workflows.errors import WorkflowDefinitionError
-from inference.core.workflows.execution_engine.entities.base import OutputDefinition
-from inference.core.workflows.execution_engine.entities.types import WILDCARD_KIND, Kind
+from inference.core.workflows.execution_engine.entities.base import InputType, WorkflowParameter
 from inference.core.workflows.execution_engine.v1.compiler.entities import (
-    GraphCompilationResult,
     ParsedWorkflowDefinition,
 )
 from inference.core.workflows.execution_engine.v1.inner_workflow.composition import (
@@ -24,7 +22,6 @@ from inference.core.workflows.execution_engine.v1.inner_workflow.composition imp
 from inference.core.workflows.execution_engine.v1.inner_workflow.constants import (
     USE_INNER_WORKFLOW_BLOCK_TYPE,
 )
-from inference.core.workflows.prototypes.block import WorkflowBlockManifest
 
 
 def workflow_identity_fingerprint(workflow_dict: Dict[str, Any]) -> str:
@@ -42,7 +39,9 @@ def collect_composition_edges_from_workflow_dict(
 
     def visit(wf: Dict[str, Any]) -> None:
         fp = workflow_identity_fingerprint(wf)
-        for step in wf.get("steps", []):
+        for step in wf.get("steps") or []:
+            if not isinstance(step, dict):
+                continue
             if step.get("type") != USE_INNER_WORKFLOW_BLOCK_TYPE:
                 continue
             child_wf = step.get("workflow_definition")
@@ -68,110 +67,15 @@ def validate_inner_workflow_composition_from_workflow_dict(
     )
 
 
-def _normalize_kinds(kinds: List[Union[str, Kind]]) -> List[Kind]:
-    result: List[Kind] = []
-    for k in kinds:
-        if isinstance(k, Kind):
-            result.append(k)
-        elif isinstance(k, dict):
-            result.append(Kind.model_validate(k))
-        elif isinstance(k, str):
-            result.append(WILDCARD_KIND)
-        else:
-            raise WorkflowDefinitionError(
-                public_message=f"Unexpected kind entry in workflow input: {k!r}",
-                context="workflow_compilation | inner_workflow_output_projection",
-            )
-    return result
-
-
-def kinds_for_workflow_output_selector(
-    parsed: ParsedWorkflowDefinition,
-    selector: str,
-) -> List[Kind]:
-    if selector.startswith("$inputs."):
-        name = selector.split(".", 1)[1]
-        for inp in parsed.inputs:
-            if inp.name == name:
-                return _normalize_kinds(inp.kind)
-        raise WorkflowDefinitionError(
-            public_message=f"Inner workflow output references unknown input `{name}` in selector `{selector}`.",
-            context="workflow_compilation | inner_workflow_output_projection",
-        )
-    if not selector.startswith("$steps."):
-        raise WorkflowDefinitionError(
-            public_message=f"Unsupported output selector for inner workflow projection: `{selector}`.",
-            context="workflow_compilation | inner_workflow_output_projection",
-        )
-    rest = selector[len("$steps.") :]
-    step_name, _, prop = rest.partition(".")
-    if not step_name or not prop:
-        raise WorkflowDefinitionError(
-            public_message=f"Invalid step output selector `{selector}` for inner workflow projection.",
-            context="workflow_compilation | inner_workflow_output_projection",
-        )
-    for sm in parsed.steps:
-        if sm.name != step_name:
-            continue
-        for od in sm.get_actual_outputs():
-            if od.name == prop:
-                return list(od.kind)
-        raise WorkflowDefinitionError(
-            public_message=f"Step `{step_name}` has no output `{prop}` (selector `{selector}`).",
-            context="workflow_compilation | inner_workflow_output_projection",
-        )
-    raise WorkflowDefinitionError(
-        public_message=f"Unknown step `{step_name}` in selector `{selector}`.",
-        context="workflow_compilation | inner_workflow_output_projection",
-    )
-
-
-def max_projection_output_lift_from_child_workflow(
-    child_graph: GraphCompilationResult,
-) -> int:
+def _child_workflow_input_requires_parameter_binding(child_input: InputType) -> bool:
     """
-    Largest positive ``get_output_dimensionality_offset()`` among child steps referenced
-    by the child workflow's JsonField outputs (e.g. ``dynamic_crop`` -> 1).
+    Bindings may omit ``WorkflowParameter`` / ``InferenceParameter`` inputs that declare a
+    non-null ``default_value``; those values are supplied when assembling the child's runtime
+    input (see :func:`assemble_inference_parameter`).
     """
-    from inference.core.workflows.execution_engine.v1.compiler.entities import StepNode
-    from inference.core.workflows.execution_engine.v1.compiler.graph_constructor import (
-        NODE_COMPILATION_OUTPUT_PROPERTY,
-    )
-    from inference.core.workflows.execution_engine.v1.compiler.utils import (
-        construct_step_selector,
-    )
-
-    lift = 0
-    graph = child_graph.execution_graph
-    for jf in child_graph.parsed_workflow_definition.outputs:
-        sel = jf.selector
-        if not isinstance(sel, str) or not sel.startswith("$steps."):
-            continue
-        rest = sel[len("$steps.") :]
-        step_name, _, prop = rest.partition(".")
-        if not step_name or not prop:
-            continue
-        step_selector = construct_step_selector(step_name=step_name)
-        if step_selector not in graph.nodes:
-            continue
-        comp = graph.nodes[step_selector].get(NODE_COMPILATION_OUTPUT_PROPERTY)
-        if not isinstance(comp, StepNode):
-            continue
-        o = comp.step_manifest.get_output_dimensionality_offset()
-        if o > lift:
-            lift = o
-    return lift
-
-
-def derive_resolved_outputs_for_child_workflow(
-    child_graph: GraphCompilationResult,
-) -> List[OutputDefinition]:
-    parsed = child_graph.parsed_workflow_definition
-    result: List[OutputDefinition] = []
-    for jf in parsed.outputs:
-        kinds = kinds_for_workflow_output_selector(parsed, jf.selector)
-        result.append(OutputDefinition(name=jf.name, kind=kinds))
-    return result
+    if isinstance(child_input, WorkflowParameter):
+        return child_input.default_value is None
+    return True
 
 
 def validate_parameter_bindings_against_child(
@@ -182,69 +86,28 @@ def validate_parameter_bindings_against_child(
 ) -> None:
     expected: Set[str] = {inp.name for inp in child_parsed.inputs}
     got = set(bindings.keys())
-    if got != expected:
+    unknown = got - expected
+    if unknown:
         raise WorkflowDefinitionError(
             public_message=(
-                f"inner_workflow step `{step_name}` parameter_bindings keys {sorted(got)} "
-                f"do not match child workflow inputs {sorted(expected)}."
+                f"inner_workflow step `{step_name}` parameter_bindings references unknown "
+                f"child workflow input names {sorted(unknown)}. "
+                f"Valid input names: {sorted(expected)}."
             ),
             context="workflow_compilation | inner_workflow_parameter_bindings",
         )
-
-
-def resolve_inner_workflow_steps_in_parsed_definition(
-    parsed: ParsedWorkflowDefinition,
-    raw_workflow_definition: Dict[str, Any],
-    *,
-    compile_workflow_graph_fn,
-    available_blocks: Any,
-    execution_engine_version: Any,
-    init_parameters: Dict[str, Any],
-    profiler: Any,
-) -> ParsedWorkflowDefinition:
-    """
-    For each ``inner_workflow`` step, compile the child workflow (for cache + output kinds)
-    and attach resolved_child_outputs on the manifest copy.
-    """
-    from inference.core.workflows.execution_engine.v1.compiler.entities import (
-        ParsedWorkflowDefinition as PWD,
+    missing_required = sorted(
+        inp.name
+        for inp in child_parsed.inputs
+        if _child_workflow_input_requires_parameter_binding(inp) and inp.name not in got
     )
-
-    new_steps: List[WorkflowBlockManifest] = []
-    for step in parsed.steps:
-        if getattr(step, "type", None) != USE_INNER_WORKFLOW_BLOCK_TYPE:
-            new_steps.append(step)
-            continue
-        child_wf = step.workflow_definition
-        if not isinstance(child_wf, dict):
-            raise WorkflowDefinitionError(
-                public_message=f"inner_workflow step `{step.name}` requires `workflow_definition` object.",
-                context="workflow_compilation | inner_workflow_resolution",
-            )
-        child_result = compile_workflow_graph_fn(
-            workflow_definition=child_wf,
-            execution_engine_version=execution_engine_version,
-            profiler=profiler,
-            init_parameters=init_parameters,
-        )
-        validate_parameter_bindings_against_child(
-            bindings=dict(step.parameter_bindings),
-            child_parsed=child_result.parsed_workflow_definition,
-            step_name=step.name,
-        )
-        resolved = derive_resolved_outputs_for_child_workflow(child_result)
-        lift = max_projection_output_lift_from_child_workflow(child_result)
-        new_steps.append(
-            step.model_copy(
-                update={
-                    "resolved_child_outputs": resolved,
-                    "nested_output_dimensionality_lift": lift,
-                },
+    if missing_required:
+        raise WorkflowDefinitionError(
+            public_message=(
+                f"inner_workflow step `{step_name}` is missing parameter_bindings for required "
+                f"child workflow inputs {missing_required}. "
+                f"Omitting a binding is allowed only for `WorkflowParameter` / `InferenceParameter` "
+                f"inputs with a non-null `default_value` in the child workflow definition."
             ),
+            context="workflow_compilation | inner_workflow_parameter_bindings",
         )
-    return PWD(
-        version=parsed.version,
-        inputs=parsed.inputs,
-        steps=new_steps,
-        outputs=parsed.outputs,
-    )

@@ -70,7 +70,6 @@ class CompiledWorkflow:
     kinds_deserializers: Dict[str, Callable[[str, Any], Any]] = field(
         default_factory=dict
     )
-    inner_workflows: Dict[str, "CompiledWorkflow"] = field(default_factory=dict)
 
 
 class NodeCategory(Enum):

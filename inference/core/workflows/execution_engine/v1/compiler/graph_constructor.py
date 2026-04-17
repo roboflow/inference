@@ -86,9 +86,6 @@ from inference.core.workflows.execution_engine.v1.compiler.utils import (
     is_step_selector,
     node_as,
 )
-from inference.core.workflows.execution_engine.v1.inner_workflow.constants import (
-    USE_INNER_WORKFLOW_BLOCK_TYPE,
-)
 from inference.core.workflows.prototypes.block import WorkflowBlockManifest
 
 NODE_DEFINITION_KEY = "definition"
@@ -741,10 +738,6 @@ def denote_data_flow_for_step(
     )
     dimensionality_reference_property = manifest.get_dimensionality_reference_property()
     output_dimensionality_offset = manifest.get_output_dimensionality_offset()
-    if manifest.type == USE_INNER_WORKFLOW_BLOCK_TYPE:
-        lift = int(getattr(manifest, "nested_output_dimensionality_lift", 0) or 0)
-        if lift > output_dimensionality_offset:
-            output_dimensionality_offset = lift
     verify_step_input_dimensionality_offsets(
         step_name=step_name,
         input_dimensionality_offsets=input_dimensionality_offsets,

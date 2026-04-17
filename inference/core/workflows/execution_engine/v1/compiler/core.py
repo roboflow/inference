@@ -48,11 +48,10 @@ from inference.core.workflows.execution_engine.v1.dynamic_blocks.block_assembler
     ensure_dynamic_blocks_allowed,
 )
 from inference.core.workflows.execution_engine.v1.inner_workflow.compiler_bridge import (
-    resolve_inner_workflow_steps_in_parsed_definition,
     validate_inner_workflow_composition_from_workflow_dict,
 )
-from inference.core.workflows.execution_engine.v1.inner_workflow.constants import (
-    USE_INNER_WORKFLOW_BLOCK_TYPE,
+from inference.core.workflows.execution_engine.v1.inner_workflow.inline import (
+    fully_inline_inner_workflow_steps,
 )
 from inference.core.workflows.execution_engine.v1.inner_workflow.reference_resolution import (
     normalize_inner_workflow_references_in_definition,
@@ -99,12 +98,6 @@ def compile_workflow(
     )
     steps_by_name = {step.manifest.name: step for step in steps}
     dump_execution_graph(execution_graph=graph_compilation_results.execution_graph)
-    inner_workflows = _compile_inner_workflows(
-        parsed=graph_compilation_results.parsed_workflow_definition,
-        init_parameters=init_parameters,
-        execution_engine_version=execution_engine_version,
-        profiler=profiler,
-    )
     return CompiledWorkflow(
         workflow_definition=graph_compilation_results.parsed_workflow_definition,
         workflow_json=workflow_definition,
@@ -114,27 +107,7 @@ def compile_workflow(
         input_substitutions=input_substitutions,
         kinds_serializers=graph_compilation_results.kinds_serializers,
         kinds_deserializers=graph_compilation_results.kinds_deserializers,
-        inner_workflows=inner_workflows,
     )
-
-
-def _compile_inner_workflows(
-    parsed: ParsedWorkflowDefinition,
-    init_parameters: Dict[str, Union[Any, Callable[[None], Any]]],
-    execution_engine_version: Optional[Version],
-    profiler: Optional[WorkflowsProfiler],
-) -> Dict[str, CompiledWorkflow]:
-    inner: Dict[str, CompiledWorkflow] = {}
-    for sm in parsed.steps:
-        if getattr(sm, "type", None) != USE_INNER_WORKFLOW_BLOCK_TYPE:
-            continue
-        inner[sm.name] = compile_workflow(
-            workflow_definition=sm.workflow_definition,
-            init_parameters=init_parameters,
-            execution_engine_version=execution_engine_version,
-            profiler=profiler,
-        )
-    return inner
 
 
 def compile_workflow_graph(
@@ -175,23 +148,19 @@ def compile_workflow_graph(
         api_key=init_parameters.get("workflows_core.api_key", None),
     )
     available_blocks = statically_defined_blocks + dynamic_blocks
+    validate_inner_workflow_composition_from_workflow_dict(workflow_for_compile)
+    workflow_inlined = fully_inline_inner_workflow_steps(
+        workflow_for_compile,
+        available_blocks=available_blocks,
+        profiler=profiler,
+    )
     parsed_workflow_definition = parse_workflow_definition(
-        raw_workflow_definition=workflow_for_compile,
+        raw_workflow_definition=workflow_inlined,
         available_blocks=available_blocks,
         profiler=profiler,
     )
     validate_workflow_specification(
         workflow_definition=parsed_workflow_definition,
-        profiler=profiler,
-    )
-    validate_inner_workflow_composition_from_workflow_dict(workflow_for_compile)
-    parsed_workflow_definition = resolve_inner_workflow_steps_in_parsed_definition(
-        parsed=parsed_workflow_definition,
-        raw_workflow_definition=workflow_for_compile,
-        compile_workflow_graph_fn=compile_workflow_graph,
-        available_blocks=available_blocks,
-        execution_engine_version=execution_engine_version,
-        init_parameters=init_parameters,
         profiler=profiler,
     )
     execution_graph = prepare_execution_graph(

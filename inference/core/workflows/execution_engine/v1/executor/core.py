@@ -56,11 +56,6 @@ from inference.core.workflows.execution_engine.v1.executor.output_constructor im
 from inference.core.workflows.execution_engine.v1.executor.utils import (
     run_steps_in_parallel,
 )
-from inference.core.workflows.execution_engine.v1.inner_workflow.step_execution import (
-    is_inner_workflow_step,
-    run_inner_workflow_non_simd,
-    run_inner_workflow_simd,
-)
 from inference.core.workflows.prototypes.block import WorkflowBlock
 from inference.usage_tracking.collector import usage_collector
 
@@ -316,24 +311,6 @@ def run_simd_step(
     step_error_handler: Optional[Callable[[str, Exception], None]] = None,
 ) -> None:
     step_name = get_last_chunk_of_selector(selector=step_selector)
-    if is_inner_workflow_step(workflow, step_name):
-        if profiler is None:
-            profiler = NullWorkflowsProfiler.init()
-        with profiler.profile_execution_phase(
-            name="step_input_assembly",
-            categories=["execution_engine_operation"],
-            metadata={"step": step_selector},
-        ):
-            execution_data_manager.get_simd_step_input(step_selector=step_selector)
-        return run_inner_workflow_simd(
-            step_selector=step_selector,
-            workflow=workflow,
-            execution_data_manager=execution_data_manager,
-            profiler=profiler,
-            kinds_serializers=workflow.kinds_serializers,
-            executor=None,
-            step_error_handler=step_error_handler,
-        )
     step_instance = workflow.steps[step_name].step
     step_manifest = workflow.steps[step_name].manifest
     collapse_of_batch_to_scalar_expected = (
@@ -464,19 +441,6 @@ def run_non_simd_step(
         # discarded by conditional execution or empty value from upstream step
         return None
     step_name = get_last_chunk_of_selector(selector=step_selector)
-    if is_inner_workflow_step(workflow, step_name):
-        if profiler is None:
-            profiler = NullWorkflowsProfiler.init()
-        return run_inner_workflow_non_simd(
-            step_selector=step_selector,
-            workflow=workflow,
-            execution_data_manager=execution_data_manager,
-            step_input=step_input,
-            profiler=profiler,
-            kinds_serializers=workflow.kinds_serializers,
-            executor=None,
-            step_error_handler=step_error_handler,
-        )
     step_instance = workflow.steps[step_name].step
     with profiler.profile_execution_phase(
         name="step_code_execution",

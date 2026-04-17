@@ -26,8 +26,9 @@ Reference fields are expanded at compile time via `workflows_core.inner_workflow
 (default: Roboflow API using `workflows_core.api_key`, or local definitions when workspace is
 `"local"`).
 
-Compilation validates composition (acyclicity, max depth) and child input names; execution uses a
-pluggable `InnerWorkflowRunner` (see `workflows_core.inner_workflow_runner`).
+At compile time the engine validates composition (acyclicity, max depth) and `parameter_bindings`,
+then **inlines** the child's steps into the parent workflow graph (same execution path as ordinary
+steps).
 
 The block's `run()` method is not used at runtime; do not call it directly.
 """
@@ -75,23 +76,15 @@ class BlockManifest(WorkflowBlockManifest):
         description="Optional pinned workflow version when resolving by id.",
     )
     parameter_bindings: Dict[str, Selector()] = Field(
-        description="Maps each **child** workflow input name to a selector (or literal coerced by the engine) from the parent.",
+        description=(
+            "Maps **child** workflow input names to a selector (or literal coerced by the engine) "
+            "from the parent. Required for every child input except `WorkflowParameter` / "
+            "`InferenceParameter` entries that declare a non-null `default_value` (those may be "
+            "omitted and the child's default is used during compilation inlining)."
+        ),
         json_schema_extra={
             "keys_bound_in": "parameter_bindings",
         },
-    )
-    resolved_child_outputs: Optional[List[OutputDefinition]] = Field(
-        default=None,
-        description="Set by the compiler when resolving child workflows.",
-        repr=False,
-    )
-    nested_output_dimensionality_lift: int = Field(
-        default=0,
-        exclude=True,
-        description=(
-            "Compiler-only: max ``get_output_dimensionality_offset()`` among child steps "
-            "referenced by the child workflow JsonField outputs (drives parent batch lineage)."
-        ),
     )
 
     @model_validator(mode="after")
@@ -119,11 +112,6 @@ class BlockManifest(WorkflowBlockManifest):
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [OutputDefinition(name="*", kind=[WILDCARD_KIND])]
 
-    def get_actual_outputs(self) -> List[OutputDefinition]:
-        if self.resolved_child_outputs is not None:
-            return list(self.resolved_child_outputs)
-        return super().get_actual_outputs()
-
     @classmethod
     def accepts_batch_input(cls) -> bool:
         return False
@@ -134,7 +122,7 @@ class BlockManifest(WorkflowBlockManifest):
 
 
 class InnerWorkflowBlockV1(WorkflowBlock):
-    """Placeholder block; execution engine runs inner workflows via InnerWorkflowRunner."""
+    """Placeholder block; inner workflows are expanded at compile time and never executed as a unit."""
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -142,6 +130,5 @@ class InnerWorkflowBlockV1(WorkflowBlock):
 
     def run(self, *args, **kwargs) -> BlockResult:
         raise RuntimeError(
-            "inner_workflow steps are executed by the execution engine via InnerWorkflowRunner; "
-            "block.run() must not be called."
+            "inner_workflow steps are compiled away into ordinary steps; block.run() must not be called."
         )

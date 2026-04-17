@@ -1,5 +1,5 @@
 """
-Inner workflow support (composition validation and execution strategy hooks).
+Inner workflow support (composition validation and compile-time inlining).
 
 Design: docs/workflows/inner_workflow_design.md
 """
@@ -16,19 +16,11 @@ from inference.core.workflows.execution_engine.v1.inner_workflow.errors import (
     InnerWorkflowCompositionError,
     InnerWorkflowNestingDepthError,
 )
-from inference.core.workflows.execution_engine.v1.inner_workflow.runner import (
-    InnerWorkflowExecutionMode,
-    InnerWorkflowRunner,
-    LocalInnerWorkflowRunner,
-)
 
 __all__ = [
     "InnerWorkflowCompositionCycleError",
     "InnerWorkflowCompositionError",
-    "InnerWorkflowExecutionMode",
     "InnerWorkflowNestingDepthError",
-    "InnerWorkflowRunner",
-    "LocalInnerWorkflowRunner",
     "assert_composition_acyclic",
     "build_composition_digraph",
     "find_composition_cycles",
