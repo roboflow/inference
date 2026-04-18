@@ -51,6 +51,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     KEYPOINT_DETECTION_PREDICTION_KIND,
     LIST_OF_VALUES_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
+    ROBOFLOW_MODEL_ID_KIND,
     STRING_KIND,
     ImageInputField,
     Selector,
@@ -120,13 +121,13 @@ class BlockManifest(WorkflowBlockManifest):
 
     type: Literal["roboflow_core/sam3_video@v1"]
     images: Selector(kind=[IMAGE_KIND]) = ImageInputField
-    model_id: Union[Selector(kind=[STRING_KIND]), str] = Field(
-        default="facebook/sam3",
+    model_id: Union[Selector(kind=[ROBOFLOW_MODEL_ID_KIND]), str] = Field(
+        default="sam3/sam3_video",
         description=(
-            "HuggingFace model id for the SAM3 video model.  Defaults to "
-            "`facebook/sam3`."
+            "Roboflow model id for the SAM3 video model.  Change this "
+            "to point at a fine-tuned SAM3 video checkpoint."
         ),
-        examples=["facebook/sam3"],
+        examples=["sam3/sam3_video", "$inputs.model_id"],
     )
     class_names: Optional[
         Union[List[str], str, Selector(kind=[LIST_OF_VALUES_KIND, STRING_KIND])]
@@ -195,6 +196,10 @@ class BlockManifest(WorkflowBlockManifest):
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.3.0,<2.0.0"
 
+    @classmethod
+    def get_supported_model_variants(cls) -> Optional[List[str]]:
+        return ["sam3/sam3_video"]
+
 
 class SegmentAnything3VideoBlockV1(WorkflowBlock):
     """Stateful SAM3 video tracking block."""
@@ -228,7 +233,9 @@ class SegmentAnything3VideoBlockV1(WorkflowBlock):
         )
 
         if self._video_model is None or self._current_model_id != model_id:
-            self._video_model = SegmentAnything3Video(model_id=model_id)
+            self._video_model = SegmentAnything3Video(
+                model_id=model_id, api_key=self._api_key
+            )
             self._current_model_id = model_id
             self._last_frame_number.clear()
             self._frames_since_prompt.clear()

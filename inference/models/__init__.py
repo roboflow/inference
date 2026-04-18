@@ -40,7 +40,9 @@ CORE_MODELS = {
     "Gaze": ("inference.models.gaze", CORE_MODEL_GAZE_ENABLED),
     "SegmentAnything": ("inference.models.sam", CORE_MODEL_SAM_ENABLED),
     "SegmentAnything2": ("inference.models.sam2", CORE_MODEL_SAM2_ENABLED),
+    "SegmentAnything2Video": ("inference.models.sam2", CORE_MODEL_SAM2_ENABLED),
     "SegmentAnything3": ("inference.models.sam3", CORE_MODEL_SAM3_ENABLED),
+    "SegmentAnything3Video": ("inference.models.sam3", CORE_MODEL_SAM3_ENABLED),
     "SegmentAnything3_3D_Objects": (
         "inference.models.sam3_3d",
         SAM3_3D_OBJECTS_ENABLED,

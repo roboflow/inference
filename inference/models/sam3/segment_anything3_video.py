@@ -6,7 +6,9 @@ folder — it is not designed for true streaming from memory.  The HF
 ``transformers`` port (``Sam3VideoModel`` / ``Sam3VideoProcessor``)
 exposes the underlying model's streaming interface via
 ``init_video_session`` + per-frame ``model(inference_session=..., frame=...)``,
-which is what ``InferencePipeline`` needs.  This wrapper uses that path.
+which is what ``InferencePipeline`` needs.  This wrapper uses that path,
+but pulls weights from the Roboflow model cache (not directly from HF
+Hub) so deployments work without outbound access to huggingface.co.
 
 Each concurrently tracked video owns an ``inference_session`` that
 carries SAM3's temporal memory.  Sessions are keyed by an opaque
@@ -14,6 +16,7 @@ carries SAM3's temporal memory.  Sessions are keyed by an opaque
 originating stream restarts.
 """
 
+import re
 from threading import RLock
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -21,12 +24,15 @@ import numpy as np
 import torch
 
 from inference.core.env import DEVICE
+from inference.models.transformers import TransformerModel
 
 if DEVICE is None:
     DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
 
 
-DEFAULT_SAM3_HF_ID = "facebook/sam3"
+#: Roboflow registry id for the default SAM3 video checkpoint.  Mirrors
+#: the ``sam3/sam3_final`` naming used by the image-path SAM3 model.
+DEFAULT_SAM3_VIDEO_MODEL_ID = "sam3/sam3_video"
 
 
 class _SAM3VideoSession:
@@ -35,40 +41,86 @@ class _SAM3VideoSession:
         self.has_prompts = False
 
 
-class SegmentAnything3Video:
+class SegmentAnything3Video(TransformerModel):
     """Frame-by-frame SAM3 video tracker built on HF transformers.
 
+    Inherits from ``TransformerModel`` so weight management follows the
+    standard Roboflow transformers pattern: weights are pulled into the
+    local model cache directory and then passed to
+    ``Sam3VideoModel.from_pretrained(self.cache_dir)``.
+
     The model and processor are loaded once and shared across every
-    video.  Per-video state lives in an ``inference_session`` from the
-    processor.  Unlike ``SegmentAnything2Video`` this is not a
-    ``RoboflowCoreModel`` — weights are pulled from the HF Hub because
-    the SAM3 streaming path is only exposed through ``transformers``.
+    concurrently tracked video.  Per-video state lives in an
+    ``inference_session`` returned by
+    ``Sam3VideoProcessor.init_video_session``.
     """
+
+    task_type = "unsupervised-segmentation"
+    load_weights_as_transformers = True
+    load_base_from_roboflow = True
 
     def __init__(
         self,
-        model_id: str = DEFAULT_SAM3_HF_ID,
-        dtype: torch.dtype = torch.bfloat16,
+        *args,
+        model_id: str = DEFAULT_SAM3_VIDEO_MODEL_ID,
+        **kwargs,
     ):
+        # Populate the lazy class-level attributes TransformerModel reads
+        # from during ``initialize_model``.  Doing this here (rather than
+        # as class statements) keeps the transformers import inside the
+        # constructor so the module remains importable in environments
+        # that only need the workflow schema.
         from transformers import Sam3VideoModel, Sam3VideoProcessor
 
-        self.model_id = model_id
-        self._device = torch.device(DEVICE)
-        self._dtype = dtype
-        self._model = Sam3VideoModel.from_pretrained(model_id).to(
-            self._device, dtype=dtype
-        )
-        self._processor = Sam3VideoProcessor.from_pretrained(model_id)
+        if SegmentAnything3Video.transformers_class is None:
+            SegmentAnything3Video.transformers_class = Sam3VideoModel
+        if SegmentAnything3Video.processor_class is None:
+            SegmentAnything3Video.processor_class = Sam3VideoProcessor
+        if SegmentAnything3Video.default_dtype is None:
+            SegmentAnything3Video.default_dtype = torch.bfloat16
+
+        super().__init__(model_id, *args, **kwargs)
+
         self._sessions: Dict[str, _SAM3VideoSession] = {}
         self._sessions_lock = RLock()
-        self.task_type = "unsupervised-segmentation"
+
+    def initialize_model(self, **kwargs):
+        """Load SAM3 video model and processor from the Roboflow cache.
+
+        We override ``TransformerModel.initialize_model`` because SAM3
+        video needs bfloat16 on GPU and does not accept the generic
+        ``attn_implementation``/``device_map`` kwargs used by LMMs.
+        """
+        self.model = (
+            self.transformers_class.from_pretrained(self.cache_dir)
+            .eval()
+            .to(DEVICE, dtype=self.dtype)
+        )
+        self.processor = self.processor_class.from_pretrained(self.cache_dir)
+
+    def get_infer_bucket_file_list(self) -> list:
+        """Files required from the Roboflow weights bucket.
+
+        The exact file set for a transformers-format SAM3 video export is
+        the usual HF model directory.  ``model*.safetensors`` is a regex
+        so we accept either a single weights file or a sharded set.
+        """
+        return [
+            "config.json",
+            "preprocessor_config.json",
+            re.compile(r"model.*\.safetensors"),
+        ]
+
+    # ------------------------------------------------------------------
+    # Session management
+    # ------------------------------------------------------------------
 
     def _init_session(self) -> _SAM3VideoSession:
-        inference_session = self._processor.init_video_session(
-            inference_device=self._device,
+        inference_session = self.processor.init_video_session(
+            inference_device=torch.device(DEVICE),
             processing_device="cpu",
             video_storage_device="cpu",
-            dtype=self._dtype,
+            dtype=self.dtype,
         )
         return _SAM3VideoSession(inference_session=inference_session)
 
@@ -93,6 +145,10 @@ class SegmentAnything3Video:
                 self._sessions[video_id] = session
             return session
 
+    # ------------------------------------------------------------------
+    # Streaming API
+    # ------------------------------------------------------------------
+
     @torch.inference_mode()
     def prompt_and_track(
         self,
@@ -103,34 +159,25 @@ class SegmentAnything3Video:
         boxes_xyxy: Optional[List[Tuple[float, float, float, float]]] = None,
         clear_old_prompts: bool = True,
     ) -> Tuple[np.ndarray, np.ndarray]:
-        """Add prompts to the session and run one streaming step.
-
-        Supply either ``text`` (open-vocabulary) or ``boxes_xyxy`` (visual
-        prompts).  ``clear_old_prompts=True`` tears down the session so
-        prompts start fresh on this frame — pass False to append new
-        prompts to an ongoing session.
-
-        Returns ``(masks, object_ids)`` with masks shape ``(N, H, W)``.
-        """
+        """Add prompts to the session and run one streaming step."""
         session = self._get_or_create_session(
             video_id=video_id, reset=clear_old_prompts
         )
 
-        inputs = self._processor(
-            images=frame, device=self._device, return_tensors="pt"
+        inputs = self.processor(
+            images=frame, device=DEVICE, return_tensors="pt"
         )
         original_sizes = inputs.original_sizes
 
         if text is not None:
-            session.inference_session = self._processor.add_text_prompt(
+            session.inference_session = self.processor.add_text_prompt(
                 inference_session=session.inference_session,
                 text=text,
             )
 
         if boxes_xyxy:
-            # Processors commonly accept nested list shape [[[[x1, y1, x2, y2], ...]]]
             formatted_boxes = [[[list(map(float, xyxy)) for xyxy in boxes_xyxy]]]
-            self._processor.add_inputs_to_inference_session(
+            self.processor.add_inputs_to_inference_session(
                 inference_session=session.inference_session,
                 frame_idx=frame_index,
                 obj_ids=list(range(len(boxes_xyxy))),
@@ -140,7 +187,7 @@ class SegmentAnything3Video:
 
         session.has_prompts = True
 
-        model_outputs = self._model(
+        model_outputs = self.model(
             inference_session=session.inference_session,
             frame=inputs.pixel_values[0],
             reverse=False,
@@ -166,10 +213,10 @@ class SegmentAnything3Video:
                 "call prompt_and_track before tracking"
             )
 
-        inputs = self._processor(
-            images=frame, device=self._device, return_tensors="pt"
+        inputs = self.processor(
+            images=frame, device=DEVICE, return_tensors="pt"
         )
-        model_outputs = self._model(
+        model_outputs = self.model(
             inference_session=session.inference_session,
             frame=inputs.pixel_values[0],
             reverse=False,
@@ -188,7 +235,7 @@ class SegmentAnything3Video:
     ) -> Tuple[np.ndarray, np.ndarray]:
         # Try the SAM3-specific post-processor first — it knows about
         # SAM3's tracking-head output layout and object id reordering.
-        postprocess = getattr(self._processor, "postprocess_outputs", None)
+        postprocess = getattr(self.processor, "postprocess_outputs", None)
         if callable(postprocess):
             processed = postprocess(
                 session.inference_session,
@@ -203,7 +250,7 @@ class SegmentAnything3Video:
         pred_masks = getattr(model_outputs, "pred_masks", None)
         if pred_masks is None:
             return np.zeros((0, 0, 0), dtype=bool), np.zeros((0,), dtype=np.int64)
-        masks = self._processor.post_process_masks(
+        masks = self.processor.post_process_masks(
             [pred_masks],
             original_sizes=original_sizes,
             binarize=True,
@@ -242,9 +289,9 @@ def _unpack_processed_outputs(
 ) -> Tuple[Optional[np.ndarray], np.ndarray]:
     """Best-effort extraction of (masks, obj_ids) from a processor output.
 
-    The SAM3 processor's ``postprocess_outputs`` return type varies
-    between transformers versions: sometimes a dict, sometimes a list of
-    per-object dicts.  We accept either shape and produce dense arrays.
+    ``Sam3VideoProcessor.postprocess_outputs`` return type varies across
+    transformers versions: sometimes a dict, sometimes a list of
+    per-object dicts.  Accept either shape and produce dense arrays.
     """
     if processed is None:
         return None, np.zeros((0,), dtype=np.int64)
