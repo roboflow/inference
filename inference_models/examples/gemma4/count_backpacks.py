@@ -1,21 +1,12 @@
 #!/usr/bin/env python3
-"""End-to-end Gemma 4 example using ``inference_models.AutoModel`` (no CLI arguments).
+"""Downloads a public sample image, loads a hosted Gemma 4 checkpoint, and asks a focused counting question.
 
-Downloads a public sample image, loads a hosted Gemma 4 checkpoint via Roboflow, and
-asks a focused counting question.
-
-Run from the ``inference_models`` package root::
-
-    uv run python examples/gemma4/run_gemma4_local.py
-
-Optional: set ``GEMMA4_MODEL_ID`` to override the default Roboflow registry id.
+    `uv run python examples/gemma4/count_backpacks.py`
 """
 
 from __future__ import annotations
 
 import io
-import os
-import sys
 
 import numpy as np
 import requests
@@ -24,11 +15,9 @@ from PIL import Image
 from inference_models import AutoModel
 from inference_models.configuration import DEFAULT_DEVICE
 
-# Same image used in repo docs (e.g. workflows benchmarks).
-IMAGE_URL = "https://media.roboflow.com/inference/people-walking.jpg"
-
 # Roboflow registry id (must match a registered Gemma 4 package).
 DEFAULT_MODEL_ID = "gemma-4-e2b-it"
+IMAGE_URL = "https://media.roboflow.com/inference/people-walking.jpg"
 
 SYSTEM_PROMPT = (
     "You are a precise vision assistant. When asked about people or objects in a scene, "

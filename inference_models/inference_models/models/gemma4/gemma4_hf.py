@@ -1,6 +1,6 @@
 import os
 from threading import Lock
-from typing import Any, Final, List, Optional, Tuple, Union
+from typing import Any, Final, FrozenSet, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
@@ -30,27 +30,33 @@ from inference_models.models.common.roboflow.pre_processing import (
     pre_process_network_input,
 )
 
-_GEMMA4_IMAGE_TOKEN_BUDGETS = frozenset({70, 140, 280, 560, 1120})
 
-# --- BatchFeature / processor keys not accepted by ``Model.forward`` / ``generate`` ---
+# HF Supported budgets for tokens representing images.
+# A higher token budget preserves more visual detail at the cost of additional compute,
+# while a lower budget enables faster inference for tasks that don't require fine-grained understanding
+_GEMMA4_IMAGE_TOKEN_BUDGETS: Final[FrozenSet[int]] = (
+    frozenset({70, 140, 280, 560, 1120})
+)
 
 # Per-image soft-token counts produced by the HF vision preprocessor when building
 # multimodal prompts. Used to expand image placeholders in text; not a tensor argument
 # to the transformer (Hugging Face ``transformers`` multimodal ``ProcessorMixin`` stack).
-PROCESSOR_NUM_SOFT_TOKENS_PER_IMAGE_KEY: Final[str] = "num_soft_tokens_per_image"
+_PROCESSOR_NUM_SOFT_TOKENS_PER_IMAGE_KEY: Final[str] = "num_soft_tokens_per_image"
 
 # Same role as ``PROCESSOR_NUM_SOFT_TOKENS_PER_IMAGE_KEY`` for video segments.
-PROCESSOR_NUM_SOFT_TOKENS_PER_VIDEO_KEY: Final[str] = "num_soft_tokens_per_video"
+_PROCESSOR_NUM_SOFT_TOKENS_PER_VIDEO_KEY: Final[str] = "num_soft_tokens_per_video"
 
 # Tokenizer output mapping token indices to source character spans (when requested).
 # Never a model forward kwarg; strip if present so ``generate(**batch)`` does not fail.
-TOKENIZER_OFFSET_MAPPING_KEY: Final[str] = "offset_mapping"
+_TOKENIZER_OFFSET_MAPPING_KEY: Final[str] = "offset_mapping"
 
 # All keys above that we defensively remove before ``self._model.generate(**...)``.
-BATCH_KEYS_TO_STRIP_BEFORE_GENERATE: Final[Tuple[str, ...]] = (
-    PROCESSOR_NUM_SOFT_TOKENS_PER_IMAGE_KEY,
-    PROCESSOR_NUM_SOFT_TOKENS_PER_VIDEO_KEY,
-    TOKENIZER_OFFSET_MAPPING_KEY,
+_BATCH_KEYS_TO_STRIP_BEFORE_GENERATE: Final[FrozenSet[str]] = (
+    frozenset({
+        _PROCESSOR_NUM_SOFT_TOKENS_PER_IMAGE_KEY,
+        _PROCESSOR_NUM_SOFT_TOKENS_PER_VIDEO_KEY,
+        _TOKENIZER_OFFSET_MAPPING_KEY,
+    })
 )
 
 
@@ -341,7 +347,7 @@ class Gemma4HF:
         **kwargs,
     ) -> torch.Tensor:
         batch = dict(inputs)
-        for _meta_key in BATCH_KEYS_TO_STRIP_BEFORE_GENERATE:
+        for _meta_key in _BATCH_KEYS_TO_STRIP_BEFORE_GENERATE:
             batch.pop(_meta_key, None)
         input_len = batch["input_ids"].shape[-1]
 
