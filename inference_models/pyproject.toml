@@ -38,6 +38,10 @@ dependencies = [
   "rf-segment-anything==1.0",
   "rf-sam-2==1.0.3",
   "pycocotools>=2.0.10,<2.1.0",
+  "imagecodecs",
+  "uvicorn[standard]>=0.30.0",
+  "fastapi>=0.115.0",
+  "psutil>=5.9.0",
 ]
 
 [project.optional-dependencies]
@@ -49,32 +53,38 @@ torch-cu118 = [
   "torch>=2.0.0,<3.0.0",
   "torchvision",
   "pycuda>=2025.0.0,<2026.0.0; platform_system != 'darwin' and python_version >= '3.10'",
+  "nvidia-ml-py>=12.0.0",
 ]
 torch-cu124 = [
   "torch>=2.0.0,<3.0.0",
   "torchvision",
   "pycuda>=2025.0.0,<2026.0.0; platform_system != 'darwin' and python_version >= '3.10'",
+  "nvidia-ml-py>=12.0.0",
 ]
 torch-cu126 = [
   "torch>=2.0.0,<3.0.0",
   "torchvision",
   "pycuda>=2025.0.0,<2026.0.0; platform_system != 'darwin' and python_version >= '3.10'",
+  "nvidia-ml-py>=12.0.0",
 ]
 torch-cu128 = [
   "torch>=2.0.0,<3.0.0",
   "torchvision",
   "pycuda>=2025.0.0,<2026.0.0; platform_system != 'darwin' and python_version >= '3.10'",
+  "nvidia-ml-py>=12.0.0",
 ]
 torch-cu130 = [
   "torch>=2.0.0,<3.0.0",
   "torchvision",
   "pycuda>=2025.0.0,<=2026.1.0; platform_system != 'darwin' and python_version >= '3.10'",
+  "nvidia-ml-py>=12.0.0",
 ]
 torch-jp6-cu126 = [
   "numpy<2.0.0",
   "torch>=2.0.0,<3.0.0",
   "torchvision",
   "pycuda>=2025.0.0,<2026.0.0",
+  "nvidia-ml-py>=12.0.0",
 ]
 onnx-cpu = [
   "onnxruntime>=1.15.1,<1.23.0"
