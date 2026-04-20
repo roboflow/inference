@@ -237,11 +237,11 @@ class SegmentAnything3VideoBlockV1(WorkflowBlock):
         return BlockManifest
 
     def _get_video_model(self, model_id: str):
-        from inference.models.sam3.segment_anything3_video import (
-            SegmentAnything3Video,
-        )
-
         if self._video_model is None or self._current_model_id != model_id:
+            from inference.models.sam3.segment_anything3_video import (
+                SegmentAnything3Video,
+            )
+
             self._video_model = SegmentAnything3Video(
                 model_id=model_id, api_key=self._api_key
             )

@@ -297,15 +297,11 @@ def _unpack_processed_outputs(
         return None, np.zeros((0,), dtype=np.int64)
 
     if isinstance(processed, dict):
-        masks = processed.get("masks") or processed.get("pred_masks")
-        ids = (
-            processed.get("obj_ids")
-            or processed.get("object_ids")
-            or processed.get("track_ids")
-        )
-        masks_np = _to_numpy_binary_masks(masks) if masks is not None else None
-        if masks_np is None:
+        masks = _first_present(processed, ("masks", "pred_masks"))
+        ids = _first_present(processed, ("obj_ids", "object_ids", "track_ids"))
+        if masks is None:
             return None, np.zeros((0,), dtype=np.int64)
+        masks_np = _to_numpy_binary_masks(masks)
         if ids is None:
             ids = np.arange(masks_np.shape[0], dtype=np.int64)
         else:
@@ -318,25 +314,23 @@ def _unpack_processed_outputs(
         mask_list = []
         id_list = []
         for idx, item in enumerate(processed):
-            if isinstance(item, dict):
-                m = item.get("mask") or item.get("masks") or item.get("segmentation")
-                oid = (
-                    item.get("obj_id")
-                    or item.get("object_id")
-                    or item.get("track_id")
-                    or idx
-                )
-                if m is None:
-                    continue
-                m_np = _to_numpy_binary_masks(m)
-                if m_np.ndim == 3 and m_np.shape[0] == 1:
-                    mask_list.append(m_np[0])
-                elif m_np.ndim == 2:
-                    mask_list.append(m_np)
-                else:
-                    for row in m_np:
-                        mask_list.append(row)
-                id_list.append(int(oid))
+            if not isinstance(item, dict):
+                continue
+            m = _first_present(item, ("mask", "masks", "segmentation"))
+            if m is None:
+                continue
+            oid = _first_present(item, ("obj_id", "object_id", "track_id"))
+            if oid is None:
+                oid = idx
+            m_np = _to_numpy_binary_masks(m)
+            if m_np.ndim == 3 and m_np.shape[0] == 1:
+                mask_list.append(m_np[0])
+            elif m_np.ndim == 2:
+                mask_list.append(m_np)
+            else:
+                for row in m_np:
+                    mask_list.append(row)
+            id_list.append(int(oid))
         if mask_list:
             return (
                 np.stack(mask_list, axis=0).astype(bool),
@@ -344,3 +338,15 @@ def _unpack_processed_outputs(
             )
 
     return None, np.zeros((0,), dtype=np.int64)
+
+
+def _first_present(container: Any, keys: Tuple[str, ...]) -> Any:
+    """Return the first value in ``container`` whose key is in ``keys``.
+
+    ``dict.get(...) or dict.get(...)`` is unsafe here because the values
+    may be numpy arrays or tensors whose truthiness raises.
+    """
+    for key in keys:
+        if key in container and container[key] is not None:
+            return container[key]
+    return None

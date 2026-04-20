@@ -429,6 +429,33 @@ def sam2_tiny_model() -> Generator[str, None, None]:
 
 
 @pytest.fixture(scope="function")
+def sam3_video_model() -> Generator[str, None, None]:
+    """Fixture that downloads the SAM3 video model package.
+
+    The zip at the URL below is expected to contain the HF-transformers
+    layout consumed by ``Sam3VideoModel.from_pretrained``:
+
+    - ``config.json``
+    - ``preprocessor_config.json``
+    - ``model.safetensors`` (or sharded ``model-00001-of-XXXXX.safetensors``
+      + ``model.safetensors.index.json``)
+    - any additional tokenizer / video-processor files the exported
+      model relies on (e.g. ``tokenizer.json``, ``tokenizer_config.json``,
+      ``special_tokens_map.json``, ``video_processor_config.json``) if
+      they are part of the published checkpoint.
+    """
+    model_id = "sam3/sam3_video"
+    model_cache_dir = fetch_and_place_model_in_cache(
+        model_id=model_id,
+        model_package_url=(
+            "https://storage.googleapis.com/roboflow-tests-assets/sam3_video.zip"
+        ),
+    )
+    yield model_id
+    shutil.rmtree(model_cache_dir)
+
+
+@pytest.fixture(scope="function")
 def sam2_small_truck_logits() -> Generator[np.ndarray, None, None]:
     yield np.load(SAM2_TRUCK_LOGITS)
 
