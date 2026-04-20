@@ -201,9 +201,13 @@ SAM2_RT_PACKAGE_URL = (
     "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/"
     "segment-anything-2-rt.zip"
 )
-SAM3_RT_PACKAGE_URL = (
+SAM2_VIDEO_PACKAGE_URL = (
     "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/"
-    "segment-anything-3-rt.zip"
+    "sam2video.zip"
+)
+SAM3_VIDEO_PACKAGE_URL = (
+    "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/"
+    "sam3video.zip"
 )
 
 RFDETR_NANO_T4_TRT_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-nano-t4-trt.zip"
@@ -1452,7 +1456,7 @@ def sam2_package() -> str:
 
 @pytest.fixture(scope="module")
 def sam2_rt_package() -> str:
-    """Streaming SAM2 (camera predictor) package.
+    """Streaming SAM2 via Meta's ``sam2`` camera predictor (legacy).
 
     Expected contents of the zip:
 
@@ -1467,8 +1471,26 @@ def sam2_rt_package() -> str:
 
 
 @pytest.fixture(scope="module")
-def sam3_rt_package() -> str:
-    """Streaming SAM3 (HF transformers video) package.
+def sam2_video_package() -> str:
+    """Streaming SAM2 via HuggingFace ``Sam2VideoModel``.
+
+    Expected contents of the zip (standard HF transformers export):
+
+    - ``config.json``
+    - ``preprocessor_config.json``
+    - ``model.safetensors`` (or sharded ``model-00001-of-NNNNN.safetensors``
+      + ``model.safetensors.index.json``)
+    - any additional processor files the published checkpoint ships.
+    """
+    return download_model_package(
+        model_package_zip_url=SAM2_VIDEO_PACKAGE_URL,
+        package_name="sam2video",
+    )
+
+
+@pytest.fixture(scope="module")
+def sam3_video_package() -> str:
+    """Streaming SAM3 via HuggingFace ``Sam3VideoModel``.
 
     Expected contents of the zip (standard HF transformers export):
 
@@ -1481,8 +1503,8 @@ def sam3_rt_package() -> str:
       ``special_tokens_map.json``, ``video_processor_config.json``)
     """
     return download_model_package(
-        model_package_zip_url=SAM3_RT_PACKAGE_URL,
-        package_name="segment-anything-3-rt",
+        model_package_zip_url=SAM3_VIDEO_PACKAGE_URL,
+        package_name="sam3video",
     )
 
 

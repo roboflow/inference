@@ -111,11 +111,11 @@ class BlockManifest(WorkflowBlockManifest):
     type: Literal["roboflow_core/sam3_video@v1"]
     images: Selector(kind=[IMAGE_KIND]) = ImageInputField
     model_id: Union[Selector(kind=[ROBOFLOW_MODEL_ID_KIND]), str] = Field(
-        default="segment-anything-3-rt",
+        default="sam3video",
         description=(
             "Streaming SAM3 model id resolved by `inference_models`."
         ),
-        examples=["segment-anything-3-rt"],
+        examples=["sam3video"],
     )
     class_names: Optional[
         Union[List[str], str, Selector(kind=[LIST_OF_VALUES_KIND, STRING_KIND])]
@@ -186,7 +186,7 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_supported_model_variants(cls) -> Optional[List[str]]:
-        return ["segment-anything-3-rt"]
+        return ["sam3video"]
 
 
 class SegmentAnything3VideoBlockV1(WorkflowBlock):

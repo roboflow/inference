@@ -1,7 +1,9 @@
-"""Unit tests for ``SAM3ForStream`` and its helpers.
+"""Unit tests for ``SAM3Video`` (HF transformers streaming tracker).
 
 Avoids ``from_pretrained`` — builds the class directly with mocked
-model and processor so the tests run without real weights / GPU.
+model and processor so tests run without real weights / GPU.  The bulk
+of the streaming logic lives in ``HFStreamingVideoBase``; these tests
+also exercise SAM3-specific behaviour (accepts text prompts).
 """
 
 from unittest.mock import MagicMock
@@ -11,9 +13,8 @@ import pytest
 import torch
 
 from inference_models.errors import ModelRuntimeError
-from inference_models.models.sam3_rt.sam3_pytorch import (
-    _SESSION_KEY,
-    SAM3ForStream,
+from inference_models.models.common.hf_streaming_video import (
+    SESSION_KEY,
     _ensure_numpy_image,
     _extract_object_ids,
     _first_present,
@@ -21,16 +22,17 @@ from inference_models.models.sam3_rt.sam3_pytorch import (
     _to_numpy_binary_masks,
     _unpack_processed_outputs,
 )
+from inference_models.models.sam3_video.sam3_video_hf import SAM3Video
 
 
 # ---------------------------------------------------------------------------
-# Helpers (pure functions)
+# Helpers (pure functions) — covered here rather than on the base class
+# to keep the module count small.
 # ---------------------------------------------------------------------------
 
 
 def test_normalise_bboxes_accepts_single_tuple():
-    out = _normalise_bboxes((10, 20, 30, 40))
-    assert out == [(10.0, 20.0, 30.0, 40.0)]
+    assert _normalise_bboxes((10, 20, 30, 40)) == [(10.0, 20.0, 30.0, 40.0)]
 
 
 def test_normalise_bboxes_accepts_list_of_tuples():
@@ -39,7 +41,6 @@ def test_normalise_bboxes_accepts_list_of_tuples():
 
 
 def test_normalise_bboxes_reorders_corners():
-    # x2 < x1, y2 < y1 — normaliser should swap so we get a proper box.
     out = _normalise_bboxes([(100, 200, 10, 20)])
     assert out == [(10.0, 20.0, 100.0, 200.0)]
 
@@ -102,7 +103,7 @@ def test_extract_object_ids_reads_obj_ids_attr():
 
 
 def test_extract_object_ids_falls_back_to_range():
-    mo = MagicMock(spec=[])  # no obj_ids / object_ids attrs
+    mo = MagicMock(spec=[])
     out = _extract_object_ids(mo, n=3)
     assert out.tolist() == [0, 1, 2]
 
@@ -164,8 +165,7 @@ def _build_model_with_mocks():
         return result
 
     processor.side_effect = _processor_call
-    # Force the fallback path in _extract_masks_and_ids so we don't have
-    # to mock postprocess_outputs's return shape.
+    # Force the fallback path in _extract_masks_and_ids.
     processor.postprocess_outputs = None
 
     def _post_process_masks(masks_list, original_sizes, binarize):
@@ -179,7 +179,7 @@ def _build_model_with_mocks():
     model_outputs.obj_ids = [0]
     model.return_value = model_outputs
 
-    sam3 = SAM3ForStream(
+    sam3 = SAM3Video(
         model=model,
         processor=processor,
         device=torch.device("cpu"),
@@ -204,7 +204,7 @@ def test_prompt_returns_state_dict_with_session_handle():
     )
 
     assert masks.shape == (1, 32, 48)
-    assert state[_SESSION_KEY] is fake_session
+    assert state[SESSION_KEY] is fake_session
     processor.add_inputs_to_inference_session.assert_called_once()
     assert processor.init_video_session.call_count == 1
 
@@ -213,15 +213,13 @@ def test_prompt_with_clear_old_prompts_false_reuses_session_from_state_dict():
     sam3, _, processor, fake_session = _build_model_with_mocks()
     frame = np.zeros((32, 48, 3), dtype=np.uint8)
 
-    # Pre-built state_dict pointing at the fake session.
-    preexisting_state = {_SESSION_KEY: fake_session}
+    preexisting_state = {SESSION_KEY: fake_session}
     sam3.prompt(
         image=frame,
         bboxes=[(1, 2, 10, 12)],
         state_dict=preexisting_state,
         clear_old_prompts=False,
     )
-    # When reusing state, no new session should be initialised.
     processor.init_video_session.assert_not_called()
 
 
@@ -229,14 +227,12 @@ def test_track_reuses_session_from_state_dict():
     sam3, _, processor, fake_session = _build_model_with_mocks()
     frame = np.zeros((32, 48, 3), dtype=np.uint8)
 
-    # Seed a session via prompt first, grab the state dict.
     _, _, state = sam3.prompt(image=frame, bboxes=[(1, 2, 10, 12)])
     processor.init_video_session.reset_mock()
 
-    # Now a track call with the returned state must NOT start a new session.
     masks, obj_ids, new_state = sam3.track(image=frame, state_dict=state)
     processor.init_video_session.assert_not_called()
-    assert new_state[_SESSION_KEY] is fake_session
+    assert new_state[SESSION_KEY] is fake_session
 
 
 def test_prompt_accepts_text_only():

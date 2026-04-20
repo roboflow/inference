@@ -1,7 +1,7 @@
-"""Integration tests for the streaming SAM3 (transformers) wrapper.
+"""Integration tests for ``SAM3Video`` (HF transformers streaming).
 
-Requires the ``sam3_rt_package`` fixture (HF transformers export of the
-SAM3 video model) and a transformers install that ships
+Requires the ``sam3_video_package`` fixture (HF transformers export of
+the SAM3 video model) and a transformers install that ships
 ``Sam3VideoModel`` / ``Sam3VideoProcessor``.
 """
 
@@ -11,7 +11,7 @@ import torch
 
 from inference_models.configuration import DEFAULT_DEVICE
 from inference_models.errors import ModelRuntimeError
-from inference_models.models.sam3_rt.sam3_pytorch import SAM3ForStream
+from inference_models.models.sam3_video.sam3_video_hf import SAM3Video
 
 
 def _translating_square_frames(
@@ -32,14 +32,14 @@ def _translating_square_frames(
 
 @pytest.mark.slow
 @pytest.mark.hf_vlm_models
-def test_sam3_rt_text_prompt_then_track(sam3_rt_package: str) -> None:
+def test_sam3_video_text_prompt_then_track(sam3_video_package: str) -> None:
     """Seed a text prompt, then track across subsequent frames.
 
     Numerical mask contents depend on hardware / transformers version;
     assert only the shape contract and that the state dict is carried
     forward without error.
     """
-    model = SAM3ForStream.from_pretrained(sam3_rt_package, device=DEFAULT_DEVICE)
+    model = SAM3Video.from_pretrained(sam3_video_package, device=DEFAULT_DEVICE)
     frames = _translating_square_frames(n_frames=4)
 
     masks, obj_ids, state = model.prompt(
@@ -61,8 +61,8 @@ def test_sam3_rt_text_prompt_then_track(sam3_rt_package: str) -> None:
 
 @pytest.mark.slow
 @pytest.mark.hf_vlm_models
-def test_sam3_rt_box_prompt_then_track(sam3_rt_package: str) -> None:
-    model = SAM3ForStream.from_pretrained(sam3_rt_package, device=DEFAULT_DEVICE)
+def test_sam3_video_box_prompt_then_track(sam3_video_package: str) -> None:
+    model = SAM3Video.from_pretrained(sam3_video_package, device=DEFAULT_DEVICE)
     frames = _translating_square_frames(n_frames=3)
 
     masks, obj_ids, state = model.prompt(
@@ -80,8 +80,8 @@ def test_sam3_rt_box_prompt_then_track(sam3_rt_package: str) -> None:
 
 @pytest.mark.slow
 @pytest.mark.hf_vlm_models
-def test_sam3_rt_track_without_state_raises(sam3_rt_package: str) -> None:
-    model = SAM3ForStream.from_pretrained(sam3_rt_package, device=DEFAULT_DEVICE)
+def test_sam3_video_track_without_state_raises(sam3_video_package: str) -> None:
+    model = SAM3Video.from_pretrained(sam3_video_package, device=DEFAULT_DEVICE)
     frame = np.zeros((120, 160, 3), dtype=np.uint8)
     with pytest.raises(ModelRuntimeError):
         model.track(image=frame, state_dict=None)
@@ -89,8 +89,8 @@ def test_sam3_rt_track_without_state_raises(sam3_rt_package: str) -> None:
 
 @pytest.mark.slow
 @pytest.mark.hf_vlm_models
-def test_sam3_rt_accepts_torch_tensor_input(sam3_rt_package: str) -> None:
-    model = SAM3ForStream.from_pretrained(sam3_rt_package, device=DEFAULT_DEVICE)
+def test_sam3_video_accepts_torch_tensor_input(sam3_video_package: str) -> None:
+    model = SAM3Video.from_pretrained(sam3_video_package, device=DEFAULT_DEVICE)
     frame = _translating_square_frames(n_frames=1)[0]
     frame_tensor = torch.from_numpy(frame)
 

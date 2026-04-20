@@ -133,13 +133,13 @@ class BlockManifest(WorkflowBlockManifest):
         json_schema_extra={"always_visible": True},
     )
     model_id: Union[Selector(kind=[ROBOFLOW_MODEL_ID_KIND]), str] = Field(
-        default="segment-anything-2-rt",
+        default="sam2video",
         description=(
             "Streaming SAM2 model id resolved by `inference_models`.  "
             "The default points at the Roboflow-registered SAM2 camera "
             "predictor package."
         ),
-        examples=["segment-anything-2-rt"],
+        examples=["sam2video"],
     )
     prompt_mode: Literal["first_frame", "every_n_frames", "every_frame"] = Field(
         default="first_frame",
@@ -184,7 +184,7 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_supported_model_variants(cls) -> Optional[List[str]]:
-        return ["segment-anything-2-rt"]
+        return ["sam2video"]
 
 
 class SegmentAnything2VideoBlockV1(WorkflowBlock):
@@ -279,7 +279,7 @@ class SegmentAnything2VideoBlockV1(WorkflowBlock):
                     bboxes=boxes_xyxy,
                     state_dict=session.state_dict,
                     # clear old points is implied by our own reset gating
-                    clear_old_points=True,
+                    clear_old_prompts=True,
                     frame_idx=frame_number,
                 )
                 session.obj_id_metadata = build_obj_id_metadata_from_boxes(

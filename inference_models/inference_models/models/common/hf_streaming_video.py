@@ -1,102 +1,66 @@
-"""Streaming SAM3 tracker backed by the HuggingFace transformers port.
+"""Shared base class for HuggingFace-transformers streaming video trackers.
 
-``SAM3ForStream`` mirrors ``SAM2ForStream`` (see
-``inference_models.models.sam2_rt.sam2_pytorch``): it exposes ``prompt``
-and ``track`` methods that return ``(masks, object_ids, state_dict)`` so
-the caller can ferry state across frames.
+SAM2 and SAM3 both expose a streaming inference interface in
+``transformers`` (``Sam2VideoModel`` / ``Sam3VideoModel``).  The
+per-frame shape is identical:
 
-Why transformers?  The native ``sam3`` package's video predictor is
-session based and requires a pre-existing MP4 / JPEG directory supplied
-via ``start_session(resource_path=...)``; it isn't designed for
-frame-by-frame streaming from memory.  HuggingFace's ``Sam3VideoModel``
-exposes the underlying model's streaming interface through
-``init_video_session`` + per-frame ``model(inference_session=..., frame=...)``,
-which is what we need.
+- A ``Sam{N}VideoProcessor.init_video_session`` creates an opaque
+  ``inference_session`` object that carries the model's temporal
+  memory.
+- Per frame, ``processor(images=frame, device=..., return_tensors="pt")``
+  prepares inputs, then ``model(inference_session=..., frame=pixel_values)``
+  produces outputs that the processor post-processes into masks +
+  object ids.
+- Prompts (text / boxes / points) are added to the session via the
+  processor's ``add_text_prompt`` / ``add_inputs_to_inference_session``
+  methods.
 
-``state_dict`` contract
-------------------------
-Unlike SAM2's PyTorch state dict (a serializable ``{str: Tensor}`` map),
-SAM3's streaming state is an opaque HuggingFace ``Sam3VideoInferenceSession``
-object that holds GPU tensors.  We wrap it in a ``dict`` so callers still
-get a dict back — but the dict is **not serializable across processes**;
-it's a live handle that must be kept in memory by the caller.
+``HFStreamingVideoBase`` encapsulates all of this.  Concrete subclasses
+(``SAM2Video``, ``SAM3Video``) just declare which transformers classes
+to load and which prompt types they accept; they inherit the streaming
+``prompt`` / ``track`` methods unchanged.
 """
 
-from pathlib import Path
 from threading import RLock
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
 
 from inference_models.configuration import DEFAULT_DEVICE
-from inference_models.errors import MissingDependencyError, ModelRuntimeError
+from inference_models.errors import ModelRuntimeError
 
-try:
-    from transformers import Sam3VideoModel, Sam3VideoProcessor
-except ImportError as import_error:
-    raise MissingDependencyError(
-        message=(
-            "Could not import Sam3VideoModel / Sam3VideoProcessor from "
-            "transformers.  Ensure a transformers version that ships SAM3 "
-            "video support is installed."
-        ),
-        help_url=(
-            "https://inference-models.roboflow.com/errors/runtime-environment/"
-            "#missingdependencyerror"
-        ),
-    ) from import_error
+#: Key under which the HF ``inference_session`` lives inside the
+#: opaque ``state_dict`` callers pass back on subsequent frames.
+SESSION_KEY = "_video_inference_session"
 
 
-#: Key under which the wrapped HF inference session lives inside the
-#: opaque ``state_dict`` this class returns.
-_SESSION_KEY = "_sam3_video_inference_session"
+class HFStreamingVideoBase:
+    """Frame-by-frame SAM-family video tracker built on transformers.
 
+    Concrete subclasses set class-level ``_transformers_model_cls`` and
+    ``_transformers_processor_cls`` (lazy-initialised, typically in
+    ``from_pretrained``) so this base can call them generically.
 
-class SAM3ForStream:
-    """Frame-by-frame SAM3 video tracker.
-
-    One instance holds the model weights on GPU.  Per-video state lives
-    inside the ``state_dict`` returned from ``prompt`` / ``track`` —
-    callers are expected to keep it in memory and pass it back on the
-    next call to continue tracking the same video.
+    State management
+    ----------------
+    Callers keep the opaque ``state_dict`` returned from ``prompt`` /
+    ``track`` and pass it back on the next call.  Unlike SAM2's
+    PyTorch state dict (a serialisable ``{str: Tensor}`` map), the HF
+    inference session is a live Python object with GPU tensor
+    references — it is **not serialisable across processes**.
     """
 
-    @classmethod
-    def from_pretrained(
-        cls,
-        model_name_or_path: str,
-        device: torch.device = DEFAULT_DEVICE,
-        dtype: torch.dtype = torch.bfloat16,
-        **kwargs,
-    ) -> "SAM3ForStream":
-        """Load SAM3 video model + processor from a package directory.
-
-        ``model_name_or_path`` must be a directory laid out like a
-        standard HuggingFace transformers export (``config.json``,
-        ``preprocessor_config.json``, ``model*.safetensors`` and any
-        tokenizer / video-processor files the exported checkpoint
-        relies on).  ``Sam3VideoProcessor.from_pretrained`` with
-        ``local_files_only=True`` will locate everything by itself.
-        """
-        model = (
-            Sam3VideoModel.from_pretrained(
-                model_name_or_path,
-                local_files_only=True,
-            )
-            .eval()
-            .to(device, dtype=dtype)
-        )
-        processor = Sam3VideoProcessor.from_pretrained(
-            model_name_or_path,
-            local_files_only=True,
-        )
-        return cls(model=model, processor=processor, device=device, dtype=dtype)
+    _transformers_model_cls: Any = None
+    _transformers_processor_cls: Any = None
+    #: Whether ``prompt`` should accept ``text=...`` prompts.  SAM3
+    #: supports them; SAM2 does not.
+    _supports_text_prompts: bool = False
 
     def __init__(
         self,
-        model: Sam3VideoModel,
-        processor: Sam3VideoProcessor,
+        model: Any,
+        processor: Any,
         device: torch.device,
         dtype: torch.dtype = torch.bfloat16,
     ):
@@ -107,7 +71,53 @@ class SAM3ForStream:
         self._lock = RLock()
 
     # ------------------------------------------------------------------
-    # Streaming API
+    # Construction
+    # ------------------------------------------------------------------
+
+    @classmethod
+    def from_pretrained(
+        cls,
+        model_name_or_path: str,
+        device: torch.device = DEFAULT_DEVICE,
+        dtype: torch.dtype = torch.bfloat16,
+        **kwargs,
+    ):
+        """Load model + processor from a HF-layout package directory.
+
+        ``model_name_or_path`` must point at a local directory
+        containing the standard transformers files; the processor's
+        own ``from_pretrained`` discovers everything it needs by
+        convention.
+        """
+        model_cls, processor_cls = cls._resolve_transformers_classes()
+        model = (
+            model_cls.from_pretrained(model_name_or_path, local_files_only=True)
+            .eval()
+            .to(device, dtype=dtype)
+        )
+        processor = processor_cls.from_pretrained(
+            model_name_or_path, local_files_only=True
+        )
+        return cls(model=model, processor=processor, device=device, dtype=dtype)
+
+    @classmethod
+    def _resolve_transformers_classes(cls) -> Tuple[Any, Any]:
+        """Return ``(model_cls, processor_cls)`` for the concrete subclass.
+
+        Subclasses may override this to lazy-import the transformers
+        symbols (keeping the import cost off the module import path).
+        """
+        if cls._transformers_model_cls is None or cls._transformers_processor_cls is None:
+            raise NotImplementedError(
+                f"{cls.__name__} must set _transformers_model_cls and "
+                f"_transformers_processor_cls (or override "
+                f"_resolve_transformers_classes)."
+            )
+        return cls._transformers_model_cls, cls._transformers_processor_cls
+
+    # ------------------------------------------------------------------
+    # Streaming API — matches SAM2ForStream's shape so the two can be
+    # swapped at call-sites.
     # ------------------------------------------------------------------
 
     @torch.inference_mode()
@@ -122,13 +132,23 @@ class SAM3ForStream:
         clear_old_prompts: bool = True,
         frame_idx: int = 0,
     ) -> Tuple[np.ndarray, np.ndarray, dict]:
-        """Seed a SAM3 session and run one streaming step.
+        """Seed a session and run one streaming step.
 
-        Supply ``bboxes`` (visual prompts) or ``text`` (open-vocabulary)
-        or both.  ``clear_old_prompts=True`` drops any existing session
-        and starts fresh; pass ``False`` along with ``state_dict`` to
+        ``clear_old_prompts=True`` starts a fresh session (discarding
+        any prior state).  Pass ``False`` along with ``state_dict`` to
         append prompts to an ongoing session.
         """
+        if text is not None and not self._supports_text_prompts:
+            raise ModelRuntimeError(
+                message=(
+                    f"{type(self).__name__} does not support text prompts; "
+                    "use `bboxes=` instead."
+                ),
+                help_url=(
+                    "https://inference-models.roboflow.com/errors/"
+                    "models-runtime/#modelruntimeerror"
+                ),
+            )
         with self._lock:
             image_np = _ensure_numpy_image(image)
             session = self._resolve_session(
@@ -166,7 +186,7 @@ class SAM3ForStream:
                 model_outputs=model_outputs,
                 original_sizes=original_sizes,
             )
-            return masks, object_ids, {_SESSION_KEY: session}
+            return masks, object_ids, {SESSION_KEY: session}
 
     @torch.inference_mode()
     def track(
@@ -176,14 +196,13 @@ class SAM3ForStream:
     ) -> Tuple[np.ndarray, np.ndarray, dict]:
         """Propagate existing tracks onto ``image``.
 
-        Must be called after ``prompt`` (either in the same invocation
-        chain or by threading the ``state_dict`` returned from a prior
-        call).
+        Requires a prior call to ``prompt`` — the state_dict returned
+        there must be threaded back in here.
         """
         with self._lock:
             image_np = _ensure_numpy_image(image)
             session = (
-                state_dict.get(_SESSION_KEY) if state_dict is not None else None
+                state_dict.get(SESSION_KEY) if state_dict is not None else None
             )
             if session is None:
                 raise ModelRuntimeError(
@@ -211,25 +230,19 @@ class SAM3ForStream:
                 model_outputs=model_outputs,
                 original_sizes=inputs.original_sizes,
             )
-            return masks, object_ids, {_SESSION_KEY: session}
+            return masks, object_ids, {SESSION_KEY: session}
 
     # ------------------------------------------------------------------
-    # Internal helpers
+    # Internals
     # ------------------------------------------------------------------
 
     def _resolve_session(
         self, state_dict: Optional[dict], reset: bool
     ) -> Any:
-        """Return a HF inference session for ``prompt``.
-
-        ``reset=True`` (the default for a fresh prompt) always returns a
-        new session.  ``reset=False`` reuses the session embedded in
-        ``state_dict`` if present, otherwise starts a new one.
-        """
         if reset:
             return self._new_session()
         if state_dict is not None:
-            session = state_dict.get(_SESSION_KEY)
+            session = state_dict.get(SESSION_KEY)
             if session is not None:
                 return session
         return self._new_session()
@@ -259,7 +272,6 @@ class SAM3ForStream:
             if masks is not None:
                 return masks, object_ids
 
-        # Fallback to the SAM2-style mask post-processing API.
         pred_masks = getattr(model_outputs, "pred_masks", None)
         if pred_masks is None:
             return np.zeros((0, 0, 0), dtype=bool), np.zeros((0,), dtype=np.int64)
@@ -274,7 +286,7 @@ class SAM3ForStream:
 
 
 # ---------------------------------------------------------------------------
-# Module-level helpers (tested in isolation)
+# Module-level helpers (pure, easy to unit-test)
 # ---------------------------------------------------------------------------
 
 
@@ -289,11 +301,6 @@ def _normalise_bboxes(
         Union[Tuple[int, int, int, int], List[Tuple[int, int, int, int]]]
     ],
 ) -> List[Tuple[float, float, float, float]]:
-    """Accept a single xyxy tuple or a list of them and return a flat list.
-
-    Empty / missing input returns ``[]``; malformed entries (< 4 coords)
-    are dropped.
-    """
     if bboxes is None:
         return []
     if not isinstance(bboxes, list):
@@ -350,8 +357,8 @@ def _first_present(container: Any, keys: Tuple[str, ...]) -> Any:
 def _unpack_processed_outputs(
     processed: Any,
 ) -> Tuple[Optional[np.ndarray], np.ndarray]:
-    """Best-effort extraction of ``(masks, obj_ids)`` from the processor's
-    ``postprocess_outputs`` return value, which varies between
+    """Best-effort extraction of ``(masks, obj_ids)`` from the
+    processor's ``postprocess_outputs`` return — shape varies across
     transformers versions.
     """
     if processed is None:

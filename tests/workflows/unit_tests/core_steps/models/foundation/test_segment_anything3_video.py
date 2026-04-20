@@ -122,7 +122,7 @@ def _make_block_with_fake_model():
     )
     fake = _FakeStreamingModel()
     block._model = fake
-    block._current_model_id = "segment-anything-3-rt"
+    block._current_model_id = "sam3video"
     return block, fake
 
 
@@ -140,7 +140,7 @@ def test_manifest_parses_valid_config():
             "class_names": ["person", "car"],
         }
     )
-    assert manifest.model_id == "segment-anything-3-rt"
+    assert manifest.model_id == "sam3video"
     assert manifest.class_names == ["person", "car"]
 
 
@@ -180,7 +180,7 @@ def test_text_prompt_used_when_no_boxes_supplied():
 
     block.run(
         images=[_make_frame(frame_number=0)],
-        model_id="segment-anything-3-rt",
+        model_id="sam3video",
         class_names=["person", "car"],
         boxes=None,
         prompt_mode="first_frame",
@@ -198,7 +198,7 @@ def test_boxes_take_precedence_over_text_when_both_supplied():
 
     block.run(
         images=[_make_frame(frame_number=0)],
-        model_id="segment-anything-3-rt",
+        model_id="sam3video",
         class_names=["person"],
         boxes=[_make_box_detections()],
         prompt_mode="first_frame",
@@ -216,7 +216,7 @@ def test_first_frame_text_prompt_then_tracks():
     for frame_number in range(3):
         block.run(
             images=[_make_frame(frame_number=frame_number)],
-            model_id="segment-anything-3-rt",
+            model_id="sam3video",
             class_names=["person"],
             boxes=None,
             prompt_mode="first_frame",
@@ -234,7 +234,7 @@ def test_every_frame_mode_reprompts_every_frame():
     for frame_number in range(3):
         block.run(
             images=[_make_frame(frame_number=frame_number)],
-            model_id="segment-anything-3-rt",
+            model_id="sam3video",
             class_names=None,
             boxes=[_make_box_detections()],
             prompt_mode="every_frame",
@@ -250,7 +250,7 @@ def test_stream_restart_triggers_reset_and_fresh_prompt():
 
     block.run(
         images=[_make_frame(frame_number=5)],
-        model_id="segment-anything-3-rt",
+        model_id="sam3video",
         class_names=["person"],
         boxes=None,
         prompt_mode="first_frame",
@@ -259,7 +259,7 @@ def test_stream_restart_triggers_reset_and_fresh_prompt():
     )
     block.run(
         images=[_make_frame(frame_number=6)],
-        model_id="segment-anything-3-rt",
+        model_id="sam3video",
         class_names=["person"],
         boxes=None,
         prompt_mode="first_frame",
@@ -268,7 +268,7 @@ def test_stream_restart_triggers_reset_and_fresh_prompt():
     )
     block.run(
         images=[_make_frame(frame_number=0)],
-        model_id="segment-anything-3-rt",
+        model_id="sam3video",
         class_names=["person"],
         boxes=None,
         prompt_mode="first_frame",
@@ -287,7 +287,7 @@ def test_no_prompts_and_no_session_emits_empty():
 
     result = block.run(
         images=[_make_frame(frame_number=0)],
-        model_id="segment-anything-3-rt",
+        model_id="sam3video",
         class_names=None,
         boxes=None,
         prompt_mode="first_frame",
