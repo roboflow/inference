@@ -126,9 +126,33 @@ class Executor:
         imports = request.get("imports", [])
         run_function_name = request.get("run_function_name", "")
         inputs_json = request.get("inputs_json", "{}")
+        client_code_hash = request.get("code_hash")
 
-        # Get the hash of this code to identify it uniquely
-        code_hash = self._get_code_hash(code_str, imports)
+        # Resolve the effective code hash. Two request modes are supported:
+        #   1. Full code: ``code_str`` is present -> compute hash, compile if new.
+        #   2. Hash-only: ``code_str`` is empty but ``code_hash`` is provided ->
+        #      look up previously cached namespace; on miss return
+        #      ``UnknownCodeHash`` so the client retries with the full code.
+        if code_str:
+            code_hash = self._get_code_hash(code_str, imports)
+        elif client_code_hash:
+            code_hash = client_code_hash
+            if code_hash not in self._code_namespaces:
+                return {
+                    "success": False,
+                    "error": (
+                        f"Code not cached on this container for hash "
+                        f"{code_hash}; client must resend full code."
+                    ),
+                    "error_type": "UnknownCodeHash",
+                    "code_hash": code_hash,
+                }
+        else:
+            return {
+                "success": False,
+                "error": "Request must include either 'code_str' or 'code_hash'.",
+                "error_type": "InvalidRequest",
+            }
 
         # Check if we already have a namespace for this code
         if code_hash not in self._code_namespaces:
@@ -404,9 +428,34 @@ from datetime import datetime
         imports: list,
         run_function_name: str,
         inputs: dict,
+        client_code_hash: str = "",
     ) -> Dict[str, Any]:
-        """Execute user code for the WebSocket transport."""
-        code_hash = executor._get_code_hash(code_str, imports)
+        """Execute user code for the WebSocket transport.
+
+        When ``code_str`` is empty but ``client_code_hash`` is provided, look up
+        a previously cached namespace on this container. On cache miss we return
+        ``UnknownCodeHash`` so the client resends the full code once.
+        """
+        if code_str:
+            code_hash = executor._get_code_hash(code_str, imports)
+        elif client_code_hash:
+            code_hash = client_code_hash
+            if code_hash not in executor._code_namespaces:
+                return {
+                    "success": False,
+                    "error": (
+                        f"Code not cached on this container for hash "
+                        f"{code_hash}; client must resend full code."
+                    ),
+                    "error_type": "UnknownCodeHash",
+                    "code_hash": code_hash,
+                }
+        else:
+            return {
+                "success": False,
+                "error": "Request must include either 'code_str' or 'code_hash'.",
+                "error_type": "InvalidRequest",
+            }
 
         if code_hash not in executor._code_namespaces:
             executor._code_namespaces[code_hash] = {
@@ -610,6 +659,7 @@ from datetime import datetime
                     imports = request.get("imports", [])
                     run_function_name = request.get("run_function_name", "")
                     inputs_raw = request.get("inputs", {})
+                    client_code_hash = request.get("code_hash", "")
 
                     inputs = Executor._deserialize_msgpack_inputs(inputs_raw)
                     resp = Executor._run_user_code_ws(
@@ -618,6 +668,7 @@ from datetime import datetime
                         imports,
                         run_function_name,
                         inputs,
+                        client_code_hash=client_code_hash,
                     )
 
                     if resp.get("success"):

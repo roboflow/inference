@@ -18,6 +18,12 @@ Performance notes
 - Images are re-encoded at ``WEBEXEC_JPEG_QUALITY`` (default 75).
 - In websocket mode, images are sent as raw JPEG bytes inside msgpack
   (no base64), saving ~33 % payload size and CPU.
+- User code is shipped only on the first frame for a given code hash. The
+  server caches the compiled namespace keyed by hash, so subsequent frames
+  send ``code_hash`` only and skip server-side ``compile()``/``exec()``.
+  On cache miss (container restart, HTTP load-balanced to a new replica)
+  the server returns ``UnknownCodeHash`` and the client retries once with
+  the full code.
 """
 
 import base64
@@ -62,6 +68,17 @@ from inference.core.workflows.core_steps.common.deserializers import (
     deserialize_image_kind,
     deserialize_video_metadata_kind,
 )
+
+
+def _compute_code_hash(code_str: str, imports: Optional[list]) -> str:
+    """Stable hash for a python block's code + imports.
+
+    Must match ``Executor._get_code_hash`` in ``modal/modal_app.py`` so the
+    server can look up a previously-cached compiled namespace when the client
+    sends only ``code_hash`` instead of the full ``code_str``.
+    """
+    content = (code_str or "") + "\n" + "\n".join(imports or [])
+    return hashlib.md5(content.encode("utf-8")).hexdigest()
 
 
 def _serialise_image_for_webexec(image: Any) -> dict:
@@ -242,6 +259,9 @@ class ModalExecutor:
         self.workspace_id = workspace_id or MODAL_ANONYMOUS_WORKSPACE_NAME
         self._base_url: Optional[str] = None
         self._session: Optional[requests.Session] = None
+        # Hashes we believe the server has cached. HTTP requests can land on
+        # any replica so a miss may still happen; we retry with full code.
+        self._known_code_hashes: set = set()
 
     def _get_session(self) -> requests.Session:
         if self._session is None:
@@ -294,12 +314,10 @@ class ModalExecutor:
 
             inputs_json = serialize_for_modal_remote_execution(inputs)
 
-            request_payload: Dict[str, Any] = {
-                "code_str": python_code.run_function_code,
-                "imports": python_code.imports or [],
-                "run_function_name": python_code.run_function_name,
-                "inputs_json": inputs_json,
-            }
+            code_hash = _compute_code_hash(
+                python_code.run_function_code or "",
+                python_code.imports,
+            )
 
             if (
                 not workspace
@@ -317,27 +335,35 @@ class ModalExecutor:
                         context="modal_executor | validation_authentication",
                     )
 
-            body_bytes = json.dumps(request_payload).encode("utf-8")
-            compressed = gzip.compress(body_bytes, compresslevel=1)
-
-            session = self._get_session()
-            response = session.post(
-                endpoint_url,
-                data=compressed,
-                timeout=30,
-                headers={
-                    "Content-Type": "application/json",
-                    "Content-Encoding": "gzip",
-                },
+            # Hash-only path: skip shipping ``code_str`` and ``imports`` when
+            # we believe the server already has this hash cached. On a miss
+            # the server returns ``UnknownCodeHash`` and we resend full code.
+            send_full_code = code_hash not in self._known_code_hashes
+            result = self._post_execute(
+                endpoint_url=endpoint_url,
+                python_code=python_code,
+                inputs_json=inputs_json,
+                code_hash=code_hash,
+                send_full_code=send_full_code,
             )
 
-            if response.status_code != 200:
-                raise DynamicBlockError(
-                    public_message=f"Modal endpoint returned status {response.status_code}: {response.text}",
-                    context="modal_executor | http_request",
+            if (
+                not send_full_code
+                and not result.get("success", False)
+                and result.get("error_type") == "UnknownCodeHash"
+            ):
+                # Server replica doesn't have this hash cached; retry once.
+                self._known_code_hashes.discard(code_hash)
+                result = self._post_execute(
+                    endpoint_url=endpoint_url,
+                    python_code=python_code,
+                    inputs_json=inputs_json,
+                    code_hash=code_hash,
+                    send_full_code=True,
                 )
 
-            result = response.json()
+            if result.get("success", False):
+                self._known_code_hashes.add(code_hash)
 
             if not result.get("success", False):
                 error_msg = result.get("error", "Unknown error")
@@ -379,6 +405,50 @@ class ModalExecutor:
                 public_message=f"Failed to connect to Modal endpoint: {str(e)}",
                 context="modal_executor | http_connection",
             )
+
+    def _post_execute(
+        self,
+        endpoint_url: str,
+        python_code: PythonCode,
+        inputs_json: str,
+        code_hash: str,
+        send_full_code: bool,
+    ) -> Dict[str, Any]:
+        """Build the gzip-JSON request and POST it. Returns the parsed JSON.
+
+        When ``send_full_code`` is False we omit ``code_str`` and ``imports``;
+        the server uses ``code_hash`` to locate its cached compiled namespace.
+        """
+        request_payload: Dict[str, Any] = {
+            "code_hash": code_hash,
+            "run_function_name": python_code.run_function_name,
+            "inputs_json": inputs_json,
+        }
+        if send_full_code:
+            request_payload["code_str"] = python_code.run_function_code
+            request_payload["imports"] = python_code.imports or []
+
+        body_bytes = json.dumps(request_payload).encode("utf-8")
+        compressed = gzip.compress(body_bytes, compresslevel=1)
+
+        session = self._get_session()
+        response = session.post(
+            endpoint_url,
+            data=compressed,
+            timeout=30,
+            headers={
+                "Content-Type": "application/json",
+                "Content-Encoding": "gzip",
+            },
+        )
+
+        if response.status_code != 200:
+            raise DynamicBlockError(
+                public_message=f"Modal endpoint returned status {response.status_code}: {response.text}",
+                context="modal_executor | http_request",
+            )
+
+        return response.json()
 
 
 def validate_code_in_modal(
@@ -588,6 +658,10 @@ class WebSocketModalExecutor:
         self.workspace_id = workspace_id or MODAL_ANONYMOUS_WORKSPACE_NAME
         self._ws: Any = None
         self._ws_url: Optional[str] = None
+        # Hashes already sent over the current WS connection. A single WS
+        # is pinned to one container, so anything in this set is guaranteed
+        # cached server-side until the connection drops.
+        self._hashes_sent_on_ws: set = set()
 
     def _get_ws_url(self, workspace_id: str) -> str:
         if self._ws_url is not None:
@@ -622,16 +696,20 @@ class WebSocketModalExecutor:
             header=[f"{k}: {v}" for k, v in headers.items()],
             timeout=30,
         )
+        # New container -> no compiled namespaces cached yet.
+        self._hashes_sent_on_ws = set()
         logger.info("[webexec-ws] Connected")
 
     def _ensure_connection(self, workspace_id: str) -> None:
         if self._ws is not None:
+            logger.info("ensuring ping!")
             try:
                 self._ws.ping()
                 return
             except Exception:
                 logger.warning("[webexec-ws] Connection lost, reconnecting")
                 self._ws = None
+                self._hashes_sent_on_ws = set()
         self._connect(workspace_id)
 
     def execute_remote(
@@ -700,13 +778,24 @@ class WebSocketModalExecutor:
         packed_inputs = serialize_inputs_for_msgpack(inputs)
         t_ser = _time.monotonic()
 
-        payload = {
-            "code_str": python_code.run_function_code,
-            "imports": python_code.imports or [],
-            "run_function_name": python_code.run_function_name,
-            "inputs": packed_inputs,
-        }
-        frame_bytes = msgpack.packb(payload, use_bin_type=True)
+        code_hash = _compute_code_hash(
+            python_code.run_function_code or "",
+            python_code.imports,
+        )
+
+        # Hash-only path: if we've already sent this code over the current WS
+        # connection (pinned to one container), drop ``code_str`` + ``imports``
+        # from every subsequent frame. The server looks up the cached
+        # compiled namespace by hash.
+        send_full_code = code_hash not in self._hashes_sent_on_ws
+
+        frame_bytes = self._build_ws_frame(
+            python_code=python_code,
+            packed_inputs=packed_inputs,
+            code_hash=code_hash,
+            send_full_code=send_full_code,
+            msgpack=msgpack,
+        )
         t_pack = _time.monotonic()
 
         try:
@@ -715,27 +804,85 @@ class WebSocketModalExecutor:
             resp_bytes = self._ws.recv()
         except Exception:
             self._ws = None
+            self._hashes_sent_on_ws = set()
             raise
 
         t_rtt = _time.monotonic()
 
         result = msgpack.unpackb(resp_bytes, raw=False)
+
+        # Fresh replica doesn't have this hash cached (can happen after a
+        # reconnect or container restart). Retry once with full code.
+        if (
+            not send_full_code
+            and not result.get("success", False)
+            and result.get("error_type") == "UnknownCodeHash"
+        ):
+            self._hashes_sent_on_ws.discard(code_hash)
+            logger.info(
+                "[webexec-ws] server missed cached hash %s, resending full code",
+                code_hash,
+            )
+            retry_frame = self._build_ws_frame(
+                python_code=python_code,
+                packed_inputs=packed_inputs,
+                code_hash=code_hash,
+                send_full_code=True,
+                msgpack=msgpack,
+            )
+            try:
+                self._ensure_connection(workspace)
+                self._ws.send_binary(retry_frame)
+                resp_bytes = self._ws.recv()
+            except Exception:
+                self._ws = None
+                self._hashes_sent_on_ws = set()
+                raise
+            result = msgpack.unpackb(resp_bytes, raw=False)
+
+        if result.get("success", False):
+            self._hashes_sent_on_ws.add(code_hash)
+
         t_done = _time.monotonic()
 
         logger.info(
-            "[webexec-ws-timing] serialize=%.0fms pack=%.0fms rtt=%.0fms unpack=%.0fms total=%.0fms bytes=%d",
+            "[webexec-ws-timing] serialize=%.0fms pack=%.0fms rtt=%.0fms unpack=%.0fms total=%.0fms bytes=%d hash_only=%s",
             (t_ser - t0) * 1000,
             (t_pack - t_ser) * 1000,
             (t_rtt - t_pack) * 1000,
             (t_done - t_rtt) * 1000,
             (t_done - t0) * 1000,
             len(frame_bytes),
+            not send_full_code,
         )
 
         if not result.get("success", False):
             self._raise_code_error(result, block_type_name, python_code)
 
         return _deserialize_msgpack_result(result.get("result", {}))
+
+    @staticmethod
+    def _build_ws_frame(
+        python_code: PythonCode,
+        packed_inputs: Dict[str, Any],
+        code_hash: str,
+        send_full_code: bool,
+        msgpack: Any,
+    ) -> bytes:
+        """Pack a msgpack frame, optionally omitting ``code_str``/``imports``.
+
+        When ``send_full_code`` is False the server resolves the compiled
+        namespace through its per-container cache keyed by ``code_hash``.
+        """
+        payload: Dict[str, Any] = {
+            "code_hash": code_hash,
+            "run_function_name": python_code.run_function_name,
+            "inputs": packed_inputs,
+        }
+        if send_full_code:
+            payload["code_str"] = python_code.run_function_code
+            payload["imports"] = python_code.imports or []
+        return msgpack.packb(payload, use_bin_type=True)
 
     @staticmethod
     def _raise_code_error(
