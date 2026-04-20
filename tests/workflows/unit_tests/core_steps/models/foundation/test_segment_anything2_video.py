@@ -67,7 +67,7 @@ def _make_box_detections(
 
 
 class _FakeStreamingModel:
-    """Stand-in for an ``inference_models.SAM2ForStream`` instance.
+    """Stand-in for an ``inference_models.SAM2Video`` instance.
 
     Records each ``prompt`` / ``track`` call and returns deterministic
     masks + obj_ids so the block can build ``sv.Detections``.  The

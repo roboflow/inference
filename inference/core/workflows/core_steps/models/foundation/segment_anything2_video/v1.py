@@ -1,7 +1,7 @@
 """SAM2 Video Tracker workflow block.
 
-Wraps ``inference_models``'s ``SAM2ForStream`` (the streaming camera
-predictor) so it can be driven from a workflow powered by
+Wraps ``inference_models``'s ``SAM2Video`` (the HuggingFace streaming
+tracker) so it can be driven from a workflow powered by
 ``InferencePipeline``.  The pipeline delivers one frame at a time with
 ``WorkflowImageData.video_metadata``; this block keeps one state_dict
 per ``video_identifier`` and either re-prompts or propagates existing

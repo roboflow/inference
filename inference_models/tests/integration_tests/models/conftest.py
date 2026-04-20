@@ -197,10 +197,6 @@ SAM_PACKAGE_URL = (
 SAM2_PACKAGE_URL = (
     "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/sam2.zip"
 )
-SAM2_RT_PACKAGE_URL = (
-    "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/"
-    "segment-anything-2-rt.zip"
-)
 SAM2_VIDEO_PACKAGE_URL = (
     "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/"
     "sam2video.zip"
@@ -1451,22 +1447,6 @@ def sam2_package() -> str:
     return download_model_package(
         model_package_zip_url=SAM2_PACKAGE_URL,
         package_name="sam2",
-    )
-
-
-@pytest.fixture(scope="module")
-def sam2_rt_package() -> str:
-    """Streaming SAM2 via Meta's ``sam2`` camera predictor (legacy).
-
-    Expected contents of the zip:
-
-    - ``weights.pt`` — SAM2 camera-predictor checkpoint.
-    - ``sam2-rt.yaml`` — Hydra config consumed by
-      ``build_sam2_camera_predictor``.
-    """
-    return download_model_package(
-        model_package_zip_url=SAM2_RT_PACKAGE_URL,
-        package_name="segment-anything-2-rt",
     )
 
 
