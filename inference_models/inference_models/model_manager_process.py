@@ -863,7 +863,7 @@ class ModelManagerProcess:
                     self.register_backend(model_id, backend)
                     return
             except Exception:
-                logger.info(
+                logger.exception(
                     "MMP: manager.load('%s') raised — stub-loading without backend",
                     model_id,
                 )

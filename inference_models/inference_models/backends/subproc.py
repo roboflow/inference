@@ -163,6 +163,8 @@ def _worker_main(
         _worker_loop(model, pool, sock, batch_decode_fn,
                      effective_bs or _DEFAULT_BATCH_MAX_SIZE, batch_max_wait_ms, _log)
 
+    except KeyboardInterrupt:
+        pass  # clean exit on Ctrl+C
     except Exception as exc:
         try:
             setup_pipe.send({"status": f"ERROR: {exc}"})
