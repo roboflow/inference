@@ -43,6 +43,7 @@ import asyncio
 import json
 import os
 import struct
+import time
 import uuid
 from contextlib import asynccontextmanager
 from multiprocessing.shared_memory import SharedMemory
@@ -52,6 +53,8 @@ import uvicorn
 import zmq
 import zmq.asyncio
 from fastapi import FastAPI, Request, Response
+
+import filetype
 
 from inference_models.backends.utils.transport import zmq_addr
 
@@ -73,25 +76,17 @@ _HEADER_SIZE = 64
 _SLOT_TOTAL  = _HEADER_SIZE + _SHM_INPUT_SIZE + _SHM_RESULT_SIZE
 
 # ---------------------------------------------------------------------------
-# Image magic-byte prefixes (first bytes of each supported format)
+# Image format detection (magic bytes via ``filetype`` lib + numpy .npy)
 # ---------------------------------------------------------------------------
 
-_IMAGE_MAGICS: tuple[bytes, ...] = (
-    b"\xff\xd8",        # JPEG
-    b"\x89PNG",         # PNG
-    b"RIFF",            # WebP  (RIFF????WEBP — prefix sufficient)
-    b"GIF8",            # GIF
-    b"BM",              # BMP
-    b"II*\x00",         # TIFF little-endian
-    b"MM\x00*",         # TIFF big-endian
-    b"\x93NUMPY",       # numpy .npy (standalone/direct mode)
-)
-_IMAGE_MAGIC_MAX = max(len(m) for m in _IMAGE_MAGICS)
+_NPY_MAGIC = b"\x93NUMPY"
 
 
 def _looks_like_image(data: bytes | memoryview) -> bool:
-    head = bytes(data[:_IMAGE_MAGIC_MAX])
-    return any(head[:len(m)] == m for m in _IMAGE_MAGICS)
+    head = bytes(data[:262])  # filetype needs up to 262 bytes
+    if head[:6] == _NPY_MAGIC:
+        return True
+    return filetype.is_image(head)
 
 
 # ---------------------------------------------------------------------------
@@ -387,12 +382,11 @@ async def infer(request: Request) -> Response:
     if not api_key:
         return Response(status_code=400, content=b"api_key query param required")
 
-    import time as _t
-    _t0 = _t.monotonic()
+    _t0 = time.monotonic()
 
     # 1. Ensure model is loaded (instant on warm path)
     status = await _ensure_loaded(model_id, instance, api_key, device)
-    _t1 = _t.monotonic()
+    _t1 = time.monotonic()
     if status[0] == "load_timeout":
         return Response(
             status_code=503,
@@ -413,7 +407,7 @@ async def infer(request: Request) -> Response:
         )
     except RuntimeError as exc:
         return Response(status_code=503, content=str(exc).encode())
-    _t2 = _t.monotonic()
+    _t2 = time.monotonic()
 
     # 3. Stream body into SHM  4. Submit  5. Read result
     # Slot is always freed in finally — even on early return paths above
@@ -430,10 +424,10 @@ async def infer(request: Request) -> Response:
 
         if pos == 0:
             return Response(status_code=400, content=b"empty body")
-        _t3 = _t.monotonic()
+        _t3 = time.monotonic()
 
         result = await _submit_and_wait(slot_id, model_id, instance, pos, params)
-        _t4 = _t.monotonic()
+        _t4 = time.monotonic()
 
         print(
             f"[TIMING] ensure={(_t1-_t0)*1000:.1f}ms "
