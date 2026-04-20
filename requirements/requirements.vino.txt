@@ -1,2 +1,2 @@
 onnxruntime-openvino>=1.15.0,<1.22.0
-inference-models[torch-cpu]~=0.25.1rc1  # keep in sync between requirements.jetson requirements.gpu.txt, requirements.cpu.txt, requirements.vino.txt
+inference-models[torch-cpu] @ git+https://github.com/roboflow/inference.git@feat/model-eval-recommended-defaults#subdirectory=inference_models  # keep in sync between requirements.jetson requirements.gpu.txt, requirements.cpu.txt, requirements.vino.txt
