@@ -77,6 +77,7 @@ from inference.core.utils.onnx import get_onnxruntime_execution_providers
 from inference.core.utils.preprocess import letterbox_image, prepare
 from inference.core.utils.roboflow import get_model_id_chunks
 from inference.core.utils.visualisation import draw_detection_predictions
+from inference.core.telemetry import start_span, set_span_attribute
 from inference.models.aliases import resolve_roboflow_model_alias
 
 NUM_S3_RETRY = 5
@@ -282,21 +283,25 @@ class RoboflowInferenceModel(Model):
         return [f for f in infer_bucket_files if f is not None]
 
     def download_model_artefacts_from_s3(self) -> None:
-        try:
-            logger.debug("Downloading model artifacts from S3")
-            infer_bucket_files = self.get_all_required_infer_bucket_file()
-            cache_directory = get_cache_dir()
-            s3_keys = [f"{self.endpoint}/{file}" for file in infer_bucket_files]
-            download_s3_files_to_directory(
-                bucket=self.model_artifact_bucket,
-                keys=s3_keys,
-                target_dir=cache_directory,
-                s3_client=S3_CLIENT,
-            )
-        except Exception as error:
-            raise ModelArtefactError(
-                f"Could not obtain model artefacts from S3 with keys {s3_keys}. Cause: {error}"
-            ) from error
+        with start_span(
+            "model.artifacts.download",
+            {"model.id": self.endpoint, "model.artifacts.source": "s3"},
+        ):
+            try:
+                logger.debug("Downloading model artifacts from S3")
+                infer_bucket_files = self.get_all_required_infer_bucket_file()
+                cache_directory = get_cache_dir()
+                s3_keys = [f"{self.endpoint}/{file}" for file in infer_bucket_files]
+                download_s3_files_to_directory(
+                    bucket=self.model_artifact_bucket,
+                    keys=s3_keys,
+                    target_dir=cache_directory,
+                    s3_client=S3_CLIENT,
+                )
+            except Exception as error:
+                raise ModelArtefactError(
+                    f"Could not obtain model artefacts from S3 with keys {s3_keys}. Cause: {error}"
+                ) from error
 
     @property
     def model_artifact_bucket(self):
@@ -309,174 +314,181 @@ class RoboflowInferenceModel(Model):
         **kwargs,
     ) -> None:
         logger.debug("Downloading model artifacts from Roboflow API")
-
-        # Use the same lock file pattern as in clear_cache
-        lock_dir = MODEL_CACHE_DIR + "/_file_locks"  # Dedicated lock directory
-        os.makedirs(lock_dir, exist_ok=True)  # Ensure lock directory exists.
-        lock_file = os.path.join(lock_dir, f"{os.path.basename(self.cache_dir)}.lock")
-        try:
-            lock = FileLock(lock_file, timeout=120)  # 120 second timeout for downloads
-            with lock:
-                if self.version_id is not None:
-                    api_data = get_roboflow_model_data(
-                        api_key=self.api_key,
-                        model_id=self.endpoint,
-                        endpoint_type=ModelEndpointType.ORT,
-                        device_id=self.device_id,
-                        countinference=countinference,
-                        service_secret=service_secret,
-                    )
-                    if "ort" not in api_data.keys():
-                        raise ModelArtefactError(
-                            "Could not find `ort` key in roboflow API model description response."
-                        )
-                    api_data = api_data["ort"]
-                    if "classes" in api_data:
-                        save_text_lines_in_cache(
-                            content=api_data["classes"],
-                            file="class_names.txt",
+        with start_span(
+            "model.artifacts.download",
+            {"model.id": self.endpoint, "model.artifacts.source": "roboflow_api"},
+        ):
+            # Use the same lock file pattern as in clear_cache
+            lock_dir = MODEL_CACHE_DIR + "/_file_locks"  # Dedicated lock directory
+            os.makedirs(lock_dir, exist_ok=True)  # Ensure lock directory exists.
+            lock_file = os.path.join(lock_dir, f"{os.path.basename(self.cache_dir)}.lock")
+            try:
+                lock = FileLock(lock_file, timeout=120)  # 120 second timeout for downloads
+                with lock:
+                    if self.version_id is not None:
+                        api_data = get_roboflow_model_data(
+                            api_key=self.api_key,
                             model_id=self.endpoint,
+                            endpoint_type=ModelEndpointType.ORT,
+                            device_id=self.device_id,
+                            countinference=countinference,
+                            service_secret=service_secret,
                         )
-                    if "model" not in api_data:
-                        raise ModelArtefactError(
-                            "Could not find `model` key in roboflow API model description response."
+                        if "ort" not in api_data.keys():
+                            raise ModelArtefactError(
+                                "Could not find `ort` key in roboflow API model description response."
+                            )
+                        api_data = api_data["ort"]
+                        if "classes" in api_data:
+                            save_text_lines_in_cache(
+                                content=api_data["classes"],
+                                file="class_names.txt",
+                                model_id=self.endpoint,
+                            )
+                        if "model" not in api_data:
+                            raise ModelArtefactError(
+                                "Could not find `model` key in roboflow API model description response."
+                            )
+                        if "environment" not in api_data:
+                            raise ModelArtefactError(
+                                "Could not find `environment` key in roboflow API model description response."
+                            )
+                        environment = get_from_url(api_data["environment"])
+                        model_weights_response = get_from_url(
+                            api_data["model"],
+                            json_response=False,
                         )
-                    if "environment" not in api_data:
-                        raise ModelArtefactError(
-                            "Could not find `environment` key in roboflow API model description response."
-                        )
-                    environment = get_from_url(api_data["environment"])
-                    model_weights_response = get_from_url(
-                        api_data["model"],
-                        json_response=False,
-                    )
-                else:
-                    api_data = get_roboflow_instant_model_data(
-                        api_key=self.api_key,
-                        model_id=self.endpoint,
-                        countinference=countinference,
-                        service_secret=service_secret,
-                    )
-                    if (
-                        "modelFiles" not in api_data
-                        or "ort" not in api_data["modelFiles"]
-                        or "model" not in api_data["modelFiles"]["ort"]
-                    ):
-                        raise ModelArtefactError(
-                            "Could not find `modelFiles` key or `modelFiles`.`ort` or `modelFiles`.`ort`.`model` key in roboflow API model description response."
-                        )
-                    if "environment" not in api_data:
-                        raise ModelArtefactError(
-                            "Could not find `environment` key in roboflow API model description response."
-                        )
-                    model_weights_response = get_from_url(
-                        api_data["modelFiles"]["ort"]["model"],
-                        json_response=False,
-                    )
-                    environment = api_data["environment"]
-                    if "classes" in api_data:
-                        save_text_lines_in_cache(
-                            content=api_data["classes"],
-                            file="class_names.txt",
+                    else:
+                        api_data = get_roboflow_instant_model_data(
+                            api_key=self.api_key,
                             model_id=self.endpoint,
+                            countinference=countinference,
+                            service_secret=service_secret,
                         )
+                        if (
+                            "modelFiles" not in api_data
+                            or "ort" not in api_data["modelFiles"]
+                            or "model" not in api_data["modelFiles"]["ort"]
+                        ):
+                            raise ModelArtefactError(
+                                "Could not find `modelFiles` key or `modelFiles`.`ort` or `modelFiles`.`ort`.`model` key in roboflow API model description response."
+                            )
+                        if "environment" not in api_data:
+                            raise ModelArtefactError(
+                                "Could not find `environment` key in roboflow API model description response."
+                            )
+                        model_weights_response = get_from_url(
+                            api_data["modelFiles"]["ort"]["model"],
+                            json_response=False,
+                        )
+                        environment = api_data["environment"]
+                        if "classes" in api_data:
+                            save_text_lines_in_cache(
+                                content=api_data["classes"],
+                                file="class_names.txt",
+                                model_id=self.endpoint,
+                            )
 
-                save_bytes_in_cache(
-                    content=model_weights_response.content,
-                    file=self.weights_file,
-                    model_id=self.endpoint,
-                )
-                if "colors" in api_data:
-                    environment["COLORS"] = api_data["colors"]
-                save_json_in_cache(
-                    content=environment,
-                    file="environment.json",
-                    model_id=self.endpoint,
-                )
-                if "keypoints_metadata" in api_data:
-                    # TODO: make sure backend provides that
+                    save_bytes_in_cache(
+                        content=model_weights_response.content,
+                        file=self.weights_file,
+                        model_id=self.endpoint,
+                    )
+                    if "colors" in api_data:
+                        environment["COLORS"] = api_data["colors"]
                     save_json_in_cache(
-                        content=api_data["keypoints_metadata"],
-                        file="keypoints_metadata.json",
+                        content=environment,
+                        file="environment.json",
                         model_id=self.endpoint,
                     )
-        except Exception as e:
-            logger.error(f"Error downloading model artifacts: {e}")
-            raise
+                    if "keypoints_metadata" in api_data:
+                        # TODO: make sure backend provides that
+                        save_json_in_cache(
+                            content=api_data["keypoints_metadata"],
+                            file="keypoints_metadata.json",
+                            model_id=self.endpoint,
+                        )
+            except Exception as e:
+                logger.error(f"Error downloading model artifacts: {e}")
+                raise
 
     def load_model_artifacts_from_cache(self) -> None:
         logger.debug("Model artifacts already downloaded, loading model from cache")
-        infer_bucket_files = self.get_all_required_infer_bucket_file()
-        if "environment.json" in infer_bucket_files:
-            self.environment = load_json_from_cache(
-                file="environment.json",
-                model_id=self.endpoint,
-                object_pairs_hook=OrderedDict,
-            )
-        if "class_names.txt" in infer_bucket_files:
-            self.class_names = load_text_file_from_cache(
-                file="class_names.txt",
-                model_id=self.endpoint,
-                split_lines=True,
-                strip_white_chars=True,
-            )
-        else:
-            self.class_names = get_class_names_from_environment_file(
-                environment=self.environment
-            )
-        self.colors = get_color_mapping_from_environment(
-            environment=self.environment,
-            class_names=self.class_names,
-        )
-        if "keypoints_metadata.json" in infer_bucket_files:
-            self.keypoints_metadata = parse_keypoints_metadata(
-                load_json_from_cache(
-                    file="keypoints_metadata.json",
+        with start_span(
+            "model.artifacts.load",
+            {"model.id": self.endpoint, "model.artifacts.source": "local_cache"},
+        ):
+            infer_bucket_files = self.get_all_required_infer_bucket_file()
+            if "environment.json" in infer_bucket_files:
+                self.environment = load_json_from_cache(
+                    file="environment.json",
                     model_id=self.endpoint,
                     object_pairs_hook=OrderedDict,
                 )
-            )
-        self.num_classes = len(self.class_names)
-        if "PREPROCESSING" not in self.environment:
-            raise ModelArtefactError(
-                "Could not find `PREPROCESSING` key in environment file."
-            )
-        if issubclass(type(self.environment["PREPROCESSING"]), dict):
-            self.preproc = self.environment["PREPROCESSING"]
-        else:
-            self.preproc = json.loads(self.environment["PREPROCESSING"])
-        if self.preproc.get("resize"):
-            self.resize_method = self.preproc["resize"].get("format", "Stretch to")
-            if self.resize_method in [
-                "Fit (reflect edges) in",
-                "Fit within",
-                "Fill (with center crop) in",
-            ]:
-                fallback_resize_method = "Fit (black edges) in"
-                logger.warning(
-                    "Unsupported resize method '%s', defaulting to '%s' - this may result in degraded model performance.",
-                    self.resize_method,
-                    fallback_resize_method,
+            if "class_names.txt" in infer_bucket_files:
+                self.class_names = load_text_file_from_cache(
+                    file="class_names.txt",
+                    model_id=self.endpoint,
+                    split_lines=True,
+                    strip_white_chars=True,
                 )
-                self.resize_method = fallback_resize_method
-            if self.resize_method not in [
-                "Stretch to",
-                "Fit (black edges) in",
-                "Fit (grey edges) in",
-                "Fit (white edges) in",
-            ]:
+            else:
+                self.class_names = get_class_names_from_environment_file(
+                    environment=self.environment
+                )
+            self.colors = get_color_mapping_from_environment(
+                environment=self.environment,
+                class_names=self.class_names,
+            )
+            if "keypoints_metadata.json" in infer_bucket_files:
+                self.keypoints_metadata = parse_keypoints_metadata(
+                    load_json_from_cache(
+                        file="keypoints_metadata.json",
+                        model_id=self.endpoint,
+                        object_pairs_hook=OrderedDict,
+                    )
+                )
+            self.num_classes = len(self.class_names)
+            if "PREPROCESSING" not in self.environment:
+                raise ModelArtefactError(
+                    "Could not find `PREPROCESSING` key in environment file."
+                )
+            if issubclass(type(self.environment["PREPROCESSING"]), dict):
+                self.preproc = self.environment["PREPROCESSING"]
+            else:
+                self.preproc = json.loads(self.environment["PREPROCESSING"])
+            if self.preproc.get("resize"):
+                self.resize_method = self.preproc["resize"].get("format", "Stretch to")
+                if self.resize_method in [
+                    "Fit (reflect edges) in",
+                    "Fit within",
+                    "Fill (with center crop) in",
+                ]:
+                    fallback_resize_method = "Fit (black edges) in"
+                    logger.warning(
+                        "Unsupported resize method '%s', defaulting to '%s' - this may result in degraded model performance.",
+                        self.resize_method,
+                        fallback_resize_method,
+                    )
+                    self.resize_method = fallback_resize_method
+                if self.resize_method not in [
+                    "Stretch to",
+                    "Fit (black edges) in",
+                    "Fit (grey edges) in",
+                    "Fit (white edges) in",
+                ]:
+                    logger.error(
+                        "Unsupported resize method '%s', defaulting to 'Stretch to' - this may result in degraded model performance.",
+                        self.resize_method,
+                    )
+                    self.resize_method = "Stretch to"
+            else:
                 logger.error(
-                    "Unsupported resize method '%s', defaulting to 'Stretch to' - this may result in degraded model performance.",
-                    self.resize_method,
+                    "Unknown resize method, defaulting to 'Stretch to' - this may result in degraded model performance."
                 )
                 self.resize_method = "Stretch to"
-        else:
-            logger.error(
-                "Unknown resize method, defaulting to 'Stretch to' - this may result in degraded model performance."
-            )
-            self.resize_method = "Stretch to"
-        logger.debug(f"Resize method is '{self.resize_method}'")
-        self.multiclass = self.environment.get("MULTICLASS", False)
+            logger.debug(f"Resize method is '{self.resize_method}'")
+            self.multiclass = self.environment.get("MULTICLASS", False)
 
     def initialize_model(self, **kwargs) -> None:
         """Initialize the model.
