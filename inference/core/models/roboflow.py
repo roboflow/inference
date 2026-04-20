@@ -321,9 +321,13 @@ class RoboflowInferenceModel(Model):
             # Use the same lock file pattern as in clear_cache
             lock_dir = MODEL_CACHE_DIR + "/_file_locks"  # Dedicated lock directory
             os.makedirs(lock_dir, exist_ok=True)  # Ensure lock directory exists.
-            lock_file = os.path.join(lock_dir, f"{os.path.basename(self.cache_dir)}.lock")
+            lock_file = os.path.join(
+                lock_dir, f"{os.path.basename(self.cache_dir)}.lock"
+            )
             try:
-                lock = FileLock(lock_file, timeout=120)  # 120 second timeout for downloads
+                lock = FileLock(
+                    lock_file, timeout=120
+                )  # 120 second timeout for downloads
                 with lock:
                     if self.version_id is not None:
                         api_data = get_roboflow_model_data(
