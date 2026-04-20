@@ -76,8 +76,8 @@ from inference.core.utils.image_utils import load_image
 from inference.core.utils.onnx import get_onnxruntime_execution_providers
 from inference.core.utils.preprocess import letterbox_image, prepare
 from inference.core.utils.roboflow import get_model_id_chunks
-from inference.core.utils.visualisation import draw_detection_predictions
 from inference.core.telemetry import start_span, set_span_attribute
+from inference.core.utils.visualisation import draw_detection_predictions
 from inference.models.aliases import resolve_roboflow_model_alias
 
 NUM_S3_RETRY = 5
