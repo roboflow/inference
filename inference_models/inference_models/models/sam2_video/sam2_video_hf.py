@@ -2,9 +2,9 @@
 
 This is the HuggingFace-based alternative to the older
 ``sam2_rt.SAM2ForStream`` (which relies on Meta's ``sam2`` package and
-its camera predictor).  The HF port exposes the same streaming-friendly
-interface used by ``sam3_video.SAM3Video``, so both models can be
-driven from a single workflow block with identical call shapes.
+its camera predictor).  It builds on ``HFStreamingVideoBase`` so the
+same streaming-friendly interface can be reused by other HF video
+trackers (e.g. a future SAM3 video port).
 
 Both are registered and available concurrently:
 

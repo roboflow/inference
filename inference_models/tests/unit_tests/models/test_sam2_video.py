@@ -1,9 +1,8 @@
 """Unit tests for ``SAM2Video`` (HF transformers streaming tracker).
 
-The streaming contract is inherited from ``HFStreamingVideoBase`` and
-covered exhaustively in ``test_sam3_video.py``.  These tests only
-exercise SAM2-specific behaviour — principally that SAM2 rejects
-text prompts (which are a SAM3 feature).
+These tests exercise SAM2-specific behaviour — principally that SAM2
+rejects text prompts (which are not part of SAM2's prompt vocabulary).
+The broader streaming contract lives in ``HFStreamingVideoBase``.
 """
 
 from unittest.mock import MagicMock

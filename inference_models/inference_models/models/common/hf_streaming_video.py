@@ -16,9 +16,9 @@ per-frame shape is identical:
   methods.
 
 ``HFStreamingVideoBase`` encapsulates all of this.  Concrete subclasses
-(``SAM2Video``, ``SAM3Video``) just declare which transformers classes
-to load and which prompt types they accept; they inherit the streaming
-``prompt`` / ``track`` methods unchanged.
+(``SAM2Video`` today, plus any future HF video tracker) just declare
+which transformers classes to load and which prompt types they accept;
+they inherit the streaming ``prompt`` / ``track`` methods unchanged.
 """
 
 from threading import RLock
