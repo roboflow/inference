@@ -30,6 +30,7 @@ Input formats (both modes):
 
 from __future__ import annotations
 
+import asyncio
 import io
 import logging
 import os
@@ -187,7 +188,7 @@ def _worker_loop(
     log,
 ) -> None:
     """Greedy batch loop — accumulate T_SLOT_READY, fire on size-or-timeout."""
-    import zmq
+    import zmq  # noqa: PLC0415 — subprocess; already in sys.modules from _worker_main
 
     poller = zmq.Poller()
     poller.register(sock, zmq.POLLIN)
@@ -403,7 +404,9 @@ class SubprocessBackend(Backend):
         if device is not None and device.startswith("cuda"):
             use_gpu = True
         if use_gpu is None:
-            use_gpu = (device is None or device.startswith("cuda"))
+            import torch  # noqa: PLC0415
+            use_gpu = (device is not None and device.startswith("cuda")) or \
+                      (device is None and torch.cuda.is_available())
         self._use_gpu    = use_gpu
         self._device_str = (
             (device if device and device.startswith("cuda") else "cuda:0")
@@ -700,7 +703,6 @@ class SubprocessBackend(Backend):
         return self.submit(raw_input, **kwargs).result()
 
     async def infer_async(self, raw_input: Any, **kwargs) -> Any:
-        import asyncio  # noqa: PLC0415
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(
             None, lambda: self.infer_sync(raw_input, **kwargs)

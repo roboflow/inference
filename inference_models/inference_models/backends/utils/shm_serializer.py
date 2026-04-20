@@ -20,6 +20,11 @@ from typing import Any
 
 import numpy as np
 
+try:
+    import torch as _torch
+except ImportError:
+    _torch = None  # type: ignore[assignment]
+
 
 # ---------------------------------------------------------------------------
 # Marker — survives pickle round-trip
@@ -86,15 +91,10 @@ def pack(
         return _ShmRef(idx)
 
     def _replace(o: Any) -> Any:
-        # torch.Tensor (guarded import)
-        try:
-            import torch
-            if isinstance(o, torch.Tensor):
-                if o.is_cuda:
-                    o = o.cpu()
-                return _write_array(o.detach().numpy(), is_tensor=True)
-        except ImportError:
-            pass
+        if _torch is not None and isinstance(o, _torch.Tensor):
+            if o.is_cuda:
+                o = o.cpu()
+            return _write_array(o.detach().numpy(), is_tensor=True)
 
         if isinstance(o, np.ndarray):
             return _write_array(o, is_tensor=False)
@@ -158,9 +158,8 @@ def unpack(
             )
             if copy:
                 arr = arr.copy()
-            if desc["T"]:
-                import torch
-                return torch.from_numpy(arr)
+            if desc["T"] and _torch is not None:
+                return _torch.from_numpy(arr)
             return arr
 
         if isinstance(o, list):
