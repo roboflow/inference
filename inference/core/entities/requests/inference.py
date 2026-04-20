@@ -215,7 +215,7 @@ class KeypointsDetectionInferenceRequest(ObjectDetectionInferenceRequest):
             raise ValueError(
                 'confidence="best" is not supported for keypoint detection '
                 "— model eval does not yet produce per-class thresholds for "
-                "this task. Use a float or \"default\"."
+                'this task. Use a float or "default".'
             )
         return value
 
