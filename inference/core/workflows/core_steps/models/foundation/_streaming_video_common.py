@@ -76,9 +76,7 @@ def extract_box_prompts(
             if isinstance(data, dict)
             else "foreground"
         )
-        parent_id = (
-            data.get("detection_id") if isinstance(data, dict) else None
-        )
+        parent_id = data.get("detection_id") if isinstance(data, dict) else None
         metas.append(
             BoxPromptMetadata(
                 class_id=int(class_id) if class_id is not None else 0,
@@ -177,14 +175,10 @@ def masks_to_sv_detections(
         class_id=np.asarray(class_ids, dtype=int),
         tracker_id=np.asarray(tracker_ids, dtype=int),
     )
-    detections.data[DETECTIONS_CLASS_NAME_FIELD] = np.asarray(
-        class_names, dtype=object
-    )
+    detections.data[DETECTIONS_CLASS_NAME_FIELD] = np.asarray(class_names, dtype=object)
     detections[DETECTION_ID_KEY] = np.asarray(detection_ids, dtype=object)
     detections[PARENT_ID_KEY] = np.asarray(parent_ids, dtype=object)
-    detections[IMAGE_DIMENSIONS_KEY] = np.asarray(
-        [[h, w]] * len(detections), dtype=int
-    )
+    detections[IMAGE_DIMENSIONS_KEY] = np.asarray([[h, w]] * len(detections), dtype=int)
     return detections
 
 
@@ -218,11 +212,7 @@ def build_obj_id_metadata_from_text(
     info, fall back to a single class name (if only one was supplied)
     or "foreground" (if multiple or none).
     """
-    label = (
-        class_names[0]
-        if len(class_names) == 1 and class_names[0]
-        else "foreground"
-    )
+    label = class_names[0] if len(class_names) == 1 and class_names[0] else "foreground"
     return {
         int(oid): BoxPromptMetadata(
             class_id=0, class_name=label, confidence=1.0, parent_id=None

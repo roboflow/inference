@@ -127,7 +127,7 @@ def _make_block_with_fake_model():
     )
     fake = _FakeStreamingModel()
     block._model = fake
-    block._current_model_id = "sam2video"
+    block._current_model_id = "sam2video/small"
     return block, fake
 
 
@@ -145,7 +145,7 @@ def test_manifest_parses_valid_config():
     }
     manifest = BlockManifest.model_validate(data)
     assert manifest.type == "roboflow_core/segment_anything_2_video@v1"
-    assert manifest.model_id == "sam2video"
+    assert manifest.model_id == "sam2video/small"
     assert manifest.prompt_mode == "first_frame"
     assert manifest.prompt_interval == 30
 
@@ -191,7 +191,7 @@ def test_first_frame_mode_prompts_once_then_tracks():
             block.run(
                 images=[_make_frame(frame_number=frame_number)],
                 boxes=[boxes],
-                model_id="sam2video",
+                model_id="sam2video/small",
                 prompt_mode="first_frame",
                 prompt_interval=30,
                 threshold=0.0,
@@ -216,7 +216,7 @@ def test_every_n_frames_mode_reprompts_after_interval():
         block.run(
             images=[_make_frame(frame_number=frame_number)],
             boxes=[boxes],
-            model_id="sam2video",
+            model_id="sam2video/small",
             prompt_mode="every_n_frames",
             prompt_interval=3,
             threshold=0.0,
@@ -244,7 +244,7 @@ def test_every_frame_mode_reprompts_every_frame():
         block.run(
             images=[_make_frame(frame_number=frame_number)],
             boxes=[boxes],
-            model_id="sam2video",
+            model_id="sam2video/small",
             prompt_mode="every_frame",
             prompt_interval=30,
             threshold=0.0,
@@ -260,7 +260,7 @@ def test_stream_restart_triggers_session_reset():
     block.run(
         images=[_make_frame(frame_number=5)],
         boxes=[boxes],
-        model_id="sam2video",
+        model_id="sam2video/small",
         prompt_mode="first_frame",
         prompt_interval=30,
         threshold=0.0,
@@ -268,7 +268,7 @@ def test_stream_restart_triggers_session_reset():
     block.run(
         images=[_make_frame(frame_number=6)],
         boxes=[boxes],
-        model_id="sam2video",
+        model_id="sam2video/small",
         prompt_mode="first_frame",
         prompt_interval=30,
         threshold=0.0,
@@ -277,7 +277,7 @@ def test_stream_restart_triggers_session_reset():
     block.run(
         images=[_make_frame(frame_number=0)],
         boxes=[boxes],
-        model_id="sam2video",
+        model_id="sam2video/small",
         prompt_mode="first_frame",
         prompt_interval=30,
         threshold=0.0,
@@ -298,7 +298,7 @@ def test_state_dict_threaded_across_track_calls():
     block.run(
         images=[_make_frame(frame_number=0)],
         boxes=[boxes],
-        model_id="sam2video",
+        model_id="sam2video/small",
         prompt_mode="first_frame",
         prompt_interval=30,
         threshold=0.0,
@@ -306,7 +306,7 @@ def test_state_dict_threaded_across_track_calls():
     block.run(
         images=[_make_frame(frame_number=1)],
         boxes=[boxes],
-        model_id="sam2video",
+        model_id="sam2video/small",
         prompt_mode="first_frame",
         prompt_interval=30,
         threshold=0.0,
@@ -314,7 +314,7 @@ def test_state_dict_threaded_across_track_calls():
     block.run(
         images=[_make_frame(frame_number=2)],
         boxes=[boxes],
-        model_id="sam2video",
+        model_id="sam2video/small",
         prompt_mode="first_frame",
         prompt_interval=30,
         threshold=0.0,
@@ -333,7 +333,7 @@ def test_multiple_video_streams_have_independent_sessions():
     block.run(
         images=[_make_frame(video_id="A", frame_number=0)],
         boxes=[boxes],
-        model_id="sam2video",
+        model_id="sam2video/small",
         prompt_mode="first_frame",
         prompt_interval=30,
         threshold=0.0,
@@ -341,7 +341,7 @@ def test_multiple_video_streams_have_independent_sessions():
     block.run(
         images=[_make_frame(video_id="B", frame_number=0)],
         boxes=[boxes],
-        model_id="sam2video",
+        model_id="sam2video/small",
         prompt_mode="first_frame",
         prompt_interval=30,
         threshold=0.0,
@@ -349,7 +349,7 @@ def test_multiple_video_streams_have_independent_sessions():
     block.run(
         images=[_make_frame(video_id="A", frame_number=1)],
         boxes=[boxes],
-        model_id="sam2video",
+        model_id="sam2video/small",
         prompt_mode="first_frame",
         prompt_interval=30,
         threshold=0.0,
@@ -366,7 +366,7 @@ def test_no_boxes_and_no_session_emits_empty_detections():
     result = block.run(
         images=[_make_frame(frame_number=0)],
         boxes=None,
-        model_id="sam2video",
+        model_id="sam2video/small",
         prompt_mode="first_frame",
         prompt_interval=30,
         threshold=0.0,

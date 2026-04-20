@@ -199,7 +199,7 @@ SAM2_PACKAGE_URL = (
 )
 SAM2_VIDEO_PACKAGE_URL = (
     "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/"
-    "sam2video.zip"
+    "sam2video-small.zip"
 )
 SAM3_VIDEO_PACKAGE_URL = (
     "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/"

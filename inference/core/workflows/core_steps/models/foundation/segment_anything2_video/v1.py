@@ -133,13 +133,18 @@ class BlockManifest(WorkflowBlockManifest):
         json_schema_extra={"always_visible": True},
     )
     model_id: Union[Selector(kind=[ROBOFLOW_MODEL_ID_KIND]), str] = Field(
-        default="sam2video",
+        default="sam2video/small",
         description=(
             "Streaming SAM2 model id resolved by `inference_models`.  "
-            "The default points at the Roboflow-registered SAM2 camera "
-            "predictor package."
+            "The `sam2video` family ships four Hiera backbone sizes; "
+            "`small` is the default trade-off between speed and quality."
         ),
-        examples=["sam2video"],
+        examples=[
+            "sam2video/tiny",
+            "sam2video/small",
+            "sam2video/base-plus",
+            "sam2video/large",
+        ],
     )
     prompt_mode: Literal["first_frame", "every_n_frames", "every_frame"] = Field(
         default="first_frame",
@@ -184,7 +189,12 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_supported_model_variants(cls) -> Optional[List[str]]:
-        return ["sam2video"]
+        return [
+            "sam2video/small",
+            "sam2video/tiny",
+            "sam2video/base-plus",
+            "sam2video/large",
+        ]
 
 
 class SegmentAnything2VideoBlockV1(WorkflowBlock):
@@ -252,12 +262,8 @@ class SegmentAnything2VideoBlockV1(WorkflowBlock):
             video_id = metadata.video_identifier
             frame_number = metadata.frame_number or 0
 
-            session = self._sessions.setdefault(
-                video_id, VideoSessionBookkeeping()
-            )
-            has_box_prompts = (
-                boxes_for_image is not None and len(boxes_for_image) > 0
-            )
+            session = self._sessions.setdefault(video_id, VideoSessionBookkeeping())
+            has_box_prompts = boxes_for_image is not None and len(boxes_for_image) > 0
             should_reset, should_prompt = decide_prompt_vs_track(
                 session=session,
                 frame_number=frame_number,
@@ -296,9 +302,7 @@ class SegmentAnything2VideoBlockV1(WorkflowBlock):
             else:
                 import numpy as np
 
-                masks = np.zeros(
-                    (0, frame_np.shape[0], frame_np.shape[1]), dtype=bool
-                )
+                masks = np.zeros((0, frame_np.shape[0], frame_np.shape[1]), dtype=bool)
                 obj_ids = np.zeros((0,), dtype=np.int64)
 
             session.last_frame_number = frame_number

@@ -172,7 +172,7 @@ class HFStreamingVideoBase:
                     inference_session=session,
                     frame_idx=frame_idx,
                     obj_ids=list(range(len(box_list))),
-                    input_boxes=[[[[float(v) for v in xyxy] for xyxy in box_list]]],
+                    input_boxes=[[[float(v) for v in xyxy] for xyxy in box_list]],
                     original_size=original_sizes[0],
                 )
 

@@ -112,9 +112,7 @@ class BlockManifest(WorkflowBlockManifest):
     images: Selector(kind=[IMAGE_KIND]) = ImageInputField
     model_id: Union[Selector(kind=[ROBOFLOW_MODEL_ID_KIND]), str] = Field(
         default="sam3video",
-        description=(
-            "Streaming SAM3 model id resolved by `inference_models`."
-        ),
+        description=("Streaming SAM3 model id resolved by `inference_models`."),
         examples=["sam3video"],
     )
     class_names: Optional[
@@ -255,12 +253,8 @@ class SegmentAnything3VideoBlockV1(WorkflowBlock):
             video_id = metadata.video_identifier
             frame_number = metadata.frame_number or 0
 
-            session = self._sessions.setdefault(
-                video_id, VideoSessionBookkeeping()
-            )
-            has_box_prompts = (
-                boxes_for_image is not None and len(boxes_for_image) > 0
-            )
+            session = self._sessions.setdefault(video_id, VideoSessionBookkeeping())
+            has_box_prompts = boxes_for_image is not None and len(boxes_for_image) > 0
             has_text_prompts = bool(class_name_list)
             has_any_prompt = has_box_prompts or has_text_prompts
 
@@ -315,9 +309,7 @@ class SegmentAnything3VideoBlockV1(WorkflowBlock):
             else:
                 import numpy as np
 
-                masks = np.zeros(
-                    (0, frame_np.shape[0], frame_np.shape[1]), dtype=bool
-                )
+                masks = np.zeros((0, frame_np.shape[0], frame_np.shape[1]), dtype=bool)
                 obj_ids = np.zeros((0,), dtype=np.int64)
 
             session.last_frame_number = frame_number
