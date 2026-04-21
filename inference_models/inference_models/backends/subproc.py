@@ -677,6 +677,12 @@ class SubprocessBackend(Backend):
             "use ModelManager.infer_async() which handles pool allocation"
         )
 
+    def submit(self, raw_input: Any, *, priority: int = 0, **kwargs) -> Future:
+        raise RuntimeError(
+            "SubprocessBackend.submit() is not available — "
+            "use ModelManager.submit() which handles pool allocation"
+        )
+
     # ------------------------------------------------------------------
     # Lifecycle
     # ------------------------------------------------------------------

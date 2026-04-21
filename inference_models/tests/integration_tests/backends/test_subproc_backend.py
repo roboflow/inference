@@ -154,6 +154,7 @@ class TestSubprocBackendLifecycle:
         )
         assert backend._worker.is_alive()
         backend.unload()
+        backend._worker.join(timeout=5)
         assert not backend._worker.is_alive()
         assert backend.state == "unhealthy"
         assert backend.is_accepting is False
