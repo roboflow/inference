@@ -103,6 +103,11 @@ _T_RESULT_READY  = b'\x14'
 _T_ERROR         = b'\xFF'
 _T_MODEL_READY   = b'\x0A'
 _T_LOAD_TIMEOUT  = b'\x0B'
+_T_OK            = b'\x40'
+
+# uvicorn → MMP (lifecycle)
+_T_LOAD          = b'\x20'
+_T_UNLOAD        = b'\x21'
 
 # Wire formats (big-endian):
 #   _T_ALLOC:         Q H N    req_id(8) flavor_len(2) flavor(N)
@@ -197,6 +202,10 @@ def _dispatch(msg_type: bytes, frames: list[bytes]) -> None:
         elif msg_type == _T_LOAD_TIMEOUT:
             req_id, retry_after = struct.unpack(">QI", frames[0])
             _resolve(req_id, ("load_timeout", retry_after))
+
+        elif msg_type == _T_OK:
+            req_id = struct.unpack(">Q", frames[0])[0]
+            _resolve(req_id, ("ok",))
 
         elif msg_type == _T_ERROR:
             req_id = struct.unpack(">Q", frames[0][:8])[0]
@@ -456,6 +465,79 @@ async def infer(request: Request) -> Response:
 
     finally:
         _free_slot(slot_id)
+
+
+# ---------------------------------------------------------------------------
+# Lifecycle endpoints (T_LOAD / T_UNLOAD via MMP)
+# ---------------------------------------------------------------------------
+
+async def _lifecycle_req(msg_type: bytes, payload: bytes, timeout_s: float = 30.0):
+    """Send a lifecycle message to MMP and wait for T_OK or T_ERROR."""
+    req_id = _new_req_id()
+    fut = _loop.create_future()
+    _pending[req_id] = fut
+
+    full_payload = struct.pack(">Q", req_id) + payload
+    await _sock.send_multipart([msg_type, full_payload])
+
+    try:
+        return await asyncio.wait_for(fut, timeout=timeout_s)
+    except asyncio.TimeoutError:
+        _pending.pop(req_id, None)
+        raise
+
+
+@app.post("/models/load")
+async def load_model(request: Request) -> Response:
+    """Trigger model load on MMP.
+
+    Query params:
+        model_id    Required.
+        api_key     Optional.
+    """
+    params   = dict(request.query_params)
+    model_id = params.get("model_id", "")
+    api_key  = params.get("api_key", "")
+    if not model_id:
+        return Response(status_code=400, content=b"model_id query param required")
+
+    mid_bytes = model_id.encode()
+    key_bytes = api_key.encode()
+    payload = struct.pack(">H", len(mid_bytes)) + mid_bytes + struct.pack(">H", len(key_bytes)) + key_bytes
+
+    try:
+        result = await _lifecycle_req(_T_LOAD, payload)
+    except asyncio.TimeoutError:
+        return Response(status_code=504, content=b"load request timeout")
+
+    if result[0] == "error":
+        return Response(status_code=500, content=b"load failed")
+    return Response(status_code=200, content=f"load triggered: {model_id}".encode())
+
+
+@app.post("/models/unload")
+async def unload_model(request: Request) -> Response:
+    """Trigger model unload on MMP.
+
+    Query params:
+        model_id    Required.
+    """
+    params   = dict(request.query_params)
+    model_id = params.get("model_id", "")
+    if not model_id:
+        return Response(status_code=400, content=b"model_id query param required")
+
+    mid_bytes = model_id.encode()
+    payload = struct.pack(">H", len(mid_bytes)) + mid_bytes
+
+    try:
+        result = await _lifecycle_req(_T_UNLOAD, payload)
+    except asyncio.TimeoutError:
+        return Response(status_code=504, content=b"unload request timeout")
+
+    if result[0] == "error":
+        return Response(status_code=500, content=b"unload failed")
+    return Response(status_code=200, content=f"unloaded: {model_id}".encode())
 
 
 # ---------------------------------------------------------------------------
