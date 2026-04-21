@@ -8,29 +8,24 @@
 
 <script>
 (function() {
-    
-    // Cache DOM elements
-    const elements = {
-        manualLink: null
-    };
-    
+
     function getOperatingSystem() {
         const userAgent = navigator.userAgent || navigator.vendor || window.opera;
-        
+
         if (userAgent.indexOf('Win') !== -1) return 'windows';
         if (userAgent.indexOf('Mac') !== -1) return 'mac';
         return 'other';
     }
-    
-    function getDownloadURL(os, version) {
-        if(os === 'windows'){
-            return `https://github.com/roboflow/inference/releases/download/v${version}/inference-${version}-installer.exe`;
-        }else if( os === 'mac'){
-            return `https://github.com/roboflow/inference/releases/download/v${version}/Roboflow-Inference-${version}.dmg`;
+
+    function pickAssetForOS(assets, os) {
+        if (os === 'windows') {
+            return assets.find(a => /\.exe$/i.test(a.name) && /installer/i.test(a.name));
+        } else if (os === 'mac') {
+            return assets.find(a => /\.dmg$/i.test(a.name));
         }
         return null;
     }
-    
+
     function triggerDownload(downloadURL) {
         const downloadLink = document.createElement('a');
         downloadLink.href = downloadURL;
@@ -39,29 +34,50 @@
         downloadLink.click();
         document.body.removeChild(downloadLink);
     }
-    
-    function startDownload() {
-        const os = getOperatingSystem();
-        const version = '{{ VERSION }}';
-        
-        // Cache DOM elements on first use
-        if (!elements.manualLink) {
-            elements.manualLink = document.getElementById('manual-download-link');
+
+    function showFallback(message) {
+        const msgEl = document.getElementById('download-message');
+        if (msgEl && message) {
+            msgEl.textContent = message;
         }
-        
+    }
+
+    async function startDownload() {
+        const os = getOperatingSystem();
+
         if (os === 'other') {
             window.location.href = '/install/';
             return;
         }
-        
-        const downloadURL = getDownloadURL(os, version);
-        if (!downloadURL) return;
-        
-        // Start automatic download
-        triggerDownload(downloadURL);
+
+        try {
+            const res = await fetch('https://api.github.com/repos/roboflow/inference/releases/latest');
+            if (!res.ok) throw new Error(`GitHub API returned ${res.status}`);
+            const release = await res.json();
+            const asset = pickAssetForOS(release.assets || [], os);
+
+            if (!asset) {
+                showFallback(
+                    os === 'mac'
+                        ? "No macOS build is available for the latest release. Please see the install docs for alternatives."
+                        : "No installer found for your platform in the latest release. Please download manually from the releases page."
+                );
+                const manualLink = document.getElementById('manual-download-link');
+                if (manualLink) manualLink.href = 'https://github.com/roboflow/inference/releases/latest';
+                return;
+            }
+
+            const manualLink = document.getElementById('manual-download-link');
+            if (manualLink) manualLink.href = asset.browser_download_url;
+
+            triggerDownload(asset.browser_download_url);
+        } catch (err) {
+            showFallback("We couldn't resolve the latest release automatically. Please download manually from the releases page.");
+            const manualLink = document.getElementById('manual-download-link');
+            if (manualLink) manualLink.href = 'https://github.com/roboflow/inference/releases/latest';
+        }
     }
-    
-    // Start download when page loads
+
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', startDownload);
     } else {
