@@ -106,7 +106,6 @@ def launch_orchestrated(
     max_pinned_memory_mb:  int   = 0,
     n_slots:               int   = 64,
     input_mb:              float = 20.0,
-    result_mb:             float = 4.0,
     mmp_addr:              Optional[str] = None,
     gpu_eviction_threshold: float = 0.90,
     evict_check_interval_s: float = 5.0,
@@ -124,7 +123,7 @@ def launch_orchestrated(
 
     Example (server startup)::
 
-        handle = launch_orchestrated(n_slots=128, input_mb=20, result_mb=4)
+        handle = launch_orchestrated(n_slots=128, input_mb=20)
         # then in each uvicorn worker:
         #   ctx  = zmq.asyncio.Context()
         #   sock = ctx.socket(zmq.DEALER)
@@ -140,7 +139,6 @@ def launch_orchestrated(
     mmp = ModelManagerProcess(
         n_slots=n_slots,
         input_mb=input_mb,
-        result_mb=result_mb,
         manager=manager,
         evict_threshold=gpu_eviction_threshold,
         evict_check_interval_s=evict_check_interval_s,

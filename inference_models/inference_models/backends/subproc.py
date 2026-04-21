@@ -1,8 +1,8 @@
 """SubprocessBackend v2 — SHMPool + worker-side greedy batching.
 
 Transport:
-  Input:  raw bytes written to SHMPool.input_memoryview(slot_id)
-  Output: pickled Python object in SHMPool.result_memoryview(slot_id)
+  Input:  raw bytes written to SHMPool.data_memoryview(slot_id)
+  Output: pickled Python object written to same SHMPool.data_memoryview(slot_id)
   Signal: ZMQ PAIR — parent sends T_SLOT_READY per request;
           worker sends T_RESULT per completed slot
 
@@ -263,7 +263,7 @@ def _process_slots(
     is_npy: list[bool] = []
     for slot_id, _ in batch:
         hdr = pool.read_header(slot_id)
-        mv  = pool.input_memoryview(slot_id)[:hdr.input_size]
+        mv  = pool.data_memoryview(slot_id)[:hdr.input_size]
         mvs.append(mv)
         is_npy.append(bytes(mv[:6]) == _NP_MAGIC)
 
@@ -350,7 +350,7 @@ def _process_slots(
             result.confidence = result.confidence.cpu()
             result.class_id = result.class_id.cpu()
         data = pickle.dumps(result)
-        mv   = pool.result_memoryview(slot_id)
+        mv   = pool.data_memoryview(slot_id)
         mv[:len(data)] = data
         mv.release()
         pool.mark_done(slot_id, len(data))
@@ -620,7 +620,7 @@ class SubprocessBackend(Backend):
             if future is not None and not future.done():
                 if result_sz > 0:
                     try:
-                        data   = bytes(self._pool.result_memoryview(slot_id)[:result_sz])
+                        data   = bytes(self._pool.data_memoryview(slot_id)[:result_sz])
                         result = pickle.loads(data)
                         future.set_result(result)
                     except Exception as exc:

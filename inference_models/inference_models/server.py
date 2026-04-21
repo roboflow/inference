@@ -108,7 +108,6 @@ def main() -> None:
     # ── MMP config ─────────────────────────────────────────────────────────
     n_slots   = int(os.environ.get("INFERENCE_N_SLOTS",   "256"))
     input_mb  = float(os.environ.get("INFERENCE_INPUT_MB",  "25.0"))
-    result_mb = float(os.environ.get("INFERENCE_RESULT_MB",  "4.0"))
     decoder        = os.environ.get("INFERENCE_DECODER", "imagecodecs")
     batch_max_size = int(os.environ.get("INFERENCE_BATCH_MAX_SIZE", "0"))
     batch_max_wait = float(os.environ.get("INFERENCE_BATCH_MAX_WAIT_MS", "5.0"))
@@ -127,13 +126,12 @@ def main() -> None:
 
     # ── Start MMP ──────────────────────────────────────────────────────────
     logger.info(
-        "Starting MMP: slots=%d input=%.0fMB result=%.0fMB",
-        n_slots, input_mb, result_mb,
+        "Starting MMP: slots=%d data=%.0fMB",
+        n_slots, input_mb,
     )
     handle = launch_orchestrated(
         n_slots=n_slots,
         input_mb=input_mb,
-        result_mb=result_mb,
         decoder=decoder,
         batch_max_size=batch_max_size,
         batch_max_wait_ms=batch_max_wait,
@@ -143,8 +141,7 @@ def main() -> None:
     # Inject into env so uvicorn worker processes pick them up at import time
     os.environ["INFERENCE_MMP_ADDR"]        = handle.mmp_addr
     os.environ["INFERENCE_SHM_NAME"]        = handle.shm_name
-    os.environ["INFERENCE_SHM_INPUT_SIZE"]  = str(int(input_mb  * 1024 * 1024))
-    os.environ["INFERENCE_SHM_RESULT_SIZE"] = str(int(result_mb * 1024 * 1024))
+    os.environ["INFERENCE_SHM_DATA_SIZE"]   = str(int(input_mb * 1024 * 1024))
 
     # ── Start uvicorn ──────────────────────────────────────────────────────
     scheme = "https" if ssl_cert else "http"
