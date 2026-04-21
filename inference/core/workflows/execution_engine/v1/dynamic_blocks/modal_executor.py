@@ -31,6 +31,7 @@ import gzip
 import hashlib
 import json
 import os
+import threading
 import time as _time
 from typing import Any, Dict, Optional
 
@@ -652,7 +653,18 @@ class WebSocketModalExecutor:
 
     Falls back to HTTP (``ModalExecutor``) if the WebSocket connection
     cannot be established.
+
+    Keep-alive strategy
+    -------------------
+    We intentionally do **not** ping on every frame: ``websocket-client``
+    ``ping()`` is a synchronous write that adds work to every RTT. Instead we
+    trust ``self._ws`` on the hot path and only reconnect on an actual
+    ``send`` / ``recv`` failure. A lightweight daemon thread pings the
+    connection when it has been idle for ``_KEEPALIVE_IDLE_SECONDS`` so NATs
+    and proxies don't silently close the channel during quiet periods.
     """
+
+    _KEEPALIVE_IDLE_SECONDS = 25.0
 
     def __init__(self, workspace_id: Optional[str] = None):
         self.workspace_id = workspace_id or MODAL_ANONYMOUS_WORKSPACE_NAME
@@ -662,6 +674,12 @@ class WebSocketModalExecutor:
         # is pinned to one container, so anything in this set is guaranteed
         # cached server-side until the connection drops.
         self._hashes_sent_on_ws: set = set()
+        # Serialize hot-path send/recv with the keepalive ping so they don't
+        # step on each other on the same socket.
+        self._io_lock = threading.Lock()
+        self._last_activity: float = 0.0
+        self._keepalive_stop: Optional[threading.Event] = None
+        self._keepalive_thread: Optional[threading.Thread] = None
 
     def _get_ws_url(self, workspace_id: str) -> str:
         if self._ws_url is not None:
@@ -698,19 +716,81 @@ class WebSocketModalExecutor:
         )
         # New container -> no compiled namespaces cached yet.
         self._hashes_sent_on_ws = set()
+        self._last_activity = _time.monotonic()
+        self._ensure_keepalive_thread()
         logger.info("[webexec-ws] Connected")
 
     def _ensure_connection(self, workspace_id: str) -> None:
-        if self._ws is not None:
-            logger.info("ensuring ping!")
-            try:
-                self._ws.ping()
+        # Hot path: trust the cached socket. A dead connection will surface
+        # as an exception on the very next ``send``/``recv`` and we drop+
+        # reconnect in the caller's except block (see ``_execute_ws``).
+        if self._ws is None:
+            self._connect(workspace_id)
+
+    def _ensure_keepalive_thread(self) -> None:
+        if self._keepalive_thread is not None and self._keepalive_thread.is_alive():
+            return
+        self._keepalive_stop = threading.Event()
+        self._keepalive_thread = threading.Thread(
+            target=self._keepalive_loop,
+            args=(self._keepalive_stop,),
+            name=f"webexec-ws-keepalive-{self.workspace_id}",
+            daemon=True,
+        )
+        self._keepalive_thread.start()
+
+    def _keepalive_loop(self, stop_event: threading.Event) -> None:
+        """Ping the WS when the connection has been idle long enough.
+
+        Skipped entirely while frames are flowing (``_last_activity`` is
+        updated on every successful RTT). Uses ``acquire(blocking=False)`` so
+        the keepalive never delays a real frame already in flight.
+        """
+        interval = self._KEEPALIVE_IDLE_SECONDS
+        while not stop_event.wait(interval):
+            ws = self._ws
+            if ws is None:
                 return
+            idle = _time.monotonic() - self._last_activity
+            if idle < interval:
+                continue
+            if not self._io_lock.acquire(blocking=False):
+                # Frame in flight -> that's keepalive enough.
+                continue
+            try:
+                ws = self._ws
+                if ws is None:
+                    return
+                try:
+                    ws.ping()
+                    self._last_activity = _time.monotonic()
+                    logger.debug("[webexec-ws] keepalive ping ok")
+                except Exception as e:
+                    logger.debug(
+                        "[webexec-ws] keepalive ping failed (%s); dropping conn",
+                        e,
+                    )
+                    try:
+                        ws.close()
+                    except Exception:
+                        pass
+                    self._ws = None
+                    self._hashes_sent_on_ws = set()
+                    return
+            finally:
+                self._io_lock.release()
+
+    def close(self) -> None:
+        """Best-effort teardown, mainly for tests."""
+        if self._keepalive_stop is not None:
+            self._keepalive_stop.set()
+        ws = self._ws
+        self._ws = None
+        if ws is not None:
+            try:
+                ws.close()
             except Exception:
-                logger.warning("[webexec-ws] Connection lost, reconnecting")
-                self._ws = None
-                self._hashes_sent_on_ws = set()
-        self._connect(workspace_id)
+                pass
 
     def execute_remote(
         self,
@@ -800,8 +880,10 @@ class WebSocketModalExecutor:
 
         try:
             self._ensure_connection(workspace)
-            self._ws.send_binary(frame_bytes)
-            resp_bytes = self._ws.recv()
+            with self._io_lock:
+                self._ws.send_binary(frame_bytes)
+                resp_bytes = self._ws.recv()
+            self._last_activity = _time.monotonic()
         except Exception:
             self._ws = None
             self._hashes_sent_on_ws = set()
@@ -832,8 +914,10 @@ class WebSocketModalExecutor:
             )
             try:
                 self._ensure_connection(workspace)
-                self._ws.send_binary(retry_frame)
-                resp_bytes = self._ws.recv()
+                with self._io_lock:
+                    self._ws.send_binary(retry_frame)
+                    resp_bytes = self._ws.recv()
+                self._last_activity = _time.monotonic()
             except Exception:
                 self._ws = None
                 self._hashes_sent_on_ws = set()
@@ -845,7 +929,7 @@ class WebSocketModalExecutor:
 
         t_done = _time.monotonic()
 
-        logger.info(
+        logger.debug(
             "[webexec-ws-timing] serialize=%.0fms pack=%.0fms rtt=%.0fms unpack=%.0fms total=%.0fms bytes=%d hash_only=%s",
             (t_ser - t0) * 1000,
             (t_pack - t_ser) * 1000,
