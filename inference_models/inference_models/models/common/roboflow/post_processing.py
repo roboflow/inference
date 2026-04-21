@@ -1,5 +1,6 @@
-from typing import List, Literal, Tuple
+from typing import Dict, Iterator, List, Literal, Tuple
 
+import numpy as np
 import torch
 import torchvision
 from torchvision.transforms import functional
@@ -9,6 +10,8 @@ from inference_models.models.common.roboflow.model_packages import (
     PreProcessingMetadata,
     StaticCropOffset,
 )
+
+MASK_ALIGNMENT_CHUNK_PIXEL_LIMIT = 4_000_000
 
 
 def run_nms_for_object_detection(
@@ -327,6 +330,208 @@ def crop_masks_to_boxes(
     return masks * crop_mask
 
 
+def _get_mask_alignment_chunk_size(
+    number_of_masks: int,
+    target_height: int,
+    target_width: int,
+) -> int:
+    pixels_per_mask = max(target_height * target_width, 1)
+    return max(
+        min(
+            number_of_masks,
+            MASK_ALIGNMENT_CHUNK_PIXEL_LIMIT // pixels_per_mask,
+        ),
+        1,
+    )
+
+
+def _resize_and_binarize_masks(
+    masks: torch.Tensor,
+    target_height: int,
+    target_width: int,
+    output_height: int,
+    output_width: int,
+    binarization_threshold: float,
+    output_offset_x: int = 0,
+    output_offset_y: int = 0,
+) -> torch.Tensor:
+    number_of_masks = masks.shape[0]
+    if output_offset_x > 0 or output_offset_y > 0:
+        resized_masks = torch.zeros(
+            (number_of_masks, output_height, output_width),
+            dtype=torch.bool,
+            device=masks.device,
+        )
+    else:
+        resized_masks = torch.empty(
+            (number_of_masks, output_height, output_width),
+            dtype=torch.bool,
+            device=masks.device,
+        )
+    output_y_slice = slice(output_offset_y, output_offset_y + target_height)
+    output_x_slice = slice(output_offset_x, output_offset_x + target_width)
+    chunk_size = _get_mask_alignment_chunk_size(
+        number_of_masks=number_of_masks,
+        target_height=target_height,
+        target_width=target_width,
+    )
+    for chunk_start in range(0, number_of_masks, chunk_size):
+        chunk_end = min(chunk_start + chunk_size, number_of_masks)
+        resized_chunk = functional.resize(
+            masks[chunk_start:chunk_end],
+            [target_height, target_width],
+            interpolation=functional.InterpolationMode.BILINEAR,
+        )
+        resized_masks[
+            chunk_start:chunk_end,
+            output_y_slice,
+            output_x_slice,
+        ] = resized_chunk.gt_(binarization_threshold)
+    return resized_masks
+
+
+def iter_aligned_instance_segmentation_results(
+    image_bboxes: torch.Tensor,
+    masks: torch.Tensor,
+    padding: Tuple[int, int, int, int],
+    scale_width: float,
+    scale_height: float,
+    original_size: ImageDimensions,
+    size_after_pre_processing: ImageDimensions,
+    inference_size: ImageDimensions,
+    static_crop_offset: StaticCropOffset,
+    binarization_threshold: float = 0.0,
+) -> Iterator[Tuple[torch.Tensor, torch.Tensor]]:
+    if image_bboxes.shape[0] == 0:
+        return
+    pad_left, pad_top, pad_right, pad_bottom = padding
+    offsets = torch.tensor(
+        [pad_left, pad_top, pad_left, pad_top],
+        device=image_bboxes.device,
+    )
+    image_bboxes[:, :4].sub_(offsets)
+    scale = torch.as_tensor(
+        [scale_width, scale_height, scale_width, scale_height],
+        dtype=image_bboxes.dtype,
+        device=image_bboxes.device,
+    )
+    image_bboxes[:, :4].div_(scale)
+    n, mh, mw = masks.shape
+    mask_h_scale = mh / inference_size.height
+    mask_w_scale = mw / inference_size.width
+    mask_pad_top, mask_pad_bottom, mask_pad_left, mask_pad_right = (
+        round(mask_h_scale * pad_top),
+        round(mask_h_scale * pad_bottom),
+        round(mask_w_scale * pad_left),
+        round(mask_w_scale * pad_right),
+    )
+    if (
+        mask_pad_top < 0
+        or mask_pad_bottom < 0
+        or mask_pad_left < 0
+        or mask_pad_right < 0
+    ):
+        masks = torch.nn.functional.pad(
+            masks,
+            (
+                abs(min(mask_pad_left, 0)),
+                abs(min(mask_pad_right, 0)),
+                abs(min(mask_pad_top, 0)),
+                abs(min(mask_pad_bottom, 0)),
+            ),
+            "constant",
+            0,
+        )
+        padded_mask_offset_top = max(mask_pad_top, 0)
+        padded_mask_offset_bottom = max(mask_pad_bottom, 0)
+        padded_mask_offset_left = max(mask_pad_left, 0)
+        padded_mask_offset_right = max(mask_pad_right, 0)
+        masks = masks[
+            :,
+            padded_mask_offset_top : masks.shape[1] - padded_mask_offset_bottom,
+            padded_mask_offset_left : masks.shape[2] - padded_mask_offset_right,
+        ]
+    else:
+        masks = masks[
+            :, mask_pad_top : mh - mask_pad_bottom, mask_pad_left : mw - mask_pad_right
+        ]
+
+    if static_crop_offset.offset_x > 0 or static_crop_offset.offset_y > 0:
+        static_crop_offsets = torch.as_tensor(
+            [
+                static_crop_offset.offset_x,
+                static_crop_offset.offset_y,
+                static_crop_offset.offset_x,
+                static_crop_offset.offset_y,
+            ],
+            dtype=image_bboxes.dtype,
+            device=image_bboxes.device,
+        )
+        image_bboxes[:, :4].add_(static_crop_offsets)
+
+    for mask_id in range(n):
+        if static_crop_offset.offset_x > 0 or static_crop_offset.offset_y > 0:
+            aligned_mask = _resize_and_binarize_masks(
+                masks=masks[mask_id : mask_id + 1],
+                target_height=size_after_pre_processing.height,
+                target_width=size_after_pre_processing.width,
+                output_height=original_size.height,
+                output_width=original_size.width,
+                binarization_threshold=binarization_threshold,
+                output_offset_x=static_crop_offset.offset_x,
+                output_offset_y=static_crop_offset.offset_y,
+            )[0]
+        else:
+            aligned_mask = _resize_and_binarize_masks(
+                masks=masks[mask_id : mask_id + 1],
+                target_height=size_after_pre_processing.height,
+                target_width=size_after_pre_processing.width,
+                output_height=size_after_pre_processing.height,
+                output_width=size_after_pre_processing.width,
+                binarization_threshold=binarization_threshold,
+            )[0]
+        yield image_bboxes[mask_id], aligned_mask
+
+
+def mask_to_largest_polygon(mask: torch.Tensor) -> np.ndarray:
+    import cv2
+
+    mask_np = mask.detach().cpu().numpy()
+    if mask_np.dtype == np.bool_:
+        if not mask_np.flags.c_contiguous:
+            mask_np = np.ascontiguousarray(mask_np)
+        mask_uint8 = mask_np.view(np.uint8)
+    elif mask_np.dtype == np.uint8:
+        mask_uint8 = (
+            mask_np
+            if mask_np.flags.c_contiguous
+            else np.ascontiguousarray(mask_np)
+        )
+    else:
+        mask_uint8 = np.ascontiguousarray(mask_np > 0).view(np.uint8)
+    if not np.any(mask_uint8):
+        return np.zeros((0, 2), dtype=np.float32)
+    contours = cv2.findContours(mask_uint8, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[
+        0
+    ]
+    if not contours:
+        return np.zeros((0, 2), dtype=np.float32)
+    return (
+        np.array(contours[np.array([len(x) for x in contours]).argmax()])
+        .reshape(-1, 2)
+        .astype(np.float32)
+    )
+
+
+def mask_to_coco_rle(mask: torch.Tensor) -> Dict[str, object]:
+    from pycocotools import mask as mask_utils
+
+    mask_np = mask.detach().cpu().numpy().astype(np.uint8)
+    rle = mask_utils.encode(np.asfortranarray(mask_np))
+    rle["counts"] = rle["counts"].decode("utf-8")
+    return rle
+
+
 def align_instance_segmentation_results(
     image_bboxes: torch.Tensor,
     masks: torch.Tensor,
@@ -397,30 +602,17 @@ def align_instance_segmentation_results(
         masks = masks[
             :, mask_pad_top : mh - mask_pad_bottom, mask_pad_left : mw - mask_pad_right
         ]
-    masks = (
-        functional.resize(
-            masks,
-            [size_after_pre_processing.height, size_after_pre_processing.width],
-            interpolation=functional.InterpolationMode.BILINEAR,
-        )
-        .gt_(binarization_threshold)
-        .to(dtype=torch.bool)
-    )
     if static_crop_offset.offset_x > 0 or static_crop_offset.offset_y > 0:
-        mask_canvas = torch.zeros(
-            (
-                masks.shape[0],
-                original_size.height,
-                original_size.width,
-            ),
-            dtype=torch.bool,
-            device=masks.device,
+        masks = _resize_and_binarize_masks(
+            masks=masks,
+            target_height=size_after_pre_processing.height,
+            target_width=size_after_pre_processing.width,
+            output_height=original_size.height,
+            output_width=original_size.width,
+            binarization_threshold=binarization_threshold,
+            output_offset_x=static_crop_offset.offset_x,
+            output_offset_y=static_crop_offset.offset_y,
         )
-        mask_canvas[
-            :,
-            static_crop_offset.offset_y : static_crop_offset.offset_y + masks.shape[1],
-            static_crop_offset.offset_x : static_crop_offset.offset_x + masks.shape[2],
-        ] = masks
         static_crop_offsets = torch.as_tensor(
             [
                 static_crop_offset.offset_x,
@@ -432,5 +624,13 @@ def align_instance_segmentation_results(
             device=image_bboxes.device,
         )
         image_bboxes[:, :4].add_(static_crop_offsets)
-        masks = mask_canvas
+    else:
+        masks = _resize_and_binarize_masks(
+            masks=masks,
+            target_height=size_after_pre_processing.height,
+            target_width=size_after_pre_processing.width,
+            output_height=size_after_pre_processing.height,
+            output_width=size_after_pre_processing.width,
+            binarization_threshold=binarization_threshold,
+        )
     return image_bboxes, masks

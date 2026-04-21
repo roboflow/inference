@@ -153,6 +153,25 @@ CONFIDENCE = float(os.getenv(CONFIDENCE_ENV, DEFAULT_CONFIDENCE))
 # Flag to enable core models, default is True
 CORE_MODELS_ENABLED = str2bool(os.getenv("CORE_MODELS_ENABLED", True))
 
+# When enabled, inference_models instance segmentation responses are serialized
+# directly from streamed masks instead of first materializing dense N x H x W masks.
+INFERENCE_MODELS_INSTANCE_SEGMENTATION_MEMORY_OPTIMIZED_POSTPROCESS = str2bool(
+    os.getenv(
+        "INFERENCE_MODELS_INSTANCE_SEGMENTATION_MEMORY_OPTIMIZED_POSTPROCESS", False
+    )
+)
+INFERENCE_MODELS_INSTANCE_SEGMENTATION_MEMORY_OPTIMIZED_FORMAT = os.getenv(
+    "INFERENCE_MODELS_INSTANCE_SEGMENTATION_MEMORY_OPTIMIZED_FORMAT", "polygon"
+).lower()
+if INFERENCE_MODELS_INSTANCE_SEGMENTATION_MEMORY_OPTIMIZED_FORMAT not in {
+    "polygon",
+    "rle",
+}:
+    raise ValueError(
+        "Invalid INFERENCE_MODELS_INSTANCE_SEGMENTATION_MEMORY_OPTIMIZED_FORMAT. "
+        "Expected one of: polygon, rle."
+    )
+
 # Flag to enable CLIP core model, default is True
 CORE_MODEL_CLIP_ENABLED = str2bool(os.getenv("CORE_MODEL_CLIP_ENABLED", True))
 

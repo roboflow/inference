@@ -18,6 +18,7 @@ from inference.core.entities.responses.inference import (
     InferenceResponseImage,
     InstanceSegmentationInferenceResponse,
     InstanceSegmentationPrediction,
+    InstanceSegmentationRLEPrediction,
     Keypoint,
     KeypointsDetectionInferenceResponse,
     KeypointsPrediction,
@@ -33,6 +34,8 @@ from inference.core.env import (
     ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES,
     API_KEY,
     DISABLED_INFERENCE_MODELS_BACKENDS,
+    INFERENCE_MODELS_INSTANCE_SEGMENTATION_MEMORY_OPTIMIZED_FORMAT,
+    INFERENCE_MODELS_INSTANCE_SEGMENTATION_MEMORY_OPTIMIZED_POSTPROCESS,
     RFDETR_ONNX_MAX_RESOLUTION,
     VALID_INFERENCE_MODELS_BACKENDS,
 )
@@ -57,10 +60,40 @@ from inference_models import (
     PreProcessingOverrides,
     SemanticSegmentationModel,
 )
+from inference_models.configuration import (
+    INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE,
+    INFERENCE_MODELS_YOLO26_DEFAULT_CONFIDENCE,
+    INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_CLASS_AGNOSTIC_NMS,
+    INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_CONFIDENCE,
+    INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_IOU_THRESHOLD,
+    INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_MASKS_BINARIZATION_THRESHOLD,
+    INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_MASKS_SMOOTHING_ENABLED,
+    INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_MAX_DETECTIONS,
+    INFERENCE_MODELS_YOLOV5_DEFAULT_CLASS_AGNOSTIC_NMS,
+    INFERENCE_MODELS_YOLOV5_DEFAULT_CONFIDENCE,
+    INFERENCE_MODELS_YOLOV5_DEFAULT_IOU_THRESHOLD,
+    INFERENCE_MODELS_YOLOV5_DEFAULT_MAX_DETECTIONS,
+    INFERENCE_MODELS_YOLOV7_DEFAULT_CLASS_AGNOSTIC_NMS,
+    INFERENCE_MODELS_YOLOV7_DEFAULT_CONFIDENCE,
+    INFERENCE_MODELS_YOLOV7_DEFAULT_IOU_THRESHOLD,
+    INFERENCE_MODELS_YOLOV7_DEFAULT_MAX_DETECTIONS,
+)
 from inference_models.models.base.semantic_segmentation import (
     SemanticSegmentationResult,
 )
 from inference_models.models.base.types import PreprocessingMetadata
+from inference_models.models.common.roboflow.post_processing import (
+    crop_masks_to_boxes,
+    iter_aligned_instance_segmentation_results,
+    mask_to_coco_rle,
+    mask_to_largest_polygon,
+    post_process_nms_fused_model_output,
+    preprocess_segmentation_masks,
+    run_nms_for_instance_segmentation,
+)
+from inference_models.models.yolov5.nms import (
+    run_yolov5_nms_for_instance_segmentation,
+)
 
 DEFAULT_COLOR_PALETTE = [
     "#A351FB",
@@ -298,6 +331,424 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
         mapped_kwargs = self.map_inference_kwargs(kwargs)
         return self._model.forward(img_in, **mapped_kwargs)
 
+    def _postprocess_memory_optimized(
+        self,
+        predictions: Any,
+        preprocess_return_metadata: PreprocessingMetadata,
+        **kwargs,
+    ) -> Optional[List[InstanceSegmentationInferenceResponse]]:
+        post_process_stream = getattr(self._model, "_post_process_stream", None)
+        if post_process_stream is None:
+            return self._postprocess_memory_optimized_for_model(
+                predictions=predictions,
+                preprocess_return_metadata=preprocess_return_metadata,
+                **kwargs,
+            )
+        with torch.cuda.stream(post_process_stream):
+            self._record_predictions_to_stream(
+                predictions=predictions,
+                stream=post_process_stream,
+            )
+            optimized_response = self._postprocess_memory_optimized_for_model(
+                predictions=predictions,
+                preprocess_return_metadata=preprocess_return_metadata,
+                **kwargs,
+            )
+        post_process_stream.synchronize()
+        return optimized_response
+
+    def _postprocess_memory_optimized_for_model(
+        self,
+        predictions: Any,
+        preprocess_return_metadata: PreprocessingMetadata,
+        **kwargs,
+    ) -> Optional[List[InstanceSegmentationInferenceResponse]]:
+        model_class_name = self._model.__class__.__name__
+        if model_class_name.startswith("YOLOv5ForInstanceSegmentation"):
+            return self._postprocess_yolov5_memory_optimized(
+                predictions=predictions,
+                preprocess_return_metadata=preprocess_return_metadata,
+                **kwargs,
+            )
+        if model_class_name.startswith("YOLOv7ForInstanceSegmentation"):
+            return self._postprocess_yolov7_memory_optimized(
+                predictions=predictions,
+                preprocess_return_metadata=preprocess_return_metadata,
+                **kwargs,
+            )
+        if model_class_name.startswith("YOLOv8ForInstanceSegmentation"):
+            return self._postprocess_yolov8_memory_optimized(
+                predictions=predictions,
+                preprocess_return_metadata=preprocess_return_metadata,
+                **kwargs,
+            )
+        if model_class_name.startswith("YOLO26ForInstanceSegmentation"):
+            return self._postprocess_yolo26_memory_optimized(
+                predictions=predictions,
+                preprocess_return_metadata=preprocess_return_metadata,
+                **kwargs,
+            )
+        if model_class_name.startswith("RFDetrForInstanceSegmentation"):
+            return self._postprocess_rfdetr_memory_optimized(
+                predictions=predictions,
+                preprocess_return_metadata=preprocess_return_metadata,
+                **kwargs,
+            )
+        return None
+
+    def _record_predictions_to_stream(
+        self,
+        predictions: Any,
+        stream: torch.cuda.Stream,
+    ) -> None:
+        if isinstance(predictions, torch.Tensor):
+            predictions.record_stream(stream)
+            return
+        if isinstance(predictions, (list, tuple)):
+            for prediction in predictions:
+                self._record_predictions_to_stream(
+                    predictions=prediction,
+                    stream=stream,
+                )
+
+    def _postprocess_yolov5_memory_optimized(
+        self,
+        predictions: Tuple[torch.Tensor, torch.Tensor],
+        preprocess_return_metadata: PreprocessingMetadata,
+        confidence: float = INFERENCE_MODELS_YOLOV5_DEFAULT_CONFIDENCE,
+        iou_threshold: float = INFERENCE_MODELS_YOLOV5_DEFAULT_IOU_THRESHOLD,
+        max_detections: int = INFERENCE_MODELS_YOLOV5_DEFAULT_MAX_DETECTIONS,
+        class_agnostic_nms: bool = INFERENCE_MODELS_YOLOV5_DEFAULT_CLASS_AGNOSTIC_NMS,
+        **kwargs,
+    ) -> List[InstanceSegmentationInferenceResponse]:
+        instances, protos = predictions
+        nms_results = run_yolov5_nms_for_instance_segmentation(
+            output=instances.permute(0, 2, 1),
+            conf_thresh=confidence,
+            iou_thresh=iou_threshold,
+            max_detections=max_detections,
+            class_agnostic=class_agnostic_nms,
+        )
+        return self._build_memory_optimized_prototype_mask_response(
+            nms_results=nms_results,
+            protos=protos,
+            preprocess_return_metadata=preprocess_return_metadata,
+            binarization_threshold=0.0,
+            class_filter=kwargs.get("class_filter"),
+        )
+
+    def _postprocess_yolov7_memory_optimized(
+        self,
+        predictions: Tuple[torch.Tensor, torch.Tensor],
+        preprocess_return_metadata: PreprocessingMetadata,
+        confidence: float = INFERENCE_MODELS_YOLOV7_DEFAULT_CONFIDENCE,
+        iou_threshold: float = INFERENCE_MODELS_YOLOV7_DEFAULT_IOU_THRESHOLD,
+        max_detections: int = INFERENCE_MODELS_YOLOV7_DEFAULT_MAX_DETECTIONS,
+        class_agnostic_nms: bool = INFERENCE_MODELS_YOLOV7_DEFAULT_CLASS_AGNOSTIC_NMS,
+        **kwargs,
+    ) -> List[InstanceSegmentationInferenceResponse]:
+        instances, protos = predictions
+        nms_results = run_nms_for_instance_segmentation(
+            output=instances.permute(0, 2, 1),
+            conf_thresh=confidence,
+            iou_thresh=iou_threshold,
+            max_detections=max_detections,
+            class_agnostic=class_agnostic_nms,
+        )
+        return self._build_memory_optimized_prototype_mask_response(
+            nms_results=nms_results,
+            protos=protos,
+            preprocess_return_metadata=preprocess_return_metadata,
+            binarization_threshold=0.0,
+            class_filter=kwargs.get("class_filter"),
+        )
+
+    def _postprocess_yolov8_memory_optimized(
+        self,
+        predictions: Tuple[torch.Tensor, torch.Tensor],
+        preprocess_return_metadata: PreprocessingMetadata,
+        confidence: float = INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_CONFIDENCE,
+        iou_threshold: float = INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_IOU_THRESHOLD,
+        max_detections: int = INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_MAX_DETECTIONS,
+        class_agnostic_nms: bool = (
+            INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_CLASS_AGNOSTIC_NMS
+        ),
+        masks_smoothing_enabled: bool = (
+            INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_MASKS_SMOOTHING_ENABLED
+        ),
+        masks_binarization_threshold: float = (
+            INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_MASKS_BINARIZATION_THRESHOLD
+        ),
+        **kwargs,
+    ) -> List[InstanceSegmentationInferenceResponse]:
+        instances, protos = predictions
+        if self._model._inference_config.post_processing.fused:
+            nms_results = post_process_nms_fused_model_output(
+                output=instances, conf_thresh=confidence
+            )
+        else:
+            nms_results = run_nms_for_instance_segmentation(
+                output=instances,
+                conf_thresh=confidence,
+                iou_thresh=iou_threshold,
+                max_detections=max_detections,
+                class_agnostic=class_agnostic_nms,
+            )
+        return self._build_memory_optimized_prototype_mask_response(
+            nms_results=nms_results,
+            protos=protos,
+            preprocess_return_metadata=preprocess_return_metadata,
+            binarization_threshold=masks_binarization_threshold,
+            class_filter=kwargs.get("class_filter"),
+            masks_smoothing_enabled=masks_smoothing_enabled,
+        )
+
+    def _postprocess_yolo26_memory_optimized(
+        self,
+        predictions: Tuple[torch.Tensor, torch.Tensor],
+        preprocess_return_metadata: PreprocessingMetadata,
+        confidence: float = INFERENCE_MODELS_YOLO26_DEFAULT_CONFIDENCE,
+        **kwargs,
+    ) -> List[InstanceSegmentationInferenceResponse]:
+        instances, protos = predictions
+        nms_results = post_process_nms_fused_model_output(
+            output=instances, conf_thresh=confidence
+        )
+        return self._build_memory_optimized_prototype_mask_response(
+            nms_results=nms_results,
+            protos=protos,
+            preprocess_return_metadata=preprocess_return_metadata,
+            binarization_threshold=0.0,
+            class_filter=kwargs.get("class_filter"),
+        )
+
+    def _postprocess_rfdetr_memory_optimized(
+        self,
+        predictions: Tuple[torch.Tensor, torch.Tensor, torch.Tensor],
+        preprocess_return_metadata: PreprocessingMetadata,
+        confidence: float = INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE,
+        **kwargs,
+    ) -> List[InstanceSegmentationInferenceResponse]:
+        all_bboxes, all_logits, all_masks = predictions
+        all_logits = torch.nn.functional.sigmoid(all_logits)
+        responses = []
+        for image_bboxes, image_logits, image_masks, image_meta in zip(
+            all_bboxes, all_logits, all_masks, preprocess_return_metadata
+        ):
+            image_confidence, top_classes = image_logits.max(dim=1)
+            confidence_mask = image_confidence > confidence
+            image_confidence = image_confidence[confidence_mask]
+            top_classes = top_classes[confidence_mask]
+            selected_boxes = image_bboxes[confidence_mask]
+            selected_masks = image_masks[confidence_mask]
+            image_confidence, sorted_indices = torch.sort(
+                image_confidence, descending=True
+            )
+            top_classes = top_classes[sorted_indices]
+            selected_boxes = selected_boxes[sorted_indices]
+            selected_masks = selected_masks[sorted_indices]
+            classes_re_mapping = getattr(self._model, "_classes_re_mapping", None)
+            if classes_re_mapping is not None:
+                remapping_mask = torch.isin(
+                    top_classes, classes_re_mapping.remaining_class_ids
+                )
+                top_classes = classes_re_mapping.class_mapping[
+                    top_classes[remapping_mask]
+                ]
+                selected_boxes = selected_boxes[remapping_mask]
+                image_confidence = image_confidence[remapping_mask]
+                selected_masks = selected_masks[remapping_mask]
+            class_keep_mask = self._get_class_keep_mask(
+                class_ids=top_classes,
+                class_filter=kwargs.get("class_filter"),
+            )
+            top_classes = top_classes[class_keep_mask]
+            selected_boxes = selected_boxes[class_keep_mask]
+            image_confidence = image_confidence[class_keep_mask]
+            selected_masks = selected_masks[class_keep_mask]
+            cxcy = selected_boxes[:, :2]
+            wh = selected_boxes[:, 2:]
+            selected_boxes_xyxy_pct = torch.cat(
+                [cxcy - 0.5 * wh, cxcy + 0.5 * wh], dim=-1
+            )
+            denorm_size = (
+                image_meta.nonsquare_intermediate_size or image_meta.inference_size
+            )
+            denorm_size_whwh = torch.tensor(
+                [
+                    denorm_size.width,
+                    denorm_size.height,
+                    denorm_size.width,
+                    denorm_size.height,
+                ],
+                device=all_bboxes.device,
+            )
+            selected_boxes_xyxy = selected_boxes_xyxy_pct * denorm_size_whwh
+            image_bboxes_for_alignment = torch.cat(
+                [
+                    selected_boxes_xyxy,
+                    image_confidence[:, None],
+                    top_classes[:, None].float(),
+                ],
+                dim=1,
+            )
+            responses.append(
+                self._build_memory_optimized_image_response(
+                    image_bboxes=image_bboxes_for_alignment,
+                    masks=selected_masks,
+                    image_meta=image_meta,
+                    inference_size=denorm_size,
+                    binarization_threshold=0.0,
+                )
+            )
+        return responses
+
+    def _build_memory_optimized_prototype_mask_response(
+        self,
+        nms_results: List[torch.Tensor],
+        protos: torch.Tensor,
+        preprocess_return_metadata: PreprocessingMetadata,
+        binarization_threshold: float,
+        class_filter: Optional[List[str]],
+        masks_smoothing_enabled: bool = False,
+    ) -> List[InstanceSegmentationInferenceResponse]:
+        responses = []
+        for image_bboxes, image_protos, image_meta in zip(
+            nms_results, protos, preprocess_return_metadata
+        ):
+            image_bboxes = self._filter_image_bboxes_by_class(
+                image_bboxes=image_bboxes,
+                class_filter=class_filter,
+            )
+            pre_processed_masks = preprocess_segmentation_masks(
+                protos=image_protos,
+                masks_in=image_bboxes[:, 6:],
+            )
+            if masks_smoothing_enabled:
+                pre_processed_masks = torch.nn.functional.sigmoid(pre_processed_masks)
+            cropped_masks = crop_masks_to_boxes(
+                image_bboxes[:, :4], pre_processed_masks
+            )
+            responses.append(
+                self._build_memory_optimized_image_response(
+                    image_bboxes=image_bboxes,
+                    masks=cropped_masks,
+                    image_meta=image_meta,
+                    inference_size=image_meta.inference_size,
+                    binarization_threshold=binarization_threshold,
+                )
+            )
+        return responses
+
+    def _build_memory_optimized_image_response(
+        self,
+        image_bboxes: torch.Tensor,
+        masks: torch.Tensor,
+        image_meta: PreprocessingMetadata,
+        inference_size,
+        binarization_threshold: float,
+    ) -> InstanceSegmentationInferenceResponse:
+        response_predictions = []
+        padding = (
+            image_meta.pad_left,
+            image_meta.pad_top,
+            image_meta.pad_right,
+            image_meta.pad_bottom,
+        )
+        for aligned_box, aligned_mask in iter_aligned_instance_segmentation_results(
+            image_bboxes=image_bboxes,
+            masks=masks,
+            padding=padding,
+            scale_height=image_meta.scale_height,
+            scale_width=image_meta.scale_width,
+            original_size=image_meta.original_size,
+            size_after_pre_processing=image_meta.size_after_pre_processing,
+            inference_size=inference_size,
+            static_crop_offset=image_meta.static_crop_offset,
+            binarization_threshold=binarization_threshold,
+        ):
+            response_predictions.append(
+                self._build_serialized_instance_prediction(
+                    aligned_box=aligned_box,
+                    aligned_mask=aligned_mask,
+                )
+            )
+        return InstanceSegmentationInferenceResponse(
+            predictions=response_predictions,
+            image=InferenceResponseImage(
+                width=image_meta.original_size.width,
+                height=image_meta.original_size.height,
+            ),
+        )
+
+    def _build_serialized_instance_prediction(
+        self,
+        aligned_box: torch.Tensor,
+        aligned_mask: torch.Tensor,
+    ) -> Union[InstanceSegmentationPrediction, InstanceSegmentationRLEPrediction]:
+        aligned_box_cpu = aligned_box.detach().cpu()
+        x1, y1, x2, y2 = aligned_box_cpu[:4].round().int().tolist()
+        conf = float(aligned_box_cpu[4])
+        class_id_int = int(aligned_box_cpu[5])
+        class_name = self._class_name_for_id(class_id=class_id_int)
+        prediction_kwargs = {
+            "x": (float(x1) + float(x2)) / 2.0,
+            "y": (float(y1) + float(y2)) / 2.0,
+            "width": float(x2) - float(x1),
+            "height": float(y2) - float(y1),
+            "confidence": float(conf),
+            "class": class_name,
+            "class_id": class_id_int,
+        }
+        if INFERENCE_MODELS_INSTANCE_SEGMENTATION_MEMORY_OPTIMIZED_FORMAT == "rle":
+            return InstanceSegmentationRLEPrediction(
+                **{
+                    **prediction_kwargs,
+                    "rle": mask_to_coco_rle(mask=aligned_mask),
+                }
+            )
+        polygon = mask_to_largest_polygon(mask=aligned_mask)
+        return InstanceSegmentationPrediction(
+            **{
+                **prediction_kwargs,
+                "points": [Point(x=point[0], y=point[1]) for point in polygon],
+            }
+        )
+
+    def _filter_image_bboxes_by_class(
+        self,
+        image_bboxes: torch.Tensor,
+        class_filter: Optional[List[str]],
+    ) -> torch.Tensor:
+        keep_mask = self._get_class_keep_mask(
+            class_ids=image_bboxes[:, 5],
+            class_filter=class_filter,
+        )
+        return image_bboxes[keep_mask]
+
+    def _get_class_keep_mask(
+        self,
+        class_ids: torch.Tensor,
+        class_filter: Optional[List[str]],
+    ) -> torch.Tensor:
+        if not class_filter or class_ids.shape[0] == 0:
+            return torch.ones(
+                (class_ids.shape[0],),
+                dtype=torch.bool,
+                device=class_ids.device,
+            )
+        class_ids_list = class_ids.detach().cpu().int().tolist()
+        keep = [
+            self._class_name_for_id(class_id=class_id) in class_filter
+            for class_id in class_ids_list
+        ]
+        return torch.as_tensor(keep, dtype=torch.bool, device=class_ids.device)
+
+    def _class_name_for_id(self, class_id: int) -> str:
+        if 0 <= class_id < len(self.class_names):
+            return self.class_names[class_id]
+        return str(class_id)
+
     def postprocess(
         self,
         predictions: List[InstanceDetections],
@@ -305,6 +756,14 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
         **kwargs,
     ) -> List[InstanceSegmentationInferenceResponse]:
         mapped_kwargs = self.map_inference_kwargs(kwargs)
+        if INFERENCE_MODELS_INSTANCE_SEGMENTATION_MEMORY_OPTIMIZED_POSTPROCESS:
+            optimized_response = self._postprocess_memory_optimized(
+                predictions=predictions,
+                preprocess_return_metadata=preprocess_return_metadata,
+                **mapped_kwargs,
+            )
+            if optimized_response is not None:
+                return optimized_response
         detections_list = self._model.post_process(
             predictions, preprocess_return_metadata, **mapped_kwargs
         )

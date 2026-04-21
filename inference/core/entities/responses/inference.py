@@ -257,7 +257,9 @@ class InstanceSegmentationInferenceResponse(
         predictions (List[inference.core.entities.responses.inference.InstanceSegmentationPrediction]): List of instance segmentation predictions.
     """
 
-    predictions: List[InstanceSegmentationPrediction]
+    predictions: List[
+        Union[InstanceSegmentationPrediction, InstanceSegmentationRLEPrediction]
+    ]
 
 
 class SemanticSegmentationInferenceResponse(
