@@ -413,6 +413,20 @@ class ModelManager:
             return "not_loaded"
         return backend.state
 
+    def list_models(self) -> List[Dict[str, Any]]:
+        """List all registered models with state, device, queue depth, health."""
+        result = []
+        for model_id, backend in self._backends.items():
+            result.append({
+                "model_id": model_id,
+                "state": backend.state,
+                "device": backend.device,
+                "is_accepting": backend.is_accepting,
+                "queue_depth": backend.queue_depth,
+                "worker_pid": backend.worker_pid,
+            })
+        return result
+
     def get_backend(self, model_id: str) -> Optional[Backend]:
         """Return Backend for model_id, or None if not loaded."""
         return self._backends.get(model_id)
