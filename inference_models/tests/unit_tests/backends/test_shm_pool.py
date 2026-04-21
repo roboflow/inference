@@ -22,8 +22,8 @@ from inference_models.backends.utils.shm_pool import (
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _make_pool(n_slots=4, input_mb=1.0, result_mb=0.5) -> SHMPool:
-    return SHMPool.create(n_slots=n_slots, input_mb=input_mb, result_mb=result_mb)
+def _make_pool(n_slots=4, input_mb=1.0) -> SHMPool:
+    return SHMPool.create(n_slots=n_slots, input_mb=input_mb)
 
 
 # ---------------------------------------------------------------------------
@@ -100,7 +100,7 @@ def test_attach_cannot_alloc():
     pool = _make_pool(n_slots=2)
     try:
         attached = SHMPool.attach(
-            pool.name, n_slots=2, input_mb=1.0, result_mb=0.5
+            pool.name, n_slots=2, input_mb=1.0
         )
         try:
             with pytest.raises(RuntimeError, match="creator"):
@@ -115,7 +115,7 @@ def test_attach_cannot_free():
     pool = _make_pool(n_slots=2)
     try:
         attached = SHMPool.attach(
-            pool.name, n_slots=2, input_mb=1.0, result_mb=0.5
+            pool.name, n_slots=2, input_mb=1.0
         )
         try:
             with pytest.raises(RuntimeError, match="creator"):
@@ -221,54 +221,32 @@ def test_free_slot_zeros_header():
 # Offset math — must match app.py arithmetic
 # ---------------------------------------------------------------------------
 
-def test_input_memoryview_offset():
-    """input_memoryview base == slot_id * slot_bytes + HEADER_SIZE."""
-    input_mb, result_mb = 1.0, 0.5
-    pool = _make_pool(n_slots=4, input_mb=input_mb, result_mb=result_mb)
+def test_data_memoryview_offset():
+    """data_memoryview base == slot_id * slot_bytes + HEADER_SIZE."""
+    input_mb = 1.0
+    pool = _make_pool(n_slots=4, input_mb=input_mb)
     try:
-        input_bytes  = int(input_mb  * 1024 * 1024)
-        result_bytes = int(result_mb * 1024 * 1024)
-        slot_bytes   = _HEADER_SIZE + input_bytes + result_bytes
+        data_bytes = int(input_mb * 1024 * 1024)
+        slot_bytes = _HEADER_SIZE + data_bytes
 
         for slot_id in range(4):
             expected_start = slot_id * slot_bytes + _HEADER_SIZE
-            mv = pool.input_memoryview(slot_id)
+            mv = pool.data_memoryview(slot_id)
             mv[0] = 0xAB
             actual = pool._shm.buf[expected_start]
             mv[0] = 0
             mv.release()
-            assert actual == 0xAB, f"slot {slot_id}: input start offset wrong"
-    finally:
-        pool.close()
-
-
-def test_result_memoryview_offset():
-    """result_memoryview base == slot_id * slot_bytes + HEADER_SIZE + input_bytes."""
-    input_mb, result_mb = 1.0, 0.5
-    pool = _make_pool(n_slots=4, input_mb=input_mb, result_mb=result_mb)
-    try:
-        input_bytes  = int(input_mb  * 1024 * 1024)
-        result_bytes = int(result_mb * 1024 * 1024)
-        slot_bytes   = _HEADER_SIZE + input_bytes + result_bytes
-
-        for slot_id in range(4):
-            expected_start = slot_id * slot_bytes + _HEADER_SIZE + input_bytes
-            mv = pool.result_memoryview(slot_id)
-            mv[0] = 0xCD
-            actual = pool._shm.buf[expected_start]
-            mv[0] = 0
-            mv.release()
-            assert actual == 0xCD, f"slot {slot_id}: result start offset wrong"
+            assert actual == 0xAB, f"slot {slot_id}: data start offset wrong"
     finally:
         pool.close()
 
 
 def test_slots_do_not_overlap():
-    """Write sentinel at end of one slot's result area; neighbour is untouched."""
-    pool = _make_pool(n_slots=4, input_mb=1.0, result_mb=0.5)
+    """Write sentinel at end of one slot's data area; neighbour is untouched."""
+    pool = _make_pool(n_slots=4, input_mb=1.0)
     try:
-        rv0 = pool.result_memoryview(0)
-        rv1 = pool.result_memoryview(1)
+        rv0 = pool.data_memoryview(0)
+        rv1 = pool.data_memoryview(1)
         rv0[-1] = 0xFF
         neighbour_first = rv1[0]
         rv0[-1] = 0
@@ -284,24 +262,24 @@ def test_slots_do_not_overlap():
 # ---------------------------------------------------------------------------
 
 def test_write_read_input_data():
-    pool = _make_pool(n_slots=2, input_mb=1.0, result_mb=0.5)
+    pool = _make_pool(n_slots=2, input_mb=1.0)
     try:
         slot = pool.alloc_slot()
         data = b"hello world" * 100
-        pool.input_memoryview(slot)[: len(data)] = data
-        readback = bytes(pool.input_memoryview(slot)[: len(data)])
+        pool.data_memoryview(slot)[: len(data)] = data
+        readback = bytes(pool.data_memoryview(slot)[: len(data)])
         assert readback == data
     finally:
         pool.close()
 
 
 def test_write_read_result_data():
-    pool = _make_pool(n_slots=2, input_mb=1.0, result_mb=0.5)
+    pool = _make_pool(n_slots=2, input_mb=1.0)
     try:
         slot = pool.alloc_slot()
         result = b"\xDE\xAD\xBE\xEF" * 50
-        pool.result_memoryview(slot)[: len(result)] = result
-        readback = bytes(pool.result_memoryview(slot)[: len(result)])
+        pool.data_memoryview(slot)[: len(result)] = result
+        readback = bytes(pool.data_memoryview(slot)[: len(result)])
         assert readback == result
     finally:
         pool.close()
@@ -312,21 +290,21 @@ def test_write_read_result_data():
 # ---------------------------------------------------------------------------
 
 def test_attach_sees_data_written_by_creator():
-    pool = _make_pool(n_slots=2, input_mb=1.0, result_mb=0.5)
+    pool = _make_pool(n_slots=2, input_mb=1.0)
     try:
         slot = pool.alloc_slot()
         pool.mark_allocated(slot, request_id=42)
         data = b"cross-process data"
-        pool.input_memoryview(slot)[: len(data)] = data
+        pool.data_memoryview(slot)[: len(data)] = data
 
         attached = SHMPool.attach(
-            pool.name, n_slots=2, input_mb=1.0, result_mb=0.5
+            pool.name, n_slots=2, input_mb=1.0
         )
         try:
             hdr = attached.read_header(slot)
             assert hdr.status     == SlotStatus.ALLOCATED
             assert hdr.request_id == 42
-            readback = bytes(attached.input_memoryview(slot)[: len(data)])
+            readback = bytes(attached.data_memoryview(slot)[: len(data)])
             assert readback == data
         finally:
             attached.close()
