@@ -91,9 +91,7 @@ from inference_models.models.common.roboflow.post_processing import (
     preprocess_segmentation_masks,
     run_nms_for_instance_segmentation,
 )
-from inference_models.models.yolov5.nms import (
-    run_yolov5_nms_for_instance_segmentation,
-)
+from inference_models.models.yolov5.nms import run_yolov5_nms_for_instance_segmentation
 
 DEFAULT_COLOR_PALETTE = [
     "#A351FB",
