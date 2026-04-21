@@ -72,6 +72,9 @@ class ExecutionEngineV1(BaseExecutionEngine):
             "dynamic_workflows_blocks.api_key",
             init_parameters.get("workflows_core.api_key"),
         )
+        init_parameters["workflow_id"] = (
+            workflow_definition.get("id") or workflow_id
+        )
 
         if profiler is None:
             profiler = NullWorkflowsProfiler.init()
