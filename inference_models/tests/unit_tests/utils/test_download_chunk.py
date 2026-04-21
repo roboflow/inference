@@ -56,7 +56,7 @@ def test_download_chunk_writes_full_range(no_chunk_sleep, target_file: str) -> N
             end=4,
             target_path=target_file,
             response_codes_to_retry={503},
-            max_attempts=5,
+            max_chunk_fetch_passes=5,
             file_chunk=64,
         )
     get_mock.assert_called_once()
@@ -90,7 +90,7 @@ def test_download_chunk_retries_on_retryable_status_then_succeeds(
             end=4,
             target_path=target_file,
             response_codes_to_retry={503},
-            max_attempts=5,
+            max_chunk_fetch_passes=5,
             file_chunk=64,
         )
     assert get_mock.call_count == 2
@@ -127,7 +127,7 @@ def test_download_chunk_resumes_after_partial_download_error(
             end=4,
             target_path=target_file,
             response_codes_to_retry={503},
-            max_attempts=5,
+            max_chunk_fetch_passes=5,
             file_chunk=64,
         )
     assert get_mock.call_count == 2
@@ -160,7 +160,7 @@ def test_download_chunk_resumes_after_short_body_vs_content_length(
             end=4,
             target_path=target_file,
             response_codes_to_retry={503},
-            max_attempts=5,
+            max_chunk_fetch_passes=5,
             file_chunk=64,
         )
     assert get_mock.call_count == 2
@@ -188,10 +188,109 @@ def test_download_chunk_raises_range_request_not_supported_on_200(
                 end=4,
                 target_path=target_file,
                 response_codes_to_retry={503},
-                max_attempts=5,
+                max_chunk_fetch_passes=5,
                 file_chunk=64,
             )
     assert "returned 200 instead of 206" in str(exc_info.value)
+
+
+def test_download_chunk_caps_retryable_http_before_any_range_progress(
+    no_chunk_sleep, target_file: str
+) -> None:
+    """Consecutive 503 without range progress is capped by ``max_consecutive_retryable_http``."""
+    bad = MagicMock()
+    bad.status_code = 503
+    bad.headers = {}
+    bad.raise_for_status = MagicMock()
+    bad.iter_content = MagicMock()
+
+    with patch("inference_models.utils.download.requests.get") as get_mock:
+        get_mock.return_value = _context_manager_for_response(bad)
+        with pytest.raises(RetryError, match="without advancing the downloaded byte offset"):
+            download_chunk(
+                url="https://example.test/file",
+                start=0,
+                end=4,
+                target_path=target_file,
+                response_codes_to_retry={503},
+                max_chunk_fetch_passes=20,
+                max_consecutive_retryable_http=2,
+                file_chunk=64,
+            )
+    assert get_mock.call_count == 2
+
+
+def test_download_chunk_resets_retryable_http_cap_after_range_progress(
+    no_chunk_sleep, target_file: str
+) -> None:
+    """After advancing current_start, a new burst of retryable HTTP is allowed (counter reset)."""
+    first = MagicMock()
+    first.status_code = 206
+    first.headers = {"Content-Length": "5"}
+    first.raise_for_status = MagicMock()
+    first.iter_content = MagicMock(side_effect=lambda chunk_size: iter([b"ab"]))
+
+    bad = MagicMock()
+    bad.status_code = 503
+    bad.headers = {}
+    bad.raise_for_status = MagicMock()
+    bad.iter_content = MagicMock()
+
+    final = _response_206(b"cde", content_length=3)
+
+    with patch("inference_models.utils.download.requests.get") as get_mock:
+        get_mock.side_effect = [
+            _context_manager_for_response(first),
+            _context_manager_for_response(bad),
+            _context_manager_for_response(final),
+        ]
+        download_chunk(
+            url="https://example.test/file",
+            start=0,
+            end=4,
+            target_path=target_file,
+            response_codes_to_retry={503},
+            max_chunk_fetch_passes=20,
+            max_consecutive_retryable_http=2,
+            file_chunk=64,
+        )
+    assert get_mock.call_count == 3
+
+
+def test_download_chunk_caps_retryable_http_after_partial_without_further_progress(
+    no_chunk_sleep, target_file: str
+) -> None:
+    """206 + partial write then only 503: still capped (no endless ``max_chunk_fetch_passes``)."""
+    first = MagicMock()
+    first.status_code = 206
+    first.headers = {"Content-Length": "5"}
+    first.raise_for_status = MagicMock()
+    first.iter_content = MagicMock(side_effect=lambda chunk_size: iter([b"ab"]))
+
+    bad = MagicMock()
+    bad.status_code = 503
+    bad.headers = {}
+    bad.raise_for_status = MagicMock()
+    bad.iter_content = MagicMock()
+
+    with patch("inference_models.utils.download.requests.get") as get_mock:
+        get_mock.side_effect = [
+            _context_manager_for_response(first),
+            _context_manager_for_response(bad),
+            _context_manager_for_response(bad),
+        ]
+        with pytest.raises(RetryError, match="without advancing the downloaded byte offset"):
+            download_chunk(
+                url="https://example.test/file",
+                start=0,
+                end=4,
+                target_path=target_file,
+                response_codes_to_retry={503},
+                max_chunk_fetch_passes=20,
+                max_consecutive_retryable_http=2,
+                file_chunk=64,
+            )
+    assert get_mock.call_count == 3
 
 
 def test_download_chunk_raises_retry_error_after_connectivity_exhausted(
@@ -206,7 +305,7 @@ def test_download_chunk_raises_retry_error_after_connectivity_exhausted(
                 end=4,
                 target_path=target_file,
                 response_codes_to_retry={503},
-                max_attempts=3,
+                max_chunk_fetch_passes=3,
                 file_chunk=64,
             )
     assert get_mock.call_count == 3
