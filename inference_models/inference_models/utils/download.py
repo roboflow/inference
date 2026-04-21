@@ -34,6 +34,7 @@ from inference_models.configuration import (
 from inference_models.errors import (
     FileHashSumMissmatch,
     InvalidParameterError,
+    RangeRequestNotSupportedError,
     RetryError,
     UntrustedFileError,
 )
@@ -69,15 +70,6 @@ class PartialDownloadError(Exception):
 
     def __init__(self, bytes_written: int) -> None:
         self.bytes_written = bytes_written
-
-
-class RangeRequestNotSupportedError(Exception):
-    """Raised when the remote end does not support range requests."""
-
-    __slots__ = ("status_code",)
-
-    def __init__(self, status_code: int) -> None:
-        self.status_code = status_code
 
 
 def _chunk_download_backoff_sleep(attempt_index: int) -> None:
@@ -663,7 +655,7 @@ def download_chunk(
                             "Server does not support range requests "
                             f"(returned {response.status_code} instead of 206)"
                         ),
-                        help_url="https://inference-models.roboflow.com/errors/file-download/#retryerror",
+                        help_url="https://inference-models.roboflow.com/errors/file-download/#rangerequestnotsupportederror",
                     )
 
                 segment_len = end - current_start + 1

@@ -143,7 +143,7 @@ Large files are downloaded in parallel using HTTP `Range` requests. Each chunk r
 
 ### What To Check
 
-1. **Inspect the HTTP status** the server returned instead of 206 (the exception exposes this as `status_code`).
+1. **Read the exception message** — it includes the HTTP status the server returned instead of 206.
 
 2. **Reproduce with curl** against the same file URL:
 
