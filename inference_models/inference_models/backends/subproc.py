@@ -109,7 +109,6 @@ def _worker_main(
     shm_pool_name:     str,
     n_slots:           int,
     input_mb:          float,
-    result_mb:         float,
     batch_max_size:    int,
     batch_max_wait_ms: float,
     use_nvjpeg:        bool,
@@ -140,7 +139,7 @@ def _worker_main(
 
         batch_decode_fn = make_batch_decoder(device, use_nvjpeg=use_nvjpeg)
         pool            = SHMPool.attach(shm_pool_name, n_slots=n_slots,
-                                   input_mb=input_mb, result_mb=result_mb)
+                                   input_mb=input_mb)
 
         model_max_bs = getattr(model, "max_batch_size", None)
         effective_bs = model_max_bs if batch_max_size <= 0 else batch_max_size
@@ -378,11 +377,10 @@ class SubprocessBackend(Backend):
         model_id: str,
         api_key: str,
         *,
-        # SHMPool
-        shm_pool_name:       Optional[str]      = None,
-        n_slots:             int                = 8,
-        input_mb:            float              = 20.0,
-        result_mb:           float              = 4.0,
+        # SHMPool (mandatory — pool is always created externally)
+        shm_pool_name:       str,
+        n_slots:             int,
+        input_mb:            float,
         # Worker batching
         batch_max_size:      int                = _DEFAULT_BATCH_MAX_SIZE,
         batch_max_delay_ms:  float              = _DEFAULT_BATCH_MAX_WAIT_MS,
@@ -415,21 +413,16 @@ class SubprocessBackend(Backend):
             if self._use_gpu else "cpu"
         )
 
-        # ── SHMPool ─────────────────────────────────────────────────
-        if shm_pool_name is None:
-            self._pool     = SHMPool.create(n_slots, input_mb, result_mb)
-            self._own_pool = True
-        else:
-            self._pool     = SHMPool.attach(shm_pool_name, n_slots=n_slots,
-                                            input_mb=input_mb, result_mb=result_mb)
-            self._own_pool = False
+        # ── SHMPool (always attach — never create) ─────────────────
+        self._pool = SHMPool.attach(shm_pool_name, n_slots=n_slots,
+                                    input_mb=input_mb)
 
         logger.info(
             "SubprocessBackend(%s): device=%s pool=%s slots=%d "
-            "input=%.0fMB result=%.0fMB batch=%d/%.0fms",
+            "input=%.0fMB batch=%d/%.0fms",
             model_id, self._device_str,
-            "owned" if self._own_pool else f"attached:{shm_pool_name[:8]}…",
-            n_slots, input_mb, result_mb, batch_max_size, batch_max_delay_ms,
+            f"attached:{shm_pool_name[:8]}…",
+            n_slots, input_mb, batch_max_size, batch_max_delay_ms,
         )
 
         # ── ZMQ PAIR ─────────────────────────────────────────────────
@@ -465,7 +458,6 @@ class SubprocessBackend(Backend):
                 shm_pool_name=self._pool.name,
                 n_slots=n_slots,
                 input_mb=input_mb,
-                result_mb=result_mb,
                 batch_max_size=batch_max_size,
                 batch_max_wait_ms=batch_max_delay_ms,
                 use_nvjpeg=(decoder == "nvjpeg"),
@@ -478,7 +470,6 @@ class SubprocessBackend(Backend):
         if not parent_pipe.poll(timeout=worker_start_timeout):
             self._worker.kill()
             self._worker.join(timeout=5)
-            self._pool.close()
             raise RuntimeError(
                 f"SubprocessBackend({model_id!r}): worker timeout "
                 f"after {worker_start_timeout}s"
@@ -488,7 +479,6 @@ class SubprocessBackend(Backend):
         if not isinstance(msg, dict) or not msg.get("status", "").startswith("READY"):
             err = msg if isinstance(msg, str) else msg.get("status", str(msg))
             self._worker.join(timeout=10)
-            self._pool.close()
             raise RuntimeError(f"SubprocessBackend({model_id!r}): {err}")
 
         self._class_names           = msg.get("class_names")
@@ -602,19 +592,14 @@ class SubprocessBackend(Backend):
             self._slot_futures.clear()
 
         for slot_id, (req_id, future) in pending:
-            # Standalone: reject the future and free the slot
-            if self._own_pool:
-                if not future.done():
-                    future.set_exception(
-                        RuntimeError(
-                            f"SubprocessBackend({self._model_id!r}): worker died"
-                        )
+            # Reject pending futures
+            if future is not None and not future.done():
+                future.set_exception(
+                    RuntimeError(
+                        f"SubprocessBackend({self._model_id!r}): worker died"
                     )
-                try:
-                    self._pool.free_slot(slot_id)
-                except Exception:
-                    pass
-            # Orchestrated: notify MMP (result_sz=0 → T_ERROR routed to uvicorn)
+                )
+            # Notify owner (MMP or ModelManager) — result_sz=0 → error
             if self._on_result_callback is not None:
                 try:
                     self._on_result_callback(req_id, slot_id, 0)
@@ -627,27 +612,23 @@ class SubprocessBackend(Backend):
 
     def _handle_result(self, req_id: int, slot_id: int, result_sz: int) -> None:
         """Called from recv thread on each T_RESULT."""
-        # Standalone mode: resolve Future for this slot
-        if self._own_pool:
-            with self._slot_lock:
-                entry = self._slot_futures.pop(slot_id, None)
-            if entry:
-                _, future = entry
+        # Resolve Future if one exists (standalone submit path)
+        with self._slot_lock:
+            entry = self._slot_futures.pop(slot_id, None)
+        if entry is not None:
+            _, future = entry
+            if future is not None and not future.done():
                 if result_sz > 0:
                     try:
                         data   = bytes(self._pool.result_memoryview(slot_id)[:result_sz])
                         result = pickle.loads(data)
-                        if not future.done():
-                            future.set_result(result)
+                        future.set_result(result)
                     except Exception as exc:
-                        if not future.done():
-                            future.set_exception(exc)
+                        future.set_exception(exc)
                 else:
-                    if not future.done():
-                        future.set_exception(RuntimeError("worker inference error"))
-                self._pool.free_slot(slot_id)
+                    future.set_exception(RuntimeError("worker inference error"))
 
-        # Orchestrated mode: notify MMP
+        # Notify owner (MMP or ModelManager)
         if self._on_result_callback is not None:
             try:
                 self._on_result_callback(req_id, slot_id, result_sz)
@@ -658,40 +639,23 @@ class SubprocessBackend(Backend):
     # Standalone inference
     # ------------------------------------------------------------------
 
-    def submit(self, raw_input: Any, *, priority: int = 0, **kwargs) -> Future:
-        """Submit a request and return a Future. Standalone mode only."""
-        if not self._own_pool:
-            raise RuntimeError(
-                "submit() is unavailable in orchestrated mode — use signal_slot()"
-            )
-        if not self.is_accepting:
-            raise RuntimeError(
-                f"SubprocessBackend('{self._model_id}') not accepting "
-                f"(state={self.state})"
-            )
+    def submit_slot(
+        self, slot_id: int, req_id: int, future: Optional[Future] = None,
+    ) -> None:
+        """Register a future for this slot and signal the worker.
 
-        input_bytes = _to_bytes(raw_input)
-        if len(input_bytes) > self._pool.input_slot_bytes:
-            raise ValueError(
-                f"Input {len(input_bytes)} B > slot capacity "
-                f"{self._pool.input_slot_bytes} B — increase input_mb"
-            )
-
-        req_id  = uuid.uuid4().int & 0xFFFF_FFFF_FFFF_FFFF
-        slot_id = self._pool.alloc_slot()
-        self._pool.mark_allocated(slot_id, req_id)
-        self._pool.input_memoryview(slot_id)[:len(input_bytes)] = input_bytes
-        self._pool.mark_written(slot_id, len(input_bytes))
-
-        future: Future = Future()
-        t0 = time.monotonic()
-        future.add_done_callback(lambda f: self._record_inference(t0, f))
+        Called by ModelManager after it writes input to the pool.
+        If ``future`` is provided, it will be resolved when the worker
+        sends T_RESULT for this slot.
+        """
+        if future is not None:
+            t0 = time.monotonic()
+            future.add_done_callback(lambda f: self._record_inference(t0, f))
 
         with self._slot_lock:
             self._slot_futures[slot_id] = (req_id, future)
 
         self.signal_slot(slot_id, req_id)
-        return future
 
     def _record_inference(self, t0: float, future: Future) -> None:
         elapsed = time.monotonic() - t0
@@ -702,12 +666,15 @@ class SubprocessBackend(Backend):
             self._error_count += 1
 
     def infer_sync(self, raw_input: Any, **kwargs) -> Any:
-        return self.submit(raw_input, **kwargs).result()
+        raise RuntimeError(
+            "SubprocessBackend.infer_sync() is not available — "
+            "use ModelManager.infer_sync() which handles pool allocation"
+        )
 
     async def infer_async(self, raw_input: Any, **kwargs) -> Any:
-        loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(
-            None, lambda: self.infer_sync(raw_input, **kwargs)
+        raise RuntimeError(
+            "SubprocessBackend.infer_async() is not available — "
+            "use ModelManager.infer_async() which handles pool allocation"
         )
 
     # ------------------------------------------------------------------
@@ -738,7 +705,7 @@ class SubprocessBackend(Backend):
         self._zmq_sock.close(linger=0)
         self._zmq_ctx.term()
 
-        self._pool.close()   # owner unlinks; attached just detaches
+        # Pool is externally owned — never close/unlink here
 
         if self._zmq_addr.startswith("ipc://"):
             try:
@@ -820,8 +787,6 @@ class SubprocessBackend(Backend):
             "last_inference_ts":    self._last_inference_ts,
             "worker_alive":         self._worker.is_alive(),
             "shm_pool_name":        self._pool.name,
-            "shm_own_pool":         self._own_pool,
-            "shm_free_slots":       self._pool.free_count if self._own_pool else -1,
         }
 
     @property
