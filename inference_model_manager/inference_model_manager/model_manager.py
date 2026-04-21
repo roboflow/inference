@@ -397,6 +397,22 @@ class ModelManager:
     # Queries
     # ------------------------------------------------------------------
 
+    def is_ready(self, model_id: str) -> bool:
+        """Whether model_id is loaded and accepting requests."""
+        backend = self._backends.get(model_id)
+        return backend is not None and backend.is_accepting
+
+    def health(self, model_id: str) -> str:
+        """Health status for a model.
+
+        Returns one of: 'not_loaded', 'loading', 'loaded', 'draining',
+        'sleeping', 'unhealthy'.
+        """
+        backend = self._backends.get(model_id)
+        if backend is None:
+            return "not_loaded"
+        return backend.state
+
     def get_backend(self, model_id: str) -> Optional[Backend]:
         """Return Backend for model_id, or None if not loaded."""
         return self._backends.get(model_id)
