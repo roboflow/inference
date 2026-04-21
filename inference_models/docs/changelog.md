@@ -1,5 +1,13 @@
 # Changelog
 
+## `0.25.1`
+
+### Added
+
+- Documentation for Gemma 4 multimodal models (`Gemma4HF` / `gemma4_hf.py`): dedicated [model page](models/gemma4.md),
+  catalog and site navigation updates, home page pointer, and [environment variables](how-to/environment-variables.md#gemma-4)
+  for `INFERENCE_MODELS_GEMMA4_*` defaults.
+
 ## `0.24.4`
 
 ### Changed
