@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-from inference_models.backends.direct import DirectBackend
+from inference_model_manager.backends.direct import DirectBackend
 
 
 @pytest.mark.slow

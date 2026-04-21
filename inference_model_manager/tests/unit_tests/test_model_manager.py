@@ -13,7 +13,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from inference_models.model_manager import ModelManager
+from inference_model_manager.model_manager import ModelManager
 
 
 # ─── Fake backend ───────────────────────────────────────────────────
@@ -422,7 +422,7 @@ class TestModelManagerBackendCreation:
         with pytest.raises(ValueError, match="Unknown backend"):
             mm.load("model-a", api_key="", backend="nonexistent")
 
-    @patch("inference_models.model_manager.ModelManager._create_backend")
+    @patch("inference_model_manager.model_manager.ModelManager._create_backend")
     def test_load_passes_kwargs_to_backend(self, mock_create):
         fb = FakeBackend("model-a")
         mock_create.return_value = fb
@@ -447,7 +447,7 @@ class TestModelManagerBackendCreation:
             batch_max_delay_ms=50.0,
         )
 
-    @patch("inference_models.model_manager.ModelManager._create_backend")
+    @patch("inference_model_manager.model_manager.ModelManager._create_backend")
     def test_warmup_calls_infer_sync(self, mock_create):
         fb = FakeBackend("model-a")
         mock_create.return_value = fb

@@ -23,7 +23,7 @@ Run standalone::
 
 or embed (Phase 4 with real loading)::
 
-    from inference_models.model_manager import ModelManager
+    from inference_model_manager.model_manager import ModelManager
     mmp = ModelManagerProcess(n_slots=256, input_mb=20,
                               manager=ModelManager())
     ready = threading.Event()
@@ -48,8 +48,8 @@ from typing import Any, Optional, Protocol
 import zmq
 import zmq.asyncio
 
-from inference_models.backends.utils.shm_pool import SHMPool
-from inference_models.backends.utils.transport import zmq_addr
+from inference_model_manager.backends.utils.shm_pool import SHMPool
+from inference_model_manager.backends.utils.transport import zmq_addr
 
 logger = logging.getLogger(__name__)
 
@@ -1098,7 +1098,7 @@ def main() -> None:
     parser.add_argument("--evict-threshold", type=float, default=0.9)
     args = parser.parse_args()
 
-    from inference_models.model_manager import ModelManager
+    from inference_model_manager.model_manager import ModelManager
 
     mmp = ModelManagerProcess(
         n_slots=args.n_slots,
