@@ -27,7 +27,7 @@ import os
 import threading
 from typing import Optional, Union
 
-from inference_models.model_manager import ModelManager
+from inference_model_manager.model_manager import ModelManager
 
 logger = logging.getLogger(__name__)
 
@@ -130,8 +130,8 @@ def launch_orchestrated(
         #   sock.connect(handle.mmp_addr)
         #   pool = SHMPool.attach(handle.shm_name, n_slots=128, ...)
     """
-    from inference_models.model_manager_process import ModelManagerProcess
-    from inference_models.backends.utils.transport import zmq_addr as _zmq_addr
+    from inference_model_manager.model_manager_process import ModelManagerProcess
+    from inference_model_manager.backends.utils.transport import zmq_addr as _zmq_addr
 
     manager   = ModelManager(max_pinned_memory_mb=max_pinned_memory_mb)
     bind_addr = mmp_addr or _zmq_addr("mmprocess")

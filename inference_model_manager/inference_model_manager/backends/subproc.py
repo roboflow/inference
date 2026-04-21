@@ -46,9 +46,9 @@ from typing import Any, Callable, Dict, List, Optional
 
 import numpy as np
 
-from inference_models.backends.base import Backend
-from inference_models.backends.utils.shm_pool import SHMPool
-from inference_models.backends.utils.transport import default_transport
+from inference_model_manager.backends.base import Backend
+from inference_model_manager.backends.utils.shm_pool import SHMPool
+from inference_model_manager.backends.utils.transport import default_transport
 
 logger = logging.getLogger(__name__)
 
@@ -125,7 +125,7 @@ def _worker_main(
     import zmq  # noqa: PLC0415
 
     from inference_models.models.auto_loaders.core import AutoModel  # noqa: PLC0415
-    from inference_models.backends.decode import make_batch_decoder    # noqa: PLC0415
+    from inference_model_manager.backends.decode import make_batch_decoder    # noqa: PLC0415
 
     _log = logging.getLogger(f"{__name__}.worker")
     pool = sock = zmq_ctx = model = None

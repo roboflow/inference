@@ -20,9 +20,9 @@ import numpy as np
 import pytest
 import torch
 
-from inference_models.backends.subproc import SubprocessBackend, _to_bytes
-from inference_models.backends.utils.shm_pool import SHMPool
-from inference_models.model_manager import ModelManager
+from inference_model_manager.backends.subproc import SubprocessBackend, _to_bytes
+from inference_model_manager.backends.utils.shm_pool import SHMPool
+from inference_model_manager.model_manager import ModelManager
 
 _N_SLOTS = 8
 _INPUT_MB = 20.0

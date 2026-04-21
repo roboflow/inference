@@ -8,7 +8,7 @@ import struct
 import numpy as np
 import pytest
 
-from inference_models.backends.subproc import (
+from inference_model_manager.backends.subproc import (
     _MSG_RESULT,
     _MSG_SLOT_READY,
     _NP_MAGIC,

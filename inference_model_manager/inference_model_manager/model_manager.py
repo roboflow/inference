@@ -7,7 +7,7 @@ import uuid
 from concurrent.futures import Future, ThreadPoolExecutor
 from typing import Any, Dict, List, Literal, Optional
 
-from inference_models.backends.base import Backend
+from inference_model_manager.backends.base import Backend
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +17,7 @@ _to_bytes = None
 def _get_to_bytes():
     global _to_bytes
     if _to_bytes is None:
-        from inference_models.backends.subproc import _to_bytes as _tb
+        from inference_model_manager.backends.subproc import _to_bytes as _tb
         _to_bytes = _tb
     return _to_bytes
 
@@ -163,7 +163,7 @@ class ModelManager:
     def _ensure_pool(self) -> Any:
         """Lazily create shared SHM pool on first subprocess backend load."""
         if self._pool is None:
-            from inference_models.backends.utils.shm_pool import SHMPool
+            from inference_model_manager.backends.utils.shm_pool import SHMPool
             self._pool = SHMPool.create(self._n_slots, self._input_mb)
             logger.info(
                 "ModelManager: SHM pool created  name=%s  slots=%d  data=%.0fMB",
@@ -179,7 +179,7 @@ class ModelManager:
         **kwargs,
     ) -> Backend:
         if backend == "direct":
-            from inference_models.backends.direct import DirectBackend
+            from inference_model_manager.backends.direct import DirectBackend
 
             # DirectBackend uses shared executor for submit() when not batching
             return DirectBackend(
@@ -188,7 +188,7 @@ class ModelManager:
                 **kwargs,
             )
         elif backend == "subprocess":
-            from inference_models.backends.subproc import SubprocessBackend
+            from inference_model_manager.backends.subproc import SubprocessBackend
 
             pool = self._ensure_pool()
             return SubprocessBackend(

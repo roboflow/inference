@@ -12,7 +12,7 @@ from typing import Any
 import numpy as np
 import pytest
 
-from inference_models.model_manager import ModelManager
+from inference_model_manager.model_manager import ModelManager
 
 
 def _assert_detections(result: Any) -> None:

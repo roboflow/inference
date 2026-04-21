@@ -99,7 +99,7 @@ def _stop_mps() -> None:
 
 
 def main() -> None:
-    from inference_models.launcher import launch_orchestrated
+    from inference_model_manager.launcher import launch_orchestrated
 
     # ── MPS ────────────────────────────────────────────────────────────────
     if os.environ.get("NVIDIA_MPS", "").strip() == "1":

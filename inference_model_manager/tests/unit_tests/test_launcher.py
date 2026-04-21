@@ -6,7 +6,7 @@ import threading
 
 import pytest
 
-from inference_models.launcher import (
+from inference_model_manager.launcher import (
     LaunchHandle,
     _MODE_INPROCESS,
     _MODE_ORCHESTRATED,
@@ -14,7 +14,7 @@ from inference_models.launcher import (
     launch_inprocess,
     launch_orchestrated,
 )
-from inference_models.model_manager import ModelManager
+from inference_model_manager.model_manager import ModelManager
 
 
 # ---------------------------------------------------------------------------

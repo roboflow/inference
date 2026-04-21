@@ -6,7 +6,7 @@ import time
 
 import pytest
 
-from inference_models.backends.utils.shm_pool import (
+from inference_model_manager.backends.utils.shm_pool import (
     SHMPool,
     SlotHeader,
     SlotStatus,
