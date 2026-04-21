@@ -1,0 +1,36 @@
+[project]
+name = "inference-model-manager"
+version = "0.1.0"
+description = "Orchestrated model management: SHM pools, subprocess workers, ZMQ routing, batched GPU inference"
+readme = "README.md"
+requires-python = ">=3.10,<3.13"
+dependencies = [
+  "inference-models",
+  "numpy",
+  "pyzmq>=26.0.0,<28.0.0",
+  "uvicorn[standard]>=0.30.0",
+  "fastapi>=0.115.0",
+  "psutil>=5.9.0",
+  "filetype>=1.2.0",
+  "pillow-heif>=0.18.0",
+  "imagecodecs",
+]
+
+[project.optional-dependencies]
+cuda = [
+  "pycuda>=2025.0.0,<2026.0.0; platform_system != 'darwin' and python_version >= '3.10'",
+  "nvidia-ml-py>=12.0.0",
+]
+test = [
+  "pytest>=8.0.0",
+  "pytest-timeout>=2.3.0",
+  "pytest-xdist>=3.0.0",
+]
+
+[tool.setuptools.packages.find]
+include = ["inference_model_manager*"]
+exclude = ["tests*"]
+
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.backends"
