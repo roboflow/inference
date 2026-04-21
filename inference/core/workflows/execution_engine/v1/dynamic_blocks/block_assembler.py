@@ -221,6 +221,13 @@ def build_input(
     return input_type, field_metadata
 
 
+# Kinds whose values are serialized as strings on the wire. When one of these kinds
+# is declared on the selector side of a dynamic input, `str` is auto-added to the
+# accepted value types so literals like "BLACK" or "#FF0000" are accepted — mirroring
+# how core blocks like text_display declare `Union[str, Selector(kind=[STRING_KIND])]`.
+_STRING_LITERAL_KINDS = {"rgb_color"}
+
+
 def build_input_field_type(
     block_type: str,
     input_name: str,
@@ -238,6 +245,11 @@ def build_input_field_type(
         input_name=input_name,
         input_definition=input_definition,
     )
+    if (
+        _declares_string_literal_kind(input_definition)
+        and str not in input_type_union_elements
+    ):
+        input_type_union_elements.append(str)
     if not input_type_union_elements:
         raise DynamicBlockError(
             public_message=f"There is no definition of input type found for property: {input_name} of "
@@ -251,6 +263,13 @@ def build_input_field_type(
     if input_definition.is_optional:
         input_type = Optional[input_type]
     return input_type
+
+
+def _declares_string_literal_kind(input_definition: DynamicInputDefinition) -> bool:
+    for kinds in input_definition.selector_data_kind.values():
+        if any(kind in _STRING_LITERAL_KINDS for kind in kinds):
+            return True
+    return False
 
 
 def collect_python_types_for_selectors(
