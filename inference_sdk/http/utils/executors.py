@@ -5,7 +5,7 @@ import logging
 from concurrent.futures import ThreadPoolExecutor
 from enum import Enum
 from functools import partial
-from typing import List, Optional, Tuple, Union
+from typing import List, Mapping, Optional, Tuple, Union
 
 import aiohttp
 import backoff
@@ -98,20 +98,28 @@ def _extract_model_id_from_request_data(request_data: RequestData) -> str:
         return UNKNOWN_MODEL_ID
 
 
-def _extract_model_ids_from_response(
-    response: Response, request_data: RequestData
+def _extract_model_ids_from_headers(
+    headers: Mapping[str, str],
+    request_data: Optional[RequestData] = None,
+    fallback_model_id: Optional[str] = None,
 ) -> List[str]:
-    model_ids_header = response.headers.get(MODEL_ID_HEADER)
+    model_ids_header = headers.get(MODEL_ID_HEADER)
     if model_ids_header:
         return [
             model_id.strip()
             for model_id in model_ids_header.split(",")
             if model_id.strip()
         ]
-    if request_data.payload and isinstance(request_data.payload, dict):
+    if (
+        request_data is not None
+        and request_data.payload
+        and isinstance(request_data.payload, dict)
+    ):
         model_id = request_data.payload.get("model_id")
         if model_id:
             return [str(model_id)]
+    if fallback_model_id not in (None, "", UNKNOWN_MODEL_ID):
+        return [str(fallback_model_id)]
     return []
 
 
@@ -138,8 +146,99 @@ def _parse_model_load_details(
     return result
 
 
-def _extract_cold_start_count_from_response(response: Response) -> int:
-    count_header = response.headers.get(MODEL_COLD_START_COUNT_HEADER)
+def _collect_remote_processing_times(
+    responses: List[Response],
+    requests_data: List[RequestData],
+) -> None:
+    if len(responses) != len(requests_data):
+        logging.warning(
+            "Response count (%d) does not match request count (%d); "
+            "only pairing the first %d entries",
+            len(responses),
+            len(requests_data),
+            min(len(responses), len(requests_data)),
+        )
+    for response, request_data in zip(responses, requests_data):
+        collect_remote_processing_metadata_from_headers(
+            headers=response.headers,
+            request_data=request_data,
+        )
+
+
+def collect_remote_processing_metadata_from_response(
+    response: Response,
+    model_id: str = UNKNOWN_MODEL_ID,
+) -> None:
+    collect_remote_processing_metadata_from_headers(
+        headers=response.headers,
+        fallback_model_id=model_id,
+    )
+
+
+def collect_remote_processing_metadata_from_headers(
+    headers: Mapping[str, str],
+    request_data: Optional[RequestData] = None,
+    fallback_model_id: str = UNKNOWN_MODEL_ID,
+) -> None:
+    collector = remote_processing_times.get()
+    if collector is None:
+        return
+    pt = headers.get(PROCESSING_TIME_HEADER)
+    if pt is not None:
+        model_id = (
+            _extract_model_id_from_request_data(request_data)
+            if request_data is not None
+            else fallback_model_id
+        )
+        try:
+            collector.add(float(pt), model_id=model_id)
+        except (ValueError, TypeError):
+            logging.warning("Malformed %s header value: %r", PROCESSING_TIME_HEADER, pt)
+    model_ids = _extract_model_ids_from_headers(
+        headers=headers,
+        request_data=request_data,
+        fallback_model_id=fallback_model_id,
+    )
+    collector.add_model_ids(model_ids=model_ids)
+    if headers.get(MODEL_COLD_START_HEADER, "").lower() != "true":
+        return
+    details_header = headers.get(MODEL_LOAD_DETAILS_HEADER)
+    if details_header:
+        parsed_details = _parse_model_load_details(details_header)
+        if parsed_details is None:
+            logging.warning(
+                "Malformed %s header value: %r",
+                MODEL_LOAD_DETAILS_HEADER,
+                details_header,
+            )
+        else:
+            for entry_model_id, load_time in parsed_details:
+                collector.record_cold_start(
+                    load_time=load_time,
+                    model_id=entry_model_id,
+                )
+            return
+    load_time = 0.0
+    load_time_header = headers.get(MODEL_LOAD_TIME_HEADER)
+    if load_time_header is not None:
+        try:
+            load_time = float(load_time_header)
+        except (ValueError, TypeError):
+            logging.warning(
+                "Malformed %s header value: %r",
+                MODEL_LOAD_TIME_HEADER,
+                load_time_header,
+            )
+    synthesized_model_id = model_ids[0] if len(model_ids) == 1 else None
+    collector.record_cold_start(
+        load_time=load_time,
+        count=_extract_cold_start_count_from_headers(headers=headers),
+        model_id=synthesized_model_id,
+    )
+
+
+def _extract_cold_start_count_from_headers(headers: Mapping[str, str]) -> int:
+    count_header = headers.get(MODEL_COLD_START_COUNT_HEADER)
     if count_header is None:
         return 1
     try:
@@ -159,72 +258,6 @@ def _extract_cold_start_count_from_response(response: Response) -> int:
         )
         return 1
     return count
-
-
-def _collect_remote_processing_times(
-    responses: List[Response],
-    requests_data: List[RequestData],
-) -> None:
-    collector = remote_processing_times.get()
-    if collector is None:
-        return
-    if len(responses) != len(requests_data):
-        logging.warning(
-            "Response count (%d) does not match request count (%d); "
-            "only pairing the first %d entries",
-            len(responses),
-            len(requests_data),
-            min(len(responses), len(requests_data)),
-        )
-    for response, request_data in zip(responses, requests_data):
-        pt = response.headers.get(PROCESSING_TIME_HEADER)
-        if pt is not None:
-            model_id = _extract_model_id_from_request_data(request_data)
-            try:
-                collector.add(float(pt), model_id=model_id)
-            except (ValueError, TypeError):
-                logging.warning(
-                    "Malformed %s header value: %r", PROCESSING_TIME_HEADER, pt
-                )
-        model_ids = _extract_model_ids_from_response(
-            response=response, request_data=request_data
-        )
-        collector.add_model_ids(model_ids=model_ids)
-        if response.headers.get(MODEL_COLD_START_HEADER, "").lower() != "true":
-            continue
-        details_header = response.headers.get(MODEL_LOAD_DETAILS_HEADER)
-        if details_header:
-            parsed_details = _parse_model_load_details(details_header)
-            if parsed_details is None:
-                logging.warning(
-                    "Malformed %s header value: %r",
-                    MODEL_LOAD_DETAILS_HEADER,
-                    details_header,
-                )
-            else:
-                for entry_model_id, load_time in parsed_details:
-                    collector.record_cold_start(
-                        load_time=load_time,
-                        model_id=entry_model_id,
-                    )
-                continue
-        load_time = 0.0
-        load_time_header = response.headers.get(MODEL_LOAD_TIME_HEADER)
-        if load_time_header is not None:
-            try:
-                load_time = float(load_time_header)
-            except (ValueError, TypeError):
-                logging.warning(
-                    "Malformed %s header value: %r",
-                    MODEL_LOAD_TIME_HEADER,
-                    load_time_header,
-                )
-        synthesized_model_id = model_ids[0] if len(model_ids) == 1 else None
-        collector.record_cold_start(
-            load_time=load_time,
-            count=_extract_cold_start_count_from_response(response=response),
-            model_id=synthesized_model_id,
-        )
 
 
 def make_parallel_requests(
@@ -429,6 +462,11 @@ async def make_request_async(
             response_data = await response.read()
         if response_is_not_retryable_error(response=response):
             response.raise_for_status()
+        if response.status == 200:
+            collect_remote_processing_metadata_from_headers(
+                headers=response.headers,
+                request_data=request_data,
+            )
         return response.status, response_data
 
 
