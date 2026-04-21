@@ -1,9 +1,7 @@
 import json
-from dataclasses import dataclass
 from functools import partial
 from typing import Any, Callable, Dict, List, Optional, Union
 
-import networkx as nx
 from packaging.version import Version
 
 from inference.core.workflows.execution_engine.entities.base import WorkflowParameter
@@ -21,8 +19,8 @@ from inference.core.workflows.execution_engine.v1.compiler.cache import (
     BasicWorkflowsCache,
 )
 from inference.core.workflows.execution_engine.v1.compiler.entities import (
-    BlockSpecification,
     CompiledWorkflow,
+    GraphCompilationResult,
     InputSubstitution,
     ParsedWorkflowDefinition,
 )
@@ -48,18 +46,16 @@ from inference.core.workflows.execution_engine.v1.dynamic_blocks.block_assembler
     compile_dynamic_blocks,
     ensure_dynamic_blocks_allowed,
 )
+from inference.core.workflows.execution_engine.v1.inner_workflow.compiler_bridge import (
+    validate_inner_workflow_composition_from_raw_workflow_definition,
+)
+from inference.core.workflows.execution_engine.v1.inner_workflow.inline import (
+    inline_inner_workflow_steps,
+)
+from inference.core.workflows.execution_engine.v1.inner_workflow.reference_resolution import (
+    normalize_inner_workflow_references_in_definition,
+)
 from inference.core.workflows.prototypes.block import WorkflowBlockManifest
-
-
-@dataclass(frozen=True)
-class GraphCompilationResult:
-    execution_graph: nx.DiGraph
-    parsed_workflow_definition: ParsedWorkflowDefinition
-    available_blocks: List[BlockSpecification]
-    initializers: Dict[str, Union[Any, Callable[[None], Any]]]
-    kinds_serializers: Dict[str, Callable[[Any], Any]]
-    kinds_deserializers: Dict[str, Callable[[str, Any], Any]]
-
 
 COMPILATION_CACHE = BasicWorkflowsCache[GraphCompilationResult](
     cache_size=256,
@@ -132,6 +128,12 @@ def compile_workflow_graph(
             dynamic_blocks_definitions=dynamic_blocks_definitions
         )
         return cached_value
+    raw_workflow_definition: Dict[str, Any] = (
+        normalize_inner_workflow_references_in_definition(
+            workflow_definition=workflow_definition,
+            init_parameters=init_parameters,
+        )
+    )
     statically_defined_blocks = load_workflow_blocks(
         execution_engine_version=execution_engine_version,
         profiler=profiler,
@@ -140,15 +142,23 @@ def compile_workflow_graph(
     kinds_serializers = load_kinds_serializers(profiler=profiler)
     kinds_deserializers = load_kinds_deserializers(profiler=profiler)
     dynamic_blocks = compile_dynamic_blocks(
-        dynamic_blocks_definitions=workflow_definition.get(
+        dynamic_blocks_definitions=raw_workflow_definition.get(
             "dynamic_blocks_definitions", []
         ),
         profiler=profiler,
         api_key=init_parameters.get("workflows_core.api_key", None),
     )
     available_blocks = statically_defined_blocks + dynamic_blocks
+    validate_inner_workflow_composition_from_raw_workflow_definition(
+        raw_workflow_definition
+    )
+    inlined_raw_workflow_definition: Dict[str, Any] = inline_inner_workflow_steps(
+        raw_workflow_definition,
+        available_blocks=available_blocks,
+        profiler=profiler,
+    )
     parsed_workflow_definition = parse_workflow_definition(
-        raw_workflow_definition=workflow_definition,
+        raw_workflow_definition=inlined_raw_workflow_definition,
         available_blocks=available_blocks,
         profiler=profiler,
     )
