@@ -77,7 +77,7 @@ If your model fits a standard category, extend the corresponding base class (see
 
 For **shared plumbing across several HF models** (sessioned video trackers, etc.), check `inference_models/inference_models/models/common/` for reusable bases before writing your own.
 
-Read `inference_models/docs/contributors/adding-model.md` and `writing-tests.md` — they cover the `from_pretrained` contract in more depth than this skill.
+Read `inference_models/docs/contributors/adding-model.md` and `inference_models/docs/contributors/writing-tests.md` — they cover the `from_pretrained` contract in more depth than this skill.
 
 ### 2. Registry entry (surface 1b)
 
