@@ -1,13 +1,25 @@
 from __future__ import annotations
 
 import logging
+import pickle
 import threading
+import uuid
 from concurrent.futures import Future, ThreadPoolExecutor
 from typing import Any, Dict, List, Literal, Optional
 
 from inference_models.backends.base import Backend
 
 logger = logging.getLogger(__name__)
+
+# Import lazily to avoid circular deps
+_to_bytes = None
+
+def _get_to_bytes():
+    global _to_bytes
+    if _to_bytes is None:
+        from inference_models.backends.subproc import _to_bytes as _tb
+        _to_bytes = _tb
+    return _to_bytes
 
 
 class ModelManager:
@@ -44,16 +56,25 @@ class ModelManager:
         self,
         *,
         max_pinned_memory_mb: int = 0,
+        n_slots: int = 32,
+        input_mb: float = 20.0,
     ) -> None:
         """
         Args:
             max_pinned_memory_mb: Maximum CPU pinned memory for sleeping models.
                 0 = no sleeping tier (models go straight from loaded to unloaded).
+            n_slots: SHM slots for subprocess backends (shared pool).
+            input_mb: MB per slot data area.
         """
         self._max_pinned_memory_bytes = max_pinned_memory_mb * 1024 * 1024
+        self._n_slots  = n_slots
+        self._input_mb = input_mb
 
         self._backends: Dict[str, Backend] = {}
         self._lifecycle_lock = threading.Lock()
+
+        # Shared SHM pool for subprocess backends — created lazily
+        self._pool: Optional[Any] = None  # SHMPool, created on first subprocess load
 
         # Shared thread pool for DirectBackends and infer_async
         self._executor = ThreadPoolExecutor(
@@ -139,6 +160,17 @@ class ModelManager:
             "Model '%s' loaded (state=%s, device=%s)", model_id, b.state, b.device,
         )
 
+    def _ensure_pool(self) -> Any:
+        """Lazily create shared SHM pool on first subprocess backend load."""
+        if self._pool is None:
+            from inference_models.backends.utils.shm_pool import SHMPool
+            self._pool = SHMPool.create(self._n_slots, self._input_mb)
+            logger.info(
+                "ModelManager: SHM pool created  name=%s  slots=%d  data=%.0fMB",
+                self._pool.name, self._n_slots, self._input_mb,
+            )
+        return self._pool
+
     def _create_backend(
         self,
         model_id: str,
@@ -158,7 +190,14 @@ class ModelManager:
         elif backend == "subprocess":
             from inference_models.backends.subproc import SubprocessBackend
 
-            return SubprocessBackend(model_id, api_key, **kwargs)
+            pool = self._ensure_pool()
+            return SubprocessBackend(
+                model_id, api_key,
+                shm_pool_name=pool.name,
+                n_slots=self._n_slots,
+                input_mb=self._input_mb,
+                **kwargs,
+            )
         else:
             raise ValueError(
                 f"Unknown backend '{backend}'. Choose 'direct' or 'subprocess'."
@@ -251,6 +290,8 @@ class ModelManager:
             KeyError: If model_id is not loaded.
         """
         backend = self._get_backend(model_id)
+        if hasattr(backend, "submit_slot"):
+            return self.submit(model_id, raw_input, **kwargs).result()
         return backend.infer_sync(raw_input, **kwargs)
 
     async def infer_async(self, model_id: str, raw_input: Any, **kwargs) -> Any:
@@ -259,16 +300,55 @@ class ModelManager:
         Raises:
             KeyError: If model_id is not loaded.
         """
+        import asyncio
         backend = self._get_backend(model_id)
+        if hasattr(backend, "submit_slot"):
+            loop = asyncio.get_running_loop()
+            return await loop.run_in_executor(
+                None, lambda: self.submit(model_id, raw_input, **kwargs).result()
+            )
         return await backend.infer_async(raw_input, **kwargs)
 
     def submit(self, model_id: str, raw_input: Any, *, priority: int = 0, **kwargs) -> Future:
         """Submit a raw input for inference. Returns a Future immediately.
 
+        For subprocess backends, this allocates a SHM slot, writes input,
+        and signals the worker. For direct backends, delegates directly.
+
         Raises:
             KeyError: If model_id is not loaded.
         """
         backend = self._get_backend(model_id)
+
+        # Subprocess backend: we manage the pool
+        if hasattr(backend, "submit_slot"):
+            to_bytes = _get_to_bytes()
+            input_bytes = to_bytes(raw_input)
+            if len(input_bytes) > self._pool.data_slot_bytes:
+                raise ValueError(
+                    f"Input {len(input_bytes)} B > slot capacity "
+                    f"{self._pool.data_slot_bytes} B — increase input_mb"
+                )
+
+            req_id  = uuid.uuid4().int & 0xFFFF_FFFF_FFFF_FFFF
+            slot_id = self._pool.alloc_slot()
+            self._pool.mark_allocated(slot_id, req_id)
+            self._pool.data_memoryview(slot_id)[:len(input_bytes)] = input_bytes
+            self._pool.mark_written(slot_id, len(input_bytes))
+
+            future: Future = Future()
+
+            def _on_done(f: Future) -> None:
+                try:
+                    self._pool.free_slot(slot_id)
+                except Exception:
+                    pass
+
+            future.add_done_callback(_on_done)
+            backend.submit_slot(slot_id, req_id, future)
+            return future
+
+        # Direct backend: has its own submit()
         return backend.submit(raw_input, priority=priority, **kwargs)
 
     # ------------------------------------------------------------------
@@ -356,6 +436,11 @@ class ModelManager:
                 logger.warning("Error unloading '%s' during shutdown", model_id, exc_info=True)
 
         self._executor.shutdown(wait=False)
+
+        if self._pool is not None:
+            self._pool.close()
+            self._pool = None
+
         logger.info("ModelManager shut down")
 
     # ------------------------------------------------------------------
