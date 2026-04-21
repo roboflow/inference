@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-import torch
-
 from inference_models.backends.direct import DirectBackend
 
 
@@ -32,30 +30,6 @@ class TestDirectBackendPipeline:
 
         backend.unload()
 
-    def test_decomposed_pipeline(
-        self, yolov8n_model_path: str, dog_image_numpy: np.ndarray
-    ) -> None:
-        # given
-        backend = DirectBackend(yolov8n_model_path, api_key="")
-
-        # when
-        pre_processed = backend.pre_process(dog_image_numpy)
-        assert isinstance(pre_processed, tuple)
-        assert len(pre_processed) == 2
-
-        tensor, meta = pre_processed
-        assert isinstance(tensor, torch.Tensor)
-
-        future = backend.submit(pre_processed)
-        result = future.result(timeout=10)
-
-        # then
-        assert result is not None
-        assert len(result) > 0
-        assert hasattr(result[0], "xyxy")
-
-        backend.unload()
-
     def test_batch_inference(
         self, yolov8n_model_path: str, dog_image_numpy: np.ndarray
     ) -> None:
@@ -70,29 +44,6 @@ class TestDirectBackendPipeline:
         assert len(result) == 2
 
         backend.unload()
-
-    def test_results_match_between_infer_and_decomposed(
-        self, yolov8n_model_path: str, dog_image_numpy: np.ndarray
-    ) -> None:
-        # given
-        backend = DirectBackend(yolov8n_model_path, api_key="")
-
-        # when
-        result_infer = backend.infer_sync(dog_image_numpy)
-        pre_processed = backend.pre_process(dog_image_numpy)
-        future = backend.submit(pre_processed)
-        result_decomposed = future.result(timeout=10)
-
-        # then — same model, same input, same result
-        assert len(result_infer) == len(result_decomposed)
-        assert torch.allclose(
-            result_infer[0].confidence.cpu(),
-            result_decomposed[0].confidence.cpu(),
-            atol=0.01,
-        )
-
-        backend.unload()
-
 
 @pytest.mark.slow
 @pytest.mark.torch_models
@@ -109,18 +60,14 @@ class TestDirectBackendBatching:
         )
 
         # when — submit multiple items, BatchCollector groups them
-        pre1 = backend.pre_process(dog_image_numpy)
-        pre2 = backend.pre_process(dog_image_numpy)
-        f1 = backend.submit(pre1)
-        f2 = backend.submit(pre2)
+        f1 = backend.submit(dog_image_numpy)
+        f2 = backend.submit(dog_image_numpy)
         r1 = f1.result(timeout=10)
         r2 = f2.result(timeout=10)
 
         # then
         assert r1 is not None
         assert r2 is not None
-        assert hasattr(r1[0], "xyxy")
-        assert hasattr(r2[0], "xyxy")
 
         backend.unload()
 
@@ -151,12 +98,11 @@ class TestDirectBackendLifecycle:
     ) -> None:
         # given
         backend = DirectBackend(yolov8n_model_path, api_key="")
-        pre = backend.pre_process(dog_image_numpy)
         backend.unload()
 
         # when / then
         with pytest.raises(RuntimeError, match="not accepting"):
-            backend.submit(pre)
+            backend.submit(dog_image_numpy)
 
     def test_class_names(self, yolov8n_model_path: str) -> None:
         # given
