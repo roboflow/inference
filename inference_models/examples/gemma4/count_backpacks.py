@@ -1,12 +1,28 @@
 #!/usr/bin/env python3
 """Downloads a public sample image, loads a hosted Gemma 4 checkpoint, and asks a focused counting question.
 
-    `uv run python examples/gemma4/count_backpacks.py`
+Run from the ``inference_models`` project root (sibling of ``examples/``)::
+
+    uv run python examples/gemma4/count_backpacks.py
+
+Or from the monorepo root (no editable install needed; imports resolve to
+``inference_models/inference_models/__init__.py``)::
+
+    uv run --env-file .env inference_models/examples/gemma4/count_backpacks.py
 """
 
 from __future__ import annotations
 
 import io
+import sys
+from pathlib import Path
+
+# Resolve the inner ``inference_models`` package (…/inference_models/inference_models/)
+# when this file is run as a script, so ``PYTHONPATH=./`` at repo root does not shadow
+# it with the outer ``inference_models/`` directory name.
+_pkg_root = Path(__file__).resolve().parents[2]
+if str(_pkg_root) not in sys.path:
+    sys.path.insert(0, str(_pkg_root))
 
 import numpy as np
 import requests

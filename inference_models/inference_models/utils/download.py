@@ -558,7 +558,8 @@ def threaded_download_file(
                 start=start,
                 end=end,
                 target_path=target_path,
-                timeout=request_timeout,
+                connect_timeout=CHUNK_DOWNLOAD_CONNECT_TIMEOUT,
+                read_timeout=request_timeout,  # TODO: this needs to be updated further upstream to allow for providing read and connect timeouts
                 response_codes_to_retry=response_codes_to_retry,
                 on_chunk_downloaded=on_chunk_downloaded,
             )
