@@ -218,7 +218,7 @@ Expect `status: ok` and `modelPackages[0].packageFiles` listing every file with 
 
 Run `AutoModel.from_pretrained("<arch>/<variant>", api_key=<staging-key>)` against staging (set `ROBOFLOW_ENVIRONMENT=staging` or `ROBOFLOW_API_HOST=https://api.roboflow.one`) and exercise the model with a real input. If surface 3 was built, also run it through `debugrun.py` / a short MP4 via `InferencePipeline`. If surface 4 was built, hit `/infer?model_id=<arch>/<variant>`.
 
-**When running `debugrun.py` or the inference server from the repo root**, pass `PYTHONSAFEPATH=1`. The `inference_models/` project dir (at repo root, no `__init__.py`) is treated by Python as an empty namespace package and shadows the editable-installed `inference_models`. `PYTHONSAFEPATH=1` (or `python -P`) stops Python from auto-adding the script dir to `sys.path` and the shadow disappears.
+**When running `debugrun.py` or the inference server from the repo root**, avoid letting the repo-root `inference_models/` directory shadow the editable-installed `inference_models` package. On newer Python versions that support it, you can use `PYTHONSAFEPATH=1` (or `python -P`) so Python does not auto-add the script directory to `sys.path`. **Do not rely on `python -P` on Python 3.10**. For Python 3.10, prefer running from an installed environment via `python -m ...` instead of invoking a repo-root script directly, or adjust your `PYTHONPATH` / working directory so the repo-root namespace package is not on `sys.path`.
 
 ## Gotchas (real, collected as hit)
 
