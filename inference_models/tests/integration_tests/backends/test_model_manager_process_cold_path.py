@@ -5,8 +5,8 @@ Tests:
   - T_LOAD / T_UNLOAD / T_SLEEP / T_WAKE lifecycle messages
   - _load_flavor calls manager.load() when manager is provided
   - register_backend triggered after mock load
-  - _lru_evictable_flavor picks LRU correctly
-  - eviction updates FlavorState.sleeping
+  - _lru_evictable_model picks LRU correctly
+  - eviction updates ModelState.sleeping
 """
 
 from __future__ import annotations
@@ -45,7 +45,6 @@ from inference_models.backends.utils.shm_pool import SHMPool
 # ---------------------------------------------------------------------------
 
 _TEST_INPUT_MB  = 0.1
-_TEST_RESULT_MB = 0.1
 _TIMEOUT_S      = 5.0
 
 
@@ -125,10 +124,9 @@ class _MockBackend:
                 self._mmp.shm_name,
                 n_slots=self._mmp._n_slots,
                 input_mb=_TEST_INPUT_MB,
-                result_mb=_TEST_RESULT_MB,
             )
             try:
-                pool.result_memoryview(slot_id)[: len(self._result)] = self._result
+                pool.data_memoryview(slot_id)[: len(self._result)] = self._result
             finally:
                 pool.close()
             self._mmp.on_result(req_id, slot_id, len(self._result))
@@ -149,7 +147,6 @@ class _MMPHarness:
         self._mmp   = ModelManagerProcess(
             n_slots=n_slots,
             input_mb=_TEST_INPUT_MB,
-            result_mb=_TEST_RESULT_MB,
             stale_reap_interval_s=1.0,
             stale_slot_max_age_s=2.0,
             manager=manager,
@@ -242,10 +239,9 @@ class _MMPHarness:
             self.mmp.shm_name,
             n_slots=self.mmp._n_slots,
             input_mb=_TEST_INPUT_MB,
-            result_mb=_TEST_RESULT_MB,
         )
         try:
-            pool.input_memoryview(slot_id)[: len(data)] = data
+            pool.data_memoryview(slot_id)[: len(data)] = data
         finally:
             pool.close()
         fb      = flavor.encode()
@@ -364,7 +360,7 @@ class TestLifecycleMessages:
         h.ensure_loaded("m")
         h.lifecycle_req(T_SLEEP, "m")
         time.sleep(0.05)
-        fs = h.mmp._flavors.get("m")
+        fs = h.mmp._models.get("m")
         h.teardown()
         assert fs is not None
         assert fs.sleeping is True
@@ -444,54 +440,52 @@ class TestLRUEviction:
         return ModelManagerProcess(
             n_slots=4,
             input_mb=_TEST_INPUT_MB,
-            result_mb=_TEST_RESULT_MB,
         )
 
-    def test_lru_evictable_returns_none_when_no_loaded_flavors(self):
+    def test_lru_evictable_returns_none_when_no_loaded_models(self):
         mmp = self._make_mmp()
-        assert mmp._lru_evictable_flavor() is None
+        assert mmp._lru_evictable_model() is None
 
     def test_lru_evictable_picks_oldest_access(self):
         mmp = self._make_mmp()
-        from inference_models.model_manager_process import FlavorState
-        mmp._flavors["a"] = FlavorState(loaded=True)
-        mmp._flavors["b"] = FlavorState(loaded=True)
-        mmp._flavor_access["a"] = 1.0   # older
-        mmp._flavor_access["b"] = 2.0   # newer
-        assert mmp._lru_evictable_flavor() == "a"
+        from inference_models.model_manager_process import ModelState
+        mmp._models["a"] = ModelState(loaded=True)
+        mmp._models["b"] = ModelState(loaded=True)
+        mmp._model_access["a"] = 1.0   # older
+        mmp._model_access["b"] = 2.0   # newer
+        assert mmp._lru_evictable_model() == "a"
 
     def test_lru_evictable_skips_sleeping(self):
         mmp = self._make_mmp()
-        from inference_models.model_manager_process import FlavorState
-        mmp._flavors["a"] = FlavorState(loaded=False, sleeping=True)
-        mmp._flavors["b"] = FlavorState(loaded=True)
-        mmp._flavor_access["a"] = 1.0
-        mmp._flavor_access["b"] = 2.0
-        assert mmp._lru_evictable_flavor() == "b"
+        from inference_models.model_manager_process import ModelState
+        mmp._models["a"] = ModelState(loaded=False, sleeping=True)
+        mmp._models["b"] = ModelState(loaded=True)
+        mmp._model_access["a"] = 1.0
+        mmp._model_access["b"] = 2.0
+        assert mmp._lru_evictable_model() == "b"
 
     def test_lru_evictable_skips_in_flight(self):
         mmp = self._make_mmp()
-        from inference_models.model_manager_process import FlavorState
-        mmp._flavors["a"] = FlavorState(loaded=True)
-        mmp._flavors["b"] = FlavorState(loaded=True)
-        mmp._flavor_access["a"] = 1.0
-        mmp._flavor_access["b"] = 2.0
+        from inference_models.model_manager_process import ModelState
+        mmp._models["a"] = ModelState(loaded=True)
+        mmp._models["b"] = ModelState(loaded=True)
+        mmp._model_access["a"] = 1.0
+        mmp._model_access["b"] = 2.0
         mmp._pending[42] = (b"id", 0, "a")   # "a" is in-flight
-        assert mmp._lru_evictable_flavor() == "b"
+        assert mmp._lru_evictable_model() == "b"
 
     def test_check_and_evict_calls_manager_sleep(self):
         mgr = _MockManager()
         mmp = ModelManagerProcess(
             n_slots=4,
             input_mb=_TEST_INPUT_MB,
-            result_mb=_TEST_RESULT_MB,
             evict_threshold=0.0,   # always evict
             manager=mgr,
         )
-        from inference_models.model_manager_process import FlavorState
-        mmp._flavors["m"] = FlavorState(loaded=True)
-        mmp._flavor_access["m"] = 1.0
+        from inference_models.model_manager_process import ModelState
+        mmp._models["m"] = ModelState(loaded=True)
+        mmp._model_access["m"] = 1.0
         mmp._check_and_evict()
         assert "sleep:m" in mgr.calls
-        assert mmp._flavors["m"].sleeping is True
-        assert mmp._flavors["m"].loaded   is False
+        assert mmp._models["m"].sleeping is True
+        assert mmp._models["m"].loaded   is False

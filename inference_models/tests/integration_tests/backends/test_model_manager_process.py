@@ -35,7 +35,6 @@ from inference_models.model_manager_process import (
 # ---------------------------------------------------------------------------
 
 _TEST_INPUT_MB  = 0.1   # 100 KB — tiny for tests
-_TEST_RESULT_MB = 0.1
 _TIMEOUT_S      = 5.0   # max seconds any single recv should take
 
 
@@ -59,7 +58,6 @@ class _MMPHarness:
         self._mmp        = ModelManagerProcess(
             n_slots=n_slots,
             input_mb=_TEST_INPUT_MB,
-            result_mb=_TEST_RESULT_MB,
             stale_reap_interval_s=1.0,
             stale_slot_max_age_s=2.0,
         )
@@ -127,10 +125,9 @@ class _MMPHarness:
             self.shm_name,
             n_slots=self._mmp._n_slots,
             input_mb=_TEST_INPUT_MB,
-            result_mb=_TEST_RESULT_MB,
         )
         try:
-            pool.input_memoryview(slot_id)[: len(data)] = data
+            pool.data_memoryview(slot_id)[: len(data)] = data
         finally:
             pool.close()
 
@@ -166,11 +163,10 @@ class _MockBackend:
                 self._mmp.shm_name,
                 n_slots=self._mmp._n_slots,
                 input_mb=_TEST_INPUT_MB,
-                result_mb=_TEST_RESULT_MB,
             )
             try:
                 data = self._result_bytes
-                pool.result_memoryview(slot_id)[: len(data)] = data
+                pool.data_memoryview(slot_id)[: len(data)] = data
             finally:
                 pool.close()
             self._mmp.on_result(req_id, slot_id, len(self._result_bytes))
@@ -309,9 +305,8 @@ class TestFullLifecycle:
             harness.shm_name,
             n_slots=harness.mmp._n_slots,
             input_mb=_TEST_INPUT_MB,
-            result_mb=_TEST_RESULT_MB,
         )
-        result = bytes(pool.result_memoryview(slot_id)[:result_sz])
+        result = bytes(pool.data_memoryview(slot_id)[:result_sz])
         pool.close()
         assert result == result_payload
 
@@ -347,10 +342,9 @@ class TestFullLifecycle:
                         harness.shm_name,
                         n_slots=harness.mmp._n_slots,
                         input_mb=_TEST_INPUT_MB,
-                        result_mb=_TEST_RESULT_MB,
                     )
                     try:
-                        pool.result_memoryview(slot_id)[:2] = b"ok"
+                        pool.data_memoryview(slot_id)[:2] = b"ok"
                     finally:
                         pool.close()
                     harness.mmp.on_result(req_id, slot_id, 2)
@@ -366,7 +360,6 @@ class TestFullLifecycle:
             harness.shm_name,
             n_slots=harness.mmp._n_slots,
             input_mb=_TEST_INPUT_MB,
-            result_mb=_TEST_RESULT_MB,
         )
         assert pool.read_header(slot_id).status == SlotStatus.ALLOCATED
 
