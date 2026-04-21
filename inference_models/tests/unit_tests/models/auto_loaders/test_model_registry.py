@@ -208,23 +208,14 @@ def test_model_implementation_exists_when_known_model_feature_requested() -> Non
     assert result is True
 
 
-@pytest.mark.parametrize(
-    "model_architecture",
-    (
-        "gemma-4-e2b-it",
-        "gemma-4-e4b-it",
-        "gemma-4-31b-it",
-        "gemma-4-26b-a4b-it",
-    ),
-)
-def test_gemma4_variants_resolve_to_gemma4_hf(model_architecture: str) -> None:
+def test_gemma4_family_architecture_resolves_to_gemma4_hf() -> None:
     assert model_implementation_exists(
-        model_architecture=model_architecture,
+        model_architecture="gemma-4",
         task_type="vlm",
         backend=BackendType.HF,
     )
     cls = resolve_model_class(
-        model_architecture=model_architecture,
+        model_architecture="gemma-4",
         task_type="vlm",
         backend=BackendType.HF,
     )

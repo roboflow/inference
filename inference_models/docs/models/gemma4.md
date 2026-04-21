@@ -21,7 +21,7 @@ The `Gemma4HF` implementation supports:
 
 ## Pre-trained model IDs
 
-Hosted Gemma 4 checkpoints use the Hugging Face backend (`hugging-face`). Public registry IDs include:
+Hosted Gemma 4 checkpoints use the Hugging Face backend (`hugging-face`). Pass one of these **model IDs** to `AutoModel.from_pretrained` (they select which checkpoint package is downloaded):
 
 | Model ID | Notes |
 |----------|--------|
@@ -30,7 +30,9 @@ Hosted Gemma 4 checkpoints use the Hugging Face backend (`hugging-face`). Public
 | `gemma-4-31b-it` | Large instruction-tuned variant |
 | `gemma-4-26b-a4b-it` | Alternate large configuration |
 
-You can also load a Roboflow `project/version` or a local directory that matches the expected layout (see [Load Models Locally](../how-to/local-packages.md)).
+**Registry architecture:** `inference-models` registers a single implementation under `model_architecture` **`gemma-4`** (vision-language task, `hugging-face` backend), the same way families like YOLOv8 use one architecture key with variant-specific **model IDs**. The Roboflow weights API should return `modelArchitecture: "gemma-4"` for every hosted Gemma 4 checkpoint while keeping the variant-specific `modelId` above; optional `modelVariant` can describe the checkpoint for UIs.
+
+For **local** packages, use `"model_architecture": "gemma-4"` in `model_config.json` (see `examples/gemma4/model_config.example.json` and [Load Models Locally](../how-to/local-packages.md)); Roboflow `project/version` paths follow the same layout rules.
 
 ## Supported backends
 

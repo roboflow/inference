@@ -286,19 +286,7 @@ REGISTERED_MODELS: Dict[
         module_name="inference_models.models.qwen3_5.qwen3_5_hf",
         class_name="Qwen35HF",
     ),
-    ("gemma-4-e2b-it", VLM_TASK, BackendType.HF): LazyClass(
-        module_name="inference_models.models.gemma4.gemma4_hf",
-        class_name="Gemma4HF",
-    ),
-    ("gemma-4-e4b-it", VLM_TASK, BackendType.HF): LazyClass(
-        module_name="inference_models.models.gemma4.gemma4_hf",
-        class_name="Gemma4HF",
-    ),
-    ("gemma-4-31b-it", VLM_TASK, BackendType.HF): LazyClass(
-        module_name="inference_models.models.gemma4.gemma4_hf",
-        class_name="Gemma4HF",
-    ),
-    ("gemma-4-26b-a4b-it", VLM_TASK, BackendType.HF): LazyClass(
+    ("gemma-4", VLM_TASK, BackendType.HF): LazyClass(
         module_name="inference_models.models.gemma4.gemma4_hf",
         class_name="Gemma4HF",
     ),

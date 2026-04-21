@@ -1,5 +1,5 @@
 {
-  "model_architecture": "gemma-4-e2b-it",
+  "model_architecture": "gemma-4",
   "task_type": "vlm",
   "backend_type": "hugging-face"
 }

@@ -62,7 +62,6 @@ def _load_image_rgb(url: str) -> np.ndarray:
 def main() -> None:
     load_kw = {
         "device": DEFAULT_DEVICE,
-        "backend": "hugging-face",
     }
     print(f"Loading hosted model {DEFAULT_MODEL_ID!r} …")
     model = AutoModel.from_pretrained(DEFAULT_MODEL_ID, **load_kw)
