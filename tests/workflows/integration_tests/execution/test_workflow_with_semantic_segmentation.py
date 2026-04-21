@@ -18,7 +18,7 @@ SEMANTIC_SEGMENTATION_WORKFLOW = {
     ],
     "steps": [
         {
-            "type": "roboflow_core/roboflow_semantic_segmentation_model@v1",
+            "type": "roboflow_core/roboflow_semantic_segmentation_model@v2",
             "name": "segmentation",
             "image": "$inputs.image",
             "model_id": "$inputs.model_id",
