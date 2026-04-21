@@ -82,23 +82,19 @@ class GroundingDinoForObjectDetectionTorch(
         device: torch.device = DEFAULT_DEVICE,
         **kwargs,
     ) -> "GroundingDinoForObjectDetectionTorch":
-        load_weights = kwargs.pop("load_weights", True)
         model_package_content = get_model_package_contents(
             model_package_dir=model_name_or_path,
             elements=["weights.pth", "config.py"],
         )
-        if load_weights:
-            text_encoder_dir = os.path.join(model_name_or_path, "text_encoder")
-            loader_kwargs = {}
-            if os.path.isdir(text_encoder_dir):
-                loader_kwargs["text_encoder_type"] = text_encoder_dir
-            model = load_model(
-                model_config_path=model_package_content["config.py"],
-                model_checkpoint_path=model_package_content["weights.pth"],
-                **loader_kwargs,
-            ).to(device)
-        else:
-            model = None
+        text_encoder_dir = os.path.join(model_name_or_path, "text_encoder")
+        loader_kwargs = {}
+        if os.path.isdir(text_encoder_dir):
+            loader_kwargs["text_encoder_type"] = text_encoder_dir
+        model = load_model(
+            model_config_path=model_package_content["config.py"],
+            model_checkpoint_path=model_package_content["weights.pth"],
+            **loader_kwargs,
+        ).to(device)
         return cls(model=model, device=device)
 
     def __init__(

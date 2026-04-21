@@ -71,7 +71,6 @@ class VITForClassificationOnnx(ClassificationModel[torch.Tensor, torch.Tensor]):
         device: torch.device = DEFAULT_DEVICE,
         **kwargs,
     ) -> "VITForClassificationOnnx":
-        load_weights = kwargs.pop("load_weights", True)
         if onnx_execution_providers is None:
             onnx_execution_providers = get_selected_onnx_execution_providers()
         if not onnx_execution_providers:
@@ -124,13 +123,10 @@ class VITForClassificationOnnx(ClassificationModel[torch.Tensor, torch.Tensor]):
                 message="Expected Softmax to be the post-processing",
                 help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
-        if load_weights:
-            session = onnxruntime.InferenceSession(
-                path_or_bytes=model_package_content["weights.onnx"],
-                providers=onnx_execution_providers,
-            )
-        else:
-            session = None
+        session = onnxruntime.InferenceSession(
+            path_or_bytes=model_package_content["weights.onnx"],
+            providers=onnx_execution_providers,
+        )
         if session:
             device = align_device_with_onnx_session(session=session, device=device)
             input_shape = session.get_inputs()[0].shape
@@ -252,7 +248,6 @@ class VITForMultiLabelClassificationOnnx(
         recommended_parameters: Optional[RecommendedParameters] = None,
         **kwargs,
     ) -> "VITForMultiLabelClassificationOnnx":
-        load_weights = kwargs.pop("load_weights", True)
         if onnx_execution_providers is None:
             onnx_execution_providers = get_selected_onnx_execution_providers()
         if not onnx_execution_providers:
@@ -305,13 +300,10 @@ class VITForMultiLabelClassificationOnnx(
                 message="Expected sigmoid to be the post-processing",
                 help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
-        if load_weights:
-            session = onnxruntime.InferenceSession(
-                path_or_bytes=model_package_content["weights.onnx"],
-                providers=onnx_execution_providers,
-            )
-        else:
-            session = None
+        session = onnxruntime.InferenceSession(
+            path_or_bytes=model_package_content["weights.onnx"],
+            providers=onnx_execution_providers,
+        )
         if session:
             device = align_device_with_onnx_session(session=session, device=device)
             input_shape = session.get_inputs()[0].shape

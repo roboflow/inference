@@ -152,7 +152,6 @@ class OWLv2HF(
         owlv2_enforce_model_compilation: bool = False,
         **kwargs,
     ) -> "OpenVocabularyObjectDetectionModel":
-        load_weights = kwargs.pop("load_weights", True)
         if owlv2_class_embeddings_cache is None:
             owlv2_class_embeddings_cache = OwlV2ClassEmbeddingsCacheNullObject()
         if owlv2_images_embeddings_cache is None:
@@ -166,17 +165,14 @@ class OWLv2HF(
             local_files_only=local_files_only,
             use_fast=True,
         )
-        if load_weights:
-            model = (
-                Owlv2ForObjectDetection.from_pretrained(
-                    model_name_or_path,
-                    local_files_only=local_files_only,
-                )
-                .eval()
-                .to(device)
+        model = (
+            Owlv2ForObjectDetection.from_pretrained(
+                model_name_or_path,
+                local_files_only=local_files_only,
             )
-        else:
-            model = None
+            .eval()
+            .to(device)
+        )
         instance = cls(
             model=model,
             processor=processor,

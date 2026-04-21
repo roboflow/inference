@@ -19,14 +19,10 @@ class TROcrHF(TextOnlyOCRModel[torch.Tensor, torch.Tensor]):
         local_files_only: bool = True,
         **kwargs,
     ) -> "TextOnlyOCRModel":
-        load_weights = kwargs.pop("load_weights", True)
-        if load_weights:
-            model = VisionEncoderDecoderModel.from_pretrained(
-                model_name_or_path,
-                local_files_only=local_files_only,
-            ).to(device)
-        else:
-            model = None
+        model = VisionEncoderDecoderModel.from_pretrained(
+            model_name_or_path,
+            local_files_only=local_files_only,
+        ).to(device)
         processor = TrOCRProcessor.from_pretrained(
             model_name_or_path, local_files_only=local_files_only
         )

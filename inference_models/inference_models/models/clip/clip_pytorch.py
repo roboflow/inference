@@ -26,21 +26,17 @@ class ClipTorch(TextImageEmbeddingModel):
         torchscript_state_global_lock: Optional[Lock] = None,
         **kwargs,
     ) -> "ClipTorch":
-        load_weights = kwargs.pop("load_weights", True)
         model_package_content = get_model_package_contents(
             model_package_dir=model_name_or_path,
             elements=["model.pt"],
         )
-        if load_weights:
-            model_weights_file = model_package_content["model.pt"]
-            model = build_clip_model(
-                model_weights_file=model_weights_file,
-                device=device,
-                torchscript_state_global_lock=torchscript_state_global_lock,
-            )
-            model.eval()
-        else:
-            model = None
+        model_weights_file = model_package_content["model.pt"]
+        model = build_clip_model(
+            model_weights_file=model_weights_file,
+            device=device,
+            torchscript_state_global_lock=torchscript_state_global_lock,
+        )
+        model.eval()
         return cls(
             model=model,
             tokenizer=clip.tokenize,
