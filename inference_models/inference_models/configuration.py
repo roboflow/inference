@@ -61,15 +61,15 @@ AUTO_LOADER_CACHE_EXPIRATION_MINUTES = get_integer_from_env(
 )
 CHUNK_DOWNLOAD_CONNECT_TIMEOUT = get_float_from_env(
     variable_name="CHUNK_DOWNLOAD_CONNECT_TIMEOUT",
-    default=15.0,
+    default=30.0,
 )
 CHUNK_DOWNLOAD_READ_TIMEOUT = get_float_from_env(
     variable_name="CHUNK_DOWNLOAD_READ_TIMEOUT",
-    default=30.0,
+    default=60.0,
 )
 CHUNK_DOWNLOAD_MAX_ATTEMPTS = get_integer_from_env(
     variable_name="CHUNK_DOWNLOAD_MAX_ATTEMPTS",
-    default=10,
+    default=60,
 )
 FILE_LOCK_ACQUIRE_TIMEOUT = get_integer_from_env(
     variable_name="INFERENCE_MODELS_FILE_LOCK_ACQUIRE_TIMEOUT", default=20
