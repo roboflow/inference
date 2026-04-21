@@ -216,7 +216,19 @@ class DirectBackend(Backend):
     # Lifecycle
     # ------------------------------------------------------------------
 
+    def drain_and_unload(self, timeout_s: float = 30.0) -> None:
+        """Stop accepting new work, drain batch collector, then unload."""
+        self._state_value = "draining"
+        logger.info("DirectBackend(%s): draining (timeout=%.1fs)", self._model_id, timeout_s)
+
+        if self._batch_collector is not None:
+            self._batch_collector.stop(drain=True)
+            self._batch_collector = None
+
+        self.unload()
+
     def unload(self) -> None:
+        self._state_value = "unhealthy"
         if self._batch_collector is not None:
             self._batch_collector.stop(drain=False)
             self._batch_collector = None

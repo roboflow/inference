@@ -221,16 +221,26 @@ class ModelManager:
                 model_id, exc_info=True,
             )
 
-    def unload(self, model_id: str) -> None:
-        """Fully unload a model, releasing all GPU and CPU resources."""
+    def unload(self, model_id: str, *, drain: bool = False, drain_timeout_s: float = 30.0) -> None:
+        """Unload a model, releasing all GPU and CPU resources.
+
+        Args:
+            drain: If True, wait for in-flight requests to complete before
+                killing the backend. If False (default), cancel immediately.
+            drain_timeout_s: Max seconds to wait when draining.
+        """
         with self._lifecycle_lock:
             backend = self._backends.pop(model_id, None)
             if backend is None:
                 raise KeyError(f"Model '{model_id}' is not loaded")
             self._pinned_bytes.pop(model_id, None)
 
-        logger.info("Unloading model '%s'", model_id)
-        backend.unload()
+        if drain:
+            logger.info("Draining and unloading model '%s' (timeout=%.1fs)", model_id, drain_timeout_s)
+            backend.drain_and_unload(timeout_s=drain_timeout_s)
+        else:
+            logger.info("Unloading model '%s'", model_id)
+            backend.unload()
 
     def sleep(self, model_id: str) -> None:
         """Offload model weights to CPU pinned memory, freeing VRAM.

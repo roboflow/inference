@@ -81,6 +81,19 @@ class Backend(ABC):
         """
         ...
 
+    def drain_and_unload(self, timeout_s: float = 30.0) -> None:
+        """Stop accepting new work, wait for in-flight to finish, then unload.
+
+        1. Set state to 'draining' — new submit/signal calls are rejected.
+        2. Wait up to ``timeout_s`` for pending work to complete.
+        3. If timeout expires, force-cancel remaining work.
+        4. Call ``unload()`` for final cleanup.
+
+        Default implementation just calls ``unload()`` immediately.
+        Backends override to implement graceful drain.
+        """
+        self.unload()
+
     @abstractmethod
     def sleep(self) -> Optional[int]:
         """Offload model weights to CPU pinned memory, freeing VRAM.

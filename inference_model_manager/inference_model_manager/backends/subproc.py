@@ -687,6 +687,30 @@ class SubprocessBackend(Backend):
     # Lifecycle
     # ------------------------------------------------------------------
 
+    def drain_and_unload(self, timeout_s: float = 30.0) -> None:
+        """Stop accepting new work, wait for in-flight to finish, then unload."""
+        self._state_value = "draining"
+        logger.info("SubprocessBackend(%s): draining (timeout=%.1fs)", self._model_id, timeout_s)
+
+        deadline = time.monotonic() + timeout_s
+        while time.monotonic() < deadline:
+            with self._slot_lock:
+                if not self._slot_futures:
+                    break
+                n = len(self._slot_futures)
+            logger.debug("SubprocessBackend(%s): %d slots still in-flight", self._model_id, n)
+            time.sleep(0.1)
+        else:
+            with self._slot_lock:
+                n = len(self._slot_futures)
+            if n > 0:
+                logger.warning(
+                    "SubprocessBackend(%s): drain timeout — %d slots still in-flight, force-unloading",
+                    self._model_id, n,
+                )
+
+        self.unload()
+
     def unload(self) -> None:
         self._state_value = "loading"   # block new submits immediately
 
@@ -701,10 +725,10 @@ class SubprocessBackend(Backend):
         if self._worker.is_alive():
             self._worker.kill()
 
-        # Cancel pending futures (standalone mode)
+        # Cancel pending futures
         with self._slot_lock:
             for slot_id, (_, future) in self._slot_futures.items():
-                if not future.done():
+                if future is not None and not future.done():
                     future.set_exception(RuntimeError("backend unloaded"))
             self._slot_futures.clear()
 
