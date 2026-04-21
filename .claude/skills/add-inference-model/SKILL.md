@@ -182,7 +182,7 @@ Open a PR against `roboflow/model-registry-sdk`. Do not run against production y
 
 ### 8. Inference-models adapter (surface 4, optional)
 
-Skip unless the user wants plain `/infer` endpoint support. Add a subclass of `Model` to `inference/core/models/inference_models_adapters.py` matching your task (there are per-task parents: object detection, instance segmentation, classification, keypoints, semantic segmentation, etc. — read the existing adapters in that file). The adapter's `__init__` calls `AutoModel.from_pretrained(model_id, api_key=api_key)` and stores the result; predict / infer methods delegate.
+Skip unless the user wants plain `/infer` endpoint support. Add a subclass of `Model` to `inference/core/models/inference_models_adapters.py` matching your task (there are per-task parents: object detection, instance segmentation, classification, keypoints, semantic segmentation, etc. — read the existing adapters in that file). In the adapter `__init__`, follow the existing adapter constructors in that file: they call `AutoModel.from_pretrained(model_id_or_path=..., ...)` and pass through the additional flags they need (for example `allow_untrusted_packages`, `allow_direct_local_storage_loading`, backend selection, etc.), then store the result; predict / infer methods delegate.
 
 Register the adapter by model architecture in `inference/models/utils.py` so `/infer?model_id=<arch>/<variant>` resolves to it. Follow the pattern other entries in that file use.
 
