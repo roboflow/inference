@@ -98,14 +98,14 @@ Use `RegistryEntry` (instead of `LazyClass` directly) if the model has optional 
 
 Create `inference_models/tests/unit_tests/models/test_<family>.py`. Mock the backend library (transformers / onnxruntime / torch) so the test runs without weights. Copy the structure from a nearby test that targets the same backend.
 
-**Run from `inference_models/` cwd** — the package has its own `pytest.ini` and a path-sensitive `conftest.py`:
+**Run from `inference_models/` cwd** so pytest uses `inference_models/pytest.ini` (or pass `-c inference_models/pytest.ini` from the repo root):
 
 ```bash
 cd inference_models
 python -m pytest tests/unit_tests/models/test_<family>.py -W ignore
 ```
 
-Running from the repo root silently mis-collects.
+Running from the repo root without `-c inference_models/pytest.ini` silently mis-collects.
 
 ### 4. Integration test + fixture
 
