@@ -3,60 +3,110 @@
 All tests use use_gpu=False to ensure they work on CPU-only CI machines.
 The SHM transport path is exercised regardless of GPU availability.
 
-Backend startup is expensive (~10s: spawn process, import torch, load model
-twice). Tests that don't call unload() share a single backend instance via
-class-scoped fixtures. Only lifecycle tests create their own instance.
+Two test groups:
+  1. Raw SubprocessBackend tests: create pool externally, use submit_slot()
+  2. Through ModelManager: tests the real production flow
+
+Backend startup is expensive (~10s: spawn process, import torch, load model).
+Tests that don't call unload() share a single instance via module fixtures.
 """
 
 from __future__ import annotations
+
+import uuid
+from concurrent.futures import Future
 
 import numpy as np
 import pytest
 import torch
 
-from inference_models.backends.subproc import SubprocessBackend
+from inference_models.backends.subproc import SubprocessBackend, _to_bytes
+from inference_models.backends.utils.shm_pool import SHMPool
+from inference_models.model_manager import ModelManager
+
+_N_SLOTS = 8
+_INPUT_MB = 20.0
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _submit_via_pool(pool: SHMPool, backend: SubprocessBackend, raw_input) -> Future:
+    """Manually alloc slot, write input, signal worker — raw backend test path."""
+    input_bytes = _to_bytes(raw_input)
+    req_id = uuid.uuid4().int & 0xFFFF_FFFF_FFFF_FFFF
+    slot_id = pool.alloc_slot()
+    pool.mark_allocated(slot_id, req_id)
+    pool.data_memoryview(slot_id)[:len(input_bytes)] = input_bytes
+    pool.mark_written(slot_id, len(input_bytes))
+
+    future: Future = Future()
+
+    def _on_done(f):
+        try:
+            pool.free_slot(slot_id)
+        except Exception:
+            pass
+
+    future.add_done_callback(_on_done)
+    backend.submit_slot(slot_id, req_id, future)
+    return future
+
+
+# ---------------------------------------------------------------------------
+# Fixtures — raw backend (external pool)
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(scope="module")
+def shared_pool():
+    pool = SHMPool.create(_N_SLOTS, _INPUT_MB)
+    yield pool
+    pool.close()
 
 
 @pytest.fixture(scope="module")
-def subproc_backend(yolov8n_model_path: str):
+def subproc_backend(yolov8n_model_path: str, shared_pool: SHMPool):
     """Shared SubprocessBackend for non-destructive tests."""
     backend = SubprocessBackend(
         yolov8n_model_path, api_key="",
+        shm_pool_name=shared_pool.name, n_slots=_N_SLOTS, input_mb=_INPUT_MB,
         use_gpu=False, use_cuda_ipc=False,
     )
     yield backend
     backend.unload()
 
 
+# ---------------------------------------------------------------------------
+# Raw SubprocessBackend tests (manual pool + submit_slot)
+# ---------------------------------------------------------------------------
+
 @pytest.mark.slow
 @pytest.mark.torch_models
 class TestSubprocBackendPipeline:
-    """Full pipeline: pre_process → submit → post_process via worker process."""
+    """Full pipeline via worker process, raw backend path."""
 
-    def test_infer_sync(
-        self, subproc_backend: SubprocessBackend, dog_image_numpy: np.ndarray
+    def test_infer_via_submit_slot(
+        self, subproc_backend: SubprocessBackend, shared_pool: SHMPool,
+        dog_image_numpy: np.ndarray,
     ) -> None:
-        # when
-        result = subproc_backend.infer_sync(dog_image_numpy)
-
-        # then
+        future = _submit_via_pool(shared_pool, subproc_backend, dog_image_numpy)
+        result = future.result(timeout=30)
         assert result is not None
-        assert len(result) > 0
-        assert hasattr(result[0], "xyxy")
-        assert hasattr(result[0], "confidence")
-        assert result[0].xyxy.shape[1] == 4
+        assert hasattr(result, "xyxy")
+        assert hasattr(result, "confidence")
+        assert result.xyxy.shape[1] == 4
 
     def test_multiple_sequential_inferences(
-        self, subproc_backend: SubprocessBackend, dog_image_numpy: np.ndarray
+        self, subproc_backend: SubprocessBackend, shared_pool: SHMPool,
+        dog_image_numpy: np.ndarray,
     ) -> None:
-        # when
-        r1 = subproc_backend.infer_sync(dog_image_numpy)
-        r2 = subproc_backend.infer_sync(dog_image_numpy)
-
-        # then — same input, same result
-        assert len(r1) == len(r2)
+        f1 = _submit_via_pool(shared_pool, subproc_backend, dog_image_numpy)
+        r1 = f1.result(timeout=30)
+        f2 = _submit_via_pool(shared_pool, subproc_backend, dog_image_numpy)
+        r2 = f2.result(timeout=30)
         assert torch.allclose(
-            r1[0].confidence.cpu(), r2[0].confidence.cpu(), atol=0.01,
+            r1.confidence.cpu(), r2.confidence.cpu(), atol=0.01,
         )
 
 
@@ -71,15 +121,11 @@ class TestSubprocBackendObservability:
         assert subproc_backend.stats()["worker_alive"] is True
 
     def test_stats_populated_after_inference(
-        self, subproc_backend: SubprocessBackend, dog_image_numpy: np.ndarray
+        self, subproc_backend: SubprocessBackend, shared_pool: SHMPool,
+        dog_image_numpy: np.ndarray,
     ) -> None:
-        # given — run inference to populate stats
-        subproc_backend.infer_sync(dog_image_numpy)
-
-        # when
+        _submit_via_pool(shared_pool, subproc_backend, dog_image_numpy).result(timeout=30)
         s = subproc_backend.stats()
-
-        # then
         assert s["backend_type"] == "subprocess"
         assert s["transport"] == "shm_pool"
         assert s["state"] == "loaded"
@@ -97,66 +143,93 @@ class TestSubprocBackendObservability:
 @pytest.mark.slow
 @pytest.mark.torch_models
 class TestSubprocBackendLifecycle:
-    """These tests create their own backend because they call unload()."""
+    """Own pool + backend per test because they call unload()."""
 
     def test_worker_terminates_on_unload(self, yolov8n_model_path: str) -> None:
-        # given
+        pool = SHMPool.create(_N_SLOTS, _INPUT_MB)
         backend = SubprocessBackend(
             yolov8n_model_path, api_key="",
+            shm_pool_name=pool.name, n_slots=_N_SLOTS, input_mb=_INPUT_MB,
             use_gpu=False, use_cuda_ipc=False,
         )
         assert backend._worker.is_alive()
-
-        # when
         backend.unload()
-
-        # then
         assert not backend._worker.is_alive()
         assert backend.state == "unhealthy"
         assert backend.is_accepting is False
+        pool.close()
 
     def test_submit_after_unload_raises(
         self, yolov8n_model_path: str, dog_image_numpy: np.ndarray
     ) -> None:
-        # given
+        pool = SHMPool.create(_N_SLOTS, _INPUT_MB)
         backend = SubprocessBackend(
             yolov8n_model_path, api_key="",
+            shm_pool_name=pool.name, n_slots=_N_SLOTS, input_mb=_INPUT_MB,
             use_gpu=False,
         )
         backend.unload()
-
-        # when / then
-        with pytest.raises(RuntimeError, match="not accepting"):
+        with pytest.raises(RuntimeError, match="not available"):
             backend.submit(dog_image_numpy)
+        pool.close()
+
+
+# ---------------------------------------------------------------------------
+# Through ModelManager (production flow)
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(scope="module")
+def subproc_manager(yolov8n_model_path: str):
+    mm = ModelManager(n_slots=_N_SLOTS, input_mb=_INPUT_MB)
+    mm.load(
+        "test-model", api_key="",
+        model_id_or_path=yolov8n_model_path,
+        backend="subprocess", use_gpu=False,
+    )
+    yield mm
+    mm.shutdown()
 
 
 @pytest.mark.slow
 @pytest.mark.torch_models
-class TestSubprocBackendBatching:
-    """Batching needs its own backend (different config)."""
+class TestSubprocViaModelManager:
+
+    def test_infer_sync(
+        self, subproc_manager: ModelManager, dog_image_numpy: np.ndarray
+    ) -> None:
+        result = subproc_manager.infer_sync("test-model", dog_image_numpy)
+        assert result is not None
+        assert hasattr(result, "xyxy")
+
+    def test_submit_returns_future(
+        self, subproc_manager: ModelManager, dog_image_numpy: np.ndarray
+    ) -> None:
+        f = subproc_manager.submit("test-model", dog_image_numpy)
+        result = f.result(timeout=30)
+        assert result is not None
+        assert hasattr(result, "xyxy")
+
+
+@pytest.mark.slow
+@pytest.mark.torch_models
+class TestSubprocBatchingViaModelManager:
 
     def test_batched_submit(
         self, yolov8n_model_path: str, dog_image_numpy: np.ndarray
     ) -> None:
-        # given
-        backend = SubprocessBackend(
-            yolov8n_model_path,
-            api_key="",
-            use_gpu=False,
-            batch_max_size=4,
-            batch_max_delay_ms=100,
+        mm = ModelManager(n_slots=_N_SLOTS, input_mb=_INPUT_MB)
+        mm.load(
+            "m", api_key="",
+            model_id_or_path=yolov8n_model_path,
+            backend="subprocess", use_gpu=False,
+            batch_max_size=4, batch_max_delay_ms=100,
         )
-
-        # when
-        f1 = backend.submit(dog_image_numpy)
-        f2 = backend.submit(dog_image_numpy)
+        f1 = mm.submit("m", dog_image_numpy)
+        f2 = mm.submit("m", dog_image_numpy)
         r1 = f1.result(timeout=30)
         r2 = f2.result(timeout=30)
-
-        # then
         assert r1 is not None
         assert r2 is not None
-        assert hasattr(r1[0], "xyxy")
-        assert hasattr(r2[0], "xyxy")
-
-        backend.unload()
+        assert hasattr(r1, "xyxy")
+        assert hasattr(r2, "xyxy")
+        mm.shutdown()
