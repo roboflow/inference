@@ -98,6 +98,71 @@ def _stop_mps() -> None:
         logger.warning("Failed to stop MPS daemon cleanly", exc_info=True)
 
 
+def _preload_models(mmp_addr: str, preload_spec: str) -> None:
+    """Send T_LOAD for each model in comma-separated spec, wait for T_OK.
+
+    Format: "model_id:api_key,model_id:api_key,..." or just "model_id,model_id,..."
+    (api_key defaults to ROBOFLOW_API_KEY env var if omitted per-model).
+    """
+    import struct
+    import uuid
+    import zmq
+
+    T_LOAD = b"\x20"
+    T_OK   = b"\x40"
+    T_ERROR = b"\xFF"
+
+    default_key = os.environ.get("ROBOFLOW_API_KEY", "")
+    models = []
+    for entry in preload_spec.split(","):
+        entry = entry.strip()
+        if not entry:
+            continue
+        if ":" in entry:
+            mid, key = entry.split(":", 1)
+        else:
+            mid, key = entry, default_key
+        models.append((mid.strip(), key.strip()))
+
+    if not models:
+        return
+
+    ctx = zmq.Context()
+    sock = ctx.socket(zmq.DEALER)
+    sock.setsockopt(zmq.LINGER, 0)
+    sock.connect(mmp_addr)
+
+    try:
+        for model_id, api_key in models:
+            req_id = uuid.uuid4().int & 0xFFFF_FFFF_FFFF_FFFF
+            mid_bytes = model_id.encode()
+            key_bytes = api_key.encode()
+            payload = (
+                struct.pack(">QH", req_id, len(mid_bytes)) + mid_bytes
+                + struct.pack(">H", len(key_bytes)) + key_bytes
+            )
+            sock.send_multipart([T_LOAD, payload])
+            logger.info("Preload: sent T_LOAD for '%s'", model_id)
+
+            # Wait for T_OK or T_ERROR (up to 120s per model)
+            if sock.poll(timeout=120_000):
+                frames = sock.recv_multipart()
+                msg_type = frames[0]
+                if msg_type == T_OK:
+                    logger.info("Preload: '%s' load accepted", model_id)
+                elif msg_type == T_ERROR:
+                    logger.error("Preload: '%s' load failed", model_id)
+                else:
+                    logger.warning("Preload: '%s' unexpected reply: %r", model_id, msg_type)
+            else:
+                logger.error("Preload: '%s' no response from MMP within 120s", model_id)
+    finally:
+        sock.close()
+        ctx.term()
+
+    logger.info("Preload: %d model(s) requested", len(models))
+
+
 def main() -> None:
     from inference_model_manager.launcher import launch_orchestrated
 
@@ -143,6 +208,11 @@ def main() -> None:
     os.environ["INFERENCE_SHM_NAME"]        = handle.shm_name
     os.environ["INFERENCE_SHM_DATA_SIZE"]   = str(int(input_mb * 1024 * 1024))
 
+    # ── Preload models ────────────────────────────────────────────────────
+    preload = os.environ.get("INFERENCE_PRELOAD_MODELS", "").strip()
+    if preload:
+        _preload_models(handle.mmp_addr, preload)
+
     # ── Start uvicorn ──────────────────────────────────────────────────────
     scheme = "https" if ssl_cert else "http"
     logger.info(
@@ -163,7 +233,7 @@ def main() -> None:
         uvicorn_kwargs["ssl_certfile"] = ssl_cert
         uvicorn_kwargs["ssl_keyfile"]  = ssl_key
 
-    uvicorn.run("inference_models.app:app", **uvicorn_kwargs)
+    uvicorn.run("inference_model_manager.app:app", **uvicorn_kwargs)
 
 
 if __name__ == "__main__":
