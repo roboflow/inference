@@ -374,14 +374,21 @@ class RoboflowVisionEventsBlockV1(WorkflowBlock):
         api_key: Optional[str],
         background_tasks: Optional[BackgroundTasks],
         thread_pool_executor: Optional[ThreadPoolExecutor],
+        workflow_id: Optional[str] = None,
     ):
         self._api_key = api_key
         self._background_tasks = background_tasks
         self._thread_pool_executor = thread_pool_executor
+        self._workflow_id = workflow_id
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
-        return ["api_key", "background_tasks", "thread_pool_executor"]
+        return [
+            "api_key",
+            "background_tasks",
+            "thread_pool_executor",
+            "workflow_id",
+        ]
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -449,6 +456,7 @@ class RoboflowVisionEventsBlockV1(WorkflowBlock):
             solution=solution,
             event_data=event_data,
             custom_metadata=custom_metadata,
+            workflow_id=self._workflow_id,
         )
 
         if fire_and_forget and self._background_tasks:
@@ -522,6 +530,7 @@ def _execute_vision_event(
     solution: str,
     event_data: Dict[str, Any],
     custom_metadata: Dict[str, Any],
+    workflow_id: Optional[str] = None,
 ) -> Tuple[bool, str]:
     try:
         # Step 1: Convert predictions to vision events format
@@ -576,6 +585,7 @@ def _execute_vision_event(
             images=images_payload,
             event_data=event_data,
             custom_metadata=custom_metadata,
+            workflow_id=workflow_id,
         )
 
         return _send_event(api_base_url, api_key, payload)
@@ -762,6 +772,7 @@ def _build_event_payload(
     images: List[dict],
     event_data: Dict[str, Any],
     custom_metadata: Dict[str, Any],
+    workflow_id: Optional[str] = None,
 ) -> dict:
     """Build the full event payload for the Vision Events API."""
     event_id = str(uuid4())
@@ -775,6 +786,8 @@ def _build_event_payload(
         "images": images,
     }
 
+    if workflow_id:
+        payload["workflowId"] = workflow_id
     if event_data:
         payload["eventData"] = event_data
     if custom_metadata:
