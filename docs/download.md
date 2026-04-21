@@ -35,18 +35,24 @@
         document.body.removeChild(downloadLink);
     }
 
-    function showFallback(message) {
+    function showFallbackHTML(html) {
         const msgEl = document.getElementById('download-message');
-        if (msgEl && message) {
-            msgEl.textContent = message;
+        if (msgEl && html) {
+            msgEl.innerHTML = html;
         }
     }
+
+    const ALTERNATIVES_HTML =
+        'You can either download the app from the ' +
+        '<a href="https://github.com/roboflow/inference/releases/">releases page</a>, ' +
+        'or run the Inference Server via ' +
+        '<a href="https://inference.roboflow.com/install/#docker">Docker</a>.';
 
     async function startDownload() {
         const os = getOperatingSystem();
 
         if (os === 'other') {
-            window.location.href = '/install/';
+            showFallbackHTML(ALTERNATIVES_HTML);
             return;
         }
 
@@ -57,13 +63,7 @@
             const asset = pickAssetForOS(release.assets || [], os);
 
             if (!asset) {
-                showFallback(
-                    os === 'mac'
-                        ? "No macOS build is available for the latest release. Please see the install docs for alternatives."
-                        : "No installer found for your platform in the latest release. Please download manually from the releases page."
-                );
-                const manualLink = document.getElementById('manual-download-link');
-                if (manualLink) manualLink.href = 'https://github.com/roboflow/inference/releases/latest';
+                showFallbackHTML(ALTERNATIVES_HTML);
                 return;
             }
 
@@ -72,9 +72,7 @@
 
             triggerDownload(asset.browser_download_url);
         } catch (err) {
-            showFallback("We couldn't resolve the latest release automatically. Please download manually from the releases page.");
-            const manualLink = document.getElementById('manual-download-link');
-            if (manualLink) manualLink.href = 'https://github.com/roboflow/inference/releases/latest';
+            showFallbackHTML(ALTERNATIVES_HTML);
         }
     }
 
