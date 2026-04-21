@@ -2,11 +2,12 @@ import base64
 import io
 from io import BytesIO
 from time import perf_counter
-from typing import Any, List, Optional, Tuple, Union
+from typing import Any, Dict, Iterator, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
 from PIL import Image, ImageDraw, ImageFont
+from torchvision.transforms import functional
 
 from inference.core.entities.requests import (
     ClassificationInferenceRequest,
@@ -84,9 +85,6 @@ from inference_models.models.base.semantic_segmentation import (
 from inference_models.models.base.types import PreprocessingMetadata
 from inference_models.models.common.roboflow.post_processing import (
     crop_masks_to_boxes,
-    iter_aligned_instance_segmentation_results,
-    mask_to_coco_rle,
-    mask_to_largest_polygon,
     post_process_nms_fused_model_output,
     preprocess_segmentation_masks,
     run_nms_for_instance_segmentation,
@@ -116,6 +114,157 @@ DEFAULT_COLOR_PALETTE = [
     "#FF97CA",
     "#FF39C9",
 ]
+
+
+def _resize_and_binarize_mask_for_serialization(
+    mask: torch.Tensor,
+    target_height: int,
+    target_width: int,
+    output_height: int,
+    output_width: int,
+    binarization_threshold: float,
+    output_offset_x: int = 0,
+    output_offset_y: int = 0,
+) -> torch.Tensor:
+    if output_offset_x > 0 or output_offset_y > 0:
+        aligned_mask = torch.zeros(
+            (output_height, output_width),
+            dtype=torch.bool,
+            device=mask.device,
+        )
+    else:
+        aligned_mask = torch.empty(
+            (output_height, output_width),
+            dtype=torch.bool,
+            device=mask.device,
+        )
+    resized_mask = functional.resize(
+        mask[None, ...],
+        [target_height, target_width],
+        interpolation=functional.InterpolationMode.BILINEAR,
+    )[0]
+    aligned_mask[
+        output_offset_y : output_offset_y + target_height,
+        output_offset_x : output_offset_x + target_width,
+    ] = resized_mask.gt_(binarization_threshold)
+    return aligned_mask
+
+
+def _iter_aligned_instance_segmentation_results(
+    image_bboxes: torch.Tensor,
+    masks: torch.Tensor,
+    padding: Tuple[int, int, int, int],
+    scale_width: float,
+    scale_height: float,
+    original_size: Any,
+    size_after_pre_processing: Any,
+    inference_size: Any,
+    static_crop_offset: Any,
+    binarization_threshold: float = 0.0,
+) -> Iterator[Tuple[torch.Tensor, torch.Tensor]]:
+    if image_bboxes.shape[0] == 0:
+        return
+    pad_left, pad_top, pad_right, pad_bottom = padding
+    offsets = torch.tensor(
+        [pad_left, pad_top, pad_left, pad_top],
+        device=image_bboxes.device,
+    )
+    image_bboxes[:, :4].sub_(offsets)
+    scale = torch.as_tensor(
+        [scale_width, scale_height, scale_width, scale_height],
+        dtype=image_bboxes.dtype,
+        device=image_bboxes.device,
+    )
+    image_bboxes[:, :4].div_(scale)
+    n, mh, mw = masks.shape
+    mask_h_scale = mh / inference_size.height
+    mask_w_scale = mw / inference_size.width
+    mask_pad_top, mask_pad_bottom, mask_pad_left, mask_pad_right = (
+        round(mask_h_scale * pad_top),
+        round(mask_h_scale * pad_bottom),
+        round(mask_w_scale * pad_left),
+        round(mask_w_scale * pad_right),
+    )
+    if (
+        mask_pad_top < 0
+        or mask_pad_bottom < 0
+        or mask_pad_left < 0
+        or mask_pad_right < 0
+    ):
+        masks = torch.nn.functional.pad(
+            masks,
+            (
+                abs(min(mask_pad_left, 0)),
+                abs(min(mask_pad_right, 0)),
+                abs(min(mask_pad_top, 0)),
+                abs(min(mask_pad_bottom, 0)),
+            ),
+            "constant",
+            0,
+        )
+        padded_mask_offset_top = max(mask_pad_top, 0)
+        padded_mask_offset_bottom = max(mask_pad_bottom, 0)
+        padded_mask_offset_left = max(mask_pad_left, 0)
+        padded_mask_offset_right = max(mask_pad_right, 0)
+        masks = masks[
+            :,
+            padded_mask_offset_top : masks.shape[1] - padded_mask_offset_bottom,
+            padded_mask_offset_left : masks.shape[2] - padded_mask_offset_right,
+        ]
+    else:
+        masks = masks[
+            :, mask_pad_top : mh - mask_pad_bottom, mask_pad_left : mw - mask_pad_right
+        ]
+
+    if static_crop_offset.offset_x > 0 or static_crop_offset.offset_y > 0:
+        static_crop_offsets = torch.as_tensor(
+            [
+                static_crop_offset.offset_x,
+                static_crop_offset.offset_y,
+                static_crop_offset.offset_x,
+                static_crop_offset.offset_y,
+            ],
+            dtype=image_bboxes.dtype,
+            device=image_bboxes.device,
+        )
+        image_bboxes[:, :4].add_(static_crop_offsets)
+
+    for mask_id in range(n):
+        if static_crop_offset.offset_x > 0 or static_crop_offset.offset_y > 0:
+            aligned_mask = _resize_and_binarize_mask_for_serialization(
+                mask=masks[mask_id],
+                target_height=size_after_pre_processing.height,
+                target_width=size_after_pre_processing.width,
+                output_height=original_size.height,
+                output_width=original_size.width,
+                binarization_threshold=binarization_threshold,
+                output_offset_x=static_crop_offset.offset_x,
+                output_offset_y=static_crop_offset.offset_y,
+            )
+        else:
+            aligned_mask = _resize_and_binarize_mask_for_serialization(
+                mask=masks[mask_id],
+                target_height=size_after_pre_processing.height,
+                target_width=size_after_pre_processing.width,
+                output_height=size_after_pre_processing.height,
+                output_width=size_after_pre_processing.width,
+                binarization_threshold=binarization_threshold,
+            )
+        yield image_bboxes[mask_id], aligned_mask
+
+
+def _mask_to_largest_polygon(mask: torch.Tensor) -> np.ndarray:
+    mask_np = mask.detach().cpu().numpy()
+    return masks2poly(mask_np[None, ...])[0]
+
+
+def _mask_to_coco_rle(mask: torch.Tensor) -> Dict[str, object]:
+    from pycocotools import mask as mask_utils
+
+    mask_np = mask.detach().cpu().numpy().astype(np.uint8)
+    rle = mask_utils.encode(np.asfortranarray(mask_np))
+    rle["counts"] = rle["counts"].decode("utf-8")
+    return rle
 
 
 class InferenceModelsObjectDetectionAdapter(Model):
@@ -653,7 +802,7 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
             image_meta.pad_right,
             image_meta.pad_bottom,
         )
-        for aligned_box, aligned_mask in iter_aligned_instance_segmentation_results(
+        for aligned_box, aligned_mask in _iter_aligned_instance_segmentation_results(
             image_bboxes=image_bboxes,
             masks=masks,
             padding=padding,
@@ -702,10 +851,10 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
             return InstanceSegmentationRLEPrediction(
                 **{
                     **prediction_kwargs,
-                    "rle": mask_to_coco_rle(mask=aligned_mask),
+                    "rle": _mask_to_coco_rle(mask=aligned_mask),
                 }
             )
-        polygon = mask_to_largest_polygon(mask=aligned_mask)
+        polygon = _mask_to_largest_polygon(mask=aligned_mask)
         return InstanceSegmentationPrediction(
             **{
                 **prediction_kwargs,
