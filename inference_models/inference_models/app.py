@@ -28,8 +28,7 @@ Environment variables::
     INFERENCE_MMP_ADDR          ZMQ address of MMP (default: platform auto via transport.py)
     INFERENCE_ZMQ_TRANSPORT     "ipc" or "tcp" (default: platform default)
     INFERENCE_SHM_NAME          Shared memory block name (default: inference_pool)
-    INFERENCE_SHM_INPUT_SIZE    Bytes per slot input area  (default: 25 MB)
-    INFERENCE_SHM_RESULT_SIZE   Bytes per slot result area (default: 4 MB)
+    INFERENCE_SHM_DATA_SIZE     Bytes per slot data area   (default: 25 MB)
     INFERENCE_LOAD_WAIT_S       Max seconds to wait for model load (default: 10)
     INFERENCE_INFER_TIMEOUT_S   Max seconds to wait for inference result (default: 30)
     INFERENCE_ALLOC_TIMEOUT_S   Max seconds to wait for slot alloc (default: 2)
@@ -64,16 +63,15 @@ from inference_models.backends.utils.transport import zmq_addr
 
 _MMP_ADDR        = os.environ.get("INFERENCE_MMP_ADDR") or zmq_addr("mmprocess")
 _SHM_NAME        = os.environ.get("INFERENCE_SHM_NAME", "inference_pool")
-_SHM_INPUT_SIZE  = int(os.environ.get("INFERENCE_SHM_INPUT_SIZE",  str(25 * 1024 * 1024)))
-_SHM_RESULT_SIZE = int(os.environ.get("INFERENCE_SHM_RESULT_SIZE", str(4  * 1024 * 1024)))
+_SHM_DATA_SIZE   = int(os.environ.get("INFERENCE_SHM_DATA_SIZE",  str(25 * 1024 * 1024)))
 _LOAD_WAIT_S     = float(os.environ.get("INFERENCE_LOAD_WAIT_S",     "10.0"))
 _INFER_TIMEOUT_S = float(os.environ.get("INFERENCE_INFER_TIMEOUT_S", "30.0"))
 _ALLOC_TIMEOUT_S = float(os.environ.get("INFERENCE_ALLOC_TIMEOUT_S",  "2.0"))
 
 # SHM slot layout (must match shm_pool.py):
-#   [HEADER 64B | INPUT _SHM_INPUT_SIZE | RESULT _SHM_RESULT_SIZE]
+#   [HEADER 64B | DATA _SHM_DATA_SIZE]
 _HEADER_SIZE = 64
-_SLOT_TOTAL  = _HEADER_SIZE + _SHM_INPUT_SIZE + _SHM_RESULT_SIZE
+_SLOT_TOTAL  = _HEADER_SIZE + _SHM_DATA_SIZE
 
 # ---------------------------------------------------------------------------
 # Image format detection (magic bytes via ``filetype`` lib + numpy .npy)
@@ -345,7 +343,7 @@ def _write_input(slot_id: int, chunk: bytes | memoryview, offset: int) -> None:
 
 
 def _read_result(slot_id: int, result_sz: int) -> bytes:
-    base = slot_id * _SLOT_TOTAL + _HEADER_SIZE + _SHM_INPUT_SIZE
+    base = slot_id * _SLOT_TOTAL + _HEADER_SIZE
     return bytes(_shm.buf[base: base + result_sz])
 
 
@@ -415,7 +413,7 @@ async def infer(request: Request) -> Response:
     try:
         pos = 0
         async for chunk in request.stream():
-            if pos + len(chunk) > _SHM_INPUT_SIZE:
+            if pos + len(chunk) > _SHM_DATA_SIZE:
                 return Response(status_code=413, content=b"payload exceeds slot capacity")
             if pos == 0 and not _looks_like_image(chunk):
                 return Response(status_code=415, content=b"body is not a recognized image format")

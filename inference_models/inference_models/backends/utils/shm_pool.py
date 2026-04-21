@@ -5,15 +5,20 @@ FastAPI workers and backend workers attach by name and access slot memory
 directly — zero copy on the data path.
 
 Slot layout (per slot):
-    [HEADER 64B | INPUT input_slot_bytes | RESULT result_slot_bytes]
+    [HEADER 64B | DATA data_slot_bytes]
+
+DATA area is shared: input written first (image bytes), then overwritten with
+result (pickled predictions) after inference. Input is dead after decode — the
+worker holds GPU tensors at that point. This halves SHM usage vs separate
+INPUT + RESULT areas.
 
 Header layout (little-endian, 64 bytes total):
     offset  size  field
        0       1  status      (SlotStatus)
        1       1  error_code
        2       2  _pad
-       4       4  input_size  (bytes written to input area)
-       8       4  result_size (bytes written to result area)
+       4       4  input_size  (bytes written to data area as input)
+       8       4  result_size (bytes written to data area as result)
       12       4  _pad
       16       8  request_id  (UUID int — never use slot_id as key, slots recycled)
       24       8  timestamp_ns (monotonic_ns at alloc — stale detection)
@@ -82,22 +87,21 @@ class SHMPool:
 
     Usage — creator (ModelManager / MMP)::
 
-        pool = SHMPool.create(n_slots=256, input_mb=20, result_mb=4)
+        pool = SHMPool.create(n_slots=256, input_mb=20)
         # share pool.name with workers via env / config
         slot_id = pool.alloc_slot()
         pool.mark_allocated(slot_id, request_id=req_id)
-        pool.input_memoryview(slot_id)[:n] = image_bytes
+        pool.data_memoryview(slot_id)[:n] = image_bytes
         pool.mark_written(slot_id, n)
-        # ... inference done ...
-        result = bytes(pool.result_memoryview(slot_id)[:result_sz])
+        # ... inference done (result overwrites same data area) ...
+        result = bytes(pool.data_memoryview(slot_id)[:result_sz])
         pool.free_slot(slot_id)
 
     Usage — worker / FastAPI (attached, read-only allocation)::
 
         pool = SHMPool.attach("inference_pool_abc123", n_slots=256,
-                              input_mb=20, result_mb=4)
-        view = pool.input_memoryview(slot_id)   # zero-copy
-        result_view = pool.result_memoryview(slot_id)
+                              input_mb=20)
+        view = pool.data_memoryview(slot_id)   # zero-copy
         pool.close()  # does NOT unlink
     """
 
@@ -105,17 +109,15 @@ class SHMPool:
         self,
         shm: SharedMemory,
         n_slots: int,
-        input_slot_bytes: int,
-        result_slot_bytes: int,
+        data_slot_bytes: int,
         *,
         owner: bool,
     ) -> None:
-        self._shm               = shm
-        self._n_slots           = n_slots
-        self._input_slot_bytes  = input_slot_bytes
-        self._result_slot_bytes = result_slot_bytes
-        self._owner             = owner
-        self._slot_bytes        = _HEADER_SIZE + input_slot_bytes + result_slot_bytes
+        self._shm              = shm
+        self._n_slots          = n_slots
+        self._data_slot_bytes  = data_slot_bytes
+        self._owner            = owner
+        self._slot_bytes       = _HEADER_SIZE + data_slot_bytes
 
         # Allocation state — only owner ever calls alloc/free
         self._free: deque[int]      = deque(range(n_slots)) if owner else deque()
@@ -130,25 +132,20 @@ class SHMPool:
         cls,
         n_slots: int,
         input_mb: float,
-        result_mb: float,
         *,
         name: Optional[str] = None,
     ) -> "SHMPool":
         """Create a new SHM pool. Caller is the owner and must call close()."""
-        input_bytes  = int(input_mb  * 1024 * 1024)
-        result_bytes = int(result_mb * 1024 * 1024)
-        total_bytes  = n_slots * (_HEADER_SIZE + input_bytes + result_bytes)
+        data_bytes  = int(input_mb * 1024 * 1024)
+        total_bytes = n_slots * (_HEADER_SIZE + data_bytes)
 
         shm = SharedMemory(name=name, create=True, size=total_bytes)
         # Zero only the headers (64B × n_slots) so status=FREE everywhere.
-        # Data areas (input/result) are written by callers before use.
-        # The kernel already zeroes fresh shm pages, but explicit header
-        # zeroing is cheap (n_slots × 64B) and guards against any OS reuse.
-        slot_bytes = _HEADER_SIZE + input_bytes + result_bytes
+        slot_bytes = _HEADER_SIZE + data_bytes
         for i in range(n_slots):
             shm.buf[i * slot_bytes: i * slot_bytes + _HEADER_SIZE] = b"\x00" * _HEADER_SIZE
 
-        return cls(shm, n_slots, input_bytes, result_bytes, owner=True)
+        return cls(shm, n_slots, data_bytes, owner=True)
 
     @classmethod
     def attach(
@@ -156,13 +153,11 @@ class SHMPool:
         name: str,
         n_slots: int,
         input_mb: float,
-        result_mb: float,
     ) -> "SHMPool":
         """Attach to an existing pool. Does NOT unlink on close()."""
-        input_bytes  = int(input_mb  * 1024 * 1024)
-        result_bytes = int(result_mb * 1024 * 1024)
+        data_bytes = int(input_mb * 1024 * 1024)
         shm = SharedMemory(name=name, create=False)
-        return cls(shm, n_slots, input_bytes, result_bytes, owner=False)
+        return cls(shm, n_slots, data_bytes, owner=False)
 
     # ------------------------------------------------------------------
     # Properties
@@ -179,16 +174,13 @@ class SHMPool:
 
     @property
     def slot_bytes(self) -> int:
-        """Total bytes per slot (header + input area + result area)."""
+        """Total bytes per slot (header + data area)."""
         return self._slot_bytes
 
     @property
-    def input_slot_bytes(self) -> int:
-        return self._input_slot_bytes
-
-    @property
-    def result_slot_bytes(self) -> int:
-        return self._result_slot_bytes
+    def data_slot_bytes(self) -> int:
+        """Bytes available per slot for input or result data."""
+        return self._data_slot_bytes
 
     @property
     def free_count(self) -> int:
@@ -292,17 +284,14 @@ class SHMPool:
     # Data area access (zero-copy)
     # ------------------------------------------------------------------
 
-    def input_memoryview(self, slot_id: int) -> memoryview:
-        """Zero-copy view of the input data area for this slot."""
-        start = self._slot_offset(slot_id) + _HEADER_SIZE
-        return self._shm.buf[start: start + self._input_slot_bytes]
+    def data_memoryview(self, slot_id: int) -> memoryview:
+        """Zero-copy view of the data area for this slot.
 
-    def result_memoryview(self, slot_id: int) -> memoryview:
-        """Zero-copy view of the result data area for this slot."""
-        start = (self._slot_offset(slot_id)
-                 + _HEADER_SIZE
-                 + self._input_slot_bytes)
-        return self._shm.buf[start: start + self._result_slot_bytes]
+        Used for both input (write image bytes) and result (write pickled
+        predictions). Input is overwritten by result after inference.
+        """
+        start = self._slot_offset(slot_id) + _HEADER_SIZE
+        return self._shm.buf[start: start + self._data_slot_bytes]
 
     # ------------------------------------------------------------------
     # Stale slot detection

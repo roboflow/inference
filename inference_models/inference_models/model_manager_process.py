@@ -19,12 +19,12 @@ Lifecycle API (admin ↔ MMP, same ROUTER):
 Run standalone::
 
     python -m inference_models.model_manager_process \\
-        --n-slots 256 --input-mb 20 --result-mb 4
+        --n-slots 256 --input-mb 20
 
 or embed (Phase 4 with real loading)::
 
     from inference_models.model_manager import ModelManager
-    mmp = ModelManagerProcess(n_slots=256, input_mb=20, result_mb=4,
+    mmp = ModelManagerProcess(n_slots=256, input_mb=20,
                               manager=ModelManager())
     ready = threading.Event()
     t = threading.Thread(target=lambda: asyncio.run(mmp.run(ready_event=ready)))
@@ -237,7 +237,6 @@ class ModelManagerProcess:
         self,
         n_slots:                int   = 256,
         input_mb:               float = 20.0,
-        result_mb:              float = 4.0,
         stale_reap_interval_s:  float = 10.0,
         stale_slot_max_age_s:   float = 30.0,
         evict_threshold:        float = 0.9,
@@ -262,7 +261,6 @@ class ModelManagerProcess:
         """
         self._n_slots               = n_slots
         self._input_mb              = input_mb
-        self._result_mb             = result_mb
         self._decoder               = decoder
         self._batch_max_size        = batch_max_size
         self._batch_max_wait_ms     = batch_max_wait_ms
@@ -345,10 +343,10 @@ class ModelManagerProcess:
         self._running = True
 
         # Create SHM pool
-        self._pool = SHMPool.create(self._n_slots, self._input_mb, self._result_mb)
+        self._pool = SHMPool.create(self._n_slots, self._input_mb)
         logger.info(
-            "MMP: SHM pool ready  name=%s  slots=%d  input=%.0fMB  result=%.0fMB",
-            self._pool.name, self._n_slots, self._input_mb, self._result_mb,
+            "MMP: SHM pool ready  name=%s  slots=%d  data=%.0fMB",
+            self._pool.name, self._n_slots, self._input_mb,
         )
 
         # Bind ROUTER
@@ -852,7 +850,6 @@ class ModelManagerProcess:
                         shm_pool_name=self._pool.name,
                         n_slots=self._n_slots,
                         input_mb=self._input_mb,
-                        result_mb=self._result_mb,
                         decoder=self._decoder,
                         batch_max_size=self._batch_max_size,
                         batch_max_delay_ms=self._batch_max_wait_ms,
@@ -1096,10 +1093,6 @@ def main() -> None:
         "--input-mb", type=float,
         default=float(os.environ.get("MMP_INPUT_MB", "20.0")),
     )
-    parser.add_argument(
-        "--result-mb", type=float,
-        default=float(os.environ.get("MMP_RESULT_MB", "4.0")),
-    )
     parser.add_argument("--addr", default=None,
                         help="ZMQ bind address (default: platform auto)")
     parser.add_argument("--evict-threshold", type=float, default=0.9)
@@ -1110,7 +1103,6 @@ def main() -> None:
     mmp = ModelManagerProcess(
         n_slots=args.n_slots,
         input_mb=args.input_mb,
-        result_mb=args.result_mb,
         evict_threshold=args.evict_threshold,
         manager=ModelManager(),
     )
