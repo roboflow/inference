@@ -1,6 +1,6 @@
 # File & Download Errors
 
-**Base Classes:** `RetryError`, `UntrustedFileError`, `FileHashSumMissmatch`
+**Base Classes:** `RetryError`, `RangeRequestNotSupportedError`, `UntrustedFileError`, `FileHashSumMissmatch`
 
 File and download errors occur when the system fails to download model files or verify their integrity. These errors happen during the file download phase and are typically caused by network issues, corrupted downloads, or security validation failures.
 
@@ -42,12 +42,6 @@ This error occurs when a network request fails due to connectivity issues or the
 
 - Server not responding
 
-**Scenario 4: Server doesn't support required features**
-
-- Server doesn't support range requests (HTTP 206)
-
-- Missing required HTTP headers
-
 ### What To Check
 
 1. **Verify network connectivity:**
@@ -72,8 +66,6 @@ This error occurs when a network request fails due to connectivity issues or the
      * "Connectivity error" → Network issue
     
      * "returned response code" → Server error
-    
-     * "does not support range requests" → Server limitation
 
 4. **Check Roboflow API status:**
 
@@ -120,6 +112,73 @@ model = AutoModel.from_pretrained("yolov8n-640")
 - If Roboflow API is down, wait for service restoration
 - Check [status.roboflow.com](https://status.roboflow.com) for updates
 
+
+---
+
+## RangeRequestNotSupportedError
+
+**The file host did not return HTTP 206 for a byte-range request used by parallel chunk downloads.**
+
+### Overview
+
+Large files are downloaded in parallel using HTTP `Range` requests. Each chunk request must receive **HTTP 206 Partial Content** with a body that matches the requested byte span. This error is raised when the response is successful (`raise_for_status` would pass) but the status code is **not** 206, so range semantics are not honored in a way the downloader can use.
+
+### When It Occurs
+
+**Scenario 1: Origin ignores or strips `Range`**
+
+- Server responds with **200** and the full representation instead of **206** for the ranged request
+
+- Reverse proxy or CDN rewrites the response and drops partial-content behavior
+
+**Scenario 2: Inconsistent range support**
+
+- `HEAD` or prior checks suggested range downloads were available, but the actual ranged `GET` for a chunk does not return 206
+
+- Different behavior on the same URL between edge nodes
+
+**Scenario 3: Unexpected success status**
+
+- Any **2xx** status other than **206** after sending `Range: bytes=…` for a threaded chunk (before streaming the body for that chunk)
+
+### What To Check
+
+1. **Inspect the HTTP status** the server returned instead of 206 (the exception exposes this as `status_code`).
+
+2. **Reproduce with curl** against the same file URL:
+
+   ```bash
+   # Replace OFFSET and LENGTH; use values from your failing chunk if known
+   curl -sI -H "Range: bytes=0-0" "https://example.com/path/to/large-file.bin" | head
+   ```
+
+   You should see `HTTP/1.1 206` (or `HTTP/2 206`) when range requests are supported for that resource.
+
+3. **Check CDN / gateway configuration:**
+
+     * Some caches always answer ranged requests with 200 and a full body
+
+     * Corporate proxies may normalize responses in ways that break 206
+
+4. **Confirm URL stability:**
+
+     * Redirects or signed URLs that change between `HEAD` and `GET` can change which host answers and whether ranges work
+
+### How To Fix
+
+**If you control the file host or CDN:**
+
+- Enable **byte-range requests** and **206 Partial Content** for static file responses.
+
+- Avoid configurations that force a full **200** response when a `Range` header is present.
+
+**If you use Roboflow-hosted assets and believe ranges should work:**
+
+- [Report the issue](https://github.com/roboflow/inference/issues) with the file URL (redact secrets), the status code you received, and a `curl -I` / ranged `curl` transcript if possible.
+
+**If the origin cannot support ranges:**
+
+- Parallel threaded download cannot be used for that URL with the current engine. Use a host that supports HTTP range requests for large artifacts, or a delivery path (e.g. different mirror or asset URL) that returns **206** for ranged `GET`s.
 
 ---
 
