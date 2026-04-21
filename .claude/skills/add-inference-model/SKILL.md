@@ -51,7 +51,7 @@ Only start scaffolding after you know which existing model yours most resembles.
 Before touching files, get concrete answers:
 
 1. **Architecture name** (registry key string) — lower-case, hyphens OK, no slashes. This is the string matched in `models_registry.py`.
-2. **Task type** — must match both the `TaskType` enum in `model_registry_utils.http.weights_service` **and** the task-type constant in `inference_models/.../models_registry.py`.
+2. **Task type** — choose one of the concrete task constants defined in `inference_models/inference_models/models/auto_loaders/models_registry.py` (for example `OBJECT_DETECTION_TASK`, etc.), and verify the exact service-side accepted string against the model-registry API/schema docs or the model-registry SDK.
 3. **Backend** — `HF` / `TORCH` / `ONNX` / `TRT` (or `TORCH_SCRIPT`, `MEDIAPIPE`, etc. — check `BackendType`). Determines which sibling you survey.
 4. **Upstream weight source** — HF repo id, internal `.pt`, local files. **If HF and gated, stop** — the user needs to accept terms and supply an `HF_TOKEN` before any download.
 5. **Variants** — one id like `clip`, or a family like `foo/{tiny,small,large}` with a default. Variants share one registry entry; variant resolution lives in the weights provider.
