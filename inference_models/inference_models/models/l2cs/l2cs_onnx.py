@@ -61,7 +61,6 @@ class L2CSNetOnnx:
         max_batch_size: int = DEFAULT_GAZE_MAX_BATCH_SIZE,
         **kwargs,
     ):
-        load_weights = kwargs.pop("load_weights", True)
         if onnx_execution_providers is None:
             onnx_execution_providers = get_selected_onnx_execution_providers()
         if not onnx_execution_providers:
@@ -82,14 +81,11 @@ class L2CSNetOnnx:
             model_package_dir=model_name_or_path,
             elements=["weights.onnx"],
         )
-        if load_weights:
-            session = onnxruntime.InferenceSession(
-                path_or_bytes=model_package_content["weights.onnx"],
-                providers=onnx_execution_providers,
-            )
-        else:
-            session = None
-        input_name = session.get_inputs()[0].name if session else None
+        session = onnxruntime.InferenceSession(
+            path_or_bytes=model_package_content["weights.onnx"],
+            providers=onnx_execution_providers,
+        )
+        input_name = session.get_inputs()[0].name
         return cls(
             session=session,
             max_batch_size=max_batch_size,

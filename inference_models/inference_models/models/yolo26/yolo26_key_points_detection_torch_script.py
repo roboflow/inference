@@ -50,7 +50,6 @@ class YOLO26ForKeyPointsDetectionTorchScript(
         recommended_parameters: Optional[RecommendedParameters] = None,
         **kwargs,
     ) -> "YOLO26ForKeyPointsDetectionTorchScript":
-        load_weights = kwargs.pop("load_weights", True)
         model_package_content = get_model_package_contents(
             model_package_dir=model_name_or_path,
             elements=[
@@ -93,7 +92,7 @@ class YOLO26ForKeyPointsDetectionTorchScript(
         )
         model = torch.jit.load(
             model_package_content["weights.torchscript"], map_location=device
-        ).eval() if load_weights else None
+        ).eval()
         return cls(
             model=model,
             class_names=class_names,

@@ -455,7 +455,6 @@ class AutoModel:
         forwarded_kwargs: Optional[List[str]] = None,
         weights_provider_extra_query_params: Optional[List[Tuple[str, str]]] = None,
         weights_provider_extra_headers: Optional[Dict[str, str]] = None,
-        load_weights: bool = True,
         **kwargs,
     ) -> AnyModel:
         """Load and initialize a computer vision model with automatic backend selection.
@@ -712,7 +711,6 @@ class AutoModel:
             "device": device,
             "default_onnx_trt_options": default_onnx_trt_options,
             "engine_host_code_allowed": trt_engine_host_code_allowed,
-            "load_weights": load_weights,
         }
         model_init_kwargs.update(kwargs)
         if not os.path.exists(model_id_or_path):

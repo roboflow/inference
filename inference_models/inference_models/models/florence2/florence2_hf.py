@@ -66,7 +66,6 @@ class Florence2HF:
         disable_quantization: bool = False,
         **kwargs,
     ) -> "Florence2HF":
-        load_weights = kwargs.pop("load_weights", True)
         torch_dtype = torch.float16 if device.type == "cuda" else torch.bfloat16
         inference_config_path = os.path.join(
             model_name_or_path, "inference_config.json"
@@ -116,62 +115,59 @@ class Florence2HF:
                 bnb_4bit_quant_type="nf4",
             )
         # Native HF Florence2 path only (require transformers >= 4.56)
-        if load_weights:
-            model = Florence2ForConditionalGeneration.from_pretrained(  # type: ignore[arg-type]
-                pretrained_model_name_or_path=base_model_path,
-                dtype=torch_dtype,
-                local_files_only=local_files_only,
-                trust_remote_code=trust_remote_code,
-                quantization_config=quantization_config,
+        model = Florence2ForConditionalGeneration.from_pretrained(  # type: ignore[arg-type]
+            pretrained_model_name_or_path=base_model_path,
+            dtype=torch_dtype,
+            local_files_only=local_files_only,
+            trust_remote_code=trust_remote_code,
+            quantization_config=quantization_config,
+        )
+        if is_adapter_package:
+            # Custom LoRA attach to also cover vision modules
+            adapter_cfg_path = os.path.join(model_name_or_path, "adapter_config.json")
+            with open(adapter_cfg_path, "r") as f:
+                adapter_cfg = json.load(f)
+
+            requested_target_modules = adapter_cfg.get("target_modules") or []
+            adapter_task_type = adapter_cfg.get("task_type") or "SEQ_2_SEQ_LM"
+            lora_config = LoraConfig(
+                r=adapter_cfg.get("r", 8),
+                lora_alpha=adapter_cfg.get("lora_alpha", 8),
+                lora_dropout=adapter_cfg.get("lora_dropout", 0.0),
+                bias="none",
+                target_modules=sorted(requested_target_modules),
+                use_dora=bool(adapter_cfg.get("use_dora", False)),
+                use_rslora=bool(adapter_cfg.get("use_rslora", False)),
+                task_type=adapter_task_type,
             )
-            if is_adapter_package:
-                # Custom LoRA attach to also cover vision modules
-                adapter_cfg_path = os.path.join(model_name_or_path, "adapter_config.json")
-                with open(adapter_cfg_path, "r") as f:
-                    adapter_cfg = json.load(f)
 
-                requested_target_modules = adapter_cfg.get("target_modules") or []
-                adapter_task_type = adapter_cfg.get("task_type") or "SEQ_2_SEQ_LM"
-                lora_config = LoraConfig(
-                    r=adapter_cfg.get("r", 8),
-                    lora_alpha=adapter_cfg.get("lora_alpha", 8),
-                    lora_dropout=adapter_cfg.get("lora_dropout", 0.0),
-                    bias="none",
-                    target_modules=sorted(requested_target_modules),
-                    use_dora=bool(adapter_cfg.get("use_dora", False)),
-                    use_rslora=bool(adapter_cfg.get("use_rslora", False)),
-                    task_type=adapter_task_type,
+            model = get_peft_model(model, lora_config)
+            # Load adapter weights
+            adapter_state = load_peft_weights(model_name_or_path, device=device.type)
+            adapter_state = normalize_adapter_state_dict(adapter_state)
+            load_result = set_peft_model_state_dict(
+                model, adapter_state, adapter_name="default"
+            )
+            tuner = lora_config.peft_type
+            tuner_prefix = PEFT_TYPE_TO_PREFIX_MAPPING.get(tuner, "")
+            adapter_missing_keys = []
+            # Filter missing keys specific to the current adapter and tuner prefix.
+            for key in load_result.missing_keys:
+                if tuner_prefix in key and "default" in key:
+                    adapter_missing_keys.append(key)
+            load_result.missing_keys.clear()
+            load_result.missing_keys.extend(adapter_missing_keys)
+            if len(load_result.missing_keys) > 0:
+                raise CorruptedModelPackageError(
+                    message="Could not load LoRA weights for the model - found missing checkpoint keys "
+                    f"({len(load_result.missing_keys)}): {load_result.missing_keys}",
+                    help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
                 )
-
-                model = get_peft_model(model, lora_config)
-                # Load adapter weights
-                adapter_state = load_peft_weights(model_name_or_path, device=device.type)
-                adapter_state = normalize_adapter_state_dict(adapter_state)
-                load_result = set_peft_model_state_dict(
-                    model, adapter_state, adapter_name="default"
-                )
-                tuner = lora_config.peft_type
-                tuner_prefix = PEFT_TYPE_TO_PREFIX_MAPPING.get(tuner, "")
-                adapter_missing_keys = []
-                # Filter missing keys specific to the current adapter and tuner prefix.
-                for key in load_result.missing_keys:
-                    if tuner_prefix in key and "default" in key:
-                        adapter_missing_keys.append(key)
-                load_result.missing_keys.clear()
-                load_result.missing_keys.extend(adapter_missing_keys)
-                if len(load_result.missing_keys) > 0:
-                    raise CorruptedModelPackageError(
-                        message="Could not load LoRA weights for the model - found missing checkpoint keys "
-                        f"({len(load_result.missing_keys)}): {load_result.missing_keys}",
-                        help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
-                    )
-                if quantization_config is None:
-                    model.merge_and_unload()
-                # Ensure global dtype consistency (handles CPU bfloat16 vs fp32 mismatches)
-                model = model.to(dtype=torch_dtype)
-                model = model.to(device)
-        else:
-            model = None
+            if quantization_config is None:
+                model.merge_and_unload()
+            # Ensure global dtype consistency (handles CPU bfloat16 vs fp32 mismatches)
+            model = model.to(dtype=torch_dtype)
+            model = model.to(device)
 
         processor = Florence2Processor.from_pretrained(  # type: ignore[arg-type]
             pretrained_model_name_or_path=base_model_path,

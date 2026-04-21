@@ -73,7 +73,6 @@ class YOLOLiteForObjectDetectionOnnx(
         recommended_parameters: Optional[RecommendedParameters] = None,
         **kwargs,
     ) -> "YOLOLiteForObjectDetectionOnnx":
-        load_weights = kwargs.pop("load_weights", True)
         if onnx_execution_providers is None:
             onnx_execution_providers = get_selected_onnx_execution_providers()
         if not onnx_execution_providers:
@@ -120,13 +119,10 @@ class YOLOLiteForObjectDetectionOnnx(
                 )
             },
         )
-        if load_weights:
-            session = onnxruntime.InferenceSession(
-                path_or_bytes=model_package_content["weights.onnx"],
-                providers=onnx_execution_providers,
-            )
-        else:
-            session = None
+        session = onnxruntime.InferenceSession(
+            path_or_bytes=model_package_content["weights.onnx"],
+            providers=onnx_execution_providers,
+        )
         if session:
             input_batch_size = session.get_inputs()[0].shape[0]
             if isinstance(input_batch_size, str):

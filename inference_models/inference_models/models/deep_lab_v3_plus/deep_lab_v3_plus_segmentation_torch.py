@@ -44,7 +44,6 @@ class DeepLabV3PlusForSemanticSegmentationTorch(
         recommended_parameters: Optional[RecommendedParameters] = None,
         **kwargs,
     ) -> "DeepLabV3PlusForSemanticSegmentationTorch":
-        load_weights = kwargs.pop("load_weights", True)
         model_package_content = get_model_package_contents(
             model_package_dir=model_name_or_path,
             elements=[
@@ -93,29 +92,26 @@ class DeepLabV3PlusForSemanticSegmentationTorch(
                 message="Expected model initialization parameter `encoder_name` not provided or in invalid format.",
                 help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
-        if load_weights:
-            model = (
-                smp.DeepLabV3Plus(
-                    encoder_name=encoder_name,
-                    in_channels=in_channels,
-                    classes=num_classes,
-                )
-                .to(device)
-                .eval()
+        model = (
+            smp.DeepLabV3Plus(
+                encoder_name=encoder_name,
+                in_channels=in_channels,
+                classes=num_classes,
             )
-            state_dict = torch.load(
-                model_package_content["weights.pt"],
-                weights_only=True,
-                map_location=device,
-            )
-            if "state_dict" in state_dict:
-                state_dict = state_dict["state_dict"]
-                state_dict = {k[len("model.") :]: v for k, v in state_dict.items()}
-            model.load_state_dict(state_dict)
-        else:
-            model = None
+            .to(device)
+            .eval()
+        )
+        state_dict = torch.load(
+            model_package_content["weights.pt"],
+            weights_only=True,
+            map_location=device,
+        )
+        if "state_dict" in state_dict:
+            state_dict = state_dict["state_dict"]
+            state_dict = {k[len("model.") :]: v for k, v in state_dict.items()}
+        model.load_state_dict(state_dict)
         return cls(
-            model=model.eval() if model is not None else None,
+            model=model.eval(),
             inference_config=inference_config,
             class_names=class_names,
             background_class_id=background_class_id,

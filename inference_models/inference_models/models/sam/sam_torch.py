@@ -41,7 +41,6 @@ class SAMTorch:
         sam_allow_client_generated_hash_ids: bool = False,
         **kwargs,
     ) -> "SAMTorch":
-        load_weights = kwargs.pop("load_weights", True)
         if sam_image_embeddings_cache is None:
             sam_image_embeddings_cache = SamImageEmbeddingsCacheNullObject()
         if sam_low_resolution_masks_cache is None:
@@ -64,22 +63,18 @@ class SAMTorch:
                 "contact us to get help.",
                 help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             ) from error
-        if load_weights:
-            try:
-                sam_model = sam_model_registry[version](
-                    checkpoint=model_package_content["model.pth"]
-                ).to(device)
-            except Exception as error:
-                raise CorruptedModelPackageError(
-                    message=f"Cold not decode initialize SAM model - cause: {error} If you see this error running "
-                    f"locally - verify installation of inference and contents of model package. If you use "
-                    f"Roboflow platform, contact us to get help.",
-                    help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
-                ) from error
-            transform = ResizeLongestSide(sam_model.image_encoder.img_size)
-        else:
-            sam_model = None
-            transform = None
+        try:
+            sam_model = sam_model_registry[version](
+                checkpoint=model_package_content["model.pth"]
+            ).to(device)
+        except Exception as error:
+            raise CorruptedModelPackageError(
+                message=f"Cold not decode initialize SAM model - cause: {error} If you see this error running "
+                f"locally - verify installation of inference and contents of model package. If you use "
+                f"Roboflow platform, contact us to get help.",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
+            ) from error
+        transform = ResizeLongestSide(sam_model.image_encoder.img_size)
         return cls(
             model=sam_model,
             transform=transform,

@@ -49,39 +49,35 @@ class EasyOCRTorch(
         device: torch.device = DEFAULT_DEVICE,
         **kwargs,
     ) -> "StructuredOCRModel":
-        load_weights = kwargs.pop("load_weights", True)
         package_contents = get_model_package_contents(
             model_package_dir=model_name_or_path, elements=["easy-ocr-config.json"]
         )
         config = parse_easy_ocr_config(
             config_path=package_contents["easy-ocr-config.json"]
         )
-        if load_weights:
-            device_string = device.type
-            if device.type == "cuda" and device.index:
-                device_string = f"{device_string}:{device.index}"
-            try:
-                model = easyocr.Reader(
-                    config.lang_list,
-                    download_enabled=False,
-                    model_storage_directory=model_name_or_path,
-                    user_network_directory=model_name_or_path,
-                    detect_network=config.detect_network,
-                    recog_network=config.recognition_network,
-                    detector=True,
-                    recognizer=True,
-                    gpu=device_string,
-                )
-            except Exception as error:
-                raise CorruptedModelPackageError(
-                    message=f"EasyOCR model package is broken - could not parse model config file. Error: {error}"
-                    f"If you attempt to run `inference-models` locally - inspect the contents of local directory to check "
-                    f"model package - config file is corrupted. If you run the model on Roboflow platform - "
-                    f"contact us.",
-                    help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
-                ) from error
-        else:
-            model = None
+        device_string = device.type
+        if device.type == "cuda" and device.index:
+            device_string = f"{device_string}:{device.index}"
+        try:
+            model = easyocr.Reader(
+                config.lang_list,
+                download_enabled=False,
+                model_storage_directory=model_name_or_path,
+                user_network_directory=model_name_or_path,
+                detect_network=config.detect_network,
+                recog_network=config.recognition_network,
+                detector=True,
+                recognizer=True,
+                gpu=device_string,
+            )
+        except Exception as error:
+            raise CorruptedModelPackageError(
+                message=f"EasyOCR model package is broken - could not parse model config file. Error: {error}"
+                f"If you attempt to run `inference-models` locally - inspect the contents of local directory to check "
+                f"model package - config file is corrupted. If you run the model on Roboflow platform - "
+                f"contact us.",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
+            ) from error
         return cls(model=model, device=device)
 
     def __init__(

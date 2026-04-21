@@ -28,7 +28,6 @@ class SAM2ForStream:
         device: torch.device = DEFAULT_DEVICE,
         **kwargs,
     ) -> "SAM2ForStream":
-        load_weights = kwargs.pop("load_weights", True)
         model_package_content = get_model_package_contents(
             model_package_dir=model_name_or_path,
             elements=[
@@ -36,19 +35,16 @@ class SAM2ForStream:
                 "sam2-rt.yaml",
             ],
         )
-        if load_weights:
-            hydra.core.global_hydra.GlobalHydra.instance().clear()
-            hydra.initialize_config_dir(
-                config_dir=Path(model_package_content["sam2-rt.yaml"]).parent.as_posix(),
-                version_base=None,
-            )
-            predictor: SAM2CameraPredictor = build_sam2_camera_predictor(
-                config_file=Path(model_package_content["sam2-rt.yaml"]).name,
-                ckpt_path=model_package_content["weights.pt"],
-                device=device,
-            )
-        else:
-            predictor = None
+        hydra.core.global_hydra.GlobalHydra.instance().clear()
+        hydra.initialize_config_dir(
+            config_dir=Path(model_package_content["sam2-rt.yaml"]).parent.as_posix(),
+            version_base=None,
+        )
+        predictor: SAM2CameraPredictor = build_sam2_camera_predictor(
+            config_file=Path(model_package_content["sam2-rt.yaml"]).name,
+            ckpt_path=model_package_content["weights.pt"],
+            device=device,
+        )
         return cls(predictor=predictor, device=device)
 
     def __init__(self, predictor: SAM2CameraPredictor, device: torch.device):
