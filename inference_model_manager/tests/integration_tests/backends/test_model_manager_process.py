@@ -16,8 +16,8 @@ import uuid
 import pytest
 import zmq
 
-from inference_models.backends.utils.shm_pool import SHMPool, SlotStatus
-from inference_models.model_manager_process import (
+from inference_model_manager.backends.utils.shm_pool import SHMPool, SlotStatus
+from inference_model_manager.model_manager_process import (
     ModelManagerProcess,
     T_ALLOC,
     T_ALLOC_OK,

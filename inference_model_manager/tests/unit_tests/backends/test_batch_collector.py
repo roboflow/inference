@@ -8,7 +8,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from inference_models.backends.batch_collector import BatchCollector
+from inference_model_manager.backends.batch_collector import BatchCollector
 
 
 # ------------------------------------------------------------------

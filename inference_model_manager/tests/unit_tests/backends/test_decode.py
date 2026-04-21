@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 import torch
 
-from inference_models.backends.decode import make_batch_decoder, make_decoder
+from inference_model_manager.backends.decode import make_batch_decoder, make_decoder
 
 
 # ---------------------------------------------------------------------------
@@ -162,7 +162,7 @@ class TestMakeBatchDecoderNvjpeg:
 
     def test_pure_jpeg_batch_only_uses_torchvision(self, jpeg_bytes, monkeypatch):
         """For an all-JPEG batch, imagecodecs.imread should never be called."""
-        import inference_models.backends.decode as _dec
+        import inference_model_manager.backends.decode as _dec
         original_ic = pytest.importorskip("imagecodecs")
 
         called = []

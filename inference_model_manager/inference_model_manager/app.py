@@ -55,7 +55,7 @@ from fastapi import FastAPI, Request, Response
 
 import filetype
 
-from inference_models.backends.utils.transport import zmq_addr
+from inference_model_manager.backends.utils.transport import zmq_addr
 
 # ---------------------------------------------------------------------------
 # Config

@@ -9,7 +9,7 @@ from typing import Any, Callable, Dict, List, Optional
 
 import logging
 
-from inference_models.backends.base import Backend
+from inference_model_manager.backends.base import Backend
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +38,7 @@ class DirectBackend(Backend):
         batch_max_delay_ms: float = 10.0,
         **kwargs,
     ) -> None:
-        from inference_models.backends.decode import make_decoder
+        from inference_model_manager.backends.decode import make_decoder
         from inference_models.models.auto_loaders.core import AutoModel
 
         self._model_id = model_id
@@ -108,7 +108,7 @@ class DirectBackend(Backend):
         return self._device_str or "cpu"
 
     def _create_batch_collector(self):
-        from inference_models.backends.batch_collector import BatchCollector
+        from inference_model_manager.backends.batch_collector import BatchCollector
 
         return BatchCollector(
             forward_fn=self._infer_batch,

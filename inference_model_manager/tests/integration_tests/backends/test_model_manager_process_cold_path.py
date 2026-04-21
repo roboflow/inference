@@ -20,7 +20,7 @@ import uuid
 import pytest
 import zmq
 
-from inference_models.model_manager_process import (
+from inference_model_manager.model_manager_process import (
     ModelManagerProcess,
     T_ALLOC,
     T_ALLOC_OK,
@@ -38,7 +38,7 @@ from inference_models.model_manager_process import (
     T_WAKE,
     T_RESULT_READY,
 )
-from inference_models.backends.utils.shm_pool import SHMPool
+from inference_model_manager.backends.utils.shm_pool import SHMPool
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -448,7 +448,7 @@ class TestLRUEviction:
 
     def test_lru_evictable_picks_oldest_access(self):
         mmp = self._make_mmp()
-        from inference_models.model_manager_process import ModelState
+        from inference_model_manager.model_manager_process import ModelState
         mmp._models["a"] = ModelState(loaded=True)
         mmp._models["b"] = ModelState(loaded=True)
         mmp._model_access["a"] = 1.0   # older
@@ -457,7 +457,7 @@ class TestLRUEviction:
 
     def test_lru_evictable_skips_sleeping(self):
         mmp = self._make_mmp()
-        from inference_models.model_manager_process import ModelState
+        from inference_model_manager.model_manager_process import ModelState
         mmp._models["a"] = ModelState(loaded=False, sleeping=True)
         mmp._models["b"] = ModelState(loaded=True)
         mmp._model_access["a"] = 1.0
@@ -466,7 +466,7 @@ class TestLRUEviction:
 
     def test_lru_evictable_skips_in_flight(self):
         mmp = self._make_mmp()
-        from inference_models.model_manager_process import ModelState
+        from inference_model_manager.model_manager_process import ModelState
         mmp._models["a"] = ModelState(loaded=True)
         mmp._models["b"] = ModelState(loaded=True)
         mmp._model_access["a"] = 1.0
@@ -482,7 +482,7 @@ class TestLRUEviction:
             evict_threshold=0.0,   # always evict
             manager=mgr,
         )
-        from inference_models.model_manager_process import ModelState
+        from inference_model_manager.model_manager_process import ModelState
         mmp._models["m"] = ModelState(loaded=True)
         mmp._model_access["m"] = 1.0
         mmp._check_and_evict()
