@@ -79,7 +79,6 @@ class YOLO26ForInstanceSegmentationOnnx(
         recommended_parameters: Optional[RecommendedParameters] = None,
         **kwargs,
     ) -> "YOLO26ForInstanceSegmentationOnnx":
-        load_weights = kwargs.pop("load_weights", True)
         if onnx_execution_providers is None:
             onnx_execution_providers = get_selected_onnx_execution_providers()
         if not onnx_execution_providers:
@@ -127,13 +126,10 @@ class YOLO26ForInstanceSegmentationOnnx(
                 )
             },
         )
-        if load_weights:
-            session = onnxruntime.InferenceSession(
-                path_or_bytes=model_package_content["weights.onnx"],
-                providers=onnx_execution_providers,
-            )
-        else:
-            session = None
+        session = onnxruntime.InferenceSession(
+            path_or_bytes=model_package_content["weights.onnx"],
+            providers=onnx_execution_providers,
+        )
         if session:
             device = align_device_with_onnx_session(session=session, device=device)
             input_batch_size = session.get_inputs()[0].shape[0]

@@ -127,7 +127,6 @@ class PerceptionEncoderTorch(TextImageEmbeddingModel):
     def from_pretrained(
         cls, model_name_or_path: str, device: torch.device = DEFAULT_DEVICE, **kwargs
     ) -> "PerceptionEncoderTorch":
-        load_weights = kwargs.pop("load_weights", True)
         # here model name came from path before, which maybe doesn't match directly with how our registry works
         # instead should this be adopted to read config file that is served as part of model package?
         # model_config = model_name_or_path.split("/")[-1]
@@ -142,16 +141,13 @@ class PerceptionEncoderTorch(TextImageEmbeddingModel):
         model_weights_file = model_package_content["model.pt"]
         config = load_config(model_config_file)
 
-        if load_weights:
-            model = pe.CLIP.from_config(
-                config.vision_encoder_config,
-                pretrained=True,
-                checkpoint_path=model_weights_file,
-            )
-            model = model.to(device)
-            model.eval()
-        else:
-            model = None
+        model = pe.CLIP.from_config(
+            config.vision_encoder_config,
+            pretrained=True,
+            checkpoint_path=model_weights_file,
+        )
+        model = model.to(device)
+        model.eval()
 
         return cls(
             model=model,

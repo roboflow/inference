@@ -40,7 +40,6 @@ class Qwen35HF:
         disable_quantization: bool = False,
         **kwargs,
     ) -> "Qwen35HF":
-        load_weights = kwargs.pop("load_weights", True)
         adapter_config_path = os.path.join(model_name_or_path, "adapter_config.json")
         inference_config_path = os.path.join(
             model_name_or_path, "inference_config.json"
@@ -60,38 +59,35 @@ class Qwen35HF:
 
         attn_implementation = _get_qwen3vl_attn_implementation(device)
 
-        if load_weights:
-            if os.path.exists(adapter_config_path):
-                # Has adapter - load base model then apply LoRA
-                base_model_path = os.path.join(model_name_or_path, "base")
-                base_model = Qwen3_5ForConditionalGeneration.from_pretrained(
-                    base_model_path,
-                    device_map=device,
-                    trust_remote_code=trust_remote_code,
-                    local_files_only=local_files_only,
-                    quantization_config=quantization_config,
-                    attn_implementation=attn_implementation,
-                )
-                # Apply LoRA, eval, convert to dtype
-                model = (
-                    PeftModel.from_pretrained(base_model, model_name_or_path)
-                    .eval()
-                    .to(cls.default_dtype)
-                )
-                model = model.merge_and_unload()
-            else:
-                # No adapter - just load base model, eval, convert to dtype
-                base_model = Qwen3_5ForConditionalGeneration.from_pretrained(
-                    model_name_or_path,
-                    device_map=device,
-                    trust_remote_code=trust_remote_code,
-                    local_files_only=local_files_only,
-                    quantization_config=quantization_config,
-                    attn_implementation=attn_implementation,
-                )
-                model = base_model.eval().to(cls.default_dtype)
+        if os.path.exists(adapter_config_path):
+            # Has adapter - load base model then apply LoRA
+            base_model_path = os.path.join(model_name_or_path, "base")
+            base_model = Qwen3_5ForConditionalGeneration.from_pretrained(
+                base_model_path,
+                device_map=device,
+                trust_remote_code=trust_remote_code,
+                local_files_only=local_files_only,
+                quantization_config=quantization_config,
+                attn_implementation=attn_implementation,
+            )
+            # Apply LoRA, eval, convert to dtype
+            model = (
+                PeftModel.from_pretrained(base_model, model_name_or_path)
+                .eval()
+                .to(cls.default_dtype)
+            )
+            model = model.merge_and_unload()
         else:
-            model = None
+            # No adapter - just load base model, eval, convert to dtype
+            base_model = Qwen3_5ForConditionalGeneration.from_pretrained(
+                model_name_or_path,
+                device_map=device,
+                trust_remote_code=trust_remote_code,
+                local_files_only=local_files_only,
+                quantization_config=quantization_config,
+                attn_implementation=attn_implementation,
+            )
+            model = base_model.eval().to(cls.default_dtype)
 
         # Load processor with chat_template if available
         # Check both root and base/ directory for chat_template.jinja

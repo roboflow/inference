@@ -68,7 +68,6 @@ class Qwen25VLHF:
         disable_quantization: bool = False,
         **kwargs,
     ) -> "Qwen25VLHF":
-        load_weights = kwargs.pop("load_weights", True)
         adapter_config_path = os.path.join(model_name_or_path, "adapter_config.json")
         inference_config_path = os.path.join(
             model_name_or_path, "inference_config.json"
@@ -99,25 +98,22 @@ class Qwen25VLHF:
         attn_implementation = _get_qwen25vl_attn_implementation(device=device)
 
         if os.path.exists(adapter_config_path):
-            if load_weights:
-                base_model_path = os.path.join(model_name_or_path, "base")
-                _patch_preprocessor_config(cache_dir=base_model_path)
-                model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
-                    base_model_path,
-                    dtype="auto",
-                    device_map=device,
-                    trust_remote_code=trust_remote_code,
-                    local_files_only=local_files_only,
-                    quantization_config=quantization_config,
-                    attn_implementation=attn_implementation,
-                )
-                _patch_preprocessor_config(cache_dir=model_name_or_path)
-                model = PeftModel.from_pretrained(model, model_name_or_path)
-                if quantization_config is None:
-                    model.merge_and_unload()
-                    model.to(device)
-            else:
-                model = None
+            base_model_path = os.path.join(model_name_or_path, "base")
+            _patch_preprocessor_config(cache_dir=base_model_path)
+            model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
+                base_model_path,
+                dtype="auto",
+                device_map=device,
+                trust_remote_code=trust_remote_code,
+                local_files_only=local_files_only,
+                quantization_config=quantization_config,
+                attn_implementation=attn_implementation,
+            )
+            _patch_preprocessor_config(cache_dir=model_name_or_path)
+            model = PeftModel.from_pretrained(model, model_name_or_path)
+            if quantization_config is None:
+                model.merge_and_unload()
+                model.to(device)
             processor = Qwen2_5_VLProcessor.from_pretrained(
                 model_name_or_path,
                 trust_remote_code=trust_remote_code,
@@ -125,19 +121,16 @@ class Qwen25VLHF:
                 use_fast=True,
             )
         else:
-            if load_weights:
-                _patch_preprocessor_config(cache_dir=model_name_or_path)
-                model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
-                    model_name_or_path,
-                    dtype="auto",
-                    device_map=device,
-                    trust_remote_code=trust_remote_code,
-                    local_files_only=local_files_only,
-                    quantization_config=quantization_config,
-                    attn_implementation=attn_implementation,
-                ).eval()
-            else:
-                model = None
+            _patch_preprocessor_config(cache_dir=model_name_or_path)
+            model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
+                model_name_or_path,
+                dtype="auto",
+                device_map=device,
+                trust_remote_code=trust_remote_code,
+                local_files_only=local_files_only,
+                quantization_config=quantization_config,
+                attn_implementation=attn_implementation,
+            ).eval()
             Qwen2_5_VLProcessor.image_processor_class = "Qwen2VLImageProcessor"
             processor = Qwen2_5_VLProcessor.from_pretrained(
                 model_name_or_path,
