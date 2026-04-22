@@ -861,18 +861,21 @@ class ModelManagerProcess:
     # Cold path — load / wake
     # ------------------------------------------------------------------
 
+    def _is_cuda_oom(self, exc: BaseException) -> bool:
+        """Check if exception is a CUDA out-of-memory error."""
+        msg = str(exc).lower()
+        return "cuda" in msg and ("out of memory" in msg or "oom" in msg)
+
     async def _load_model(
         self, model_id: str, api_key: str = "", device: str = ""
     ) -> None:
-        """Load model via ModelManager, falling back to stub on failure/no manager.
+        """Load model via ModelManager with reactive admission loop.
+
+        On CUDA OOM: evicts coldest model, retries. Repeats until success,
+        no cold models left (_ERR_SERVER_FULL), or non-OOM failure (_ERR_LOAD_FAILED).
 
         model_id is the full routing key (may include ":instance" suffix).
         model_id_or_path strips the suffix to fetch the correct weights.
-        device selects which GPU to use (forwarded to manager.load).
-
-        Stub mode: marks model_id loaded immediately (no real model).
-        T_ENSURE_LOADED waiters get T_MODEL_READY, but T_SUBMIT will return
-        T_ERROR because no backend is registered.
         """
         loop = asyncio.get_running_loop()
         fs = self._models.get(model_id)
@@ -882,14 +885,18 @@ class ModelManagerProcess:
             await self._wake_model(model_id)
             return
 
-        if self._manager is not None:
-            # Strip ":instance" suffix to get the actual model weights identifier
-            model_id_or_path = model_id.rsplit(":", 1)[0]
+        if self._manager is None:
+            # Stub mode: no manager
+            self._stub_load(model_id, fs)
+            return
+
+        model_id_or_path = model_id.rsplit(":", 1)[0]
+        max_retries = 5  # safety cap — never loop forever
+
+        for attempt in range(max_retries):
             logger.info(
-                "MMP: loading '%s' (weights=%s device=%s) via ModelManager",
-                model_id,
-                model_id_or_path,
-                device or "default",
+                "MMP: loading '%s' (weights=%s device=%s attempt=%d)",
+                model_id, model_id_or_path, device or "default", attempt + 1,
             )
             try:
                 await loop.run_in_executor(
@@ -912,19 +919,69 @@ class ModelManagerProcess:
                 if backend is not None and hasattr(backend, "signal_slot"):
                     self.register_backend(model_id, backend)
                     return
-            except Exception:
-                logger.exception(
-                    "MMP: manager.load('%s') raised — stub-loading without backend",
-                    model_id,
-                )
+                # Loaded but no backend — fall through to stub
+                break
 
-        # Stub: mark loaded, flush waiters; no backend registered
+            except Exception as exc:
+                if not self._is_cuda_oom(exc):
+                    # Non-OOM failure — don't retry
+                    logger.exception("MMP: load '%s' failed (non-OOM)", model_id)
+                    self._fail_load(model_id, fs, _ERR_LOAD_FAILED)
+                    return
+
+                # CUDA OOM — try to evict a cold model and retry
+                candidate = self._pick_eviction_candidate()
+                if candidate is None:
+                    logger.error(
+                        "MMP: OOM loading '%s' — all models hot, cannot evict",
+                        model_id,
+                    )
+                    self._fail_load(model_id, fs, _ERR_SERVER_FULL)
+                    return
+
+                logger.warning(
+                    "MMP: OOM loading '%s' — evicting cold model '%s' and retrying",
+                    model_id, candidate,
+                )
+                self._evict_model(candidate)
+
+                # Clean up the failed partial load before retrying
+                try:
+                    self._manager.unload(model_id)
+                except Exception:
+                    pass
+
+        # Exhausted retries — should not normally reach here
+        logger.error("MMP: load '%s' exhausted %d retries", model_id, max_retries)
+        self._fail_load(model_id, fs, _ERR_LOAD_FAILED)
+
+    def _stub_load(self, model_id: str, fs: Optional[ModelState]) -> None:
+        """Mark model as stub-loaded (no real backend). Flushes waiters."""
         logger.info("MMP: '%s' stub-loaded (no real model)", model_id)
         if fs is None:
             fs = self._models.setdefault(model_id, ModelState())
         fs.loading = False
         fs.loaded = True
         self._flush_load_waiters(model_id)
+
+    def _fail_load(self, model_id: str, fs: Optional[ModelState], err_code: int) -> None:
+        """Clean up ModelState and notify waiters with T_ERROR on load failure."""
+        if fs is None:
+            fs = self._models.get(model_id)
+        if fs is not None:
+            waiters, fs.load_waiters = fs.load_waiters, []
+            fs.loading = False
+            fs.loaded = False
+            for identity, req_id, _ in waiters:
+                asyncio.create_task(
+                    self._send(
+                        identity, T_ERROR, struct.pack(">QB", req_id, err_code)
+                    )
+                )
+        # Clean up any partial state
+        self._backends.pop(model_id, None)
+        self._model_access.pop(model_id, None)
+        self._model_request_times.pop(model_id, None)
 
     def _flush_load_waiters(self, model_id: str) -> None:
         """Notify all T_ENSURE_LOADED waiters for this model_id.
