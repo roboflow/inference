@@ -13,6 +13,7 @@ from pydantic import ConfigDict, Field
 from inference.core.env import API_BASE_URL
 from inference.core.logger import logger
 from inference.core.utils.image_utils import encode_image_to_jpeg_bytes
+from inference.core.utils.url_utils import wrap_url
 from inference.core.workflows.core_steps.common.serializers import mask_to_polygon
 from inference.core.workflows.execution_engine.constants import (
     KEYPOINTS_CLASS_ID_KEY_IN_SV_DETECTIONS,
@@ -745,7 +746,7 @@ def _upload_image(
         image_data.numpy_image, jpeg_quality=jpeg_quality
     )
     response = requests.post(
-        f"{api_base_url}/vision-events/upload",
+        wrap_url(f"{api_base_url}/vision-events/upload"),
         headers={"Authorization": f"Bearer {api_key}"},
         files={"file": ("image.jpg", image_bytes, "image/jpeg")},
         timeout=30,
@@ -797,7 +798,7 @@ def _send_event(
     """
     try:
         response = requests.post(
-            f"{api_base_url}/vision-events",
+            wrap_url(f"{api_base_url}/vision-events"),
             headers={
                 "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json",

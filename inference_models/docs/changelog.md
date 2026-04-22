@@ -96,7 +96,7 @@ problem with loading is recoverable.
 
 ### Added
 
-- Support for Roboflow License Server proxy in Roboflow weights provider 
+- Support for Roboflow Secure Gateway proxy in Roboflow weights provider
 
 ---
 

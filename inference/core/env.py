@@ -367,8 +367,16 @@ CORRELATION_ID_LOG_KEY = os.getenv("CORRELATION_ID_LOG_KEY", "request_id")
 # Flag to enable legacy route, default is True
 LEGACY_ROUTE_ENABLED = str2bool(os.getenv("LEGACY_ROUTE_ENABLED", True))
 
-# License server, default is None
-LICENSE_SERVER = os.getenv("LICENSE_SERVER", None)
+# Secure gateway address for air-gapped deployments.
+# Accepts SECURE_GATEWAY (preferred) or LICENSE_SERVER (legacy).
+_legacy_license_server = os.getenv("LICENSE_SERVER")
+SECURE_GATEWAY = os.getenv("SECURE_GATEWAY") or _legacy_license_server or None
+if _legacy_license_server and not os.getenv("SECURE_GATEWAY"):
+    warnings.warn(
+        "LICENSE_SERVER is deprecated, use SECURE_GATEWAY instead",
+        DeprecationWarning,
+        stacklevel=1,
+    )
 
 # Log level, default is "WARNING"
 LOG_LEVEL = os.getenv("LOG_LEVEL", "WARNING")
