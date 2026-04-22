@@ -444,37 +444,50 @@ class TestLRUEviction:
             input_mb=_TEST_INPUT_MB,
         )
 
-    def test_lru_evictable_returns_none_when_no_loaded_models(self):
+    def test_eviction_returns_none_when_no_loaded_models(self):
         mmp = self._make_mmp()
-        assert mmp._lru_evictable_model() is None
+        assert mmp._pick_eviction_candidate() is None
 
-    def test_lru_evictable_picks_oldest_access(self):
+    def test_eviction_picks_coldest_model(self):
         mmp = self._make_mmp()
         from inference_model_manager.model_manager_process import ModelState
         mmp._models["a"] = ModelState(loaded=True)
         mmp._models["b"] = ModelState(loaded=True)
-        mmp._model_access["a"] = 1.0   # older
-        mmp._model_access["b"] = 2.0   # newer
-        assert mmp._lru_evictable_model() == "a"
+        # Both cold (access time far in the past vs idle_timeout_s=300)
+        mmp._model_access["a"] = 1.0   # older = colder
+        mmp._model_access["b"] = 2.0
+        assert mmp._pick_eviction_candidate() == "a"
 
-    def test_lru_evictable_skips_sleeping(self):
+    def test_eviction_returns_none_when_all_hot(self):
+        mmp = self._make_mmp()
+        from inference_model_manager.model_manager_process import ModelState
+        import time
+        now = time.monotonic()
+        mmp._models["a"] = ModelState(loaded=True)
+        mmp._models["b"] = ModelState(loaded=True)
+        # Both hot (accessed just now, well within idle_timeout_s=300)
+        mmp._model_access["a"] = now
+        mmp._model_access["b"] = now
+        assert mmp._pick_eviction_candidate() is None
+
+    def test_eviction_skips_sleeping(self):
         mmp = self._make_mmp()
         from inference_model_manager.model_manager_process import ModelState
         mmp._models["a"] = ModelState(loaded=False, sleeping=True)
         mmp._models["b"] = ModelState(loaded=True)
         mmp._model_access["a"] = 1.0
-        mmp._model_access["b"] = 2.0
-        assert mmp._lru_evictable_model() == "b"
+        mmp._model_access["b"] = 1.0  # cold
+        assert mmp._pick_eviction_candidate() == "b"
 
-    def test_lru_evictable_skips_in_flight(self):
+    def test_eviction_skips_in_flight(self):
         mmp = self._make_mmp()
         from inference_model_manager.model_manager_process import ModelState
         mmp._models["a"] = ModelState(loaded=True)
         mmp._models["b"] = ModelState(loaded=True)
-        mmp._model_access["a"] = 1.0
-        mmp._model_access["b"] = 2.0
+        mmp._model_access["a"] = 1.0  # cold
+        mmp._model_access["b"] = 1.0  # cold
         mmp._pending[42] = (b"id", 0, "a")   # "a" is in-flight
-        assert mmp._lru_evictable_model() == "b"
+        assert mmp._pick_eviction_candidate() == "b"
 
     def test_check_and_evict_calls_manager_unload_drain(self):
         mgr = _MockManager()

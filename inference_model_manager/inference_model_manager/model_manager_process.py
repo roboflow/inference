@@ -88,6 +88,7 @@ _ERR_STALE = 3
 _ERR_BACKEND = 4
 _ERR_LOAD_FAILED = 5
 _ERR_NOT_LOADED = 6
+_ERR_SERVER_FULL = 7
 
 
 # ---------------------------------------------------------------------------
@@ -252,6 +253,7 @@ class ModelManagerProcess:
         evict_threshold: float = 0.9,
         evict_check_interval_s: float = 5.0,
         monitor_interval_s: float = 5.0,
+        idle_timeout_s: float = 300.0,
         manager: Optional[Any] = None,
         decoder: str = "imagecodecs",
         batch_max_size: int = 0,
@@ -279,6 +281,7 @@ class ModelManagerProcess:
         self._evict_threshold = evict_threshold
         self._evict_check_interval_s = evict_check_interval_s
         self._monitor_interval_s = monitor_interval_s
+        self._idle_timeout_s = idle_timeout_s
         self._manager = manager
         self._own_manager = False  # set True only if we created it
 
@@ -295,8 +298,15 @@ class ModelManagerProcess:
         # model_id → BackendLike (registered by register_backend or _load_model)
         self._backends: dict[str, BackendLike] = {}
 
-        # flavor → monotonic timestamp of last T_SUBMIT (LRU eviction)
+        # flavor → monotonic timestamp of last T_SUBMIT (LRU eviction + hot/cold)
         self._model_access: dict[str, float] = {}
+
+        # flavor → list of request timestamps (sliding window for request rate)
+        self._model_request_times: dict[str, list[float]] = {}
+
+        # Cache hit/miss counters (model already loaded vs triggered load)
+        self._cache_hits: int = 0
+        self._cache_misses: int = 0
 
         # Latest monitoring snapshot (updated by _monitoring_loop)
         self._stats_snapshot: dict[str, Any] = {}
@@ -526,8 +536,11 @@ class ModelManagerProcess:
 
         fs = self._models.get(model_id)
         if fs is not None and fs.loaded:
+            self._cache_hits += 1
             await self._send(identity, T_MODEL_READY, struct.pack(">Q", req_id))
             return
+
+        self._cache_misses += 1
 
         if fs is None:
             fs = ModelState()
@@ -725,12 +738,25 @@ class ModelManagerProcess:
                 snapshot.update(self._manager.stats())
             except Exception:
                 pass
+        now = time.monotonic()
         model_stats: dict[str, Any] = {}
         for f, fs in self._models.items():
+            last_access = self._model_access.get(f)
+            idle_s = (now - last_access) if last_access else None
+            req_times = self._model_request_times.get(f, [])
+            # Trim stale entries for accurate rate
+            cutoff = now - 60.0
+            while req_times and req_times[0] < cutoff:
+                req_times.pop(0)
+
             entry: dict[str, Any] = {
                 "loaded": fs.loaded,
                 "sleeping": fs.sleeping,
                 "loading": fs.loading,
+                "last_access_ts": last_access,
+                "idle_s": round(idle_s, 1) if idle_s is not None else None,
+                "is_cold": idle_s is not None and idle_s > self._idle_timeout_s,
+                "request_rate_60s": len(req_times),
             }
             backend = self._backends.get(f)
             if backend is not None:
@@ -747,6 +773,9 @@ class ModelManagerProcess:
                 "mmp_free_slots": self._pool.free_count if self._pool else 0,
                 "mmp_total_slots": self._n_slots,
                 "mmp_pending": len(self._pending),
+                "mmp_cache_hits": self._cache_hits,
+                "mmp_cache_misses": self._cache_misses,
+                "mmp_idle_timeout_s": self._idle_timeout_s,
                 "mmp_models": model_stats,
             }
         )
@@ -764,7 +793,15 @@ class ModelManagerProcess:
     def _forward_to_backend(
         self, model_id: str, slot_id: int, req_id: int, params_bytes: bytes = b"{}"
     ) -> None:
-        self._model_access[model_id] = time.monotonic()  # LRU update
+        now = time.monotonic()
+        self._model_access[model_id] = now
+        # Sliding window: append timestamp, trim old entries
+        times = self._model_request_times.setdefault(model_id, [])
+        times.append(now)
+        # Keep only last 60s of timestamps
+        cutoff = now - 60.0
+        while times and times[0] < cutoff:
+            times.pop(0)
         backend = self._backends.get(model_id)
         if backend is None:
             logger.warning("MMP: no backend for '%s', req_id=%d", model_id, req_id)
@@ -964,7 +1001,11 @@ class ModelManagerProcess:
                 logger.exception("MMP: error in eviction loop")
 
     def _check_and_evict(self) -> None:
-        """Evict LRU model if GPU memory exceeds threshold.
+        """Evict cold models if GPU memory exceeds threshold.
+
+        Cold-first: models idle > idle_timeout_s are evicted first (oldest first).
+        If all models are hot (recent traffic), no eviction — _ERR_SERVER_FULL
+        will be returned by _load_model when it can't free space.
 
         Uses drain_and_unload (graceful: stop accepting, finish in-flight, then kill).
         Next request for evicted model triggers _load_model which reloads from disk cache.
@@ -974,28 +1015,45 @@ class ModelManagerProcess:
         gpu_frac = _gpu_used_fraction()
         if gpu_frac < self._evict_threshold:
             return
-        lru = self._lru_evictable_model()
-        if lru is None:
+        candidate = self._pick_eviction_candidate()
+        if candidate is None:
+            logger.warning(
+                "MMP: GPU %.0f%% > %.0f%% threshold but all models are hot — no eviction",
+                gpu_frac * 100,
+                self._evict_threshold * 100,
+            )
             return
         logger.warning(
-            "MMP: GPU %.0f%% > %.0f%% threshold — evicting '%s'",
+            "MMP: GPU %.0f%% > %.0f%% threshold — evicting cold model '%s'",
             gpu_frac * 100,
             self._evict_threshold * 100,
-            lru,
+            candidate,
         )
+        self._evict_model(candidate)
+
+    def _evict_model(self, model_id: str) -> bool:
+        """Evict a single model. Returns True on success."""
         try:
-            self._manager.unload(lru, drain=True)
-            fs = self._models.get(lru)
+            self._manager.unload(model_id, drain=True)
+            fs = self._models.get(model_id)
             if fs:
                 fs.loaded = False
                 fs.loading = False
                 fs.sleeping = False
-            self._backends.pop(lru, None)
+            self._backends.pop(model_id, None)
+            self._model_access.pop(model_id, None)
+            self._model_request_times.pop(model_id, None)
+            return True
         except Exception:
-            logger.warning("MMP: eviction of '%s' failed", lru, exc_info=True)
+            logger.warning("MMP: eviction of '%s' failed", model_id, exc_info=True)
+            return False
 
-    def _lru_evictable_model(self) -> Optional[str]:
-        """LRU flavor that is loaded, not sleeping, and not currently in-flight."""
+    def _pick_eviction_candidate(self) -> Optional[str]:
+        """Pick best model to evict. Cold models first, then LRU among warm.
+
+        Returns None if no evictable model (all hot and in-flight, or nothing loaded).
+        """
+        now = time.monotonic()
         in_flight = {mid for _, _, mid in self._pending.values()}
         candidates = [
             f
@@ -1004,7 +1062,19 @@ class ModelManagerProcess:
         ]
         if not candidates:
             return None
-        return min(candidates, key=lambda f: self._model_access.get(f, 0.0))
+
+        # Partition into cold (idle > timeout) and hot
+        cold = [
+            f for f in candidates
+            if (now - self._model_access.get(f, 0.0)) > self._idle_timeout_s
+        ]
+
+        if cold:
+            # Among cold models, evict the one with oldest last access (most stale)
+            return min(cold, key=lambda f: self._model_access.get(f, 0.0))
+
+        # All candidates are hot — return None (caller decides: error or force-evict)
+        return None
 
     # ------------------------------------------------------------------
     # Monitoring loop
