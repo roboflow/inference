@@ -358,6 +358,10 @@ def _write_input(slot_id: int, chunk: bytes | memoryview, offset: int) -> None:
 
 
 def _read_result(slot_id: int, result_sz: int) -> bytes:
+    if result_sz > _SHM_DATA_SIZE or result_sz < 0:
+        raise ValueError(f"result_sz {result_sz} out of bounds (max {_SHM_DATA_SIZE})")
+    if slot_id < 0 or slot_id * _SLOT_TOTAL + _HEADER_SIZE + result_sz > len(_shm.buf):
+        raise ValueError(f"slot_id {slot_id} out of bounds")
     base = slot_id * _SLOT_TOTAL + _HEADER_SIZE
     return bytes(_shm.buf[base : base + result_sz])
 
