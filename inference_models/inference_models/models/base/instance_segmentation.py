@@ -1,11 +1,12 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Generic, List, Optional, Tuple, Union
+from typing import Generic, List, Optional, Tuple, Union, Set
 
 import numpy as np
 import supervision as sv
 import torch
 
+from inference_models import RLEMask, CompactMask, MaskFormat
 from inference_models.models.base.types import (
     PreprocessedInputs,
     PreprocessingMetadata,
@@ -18,7 +19,7 @@ class InstanceDetections:
     xyxy: torch.Tensor  # (n_boxes, 4)
     class_id: torch.Tensor  # (n_boxes, )
     confidence: torch.Tensor  # (n_boxes, )
-    mask: torch.Tensor  # (n_boxes, mask_height, mask_width)
+    mask: Union[torch.Tensor, RLEMask, CompactMask]  # for dense representation (n_boxes, mask_height, mask_width)
     image_metadata: Optional[dict] = None
     bboxes_metadata: Optional[List[dict]] = (
         None  # if given, list of size equal to # of bboxes
@@ -91,6 +92,11 @@ class InstanceSegmentationModel(
     @property
     @abstractmethod
     def class_names(self) -> List[str]:
+        pass
+
+    @property
+    @abstractmethod
+    def supported_mask_formats(self) -> Set[MaskFormat]:
         pass
 
     def infer(

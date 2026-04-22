@@ -52,6 +52,7 @@ from inference_models.models.base.instance_segmentation import (
     InstanceDetections,
     InstanceSegmentationModel,
 )
+from inference_models.models.base.masks import MaskFormat, RLEMask, CompactMask
 from inference_models.models.base.keypoints_detection import (
     KeyPoints,
     KeyPointsDetectionModel,
