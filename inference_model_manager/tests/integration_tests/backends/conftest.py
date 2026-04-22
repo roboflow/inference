@@ -5,10 +5,9 @@ import pytest
 import requests
 from filelock import FileLock
 
-ASSETS_DIR = os.path.abspath(
-    os.path.join(os.path.dirname(__file__), "..", "models", "assets")
+ASSETS_DIR = os.path.join(
+    os.path.dirname(__file__), "..", "assets"
 )
-MODELS_DIR = os.path.join(ASSETS_DIR, "models")
 
 YOLOV8N_TS_PACKAGE_URL = (
     "https://storage.googleapis.com/roboflow-tests-assets/"
@@ -34,7 +33,7 @@ def _download_if_not_exists(file_path: str, url: str, lock_timeout: int = 180) -
 @pytest.fixture(scope="module")
 def yolov8n_model_path() -> str:
     """Download and extract a small YOLOv8n model package. Returns local path."""
-    package_dir = os.path.join(MODELS_DIR, "backends_test")
+    package_dir = os.path.join(ASSETS_DIR, "backends_test")
     zip_path = os.path.join(package_dir, f"{YOLOV8N_TS_PACKAGE_NAME}.zip")
     os.makedirs(package_dir, exist_ok=True)
     _download_if_not_exists(file_path=zip_path, url=YOLOV8N_TS_PACKAGE_URL)
