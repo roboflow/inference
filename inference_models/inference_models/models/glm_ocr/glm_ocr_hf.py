@@ -61,8 +61,8 @@ def _resolve_default_dtype(device: torch.device) -> torch.dtype:
 class GlmOcrHF(ManagedModel):
     default_dtype = torch.bfloat16
 
-    @property
-    def supported_tasks(self) -> Dict[str, TaskSpec]:
+    @classmethod
+    def get_supported_tasks(cls) -> Dict[str, TaskSpec]:
         return {
             "recognize_text": TaskSpec(method="recognize_text", default=True, params=["images"]),
             "recognize_table": TaskSpec(method="recognize_table", params=["images"]),

@@ -103,8 +103,8 @@ def _to_pil_rgb(
 class Gemma4HF(ManagedModel):
     """Hugging Face Gemma 4 multimodal (vision + text) instruction-tuned models."""
 
-    @property
-    def supported_tasks(self) -> Dict[str, TaskSpec]:
+    @classmethod
+    def get_supported_tasks(cls) -> Dict[str, TaskSpec]:
         return {
             "prompt": TaskSpec(method="prompt", default=True, params=["images", "prompt"]),
         }

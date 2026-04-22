@@ -1,8 +1,10 @@
 """Task dispatch mixin for inference models.
 
-Every model must declare which tasks it supports via the ``supported_tasks``
-property. ModelManager uses this to dispatch ``invoke(model_id, task, **kwargs)``
-to the correct method without hard-coded task→method mappings.
+Every model must declare which tasks it supports via ``get_supported_tasks()``
+classmethod. ModelManager uses this for:
+  - **Dispatch**: ``process(model_id, task, **kwargs)`` → correct model method.
+  - **Discovery**: ``get_supported_tasks(model_id)`` → what can this model do?
+    Works without loading the model (class-level, no instance needed).
 """
 
 from __future__ import annotations
@@ -30,14 +32,14 @@ class ManagedModel(ABC):
     """Mixin ABC for models managed by ModelManager.
 
     Any model that wants to work with ModelManager must inherit this
-    and implement ``supported_tasks``. ABC enforces it — instantiation
-    raises ``TypeError`` if the property is missing.
+    and implement ``get_supported_tasks()``. ABC enforces it —
+    instantiation raises ``TypeError`` if the classmethod is missing.
     """
 
-    @property
+    @classmethod
     @abstractmethod
-    def supported_tasks(self) -> Dict[str, TaskSpec]:
-        """Return task dispatch table.
+    def get_supported_tasks(cls) -> Dict[str, TaskSpec]:
+        """Return task dispatch table. Class-level — no instance needed.
 
         Must return a dict with at least one entry where ``default=True``.
 
@@ -48,3 +50,8 @@ class ManagedModel(ABC):
             }
         """
         ...
+
+    @property
+    def supported_tasks(self) -> Dict[str, TaskSpec]:
+        """Instance-level convenience — delegates to classmethod."""
+        return self.get_supported_tasks()

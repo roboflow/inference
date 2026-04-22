@@ -60,8 +60,8 @@ from inference_models.models.common.roboflow.pre_processing import (
 
 class PaliGemmaHF(ManagedModel):
 
-    @property
-    def supported_tasks(self) -> Dict[str, TaskSpec]:
+    @classmethod
+    def get_supported_tasks(cls) -> Dict[str, TaskSpec]:
         return {
             "prompt": TaskSpec(method="prompt", default=True, params=["images", "prompt"]),
         }

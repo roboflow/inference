@@ -59,8 +59,8 @@ def _is_model_running_against_ampere_plus_aarch(device: torch.device) -> bool:
 
 class Qwen25VLHF(ManagedModel):
 
-    @property
-    def supported_tasks(self) -> Dict[str, TaskSpec]:
+    @classmethod
+    def get_supported_tasks(cls) -> Dict[str, TaskSpec]:
         return {
             "prompt": TaskSpec(method="prompt", default=True, params=["images", "prompt"]),
         }

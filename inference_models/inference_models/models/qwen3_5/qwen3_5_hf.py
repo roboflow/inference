@@ -30,8 +30,8 @@ from inference_models.models.qwen3vl.qwen3vl_hf import _get_qwen3vl_attn_impleme
 class Qwen35HF(ManagedModel):
     default_dtype = torch.bfloat16
 
-    @property
-    def supported_tasks(self) -> Dict[str, TaskSpec]:
+    @classmethod
+    def get_supported_tasks(cls) -> Dict[str, TaskSpec]:
         return {
             "prompt": TaskSpec(method="prompt", default=True, params=["images", "prompt"]),
         }

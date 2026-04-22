@@ -56,8 +56,8 @@ LOC_BINS = 1000
 
 class Florence2HF(ManagedModel):
 
-    @property
-    def supported_tasks(self) -> Dict[str, TaskSpec]:
+    @classmethod
+    def get_supported_tasks(cls) -> Dict[str, TaskSpec]:
         return {
             "caption": TaskSpec(method="caption_image", default=True, params=["images"]),
             "detect": TaskSpec(method="detect_objects", params=["images", "classes"]),

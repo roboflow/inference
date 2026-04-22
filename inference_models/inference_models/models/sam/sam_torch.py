@@ -31,8 +31,8 @@ ArrayOrTensor = Union[np.ndarray, torch.Tensor]
 
 class SAMTorch(ManagedModel):
 
-    @property
-    def supported_tasks(self) -> Dict[str, TaskSpec]:
+    @classmethod
+    def get_supported_tasks(cls) -> Dict[str, TaskSpec]:
         return {
             "embed": TaskSpec(method="embed_images", default=True, params=["images"]),
             "segment": TaskSpec(

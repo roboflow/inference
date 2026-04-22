@@ -51,8 +51,8 @@ SUPPORTED_VERSIONS = {
 
 class SAM2Torch(ManagedModel):
 
-    @property
-    def supported_tasks(self) -> Dict[str, TaskSpec]:
+    @classmethod
+    def get_supported_tasks(cls) -> Dict[str, TaskSpec]:
         return {
             "embed": TaskSpec(method="embed_images", default=True, params=["images"]),
             "segment": TaskSpec(
