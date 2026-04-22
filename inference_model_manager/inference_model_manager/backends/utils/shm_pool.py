@@ -36,22 +36,21 @@ from enum import IntEnum
 from multiprocessing.shared_memory import SharedMemory
 from typing import NamedTuple, Optional
 
-
 # ---------------------------------------------------------------------------
 # Header format
 # ---------------------------------------------------------------------------
 
-_HEADER_FMT  = "<BBxxIIxxxxQQi28x"
+_HEADER_FMT = "<BBxxIIxxxxQQi28x"
 _HEADER_SIZE = struct.calcsize(_HEADER_FMT)
 assert _HEADER_SIZE == 64, f"Header must be 64 bytes, got {_HEADER_SIZE}"
 
 # Field byte offsets within a slot header (for fast partial writes)
-_OFF_STATUS    = 0
-_OFF_ERROR     = 1
-_OFF_INPUT_SZ  = 4
+_OFF_STATUS = 0
+_OFF_ERROR = 1
+_OFF_INPUT_SZ = 4
 _OFF_RESULT_SZ = 8
-_OFF_REQ_ID    = 16
-_OFF_TS_NS     = 24
+_OFF_REQ_ID = 16
+_OFF_TS_NS = 24
 _OFF_OWNER_PID = 32
 
 
@@ -59,28 +58,30 @@ _OFF_OWNER_PID = 32
 # Public types
 # ---------------------------------------------------------------------------
 
+
 class SlotStatus(IntEnum):
-    FREE       = 0
-    ALLOCATED  = 1
-    WRITTEN    = 2
+    FREE = 0
+    ALLOCATED = 1
+    WRITTEN = 2
     PROCESSING = 3
-    DONE       = 4
-    ERROR      = 5
+    DONE = 4
+    ERROR = 5
 
 
 class SlotHeader(NamedTuple):
-    status:       int
-    error_code:   int
-    input_size:   int
-    result_size:  int
-    request_id:   int
+    status: int
+    error_code: int
+    input_size: int
+    result_size: int
+    request_id: int
     timestamp_ns: int
-    owner_pid:    int
+    owner_pid: int
 
 
 # ---------------------------------------------------------------------------
 # SHMPool
 # ---------------------------------------------------------------------------
+
 
 class SHMPool:
     """Fixed pool of SHM slots. Only the creator (owner) manages allocation.
@@ -113,14 +114,14 @@ class SHMPool:
         *,
         owner: bool,
     ) -> None:
-        self._shm              = shm
-        self._n_slots          = n_slots
-        self._data_slot_bytes  = data_slot_bytes
-        self._owner            = owner
-        self._slot_bytes       = _HEADER_SIZE + data_slot_bytes
+        self._shm = shm
+        self._n_slots = n_slots
+        self._data_slot_bytes = data_slot_bytes
+        self._owner = owner
+        self._slot_bytes = _HEADER_SIZE + data_slot_bytes
 
         # Allocation state — only owner ever calls alloc/free
-        self._free: deque[int]      = deque(range(n_slots)) if owner else deque()
+        self._free: deque[int] = deque(range(n_slots)) if owner else deque()
         self._cond: threading.Condition = threading.Condition(threading.Lock())
 
     # ------------------------------------------------------------------
@@ -136,14 +137,16 @@ class SHMPool:
         name: Optional[str] = None,
     ) -> "SHMPool":
         """Create a new SHM pool. Caller is the owner and must call close()."""
-        data_bytes  = int(input_mb * 1024 * 1024)
+        data_bytes = int(input_mb * 1024 * 1024)
         total_bytes = n_slots * (_HEADER_SIZE + data_bytes)
 
         shm = SharedMemory(name=name, create=True, size=total_bytes)
         # Zero only the headers (64B × n_slots) so status=FREE everywhere.
         slot_bytes = _HEADER_SIZE + data_bytes
         for i in range(n_slots):
-            shm.buf[i * slot_bytes: i * slot_bytes + _HEADER_SIZE] = b"\x00" * _HEADER_SIZE
+            shm.buf[i * slot_bytes : i * slot_bytes + _HEADER_SIZE] = (
+                b"\x00" * _HEADER_SIZE
+            )
 
         return cls(shm, n_slots, data_bytes, owner=True)
 
@@ -209,9 +212,7 @@ class SHMPool:
             while not self._free:
                 remaining = deadline - time.monotonic()
                 if remaining <= 0 or not self._cond.wait(timeout=remaining):
-                    raise TimeoutError(
-                        f"No free SHM slots (pool size={self._n_slots})"
-                    )
+                    raise TimeoutError(f"No free SHM slots (pool size={self._n_slots})")
             return self._free.popleft()
 
     def free_slot(self, slot_id: int) -> None:
@@ -223,8 +224,9 @@ class SHMPool:
             raise RuntimeError("Only the pool creator can free slots")
         # Zero header so next alloc starts clean
         off = self._slot_offset(slot_id)
-        struct.pack_into(_HEADER_FMT, self._shm.buf, off,
-                         SlotStatus.FREE, 0, 0, 0, 0, 0, 0)
+        struct.pack_into(
+            _HEADER_FMT, self._shm.buf, off, SlotStatus.FREE, 0, 0, 0, 0, 0, 0
+        )
         with self._cond:
             self._free.append(slot_id)
             self._cond.notify()
@@ -252,9 +254,18 @@ class SHMPool:
     def mark_allocated(self, slot_id: int, request_id: int) -> None:
         """Write full header: status=ALLOCATED, req_id, timestamp."""
         off = self._slot_offset(slot_id)
-        struct.pack_into(_HEADER_FMT, self._shm.buf, off,
-                         SlotStatus.ALLOCATED, 0, 0, 0,
-                         request_id, time.monotonic_ns(), 0)
+        struct.pack_into(
+            _HEADER_FMT,
+            self._shm.buf,
+            off,
+            SlotStatus.ALLOCATED,
+            0,
+            0,
+            0,
+            request_id,
+            time.monotonic_ns(),
+            0,
+        )
 
     def mark_written(self, slot_id: int, input_size: int) -> None:
         """Fast update: status=WRITTEN + input_size. Data is already in slot."""
@@ -278,7 +289,7 @@ class SHMPool:
         """Set status=ERROR + error_code."""
         off = self._slot_offset(slot_id)
         self._shm.buf[off + _OFF_STATUS] = SlotStatus.ERROR
-        self._shm.buf[off + _OFF_ERROR]  = error_code
+        self._shm.buf[off + _OFF_ERROR] = error_code
 
     # ------------------------------------------------------------------
     # Data area access (zero-copy)
@@ -291,7 +302,7 @@ class SHMPool:
         predictions). Input is overwritten by result after inference.
         """
         start = self._slot_offset(slot_id) + _HEADER_SIZE
-        return self._shm.buf[start: start + self._data_slot_bytes]
+        return self._shm.buf[start : start + self._data_slot_bytes]
 
     # ------------------------------------------------------------------
     # Stale slot detection
@@ -303,14 +314,16 @@ class SHMPool:
         Used by MMP's reaper to reclaim orphaned slots when a FastAPI worker
         or backend worker crashes without sending T_FREE.
         """
-        now_ns    = time.monotonic_ns()
-        max_ns    = int(max_age_s * 1_000_000_000)
-        result    = []
+        now_ns = time.monotonic_ns()
+        max_ns = int(max_age_s * 1_000_000_000)
+        result = []
         for slot_id in range(self._n_slots):
             hdr = self.read_header(slot_id)
-            if (hdr.status != SlotStatus.FREE
-                    and hdr.timestamp_ns > 0
-                    and now_ns - hdr.timestamp_ns > max_ns):
+            if (
+                hdr.status != SlotStatus.FREE
+                and hdr.timestamp_ns > 0
+                and now_ns - hdr.timestamp_ns > max_ns
+            ):
                 result.append(slot_id)
         return result
 

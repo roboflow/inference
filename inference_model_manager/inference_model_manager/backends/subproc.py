@@ -57,15 +57,17 @@ logger = logging.getLogger(__name__)
 # PAIR protocol constants (parent ↔ worker)
 # ---------------------------------------------------------------------------
 
-_MSG_SLOT_READY = b"\x01"   # parent→worker: struct.pack(">IQ", slot_id, req_id)  [12 B]
-_MSG_RESULT     = b"\x02"   # worker→parent: struct.pack(">QII", req_id, slot_id, result_sz) [16 B]
-_MSG_HEARTBEAT  = b"\x03"   # worker→parent: keepalive (no payload)
-_MSG_SHUTDOWN   = b"\x04"   # parent→worker: stop gracefully (no payload)
+_MSG_SLOT_READY = b"\x01"  # parent→worker: struct.pack(">IQ", slot_id, req_id)  [12 B]
+_MSG_RESULT = (
+    b"\x02"  # worker→parent: struct.pack(">QII", req_id, slot_id, result_sz) [16 B]
+)
+_MSG_HEARTBEAT = b"\x03"  # worker→parent: keepalive (no payload)
+_MSG_SHUTDOWN = b"\x04"  # parent→worker: stop gracefully (no payload)
 
-_HEARTBEAT_INTERVAL_S   = 2.0
-_WORKER_HEARTBEAT_TIMEOUT = 30.0   # seconds of silence → unhealthy
+_HEARTBEAT_INTERVAL_S = 2.0
+_WORKER_HEARTBEAT_TIMEOUT = 30.0  # seconds of silence → unhealthy
 
-_DEFAULT_BATCH_MAX_SIZE    = 8
+_DEFAULT_BATCH_MAX_SIZE = 8
 _DEFAULT_BATCH_MAX_WAIT_MS = 5.0
 
 
@@ -73,7 +75,7 @@ _DEFAULT_BATCH_MAX_WAIT_MS = 5.0
 # Input serialisation helper (parent side)
 # ---------------------------------------------------------------------------
 
-_NP_MAGIC = b"\x93NUMPY"   # first 6 bytes of every np.save() file
+_NP_MAGIC = b"\x93NUMPY"  # first 6 bytes of every np.save() file
 
 
 def _to_bytes(raw_input: Any) -> bytes:
@@ -99,20 +101,21 @@ def _to_bytes(raw_input: Any) -> bytes:
 # Worker subprocess
 # ---------------------------------------------------------------------------
 
+
 def _worker_main(
-    model_id:          str,
-    api_key:           str,
-    setup_pipe:        Any,
-    zmq_addr:          str,
-    use_gpu:           bool,
-    gpu_device:        Optional[str],
-    shm_pool_name:     str,
-    n_slots:           int,
-    input_mb:          float,
-    batch_max_size:    int,
+    model_id: str,
+    api_key: str,
+    setup_pipe: Any,
+    zmq_addr: str,
+    use_gpu: bool,
+    gpu_device: Optional[str],
+    shm_pool_name: str,
+    n_slots: int,
+    input_mb: float,
+    batch_max_size: int,
     batch_max_wait_ms: float,
-    use_nvjpeg:        bool,
-    model_kwargs:      dict,
+    use_nvjpeg: bool,
+    model_kwargs: dict,
 ) -> None:
     """Worker subprocess entry point.
 
@@ -124,43 +127,61 @@ def _worker_main(
 
     import zmq  # noqa: PLC0415
 
+    from inference_model_manager.backends.decode import (  # noqa: PLC0415
+        make_batch_decoder,
+    )
     from inference_models.models.auto_loaders.core import AutoModel  # noqa: PLC0415
-    from inference_model_manager.backends.decode import make_batch_decoder    # noqa: PLC0415
 
     _log = logging.getLogger(f"{__name__}.worker")
     pool = sock = zmq_ctx = model = None
 
     try:
-        device = gpu_device if (use_gpu and gpu_device) else ("cuda:0" if use_gpu else "cpu")
+        device = (
+            gpu_device if (use_gpu and gpu_device) else ("cuda:0" if use_gpu else "cpu")
+        )
         _log.info("Worker(%s): loading on %s", model_id, device)
-        model = AutoModel.from_pretrained(model_id, api_key=api_key, device=device,
-                                          **model_kwargs)
+        model = AutoModel.from_pretrained(
+            model_id, api_key=api_key, device=device, **model_kwargs
+        )
         _log.info("Worker(%s): model ready (%s)", model_id, type(model).__name__)
 
         batch_decode_fn = make_batch_decoder(device, use_nvjpeg=use_nvjpeg)
-        pool            = SHMPool.attach(shm_pool_name, n_slots=n_slots,
-                                   input_mb=input_mb)
+        pool = SHMPool.attach(shm_pool_name, n_slots=n_slots, input_mb=input_mb)
 
         model_max_bs = getattr(model, "max_batch_size", None)
         effective_bs = model_max_bs if batch_max_size <= 0 else batch_max_size
         if model_max_bs is not None and effective_bs > model_max_bs:
             effective_bs = model_max_bs
-        _log.info("Worker(%s): batch_max_size=%s (model=%s, configured=%s)",
-                  model_id, effective_bs, model_max_bs, batch_max_size)
+        _log.info(
+            "Worker(%s): batch_max_size=%s (model=%s, configured=%s)",
+            model_id,
+            effective_bs,
+            model_max_bs,
+            batch_max_size,
+        )
 
-        setup_pipe.send({
-            "status":        "READY",
-            "class_names":   getattr(model, "class_names", None),
-            "max_batch_size": model_max_bs,
-        })
+        setup_pipe.send(
+            {
+                "status": "READY",
+                "class_names": getattr(model, "class_names", None),
+                "max_batch_size": model_max_bs,
+            }
+        )
 
         zmq_ctx = zmq.Context()
-        sock    = zmq_ctx.socket(zmq.PAIR)
+        sock = zmq_ctx.socket(zmq.PAIR)
         sock.setsockopt(zmq.LINGER, 0)
         sock.connect(zmq_addr)
 
-        _worker_loop(model, pool, sock, batch_decode_fn,
-                     effective_bs or _DEFAULT_BATCH_MAX_SIZE, batch_max_wait_ms, _log)
+        _worker_loop(
+            model,
+            pool,
+            sock,
+            batch_decode_fn,
+            effective_bs or _DEFAULT_BATCH_MAX_SIZE,
+            batch_max_wait_ms,
+            _log,
+        )
 
     except KeyboardInterrupt:
         pass  # clean exit on Ctrl+C
@@ -181,10 +202,10 @@ def _worker_main(
 
 def _worker_loop(
     model,
-    pool:              SHMPool,
+    pool: SHMPool,
     sock,
     batch_decode_fn,
-    batch_max_size:    int,
+    batch_max_size: int,
     batch_max_wait_ms: float,
     log,
 ) -> None:
@@ -195,18 +216,18 @@ def _worker_loop(
     poller.register(sock, zmq.POLLIN)
 
     batch_max_wait_s = batch_max_wait_ms / 1000.0
-    pending: list[tuple[int, int]] = []   # (slot_id, req_id)
-    batch_start   = 0.0
+    pending: list[tuple[int, int]] = []  # (slot_id, req_id)
+    batch_start = 0.0
     last_heartbeat = time.monotonic()
 
     while True:
         # Compute poll timeout
         now = time.monotonic()
         if pending:
-            wait_left  = batch_start + batch_max_wait_s - now
+            wait_left = batch_start + batch_max_wait_s - now
             timeout_ms = max(0, int(wait_left * 1000))
         else:
-            hb_due     = last_heartbeat + _HEARTBEAT_INTERVAL_S
+            hb_due = last_heartbeat + _HEARTBEAT_INTERVAL_S
             timeout_ms = max(1, int((hb_due - now) * 1000))
 
         events = dict(poller.poll(timeout=timeout_ms))
@@ -239,8 +260,7 @@ def _worker_loop(
         # Fire batch when ready
         now = time.monotonic()
         if pending and (
-            len(pending) >= batch_max_size
-            or (now - batch_start) >= batch_max_wait_s
+            len(pending) >= batch_max_size or (now - batch_start) >= batch_max_wait_s
         ):
             _process_slots(model, pool, pending, sock, batch_decode_fn, log)
             pending.clear()
@@ -249,8 +269,8 @@ def _worker_loop(
 
 def _process_slots(
     model,
-    pool:            SHMPool,
-    batch:           list[tuple[int, int]],
+    pool: SHMPool,
+    batch: list[tuple[int, int]],
     sock,
     batch_decode_fn,
     log,
@@ -259,11 +279,11 @@ def _process_slots(
     import zmq
 
     # Gather memoryviews; classify as .npy (standalone numpy) vs raw bytes
-    mvs:    list[Any]  = []
+    mvs: list[Any] = []
     is_npy: list[bool] = []
     for slot_id, _ in batch:
         hdr = pool.read_header(slot_id)
-        mv  = pool.data_memoryview(slot_id)[:hdr.input_size]
+        mv = pool.data_memoryview(slot_id)[: hdr.input_size]
         mvs.append(mv)
         is_npy.append(bytes(mv[:6]) == _NP_MAGIC)
 
@@ -293,7 +313,9 @@ def _process_slots(
             for i, img in zip(raw_indices, raw_decoded):
                 images[i] = img
         except Exception:
-            log.exception("Worker: batch decode failed for %d slot(s)", len(raw_indices))
+            log.exception(
+                "Worker: batch decode failed for %d slot(s)", len(raw_indices)
+            )
             for i in raw_indices:
                 decode_errors[i] = True
 
@@ -311,22 +333,32 @@ def _process_slots(
             slot_id, req_id = batch[i]
             pool.mark_error(slot_id)
             try:
-                sock.send_multipart([_MSG_RESULT, struct.pack(">QII", req_id, slot_id, 0)])
+                sock.send_multipart(
+                    [_MSG_RESULT, struct.pack(">QII", req_id, slot_id, 0)]
+                )
             except zmq.ZMQError:
                 return
         if len(error_indices) == len(batch):
             return
         # Filter to only successfully decoded slots for infer
-        good = [(i, batch[i], images[i]) for i in range(len(batch)) if i not in error_indices]
-        good_batch  = [b for _, b, _ in good]
+        good = [
+            (i, batch[i], images[i])
+            for i in range(len(batch))
+            if i not in error_indices
+        ]
+        good_batch = [b for _, b, _ in good]
         good_images = [img for _, _, img in good]
     else:
-        good_batch  = batch
+        good_batch = batch
         good_images = images
 
     results: list[Any]
     try:
-        raw_out = model.infer(good_images[0]) if len(good_images) == 1 else model.infer(good_images)
+        raw_out = (
+            model.infer(good_images[0])
+            if len(good_images) == 1
+            else model.infer(good_images)
+        )
         results = raw_out if isinstance(raw_out, list) else [raw_out]
     except Exception:
         log.exception("Worker: model.infer() failed")
@@ -336,8 +368,9 @@ def _process_slots(
         if result is None:
             pool.mark_error(slot_id)
             try:
-                sock.send_multipart([_MSG_RESULT,
-                                     struct.pack(">QII", req_id, slot_id, 0)])
+                sock.send_multipart(
+                    [_MSG_RESULT, struct.pack(">QII", req_id, slot_id, 0)]
+                )
             except zmq.ZMQError:
                 return
             continue
@@ -350,13 +383,14 @@ def _process_slots(
             result.confidence = result.confidence.cpu()
             result.class_id = result.class_id.cpu()
         data = pickle.dumps(result)
-        mv   = pool.data_memoryview(slot_id)
-        mv[:len(data)] = data
+        mv = pool.data_memoryview(slot_id)
+        mv[: len(data)] = data
         mv.release()
         pool.mark_done(slot_id, len(data))
         try:
-            sock.send_multipart([_MSG_RESULT,
-                                 struct.pack(">QII", req_id, slot_id, len(data))])
+            sock.send_multipart(
+                [_MSG_RESULT, struct.pack(">QII", req_id, slot_id, len(data))]
+            )
         except zmq.ZMQError:
             return
 
@@ -364,6 +398,7 @@ def _process_slots(
 # ---------------------------------------------------------------------------
 # SubprocessBackend
 # ---------------------------------------------------------------------------
+
 
 class SubprocessBackend(Backend):
     """Inference backend running the model in a worker subprocess.
@@ -378,26 +413,26 @@ class SubprocessBackend(Backend):
         api_key: str,
         *,
         # SHMPool (mandatory — pool is always created externally)
-        shm_pool_name:       str,
-        n_slots:             int,
-        input_mb:            float,
+        shm_pool_name: str,
+        n_slots: int,
+        input_mb: float,
         # Worker batching
-        batch_max_size:      int                = _DEFAULT_BATCH_MAX_SIZE,
-        batch_max_delay_ms:  float              = _DEFAULT_BATCH_MAX_WAIT_MS,
+        batch_max_size: int = _DEFAULT_BATCH_MAX_SIZE,
+        batch_max_delay_ms: float = _DEFAULT_BATCH_MAX_WAIT_MS,
         # Orchestrated-mode callback
-        on_result_callback:  Optional[Callable] = None,
+        on_result_callback: Optional[Callable] = None,
         # Device
-        device:              Optional[str]      = None,
-        use_gpu:             Optional[bool]     = None,
-        use_cuda_ipc:        Optional[bool]     = None,   # reserved, unused
+        device: Optional[str] = None,
+        use_gpu: Optional[bool] = None,
+        use_cuda_ipc: Optional[bool] = None,  # reserved, unused
         # Misc
-        decoder:             str                = "imagecodecs",
-        worker_start_timeout: float             = 120.0,
+        decoder: str = "imagecodecs",
+        worker_start_timeout: float = 120.0,
         **kwargs,
     ) -> None:
         import zmq  # noqa: PLC0415
 
-        self._model_id    = model_id
+        self._model_id = model_id
         self._state_value: str = "loading"
 
         # ── Device resolution ────────────────────────────────────────
@@ -405,33 +440,39 @@ class SubprocessBackend(Backend):
             use_gpu = True
         if use_gpu is None:
             import torch  # noqa: PLC0415
-            use_gpu = (device is not None and device.startswith("cuda")) or \
-                      (device is None and torch.cuda.is_available())
-        self._use_gpu    = use_gpu
+
+            use_gpu = (device is not None and device.startswith("cuda")) or (
+                device is None and torch.cuda.is_available()
+            )
+        self._use_gpu = use_gpu
         self._device_str = (
             (device if device and device.startswith("cuda") else "cuda:0")
-            if self._use_gpu else "cpu"
+            if self._use_gpu
+            else "cpu"
         )
 
         # ── SHMPool (always attach — never create) ─────────────────
-        self._pool = SHMPool.attach(shm_pool_name, n_slots=n_slots,
-                                    input_mb=input_mb)
+        self._pool = SHMPool.attach(shm_pool_name, n_slots=n_slots, input_mb=input_mb)
 
         logger.info(
             "SubprocessBackend(%s): device=%s pool=%s slots=%d "
             "input=%.0fMB batch=%d/%.0fms",
-            model_id, self._device_str,
+            model_id,
+            self._device_str,
             f"attached:{shm_pool_name[:8]}…",
-            n_slots, input_mb, batch_max_size, batch_max_delay_ms,
+            n_slots,
+            input_mb,
+            batch_max_size,
+            batch_max_delay_ms,
         )
 
         # ── ZMQ PAIR ─────────────────────────────────────────────────
-        self._zmq_ctx  = zmq.Context()
+        self._zmq_ctx = zmq.Context()
         self._zmq_sock = self._zmq_ctx.socket(zmq.PAIR)
         self._zmq_sock.setsockopt(zmq.LINGER, 0)
 
         _transport = os.environ.get("INFERENCE_ZMQ_TRANSPORT", default_transport())
-        _sock_id   = f"sp_{os.getpid()}_{uuid.uuid4().hex[:8]}"
+        _sock_id = f"sp_{os.getpid()}_{uuid.uuid4().hex[:8]}"
         if _transport == "ipc":
             self._zmq_addr = f"ipc:///tmp/inference_{_sock_id}.ipc"
         else:
@@ -481,29 +522,31 @@ class SubprocessBackend(Backend):
             self._worker.join(timeout=10)
             raise RuntimeError(f"SubprocessBackend({model_id!r}): {err}")
 
-        self._class_names           = msg.get("class_names")
-        self._max_batch_size_model  = msg.get("max_batch_size")
-        self._last_worker_activity  = time.monotonic()
+        self._class_names = msg.get("class_names")
+        self._max_batch_size_model = msg.get("max_batch_size")
+        self._last_worker_activity = time.monotonic()
 
         logger.info(
             "SubprocessBackend(%s): worker ready (pid=%d, device=%s)",
-            model_id, self._worker.pid, self._device_str,
+            model_id,
+            self._worker.pid,
+            self._device_str,
         )
 
         # ── Stats ─────────────────────────────────────────────────────
-        self._inference_count   = 0
-        self._error_count       = 0
+        self._inference_count = 0
+        self._error_count = 0
         self._last_inference_ts = 0.0
         self._latencies: deque[float] = deque(maxlen=1000)
 
         # ── Recv thread ───────────────────────────────────────────────
         # All ZMQ socket I/O runs here.  Other threads communicate via _outbound.
         self._outbound: queue.Queue = queue.Queue()
-        self._slot_futures: Dict[int, tuple] = {}   # slot_id → (req_id, Future)
-        self._slot_lock                       = threading.Lock()
+        self._slot_futures: Dict[int, tuple] = {}  # slot_id → (req_id, Future)
+        self._slot_lock = threading.Lock()
         self._on_result_callback: Optional[Callable] = on_result_callback
         self._recv_running = True
-        self._recv_thread  = threading.Thread(
+        self._recv_thread = threading.Thread(
             target=self._recv_loop,
             daemon=True,
             name=f"subproc-recv-{model_id[:20]}",
@@ -541,7 +584,7 @@ class SubprocessBackend(Backend):
                     item = self._outbound.get_nowait()
                 except queue.Empty:
                     break
-                if item is None:   # shutdown sentinel
+                if item is None:  # shutdown sentinel
                     try:
                         self._zmq_sock.send_multipart([_MSG_SHUTDOWN, b""])
                     except Exception:
@@ -572,7 +615,7 @@ class SubprocessBackend(Backend):
             msg = frames[0]
 
             if msg == _MSG_HEARTBEAT:
-                pass   # timestamp already updated
+                pass  # timestamp already updated
             elif msg == _MSG_RESULT and len(frames) > 1 and len(frames[1]) == 16:
                 req_id, slot_id, result_sz = struct.unpack(">QII", frames[1])
                 self._handle_result(req_id, slot_id, result_sz)
@@ -595,9 +638,7 @@ class SubprocessBackend(Backend):
             # Reject pending futures
             if future is not None and not future.done():
                 future.set_exception(
-                    RuntimeError(
-                        f"SubprocessBackend({self._model_id!r}): worker died"
-                    )
+                    RuntimeError(f"SubprocessBackend({self._model_id!r}): worker died")
                 )
             # Notify owner (MMP or ModelManager) — result_sz=0 → error
             if self._on_result_callback is not None:
@@ -620,7 +661,7 @@ class SubprocessBackend(Backend):
             if future is not None and not future.done():
                 if result_sz > 0:
                     try:
-                        data   = bytes(self._pool.data_memoryview(slot_id)[:result_sz])
+                        data = bytes(self._pool.data_memoryview(slot_id)[:result_sz])
                         result = pickle.loads(data)
                         future.set_result(result)
                     except Exception as exc:
@@ -640,7 +681,10 @@ class SubprocessBackend(Backend):
     # ------------------------------------------------------------------
 
     def submit_slot(
-        self, slot_id: int, req_id: int, future: Optional[Future] = None,
+        self,
+        slot_id: int,
+        req_id: int,
+        future: Optional[Future] = None,
     ) -> None:
         """Register a future for this slot and signal the worker.
 
@@ -659,8 +703,8 @@ class SubprocessBackend(Backend):
 
     def _record_inference(self, t0: float, future: Future) -> None:
         elapsed = time.monotonic() - t0
-        self._inference_count   += 1
-        self._last_inference_ts  = t0
+        self._inference_count += 1
+        self._last_inference_ts = t0
         self._latencies.append(elapsed)
         if future.exception() is not None:
             self._error_count += 1
@@ -690,7 +734,9 @@ class SubprocessBackend(Backend):
     def drain_and_unload(self, timeout_s: float = 30.0) -> None:
         """Stop accepting new work, wait for in-flight to finish, then unload."""
         self._state_value = "draining"
-        logger.info("SubprocessBackend(%s): draining (timeout=%.1fs)", self._model_id, timeout_s)
+        logger.info(
+            "SubprocessBackend(%s): draining (timeout=%.1fs)", self._model_id, timeout_s
+        )
 
         deadline = time.monotonic() + timeout_s
         while time.monotonic() < deadline:
@@ -698,7 +744,9 @@ class SubprocessBackend(Backend):
                 if not self._slot_futures:
                     break
                 n = len(self._slot_futures)
-            logger.debug("SubprocessBackend(%s): %d slots still in-flight", self._model_id, n)
+            logger.debug(
+                "SubprocessBackend(%s): %d slots still in-flight", self._model_id, n
+            )
             time.sleep(0.1)
         else:
             with self._slot_lock:
@@ -706,17 +754,18 @@ class SubprocessBackend(Backend):
             if n > 0:
                 logger.warning(
                     "SubprocessBackend(%s): drain timeout — %d slots still in-flight, force-unloading",
-                    self._model_id, n,
+                    self._model_id,
+                    n,
                 )
 
         self.unload()
 
     def unload(self) -> None:
-        self._state_value = "loading"   # block new submits immediately
+        self._state_value = "loading"  # block new submits immediately
 
         # Signal recv thread: send T_SHUTDOWN to worker, then exit
         self._recv_running = False
-        self._outbound.put(None)        # None = shutdown sentinel
+        self._outbound.put(None)  # None = shutdown sentinel
         self._recv_thread.join(timeout=5.0)
 
         # Kill worker if still alive
@@ -739,14 +788,14 @@ class SubprocessBackend(Backend):
 
         if self._zmq_addr.startswith("ipc://"):
             try:
-                os.unlink(self._zmq_addr[len("ipc://"):])
+                os.unlink(self._zmq_addr[len("ipc://") :])
             except OSError:
                 pass
 
         logger.info("SubprocessBackend(%s): unloaded", self._model_id)
 
     def sleep(self) -> Optional[int]:
-        return None   # Issue #8: not yet implemented
+        return None  # Issue #8: not yet implemented
 
     def wake(self) -> None:
         raise RuntimeError(
@@ -797,26 +846,26 @@ class SubprocessBackend(Backend):
             return sorted_lats[idx] * 1000
 
         return {
-            "model_id":             self._model_id,
-            "backend_type":         "subprocess",
-            "device":               self._device_str,
-            "transport":            "shm_pool",
-            "state":                self.state,
-            "is_accepting":         self.is_accepting,
-            "queue_depth":          self.queue_depth,
-            "max_batch_size":       self.max_batch_size,
-            "throughput_fps":       (
+            "model_id": self._model_id,
+            "backend_type": "subprocess",
+            "device": self._device_str,
+            "transport": "shm_pool",
+            "state": self.state,
+            "is_accepting": self.is_accepting,
+            "queue_depth": self.queue_depth,
+            "max_batch_size": self.max_batch_size,
+            "throughput_fps": (
                 self._inference_count / sum(sorted_lats) if sorted_lats else 0.0
             ),
-            "latency_p50_ms":       _pct(50),
-            "latency_p99_ms":       _pct(99),
-            "gpu_memory_mb":        0.0,
+            "latency_p50_ms": _pct(50),
+            "latency_p99_ms": _pct(99),
+            "gpu_memory_mb": 0.0,
             "cpu_pinned_memory_mb": 0.0,
-            "inference_count":      self._inference_count,
-            "error_count":          self._error_count,
-            "last_inference_ts":    self._last_inference_ts,
-            "worker_alive":         self._worker.is_alive(),
-            "shm_pool_name":        self._pool.name,
+            "inference_count": self._inference_count,
+            "error_count": self._error_count,
+            "last_inference_ts": self._last_inference_ts,
+            "worker_alive": self._worker.is_alive(),
+            "shm_pool_name": self._pool.name,
         }
 
     @property

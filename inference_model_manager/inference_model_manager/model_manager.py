@@ -14,10 +14,12 @@ logger = logging.getLogger(__name__)
 # Import lazily to avoid circular deps
 _to_bytes = None
 
+
 def _get_to_bytes():
     global _to_bytes
     if _to_bytes is None:
         from inference_model_manager.backends.subproc import _to_bytes as _tb
+
         _to_bytes = _tb
     return _to_bytes
 
@@ -67,7 +69,7 @@ class ModelManager:
             input_mb: MB per slot data area.
         """
         self._max_pinned_memory_bytes = max_pinned_memory_mb * 1024 * 1024
-        self._n_slots  = n_slots
+        self._n_slots = n_slots
         self._input_mb = input_mb
 
         self._backends: Dict[str, Backend] = {}
@@ -136,7 +138,11 @@ class ModelManager:
 
             logger.info(
                 "Loading '%s' (model=%s) with backend=%s, device=%s, batch_max_size=%d",
-                model_id, load_target, backend, device, batch_max_size,
+                model_id,
+                load_target,
+                backend,
+                device,
+                batch_max_size,
             )
 
             b = self._create_backend(
@@ -157,17 +163,23 @@ class ModelManager:
             self._warmup(model_id, warmup_iters)
 
         logger.info(
-            "Model '%s' loaded (state=%s, device=%s)", model_id, b.state, b.device,
+            "Model '%s' loaded (state=%s, device=%s)",
+            model_id,
+            b.state,
+            b.device,
         )
 
     def _ensure_pool(self) -> Any:
         """Lazily create shared SHM pool on first subprocess backend load."""
         if self._pool is None:
             from inference_model_manager.backends.utils.shm_pool import SHMPool
+
             self._pool = SHMPool.create(self._n_slots, self._input_mb)
             logger.info(
                 "ModelManager: SHM pool created  name=%s  slots=%d  data=%.0fMB",
-                self._pool.name, self._n_slots, self._input_mb,
+                self._pool.name,
+                self._n_slots,
+                self._input_mb,
             )
         return self._pool
 
@@ -183,7 +195,8 @@ class ModelManager:
 
             # DirectBackend uses shared executor for submit() when not batching
             return DirectBackend(
-                model_id, api_key,
+                model_id,
+                api_key,
                 executor=self._executor,
                 **kwargs,
             )
@@ -192,7 +205,8 @@ class ModelManager:
 
             pool = self._ensure_pool()
             return SubprocessBackend(
-                model_id, api_key,
+                model_id,
+                api_key,
                 shm_pool_name=pool.name,
                 n_slots=self._n_slots,
                 input_mb=self._input_mb,
@@ -218,10 +232,13 @@ class ModelManager:
         except Exception:
             logger.warning(
                 "Warmup failed for '%s' — model is loaded but not warmed up",
-                model_id, exc_info=True,
+                model_id,
+                exc_info=True,
             )
 
-    def unload(self, model_id: str, *, drain: bool = False, drain_timeout_s: float = 30.0) -> None:
+    def unload(
+        self, model_id: str, *, drain: bool = False, drain_timeout_s: float = 30.0
+    ) -> None:
         """Unload a model, releasing all GPU and CPU resources.
 
         Args:
@@ -236,7 +253,11 @@ class ModelManager:
             self._pinned_bytes.pop(model_id, None)
 
         if drain:
-            logger.info("Draining and unloading model '%s' (timeout=%.1fs)", model_id, drain_timeout_s)
+            logger.info(
+                "Draining and unloading model '%s' (timeout=%.1fs)",
+                model_id,
+                drain_timeout_s,
+            )
             backend.drain_and_unload(timeout_s=drain_timeout_s)
         else:
             logger.info("Unloading model '%s'", model_id)
@@ -311,6 +332,7 @@ class ModelManager:
             KeyError: If model_id is not loaded.
         """
         import asyncio
+
         backend = self._get_backend(model_id)
         if hasattr(backend, "submit_slot"):
             loop = asyncio.get_running_loop()
@@ -319,7 +341,9 @@ class ModelManager:
             )
         return await backend.infer_async(raw_input, **kwargs)
 
-    def submit(self, model_id: str, raw_input: Any, *, priority: int = 0, **kwargs) -> Future:
+    def submit(
+        self, model_id: str, raw_input: Any, *, priority: int = 0, **kwargs
+    ) -> Future:
         """Submit a raw input for inference. Returns a Future immediately.
 
         For subprocess backends, this allocates a SHM slot, writes input,
@@ -340,10 +364,10 @@ class ModelManager:
                     f"{self._pool.data_slot_bytes} B — increase input_mb"
                 )
 
-            req_id  = uuid.uuid4().int & 0xFFFF_FFFF_FFFF_FFFF
+            req_id = uuid.uuid4().int & 0xFFFF_FFFF_FFFF_FFFF
             slot_id = self._pool.alloc_slot()
             self._pool.mark_allocated(slot_id, req_id)
-            self._pool.data_memoryview(slot_id)[:len(input_bytes)] = input_bytes
+            self._pool.data_memoryview(slot_id)[: len(input_bytes)] = input_bytes
             self._pool.mark_written(slot_id, len(input_bytes))
 
             future: Future = Future()
@@ -417,14 +441,16 @@ class ModelManager:
         """List all registered models with state, device, queue depth, health."""
         result = []
         for model_id, backend in self._backends.items():
-            result.append({
-                "model_id": model_id,
-                "state": backend.state,
-                "device": backend.device,
-                "is_accepting": backend.is_accepting,
-                "queue_depth": backend.queue_depth,
-                "worker_pid": backend.worker_pid,
-            })
+            result.append(
+                {
+                    "model_id": model_id,
+                    "state": backend.state,
+                    "device": backend.device,
+                    "is_accepting": backend.is_accepting,
+                    "queue_depth": backend.queue_depth,
+                    "worker_pid": backend.worker_pid,
+                }
+            )
         return result
 
     def get_backend(self, model_id: str) -> Optional[Backend]:
@@ -445,17 +471,11 @@ class ModelManager:
 
     @property
     def loaded_models(self) -> List[str]:
-        return [
-            mid for mid, b in self._backends.items()
-            if b.state == "loaded"
-        ]
+        return [mid for mid, b in self._backends.items() if b.state == "loaded"]
 
     @property
     def sleeping_models(self) -> List[str]:
-        return [
-            mid for mid, b in self._backends.items()
-            if b.state == "sleeping"
-        ]
+        return [mid for mid, b in self._backends.items() if b.state == "sleeping"]
 
     # ------------------------------------------------------------------
     # Shutdown
@@ -473,7 +493,9 @@ class ModelManager:
             try:
                 self.unload(model_id)
             except Exception:
-                logger.warning("Error unloading '%s' during shutdown", model_id, exc_info=True)
+                logger.warning(
+                    "Error unloading '%s' during shutdown", model_id, exc_info=True
+                )
 
         self._executor.shutdown(wait=False)
 
@@ -497,17 +519,21 @@ class ModelManager:
                 gpus = []
                 for i in range(torch.cuda.device_count()):
                     props = torch.cuda.get_device_properties(i)
-                    gpus.append({
-                        "device": f"cuda:{i}",
-                        "name": props.name,
-                        "total_mb": round(props.total_mem / 1024 / 1024, 1),
-                        "allocated_mb": round(
-                            torch.cuda.memory_allocated(i) / 1024 / 1024, 1,
-                        ),
-                        "reserved_mb": round(
-                            torch.cuda.memory_reserved(i) / 1024 / 1024, 1,
-                        ),
-                    })
+                    gpus.append(
+                        {
+                            "device": f"cuda:{i}",
+                            "name": props.name,
+                            "total_mb": round(props.total_mem / 1024 / 1024, 1),
+                            "allocated_mb": round(
+                                torch.cuda.memory_allocated(i) / 1024 / 1024,
+                                1,
+                            ),
+                            "reserved_mb": round(
+                                torch.cuda.memory_reserved(i) / 1024 / 1024,
+                                1,
+                            ),
+                        }
+                    )
                 return gpus
         except Exception:
             pass

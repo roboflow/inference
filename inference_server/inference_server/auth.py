@@ -62,7 +62,8 @@ async def validate_api_key(api_key: str) -> tuple[bool, Optional[str]]:
             ) as resp:
                 if resp.status != 200:
                     _cache[api_key] = _CacheEntry(
-                        expires_at=now + _CACHE_FAIL_TTL_S, valid=False,
+                        expires_at=now + _CACHE_FAIL_TTL_S,
+                        valid=False,
                     )
                     return False, None
 
@@ -70,7 +71,8 @@ async def validate_api_key(api_key: str) -> tuple[bool, Optional[str]]:
                 workspace_id = data.get("workspace")
                 if not workspace_id:
                     _cache[api_key] = _CacheEntry(
-                        expires_at=now + _CACHE_FAIL_TTL_S, valid=False,
+                        expires_at=now + _CACHE_FAIL_TTL_S,
+                        valid=False,
                     )
                     return False, None
 
@@ -84,6 +86,7 @@ async def validate_api_key(api_key: str) -> tuple[bool, Optional[str]]:
     except Exception:
         logger.warning("Auth validation failed (network error)", exc_info=True)
         _cache[api_key] = _CacheEntry(
-            expires_at=now + _CACHE_FAIL_TTL_S, valid=False,
+            expires_at=now + _CACHE_FAIL_TTL_S,
+            valid=False,
         )
         return False, None

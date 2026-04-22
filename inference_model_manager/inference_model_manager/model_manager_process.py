@@ -59,58 +59,60 @@ logger = logging.getLogger(__name__)
 
 # uvicorn → MMP (hot path)
 T_ENSURE_LOADED = b"\x09"
-T_ALLOC         = b"\x01"
-T_SUBMIT        = b"\x02"
-T_FREE          = b"\x03"
+T_ALLOC = b"\x01"
+T_SUBMIT = b"\x02"
+T_FREE = b"\x03"
 
 # MMP → uvicorn (hot path)
-T_MODEL_READY   = b"\x0A"
-T_LOAD_TIMEOUT  = b"\x0B"
-T_ALLOC_OK      = b"\x11"
-T_RESULT_READY  = b"\x14"
-T_ERROR         = b"\xFF"
+T_MODEL_READY = b"\x0A"
+T_LOAD_TIMEOUT = b"\x0B"
+T_ALLOC_OK = b"\x11"
+T_RESULT_READY = b"\x14"
+T_ERROR = b"\xFF"
 
 # Lifecycle API (admin → MMP)
-T_LOAD   = b"\x20"
+T_LOAD = b"\x20"
 T_UNLOAD = b"\x21"
-T_SLEEP  = b"\x22"
-T_WAKE   = b"\x23"
-T_STATS  = b"\x30"
+T_SLEEP = b"\x22"
+T_WAKE = b"\x23"
+T_STATS = b"\x30"
 
 # Lifecycle replies (MMP → admin)
-T_OK         = b"\x40"
+T_OK = b"\x40"
 T_STATS_RESP = b"\x41"
 
 # Error codes embedded in T_ERROR payload byte
-_ERR_POOL_FULL   = 1
-_ERR_NO_BACKEND  = 2
-_ERR_STALE       = 3
-_ERR_BACKEND     = 4
+_ERR_POOL_FULL = 1
+_ERR_NO_BACKEND = 2
+_ERR_STALE = 3
+_ERR_BACKEND = 4
 _ERR_LOAD_FAILED = 5
-_ERR_NOT_LOADED  = 6
+_ERR_NOT_LOADED = 6
 
 
 # ---------------------------------------------------------------------------
 # GPU memory helper (module level — no dependency on MMP instance)
 # ---------------------------------------------------------------------------
 
+
 def _gpu_used_fraction() -> float:
     """Fraction of GPU 0 memory in use (0.0–1.0). Used by eviction loop. Returns 0.0 if unavailable."""
     try:
         import torch
+
         if torch.cuda.is_available():
             total = torch.cuda.get_device_properties(0).total_memory
             if total > 0:
-                used = (torch.cuda.memory_allocated(0)
-                        + torch.cuda.memory_reserved(0))
+                used = torch.cuda.memory_allocated(0) + torch.cuda.memory_reserved(0)
                 return used / total
     except Exception:
         pass
     try:
         import pynvml  # nvidia-ml-py (drop-in; install nvidia-ml-py not pynvml)
+
         pynvml.nvmlInit()
         handle = pynvml.nvmlDeviceGetHandleByIndex(0)
-        info   = pynvml.nvmlDeviceGetMemoryInfo(handle)
+        info = pynvml.nvmlDeviceGetMemoryInfo(handle)
         if info.total > 0:
             return info.used / info.total
     except Exception:
@@ -140,16 +142,16 @@ def _collect_gpu_stats(
         import pynvml  # nvidia-ml-py
 
         pynvml.nvmlInit()
-        count     = pynvml.nvmlDeviceGetCount()
+        count = pynvml.nvmlDeviceGetCount()
         pid_mem_mb: dict[int, float] = {}
 
         for i in range(count):
-            handle  = pynvml.nvmlDeviceGetHandleByIndex(i)
-            mem     = pynvml.nvmlDeviceGetMemoryInfo(handle)
+            handle = pynvml.nvmlDeviceGetHandleByIndex(i)
+            mem = pynvml.nvmlDeviceGetMemoryInfo(handle)
 
             util_gpu = util_mem_pct = None
             try:
-                util     = pynvml.nvmlDeviceGetUtilizationRates(handle)
+                util = pynvml.nvmlDeviceGetUtilizationRates(handle)
                 util_gpu = util.gpu
                 util_mem_pct = util.memory
             except Exception:
@@ -176,16 +178,20 @@ def _collect_gpu_stats(
             except Exception:
                 pass
 
-            result["gpus"].append({
-                "index":            i,
-                "memory_used_mb":   round(mem.used  / 1024 / 1024, 1),
-                "memory_total_mb":  round(mem.total / 1024 / 1024, 1),
-                "memory_used_pct":  round(mem.used / mem.total * 100, 1) if mem.total else 0.0,
-                "utilization_pct":  util_gpu,
-                "mem_util_pct":     util_mem_pct,
-                "temperature_c":    temp_c,
-                "power_w":          power_w,
-            })
+            result["gpus"].append(
+                {
+                    "index": i,
+                    "memory_used_mb": round(mem.used / 1024 / 1024, 1),
+                    "memory_total_mb": round(mem.total / 1024 / 1024, 1),
+                    "memory_used_pct": (
+                        round(mem.used / mem.total * 100, 1) if mem.total else 0.0
+                    ),
+                    "utilization_pct": util_gpu,
+                    "mem_util_pct": util_mem_pct,
+                    "temperature_c": temp_c,
+                    "power_w": power_w,
+                }
+            )
 
         if pid_to_flavor:
             for pid, flavor in pid_to_flavor.items():
@@ -202,12 +208,14 @@ def _collect_gpu_stats(
 # ModelState — per model flavor lifecycle
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class ModelState:
     """Tracks load lifecycle for one model flavor."""
-    loaded:   bool = False
-    loading:  bool = False
-    sleeping: bool = False   # in ModelManager but VRAM evicted
+
+    loaded: bool = False
+    loading: bool = False
+    sleeping: bool = False  # in ModelManager but VRAM evicted
     # Each waiter: (uvicorn_identity, req_id, deadline_monotonic_s)
     load_waiters: list[tuple[bytes, int, float]] = field(default_factory=list)
 
@@ -216,6 +224,7 @@ class ModelState:
 # BackendLike protocol
 # ---------------------------------------------------------------------------
 
+
 class BackendLike(Protocol):
     def signal_slot(self, slot_id: int, req_id: int) -> None: ...
 
@@ -223,6 +232,7 @@ class BackendLike(Protocol):
 # ---------------------------------------------------------------------------
 # ModelManagerProcess
 # ---------------------------------------------------------------------------
+
 
 class ModelManagerProcess:
     """ZMQ ROUTER hub — Phase 3 hot path + Phase 4 cold path.
@@ -235,17 +245,17 @@ class ModelManagerProcess:
 
     def __init__(
         self,
-        n_slots:                int   = 256,
-        input_mb:               float = 20.0,
-        stale_reap_interval_s:  float = 10.0,
-        stale_slot_max_age_s:   float = 30.0,
-        evict_threshold:        float = 0.9,
+        n_slots: int = 256,
+        input_mb: float = 20.0,
+        stale_reap_interval_s: float = 10.0,
+        stale_slot_max_age_s: float = 30.0,
+        evict_threshold: float = 0.9,
         evict_check_interval_s: float = 5.0,
-        monitor_interval_s:     float = 5.0,
-        manager: Optional[Any]        = None,
-        decoder:                str   = "imagecodecs",
-        batch_max_size:         int   = 0,
-        batch_max_wait_ms:      float = 5.0,
+        monitor_interval_s: float = 5.0,
+        manager: Optional[Any] = None,
+        decoder: str = "imagecodecs",
+        batch_max_size: int = 0,
+        batch_max_wait_ms: float = 5.0,
     ) -> None:
         """
         Args:
@@ -259,22 +269,22 @@ class ModelManagerProcess:
             batch_max_size: Max images per worker batch (default: 8).
             batch_max_wait_ms: Max ms to wait for a full batch (default: 5.0).
         """
-        self._n_slots               = n_slots
-        self._input_mb              = input_mb
-        self._decoder               = decoder
-        self._batch_max_size        = batch_max_size
-        self._batch_max_wait_ms     = batch_max_wait_ms
+        self._n_slots = n_slots
+        self._input_mb = input_mb
+        self._decoder = decoder
+        self._batch_max_size = batch_max_size
+        self._batch_max_wait_ms = batch_max_wait_ms
         self._stale_reap_interval_s = stale_reap_interval_s
-        self._stale_slot_max_age_s  = stale_slot_max_age_s
-        self._evict_threshold       = evict_threshold
+        self._stale_slot_max_age_s = stale_slot_max_age_s
+        self._evict_threshold = evict_threshold
         self._evict_check_interval_s = evict_check_interval_s
-        self._monitor_interval_s    = monitor_interval_s
-        self._manager               = manager
-        self._own_manager           = False  # set True only if we created it
+        self._monitor_interval_s = monitor_interval_s
+        self._manager = manager
+        self._own_manager = False  # set True only if we created it
 
-        self._pool:   Optional[SHMPool]                   = None
-        self._router: Optional[zmq.asyncio.Socket]        = None
-        self._loop:   Optional[asyncio.AbstractEventLoop] = None
+        self._pool: Optional[SHMPool] = None
+        self._router: Optional[zmq.asyncio.Socket] = None
+        self._loop: Optional[asyncio.AbstractEventLoop] = None
 
         # req_id → (uvicorn_identity, slot_id, flavor)
         self._pending: dict[int, tuple[bytes, int, str]] = {}
@@ -317,8 +327,8 @@ class ModelManagerProcess:
         if hasattr(backend, "set_on_result_callback"):
             backend.set_on_result_callback(self.on_result)
         fs = self._models.setdefault(model_id, ModelState())
-        fs.loading  = False
-        fs.loaded   = True
+        fs.loading = False
+        fs.loaded = True
         fs.sleeping = False
 
         if self._loop is not None and fs.load_waiters:
@@ -340,18 +350,20 @@ class ModelManagerProcess:
 
     async def run(
         self,
-        addr:        Optional[str]             = None,
+        addr: Optional[str] = None,
         ready_event: Optional[threading.Event] = None,
     ) -> None:
         """Bind ROUTER, create SHM pool, dispatch messages until stopped."""
-        self._loop    = asyncio.get_running_loop()
+        self._loop = asyncio.get_running_loop()
         self._running = True
 
         # Create SHM pool
         self._pool = SHMPool.create(self._n_slots, self._input_mb)
         logger.info(
             "MMP: SHM pool ready  name=%s  slots=%d  data=%.0fMB",
-            self._pool.name, self._n_slots, self._input_mb,
+            self._pool.name,
+            self._n_slots,
+            self._input_mb,
         )
 
         # Bind ROUTER
@@ -377,10 +389,10 @@ class ModelManagerProcess:
             ready_event.set()
 
         tasks = [
-            asyncio.create_task(self._recv_loop(),         name="mmp-recv"),
+            asyncio.create_task(self._recv_loop(), name="mmp-recv"),
             asyncio.create_task(self._stale_reaper_loop(), name="mmp-stale-reaper"),
-            asyncio.create_task(self._eviction_loop(),     name="mmp-evictor"),
-            asyncio.create_task(self._monitoring_loop(),   name="mmp-monitor"),
+            asyncio.create_task(self._eviction_loop(), name="mmp-evictor"),
+            asyncio.create_task(self._monitoring_loop(), name="mmp-monitor"),
         ]
 
         try:
@@ -396,7 +408,7 @@ class ModelManagerProcess:
             self._router.close()
             ctx.term()
             self._pool.close()
-            self._pool   = None
+            self._pool = None
             self._router = None
             if self._own_manager and self._manager is not None:
                 self._manager.shutdown()
@@ -460,7 +472,7 @@ class ModelManagerProcess:
             return
         identity = frames[0]
         msg_type = frames[1]
-        data     = frames[2:]
+        data = frames[2:]
 
         try:
             if msg_type == T_ENSURE_LOADED:
@@ -482,9 +494,7 @@ class ModelManagerProcess:
             elif msg_type == T_STATS:
                 await self._handle_stats(identity, data)
             else:
-                logger.debug(
-                    "MMP: unknown msg_type=%r from %r", msg_type, identity
-                )
+                logger.debug("MMP: unknown msg_type=%r from %r", msg_type, identity)
         except Exception:
             logger.exception("MMP: unhandled error dispatching %r", msg_type)
 
@@ -495,25 +505,23 @@ class ModelManagerProcess:
     #   key_len(2) key(M) device_len(2) device(D)
     # ------------------------------------------------------------------
 
-    async def _handle_ensure_loaded(
-        self, identity: bytes, data: list[bytes]
-    ) -> None:
+    async def _handle_ensure_loaded(self, identity: bytes, data: list[bytes]) -> None:
         if not data or len(data[0]) < 14:
             return
         frame = data[0]
         req_id, wait_ms, mid_len = struct.unpack_from(">QIH", frame)
-        off      = 14
-        model_id = frame[off: off + mid_len].decode(errors="replace")
-        off     += mid_len
-        api_key  = ""
+        off = 14
+        model_id = frame[off : off + mid_len].decode(errors="replace")
+        off += mid_len
+        api_key = ""
         if len(frame) >= off + 2:
-            klen    = struct.unpack_from(">H", frame, off)[0]
-            api_key = frame[off + 2: off + 2 + klen].decode(errors="replace")
-            off    += 2 + klen
-        device   = ""
+            klen = struct.unpack_from(">H", frame, off)[0]
+            api_key = frame[off + 2 : off + 2 + klen].decode(errors="replace")
+            off += 2 + klen
+        device = ""
         if len(frame) >= off + 2:
-            dlen   = struct.unpack_from(">H", frame, off)[0]
-            device = frame[off + 2: off + 2 + dlen].decode(errors="replace")
+            dlen = struct.unpack_from(">H", frame, off)[0]
+            device = frame[off + 2 : off + 2 + dlen].decode(errors="replace")
         deadline = time.monotonic() + wait_ms / 1000.0
 
         fs = self._models.get(model_id)
@@ -539,20 +547,19 @@ class ModelManagerProcess:
     # wire: Q H N   req_id(8) mid_len(2) flavor(N)
     # ------------------------------------------------------------------
 
-    async def _handle_alloc(
-        self, identity: bytes, data: list[bytes]
-    ) -> None:
+    async def _handle_alloc(self, identity: bytes, data: list[bytes]) -> None:
         if not data or len(data[0]) < 10:
             return
         frame = data[0]
         req_id, mid_len = struct.unpack_from(">QH", frame)
-        model_id = frame[10: 10 + mid_len].decode(errors="replace")
+        model_id = frame[10 : 10 + mid_len].decode(errors="replace")
 
         try:
             slot_id = self._pool.alloc_slot(timeout=0)
         except TimeoutError:
-            await self._send(identity, T_ERROR,
-                             struct.pack(">QB", req_id, _ERR_POOL_FULL))
+            await self._send(
+                identity, T_ERROR, struct.pack(">QB", req_id, _ERR_POOL_FULL)
+            )
             return
 
         self._pool.mark_allocated(slot_id, req_id)
@@ -569,7 +576,7 @@ class ModelManagerProcess:
             return
         frame = data[0]
         req_id, slot_id, input_sz, mid_len = struct.unpack_from(">QIIH", frame)
-        model_id = frame[18: 18 + mid_len].decode(errors="replace")
+        model_id = frame[18 : 18 + mid_len].decode(errors="replace")
 
         self._pending[req_id] = (identity, slot_id, model_id)
         self._pool.mark_written(slot_id, input_sz)
@@ -599,13 +606,13 @@ class ModelManagerProcess:
             return
         frame = data[0]
         req_id, mid_len = struct.unpack_from(">QH", frame)
-        off    = 10
-        model_id = frame[off: off + mid_len].decode(errors="replace")
-        off   += mid_len
+        off = 10
+        model_id = frame[off : off + mid_len].decode(errors="replace")
+        off += mid_len
         api_key = ""
         if len(frame) >= off + 2:
-            klen    = struct.unpack_from(">H", frame, off)[0]
-            api_key = frame[off + 2: off + 2 + klen].decode(errors="replace")
+            klen = struct.unpack_from(">H", frame, off)[0]
+            api_key = frame[off + 2 : off + 2 + klen].decode(errors="replace")
 
         fs = self._models.setdefault(model_id, ModelState())
         if not fs.loaded and not fs.loading:
@@ -626,25 +633,24 @@ class ModelManagerProcess:
             return
         frame = data[0]
         req_id, mid_len = struct.unpack_from(">QH", frame)
-        model_id = frame[10: 10 + mid_len].decode(errors="replace")
+        model_id = frame[10 : 10 + mid_len].decode(errors="replace")
 
         loop = asyncio.get_running_loop()
         try:
             if self._manager is not None:
-                await loop.run_in_executor(
-                    None, lambda: self._manager.unload(model_id)
-                )
+                await loop.run_in_executor(None, lambda: self._manager.unload(model_id))
             fs = self._models.get(model_id)
             if fs:
-                fs.loaded   = False
+                fs.loaded = False
                 fs.sleeping = False
-                fs.loading  = False
+                fs.loading = False
             self._backends.pop(model_id, None)
             await self._send(identity, T_OK, struct.pack(">Q", req_id))
         except Exception:
             logger.exception("MMP: T_UNLOAD '%s' failed", model_id)
-            await self._send(identity, T_ERROR,
-                             struct.pack(">QB", req_id, _ERR_NOT_LOADED))
+            await self._send(
+                identity, T_ERROR, struct.pack(">QB", req_id, _ERR_NOT_LOADED)
+            )
 
     # ------------------------------------------------------------------
     # T_SLEEP (admin) — offload VRAM, keep weights on CPU
@@ -656,23 +662,22 @@ class ModelManagerProcess:
             return
         frame = data[0]
         req_id, mid_len = struct.unpack_from(">QH", frame)
-        model_id = frame[10: 10 + mid_len].decode(errors="replace")
+        model_id = frame[10 : 10 + mid_len].decode(errors="replace")
 
         loop = asyncio.get_running_loop()
         try:
             if self._manager is not None:
-                await loop.run_in_executor(
-                    None, lambda: self._manager.sleep(model_id)
-                )
+                await loop.run_in_executor(None, lambda: self._manager.sleep(model_id))
             fs = self._models.get(model_id)
             if fs:
-                fs.loaded   = False
+                fs.loaded = False
                 fs.sleeping = True
             await self._send(identity, T_OK, struct.pack(">Q", req_id))
         except Exception:
             logger.exception("MMP: T_SLEEP '%s' failed", model_id)
-            await self._send(identity, T_ERROR,
-                             struct.pack(">QB", req_id, _ERR_NOT_LOADED))
+            await self._send(
+                identity, T_ERROR, struct.pack(">QB", req_id, _ERR_NOT_LOADED)
+            )
 
     # ------------------------------------------------------------------
     # T_WAKE (admin) — restore weights to VRAM
@@ -684,23 +689,22 @@ class ModelManagerProcess:
             return
         frame = data[0]
         req_id, mid_len = struct.unpack_from(">QH", frame)
-        model_id = frame[10: 10 + mid_len].decode(errors="replace")
+        model_id = frame[10 : 10 + mid_len].decode(errors="replace")
 
         loop = asyncio.get_running_loop()
         try:
             if self._manager is not None:
-                await loop.run_in_executor(
-                    None, lambda: self._manager.wake(model_id)
-                )
+                await loop.run_in_executor(None, lambda: self._manager.wake(model_id))
             fs = self._models.get(model_id)
             if fs:
-                fs.loaded   = True
+                fs.loaded = True
                 fs.sleeping = False
             await self._send(identity, T_OK, struct.pack(">Q", req_id))
         except Exception:
             logger.exception("MMP: T_WAKE '%s' failed", model_id)
-            await self._send(identity, T_ERROR,
-                             struct.pack(">QB", req_id, _ERR_NOT_LOADED))
+            await self._send(
+                identity, T_ERROR, struct.pack(">QB", req_id, _ERR_NOT_LOADED)
+            )
 
     # ------------------------------------------------------------------
     # T_STATS — snapshot reply
@@ -710,8 +714,7 @@ class ModelManagerProcess:
 
     async def _handle_stats(self, identity: bytes, data: list[bytes]) -> None:
         req_id = (
-            struct.unpack_from(">Q", data[0])[0]
-            if (data and len(data[0]) >= 8) else 0
+            struct.unpack_from(">Q", data[0])[0] if (data and len(data[0]) >= 8) else 0
         )
         # Start from cached monitoring snapshot (includes psutil/GPU from last poll)
         snapshot: dict[str, Any] = dict(self._stats_snapshot)
@@ -724,29 +727,32 @@ class ModelManagerProcess:
         model_stats: dict[str, Any] = {}
         for f, fs in self._models.items():
             entry: dict[str, Any] = {
-                "loaded":   fs.loaded,
+                "loaded": fs.loaded,
                 "sleeping": fs.sleeping,
-                "loading":  fs.loading,
+                "loading": fs.loading,
             }
             backend = self._backends.get(f)
             if backend is not None:
                 try:
-                    entry["queue_depth"]  = backend.queue_depth
+                    entry["queue_depth"] = backend.queue_depth
                     entry["worker_alive"] = backend.is_healthy
-                    entry["worker_pid"]   = getattr(backend, "worker_pid", None)
+                    entry["worker_pid"] = getattr(backend, "worker_pid", None)
                 except Exception:
                     pass
             model_stats[f] = entry
 
-        snapshot.update({
-            "mmp_free_slots":  self._pool.free_count if self._pool else 0,
-            "mmp_total_slots": self._n_slots,
-            "mmp_pending":     len(self._pending),
-            "mmp_models":     model_stats,
-        })
+        snapshot.update(
+            {
+                "mmp_free_slots": self._pool.free_count if self._pool else 0,
+                "mmp_total_slots": self._n_slots,
+                "mmp_pending": len(self._pending),
+                "mmp_models": model_stats,
+            }
+        )
         payload = json.dumps(snapshot, default=str).encode()
         await self._send(
-            identity, T_STATS_RESP,
+            identity,
+            T_STATS_RESP,
             struct.pack(">QI", req_id, len(payload)) + payload,
         )
 
@@ -754,10 +760,8 @@ class ModelManagerProcess:
     # Backend routing
     # ------------------------------------------------------------------
 
-    def _forward_to_backend(
-        self, model_id: str, slot_id: int, req_id: int
-    ) -> None:
-        self._model_access[model_id] = time.monotonic()   # LRU update
+    def _forward_to_backend(self, model_id: str, slot_id: int, req_id: int) -> None:
+        self._model_access[model_id] = time.monotonic()  # LRU update
         backend = self._backends.get(model_id)
         if backend is None:
             logger.warning("MMP: no backend for '%s', req_id=%d", model_id, req_id)
@@ -773,9 +777,7 @@ class ModelManagerProcess:
     # on_result — event-loop side
     # ------------------------------------------------------------------
 
-    def _on_result_on_loop(
-        self, req_id: int, slot_id: int, result_sz: int
-    ) -> None:
+    def _on_result_on_loop(self, req_id: int, slot_id: int, result_sz: int) -> None:
         """Must be called on the event loop thread."""
         pending = self._pending.pop(req_id, None)
         if pending is None:
@@ -788,19 +790,21 @@ class ModelManagerProcess:
 
     async def _reply_result(
         self,
-        identity:  bytes,
-        req_id:    int,
-        slot_id:   int,
+        identity: bytes,
+        req_id: int,
+        slot_id: int,
         result_sz: int,
     ) -> None:
         if result_sz == 0:
-            await self._send(identity, T_ERROR,
-                             struct.pack(">QB", req_id, _ERR_BACKEND))
+            await self._send(
+                identity, T_ERROR, struct.pack(">QB", req_id, _ERR_BACKEND)
+            )
             self._pool.free_slot(slot_id)
             return
         self._pool.mark_done(slot_id, result_sz)
         sent = await self._send(
-            identity, T_RESULT_READY,
+            identity,
+            T_RESULT_READY,
             struct.pack(">QII", req_id, slot_id, result_sz),
         )
         if not sent:
@@ -808,7 +812,8 @@ class ModelManagerProcess:
             # (backend already finished; we just drop the result silently)
             logger.debug(
                 "MMP: peer gone for req_id=%d slot=%d — freeing slot",
-                req_id, slot_id,
+                req_id,
+                slot_id,
             )
             self._pool.free_slot(slot_id)
 
@@ -830,7 +835,7 @@ class ModelManagerProcess:
         T_ERROR because no backend is registered.
         """
         loop = asyncio.get_running_loop()
-        fs   = self._models.get(model_id)
+        fs = self._models.get(model_id)
 
         # Sleeping → wake instead of reload
         if fs is not None and fs.sleeping:
@@ -842,7 +847,9 @@ class ModelManagerProcess:
             model_id_or_path = model_id.rsplit(":", 1)[0]
             logger.info(
                 "MMP: loading '%s' (weights=%s device=%s) via ModelManager",
-                model_id, model_id_or_path, device or "default",
+                model_id,
+                model_id_or_path,
+                device or "default",
             )
             try:
                 await loop.run_in_executor(
@@ -876,7 +883,7 @@ class ModelManagerProcess:
         if fs is None:
             fs = self._models.setdefault(model_id, ModelState())
         fs.loading = False
-        fs.loaded  = True
+        fs.loaded = True
         self._flush_load_waiters(model_id)
 
     async def _wake_model(self, model_id: str) -> None:
@@ -885,14 +892,12 @@ class ModelManagerProcess:
         logger.info("MMP: waking '%s'", model_id)
         try:
             if self._manager is not None:
-                await loop.run_in_executor(
-                    None, lambda: self._manager.wake(model_id)
-                )
+                await loop.run_in_executor(None, lambda: self._manager.wake(model_id))
             fs = self._models.get(model_id)
             if fs:
                 fs.sleeping = False
-                fs.loading  = False
-                fs.loaded   = True
+                fs.loading = False
+                fs.loaded = True
                 if self._manager is not None:
                     backend = self._manager.get_backend(model_id)
                     if backend is not None and hasattr(backend, "signal_slot"):
@@ -906,8 +911,11 @@ class ModelManagerProcess:
                 fs.loading = False
                 for identity, req_id, _ in waiters:
                     asyncio.create_task(
-                        self._send(identity, T_ERROR,
-                                   struct.pack(">QB", req_id, _ERR_LOAD_FAILED))
+                        self._send(
+                            identity,
+                            T_ERROR,
+                            struct.pack(">QB", req_id, _ERR_LOAD_FAILED),
+                        )
                     )
 
     def _flush_load_waiters(self, model_id: str) -> None:
@@ -923,13 +931,11 @@ class ModelManagerProcess:
         for identity, req_id, deadline in waiters:
             if now <= deadline:
                 asyncio.create_task(
-                    self._send(identity, T_MODEL_READY,
-                               struct.pack(">Q", req_id))
+                    self._send(identity, T_MODEL_READY, struct.pack(">Q", req_id))
                 )
             else:
                 asyncio.create_task(
-                    self._send(identity, T_LOAD_TIMEOUT,
-                               struct.pack(">QI", req_id, 1))
+                    self._send(identity, T_LOAD_TIMEOUT, struct.pack(">QI", req_id, 1))
                 )
 
     # ------------------------------------------------------------------
@@ -948,26 +954,29 @@ class ModelManagerProcess:
         stale = self._pool.stale_slots(self._stale_slot_max_age_s)
         if not stale:
             return
-        now_ns        = time.monotonic_ns()
-        slot_to_req   = {s: r for r, (_, s, _) in self._pending.items()}
+        now_ns = time.monotonic_ns()
+        slot_to_req = {s: r for r, (_, s, _) in self._pending.items()}
         for slot_id in stale:
             req_id = slot_to_req.get(slot_id)
             try:
-                hdr   = self._pool.read_header(slot_id)
+                hdr = self._pool.read_header(slot_id)
                 age_s = (now_ns - hdr.timestamp_ns) / 1e9 if hdr.timestamp_ns else 0.0
             except Exception:
                 age_s = 0.0
             logger.warning(
                 "MMP: reaping stale slot slot_id=%d age_s=%.1f req_id=%s",
-                slot_id, age_s, req_id,
+                slot_id,
+                age_s,
+                req_id,
             )
             if req_id is not None:
                 pending = self._pending.pop(req_id, None)
                 if pending:
                     identity, _, _ = pending
                     asyncio.create_task(
-                        self._send(identity, T_ERROR,
-                                   struct.pack(">QB", req_id, _ERR_STALE))
+                        self._send(
+                            identity, T_ERROR, struct.pack(">QB", req_id, _ERR_STALE)
+                        )
                     )
             self._pool.free_slot(slot_id)
 
@@ -995,13 +1004,15 @@ class ModelManagerProcess:
             return
         logger.warning(
             "MMP: GPU %.0f%% > %.0f%% threshold — evicting '%s'",
-            gpu_frac * 100, self._evict_threshold * 100, lru,
+            gpu_frac * 100,
+            self._evict_threshold * 100,
+            lru,
         )
         try:
             self._manager.sleep(lru)
             fs = self._models.get(lru)
             if fs:
-                fs.loaded   = False
+                fs.loaded = False
                 fs.sleeping = True
         except Exception:
             logger.warning("MMP: eviction of '%s' failed", lru, exc_info=True)
@@ -1010,7 +1021,8 @@ class ModelManagerProcess:
         """LRU flavor that is loaded, not sleeping, and not currently in-flight."""
         in_flight = {mid for _, _, mid in self._pending.values()}
         candidates = [
-            f for f, fs in self._models.items()
+            f
+            for f, fs in self._models.items()
             if fs.loaded and not fs.sleeping and f not in in_flight
         ]
         if not candidates:
@@ -1042,11 +1054,12 @@ class ModelManagerProcess:
                 pass
         try:
             import psutil  # type: ignore[import]
+
             proc = psutil.Process()
             s["process_cpu_pct"] = proc.cpu_percent()
-            s["process_rss_mb"]  = round(proc.memory_info().rss / 1024 / 1024, 1)
-            s["system_cpu_pct"]  = psutil.cpu_percent()
-            s["system_ram_pct"]  = psutil.virtual_memory().percent
+            s["process_rss_mb"] = round(proc.memory_info().rss / 1024 / 1024, 1)
+            s["system_cpu_pct"] = psutil.cpu_percent()
+            s["system_ram_pct"] = psutil.virtual_memory().percent
         except Exception:
             pass
 
@@ -1066,9 +1079,7 @@ class ModelManagerProcess:
     # ZMQ send helper
     # ------------------------------------------------------------------
 
-    async def _send(
-        self, identity: bytes, msg_type: bytes, payload: bytes
-    ) -> bool:
+    async def _send(self, identity: bytes, msg_type: bytes, payload: bytes) -> bool:
         """Send a message. Returns True on success, False on ZMQ error."""
         try:
             await self._router.send_multipart([identity, msg_type, payload])
@@ -1082,6 +1093,7 @@ class ModelManagerProcess:
 # Standalone entry point
 # ---------------------------------------------------------------------------
 
+
 def main() -> None:
     import argparse
 
@@ -1092,15 +1104,18 @@ def main() -> None:
 
     parser = argparse.ArgumentParser(description="ModelManagerProcess")
     parser.add_argument(
-        "--n-slots", type=int,
+        "--n-slots",
+        type=int,
         default=int(os.environ.get("MMP_N_SLOTS", "256")),
     )
     parser.add_argument(
-        "--input-mb", type=float,
+        "--input-mb",
+        type=float,
         default=float(os.environ.get("MMP_INPUT_MB", "20.0")),
     )
-    parser.add_argument("--addr", default=None,
-                        help="ZMQ bind address (default: platform auto)")
+    parser.add_argument(
+        "--addr", default=None, help="ZMQ bind address (default: platform auto)"
+    )
     parser.add_argument("--evict-threshold", type=float, default=0.9)
     args = parser.parse_args()
 

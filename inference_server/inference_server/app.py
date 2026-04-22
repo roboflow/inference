@@ -50,32 +50,30 @@ from contextlib import asynccontextmanager
 from multiprocessing.shared_memory import SharedMemory
 from typing import Annotated, Optional
 
-from inference_server.serializers import serialize_json
-
+import filetype
 import uvicorn
 import zmq
 import zmq.asyncio
 from fastapi import Depends, FastAPI, Request, Response
 
-import filetype
-
 from inference_model_manager.backends.utils.transport import zmq_addr
+from inference_server.serializers import serialize_json
 
 # ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
 
-_MMP_ADDR        = os.environ.get("INFERENCE_MMP_ADDR") or zmq_addr("mmprocess")
-_SHM_NAME        = os.environ.get("INFERENCE_SHM_NAME", "inference_pool")
-_SHM_DATA_SIZE   = int(os.environ.get("INFERENCE_SHM_DATA_SIZE",  str(25 * 1024 * 1024)))
-_LOAD_WAIT_S     = float(os.environ.get("INFERENCE_LOAD_WAIT_S",     "10.0"))
+_MMP_ADDR = os.environ.get("INFERENCE_MMP_ADDR") or zmq_addr("mmprocess")
+_SHM_NAME = os.environ.get("INFERENCE_SHM_NAME", "inference_pool")
+_SHM_DATA_SIZE = int(os.environ.get("INFERENCE_SHM_DATA_SIZE", str(25 * 1024 * 1024)))
+_LOAD_WAIT_S = float(os.environ.get("INFERENCE_LOAD_WAIT_S", "10.0"))
 _INFER_TIMEOUT_S = float(os.environ.get("INFERENCE_INFER_TIMEOUT_S", "30.0"))
-_ALLOC_TIMEOUT_S = float(os.environ.get("INFERENCE_ALLOC_TIMEOUT_S",  "2.0"))
+_ALLOC_TIMEOUT_S = float(os.environ.get("INFERENCE_ALLOC_TIMEOUT_S", "2.0"))
 
 # SHM slot layout (must match shm_pool.py):
 #   [HEADER 64B | DATA _SHM_DATA_SIZE]
 _HEADER_SIZE = 64
-_SLOT_TOTAL  = _HEADER_SIZE + _SHM_DATA_SIZE
+_SLOT_TOTAL = _HEADER_SIZE + _SHM_DATA_SIZE
 
 # ---------------------------------------------------------------------------
 # Image format detection (magic bytes via ``filetype`` lib + numpy .npy)
@@ -96,22 +94,22 @@ def _looks_like_image(data: bytes | memoryview) -> bool:
 # ---------------------------------------------------------------------------
 
 # uvicorn → MMP
-_T_ALLOC         = b'\x01'
-_T_SUBMIT        = b'\x02'
-_T_FREE          = b'\x03'
-_T_ENSURE_LOADED = b'\x09'
+_T_ALLOC = b"\x01"
+_T_SUBMIT = b"\x02"
+_T_FREE = b"\x03"
+_T_ENSURE_LOADED = b"\x09"
 
 # MMP → uvicorn
-_T_ALLOC_OK      = b'\x11'
-_T_RESULT_READY  = b'\x14'
-_T_ERROR         = b'\xFF'
-_T_MODEL_READY   = b'\x0A'
-_T_LOAD_TIMEOUT  = b'\x0B'
-_T_OK            = b'\x40'
+_T_ALLOC_OK = b"\x11"
+_T_RESULT_READY = b"\x14"
+_T_ERROR = b"\xFF"
+_T_MODEL_READY = b"\x0A"
+_T_LOAD_TIMEOUT = b"\x0B"
+_T_OK = b"\x40"
 
 # uvicorn → MMP (lifecycle)
-_T_LOAD          = b'\x20'
-_T_UNLOAD        = b'\x21'
+_T_LOAD = b"\x20"
+_T_UNLOAD = b"\x21"
 
 # Wire formats (big-endian):
 #   _T_ALLOC:         Q H N    req_id(8) flavor_len(2) flavor(N)
@@ -137,11 +135,11 @@ _T_UNLOAD        = b'\x21'
 #
 # These are set once per process in the FastAPI lifespan handler.
 
-_shm:     Optional[SharedMemory]       = None
-_sock:    Optional[zmq.asyncio.Socket] = None
-_ctx:     Optional[zmq.asyncio.Context]= None
-_pending: dict[int, asyncio.Future]    = {}
-_recv_task: Optional[asyncio.Task]     = None
+_shm: Optional[SharedMemory] = None
+_sock: Optional[zmq.asyncio.Socket] = None
+_ctx: Optional[zmq.asyncio.Context] = None
+_pending: dict[int, asyncio.Future] = {}
+_recv_task: Optional[asyncio.Task] = None
 
 
 @asynccontextmanager
@@ -150,15 +148,15 @@ async def _lifespan(_: FastAPI):
 
     identity = f"uv_{os.getpid()}_{uuid.uuid4().hex[:8]}".encode()
 
-    _ctx  = zmq.asyncio.Context()
+    _ctx = zmq.asyncio.Context()
     _sock = _ctx.socket(zmq.DEALER)
     _sock.setsockopt(zmq.IDENTITY, identity)
-    _sock.setsockopt(zmq.SNDHWM, 0)   # unlimited send buffer
-    _sock.setsockopt(zmq.RCVHWM, 0)   # unlimited recv buffer
-    _sock.setsockopt(zmq.LINGER, 0)   # don't block on close
+    _sock.setsockopt(zmq.SNDHWM, 0)  # unlimited send buffer
+    _sock.setsockopt(zmq.RCVHWM, 0)  # unlimited recv buffer
+    _sock.setsockopt(zmq.LINGER, 0)  # don't block on close
     _sock.connect(_MMP_ADDR)
 
-    _shm     = SharedMemory(name=_SHM_NAME, create=False)
+    _shm = SharedMemory(name=_SHM_NAME, create=False)
     _pending = {}
     _recv_task = asyncio.create_task(_recv_loop(), name="zmq-recv")
 
@@ -177,6 +175,7 @@ async def _lifespan(_: FastAPI):
 # ---------------------------------------------------------------------------
 # ZMQ recv loop — asyncio task, resolves futures on the same event loop
 # ---------------------------------------------------------------------------
+
 
 async def _recv_loop() -> None:
     while True:
@@ -245,6 +244,7 @@ def _drop_future(req_id: int) -> None:
 # Protocol helpers
 # ---------------------------------------------------------------------------
 
+
 def _routing_key(model_id: str, instance: str) -> str:
     """Compose MMP routing key from model_id and optional instance suffix."""
     return f"{model_id}:{instance}" if instance else model_id
@@ -253,8 +253,8 @@ def _routing_key(model_id: str, instance: str) -> str:
 async def _ensure_loaded(
     model_id: str,
     instance: str = "",
-    api_key:  str = "",
-    device:   str = "",
+    api_key: str = "",
+    device: str = "",
 ) -> tuple:
     """Ask MMP to ensure model is loaded.
 
@@ -269,11 +269,11 @@ async def _ensure_loaded(
         ("load_timeout", retry_after_s)
         ("error", code)
     """
-    req_id    = _new_req_id()
+    req_id = _new_req_id()
     mid_bytes = _routing_key(model_id, instance).encode()
     key_bytes = api_key.encode()
     dev_bytes = device.encode()
-    wait_ms   = int(_LOAD_WAIT_S * 1000)
+    wait_ms = int(_LOAD_WAIT_S * 1000)
     # wire: Q I H N H M H D
     #   req_id(8) wait_ms(4) model_id_len(2) model_id(N)
     #   key_len(2) key(M) device_len(2) device(D)
@@ -301,10 +301,10 @@ async def _alloc_slot(model_id: str, instance: str = "") -> int:
     Raises asyncio.TimeoutError if no slot granted within ALLOC_TIMEOUT_S.
     Raises RuntimeError if MMP replies with an error.
     """
-    req_id  = _new_req_id()
-    mid     = _routing_key(model_id, instance).encode()
+    req_id = _new_req_id()
+    mid = _routing_key(model_id, instance).encode()
     payload = struct.pack(">QH", req_id, len(mid)) + mid
-    fut     = _make_future(req_id)
+    fut = _make_future(req_id)
     await _sock.send_multipart([_T_ALLOC, payload])
     try:
         result = await asyncio.wait_for(fut, timeout=_ALLOC_TIMEOUT_S)
@@ -317,11 +317,11 @@ async def _alloc_slot(model_id: str, instance: str = "") -> int:
 
 
 async def _submit_and_wait(
-    slot_id:  int,
+    slot_id: int,
     model_id: str,
     instance: str,
     input_sz: int,
-    params:   dict,
+    params: dict,
 ) -> tuple:
     """Signal MMP that slot data is ready; await the inference result.
 
@@ -331,11 +331,11 @@ async def _submit_and_wait(
 
     Raises asyncio.TimeoutError if no result within INFER_TIMEOUT_S.
     """
-    req_id      = _new_req_id()
-    mid         = _routing_key(model_id, instance).encode()
-    header      = struct.pack(">QIIH", req_id, slot_id, input_sz, len(mid)) + mid
+    req_id = _new_req_id()
+    mid = _routing_key(model_id, instance).encode()
+    header = struct.pack(">QIIH", req_id, slot_id, input_sz, len(mid)) + mid
     params_json = json.dumps(params).encode() if params else b"{}"
-    fut         = _make_future(req_id)
+    fut = _make_future(req_id)
     await _sock.send_multipart([_T_SUBMIT, header, params_json])
     try:
         return await asyncio.wait_for(fut, timeout=_INFER_TIMEOUT_S)
@@ -347,17 +347,18 @@ async def _submit_and_wait(
 def _free_slot(slot_id: int) -> None:
     async def _send():
         await _sock.send_multipart([_T_FREE, struct.pack(">I", slot_id)])
+
     asyncio.create_task(_send())
 
 
 def _write_input(slot_id: int, chunk: bytes | memoryview, offset: int) -> None:
     base = slot_id * _SLOT_TOTAL + _HEADER_SIZE
-    _shm.buf[base + offset: base + offset + len(chunk)] = chunk
+    _shm.buf[base + offset : base + offset + len(chunk)] = chunk
 
 
 def _read_result(slot_id: int, result_sz: int) -> bytes:
     base = slot_id * _SLOT_TOTAL + _HEADER_SIZE
-    return bytes(_shm.buf[base: base + result_sz])
+    return bytes(_shm.buf[base : base + result_sz])
 
 
 # ---------------------------------------------------------------------------
@@ -366,10 +367,16 @@ def _read_result(slot_id: int, result_sz: int) -> bytes:
 
 app = FastAPI(lifespan=_lifespan)
 
-_AUTH_SKIP_PATHS = frozenset({
-    "/", "/docs", "/redoc", "/openapi.json",
-    "/v2/server/health", "/v2/server/ready",
-})
+_AUTH_SKIP_PATHS = frozenset(
+    {
+        "/",
+        "/docs",
+        "/redoc",
+        "/openapi.json",
+        "/v2/server/health",
+        "/v2/server/ready",
+    }
+)
 
 
 def _bearer_token(request: Request) -> str:
@@ -386,8 +393,11 @@ async def auth_middleware(request: Request, call_next):
         return await call_next(request)
     token = _bearer_token(request)
     if not token:
-        return Response(status_code=401, content=b"Authorization: Bearer <api_key> header required")
+        return Response(
+            status_code=401, content=b"Authorization: Bearer <api_key> header required"
+        )
     from inference_server.auth import validate_api_key
+
     valid, _ = await validate_api_key(token)
     if not valid:
         return Response(status_code=403, content=b"Invalid API key")
@@ -416,11 +426,11 @@ async def infer(request: Request, api_key: BearerToken) -> Response:
     Body:
         Raw image bytes (e.g. Content-Type: image/jpeg).
     """
-    params   = dict(request.query_params)
+    params = dict(request.query_params)
     model_id = params.pop("model_id", "")
     instance = params.pop("instance", "")
-    device   = params.pop("device", "")
-    fmt      = params.pop("format", "pickle")  # "json" or "pickle"
+    device = params.pop("device", "")
+    fmt = params.pop("format", "pickle")  # "json" or "pickle"
     if not model_id:
         return Response(status_code=400, content=b"model_id query param required")
 
@@ -460,7 +470,9 @@ async def infer(request: Request, api_key: BearerToken) -> Response:
             if pos + len(chunk) > _SHM_DATA_SIZE:
                 return Response(status_code=413, content=b"payload too large")
             if pos == 0 and not _looks_like_image(chunk):
-                return Response(status_code=415, content=b"body is not a recognized image format")
+                return Response(
+                    status_code=415, content=b"body is not a recognized image format"
+                )
             _write_input(slot_id, chunk, pos)
             pos += len(chunk)
 
@@ -515,6 +527,7 @@ async def infer(request: Request, api_key: BearerToken) -> Response:
 # Lifecycle endpoints (T_LOAD / T_UNLOAD via MMP)
 # ---------------------------------------------------------------------------
 
+
 async def _lifecycle_req(msg_type: bytes, payload: bytes, timeout_s: float = 30.0):
     """Send a lifecycle message to MMP and wait for T_OK or T_ERROR."""
     req_id = _new_req_id()
@@ -541,14 +554,19 @@ async def load_model(request: Request, api_key: BearerToken) -> Response:
     Query params:
         model_id    Required.
     """
-    params   = dict(request.query_params)
+    params = dict(request.query_params)
     model_id = params.get("model_id", "")
     if not model_id:
         return Response(status_code=400, content=b"model_id query param required")
 
     mid_bytes = model_id.encode()
     key_bytes = api_key.encode()
-    payload = struct.pack(">H", len(mid_bytes)) + mid_bytes + struct.pack(">H", len(key_bytes)) + key_bytes
+    payload = (
+        struct.pack(">H", len(mid_bytes))
+        + mid_bytes
+        + struct.pack(">H", len(key_bytes))
+        + key_bytes
+    )
 
     try:
         result = await _lifecycle_req(_T_LOAD, payload)
@@ -570,7 +588,7 @@ async def unload_model(request: Request, _token: BearerToken) -> Response:
     Query params:
         model_id    Required.
     """
-    params   = dict(request.query_params)
+    params = dict(request.query_params)
     model_id = params.get("model_id", "")
     if not model_id:
         return Response(status_code=400, content=b"model_id query param required")

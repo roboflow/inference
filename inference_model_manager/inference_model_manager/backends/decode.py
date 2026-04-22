@@ -13,6 +13,7 @@ Batch decoder output is always List[(C,H,W) RGB uint8 tensor]:
                      non-JPEG path: imagecodecs.imread(mv) → permute(2,0,1).to(device)
   use_nvjpeg=False — imagecodecs for everything → permute(2,0,1).to(device)
 """
+
 from __future__ import annotations
 
 import io
@@ -24,6 +25,7 @@ from PIL import Image
 
 try:
     import pillow_heif
+
     pillow_heif.register_heif_opener()
     _HAS_HEIF = True
 except ImportError:
@@ -37,7 +39,7 @@ _FTYP_MAGIC = b"ftyp"
 
 
 def _is_heif(data: bytes | memoryview) -> bool:
-    return bytes(data[_FTYP_OFFSET:_FTYP_OFFSET + 4]) == _FTYP_MAGIC
+    return bytes(data[_FTYP_OFFSET : _FTYP_OFFSET + 4]) == _FTYP_MAGIC
 
 
 def _decode_heif(data: bytes) -> np.ndarray:
@@ -69,7 +71,7 @@ def make_decoder(name: str, device: str = "cuda:0") -> Callable[[bytes], Any]:
         def _decode_imagecodecs(data: bytes) -> Any:
             if _is_heif(data):
                 return _decode_heif(data)
-            return imagecodecs.imread(data)   # RGB HWC uint8 numpy
+            return imagecodecs.imread(data)  # RGB HWC uint8 numpy
 
         return _decode_imagecodecs
 
@@ -95,9 +97,7 @@ def make_decoder(name: str, device: str = "cuda:0") -> Callable[[bytes], Any]:
 
         return _decode_nvjpeg
 
-    raise ValueError(
-        f"Unknown decoder: {name!r}. Supported: 'imagecodecs', 'nvjpeg'"
-    )
+    raise ValueError(f"Unknown decoder: {name!r}. Supported: 'imagecodecs', 'nvjpeg'")
 
 
 def make_batch_decoder(
@@ -123,15 +123,15 @@ def make_batch_decoder(
     import torch  # noqa: PLC0415
 
     torch_device = torch.device(device)
-    _JPEG_MAGIC  = b"\xff\xd8"
+    _JPEG_MAGIC = b"\xff\xd8"
 
     if use_nvjpeg:
         import torchvision.io as _tvio  # noqa: PLC0415
 
         def _batch_decode_nvjpeg(mvs: List[memoryview]) -> List[Any]:
-            jpeg_idx:  list[int]        = []
-            jpeg_bufs: list[Any]        = []
-            other_idx: list[int]        = []
+            jpeg_idx: list[int] = []
+            jpeg_bufs: list[Any] = []
+            other_idx: list[int] = []
             other_mvs: list[memoryview] = []
 
             for i, mv in enumerate(mvs):
