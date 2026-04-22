@@ -445,10 +445,10 @@ async def infer(request: Request, api_key: BearerToken) -> Response:
         return Response(
             status_code=503,
             headers={"Retry-After": "1"},
-            content=b"no SHM slots available",
+            content=b"server busy, try again",
         )
-    except RuntimeError as exc:
-        return Response(status_code=503, content=str(exc).encode())
+    except RuntimeError:
+        return Response(status_code=503, content=b"server busy, try again")
     _t2 = time.monotonic()
 
     # 3. Stream body into SHM  4. Submit  5. Read result
@@ -458,7 +458,7 @@ async def infer(request: Request, api_key: BearerToken) -> Response:
         pos = 0
         async for chunk in request.stream():
             if pos + len(chunk) > _SHM_DATA_SIZE:
-                return Response(status_code=413, content=b"payload exceeds slot capacity")
+                return Response(status_code=413, content=b"payload too large")
             if pos == 0 and not _looks_like_image(chunk):
                 return Response(status_code=415, content=b"body is not a recognized image format")
             _write_input(slot_id, chunk, pos)
@@ -486,7 +486,7 @@ async def infer(request: Request, api_key: BearerToken) -> Response:
         if result[0] != "result":
             return Response(
                 status_code=500,
-                content=f"unexpected MMP reply: {result[0]}".encode(),
+                content=b"internal error",
             )
 
         _, result_slot_id, result_sz = result
