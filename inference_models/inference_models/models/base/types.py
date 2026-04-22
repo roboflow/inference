@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import TypeVar, Tuple, List
+from typing import List, Tuple, TypeVar
 
 PreprocessedInputs = TypeVar("PreprocessedInputs")
 PreprocessingMetadata = TypeVar("PreprocessingMetadata")

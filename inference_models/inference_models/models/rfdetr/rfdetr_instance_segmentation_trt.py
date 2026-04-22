@@ -13,7 +13,7 @@ from inference_models.configuration import (
     DEFAULT_DEVICE,
     INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE,
 )
-from inference_models.entities import Confidence, ColorFormat
+from inference_models.entities import ColorFormat, Confidence
 from inference_models.errors import (
     CorruptedModelPackageError,
     MissingDependencyError,
@@ -33,6 +33,7 @@ from inference_models.models.common.roboflow.model_packages import (
     parse_inference_config,
     parse_trt_config,
 )
+from inference_models.models.common.roboflow.post_processing import ConfidenceFilter
 from inference_models.models.common.trt import (
     TRTCudaGraphCache,
     establish_trt_cuda_graph_cache,
@@ -48,7 +49,6 @@ from inference_models.models.rfdetr.common import (
     post_process_instance_segmentation_results,
 )
 from inference_models.models.rfdetr.pre_processing import pre_process_network_input
-from inference_models.models.common.roboflow.post_processing import ConfidenceFilter
 from inference_models.weights_providers.entities import RecommendedParameters
 
 try:

@@ -26,10 +26,10 @@ from inference_models.models.common.roboflow.model_packages import (
     parse_inference_config,
 )
 from inference_models.models.common.roboflow.post_processing import ConfidenceFilter
-from inference_models.weights_providers.entities import RecommendedParameters
 from inference_models.models.common.roboflow.pre_processing import (
     pre_process_network_input,
 )
+from inference_models.weights_providers.entities import RecommendedParameters
 
 
 class DeepLabV3PlusForSemanticSegmentationTorch(

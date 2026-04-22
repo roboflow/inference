@@ -1,16 +1,16 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Generic, List, Optional, Tuple, Union, Set, Literal
+from typing import Generic, List, Literal, Optional, Set, Tuple, Union
 
 import numpy as np
 import supervision as sv
 import torch
 
 from inference_models.models.base.types import (
+    InstancesRLEMasks,
     PreprocessedInputs,
     PreprocessingMetadata,
     RawPrediction,
-    InstancesRLEMasks,
 )
 from inference_models.models.common.rle_utils import coco_rle_masks_to_numpy_mask
 

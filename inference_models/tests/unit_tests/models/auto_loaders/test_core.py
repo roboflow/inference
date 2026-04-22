@@ -28,9 +28,9 @@ from inference_models.models.auto_loaders.core import (
     resolve_recommended_parameters,
 )
 from inference_models.models.auto_loaders.entities import (
+    BackendType,
     InferenceModelConfig,
 )
-from inference_models.models.auto_loaders.entities import BackendType
 from inference_models.weights_providers.entities import RecommendedParameters
 
 

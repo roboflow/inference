@@ -5,10 +5,10 @@ import torch
 from inference_models import InstanceDetections, InstancesRLEMasks
 from inference_models.models.common.roboflow.model_packages import PreProcessingMetadata
 from inference_models.models.common.roboflow.post_processing import (
-    preprocess_segmentation_masks,
-    crop_masks_to_boxes,
     align_instance_segmentation_results,
     align_instance_segmentation_results_to_rle_masks,
+    crop_masks_to_boxes,
+    preprocess_segmentation_masks,
 )
 
 

@@ -1,26 +1,26 @@
 import threading
 from threading import Lock
-from typing import List, Optional, Tuple, Union, Set
+from typing import List, Optional, Set, Tuple, Union
 
 import numpy as np
 import torch
 
 from inference_models import (
     InstanceDetections,
+    InstanceSegmentationMaskFormat,
     InstanceSegmentationModel,
     PreProcessingOverrides,
-    InstanceSegmentationMaskFormat,
 )
 from inference_models.configuration import (
     DEFAULT_DEVICE,
     INFERENCE_MODELS_YOLO26_DEFAULT_CONFIDENCE,
 )
-from inference_models.entities import Confidence, ColorFormat
+from inference_models.entities import ColorFormat, Confidence
 from inference_models.errors import (
     CorruptedModelPackageError,
     MissingDependencyError,
-    ModelRuntimeError,
     ModelInputError,
+    ModelRuntimeError,
 )
 from inference_models.models.common.cuda import (
     use_cuda_context,

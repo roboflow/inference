@@ -1,4 +1,4 @@
-from typing import Dict, List, Literal, Optional, Tuple, Union, Generator
+from typing import Dict, Generator, List, Literal, Optional, Tuple, Union
 
 import torch
 import torchvision
