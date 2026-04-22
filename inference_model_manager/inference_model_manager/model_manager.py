@@ -41,7 +41,7 @@ class ModelManager:
 
         manager = ModelManager()
         manager.load("yolov8n-640", api_key=key, backend="direct")
-        result = manager.infer_sync("yolov8n-640", image)
+        result = manager.process("yolov8n-640", images=image)
 
     Fleet usage::
 
@@ -111,7 +111,7 @@ class ModelManager:
         Blocks until the model is loaded, warmed up, and ready to serve.
 
         Args:
-            model_id: Unique key for routing (``infer_sync(model_id, ...)``,
+            model_id: Unique key for routing (``process(model_id, ...)``,
                 ``submit(model_id, ...)``). Also used as the model to load
                 unless ``model_id_or_path`` is set.
             model_id_or_path: What to pass to ``AutoModel.from_pretrained``.
@@ -219,15 +219,13 @@ class ModelManager:
 
     def _warmup(self, model_id: str, iters: int) -> None:
         """Run synthetic inferences to warm up the model."""
-        backend = self._backends[model_id]
         logger.info("Warming up '%s' with %d iterations", model_id, iters)
         try:
             import numpy as np
 
-            # Use a small synthetic image — model pre_process handles resizing
             dummy = np.zeros((64, 64, 3), dtype=np.uint8)
             for i in range(iters):
-                backend.infer_sync(dummy)
+                self.process(model_id, images=dummy)
             logger.info("Warmup complete for '%s'", model_id)
         except Exception:
             logger.warning(
@@ -264,16 +262,19 @@ class ModelManager:
             backend.unload()
 
     # ------------------------------------------------------------------
-    # Task dispatch
+    # Processing — unified task dispatch
     # ------------------------------------------------------------------
 
-    def invoke(
+    def process(
         self, model_id: str, task: Optional[str] = None, **kwargs: Any
     ) -> Any:
-        """Invoke a task on a loaded model.
+        """Process a task on a loaded model. Blocks until result is ready.
 
         Uses the model's ``supported_tasks`` property to resolve ``task`` to
         the correct method. If ``task`` is None, the default task is used.
+
+        For direct backends, calls the model method in-process.
+        For subprocess backends, submits via SHM and waits for result.
 
         Args:
             model_id: Loaded model key.
@@ -291,8 +292,113 @@ class ModelManager:
         from inference_model_manager.dispatch import invoke_task
 
         backend = self._get_backend(model_id)
-        model = backend.model
-        return invoke_task(model, task=task, **kwargs)
+
+        if hasattr(backend, "submit_slot"):
+            raw_input = kwargs.pop("images", None)
+            return self.submit(model_id, task=task, raw_input=raw_input, **kwargs).result()
+
+        return invoke_task(backend.model, task=task, **kwargs)
+
+    async def process_async(
+        self, model_id: str, task: Optional[str] = None, **kwargs: Any
+    ) -> Any:
+        """Process a task asynchronously.
+
+        Same as ``process()`` but non-blocking in an async context.
+
+        Raises:
+            KeyError: If model_id is not loaded.
+            ValueError: If task is not supported by the model.
+        """
+        import asyncio
+
+        backend = self._get_backend(model_id)
+
+        if hasattr(backend, "submit_slot"):
+            loop = asyncio.get_running_loop()
+            raw_input = kwargs.pop("images", None)
+            return await loop.run_in_executor(
+                None, lambda: self.submit(model_id, task=task, raw_input=raw_input, **kwargs).result()
+            )
+
+        from inference_model_manager.dispatch import invoke_task
+
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(
+            None, lambda: invoke_task(backend.model, task=task, **kwargs)
+        )
+
+    def submit(
+        self,
+        model_id: str,
+        *,
+        task: Optional[str] = None,
+        raw_input: Any = None,
+        **kwargs,
+    ) -> Future:
+        """Submit for processing. Returns a Future immediately.
+
+        For subprocess backends, allocates a SHM slot, writes input,
+        and signals the worker with task + params.
+        For direct backends, runs in thread pool via task dispatch.
+
+        Args:
+            model_id: Loaded model key.
+            task: Task name. None → default.
+            raw_input: Image bytes / numpy array for SHM path.
+                For direct backend, pass images in kwargs instead.
+            **kwargs: Additional params (forwarded to worker as params JSON,
+                or passed directly to model method for direct backend).
+
+        Raises:
+            KeyError: If model_id is not loaded.
+        """
+        backend = self._get_backend(model_id)
+
+        # Subprocess backend: we manage the pool
+        if hasattr(backend, "submit_slot"):
+            import json
+
+            to_bytes = _get_to_bytes()
+            input_bytes = to_bytes(raw_input) if raw_input is not None else b""
+            if input_bytes and len(input_bytes) > self._pool.data_slot_bytes:
+                raise ValueError(
+                    f"Input {len(input_bytes)} B > slot capacity "
+                    f"{self._pool.data_slot_bytes} B — increase input_mb"
+                )
+
+            req_id = uuid.uuid4().int & 0xFFFF_FFFF_FFFF_FFFF
+            slot_id = self._pool.alloc_slot()
+            self._pool.mark_allocated(slot_id, req_id)
+            if input_bytes:
+                self._pool.data_memoryview(slot_id)[: len(input_bytes)] = input_bytes
+            self._pool.mark_written(slot_id, len(input_bytes))
+
+            # Pack task + kwargs into params_bytes for worker
+            params = dict(kwargs)
+            if task is not None:
+                params["task"] = task
+            params_bytes = json.dumps(params, default=str).encode()
+
+            future: Future = Future()
+
+            def _on_done(f: Future) -> None:
+                try:
+                    self._pool.free_slot(slot_id)
+                except Exception:
+                    pass
+
+            future.add_done_callback(_on_done)
+            backend.submit_slot(slot_id, req_id, future, params_bytes)
+            return future
+
+        # Direct backend: run in thread pool via task dispatch
+        from inference_model_manager.dispatch import invoke_task
+
+        future = self._executor.submit(
+            invoke_task, backend.model, task=task, **kwargs
+        )
+        return future
 
     def get_supported_tasks(self, model_id: str) -> Dict[str, Any]:
         """Return supported tasks for a loaded model.
@@ -304,81 +410,6 @@ class ModelManager:
 
         backend = self._get_backend(model_id)
         return list_tasks(backend.model)
-
-    # ------------------------------------------------------------------
-    # Inference (legacy — delegates to invoke for direct backends)
-    # ------------------------------------------------------------------
-
-    def infer_sync(self, model_id: str, raw_input: Any, **kwargs) -> Any:
-        """Run inference synchronously. Blocks until result is ready.
-
-        Raises:
-            KeyError: If model_id is not loaded.
-        """
-        backend = self._get_backend(model_id)
-        if hasattr(backend, "submit_slot"):
-            return self.submit(model_id, raw_input, **kwargs).result()
-        return backend.infer_sync(raw_input, **kwargs)
-
-    async def infer_async(self, model_id: str, raw_input: Any, **kwargs) -> Any:
-        """Run inference asynchronously.
-
-        Raises:
-            KeyError: If model_id is not loaded.
-        """
-        import asyncio
-
-        backend = self._get_backend(model_id)
-        if hasattr(backend, "submit_slot"):
-            loop = asyncio.get_running_loop()
-            return await loop.run_in_executor(
-                None, lambda: self.submit(model_id, raw_input, **kwargs).result()
-            )
-        return await backend.infer_async(raw_input, **kwargs)
-
-    def submit(
-        self, model_id: str, raw_input: Any, *, priority: int = 0, **kwargs
-    ) -> Future:
-        """Submit a raw input for inference. Returns a Future immediately.
-
-        For subprocess backends, this allocates a SHM slot, writes input,
-        and signals the worker. For direct backends, delegates directly.
-
-        Raises:
-            KeyError: If model_id is not loaded.
-        """
-        backend = self._get_backend(model_id)
-
-        # Subprocess backend: we manage the pool
-        if hasattr(backend, "submit_slot"):
-            to_bytes = _get_to_bytes()
-            input_bytes = to_bytes(raw_input)
-            if len(input_bytes) > self._pool.data_slot_bytes:
-                raise ValueError(
-                    f"Input {len(input_bytes)} B > slot capacity "
-                    f"{self._pool.data_slot_bytes} B — increase input_mb"
-                )
-
-            req_id = uuid.uuid4().int & 0xFFFF_FFFF_FFFF_FFFF
-            slot_id = self._pool.alloc_slot()
-            self._pool.mark_allocated(slot_id, req_id)
-            self._pool.data_memoryview(slot_id)[: len(input_bytes)] = input_bytes
-            self._pool.mark_written(slot_id, len(input_bytes))
-
-            future: Future = Future()
-
-            def _on_done(f: Future) -> None:
-                try:
-                    self._pool.free_slot(slot_id)
-                except Exception:
-                    pass
-
-            future.add_done_callback(_on_done)
-            backend.submit_slot(slot_id, req_id, future)
-            return future
-
-        # Direct backend: has its own submit()
-        return backend.submit(raw_input, priority=priority, **kwargs)
 
     # ------------------------------------------------------------------
     # Observability

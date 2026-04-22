@@ -13,63 +13,45 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from inference_models.models.base.task_dispatch import ManagedModel, TaskSpec
 from inference_model_manager.model_manager import ModelManager
 
 
-# ─── Fake backend ───────────────────────────────────────────────────
+# ─── Fake model + backend ──────────────────────────────────────────
+
+
+class FakeModel(ManagedModel):
+    """Minimal ManagedModel for unit tests."""
+
+    def __init__(self, model_id: str):
+        self.model_id = model_id
+        self._inference_count = 0
+
+    @property
+    def supported_tasks(self) -> Dict[str, TaskSpec]:
+        return {"infer": TaskSpec(method="infer", default=True, params=["images"])}
+
+    def infer(self, images=None, **kwargs) -> Any:
+        self._inference_count += 1
+        return {"prediction": "fake", "model_id": self.model_id}
 
 
 class FakeBackend:
     """Minimal Backend stand-in for unit tests."""
 
     def __init__(self, model_id: str, **kwargs):
-        self.model_id = model_id
+        self._fake_model = FakeModel(model_id)
         self._state = "loaded"
-        self._inference_count = 0
         self._unloaded = False
-        self._sleep_bytes: Optional[int] = None
 
-    # Pipeline
-    def pre_process(self, *args, **kwargs) -> Tuple[Any, Any]:
-        return (args, None)
-
-    def post_process(self, raw_output: Any, meta: Any, **kwargs) -> Any:
-        return raw_output
-
-    def infer_sync(self, *args, **kwargs) -> Any:
-        if self._state != "loaded":
-            raise RuntimeError(f"Cannot infer: state={self._state}")
-        self._inference_count += 1
-        return {"prediction": "fake", "model_id": self.model_id}
-
-    def submit(self, raw_input: Any, *, priority: int = 0, **kwargs) -> Future:
-        if self._state != "loaded":
-            raise RuntimeError("not accepting")
-        f: Future = Future()
-        f.set_result({"prediction": "fake", "model_id": self.model_id})
-        self._inference_count += 1
-        return f
-
-    async def infer_async(self, raw_input: Any, **kwargs) -> Any:
-        return self.infer_sync(raw_input, **kwargs)
+    @property
+    def model(self) -> FakeModel:
+        return self._fake_model
 
     # Lifecycle
-    def unload(self) -> None:
+    def unload(self, drain: bool = False, drain_timeout_s: float = 30.0) -> None:
         self._state = "unhealthy"
         self._unloaded = True
-
-    def sleep(self) -> Optional[int]:
-        if self._state != "loaded":
-            raise RuntimeError(f"Cannot sleep: state={self._state}")
-        self._state = "sleeping"
-        self._sleep_bytes = 100 * 1024 * 1024  # 100MB
-        return self._sleep_bytes
-
-    def wake(self) -> None:
-        if self._state != "sleeping":
-            raise RuntimeError(f"Cannot wake: state={self._state}")
-        self._state = "loaded"
-        self._sleep_bytes = None
 
     # Observability
     @property
@@ -82,7 +64,7 @@ class FakeBackend:
 
     @property
     def is_healthy(self) -> bool:
-        return self._state in ("loaded", "sleeping")
+        return self._state == "loaded"
 
     @property
     def is_accepting(self) -> bool:
@@ -92,12 +74,16 @@ class FakeBackend:
     def queue_depth(self) -> int:
         return 0
 
+    @property
+    def max_batch_size(self) -> Optional[int]:
+        return None
+
     def stats(self) -> Dict[str, Any]:
         return {
             "backend_type": "fake",
             "state": self.state,
             "is_accepting": self.is_accepting,
-            "inference_count": self._inference_count,
+            "inference_count": self._fake_model._inference_count,
             "error_count": 0,
         }
 
@@ -185,21 +171,21 @@ class TestModelManagerLifecycle:
 
 class TestModelManagerInference:
 
-    def test_infer_sync(self):
+    def test_process(self):
         mm = ModelManager()
         backends = {}
         _patch_create_backend(mm, backends)
 
         mm.load("model-a", api_key="")
-        result = mm.infer_sync("model-a", "some_image")
+        result = mm.process("model-a", images="some_image")
 
         assert result == {"prediction": "fake", "model_id": "model-a"}
-        assert backends["model-a"]._inference_count == 1
+        assert backends["model-a"]._fake_model._inference_count == 1
 
-    def test_infer_sync_missing_model_raises(self):
+    def test_process_missing_model_raises(self):
         mm = ModelManager()
         with pytest.raises(KeyError, match="not loaded"):
-            mm.infer_sync("nonexistent", "image")
+            mm.process("nonexistent", images="image")
 
     def test_submit(self):
         mm = ModelManager()
@@ -207,19 +193,19 @@ class TestModelManagerInference:
         _patch_create_backend(mm, backends)
 
         mm.load("model-a", api_key="")
-        future = mm.submit("model-a", "some_image")
+        future = mm.submit("model-a", images="some_image")
         result = future.result(timeout=5)
 
         assert result is not None
 
-    def test_infer_async(self):
+    def test_process_async(self):
         mm = ModelManager()
         backends = {}
         _patch_create_backend(mm, backends)
 
         mm.load("model-a", api_key="")
         result = asyncio.get_event_loop().run_until_complete(
-            mm.infer_async("model-a", "some_image")
+            mm.process_async("model-a", images="some_image")
         )
 
         assert result == {"prediction": "fake", "model_id": "model-a"}
@@ -232,13 +218,13 @@ class TestModelManagerInference:
         mm.load("model-a", api_key="")
         mm.load("model-b", api_key="")
 
-        r_a = mm.infer_sync("model-a", "img")
-        r_b = mm.infer_sync("model-b", "img")
+        r_a = mm.process("model-a", images="img")
+        r_b = mm.process("model-b", images="img")
 
         assert r_a["model_id"] == "model-a"
         assert r_b["model_id"] == "model-b"
-        assert backends["model-a"]._inference_count == 1
-        assert backends["model-b"]._inference_count == 1
+        assert backends["model-a"]._fake_model._inference_count == 1
+        assert backends["model-b"]._fake_model._inference_count == 1
 
 
 class TestModelManagerObservability:
@@ -258,7 +244,7 @@ class TestModelManagerObservability:
 
         mm.load("model-a", api_key="")
         mm.load("model-b", api_key="")
-        mm.infer_sync("model-a", "img")
+        mm.process("model-a", images="img")
 
         s = mm.stats()
 
@@ -320,7 +306,7 @@ class TestModelManagerThreadSafety:
         results = []
 
         def infer():
-            r = mm.infer_sync("model-a", "img")
+            r = mm.process("model-a", images="img")
             results.append(r)
 
         threads = [threading.Thread(target=infer) for _ in range(20)]
@@ -330,7 +316,7 @@ class TestModelManagerThreadSafety:
             t.join()
 
         assert len(results) == 20
-        assert backends["model-a"]._inference_count == 20
+        assert backends["model-a"]._fake_model._inference_count == 20
 
 
 class TestModelManagerBackendCreation:
@@ -366,11 +352,11 @@ class TestModelManagerBackendCreation:
         )
 
     @patch("inference_model_manager.model_manager.ModelManager._create_backend")
-    def test_warmup_calls_infer_sync(self, mock_create):
+    def test_warmup_calls_process(self, mock_create):
         fb = FakeBackend("model-a")
         mock_create.return_value = fb
 
         mm = ModelManager()
         mm.load("model-a", api_key="", warmup_iters=3)
 
-        assert fb._inference_count == 3
+        assert fb._fake_model._inference_count == 3
