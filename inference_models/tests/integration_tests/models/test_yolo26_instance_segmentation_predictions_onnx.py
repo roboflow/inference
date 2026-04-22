@@ -620,3 +620,30 @@ def test_onnx_package_letterbox_dynamic_bs_torch(
         atol=XYXY_ATOL,
     )
     assert 219500 <= mask_region_sum <= 221300
+
+
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+def test_onnx_per_class_confidence_blocks_snake_class(
+    yolo26n_seg_snakes_stretch_onnx_static_package: str,
+    snake_image_numpy: np.ndarray,
+) -> None:
+    """Baseline (see `test_onnx_package_stretch_static_bs_numpy` above) returns
+    1 detection of class 0 (snake) at conf 0.9645. Setting a 0.99 per-class
+    threshold on class 0 leaves no detections."""
+    from inference_models.models.yolo26.yolo26_instance_segmentation_onnx import (
+        YOLO26ForInstanceSegmentationOnnx,
+    )
+    from inference_models.weights_providers.entities import RecommendedParameters
+
+    model = YOLO26ForInstanceSegmentationOnnx.from_pretrained(
+        model_name_or_path=yolo26n_seg_snakes_stretch_onnx_static_package,
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
+    )
+    class_names = list(model.class_names)
+    model.recommended_parameters = RecommendedParameters(
+        confidence=0.25,
+        per_class_confidence={class_names[0]: 0.99},
+    )
+    predictions = model(snake_image_numpy, confidence="best")
+    assert predictions[0].class_id.numel() == 0

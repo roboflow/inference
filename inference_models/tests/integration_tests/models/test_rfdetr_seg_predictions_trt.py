@@ -355,3 +355,27 @@ def test_trt_cudagraph_output_matches_non_cudagraph_output(
                 outputs[1][execution_branch_idx][result_idx],
                 atol=1e-6,
             )
+
+
+@pytest.mark.slow
+@pytest.mark.trt_extras
+def test_trt_per_class_confidence_filters_detections(
+    rfdetr_seg_asl_trt_package: str,
+    asl_image_numpy: np.ndarray,
+) -> None:
+    from inference_models.models.rfdetr.rfdetr_instance_segmentation_trt import (
+        RFDetrForInstanceSegmentationTRT,
+    )
+    from inference_models.weights_providers.entities import RecommendedParameters
+
+    model = RFDetrForInstanceSegmentationTRT.from_pretrained(
+        model_name_or_path=rfdetr_seg_asl_trt_package,
+        engine_host_code_allowed=True,
+    )
+    class_names = list(model.class_names)
+    model.recommended_parameters = RecommendedParameters(
+        confidence=0.3,
+        per_class_confidence={class_names[20]: 1.01},
+    )
+    predictions = model(asl_image_numpy, confidence="best")
+    assert predictions[0].class_id.numel() == 0

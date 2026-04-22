@@ -177,7 +177,7 @@ GROUNDED_SAM_WORKFLOW = {
     ],
     "steps": [
         {
-            "type": "roboflow_core/roboflow_object_detection_model@v2",
+            "type": "roboflow_core/roboflow_object_detection_model@v3",
             "name": "detection",
             "model_id": "yolov8n-640",
             "images": "$inputs.image",

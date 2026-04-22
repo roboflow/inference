@@ -132,7 +132,7 @@ def _flat_workflow() -> dict:
         "inputs": [{"type": "WorkflowImage", "name": "image"}],
         "steps": [
             {
-                "type": "roboflow_core/roboflow_object_detection_model@v2",
+                "type": "roboflow_core/roboflow_object_detection_model@v3",
                 "name": "general_detection",
                 "image": "$inputs.image",
                 "model_id": "yolov8n-640",
