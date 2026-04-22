@@ -350,7 +350,9 @@ class VITForMultiLabelClassificationOnnx(
         )
         threshold = confidence_filter.get_threshold(self.class_names)
         if isinstance(threshold, torch.Tensor):
-            threshold = threshold.to(dtype=model_results.dtype, device=model_results.device)
+            threshold = threshold.to(
+                dtype=model_results.dtype, device=model_results.device
+            )
         if self._inference_config.post_processing.fused:
             model_results = model_results
         else:

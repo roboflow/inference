@@ -350,7 +350,9 @@ def test_dump_auto_resolution_cache_omits_recommended_parameters_when_none(
 def test_resolve_recommended_parameters_package_overrides_model() -> None:
     package_params = RecommendedParameters(confidence=0.8)
     model_params = RecommendedParameters(confidence=0.4)
-    assert resolve_recommended_parameters(package_params, model_params) is package_params
+    assert (
+        resolve_recommended_parameters(package_params, model_params) is package_params
+    )
 
 
 def test_resolve_recommended_parameters_falls_back_to_model() -> None:

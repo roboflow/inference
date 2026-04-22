@@ -75,7 +75,11 @@ def post_process_instance_segmentation_results(
             top_classes = top_classes[named]
             image_bboxes = image_bboxes[named]
             image_masks = image_masks[named]
-        confidence_mask = confidence > (threshold[top_classes.long()] if isinstance(threshold, torch.Tensor) else threshold)
+        confidence_mask = confidence > (
+            threshold[top_classes.long()]
+            if isinstance(threshold, torch.Tensor)
+            else threshold
+        )
         confidence = confidence[confidence_mask]
         top_classes = top_classes[confidence_mask]
         selected_boxes = image_bboxes[confidence_mask]

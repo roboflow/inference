@@ -220,6 +220,4 @@ def test_onnx_per_class_confidence_preserves_objectness_row(
     )
     predictions = model(asl_image_numpy, confidence="best")
     assert np.allclose(predictions[0].class_id[0].cpu().numpy(), [0], atol=1)
-    assert np.allclose(
-        predictions[0].confidence[0].cpu().numpy(), [0.7349], atol=0.005
-    )
+    assert np.allclose(predictions[0].confidence[0].cpu().numpy(), [0.7349], atol=0.005)

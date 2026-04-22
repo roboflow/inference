@@ -35,11 +35,13 @@ def _od_output(box_class_conf):
 class TestRunNmsForObjectDetection:
     def test_scalar_keeps_all_above_threshold(self) -> None:
         # Three well-separated boxes, three classes, conf 0.7/0.5/0.3.
-        out = _od_output([
-            ((10, 10, 10, 10), 0, 0.7),
-            ((100, 100, 10, 10), 1, 0.5),
-            ((200, 200, 10, 10), 2, 0.3),
-        ])
+        out = _od_output(
+            [
+                ((10, 10, 10, 10), 0, 0.7),
+                ((100, 100, 10, 10), 1, 0.5),
+                ((200, 200, 10, 10), 2, 0.3),
+            ]
+        )
         result = run_nms_for_object_detection(out, conf_thresh=0.4)
         # 0.3 dropped; 0.7 and 0.5 kept.
         assert result[0].shape[0] == 2
@@ -47,11 +49,13 @@ class TestRunNmsForObjectDetection:
     def test_per_class_tensor_drops_only_classes_above_their_threshold(
         self,
     ) -> None:
-        out = _od_output([
-            ((10, 10, 10, 10), 0, 0.7),
-            ((100, 100, 10, 10), 1, 0.5),
-            ((200, 200, 10, 10), 2, 0.3),
-        ])
+        out = _od_output(
+            [
+                ((10, 10, 10, 10), 0, 0.7),
+                ((100, 100, 10, 10), 1, 0.5),
+                ((200, 200, 10, 10), 2, 0.3),
+            ]
+        )
         # cat=0.6 (drops 0?), dog=0.6 (drops 0.5), fish=0.2 (keeps 0.3)
         thresholds = torch.tensor([0.6, 0.6, 0.2])
         result = run_nms_for_object_detection(out, conf_thresh=thresholds)
@@ -71,20 +75,24 @@ class TestPostProcessNmsFused:
         return torch.tensor([rows], dtype=torch.float32)
 
     def test_scalar_threshold(self) -> None:
-        out = self._fused([
-            (0, 0, 10, 10, 0.9, 0),
-            (10, 10, 20, 20, 0.4, 1),
-        ])
+        out = self._fused(
+            [
+                (0, 0, 10, 10, 0.9, 0),
+                (10, 10, 20, 20, 0.4, 1),
+            ]
+        )
         result = post_process_nms_fused_model_output(out, conf_thresh=0.5)
         assert result[0].shape[0] == 1
         assert int(result[0][0, 5]) == 0
 
     def test_per_class_tensor_indexes_by_class_id(self) -> None:
-        out = self._fused([
-            (0, 0, 10, 10, 0.9, 0),  # cls 0, conf 0.9 vs thresh 0.95 → drop
-            (10, 10, 20, 20, 0.4, 1),  # cls 1, conf 0.4 vs thresh 0.3 → keep
-            (20, 20, 30, 30, 0.6, 2),  # cls 2, conf 0.6 vs thresh 0.5 → keep
-        ])
+        out = self._fused(
+            [
+                (0, 0, 10, 10, 0.9, 0),  # cls 0, conf 0.9 vs thresh 0.95 → drop
+                (10, 10, 20, 20, 0.4, 1),  # cls 1, conf 0.4 vs thresh 0.3 → keep
+                (20, 20, 30, 30, 0.6, 2),  # cls 2, conf 0.6 vs thresh 0.5 → keep
+            ]
+        )
         thresholds = torch.tensor([0.95, 0.3, 0.5])
         result = post_process_nms_fused_model_output(out, conf_thresh=thresholds)
         kept = sorted(int(c) for c in result[0][:, 5].tolist())
@@ -103,11 +111,13 @@ def _is_output(box_class_conf, num_mask_coeffs=32):
 
 class TestRunNmsForInstanceSegmentation:
     def test_per_class_tensor_drops_per_class(self) -> None:
-        out = _is_output([
-            ((10, 10, 10, 10), 0, 0.7),
-            ((100, 100, 10, 10), 1, 0.5),
-            ((200, 200, 10, 10), 2, 0.3),
-        ])
+        out = _is_output(
+            [
+                ((10, 10, 10, 10), 0, 0.7),
+                ((100, 100, 10, 10), 1, 0.5),
+                ((200, 200, 10, 10), 2, 0.3),
+            ]
+        )
         thresholds = torch.tensor([0.6, 0.6, 0.2])
         result = run_nms_for_instance_segmentation(out, conf_thresh=thresholds)
         kept = sorted(int(c) for c in result[0][:, 5].tolist())
@@ -186,9 +196,7 @@ class TestConfidenceFilter:
     def test_unknown_class_falls_back_to_global_optimal(self) -> None:
         cf = ConfidenceFilter(
             confidence="best",
-            recommended_parameters=self._rd(
-                confidence=0.5, per_class={"cat": 0.6}
-            ),
+            recommended_parameters=self._rd(confidence=0.5, per_class={"cat": 0.6}),
             default_confidence=INFERENCE_MODELS_DEFAULT_CONFIDENCE,
         )
         assert cf.get_threshold(["fish"]).tolist() == pytest.approx([0.5])
@@ -206,9 +214,7 @@ class TestConfidenceFilter:
     def test_per_class_overrides_global_optimal(self) -> None:
         cf = ConfidenceFilter(
             confidence="best",
-            recommended_parameters=self._rd(
-                confidence=0.5, per_class={"cat": 0.9}
-            ),
+            recommended_parameters=self._rd(confidence=0.5, per_class={"cat": 0.9}),
             default_confidence=INFERENCE_MODELS_DEFAULT_CONFIDENCE,
         )
         assert cf.get_threshold(["cat"]).tolist() == pytest.approx([0.9])
@@ -269,9 +275,7 @@ class TestConfidenceFilter:
     def test_default_string_skips_recommended_parameters(self) -> None:
         cf = ConfidenceFilter(
             confidence="default",
-            recommended_parameters=self._rd(
-                confidence=0.5, per_class={"cat": 0.6}
-            ),
+            recommended_parameters=self._rd(confidence=0.5, per_class={"cat": 0.6}),
             default_confidence=0.25,
         )
         assert cf.get_threshold(["cat", "dog"]) == pytest.approx(0.25)

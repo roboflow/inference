@@ -462,7 +462,9 @@ class ResNetForMultiLabelClassificationTRT(
         )
         threshold = confidence_filter.get_threshold(self.class_names)
         if isinstance(threshold, torch.Tensor):
-            threshold = threshold.to(dtype=model_results.dtype, device=model_results.device)
+            threshold = threshold.to(
+                dtype=model_results.dtype, device=model_results.device
+            )
         with torch.cuda.stream(self._post_process_stream):
             model_results.record_stream(self._post_process_stream)
             if self._inference_config.post_processing.fused:

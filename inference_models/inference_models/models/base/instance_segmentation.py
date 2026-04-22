@@ -6,17 +6,15 @@ import numpy as np
 import supervision as sv
 import torch
 
-from inference_models.models.base.masks import RLEMask
 from inference_models.models.base.types import (
     PreprocessedInputs,
     PreprocessingMetadata,
     RawPrediction,
+    InstancesRLEMasks,
 )
-
+from inference_models.models.common.rle_utils import coco_rle_masks_to_numpy_mask
 
 InstanceSegmentationMaskFormat = Literal["dense", "rle"]
-
-
 
 
 @dataclass
@@ -24,7 +22,9 @@ class InstanceDetections:
     xyxy: torch.Tensor  # (n_boxes, 4)
     class_id: torch.Tensor  # (n_boxes, )
     confidence: torch.Tensor  # (n_boxes, )
-    mask: Union[torch.Tensor, List[RLEMask]]  # for dense representation (n_boxes, mask_height, mask_width)
+    mask: Union[
+        torch.Tensor, InstancesRLEMasks
+    ]  # for dense representation (n_boxes, mask_height, mask_width)
     image_metadata: Optional[dict] = None
     bboxes_metadata: Optional[List[dict]] = (
         None  # if given, list of size equal to # of bboxes
@@ -75,11 +75,15 @@ class InstanceDetections:
         See Also:
             - Supervision documentation: https://supervision.roboflow.com
         """
+        if isinstance(self.mask, torch.Tensor):
+            mask = self.mask.cpu().numpy()
+        else:
+            mask = coco_rle_masks_to_numpy_mask(self.mask)
         return sv.Detections(
             xyxy=self.xyxy.cpu().numpy(),
             class_id=self.class_id.cpu().numpy(),
             confidence=self.confidence.cpu().numpy(),
-            mask=self.mask.cpu().numpy(),
+            mask=mask,
         )
 
 

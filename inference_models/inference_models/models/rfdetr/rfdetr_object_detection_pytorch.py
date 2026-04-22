@@ -503,7 +503,11 @@ class RFDetrForObjectDetectionTorch(
                 scores = scores[named]
                 labels = labels[named]
                 boxes = boxes[named]
-            keep = scores > (score_thresholds[labels.long()] if isinstance(score_thresholds, torch.Tensor) else score_thresholds)
+            keep = scores > (
+                score_thresholds[labels.long()]
+                if isinstance(score_thresholds, torch.Tensor)
+                else score_thresholds
+            )
             scores = scores[keep]
             labels = labels[keep]
             boxes = boxes[keep]

@@ -1083,7 +1083,9 @@ def attempt_loading_model_with_auto_load_cache(
         # Cache stores the already-resolved (package-vs-model) value written
         # in initialize_model — no need to re-run resolve_recommended_parameters.
         if cache_entry.recommended_parameters is not None:
-            model_init_kwargs["recommended_parameters"] = cache_entry.recommended_parameters
+            model_init_kwargs["recommended_parameters"] = (
+                cache_entry.recommended_parameters
+            )
         model = model_class.from_pretrained(
             model_package_cache_dir, **model_init_kwargs
         )
