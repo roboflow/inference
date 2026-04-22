@@ -354,7 +354,10 @@ def _free_slot(slot_id: int) -> None:
 
 def _write_input(slot_id: int, chunk: bytes | memoryview, offset: int) -> None:
     base = slot_id * _SLOT_TOTAL + _HEADER_SIZE
-    _shm.buf[base + offset : base + offset + len(chunk)] = chunk
+    end = base + offset + len(chunk)
+    if base < 0 or end > len(_shm.buf):
+        raise ValueError(f"SHM write out of bounds: slot={slot_id} offset={offset} len={len(chunk)}")
+    _shm.buf[base + offset : end] = chunk
 
 
 def _read_result(slot_id: int, result_sz: int) -> bytes:
@@ -394,7 +397,7 @@ def _bearer_token(request: Request) -> str:
 
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next):
-    if request.url.path in _AUTH_SKIP_PATHS:
+    if request.url.path.rstrip("/") in _AUTH_SKIP_PATHS:
         return await call_next(request)
     token = _bearer_token(request)
     if not token:
@@ -509,7 +512,10 @@ async def infer(request: Request, api_key: BearerToken) -> Response:
         raw = _read_result(result_slot_id, result_sz)
 
         if fmt == "json":
-            obj = pickle.loads(raw)
+            try:
+                obj = pickle.loads(raw)
+            except Exception:
+                return Response(status_code=500, content=b"result deserialization failed")
             return Response(
                 content=serialize_json(obj),
                 media_type="application/json",

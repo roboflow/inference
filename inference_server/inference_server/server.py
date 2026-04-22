@@ -123,7 +123,7 @@ def _preload_models(mmp_addr: str, preload_spec: str) -> None:
         if not entry:
             continue
         if ":" in entry:
-            mid, key = entry.split(":", 1)
+            mid, key = entry.rsplit(":", 1)
         else:
             mid, key = entry, default_key
         models.append((mid.strip(), key.strip()))

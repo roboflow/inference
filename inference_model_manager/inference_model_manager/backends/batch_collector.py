@@ -132,13 +132,15 @@ class BatchCollector:
 
     @property
     def queue_depth(self) -> int:
-        return len(self._heap)
+        with self._cond:
+            return len(self._heap)
 
     def queue_depth_by_priority(self) -> Dict[int, int]:
-        counts: Dict[int, int] = {}
-        for item in self._heap:
-            counts[item.priority] = counts.get(item.priority, 0) + 1
-        return counts
+        with self._cond:
+            counts: Dict[int, int] = {}
+            for item in self._heap:
+                counts[item.priority] = counts.get(item.priority, 0) + 1
+            return counts
 
     def stats(self) -> Dict[str, Any]:
         n = self._batches_dispatched
@@ -169,7 +171,9 @@ class BatchCollector:
         # Thread is done — safe to touch the heap without locking.
         remaining = [heapq.heappop(self._heap) for _ in range(len(self._heap))]
         if drain and remaining:
-            self._process_batch(remaining)
+            # Respect max_size to avoid OOM on huge drain
+            for i in range(0, len(remaining), self._max_size):
+                self._process_batch(remaining[i : i + self._max_size])
         else:
             for item in remaining:
                 if not item.future.done():

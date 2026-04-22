@@ -725,7 +725,9 @@ class SubprocessBackend(Backend):
         self._inference_count += 1
         self._last_inference_ts = t0
         self._latencies.append(elapsed)
-        if future.exception() is not None:
+        if future.cancelled():
+            self._error_count += 1
+        elif future.exception() is not None:
             self._error_count += 1
 
     def infer_sync(self, raw_input: Any, **kwargs) -> Any:
@@ -780,7 +782,7 @@ class SubprocessBackend(Backend):
         self.unload()
 
     def unload(self) -> None:
-        self._state_value = "loading"  # block new submits immediately
+        self._state_value = "unhealthy"  # block new submits immediately
 
         # Signal recv thread: send T_SHUTDOWN to worker, then exit
         self._recv_running = False

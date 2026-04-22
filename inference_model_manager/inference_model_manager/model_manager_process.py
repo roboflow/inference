@@ -793,6 +793,8 @@ class ModelManagerProcess:
         """Must be called on the event loop thread."""
         pending = self._pending.pop(req_id, None)
         if pending is None:
+            # Stale reaper already freed this, or duplicate callback — free slot
+            self._pool.free_slot(slot_id)
             return
         identity, _, _ = pending
         asyncio.create_task(
@@ -912,11 +914,12 @@ class ModelManagerProcess:
                 )
                 self._evict_model(candidate)
 
-                # Clean up the failed partial load before retrying
+                # Force-clear partial load so next attempt doesn't hit "already loaded"
                 try:
                     self._manager.unload(model_id)
                 except Exception:
-                    pass
+                    # unload failed — force-remove from backends dict
+                    self._manager._backends.pop(model_id, None)
 
         # Exhausted retries — should not normally reach here
         logger.error("MMP: load '%s' exhausted %d retries", model_id, max_retries)
@@ -1053,7 +1056,12 @@ class ModelManagerProcess:
             self._evict_threshold * 100,
             candidate,
         )
-        self._evict_model(candidate)
+        # Run in executor — drain_and_unload can block up to 30s
+        try:
+            asyncio.get_running_loop().run_in_executor(None, self._evict_model, candidate)
+        except RuntimeError:
+            # No event loop (test or direct call) — run synchronously
+            self._evict_model(candidate)
 
     def _evict_model(self, model_id: str) -> bool:
         """Evict a single model. Returns True on success."""
