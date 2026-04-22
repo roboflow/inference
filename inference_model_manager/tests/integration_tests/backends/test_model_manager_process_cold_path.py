@@ -403,13 +403,13 @@ class TestAutoLoad:
         assert msg == T_MODEL_READY
         assert any(c.startswith("load:yolov8n") for c in mgr.calls)
 
-    def test_ensure_loaded_unknown_falls_back_to_stub(self):
-        """Unknown flavor (not in mock manager) → stub load → T_MODEL_READY."""
+    def test_ensure_loaded_unknown_returns_error(self):
+        """Unknown model (not in mock manager) → load fails → T_ERROR."""
         mgr = _MockManager()   # no models registered
         h   = _MMPHarness(manager=mgr)
         msg = h.ensure_loaded("no-such-model")
         h.teardown()
-        assert msg == T_MODEL_READY
+        assert msg == T_ERROR
 
     def test_end_to_end_with_mock_manager(self):
         """Full lifecycle: load → alloc → submit → result → free."""
