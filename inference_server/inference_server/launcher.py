@@ -118,6 +118,7 @@ def launch_orchestrated(
     decoder: str = "imagecodecs",
     batch_max_size: int = 0,
     batch_max_wait_ms: float = 5.0,
+    idle_timeout_s: float = 300.0,
 ) -> LaunchHandle:
     """Start a ModelManagerProcess and return a LaunchHandle.
 
@@ -150,6 +151,7 @@ def launch_orchestrated(
         decoder=decoder,
         batch_max_size=batch_max_size,
         batch_max_wait_ms=batch_max_wait_ms,
+        idle_timeout_s=idle_timeout_s,
     )
 
     ready = threading.Event()

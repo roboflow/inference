@@ -184,6 +184,7 @@ def main() -> None:
     decoder = os.environ.get("INFERENCE_DECODER", "imagecodecs")
     batch_max_size = int(os.environ.get("INFERENCE_BATCH_MAX_SIZE", "0"))
     batch_max_wait = float(os.environ.get("INFERENCE_BATCH_MAX_WAIT_MS", "5.0"))
+    idle_timeout = float(os.environ.get("INFERENCE_MODEL_IDLE_TIMEOUT_S", "300.0"))
 
     # ── HTTP / TLS config ──────────────────────────────────────────────────
     host = os.environ.get("HOST", "0.0.0.0")
@@ -209,6 +210,7 @@ def main() -> None:
         decoder=decoder,
         batch_max_size=batch_max_size,
         batch_max_wait_ms=batch_max_wait,
+        idle_timeout_s=idle_timeout,
     )
     logger.info("MMP ready: addr=%s  shm=%s", handle.mmp_addr, handle.shm_name)
 
