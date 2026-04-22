@@ -64,8 +64,8 @@ def _recompute_non_persistent_buffers(model_dir: str, model) -> None:
 
 class MoonDream2HF(ManagedModel):
 
-    @property
-    def supported_tasks(self) -> Dict[str, TaskSpec]:
+    @classmethod
+    def get_supported_tasks(cls) -> Dict[str, TaskSpec]:
         return {
             "caption": TaskSpec(method="caption", default=True, params=["images"]),
             "detect": TaskSpec(method="detect", params=["images", "classes"]),

@@ -10,8 +10,8 @@ from inference_models.models.base.task_dispatch import ManagedModel, TaskSpec
 
 class TextImageEmbeddingModel(ManagedModel, ABC):
 
-    @property
-    def supported_tasks(self) -> Dict[str, TaskSpec]:
+    @classmethod
+    def get_supported_tasks(cls) -> Dict[str, TaskSpec]:
         return {
             "embed_images": TaskSpec(method="embed_images", default=True, params=["images"]),
             "embed_text": TaskSpec(method="embed_text", params=["texts"]),

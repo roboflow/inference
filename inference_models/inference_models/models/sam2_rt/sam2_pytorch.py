@@ -23,8 +23,8 @@ except ImportError as import_error:
 
 class SAM2ForStream(ManagedModel):
 
-    @property
-    def supported_tasks(self) -> Dict[str, TaskSpec]:
+    @classmethod
+    def get_supported_tasks(cls) -> Dict[str, TaskSpec]:
         return {
             "prompt": TaskSpec(method="prompt", default=True, params=["images", "bboxes"]),
             "track": TaskSpec(method="track", params=["images"]),
