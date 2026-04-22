@@ -11,6 +11,7 @@ dependencies = [
   "pyzmq>=26.0.0,<28.0.0",
   "orjson>=3.9.0",
   "filetype>=1.2.0",
+  "aiohttp>=3.9.0",
 ]
 
 [project.optional-dependencies]
