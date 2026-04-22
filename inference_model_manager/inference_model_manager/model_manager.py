@@ -357,9 +357,7 @@ class ModelManager:
 
         return {
             "gpus": gpu_info,
-            "ram_pinned_used_mb": sum(self._pinned_bytes.values()) / 1024 / 1024,
             "models_loaded": self.loaded_models,
-            "models_sleeping": self.sleeping_models,
             "models": models,
         }
 
