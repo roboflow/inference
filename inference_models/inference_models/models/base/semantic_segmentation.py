@@ -1,10 +1,11 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Generic, List, Optional, Union
+from typing import Dict, Generic, List, Optional, Union
 
 import numpy as np
 import torch
 
+from inference_models.models.base.task_dispatch import ManagedModel, TaskSpec
 from inference_models.models.base.types import (
     PreprocessedInputs,
     PreprocessingMetadata,
@@ -20,8 +21,12 @@ class SemanticSegmentationResult:
 
 
 class SemanticSegmentationModel(
-    ABC, Generic[PreprocessedInputs, PreprocessingMetadata, RawPrediction]
+    ManagedModel, ABC, Generic[PreprocessedInputs, PreprocessingMetadata, RawPrediction]
 ):
+
+    @property
+    def supported_tasks(self) -> Dict[str, TaskSpec]:
+        return {"infer": TaskSpec(method="infer", default=True, params=["images"])}
 
     @classmethod
     @abstractmethod

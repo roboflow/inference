@@ -1,6 +1,6 @@
 import os
 from threading import Lock
-from typing import List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
@@ -21,6 +21,7 @@ from inference_models.models.common.roboflow.model_packages import (
     ResizeMode,
     parse_inference_config,
 )
+from inference_models.models.base.task_dispatch import ManagedModel, TaskSpec
 from inference_models.models.common.roboflow.pre_processing import (
     pre_process_network_input,
 )
@@ -51,7 +52,13 @@ def _is_model_running_against_ampere_plus_aarch(device: torch.device) -> bool:
     return major >= 8
 
 
-class SmolVLMHF:
+class SmolVLMHF(ManagedModel):
+
+    @property
+    def supported_tasks(self) -> Dict[str, TaskSpec]:
+        return {
+            "prompt": TaskSpec(method="prompt", default=True, params=["images", "prompt"]),
+        }
 
     @classmethod
     def from_pretrained(

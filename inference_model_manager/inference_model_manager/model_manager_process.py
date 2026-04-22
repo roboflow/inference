@@ -1,7 +1,7 @@
 """ModelManagerProcess (MMP) — orchestrated mode hub.
 
-Phase 3 (hot path): ZMQ ROUTER slot routing between uvicorn workers and backends.
-Phase 4 (cold path): Optional ModelManager embedding, auto-load via executor,
+hot path: ZMQ ROUTER slot routing between uvicorn workers and backends.
+cold path: Optional ModelManager embedding, auto-load via executor,
 LRU eviction, GPU/CPU monitoring, lifecycle control messages.
 
 Hot-path protocol (uvicorn ↔ MMP, ZMQ DEALER/ROUTER, no empty delimiter):
@@ -21,7 +21,7 @@ Run standalone::
     python -m inference_models.model_manager_process \\
         --n-slots 256 --input-mb 20
 
-or embed (Phase 4 with real loading)::
+or embed::
 
     from inference_model_manager.model_manager import ModelManager
     mmp = ModelManagerProcess(n_slots=256, input_mb=20,
@@ -885,38 +885,6 @@ class ModelManagerProcess:
         fs.loading = False
         fs.loaded = True
         self._flush_load_waiters(model_id)
-
-    async def _wake_model(self, model_id: str) -> None:
-        """Wake a sleeping model via ModelManager."""
-        loop = asyncio.get_running_loop()
-        logger.info("MMP: waking '%s'", model_id)
-        try:
-            if self._manager is not None:
-                await loop.run_in_executor(None, lambda: self._manager.wake(model_id))
-            fs = self._models.get(model_id)
-            if fs:
-                fs.sleeping = False
-                fs.loading = False
-                fs.loaded = True
-                if self._manager is not None:
-                    backend = self._manager.get_backend(model_id)
-                    if backend is not None and hasattr(backend, "signal_slot"):
-                        self._backends[model_id] = backend
-                self._flush_load_waiters(model_id)
-        except Exception:
-            logger.exception("MMP: failed to wake '%s'", model_id)
-            fs = self._models.get(model_id)
-            if fs:
-                waiters, fs.load_waiters = fs.load_waiters, []
-                fs.loading = False
-                for identity, req_id, _ in waiters:
-                    asyncio.create_task(
-                        self._send(
-                            identity,
-                            T_ERROR,
-                            struct.pack(">QB", req_id, _ERR_LOAD_FAILED),
-                        )
-                    )
 
     def _flush_load_waiters(self, model_id: str) -> None:
         """Notify all T_ENSURE_LOADED waiters for this model_id.

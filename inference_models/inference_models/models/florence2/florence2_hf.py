@@ -1,7 +1,7 @@
 import json
 import os
 from threading import Lock
-from typing import List, Literal, Optional, Tuple, Union
+from typing import Dict, List, Literal, Optional, Tuple, Union
 
 import cv2
 import numpy as np
@@ -35,6 +35,7 @@ from inference_models.models.common.roboflow.model_packages import (
     ResizeMode,
     parse_inference_config,
 )
+from inference_models.models.base.task_dispatch import ManagedModel, TaskSpec
 from inference_models.models.common.roboflow.pre_processing import (
     extract_input_images_dimensions,
     pre_process_network_input,
@@ -53,7 +54,23 @@ LABEL_MODE2TASK = {
 LOC_BINS = 1000
 
 
-class Florence2HF:
+class Florence2HF(ManagedModel):
+
+    @property
+    def supported_tasks(self) -> Dict[str, TaskSpec]:
+        return {
+            "caption": TaskSpec(method="caption_image", default=True, params=["images"]),
+            "detect": TaskSpec(method="detect_objects", params=["images", "classes"]),
+            "segment_phrase": TaskSpec(method="segment_phrase", params=["images", "phrase"]),
+            "ocr": TaskSpec(method="ocr_image", params=["images"]),
+            "prompt": TaskSpec(method="prompt", params=["images", "prompt"]),
+            "classify_region": TaskSpec(method="classify_image_region", params=["images", "xyxy"]),
+            "caption_region": TaskSpec(method="caption_image_region", params=["images", "xyxy"]),
+            "ocr_region": TaskSpec(method="ocr_image_region", params=["images", "xyxy"]),
+            "segment_region": TaskSpec(method="segment_region", params=["images", "xyxy"]),
+            "ground_phrase": TaskSpec(method="ground_phrase", params=["images", "phrase"]),
+            "parse_document": TaskSpec(method="parse_document", params=["images"]),
+        }
 
     @classmethod
     def from_pretrained(

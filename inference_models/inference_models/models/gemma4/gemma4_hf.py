@@ -1,6 +1,6 @@
 import os
 from threading import Lock
-from typing import Any, Final, FrozenSet, List, Optional, Tuple, Union
+from typing import Any, Dict, Final, FrozenSet, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
@@ -26,6 +26,7 @@ from inference_models.models.common.roboflow.model_packages import (
     ResizeMode,
     parse_inference_config,
 )
+from inference_models.models.base.task_dispatch import ManagedModel, TaskSpec
 from inference_models.models.common.roboflow.pre_processing import (
     pre_process_network_input,
 )
@@ -99,8 +100,14 @@ def _to_pil_rgb(
     return Image.fromarray(arr).convert("RGB")
 
 
-class Gemma4HF:
+class Gemma4HF(ManagedModel):
     """Hugging Face Gemma 4 multimodal (vision + text) instruction-tuned models."""
+
+    @property
+    def supported_tasks(self) -> Dict[str, TaskSpec]:
+        return {
+            "prompt": TaskSpec(method="prompt", default=True, params=["images", "prompt"]),
+        }
 
     @classmethod
     def from_pretrained(
