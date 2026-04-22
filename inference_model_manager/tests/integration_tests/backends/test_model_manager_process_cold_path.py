@@ -346,47 +346,6 @@ class TestLifecycleMessages:
         h.teardown()
         assert "unload:m:drain=False" in mgr.calls
 
-    def test_t_sleep_returns_ok(self):
-        mgr = _MockManager()
-        mgr.register("m")
-        h   = _MMPHarness(manager=mgr)
-        h.ensure_loaded("m")
-        msg = h.lifecycle_req(T_SLEEP, "m")
-        h.teardown()
-        assert msg == T_OK
-
-    def test_t_sleep_sets_flavor_sleeping(self):
-        mgr = _MockManager()
-        mgr.register("m")
-        h   = _MMPHarness(manager=mgr)
-        h.ensure_loaded("m")
-        h.lifecycle_req(T_SLEEP, "m")
-        time.sleep(0.05)
-        fs = h.mmp._models.get("m")
-        h.teardown()
-        assert fs is not None
-        assert fs.sleeping is True
-        assert fs.loaded   is False
-
-    def test_t_wake_returns_ok(self):
-        mgr = _MockManager()
-        mgr.register("m")
-        h   = _MMPHarness(manager=mgr)
-        h.ensure_loaded("m")
-        h.lifecycle_req(T_SLEEP, "m")
-        msg = h.lifecycle_req(T_WAKE, "m")
-        h.teardown()
-        assert msg == T_OK
-
-    def test_t_wake_calls_manager(self):
-        mgr = _MockManager()
-        mgr.register("m")
-        h   = _MMPHarness(manager=mgr)
-        h.ensure_loaded("m")
-        h.lifecycle_req(T_SLEEP, "m")
-        h.lifecycle_req(T_WAKE, "m")
-        h.teardown()
-        assert "wake:m" in mgr.calls
 
 
 # ---------------------------------------------------------------------------

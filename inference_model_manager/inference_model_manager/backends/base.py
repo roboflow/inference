@@ -157,6 +157,10 @@ class Backend(ABC):
         """Number of pending requests waiting in the batch queue."""
         ...
 
+    def record_inference(self, t0: float, error: bool = False) -> None:
+        """Record an inference for stats tracking. Called by ModelManager."""
+        pass
+
     @abstractmethod
     def stats(self) -> Dict[str, Any]:
         """Runtime statistics snapshot. Must be non-blocking.

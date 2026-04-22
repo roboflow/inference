@@ -54,10 +54,13 @@ class TestModelManagerDirectE2E:
         mm = ModelManager()
         mm.load(yolov8n_model_path, api_key="", backend="direct")
 
+        import imagecodecs
+
         _, buf = cv2.imencode(".jpg", dog_image_numpy)
         jpeg_bytes = buf.tobytes()
-
-        result = mm.process(yolov8n_model_path, images=jpeg_bytes)
+        # DirectBackend has no worker-side decode — must pass decoded array
+        decoded = imagecodecs.imread(jpeg_bytes)
+        result = mm.process(yolov8n_model_path, images=decoded)
 
         _assert_detections(result)
 
@@ -69,7 +72,7 @@ class TestModelManagerDirectE2E:
         mm = ModelManager()
         mm.load(yolov8n_model_path, api_key="", backend="direct")
 
-        future = mm.submit(yolov8n_model_path, dog_image_numpy)
+        future = mm.submit(yolov8n_model_path, images=dog_image_numpy)
         result = future.result(timeout=30)
 
         _assert_detections(result)
@@ -198,7 +201,7 @@ class TestModelManagerSubprocessE2E:
         mm = ModelManager()
         mm.load(yolov8n_model_path, api_key="", backend="subprocess")
 
-        future = mm.submit(yolov8n_model_path, dog_image_numpy)
+        future = mm.submit(yolov8n_model_path, images=dog_image_numpy)
         result = future.result(timeout=30)
 
         _assert_detections(result)

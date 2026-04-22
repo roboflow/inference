@@ -57,6 +57,7 @@ import zmq.asyncio
 from fastapi import Depends, FastAPI, Request, Response
 
 from inference_model_manager.backends.utils.transport import zmq_addr
+from inference_server.auth import validate_api_key
 from inference_server.serializers import serialize_json
 
 # ---------------------------------------------------------------------------
@@ -396,8 +397,6 @@ async def auth_middleware(request: Request, call_next):
         return Response(
             status_code=401, content=b"Authorization: Bearer <api_key> header required"
         )
-    from inference_server.auth import validate_api_key
-
     valid, _ = await validate_api_key(token)
     if not valid:
         return Response(status_code=403, content=b"Invalid API key")
@@ -532,7 +531,7 @@ async def infer(request: Request, api_key: BearerToken) -> Response:
 async def _lifecycle_req(msg_type: bytes, payload: bytes, timeout_s: float = 30.0):
     """Send a lifecycle message to MMP and wait for T_OK or T_ERROR."""
     req_id = _new_req_id()
-    fut = _loop.create_future()
+    fut = asyncio.get_running_loop().create_future()
     _pending[req_id] = fut
 
     full_payload = struct.pack(">Q", req_id) + payload
