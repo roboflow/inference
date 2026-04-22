@@ -41,12 +41,15 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import pickle
 import struct
 import time
 import uuid
 from contextlib import asynccontextmanager
 from multiprocessing.shared_memory import SharedMemory
 from typing import Optional
+
+from inference_model_manager.serializers import serialize_json
 
 import uvicorn
 import zmq
@@ -384,6 +387,7 @@ async def infer(request: Request) -> Response:
     api_key  = params.pop("api_key", "")
     instance = params.pop("instance", "")
     device   = params.pop("device", "")
+    fmt      = params.pop("format", "pickle")  # "json" or "pickle"
     if not model_id:
         return Response(status_code=400, content=b"model_id query param required")
     if not api_key:
@@ -455,8 +459,17 @@ async def infer(request: Request) -> Response:
             )
 
         _, result_slot_id, result_sz = result
+        raw = _read_result(result_slot_id, result_sz)
+
+        if fmt == "json":
+            obj = pickle.loads(raw)
+            return Response(
+                content=serialize_json(obj),
+                media_type="application/json",
+            )
+
         return Response(
-            content=_read_result(result_slot_id, result_sz),
+            content=raw,
             media_type="application/octet-stream",
         )
 
