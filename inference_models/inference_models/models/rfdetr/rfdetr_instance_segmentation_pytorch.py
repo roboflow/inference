@@ -1,13 +1,14 @@
 import os.path
 from copy import deepcopy
 from threading import RLock
-from typing import List, Optional, Tuple, Union
+from typing import List, Optional, Set, Tuple, Union
 
 import numpy as np
 import torch
 
 from inference_models import (
     InstanceDetections,
+    InstanceSegmentationMaskFormat,
     InstanceSegmentationModel,
     PreProcessingOverrides,
 )
@@ -22,7 +23,6 @@ from inference_models.errors import (
     MissingModelInitParameterError,
     ModelInputError,
     ModelPackageRestrictedError,
-    ModelRuntimeError,
 )
 from inference_models.logger import LOGGER
 from inference_models.models.common.model_packages import get_model_package_contents
@@ -45,6 +45,7 @@ from inference_models.models.rfdetr.class_remapping import (
 from inference_models.models.rfdetr.common import (
     parse_model_type,
     post_process_instance_segmentation_results,
+    post_process_instance_segmentation_results_to_rle_masks,
 )
 from inference_models.models.rfdetr.default_labels import resolve_labels
 from inference_models.models.rfdetr.post_processor import PostProcess
@@ -318,6 +319,10 @@ class RFDetrForInstanceSegmentationTorch(
     def class_names(self) -> List[str]:
         return self._class_names
 
+    @property
+    def supported_mask_formats(self) -> Set[InstanceSegmentationMaskFormat]:
+        return {"dense", "rle"}
+
     def optimize_for_inference(
         self,
         compile: bool = True,
@@ -422,8 +427,19 @@ class RFDetrForInstanceSegmentationTorch(
         model_results: dict,
         pre_processing_meta: List[PreProcessingMetadata],
         confidence: Confidence = "default",
+        mask_format: InstanceSegmentationMaskFormat = "dense",
         **kwargs,
     ) -> List[InstanceDetections]:
+        if mask_format not in self.supported_mask_formats:
+            raise ModelInputError(
+                message=f"RFDetr Instance Segmentation models support the following mask "
+                f"formats: {self.supported_mask_formats}. Requested format: {mask_format} "
+                f"is not supported. If you see this error while running on Roboflow platform, "
+                f"contact support or raise an issue at https://github.com/roboflow/inference/issues. "
+                f"When running locally - please verify your integration to make sure that appropriate "
+                f"value of `mask_format` parameter is set.",
+                help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
+            )
         confidence_filter = ConfidenceFilter(
             confidence=confidence,
             recommended_parameters=self.recommended_parameters,
@@ -434,13 +450,24 @@ class RFDetrForInstanceSegmentationTorch(
             model_results["pred_logits"],
             model_results["pred_masks"],
         )
-        results = post_process_instance_segmentation_results(
-            bboxes=bboxes,
-            logits=logits,
-            masks=masks,
-            pre_processing_meta=pre_processing_meta,
-            threshold=confidence_filter.get_threshold(self.class_names),
-            num_classes=len(self.class_names),
-            classes_re_mapping=self._classes_re_mapping,
-        )
+        if mask_format == "dense":
+            results = post_process_instance_segmentation_results(
+                bboxes=bboxes,
+                logits=logits,
+                masks=masks,
+                pre_processing_meta=pre_processing_meta,
+                threshold=confidence_filter.get_threshold(self.class_names),
+                num_classes=len(self.class_names),
+                classes_re_mapping=self._classes_re_mapping,
+            )
+        else:
+            results = post_process_instance_segmentation_results_to_rle_masks(
+                bboxes=bboxes,
+                logits=logits,
+                masks=masks,
+                pre_processing_meta=pre_processing_meta,
+                threshold=confidence_filter.get_threshold(self.class_names),
+                num_classes=len(self.class_names),
+                classes_re_mapping=self._classes_re_mapping,
+            )
         return results
