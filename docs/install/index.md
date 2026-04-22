@@ -31,13 +31,13 @@ Choose the installation method that matches your platform:
 
     <div class="download-container">
         <div class="download-card">
-            <a href="https://github.com/roboflow/inference/releases/download/v{{ VERSION }}/inference-{{ VERSION }}-installer.exe" class="download-button">
+            <a href="/download" class="download-button">
                 <img src="/images/windows-icon.svg" alt="Windows" /> Download for Windows
             </a>
         </div>
     </div>
 
-    1. [Download the latest installer](https://github.com/roboflow/inference/releases/download/v{{ VERSION }}/inference-{{ VERSION }}-installer.exe) and run it
+    1. [Download the latest installer](/download) and run it
     2. When the install finishes, it will offer to launch the Inference Server
     3. To stop the server, close the terminal window it opens
     4. To start it again later, find **Roboflow Inference** in your Start Menu
@@ -52,13 +52,13 @@ Choose the installation method that matches your platform:
 
     <div class="download-container">
         <div class="download-card">
-            <a href="https://github.com/roboflow/inference/releases/download/v{{ VERSION }}/Roboflow-Inference-{{ VERSION }}.dmg" class="download-button">
+            <a href="/download" class="download-button">
                 <img src="/images/macos-icon.svg" alt="macOS" /> Download for Mac
             </a>
         </div>
     </div>
 
-    1. [Download the DMG](https://github.com/roboflow/inference/releases/download/v{{ VERSION }}/Roboflow-Inference-{{ VERSION }}.dmg) and open it
+    1. [Download the DMG](/download) and open it
     2. Drag the Roboflow Inference app to your Applications folder
     3. Double-click the app in Applications to start the server
 

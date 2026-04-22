@@ -1,14 +1,34 @@
 # Changelog
 
-## `0.25.1`
+## `0.26.0` 
 
-### Fixed
+### Added
 
-- Fix bug in roboflow_instant_hf confidence filter.
+- Bringing back changes to filtering proposed in retracted release `0.25.0` 
+along with fixes for bugs which caused retraction.
 
 ---
 
-## `0.25.0`
+## `0.25.2`
+
+### Fixed
+
+- OWLv2 compilation procedure clash with `transformers~=5.5` brought to dependencies along with `0.25.1` release and
+Gemma 4.
+
+---
+
+## `0.25.1`
+
+### Added
+
+- Documentation for Gemma 4 multimodal models (`Gemma4HF` / `gemma4_hf.py`): dedicated [model page](models/gemma4.md),
+  catalog and site navigation updates, home page pointer, and [environment variables](how-to/environment-variables.md#gemma-4)
+  for `INFERENCE_MODELS_GEMMA4_*` defaults.
+
+---
+
+## `0.25.0` **(retracted)**
 
 ### Added
 
