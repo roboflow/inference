@@ -30,6 +30,25 @@ def test_text_image_pairs_model_validation_when_minimalistic_config_is_provided(
     )
 
 
+def test_text_image_pairs_model_validation_accepts_active_learning_fields() -> None:
+    # given
+    data = {
+        "type": "roboflow_core/roboflow_text_image_pairs_model@v1",
+        "name": "some",
+        "images": "$inputs.image",
+        "model_id": "some/1",
+        "disable_active_learning": True,
+        "active_learning_target_dataset": "workspace/project",
+    }
+
+    # when
+    result = BlockManifest.validate(data)
+
+    # then
+    assert result.disable_active_learning is True
+    assert result.active_learning_target_dataset == "workspace/project"
+
+
 def test_text_image_pairs_model_validation_accepts_prompt() -> None:
     # given
     data = {

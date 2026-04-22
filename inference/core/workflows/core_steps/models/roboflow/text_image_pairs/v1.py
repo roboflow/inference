@@ -7,6 +7,8 @@ from inference.core.env import (
     HOSTED_CORE_MODEL_URL,
     LOCAL_INFERENCE_API_URL,
     WORKFLOWS_REMOTE_API_TARGET,
+    WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
+    WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
 )
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
@@ -16,9 +18,11 @@ from inference.core.workflows.execution_engine.entities.base import (
     WorkflowImageData,
 )
 from inference.core.workflows.execution_engine.entities.types import (
+    BOOLEAN_KIND,
     IMAGE_KIND,
     LANGUAGE_MODEL_OUTPUT_KIND,
     ROBOFLOW_MODEL_ID_KIND,
+    ROBOFLOW_PROJECT_KIND,
     STRING_KIND,
     ImageInputField,
     RoboflowModelField,
@@ -29,7 +33,7 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
-from inference_sdk import InferenceHTTPClient
+from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 
 LONG_DESCRIPTION = """
 Run inference on a fine-tuned text-image-pairs (VLM) model hosted on or uploaded to
@@ -84,6 +88,18 @@ class BlockManifest(WorkflowBlockManifest):
         description="Optional text prompt forwarded to the VLM.",
         examples=["Describe the image.", "$inputs.prompt"],
     )
+    disable_active_learning: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(
+        default=True,
+        description="Boolean flag to disable project-level active learning for this block.",
+        examples=[True, "$inputs.disable_active_learning"],
+    )
+    active_learning_target_dataset: Union[
+        Selector(kind=[ROBOFLOW_PROJECT_KIND]), Optional[str]
+    ] = Field(
+        default=None,
+        description="Target dataset for active learning, if enabled.",
+        examples=["my_project", "$inputs.al_target_project"],
+    )
 
     @classmethod
     def get_compatible_task_types(cls) -> Optional[List[str]]:
@@ -129,18 +145,24 @@ class RoboflowTextImagePairsModelBlockV1(WorkflowBlock):
         images: Batch[WorkflowImageData],
         model_id: str,
         prompt: Optional[str],
+        disable_active_learning: Optional[bool],
+        active_learning_target_dataset: Optional[str],
     ) -> BlockResult:
         if self._step_execution_mode is StepExecutionMode.LOCAL:
             return self.run_locally(
                 images=images,
                 model_id=model_id,
                 prompt=prompt,
+                disable_active_learning=disable_active_learning,
+                active_learning_target_dataset=active_learning_target_dataset,
             )
         elif self._step_execution_mode is StepExecutionMode.REMOTE:
             return self.run_remotely(
                 images=images,
                 model_id=model_id,
                 prompt=prompt,
+                disable_active_learning=disable_active_learning,
+                active_learning_target_dataset=active_learning_target_dataset,
             )
         else:
             raise ValueError(
@@ -152,6 +174,8 @@ class RoboflowTextImagePairsModelBlockV1(WorkflowBlock):
         images: Batch[WorkflowImageData],
         model_id: str,
         prompt: Optional[str],
+        disable_active_learning: Optional[bool],
+        active_learning_target_dataset: Optional[str],
     ) -> BlockResult:
         inference_images = [
             i.to_inference_format(numpy_preferred=False) for i in images
@@ -168,6 +192,8 @@ class RoboflowTextImagePairsModelBlockV1(WorkflowBlock):
                 image=image,
                 source="workflow-execution",
                 prompt=prompt or "",
+                disable_active_learning=disable_active_learning,
+                active_learning_target_dataset=active_learning_target_dataset,
             )
             prediction = self._model_manager.infer_from_request_sync(
                 model_id=model_id, request=request
@@ -180,6 +206,8 @@ class RoboflowTextImagePairsModelBlockV1(WorkflowBlock):
         images: Batch[WorkflowImageData],
         model_id: str,
         prompt: Optional[str],
+        disable_active_learning: Optional[bool],
+        active_learning_target_dataset: Optional[str],
     ) -> BlockResult:
         api_url = (
             LOCAL_INFERENCE_API_URL
@@ -192,9 +220,24 @@ class RoboflowTextImagePairsModelBlockV1(WorkflowBlock):
         )
         if WORKFLOWS_REMOTE_API_TARGET == "hosted":
             client.select_api_v0()
+        # NOTE: `infer_lmm` in inference_sdk does not currently honor
+        # `max_batch_size` / `max_concurrent_requests` (it issues one request per
+        # call) and does not forward `source` to the `/infer/lmm` payload. We
+        # still call `client.configure(...)` so the `source` tag propagates
+        # through the shared client state for any header/telemetry usage.
+        client_config = InferenceConfiguration(
+            max_batch_size=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
+            max_concurrent_requests=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
+            source="workflow-execution",
+        )
+        client.configure(inference_configuration=client_config)
 
         predictions = []
         for image in images:
+            # NOTE: `infer_lmm` does not currently accept
+            # `disable_active_learning` / `active_learning_target_dataset`, so
+            # the remote path does not propagate AL controls to `/infer/lmm`.
+            # The local execution path honors them via `LMMInferenceRequest`.
             result = client.infer_lmm(
                 inference_input=image.base64_image,
                 model_id=model_id,
