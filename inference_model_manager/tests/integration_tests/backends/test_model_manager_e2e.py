@@ -17,7 +17,7 @@ from inference_model_manager.model_manager import ModelManager
 
 def _assert_detections(result: Any) -> None:
     """Validate result is Detections (or list of Detections) with correct shape."""
-    # infer_sync returns List[Detections]; submit/subprocess may return single Detections
+    # process returns List[Detections]; submit/subprocess may return single Detections
     if isinstance(result, list):
         assert len(result) > 0
         det = result[0]
@@ -40,7 +40,7 @@ class TestModelManagerDirectE2E:
         mm = ModelManager()
         mm.load(yolov8n_model_path, api_key="", backend="direct")
 
-        result = mm.infer_sync(yolov8n_model_path, dog_image_numpy)
+        result = mm.process(yolov8n_model_path, images=dog_image_numpy)
 
         _assert_detections(result)
 
@@ -57,7 +57,7 @@ class TestModelManagerDirectE2E:
         _, buf = cv2.imencode(".jpg", dog_image_numpy)
         jpeg_bytes = buf.tobytes()
 
-        result = mm.infer_sync(yolov8n_model_path, jpeg_bytes)
+        result = mm.process(yolov8n_model_path, images=jpeg_bytes)
 
         _assert_detections(result)
 
@@ -76,7 +76,7 @@ class TestModelManagerDirectE2E:
 
         mm.shutdown()
 
-    def test_infer_async(
+    def test_process_async(
         self, yolov8n_model_path: str, dog_image_numpy: np.ndarray
     ) -> None:
         import asyncio
@@ -85,7 +85,7 @@ class TestModelManagerDirectE2E:
         mm.load(yolov8n_model_path, api_key="", backend="direct")
 
         result = asyncio.get_event_loop().run_until_complete(
-            mm.infer_async(yolov8n_model_path, dog_image_numpy)
+            mm.process_async(yolov8n_model_path, images=dog_image_numpy)
         )
 
         _assert_detections(result)
@@ -97,8 +97,8 @@ class TestModelManagerDirectE2E:
     ) -> None:
         mm = ModelManager()
         mm.load(yolov8n_model_path, api_key="", backend="direct")
-        mm.infer_sync(yolov8n_model_path, dog_image_numpy)
-        mm.infer_sync(yolov8n_model_path, dog_image_numpy)
+        mm.process(yolov8n_model_path, images=dog_image_numpy)
+        mm.process(yolov8n_model_path, images=dog_image_numpy)
 
         s = mm.stats()
 
@@ -118,7 +118,7 @@ class TestModelManagerDirectE2E:
         mm.unload(yolov8n_model_path)
 
         with pytest.raises(KeyError, match="not loaded"):
-            mm.infer_sync(yolov8n_model_path, dog_image_numpy)
+            mm.process(yolov8n_model_path, images=dog_image_numpy)
 
 
 @pytest.mark.slow
@@ -143,8 +143,8 @@ class TestModelManagerMultiInstance:
         assert "yolov8n:1" in mm
         assert len(mm) == 2
 
-        r0 = mm.infer_sync("yolov8n:0", dog_image_numpy)
-        r1 = mm.infer_sync("yolov8n:1", dog_image_numpy)
+        r0 = mm.process("yolov8n:0", images=dog_image_numpy)
+        r1 = mm.process("yolov8n:1", images=dog_image_numpy)
 
         _assert_detections(r0)
         _assert_detections(r1)
@@ -169,7 +169,7 @@ class TestModelManagerMultiInstance:
         assert "yolov8n:0" not in mm
         assert "yolov8n:1" in mm
 
-        result = mm.infer_sync("yolov8n:1", dog_image_numpy)
+        result = mm.process("yolov8n:1", images=dog_image_numpy)
         _assert_detections(result)
 
         mm.shutdown()
@@ -186,7 +186,7 @@ class TestModelManagerSubprocessE2E:
         mm = ModelManager()
         mm.load(yolov8n_model_path, api_key="", backend="subprocess")
 
-        result = mm.infer_sync(yolov8n_model_path, dog_image_numpy)
+        result = mm.process(yolov8n_model_path, images=dog_image_numpy)
 
         _assert_detections(result)
 
@@ -210,7 +210,7 @@ class TestModelManagerSubprocessE2E:
     ) -> None:
         mm = ModelManager()
         mm.load(yolov8n_model_path, api_key="", backend="subprocess")
-        mm.infer_sync(yolov8n_model_path, dog_image_numpy)
+        mm.process(yolov8n_model_path, images=dog_image_numpy)
 
         s = mm.model_stats(yolov8n_model_path)
 

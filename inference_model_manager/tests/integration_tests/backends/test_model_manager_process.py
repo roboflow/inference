@@ -156,7 +156,7 @@ class _MockBackend:
         self._mmp          = mmp
         self._result_bytes = result_bytes
 
-    def signal_slot(self, slot_id: int, req_id: int) -> None:
+    def signal_slot(self, slot_id: int, req_id: int, params_bytes: bytes = b"{}") -> None:
         """Write fake result to SHM slot, call on_result from a thread."""
         def _do() -> None:
             # Write result into the SHM pool's result area
@@ -337,7 +337,7 @@ class TestFullLifecycle:
         result_ready = threading.Event()
 
         class _SlowBackend:
-            def signal_slot(self, slot_id, req_id):
+            def signal_slot(self, slot_id, req_id, params_bytes=b"{}"):
                 def _do():
                     pool = SHMPool.attach(
                         harness.shm_name,
@@ -393,7 +393,7 @@ class TestStaleReaper:
 
         class _StuckBackend:
             """signal_slot does nothing — simulates a crashed worker."""
-            def signal_slot(self, slot_id, req_id):
+            def signal_slot(self, slot_id, req_id, params_bytes=b"{}"):
                 pass  # never calls on_result
 
         h.mmp.register_backend("stuck", _StuckBackend())

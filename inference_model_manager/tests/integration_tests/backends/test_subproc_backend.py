@@ -195,17 +195,17 @@ def subproc_manager(yolov8n_model_path: str):
 @pytest.mark.torch_models
 class TestSubprocViaModelManager:
 
-    def test_infer_sync(
+    def test_process(
         self, subproc_manager: ModelManager, dog_image_numpy: np.ndarray
     ) -> None:
-        result = subproc_manager.infer_sync("test-model", dog_image_numpy)
+        result = subproc_manager.process("test-model", images=dog_image_numpy)
         assert result is not None
         assert hasattr(result, "xyxy")
 
     def test_submit_returns_future(
         self, subproc_manager: ModelManager, dog_image_numpy: np.ndarray
     ) -> None:
-        f = subproc_manager.submit("test-model", dog_image_numpy)
+        f = subproc_manager.submit("test-model", raw_input=dog_image_numpy)
         result = f.result(timeout=30)
         assert result is not None
         assert hasattr(result, "xyxy")
@@ -225,8 +225,8 @@ class TestSubprocBatchingViaModelManager:
             backend="subprocess", use_gpu=False,
             batch_max_size=4, batch_max_delay_ms=100,
         )
-        f1 = mm.submit("m", dog_image_numpy)
-        f2 = mm.submit("m", dog_image_numpy)
+        f1 = mm.submit("m", raw_input=dog_image_numpy)
+        f2 = mm.submit("m", raw_input=dog_image_numpy)
         r1 = f1.result(timeout=30)
         r2 = f2.result(timeout=30)
         assert r1 is not None

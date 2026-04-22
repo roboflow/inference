@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import asyncio
 import io
+import json
 import logging
 import os
 import pickle
@@ -49,6 +50,7 @@ import numpy as np
 from inference_model_manager.backends.base import Backend
 from inference_model_manager.backends.utils.shm_pool import SHMPool
 from inference_model_manager.backends.utils.transport import default_transport
+from inference_model_manager.dispatch import invoke_task
 
 logger = logging.getLogger(__name__)
 
@@ -216,7 +218,7 @@ def _worker_loop(
     poller.register(sock, zmq.POLLIN)
 
     batch_max_wait_s = batch_max_wait_ms / 1000.0
-    pending: list[tuple[int, int]] = []  # (slot_id, req_id)
+    pending: list[tuple[int, int, bytes]] = []  # (slot_id, req_id, params_bytes)
     batch_start = 0.0
     last_heartbeat = time.monotonic()
 
@@ -241,11 +243,12 @@ def _worker_loop(
             msg = frames[0]
             if msg == _MSG_SHUTDOWN:
                 break
-            elif msg == _MSG_SLOT_READY and len(frames) > 1 and len(frames[1]) == 12:
-                slot_id, req_id = struct.unpack(">IQ", frames[1])
+            elif msg == _MSG_SLOT_READY and len(frames) > 1 and len(frames[1]) >= 12:
+                slot_id, req_id = struct.unpack(">IQ", frames[1][:12])
+                params_bytes = frames[2] if len(frames) > 2 else b"{}"
                 if not pending:
                     batch_start = time.monotonic()
-                pending.append((slot_id, req_id))
+                pending.append((slot_id, req_id, params_bytes))
         else:
             # Timeout while idle → heartbeat
             if not pending:
@@ -270,18 +273,22 @@ def _worker_loop(
 def _process_slots(
     model,
     pool: SHMPool,
-    batch: list[tuple[int, int]],
+    batch: list[tuple[int, int, bytes]],
     sock,
     batch_decode_fn,
     log,
 ) -> None:
-    """Process a batch of (slot_id, req_id), write results to SHM, send T_RESULT."""
+    """Process a batch of (slot_id, req_id, params_bytes), write results to SHM, send T_RESULT."""
     import zmq
+
+    # Parse task from first slot's params (all slots in a batch share the same model).
+    first_params = json.loads(batch[0][2]) if batch else {}
+    task = first_params.pop("task", None)
 
     # Gather memoryviews; classify as .npy (standalone numpy) vs raw bytes
     mvs: list[Any] = []
     is_npy: list[bool] = []
-    for slot_id, _ in batch:
+    for slot_id, _, _ in batch:
         hdr = pool.read_header(slot_id)
         mv = pool.data_memoryview(slot_id)[: hdr.input_size]
         mvs.append(mv)
@@ -330,7 +337,7 @@ def _process_slots(
     error_indices = {i for i, err in enumerate(decode_errors) if err}
     if error_indices:
         for i in error_indices:
-            slot_id, req_id = batch[i]
+            slot_id, req_id, _ = batch[i]
             pool.mark_error(slot_id)
             try:
                 sock.send_multipart(
@@ -354,17 +361,14 @@ def _process_slots(
 
     results: list[Any]
     try:
-        raw_out = (
-            model.infer(good_images[0])
-            if len(good_images) == 1
-            else model.infer(good_images)
-        )
+        images_arg = good_images[0] if len(good_images) == 1 else good_images
+        raw_out = invoke_task(model, task=task, images=images_arg, **first_params)
         results = raw_out if isinstance(raw_out, list) else [raw_out]
     except Exception:
-        log.exception("Worker: model.infer() failed")
+        log.exception("Worker: invoke_task(task=%r) failed", task)
         results = [None] * len(good_batch)
 
-    for (slot_id, req_id), result in zip(good_batch, results):
+    for (slot_id, req_id, _), result in zip(good_batch, results):
         if result is None:
             pool.mark_error(slot_id)
             try:
@@ -559,9 +563,9 @@ class SubprocessBackend(Backend):
     # Orchestrated-mode API (called by MMP)
     # ------------------------------------------------------------------
 
-    def signal_slot(self, slot_id: int, req_id: int) -> None:
+    def signal_slot(self, slot_id: int, req_id: int, params_bytes: bytes = b"{}") -> None:
         """Enqueue T_SLOT_READY for the recv thread to send. Thread-safe."""
-        self._outbound.put((slot_id, req_id))
+        self._outbound.put((slot_id, req_id, params_bytes))
 
     def set_on_result_callback(self, callback: Callable[[int, int, int], None]) -> None:
         """Set MMP callback: called on each T_RESULT from worker."""
@@ -590,10 +594,10 @@ class SubprocessBackend(Backend):
                     except Exception:
                         pass
                     return
-                slot_id, req_id = item
+                slot_id, req_id, params_bytes = item
                 try:
                     self._zmq_sock.send_multipart(
-                        [_MSG_SLOT_READY, struct.pack(">IQ", slot_id, req_id)]
+                        [_MSG_SLOT_READY, struct.pack(">IQ", slot_id, req_id), params_bytes]
                     )
                 except zmq.ZMQError:
                     return
@@ -685,6 +689,7 @@ class SubprocessBackend(Backend):
         slot_id: int,
         req_id: int,
         future: Optional[Future] = None,
+        params_bytes: bytes = b"{}",
     ) -> None:
         """Register a future for this slot and signal the worker.
 
@@ -699,7 +704,7 @@ class SubprocessBackend(Backend):
         with self._slot_lock:
             self._slot_futures[slot_id] = (req_id, future)
 
-        self.signal_slot(slot_id, req_id)
+        self.signal_slot(slot_id, req_id, params_bytes)
 
     def _record_inference(self, t0: float, future: Future) -> None:
         elapsed = time.monotonic() - t0
