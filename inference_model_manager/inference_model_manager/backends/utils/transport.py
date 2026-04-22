@@ -57,5 +57,15 @@ def zmq_addr(name: str, transport: str | None = None) -> str:
 
     # TCP loopback — port from env or registry
     env_key = f"INFERENCE_ZMQ_PORT_{name.upper()}"
-    port = int(os.environ.get(env_key, str(_DEFAULT_PORTS.get(name, 15555))))
+    default_port = _DEFAULT_PORTS.get(name)
+    env_port = os.environ.get(env_key)
+    if env_port is not None:
+        port = int(env_port)
+    elif default_port is not None:
+        port = default_port
+    else:
+        raise ValueError(
+            f"No default port for ZMQ socket '{name}'. "
+            f"Set {env_key} or add to _DEFAULT_PORTS."
+        )
     return f"tcp://127.0.0.1:{port}"

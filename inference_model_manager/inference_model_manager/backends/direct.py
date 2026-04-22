@@ -61,9 +61,14 @@ class DirectBackend(Backend):
             device or "default",
             decoder,
         )
-        self._model = AutoModel.from_pretrained(
-            model_id, api_key=api_key, **load_kwargs
-        )
+        try:
+            self._model = AutoModel.from_pretrained(
+                model_id, api_key=api_key, **load_kwargs
+            )
+        except Exception:
+            # Ensure GPU memory freed if model partially loaded
+            self._model = None
+            raise
         self._state_value = "loaded"
 
         self._device_str = self._detect_device()
