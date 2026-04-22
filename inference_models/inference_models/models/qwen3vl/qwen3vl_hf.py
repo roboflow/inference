@@ -1,7 +1,7 @@
 import json
 import os
 from threading import Lock
-from typing import List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
@@ -19,6 +19,7 @@ from inference_models.configuration import (
     INFERENCE_MODELS_QWEN3_VL_DEFAULT_MAX_NEW_TOKENS,
 )
 from inference_models.entities import ColorFormat
+from inference_models.models.base.task_dispatch import ManagedModel, TaskSpec
 from inference_models.models.common.roboflow.model_packages import (
     InferenceConfig,
     ResizeMode,
@@ -51,8 +52,14 @@ def _is_model_running_against_ampere_plus_aarch(device: torch.device) -> bool:
     return major >= 8
 
 
-class Qwen3VLHF:
+class Qwen3VLHF(ManagedModel):
     default_dtype = torch.bfloat16
+
+    @property
+    def supported_tasks(self) -> Dict[str, TaskSpec]:
+        return {
+            "prompt": TaskSpec(method="prompt", default=True, params=["images", "prompt"]),
+        }
 
     @classmethod
     def from_pretrained(

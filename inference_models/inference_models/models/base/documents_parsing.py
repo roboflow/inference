@@ -1,10 +1,11 @@
 from abc import ABC, abstractmethod
-from typing import Generic, List, Optional, Tuple, Union
+from typing import Dict, Generic, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
 
 from inference_models.models.base.object_detection import Detections
+from inference_models.models.base.task_dispatch import ManagedModel, TaskSpec
 from inference_models.models.base.types import (
     PreprocessedInputs,
     PreprocessingMetadata,
@@ -13,8 +14,12 @@ from inference_models.models.base.types import (
 
 
 class StructuredOCRModel(
-    ABC, Generic[PreprocessedInputs, PreprocessingMetadata, RawPrediction]
+    ManagedModel, ABC, Generic[PreprocessedInputs, PreprocessingMetadata, RawPrediction]
 ):
+
+    @property
+    def supported_tasks(self) -> Dict[str, TaskSpec]:
+        return {"infer": TaskSpec(method="infer", default=True, params=["images"])}
 
     @classmethod
     @abstractmethod
@@ -71,7 +76,11 @@ class StructuredOCRModel(
         return self.infer(images, **kwargs)
 
 
-class TextOnlyOCRModel(ABC, Generic[PreprocessedInputs, RawPrediction]):
+class TextOnlyOCRModel(ManagedModel, ABC, Generic[PreprocessedInputs, RawPrediction]):
+
+    @property
+    def supported_tasks(self) -> Dict[str, TaskSpec]:
+        return {"infer": TaskSpec(method="infer", default=True, params=["images"])}
     @classmethod
     @abstractmethod
     def from_pretrained(cls, model_name_or_path: str, **kwargs) -> "TextOnlyOCRModel":

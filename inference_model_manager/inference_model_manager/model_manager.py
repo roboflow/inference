@@ -263,53 +263,6 @@ class ModelManager:
             logger.info("Unloading model '%s'", model_id)
             backend.unload()
 
-    def sleep(self, model_id: str) -> None:
-        """Offload model weights to CPU pinned memory, freeing VRAM.
-
-        Raises:
-            RuntimeError: If max_pinned_memory_mb would be exceeded.
-            KeyError: If model_id is not loaded.
-        """
-        with self._lifecycle_lock:
-            backend = self._get_backend(model_id)
-            pinned = backend.sleep()
-
-            if pinned is not None and pinned > 0:
-                total_after = sum(self._pinned_bytes.values()) + pinned
-                if (
-                    self._max_pinned_memory_bytes > 0
-                    and total_after > self._max_pinned_memory_bytes
-                ):
-                    # Roll back — wake the model back up
-                    backend.wake()
-                    raise RuntimeError(
-                        f"Cannot sleep '{model_id}': would use "
-                        f"{total_after / 1024 / 1024:.0f}MB pinned memory, "
-                        f"exceeding limit of "
-                        f"{self._max_pinned_memory_bytes / 1024 / 1024:.0f}MB"
-                    )
-                self._pinned_bytes[model_id] = pinned
-
-        logger.info(
-            "Model '%s' sleeping (pinned=%s bytes)",
-            model_id,
-            pinned if pinned is not None else "N/A",
-        )
-
-    def wake(self, model_id: str) -> None:
-        """Reload a sleeping model's weights from CPU pinned memory to GPU.
-
-        Raises:
-            KeyError: If model_id is not registered.
-            RuntimeError: If model is not in sleeping state.
-        """
-        with self._lifecycle_lock:
-            backend = self._get_backend(model_id)
-            backend.wake()
-            self._pinned_bytes.pop(model_id, None)
-
-        logger.info("Model '%s' woken up", model_id)
-
     # ------------------------------------------------------------------
     # Inference
     # ------------------------------------------------------------------
@@ -472,10 +425,6 @@ class ModelManager:
     @property
     def loaded_models(self) -> List[str]:
         return [mid for mid, b in self._backends.items() if b.state == "loaded"]
-
-    @property
-    def sleeping_models(self) -> List[str]:
-        return [mid for mid, b in self._backends.items() if b.state == "sleeping"]
 
     # ------------------------------------------------------------------
     # Shutdown

@@ -183,75 +183,6 @@ class TestModelManagerLifecycle:
         assert backends["model-b"]._unloaded is True
 
 
-class TestModelManagerSleepWake:
-
-    def test_sleep_and_wake(self):
-        mm = ModelManager(max_pinned_memory_mb=500)
-        backends = {}
-        _patch_create_backend(mm, backends)
-
-        mm.load("model-a", api_key="")
-        mm.sleep("model-a")
-
-        assert mm.sleeping_models == ["model-a"]
-        assert mm.loaded_models == []
-        assert backends["model-a"].state == "sleeping"
-
-        mm.wake("model-a")
-
-        assert mm.loaded_models == ["model-a"]
-        assert mm.sleeping_models == []
-        assert backends["model-a"].state == "loaded"
-
-    def test_sleep_exceeds_pinned_limit_raises(self):
-        # 100MB limit, FakeBackend.sleep() returns 100MB
-        mm = ModelManager(max_pinned_memory_mb=150)
-        backends = {}
-        _patch_create_backend(mm, backends)
-
-        mm.load("model-a", api_key="")
-        mm.sleep("model-a")  # 100MB → ok
-
-        mm.load("model-b", api_key="")
-        with pytest.raises(RuntimeError, match="exceeding limit"):
-            mm.sleep("model-b")  # would be 200MB > 150MB
-
-        # model-b should be rolled back to loaded
-        assert backends["model-b"].state == "loaded"
-
-    def test_sleep_with_zero_limit_still_works(self):
-        # max_pinned_memory_mb=0 means no limit
-        mm = ModelManager(max_pinned_memory_mb=0)
-        backends = {}
-        _patch_create_backend(mm, backends)
-
-        mm.load("model-a", api_key="")
-        mm.sleep("model-a")
-        assert backends["model-a"].state == "sleeping"
-
-    def test_wake_clears_pinned_tracking(self):
-        mm = ModelManager(max_pinned_memory_mb=500)
-        backends = {}
-        _patch_create_backend(mm, backends)
-
-        mm.load("model-a", api_key="")
-        mm.sleep("model-a")
-        assert mm._pinned_bytes["model-a"] == 100 * 1024 * 1024
-
-        mm.wake("model-a")
-        assert "model-a" not in mm._pinned_bytes
-
-    def test_unload_clears_pinned_tracking(self):
-        mm = ModelManager(max_pinned_memory_mb=500)
-        backends = {}
-        _patch_create_backend(mm, backends)
-
-        mm.load("model-a", api_key="")
-        mm.sleep("model-a")
-        mm.unload("model-a")
-        assert "model-a" not in mm._pinned_bytes
-
-
 class TestModelManagerInference:
 
     def test_infer_sync(self):
@@ -317,7 +248,6 @@ class TestModelManagerObservability:
         s = mm.stats()
 
         assert s["models_loaded"] == []
-        assert s["models_sleeping"] == []
         assert s["models"] == []
         assert isinstance(s["gpus"], list)
 
@@ -355,18 +285,6 @@ class TestModelManagerObservability:
         mm = ModelManager()
         with pytest.raises(KeyError, match="not loaded"):
             mm.model_stats("nonexistent")
-
-    def test_stats_pinned_memory(self):
-        mm = ModelManager(max_pinned_memory_mb=500)
-        backends = {}
-        _patch_create_backend(mm, backends)
-
-        mm.load("model-a", api_key="")
-        mm.sleep("model-a")
-
-        s = mm.stats()
-        assert s["ram_pinned_used_mb"] == 100.0  # FakeBackend returns 100MB
-
 
 class TestModelManagerThreadSafety:
 
