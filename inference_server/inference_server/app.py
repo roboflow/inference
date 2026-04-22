@@ -416,6 +416,8 @@ async def infer(request: Request, api_key: BearerToken) -> Response:
 
     Query params:
         model_id    Required. May contain '/' — URL-encode as %2F.
+        task        Optional. Task name (e.g. "infer", "embed_text", "caption").
+                    None → default task for this model.
         instance    Optional. Differentiates multiple workers of the same model
                     (e.g. "0", "1", "gpu0"). Routed as model_id:instance internally.
         device      Optional. Device hint for cold-path load (e.g. "cuda:0", "cuda:1").
@@ -425,6 +427,7 @@ async def infer(request: Request, api_key: BearerToken) -> Response:
 
     Body:
         Raw image bytes (e.g. Content-Type: image/jpeg).
+        May be empty for text-only tasks (e.g. embed_text).
     """
     params = dict(request.query_params)
     model_id = params.pop("model_id", "")
@@ -476,8 +479,6 @@ async def infer(request: Request, api_key: BearerToken) -> Response:
             _write_input(slot_id, chunk, pos)
             pos += len(chunk)
 
-        if pos == 0:
-            return Response(status_code=400, content=b"empty body")
         _t3 = time.monotonic()
 
         result = await _submit_and_wait(slot_id, model_id, instance, pos, params)
@@ -604,6 +605,43 @@ async def unload_model(request: Request, _token: BearerToken) -> Response:
     if result[0] == "error":
         return Response(status_code=500, content=b"unload failed")
     return Response(status_code=200, content=f"unloaded: {model_id}".encode())
+
+
+# ---------------------------------------------------------------------------
+# Discovery endpoint
+# ---------------------------------------------------------------------------
+
+
+@app.get("/models/tasks")
+async def get_model_tasks(request: Request, api_key: BearerToken) -> Response:
+    """Discover supported tasks for a model WITHOUT loading it.
+
+    Resolves model_id to model class via Roboflow API (cached 24h),
+    reads class-level ``get_supported_tasks()``. No download, no GPU.
+
+    Headers:
+        Authorization: Bearer <api_key>    Required.
+
+    Query params:
+        model_id    Required.
+    """
+    model_id = request.query_params.get("model_id", "")
+    if not model_id:
+        return Response(status_code=400, content=b"model_id query param required")
+
+    try:
+        from inference_model_manager.dispatch import discover_tasks
+
+        tasks = discover_tasks(model_id, api_key=api_key)
+    except Exception:
+        return Response(status_code=404, content=b"model not found or not compatible")
+
+    import orjson
+
+    return Response(
+        content=orjson.dumps(tasks),
+        media_type="application/json",
+    )
 
 
 # ---------------------------------------------------------------------------

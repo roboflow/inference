@@ -27,8 +27,8 @@ class FakeModel(ManagedModel):
         self.model_id = model_id
         self._inference_count = 0
 
-    @property
-    def supported_tasks(self) -> Dict[str, TaskSpec]:
+    @classmethod
+    def get_supported_tasks(cls) -> Dict[str, TaskSpec]:
         return {"infer": TaskSpec(method="infer", default=True, params=["images"])}
 
     def infer(self, images=None, **kwargs) -> Any:

@@ -92,8 +92,8 @@ class InstanceSegmentationModel(
     ManagedModel, ABC, Generic[PreprocessedInputs, PreprocessingMetadata, RawPrediction]
 ):
 
-    @property
-    def supported_tasks(self) -> Dict[str, TaskSpec]:
+    @classmethod
+    def get_supported_tasks(cls) -> Dict[str, TaskSpec]:
         return {"infer": TaskSpec(method="infer", default=True, params=["images"])}
 
     @classmethod

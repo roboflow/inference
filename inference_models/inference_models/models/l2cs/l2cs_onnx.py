@@ -52,8 +52,8 @@ class L2CSGazeDetection:
 
 class L2CSNetOnnx(ManagedModel):
 
-    @property
-    def supported_tasks(self) -> Dict[str, TaskSpec]:
+    @classmethod
+    def get_supported_tasks(cls) -> Dict[str, TaskSpec]:
         return {
             "infer": TaskSpec(method="infer", default=True, params=["images"]),
         }
