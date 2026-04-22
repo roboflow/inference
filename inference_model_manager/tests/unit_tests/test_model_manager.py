@@ -78,6 +78,12 @@ class FakeBackend:
     def max_batch_size(self) -> Optional[int]:
         return None
 
+    def record_inference(self, t0: float, error: bool = False) -> None:
+        pass
+
+    def drain_and_unload(self, timeout_s: float = 30.0) -> None:
+        self.unload()
+
     def stats(self) -> Dict[str, Any]:
         return {
             "backend_type": "fake",

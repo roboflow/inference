@@ -216,7 +216,7 @@ class ModelState:
 
     loaded: bool = False
     loading: bool = False
-    sleeping: bool = False  # in ModelManager but VRAM evicted
+    sleeping: bool = False  # DEPRECATED — kept for stats compat, always False
     # Each waiter: (uvicorn_identity, req_id, deadline_monotonic_s)
     load_waiters: list[tuple[bytes, int, float]] = field(default_factory=list)
 
@@ -667,58 +667,28 @@ class ModelManagerProcess:
             )
 
     # ------------------------------------------------------------------
-    # T_SLEEP (admin) — offload VRAM, keep weights on CPU
-    # wire: Q H N   req_id(8) mid_len(2) flavor(N)
+    # T_SLEEP / T_WAKE — removed in Phase 18.
+    # Eviction uses unload(drain=True) instead.  Keep handlers so
+    # old clients get a clear error rather than a silent drop.
     # ------------------------------------------------------------------
 
     async def _handle_sleep(self, identity: bytes, data: list[bytes]) -> None:
         if not data or len(data[0]) < 10:
             return
-        frame = data[0]
-        req_id, mid_len = struct.unpack_from(">QH", frame)
-        model_id = frame[10 : 10 + mid_len].decode(errors="replace")
-
-        loop = asyncio.get_running_loop()
-        try:
-            if self._manager is not None:
-                await loop.run_in_executor(None, lambda: self._manager.sleep(model_id))
-            fs = self._models.get(model_id)
-            if fs:
-                fs.loaded = False
-                fs.sleeping = True
-            await self._send(identity, T_OK, struct.pack(">Q", req_id))
-        except Exception:
-            logger.exception("MMP: T_SLEEP '%s' failed", model_id)
-            await self._send(
-                identity, T_ERROR, struct.pack(">QB", req_id, _ERR_NOT_LOADED)
-            )
-
-    # ------------------------------------------------------------------
-    # T_WAKE (admin) — restore weights to VRAM
-    # wire: Q H N   req_id(8) mid_len(2) flavor(N)
-    # ------------------------------------------------------------------
+        req_id = struct.unpack_from(">Q", data[0])[0]
+        logger.warning("MMP: T_SLEEP not supported — use T_UNLOAD instead")
+        await self._send(
+            identity, T_ERROR, struct.pack(">QB", req_id, _ERR_LOAD_FAILED)
+        )
 
     async def _handle_wake(self, identity: bytes, data: list[bytes]) -> None:
         if not data or len(data[0]) < 10:
             return
-        frame = data[0]
-        req_id, mid_len = struct.unpack_from(">QH", frame)
-        model_id = frame[10 : 10 + mid_len].decode(errors="replace")
-
-        loop = asyncio.get_running_loop()
-        try:
-            if self._manager is not None:
-                await loop.run_in_executor(None, lambda: self._manager.wake(model_id))
-            fs = self._models.get(model_id)
-            if fs:
-                fs.loaded = True
-                fs.sleeping = False
-            await self._send(identity, T_OK, struct.pack(">Q", req_id))
-        except Exception:
-            logger.exception("MMP: T_WAKE '%s' failed", model_id)
-            await self._send(
-                identity, T_ERROR, struct.pack(">QB", req_id, _ERR_NOT_LOADED)
-            )
+        req_id = struct.unpack_from(">Q", data[0])[0]
+        logger.warning("MMP: T_WAKE not supported — use T_ENSURE_LOADED instead")
+        await self._send(
+            identity, T_ERROR, struct.pack(">QB", req_id, _ERR_LOAD_FAILED)
+        )
 
     # ------------------------------------------------------------------
     # T_STATS — snapshot reply
@@ -879,11 +849,6 @@ class ModelManagerProcess:
         """
         loop = asyncio.get_running_loop()
         fs = self._models.get(model_id)
-
-        # Sleeping → wake instead of reload
-        if fs is not None and fs.sleeping:
-            await self._wake_model(model_id)
-            return
 
         if self._manager is None:
             # Stub mode: no manager
