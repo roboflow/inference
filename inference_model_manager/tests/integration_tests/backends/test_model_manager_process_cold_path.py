@@ -118,7 +118,7 @@ class _MockBackend:
         self._mmp    = mmp
         self._result = result_bytes
 
-    def signal_slot(self, slot_id: int, req_id: int) -> None:
+    def signal_slot(self, slot_id: int, req_id: int, params_bytes: bytes = b"{}") -> None:
         def _do() -> None:
             pool = SHMPool.attach(
                 self._mmp.shm_name,

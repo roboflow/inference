@@ -577,10 +577,11 @@ class ModelManagerProcess:
         frame = data[0]
         req_id, slot_id, input_sz, mid_len = struct.unpack_from(">QIIH", frame)
         model_id = frame[18 : 18 + mid_len].decode(errors="replace")
+        params_bytes = data[1] if len(data) > 1 else b"{}"
 
         self._pending[req_id] = (identity, slot_id, model_id)
         self._pool.mark_written(slot_id, input_sz)
-        self._forward_to_backend(model_id, slot_id, req_id)
+        self._forward_to_backend(model_id, slot_id, req_id, params_bytes)
 
     # ------------------------------------------------------------------
     # T_FREE
@@ -760,7 +761,9 @@ class ModelManagerProcess:
     # Backend routing
     # ------------------------------------------------------------------
 
-    def _forward_to_backend(self, model_id: str, slot_id: int, req_id: int) -> None:
+    def _forward_to_backend(
+        self, model_id: str, slot_id: int, req_id: int, params_bytes: bytes = b"{}"
+    ) -> None:
         self._model_access[model_id] = time.monotonic()  # LRU update
         backend = self._backends.get(model_id)
         if backend is None:
@@ -768,7 +771,7 @@ class ModelManagerProcess:
             self._on_result_on_loop(req_id, slot_id, 0)
             return
         try:
-            backend.signal_slot(slot_id, req_id)
+            backend.signal_slot(slot_id, req_id, params_bytes)
         except Exception:
             logger.exception("MMP: signal_slot raised for '%s'", model_id)
             self._on_result_on_loop(req_id, slot_id, 0)
