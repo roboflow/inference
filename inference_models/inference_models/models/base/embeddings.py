@@ -1,12 +1,21 @@
 from abc import ABC, abstractmethod
-from typing import List, Literal, Optional, Union
+from typing import Dict, List, Literal, Optional, Union
 
 import numpy as np
 import torch
 import torch.nn.functional as F
 
+from inference_models.models.base.task_dispatch import ManagedModel, TaskSpec
 
-class TextImageEmbeddingModel(ABC):
+
+class TextImageEmbeddingModel(ManagedModel, ABC):
+
+    @property
+    def supported_tasks(self) -> Dict[str, TaskSpec]:
+        return {
+            "embed_images": TaskSpec(method="embed_images", default=True, params=["images"]),
+            "embed_text": TaskSpec(method="embed_text", params=["texts"]),
+        }
 
     @classmethod
     @abstractmethod

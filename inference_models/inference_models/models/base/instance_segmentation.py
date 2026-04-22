@@ -1,11 +1,12 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Generic, List, Literal, Optional, Set, Tuple, Union
+from typing import Dict, Generic, List, Literal, Optional, Set, Tuple, Union
 
 import numpy as np
 import supervision as sv
 import torch
 
+from inference_models.models.base.task_dispatch import ManagedModel, TaskSpec
 from inference_models.models.base.types import (
     InstancesRLEMasks,
     PreprocessedInputs,
@@ -88,8 +89,12 @@ class InstanceDetections:
 
 
 class InstanceSegmentationModel(
-    ABC, Generic[PreprocessedInputs, PreprocessingMetadata, RawPrediction]
+    ManagedModel, ABC, Generic[PreprocessedInputs, PreprocessingMetadata, RawPrediction]
 ):
+
+    @property
+    def supported_tasks(self) -> Dict[str, TaskSpec]:
+        return {"infer": TaskSpec(method="infer", default=True, params=["images"])}
 
     @classmethod
     @abstractmethod

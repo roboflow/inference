@@ -3,7 +3,7 @@ This is inference-models wrapper for the model originally published in https://g
 """
 
 from threading import Lock
-from typing import Any, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 
 import numpy as np
 import torch
@@ -17,6 +17,7 @@ from inference_models.configuration import (
     INFERENCE_MODELS_GLM_OCR_DEFAULT_MAX_NEW_TOKENS,
 )
 from inference_models.entities import ColorFormat
+from inference_models.models.base.task_dispatch import ManagedModel, TaskSpec
 
 TEXT_RECOGNITION_PROMPT = "Text Recognition:"
 FORMULA_RECOGNITION_PROMPT = "Formula Recognition:"
@@ -44,8 +45,17 @@ def _is_ampere_plus(device: torch.device) -> bool:
     return major >= 8
 
 
-class GlmOcrHF:
+class GlmOcrHF(ManagedModel):
     default_dtype = torch.bfloat16
+
+    @property
+    def supported_tasks(self) -> Dict[str, TaskSpec]:
+        return {
+            "recognize_text": TaskSpec(method="recognize_text", default=True, params=["images"]),
+            "recognize_table": TaskSpec(method="recognize_table", params=["images"]),
+            "recognize_formula": TaskSpec(method="recognize_formula", params=["images"]),
+            "prompt": TaskSpec(method="prompt", params=["images", "prompt"]),
+        }
 
     @classmethod
     def from_pretrained(

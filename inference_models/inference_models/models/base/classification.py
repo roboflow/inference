@@ -1,10 +1,11 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Generic, List, Optional, Union
+from typing import Dict, Generic, List, Optional, Union
 
 import numpy as np
 import torch
 
+from inference_models.models.base.task_dispatch import ManagedModel, TaskSpec
 from inference_models.models.base.types import PreprocessedInputs, RawPrediction
 
 
@@ -15,7 +16,11 @@ class ClassificationPrediction:
     images_metadata: Optional[List[dict]] = None  # if given, list of size equal to bs
 
 
-class ClassificationModel(ABC, Generic[PreprocessedInputs, RawPrediction]):
+class ClassificationModel(ManagedModel, ABC, Generic[PreprocessedInputs, RawPrediction]):
+
+    @property
+    def supported_tasks(self) -> Dict[str, TaskSpec]:
+        return {"infer": TaskSpec(method="infer", default=True, params=["images"])}
 
     # Single-label classification deliberately opts out of recommendedParameters.
     # Top-1 always wins regardless of confidence, so per-class refinement isn't
@@ -83,7 +88,11 @@ class MultiLabelClassificationPrediction:
     image_metadata: Optional[dict] = None
 
 
-class MultiLabelClassificationModel(ABC, Generic[PreprocessedInputs, RawPrediction]):
+class MultiLabelClassificationModel(ManagedModel, ABC, Generic[PreprocessedInputs, RawPrediction]):
+
+    @property
+    def supported_tasks(self) -> Dict[str, TaskSpec]:
+        return {"infer": TaskSpec(method="infer", default=True, params=["images"])}
 
     @classmethod
     def from_pretrained(
