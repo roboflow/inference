@@ -337,6 +337,9 @@ from inference.core.workflows.core_steps.models.roboflow.object_detection.v2 imp
 from inference.core.workflows.core_steps.models.roboflow.semantic_segmentation.v1 import (
     RoboflowSemanticSegmentationModelBlockV1,
 )
+from inference.core.workflows.core_steps.models.roboflow.text_image_pairs.v1 import (
+    RoboflowTextImagePairsModelBlockV1,
+)
 from inference.core.workflows.core_steps.models.third_party.barcode_detection.v1 import (
     BarcodeDetectorBlockV1,
 )
@@ -855,6 +858,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         RoboflowClassificationModelBlockV2,
         RoboflowMultiLabelClassificationModelBlockV2,
         RoboflowObjectDetectionModelBlockV2,
+        RoboflowTextImagePairsModelBlockV1,
         VLMAsClassifierBlockV2,
         VLMAsDetectorBlockV2,
         IdentifyOutliersBlockV1,
