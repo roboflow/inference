@@ -388,6 +388,20 @@ def _process_slots(
             result.class_id = result.class_id.cpu()
         data = pickle.dumps(result)
         mv = pool.data_memoryview(slot_id)
+        if len(data) > len(mv):
+            log.error(
+                "Worker: result %d B exceeds slot capacity %d B for slot %d — marking error",
+                len(data), len(mv), slot_id,
+            )
+            pool.mark_error(slot_id)
+            try:
+                sock.send_multipart(
+                    [_MSG_RESULT, struct.pack(">QII", req_id, slot_id, 0)]
+                )
+            except zmq.ZMQError:
+                pass
+            mv.release()
+            continue
         mv[: len(data)] = data
         mv.release()
         pool.mark_done(slot_id, len(data))
