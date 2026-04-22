@@ -302,6 +302,11 @@ class ModelManagerProcess:
         """SHM pool name — valid after run() has started."""
         return self._pool.name if self._pool else None
 
+    @property
+    def bound_addr(self) -> Optional[str]:
+        """Actual bound ZMQ address — valid after run() has started."""
+        return getattr(self, "_bound_addr", None)
+
     def register_backend(self, model_id: str, backend: BackendLike) -> None:
         """Mark model_id loaded and register its backend.
 
@@ -358,7 +363,8 @@ class ModelManagerProcess:
         self._router.setsockopt(zmq.LINGER, 0)
         bind_addr = addr or zmq_addr("mmprocess")
         self._router.bind(bind_addr)
-        logger.info("MMP: ROUTER bound on %s", bind_addr)
+        self._bound_addr = self._router.getsockopt_string(zmq.LAST_ENDPOINT)
+        logger.info("MMP: ROUTER bound on %s", self._bound_addr)
 
         try:
             self._loop.add_signal_handler(signal.SIGTERM, self._on_sigterm)

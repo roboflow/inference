@@ -49,8 +49,8 @@ _TIMEOUT_S      = 5.0
 
 
 def _rand_addr() -> str:
-    import random
-    return f"tcp://127.0.0.1:{random.randint(30000, 59999)}"
+    """tcp://127.0.0.1:0 — OS assigns a free port; MMP reads actual via LAST_ENDPOINT."""
+    return "tcp://127.0.0.1:0"
 
 
 def _req_id() -> int:
@@ -142,7 +142,7 @@ class _MMPHarness:
     """Starts MMP in a background asyncio thread; provides sync ZMQ client."""
 
     def __init__(self, manager=None, n_slots: int = 8):
-        self.addr   = _rand_addr()
+        self._bind_addr = _rand_addr()
         self._ready = threading.Event()
         self._mmp   = ModelManagerProcess(
             n_slots=n_slots,
@@ -159,6 +159,8 @@ class _MMPHarness:
         self._thread.start()
         assert self._ready.wait(timeout=_TIMEOUT_S), "MMP did not start"
 
+        self.addr = self._mmp.bound_addr or self._bind_addr
+
         self._ctx    = zmq.Context()
         self._dealer = self._ctx.socket(zmq.DEALER)
         self._dealer.setsockopt(zmq.RCVTIMEO, int(_TIMEOUT_S * 1000))
@@ -170,7 +172,7 @@ class _MMPHarness:
         self._dealer.connect(self.addr)
 
     def _run_loop(self) -> None:
-        asyncio.run(self._mmp.run(addr=self.addr, ready_event=self._ready))
+        asyncio.run(self._mmp.run(addr=self._bind_addr, ready_event=self._ready))
 
     @property
     def mmp(self) -> ModelManagerProcess:
