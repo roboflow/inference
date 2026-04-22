@@ -344,7 +344,7 @@ def _process_slots(
                     [_MSG_RESULT, struct.pack(">QII", req_id, slot_id, 0)]
                 )
             except zmq.ZMQError:
-                return
+                log.warning("Worker: ZMQ send failed for error slot %d", slot_id)
         if len(error_indices) == len(batch):
             return
         # Filter to only successfully decoded slots for infer
