@@ -45,4 +45,4 @@ if [ -f "${SCRIPT_DIR}/venv/bin/activate" ]; then
 fi
 
 # ── Launch ──────────────────────────────────────────────────────────────────
-exec python -m inference_models.server
+exec python -m inference_server.server

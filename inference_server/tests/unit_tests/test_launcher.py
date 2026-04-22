@@ -6,7 +6,7 @@ import threading
 
 import pytest
 
-from inference_model_manager.launcher import (
+from inference_server.launcher import (
     LaunchHandle,
     _MODE_INPROCESS,
     _MODE_ORCHESTRATED,
