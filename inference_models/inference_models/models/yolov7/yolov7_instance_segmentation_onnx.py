@@ -16,7 +16,7 @@ from inference_models.configuration import (
     INFERENCE_MODELS_YOLOV7_DEFAULT_IOU_THRESHOLD,
     INFERENCE_MODELS_YOLOV7_DEFAULT_MAX_DETECTIONS,
 )
-from inference_models.entities import ColorFormat
+from inference_models.entities import Confidence, ColorFormat
 from inference_models.errors import (
     EnvironmentConfigurationError,
     MissingDependencyError,
@@ -34,6 +34,7 @@ from inference_models.models.common.roboflow.model_packages import (
     parse_inference_config,
 )
 from inference_models.models.common.roboflow.post_processing import (
+    ConfidenceFilter,
     align_instance_segmentation_results,
     crop_masks_to_boxes,
     preprocess_segmentation_masks,
@@ -45,6 +46,7 @@ from inference_models.models.common.roboflow.pre_processing import (
 from inference_models.utils.onnx_introspection import (
     get_selected_onnx_execution_providers,
 )
+from inference_models.weights_providers.entities import RecommendedParameters
 
 try:
     import onnxruntime
@@ -75,6 +77,7 @@ class YOLOv7ForInstanceSegmentationOnnx(
         onnx_execution_providers: Optional[List[Union[str, tuple]]] = None,
         default_onnx_trt_options: bool = True,
         device: torch.device = DEFAULT_DEVICE,
+        recommended_parameters: Optional[RecommendedParameters] = None,
         **kwargs,
     ) -> "YOLOv7ForInstanceSegmentationOnnx":
         if onnx_execution_providers is None:
@@ -139,6 +142,7 @@ class YOLOv7ForInstanceSegmentationOnnx(
             inference_config=inference_config,
             device=device,
             input_batch_size=input_batch_size,
+            recommended_parameters=recommended_parameters,
         )
 
     def __init__(
@@ -149,6 +153,7 @@ class YOLOv7ForInstanceSegmentationOnnx(
         class_names: List[str],
         device: torch.device,
         input_batch_size: Optional[int],
+        recommended_parameters=None,
     ):
         self._session = session
         self._input_name = input_name
@@ -157,6 +162,7 @@ class YOLOv7ForInstanceSegmentationOnnx(
         self._device = device
         self._input_batch_size = input_batch_size
         self._session_thread_lock = Lock()
+        self.recommended_parameters = recommended_parameters
 
     @property
     def class_names(self) -> List[str]:
@@ -195,12 +201,25 @@ class YOLOv7ForInstanceSegmentationOnnx(
         self,
         model_results: Tuple[torch.Tensor, torch.Tensor],
         pre_processing_meta: List[PreProcessingMetadata],
-        confidence: float = INFERENCE_MODELS_YOLOV7_DEFAULT_CONFIDENCE,
+        confidence: Confidence = "default",
         iou_threshold: float = INFERENCE_MODELS_YOLOV7_DEFAULT_IOU_THRESHOLD,
         max_detections: int = INFERENCE_MODELS_YOLOV7_DEFAULT_MAX_DETECTIONS,
         class_agnostic_nms: bool = INFERENCE_MODELS_YOLOV7_DEFAULT_CLASS_AGNOSTIC_NMS,
         **kwargs,
     ) -> List[InstanceDetections]:
+        confidence_filter = ConfidenceFilter(
+            confidence=confidence,
+            recommended_parameters=self.recommended_parameters,
+            default_confidence=INFERENCE_MODELS_YOLOV7_DEFAULT_CONFIDENCE,
+        )
+        # YOLOv7 IS output scores slice includes the objectness column at
+        # index 0 with real classes at 1..N, so class_ids can land at 0
+        # (objectness-dominated). Prepend a dummy slot so the per-class
+        # tensor aligns with the slice-space indexing — get_threshold's
+        # missing-key fallback covers it with `fallback_threshold`.
+        confidence = confidence_filter.get_threshold(
+            ["__objectness_slot__", *self.class_names]
+        )
         instances, protos = model_results
         nms_results = run_nms_for_instance_segmentation(
             output=instances.permute(0, 2, 1),
