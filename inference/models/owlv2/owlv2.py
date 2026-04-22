@@ -177,7 +177,10 @@ def dummy_infer(hf_id: str):
     singleton = Owlv2Singleton(hf_id)
     model = singleton.model
     processor = Owlv2Processor.from_pretrained(hf_id)
-    image_size = (processor.image_processor.size.height, processor.image_processor.size.width)
+    image_size = (
+        processor.image_processor.size.height,
+        processor.image_processor.size.width,
+    )
     image_mean = torch.tensor(processor.image_processor.image_mean, device=DEVICE).view(
         1, 3, 1, 1
     )
@@ -392,7 +395,10 @@ class OwlV2(RoboflowInferenceModel):
             self.version_id = owlv2_model_id_chunks[1]
         hf_id = os.path.join("google", self.version_id)
         processor = Owlv2Processor.from_pretrained(hf_id)
-        self.image_size = (processor.image_processor.size.height, processor.image_processor.size.width)
+        self.image_size = (
+            processor.image_processor.size.height,
+            processor.image_processor.size.width,
+        )
         self.image_mean = torch.tensor(
             processor.image_processor.image_mean, device=DEVICE
         ).view(1, 3, 1, 1)
