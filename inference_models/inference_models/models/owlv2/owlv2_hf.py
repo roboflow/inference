@@ -66,7 +66,7 @@ def monkey_patch_vision_encoder_before_compilation(model: Owlv2ForObjectDetectio
     """
     from transformers.modeling_outputs import BaseModelOutputWithPooling, BaseModelOutput
 
-    def vision_model_forward_from_5_2_0(
+    def vision_model_forward_patched_for_torch_compile(
         self,
         pixel_values: torch.FloatTensor,
         interpolate_pos_encoding: bool | None = False,
@@ -119,7 +119,7 @@ def monkey_patch_vision_encoder_before_compilation(model: Owlv2ForObjectDetectio
         model.owlv2.vision_model.encoder,
     )
     model.owlv2.vision_model.forward = types.MethodType(
-        vision_model_forward_from_5_2_0,
+        vision_model_forward_patched_for_torch_compile,
         model.owlv2.vision_model
     )
     return model
