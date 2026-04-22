@@ -7,6 +7,7 @@ model_id may contain '/' (URL-encode as %2F; Starlette decodes automatically).
 Usage::
 
     POST /infer?model_id=yolov8n%2F640&confidence=0.5
+    Authorization: Bearer <api_key>
     Content-Type: image/jpeg
     <raw jpeg bytes>
 
@@ -47,14 +48,14 @@ import time
 import uuid
 from contextlib import asynccontextmanager
 from multiprocessing.shared_memory import SharedMemory
-from typing import Optional
+from typing import Annotated, Optional
 
 from inference_server.serializers import serialize_json
 
 import uvicorn
 import zmq
 import zmq.asyncio
-from fastapi import FastAPI, Request, Response
+from fastapi import Depends, FastAPI, Request, Response
 
 import filetype
 
@@ -365,18 +366,51 @@ def _read_result(slot_id: int, result_sz: int) -> bytes:
 
 app = FastAPI(lifespan=_lifespan)
 
+_AUTH_SKIP_PATHS = frozenset({
+    "/", "/docs", "/redoc", "/openapi.json",
+    "/v2/server/health", "/v2/server/ready",
+})
+
+
+def _bearer_token(request: Request) -> str:
+    """Extract API key from ``Authorization: Bearer <key>`` header."""
+    auth = request.headers.get("authorization", "")
+    if auth.startswith("Bearer "):
+        return auth[7:]
+    return ""
+
+
+@app.middleware("http")
+async def auth_middleware(request: Request, call_next):
+    if request.url.path in _AUTH_SKIP_PATHS:
+        return await call_next(request)
+    token = _bearer_token(request)
+    if not token:
+        return Response(status_code=401, content=b"Authorization: Bearer <api_key> header required")
+    from inference_server.auth import validate_api_key
+    valid, _ = await validate_api_key(token)
+    if not valid:
+        return Response(status_code=403, content=b"Invalid API key")
+    return await call_next(request)
+
+
+BearerToken = Annotated[str, Depends(_bearer_token)]
+
 
 @app.post("/infer")
-async def infer(request: Request) -> Response:
+async def infer(request: Request, api_key: BearerToken) -> Response:
     """Infer endpoint.
+
+    Headers:
+        Authorization: Bearer <api_key>    Required.
 
     Query params:
         model_id    Required. May contain '/' — URL-encode as %2F.
-        api_key     Required. Roboflow API key.
         instance    Optional. Differentiates multiple workers of the same model
                     (e.g. "0", "1", "gpu0"). Routed as model_id:instance internally.
         device      Optional. Device hint for cold-path load (e.g. "cuda:0", "cuda:1").
                     No effect if model is already loaded.
+        format      Optional. "json" or "pickle" (default: pickle).
         *           Any additional params forwarded opaquely to the backend.
 
     Body:
@@ -384,14 +418,11 @@ async def infer(request: Request) -> Response:
     """
     params   = dict(request.query_params)
     model_id = params.pop("model_id", "")
-    api_key  = params.pop("api_key", "")
     instance = params.pop("instance", "")
     device   = params.pop("device", "")
     fmt      = params.pop("format", "pickle")  # "json" or "pickle"
     if not model_id:
         return Response(status_code=400, content=b"model_id query param required")
-    if not api_key:
-        return Response(status_code=400, content=b"api_key query param required")
 
     _t0 = time.monotonic()
 
@@ -501,16 +532,17 @@ async def _lifecycle_req(msg_type: bytes, payload: bytes, timeout_s: float = 30.
 
 
 @app.post("/models/load")
-async def load_model(request: Request) -> Response:
+async def load_model(request: Request, api_key: BearerToken) -> Response:
     """Trigger model load on MMP.
+
+    Headers:
+        Authorization: Bearer <api_key>    Required.
 
     Query params:
         model_id    Required.
-        api_key     Optional.
     """
     params   = dict(request.query_params)
     model_id = params.get("model_id", "")
-    api_key  = params.get("api_key", "")
     if not model_id:
         return Response(status_code=400, content=b"model_id query param required")
 
@@ -529,8 +561,11 @@ async def load_model(request: Request) -> Response:
 
 
 @app.post("/models/unload")
-async def unload_model(request: Request) -> Response:
+async def unload_model(request: Request, _token: BearerToken) -> Response:
     """Trigger model unload on MMP.
+
+    Headers:
+        Authorization: Bearer <api_key>    Required.
 
     Query params:
         model_id    Required.
