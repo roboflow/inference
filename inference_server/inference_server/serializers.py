@@ -11,6 +11,7 @@ Benchmark (bench_serialization.py):
 
 from __future__ import annotations
 
+import base64
 import dataclasses
 from typing import Any
 
@@ -76,8 +77,10 @@ def _convert(obj: Any) -> Any:
         return result
 
     # Primitives
-    if isinstance(obj, (str, int, float, bool, bytes)):
+    if isinstance(obj, (str, int, float, bool)):
         return obj
+    if isinstance(obj, bytes):
+        return base64.b64encode(obj).decode("ascii")
 
     # Fallback: try __dict__
     if hasattr(obj, "__dict__"):

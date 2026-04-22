@@ -122,6 +122,7 @@ class SHMPool:
 
         # Allocation state — only owner ever calls alloc/free
         self._free: deque[int] = deque(range(n_slots)) if owner else deque()
+        self._allocated: set[int] = set()  # slots currently in use (for double-free guard)
         self._cond: threading.Condition = threading.Condition(threading.Lock())
 
     # ------------------------------------------------------------------
@@ -213,21 +214,27 @@ class SHMPool:
                 remaining = deadline - time.monotonic()
                 if remaining <= 0 or not self._cond.wait(timeout=remaining):
                     raise TimeoutError(f"No free SHM slots (pool size={self._n_slots})")
-            return self._free.popleft()
+            slot_id = self._free.popleft()
+            self._allocated.add(slot_id)
+            return slot_id
 
     def free_slot(self, slot_id: int) -> None:
         """Return slot to the pool and zero its header.
 
         Only the pool creator (owner) should call this.
+        Thread-safe: lock protects both header write and free-list append.
         """
         if not self._owner:
             raise RuntimeError("Only the pool creator can free slots")
-        # Zero header so next alloc starts clean
-        off = self._slot_offset(slot_id)
-        struct.pack_into(
-            _HEADER_FMT, self._shm.buf, off, SlotStatus.FREE, 0, 0, 0, 0, 0, 0
-        )
         with self._cond:
+            if slot_id not in self._allocated:
+                return  # double-free guard — silently ignore
+            self._allocated.discard(slot_id)
+            # Zero header inside lock so no reader sees partial state
+            off = self._slot_offset(slot_id)
+            struct.pack_into(
+                _HEADER_FMT, self._shm.buf, off, SlotStatus.FREE, 0, 0, 0, 0, 0, 0
+            )
             self._free.append(slot_id)
             self._cond.notify()
 
@@ -268,10 +275,12 @@ class SHMPool:
         )
 
     def mark_written(self, slot_id: int, input_size: int) -> None:
-        """Fast update: status=WRITTEN + input_size. Data is already in slot."""
+        """Fast update: status=WRITTEN + input_size. Data is already in slot.
+        Size written first so cross-process readers never see WRITTEN with stale size.
+        """
         off = self._slot_offset(slot_id)
-        self._shm.buf[off + _OFF_STATUS] = SlotStatus.WRITTEN
         struct.pack_into("<I", self._shm.buf, off + _OFF_INPUT_SZ, input_size)
+        self._shm.buf[off + _OFF_STATUS] = SlotStatus.WRITTEN
 
     def mark_processing(self, slot_id: int, owner_pid: int) -> None:
         """Worker sets status=PROCESSING and records its pid."""
@@ -280,10 +289,12 @@ class SHMPool:
         struct.pack_into("<i", self._shm.buf, off + _OFF_OWNER_PID, owner_pid)
 
     def mark_done(self, slot_id: int, result_size: int) -> None:
-        """Worker sets status=DONE + result_size after writing result area."""
+        """Worker sets status=DONE + result_size after writing result area.
+        Size written first so cross-process readers never see DONE with stale size.
+        """
         off = self._slot_offset(slot_id)
-        self._shm.buf[off + _OFF_STATUS] = SlotStatus.DONE
         struct.pack_into("<I", self._shm.buf, off + _OFF_RESULT_SZ, result_size)
+        self._shm.buf[off + _OFF_STATUS] = SlotStatus.DONE
 
     def mark_error(self, slot_id: int, error_code: int = 1) -> None:
         """Set status=ERROR + error_code."""
@@ -313,11 +324,14 @@ class SHMPool:
 
         Used by MMP's reaper to reclaim orphaned slots when a FastAPI worker
         or backend worker crashes without sending T_FREE.
+        Only returns slots that are actually allocated (not in free list).
         """
         now_ns = time.monotonic_ns()
         max_ns = int(max_age_s * 1_000_000_000)
+        with self._cond:
+            allocated = set(self._allocated)
         result = []
-        for slot_id in range(self._n_slots):
+        for slot_id in allocated:
             hdr = self.read_header(slot_id)
             if (
                 hdr.status != SlotStatus.FREE
