@@ -264,7 +264,49 @@ class ModelManager:
             backend.unload()
 
     # ------------------------------------------------------------------
-    # Inference
+    # Task dispatch
+    # ------------------------------------------------------------------
+
+    def invoke(
+        self, model_id: str, task: Optional[str] = None, **kwargs: Any
+    ) -> Any:
+        """Invoke a task on a loaded model.
+
+        Uses the model's ``supported_tasks`` property to resolve ``task`` to
+        the correct method. If ``task`` is None, the default task is used.
+
+        Args:
+            model_id: Loaded model key.
+            task: Task name (e.g. ``"infer"``, ``"embed_text"``, ``"caption"``).
+                None → default task for this model.
+            **kwargs: Passed to the model method (images, texts, classes, prompt, etc.).
+
+        Returns:
+            Whatever the model method returns.
+
+        Raises:
+            KeyError: If model_id is not loaded.
+            ValueError: If task is not supported by the model.
+        """
+        from inference_model_manager.dispatch import invoke_task
+
+        backend = self._get_backend(model_id)
+        model = backend.model
+        return invoke_task(model, task=task, **kwargs)
+
+    def get_supported_tasks(self, model_id: str) -> Dict[str, Any]:
+        """Return supported tasks for a loaded model.
+
+        Raises:
+            KeyError: If model_id is not loaded.
+        """
+        from inference_model_manager.dispatch import list_tasks
+
+        backend = self._get_backend(model_id)
+        return list_tasks(backend.model)
+
+    # ------------------------------------------------------------------
+    # Inference (legacy — delegates to invoke for direct backends)
     # ------------------------------------------------------------------
 
     def infer_sync(self, model_id: str, raw_input: Any, **kwargs) -> Any:
