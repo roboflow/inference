@@ -346,7 +346,10 @@ class SHMPool:
     # ------------------------------------------------------------------
 
     def close(self) -> None:
-        """Detach from SHM. Owner also unlinks (destroys) the block."""
+        """Detach from SHM. Owner also unlinks (destroys) the block. Idempotent."""
+        if getattr(self, "_closed", False):
+            return
+        self._closed = True
         self._shm.close()
         if self._owner:
             try:
@@ -359,4 +362,6 @@ class SHMPool:
     # ------------------------------------------------------------------
 
     def _slot_offset(self, slot_id: int) -> int:
+        if slot_id < 0 or slot_id >= self._n_slots:
+            raise IndexError(f"slot_id {slot_id} out of range [0, {self._n_slots})")
         return slot_id * self._slot_bytes

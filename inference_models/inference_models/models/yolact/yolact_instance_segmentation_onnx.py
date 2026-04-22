@@ -132,19 +132,16 @@ class YOLOACTForInstanceSegmentationOnnx(
             path_or_bytes=model_package_content["weights.onnx"],
             providers=onnx_execution_providers,
         )
-        if session:
-            input_batch_size = session.get_inputs()[0].shape[0]
-            if input_batch_size != 1:
-                raise ModelRuntimeError(
-                    message="Implementation of YOLOACTForInstanceSegmentationOnnx is adjusted to work correctly with "
-                    "onnx models accepting inputs with `batch_size=1`. It can be extended if needed, but we've "
-                    "not heard such request so far. If you find that a valuable feature - let us know via "
-                    "https://github.com/roboflow/inference/issues",
-                    help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
-                )
-            input_name = session.get_inputs()[0].name
-        else:
-            input_name = None
+        input_batch_size = session.get_inputs()[0].shape[0]
+        if input_batch_size != 1:
+            raise ModelRuntimeError(
+                message="Implementation of YOLOACTForInstanceSegmentationOnnx is adjusted to work correctly with "
+                "onnx models accepting inputs with `batch_size=1`. It can be extended if needed, but we've "
+                "not heard such request so far. If you find that a valuable feature - let us know via "
+                "https://github.com/roboflow/inference/issues",
+                help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
+            )
+        input_name = session.get_inputs()[0].name
         return cls(
             session=session,
             input_name=input_name,

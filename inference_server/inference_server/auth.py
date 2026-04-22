@@ -37,6 +37,17 @@ class _CacheEntry:
 
 
 _cache: dict[str, _CacheEntry] = {}
+_session: Optional[aiohttp.ClientSession] = None
+
+
+def _get_session() -> aiohttp.ClientSession:
+    """Reuse a single aiohttp session per worker process.
+    Safe: only called from async code on a single event loop thread.
+    """
+    global _session
+    if _session is None or _session.closed:
+        _session = aiohttp.ClientSession(timeout=_REQUEST_TIMEOUT)
+    return _session
 
 
 async def validate_api_key(api_key: str) -> tuple[bool, Optional[str]]:
@@ -55,33 +66,33 @@ async def validate_api_key(api_key: str) -> tuple[bool, Optional[str]]:
         return entry.valid, entry.workspace_id
 
     try:
-        async with aiohttp.ClientSession(timeout=_REQUEST_TIMEOUT) as session:
-            async with session.get(
-                f"{API_BASE_URL}/",
-                params={"api_key": api_key, "nocache": "true"},
-            ) as resp:
-                if resp.status != 200:
-                    _cache[api_key] = _CacheEntry(
-                        expires_at=now + _CACHE_FAIL_TTL_S,
-                        valid=False,
-                    )
-                    return False, None
-
-                data = await resp.json()
-                workspace_id = data.get("workspace")
-                if not workspace_id:
-                    _cache[api_key] = _CacheEntry(
-                        expires_at=now + _CACHE_FAIL_TTL_S,
-                        valid=False,
-                    )
-                    return False, None
-
+        session = _get_session()
+        async with session.get(
+            f"{API_BASE_URL}/",
+            params={"api_key": api_key, "nocache": "true"},
+        ) as resp:
+            if resp.status != 200:
                 _cache[api_key] = _CacheEntry(
-                    expires_at=now + _CACHE_TTL_S,
-                    valid=True,
-                    workspace_id=workspace_id,
+                    expires_at=now + _CACHE_FAIL_TTL_S,
+                    valid=False,
                 )
-                return True, workspace_id
+                return False, None
+
+            data = await resp.json()
+            workspace_id = data.get("workspace")
+            if not workspace_id:
+                _cache[api_key] = _CacheEntry(
+                    expires_at=now + _CACHE_FAIL_TTL_S,
+                    valid=False,
+                )
+                return False, None
+
+            _cache[api_key] = _CacheEntry(
+                expires_at=now + _CACHE_TTL_S,
+                valid=True,
+                workspace_id=workspace_id,
+            )
+            return True, workspace_id
 
     except Exception:
         logger.warning("Auth validation failed (network error)", exc_info=True)

@@ -120,14 +120,10 @@ class DeepLabV3PlusForSemanticSegmentationOnnx(
             path_or_bytes=model_package_content["weights.onnx"],
             providers=onnx_execution_providers,
         )
-        if session:
-            input_batch_size = session.get_inputs()[0].shape[0]
-            if isinstance(input_batch_size, str):
-                input_batch_size = None
-            input_name = session.get_inputs()[0].name
-        else:
+        input_batch_size = session.get_inputs()[0].shape[0]
+        if isinstance(input_batch_size, str):
             input_batch_size = None
-            input_name = None
+        input_name = session.get_inputs()[0].name
         return cls(
             session=session,
             input_name=input_name,

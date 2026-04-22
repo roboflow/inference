@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 
 @dataclass(frozen=True)
@@ -55,3 +55,8 @@ class ManagedModel(ABC):
     def supported_tasks(self) -> Dict[str, TaskSpec]:
         """Instance-level convenience — delegates to classmethod."""
         return self.get_supported_tasks()
+
+    @property
+    def max_batch_size(self) -> Optional[int]:
+        """Max batch size for inference. Override in subclass if model supports batching."""
+        return getattr(self, "_max_batch_size", 1)
