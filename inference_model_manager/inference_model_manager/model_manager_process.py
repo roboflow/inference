@@ -993,7 +993,11 @@ class ModelManagerProcess:
                 logger.exception("MMP: error in eviction loop")
 
     def _check_and_evict(self) -> None:
-        """Evict LRU flavor if GPU memory exceeds threshold."""
+        """Evict LRU model if GPU memory exceeds threshold.
+
+        Uses drain_and_unload (graceful: stop accepting, finish in-flight, then kill).
+        Next request for evicted model triggers _load_model which reloads from disk cache.
+        """
         if self._manager is None:
             return
         gpu_frac = _gpu_used_fraction()
@@ -1009,11 +1013,13 @@ class ModelManagerProcess:
             lru,
         )
         try:
-            self._manager.sleep(lru)
+            self._manager.unload(lru, drain=True)
             fs = self._models.get(lru)
             if fs:
                 fs.loaded = False
-                fs.sleeping = True
+                fs.loading = False
+                fs.sleeping = False
+            self._backends.pop(lru, None)
         except Exception:
             logger.warning("MMP: eviction of '%s' failed", lru, exc_info=True)
 

@@ -92,8 +92,8 @@ class _MockManager:
         mmp    = self._mmp
         return _MockBackend(mmp, result_bytes=result)
 
-    def unload(self, model_id: str) -> None:
-        self.calls.append(f"unload:{model_id}")
+    def unload(self, model_id: str, drain: bool = False, drain_timeout_s: float = 30.0) -> None:
+        self.calls.append(f"unload:{model_id}:drain={drain}")
         self.loaded.pop(model_id, None)
 
     def sleep(self, model_id: str) -> None:
@@ -344,7 +344,7 @@ class TestLifecycleMessages:
         h.ensure_loaded("m")
         h.lifecycle_req(T_UNLOAD, "m")
         h.teardown()
-        assert "unload:m" in mgr.calls
+        assert "unload:m:drain=False" in mgr.calls
 
     def test_t_sleep_returns_ok(self):
         mgr = _MockManager()
@@ -476,7 +476,7 @@ class TestLRUEviction:
         mmp._pending[42] = (b"id", 0, "a")   # "a" is in-flight
         assert mmp._lru_evictable_model() == "b"
 
-    def test_check_and_evict_calls_manager_sleep(self):
+    def test_check_and_evict_calls_manager_unload_drain(self):
         mgr = _MockManager()
         mmp = ModelManagerProcess(
             n_slots=4,
@@ -488,6 +488,6 @@ class TestLRUEviction:
         mmp._models["m"] = ModelState(loaded=True)
         mmp._model_access["m"] = 1.0
         mmp._check_and_evict()
-        assert "sleep:m" in mgr.calls
-        assert mmp._models["m"].sleeping is True
+        assert "unload:m:drain=True" in mgr.calls
         assert mmp._models["m"].loaded   is False
+        assert mmp._models["m"].sleeping is False
