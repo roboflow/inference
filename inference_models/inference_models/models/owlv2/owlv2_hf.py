@@ -55,6 +55,7 @@ Query = Dict[
     Tuple[Union[int, float], Union[int, float], Union[int, float], Union[int, float]],
 ]
 
+
 def monkey_patch_vision_encoder_before_compilation(model: Owlv2ForObjectDetection) -> Owlv2ForObjectDetection:
     """
     Due to global changes in transformers: https://github.com/huggingface/transformers/pull/43590
@@ -63,23 +64,14 @@ def monkey_patch_vision_encoder_before_compilation(model: Owlv2ForObjectDetectio
     While seeking general solution, this function patches instantiated `Owlv2VisionTransformer` forward method
     to match state from version 5.2.0
     """
-    from transformers.modeling_outputs import BaseModelOutputWithPooling
+    from transformers.modeling_outputs import BaseModelOutputWithPooling, BaseModelOutput
 
-    def forward_from_5_2_0(
+    def vision_model_forward_from_5_2_0(
         self,
         pixel_values: torch.FloatTensor,
-        output_attentions: bool | None = None,
-        output_hidden_states: bool | None = None,
         interpolate_pos_encoding: bool | None = False,
-        return_dict: bool | None = None,
-        **kwargs,
+        **kwargs
     ):
-        output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
-        output_hidden_states = (
-            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
-        )
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
-
         # Cast the input to the expected `dtype`
         expected_input_dtype = self.embeddings.patch_embedding.weight.dtype
         pixel_values = pixel_values.to(expected_input_dtype)
@@ -87,31 +79,47 @@ def monkey_patch_vision_encoder_before_compilation(model: Owlv2ForObjectDetectio
         hidden_states = self.embeddings(pixel_values, interpolate_pos_encoding=interpolate_pos_encoding)
         hidden_states = self.pre_layernorm(hidden_states)
 
-        encoder_outputs = self.encoder(
+        # here we made a change
+        last_hidden_state: torch.FloatTensor = self.encoder(
             inputs_embeds=hidden_states,
-            output_attentions=output_attentions,
-            output_hidden_states=output_hidden_states,
-            return_dict=return_dict,
+            raw_output=True,
             **kwargs,
         )
 
-        last_hidden_state = encoder_outputs[0]
         pooled_output = last_hidden_state[:, 0, :]
-
         pooled_output = self.post_layernorm(pooled_output)
-
-        if not return_dict:
-            return (last_hidden_state, pooled_output) + encoder_outputs[1:]
 
         return BaseModelOutputWithPooling(
             last_hidden_state=last_hidden_state,
             pooler_output=pooled_output,
-            hidden_states=encoder_outputs.hidden_states,
-            attentions=encoder_outputs.attentions,
         )
 
+
+    def vision_model_encoder_forward_patched_for_torch_compile(
+        self,
+        inputs_embeds,
+        attention_mask: torch.Tensor | None = None,
+        **kwargs
+    ):
+        hidden_states = inputs_embeds
+        for encoder_layer in self.layers:
+            hidden_states = encoder_layer(
+                hidden_states,
+                attention_mask,
+                **kwargs,
+            )
+        if kwargs.get("raw_output"):
+            return hidden_states
+        return BaseModelOutput(
+            last_hidden_state=hidden_states,
+        )
+
+    model.owlv2.vision_model.encoder.forward = types.MethodType(
+        vision_model_encoder_forward_patched_for_torch_compile,
+        model.owlv2.vision_model.encoder,
+    )
     model.owlv2.vision_model.forward = types.MethodType(
-        forward_from_5_2_0,
+        vision_model_forward_from_5_2_0,
         model.owlv2.vision_model
     )
     return model
@@ -213,7 +221,7 @@ class OWLv2HF(
                 return None
             self._model = monkey_patch_vision_encoder_before_compilation(self._model)
             self._model.owlv2.vision_model = torch.compile(
-                self._model.owlv2.vision_model
+                self._model.owlv2.vision_model,
             )
             example_image = torch.randint(
                 low=0, high=255, size=(3, 128, 128), dtype=torch.uint8
