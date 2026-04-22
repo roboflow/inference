@@ -216,4 +216,4 @@ inference_testing
 *.rrd
 
 # Test-downloaded model artifacts
-inference_model_manager/tests/integration_tests/models/
+inference_model_manager/tests/integration_tests/assets/
