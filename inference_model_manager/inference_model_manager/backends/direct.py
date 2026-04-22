@@ -219,13 +219,16 @@ class DirectBackend(Backend):
             self._last_inference_ts = t0
             self._latencies.append(elapsed)
 
-    def _record_inference(self, t0: float, future: Future) -> None:
+    def record_inference(self, t0: float, error: bool = False) -> None:
         elapsed = time.monotonic() - t0
         self._inference_count += 1
         self._last_inference_ts = t0
         self._latencies.append(elapsed)
-        if future.exception() is not None:
+        if error:
             self._error_count += 1
+
+    def _record_inference(self, t0: float, future: Future) -> None:
+        self.record_inference(t0, error=future.exception() is not None)
 
     # ------------------------------------------------------------------
     # Lifecycle

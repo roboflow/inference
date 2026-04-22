@@ -1,13 +1,17 @@
 from __future__ import annotations
 
+import asyncio
+import json
 import logging
 import pickle
 import threading
+import time
 import uuid
 from concurrent.futures import Future, ThreadPoolExecutor
 from typing import Any, Dict, List, Literal, Optional
 
 from inference_model_manager.backends.base import Backend
+from inference_model_manager.dispatch import invoke_task
 
 logger = logging.getLogger(__name__)
 
@@ -289,15 +293,20 @@ class ModelManager:
             KeyError: If model_id is not loaded.
             ValueError: If task is not supported by the model.
         """
-        from inference_model_manager.dispatch import invoke_task
-
         backend = self._get_backend(model_id)
 
         if hasattr(backend, "submit_slot"):
             raw_input = kwargs.pop("images", None)
             return self.submit(model_id, task=task, raw_input=raw_input, **kwargs).result()
 
-        return invoke_task(backend.model, task=task, **kwargs)
+        t0 = time.monotonic()
+        try:
+            result = invoke_task(backend.model, task=task, **kwargs)
+        except Exception:
+            backend.record_inference(t0, error=True)
+            raise
+        backend.record_inference(t0, error=False)
+        return result
 
     async def process_async(
         self, model_id: str, task: Optional[str] = None, **kwargs: Any
@@ -310,8 +319,6 @@ class ModelManager:
             KeyError: If model_id is not loaded.
             ValueError: If task is not supported by the model.
         """
-        import asyncio
-
         backend = self._get_backend(model_id)
 
         if hasattr(backend, "submit_slot"):
@@ -321,11 +328,8 @@ class ModelManager:
                 None, lambda: self.submit(model_id, task=task, raw_input=raw_input, **kwargs).result()
             )
 
-        from inference_model_manager.dispatch import invoke_task
-
-        loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(
-            None, lambda: invoke_task(backend.model, task=task, **kwargs)
+        return await asyncio.get_running_loop().run_in_executor(
+            None, lambda: self.process(model_id, task=task, **kwargs)
         )
 
     def submit(
@@ -357,8 +361,9 @@ class ModelManager:
 
         # Subprocess backend: we manage the pool
         if hasattr(backend, "submit_slot"):
-            import json
-
+            # Accept images via raw_input param or images kwarg
+            if raw_input is None:
+                raw_input = kwargs.pop("images", None)
             to_bytes = _get_to_bytes()
             input_bytes = to_bytes(raw_input) if raw_input is not None else b""
             if input_bytes and len(input_bytes) > self._pool.data_slot_bytes:
@@ -393,8 +398,6 @@ class ModelManager:
             return future
 
         # Direct backend: run in thread pool via task dispatch
-        from inference_model_manager.dispatch import invoke_task
-
         future = self._executor.submit(
             invoke_task, backend.model, task=task, **kwargs
         )
