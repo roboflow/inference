@@ -227,7 +227,7 @@ class ModelState:
 
 
 class BackendLike(Protocol):
-    def signal_slot(self, slot_id: int, req_id: int) -> None: ...
+    def signal_slot(self, slot_id: int, req_id: int, params_bytes: bytes = ...) -> None: ...
 
 
 # ---------------------------------------------------------------------------
@@ -340,6 +340,8 @@ class ModelManagerProcess:
         fs.loading = False
         fs.loaded = True
         fs.sleeping = False
+        # Prevent immediate eviction — treat load time as first access
+        self._model_access.setdefault(model_id, time.monotonic())
 
         if self._loop is not None and fs.load_waiters:
             self._loop.call_soon_threadsafe(self._flush_load_waiters, model_id)

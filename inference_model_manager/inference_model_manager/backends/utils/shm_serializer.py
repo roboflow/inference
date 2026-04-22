@@ -71,6 +71,10 @@ def pack(
     def _write_array(arr: np.ndarray, *, is_tensor: bool) -> _ShmRef:
         nonlocal current_offset
         arr = np.ascontiguousarray(arr)
+        # Align offset to dtype's alignment requirement
+        alignment = arr.dtype.alignment
+        if alignment > 1:
+            current_offset = (current_offset + alignment - 1) & ~(alignment - 1)
         nbytes = arr.nbytes
         if current_offset + nbytes > buf_len:
             raise ValueError(
