@@ -49,7 +49,7 @@ from contextlib import asynccontextmanager
 from multiprocessing.shared_memory import SharedMemory
 from typing import Optional
 
-from inference_model_manager.serializers import serialize_json
+from inference_server.serializers import serialize_json
 
 import uvicorn
 import zmq
@@ -559,7 +559,7 @@ async def unload_model(request: Request) -> Response:
 
 if __name__ == "__main__":
     uvicorn.run(
-        "inference_models.app:app",
+        "inference_server.app:app",
         host="0.0.0.0",
         port=int(os.environ.get("PORT", "8000")),
         workers=int(os.environ.get("NUM_WORKERS", "4")),

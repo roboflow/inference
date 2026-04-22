@@ -7,10 +7,10 @@ Each uvicorn worker connects to MMP via ZMQ and attaches the shared SHM pool.
 Usage::
 
     # Plain HTTP (dev/local):
-    python -m inference_models.server
+    python -m inference_server.server
 
     # HTTPS with self-signed cert (remote machine):
-    SSL_CERTFILE=/path/c.pem SSL_KEYFILE=/path/c.key python -m inference_models.server
+    SSL_CERTFILE=/path/c.pem SSL_KEYFILE=/path/c.key python -m inference_server.server
 
     # Or via start_server.sh (generates cert automatically):
     ./start_server.sh
@@ -164,7 +164,7 @@ def _preload_models(mmp_addr: str, preload_spec: str) -> None:
 
 
 def main() -> None:
-    from inference_model_manager.launcher import launch_orchestrated
+    from inference_server.launcher import launch_orchestrated
 
     # ── MPS ────────────────────────────────────────────────────────────────
     if os.environ.get("NVIDIA_MPS", "").strip() == "1":
@@ -233,7 +233,7 @@ def main() -> None:
         uvicorn_kwargs["ssl_certfile"] = ssl_cert
         uvicorn_kwargs["ssl_keyfile"]  = ssl_key
 
-    uvicorn.run("inference_model_manager.app:app", **uvicorn_kwargs)
+    uvicorn.run("inference_server.app:app", **uvicorn_kwargs)
 
 
 if __name__ == "__main__":

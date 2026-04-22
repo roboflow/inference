@@ -1,0 +1,28 @@
+[project]
+name = "inference-server"
+version = "0.1.0"
+description = "FastAPI inference server — orchestrated client for inference-model-manager"
+readme = "README.md"
+requires-python = ">=3.10,<3.13"
+dependencies = [
+  "inference-model-manager",
+  "fastapi>=0.115.0",
+  "uvicorn[standard]>=0.30.0",
+  "pyzmq>=26.0.0,<28.0.0",
+  "orjson>=3.9.0",
+  "filetype>=1.2.0",
+]
+
+[project.optional-dependencies]
+test = [
+  "pytest>=8.0.0",
+  "pytest-timeout>=2.3.0",
+]
+
+[tool.setuptools.packages.find]
+include = ["inference_server*"]
+exclude = ["tests*"]
+
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"

@@ -9,7 +9,7 @@ import numpy as np
 import orjson
 import torch
 
-from inference_model_manager.serializers import serialize_json
+from inference_server.serializers import serialize_json
 
 
 # ---------------------------------------------------------------------------
