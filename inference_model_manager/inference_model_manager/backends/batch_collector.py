@@ -16,7 +16,12 @@ class _PendingItem:
     __slots__ = ("priority", "seq", "tensor", "meta", "future", "nbytes")
 
     def __init__(
-        self, priority: int, seq: int, tensor: Any, meta: Any, future: Future,
+        self,
+        priority: int,
+        seq: int,
+        tensor: Any,
+        meta: Any,
+        future: Future,
         nbytes: int = 0,
     ) -> None:
         self.priority = priority
@@ -92,7 +97,8 @@ class BatchCollector:
         self._thread.start()
         logger.info(
             "BatchCollector started | max_size=%d | max_delay=%.1fms | max_bytes=%s",
-            max_size, max_delay_s * 1000,
+            max_size,
+            max_delay_s * 1000,
             f"{max_bytes}" if max_bytes > 0 else "unlimited",
         )
 
@@ -101,7 +107,11 @@ class BatchCollector:
     # ------------------------------------------------------------------
 
     def add(
-        self, tensor: Any, meta: Any, priority: int = 0, nbytes: int = 0,
+        self,
+        tensor: Any,
+        meta: Any,
+        priority: int = 0,
+        nbytes: int = 0,
     ) -> Future:
         """Add a pre-processed item. Returns a Future for the post-processed result.
 
@@ -163,9 +173,7 @@ class BatchCollector:
         else:
             for item in remaining:
                 if not item.future.done():
-                    item.future.set_exception(
-                        RuntimeError("BatchCollector stopped")
-                    )
+                    item.future.set_exception(RuntimeError("BatchCollector stopped"))
 
     # ------------------------------------------------------------------
     # Dispatch loop (runs on daemon thread)
