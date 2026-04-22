@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 import supervision as sv
 
 from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
@@ -6,43 +7,52 @@ from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.execution_engine.core import ExecutionEngine
 
-SEMANTIC_SEGMENTATION_WORKFLOW = {
-    "version": "1.3.0",
-    "inputs": [
-        {"type": "WorkflowImage", "name": "image"},
-        {
-            "type": "WorkflowParameter",
-            "name": "model_id",
-            "default_value": "deep-lab-v3-plus/2",
-        },
-    ],
-    "steps": [
-        {
-            "type": "roboflow_core/roboflow_semantic_segmentation_model@v2",
-            "name": "segmentation",
-            "image": "$inputs.image",
-            "model_id": "$inputs.model_id",
-        },
-    ],
-    "outputs": [
-        {
-            "type": "JsonField",
-            "name": "predictions",
-            "selector": "$steps.segmentation.predictions",
-        },
-        {
-            "type": "JsonField",
-            "name": "model_id",
-            "selector": "$steps.segmentation.model_id",
-        },
-    ],
-}
+SEMANTIC_SEGMENTATION_BLOCK_TYPES = [
+    "roboflow_core/roboflow_semantic_segmentation_model@v1",
+    "roboflow_core/roboflow_semantic_segmentation_model@v2",
+]
 
 
+def _build_semantic_segmentation_workflow(block_type: str) -> dict:
+    return {
+        "version": "1.3.0",
+        "inputs": [
+            {"type": "WorkflowImage", "name": "image"},
+            {
+                "type": "WorkflowParameter",
+                "name": "model_id",
+                "default_value": "deep-lab-v3-plus/2",
+            },
+        ],
+        "steps": [
+            {
+                "type": block_type,
+                "name": "segmentation",
+                "image": "$inputs.image",
+                "model_id": "$inputs.model_id",
+            },
+        ],
+        "outputs": [
+            {
+                "type": "JsonField",
+                "name": "predictions",
+                "selector": "$steps.segmentation.predictions",
+            },
+            {
+                "type": "JsonField",
+                "name": "model_id",
+                "selector": "$steps.segmentation.model_id",
+            },
+        ],
+    }
+
+
+@pytest.mark.parametrize("block_type", SEMANTIC_SEGMENTATION_BLOCK_TYPES)
 def test_semantic_segmentation_workflow_when_single_image_provided(
     model_manager: ModelManager,
     dogs_image: np.ndarray,
     roboflow_api_key: str,
+    block_type: str,
 ) -> None:
     # given
     workflow_init_parameters = {
@@ -51,7 +61,7 @@ def test_semantic_segmentation_workflow_when_single_image_provided(
         "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
     }
     execution_engine = ExecutionEngine.init(
-        workflow_definition=SEMANTIC_SEGMENTATION_WORKFLOW,
+        workflow_definition=_build_semantic_segmentation_workflow(block_type),
         init_parameters=workflow_init_parameters,
         max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
     )
@@ -88,10 +98,12 @@ def test_semantic_segmentation_workflow_when_single_image_provided(
     ), "Expected model_id output to match input"
 
 
+@pytest.mark.parametrize("block_type", SEMANTIC_SEGMENTATION_BLOCK_TYPES)
 def test_semantic_segmentation_workflow_when_batch_input_provided(
     model_manager: ModelManager,
     dogs_image: np.ndarray,
     roboflow_api_key: str,
+    block_type: str,
 ) -> None:
     # given
     workflow_init_parameters = {
@@ -100,7 +112,7 @@ def test_semantic_segmentation_workflow_when_batch_input_provided(
         "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
     }
     execution_engine = ExecutionEngine.init(
-        workflow_definition=SEMANTIC_SEGMENTATION_WORKFLOW,
+        workflow_definition=_build_semantic_segmentation_workflow(block_type),
         init_parameters=workflow_init_parameters,
         max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
     )
@@ -126,10 +138,12 @@ def test_semantic_segmentation_workflow_when_batch_input_provided(
         ), f"Expected rle_mask in detections data for image {i}"
 
 
+@pytest.mark.parametrize("block_type", SEMANTIC_SEGMENTATION_BLOCK_TYPES)
 def test_semantic_segmentation_workflow_with_serialization(
     model_manager: ModelManager,
     dogs_image: np.ndarray,
     roboflow_api_key: str,
+    block_type: str,
 ) -> None:
     # given
     workflow_init_parameters = {
@@ -138,7 +152,7 @@ def test_semantic_segmentation_workflow_with_serialization(
         "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
     }
     execution_engine = ExecutionEngine.init(
-        workflow_definition=SEMANTIC_SEGMENTATION_WORKFLOW,
+        workflow_definition=_build_semantic_segmentation_workflow(block_type),
         init_parameters=workflow_init_parameters,
         max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
     )
