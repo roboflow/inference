@@ -1,24 +1,11 @@
 from dataclasses import dataclass
-from typing import Literal, Tuple, List
-
-import torch
-
-MaskFormat = Literal["dense", "rle", "compact-rle"]
+from typing import Tuple
 
 
 @dataclass
 class RLEMask:
     """
-    cocotools RLE format, apart from having single `image_shape`
-    for all masks of the same size
+    cocotools RLE format, just unwrapped into dataclass
     """
-    image_shape: Tuple[int, int]  # (h, w)
-    rles: List[bytes]
-
-
-@dataclass
-class CompactMask:
-    image_shape: Tuple[int, int]  # (h, w)
-    rles: List[torch.Tensor]
-    crop_shapes: torch.Tensor  # (N,2): (h,w)
-    offsets: torch.Tensor  # (N,2): (x1,y1)
+    size: Tuple[int, int]  # (h, w)
+    counts: bytes

@@ -1,5 +1,5 @@
 from threading import Lock
-from typing import List, Optional, Tuple, Union, Set
+from typing import List, Optional, Tuple, Union
 
 import numpy as np
 import torch
@@ -7,7 +7,7 @@ import torch
 from inference_models import (
     InstanceDetections,
     InstanceSegmentationModel,
-    PreProcessingOverrides, MaskFormat,
+    PreProcessingOverrides,
 )
 from inference_models.configuration import (
     DEFAULT_DEVICE,
@@ -159,10 +159,6 @@ class YOLO26ForInstanceSegmentationOnnx(
     def class_names(self) -> List[str]:
         return self._class_names
 
-    @property
-    def supported_mask_formats(self) -> Set[MaskFormat]:
-        return {"dense", "rle", "compact-rle"}
-
     def pre_process(
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
@@ -198,7 +194,6 @@ class YOLO26ForInstanceSegmentationOnnx(
         model_results: Tuple[torch.Tensor, torch.Tensor],
         pre_processing_meta: List[PreProcessingMetadata],
         confidence: float = INFERENCE_MODELS_YOLO26_DEFAULT_CONFIDENCE,
-        mask_format: MaskFormat = "dense",
         **kwargs,
     ) -> List[InstanceDetections]:
         instances, protos = model_results
