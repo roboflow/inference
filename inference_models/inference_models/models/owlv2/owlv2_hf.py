@@ -1,3 +1,4 @@
+import types
 from collections import defaultdict
 from threading import RLock
 from typing import Dict, Iterable, List, Optional, Tuple, Union
@@ -53,6 +54,77 @@ Query = Dict[
     str,
     Tuple[Union[int, float], Union[int, float], Union[int, float], Union[int, float]],
 ]
+
+
+def monkey_patch_vision_encoder_before_compilation(
+    model: Owlv2ForObjectDetection,
+) -> Owlv2ForObjectDetection:
+    """
+    Due to global changes in transformers: https://github.com/huggingface/transformers/pull/43590
+    our way of compiling owlv2 vision_model turned out invalid.
+
+    While seeking general solution, this function patches instantiated `Owlv2VisionTransformer` forward method
+    to match state from version 5.2.0
+    """
+    from transformers.modeling_outputs import (
+        BaseModelOutput,
+        BaseModelOutputWithPooling,
+    )
+
+    def vision_model_forward_patched_for_torch_compile(
+        self,
+        pixel_values: torch.FloatTensor,
+        interpolate_pos_encoding: bool | None = False,
+        **kwargs,
+    ):
+        # Cast the input to the expected `dtype`
+        expected_input_dtype = self.embeddings.patch_embedding.weight.dtype
+        pixel_values = pixel_values.to(expected_input_dtype)
+
+        hidden_states = self.embeddings(
+            pixel_values, interpolate_pos_encoding=interpolate_pos_encoding
+        )
+        hidden_states = self.pre_layernorm(hidden_states)
+
+        # here we made a change
+        last_hidden_state: torch.FloatTensor = self.encoder(
+            inputs_embeds=hidden_states,
+            raw_output=True,
+            **kwargs,
+        )
+
+        pooled_output = last_hidden_state[:, 0, :]
+        pooled_output = self.post_layernorm(pooled_output)
+
+        return BaseModelOutputWithPooling(
+            last_hidden_state=last_hidden_state,
+            pooler_output=pooled_output,
+        )
+
+    def vision_model_encoder_forward_patched_for_torch_compile(
+        self, inputs_embeds, attention_mask: torch.Tensor | None = None, **kwargs
+    ):
+        hidden_states = inputs_embeds
+        for encoder_layer in self.layers:
+            hidden_states = encoder_layer(
+                hidden_states,
+                attention_mask,
+                **kwargs,
+            )
+        if kwargs.get("raw_output"):
+            return hidden_states
+        return BaseModelOutput(
+            last_hidden_state=hidden_states,
+        )
+
+    model.owlv2.vision_model.encoder.forward = types.MethodType(
+        vision_model_encoder_forward_patched_for_torch_compile,
+        model.owlv2.vision_model.encoder,
+    )
+    model.owlv2.vision_model.forward = types.MethodType(
+        vision_model_forward_patched_for_torch_compile, model.owlv2.vision_model
+    )
+    return model
 
 
 class OWLv2HF(
@@ -150,8 +222,9 @@ class OWLv2HF(
         with self._lock:
             if self._compiled:
                 return None
+            self._model = monkey_patch_vision_encoder_before_compilation(self._model)
             self._model.owlv2.vision_model = torch.compile(
-                self._model.owlv2.vision_model
+                self._model.owlv2.vision_model,
             )
             example_image = torch.randint(
                 low=0, high=255, size=(3, 128, 128), dtype=torch.uint8

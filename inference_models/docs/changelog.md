@@ -1,5 +1,12 @@
 # Changelog
 
+## `0.25.2`
+
+### Fixed
+
+- OWLv2 compilation procedure clash with `transformers~=5.5` brought to dependencies along with `0.25.1` release and
+Gemma 4.
+
 ## `0.25.1`
 
 ### Added

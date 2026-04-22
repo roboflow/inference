@@ -12,7 +12,6 @@ import requests
 from filelock import FileLock
 from requests import Response, Timeout
 from requests.exceptions import ChunkedEncodingError
-from urllib3.exceptions import ProtocolError
 from rich.progress import (
     BarColumn,
     DownloadColumn,
@@ -20,13 +19,14 @@ from rich.progress import (
     TimeRemainingColumn,
     TransferSpeedColumn,
 )
+from urllib3.exceptions import ProtocolError
 
 from inference_models.configuration import (
     API_CALLS_MAX_TRIES,
     API_CALLS_TIMEOUT,
     CHUNK_DOWNLOAD_CONNECT_TIMEOUT,
-    CHUNK_DOWNLOAD_READ_TIMEOUT,
     CHUNK_DOWNLOAD_MAX_ATTEMPTS,
+    CHUNK_DOWNLOAD_READ_TIMEOUT,
     DISABLE_INTERACTIVE_PROGRESS_BARS,
     FILE_LOCK_ACQUIRE_TIMEOUT,
     IDEMPOTENT_API_REQUEST_CODES_TO_RETRY,
@@ -667,7 +667,10 @@ def download_chunk(
         headers = {"Range": f"bytes={current_start}-{end}"}
         try:
             with requests.get(
-                url, headers=headers, stream=True, timeout=(connect_timeout, read_timeout)
+                url,
+                headers=headers,
+                stream=True,
+                timeout=(connect_timeout, read_timeout),
             ) as response:
                 if response.status_code in response_codes_to_retry:
                     retryable_http_since_last_range_advance += 1
@@ -724,7 +727,11 @@ def download_chunk(
                 # Sanity check: the server should have returned the correct content length
                 # Doesn't run in the unlikely scenario the content-length header is missing or malformed
                 content_length = response.headers.get("Content-Length")
-                if content_length and content_length.isdigit() and written < int(content_length):
+                if (
+                    content_length
+                    and content_length.isdigit()
+                    and written < int(content_length)
+                ):
                     current_start += written
                     retryable_http_since_last_range_advance = 0
                     _chunk_download_backoff_sleep(attempt)
