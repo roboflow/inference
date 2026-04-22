@@ -317,6 +317,10 @@ class DirectBackend(Backend):
     # ------------------------------------------------------------------
 
     @property
+    def model(self) -> Any:
+        return self._model
+
+    @property
     def device(self) -> str:
         if self._state_value == "sleeping":
             return "cpu"

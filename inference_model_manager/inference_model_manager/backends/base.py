@@ -176,6 +176,14 @@ class Backend(ABC):
         ...
 
     @property
+    def model(self) -> Any:
+        """Underlying model instance. Used by ModelManager.invoke() for task dispatch.
+
+        Returns None for subprocess backends (model lives in worker process).
+        """
+        return None
+
+    @property
     def worker_pid(self) -> Optional[int]:
         """OS PID of the worker subprocess, if applicable. None for in-process backends."""
         return None
