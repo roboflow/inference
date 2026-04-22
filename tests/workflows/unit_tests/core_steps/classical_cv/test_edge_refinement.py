@@ -4,7 +4,7 @@ import supervision as sv
 from pydantic import ValidationError
 
 from inference.core.workflows.core_steps.classical_cv.edge_refinement.v1 import (
-    OUTPUT_EDGE_VIS_KEY,
+    OUTPUT_EDGE_DETECTIONS_KEY,
     OUTPUT_PREDICTIONS_KEY,
     EdgeRefinementBlockV1,
     EdgeRefinementManifest,
@@ -121,7 +121,7 @@ def test_edge_refinement_manifest_describe_outputs():
     assert len(outputs) == 2
     output_names = {output.name for output in outputs}
     assert OUTPUT_PREDICTIONS_KEY in output_names
-    assert OUTPUT_EDGE_VIS_KEY in output_names
+    assert OUTPUT_EDGE_DETECTIONS_KEY in output_names
 
 
 def test_edge_refinement_manifest_get_execution_engine_compatibility():
@@ -168,9 +168,9 @@ def test_edge_refinement_block_with_no_masks(dogs_image: np.ndarray) -> None:
 
     # then
     assert OUTPUT_PREDICTIONS_KEY in result
-    assert OUTPUT_EDGE_VIS_KEY in result
+    assert OUTPUT_EDGE_DETECTIONS_KEY in result
     assert isinstance(result[OUTPUT_PREDICTIONS_KEY], sv.Detections)
-    assert isinstance(result[OUTPUT_EDGE_VIS_KEY], WorkflowImageData)
+    assert isinstance(result[OUTPUT_EDGE_DETECTIONS_KEY], sv.Detections)
 
 
 def test_edge_refinement_block_with_empty_detections(
@@ -206,7 +206,7 @@ def test_edge_refinement_block_with_empty_detections(
 
     # then
     assert OUTPUT_PREDICTIONS_KEY in result
-    assert OUTPUT_EDGE_VIS_KEY in result
+    assert OUTPUT_EDGE_DETECTIONS_KEY in result
     assert len(result[OUTPUT_PREDICTIONS_KEY]) == 0
 
 
@@ -262,17 +262,17 @@ def test_edge_refinement_block_with_simple_mask(dogs_image: np.ndarray) -> None:
 
     # then
     assert OUTPUT_PREDICTIONS_KEY in result
-    assert OUTPUT_EDGE_VIS_KEY in result
+    assert OUTPUT_EDGE_DETECTIONS_KEY in result
     refined_detections = result[OUTPUT_PREDICTIONS_KEY]
-    edge_vis = result[OUTPUT_EDGE_VIS_KEY]
+    edge_detections = result[OUTPUT_EDGE_DETECTIONS_KEY]
 
     assert isinstance(refined_detections, sv.Detections)
     assert len(refined_detections) == 1
     assert refined_detections.mask is not None
     assert refined_detections.mask[0].shape == mask.shape
 
-    assert isinstance(edge_vis, WorkflowImageData)
-    assert edge_vis.numpy_image.shape == (dogs_image.shape[0], dogs_image.shape[1], 3)
+    assert isinstance(edge_detections, sv.Detections)
+    assert edge_detections.mask is not None
 
 
 def test_edge_refinement_block_preserves_detection_metadata(
@@ -362,7 +362,7 @@ def test_edge_refinement_block_with_dilation(dogs_image: np.ndarray) -> None:
 
     # then
     assert OUTPUT_PREDICTIONS_KEY in result
-    assert OUTPUT_EDGE_VIS_KEY in result
+    assert OUTPUT_EDGE_DETECTIONS_KEY in result
     assert result[OUTPUT_PREDICTIONS_KEY].mask is not None
 
 

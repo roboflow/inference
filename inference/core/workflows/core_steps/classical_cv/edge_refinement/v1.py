@@ -78,7 +78,7 @@ This block requires instance segmentation predictions with masks. Input images s
 """
 
 OUTPUT_PREDICTIONS_KEY = "refined_segmentation"
-OUTPUT_EDGE_VIS_KEY = "edge_visualization"
+OUTPUT_EDGE_DETECTIONS_KEY = "edge_detections"
 
 
 class EdgeRefinementManifest(WorkflowBlockManifest):
@@ -199,8 +199,8 @@ class EdgeRefinementManifest(WorkflowBlockManifest):
                 kind=[INSTANCE_SEGMENTATION_PREDICTION_KIND],
             ),
             OutputDefinition(
-                name=OUTPUT_EDGE_VIS_KEY,
-                kind=[IMAGE_KIND],
+                name=OUTPUT_EDGE_DETECTIONS_KEY,
+                kind=[INSTANCE_SEGMENTATION_PREDICTION_KIND],
             ),
         ]
 
@@ -300,19 +300,41 @@ class EdgeRefinementBlockV1(WorkflowBlock):
             if stats[lbl, cv2.CC_STAT_AREA] >= min_area:
                 edge_filtered[labels == lbl] = 255
 
-        # Visualization: raw filtered edge pixels
-        edge_vis = np.zeros((H, W, 3), dtype=np.uint8)
-        edge_vis[edge_filtered > 0] = (255, 0, 0)
-        edge_vis_image = WorkflowImageData.copy_and_replace(
-            origin_image_data=image, numpy_image=edge_vis
+        # Convert edge contours to Detections object for debugging visualization
+        edge_contours, _ = cv2.findContours(
+            edge_filtered, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE
         )
+        edge_masks = []
+        edge_xyxy = []
+        for contour in edge_contours:
+            edge_mask = np.zeros((H, W), dtype=np.uint8)
+            cv2.drawContours(edge_mask, [contour], 0, 1, -1)
+            edge_masks.append(edge_mask.astype(bool))
+            if len(contour) > 0:
+                x = contour[:, 0, 0]
+                y = contour[:, 0, 1]
+                x_min, x_max = int(np.min(x)), int(np.max(x))
+                y_min, y_max = int(np.min(y)), int(np.max(y))
+                edge_xyxy.append([x_min, y_min, x_max, y_max])
+            else:
+                edge_xyxy.append([0, 0, W - 1, H - 1])
+
+        if len(edge_masks) > 0:
+            edge_detections = sv.Detections(
+                xyxy=np.array(edge_xyxy, dtype=np.float32),
+                mask=np.array(edge_masks, dtype=bool),
+            )
+        else:
+            edge_detections = sv.Detections(
+                xyxy=np.array([], dtype=np.float32).reshape(0, 4),
+            )
 
         edge_bool = edge_filtered > 0
 
         if segmentation.mask is None or len(segmentation) == 0:
             return {
                 OUTPUT_PREDICTIONS_KEY: segmentation,
-                OUTPUT_EDGE_VIS_KEY: edge_vis_image,
+                OUTPUT_EDGE_DETECTIONS_KEY: edge_detections,
             }
 
         refined_masks = []
@@ -384,5 +406,5 @@ class EdgeRefinementBlockV1(WorkflowBlock):
         )
         return {
             OUTPUT_PREDICTIONS_KEY: refined_detections,
-            OUTPUT_EDGE_VIS_KEY: edge_vis_image,
+            OUTPUT_EDGE_DETECTIONS_KEY: edge_detections,
         }
