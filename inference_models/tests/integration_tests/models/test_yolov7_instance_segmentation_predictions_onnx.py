@@ -191,3 +191,35 @@ def test_seg_onnx_package_with_static_batch_size_and_letterbox_torch_tensor(
     assert np.allclose(predictions[1].class_id[0].cpu().numpy(), [0], atol=1)
     assert np.allclose(predictions[1].confidence[0].cpu().numpy(), [0.7349], atol=0.005)
     assert 16600 <= predictions[1].mask[0].cpu().numpy().sum() <= 16900
+
+
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+def test_onnx_per_class_confidence_preserves_objectness_row(
+    asl_yolov7_onnx_seg_static_bs_letterbox: str,
+    asl_image_numpy: np.ndarray,
+) -> None:
+    """YOLOv7 IS uses slice-space class_ids where class_id 0 is the objectness
+    slot (no real class). The baseline (see
+    `test_seg_onnx_package_with_static_batch_size_and_letterbox_numpy` above)
+    returns one obj-dominated detection at conf 0.7349. Per-class thresholds
+    must not block objectness-dominated rows, so the detection survives even
+    with every real class set to 0.99."""
+    from inference_models.models.yolov7.yolov7_instance_segmentation_onnx import (
+        YOLOv7ForInstanceSegmentationOnnx,
+    )
+    from inference_models.weights_providers.entities import RecommendedParameters
+
+    model = YOLOv7ForInstanceSegmentationOnnx.from_pretrained(
+        model_name_or_path=asl_yolov7_onnx_seg_static_bs_letterbox,
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
+    )
+    model.recommended_parameters = RecommendedParameters(
+        confidence=0.6,
+        per_class_confidence={name: 1.01 for name in model.class_names},
+    )
+    predictions = model(asl_image_numpy, confidence="best")
+    assert np.allclose(predictions[0].class_id[0].cpu().numpy(), [0], atol=1)
+    assert np.allclose(
+        predictions[0].confidence[0].cpu().numpy(), [0.7349], atol=0.005
+    )

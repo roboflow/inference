@@ -175,3 +175,26 @@ def test_face_detector_predictions_for_torch_list(
         ),
         atol=3,
     )
+
+
+@pytest.mark.torch_models
+def test_per_class_confidence_filters_faces(
+    mediapipe_face_detector_package: str,
+    man_image_numpy: np.ndarray,
+) -> None:
+    from inference_models.models.mediapipe_face_detection.face_detection import (
+        MediaPipeFaceDetector,
+    )
+    from inference_models.weights_providers.entities import RecommendedParameters
+
+    model = MediaPipeFaceDetector.from_pretrained(mediapipe_face_detector_package)
+    baseline = model(man_image_numpy, confidence=0.25)
+    baseline_count = baseline[1][0].xyxy.shape[0]
+    assert baseline_count > 0
+
+    model.recommended_parameters = RecommendedParameters(
+        confidence=0.25,
+        per_class_confidence={name: 1.01 for name in model.class_names},
+    )
+    filtered = model(man_image_numpy, confidence="best")
+    assert filtered[1][0].xyxy.shape[0] < baseline_count

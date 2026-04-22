@@ -575,3 +575,30 @@ def test_seg_onnx_package_with_static_batch_size_static_crop_and_stretch_torch_t
     assert np.allclose(predictions[1].class_id[0].cpu().numpy(), [24], atol=1)
     assert np.allclose(predictions[1].confidence[0].cpu().numpy(), [0.2552], atol=0.006)
     assert 7000 <= predictions[1].mask[0].cpu().numpy().sum() <= 7500
+
+
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+def test_onnx_per_class_confidence_blocks_specific_class(
+    asl_yolact_onnx_seg_static_bs_letterbox: str,
+    asl_image_numpy: np.ndarray,
+) -> None:
+    """Baseline (see `test_seg_onnx_package_with_static_batch_size_and_letterbox_numpy`
+    above) top detection is class 18 at conf 0.5068. Setting a 0.99 per-class
+    threshold on class 18 drops the detection."""
+    from inference_models.models.yolact.yolact_instance_segmentation_onnx import (
+        YOLOACTForInstanceSegmentationOnnx,
+    )
+    from inference_models.weights_providers.entities import RecommendedParameters
+
+    model = YOLOACTForInstanceSegmentationOnnx.from_pretrained(
+        model_name_or_path=asl_yolact_onnx_seg_static_bs_letterbox,
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
+    )
+    class_names = list(model.class_names)
+    model.recommended_parameters = RecommendedParameters(
+        confidence=0.25,
+        per_class_confidence={class_names[18]: 0.99},
+    )
+    predictions = model(asl_image_numpy, confidence="best")
+    assert 18 not in predictions[0].class_id.cpu().tolist()

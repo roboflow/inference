@@ -1394,3 +1394,23 @@ def test_torch_package_with_nonsquare_letterbox_torch_list(
         assert torch.allclose(
             pred.xyxy.cpu(), _NONSQUARE_LETTERBOX_TORCH_EXPECTED_XYXY_TORCH, atol=2
         )
+
+
+@pytest.mark.slow
+@pytest.mark.torch_models
+def test_torch_per_class_confidence_filters_detections(
+    coin_counting_rfdetr_nano_torch_cs_stretch_package: str,
+    coins_counting_image_numpy: np.ndarray,
+) -> None:
+    from inference_models.weights_providers.entities import RecommendedParameters
+
+    model = RFDetrForObjectDetectionTorch.from_pretrained(
+        model_name_or_path=coin_counting_rfdetr_nano_torch_cs_stretch_package,
+    )
+    class_names = list(model.class_names)
+    model.recommended_parameters = RecommendedParameters(
+        confidence=0.3,
+        per_class_confidence={class_names[1]: 1.01},
+    )
+    predictions = model(coins_counting_image_numpy, confidence="best")
+    assert 1 not in predictions[0].class_id.cpu().tolist()

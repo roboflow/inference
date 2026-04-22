@@ -10,7 +10,7 @@ TWO_STAGE_WORKFLOW_WITH_FLOW_CONTROL = {
     "inputs": [{"type": "WorkflowImage", "name": "image"}],
     "steps": [
         {
-            "type": "roboflow_core/roboflow_object_detection_model@v2",
+            "type": "roboflow_core/roboflow_object_detection_model@v3",
             "name": "general_detection",
             "image": "$inputs.image",
             "model_id": "yolov8n-640",
@@ -23,11 +23,11 @@ TWO_STAGE_WORKFLOW_WITH_FLOW_CONTROL = {
             "predictions": "$steps.general_detection.predictions",
         },
         {
-            "type": "roboflow_core/roboflow_classification_model@v2",
+            "type": "roboflow_core/roboflow_classification_model@v3",
             "name": "breds_classification",
             "image": "$steps.cropping.crops",
             "model_id": "dog-breed-xpaq6/1",
-            "confidence": 0.09,
+            "confidence_mode": "custom", "custom_confidence": 0.09,
         },
         {
             "type": "roboflow_core/continue_if@v1",
