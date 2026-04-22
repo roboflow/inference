@@ -305,3 +305,30 @@ def test_trt_package_torch_batch(
         atol=5,
     )
     assert 16000 <= predictions[1].mask.cpu().sum().item() <= 16200
+
+
+@pytest.mark.slow
+@pytest.mark.trt_extras
+def test_trt_per_class_confidence_blocks_specific_class(
+    yolov8_seg_asl_trt_package: str,
+    asl_image_numpy: np.ndarray,
+) -> None:
+    """Baseline (see `test_trt_package_numpy` above) returns 1 detection of
+    class 20. Setting a 1.01 per-class threshold on class 20 leaves no
+    detections."""
+    from inference_models.models.yolov8.yolov8_instance_segmentation_trt import (
+        YOLOv8ForInstanceSegmentationTRT,
+    )
+    from inference_models.weights_providers.entities import RecommendedParameters
+
+    model = YOLOv8ForInstanceSegmentationTRT.from_pretrained(
+        model_name_or_path=yolov8_seg_asl_trt_package,
+        engine_host_code_allowed=True,
+    )
+    class_names = list(model.class_names)
+    model.recommended_parameters = RecommendedParameters(
+        confidence=0.25,
+        per_class_confidence={class_names[20]: 1.01},
+    )
+    predictions = model(asl_image_numpy, confidence="best")
+    assert predictions[0].class_id.numel() == 0

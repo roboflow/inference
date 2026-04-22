@@ -9,7 +9,7 @@ from inference_models.configuration import (
     DEFAULT_DEVICE,
     INFERENCE_MODELS_YOLO26_DEFAULT_CONFIDENCE,
 )
-from inference_models.entities import ColorFormat
+from inference_models.entities import Confidence, ColorFormat
 from inference_models.errors import CorruptedModelPackageError
 from inference_models.models.common.model_packages import get_model_package_contents
 from inference_models.models.common.roboflow.model_packages import (
@@ -20,6 +20,7 @@ from inference_models.models.common.roboflow.model_packages import (
     parse_inference_config,
 )
 from inference_models.models.common.roboflow.post_processing import (
+    ConfidenceFilter,
     post_process_nms_fused_model_output,
     rescale_detections,
 )
@@ -27,6 +28,7 @@ from inference_models.models.common.roboflow.pre_processing import (
     pre_process_network_input,
 )
 from inference_models.models.common.torch import generate_batch_chunks
+from inference_models.weights_providers.entities import RecommendedParameters
 
 
 class YOLO26ForObjectDetectionTorchScript(
@@ -38,6 +40,7 @@ class YOLO26ForObjectDetectionTorchScript(
         cls,
         model_name_or_path: str,
         device: torch.device = DEFAULT_DEVICE,
+        recommended_parameters: Optional[RecommendedParameters] = None,
         **kwargs,
     ) -> "YOLO26ForObjectDetectionTorchScript":
         model_package_content = get_model_package_contents(
@@ -84,6 +87,7 @@ class YOLO26ForObjectDetectionTorchScript(
             class_names=class_names,
             inference_config=inference_config,
             device=device,
+            recommended_parameters=recommended_parameters,
         )
 
     def __init__(
@@ -92,12 +96,14 @@ class YOLO26ForObjectDetectionTorchScript(
         inference_config: InferenceConfig,
         class_names: List[str],
         device: torch.device,
+        recommended_parameters=None,
     ):
         self._model = model
         self._inference_config = inference_config
         self._class_names = class_names
         self._device = device
         self._lock = Lock()
+        self.recommended_parameters = recommended_parameters
 
     @property
     def class_names(self) -> List[str]:
@@ -143,9 +149,15 @@ class YOLO26ForObjectDetectionTorchScript(
         self,
         model_results: torch.Tensor,
         pre_processing_meta: List[PreProcessingMetadata],
-        confidence: float = INFERENCE_MODELS_YOLO26_DEFAULT_CONFIDENCE,
+        confidence: Confidence = "default",
         **kwargs,
     ) -> List[Detections]:
+        confidence_filter = ConfidenceFilter(
+            confidence=confidence,
+            recommended_parameters=self.recommended_parameters,
+            default_confidence=INFERENCE_MODELS_YOLO26_DEFAULT_CONFIDENCE,
+        )
+        confidence = confidence_filter.get_threshold(self.class_names)
         filtered_results = post_process_nms_fused_model_output(
             output=model_results, conf_thresh=confidence
         )

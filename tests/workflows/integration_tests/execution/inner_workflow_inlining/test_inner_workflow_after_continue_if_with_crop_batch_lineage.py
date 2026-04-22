@@ -113,7 +113,7 @@ def _nested_workflow(inner: dict) -> dict:
         ],
         "steps": [
             {
-                "type": "roboflow_core/roboflow_object_detection_model@v2",
+                "type": "roboflow_core/roboflow_object_detection_model@v3",
                 "name": "general_detection",
                 "image": "$inputs.image",
                 "model_id": "yolov8n-640",
@@ -126,11 +126,11 @@ def _nested_workflow(inner: dict) -> dict:
                 "predictions": "$steps.general_detection.predictions",
             },
             {
-                "type": "roboflow_core/roboflow_classification_model@v2",
+                "type": "roboflow_core/roboflow_classification_model@v3",
                 "name": "breds_classification",
                 "image": "$steps.cropping.crops",
                 "model_id": "dog-breed/1",
-                "confidence": _CLASSIFICATION_REQUEST_CONFIDENCE_THRESHOLD,
+                "confidence_mode": "custom", "custom_confidence": _CLASSIFICATION_REQUEST_CONFIDENCE_THRESHOLD,
             },
             {
                 "type": "roboflow_core/continue_if@v1",
@@ -188,7 +188,7 @@ def _flat_workflow() -> dict:
         ],
         "steps": [
             {
-                "type": "roboflow_core/roboflow_object_detection_model@v2",
+                "type": "roboflow_core/roboflow_object_detection_model@v3",
                 "name": "general_detection",
                 "image": "$inputs.image",
                 "model_id": "yolov8n-640",
@@ -201,11 +201,11 @@ def _flat_workflow() -> dict:
                 "predictions": "$steps.general_detection.predictions",
             },
             {
-                "type": "roboflow_core/roboflow_classification_model@v2",
+                "type": "roboflow_core/roboflow_classification_model@v3",
                 "name": "breds_classification",
                 "image": "$steps.cropping.crops",
                 "model_id": "dog-breed/1",
-                "confidence": _CLASSIFICATION_REQUEST_CONFIDENCE_THRESHOLD,
+                "confidence_mode": "custom", "custom_confidence": _CLASSIFICATION_REQUEST_CONFIDENCE_THRESHOLD,
             },
             {
                 "type": "roboflow_core/continue_if@v1",

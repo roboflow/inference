@@ -59,6 +59,18 @@ DISABLE_VERBOSE_LOGGER = get_boolean_from_env(
 AUTO_LOADER_CACHE_EXPIRATION_MINUTES = get_integer_from_env(
     variable_name="AUTO_LOADER_CACHE_EXPIRATION_MINUTES", default=1440
 )
+CHUNK_DOWNLOAD_CONNECT_TIMEOUT = get_float_from_env(
+    variable_name="CHUNK_DOWNLOAD_CONNECT_TIMEOUT",
+    default=30.0,
+)
+CHUNK_DOWNLOAD_READ_TIMEOUT = get_float_from_env(
+    variable_name="CHUNK_DOWNLOAD_READ_TIMEOUT",
+    default=60.0,
+)
+CHUNK_DOWNLOAD_MAX_ATTEMPTS = get_integer_from_env(
+    variable_name="CHUNK_DOWNLOAD_MAX_ATTEMPTS",
+    default=60,
+)
 FILE_LOCK_ACQUIRE_TIMEOUT = get_integer_from_env(
     variable_name="INFERENCE_MODELS_FILE_LOCK_ACQUIRE_TIMEOUT", default=20
 )
@@ -234,6 +246,35 @@ INFERENCE_MODELS_QWEN25_VL_DEFAULT_SKIP_SPECIAL_TOKENS = get_boolean_from_env(
     variable_name="INFERENCE_MODELS_QWEN25_VL_DEFAULT_SKIP_SPECIAL_TOKENS",
     default=True,
 )
+INFERENCE_MODELS_GEMMA4_DEFAULT_MAX_NEW_TOKENS = get_integer_from_env(
+    variable_name="INFERENCE_MODELS_GEMMA4_DEFAULT_MAX_NEW_TOKENS",
+    default=512,
+)
+INFERENCE_MODELS_GEMMA4_DEFAULT_DO_SAMPLE = get_boolean_from_env(
+    variable_name="INFERENCE_MODELS_GEMMA4_DEFAULT_DO_SAMPLE",
+    default=INFERENCE_MODELS_DEFAULT_DO_SAMPLE,
+)
+INFERENCE_MODELS_GEMMA4_DEFAULT_ENABLE_THINKING = get_boolean_from_env(
+    variable_name="INFERENCE_MODELS_GEMMA4_DEFAULT_ENABLE_THINKING",
+    default=False,
+)
+INFERENCE_MODELS_GEMMA4_DEFAULT_SKIP_SPECIAL_TOKENS = get_boolean_from_env(
+    variable_name="INFERENCE_MODELS_GEMMA4_DEFAULT_SKIP_SPECIAL_TOKENS",
+    default=True,
+)
+# Official Gemma 4 sampling recommendations when ``do_sample`` is True (HF model cards).
+INFERENCE_MODELS_GEMMA4_DEFAULT_TEMPERATURE = get_float_from_env(
+    variable_name="INFERENCE_MODELS_GEMMA4_DEFAULT_TEMPERATURE",
+    default=1.0,
+)
+INFERENCE_MODELS_GEMMA4_DEFAULT_TOP_P = get_float_from_env(
+    variable_name="INFERENCE_MODELS_GEMMA4_DEFAULT_TOP_P",
+    default=0.95,
+)
+INFERENCE_MODELS_GEMMA4_DEFAULT_TOP_K = get_integer_from_env(
+    variable_name="INFERENCE_MODELS_GEMMA4_DEFAULT_TOP_K",
+    default=64,
+)
 INFERENCE_MODELS_RESNET_DEFAULT_CONFIDENCE = get_float_from_env(
     variable_name="INFERENCE_MODELS_RESNET_DEFAULT_CONFIDENCE",
     default=INFERENCE_MODELS_DEFAULT_CONFIDENCE,
@@ -257,6 +298,14 @@ INFERENCE_MODELS_ROBOFLOW_INSTANT_MAX_DETECTIONS = get_integer_from_env(
 INFERENCE_MODELS_SMOL_VLM_DEFAULT_MAX_NEW_TOKENS = get_integer_from_env(
     variable_name="INFERENCE_MODELS_SMOL_VLM_DEFAULT_MAX_NEW_TOKENS",
     default=400,
+)
+INFERENCE_MODELS_GEMMA4_DEFAULT_IMAGE_PROMPT = os.getenv(
+    "INFERENCE_MODELS_GEMMA4_DEFAULT_IMAGE_PROMPT",
+    "Describe what you see in this image.",
+)
+INFERENCE_MODELS_GEMMA4_DEFAULT_SYSTEM_PROMPT = os.getenv(
+    "INFERENCE_MODELS_GEMMA4_DEFAULT_SYSTEM_PROMPT",
+    "You are Gemma 4, a helpful multimodal assistant. Answer clearly and accurately.",
 )
 INFERENCE_MODELS_SMOL_VLM_DEFAULT_DO_SAMPLE = get_boolean_from_env(
     variable_name="INFERENCE_MODELS_SMOL_VLM_DEFAULT_DO_SAMPLE",

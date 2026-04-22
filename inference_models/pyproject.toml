@@ -1,6 +1,6 @@
 [project]
 name = "inference-models"
-version = "0.24.4"
+version = "0.26.0"
 description = "The new inference engine for Computer Vision models"
 readme = "README.md"
 requires-python = ">=3.10,<3.13"
@@ -12,7 +12,7 @@ dependencies = [
   "requests>=2.32.0,<3.0.0",
   "supervision>=0.26.0",
   "backoff~=2.2.0",
-  "transformers>=5.2.0,<5.3.0",
+  "transformers~=5.5",
   "timm>=1.0.0,<2.0.0",
   "accelerate>=1.0.0,<2.0.0",
   "einops>=0.7.0,<1.0.0",
