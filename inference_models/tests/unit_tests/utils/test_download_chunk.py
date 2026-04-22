@@ -206,7 +206,9 @@ def test_download_chunk_caps_retryable_http_before_any_range_progress(
 
     with patch("inference_models.utils.download.requests.get") as get_mock:
         get_mock.return_value = _context_manager_for_response(bad)
-        with pytest.raises(RetryError, match="without advancing the downloaded byte offset"):
+        with pytest.raises(
+            RetryError, match="without advancing the downloaded byte offset"
+        ):
             download_chunk(
                 url="https://example.test/file",
                 start=0,
@@ -279,7 +281,9 @@ def test_download_chunk_caps_retryable_http_after_partial_without_further_progre
             _context_manager_for_response(bad),
             _context_manager_for_response(bad),
         ]
-        with pytest.raises(RetryError, match="without advancing the downloaded byte offset"):
+        with pytest.raises(
+            RetryError, match="without advancing the downloaded byte offset"
+        ):
             download_chunk(
                 url="https://example.test/file",
                 start=0,

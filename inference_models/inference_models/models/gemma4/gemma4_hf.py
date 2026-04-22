@@ -4,8 +4,8 @@ from typing import Any, Final, FrozenSet, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
-from PIL import Image
 from peft import PeftModel
+from PIL import Image
 from transformers import AutoModelForMultimodalLM, AutoProcessor, BitsAndBytesConfig
 from transformers.utils import is_flash_attn_2_available
 
@@ -30,12 +30,11 @@ from inference_models.models.common.roboflow.pre_processing import (
     pre_process_network_input,
 )
 
-
 # HF Supported budgets for tokens representing images.
 # A higher token budget preserves more visual detail at the cost of additional compute,
 # while a lower budget enables faster inference for tasks that don't require fine-grained understanding
-_GEMMA4_IMAGE_TOKEN_BUDGETS: Final[FrozenSet[int]] = (
-    frozenset({70, 140, 280, 560, 1120})
+_GEMMA4_IMAGE_TOKEN_BUDGETS: Final[FrozenSet[int]] = frozenset(
+    {70, 140, 280, 560, 1120}
 )
 
 # Per-image soft-token counts produced by the HF vision preprocessor when building
@@ -51,12 +50,12 @@ _PROCESSOR_NUM_SOFT_TOKENS_PER_VIDEO_KEY: Final[str] = "num_soft_tokens_per_vide
 _TOKENIZER_OFFSET_MAPPING_KEY: Final[str] = "offset_mapping"
 
 # All keys above that we defensively remove before ``self._model.generate(**...)``.
-_BATCH_KEYS_TO_STRIP_BEFORE_GENERATE: Final[FrozenSet[str]] = (
-    frozenset({
+_BATCH_KEYS_TO_STRIP_BEFORE_GENERATE: Final[FrozenSet[str]] = frozenset(
+    {
         _PROCESSOR_NUM_SOFT_TOKENS_PER_IMAGE_KEY,
         _PROCESSOR_NUM_SOFT_TOKENS_PER_VIDEO_KEY,
         _TOKENIZER_OFFSET_MAPPING_KEY,
-    })
+    }
 )
 
 
@@ -239,9 +238,7 @@ class Gemma4HF:
         self._processor = processor
         self._inference_config = inference_config
         self._device = device
-        self.default_system_prompt = (
-            "You are Gemma 4, a helpful multimodal assistant. Answer clearly and accurately."
-        )
+        self.default_system_prompt = "You are Gemma 4, a helpful multimodal assistant. Answer clearly and accurately."
         self._lock = Lock()
 
     def prompt(

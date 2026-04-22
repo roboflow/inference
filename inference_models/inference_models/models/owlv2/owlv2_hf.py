@@ -56,7 +56,9 @@ Query = Dict[
 ]
 
 
-def monkey_patch_vision_encoder_before_compilation(model: Owlv2ForObjectDetection) -> Owlv2ForObjectDetection:
+def monkey_patch_vision_encoder_before_compilation(
+    model: Owlv2ForObjectDetection,
+) -> Owlv2ForObjectDetection:
     """
     Due to global changes in transformers: https://github.com/huggingface/transformers/pull/43590
     our way of compiling owlv2 vision_model turned out invalid.
@@ -64,19 +66,24 @@ def monkey_patch_vision_encoder_before_compilation(model: Owlv2ForObjectDetectio
     While seeking general solution, this function patches instantiated `Owlv2VisionTransformer` forward method
     to match state from version 5.2.0
     """
-    from transformers.modeling_outputs import BaseModelOutputWithPooling, BaseModelOutput
+    from transformers.modeling_outputs import (
+        BaseModelOutput,
+        BaseModelOutputWithPooling,
+    )
 
     def vision_model_forward_patched_for_torch_compile(
         self,
         pixel_values: torch.FloatTensor,
         interpolate_pos_encoding: bool | None = False,
-        **kwargs
+        **kwargs,
     ):
         # Cast the input to the expected `dtype`
         expected_input_dtype = self.embeddings.patch_embedding.weight.dtype
         pixel_values = pixel_values.to(expected_input_dtype)
 
-        hidden_states = self.embeddings(pixel_values, interpolate_pos_encoding=interpolate_pos_encoding)
+        hidden_states = self.embeddings(
+            pixel_values, interpolate_pos_encoding=interpolate_pos_encoding
+        )
         hidden_states = self.pre_layernorm(hidden_states)
 
         # here we made a change
@@ -94,12 +101,8 @@ def monkey_patch_vision_encoder_before_compilation(model: Owlv2ForObjectDetectio
             pooler_output=pooled_output,
         )
 
-
     def vision_model_encoder_forward_patched_for_torch_compile(
-        self,
-        inputs_embeds,
-        attention_mask: torch.Tensor | None = None,
-        **kwargs
+        self, inputs_embeds, attention_mask: torch.Tensor | None = None, **kwargs
     ):
         hidden_states = inputs_embeds
         for encoder_layer in self.layers:
@@ -119,10 +122,10 @@ def monkey_patch_vision_encoder_before_compilation(model: Owlv2ForObjectDetectio
         model.owlv2.vision_model.encoder,
     )
     model.owlv2.vision_model.forward = types.MethodType(
-        vision_model_forward_patched_for_torch_compile,
-        model.owlv2.vision_model
+        vision_model_forward_patched_for_torch_compile, model.owlv2.vision_model
     )
     return model
+
 
 class OWLv2HF(
     OpenVocabularyObjectDetectionModel[
