@@ -23,11 +23,11 @@ FLORENCE2_GROUNDED_CLASSIFICATION_WORKFLOW_DEFINITION = {
     ],
     "steps": [
         {
-            "type": "roboflow_core/roboflow_object_detection_model@v2",
+            "type": "roboflow_core/roboflow_object_detection_model@v3",
             "name": "model_1",
             "images": "$inputs.image",
             "model_id": "yolov8n-640",
-            "confidence": "$inputs.confidence",
+            "confidence_mode": "custom", "custom_confidence": "$inputs.confidence",
         },
         {
             "type": "roboflow_core/florence_2@v1",
@@ -148,7 +148,7 @@ FLORENCE2_GROUNDED_INSTANCE_SEGMENTATION_WORKFLOW_DEFINITION = {
     "inputs": [{"type": "InferenceImage", "name": "image"}],
     "steps": [
         {
-            "type": "roboflow_core/roboflow_object_detection_model@v2",
+            "type": "roboflow_core/roboflow_object_detection_model@v3",
             "name": "model_1",
             "images": "$inputs.image",
             "model_id": "yolov8n-640",
@@ -298,7 +298,7 @@ FLORENCE2_GROUNDED_CAPTION_WORKFLOW_DEFINITION = {
     "inputs": [{"type": "InferenceImage", "name": "image"}],
     "steps": [
         {
-            "type": "roboflow_core/roboflow_object_detection_model@v2",
+            "type": "roboflow_core/roboflow_object_detection_model@v3",
             "name": "model_1",
             "images": "$inputs.image",
             "model_id": "yolov8n-640",

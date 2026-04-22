@@ -10,11 +10,11 @@ WORKFLOW_DEFINITION = {
     "inputs": [{"type": "InferenceImage", "name": "image"}],
     "steps": [
         {
-            "type": "roboflow_core/roboflow_multi_label_classification_model@v1",
+            "type": "roboflow_core/roboflow_multi_label_classification_model@v3",
             "name": "multi_label",
             "images": "$inputs.image",
             "model_id": "animal-classification-9lufm/1",
-            "confidence": 0.2,
+            "confidence_mode": "custom", "custom_confidence": 0.2,
         },
         {
             "type": "roboflow_core/property_definition@v1",
@@ -133,7 +133,7 @@ WORKFLOW_DEFINITION = {
             "height": 50,
         },
         {
-            "type": "roboflow_core/roboflow_classification_model@v1",
+            "type": "roboflow_core/roboflow_classification_model@v3",
             "name": "single_label",
             "images": "$inputs.image",
             "model_id": "animals-2kk5l/1",

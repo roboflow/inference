@@ -689,16 +689,21 @@ class InferenceModelsClassificationAdapter(Model):
         # Single-label classification: top-1 always wins regardless of
         # confidence, so per-class refinement isn't meaningful here. The base
         # class deliberately opts out of recommendedParameters entirely. The
-        # response builder still uses kwargs.get("confidence", 0.5) for the
-        # cutoff that decides which alternative classes show up.
+        # response builder still uses the confidence as a cutoff that decides
+        # which alternative classes show up — string-valued "best"/"default"
+        # have no meaningful mapping here, so fall back to 0.5.
         post_processed_predictions = self._model.post_process(
             predictions, **mapped_kwargs
+        )
+        raw_confidence = kwargs.get("confidence")
+        confidence_threshold = (
+            raw_confidence if isinstance(raw_confidence, (int, float)) else 0.5
         )
         return prepare_classification_response(
             post_processed_predictions,
             image_sizes=returned_metadata,
             class_names=self.class_names,
-            confidence_threshold=kwargs.get("confidence") or 0.5,
+            confidence_threshold=confidence_threshold,
         )
 
     def clear_cache(self, delete_from_disk: bool = True) -> None:

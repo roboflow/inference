@@ -74,7 +74,7 @@ def _nested_parent_workflow_crop_only(inner: dict) -> dict:
         "inputs": [{"type": "WorkflowImage", "name": "image"}],
         "steps": [
             {
-                "type": "roboflow_core/roboflow_object_detection_model@v2",
+                "type": "roboflow_core/roboflow_object_detection_model@v3",
                 "name": "general_detection",
                 "image": "$inputs.image",
                 "model_id": "yolov8n-640",
@@ -107,7 +107,7 @@ def _nested_parent_workflow_with_detection_offset(
         "inputs": [{"type": "WorkflowImage", "name": "image"}],
         "steps": [
             {
-                "type": "roboflow_core/roboflow_object_detection_model@v2",
+                "type": "roboflow_core/roboflow_object_detection_model@v3",
                 "name": "general_detection",
                 "image": "$inputs.image",
                 "model_id": "yolov8n-640",
@@ -146,7 +146,7 @@ def _flat_parent_workflow_crop_only() -> dict:
         "inputs": [{"type": "WorkflowImage", "name": "image"}],
         "steps": [
             {
-                "type": "roboflow_core/roboflow_object_detection_model@v2",
+                "type": "roboflow_core/roboflow_object_detection_model@v3",
                 "name": "general_detection",
                 "image": "$inputs.image",
                 "model_id": "yolov8n-640",
@@ -176,7 +176,7 @@ def _flat_parent_workflow_with_detection_offset(
         "inputs": [{"type": "WorkflowImage", "name": "image"}],
         "steps": [
             {
-                "type": "roboflow_core/roboflow_object_detection_model@v2",
+                "type": "roboflow_core/roboflow_object_detection_model@v3",
                 "name": "general_detection",
                 "image": "$inputs.image",
                 "model_id": "yolov8n-640",
