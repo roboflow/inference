@@ -19,6 +19,7 @@ Two launch paths:
 Select via env var:  INFERENCE_DEPLOYMENT_MODE=inprocess|orchestrated
 or pass mode= to launch().
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -31,13 +32,14 @@ from inference_model_manager.model_manager import ModelManager
 
 logger = logging.getLogger(__name__)
 
-_MODE_INPROCESS    = "inprocess"
+_MODE_INPROCESS = "inprocess"
 _MODE_ORCHESTRATED = "orchestrated"
 
 
 # ---------------------------------------------------------------------------
 # LaunchHandle — returned by launch_orchestrated()
 # ---------------------------------------------------------------------------
+
 
 class LaunchHandle:
     """Handle to a running ModelManagerProcess.
@@ -53,22 +55,21 @@ class LaunchHandle:
 
     def __init__(
         self,
-        manager:  ModelManager,
-        mmp,                          # ModelManagerProcess (imported lazily)
+        manager: ModelManager,
+        mmp,  # ModelManagerProcess (imported lazily)
         mmp_addr: str,
         shm_name: str,
-        _thread:  threading.Thread,
+        _thread: threading.Thread,
     ) -> None:
-        self.manager  = manager
-        self.mmp      = mmp
+        self.manager = manager
+        self.mmp = mmp
         self.mmp_addr = mmp_addr
         self.shm_name = shm_name
-        self._thread  = _thread
+        self._thread = _thread
 
     def __repr__(self) -> str:
         return (
-            f"LaunchHandle(mmp_addr={self.mmp_addr!r}, "
-            f"shm_name={self.shm_name!r})"
+            f"LaunchHandle(mmp_addr={self.mmp_addr!r}, " f"shm_name={self.shm_name!r})"
         )
 
     def shutdown(self, timeout: float = 10.0) -> None:
@@ -81,6 +82,7 @@ class LaunchHandle:
 # ---------------------------------------------------------------------------
 # launch_inprocess
 # ---------------------------------------------------------------------------
+
 
 def launch_inprocess(
     *,
@@ -101,20 +103,21 @@ def launch_inprocess(
 # launch_orchestrated
 # ---------------------------------------------------------------------------
 
+
 def launch_orchestrated(
     *,
-    max_pinned_memory_mb:  int   = 0,
-    n_slots:               int   = 64,
-    input_mb:              float = 20.0,
-    mmp_addr:              Optional[str] = None,
+    max_pinned_memory_mb: int = 0,
+    n_slots: int = 64,
+    input_mb: float = 20.0,
+    mmp_addr: Optional[str] = None,
     gpu_eviction_threshold: float = 0.90,
     evict_check_interval_s: float = 5.0,
-    stale_reap_interval_s:  float = 10.0,
-    stale_slot_max_age_s:   float = 30.0,
-    mmp_start_timeout:      float = 30.0,
-    decoder:                str   = "imagecodecs",
-    batch_max_size:         int   = 0,
-    batch_max_wait_ms:      float = 5.0,
+    stale_reap_interval_s: float = 10.0,
+    stale_slot_max_age_s: float = 30.0,
+    mmp_start_timeout: float = 30.0,
+    decoder: str = "imagecodecs",
+    batch_max_size: int = 0,
+    batch_max_wait_ms: float = 5.0,
 ) -> LaunchHandle:
     """Start a ModelManagerProcess and return a LaunchHandle.
 
@@ -130,10 +133,10 @@ def launch_orchestrated(
         #   sock.connect(handle.mmp_addr)
         #   pool = SHMPool.attach(handle.shm_name, n_slots=128, ...)
     """
-    from inference_model_manager.model_manager_process import ModelManagerProcess
     from inference_model_manager.backends.utils.transport import zmq_addr as _zmq_addr
+    from inference_model_manager.model_manager_process import ModelManagerProcess
 
-    manager   = ModelManager(max_pinned_memory_mb=max_pinned_memory_mb)
+    manager = ModelManager(max_pinned_memory_mb=max_pinned_memory_mb)
     bind_addr = mmp_addr or _zmq_addr("mmprocess")
 
     mmp = ModelManagerProcess(
@@ -149,7 +152,7 @@ def launch_orchestrated(
         batch_max_wait_ms=batch_max_wait_ms,
     )
 
-    ready  = threading.Event()
+    ready = threading.Event()
     thread = threading.Thread(
         target=lambda: asyncio.run(mmp.run(addr=bind_addr, ready_event=ready)),
         daemon=True,
@@ -179,6 +182,7 @@ def launch_orchestrated(
 # ---------------------------------------------------------------------------
 # launch — unified entry point
 # ---------------------------------------------------------------------------
+
 
 def launch(
     mode: Optional[str] = None,

@@ -30,6 +30,7 @@ except ImportError:
 # Marker — survives pickle round-trip
 # ---------------------------------------------------------------------------
 
+
 class _ShmRef:
     """Placeholder for an array whose data lives in shared memory."""
 
@@ -42,6 +43,7 @@ class _ShmRef:
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
 
 def pack(
     obj: Any,
@@ -76,17 +78,22 @@ def pack(
                 f"shared memory buffer ({buf_len} bytes)"
             )
         target = np.ndarray(
-            arr.shape, dtype=arr.dtype, buffer=shm_buf, offset=current_offset,
+            arr.shape,
+            dtype=arr.dtype,
+            buffer=shm_buf,
+            offset=current_offset,
         )
         np.copyto(target, arr)
         idx = len(descriptors)
-        descriptors.append({
-            "d": str(arr.dtype),
-            "s": list(arr.shape),
-            "o": current_offset,
-            "n": nbytes,
-            "T": is_tensor,
-        })
+        descriptors.append(
+            {
+                "d": str(arr.dtype),
+                "s": list(arr.shape),
+                "o": current_offset,
+                "n": nbytes,
+                "T": is_tensor,
+            }
+        )
         current_offset += nbytes
         return _ShmRef(idx)
 
@@ -108,8 +115,7 @@ def pack(
             return {k: _replace(v) for k, v in o.items()}
         if dataclasses.is_dataclass(o) and not isinstance(o, type):
             fields = {
-                f.name: _replace(getattr(o, f.name))
-                for f in dataclasses.fields(o)
+                f.name: _replace(getattr(o, f.name)) for f in dataclasses.fields(o)
             }
             return type(o)(**fields)
 
@@ -170,8 +176,7 @@ def unpack(
             return {k: _restore(v) for k, v in o.items()}
         if dataclasses.is_dataclass(o) and not isinstance(o, type):
             fields = {
-                f.name: _restore(getattr(o, f.name))
-                for f in dataclasses.fields(o)
+                f.name: _restore(getattr(o, f.name)) for f in dataclasses.fields(o)
             }
             return type(o)(**fields)
 

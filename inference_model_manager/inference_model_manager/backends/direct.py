@@ -2,12 +2,11 @@ from __future__ import annotations
 
 import asyncio
 import functools
+import logging
 import time
 from collections import deque
 from concurrent.futures import Future, ThreadPoolExecutor
 from typing import Any, Callable, Dict, List, Optional
-
-import logging
 
 from inference_model_manager.backends.base import Backend
 
@@ -49,7 +48,8 @@ class DirectBackend(Backend):
         self._state_value: str = "loading"
 
         self._decode: Callable[[bytes], Any] = make_decoder(
-            decoder, device=device or "cpu",
+            decoder,
+            device=device or "cpu",
         )
 
         load_kwargs = dict(kwargs)
@@ -57,9 +57,13 @@ class DirectBackend(Backend):
             load_kwargs["device"] = device
         logger.info(
             "DirectBackend(%s): loading model (device=%s, decoder=%s)",
-            model_id, device or "default", decoder,
+            model_id,
+            device or "default",
+            decoder,
         )
-        self._model = AutoModel.from_pretrained(model_id, api_key=api_key, **load_kwargs)
+        self._model = AutoModel.from_pretrained(
+            model_id, api_key=api_key, **load_kwargs
+        )
         self._state_value = "loaded"
 
         self._device_str = self._detect_device()
@@ -82,7 +86,9 @@ class DirectBackend(Backend):
         self._latencies: deque[float] = deque(maxlen=1000)
 
         # Batching
-        self._batch_collector = self._create_batch_collector() if self._batch_max_size > 1 else None
+        self._batch_collector = (
+            self._create_batch_collector() if self._batch_max_size > 1 else None
+        )
 
         model_type = type(self._model).__name__
         class_count = len(self.class_names) if self.class_names else 0
@@ -90,8 +96,13 @@ class DirectBackend(Backend):
             "DirectBackend(%s): ready | model_type=%s | device=%s | decoder=%s | "
             "class_names=%d | model_max_batch=%s | effective_batch=%s | "
             "batch_delay=%.1fms | executor=%s",
-            model_id, model_type, self._device_str, decoder,
-            class_count, model_max, self._batch_max_size or "off",
+            model_id,
+            model_type,
+            self._device_str,
+            decoder,
+            class_count,
+            model_max,
+            self._batch_max_size or "off",
             batch_max_delay_ms,
             "shared" if executor else "none",
         )
@@ -99,7 +110,9 @@ class DirectBackend(Backend):
     def _detect_device(self) -> str:
         if self._model is None:
             return self._device_str or "cpu"
-        params = list(self._model.parameters()) if hasattr(self._model, "parameters") else []
+        params = (
+            list(self._model.parameters()) if hasattr(self._model, "parameters") else []
+        )
         if params:
             return str(params[0].device)
         buffers = list(self._model.buffers()) if hasattr(self._model, "buffers") else []
@@ -175,7 +188,9 @@ class DirectBackend(Backend):
 
         if self._batch_collector is not None:
             t0 = time.monotonic()
-            future = self._batch_collector.add(raw_input, kwargs or None, priority=priority)
+            future = self._batch_collector.add(
+                raw_input, kwargs or None, priority=priority
+            )
             future.add_done_callback(lambda f: self._record_inference(t0, f))
             return future
 
@@ -219,7 +234,9 @@ class DirectBackend(Backend):
     def drain_and_unload(self, timeout_s: float = 30.0) -> None:
         """Stop accepting new work, drain batch collector, then unload."""
         self._state_value = "draining"
-        logger.info("DirectBackend(%s): draining (timeout=%.1fs)", self._model_id, timeout_s)
+        logger.info(
+            "DirectBackend(%s): draining (timeout=%.1fs)", self._model_id, timeout_s
+        )
 
         if self._batch_collector is not None:
             self._batch_collector.stop(drain=True)
@@ -248,7 +265,9 @@ class DirectBackend(Backend):
             self._batch_collector = None
         import torch
 
-        params = list(self._model.parameters()) if hasattr(self._model, "parameters") else []
+        params = (
+            list(self._model.parameters()) if hasattr(self._model, "parameters") else []
+        )
         buffers = list(self._model.buffers()) if hasattr(self._model, "buffers") else []
         if not params and not buffers:
             return None
@@ -275,7 +294,9 @@ class DirectBackend(Backend):
         import torch
 
         device = self._sleep_device or torch.device(self._device_str or "cuda")
-        params = list(self._model.parameters()) if hasattr(self._model, "parameters") else []
+        params = (
+            list(self._model.parameters()) if hasattr(self._model, "parameters") else []
+        )
         buffers = list(self._model.buffers()) if hasattr(self._model, "buffers") else []
         for p in params:
             p.data = p.data.to(device, non_blocking=True)

@@ -81,7 +81,8 @@ def _convert(obj: Any) -> Any:
 
     # Fallback: try __dict__
     if hasattr(obj, "__dict__"):
-        return {k: _convert(v) for k, v in obj.__dict__.items()
-                if not k.startswith("_")}
+        return {
+            k: _convert(v) for k, v in obj.__dict__.items() if not k.startswith("_")
+        }
 
     return str(obj)
