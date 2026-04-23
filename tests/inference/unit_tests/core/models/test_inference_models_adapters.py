@@ -75,8 +75,8 @@ def test_prepare_classification_response_flattens_singleton_output_dimensions() 
 
 def test_prepare_classification_response_fails_on_class_count_mismatch() -> None:
     prediction = ClassificationPrediction(
-        class_id=torch.tensor([2], dtype=torch.long),
-        confidence=torch.tensor([[0.1, 0.2, 0.7]]),
+        class_id=torch.tensor([0], dtype=torch.long),
+        confidence=torch.tensor([[0.7]]),
     )
 
     with pytest.raises(PostProcessingError, match="class names metadata"):
