@@ -56,9 +56,9 @@ documentation](https://inference.roboflow.com/quickstart/configure_api_key/).
 class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
-            "name": "Roboflow Text-Image-Pairs Model",
+            "name": "Multimodal Model",
             "version": "v1",
-            "short_description": "Run a fine-tuned text-image-pairs (VLM) model hosted on Roboflow.",
+            "short_description": "Run a fine-tuned multimodal (VLM) model hosted on Roboflow.",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "model",
