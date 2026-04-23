@@ -38,6 +38,7 @@ from inference.core.env import (
     RFDETR_ONNX_MAX_RESOLUTION,
     VALID_INFERENCE_MODELS_BACKENDS,
 )
+from inference.core.exceptions import PostProcessingError
 from inference.core.models.base import Model
 from inference.core.roboflow_api import get_extra_weights_provider_headers
 from inference.core.utils.image_utils import load_image_bgr, load_image_rgb
@@ -817,12 +818,17 @@ def prepare_multi_label_classification_response(
     """
     results = []
     for prediction, image_size in zip(post_processed_predictions, image_sizes):
+        class_confidences = _reshape_classification_confidences(
+            confidence=prediction.confidence.cpu(),
+            expected_num_images=1,
+            class_names=class_names,
+        )[0].tolist()
         image_predictions_dict = {
             class_names[class_id]: {
                 "confidence": confidence,
                 "class_id": class_id,
             }
-            for class_id, confidence in enumerate(prediction.confidence.cpu().tolist())
+            for class_id, confidence in enumerate(class_confidences)
         }
         predicted_classes = [
             class_names[class_id] for class_id in prediction.class_ids.tolist()
@@ -845,9 +851,12 @@ def prepare_classification_response(
     confidence_threshold: float,
 ) -> List[ClassificationInferenceResponse]:
     responses = []
-    for classes_confidence, image_size in zip(
-        post_processed_predictions.confidence.cpu().tolist(), image_sizes
-    ):
+    batch_confidences = _reshape_classification_confidences(
+        confidence=post_processed_predictions.confidence.cpu(),
+        expected_num_images=len(image_sizes),
+        class_names=class_names,
+    )
+    for classes_confidence, image_size in zip(batch_confidences.tolist(), image_sizes):
         individual_classes_predictions = []
         for i, cls_name in enumerate(class_names):
             class_score = float(classes_confidence[i])
@@ -879,6 +888,26 @@ def prepare_classification_response(
         )
         responses.append(response)
     return responses
+
+
+def _reshape_classification_confidences(
+    confidence: torch.Tensor,
+    expected_num_images: int,
+    class_names: List[str],
+) -> torch.Tensor:
+    expected_num_classes = len(class_names)
+    expected_num_scores = expected_num_images * expected_num_classes
+    actual_num_scores = confidence.numel()
+    if actual_num_scores != expected_num_scores:
+        raise PostProcessingError(
+            "Classification model output has shape "
+            f"{tuple(confidence.shape)} containing {actual_num_scores} confidence "
+            f"score(s), but response metadata expects {expected_num_images} image(s) "
+            f"x {expected_num_classes} class name(s) = {expected_num_scores} score(s). "
+            "This usually means the model package class names metadata does not match "
+            "the classifier head."
+        )
+    return confidence.reshape(expected_num_images, expected_num_classes)
 
 
 def draw_predictions(inference_request, inference_response, class_names: List[str]):
