@@ -28,6 +28,7 @@ from inference.core.entities.responses.inference import (
     SemanticSegmentationInferenceResponse,
     SemanticSegmentationPrediction,
 )
+from inference.core.exceptions import PostProcessingError
 from inference.core.env import (
     ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES,
     ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES,
@@ -753,7 +754,12 @@ def prepare_multi_label_classification_response(
     for prediction, image_size in zip(post_processed_predictions, image_sizes):
         image_predictions_dict = dict()
         predicted_classes = []
-        for class_id, confidence in enumerate(prediction.confidence.cpu().tolist()):
+        class_confidences = _reshape_classification_confidences(
+            confidence=prediction.confidence.cpu(),
+            expected_num_images=1,
+            class_names=class_names,
+        )[0].tolist()
+        for class_id, confidence in enumerate(class_confidences):
             cls_name = class_names[class_id]
             image_predictions_dict[cls_name] = {
                 "confidence": confidence,
@@ -779,9 +785,12 @@ def prepare_classification_response(
     confidence_threshold: float,
 ) -> List[ClassificationInferenceResponse]:
     responses = []
-    for classes_confidence, image_size in zip(
-        post_processed_predictions.confidence.cpu().tolist(), image_sizes
-    ):
+    batch_confidences = _reshape_classification_confidences(
+        confidence=post_processed_predictions.confidence.cpu(),
+        expected_num_images=len(image_sizes),
+        class_names=class_names,
+    )
+    for classes_confidence, image_size in zip(batch_confidences.tolist(), image_sizes):
         individual_classes_predictions = []
         for i, cls_name in enumerate(class_names):
             class_score = float(classes_confidence[i])
@@ -813,6 +822,26 @@ def prepare_classification_response(
         )
         responses.append(response)
     return responses
+
+
+def _reshape_classification_confidences(
+    confidence: torch.Tensor,
+    expected_num_images: int,
+    class_names: List[str],
+) -> torch.Tensor:
+    expected_num_classes = len(class_names)
+    expected_num_scores = expected_num_images * expected_num_classes
+    actual_num_scores = confidence.numel()
+    if actual_num_scores != expected_num_scores:
+        raise PostProcessingError(
+            "Classification model output has shape "
+            f"{tuple(confidence.shape)} containing {actual_num_scores} confidence "
+            f"score(s), but response metadata expects {expected_num_images} image(s) "
+            f"x {expected_num_classes} class name(s) = {expected_num_scores} score(s). "
+            "This usually means the model package class names metadata does not match "
+            "the classifier head."
+        )
+    return confidence.reshape(expected_num_images, expected_num_classes)
 
 
 def draw_predictions(inference_request, inference_response, class_names: List[str]):
