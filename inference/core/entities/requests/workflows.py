@@ -28,6 +28,11 @@ class WorkflowInferenceRequest(BaseModel):
     workflow_id: Optional[str] = Field(
         default=None, description="Optional identifier of workflow"
     )
+    workflow_url: Optional[str] = Field(
+        default=None,
+        description="Optional URL of the workflow; forwarded to blocks (e.g. Vision Events) "
+        "for event attribution when callers pass a non-sensical workflow_id.",
+    )
 
 
 class PredefinedWorkflowInferenceRequest(WorkflowInferenceRequest):

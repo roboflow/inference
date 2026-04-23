@@ -1261,6 +1261,7 @@ class HttpInterface(BaseInterface):
                     profiler=profiler,
                     executor=self.shared_thread_pool_executor,
                     workflow_id=workflow_request.workflow_id,
+                    workflow_url=workflow_request.workflow_url,
                 )
             is_preview = False
             if hasattr(workflow_request, "is_preview"):
