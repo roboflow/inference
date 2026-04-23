@@ -604,6 +604,7 @@ class SubprocessBackend(Backend):
         self._slot_lock = threading.Lock()
         self._on_result_callback: Optional[Callable] = on_result_callback
         self._recv_running = True
+        self._recv_dead = False
         self._recv_thread = threading.Thread(
             target=self._recv_loop,
             daemon=True,
@@ -619,7 +620,13 @@ class SubprocessBackend(Backend):
 
     def signal_slot(self, slot_id: int, req_id: int, params_bytes: bytes = b"{}") -> None:
         """Enqueue T_SLOT_READY for the recv thread to send. Thread-safe."""
+        if self._recv_dead:
+            raise RuntimeError(
+                f"SubprocessBackend({self._model_id!r}): recv thread is dead, "
+                "cannot enqueue work"
+            )
         self._outbound.put((slot_id, req_id, params_bytes))
+        self._last_worker_activity = time.monotonic()
 
     def set_on_result_callback(self, callback: Callable[[int, int, int], None]) -> None:
         """Set MMP callback: called on each T_RESULT from worker."""
@@ -667,7 +674,12 @@ class SubprocessBackend(Backend):
             try:
                 frames = self._zmq_sock.recv_multipart()
             except zmq.ZMQError:
-                break
+                logger.error(
+                    "SubprocessBackend(%s): recv thread exiting due to ZMQError",
+                    self._model_id,
+                )
+                self._recv_dead = True
+                return
 
             self._last_worker_activity = time.monotonic()
             msg = frames[0]
