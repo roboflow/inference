@@ -104,7 +104,7 @@ def _gpu_used_fraction() -> float:
         if torch.cuda.is_available():
             total = torch.cuda.get_device_properties(0).total_memory
             if total > 0:
-                used = torch.cuda.memory_allocated(0) + torch.cuda.memory_reserved(0)
+                used = torch.cuda.memory_reserved(0)
                 return used / total
     except Exception:
         pass

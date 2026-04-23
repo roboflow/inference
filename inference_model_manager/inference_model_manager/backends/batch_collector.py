@@ -220,9 +220,10 @@ class BatchCollector:
 
             if batch:
                 actual_delay = time.monotonic() - batch_start
-                self._batches_dispatched += 1
-                self._total_batch_items += len(batch)
-                self._total_batch_delay_s += actual_delay
+                with self._lock:
+                    self._batches_dispatched += 1
+                    self._total_batch_items += len(batch)
+                    self._total_batch_delay_s += actual_delay
                 self._process_batch(batch)
 
     def _process_batch(self, batch: List[_PendingItem]) -> None:

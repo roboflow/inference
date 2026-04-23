@@ -296,9 +296,10 @@ class SHMPool:
         struct.pack_into("<I", self._shm.buf, off + _OFF_RESULT_SZ, result_size)
         self._shm.buf[off + _OFF_STATUS] = SlotStatus.DONE
 
-    def mark_error(self, slot_id: int, error_code: int = 1) -> None:
-        """Set status=ERROR + error_code."""
+    def mark_error(self, slot_id: int, error_code: int = 1, error_size: int = 0) -> None:
+        """Set status=ERROR + error_code. error_size = bytes of error detail in DATA area."""
         off = self._slot_offset(slot_id)
+        struct.pack_into("<I", self._shm.buf, off + _OFF_RESULT_SZ, error_size)
         self._shm.buf[off + _OFF_STATUS] = SlotStatus.ERROR
         self._shm.buf[off + _OFF_ERROR] = error_code
 
