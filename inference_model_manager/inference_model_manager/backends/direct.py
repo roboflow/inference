@@ -286,9 +286,8 @@ class DirectBackend(Backend):
             p.data = p.data.cpu().pin_memory()
             pinned_bytes += p.numel() * p.element_size()
         for b in buffers:
-            if b.is_floating_point() or b.is_complex():
-                b.data = b.data.cpu().pin_memory()
-                pinned_bytes += b.numel() * b.element_size()
+            b.data = b.data.cpu().pin_memory()
+            pinned_bytes += b.numel() * b.element_size()
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
         self._state_value = "sleeping"
@@ -309,8 +308,7 @@ class DirectBackend(Backend):
         for p in params:
             p.data = p.data.to(device, non_blocking=True)
         for b in buffers:
-            if b.is_floating_point() or b.is_complex():
-                b.data = b.data.to(device, non_blocking=True)
+            b.data = b.data.to(device, non_blocking=True)
         if torch.cuda.is_available():
             torch.cuda.synchronize(device)
         self._device_str = str(device)

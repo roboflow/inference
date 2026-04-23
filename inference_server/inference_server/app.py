@@ -41,6 +41,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import pickle
 import struct
@@ -60,6 +61,8 @@ from inference_model_manager.backends.utils.transport import zmq_addr
 from inference_server.auth import validate_api_key
 from inference_server.serializers import serialize_json
 
+logger = logging.getLogger(__name__)
+
 # ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
@@ -75,6 +78,25 @@ _ALLOC_TIMEOUT_S = float(os.environ.get("INFERENCE_ALLOC_TIMEOUT_S", "2.0"))
 #   [HEADER 64B | DATA _SHM_DATA_SIZE]
 _HEADER_SIZE = 64
 _SLOT_TOTAL = _HEADER_SIZE + _SHM_DATA_SIZE
+_SLOT_STATUS_ERROR = 5  # SlotStatus.ERROR
+_OFF_STATUS = 0
+_OFF_RESULT_SZ = 8
+
+
+class _SlotHeaderView:
+    __slots__ = ("status", "result_size")
+    def __init__(self, status: int, result_size: int) -> None:
+        self.status = status
+        self.result_size = result_size
+
+
+def _read_slot_header(slot_id: int) -> _SlotHeaderView | None:
+    off = slot_id * _SLOT_TOTAL
+    if off + _HEADER_SIZE > len(_shm.buf):
+        return None
+    status = _shm.buf[off + _OFF_STATUS]
+    result_size = struct.unpack_from("<I", _shm.buf, off + _OFF_RESULT_SZ)[0]
+    return _SlotHeaderView(status, result_size)
 
 # ---------------------------------------------------------------------------
 # Image format detection (magic bytes via ``filetype`` lib + numpy .npy)
@@ -216,8 +238,11 @@ def _dispatch(msg_type: bytes, frames: list[bytes]) -> None:
             err = frames[0][8] if len(frames[0]) > 8 else 0
             _resolve(req_id, ("error", err))
 
+        else:
+            logger.warning("_dispatch: unknown message type %r (frames=%d)", msg_type, len(frames))
+
     except (struct.error, IndexError):
-        pass  # malformed — drop
+        logger.warning("_dispatch: malformed message type=%r frames=%d", msg_type, len(frames), exc_info=True)
 
 
 def _resolve(req_id: int, value: tuple) -> None:
@@ -347,9 +372,13 @@ async def _submit_and_wait(
 
 def _free_slot(slot_id: int) -> None:
     async def _send():
-        await _sock.send_multipart([_T_FREE, struct.pack(">I", slot_id)])
+        try:
+            await _sock.send_multipart([_T_FREE, struct.pack(">I", slot_id)])
+        except Exception:
+            logger.warning("_free_slot: failed to send FREE for slot %d", slot_id, exc_info=True)
 
-    asyncio.create_task(_send())
+    task = asyncio.create_task(_send())
+    task.add_done_callback(lambda t: t.result() if not t.cancelled() and t.exception() is None else None)
 
 
 def _write_input(slot_id: int, chunk: bytes | memoryview, offset: int) -> None:
@@ -440,6 +469,8 @@ async def infer(request: Request, api_key: BearerToken) -> Response:
     instance = params.pop("instance", "")
     device = params.pop("device", "")
     fmt = params.pop("format", "pickle")  # "json" or "pickle"
+    if fmt not in ("json", "pickle"):
+        return Response(status_code=400, content=f"Invalid format={fmt!r}; must be 'json' or 'pickle'".encode())
     if not model_id:
         return Response(status_code=400, content=b"model_id query param required")
 
@@ -509,6 +540,18 @@ async def infer(request: Request, api_key: BearerToken) -> Response:
             )
 
         _, result_slot_id, result_sz = result
+
+        # Check if slot is in ERROR state — read error detail from DATA area
+        hdr = _read_slot_header(result_slot_id)
+        if hdr is not None and hdr.status == _SLOT_STATUS_ERROR:
+            if hdr.result_size > 0:
+                err_msg = _read_result(result_slot_id, hdr.result_size).decode(
+                    "utf-8", errors="replace"
+                )
+            else:
+                err_msg = "inference failed"
+            return Response(status_code=500, content=err_msg.encode())
+
         raw = _read_result(result_slot_id, result_sz)
 
         if fmt == "json":
