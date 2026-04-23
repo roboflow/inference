@@ -231,8 +231,8 @@ class ModelManager:
                 self.process(model_id, images=dummy)
             logger.info("Warmup complete for '%s'", model_id)
         except Exception:
-            logger.warning(
-                "Warmup failed for '%s' — model is loaded but not warmed up",
+            logger.error(
+                "Warmup failed for '%s' — model is loaded but may not perform optimally",
                 model_id,
                 exc_info=True,
             )
@@ -525,7 +525,7 @@ class ModelManager:
                     "Error unloading '%s' during shutdown", model_id, exc_info=True
                 )
 
-        self._executor.shutdown(wait=False)
+        self._executor.shutdown(wait=True, cancel_futures=True)
 
         if self._pool is not None:
             self._pool.close()

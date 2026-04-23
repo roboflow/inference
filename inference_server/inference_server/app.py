@@ -521,14 +521,15 @@ async def infer(request: Request, api_key: BearerToken) -> Response:
         result = await _submit_and_wait(slot_id, model_id, instance, pos, params)
         _t4 = time.monotonic()
 
-        print(
-            f"[TIMING] ensure={(_t1-_t0)*1000:.1f}ms "
-            f"alloc={(_t2-_t1)*1000:.1f}ms "
-            f"stream={(_t3-_t2)*1000:.1f}ms "
-            f"infer={(_t4-_t3)*1000:.1f}ms "
-            f"total={(_t4-_t0)*1000:.1f}ms "
-            f"body={pos}B",
-            flush=True,
+        logger.debug(
+            "[TIMING] ensure=%.1fms alloc=%.1fms stream=%.1fms "
+            "infer=%.1fms total=%.1fms body=%dB",
+            (_t1 - _t0) * 1000,
+            (_t2 - _t1) * 1000,
+            (_t3 - _t2) * 1000,
+            (_t4 - _t3) * 1000,
+            (_t4 - _t0) * 1000,
+            pos,
         )
 
         if result[0] == "error":
