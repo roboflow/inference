@@ -39,7 +39,7 @@ from inference.core.env import (
 from inference.core.models.base import Model
 from inference.core.roboflow_api import get_extra_weights_provider_headers
 from inference.core.utils.image_utils import load_image_bgr, load_image_rgb
-from inference.core.utils.postprocess import masks2poly
+from inference.core.utils.postprocess import masks2poly, mask2poly
 from inference.core.utils.visualisation import draw_detection_predictions
 from inference.models.aliases import resolve_roboflow_model_alias
 from inference_models import (
@@ -60,7 +60,9 @@ from inference_models import (
 from inference_models.models.base.semantic_segmentation import (
     SemanticSegmentationResult,
 )
-from inference_models.models.base.types import PreprocessingMetadata
+from inference_models.models.base.types import PreprocessingMetadata, InstancesRLEMasks
+
+from pycocotools import mask as mask_utils
 
 DEFAULT_COLOR_PALETTE = [
     "#A351FB",
@@ -277,6 +279,8 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
             disable_static_crop=kwargs.get("disable_preproc_static_crop", False),
         )
         kwargs["pre_processing_overrides"] = pre_processing_overrides
+        if "rle" in self._model.supported_mask_formats:
+            kwargs["mask_format"] = "rle"
         return kwargs
 
     def preprocess(self, image: Any, **kwargs):
@@ -316,8 +320,11 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
 
             xyxy = det.xyxy.detach().cpu().numpy()
             confs = det.confidence.detach().cpu().numpy()
-            masks = det.mask.detach().cpu().numpy()
-            polys = masks2poly(masks)
+            if isinstance(det.mask, torch.Tensor):
+                masks = det.mask.detach().cpu().numpy()
+                polys = masks2poly(masks)
+            else:
+                polys = rle_masks2poly(det.mask)
             class_ids = det.class_id.detach().cpu().numpy()
 
             predictions: List[InstanceSegmentationPrediction] = []
@@ -394,6 +401,20 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
             inference_response=inference_response,
             colors=class_id_2_color,
         )
+
+
+
+def rle_masks2poly(masks: InstancesRLEMasks) -> List[np.ndarray]:
+    segments = []
+    h, w = masks.image_size
+    for counts in masks.masks:
+        rle_dict = {"size": [h, w], "counts": counts}
+        decoded_rle = mask_utils.decode(rle_dict)  # (H, W) uint8, already C-contiguous
+        if not np.any(decoded_rle):
+            segments.append(np.zeros((0, 2), dtype=np.float32))
+            continue
+        segments.append(mask2poly(decoded_rle))
+    return segments
 
 
 class InferenceModelsKeyPointsDetectionAdapter(Model):
