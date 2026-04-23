@@ -287,6 +287,7 @@ from inference.core.telemetry import (
 )
 from inference.core.utils.container import is_docker_socket_mounted
 from inference.core.utils.notebooks import start_notebook
+from inference.core.utils.url_utils import wrap_url
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.errors import (
     WorkflowBlockError,
@@ -3354,7 +3355,7 @@ class HttpInterface(BaseInterface):
                             )
 
                             response = requests.post(
-                                f"{endpoint}?api_key={api_key}",
+                                wrap_url(f"{endpoint}?api_key={api_key}"),
                                 json=payload,
                                 headers=headers,
                                 timeout=60,
@@ -3455,7 +3456,7 @@ class HttpInterface(BaseInterface):
                             )
 
                             response = requests.post(
-                                f"{endpoint}?api_key={api_key}",
+                                wrap_url(f"{endpoint}?api_key={api_key}"),
                                 json=payload,
                                 headers=headers,
                                 timeout=60,
