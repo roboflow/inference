@@ -7,6 +7,7 @@ from inference.core.env import (
     WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE,
 )
 from inference.core.exceptions import WorkspaceLoadError
+from inference.core.logger import logger
 from inference.core.roboflow_api import get_roboflow_workspace
 from inference.core.workflows.errors import (
     DynamicBlockCodeError,
@@ -108,7 +109,7 @@ def assembly_custom_python_block(
             import_lines_count = len(_get_python_code_imports(python_code).splitlines())
             try:
                 with capture_output() as (stdout_buf, stderr_buf):
-                    return run_function(self, *args, **kwargs)
+                    result = run_function(self, *args, **kwargs)
             except Exception as error:
                 raise create_dynamic_block_code_error(
                     error=error,
@@ -118,6 +119,17 @@ def assembly_custom_python_block(
                     stderr=stderr_buf.getvalue() or None,
                     block_type_name=block_type_name,
                 ) from error
+            stdout = stdout_buf.getvalue()
+            stderr = stderr_buf.getvalue()
+            if stdout:
+                logger.info(
+                    "Custom Python block '%s' stdout:\n%s", block_type_name, stdout
+                )
+            if stderr:
+                logger.warning(
+                    "Custom Python block '%s' stderr:\n%s", block_type_name, stderr
+                )
+            return result
 
     if python_code.init_function_code is not None and not hasattr(
         code_module, python_code.init_function_name
