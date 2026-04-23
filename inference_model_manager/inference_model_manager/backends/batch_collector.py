@@ -220,7 +220,7 @@ class BatchCollector:
 
             if batch:
                 actual_delay = time.monotonic() - batch_start
-                with self._lock:
+                with self._cond:
                     self._batches_dispatched += 1
                     self._total_batch_items += len(batch)
                     self._total_batch_delay_s += actual_delay
