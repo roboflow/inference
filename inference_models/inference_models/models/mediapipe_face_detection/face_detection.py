@@ -8,7 +8,7 @@ from inference_models import Detections, KeyPoints, KeyPointsDetectionModel
 from inference_models.configuration import (
     INFERENCE_MODELS_MEDIAPIPE_FACE_DETECTOR_DEFAULT_CONFIDENCE,
 )
-from inference_models.entities import Confidence, ColorFormat, ImageDimensions
+from inference_models.entities import ColorFormat, Confidence, ImageDimensions
 from inference_models.errors import (
     MissingDependencyError,
     ModelInputError,
@@ -189,7 +189,11 @@ class MediaPipeFaceDetector(
             default_confidence=INFERENCE_MODELS_MEDIAPIPE_FACE_DETECTOR_DEFAULT_CONFIDENCE,
         )
         threshold = confidence_filter.get_threshold(self.class_names)
-        confidence = float(threshold[0].item()) if isinstance(threshold, torch.Tensor) else float(threshold)
+        confidence = (
+            float(threshold[0].item())
+            if isinstance(threshold, torch.Tensor)
+            else float(threshold)
+        )
         final_key_points, final_detections = [], []
         for image_results, image_dimensions in zip(model_results, pre_processing_meta):
             detections_xyxy, detections_class_id, detections_confidence = [], [], []
