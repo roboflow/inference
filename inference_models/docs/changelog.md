@@ -1,5 +1,17 @@
 # Changelog
 
+## `0.26.1`
+
+### Changed
+- For Roboflow weights provider, Roboflow License Server proxy transitioned into 
+Roboflow Secure Gateway, altering naming conventions of all helper functions which are 
+considered private interface of weights provider (hence should not be considered breaking 
+for any clients). Along with this change, `LICENSE_SERVER` environmental variable controlling 
+the proxy address was replaced to be `SECURE_GATEWAY` - old variable will be deleted in the
+release following after the end of Q3 2026.
+
+---
+
 ## `0.26.0` 
 
 ### Added
@@ -96,7 +108,7 @@ problem with loading is recoverable.
 
 ### Added
 
-- Support for Roboflow License Server proxy in Roboflow weights provider 
+- Support for Roboflow License Server proxy in Roboflow weights provider
 
 ---
 
