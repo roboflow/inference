@@ -19,6 +19,7 @@ from inference.core.entities.responses.inference import (
     InferenceResponseImage,
     InstanceSegmentationInferenceResponse,
     InstanceSegmentationPrediction,
+    InstanceSegmentationRLEPrediction,
     Keypoint,
     KeypointsDetectionInferenceResponse,
     KeypointsPrediction,
@@ -28,7 +29,6 @@ from inference.core.entities.responses.inference import (
     Point,
     SemanticSegmentationInferenceResponse,
     SemanticSegmentationPrediction,
-    InstanceSegmentationRLEPrediction,
 )
 from inference.core.env import (
     ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES,
@@ -334,7 +334,9 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
                     polys_or_rles = rle_masks2poly(det.mask)
             class_ids = det.class_id.detach().cpu().numpy()
 
-            predictions: List[Union[InstanceSegmentationPrediction, InstanceSegmentationRLEPrediction]] = []
+            predictions: List[
+                Union[InstanceSegmentationPrediction, InstanceSegmentationRLEPrediction]
+            ] = []
 
             for (x1, y1, x2, y2), mask_as_poly_or_rle, conf, class_id in zip(
                 xyxy, polys_or_rles, confs, class_ids
@@ -363,7 +365,8 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
                             height=h,
                             confidence=float(conf),
                             points=[
-                                Point(x=point[0], y=point[1]) for point in mask_as_poly_or_rle
+                                Point(x=point[0], y=point[1])
+                                for point in mask_as_poly_or_rle
                             ],
                             **{"class": class_name},
                             class_id=class_id_int,
