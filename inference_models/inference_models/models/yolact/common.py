@@ -83,6 +83,7 @@ def prepare_rle_masks(
             size_after_pre_processing=image_meta.size_after_pre_processing,
             inference_size=image_meta.inference_size,
             static_crop_offset=image_meta.static_crop_offset,
+            binarization_threshold=0.5,
         ):
             aligned_boxes.append(bbox)
             rle_masks.append(mask)
