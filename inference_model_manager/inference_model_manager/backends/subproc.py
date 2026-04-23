@@ -80,6 +80,22 @@ _DEFAULT_BATCH_MAX_WAIT_MS = 5.0
 _NP_MAGIC = b"\x93NUMPY"  # first 6 bytes of every np.save() file
 
 
+class _InferenceError:
+    """Sentinel for failed inference — distinguishes from legitimate None result."""
+    __slots__ = ("message",)
+    def __init__(self, message: str) -> None:
+        self.message = message
+
+
+def _write_error_to_slot(pool: "SHMPool", slot_id: int, message: str) -> None:
+    """Write error detail to DATA area before mark_error, so app.py can read it."""
+    err_bytes = message.encode("utf-8", errors="replace")[:1024]  # cap at 1KB
+    mv = pool.data_memoryview(slot_id)
+    mv[: len(err_bytes)] = err_bytes
+    mv.release()
+    pool.mark_error(slot_id, error_code=1, error_size=len(err_bytes))
+
+
 def _to_bytes(raw_input: Any) -> bytes:
     """Serialise any input value to bytes for writing to the SHMPool input slot.
 
@@ -281,9 +297,10 @@ def _process_slots(
     """Process a batch of (slot_id, req_id, params_bytes), write results to SHM, send T_RESULT."""
     import zmq
 
-    # Parse task from first slot's params (all slots in a batch share the same model).
-    first_params = json.loads(batch[0][2]) if batch else {}
-    task = first_params.pop("task", None)
+    # Parse per-slot params
+    slot_params: list[dict] = []
+    for _, _, params_bytes in batch:
+        slot_params.append(json.loads(params_bytes) if params_bytes else {})
 
     # Gather memoryviews; classify as .npy (standalone numpy) vs raw bytes
     mvs: list[Any] = []
@@ -338,7 +355,7 @@ def _process_slots(
     if error_indices:
         for i in error_indices:
             slot_id, req_id, _ = batch[i]
-            pool.mark_error(slot_id)
+            _write_error_to_slot(pool, slot_id, "image decode failed")
             try:
                 sock.send_multipart(
                     [_MSG_RESULT, struct.pack(">QII", req_id, slot_id, 0)]
@@ -355,22 +372,41 @@ def _process_slots(
         ]
         good_batch = [b for _, b, _ in good]
         good_images = [img for _, _, img in good]
+        good_params = [slot_params[i] for i, _, _ in good]
     else:
         good_batch = batch
         good_images = images
+        good_params = slot_params
 
-    results: list[Any]
-    try:
-        images_arg = good_images[0] if len(good_images) == 1 else good_images
-        raw_out = invoke_task(model, task=task, images=images_arg, **first_params)
-        results = raw_out if isinstance(raw_out, list) else [raw_out]
-    except Exception:
-        log.exception("Worker: invoke_task(task=%r) failed", task)
-        results = [None] * len(good_batch)
+    # Group by (task, params) so that slots with different tasks/params are
+    # processed in separate sub-batches instead of silently using only the
+    # first slot's params for the entire batch.
+    sub_batches: dict[str, list[int]] = {}
+    for idx, p in enumerate(good_params):
+        # Build a hashable key from the params dict (task + sorted remaining params)
+        key = json.dumps(p, sort_keys=True)
+        sub_batches.setdefault(key, []).append(idx)
+
+    results: list[Any] = [None] * len(good_batch)
+    for params_key, indices in sub_batches.items():
+        sub_params = json.loads(params_key)
+        task = sub_params.pop("task", None)
+        sub_images = [good_images[i] for i in indices]
+        try:
+            images_arg = sub_images[0] if len(sub_images) == 1 else sub_images
+            raw_out = invoke_task(model, task=task, images=images_arg, **sub_params)
+            sub_results = raw_out if isinstance(raw_out, list) else [raw_out]
+            for i, r in zip(indices, sub_results):
+                results[i] = r
+        except Exception as exc:
+            log.exception("Worker: invoke_task(task=%r) failed", task)
+            for i in indices:
+                results[i] = _InferenceError(str(exc))
 
     for (slot_id, req_id, _), result in zip(good_batch, results):
-        if result is None:
-            pool.mark_error(slot_id)
+        if result is None or isinstance(result, _InferenceError):
+            err_msg = result.message if isinstance(result, _InferenceError) else "inference returned None"
+            _write_error_to_slot(pool, slot_id, err_msg)
             try:
                 sock.send_multipart(
                     [_MSG_RESULT, struct.pack(">QII", req_id, slot_id, 0)]
@@ -393,14 +429,17 @@ def _process_slots(
                 "Worker: result %d B exceeds slot capacity %d B for slot %d — marking error",
                 len(data), len(mv), slot_id,
             )
-            pool.mark_error(slot_id)
+            mv.release()
+            _write_error_to_slot(
+                pool, slot_id,
+                f"result {len(data)}B exceeds slot capacity {len(mv)}B",
+            )
             try:
                 sock.send_multipart(
                     [_MSG_RESULT, struct.pack(">QII", req_id, slot_id, 0)]
                 )
             except zmq.ZMQError:
                 pass
-            mv.release()
             continue
         mv[: len(data)] = data
         mv.release()
@@ -555,6 +594,7 @@ class SubprocessBackend(Backend):
         self._inference_count = 0
         self._error_count = 0
         self._last_inference_ts = 0.0
+        self._start_ts = time.monotonic()
         self._latencies: deque[float] = deque(maxlen=1000)
 
         # ── Recv thread ───────────────────────────────────────────────
@@ -876,7 +916,7 @@ class SubprocessBackend(Backend):
             "queue_depth": self.queue_depth,
             "max_batch_size": self.max_batch_size,
             "throughput_fps": (
-                self._inference_count / sum(sorted_lats) if sorted_lats else 0.0
+                self._inference_count / max(time.monotonic() - self._start_ts, 1e-6)
             ),
             "latency_p50_ms": _pct(50),
             "latency_p99_ms": _pct(99),
