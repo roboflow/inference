@@ -5,8 +5,8 @@ from inference.core.utils import url_utils
 from inference.core.utils.url_utils import wrap_url
 
 
-@mock.patch.object(url_utils, "LICENSE_SERVER", "licence-server.com")
-def test_wrap_url_when_license_server_is_provided() -> None:
+@mock.patch.object(url_utils, "SECURE_GATEWAY", "gateway.local")
+def test_wrap_url_when_secure_gateway_is_provided() -> None:
     # given
     original_url = "https://detection.roboflow.com/eye-detection/1?api_key=X"
 
@@ -16,13 +16,13 @@ def test_wrap_url_when_license_server_is_provided() -> None:
     # then
     assert (
         result
-        == "http://licence-server.com/proxy?url=https%3A%2F%2Fdetection.roboflow.com%2Feye-detection%2F1%3Fapi_key%3DX"
+        == "http://gateway.local/proxy?url=https%3A%2F%2Fdetection.roboflow.com%2Feye-detection%2F1%3Fapi_key%3DX"
     )
     assert parse_qs(urlparse(result).query)["url"][0] == original_url
 
 
-@mock.patch.object(url_utils, "LICENSE_SERVER", None)
-def test_wrap_url_when_license_server_is_not_provided() -> None:
+@mock.patch.object(url_utils, "SECURE_GATEWAY", None)
+def test_wrap_url_when_secure_gateway_is_not_provided() -> None:
     # given
     original_url = "https://detection.roboflow.com/eye-detection/1?api_key=X"
 
