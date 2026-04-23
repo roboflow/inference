@@ -268,7 +268,9 @@ class InstanceSegmentationInferenceResponse(
         ]]): List of instance segmentation predictions.
     """
 
-    predictions: List[Union[InstanceSegmentationPrediction, InstanceSegmentationRLEPrediction]]
+    predictions: List[
+        Union[InstanceSegmentationPrediction, InstanceSegmentationRLEPrediction]
+    ]
 
 
 class SemanticSegmentationInferenceResponse(

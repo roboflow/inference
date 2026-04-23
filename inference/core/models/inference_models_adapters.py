@@ -374,7 +374,9 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
                     )
                 else:
                     if isinstance(mask_as_poly_or_rle["counts"], bytes):
-                        mask_as_poly_or_rle["counts"] = mask_as_poly_or_rle["counts"].decode("ascii")
+                        mask_as_poly_or_rle["counts"] = mask_as_poly_or_rle[
+                            "counts"
+                        ].decode("ascii")
                     predictions.append(
                         InstanceSegmentationRLEPrediction(
                             x=cx,
