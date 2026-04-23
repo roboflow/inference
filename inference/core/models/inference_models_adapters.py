@@ -436,7 +436,9 @@ def rle_masks2poly(masks: InstancesRLEMasks) -> List[np.ndarray]:
     h, w = masks.image_size
     for counts in masks.masks:
         rle_dict = {"size": [h, w], "counts": counts}
-        decoded_rle = mask_utils.decode(rle_dict)  # (H, W) uint8, already C-contiguous
+        decoded_rle = np.ascontiguousarray(
+            mask_utils.decode(rle_dict)
+        )  # (H, W) uint8, already C-contiguous
         if not np.any(decoded_rle):
             segments.append(np.zeros((0, 2), dtype=np.float32))
             continue

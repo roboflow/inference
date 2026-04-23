@@ -21,4 +21,4 @@ class InstancesRLEMasks:
         return cls(image_size=image_size, masks=masks)
 
     def to_coco_rle_masks(self) -> List[dict]:
-        return [{"size": self.image_size, "counts": m} for m in self.masks]
+        return [{"size": list(self.image_size), "counts": m} for m in self.masks]

@@ -18,7 +18,7 @@ def coco_rle_masks_to_numpy_mask(instances_masks: InstancesRLEMasks) -> np.ndarr
             (0, instances_masks.image_size[0], instances_masks.image_size[1]),
             dtype=bool,
         )
-    return (
+    return np.ascontiguousarray(
         mask_utils.decode(instances_masks.to_coco_rle_masks())
         .transpose(2, 0, 1)
         .astype(bool)
@@ -35,7 +35,9 @@ def coco_rle_masks_to_torch_mask(
             device=device,
         )
     return torch.from_numpy(
-        mask_utils.decode(instances_masks.to_coco_rle_masks())
-        .transpose(2, 0, 1)
-        .astype(bool)
+        np.ascontiguousarray(
+            mask_utils.decode(instances_masks.to_coco_rle_masks())
+            .transpose(2, 0, 1)
+            .astype(bool)
+        )
     ).to(device=device, dtype=torch.bool)

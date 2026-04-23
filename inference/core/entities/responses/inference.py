@@ -1,5 +1,5 @@
 import base64
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Literal, Optional, Union
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_serializer
@@ -103,7 +103,7 @@ class InstanceSegmentationPrediction(InstanceSegmentationBasePrediction):
     points: List[Point] = Field(
         description="The list of points that make up the instance polygon"
     )
-    mask_format: str = Field(
+    mask_format: Literal["polygon"] = Field(
         default="polygon",
         description="Type of mask format",
     )
@@ -113,7 +113,7 @@ class InstanceSegmentationRLEPrediction(InstanceSegmentationBasePrediction):
     rle: dict = Field(
         description="RLE-encoded mask in COCO format: {'size': [H, W], 'counts': '...'}"
     )
-    mask_format: str = Field(
+    mask_format: Literal["rle"] = Field(
         default="rle",
         description="Type of mask format",
     )
