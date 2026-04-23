@@ -28,6 +28,7 @@ from inference.core.entities.responses.inference import (
     Point,
     SemanticSegmentationInferenceResponse,
     SemanticSegmentationPrediction,
+    InstanceSegmentationRLEPrediction,
 )
 from inference.core.env import (
     ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES,
@@ -58,10 +59,8 @@ from inference_models import (
     PreProcessingOverrides,
     SemanticSegmentationModel,
 )
-from inference_models.models.base.semantic_segmentation import (
-    SemanticSegmentationResult,
-)
 from inference_models.models.base.types import InstancesRLEMasks, PreprocessingMetadata
+from inference_models.models.common.rle_utils import torch_mask_to_coco_rle
 
 DEFAULT_COLOR_PALETTE = [
     "#A351FB",
@@ -307,6 +306,7 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
         preprocess_return_metadata: PreprocessingMetadata,
         **kwargs,
     ) -> List[InstanceSegmentationInferenceResponse]:
+        return_in_rle = kwargs.get("response_mask_format") == "rle"
         mapped_kwargs = self.map_inference_kwargs(kwargs)
         detections_list = self._model.post_process(
             predictions, preprocess_return_metadata, **mapped_kwargs
@@ -321,15 +321,23 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
             confs = det.confidence.detach().cpu().numpy()
             if isinstance(det.mask, torch.Tensor):
                 masks = det.mask.detach().cpu().numpy()
-                polys = masks2poly(masks)
+                if return_in_rle:
+                    polys_or_rles = [
+                        torch_mask_to_coco_rle(mask=mask) for mask in masks
+                    ]
+                else:
+                    polys_or_rles = masks2poly(masks)
             else:
-                polys = rle_masks2poly(det.mask)
+                if return_in_rle:
+                    polys_or_rles = det.mask.to_coco_rle_masks()
+                else:
+                    polys_or_rles = rle_masks2poly(det.mask)
             class_ids = det.class_id.detach().cpu().numpy()
 
-            predictions: List[InstanceSegmentationPrediction] = []
+            predictions: List[Union[InstanceSegmentationPrediction, InstanceSegmentationRLEPrediction]] = []
 
-            for (x1, y1, x2, y2), mask_as_poly, conf, class_id in zip(
-                xyxy, polys, confs, class_ids
+            for (x1, y1, x2, y2), mask_as_poly_or_rle, conf, class_id in zip(
+                xyxy, polys_or_rles, confs, class_ids
             ):
                 cx = (float(x1) + float(x2)) / 2.0
                 cy = (float(y1) + float(y2)) / 2.0
@@ -346,20 +354,34 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
                     and class_name not in kwargs["class_filter"]
                 ):
                     continue
-                predictions.append(
-                    InstanceSegmentationPrediction(
-                        x=cx,
-                        y=cy,
-                        width=w,
-                        height=h,
-                        confidence=float(conf),
-                        points=[
-                            Point(x=point[0], y=point[1]) for point in mask_as_poly
-                        ],
-                        **{"class": class_name},
-                        class_id=class_id_int,
+                if not return_in_rle:
+                    predictions.append(
+                        InstanceSegmentationPrediction(
+                            x=cx,
+                            y=cy,
+                            width=w,
+                            height=h,
+                            confidence=float(conf),
+                            points=[
+                                Point(x=point[0], y=point[1]) for point in mask_as_poly_or_rle
+                            ],
+                            **{"class": class_name},
+                            class_id=class_id_int,
+                        )
                     )
-                )
+                else:
+                    predictions.append(
+                        InstanceSegmentationRLEPrediction(
+                            x=cx,
+                            y=cy,
+                            width=w,
+                            height=h,
+                            confidence=float(conf),
+                            rle=mask_as_poly_or_rle,
+                            **{"class": class_name},
+                            class_id=class_id_int,
+                        )
+                    )
 
             responses.append(
                 InstanceSegmentationInferenceResponse(

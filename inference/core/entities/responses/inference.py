@@ -103,11 +103,19 @@ class InstanceSegmentationPrediction(InstanceSegmentationBasePrediction):
     points: List[Point] = Field(
         description="The list of points that make up the instance polygon"
     )
+    mask_format: str = Field(
+        default="polygon",
+        description="Type of mask format",
+    )
 
 
 class InstanceSegmentationRLEPrediction(InstanceSegmentationBasePrediction):
     rle: dict = Field(
         description="RLE-encoded mask in COCO format: {'size': [H, W], 'counts': '...'}"
+    )
+    mask_format: str = Field(
+        default="rle",
+        description="Type of mask format",
     )
 
 
