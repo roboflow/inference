@@ -149,6 +149,7 @@ class InferenceConfiguration:
     source_info: Optional[str] = None
     profiling_directory: str = "./inference_profiling"
     workflow_run_retries_enabled: bool = WORKFLOW_RUN_RETRIES_ENABLED
+    response_mask_format: Optional[bool] = None
 
     @classmethod
     def init_default(cls) -> "InferenceConfiguration":
@@ -231,6 +232,7 @@ class InferenceConfiguration:
         parameters_specs = [
             ("mask_decode_mode", "mask_decode_mode"),
             ("tradeoff_factor", "tradeoff_factor"),
+            ("response_mask_format", "response_mask_format"),
         ]
         for internal_name, external_name in parameters_specs:
             parameters[external_name] = getattr(self, internal_name)
@@ -286,6 +288,7 @@ class InferenceConfiguration:
             ("active_learning_target_dataset", "active_learning_target_dataset"),
             ("source", "source"),
             ("source_info", "source_info"),
+            ("response_mask_format", "response_mask_format"),
         ]
         return get_non_empty_attributes(
             source_object=self,

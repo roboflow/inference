@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from functools import partial
 from threading import Lock, Thread
 from time import sleep
-from typing import Annotated, Any, Dict, List, Optional, Tuple, Union
+from typing import Annotated, Any, Dict, List, Literal, Optional, Tuple, Union
 from uuid import uuid4
 
 import asgi_correlation_id
@@ -3962,6 +3962,11 @@ class HttpInterface(BaseInterface):
                     description="If true, disables model monitoring for this request",
                     include_in_schema=False,
                 ),
+                response_mask_format: Optional[Literal["polygon", "rle"]] = Query(
+                    default="polygon",
+                    description="The format of the prediction mask - polygon (default) or rle - applicable "
+                    "for instance segmentation models.",
+                ),
             ):
                 """
                 Legacy inference endpoint for object detection, instance segmentation, and classification.
@@ -4062,6 +4067,8 @@ class HttpInterface(BaseInterface):
                         "mask_decode_mode": mask_decode_mode,
                         "tradeoff_factor": tradeoff_factor,
                     }
+                    if response_mask_format:
+                        args["response_mask_format"] = response_mask_format
                 elif task_type == "classification":
                     inference_request_type = ClassificationInferenceRequest
                 elif task_type == "keypoint-detection":
