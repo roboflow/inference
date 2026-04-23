@@ -32,6 +32,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from inference.core import logger
 from inference.core.constants import (
+    MODEL_COLD_START_COUNT_HEADER,
     MODEL_COLD_START_HEADER,
     MODEL_ID_HEADER,
     MODEL_LOAD_DETAILS_HEADER,
@@ -229,6 +230,12 @@ from inference.core.interfaces.http.orjson_utils import (
     orjson_response,
     orjson_response_keeping_parent_id,
 )
+from inference.core.interfaces.http.request_metrics import (
+    REMOTE_PROCESSING_TIME_HEADER,
+    REMOTE_PROCESSING_TIMES_HEADER,
+    GCPServerlessMiddleware,
+    build_model_response_headers,
+)
 from inference.core.interfaces.stream_manager.api.entities import (
     CommandContext,
     CommandResponse,
@@ -323,23 +330,10 @@ from inference.core.roboflow_api import ModelEndpointType
 from inference.core.version import __version__
 
 try:
-    from inference_sdk.config import (
-        EXECUTION_ID_HEADER,
-        INTERNAL_REMOTE_EXEC_REQ_HEADER,
-        INTERNAL_REMOTE_EXEC_REQ_VERIFIED_HEADER,
-        RemoteProcessingTimeCollector,
-        apply_duration_minimum,
-        execution_id,
-        remote_processing_times,
-    )
+    from inference_sdk.config import EXECUTION_ID_HEADER, execution_id
 except ImportError:
-    execution_id = None
-    remote_processing_times = None
-    RemoteProcessingTimeCollector = None
     EXECUTION_ID_HEADER = None
-    INTERNAL_REMOTE_EXEC_REQ_HEADER = None
-    INTERNAL_REMOTE_EXEC_REQ_VERIFIED_HEADER = None
-    apply_duration_minimum = None
+    execution_id = None
 
 
 def get_content_type(request: Request) -> str:
@@ -355,8 +349,6 @@ class LambdaMiddleware(BaseHTTPMiddleware):
         return response
 
 
-REMOTE_PROCESSING_TIME_HEADER = "X-Remote-Processing-Time"
-REMOTE_PROCESSING_TIMES_HEADER = "X-Remote-Processing-Times"
 AUTH_CACHE_TTL_SECONDS = 3600
 SHORT_AUTH_CACHE_TTL_SECONDS = 60
 
@@ -496,48 +488,6 @@ def _log_serverless_authorization_denial(
     logger.info("Serverless authorization denied", **log_fields)
 
 
-class GCPServerlessMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request, call_next):
-        if execution_id is not None:
-            execution_id_value = request.headers.get(EXECUTION_ID_HEADER)
-            if not execution_id_value:
-                execution_id_value = f"{time.time_ns()}_{uuid4().hex[:4]}"
-            execution_id.set(execution_id_value)
-        is_verified_internal = False
-        if apply_duration_minimum is not None:
-            is_verified_internal = bool(
-                ROBOFLOW_INTERNAL_SERVICE_SECRET
-                and INTERNAL_REMOTE_EXEC_REQ_HEADER
-                and request.headers.get(INTERNAL_REMOTE_EXEC_REQ_HEADER)
-                == ROBOFLOW_INTERNAL_SERVICE_SECRET
-            )
-            apply_duration_minimum.set(not is_verified_internal)
-        collector = None
-        if (
-            WORKFLOWS_REMOTE_EXECUTION_TIME_FORWARDING
-            and remote_processing_times is not None
-            and RemoteProcessingTimeCollector is not None
-        ):
-            collector = RemoteProcessingTimeCollector()
-            remote_processing_times.set(collector)
-        t1 = time.time()
-        response = await call_next(request)
-        t2 = time.time()
-        response.headers[PROCESSING_TIME_HEADER] = str(t2 - t1)
-        if collector is not None and collector.has_data():
-            total, detail = collector.summarize()
-            response.headers[REMOTE_PROCESSING_TIME_HEADER] = str(total)
-            if detail is not None:
-                response.headers[REMOTE_PROCESSING_TIMES_HEADER] = detail
-        if execution_id is not None:
-            response.headers[EXECUTION_ID_HEADER] = execution_id_value
-        if INTERNAL_REMOTE_EXEC_REQ_VERIFIED_HEADER is not None:
-            response.headers[INTERNAL_REMOTE_EXEC_REQ_VERIFIED_HEADER] = str(
-                is_verified_internal
-            ).lower()
-        return response
-
-
 class HttpInterface(BaseInterface):
     """Roboflow defined HTTP interface for a general-purpose inference server.
 
@@ -644,6 +594,7 @@ class HttpInterface(BaseInterface):
                     REMOTE_PROCESSING_TIME_HEADER,
                     REMOTE_PROCESSING_TIMES_HEADER,
                     MODEL_COLD_START_HEADER,
+                    MODEL_COLD_START_COUNT_HEADER,
                     MODEL_LOAD_TIME_HEADER,
                     MODEL_LOAD_DETAILS_HEADER,
                     MODEL_ID_HEADER,
@@ -1094,17 +1045,35 @@ class HttpInterface(BaseInterface):
             ids_collector = RequestModelIds()
             request_model_ids.set(ids_collector)
             response = await call_next(request)
-            if load_collector.has_data():
-                total, detail = load_collector.summarize()
-                response.headers[MODEL_COLD_START_HEADER] = "true"
-                response.headers[MODEL_LOAD_TIME_HEADER] = str(total)
-                if detail is not None:
-                    response.headers[MODEL_LOAD_DETAILS_HEADER] = detail
+            remote_processing_collector = getattr(
+                request.state, "remote_processing_time_collector", None
+            )
+            if remote_processing_collector is not None:
+                remote_model_ids = remote_processing_collector.snapshot_model_ids()
+                remote_cold_start_entries = (
+                    remote_processing_collector.snapshot_cold_start_entries()
+                )
+                remote_cold_start_count = (
+                    remote_processing_collector.snapshot_cold_start_count()
+                )
+                remote_cold_start_total_load_time = (
+                    remote_processing_collector.snapshot_cold_start_total_load_time()
+                )
             else:
-                response.headers[MODEL_COLD_START_HEADER] = "false"
-            model_ids = ids_collector.get_ids()
-            if model_ids:
-                response.headers[MODEL_ID_HEADER] = ",".join(sorted(model_ids))
+                remote_model_ids = set()
+                remote_cold_start_entries = []
+                remote_cold_start_count = 0
+                remote_cold_start_total_load_time = 0.0
+            response.headers.update(
+                build_model_response_headers(
+                    local_model_ids=ids_collector.get_ids(),
+                    local_cold_start_entries=load_collector.snapshot_entries(),
+                    remote_model_ids=remote_model_ids,
+                    remote_cold_start_entries=remote_cold_start_entries,
+                    remote_cold_start_count=remote_cold_start_count,
+                    remote_cold_start_total_load_time=remote_cold_start_total_load_time,
+                )
+            )
             wf_id = request_workflow_id.get(None)
             if wf_id:
                 response.headers[WORKFLOW_ID_HEADER] = wf_id
@@ -1130,6 +1099,7 @@ class HttpInterface(BaseInterface):
                     "request_id": CORRELATION_ID_HEADER,
                     "processing_time": PROCESSING_TIME_HEADER,
                     "model_cold_start": MODEL_COLD_START_HEADER,
+                    "model_cold_start_count": MODEL_COLD_START_COUNT_HEADER,
                     "model_load_time": MODEL_LOAD_TIME_HEADER,
                     "model_id": MODEL_ID_HEADER,
                     "workflow_id": WORKFLOW_ID_HEADER,
