@@ -149,7 +149,7 @@ class InferenceConfiguration:
     source_info: Optional[str] = None
     profiling_directory: str = "./inference_profiling"
     workflow_run_retries_enabled: bool = WORKFLOW_RUN_RETRIES_ENABLED
-    response_mask_format: Optional[bool] = None
+    response_mask_format: Optional[Literal["polygon", "rle"]] = None
 
     @classmethod
     def init_default(cls) -> "InferenceConfiguration":
