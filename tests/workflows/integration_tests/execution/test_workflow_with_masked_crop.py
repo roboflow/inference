@@ -29,7 +29,8 @@ MASKED_CROP_LEGACY_WORKFLOW = {
             "name": "segmentation",
             "image": "$inputs.image",
             "model_id": "$inputs.model_id",
-            "confidence_mode": "custom", "custom_confidence": "$inputs.confidence",
+            "confidence_mode": "custom",
+            "custom_confidence": "$inputs.confidence",
         },
         {
             "type": "roboflow_core/dynamic_crop@v1",
@@ -120,7 +121,8 @@ MASKED_CROP_WORKFLOW = {
             "name": "segmentation",
             "image": "$inputs.image",
             "model_id": "$inputs.model_id",
-            "confidence_mode": "custom", "custom_confidence": "$inputs.confidence",
+            "confidence_mode": "custom",
+            "custom_confidence": "$inputs.confidence",
         },
         {
             "type": "roboflow_core/dynamic_crop@v1",

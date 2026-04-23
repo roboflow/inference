@@ -26,10 +26,10 @@ from inference_models.models.common.roboflow.model_packages import (
     parse_inference_config,
 )
 from inference_models.models.common.roboflow.post_processing import ConfidenceFilter
-from inference_models.weights_providers.entities import RecommendedParameters
 from inference_models.models.common.roboflow.pre_processing import (
     pre_process_network_input,
 )
+from inference_models.weights_providers.entities import RecommendedParameters
 
 
 class DeepLabV3PlusForSemanticSegmentationTorch(
@@ -275,8 +275,14 @@ class DeepLabV3PlusForSemanticSegmentationTorch(
                 image_confidence = original_size_confidence_canvas
             threshold = confidence_filter.get_threshold(self.class_names)
             if isinstance(threshold, torch.Tensor):
-                threshold = threshold.to(dtype=image_confidence.dtype, device=image_confidence.device)
-            below = image_confidence < (threshold[image_class_ids.long()] if isinstance(threshold, torch.Tensor) else threshold)
+                threshold = threshold.to(
+                    dtype=image_confidence.dtype, device=image_confidence.device
+                )
+            below = image_confidence < (
+                threshold[image_class_ids.long()]
+                if isinstance(threshold, torch.Tensor)
+                else threshold
+            )
             image_class_ids = image_class_ids.clone()
             image_confidence = image_confidence.clone()
             image_class_ids[below] = self._background_class_id

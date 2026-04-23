@@ -26,7 +26,8 @@ WORKFLOW_STITCHING_OCR_DETECTIONS = {
             "name": "ocr_detection",
             "image": "$inputs.image",
             "model_id": "$inputs.model_id",
-            "confidence_mode": "custom", "custom_confidence": "$inputs.confidence",
+            "confidence_mode": "custom",
+            "custom_confidence": "$inputs.confidence",
         },
         {
             "type": "roboflow_core/stitch_ocr_detections@v2",

@@ -12,7 +12,7 @@ from inference_models.configuration import (
     INFERENCE_MODELS_YOLONAS_DEFAULT_IOU_THRESHOLD,
     INFERENCE_MODELS_YOLONAS_DEFAULT_MAX_DETECTIONS,
 )
-from inference_models.entities import Confidence, ColorFormat
+from inference_models.entities import ColorFormat, Confidence
 from inference_models.errors import (
     CorruptedModelPackageError,
     EnvironmentConfigurationError,
