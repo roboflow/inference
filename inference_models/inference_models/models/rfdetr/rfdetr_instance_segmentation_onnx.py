@@ -13,7 +13,7 @@ from inference_models.configuration import (
     DEFAULT_DEVICE,
     INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE,
 )
-from inference_models.entities import ColorFormat
+from inference_models.entities import Confidence, ColorFormat
 from inference_models.errors import (
     EnvironmentConfigurationError,
     MissingDependencyError,
@@ -38,9 +38,11 @@ from inference_models.models.rfdetr.common import (
     post_process_instance_segmentation_results,
 )
 from inference_models.models.rfdetr.pre_processing import pre_process_network_input
+from inference_models.models.common.roboflow.post_processing import ConfidenceFilter
 from inference_models.utils.onnx_introspection import (
     get_selected_onnx_execution_providers,
 )
+from inference_models.weights_providers.entities import RecommendedParameters
 
 try:
     import onnxruntime
@@ -74,6 +76,7 @@ class RFDetrForInstanceSegmentationOnnx(
         default_onnx_trt_options: bool = True,
         device: torch.device = DEFAULT_DEVICE,
         rf_detr_max_input_resolution: Optional[Union[int, Tuple[int, int]]] = None,
+        recommended_parameters: Optional[RecommendedParameters] = None,
         **kwargs,
     ) -> "RFDetrForInstanceSegmentationOnnx":
         if onnx_execution_providers is None:
@@ -147,6 +150,7 @@ class RFDetrForInstanceSegmentationOnnx(
             inference_config=inference_config,
             device=device,
             input_batch_size=input_batch_size,
+            recommended_parameters=recommended_parameters,
         )
 
     def __init__(
@@ -158,6 +162,7 @@ class RFDetrForInstanceSegmentationOnnx(
         inference_config: InferenceConfig,
         device: torch.device,
         input_batch_size: Optional[int],
+        recommended_parameters=None,
     ):
         self._session = session
         self._input_name = input_name
@@ -172,6 +177,7 @@ class RFDetrForInstanceSegmentationOnnx(
             else inference_config.forward_pass.max_dynamic_batch_size
         )
         self._session_thread_lock = threading.Lock()
+        self.recommended_parameters = recommended_parameters
 
     @property
     def class_names(self) -> List[str]:
@@ -211,15 +217,22 @@ class RFDetrForInstanceSegmentationOnnx(
         self,
         model_results: Tuple[torch.Tensor, torch.Tensor, torch.Tensor],
         pre_processing_meta: List[PreProcessingMetadata],
-        confidence: float = INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE,
+        confidence: Confidence = "default",
         **kwargs,
     ) -> List[InstanceDetections]:
+        confidence_filter = ConfidenceFilter(
+            confidence=confidence,
+            recommended_parameters=self.recommended_parameters,
+            default_confidence=INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE,
+        )
         bboxes, logits, masks = model_results
-        return post_process_instance_segmentation_results(
+        results = post_process_instance_segmentation_results(
             bboxes=bboxes,
             logits=logits,
             masks=masks,
             pre_processing_meta=pre_processing_meta,
-            threshold=confidence,
+            threshold=confidence_filter.get_threshold(self.class_names),
+            num_classes=len(self.class_names),
             classes_re_mapping=self._classes_re_mapping,
         )
+        return results

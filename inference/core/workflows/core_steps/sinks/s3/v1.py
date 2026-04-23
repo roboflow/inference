@@ -1,7 +1,7 @@
 import json
 import logging
-import time
 from datetime import datetime
+from time import sleep
 from typing import Any, List, Literal, Optional, Type, Union
 
 import boto3
@@ -385,7 +385,7 @@ def upload_content_to_s3(
                 f"Retrying S3 upload to s3://{bucket_name}/{s3_key} "
                 f"(attempt {attempt + 1}/{1 + MAX_UPLOAD_RETRIES}) after {delay:.1f}s..."
             )
-            time.sleep(delay)
+            sleep(delay)
         try:
             s3_client.put_object(
                 Bucket=bucket_name,

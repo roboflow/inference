@@ -332,3 +332,24 @@ def test_yolo26n_pose_torchscript_stretch_torch(
         torch.tensor([0.9262]),
         atol=CONF_TOLERANCE,
     )
+
+
+@pytest.mark.slow
+@pytest.mark.torch_models
+def test_torchscript_per_class_confidence_filters_detections(
+    yolo26n_pose_basketball_letterbox_torch_script_package: str,
+    basketball_image_numpy: np.ndarray,
+) -> None:
+    from inference_models.weights_providers.entities import RecommendedParameters
+
+    model = YOLO26ForKeyPointsDetectionTorchScript.from_pretrained(
+        model_name_or_path=yolo26n_pose_basketball_letterbox_torch_script_package,
+        device=DEFAULT_DEVICE,
+    )
+    class_names = list(model.class_names)
+    model.recommended_parameters = RecommendedParameters(
+        confidence=0.25,
+        per_class_confidence={class_names[0]: 1.01},
+    )
+    _, predictions_det = model(basketball_image_numpy, confidence="best")
+    assert predictions_det[0].class_id.numel() == 0

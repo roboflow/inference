@@ -1,9 +1,10 @@
 from typing import Any, ClassVar, List, Optional, Union
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field, validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, validator
 
 from inference.core.entities.common import ApiKey, ModelID, ModelType
+from inference_sdk.http.entities import Confidence
 
 
 class BaseRequest(BaseModel):
@@ -145,10 +146,13 @@ class ObjectDetectionInferenceRequest(CVInferenceRequest):
         examples=[["class-1", "class-2", "class-n"]],
         description="If provided, only predictions for the listed classes will be returned",
     )
-    confidence: Optional[float] = Field(
+    confidence: Confidence = Field(
         default=0.4,
-        examples=[0.5],
-        description="The confidence threshold used to filter out predictions",
+        examples=[0.5, "best", "default"],
+        description=(
+            'Confidence threshold. "best" uses model-eval thresholds, '
+            '"default" uses the model built-in, or pass a float.'
+        ),
     )
     fix_batch_size: Optional[bool] = Field(
         default=False,
@@ -203,6 +207,18 @@ class KeypointsDetectionInferenceRequest(ObjectDetectionInferenceRequest):
         description="The confidence threshold used to filter out non visible keypoints",
     )
 
+    # TODO: drop this validator once model eval supports keypoint detection.
+    @field_validator("confidence", mode="before")
+    @classmethod
+    def _reject_best_confidence(cls, value: Any) -> Any:
+        if value == "best":
+            raise ValueError(
+                'confidence="best" is not supported for keypoint detection '
+                "— model eval does not yet produce per-class thresholds for "
+                'this task. Use a float or "default".'
+            )
+        return value
+
 
 class InstanceSegmentationInferenceRequest(ObjectDetectionInferenceRequest):
     """Instance Segmentation inference request.
@@ -231,6 +247,28 @@ class SemanticSegmentationInferenceRequest(CVInferenceRequest):
         kwargs["model_type"] = "semantic-segmentation"
         super().__init__(**kwargs)
 
+    confidence: Confidence = Field(
+        default=0.4,
+        examples=[0.5, "default"],
+        description=(
+            '"default" uses the model built-in threshold, or pass a float. '
+            '"best" (model-eval threshold) is not supported for semantic '
+            "segmentation yet."
+        ),
+    )
+
+    # TODO: drop this validator once model eval supports semantic segmentation.
+    @field_validator("confidence", mode="before")
+    @classmethod
+    def _reject_best_confidence(cls, value: Any) -> Any:
+        if value == "best":
+            raise ValueError(
+                'confidence="best" is not supported for semantic segmentation '
+                "— model eval does not yet produce per-class thresholds for "
+                'this task. Use a float or "default".'
+            )
+        return value
+
 
 class ClassificationInferenceRequest(CVInferenceRequest):
     """Classification inference request.
@@ -245,10 +283,13 @@ class ClassificationInferenceRequest(CVInferenceRequest):
         kwargs["model_type"] = "classification"
         super().__init__(**kwargs)
 
-    confidence: Optional[float] = Field(
+    confidence: Confidence = Field(
         default=0.4,
-        examples=[0.5],
-        description="The confidence threshold used to filter out predictions",
+        examples=[0.5, "best", "default"],
+        description=(
+            'Confidence threshold. "best" uses model-eval thresholds, '
+            '"default" uses the model built-in, or pass a float.'
+        ),
     )
     visualization_stroke_width: Optional[int] = Field(
         default=1,

@@ -13,7 +13,7 @@ from inference_models.configuration import (
     DEFAULT_DEVICE,
     INFERENCE_MODELS_YOLO26_DEFAULT_CONFIDENCE,
 )
-from inference_models.entities import ColorFormat
+from inference_models.entities import Confidence, ColorFormat
 from inference_models.errors import (
     EnvironmentConfigurationError,
     MissingDependencyError,
@@ -31,6 +31,7 @@ from inference_models.models.common.roboflow.model_packages import (
     parse_inference_config,
 )
 from inference_models.models.common.roboflow.post_processing import (
+    ConfidenceFilter,
     align_instance_segmentation_results,
     crop_masks_to_boxes,
     post_process_nms_fused_model_output,
@@ -42,6 +43,7 @@ from inference_models.models.common.roboflow.pre_processing import (
 from inference_models.utils.onnx_introspection import (
     get_selected_onnx_execution_providers,
 )
+from inference_models.weights_providers.entities import RecommendedParameters
 
 try:
     import onnxruntime
@@ -72,6 +74,7 @@ class YOLO26ForInstanceSegmentationOnnx(
         onnx_execution_providers: Optional[List[Union[str, tuple]]] = None,
         default_onnx_trt_options: bool = True,
         device: torch.device = DEFAULT_DEVICE,
+        recommended_parameters: Optional[RecommendedParameters] = None,
         **kwargs,
     ) -> "YOLO26ForInstanceSegmentationOnnx":
         if onnx_execution_providers is None:
@@ -136,6 +139,7 @@ class YOLO26ForInstanceSegmentationOnnx(
             inference_config=inference_config,
             device=device,
             input_batch_size=input_batch_size,
+            recommended_parameters=recommended_parameters,
         )
 
     def __init__(
@@ -146,6 +150,7 @@ class YOLO26ForInstanceSegmentationOnnx(
         class_names: List[str],
         device: torch.device,
         input_batch_size: Optional[int],
+        recommended_parameters=None,
     ):
         self._session = session
         self._input_name = input_name
@@ -154,6 +159,7 @@ class YOLO26ForInstanceSegmentationOnnx(
         self._device = device
         self._input_batch_size = input_batch_size
         self._session_thread_lock = Lock()
+        self.recommended_parameters = recommended_parameters
 
     @property
     def class_names(self) -> List[str]:
@@ -193,9 +199,15 @@ class YOLO26ForInstanceSegmentationOnnx(
         self,
         model_results: Tuple[torch.Tensor, torch.Tensor],
         pre_processing_meta: List[PreProcessingMetadata],
-        confidence: float = INFERENCE_MODELS_YOLO26_DEFAULT_CONFIDENCE,
+        confidence: Confidence = "default",
         **kwargs,
     ) -> List[InstanceDetections]:
+        confidence_filter = ConfidenceFilter(
+            confidence=confidence,
+            recommended_parameters=self.recommended_parameters,
+            default_confidence=INFERENCE_MODELS_YOLO26_DEFAULT_CONFIDENCE,
+        )
+        confidence = confidence_filter.get_threshold(self.class_names)
         instances, protos = model_results
         filtered_results = post_process_nms_fused_model_output(
             output=instances, conf_thresh=confidence

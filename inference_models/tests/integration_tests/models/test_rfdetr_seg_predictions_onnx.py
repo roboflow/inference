@@ -1114,3 +1114,29 @@ def test_package_with_nonsquare_letterbox_against_torch_batch_input(
             <= np.sum(pred.mask.cpu().numpy())
             <= _NONSQUARE_LETTERBOX_SEG_ONNX_EXPECTED_MASK_SUM_TORCH + 500
         )
+
+
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+def test_onnx_per_class_confidence_blocks_all_classes(
+    snake_image_numpy: np.ndarray,
+    snakes_rfdetr_seg_onnx_static_bs_stretch_package: str,
+) -> None:
+    """Baseline (see `test_package_with_stretch_against_numpy_input` above)
+    returns 1 detection. Setting a 0.99 per-class threshold on every class
+    leaves no detections."""
+    from inference_models.models.rfdetr.rfdetr_instance_segmentation_onnx import (
+        RFDetrForInstanceSegmentationOnnx,
+    )
+    from inference_models.weights_providers.entities import RecommendedParameters
+
+    model = RFDetrForInstanceSegmentationOnnx.from_pretrained(
+        model_name_or_path=snakes_rfdetr_seg_onnx_static_bs_stretch_package,
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
+    )
+    model.recommended_parameters = RecommendedParameters(
+        confidence=0.3,
+        per_class_confidence={name: 1.01 for name in model.class_names},
+    )
+    predictions = model(snake_image_numpy, confidence="best")
+    assert predictions[0].class_id.numel() == 0

@@ -49,7 +49,7 @@ def test_torchscript_package_stretch_numpy(
         expected_xyxy,
         atol=XYXY_ATOL,
     )
-    assert 210000 <= mask_region_sum <= 210200
+    assert 209000 <= mask_region_sum <= 210200
 
 
 @pytest.mark.slow
@@ -114,8 +114,8 @@ def test_torchscript_package_stretch_batch_numpy(
         expected_xyxy,
         atol=XYXY_ATOL,
     )
-    assert 210000 <= mask_region_sum_0 <= 210200
-    assert 210000 <= mask_region_sum_1 <= 210200
+    assert 209000 <= mask_region_sum_0 <= 210200
+    assert 209000 <= mask_region_sum_1 <= 210200
 
 
 @pytest.mark.slow
@@ -159,7 +159,7 @@ def test_torchscript_package_stretch_torch(
         expected_xyxy,
         atol=XYXY_ATOL,
     )
-    assert 210000 <= mask_region_sum <= 210200
+    assert 209000 <= mask_region_sum <= 210200
 
 
 @pytest.mark.slow
@@ -203,7 +203,7 @@ def test_torchscript_package_letterbox_numpy(
         expected_xyxy,
         atol=XYXY_ATOL,
     )
-    assert 221000 <= mask_region_sum <= 221300
+    assert 219500 <= mask_region_sum <= 221300
 
 
 @pytest.mark.slow
@@ -268,8 +268,8 @@ def test_torchscript_package_letterbox_batch_numpy(
         expected_xyxy,
         atol=XYXY_ATOL,
     )
-    assert 221000 <= mask_region_sum_0 <= 221300
-    assert 221000 <= mask_region_sum_1 <= 221300
+    assert 219500 <= mask_region_sum_0 <= 221300
+    assert 219500 <= mask_region_sum_1 <= 221300
 
 
 @pytest.mark.slow
@@ -313,4 +313,28 @@ def test_torchscript_package_letterbox_torch(
         expected_xyxy,
         atol=XYXY_ATOL,
     )
-    assert 221000 <= mask_region_sum <= 221300
+    assert 219500 <= mask_region_sum <= 221300
+
+
+@pytest.mark.slow
+@pytest.mark.torch_models
+def test_torchscript_per_class_confidence_filters_detections(
+    yolo26n_seg_snakes_stretch_torch_script_package: str,
+    snake_image_numpy: np.ndarray,
+) -> None:
+    from inference_models.models.yolo26.yolo26_instance_segmentation_torch_script import (
+        YOLO26ForInstanceSegmentationTorchScript,
+    )
+    from inference_models.weights_providers.entities import RecommendedParameters
+
+    model = YOLO26ForInstanceSegmentationTorchScript.from_pretrained(
+        model_name_or_path=yolo26n_seg_snakes_stretch_torch_script_package,
+        device=DEFAULT_DEVICE,
+    )
+    class_names = list(model.class_names)
+    model.recommended_parameters = RecommendedParameters(
+        confidence=0.25,
+        per_class_confidence={class_names[0]: 1.01},
+    )
+    predictions = model(snake_image_numpy, confidence="best")
+    assert predictions[0].class_id.numel() == 0

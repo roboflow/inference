@@ -12,7 +12,7 @@ from inference_models.configuration import (
     INFERENCE_MODELS_YOLOLITE_DEFAULT_IOU_THRESHOLD,
     INFERENCE_MODELS_YOLOLITE_DEFAULT_MAX_DETECTIONS,
 )
-from inference_models.entities import ColorFormat
+from inference_models.entities import Confidence, ColorFormat
 from inference_models.errors import (
     EnvironmentConfigurationError,
     MissingDependencyError,
@@ -30,6 +30,7 @@ from inference_models.models.common.roboflow.model_packages import (
     parse_inference_config,
 )
 from inference_models.models.common.roboflow.post_processing import (
+    ConfidenceFilter,
     post_process_nms_fused_model_output,
     rescale_detections,
     run_nms_for_object_detection,
@@ -40,6 +41,7 @@ from inference_models.models.common.roboflow.pre_processing import (
 from inference_models.utils.onnx_introspection import (
     get_selected_onnx_execution_providers,
 )
+from inference_models.weights_providers.entities import RecommendedParameters
 
 try:
     import onnxruntime
@@ -68,6 +70,7 @@ class YOLOLiteForObjectDetectionOnnx(
         onnx_execution_providers: Optional[List[Union[str, tuple]]] = None,
         default_onnx_trt_options: bool = True,
         device: torch.device = DEFAULT_DEVICE,
+        recommended_parameters: Optional[RecommendedParameters] = None,
         **kwargs,
     ) -> "YOLOLiteForObjectDetectionOnnx":
         if onnx_execution_providers is None:
@@ -131,6 +134,7 @@ class YOLOLiteForObjectDetectionOnnx(
             inference_config=inference_config,
             device=device,
             input_batch_size=input_batch_size,
+            recommended_parameters=recommended_parameters,
         )
 
     def __init__(
@@ -141,6 +145,7 @@ class YOLOLiteForObjectDetectionOnnx(
         class_names: List[str],
         device: torch.device,
         input_batch_size: Optional[int],
+        recommended_parameters=None,
     ):
         self._session = session
         self._input_name = input_name
@@ -154,6 +159,7 @@ class YOLOLiteForObjectDetectionOnnx(
             else inference_config.forward_pass.max_dynamic_batch_size
         )
         self._session_thread_lock = Lock()
+        self.recommended_parameters = recommended_parameters
 
     @property
     def class_names(self) -> List[str]:
@@ -193,18 +199,31 @@ class YOLOLiteForObjectDetectionOnnx(
         self,
         model_results: Tuple[torch.Tensor, ...],
         pre_processing_meta: List[PreProcessingMetadata],
-        confidence: float = INFERENCE_MODELS_YOLOLITE_DEFAULT_CONFIDENCE,
+        confidence: Confidence = "default",
         iou_threshold: float = INFERENCE_MODELS_YOLOLITE_DEFAULT_IOU_THRESHOLD,
         max_detections: int = INFERENCE_MODELS_YOLOLITE_DEFAULT_MAX_DETECTIONS,
         class_agnostic_nms: bool = INFERENCE_MODELS_YOLOLITE_DEFAULT_CLASS_AGNOSTIC_NMS,
         **kwargs,
     ) -> List[Detections]:
+        confidence_filter = ConfidenceFilter(
+            confidence=confidence,
+            recommended_parameters=self.recommended_parameters,
+            default_confidence=INFERENCE_MODELS_YOLOLITE_DEFAULT_CONFIDENCE,
+        )
+        confidence = confidence_filter.get_threshold(self.class_names)
         # Backward compatibility: earlier model packages have no post_processing config — always unfused 3-tensor output
-        if self._inference_config.post_processing and self._inference_config.post_processing.fused:
+        if (
+            self._inference_config.post_processing
+            and self._inference_config.post_processing.fused
+        ):
             nms_results = self._post_process_fused(model_results, confidence)
         else:
             nms_results = self._post_process_unfused(
-                model_results, confidence, iou_threshold, max_detections, class_agnostic_nms,
+                model_results,
+                confidence,
+                iou_threshold,
+                max_detections,
+                class_agnostic_nms,
             )
         rescaled_results = rescale_detections(
             detections=nms_results,
@@ -224,23 +243,27 @@ class YOLOLiteForObjectDetectionOnnx(
     def _post_process_fused(
         self,
         model_results: Tuple[torch.Tensor, ...],
-        confidence: float,
+        confidence: Union[float, torch.Tensor],
     ) -> List[torch.Tensor]:
         # Single output tensor [B, max_det, 6]: x1, y1, x2, y2, conf, class_id
         output = model_results[0]
-        return post_process_nms_fused_model_output(output=output, conf_thresh=confidence)
+        return post_process_nms_fused_model_output(
+            output=output, conf_thresh=confidence
+        )
 
     def _post_process_unfused(
         self,
         model_results: Tuple[torch.Tensor, ...],
-        confidence: float,
+        confidence: Union[float, torch.Tensor],
         iou_threshold: float,
         max_detections: int,
         class_agnostic_nms: bool,
     ) -> List[torch.Tensor]:
         # Decoded outputs without fused NMS: boxes_xyxy [B,N,4], obj_logits [B,N,1], cls_logits [B,N,C]
         boxes_xyxy, obj_logits, cls_logits = (
-            model_results[0], model_results[1], model_results[2],
+            model_results[0],
+            model_results[1],
+            model_results[2],
         )
         obj_conf = torch.sigmoid(obj_logits)
         cls_conf = torch.sigmoid(cls_logits)

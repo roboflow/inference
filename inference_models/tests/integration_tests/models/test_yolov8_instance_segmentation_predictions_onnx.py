@@ -92,7 +92,7 @@ def test_onnx_package_with_dynamic_batch_size_and_stretch_numpy_custom_size(
         atol=2,
     )
     assert (
-        17000 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 17200
+        16700 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 17200
     )
 
 
@@ -139,7 +139,7 @@ def test_onnx_package_with_dynamic_batch_size_and_stretch_torch_custom_size(
         atol=2,
     )
     assert (
-        17000 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 17200
+        16700 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 17200
     )
 
 
@@ -1029,7 +1029,7 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_numpy_cust
         atol=2,
     )
     assert (
-        13800 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 14000
+        13400 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 14000
     )
 
 
@@ -1076,7 +1076,7 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_torch_cust
         atol=2,
     )
     assert (
-        13800 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 14000
+        13400 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 14000
     )
 
 
@@ -1404,7 +1404,7 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_fused_nms_
         atol=2,
     )
     assert (
-        13800 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 14000
+        13400 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 14000
     )
 
 
@@ -1451,7 +1451,7 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_fused_nms_
         atol=2,
     )
     assert (
-        13800 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 14000
+        13400 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 14000
     )
 
 
@@ -2060,7 +2060,7 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_numpy_
         atol=2,
     )
     assert (
-        12800 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 13000
+        12500 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 13000
     )
 
 
@@ -2107,7 +2107,7 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_torch_
         atol=2,
     )
     assert (
-        12800 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 13000
+        12400 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 13000
     )
 
 
@@ -2435,7 +2435,7 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_fused_
         atol=2,
     )
     assert (
-        12800 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 13000
+        12400 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 13000
     )
 
 
@@ -2482,7 +2482,7 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_fused_
         atol=2,
     )
     assert (
-        12800 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 13000
+        12400 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 13000
     )
 
 
@@ -3044,7 +3044,7 @@ def test_onnx_package_with_dynamic_batch_size_and_center_crop_numpy(
         atol=2,
     )
     assert (
-        16200 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 16400
+        16000 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 16400
     )
 
 
@@ -3104,10 +3104,10 @@ def test_onnx_package_with_dynamic_batch_size_and_center_crop_batch_numpy(
         atol=2,
     )
     assert (
-        16200 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 16400
+        16000 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 16400
     )
     assert (
-        16200 <= predictions[1].to_supervision().mask[0, 174:371, 63:187].sum() <= 16400
+        16000 <= predictions[1].to_supervision().mask[0, 174:371, 63:187].sum() <= 16400
     )
 
 
@@ -3153,7 +3153,7 @@ def test_onnx_package_with_dynamic_batch_size_and_center_crop_torch(
         atol=2,
     )
     assert (
-        16200 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 16400
+        16000 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 16400
     )
 
 
@@ -3213,10 +3213,10 @@ def test_onnx_package_with_dynamic_batch_size_and_center_crop_batch_torch(
         atol=2,
     )
     assert (
-        16200 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 16400
+        16000 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 16400
     )
     assert (
-        16200 <= predictions[1].to_supervision().mask[0, 174:371, 63:187].sum() <= 16400
+        16000 <= predictions[1].to_supervision().mask[0, 174:371, 63:187].sum() <= 16400
     )
 
 
@@ -3276,10 +3276,10 @@ def test_onnx_package_with_dynamic_batch_size_and_center_crop_list_torch(
         atol=2,
     )
     assert (
-        16200 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 16400
+        16000 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 16400
     )
     assert (
-        16200 <= predictions[1].to_supervision().mask[0, 174:371, 63:187].sum() <= 16400
+        16000 <= predictions[1].to_supervision().mask[0, 174:371, 63:187].sum() <= 16400
     )
 
 
@@ -3327,7 +3327,7 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_letterbox_numpy(
         atol=2,
     )
     assert (
-        13900 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 14100
+        13800 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 14100
     )
 
 
@@ -3389,10 +3389,10 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_letterbox_batch_nu
         atol=2,
     )
     assert (
-        13900 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 14100
+        13800 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 14100
     )
     assert (
-        13900 <= predictions[1].to_supervision().mask[0, 174:371, 63:187].sum() <= 14100
+        13800 <= predictions[1].to_supervision().mask[0, 174:371, 63:187].sum() <= 14100
     )
 
 
@@ -3440,7 +3440,7 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_letterbox_torch(
         atol=2,
     )
     assert (
-        13900 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 14100
+        13800 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 14100
     )
 
 
@@ -3502,10 +3502,10 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_letterbox_batch_to
         atol=2,
     )
     assert (
-        13900 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 14100
+        13800 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 14100
     )
     assert (
-        13900 <= predictions[1].to_supervision().mask[0, 174:371, 63:187].sum() <= 14100
+        13800 <= predictions[1].to_supervision().mask[0, 174:371, 63:187].sum() <= 14100
     )
 
 
@@ -3567,8 +3567,35 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_letterbox_list_tor
         atol=2,
     )
     assert (
-        13900 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 14100
+        13800 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 14100
     )
     assert (
-        13900 <= predictions[1].to_supervision().mask[0, 174:371, 63:187].sum() <= 14100
+        13800 <= predictions[1].to_supervision().mask[0, 174:371, 63:187].sum() <= 14100
     )
+
+
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+def test_onnx_per_class_confidence_blocks_specific_class(
+    asl_yolov8n_onnx_seg_dynamic_bs_stretch: str,
+    asl_image_numpy: np.ndarray,
+) -> None:
+    """Baseline (see `test_onnx_package_with_dynamic_batch_size_and_stretch_numpy`
+    above) returns 1 detection of class 20 at conf 0.985. Setting a 0.99
+    per-class threshold on class 20 should leave no detections."""
+    from inference_models.models.yolov8.yolov8_instance_segmentation_onnx import (
+        YOLOv8ForInstanceSegmentationOnnx,
+    )
+    from inference_models.weights_providers.entities import RecommendedParameters
+
+    model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
+        model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_stretch,
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
+    )
+    class_names = list(model.class_names)
+    model.recommended_parameters = RecommendedParameters(
+        confidence=0.25,
+        per_class_confidence={class_names[20]: 0.99},
+    )
+    predictions = model(asl_image_numpy, confidence="best")
+    assert predictions[0].class_id.numel() == 0

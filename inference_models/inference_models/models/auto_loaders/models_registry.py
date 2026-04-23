@@ -286,6 +286,10 @@ REGISTERED_MODELS: Dict[
         module_name="inference_models.models.qwen3_5.qwen3_5_hf",
         class_name="Qwen35HF",
     ),
+    ("gemma-4", VLM_TASK, BackendType.HF): LazyClass(
+        module_name="inference_models.models.gemma4.gemma4_hf",
+        class_name="Gemma4HF",
+    ),
     ("florence-2", VLM_TASK, BackendType.HF): LazyClass(
         module_name="inference_models.models.florence2.florence2_hf",
         class_name="Florence2HF",
@@ -328,9 +332,19 @@ REGISTERED_MODELS: Dict[
         module_name="inference_models.models.rfdetr.rfdetr_instance_segmentation_pytorch",
         class_name="RFDetrForInstanceSegmentationTorch",
     ),
-    ("rfdetr", INSTANCE_SEGMENTATION_TASK, BackendType.ONNX): LazyClass(
-        module_name="inference_models.models.rfdetr.rfdetr_instance_segmentation_onnx",
-        class_name="RFDetrForInstanceSegmentationOnnx",
+    ("rfdetr", INSTANCE_SEGMENTATION_TASK, BackendType.ONNX): RegistryEntry(
+        model_class=LazyClass(
+            module_name="inference_models.models.rfdetr.rfdetr_instance_segmentation_onnx",
+            class_name="RFDetrForInstanceSegmentationOnnx",
+        ),
+        supported_model_features={
+            "resolution",
+            "patch_size",
+            "num_windows",
+            "dec_layers",
+            "num_queries",
+            "num_select",
+        },
     ),
     ("rfdetr", INSTANCE_SEGMENTATION_TASK, BackendType.TRT): LazyClass(
         module_name="inference_models.models.rfdetr.rfdetr_instance_segmentation_trt",

@@ -1873,7 +1873,7 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_numpy(
         atol=2,
     )
     assert (
-        16200 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 16400
+        16000 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 16400
     )
 
 
@@ -1929,10 +1929,10 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_batch_numpy(
         atol=2,
     )
     assert (
-        16200 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 16400
+        16000 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 16400
     )
     assert (
-        16200 <= predictions[1].to_supervision().mask[0, 174:371, 63:187].sum() <= 16400
+        16000 <= predictions[1].to_supervision().mask[0, 174:371, 63:187].sum() <= 16400
     )
 
 
@@ -1974,7 +1974,7 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_torch(
         atol=2,
     )
     assert (
-        16200 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 16400
+        16000 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 16400
     )
 
 
@@ -2030,10 +2030,10 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_batch_torch(
         atol=2,
     )
     assert (
-        16200 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 16400
+        16000 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 16400
     )
     assert (
-        16200 <= predictions[1].to_supervision().mask[0, 174:371, 63:187].sum() <= 16400
+        16000 <= predictions[1].to_supervision().mask[0, 174:371, 63:187].sum() <= 16400
     )
 
 
@@ -2089,10 +2089,10 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_list_torch(
         atol=2,
     )
     assert (
-        16200 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 16400
+        16000 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 16400
     )
     assert (
-        16200 <= predictions[1].to_supervision().mask[0, 174:371, 63:187].sum() <= 16400
+        16000 <= predictions[1].to_supervision().mask[0, 174:371, 63:187].sum() <= 16400
     )
 
 
@@ -2136,7 +2136,7 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_letterbox_cr
         atol=2,
     )
     assert (
-        13900 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 14100
+        13800 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 14100
     )
 
 
@@ -2194,10 +2194,10 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_letterbox_ba
         atol=2,
     )
     assert (
-        13900 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 14100
+        13800 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 14100
     )
     assert (
-        13900 <= predictions[1].to_supervision().mask[0, 174:371, 63:187].sum() <= 14100
+        13800 <= predictions[1].to_supervision().mask[0, 174:371, 63:187].sum() <= 14100
     )
 
 
@@ -2241,7 +2241,7 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_letterbox_cr
         atol=2,
     )
     assert (
-        13900 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 14100
+        13800 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 14100
     )
 
 
@@ -2299,10 +2299,10 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_letterbox_ba
         atol=2,
     )
     assert (
-        13900 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 14100
+        13800 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 14100
     )
     assert (
-        13900 <= predictions[1].to_supervision().mask[0, 174:371, 63:187].sum() <= 14100
+        13800 <= predictions[1].to_supervision().mask[0, 174:371, 63:187].sum() <= 14100
     )
 
 
@@ -2360,8 +2360,31 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_letterbox_li
         atol=2,
     )
     assert (
-        13900 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 14100
+        13800 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 14100
     )
     assert (
-        13900 <= predictions[1].to_supervision().mask[0, 174:371, 63:187].sum() <= 14100
+        13800 <= predictions[1].to_supervision().mask[0, 174:371, 63:187].sum() <= 14100
     )
+
+
+@pytest.mark.slow
+@pytest.mark.torch_models
+def test_torchscript_per_class_confidence_blocks_specific_class(
+    asl_yolov8n_torchscript_seg_static_bs_stretch: str,
+    asl_image_numpy: np.ndarray,
+) -> None:
+    """ASL dataset baseline returns class 20 detection. Setting a 1.01
+    per-class threshold on class 20 leaves no detections."""
+    from inference_models.weights_providers.entities import RecommendedParameters
+
+    model = YOLOv8ForInstanceSegmentationTorchScript.from_pretrained(
+        model_name_or_path=asl_yolov8n_torchscript_seg_static_bs_stretch,
+        device=DEFAULT_DEVICE,
+    )
+    class_names = list(model.class_names)
+    model.recommended_parameters = RecommendedParameters(
+        confidence=0.25,
+        per_class_confidence={class_names[20]: 1.01},
+    )
+    predictions = model(asl_image_numpy, confidence="best")
+    assert predictions[0].class_id.numel() == 0

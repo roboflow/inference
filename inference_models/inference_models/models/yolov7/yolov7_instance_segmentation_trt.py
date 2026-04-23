@@ -17,7 +17,7 @@ from inference_models.configuration import (
     INFERENCE_MODELS_YOLOV7_DEFAULT_IOU_THRESHOLD,
     INFERENCE_MODELS_YOLOV7_DEFAULT_MAX_DETECTIONS,
 )
-from inference_models.entities import ColorFormat
+from inference_models.entities import Confidence, ColorFormat
 from inference_models.errors import (
     CorruptedModelPackageError,
     MissingDependencyError,
@@ -38,6 +38,7 @@ from inference_models.models.common.roboflow.model_packages import (
     parse_trt_config,
 )
 from inference_models.models.common.roboflow.post_processing import (
+    ConfidenceFilter,
     align_instance_segmentation_results,
     crop_masks_to_boxes,
     preprocess_segmentation_masks,
@@ -53,6 +54,7 @@ from inference_models.models.common.trt import (
     infer_from_trt_engine,
     load_trt_model,
 )
+from inference_models.weights_providers.entities import RecommendedParameters
 
 try:
     import tensorrt as trt
@@ -96,6 +98,7 @@ class YOLOv7ForInstanceSegmentationTRT(
         engine_host_code_allowed: bool = False,
         trt_cuda_graph_cache: Optional[TRTCudaGraphCache] = None,
         default_trt_cuda_graph_cache_size: int = 8,
+        recommended_parameters: Optional[RecommendedParameters] = None,
         **kwargs,
     ) -> "YOLOv7ForInstanceSegmentationTRT":
         if device.type != "cuda":
@@ -173,6 +176,7 @@ class YOLOv7ForInstanceSegmentationTRT(
             cuda_context=cuda_context,
             execution_context=execution_context,
             trt_cuda_graph_cache=trt_cuda_graph_cache,
+            recommended_parameters=recommended_parameters,
         )
 
     def __init__(
@@ -187,6 +191,7 @@ class YOLOv7ForInstanceSegmentationTRT(
         cuda_context: cuda.Context,
         execution_context: trt.IExecutionContext,
         trt_cuda_graph_cache: Optional[TRTCudaGraphCache],
+        recommended_parameters=None,
     ):
         self._engine = engine
         self._input_name = input_name
@@ -201,6 +206,7 @@ class YOLOv7ForInstanceSegmentationTRT(
         self._inference_stream = torch.cuda.Stream(device=self._device)
         self._trt_cuda_graph_cache = trt_cuda_graph_cache
         self._thread_local_storage = threading.local()
+        self.recommended_parameters = recommended_parameters
 
     @property
     def class_names(self) -> List[str]:
@@ -251,12 +257,25 @@ class YOLOv7ForInstanceSegmentationTRT(
         self,
         model_results: Tuple[torch.Tensor, torch.Tensor],
         pre_processing_meta: List[PreProcessingMetadata],
-        confidence: float = INFERENCE_MODELS_YOLOV7_DEFAULT_CONFIDENCE,
+        confidence: Confidence = "default",
         iou_threshold: float = INFERENCE_MODELS_YOLOV7_DEFAULT_IOU_THRESHOLD,
         max_detections: int = INFERENCE_MODELS_YOLOV7_DEFAULT_MAX_DETECTIONS,
         class_agnostic_nms: bool = INFERENCE_MODELS_YOLOV7_DEFAULT_CLASS_AGNOSTIC_NMS,
         **kwargs,
     ) -> List[InstanceDetections]:
+        confidence_filter = ConfidenceFilter(
+            confidence=confidence,
+            recommended_parameters=self.recommended_parameters,
+            default_confidence=INFERENCE_MODELS_YOLOV7_DEFAULT_CONFIDENCE,
+        )
+        # YOLOv7 IS output scores slice includes the objectness column at
+        # index 0 with real classes at 1..N, so class_ids can land at 0
+        # (objectness-dominated). Prepend a dummy slot so the per-class
+        # tensor aligns with the slice-space indexing — get_threshold's
+        # missing-key fallback covers it with `fallback_threshold`.
+        confidence = confidence_filter.get_threshold(
+            ["__objectness_slot__", *self.class_names]
+        )
         with torch.cuda.stream(self._post_process_stream):
             for result_element in model_results:
                 result_element.record_stream(self._post_process_stream)

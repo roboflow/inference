@@ -15,9 +15,11 @@ from inference_models.configuration import (
     INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_CLASS_AGNOSTIC_NMS,
     INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_CONFIDENCE,
     INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_IOU_THRESHOLD,
+    INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_MASKS_BINARIZATION_THRESHOLD,
+    INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_MASKS_SMOOTHING_ENABLED,
     INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_MAX_DETECTIONS,
 )
-from inference_models.entities import ColorFormat
+from inference_models.entities import Confidence, ColorFormat
 from inference_models.errors import CorruptedModelPackageError
 from inference_models.models.common.model_packages import get_model_package_contents
 from inference_models.models.common.roboflow.model_packages import (
@@ -28,6 +30,7 @@ from inference_models.models.common.roboflow.model_packages import (
     parse_inference_config,
 )
 from inference_models.models.common.roboflow.post_processing import (
+    ConfidenceFilter,
     align_instance_segmentation_results,
     crop_masks_to_boxes,
     post_process_nms_fused_model_output,
@@ -38,6 +41,7 @@ from inference_models.models.common.roboflow.pre_processing import (
     pre_process_network_input,
 )
 from inference_models.models.common.torch import generate_batch_chunks
+from inference_models.weights_providers.entities import RecommendedParameters
 
 
 class YOLOv8ForInstanceSegmentationTorchScript(
@@ -51,6 +55,7 @@ class YOLOv8ForInstanceSegmentationTorchScript(
         cls,
         model_name_or_path: str,
         device: torch.device = DEFAULT_DEVICE,
+        recommended_parameters: Optional[RecommendedParameters] = None,
         **kwargs,
     ) -> "YOLOv8ForInstanceSegmentationTorchScript":
         model_package_content = get_model_package_contents(
@@ -102,6 +107,7 @@ class YOLOv8ForInstanceSegmentationTorchScript(
             class_names=class_names,
             inference_config=inference_config,
             device=device,
+            recommended_parameters=recommended_parameters,
         )
 
     def __init__(
@@ -110,12 +116,14 @@ class YOLOv8ForInstanceSegmentationTorchScript(
         inference_config: InferenceConfig,
         class_names: List[str],
         device: torch.device,
+        recommended_parameters=None,
     ):
         self._model = model
         self._inference_config = inference_config
         self._class_names = class_names
         self._device = device
         self._lock = Lock()
+        self.recommended_parameters = recommended_parameters
 
     @property
     def class_names(self) -> List[str]:
@@ -166,12 +174,20 @@ class YOLOv8ForInstanceSegmentationTorchScript(
         self,
         model_results: Tuple[torch.Tensor, torch.Tensor],
         pre_processing_meta: List[PreProcessingMetadata],
-        confidence: float = INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_CONFIDENCE,
+        confidence: Confidence = "default",
         iou_threshold: float = INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_IOU_THRESHOLD,
         max_detections: int = INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_MAX_DETECTIONS,
         class_agnostic_nms: bool = INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_CLASS_AGNOSTIC_NMS,
+        masks_smoothing_enabled: bool = INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_MASKS_SMOOTHING_ENABLED,
+        masks_binarization_threshold: float = INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_MASKS_BINARIZATION_THRESHOLD,
         **kwargs,
     ) -> List[InstanceDetections]:
+        confidence_filter = ConfidenceFilter(
+            confidence=confidence,
+            recommended_parameters=self.recommended_parameters,
+            default_confidence=INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_CONFIDENCE,
+        )
+        confidence = confidence_filter.get_threshold(self.class_names)
         instances, protos = model_results
         if self._inference_config.post_processing.fused:
             nms_results = post_process_nms_fused_model_output(
@@ -193,6 +209,8 @@ class YOLOv8ForInstanceSegmentationTorchScript(
                 protos=image_protos,
                 masks_in=image_bboxes[:, 6:],
             )
+            if masks_smoothing_enabled:
+                pre_processed_masks = torch.nn.functional.sigmoid(pre_processed_masks)
             cropped_masks = crop_masks_to_boxes(
                 image_bboxes[:, :4], pre_processed_masks
             )
@@ -212,6 +230,7 @@ class YOLOv8ForInstanceSegmentationTorchScript(
                 size_after_pre_processing=image_meta.size_after_pre_processing,
                 inference_size=image_meta.inference_size,
                 static_crop_offset=image_meta.static_crop_offset,
+                binarization_threshold=masks_binarization_threshold,
             )
             final_results.append(
                 InstanceDetections(

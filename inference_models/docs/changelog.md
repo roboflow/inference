@@ -1,5 +1,90 @@
 # Changelog
 
+## `0.26.1`
+
+### Changed
+- For Roboflow weights provider, Roboflow License Server proxy transitioned into 
+Roboflow Secure Gateway, altering naming conventions of all helper functions which are 
+considered private interface of weights provider (hence should not be considered breaking 
+for any clients). Along with this change, `LICENSE_SERVER` environmental variable controlling 
+the proxy address was replaced to be `SECURE_GATEWAY` - old variable will be deleted in the
+release following after the end of Q3 2026.
+
+---
+
+## `0.26.0` 
+
+### Added
+
+- Bringing back changes to filtering proposed in retracted release `0.25.0` 
+along with fixes for bugs which caused retraction.
+
+---
+
+## `0.25.2`
+
+### Fixed
+
+- OWLv2 compilation procedure clash with `transformers~=5.5` brought to dependencies along with `0.25.1` release and
+Gemma 4.
+
+---
+
+## `0.25.1`
+
+### Added
+
+- Documentation for Gemma 4 multimodal models (`Gemma4HF` / `gemma4_hf.py`): dedicated [model page](models/gemma4.md),
+  catalog and site navigation updates, home page pointer, and [environment variables](how-to/environment-variables.md#gemma-4)
+  for `INFERENCE_MODELS_GEMMA4_*` defaults.
+
+---
+
+## `0.25.0` **(retracted)**
+
+### Added
+
+- `post_process(...)` on object detection, instance segmentation, keypoint detection, classification, and semantic 
+segmentation models now accepts `confidence` as `"best"` (use per-class or global thresholds from 
+`RecommendedParameters` when available), `"default"` (model's built-in default), or a float override. Shared NMS 
+helpers accept a per-class `torch.Tensor` for single-pass per-class filtering.
+
+---
+
+## `0.24.4`
+
+### Changed
+
+- Behavior of Roboflow weights provider was changed - instead of throwing error each time **any** known model 
+package is fetched with manifest not passing validation - it warns about this fact and skips the package.
+This change is dictated by potential negative impact on stability which malformed manifests could have, in the face 
+of broader change on Roboflow platform making it possible tp externally register packages - sanitization and 
+validation is enabled on registry API side, but we introduce defensive change here to prevent potential instability.
+
+### Added
+
+- RF-DETR NAS capabilities for Instance Segmentation
+
+## `0.24.3`
+
+### Changed
+
+- Added `sigmoid` smoothing for instance-segmentation masks in YOLOv8, YOLOv11, YOLOv12 models family.
+Smoothing can be enabled / disabled via `masks_smoothing_enabled` parameter of `post_process(...)` method
+(which can be passed as `**kwarg` to `forward(...)`) with default set with 
+`INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_MASKS_SMOOTHING_ENABLED` (set to `True`). Additionally, the binarization 
+threshold for masks can be controlled via `masks_binarization_threshold` parameter - default to be 
+controlled with `INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_MASKS_BINARIZATION_THRESHOLD` (set to `0.5` or `0.0` 
+depending on `INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_MASKS_SMOOTHING_ENABLED`).
+
+!!! warning "Instance-segmentation masks will change"
+
+    Due to smoothing, there is slight change to segmentation masks expected - mainly regarding edges 
+    of predictions which should be smoother now. Change is dictated by alignment to old `inference` versions
+    behaviour, effectively drifting from `ultralytics` post-processing.
+
+---
+
 ## `0.24.2`
 
 ### Fixed
@@ -23,7 +108,7 @@ problem with loading is recoverable.
 
 ### Added
 
-- Support for Roboflow License Server proxy in Roboflow weights provider 
+- Support for Roboflow License Server proxy in Roboflow weights provider
 
 ---
 

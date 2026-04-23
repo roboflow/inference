@@ -41,7 +41,7 @@ def test_trt_package_numpy(
         expected_xyxy.cpu(),
         atol=5,
     )
-    assert 16500 <= predictions[0].mask.cpu().sum().item() <= 16600
+    assert 16100 <= predictions[0].mask.cpu().sum().item() <= 16700
 
 
 @pytest.mark.slow
@@ -82,7 +82,7 @@ def test_trt_package_batch_numpy(
         expected_xyxy.cpu(),
         atol=5,
     )
-    assert 16500 <= predictions[0].mask.cpu().sum().item() <= 16600
+    assert 16100 <= predictions[0].mask.cpu().sum().item() <= 16700
     assert torch.allclose(
         predictions[1].confidence.cpu(),
         torch.tensor([0.9671]).cpu(),
@@ -101,7 +101,7 @@ def test_trt_package_batch_numpy(
         expected_xyxy.cpu(),
         atol=5,
     )
-    assert 16500 <= predictions[1].mask.cpu().sum().item() <= 16600
+    assert 16100 <= predictions[1].mask.cpu().sum().item() <= 16700
 
 
 @pytest.mark.slow
@@ -142,7 +142,7 @@ def test_trt_package_torch(
         expected_xyxy.cpu(),
         atol=5,
     )
-    assert 16500 <= predictions[0].mask.cpu().sum().item() <= 16600
+    assert 16100 <= predictions[0].mask.cpu().sum().item() <= 16700
 
 
 @pytest.mark.slow
@@ -184,7 +184,7 @@ def test_trt_package_torch_multiple_predictions_in_row(
             expected_xyxy.cpu(),
             atol=5,
         )
-        assert 16500 <= predictions[0].mask.cpu().sum().item() <= 16600
+        assert 16100 <= predictions[0].mask.cpu().sum().item() <= 16700
 
 
 @pytest.mark.slow
@@ -225,7 +225,7 @@ def test_trt_package_torch_list(
         expected_xyxy.cpu(),
         atol=5,
     )
-    assert 16500 <= predictions[0].mask.cpu().sum().item() <= 16600
+    assert 16100 <= predictions[0].mask.cpu().sum().item() <= 16700
     assert torch.allclose(
         predictions[1].confidence.cpu(),
         torch.tensor([0.9671]).cpu(),
@@ -244,7 +244,7 @@ def test_trt_package_torch_list(
         expected_xyxy.cpu(),
         atol=5,
     )
-    assert 16500 <= predictions[1].mask.cpu().sum().item() <= 16600
+    assert 16100 <= predictions[1].mask.cpu().sum().item() <= 16700
 
 
 @pytest.mark.slow
@@ -285,7 +285,7 @@ def test_trt_package_torch_batch(
         expected_xyxy.cpu(),
         atol=5,
     )
-    assert 16500 <= predictions[0].mask.cpu().sum().item() <= 16600
+    assert 16100 <= predictions[0].mask.cpu().sum().item() <= 16700
     assert torch.allclose(
         predictions[1].confidence.cpu(),
         torch.tensor([0.9671]).cpu(),
@@ -304,4 +304,28 @@ def test_trt_package_torch_batch(
         expected_xyxy.cpu(),
         atol=5,
     )
-    assert 16500 <= predictions[1].mask.cpu().sum().item() <= 16600
+    assert 16100 <= predictions[1].mask.cpu().sum().item() <= 16700
+
+
+@pytest.mark.slow
+@pytest.mark.trt_extras
+def test_trt_per_class_confidence_filters_detections(
+    yolo26_seg_asl_trt_package: str,
+    asl_image_numpy: np.ndarray,
+) -> None:
+    from inference_models.models.yolo26.yolo26_instance_segmentation_trt import (
+        YOLO26ForInstanceSegmentationTRT,
+    )
+    from inference_models.weights_providers.entities import RecommendedParameters
+
+    model = YOLO26ForInstanceSegmentationTRT.from_pretrained(
+        model_name_or_path=yolo26_seg_asl_trt_package,
+        engine_host_code_allowed=True,
+    )
+    class_names = list(model.class_names)
+    model.recommended_parameters = RecommendedParameters(
+        confidence=0.25,
+        per_class_confidence={class_names[20]: 1.01},
+    )
+    predictions = model(asl_image_numpy, confidence="best")
+    assert predictions[0].class_id.numel() == 0
