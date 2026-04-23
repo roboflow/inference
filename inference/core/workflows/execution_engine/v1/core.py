@@ -51,6 +51,7 @@ class ExecutionEngineV1(BaseExecutionEngine):
         max_concurrent_steps: int = 1,
         prevent_local_images_loading: bool = False,
         workflow_id: Optional[str] = None,
+        workflow_url: Optional[str] = None,
         profiler: Optional[WorkflowsProfiler] = None,
         executor: Optional[ThreadPoolExecutor] = None,
         step_error_handler: Optional[
@@ -72,7 +73,7 @@ class ExecutionEngineV1(BaseExecutionEngine):
             "dynamic_workflows_blocks.api_key",
             init_parameters.get("workflows_core.api_key"),
         )
-        init_parameters["workflow_id"] = workflow_definition.get("id") or workflow_id
+        init_parameters["workflow_url"] = workflow_url
 
         if profiler is None:
             profiler = NullWorkflowsProfiler.init()

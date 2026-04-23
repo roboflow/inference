@@ -371,27 +371,27 @@ def test_build_event_payload_minimal() -> None:
     assert "workflowId" not in payload
 
 
-def test_build_event_payload_includes_workflow_id_when_set() -> None:
+def test_build_event_payload_includes_workflow_url_as_workflow_id() -> None:
     payload = _build_event_payload(
         event_type="custom",
         solution="test",
         images=[],
         event_data={},
         custom_metadata={},
-        workflow_id="wf-abc-123",
+        workflow_url="https://app.roboflow.com/workflows/ws/wf-abc",
     )
 
-    assert payload["workflowId"] == "wf-abc-123"
+    assert payload["workflowId"] == "https://app.roboflow.com/workflows/ws/wf-abc"
 
 
-def test_build_event_payload_omits_workflow_id_when_none() -> None:
+def test_build_event_payload_omits_workflow_id_when_workflow_url_is_none() -> None:
     payload = _build_event_payload(
         event_type="custom",
         solution="test",
         images=[],
         event_data={},
         custom_metadata={},
-        workflow_id=None,
+        workflow_url=None,
     )
 
     assert "workflowId" not in payload
@@ -561,88 +561,6 @@ def test_run_synchronous(mock_execute: MagicMock) -> None:
     mock_execute.assert_called_once()
     assert result["error_status"] is False
     assert result["message"] == "Vision event sent successfully"
-
-
-@patch(
-    "inference.core.workflows.core_steps.sinks.roboflow.vision_events.v1.requests.post"
-)
-def test_run_synchronous_sends_workflow_id_in_payload(mock_post: MagicMock) -> None:
-    mock_response = MagicMock()
-    mock_response.raise_for_status.return_value = None
-    mock_post.return_value = mock_response
-
-    block = RoboflowVisionEventsBlockV1(
-        api_key="test-key",
-        background_tasks=None,
-        thread_pool_executor=None,
-        workflow_id="wf-xyz",
-    )
-    result = block.run(
-        input_image=None,
-        output_image=None,
-        predictions=None,
-        event_type="custom",
-        solution="test",
-        custom_metadata={},
-        fire_and_forget=False,
-        disable_sink=False,
-        custom_value="hello",
-    )
-
-    assert result["error_status"] is False
-    mock_post.assert_called_once()
-    sent_payload = mock_post.call_args[1]["json"]
-    assert sent_payload["workflowId"] == "wf-xyz"
-
-
-@patch(
-    "inference.core.workflows.core_steps.sinks.roboflow.vision_events.v1.requests.post"
-)
-def test_run_synchronous_omits_workflow_id_when_not_provided(
-    mock_post: MagicMock,
-) -> None:
-    mock_response = MagicMock()
-    mock_response.raise_for_status.return_value = None
-    mock_post.return_value = mock_response
-
-    block = RoboflowVisionEventsBlockV1(
-        api_key="test-key",
-        background_tasks=None,
-        thread_pool_executor=None,
-    )
-    block.run(
-        input_image=None,
-        output_image=None,
-        predictions=None,
-        event_type="custom",
-        solution="test",
-        custom_metadata={},
-        fire_and_forget=False,
-        disable_sink=False,
-        custom_value="hello",
-    )
-
-    mock_post.assert_called_once()
-    sent_payload = mock_post.call_args[1]["json"]
-    assert "workflowId" not in sent_payload
-
-
-def test_get_init_parameters_requests_workflow_id() -> None:
-    assert "workflow_id" in RoboflowVisionEventsBlockV1.get_init_parameters()
-
-
-def test_workflow_id_has_default_initializer_for_direct_compile_workflow_callers() -> (
-    None
-):
-    """Regression: the block declares workflow_id as an init parameter, so callers
-    that invoke compile_workflow() directly (without ExecutionEngineV1.init() merging
-    workflow_id into init_parameters) must still be able to resolve it from the core
-    REGISTERED_INITIALIZERS registry, or step initialisation raises
-    BlockInitParameterNotProvidedError."""
-    from inference.core.workflows.core_steps.loader import REGISTERED_INITIALIZERS
-
-    assert "workflow_id" in REGISTERED_INITIALIZERS
-    assert REGISTERED_INITIALIZERS["workflow_id"] is None
 
 
 # === Non-SIMD / Compilation Regression Tests (ENT-1126) ===

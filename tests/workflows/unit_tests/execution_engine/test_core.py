@@ -90,10 +90,8 @@ def test_execution_engine_init_with_invalid_step_error_handler() -> None:
         )
 
 
-@mock.patch(
-    "inference.core.workflows.execution_engine.v1.core.compile_workflow"
-)
-def test_v1_engine_init_injects_external_workflow_id_when_no_internal_id(
+@mock.patch("inference.core.workflows.execution_engine.v1.core.compile_workflow")
+def test_v1_engine_init_injects_workflow_url_into_init_parameters(
     compile_workflow_mock: mock.MagicMock,
 ) -> None:
     from inference.core.workflows.execution_engine.v1.core import ExecutionEngineV1
@@ -103,41 +101,15 @@ def test_v1_engine_init_injects_external_workflow_id_when_no_internal_id(
     ExecutionEngineV1.init(
         workflow_definition={"version": "1.0.0"},
         init_parameters={},
-        workflow_id="ext-123",
+        workflow_url="https://app.roboflow.com/workflows/ws/wf-abc",
     )
 
-    forwarded_init_parameters = compile_workflow_mock.call_args.kwargs[
-        "init_parameters"
-    ]
-    assert forwarded_init_parameters["workflow_id"] == "ext-123"
+    forwarded = compile_workflow_mock.call_args.kwargs["init_parameters"]
+    assert forwarded["workflow_url"] == "https://app.roboflow.com/workflows/ws/wf-abc"
 
 
-@mock.patch(
-    "inference.core.workflows.execution_engine.v1.core.compile_workflow"
-)
-def test_v1_engine_init_prefers_internal_id_over_external_workflow_id(
-    compile_workflow_mock: mock.MagicMock,
-) -> None:
-    from inference.core.workflows.execution_engine.v1.core import ExecutionEngineV1
-
-    compile_workflow_mock.return_value = mock.MagicMock()
-
-    ExecutionEngineV1.init(
-        workflow_definition={"version": "1.0.0", "id": "internal-abc"},
-        init_parameters={},
-        workflow_id="ext-123",
-    )
-
-    forwarded_init_parameters = compile_workflow_mock.call_args.kwargs[
-        "init_parameters"
-    ]
-    assert forwarded_init_parameters["workflow_id"] == "internal-abc"
-
-
-@mock.patch(
-    "inference.core.workflows.execution_engine.v1.core.compile_workflow"
-)
-def test_v1_engine_init_sets_workflow_id_to_none_when_neither_provided(
+@mock.patch("inference.core.workflows.execution_engine.v1.core.compile_workflow")
+def test_v1_engine_init_sets_workflow_url_to_none_when_not_provided(
     compile_workflow_mock: mock.MagicMock,
 ) -> None:
     from inference.core.workflows.execution_engine.v1.core import ExecutionEngineV1
@@ -149,7 +121,5 @@ def test_v1_engine_init_sets_workflow_id_to_none_when_neither_provided(
         init_parameters={},
     )
 
-    forwarded_init_parameters = compile_workflow_mock.call_args.kwargs[
-        "init_parameters"
-    ]
-    assert forwarded_init_parameters["workflow_id"] is None
+    forwarded = compile_workflow_mock.call_args.kwargs["init_parameters"]
+    assert forwarded["workflow_url"] is None

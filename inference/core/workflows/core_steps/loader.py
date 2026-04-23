@@ -620,7 +620,7 @@ REGISTERED_INITIALIZERS = {
     "step_execution_mode": StepExecutionMode(WORKFLOWS_STEP_EXECUTION_MODE),
     "background_tasks": None,
     "thread_pool_executor": None,
-    "workflow_id": None,
+    "workflow_url": None,
     "allow_access_to_file_system": ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE,
     "allowed_write_directory": WORKFLOW_BLOCKS_WRITE_DIRECTORY,
     "allow_access_to_environmental_variables": ALLOW_WORKFLOW_BLOCKS_ACCESSING_ENVIRONMENTAL_VARIABLES,
