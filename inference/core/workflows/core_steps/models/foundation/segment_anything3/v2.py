@@ -26,6 +26,7 @@ from inference.core.env import (
 )
 from inference.core.managers.base import ModelManager
 from inference.core.roboflow_api import build_roboflow_api_headers
+from inference.core.utils.url_utils import wrap_url
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.utils import (
     attach_parents_coordinates_to_batch_of_sv_detections,
@@ -493,7 +494,7 @@ class SegmentAnything3BlockV2(WorkflowBlock):
                 headers = build_roboflow_api_headers(explicit_headers=headers)
 
                 response = requests.post(
-                    f"{endpoint}?api_key={api_key}",
+                    wrap_url(f"{endpoint}?api_key={api_key}"),
                     json=payload,
                     headers=headers,
                     timeout=60,

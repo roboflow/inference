@@ -15,7 +15,7 @@ from inference_models.configuration import (
     DEFAULT_DEVICE,
     INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE,
 )
-from inference_models.entities import ColorFormat
+from inference_models.entities import Confidence, ColorFormat
 from inference_models.errors import (
     CorruptedModelPackageError,
     InvalidModelInitParameterError,
@@ -48,6 +48,7 @@ from inference_models.models.rfdetr.common import (
 from inference_models.models.rfdetr.default_labels import resolve_labels
 from inference_models.models.rfdetr.post_processor import PostProcess
 from inference_models.models.rfdetr.pre_processing import pre_process_network_input
+from inference_models.models.common.roboflow.post_processing import ConfidenceFilter
 from inference_models.models.rfdetr.rfdetr_base_pytorch import (
     LWDETR,
     RFDETRSeg2XLargeConfig,
@@ -59,6 +60,7 @@ from inference_models.models.rfdetr.rfdetr_base_pytorch import (
     RFDETRSegXLargeConfig,
     build_model,
 )
+from inference_models.weights_providers.entities import RecommendedParameters
 
 try:
     torch.set_float32_matmul_precision("high")
@@ -94,6 +96,7 @@ class RFDetrForInstanceSegmentationTorch(
         labels: Optional[Union[str, List[str]]] = None,
         resolution: Optional[int] = None,
         rf_detr_max_input_resolution: Optional[Union[int, Tuple[int, int]]] = None,
+        recommended_parameters: Optional[RecommendedParameters] = None,
         **kwargs,
     ) -> "RFDetrForInstanceSegmentationTorch":
         if os.path.isfile(model_name_or_path):
@@ -176,6 +179,7 @@ class RFDetrForInstanceSegmentationTorch(
             inference_config=inference_config,
             post_processor=post_processor,
             resolution=model_config.resolution,
+            recommended_parameters=recommended_parameters,
         )
 
     @classmethod
@@ -293,6 +297,7 @@ class RFDetrForInstanceSegmentationTorch(
         device: torch.device,
         post_processor: PostProcess,
         resolution: int,
+        recommended_parameters=None,
     ):
         self._model = model
         self._inference_config = inference_config
@@ -307,6 +312,7 @@ class RFDetrForInstanceSegmentationTorch(
         self._optimized_batch_size = None
         self._optimized_dtype = None
         self._lock = RLock()
+        self.recommended_parameters = recommended_parameters
 
     @property
     def class_names(self) -> List[str]:
@@ -415,19 +421,26 @@ class RFDetrForInstanceSegmentationTorch(
         self,
         model_results: dict,
         pre_processing_meta: List[PreProcessingMetadata],
-        confidence: float = INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE,
+        confidence: Confidence = "default",
         **kwargs,
     ) -> List[InstanceDetections]:
+        confidence_filter = ConfidenceFilter(
+            confidence=confidence,
+            recommended_parameters=self.recommended_parameters,
+            default_confidence=INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE,
+        )
         bboxes, logits, masks = (
             model_results["pred_boxes"],
             model_results["pred_logits"],
             model_results["pred_masks"],
         )
-        return post_process_instance_segmentation_results(
+        results = post_process_instance_segmentation_results(
             bboxes=bboxes,
             logits=logits,
             masks=masks,
             pre_processing_meta=pre_processing_meta,
-            threshold=confidence,
+            threshold=confidence_filter.get_threshold(self.class_names),
+            num_classes=len(self.class_names),
             classes_re_mapping=self._classes_re_mapping,
         )
+        return results

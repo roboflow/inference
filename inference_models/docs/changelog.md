@@ -1,5 +1,56 @@
 # Changelog
 
+## `0.26.1`
+
+### Changed
+- For Roboflow weights provider, Roboflow License Server proxy transitioned into 
+Roboflow Secure Gateway, altering naming conventions of all helper functions which are 
+considered private interface of weights provider (hence should not be considered breaking 
+for any clients). Along with this change, `LICENSE_SERVER` environmental variable controlling 
+the proxy address was replaced to be `SECURE_GATEWAY` - old variable will be deleted in the
+release following after the end of Q3 2026.
+
+---
+
+## `0.26.0` 
+
+### Added
+
+- Bringing back changes to filtering proposed in retracted release `0.25.0` 
+along with fixes for bugs which caused retraction.
+
+---
+
+## `0.25.2`
+
+### Fixed
+
+- OWLv2 compilation procedure clash with `transformers~=5.5` brought to dependencies along with `0.25.1` release and
+Gemma 4.
+
+---
+
+## `0.25.1`
+
+### Added
+
+- Documentation for Gemma 4 multimodal models (`Gemma4HF` / `gemma4_hf.py`): dedicated [model page](models/gemma4.md),
+  catalog and site navigation updates, home page pointer, and [environment variables](how-to/environment-variables.md#gemma-4)
+  for `INFERENCE_MODELS_GEMMA4_*` defaults.
+
+---
+
+## `0.25.0` **(retracted)**
+
+### Added
+
+- `post_process(...)` on object detection, instance segmentation, keypoint detection, classification, and semantic 
+segmentation models now accepts `confidence` as `"best"` (use per-class or global thresholds from 
+`RecommendedParameters` when available), `"default"` (model's built-in default), or a float override. Shared NMS 
+helpers accept a per-class `torch.Tensor` for single-pass per-class filtering.
+
+---
+
 ## `0.24.4`
 
 ### Changed
@@ -57,7 +108,7 @@ problem with loading is recoverable.
 
 ### Added
 
-- Support for Roboflow License Server proxy in Roboflow weights provider 
+- Support for Roboflow License Server proxy in Roboflow weights provider
 
 ---
 

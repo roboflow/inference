@@ -20,7 +20,7 @@ WORKFLOW_DEFINITION = {
     ],
     "steps": [
         {
-            "type": "roboflow_core/roboflow_classification_model@v1",
+            "type": "roboflow_core/roboflow_classification_model@v3",
             "name": "model",
             "images": "$inputs.image",
             "model_id": "$inputs.model_id",

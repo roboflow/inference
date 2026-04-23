@@ -1,5 +1,4 @@
 import os
-import urllib.request
 from time import perf_counter
 from typing import Any, List, Optional
 
@@ -81,16 +80,15 @@ class GroundingDINO(RoboflowCoreModel):
 
         GROUNDING_DINO_CACHE_DIR = os.path.join(MODEL_CACHE_DIR, model_id)
 
+        import groundingdino.config as _gd_config
+
         GROUNDING_DINO_CONFIG_PATH = os.path.join(
-            GROUNDING_DINO_CACHE_DIR, "GroundingDINO_SwinT_OGC.py"
+            os.path.dirname(_gd_config.__file__),
+            "GroundingDINO_SwinT_OGC.py",
         )
 
         if not os.path.exists(GROUNDING_DINO_CACHE_DIR):
             os.makedirs(GROUNDING_DINO_CACHE_DIR)
-
-        if not os.path.exists(GROUNDING_DINO_CONFIG_PATH):
-            url = "https://raw.githubusercontent.com/roboflow/GroundingDINO/main/groundingdino/config/GroundingDINO_SwinT_OGC.py"
-            urllib.request.urlretrieve(url, GROUNDING_DINO_CONFIG_PATH)
 
         self.model = Model(
             model_config_path=GROUNDING_DINO_CONFIG_PATH,

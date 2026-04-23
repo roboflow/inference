@@ -678,25 +678,34 @@ class InferenceModelsClassificationAdapter(Model):
         List[ClassificationInferenceResponse],
     ]:
         mapped_kwargs = self.map_inference_kwargs(kwargs)
-        post_processed_predictions = self._model.post_process(
-            predictions, **mapped_kwargs
-        )
-        if isinstance(post_processed_predictions, list):
-            # multi-label classification
+        if isinstance(self._model, MultiLabelClassificationModel):
+            post_processed_predictions = self._model.post_process(
+                predictions, **mapped_kwargs
+            )
             return prepare_multi_label_classification_response(
                 post_processed_predictions,
                 image_sizes=returned_metadata,
                 class_names=self.class_names,
-                confidence_threshold=kwargs.get("confidence", 0.5),
             )
-        else:
-            # single-label classification
-            return prepare_classification_response(
-                post_processed_predictions,
-                image_sizes=returned_metadata,
-                class_names=self.class_names,
-                confidence_threshold=kwargs.get("confidence", 0.5),
-            )
+        # Single-label classification: top-1 always wins regardless of
+        # confidence, so per-class refinement isn't meaningful here. The base
+        # class deliberately opts out of recommendedParameters entirely. The
+        # response builder still uses the confidence as a cutoff that decides
+        # which alternative classes show up — string-valued "best"/"default"
+        # have no meaningful mapping here, so fall back to 0.5.
+        post_processed_predictions = self._model.post_process(
+            predictions, **mapped_kwargs
+        )
+        raw_confidence = kwargs.get("confidence")
+        confidence_threshold = (
+            raw_confidence if isinstance(raw_confidence, (int, float)) else 0.5
+        )
+        return prepare_classification_response(
+            post_processed_predictions,
+            image_sizes=returned_metadata,
+            class_names=self.class_names,
+            confidence_threshold=confidence_threshold,
+        )
 
     def clear_cache(self, delete_from_disk: bool = True) -> None:
         """Clears any cache if necessary. TODO: Implement this to delete the cache from the experimental model.
@@ -748,25 +757,32 @@ def prepare_multi_label_classification_response(
     post_processed_predictions: List[MultiLabelClassificationPrediction],
     image_sizes: List[Tuple[int, int]],
     class_names: List[str],
-    confidence_threshold: float,
 ) -> List[MultiLabelClassificationInferenceResponse]:
+    """Build the API response from a model's post-processed predictions.
+
+    `prediction.class_ids` is the authoritative list of "passed" classes —
+    the model's `post_process` already applied the
+    full priority chain (user → per-class → global → default), so the
+    response builder doesn't re-threshold here. The full per-class score
+    vector is still emitted in `image_predictions_dict` for UI display.
+    """
     results = []
     for prediction, image_size in zip(post_processed_predictions, image_sizes):
-        image_predictions_dict = dict()
-        predicted_classes = []
         class_confidences = _reshape_classification_confidences(
             confidence=prediction.confidence.cpu(),
             expected_num_images=1,
             class_names=class_names,
         )[0].tolist()
-        for class_id, confidence in enumerate(class_confidences):
-            cls_name = class_names[class_id]
-            image_predictions_dict[cls_name] = {
+        image_predictions_dict = {
+            class_names[class_id]: {
                 "confidence": confidence,
                 "class_id": class_id,
             }
-            if confidence > confidence_threshold:
-                predicted_classes.append(cls_name)
+            for class_id, confidence in enumerate(class_confidences)
+        }
+        predicted_classes = [
+            class_names[class_id] for class_id in prediction.class_ids.tolist()
+        ]
         results.append(
             MultiLabelClassificationInferenceResponse(
                 predictions=image_predictions_dict,
