@@ -88,6 +88,7 @@ def test_seg_onnx_package_with_static_batch_size_and_letterbox_numpy_rle_variant
         decoded_mask.cpu().numpy(), predictions_ref[0].mask.cpu().numpy()
     )
 
+
 @pytest.mark.slow
 @pytest.mark.onnx_extras
 def test_seg_onnx_package_with_static_batch_size_and_letterbox_numpy_list(
@@ -188,6 +189,7 @@ def test_seg_onnx_package_with_static_batch_size_and_letterbox_numpy_list_rle_va
     assert np.allclose(
         decoded_mask_2.cpu().numpy(), predictions_ref[1].mask.cpu().numpy()
     )
+
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras

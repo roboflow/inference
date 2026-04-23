@@ -50,6 +50,7 @@ def test_onnx_package_with_dynamic_batch_size_and_stretch_numpy(
         16000 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 16200
     )
 
+
 @pytest.mark.slow
 @pytest.mark.onnx_extras
 def test_onnx_package_with_dynamic_batch_size_and_stretch_numpy_rle_variant(

@@ -93,6 +93,7 @@ def test_trt_package_numpy_rle_variant(
         decoded_mask.cpu().numpy(), predictions_ref[0].mask.cpu().numpy()
     )
 
+
 @pytest.mark.slow
 @pytest.mark.trt_extras
 def test_trt_package_batch_numpy(
@@ -151,6 +152,7 @@ def test_trt_package_batch_numpy(
         atol=5,
     )
     assert 16000 <= predictions[1].mask.cpu().sum().item() <= 16200
+
 
 @pytest.mark.slow
 @pytest.mark.trt_extras
@@ -223,7 +225,6 @@ def test_trt_package_batch_numpy_rle_variant(
     assert np.allclose(
         decoded_mask_2.cpu().numpy(), predictions_ref[1].mask.cpu().numpy()
     )
-
 
 
 @pytest.mark.slow

@@ -106,6 +106,7 @@ def test_torchscript_package_with_static_batch_size_and_stretch_numpy_rle_varian
         decoded_mask.cpu().numpy(), predictions_ref[0].mask.cpu().numpy()
     )
 
+
 @pytest.mark.slow
 @pytest.mark.torch_models
 def test_torchscript_package_with_static_batch_size_and_stretch_batch_numpy(

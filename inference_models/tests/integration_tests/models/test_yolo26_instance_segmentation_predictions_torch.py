@@ -52,6 +52,7 @@ def test_torchscript_package_stretch_numpy(
     )
     assert 209000 <= mask_region_sum <= 210200
 
+
 @pytest.mark.slow
 @pytest.mark.torch_models
 def test_torchscript_package_stretch_numpy_rle_variant(
@@ -101,6 +102,7 @@ def test_torchscript_package_stretch_numpy_rle_variant(
     assert np.allclose(
         decoded_mask.cpu().numpy(), predictions_ref[0].mask.cpu().numpy()
     )
+
 
 @pytest.mark.slow
 @pytest.mark.torch_models
@@ -183,7 +185,9 @@ def test_torchscript_package_stretch_batch_numpy_rle_variant(
         device=DEFAULT_DEVICE,
     )
 
-    predictions = model([snake_image_numpy, snake_image_numpy], confidence=0.25, mask_format="rle")
+    predictions = model(
+        [snake_image_numpy, snake_image_numpy], confidence=0.25, mask_format="rle"
+    )
     predictions_ref = model([snake_image_numpy, snake_image_numpy], confidence=0.25)
     decoded_mask_1 = coco_rle_masks_to_torch_mask(
         instances_masks=predictions[0].mask, device=torch.device("cpu")
@@ -245,6 +249,7 @@ def test_torchscript_package_stretch_batch_numpy_rle_variant(
     assert np.allclose(
         decoded_mask_2.cpu().numpy(), predictions_ref[1].mask.cpu().numpy()
     )
+
 
 @pytest.mark.slow
 @pytest.mark.torch_models
