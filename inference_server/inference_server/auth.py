@@ -13,6 +13,7 @@ Environment variables::
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
 import time
@@ -40,6 +41,11 @@ _cache: dict[str, _CacheEntry] = {}
 _session: Optional[aiohttp.ClientSession] = None
 
 
+def _key_hash(api_key: str) -> str:
+    """SHA-256 of raw key — avoids storing plaintext in memory."""
+    return hashlib.sha256(api_key.encode()).hexdigest()
+
+
 def _get_session() -> aiohttp.ClientSession:
     """Reuse a single aiohttp session per worker process.
     Safe: only called from async code on a single event loop thread.
@@ -61,7 +67,7 @@ async def validate_api_key(api_key: str) -> tuple[bool, Optional[str]]:
     """
     now = time.monotonic()
 
-    entry = _cache.get(api_key)
+    entry = _cache.get(_key_hash(api_key))
     if entry is not None and entry.expires_at > now:
         return entry.valid, entry.workspace_id
 
@@ -72,7 +78,7 @@ async def validate_api_key(api_key: str) -> tuple[bool, Optional[str]]:
             params={"api_key": api_key, "nocache": "true"},
         ) as resp:
             if resp.status != 200:
-                _cache[api_key] = _CacheEntry(
+                _cache[_key_hash(api_key)] = _CacheEntry(
                     expires_at=now + _CACHE_FAIL_TTL_S,
                     valid=False,
                 )
@@ -81,13 +87,13 @@ async def validate_api_key(api_key: str) -> tuple[bool, Optional[str]]:
             data = await resp.json()
             workspace_id = data.get("workspace")
             if not workspace_id:
-                _cache[api_key] = _CacheEntry(
+                _cache[_key_hash(api_key)] = _CacheEntry(
                     expires_at=now + _CACHE_FAIL_TTL_S,
                     valid=False,
                 )
                 return False, None
 
-            _cache[api_key] = _CacheEntry(
+            _cache[_key_hash(api_key)] = _CacheEntry(
                 expires_at=now + _CACHE_TTL_S,
                 valid=True,
                 workspace_id=workspace_id,
@@ -96,7 +102,7 @@ async def validate_api_key(api_key: str) -> tuple[bool, Optional[str]]:
 
     except Exception:
         logger.warning("Auth validation failed (network error)", exc_info=True)
-        _cache[api_key] = _CacheEntry(
+        _cache[_key_hash(api_key)] = _CacheEntry(
             expires_at=now + _CACHE_FAIL_TTL_S,
             valid=False,
         )
