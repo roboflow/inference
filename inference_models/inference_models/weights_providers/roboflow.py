@@ -14,7 +14,7 @@ from inference_models.configuration import (
     IDEMPOTENT_API_REQUEST_CODES_TO_RETRY,
     ROBOFLOW_API_HOST,
     ROBOFLOW_API_KEY,
-    ROBOFLOW_LICENSE_SERVER,
+    SECURE_GATEWAY,
 )
 
 LOCAL_API_KEY = "local"
@@ -107,8 +107,8 @@ def get_roboflow_model(
     **kwargs,
 ) -> ModelMetadata:
     proxy_url_builder = None
-    if ROBOFLOW_LICENSE_SERVER:
-        proxy_url_builder = roboflow_license_server_proxy_url_builder
+    if SECURE_GATEWAY:
+        proxy_url_builder = roboflow_secure_gateway_proxy_url_builder
     model_metadata = get_model_metadata(
         model_id=model_id,
         api_key=api_key,
@@ -147,7 +147,7 @@ def get_roboflow_model(
     )
 
 
-def roboflow_license_server_proxy_url_builder(
+def roboflow_secure_gateway_proxy_url_builder(
     url: str, query: Optional[Dict[str, Union[str, List[str]]]]
 ) -> str:
     """
@@ -156,9 +156,9 @@ def roboflow_license_server_proxy_url_builder(
     """
     if query is not None:
         url = _add_query_params_to_url(url=url, query=query)
-    if not ROBOFLOW_LICENSE_SERVER:
+    if not SECURE_GATEWAY:
         return url
-    return f"http://{ROBOFLOW_LICENSE_SERVER}/proxy?url=" + urllib.parse.quote(
+    return f"http://{SECURE_GATEWAY}/proxy?url=" + urllib.parse.quote(
         url, safe="~()*!'"
     )
 
