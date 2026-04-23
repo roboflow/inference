@@ -28,7 +28,6 @@ from inference.core.entities.responses.inference import (
     SemanticSegmentationInferenceResponse,
     SemanticSegmentationPrediction,
 )
-from inference.core.exceptions import PostProcessingError
 from inference.core.env import (
     ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES,
     ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES,
@@ -37,6 +36,7 @@ from inference.core.env import (
     RFDETR_ONNX_MAX_RESOLUTION,
     VALID_INFERENCE_MODELS_BACKENDS,
 )
+from inference.core.exceptions import PostProcessingError
 from inference.core.models.base import Model
 from inference.core.roboflow_api import get_extra_weights_provider_headers
 from inference.core.utils.image_utils import load_image_bgr, load_image_rgb
