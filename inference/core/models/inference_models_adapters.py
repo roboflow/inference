@@ -7,6 +7,7 @@ from typing import Any, List, Optional, Tuple, Union
 import numpy as np
 import torch
 from PIL import Image, ImageDraw, ImageFont
+from pycocotools import mask as mask_utils
 
 from inference.core.entities.requests import (
     ClassificationInferenceRequest,
@@ -39,7 +40,7 @@ from inference.core.env import (
 from inference.core.models.base import Model
 from inference.core.roboflow_api import get_extra_weights_provider_headers
 from inference.core.utils.image_utils import load_image_bgr, load_image_rgb
-from inference.core.utils.postprocess import masks2poly, mask2poly
+from inference.core.utils.postprocess import mask2poly, masks2poly
 from inference.core.utils.visualisation import draw_detection_predictions
 from inference.models.aliases import resolve_roboflow_model_alias
 from inference_models import (
@@ -60,9 +61,7 @@ from inference_models import (
 from inference_models.models.base.semantic_segmentation import (
     SemanticSegmentationResult,
 )
-from inference_models.models.base.types import PreprocessingMetadata, InstancesRLEMasks
-
-from pycocotools import mask as mask_utils
+from inference_models.models.base.types import InstancesRLEMasks, PreprocessingMetadata
 
 DEFAULT_COLOR_PALETTE = [
     "#A351FB",
@@ -401,7 +400,6 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
             inference_response=inference_response,
             colors=class_id_2_color,
         )
-
 
 
 def rle_masks2poly(masks: InstancesRLEMasks) -> List[np.ndarray]:
