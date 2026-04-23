@@ -9,7 +9,6 @@ from inference.core.managers.base import ModelManager
 from inference.core.workflows.execution_engine.v1.inner_workflow.reference_resolution import (
     WORKFLOWS_CORE_INNER_WORKFLOW_SPEC_RESOLVER,
 )
-
 from tests.workflows.integration_tests.execution.inner_workflow_inlining._common import (
     echo_child_workflow,
     execution_engine,

@@ -18,7 +18,6 @@ from inference.core.entities.responses.inference import (
     ObjectDetectionPrediction,
 )
 from inference.core.managers.base import ModelManager
-
 from tests.workflows.integration_tests.execution.inner_workflow_inlining._common import (
     echo_child_workflow,
     execution_engine,
@@ -130,7 +129,8 @@ def _nested_workflow(inner: dict) -> dict:
                 "name": "breds_classification",
                 "image": "$steps.cropping.crops",
                 "model_id": "dog-breed/1",
-                "confidence_mode": "custom", "custom_confidence": _CLASSIFICATION_REQUEST_CONFIDENCE_THRESHOLD,
+                "confidence_mode": "custom",
+                "custom_confidence": _CLASSIFICATION_REQUEST_CONFIDENCE_THRESHOLD,
             },
             {
                 "type": "roboflow_core/continue_if@v1",
@@ -151,7 +151,10 @@ def _nested_workflow(inner: dict) -> dict:
                                 ],
                             },
                             "comparator": {"type": "(Number) >="},
-                            "right_operand": {"type": "StaticOperand", "value": _CONTINUE_IF_CONFIDENCE_THRESHOLD},
+                            "right_operand": {
+                                "type": "StaticOperand",
+                                "value": _CONTINUE_IF_CONFIDENCE_THRESHOLD,
+                            },
                         }
                     ],
                 },
@@ -205,7 +208,8 @@ def _flat_workflow() -> dict:
                 "name": "breds_classification",
                 "image": "$steps.cropping.crops",
                 "model_id": "dog-breed/1",
-                "confidence_mode": "custom", "custom_confidence": _CLASSIFICATION_REQUEST_CONFIDENCE_THRESHOLD,
+                "confidence_mode": "custom",
+                "custom_confidence": _CLASSIFICATION_REQUEST_CONFIDENCE_THRESHOLD,
             },
             {
                 "type": "roboflow_core/continue_if@v1",
@@ -226,7 +230,10 @@ def _flat_workflow() -> dict:
                                 ],
                             },
                             "comparator": {"type": "(Number) >="},
-                            "right_operand": {"type": "StaticOperand", "value": _CONTINUE_IF_CONFIDENCE_THRESHOLD},
+                            "right_operand": {
+                                "type": "StaticOperand",
+                                "value": _CONTINUE_IF_CONFIDENCE_THRESHOLD,
+                            },
                         }
                     ],
                 },
