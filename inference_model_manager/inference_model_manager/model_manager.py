@@ -425,7 +425,10 @@ class ModelManager:
         gpu_info = self._gpu_memory_info()
         models = []
 
-        for model_id, backend in self._backends.items():
+        with self._lifecycle_lock:
+            backends_snapshot = list(self._backends.items())
+
+        for model_id, backend in backends_snapshot:
             s = backend.stats()
             s["model_id"] = model_id
             models.append(s)
@@ -465,8 +468,11 @@ class ModelManager:
 
     def list_models(self) -> List[Dict[str, Any]]:
         """List all registered models with state, device, queue depth, health."""
+        with self._lifecycle_lock:
+            backends_snapshot = list(self._backends.items())
+
         result = []
-        for model_id, backend in self._backends.items():
+        for model_id, backend in backends_snapshot:
             result.append(
                 {
                     "model_id": model_id,

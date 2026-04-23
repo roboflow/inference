@@ -462,7 +462,7 @@ class AutoModel:
             device=device,
         )
         if not matching:
-            raise RuntimeError(
+            raise ModelPackageAlternativesExhaustedError(
                 f"No compatible model package found for '{model_id}'"
             )
         best = matching[0]
