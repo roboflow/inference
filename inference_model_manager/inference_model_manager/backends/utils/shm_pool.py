@@ -161,7 +161,11 @@ class SHMPool:
         """Attach to an existing pool. Does NOT unlink on close()."""
         data_bytes = int(input_mb * 1024 * 1024)
         shm = SharedMemory(name=name, create=False)
-        return cls(shm, n_slots, data_bytes, owner=False)
+        try:
+            return cls(shm, n_slots, data_bytes, owner=False)
+        except Exception:
+            shm.close()
+            raise
 
     # ------------------------------------------------------------------
     # Properties

@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import os
 import sys
+import tempfile
 
 _DEFAULT_PORTS: dict[str, int] = {
     "mmprocess": 15555,
@@ -53,7 +54,7 @@ def zmq_addr(name: str, transport: str | None = None) -> str:
         transport = os.environ.get("INFERENCE_ZMQ_TRANSPORT", default_transport())
 
     if transport == "ipc":
-        return f"ipc:///tmp/inference_{name}.ipc"
+        return f"ipc://{tempfile.gettempdir()}/inference_{name}.ipc"
 
     # TCP loopback — port from env or registry
     env_key = f"INFERENCE_ZMQ_PORT_{name.upper()}"

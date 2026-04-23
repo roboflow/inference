@@ -46,6 +46,7 @@ class DirectBackend(Backend):
         self._executor = executor
         self._batch_max_delay_ms = batch_max_delay_ms
         self._state_value: str = "loading"
+        self._gpu_memory_delta_mb: float = 0.0
 
         self._decode: Callable[[bytes], Any] = make_decoder(
             decoder,
@@ -61,6 +62,7 @@ class DirectBackend(Backend):
             device or "default",
             decoder,
         )
+        gpu_before = self._gpu_mem_snapshot()
         try:
             self._model = AutoModel.from_pretrained(
                 model_id, api_key=api_key, **load_kwargs
@@ -69,6 +71,7 @@ class DirectBackend(Backend):
             # Ensure GPU memory freed if model partially loaded
             self._model = None
             raise
+        self._gpu_memory_delta_mb = (self._gpu_mem_snapshot() - gpu_before) / (1024 * 1024)
         self._state_value = "loaded"
 
         self._device_str = self._detect_device()
@@ -356,6 +359,30 @@ class DirectBackend(Backend):
             return self._batch_collector.queue_depth
         return 0
 
+    @staticmethod
+    def _gpu_mem_snapshot() -> int:
+        """Return current GPU memory used by this process (bytes) via pynvml.
+
+        Falls back to torch.cuda.memory_allocated, then 0.
+        """
+        try:
+            import os
+            import pynvml
+            pynvml.nvmlInit()
+            handle = pynvml.nvmlDeviceGetHandleByIndex(0)
+            for proc in pynvml.nvmlDeviceGetComputeRunningProcesses(handle):
+                if proc.pid == os.getpid():
+                    return proc.usedGpuMemory or 0
+        except Exception:
+            pass
+        try:
+            import torch
+            if torch.cuda.is_available():
+                return torch.cuda.memory_allocated()
+        except Exception:
+            pass
+        return 0
+
     def stats(self) -> Dict[str, Any]:
         sorted_lats = sorted(self._latencies) if self._latencies else []
         bc = self._batch_collector.stats() if self._batch_collector else {}
@@ -382,8 +409,8 @@ class DirectBackend(Backend):
             ),
             "latency_p50_ms": _pct(50),
             "latency_p99_ms": _pct(99),
-            "gpu_memory_mb": 0.0,
-            "cpu_pinned_memory_mb": 0.0,
+            "gpu_memory_mb": self._gpu_memory_delta_mb if self._state_value != "sleeping" else 0.0,
+            "cpu_pinned_memory_mb": self._gpu_memory_delta_mb if self._state_value == "sleeping" else 0.0,
             "inference_count": self._inference_count,
             "error_count": self._error_count,
             "last_inference_ts": self._last_inference_ts,
