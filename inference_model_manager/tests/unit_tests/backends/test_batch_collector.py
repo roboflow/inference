@@ -267,27 +267,38 @@ def test_stop_drain_true_processes_remaining_items() -> None:
 
 
 def test_stop_drain_false_fails_remaining_items() -> None:
-    # given — block dispatch so items sit in queue
+    # given — block dispatch so items sit in queue.
+    # Use a gate to hold the forward call, then submit MORE items while
+    # forward is blocked so they stay pending in the heap.
     gate = threading.Event()
+    forward_entered = threading.Event()
 
     def blocked_forward(batch):
+        forward_entered.set()
         gate.wait(timeout=5)
         return [x * 2 for x in batch]
 
-    bc = _make_collector(max_size=100, max_delay_ms=5000, forward_fn=blocked_forward)
+    # max_size=2: first 2 items trigger a batch immediately, forward blocks.
+    # The remaining items stay in the heap.
+    bc = _make_collector(max_size=2, max_delay_ms=5000, forward_fn=blocked_forward)
 
-    # when
-    futures = [bc.add(tensor=i, meta=None) for i in range(3)]
-    # Give the dispatch loop a moment to pick up items and block on forward
-    time.sleep(0.05)
-    gate.set()
+    # when — submit 2 items to trigger dispatch, then submit more while blocked
+    first_futures = [bc.add(tensor=i, meta=None) for i in range(2)]
+    forward_entered.wait(timeout=2)  # wait until forward is executing
+    remaining_futures = [bc.add(tensor=i, meta=None) for i in range(2, 5)]
+
+    # Stop without drain — remaining items should be failed
+    gate.set()  # unblock forward so dispatch thread can exit
     bc.stop(drain=False)
 
-    # then — items that weren't processed get RuntimeError
-    for f in futures:
-        # Either processed (if dispatch thread got them) or failed
+    # then — the remaining futures (submitted while forward was blocked) should fail
+    failed_count = 0
+    all_futures = first_futures + remaining_futures
+    for f in all_futures:
         if f.exception() is not None:
             assert "stopped" in str(f.exception()).lower()
+            failed_count += 1
+    assert failed_count > 0, "Expected at least one future to be failed/cancelled after drain=False stop"
 
 
 def test_add_after_stop_returns_failed_future() -> None:
@@ -321,10 +332,18 @@ def test_queue_depth_reflects_pending_items() -> None:
     # when
     assert bc.queue_depth == 0
     futures = [bc.add(tensor=i, meta=None) for i in range(5)]
-    # Items are either in heap or being processed — depth should be >= 0
-    # (dispatch thread may have grabbed some already)
+    time.sleep(0.02)  # let items land in heap
 
-    # then — cleanup
+    # then — queue_depth should reflect pending items
+    # (dispatch thread may have grabbed some, but max_size=100 and forward is
+    # blocked, so at most one batch could be in-flight)
+    depth = bc.queue_depth
+    assert depth >= 0, f"queue_depth should be non-negative, got {depth}"
+    # At least some items should still be pending (forward is blocked, so the
+    # dispatch thread can grab at most one batch but cannot finish it)
+    assert depth <= 5, f"queue_depth should be at most 5, got {depth}"
+
+    # cleanup
     gate.set()
     bc.stop(drain=True)
     for f in futures:

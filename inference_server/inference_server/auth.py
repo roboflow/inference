@@ -27,6 +27,7 @@ logger = logging.getLogger(__name__)
 API_BASE_URL = os.environ.get("API_BASE_URL", "https://api.roboflow.com")
 _CACHE_TTL_S = int(os.environ.get("AUTH_CACHE_TTL_S", "3600"))
 _CACHE_FAIL_TTL_S = int(os.environ.get("AUTH_CACHE_FAIL_TTL_S", "60"))
+_MAX_CACHE_SIZE = int(os.environ.get("AUTH_CACHE_MAX_SIZE", "10000"))
 _REQUEST_TIMEOUT = aiohttp.ClientTimeout(total=10)
 
 
@@ -56,6 +57,21 @@ def _get_session() -> aiohttp.ClientSession:
     return _session
 
 
+def _enforce_cache_limit() -> None:
+    """Evict entries when cache exceeds max size to prevent memory DoS.
+
+    Strategy: purge expired entries first; if still over limit, clear entirely.
+    """
+    if len(_cache) <= _MAX_CACHE_SIZE:
+        return
+    now = time.monotonic()
+    expired_keys = [k for k, v in _cache.items() if v.expires_at <= now]
+    for k in expired_keys:
+        del _cache[k]
+    if len(_cache) > _MAX_CACHE_SIZE:
+        _cache.clear()
+
+
 async def validate_api_key(api_key: str) -> tuple[bool, Optional[str]]:
     """Validate api_key against Roboflow API.
 
@@ -78,6 +94,7 @@ async def validate_api_key(api_key: str) -> tuple[bool, Optional[str]]:
             params={"api_key": api_key, "nocache": "true"},
         ) as resp:
             if resp.status != 200:
+                _enforce_cache_limit()
                 _cache[_key_hash(api_key)] = _CacheEntry(
                     expires_at=now + _CACHE_FAIL_TTL_S,
                     valid=False,
@@ -87,12 +104,14 @@ async def validate_api_key(api_key: str) -> tuple[bool, Optional[str]]:
             data = await resp.json()
             workspace_id = data.get("workspace")
             if not workspace_id:
+                _enforce_cache_limit()
                 _cache[_key_hash(api_key)] = _CacheEntry(
                     expires_at=now + _CACHE_FAIL_TTL_S,
                     valid=False,
                 )
                 return False, None
 
+            _enforce_cache_limit()
             _cache[_key_hash(api_key)] = _CacheEntry(
                 expires_at=now + _CACHE_TTL_S,
                 valid=True,
@@ -102,6 +121,7 @@ async def validate_api_key(api_key: str) -> tuple[bool, Optional[str]]:
 
     except Exception:
         logger.warning("Auth validation failed (network error)", exc_info=True)
+        _enforce_cache_limit()
         _cache[_key_hash(api_key)] = _CacheEntry(
             expires_at=now + _CACHE_FAIL_TTL_S,
             valid=False,
