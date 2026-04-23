@@ -18,6 +18,8 @@ from inference_models.configuration import (
     INFERENCE_MODELS_GEMMA4_DEFAULT_TEMPERATURE,
     INFERENCE_MODELS_GEMMA4_DEFAULT_TOP_K,
     INFERENCE_MODELS_GEMMA4_DEFAULT_TOP_P,
+    INFERENCE_MODELS_GEMMA4_DEFAULT_IMAGE_PROMPT,
+    INFERENCE_MODELS_GEMMA4_DEFAULT_SYSTEM_PROMPT,
 )
 from inference_models.entities import ColorFormat
 from inference_models.errors import InvalidModelInitParameterError
@@ -186,7 +188,7 @@ class Gemma4HF(ManagedModel):
         attn_implementation = _get_gemma4_attn_implementation(device)
 
         load_kw = dict(
-            dtype="auto",
+            torch_dtype="auto",
             device_map=device,
             trust_remote_code=trust_remote_code,
             local_files_only=local_files_only,
@@ -245,7 +247,7 @@ class Gemma4HF(ManagedModel):
         self._processor = processor
         self._inference_config = inference_config
         self._device = device
-        self.default_system_prompt = "You are Gemma 4, a helpful multimodal assistant. Answer clearly and accurately."
+        self.default_system_prompt = INFERENCE_MODELS_GEMMA4_DEFAULT_SYSTEM_PROMPT
         self._lock = Lock()
 
     def prompt(
@@ -309,15 +311,15 @@ class Gemma4HF(ManagedModel):
         pil_images = [_to_pil_rgb(img, input_color_format) for img in raw_list]
 
         if prompt is None:
-            prompt = "Describe what you see in this image."
+            prompt = INFERENCE_MODELS_GEMMA4_DEFAULT_IMAGE_PROMPT
             system_prompt = self.default_system_prompt
         else:
             split_prompt = prompt.split("<system_prompt>")
             if len(split_prompt) == 1:
-                prompt = split_prompt[0] or "Describe what you see in this image."
+                prompt = split_prompt[0] or INFERENCE_MODELS_GEMMA4_DEFAULT_IMAGE_PROMPT
                 system_prompt = self.default_system_prompt
             else:
-                prompt = split_prompt[0] or "Describe what you see in this image."
+                prompt = split_prompt[0] or INFERENCE_MODELS_GEMMA4_DEFAULT_IMAGE_PROMPT
                 system_prompt = split_prompt[1] or self.default_system_prompt
 
         user_content: List[dict] = [
