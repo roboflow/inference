@@ -373,7 +373,8 @@ _legacy_license_server = os.getenv("LICENSE_SERVER")
 SECURE_GATEWAY = os.getenv("SECURE_GATEWAY") or _legacy_license_server or None
 if _legacy_license_server and not os.getenv("SECURE_GATEWAY"):
     warnings.warn(
-        "LICENSE_SERVER is deprecated, use SECURE_GATEWAY instead",
+        "`LICENSE_SERVER` env variable is deprecated, use `SECURE_GATEWAY` instead. "
+        "`LICENSE_SERVER` will be removed end of Q3 2026.",
         DeprecationWarning,
         stacklevel=1,
     )
