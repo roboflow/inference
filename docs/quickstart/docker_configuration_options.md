@@ -59,11 +59,13 @@ Sets the max batch size accepted by the clip model inference functions.
 
 If true, the batch size will be fixed to the maximum batch size configured for this server.
 
-## License Server
+## Secure Gateway
 
-**LICENSE_SERVER**: String (default = None)
+**SECURE_GATEWAY**: String (default = None)
 
-Sets the address of a Roboflow license server.
+Sets the address of a Roboflow Secure Gateway for air-gapped deployments. All API and model download traffic will be routed through this proxy.
+
+The legacy `LICENSE_SERVER` environment variable is still accepted but deprecated.
 
 ## Maximum Active Models
 
