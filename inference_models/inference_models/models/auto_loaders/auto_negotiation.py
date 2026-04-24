@@ -15,7 +15,7 @@ from inference_models.errors import (
     UnknownBackendTypeError,
     UnknownQuantizationError,
 )
-from inference_models.logger import LOGGER, verbose_info
+from inference_models.logger import verbose_info
 from inference_models.models.auto_loaders.constants import (
     NMS_CLASS_AGNOSTIC_KEY,
     NMS_CONFIDENCE_THRESHOLD_KEY,
@@ -485,7 +485,6 @@ def filter_model_packages_matching_runtime_environment(
         verbose_requested=verbose,
     )
     results, discarded_packages = [], []
-    discarded_trt_reasons = []
     for model_package in model_packages:
         matches, reason = model_package_matches_runtime_environment(
             model_package=model_package,
@@ -496,8 +495,6 @@ def filter_model_packages_matching_runtime_environment(
             verbose=verbose,
         )
         if not matches:
-            if model_package.backend == BackendType.TRT:
-                discarded_trt_reasons.append(f"{model_package.package_id}: {reason}")
             discarded_packages.append(
                 DiscardedPackage(
                     package_id=model_package.package_id,
@@ -506,13 +503,6 @@ def filter_model_packages_matching_runtime_environment(
             )
             continue
         results.append(model_package)
-    if discarded_trt_reasons and not any(
-        mp.backend == BackendType.TRT for mp in results
-    ):
-        LOGGER.warning(
-            "No pre-compiled TRT engine matched the runtime environment: %s",
-            "; ".join(discarded_trt_reasons),
-        )
     return results, discarded_packages
 
 
