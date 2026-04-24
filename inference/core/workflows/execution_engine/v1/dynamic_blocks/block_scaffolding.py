@@ -7,7 +7,6 @@ from inference.core.env import (
     WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE,
 )
 from inference.core.exceptions import WorkspaceLoadError
-from inference.core.logger import logger
 from inference.core.roboflow_api import get_roboflow_workspace
 from inference.core.workflows.errors import (
     DynamicBlockCodeError,
@@ -119,16 +118,8 @@ def assembly_custom_python_block(
                     stderr=stderr_buf.getvalue() or None,
                     block_type_name=block_type_name,
                 ) from error
-            stdout = stdout_buf.getvalue()
-            stderr = stderr_buf.getvalue()
-            if stdout:
-                logger.info(
-                    "Custom Python block '%s' stdout:\n%s", block_type_name, stdout
-                )
-            if stderr:
-                logger.warning(
-                    "Custom Python block '%s' stderr:\n%s", block_type_name, stderr
-                )
+            # stdout/stderr already reach the process streams in real time via the
+            # tee in capture_output(); buffers are only used to attach context on error.
             return result
 
     if python_code.init_function_code is not None and not hasattr(
