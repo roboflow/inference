@@ -1,5 +1,6 @@
 from typing import Callable, Dict, Optional
 
+from inference_models.configuration import OFFLINE_MODE
 from inference_models.errors import ModelRetrievalError
 from inference_models.weights_providers.entities import ModelMetadata
 from inference_models.weights_providers.roboflow import get_roboflow_model
@@ -81,6 +82,12 @@ def get_model_from_provider(
         - `register_model_provider()`: Register a custom weights provider
         - `AutoModel.from_pretrained()`: Load models using the provider system
     """
+    if OFFLINE_MODE:
+        raise ModelRetrievalError(
+            message=f"Cannot fetch model metadata from provider '{provider}' - "
+            f"OFFLINE_MODE is enabled. All models must be pre-cached locally.",
+            help_url="https://inference-models.roboflow.com/errors/model-retrieval/#modelretrievalerror",
+        )
     if provider not in WEIGHTS_PROVIDERS:
         raise ModelRetrievalError(
             message=f"Requested model to be retrieved using '{provider}' provider which is not implemented.",

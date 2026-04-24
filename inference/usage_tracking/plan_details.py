@@ -6,7 +6,7 @@ from typing import Dict, Optional, Union
 import requests
 from pydantic import BaseModel
 
-from inference.core.env import MODEL_CACHE_DIR
+from inference.core.env import MODEL_CACHE_DIR, OFFLINE_MODE
 from inference.core.logger import logger
 from inference.core.utils.sqlite_wrapper import SQLiteWrapper
 from inference.usage_tracking.payload_helpers import APIKey, APIKeyHash, sha256_hash
@@ -140,6 +140,8 @@ class PlanDetails(SQLiteWrapper):
             }
 
         try:
+            if OFFLINE_MODE:
+                raise ConnectionError("OFFLINE_MODE is enabled")
             response = requests.get(
                 self._api_plan_endpoint_url,
                 verify=ssl_verify,
@@ -264,6 +266,8 @@ class PlanDetails(SQLiteWrapper):
             ssl_verify = False
 
         try:
+            if OFFLINE_MODE:
+                return {}
             response = requests.get(
                 self._webrtc_plans_endpoint_url,
                 verify=ssl_verify,

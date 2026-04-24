@@ -12,6 +12,7 @@ from inference_models.errors import (
     CorruptedModelPackageError,
     InsecureModelIdentifierError,
     ModelLoadingError,
+    ModelRetrievalError,
 )
 from inference_models.models.auto_loaders import core
 from inference_models.models.auto_loaders.auto_resolution_cache import (
@@ -19,6 +20,7 @@ from inference_models.models.auto_loaders.auto_resolution_cache import (
 )
 from inference_models.models.auto_loaders.core import (
     attempt_loading_model_from_local_storage,
+    attempt_loading_model_from_offline_cache,
     create_symlinks_to_shared_blobs,
     dump_auto_resolution_cache,
     dump_model_config_for_offline_use,
@@ -535,3 +537,210 @@ def _create_file(path: str, content: str) -> None:
 def _read_file(path: str) -> str:
     with open(path, "r") as f:
         return f.read()
+
+
+@mock.patch.object(core, "INFERENCE_HOME", "/nonexistent")
+def test_attempt_loading_model_from_offline_cache_when_no_cache_dir() -> None:
+    # when
+    result = attempt_loading_model_from_offline_cache(
+        model_id="yolov8n-640",
+        model_init_kwargs={},
+    )
+
+    # then
+    assert result is None
+
+
+def test_attempt_loading_model_from_offline_cache_when_empty_cache_dir(
+    empty_local_dir: str,
+) -> None:
+    # given
+    model_id = "yolov8n-640"
+    slug = core.slugify_model_id_to_os_safe_format(model_id=model_id)
+    cache_dir = os.path.join(empty_local_dir, "models-cache", slug)
+    os.makedirs(cache_dir, exist_ok=True)
+
+    # when
+    with mock.patch.object(core, "INFERENCE_HOME", empty_local_dir):
+        result = attempt_loading_model_from_offline_cache(
+            model_id=model_id,
+            model_init_kwargs={},
+        )
+
+    # then
+    assert result is None
+
+
+def test_attempt_loading_model_from_offline_cache_when_package_has_no_config(
+    empty_local_dir: str,
+) -> None:
+    # given
+    model_id = "yolov8n-640"
+    slug = core.slugify_model_id_to_os_safe_format(model_id=model_id)
+    package_dir = os.path.join(empty_local_dir, "models-cache", slug, "pkg001")
+    os.makedirs(package_dir, exist_ok=True)
+    _create_file(os.path.join(package_dir, "weights.onnx"), "fake-weights")
+
+    # when
+    with mock.patch.object(core, "INFERENCE_HOME", empty_local_dir):
+        result = attempt_loading_model_from_offline_cache(
+            model_id=model_id,
+            model_init_kwargs={},
+        )
+
+    # then
+    assert result is None
+
+
+def test_attempt_loading_model_from_offline_cache_when_valid_package_found(
+    empty_local_dir: str,
+) -> None:
+    # given
+    model_id = "yolov8n-640"
+    slug = core.slugify_model_id_to_os_safe_format(model_id=model_id)
+    package_dir = os.path.join(empty_local_dir, "models-cache", slug, "pkg001")
+    os.makedirs(package_dir, exist_ok=True)
+    config = {
+        "model_architecture": "yolov8",
+        "task_type": "object-detection",
+        "backend_type": "onnx",
+    }
+    _create_file(os.path.join(package_dir, "model_config.json"), json.dumps(config))
+    mock_model = MagicMock()
+
+    # when
+    with mock.patch.object(core, "INFERENCE_HOME", empty_local_dir), mock.patch.object(
+        core, "attempt_loading_model_from_local_storage", return_value=mock_model
+    ) as mock_load:
+        result = attempt_loading_model_from_offline_cache(
+            model_id=model_id,
+            model_init_kwargs={"device": "cpu"},
+        )
+
+    # then
+    assert result is not None
+    model, cache_dir = result
+    assert model is mock_model
+    assert cache_dir == package_dir
+    mock_load.assert_called_once_with(
+        model_dir_or_weights_path=package_dir,
+        allow_local_code_packages=True,
+        model_init_kwargs={"device": "cpu"},
+    )
+
+
+def test_attempt_loading_model_from_offline_cache_skips_hidden_dirs(
+    empty_local_dir: str,
+) -> None:
+    # given - only hidden directory, no visible package dirs
+    model_id = "yolov8n-640"
+    slug = core.slugify_model_id_to_os_safe_format(model_id=model_id)
+    hidden_dir = os.path.join(empty_local_dir, "models-cache", slug, ".locks")
+    os.makedirs(hidden_dir, exist_ok=True)
+    config = {
+        "model_architecture": "yolov8",
+        "task_type": "object-detection",
+        "backend_type": "onnx",
+    }
+    _create_file(os.path.join(hidden_dir, "model_config.json"), json.dumps(config))
+
+    # when
+    with mock.patch.object(core, "INFERENCE_HOME", empty_local_dir):
+        result = attempt_loading_model_from_offline_cache(
+            model_id=model_id,
+            model_init_kwargs={},
+        )
+
+    # then
+    assert result is None
+
+
+def test_attempt_loading_model_from_offline_cache_tries_next_on_failure(
+    empty_local_dir: str,
+) -> None:
+    # given - first package fails, second succeeds
+    model_id = "yolov8n-640"
+    slug = core.slugify_model_id_to_os_safe_format(model_id=model_id)
+    base = os.path.join(empty_local_dir, "models-cache", slug)
+    config = {
+        "model_architecture": "yolov8",
+        "task_type": "object-detection",
+        "backend_type": "onnx",
+    }
+    for pkg_id in ["pkg001", "pkg002"]:
+        pkg_dir = os.path.join(base, pkg_id)
+        os.makedirs(pkg_dir, exist_ok=True)
+        _create_file(os.path.join(pkg_dir, "model_config.json"), json.dumps(config))
+
+    mock_model = MagicMock()
+
+    def side_effect(model_dir_or_weights_path, **kwargs):
+        if model_dir_or_weights_path.endswith("pkg001"):
+            raise RuntimeError("corrupted package")
+        return mock_model
+
+    # when
+    with mock.patch.object(core, "INFERENCE_HOME", empty_local_dir), mock.patch.object(
+        core, "attempt_loading_model_from_local_storage", side_effect=side_effect
+    ):
+        result = attempt_loading_model_from_offline_cache(
+            model_id=model_id,
+            model_init_kwargs={},
+        )
+
+    # then
+    assert result is not None
+    model, cache_dir = result
+    assert model is mock_model
+    assert cache_dir == os.path.join(base, "pkg002")
+
+
+def test_offline_mode_loads_from_cache(empty_local_dir: str) -> None:
+    # given
+    model_id = "yolov8n-640"
+    slug = core.slugify_model_id_to_os_safe_format(model_id=model_id)
+    package_dir = os.path.join(empty_local_dir, "models-cache", slug, "pkg001")
+    os.makedirs(package_dir, exist_ok=True)
+    config = {
+        "model_architecture": "yolov8",
+        "task_type": "object-detection",
+        "backend_type": "onnx",
+    }
+    _create_file(os.path.join(package_dir, "model_config.json"), json.dumps(config))
+    mock_model = MagicMock()
+    mock_get_provider = MagicMock()
+
+    # when
+    with mock.patch.object(core, "OFFLINE_MODE", True), mock.patch.object(
+        core, "INFERENCE_HOME", empty_local_dir
+    ), mock.patch.object(
+        core, "attempt_loading_model_from_local_storage", return_value=mock_model
+    ), mock.patch.object(
+        core, "get_model_from_provider", mock_get_provider
+    ), mock.patch.object(
+        core, "attempt_loading_model_with_auto_load_cache", return_value=None
+    ):
+        result = attempt_loading_model_from_offline_cache(
+            model_id=model_id,
+            model_init_kwargs={},
+        )
+
+    # then - loaded from cache, API never called
+    assert result is not None
+    assert result[0] is mock_model
+    mock_get_provider.assert_not_called()
+
+
+def test_offline_mode_raises_when_no_cache(empty_local_dir: str) -> None:
+    # given - no cached model
+    model_id = "yolov8n-640"
+
+    # when / then
+    with mock.patch.object(core, "OFFLINE_MODE", True), mock.patch.object(
+        core, "INFERENCE_HOME", empty_local_dir
+    ):
+        result = attempt_loading_model_from_offline_cache(
+            model_id=model_id,
+            model_init_kwargs={},
+        )
+        assert result is None

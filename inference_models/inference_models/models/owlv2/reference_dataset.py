@@ -17,6 +17,7 @@ from tldextract.tldextract import ExtractResult
 from inference_models.configuration import (
     API_CALLS_MAX_TRIES,
     IDEMPOTENT_API_REQUEST_CODES_TO_RETRY,
+    OFFLINE_MODE,
 )
 from inference_models.errors import ModelInputError, ModelRuntimeError, RetryError
 
@@ -266,6 +267,12 @@ def _ensure_location_matches_destination_blacklist(
     interval=1,
 )
 def _get_from_url(url: str, timeout: int = 5) -> bytes:
+    if OFFLINE_MODE:
+        raise ModelInputError(
+            message=f"Cannot fetch URL {url} - OFFLINE_MODE is enabled. "
+            f"Provide image data directly instead of URLs.",
+            help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
+        )
     try:
         with requests.get(url, stream=True, timeout=timeout) as response:
             if response.status_code in IDEMPOTENT_API_REQUEST_CODES_TO_RETRY:

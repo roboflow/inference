@@ -16,6 +16,7 @@ from inference_models.configuration import (
     DEFAULT_DEVICE,
     FILE_LOCK_ACQUIRE_TIMEOUT,
     INFERENCE_HOME,
+    OFFLINE_MODE,
 )
 from inference_models.errors import (
     CorruptedModelPackageError,
@@ -26,7 +27,9 @@ from inference_models.errors import (
     InvalidParameterError,
     MissingModelInitParameterError,
     ModelPackageAlternativesExhaustedError,
+    ModelRetrievalError,
     NoModelPackagesAvailableError,
+    RetryError,
     UnauthorizedModelAccessError,
 )
 from inference_models.logger import LOGGER, verbose_info
@@ -783,6 +786,25 @@ class AutoModel:
             )
             if model_from_cache:
                 return model_from_cache
+            if OFFLINE_MODE:
+                offline_result = attempt_loading_model_from_offline_cache(
+                    model_id=model_id_or_path,
+                    model_init_kwargs=model_init_kwargs,
+                    allow_local_code_packages=allow_local_code_packages,
+                    verbose=verbose,
+                )
+                if offline_result is not None:
+                    model, cache_dir = offline_result
+                    if point_model_directory:
+                        point_model_directory(cache_dir)
+                    return model
+                raise ModelRetrievalError(
+                    message=f"Cannot load model {model_id_or_path} in OFFLINE_MODE - "
+                    f"no cached model package found in {INFERENCE_HOME}/models-cache/. "
+                    f"Pre-populate the cache by running once with network access, "
+                    f"or disable OFFLINE_MODE.",
+                    help_url="https://inference-models.roboflow.com/errors/model-retrieval/#modelretrievalerror",
+                )
             try:
                 model_metadata = get_model_from_provider(
                     provider=weights_provider,
@@ -828,6 +850,24 @@ class AutoModel:
                     model_id=model_id_or_path, api_key=api_key
                 )
                 raise error
+            except RetryError:
+                verbose_info(
+                    message=f"API unreachable for model {model_id_or_path}, "
+                    f"attempting offline cache fallback.",
+                    verbose_requested=verbose,
+                )
+                offline_result = attempt_loading_model_from_offline_cache(
+                    model_id=model_id_or_path,
+                    model_init_kwargs=model_init_kwargs,
+                    allow_local_code_packages=allow_local_code_packages,
+                    verbose=verbose,
+                )
+                if offline_result is not None:
+                    model, cache_dir = offline_result
+                    if point_model_directory:
+                        point_model_directory(cache_dir)
+                    return model
+                raise
             # here we verify if de-aliasing or access confirmation from auth master changed something
             model_from_access_manager = model_access_manager.retrieve_model_instance(
                 model_id=model_id_or_path,
@@ -1102,6 +1142,62 @@ def attempt_loading_model_with_auto_load_cache(
         )
         auto_resolution_cache.invalidate(auto_negotiation_hash=auto_negotiation_hash)
         return None
+
+
+def attempt_loading_model_from_offline_cache(
+    model_id: str,
+    model_init_kwargs: dict,
+    allow_local_code_packages: bool = True,
+    verbose: bool = False,
+) -> Optional[Tuple[AnyModel, str]]:
+    """Try to load a model from local cache when the API is unreachable.
+
+    Scans ``{INFERENCE_HOME}/models-cache/{slugified_model_id}/`` for package
+    directories containing ``model_config.json``.  Returns ``(model, cache_dir)``
+    on success, ``None`` if no cached package is found.
+    """
+    model_id_slug = slugify_model_id_to_os_safe_format(model_id=model_id)
+    cache_base = os.path.join(INFERENCE_HOME, "models-cache", model_id_slug)
+    if not os.path.isdir(cache_base):
+        verbose_info(
+            message=f"No offline cache directory found for model {model_id}.",
+            verbose_requested=verbose,
+        )
+        return None
+    try:
+        entries = sorted(os.listdir(cache_base))
+    except OSError:
+        return None
+    for entry in entries:
+        if entry.startswith("."):
+            continue
+        package_dir = os.path.join(cache_base, entry)
+        if not os.path.isdir(package_dir):
+            continue
+        config_path = os.path.join(package_dir, MODEL_CONFIG_FILE_NAME)
+        if not os.path.isfile(config_path):
+            continue
+        try:
+            model = attempt_loading_model_from_local_storage(
+                model_dir_or_weights_path=package_dir,
+                allow_local_code_packages=allow_local_code_packages,
+                model_init_kwargs=dict(model_init_kwargs),
+            )
+            verbose_info(
+                message=f"Loaded model {model_id} from offline cache at {package_dir}.",
+                verbose_requested=verbose,
+            )
+            return model, package_dir
+        except Exception as e:
+            LOGGER.warning(
+                f"Failed to load cached model package from {package_dir}: {e}"
+            )
+            continue
+    verbose_info(
+        message=f"No usable cached model package found for {model_id}.",
+        verbose_requested=verbose,
+    )
+    return None
 
 
 def all_files_exist(files: List[str]) -> bool:
