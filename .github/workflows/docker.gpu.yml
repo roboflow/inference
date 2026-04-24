@@ -64,7 +64,7 @@ jobs:
         id: auth
         with:
           workload_identity_provider: 'projects/391662651862/locations/global/workloadIdentityPools/github-actions/providers/github'
-          service_account: 'github-gcloud-deployer@roboflow-artifacts.iam.gserviceaccount.com'
+          service_account: 'gha-inference@roboflow-artifacts.iam.gserviceaccount.com'
           token_format: 'access_token'
       - name: Login to Google Artifact Registry
         uses: docker/login-action@v3

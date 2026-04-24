@@ -17,14 +17,15 @@ from inference_models.errors import (
     RetryError,
     UnauthorizedModelAccessError,
 )
-from inference_models.models.auto_loaders.entities import BackendType
 from inference_models.weights_providers import roboflow as roboflow_module
 from inference_models.weights_providers.entities import (
+    BackendType,
     FileDownloadSpecs,
     JetsonEnvironmentRequirements,
     ModelPackageMetadata,
     ONNXPackageDetails,
     Quantization,
+    RecommendedParameters,
     ServerEnvironmentRequirements,
     TorchScriptPackageDetails,
     TRTPackageDetails,
@@ -40,10 +41,10 @@ from inference_models.weights_providers.roboflow import (
     get_roboflow_model,
     handle_response_errors,
     parse_model_package_metadata,
-    roboflow_license_server_proxy_url_builder,
+    roboflow_secure_gateway_proxy_url_builder,
 )
 
-DUMMY_PROXY_PREFIX = "http://license.local/proxy?url="
+DUMMY_PROXY_PREFIX = "http://gateway.local/proxy?url="
 
 
 def test_as_version_when_valid_version_provided() -> None:
@@ -1521,12 +1522,192 @@ def test_get_roboflow_model(requests_mock: Mocker) -> None:
     assert len(result.model_packages) == 2
 
 
-@patch.object(roboflow_module, "ROBOFLOW_LICENSE_SERVER", "license.local")
+def test_get_roboflow_model_propagates_recommended_parameters(
+    requests_mock: Mocker,
+) -> None:
+    # The weights provider returns model-level recommendedParameters; the loader must
+    # parse them and surface them on the resulting ModelMetadata so initialize_model
+    # can later forward them to model instances. This is the end-to-end parse path.
+    requests_mock.get(
+        f"{ROBOFLOW_API_HOST}/models/v1/external/weights",
+        json={
+            "modelMetadata": {
+                "type": "external-model-metadata-v1",
+                "modelId": "my-model",
+                "modelArchitecture": "yolov8",
+                "taskType": "object-detection",
+                "modelPackages": [
+                    {
+                        "type": "external-model-package-v1",
+                        "packageId": "my-package-id",
+                        "packageManifest": {
+                            "type": "onnx-model-package-v1",
+                            "backendType": "onnx",
+                            "quantization": "fp32",
+                            "dynamicBatchSize": True,
+                            "opset": 19,
+                        },
+                        "packageFiles": [
+                            {
+                                "fileHandle": "some",
+                                "downloadUrl": "https://link.com",
+                            }
+                        ],
+                    },
+                ],
+                "recommendedParameters": {"confidence": 0.42},
+            }
+        },
+    )
+
+    result = get_roboflow_model(model_id="my-model", api_key="my-api-key")
+
+    assert result.recommended_parameters == RecommendedParameters(confidence=0.42)
+
+
+def test_get_roboflow_model_when_no_recommended_parameters_returns_none(
+    requests_mock: Mocker,
+) -> None:
+    # Models registered before the recommendedParameters field existed (or models
+    # never evaluated) won't have it in the API response. The field must be None,
+    # not missing — callers do `if metadata.recommended_parameters:` style checks.
+    requests_mock.get(
+        f"{ROBOFLOW_API_HOST}/models/v1/external/weights",
+        json={
+            "modelMetadata": {
+                "type": "external-model-metadata-v1",
+                "modelId": "my-model",
+                "modelArchitecture": "yolov8",
+                "taskType": "object-detection",
+                "modelPackages": [
+                    {
+                        "type": "external-model-package-v1",
+                        "packageId": "my-package-id",
+                        "packageManifest": {
+                            "type": "onnx-model-package-v1",
+                            "backendType": "onnx",
+                            "quantization": "fp32",
+                            "dynamicBatchSize": True,
+                            "opset": 19,
+                        },
+                        "packageFiles": [
+                            {
+                                "fileHandle": "some",
+                                "downloadUrl": "https://link.com",
+                            }
+                        ],
+                    },
+                ],
+            }
+        },
+    )
+
+    result = get_roboflow_model(model_id="my-model", api_key="my-api-key")
+
+    assert result.recommended_parameters is None
+
+
+def test_get_roboflow_model_propagates_per_class_confidence(
+    requests_mock: Mocker,
+) -> None:
+    # Per-class thresholds round-trip from camelCase API payload to snake_case
+    # field on the parsed RecommendedParameters. This is the loader's contract with
+    # TheGOAT — keys are class names, values in [0, 1].
+    requests_mock.get(
+        f"{ROBOFLOW_API_HOST}/models/v1/external/weights",
+        json={
+            "modelMetadata": {
+                "type": "external-model-metadata-v1",
+                "modelId": "my-model",
+                "modelArchitecture": "yolov8",
+                "taskType": "object-detection",
+                "modelPackages": [
+                    {
+                        "type": "external-model-package-v1",
+                        "packageId": "my-package-id",
+                        "packageManifest": {
+                            "type": "onnx-model-package-v1",
+                            "backendType": "onnx",
+                            "quantization": "fp32",
+                            "dynamicBatchSize": True,
+                            "opset": 19,
+                        },
+                        "packageFiles": [
+                            {
+                                "fileHandle": "some",
+                                "downloadUrl": "https://link.com",
+                            }
+                        ],
+                    },
+                ],
+                "recommendedParameters": {
+                    "confidence": 0.42,
+                    "perClassConfidence": {"cat": 0.45, "dog": 0.4},
+                },
+            }
+        },
+    )
+
+    result = get_roboflow_model(model_id="my-model", api_key="my-api-key")
+
+    assert result.recommended_parameters == RecommendedParameters(
+        confidence=0.42,
+        per_class_confidence={"cat": 0.45, "dog": 0.4},
+    )
+
+
+def test_get_roboflow_model_drops_unknown_recommended_parameters_keys(
+    requests_mock: Mocker,
+) -> None:
+    # Forward compatibility: if a future model_eval release adds a new field to
+    # recommendedParameters that this version of inference_models doesn't know about,
+    # the unknown field must be silently dropped — the load must not crash.
+    requests_mock.get(
+        f"{ROBOFLOW_API_HOST}/models/v1/external/weights",
+        json={
+            "modelMetadata": {
+                "type": "external-model-metadata-v1",
+                "modelId": "my-model",
+                "modelArchitecture": "yolov8",
+                "taskType": "object-detection",
+                "modelPackages": [
+                    {
+                        "type": "external-model-package-v1",
+                        "packageId": "my-package-id",
+                        "packageManifest": {
+                            "type": "onnx-model-package-v1",
+                            "backendType": "onnx",
+                            "quantization": "fp32",
+                            "dynamicBatchSize": True,
+                            "opset": 19,
+                        },
+                        "packageFiles": [
+                            {
+                                "fileHandle": "some",
+                                "downloadUrl": "https://link.com",
+                            }
+                        ],
+                    },
+                ],
+                "recommendedParameters": {
+                    "confidence": 0.42,
+                    "futureFieldFromNewerModelEval": "anything",
+                },
+            }
+        },
+    )
+
+    result = get_roboflow_model(model_id="my-model", api_key="my-api-key")
+
+    assert result.recommended_parameters == RecommendedParameters(confidence=0.42)
+
+
+@patch.object(roboflow_module, "SECURE_GATEWAY", "gateway.local")
 def test_get_roboflow_model_with_proxy(requests_mock: Mocker) -> None:
     # given
     requests_mock.register_uri(
         "GET",
-        re.compile(r"http://license\.local/proxy"),
+        re.compile(r"http://gateway\.local/proxy"),
         [
             {
                 "status_code": 200,
@@ -1630,7 +1811,7 @@ def test_get_roboflow_model_with_proxy(requests_mock: Mocker) -> None:
     for history_entry in requests_mock.request_history:
         parsed = urllib.parse.urlparse(history_entry.url)
         assert parsed.scheme == "http"
-        assert parsed.netloc == "license.local"
+        assert parsed.netloc == "gateway.local"
         assert parsed.path == "/proxy"
         outer_params = urllib.parse.parse_qs(parsed.query)
         assert "url" in outer_params
@@ -1642,21 +1823,21 @@ def test_get_roboflow_model_with_proxy(requests_mock: Mocker) -> None:
     for package in result.model_packages:
         for artefact in package.package_artefacts:
             parsed = urllib.parse.urlparse(artefact.download_url)
-            assert parsed.netloc == "license.local"
+            assert parsed.netloc == "gateway.local"
             assert parsed.path == "/proxy"
             inner_url = urllib.parse.parse_qs(parsed.query)["url"][0]
             assert inner_url == "https://link.com"
 
 
-@patch.object(roboflow_module, "ROBOFLOW_LICENSE_SERVER", "license.local:8080")
+@patch.object(roboflow_module, "SECURE_GATEWAY", "gateway.local:8080")
 def test_basic_url_no_query():
-    result = roboflow_license_server_proxy_url_builder(
+    result = roboflow_secure_gateway_proxy_url_builder(
         url="https://api.roboflow.com/models/v1/weights",
         query=None,
     )
     outer = _parse_proxy_result(result)
     assert outer.scheme == "http"
-    assert outer.netloc == "license.local:8080"
+    assert outer.netloc == "gateway.local:8080"
     assert outer.path == "/proxy"
 
     inner_url = _extract_proxied_url(result)
@@ -1667,9 +1848,9 @@ def test_basic_url_no_query():
     assert inner.query == ""
 
 
-@patch.object(roboflow_module, "ROBOFLOW_LICENSE_SERVER", "license.local:8080")
+@patch.object(roboflow_module, "SECURE_GATEWAY", "gateway.local:8080")
 def test_query_params_are_embedded_in_proxied_url():
-    result = roboflow_license_server_proxy_url_builder(
+    result = roboflow_secure_gateway_proxy_url_builder(
         url="https://api.roboflow.com/weights",
         query={"modelId": "my-model", "api_key": "abc123"},
     )
@@ -1678,9 +1859,9 @@ def test_query_params_are_embedded_in_proxied_url():
     assert inner_params["api_key"] == ["abc123"]
 
 
-@patch.object(roboflow_module, "ROBOFLOW_LICENSE_SERVER", "license.local:8080")
+@patch.object(roboflow_module, "SECURE_GATEWAY", "gateway.local:8080")
 def test_query_with_list_values():
-    result = roboflow_license_server_proxy_url_builder(
+    result = roboflow_secure_gateway_proxy_url_builder(
         url="https://api.roboflow.com/weights",
         query={"tag": ["a", "b"]},
     )
@@ -1688,9 +1869,9 @@ def test_query_with_list_values():
     assert inner_params["tag"] == ["a", "b"]
 
 
-@patch.object(roboflow_module, "ROBOFLOW_LICENSE_SERVER", "license.local:8080")
+@patch.object(roboflow_module, "SECURE_GATEWAY", "gateway.local:8080")
 def test_empty_query_dict_no_params_in_proxied_url():
-    result = roboflow_license_server_proxy_url_builder(
+    result = roboflow_secure_gateway_proxy_url_builder(
         url="https://api.roboflow.com/weights",
         query={},
     )
@@ -1699,9 +1880,9 @@ def test_empty_query_dict_no_params_in_proxied_url():
     assert inner.query == ""
 
 
-@patch.object(roboflow_module, "ROBOFLOW_LICENSE_SERVER", None)
-def test_no_license_server_returns_plain_url():
-    result = roboflow_license_server_proxy_url_builder(
+@patch.object(roboflow_module, "SECURE_GATEWAY", None)
+def test_no_secure_gateway_returns_plain_url():
+    result = roboflow_secure_gateway_proxy_url_builder(
         url="https://api.roboflow.com/weights",
         query=None,
     )
@@ -1712,9 +1893,9 @@ def test_no_license_server_returns_plain_url():
     assert parsed.query == ""
 
 
-@patch.object(roboflow_module, "ROBOFLOW_LICENSE_SERVER", None)
-def test_no_license_server_with_query_returns_url_with_params():
-    result = roboflow_license_server_proxy_url_builder(
+@patch.object(roboflow_module, "SECURE_GATEWAY", None)
+def test_no_secure_gateway_with_query_returns_url_with_params():
+    result = roboflow_secure_gateway_proxy_url_builder(
         url="https://api.roboflow.com/weights",
         query={"modelId": "my-model"},
     )
@@ -1726,9 +1907,9 @@ def test_no_license_server_with_query_returns_url_with_params():
     assert params["modelId"] == ["my-model"]
 
 
-@patch.object(roboflow_module, "ROBOFLOW_LICENSE_SERVER", "")
-def test_empty_string_license_server_returns_plain_url():
-    result = roboflow_license_server_proxy_url_builder(
+@patch.object(roboflow_module, "SECURE_GATEWAY", "")
+def test_empty_string_secure_gateway_returns_plain_url():
+    result = roboflow_secure_gateway_proxy_url_builder(
         url="https://api.roboflow.com/weights",
         query=None,
     )
@@ -1738,9 +1919,9 @@ def test_empty_string_license_server_returns_plain_url():
     assert parsed.query == ""
 
 
-@patch.object(roboflow_module, "ROBOFLOW_LICENSE_SERVER", "proxy.internal")
+@patch.object(roboflow_module, "SECURE_GATEWAY", "proxy.internal")
 def test_url_with_existing_params_preserved_after_proxying():
-    result = roboflow_license_server_proxy_url_builder(
+    result = roboflow_secure_gateway_proxy_url_builder(
         url="https://api.roboflow.com/weights?existing=val&other=123",
         query=None,
     )
@@ -1749,9 +1930,9 @@ def test_url_with_existing_params_preserved_after_proxying():
     assert inner_params["other"] == ["123"]
 
 
-@patch.object(roboflow_module, "ROBOFLOW_LICENSE_SERVER", "proxy.internal:9090")
+@patch.object(roboflow_module, "SECURE_GATEWAY", "proxy.internal:9090")
 def test_proxy_url_structure():
-    result = roboflow_license_server_proxy_url_builder(
+    result = roboflow_secure_gateway_proxy_url_builder(
         url="https://api.roboflow.com/weights",
         query=None,
     )
@@ -1762,9 +1943,9 @@ def test_proxy_url_structure():
     assert "url" in urllib.parse.parse_qs(outer.query)
 
 
-@patch.object(roboflow_module, "ROBOFLOW_LICENSE_SERVER", "proxy.internal")
+@patch.object(roboflow_module, "SECURE_GATEWAY", "proxy.internal")
 def test_proxy_uses_http_not_https():
-    result = roboflow_license_server_proxy_url_builder(
+    result = roboflow_secure_gateway_proxy_url_builder(
         url="https://api.roboflow.com/weights",
         query=None,
     )
@@ -1772,9 +1953,9 @@ def test_proxy_uses_http_not_https():
     assert outer.scheme == "http"
 
 
-@patch.object(roboflow_module, "ROBOFLOW_LICENSE_SERVER", "proxy.internal")
+@patch.object(roboflow_module, "SECURE_GATEWAY", "proxy.internal")
 def test_roundtrip_preserves_query_with_special_characters():
-    result = roboflow_license_server_proxy_url_builder(
+    result = roboflow_secure_gateway_proxy_url_builder(
         url="https://api.roboflow.com/weights",
         query={"modelId": "workspace/model", "api_key": "key=with=equals"},
     )
@@ -1783,9 +1964,9 @@ def test_roundtrip_preserves_query_with_special_characters():
     assert inner_params["api_key"] == ["key=with=equals"]
 
 
-@patch.object(roboflow_module, "ROBOFLOW_LICENSE_SERVER", "proxy.internal")
+@patch.object(roboflow_module, "SECURE_GATEWAY", "proxy.internal")
 def test_proxy_url_param_does_not_leak_into_inner_url():
-    result = roboflow_license_server_proxy_url_builder(
+    result = roboflow_secure_gateway_proxy_url_builder(
         url="https://api.roboflow.com/weights",
         query={"modelId": "test"},
     )
@@ -1799,9 +1980,9 @@ def test_proxy_url_param_does_not_leak_into_inner_url():
     assert "modelId" in inner_params
 
 
-@patch.object(roboflow_module, "ROBOFLOW_LICENSE_SERVER", "proxy.internal")
+@patch.object(roboflow_module, "SECURE_GATEWAY", "proxy.internal")
 def test_params_from_url_and_query_are_both_preserved():
-    result = roboflow_license_server_proxy_url_builder(
+    result = roboflow_secure_gateway_proxy_url_builder(
         url="https://api.roboflow.com/weights?existing=from_url&page=1",
         query={"modelId": "my-model", "api_key": "abc123"},
     )
@@ -1814,18 +1995,18 @@ def test_params_from_url_and_query_are_both_preserved():
     assert inner_params["api_key"] == ["abc123"]
 
 
-@patch.object(roboflow_module, "ROBOFLOW_LICENSE_SERVER", "proxy.internal")
+@patch.object(roboflow_module, "SECURE_GATEWAY", "proxy.internal")
 def test_overlapping_params_from_url_and_query():
     with pytest.raises(AssumptionError):
-        _ = roboflow_license_server_proxy_url_builder(
+        _ = roboflow_secure_gateway_proxy_url_builder(
             url="https://api.roboflow.com/weights?key=from_url",
             query={"key": "from_query"},
         )
 
 
-@patch.object(roboflow_module, "ROBOFLOW_LICENSE_SERVER", None)
+@patch.object(roboflow_module, "SECURE_GATEWAY", None)
 def test_params_from_url_and_query_are_both_preserved_without_proxy():
-    result = roboflow_license_server_proxy_url_builder(
+    result = roboflow_secure_gateway_proxy_url_builder(
         url="https://api.roboflow.com/weights?existing=from_url",
         query={"modelId": "my-model"},
     )

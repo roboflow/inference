@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Union
 
 import torch
 import torchvision
@@ -6,20 +6,26 @@ import torchvision
 
 def run_yolonas_nms_for_object_detection(
     output: torch.Tensor,
-    conf_thresh: float = 0.25,
+    conf_thresh: Union[float, torch.Tensor] = 0.25,
     iou_thresh: float = 0.45,
     max_detections: int = 100,
     class_agnostic: bool = False,
 ) -> List[torch.Tensor]:
+    """
+    `conf_thresh`: scalar applies to all classes; 1-D tensor of shape
+    (num_classes,) indexed by class_id for per-class thresholds.
+    """
     bs = output.shape[0]
     boxes = output[:, :, :4]
     scores = output[:, :, 4:]
     results = []
     for b in range(bs):
-        # Combine transpose & max for efficiency
         class_scores = scores[b]  # (8400, cls_num)
         class_conf, class_ids = torch.max(class_scores, dim=-1)
-        mask = class_conf > conf_thresh
+        if isinstance(conf_thresh, torch.Tensor):
+            mask = class_conf > conf_thresh.to(output.device)[class_ids]
+        else:
+            mask = class_conf > conf_thresh
         if not torch.any(mask):
             results.append(torch.zeros((0, 6), device=output.device))
             continue

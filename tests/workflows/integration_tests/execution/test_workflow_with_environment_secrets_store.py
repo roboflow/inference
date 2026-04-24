@@ -417,7 +417,7 @@ WORKFLOW_EXPOSING_NON_EXISTING_ENV_VARIABLE_TO_SIMD_STEP_ACCEPTING_BATCHES_NESTE
     "inputs": [{"type": "WorkflowImage", "name": "image"}],
     "steps": [
         {
-            "type": "roboflow_core/roboflow_object_detection_model@v2",
+            "type": "roboflow_core/roboflow_object_detection_model@v3",
             "name": "detection",
             "image": "$inputs.image",
             "model_id": "yolov8n-640",
@@ -559,7 +559,7 @@ WORKFLOW_EXPOSING_NON_EXISTING_ENV_VARIABLE_TO_SIMD_STEP_ACCEPTING_EMPTY_BATCHES
     "inputs": [{"type": "WorkflowImage", "name": "image"}],
     "steps": [
         {
-            "type": "roboflow_core/roboflow_object_detection_model@v2",
+            "type": "roboflow_core/roboflow_object_detection_model@v3",
             "name": "detection",
             "image": "$inputs.image",
             "model_id": "yolov8n-640",
@@ -701,7 +701,7 @@ WORKFLOW_EXPOSING_NON_EXISTING_ENV_VARIABLE_TO_SIMD_STEP_NOT_ACCEPTING_BATCHES_N
     "inputs": [{"type": "WorkflowImage", "name": "image"}],
     "steps": [
         {
-            "type": "roboflow_core/roboflow_object_detection_model@v2",
+            "type": "roboflow_core/roboflow_object_detection_model@v3",
             "name": "detection",
             "image": "$inputs.image",
             "model_id": "yolov8n-640",
@@ -843,7 +843,7 @@ WORKFLOW_EXPOSING_NON_EXISTING_ENV_VARIABLE_TO_SIMD_STEP_ACCEPTING_EMPTY_VALUES_
     "inputs": [{"type": "WorkflowImage", "name": "image"}],
     "steps": [
         {
-            "type": "roboflow_core/roboflow_object_detection_model@v2",
+            "type": "roboflow_core/roboflow_object_detection_model@v3",
             "name": "detection",
             "image": "$inputs.image",
             "model_id": "yolov8n-640",
