@@ -17,7 +17,10 @@ from inference_models.models.auto_loaders.entities import (
     TaskType,
 )
 from inference_models.utils.file_system import dump_json, read_json
-from inference_models.weights_providers.entities import ModelDependency
+from inference_models.weights_providers.entities import (
+    ModelDependency,
+    RecommendedParameters,
+)
 
 
 class AutoResolutionCacheEntry(BaseModel):
@@ -30,6 +33,7 @@ class AutoResolutionCacheEntry(BaseModel):
     model_dependencies: Optional[List[ModelDependency]] = Field(default=None)
     created_at: datetime
     model_features: Optional[dict] = Field(default=None)
+    recommended_parameters: Optional[RecommendedParameters] = Field(default=None)
 
 
 class AutoResolutionCache(ABC):

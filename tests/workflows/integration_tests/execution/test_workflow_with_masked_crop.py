@@ -25,11 +25,12 @@ MASKED_CROP_LEGACY_WORKFLOW = {
     ],
     "steps": [
         {
-            "type": "roboflow_core/roboflow_instance_segmentation_model@v1",
+            "type": "roboflow_core/roboflow_instance_segmentation_model@v3",
             "name": "segmentation",
             "image": "$inputs.image",
             "model_id": "$inputs.model_id",
-            "confidence": "$inputs.confidence",
+            "confidence_mode": "custom",
+            "custom_confidence": "$inputs.confidence",
         },
         {
             "type": "roboflow_core/dynamic_crop@v1",
@@ -116,11 +117,12 @@ MASKED_CROP_WORKFLOW = {
     ],
     "steps": [
         {
-            "type": "roboflow_core/roboflow_instance_segmentation_model@v2",
+            "type": "roboflow_core/roboflow_instance_segmentation_model@v3",
             "name": "segmentation",
             "image": "$inputs.image",
             "model_id": "$inputs.model_id",
-            "confidence": "$inputs.confidence",
+            "confidence_mode": "custom",
+            "custom_confidence": "$inputs.confidence",
         },
         {
             "type": "roboflow_core/dynamic_crop@v1",
