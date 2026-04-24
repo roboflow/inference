@@ -200,6 +200,6 @@ class WorkflowErrorResponse(BaseModel):
     message: str
     error_type: str
     context: str
-    inner_error_type: str
-    inner_error_message: str
-    blocks_errors: Optional[List[WorkflowBlockError]]
+    inner_error_type: Optional[str] = None
+    inner_error_message: Optional[str] = None
+    blocks_errors: Optional[List[WorkflowBlockError]] = None
