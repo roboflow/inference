@@ -20,7 +20,6 @@ def torch_mask_to_coco_rle(mask: torch.Tensor) -> dict:
     h, w = mask.shape
     # compress
     rle = mask_utils.frPyObjects({"counts": counts, "size": [h, w]}, h, w)
-    rle["counts"] = rle["counts"].decode("utf-8")
     return rle
 
 
