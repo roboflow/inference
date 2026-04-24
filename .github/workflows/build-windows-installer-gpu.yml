@@ -389,6 +389,12 @@ jobs:
           path: app_bundles/windows/installer/ # Adjusted path
           if-no-files-found: error # Fail the step if the installer directory is not found or empty
 
+      - name: Compress Installer
+        run: |
+          7z a -tzip ./app_bundles/windows/installer/inference-${{ steps.determine_version.outputs.installer_version_out }}-installer.zip ./app_bundles/windows/installer/inference-${{ steps.determine_version.outputs.installer_version_out }}-installer.exe 
+          Get-Item ./app_bundles/windows/installer/inference-${{ steps.determine_version.outputs.installer_version_out }}-installer.zip | Select-Object Name, @{N='SizeMB';E={[math]::Round($_.Length/1MB,2)}}
+
+
       - name: Upload Installer to Release
         if: github.event_name == 'release'
         uses: actions/upload-release-asset@v1
@@ -396,6 +402,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ github.event.release.upload_url }}
-          asset_path: ./app_bundles/windows/installer/inference-${{ steps.determine_version.outputs.installer_version_out }}-installer.exe
-          asset_name: inference-${{ steps.determine_version.outputs.installer_version_out }}-gpu-installer.exe
-          asset_content_type: application/vnd.microsoft.portable-executable 
+          asset_path: ./app_bundles/windows/installer/inference-${{ steps.determine_version.outputs.installer_version_out }}-installer.zip
+          asset_name: inference-${{ steps.determine_version.outputs.installer_version_out }}-gpu-installer.zip
+          asset_content_type: application/zip
