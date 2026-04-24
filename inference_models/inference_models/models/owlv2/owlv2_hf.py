@@ -59,6 +59,8 @@ Query = Dict[
 def monkey_patch_vision_encoder_before_compilation(
     model: Owlv2ForObjectDetection,
 ) -> Owlv2ForObjectDetection:
+    # IMPORTANT: This function is used in inference - move it and you will be executed. This import must work.
+    # It's brittle, but we had no other choice :)
     """
     Due to global changes in transformers: https://github.com/huggingface/transformers/pull/43590
     our way of compiling owlv2 vision_model turned out invalid.
