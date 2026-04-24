@@ -1083,7 +1083,9 @@ def attempt_loading_model_with_auto_load_cache(
         # Cache stores the already-resolved (package-vs-model) value written
         # in initialize_model — no need to re-run resolve_recommended_parameters.
         if cache_entry.recommended_parameters is not None:
-            model_init_kwargs["recommended_parameters"] = cache_entry.recommended_parameters
+            model_init_kwargs["recommended_parameters"] = (
+                cache_entry.recommended_parameters
+            )
         model = model_class.from_pretrained(
             model_package_cache_dir, **model_init_kwargs
         )
@@ -1137,7 +1139,7 @@ def attempt_loading_matching_model_packages(
             help_url="https://inference-models.roboflow.com/errors/package-negotiation/#nomodelpackagesavailableerror",
         )
     failed_load_attempts: List[Tuple[str, Exception]] = []
-    for model_package in matching_model_packages:
+    for idx, model_package in enumerate(matching_model_packages):
         access_identifiers = AccessIdentifiers(
             model_id=model_id,
             package_id=model_package.package_id,
@@ -1178,6 +1180,12 @@ def attempt_loading_matching_model_packages(
                 on_symlink_deleted=model_access_manager.on_symlink_deleted,
                 use_auto_resolution_cache=use_auto_resolution_cache,
             )
+            LOGGER.info(
+                "Loaded model %s with backend %s (package %s)",
+                model_id,
+                model_package.backend.value,
+                model_package.package_id,
+            )
             model_access_manager.on_model_loaded(
                 model=model,
                 access_identifiers=access_identifiers,
@@ -1196,6 +1204,15 @@ def attempt_loading_matching_model_packages(
                 f"likely a bug in `inference-models` and you should raise an issue providing full context of "
                 f"the event. https://github.com/roboflow/inference/issues"
             )
+            next_idx = idx + 1
+            if next_idx < len(matching_model_packages):
+                next_backend = matching_model_packages[next_idx].backend.value
+                LOGGER.warning(
+                    "Falling back from %s to %s backend for model %s",
+                    model_package.backend.value,
+                    next_backend,
+                    model_id,
+                )
             failed_load_attempts.append((model_package.package_id, error))
 
     summary_of_errors = "\n".join(

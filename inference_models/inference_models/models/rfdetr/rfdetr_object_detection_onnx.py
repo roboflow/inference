@@ -9,7 +9,7 @@ from inference_models.configuration import (
     DEFAULT_DEVICE,
     INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE,
 )
-from inference_models.entities import Confidence, ColorFormat
+from inference_models.entities import ColorFormat, Confidence
 from inference_models.errors import (
     EnvironmentConfigurationError,
     MissingDependencyError,
@@ -223,7 +223,9 @@ class RFDetrForObjectDetectionONNX(
         logits_sigmoid = torch.nn.functional.sigmoid(logits)
         threshold = confidence_filter.get_threshold(self.class_names)
         if isinstance(threshold, torch.Tensor):
-            threshold = threshold.to(dtype=logits_sigmoid.dtype, device=logits_sigmoid.device)
+            threshold = threshold.to(
+                dtype=logits_sigmoid.dtype, device=logits_sigmoid.device
+            )
         results = []
         for image_bboxes, image_logits, image_meta in zip(
             bboxes, logits_sigmoid, pre_processing_meta
@@ -244,7 +246,11 @@ class RFDetrForObjectDetectionONNX(
                 predicted_confidence = predicted_confidence[named]
                 top_classes = top_classes[named]
                 image_bboxes = image_bboxes[named]
-            confidence_mask = predicted_confidence > (threshold[top_classes.long()] if isinstance(threshold, torch.Tensor) else threshold)
+            confidence_mask = predicted_confidence > (
+                threshold[top_classes.long()]
+                if isinstance(threshold, torch.Tensor)
+                else threshold
+            )
             predicted_confidence = predicted_confidence[confidence_mask]
             top_classes = top_classes[confidence_mask]
             selected_boxes = image_bboxes[confidence_mask]
