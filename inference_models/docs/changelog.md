@@ -1,5 +1,11 @@
 # Changelog
 
+## `0.27.1`
+
+### Added
+
+- Improved logging for auto-negotiation of model packages.
+
 ## `0.27.0`
 
 ### Added
