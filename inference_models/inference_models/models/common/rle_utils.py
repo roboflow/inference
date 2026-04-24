@@ -8,8 +8,20 @@ from inference_models.models.base.types import InstancesRLEMasks
 
 
 def torch_mask_to_coco_rle(mask: torch.Tensor) -> dict:
-    np_mask = np.asfortranarray(mask.detach().cpu().numpy().astype(np.uint8))
-    return mask_utils.encode(np_mask)
+    # Convert to uncompressed run length encoding in GPU
+    # coco tools expect fortran order (column-wise)
+    mask_flat = mask.permute(1, 0).reshape(-1)
+    values, lengths = torch.unique_consecutive(mask_flat, return_counts=True)
+    counts = lengths.cpu().tolist()
+
+    if values[0] == 1:
+        counts.insert(0, 0)
+
+    h, w = mask.shape
+    # compress
+    rle = mask_utils.frPyObjects({"counts": counts, "size": [h, w]}, h, w)
+    rle["counts"] = rle["counts"].decode("utf-8")
+    return rle
 
 
 def coco_rle_masks_to_numpy_mask(instances_masks: InstancesRLEMasks) -> np.ndarray:
