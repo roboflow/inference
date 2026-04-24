@@ -279,8 +279,14 @@ DISABLE_PREPROC_GRAYSCALE = str2bool(os.getenv("DISABLE_PREPROC_GRAYSCALE", Fals
 # Flag to disable static crop preprocessing, default is False
 DISABLE_PREPROC_STATIC_CROP = str2bool(os.getenv("DISABLE_PREPROC_STATIC_CROP", False))
 
+# Offline mode - disables all outbound network requests to Roboflow API.
+# Models must be pre-cached locally. Telemetry and metrics are silently skipped.
+OFFLINE_MODE = str2bool(os.getenv("OFFLINE_MODE", False))
+
 # Flag to disable version check, default is False
 DISABLE_VERSION_CHECK = str2bool(os.getenv("DISABLE_VERSION_CHECK", False))
+if OFFLINE_MODE:
+    DISABLE_VERSION_CHECK = True
 
 # ElastiCache endpoint
 ELASTICACHE_ENDPOINT = os.environ.get(
@@ -431,7 +437,7 @@ OTEL_METRIC_EXPORT_INTERVAL_MS = int(
 
 # Metrics enabled flag, default is True
 METRICS_ENABLED = str2bool(os.getenv("METRICS_ENABLED", True))
-if LAMBDA or GCP_SERVERLESS:
+if LAMBDA or GCP_SERVERLESS or OFFLINE_MODE:
     METRICS_ENABLED = False
 
 # Interval for metrics aggregation, default is 60
@@ -564,6 +570,8 @@ INFER_BUCKET = os.getenv(
 )
 
 ACTIVE_LEARNING_ENABLED = str2bool(os.getenv("ACTIVE_LEARNING_ENABLED", True))
+if OFFLINE_MODE:
+    ACTIVE_LEARNING_ENABLED = False
 ACTIVE_LEARNING_TAGS = safe_split_value(os.getenv("ACTIVE_LEARNING_TAGS", None))
 
 # Number inflight async tasks for async model manager
@@ -722,6 +730,8 @@ USE_FILE_CACHE_FOR_WORKFLOWS_DEFINITIONS = str2bool(
 SINGLE_TENANT_WORKFLOW_CACHE = str2bool(
     os.getenv("SINGLE_TENANT_WORKFLOW_CACHE", "False")
 )
+if OFFLINE_MODE:
+    SINGLE_TENANT_WORKFLOW_CACHE = True
 ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE = str2bool(
     os.getenv("ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE", "True")
 )

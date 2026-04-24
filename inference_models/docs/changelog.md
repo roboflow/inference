@@ -1,5 +1,18 @@
 # Changelog
 
+## `0.27.1`
+
+### Added
+
+- `OFFLINE_MODE` environment variable. When set to `True`, all outbound HTTP requests are blocked
+and models are loaded exclusively from local cache. Designed for air-gapped deployments where the
+inference server has no network access. Models must be pre-cached by running once with network
+connectivity. The auto-resolution cache and the models-cache directory are both used for offline
+loading. If a cached model is not found, a clear error is raised immediately with no retries or
+timeouts.
+
+---
+
 ## `0.27.0`
 
 ### Added

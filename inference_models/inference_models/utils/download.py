@@ -30,6 +30,7 @@ from inference_models.configuration import (
     DISABLE_INTERACTIVE_PROGRESS_BARS,
     FILE_LOCK_ACQUIRE_TIMEOUT,
     IDEMPOTENT_API_REQUEST_CODES_TO_RETRY,
+    OFFLINE_MODE,
 )
 from inference_models.errors import (
     FileHashSumMissmatch,
@@ -195,6 +196,11 @@ def download_files_to_directory(
         - Existing files are skipped automatically
         - Progress bars are disabled if DISABLE_INTERACTIVE_PROGRESS_BARS env var is set
     """
+    if OFFLINE_MODE:
+        raise RuntimeError(
+            "Cannot download files - OFFLINE_MODE is enabled. "
+            "All model weights must be pre-cached locally."
+        )
     if name_after not in {"file_handle", "md5_hash"}:
         raise InvalidParameterError(
             message="Function download_files_to_directory(...) was called with "

@@ -44,6 +44,7 @@ from inference.core.env import (
     MODELS_CACHE_AUTH_CACHE_MAX_SIZE,
     MODELS_CACHE_AUTH_CACHE_TTL,
     MODELS_CACHE_AUTH_ENABLED,
+    OFFLINE_MODE,
     RETRY_CONNECTION_ERRORS_TO_ROBOFLOW_API,
     ROBOFLOW_API_EXTRA_HEADERS,
     ROBOFLOW_API_REQUEST_TIMEOUT,
@@ -289,6 +290,10 @@ def get_roboflow_workspace(api_key: str) -> WorkspaceID:
     interval=TRANSIENT_ROBOFLOW_API_ERRORS_RETRY_INTERVAL,
 )
 async def get_roboflow_workspace_async(api_key: str) -> WorkspaceID:
+    if OFFLINE_MODE:
+        raise RoboflowAPIConnectionError(
+            "Cannot fetch workspace - OFFLINE_MODE is enabled."
+        )
     try:
         headers = build_roboflow_api_headers()
         full_url = wrap_url(
@@ -336,6 +341,8 @@ async def get_roboflow_workspace_async(api_key: str) -> WorkspaceID:
 async def get_serverless_usage_check_async(
     api_key: str,
 ) -> ServerlessUsageCheckResponse:
+    if OFFLINE_MODE:
+        return ServerlessUsageCheckResponse(status_code=200)
     try:
         headers = build_roboflow_api_headers()
         full_url = wrap_url(
@@ -406,6 +413,8 @@ def add_custom_metadata(
             params=[("api_key", api_key), ("nocache", "true")],
         )
     )
+    if OFFLINE_MODE:
+        return
     response = requests.post(
         url=api_url,
         json={
@@ -692,6 +701,8 @@ def register_image_at_roboflow(
     inference_id: Optional[str] = None,
     metadata: Optional[Dict[str, Any]] = None,
 ) -> dict:
+    if OFFLINE_MODE:
+        return {}
     url = f"{API_BASE_URL}/dataset/{dataset_id}/upload"
     params = [
         ("api_key", api_key),
@@ -747,6 +758,8 @@ def annotate_image_at_roboflow(
     annotation_file_type: str,
     is_prediction: bool = True,
 ) -> dict:
+    if OFFLINE_MODE:
+        return {}
     url = f"{API_BASE_URL}/dataset/{dataset_id}/annotate/{roboflow_image_id}"
     params = [
         ("api_key", api_key),
@@ -1074,6 +1087,8 @@ def _get_from_url(
     json_response: bool = True,
     headers: Optional[dict] = None,
 ) -> Union[Response, dict]:
+    if OFFLINE_MODE:
+        raise ConnectionError("OFFLINE_MODE is enabled - cannot make API requests.")
     full_url = wrap_url(url)
     try:
         response = requests.get(
@@ -1215,6 +1230,8 @@ def send_inference_results_to_model_monitoring(
     workspace_id: WorkspaceID,
     inference_data: dict,
 ):
+    if OFFLINE_MODE:
+        return
     api_url = wrap_url(
         _add_params_to_url(
             url=f"{API_BASE_URL}/{workspace_id}/inference-stats",
@@ -1291,6 +1308,11 @@ def post_to_roboflow_api(
         params: Additional URL parameters
         http_errors_handlers: Optional custom HTTP error handlers by status code
     """
+
+    if OFFLINE_MODE:
+        raise RoboflowAPIConnectionError(
+            "Cannot make API requests - OFFLINE_MODE is enabled."
+        )
 
     @wrap_roboflow_api_errors(http_errors_handlers=http_errors_handlers)
     def _make_request():
