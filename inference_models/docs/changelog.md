@@ -1,5 +1,13 @@
 # Changelog
 
+## `0.27.2`
+
+### Fixed
+
+- Temporarily disabled flash-attention in GLM-OCR for Jetsons, due to incompatibility detected
+before release.
+
+
 ## `0.27.1`
 
 ### Added
