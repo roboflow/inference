@@ -123,8 +123,8 @@ class Owlv2Singleton:
 
             if OWLV2_COMPILE_MODEL:
                 torch._dynamo.config.suppress_errors = True
-                model._model = monkey_patch_vision_encoder_before_compilation(
-                    model._model
+                model = monkey_patch_vision_encoder_before_compilation(
+                    model
                 )
                 model.owlv2.vision_model = torch.compile(model.owlv2.vision_model)
             instance.model = model
