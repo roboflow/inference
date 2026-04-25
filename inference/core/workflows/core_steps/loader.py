@@ -233,6 +233,9 @@ from inference.core.workflows.core_steps.models.foundation.google_gemini.v2 impo
 from inference.core.workflows.core_steps.models.foundation.google_gemini.v3 import (
     GoogleGeminiBlockV3,
 )
+from inference.core.workflows.core_steps.models.foundation.google_gemma.v1 import (
+    GoogleGemmaBlockV1,
+)
 from inference.core.workflows.core_steps.models.foundation.google_vision_ocr.v1 import (
     GoogleVisionOCRBlockV1,
 )
@@ -897,6 +900,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         TwilioSMSNotificationBlockV2,
         GazeBlockV1,
         LlamaVisionBlockV1,
+        GoogleGemmaBlockV1,
         ImageSlicerBlockV2,
         Qwen25VLBlockV1,
         Qwen3VLBlockV1,
