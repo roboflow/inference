@@ -250,16 +250,29 @@ def lazy_register(model_class: type) -> None:
     _registered_classes.add(cls_id)
 
     for cls in model_class.__mro__:
-        config = _TASK_CONFIGS.get(cls.__name__)
+        _register_from_config(cls)
+
+
+def lazy_register_by_names(mro_names: list[str]) -> None:
+    """Register tasks using MRO class name strings (subprocess path).
+
+    Worker sends class names in READY pipe — no actual class objects needed.
+    Creates lightweight placeholder classes for registry storage. Lookup
+    uses get_entry_by_mro_names() which matches by class name string.
+    """
+    key = ",".join(mro_names)
+    if key in _registered_name_keys:
+        return
+    _registered_name_keys.add(key)
+
+    for name in mro_names:
+        config = _TASK_CONFIGS.get(name)
         if config is None:
             continue
-        # Register on the base class — MRO lookup will match subclasses.
+        placeholder = type(name, (), {})
         for task_name, method, default, params, val_name, ser_name, resp_type in config:
-            # Skip if already registered for this class+task (e.g. child overrides parent).
-            if registry.get_entry_for_class(model_class, task_name) is not None:
-                continue
             registry.register(
-                cls,
+                placeholder,
                 task_name,
                 method=method,
                 default=default,
@@ -268,5 +281,28 @@ def lazy_register(model_class: type) -> None:
                 serializer=_resolve_serializer(ser_name),
                 response_type=resp_type,
             )
+
+
+_registered_name_keys: set[str] = set()
+
+
+def _register_from_config(cls: type) -> None:
+    """Register tasks for a single class if it has config."""
+    config = _TASK_CONFIGS.get(cls.__name__)
+    if config is None:
+        return
+    for task_name, method, default, params, val_name, ser_name, resp_type in config:
+        if registry.get_entry_for_class(cls, task_name) is not None:
+            continue
+        registry.register(
+            cls,
+            task_name,
+            method=method,
+            default=default,
+            params=params,
+            validator=_resolve_validator(val_name),
+            serializer=_resolve_serializer(ser_name),
+            response_type=resp_type,
+        )
 
 

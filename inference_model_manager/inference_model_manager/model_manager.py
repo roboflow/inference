@@ -159,19 +159,14 @@ class ModelManager:
                 batch_max_delay_ms=batch_max_delay_ms,
                 **kwargs,
             )
-            # Store model class for registry lookup (needed for subprocess
-            # where model instance lives in worker, not in parent process).
-            # Also lazily registers the class in the model registry.
-            try:
-                from inference_models.models.auto_loaders.core import AutoModel
-                b._model_class = AutoModel.resolve_class(
-                    load_target, api_key=api_key,
-                )
-                from inference_model_manager.registry_defaults import lazy_register
-                lazy_register(b._model_class)
-            except Exception:
-                logger.warning("Failed to resolve model class for '%s'", load_target, exc_info=True)
-                b._model_class = None
+            # Register model class in registry for task dispatch + serialization.
+            from inference_model_manager.registry_defaults import lazy_register, lazy_register_by_names
+            if hasattr(b, "model") and b.model is not None:
+                # DirectBackend — model instance available in-process.
+                lazy_register(type(b.model))
+            elif hasattr(b, "_model_mro_names") and b._model_mro_names:
+                # SubprocessBackend — worker sent MRO class names in READY.
+                lazy_register_by_names(b._model_mro_names)
             self._backends[model_id] = b
 
         # Warmup outside the lock — model is registered, other models can load
@@ -310,19 +305,13 @@ class ModelManager:
         if hasattr(backend, "submit_slot"):
             raw_input = kwargs.pop("images", None)
             result = self.submit(model_id, task=task, raw_input=raw_input, **kwargs).result()
-            # Serialize subprocess result through registry (use model_class, not instance)
-            model_class = getattr(backend, "_model_class", None)
-            if model_class is not None:
+            # Serialize subprocess result through registry (model lives in worker,
+            # parent only has MRO class name strings from READY pipe).
+            mro_names = getattr(backend, "_model_mro_names", [])
+            if mro_names:
                 reg = _get_registry()
-                # Resolve default task name if not specified
-                if task is None:
-                    from inference_model_manager.dispatch import _entries_for_class
-                    entries = _entries_for_class(model_class, reg)
-                    defaults = [n for n, e in entries.items() if e.default]
-                    task_name = defaults[0] if defaults else "infer"
-                else:
-                    task_name = task
-                entry = reg.get_entry_for_class(model_class, task_name)
+                task_name = task or reg.get_default_task_by_mro_names(mro_names) or "infer"
+                entry = reg.get_entry_by_mro_names(mro_names, task_name)
                 if entry is not None:
                     return entry.serializer(result, backend)
             return result
