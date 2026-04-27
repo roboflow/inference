@@ -1,4 +1,5 @@
 """Unit tests for decode.py — make_decoder and make_batch_decoder."""
+
 from __future__ import annotations
 
 import numpy as np
@@ -7,10 +8,10 @@ import torch
 
 from inference_model_manager.backends.decode import make_batch_decoder, make_decoder
 
-
 # ---------------------------------------------------------------------------
 # Fixtures — minimal valid JPEG and PNG bytes
 # ---------------------------------------------------------------------------
+
 
 def _make_rgb_array(h: int = 8, w: int = 8) -> np.ndarray:
     rng = np.random.default_rng(42)
@@ -33,13 +34,14 @@ def png_bytes() -> bytes:
 # make_decoder — single-image
 # ---------------------------------------------------------------------------
 
+
 class TestMakeDecoder:
     def test_imagecodecs_returns_rgb_hwc_numpy(self, jpeg_bytes):
         decode = make_decoder("imagecodecs")
         result = decode(jpeg_bytes)
         assert isinstance(result, np.ndarray)
         assert result.ndim == 3
-        assert result.shape[2] == 3        # HWC
+        assert result.shape[2] == 3  # HWC
 
     def test_imagecodecs_uint8(self, jpeg_bytes):
         decode = make_decoder("imagecodecs")
@@ -50,7 +52,7 @@ class TestMakeDecoder:
         result = decode(jpeg_bytes)
         assert isinstance(result, torch.Tensor)
         assert result.ndim == 3
-        assert result.shape[0] == 3        # CHW
+        assert result.shape[0] == 3  # CHW
 
     def test_nvjpeg_jpeg_uint8(self, jpeg_bytes):
         decode = make_decoder("nvjpeg", device="cpu")
@@ -62,7 +64,7 @@ class TestMakeDecoder:
         result = decode(png_bytes)
         assert isinstance(result, torch.Tensor)
         assert result.ndim == 3
-        assert result.shape[0] == 3        # CHW
+        assert result.shape[0] == 3  # CHW
 
     def test_unknown_name_raises(self):
         with pytest.raises(ValueError, match="Unknown decoder"):
@@ -73,6 +75,7 @@ class TestMakeDecoder:
 # make_batch_decoder — use_nvjpeg=False (imagecodecs path)
 # ---------------------------------------------------------------------------
 
+
 class TestMakeBatchDecoderImagecodecs:
     def test_jpeg_batch_shape(self, jpeg_bytes):
         decode = make_batch_decoder("cpu", use_nvjpeg=False)
@@ -81,7 +84,7 @@ class TestMakeBatchDecoderImagecodecs:
         for t in results:
             assert isinstance(t, torch.Tensor)
             assert t.ndim == 3
-            assert t.shape[0] == 3         # CHW
+            assert t.shape[0] == 3  # CHW
 
     def test_png_batch_shape(self, png_bytes):
         decode = make_batch_decoder("cpu", use_nvjpeg=False)
@@ -107,19 +110,20 @@ class TestMakeBatchDecoderImagecodecs:
 
     def test_single_image_matches_make_decoder(self, jpeg_bytes):
         """Batch decoder with one JPEG should produce same CHW shape as single decoder."""
-        batch_decode  = make_batch_decoder("cpu", use_nvjpeg=False)
+        batch_decode = make_batch_decoder("cpu", use_nvjpeg=False)
         single_decode = make_decoder("imagecodecs")
-        single_result = single_decode(jpeg_bytes)   # HWC numpy
-        batch_result  = batch_decode([memoryview(jpeg_bytes)])[0]   # CHW tensor
+        single_result = single_decode(jpeg_bytes)  # HWC numpy
+        batch_result = batch_decode([memoryview(jpeg_bytes)])[0]  # CHW tensor
         # shape consistency: HWC vs CHW — spatial dims match
-        assert batch_result.shape[1] == single_result.shape[0]   # H
-        assert batch_result.shape[2] == single_result.shape[1]   # W
-        assert batch_result.shape[0] == single_result.shape[2]   # C
+        assert batch_result.shape[1] == single_result.shape[0]  # H
+        assert batch_result.shape[2] == single_result.shape[1]  # W
+        assert batch_result.shape[0] == single_result.shape[2]  # C
 
 
 # ---------------------------------------------------------------------------
 # make_batch_decoder — use_nvjpeg=True
 # ---------------------------------------------------------------------------
+
 
 class TestMakeBatchDecoderNvjpeg:
     def test_jpeg_batch_shape(self, jpeg_bytes):
@@ -163,6 +167,7 @@ class TestMakeBatchDecoderNvjpeg:
     def test_pure_jpeg_batch_only_uses_torchvision(self, jpeg_bytes, monkeypatch):
         """For an all-JPEG batch, imagecodecs.imread should never be called."""
         import inference_model_manager.backends.decode as _dec
+
         original_ic = pytest.importorskip("imagecodecs")
 
         called = []
@@ -172,7 +177,8 @@ class TestMakeBatchDecoderNvjpeg:
             return original_ic.imread(data)
 
         monkeypatch.setattr(
-            _dec, "make_batch_decoder",
+            _dec,
+            "make_batch_decoder",
             lambda *a, **kw: make_batch_decoder(*a, **kw),
         )
         # Patch imagecodecs inside the closure by creating a fresh decoder
@@ -181,6 +187,7 @@ class TestMakeBatchDecoderNvjpeg:
 
         # Wrap the actual imagecodecs in the already-closed-over module ref
         import imagecodecs as ic_module
+
         original_imread = ic_module.imread
         ic_module.imread = _spy_imread
         try:

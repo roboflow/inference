@@ -122,7 +122,9 @@ class SHMPool:
 
         # Allocation state — only owner ever calls alloc/free
         self._free: deque[int] = deque(range(n_slots)) if owner else deque()
-        self._allocated: set[int] = set()  # slots currently in use (for double-free guard)
+        self._allocated: set[int] = (
+            set()
+        )  # slots currently in use (for double-free guard)
         self._cond: threading.Condition = threading.Condition(threading.Lock())
 
     # ------------------------------------------------------------------
@@ -300,7 +302,9 @@ class SHMPool:
         struct.pack_into("<I", self._shm.buf, off + _OFF_RESULT_SZ, result_size)
         self._shm.buf[off + _OFF_STATUS] = SlotStatus.DONE
 
-    def mark_error(self, slot_id: int, error_code: int = 1, error_size: int = 0) -> None:
+    def mark_error(
+        self, slot_id: int, error_code: int = 1, error_size: int = 0
+    ) -> None:
         """Set status=ERROR + error_code. error_size = bytes of error detail in DATA area."""
         off = self._slot_offset(slot_id)
         struct.pack_into("<I", self._shm.buf, off + _OFF_RESULT_SZ, error_size)

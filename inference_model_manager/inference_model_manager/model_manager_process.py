@@ -227,7 +227,9 @@ class ModelState:
 
 
 class BackendLike(Protocol):
-    def signal_slot(self, slot_id: int, req_id: int, params_bytes: bytes = ...) -> None: ...
+    def signal_slot(
+        self, slot_id: int, req_id: int, params_bytes: bytes = ...
+    ) -> None: ...
 
 
 # ---------------------------------------------------------------------------
@@ -865,7 +867,10 @@ class ModelManagerProcess:
         for attempt in range(max_retries):
             logger.info(
                 "MMP: loading '%s' (weights=%s device=%s attempt=%d)",
-                model_id, model_id_or_path, device or "default", attempt + 1,
+                model_id,
+                model_id_or_path,
+                device or "default",
+                attempt + 1,
             )
             try:
                 await loop.run_in_executor(
@@ -910,7 +915,8 @@ class ModelManagerProcess:
 
                 logger.warning(
                     "MMP: OOM loading '%s' — evicting cold model '%s' and retrying",
-                    model_id, candidate,
+                    model_id,
+                    candidate,
                 )
                 self._evict_model(candidate)
 
@@ -934,7 +940,9 @@ class ModelManagerProcess:
         fs.loaded = True
         self._flush_load_waiters(model_id)
 
-    def _fail_load(self, model_id: str, fs: Optional[ModelState], err_code: int) -> None:
+    def _fail_load(
+        self, model_id: str, fs: Optional[ModelState], err_code: int
+    ) -> None:
         """Clean up ModelState and notify waiters with T_ERROR on load failure."""
         if fs is None:
             fs = self._models.get(model_id)
@@ -944,9 +952,7 @@ class ModelManagerProcess:
             fs.loaded = False
             for identity, req_id, _ in waiters:
                 asyncio.create_task(
-                    self._send(
-                        identity, T_ERROR, struct.pack(">QB", req_id, err_code)
-                    )
+                    self._send(identity, T_ERROR, struct.pack(">QB", req_id, err_code))
                 )
         # Clean up any partial state
         self._backends.pop(model_id, None)
@@ -1058,7 +1064,9 @@ class ModelManagerProcess:
         )
         # Run in executor — drain_and_unload can block up to 30s
         try:
-            asyncio.get_running_loop().run_in_executor(None, self._evict_model, candidate)
+            asyncio.get_running_loop().run_in_executor(
+                None, self._evict_model, candidate
+            )
         except RuntimeError:
             # No event loop (test or direct call) — run synchronously
             self._evict_model(candidate)
@@ -1097,7 +1105,8 @@ class ModelManagerProcess:
 
         # Partition into cold (idle > timeout) and hot
         cold = [
-            f for f in candidates
+            f
+            for f in candidates
             if (now - self._model_access.get(f, 0.0)) > self._idle_timeout_s
         ]
 

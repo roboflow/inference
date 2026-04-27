@@ -32,13 +32,14 @@ _INPUT_MB = 20.0
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _submit_via_pool(pool: SHMPool, backend: SubprocessBackend, raw_input) -> Future:
     """Manually alloc slot, write input, signal worker — raw backend test path."""
     input_bytes = _to_bytes(raw_input)
     req_id = uuid.uuid4().int & 0xFFFF_FFFF_FFFF_FFFF
     slot_id = pool.alloc_slot()
     pool.mark_allocated(slot_id, req_id)
-    pool.data_memoryview(slot_id)[:len(input_bytes)] = input_bytes
+    pool.data_memoryview(slot_id)[: len(input_bytes)] = input_bytes
     pool.mark_written(slot_id, len(input_bytes))
 
     future: Future = Future()
@@ -58,6 +59,7 @@ def _submit_via_pool(pool: SHMPool, backend: SubprocessBackend, raw_input) -> Fu
 # Fixtures — raw backend (external pool)
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture(scope="module")
 def shared_pool():
     pool = SHMPool.create(_N_SLOTS, _INPUT_MB)
@@ -69,9 +71,13 @@ def shared_pool():
 def subproc_backend(yolov8n_model_path: str, shared_pool: SHMPool):
     """Shared SubprocessBackend for non-destructive tests."""
     backend = SubprocessBackend(
-        yolov8n_model_path, api_key="",
-        shm_pool_name=shared_pool.name, n_slots=_N_SLOTS, input_mb=_INPUT_MB,
-        use_gpu=False, use_cuda_ipc=False,
+        yolov8n_model_path,
+        api_key="",
+        shm_pool_name=shared_pool.name,
+        n_slots=_N_SLOTS,
+        input_mb=_INPUT_MB,
+        use_gpu=False,
+        use_cuda_ipc=False,
     )
     yield backend
     backend.unload()
@@ -81,13 +87,16 @@ def subproc_backend(yolov8n_model_path: str, shared_pool: SHMPool):
 # Raw SubprocessBackend tests (manual pool + submit_slot)
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.slow
 @pytest.mark.torch_models
 class TestSubprocBackendPipeline:
     """Full pipeline via worker process, raw backend path."""
 
     def test_infer_via_submit_slot(
-        self, subproc_backend: SubprocessBackend, shared_pool: SHMPool,
+        self,
+        subproc_backend: SubprocessBackend,
+        shared_pool: SHMPool,
         dog_image_numpy: np.ndarray,
     ) -> None:
         future = _submit_via_pool(shared_pool, subproc_backend, dog_image_numpy)
@@ -98,7 +107,9 @@ class TestSubprocBackendPipeline:
         assert result.xyxy.shape[1] == 4
 
     def test_multiple_sequential_inferences(
-        self, subproc_backend: SubprocessBackend, shared_pool: SHMPool,
+        self,
+        subproc_backend: SubprocessBackend,
+        shared_pool: SHMPool,
         dog_image_numpy: np.ndarray,
     ) -> None:
         f1 = _submit_via_pool(shared_pool, subproc_backend, dog_image_numpy)
@@ -106,7 +117,9 @@ class TestSubprocBackendPipeline:
         f2 = _submit_via_pool(shared_pool, subproc_backend, dog_image_numpy)
         r2 = f2.result(timeout=30)
         assert torch.allclose(
-            r1.confidence.cpu(), r2.confidence.cpu(), atol=0.01,
+            r1.confidence.cpu(),
+            r2.confidence.cpu(),
+            atol=0.01,
         )
 
 
@@ -121,10 +134,14 @@ class TestSubprocBackendObservability:
         assert subproc_backend.stats()["worker_alive"] is True
 
     def test_stats_populated_after_inference(
-        self, subproc_backend: SubprocessBackend, shared_pool: SHMPool,
+        self,
+        subproc_backend: SubprocessBackend,
+        shared_pool: SHMPool,
         dog_image_numpy: np.ndarray,
     ) -> None:
-        _submit_via_pool(shared_pool, subproc_backend, dog_image_numpy).result(timeout=30)
+        _submit_via_pool(shared_pool, subproc_backend, dog_image_numpy).result(
+            timeout=30
+        )
         s = subproc_backend.stats()
         assert s["backend_type"] == "subprocess"
         assert s["transport"] == "shm_pool"
@@ -148,9 +165,13 @@ class TestSubprocBackendLifecycle:
     def test_worker_terminates_on_unload(self, yolov8n_model_path: str) -> None:
         pool = SHMPool.create(_N_SLOTS, _INPUT_MB)
         backend = SubprocessBackend(
-            yolov8n_model_path, api_key="",
-            shm_pool_name=pool.name, n_slots=_N_SLOTS, input_mb=_INPUT_MB,
-            use_gpu=False, use_cuda_ipc=False,
+            yolov8n_model_path,
+            api_key="",
+            shm_pool_name=pool.name,
+            n_slots=_N_SLOTS,
+            input_mb=_INPUT_MB,
+            use_gpu=False,
+            use_cuda_ipc=False,
         )
         assert backend._worker.is_alive()
         backend.unload()
@@ -165,8 +186,11 @@ class TestSubprocBackendLifecycle:
     ) -> None:
         pool = SHMPool.create(_N_SLOTS, _INPUT_MB)
         backend = SubprocessBackend(
-            yolov8n_model_path, api_key="",
-            shm_pool_name=pool.name, n_slots=_N_SLOTS, input_mb=_INPUT_MB,
+            yolov8n_model_path,
+            api_key="",
+            shm_pool_name=pool.name,
+            n_slots=_N_SLOTS,
+            input_mb=_INPUT_MB,
             use_gpu=False,
         )
         backend.unload()
@@ -179,13 +203,16 @@ class TestSubprocBackendLifecycle:
 # Through ModelManager (production flow)
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture(scope="module")
 def subproc_manager(yolov8n_model_path: str):
     mm = ModelManager(n_slots=_N_SLOTS, input_mb=_INPUT_MB)
     mm.load(
-        "test-model", api_key="",
+        "test-model",
+        api_key="",
         model_id_or_path=yolov8n_model_path,
-        backend="subprocess", use_gpu=False,
+        backend="subprocess",
+        use_gpu=False,
     )
     yield mm
     mm.shutdown()
@@ -229,10 +256,13 @@ class TestSubprocBatchingViaModelManager:
     ) -> None:
         mm = ModelManager(n_slots=_N_SLOTS, input_mb=_INPUT_MB)
         mm.load(
-            "m", api_key="",
+            "m",
+            api_key="",
             model_id_or_path=yolov8n_model_path,
-            backend="subprocess", use_gpu=False,
-            batch_max_size=4, batch_max_delay_ms=100,
+            backend="subprocess",
+            use_gpu=False,
+            batch_max_size=4,
+            batch_max_delay_ms=100,
         )
         f1 = mm.submit("m", raw_input=dog_image_numpy)
         f2 = mm.submit("m", raw_input=dog_image_numpy)

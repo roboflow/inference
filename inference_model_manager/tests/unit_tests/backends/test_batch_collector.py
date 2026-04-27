@@ -10,7 +10,6 @@ import pytest
 
 from inference_model_manager.backends.batch_collector import BatchCollector
 
-
 # ------------------------------------------------------------------
 # Fake pipeline functions — no model, no torch, no GPU
 # ------------------------------------------------------------------
@@ -151,9 +150,7 @@ def test_higher_priority_items_dispatched_first() -> None:
         collate_order.extend([t for t, _ in items])
         return [t for t, _ in items]
 
-    bc = _make_collector(
-        max_size=3, max_delay_ms=50, collate_fn=tracking_collate
-    )
+    bc = _make_collector(max_size=3, max_delay_ms=50, collate_fn=tracking_collate)
 
     # when — submit with different priorities, block dispatch briefly
     # by submitting all before the collector wakes up
@@ -176,9 +173,7 @@ def test_fifo_within_same_priority() -> None:
         collate_order.extend([t for t, _ in items])
         return [t for t, _ in items]
 
-    bc = _make_collector(
-        max_size=3, max_delay_ms=50, collate_fn=tracking_collate
-    )
+    bc = _make_collector(max_size=3, max_delay_ms=50, collate_fn=tracking_collate)
 
     # when — same priority, different order
     bc.add(tensor="first", meta=None, priority=0)
@@ -298,7 +293,9 @@ def test_stop_drain_false_fails_remaining_items() -> None:
         if f.exception() is not None:
             assert "stopped" in str(f.exception()).lower()
             failed_count += 1
-    assert failed_count > 0, "Expected at least one future to be failed/cancelled after drain=False stop"
+    assert (
+        failed_count > 0
+    ), "Expected at least one future to be failed/cancelled after drain=False stop"
 
 
 def test_add_after_stop_returns_failed_future() -> None:
@@ -420,10 +417,7 @@ def test_concurrent_submits_all_resolve() -> None:
         for i in range(start, start + count):
             futures.append(bc.add(tensor=i, meta=i))
 
-    threads = [
-        threading.Thread(target=submitter, args=(i * 13, 13))
-        for i in range(4)
-    ]
+    threads = [threading.Thread(target=submitter, args=(i * 13, 13)) for i in range(4)]
     for t in threads:
         t.start()
     for t in threads:

@@ -88,9 +88,7 @@ class ModelRegistry:
             self._entries[model_class] = {}
         self._entries[model_class][task_name] = entry
 
-    def get_entry(
-        self, model: Any, task_name: str
-    ) -> Optional[TaskEntry]:
+    def get_entry(self, model: Any, task_name: str) -> Optional[TaskEntry]:
         """Look up TaskEntry for model instance + task, following MRO.
 
         Returns None if no entry found (caller falls back to raw dispatch).
@@ -112,9 +110,7 @@ class ModelRegistry:
             return kwargs
         return entry.validator(kwargs)
 
-    def serialize(
-        self, model: Any, task_name: str, raw_output: Any
-    ) -> Optional[dict]:
+    def serialize(self, model: Any, task_name: str, raw_output: Any) -> Optional[dict]:
         """Serialize model output to typed dict.
 
         Returns None if no registry entry (caller uses raw output).
@@ -124,9 +120,7 @@ class ModelRegistry:
             return None
         return entry.serializer(raw_output, model)
 
-    def response_type(
-        self, model: Any, task_name: str
-    ) -> Optional[str]:
+    def response_type(self, model: Any, task_name: str) -> Optional[str]:
         """Get response type string for a task."""
         entry = self.get_entry(model, task_name)
         return entry.response_type if entry else None
@@ -155,9 +149,7 @@ class ModelRegistry:
                     return class_entries[task_name]
         return None
 
-    def get_default_task_by_mro_names(
-        self, mro_names: list[str]
-    ) -> Optional[str]:
+    def get_default_task_by_mro_names(self, mro_names: list[str]) -> Optional[str]:
         """Find default task name by MRO class name strings."""
         for name in mro_names:
             for cls, class_entries in self._entries.items():

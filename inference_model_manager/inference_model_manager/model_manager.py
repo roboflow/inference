@@ -10,7 +10,7 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from typing import Any, Dict, List, Literal, Optional
 
 from inference_model_manager.backends.base import Backend
-from inference_model_manager.dispatch import invoke_task, resolve_task, _get_registry
+from inference_model_manager.dispatch import _get_registry, invoke_task, resolve_task
 
 logger = logging.getLogger(__name__)
 
@@ -160,7 +160,11 @@ class ModelManager:
                 **kwargs,
             )
             # Register model class in registry for task dispatch + serialization.
-            from inference_model_manager.registry_defaults import lazy_register, lazy_register_by_names
+            from inference_model_manager.registry_defaults import (
+                lazy_register,
+                lazy_register_by_names,
+            )
+
             if hasattr(b, "model") and b.model is not None:
                 # DirectBackend — model instance available in-process.
                 lazy_register(type(b.model))
@@ -276,9 +280,7 @@ class ModelManager:
     # Processing — unified task dispatch
     # ------------------------------------------------------------------
 
-    def process(
-        self, model_id: str, task: Optional[str] = None, **kwargs: Any
-    ) -> Any:
+    def process(self, model_id: str, task: Optional[str] = None, **kwargs: Any) -> Any:
         """Process a task on a loaded model. Blocks until result is ready.
 
         Uses the model registry to resolve ``task`` to the correct method.
@@ -304,13 +306,17 @@ class ModelManager:
 
         if hasattr(backend, "submit_slot"):
             raw_input = kwargs.pop("images", None)
-            result = self.submit(model_id, task=task, raw_input=raw_input, **kwargs).result()
+            result = self.submit(
+                model_id, task=task, raw_input=raw_input, **kwargs
+            ).result()
             # Serialize subprocess result through registry (model lives in worker,
             # parent only has MRO class name strings from READY pipe).
             mro_names = getattr(backend, "_model_mro_names", [])
             if mro_names:
                 reg = _get_registry()
-                task_name = task or reg.get_default_task_by_mro_names(mro_names) or "infer"
+                task_name = (
+                    task or reg.get_default_task_by_mro_names(mro_names) or "infer"
+                )
                 entry = reg.get_entry_by_mro_names(mro_names, task_name)
                 if entry is not None:
                     return entry.serializer(result, backend)
@@ -351,7 +357,10 @@ class ModelManager:
             loop = asyncio.get_running_loop()
             raw_input = kwargs.pop("images", None)
             return await loop.run_in_executor(
-                None, lambda: self.submit(model_id, task=task, raw_input=raw_input, **kwargs).result()
+                None,
+                lambda: self.submit(
+                    model_id, task=task, raw_input=raw_input, **kwargs
+                ).result(),
             )
 
         return await asyncio.get_running_loop().run_in_executor(
@@ -424,9 +433,7 @@ class ModelManager:
             return future
 
         # Direct backend: run in thread pool via task dispatch
-        future = self._executor.submit(
-            invoke_task, backend.model, task=task, **kwargs
-        )
+        future = self._executor.submit(invoke_task, backend.model, task=task, **kwargs)
         return future
 
     def get_supported_tasks(self, model_id: str) -> Dict[str, Any]:

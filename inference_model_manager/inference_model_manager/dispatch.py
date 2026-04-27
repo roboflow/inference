@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 def _get_registry():
     """Lazy import to avoid heavy imports at module level."""
     from inference_model_manager.registry_defaults import registry
+
     return registry
 
 
@@ -58,6 +59,7 @@ def resolve_task(model: Any, task: Optional[str] = None) -> tuple[str, TaskEntry
         ValueError: If task not found or no default task registered.
     """
     from inference_model_manager.registry_defaults import lazy_register
+
     lazy_register(type(model))
 
     registry = _get_registry()
