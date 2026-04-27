@@ -53,6 +53,9 @@ from inference.core.utils.image_utils import (
     extract_image_payload_and_type,
     load_image_rgb,
 )
+from inference_models.models.owlv2.owlv2_hf import (
+    monkey_patch_vision_encoder_before_compilation,
+)
 
 CPU_IMAGE_EMBED_CACHE_SIZE = OWLV2_CPU_IMAGE_CACHE_SIZE
 PRELOADED_HF_MODELS = {}
@@ -120,6 +123,7 @@ class Owlv2Singleton:
 
             if OWLV2_COMPILE_MODEL:
                 torch._dynamo.config.suppress_errors = True
+                model = monkey_patch_vision_encoder_before_compilation(model)
                 model.owlv2.vision_model = torch.compile(model.owlv2.vision_model)
             instance.model = model
             cls._instances[huggingface_id] = instance
